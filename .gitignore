@@ -1,7 +1,10 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# ------------------------------
+# Root Monorepo Gitignore
+# Covers apps/ (Next.js + Expo) and packages/ (Drizzle + Supabase)
+# ------------------------------
 
 # Dependencies
-node_modules
+node_modules/
 .pnp
 .pnp.js
 
@@ -13,26 +16,71 @@ node_modules
 .env.production.local
 
 # Testing
-coverage
+coverage/
+*.lcov
 
 # Turbo
-.turbo
+.turbo/
 
 # Vercel
-.vercel
+.vercel/
 
-# Build Outputs
+# ------------------------------
+# Next.js (apps/nextjs-app)
+# ------------------------------
 .next/
 out/
-build
-dist
 
+# ------------------------------
+# Expo / React Native (apps/expo-app)
+# ------------------------------
+.expo/
+.expo-shared/
+*.iml
+*.apk
+*.aar
+*.jks
 
-# Debug
+.expo/
+.expo-shared/
+ios/
+android/
+
+# Metro bundler cache
+.metro-cache/
+*.packager
+
+# ------------------------------
+# Shared Packages (packages/)
+# ------------------------------
+# Drizzle ORM generated files
+packages/drizzle/drizzle/
+packages/drizzle/migrations/
+
+# Supabase generated stuff
+packages/supabase/.temp/
+packages/supabase/.branches/
+packages/supabase/migrations
+packages/supabase/config.toml
+# ------------------------------
+# Logs & Debug
+# ------------------------------
+logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 
+# ------------------------------
 # Misc
+# ------------------------------
 .DS_Store
 *.pem
+*.keystore
+*.gradle
+*.hprof
+*.swp
+
+# IDE/editor
+.vscode/
+.idea/

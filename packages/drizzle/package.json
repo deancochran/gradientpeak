@@ -1,0 +1,29 @@
+{
+  "name": "@repo/drizzle",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:pull": "drizzle-kit pull",
+    "db:studio": "drizzle-kit studio",
+    "db:drop": "drizzle-kit drop"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.1",
+    "drizzle-orm": "^0.44.4",
+    "drizzle-zod": "^0.8.3",
+    "postgres": "^3.4.7"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
+    "drizzle-kit": "^0.31.4",
+    "tsx": "^4.20.4",
+    "zod": "^4.0.17"
+  },
+  "exports": {
+    "./client": "./src/index.ts"
+  }
+}

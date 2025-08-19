@@ -1,0 +1,19 @@
+{
+  "name": "@repo/supabase",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "supabase start",
+    "start": "supabase start",
+    "stop": "supabase stop",
+    "reset": "supabase reset",
+    "migrate": "supabase db migrate"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.1"
+  },
+  "devDependencies": {
+    "supabase": "^2.34.3"
+  }
+}
