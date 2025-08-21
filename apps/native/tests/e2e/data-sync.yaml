@@ -1,0 +1,57 @@
+# Test: Data Synchronization After Auth
+---
+appId: ${APP_ID}
+name: Data Sync After Authentication
+tags:
+  - auth
+  - sync
+  - integration
+
+---
+# Sign in first
+- launchApp
+- tapOn: "Sign In"
+- tapOn: "Email"
+- inputText: "${test_users.valid_user.email}"
+- tapOn: "Password"  
+- inputText: "${test_users.valid_user.password}"
+- tapOn: "Sign In"
+- assertVisible: "Dashboard"
+
+# Wait for initial data sync
+- wait: 3000
+
+# Create a test activity
+- tapOn: "Record Activity"
+- assertVisible: "New Activity"
+- tapOn: "Activity Name"
+- inputText: "Test Sync Activity"
+- tapOn: "Activity Type"
+- tapOn: "Running"
+- tapOn: "Duration"
+- inputText: "30"
+- tapOn: "Save Activity"
+
+# Verify activity appears in dashboard
+- assertVisible: "Test Sync Activity"
+- assertVisible: "30 minutes"
+
+# Test offline/online sync
+- runScript: |
+    # Simulate network disconnection
+    mobile: shell "svc wifi disable && svc data disable"
+
+- tapOn: "Record Activity"
+- tapOn: "Activity Name"
+- inputText: "Offline Activity"
+- tapOn: "Save Activity"
+- assertVisible: "Saved offline"
+
+# Re-enable network
+- runScript: |
+    mobile: shell "svc wifi enable && svc data enable"
+
+# Wait for sync
+- wait: 5000
+- assertVisible: "Sync complete"
+- assertVisible: "Offline Activity"

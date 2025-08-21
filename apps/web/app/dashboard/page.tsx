@@ -48,6 +48,7 @@ export default async function DashboardPage() {
               </div>
               <div className="flex items-center gap-2">
                 <UserButton
+                  data-testid="sign-out-button"
                   appearance={{
                     elements: {
                       userButtonAvatarBox: "size-8",

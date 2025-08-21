@@ -1,0 +1,31 @@
+# Maestro configuration for TurboFit mobile app testing
+env:
+  APP_ID: "host.exp.exponent"  # Default Expo Go app ID
+  BUNDLE_ID: "com.turbofit.native"  # Production app bundle ID
+  TEST_TIMEOUT: 30000
+  
+# Test data
+test_users:
+  valid_user:
+    email: "maestro-test@test.example"
+    password: "MaestroTestPassword123!"
+  
+  new_user:
+    email: "new-maestro-test@test.example" 
+    password: "NewMaestroPassword123!"
+
+# Test configuration
+retries: 2
+timeout: 30000
+
+# Device configurations
+android:
+  device_name: "Pixel_5_API_31"
+  
+ios:
+  device_name: "iPhone 14"
+  ios_version: "16.0"
+
+# Parallel execution
+parallel: true
+max_parallel: 2

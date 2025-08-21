@@ -132,7 +132,7 @@ export default function SignUpScreen() {
 
   if (pendingVerification) {
     return (
-      <ThemedView style={styles.screen}>
+      <ThemedView style={styles.screen} testID="verification-screen">
         <Card style={styles.card}>
           <View style={styles.header}>
             <Text variant="title" style={styles.title}>
@@ -143,8 +143,14 @@ export default function SignUpScreen() {
             </ThemedText>
           </View>
 
+          {verifying && (
+            <View testID="loading-spinner" style={styles.loadingIndicator}>
+              <ThemedText>Loading...</ThemedText>
+            </View>
+          )}
+
           {errorMessage ? (
-            <View style={styles.alertError}>
+            <View style={styles.alertError} testID="error-message" role="alert">
               <ThemedText style={styles.alertErrorText}>
                 {errorMessage}
               </ThemedText>
@@ -152,7 +158,7 @@ export default function SignUpScreen() {
           ) : null}
 
           {infoMessage ? (
-            <View style={styles.alertInfo}>
+            <View style={styles.alertInfo} testID="success-message">
               <ThemedText style={styles.alertInfoText}>
                 {infoMessage}
               </ThemedText>
@@ -161,18 +167,24 @@ export default function SignUpScreen() {
 
           <View style={styles.form}>
             <Input
+              testID="verification-code-input"
               value={code}
               placeholder="Enter verification code"
               onChangeText={(t: string) => setCode(t)}
               style={styles.input}
               accessibilityLabel="Verification code"
+              accessibilityRole="textbox"
               keyboardType="number-pad"
             />
 
             <Button
+              testID="verify-button"
               onPress={onVerifyPress}
               disabled={!canVerify}
               style={styles.button}
+              accessibilityLabel="Verify email address"
+              accessibilityRole="button"
+              accessibilityState={{ disabled: !canVerify }}
             >
               {verifying ? "Verifying..." : "Verify"}
             </Button>
@@ -180,9 +192,12 @@ export default function SignUpScreen() {
             <View style={styles.row}>
               <ThemedText>Didn't receive an email?</ThemedText>
               <Button
+                testID="resend-code-button"
                 onPress={onResendCode}
                 disabled={loading}
                 style={styles.linkButton}
+                accessibilityRole="button"
+                accessibilityLabel="Resend verification code"
               >
                 Resend code
               </Button>
@@ -191,7 +206,7 @@ export default function SignUpScreen() {
             <View style={styles.row}>
               <ThemedText>Already have an account?</ThemedText>
               <Link href="/sign-in" style={styles.link}>
-                <Text variant="link"> Sign in</Text>
+                <Text variant="link" testID="sign-in-link" accessibilityRole="link"> Sign in</Text>
               </Link>
             </View>
           </View>
@@ -201,7 +216,7 @@ export default function SignUpScreen() {
   }
 
   return (
-    <ThemedView style={styles.screen}>
+    <ThemedView style={styles.screen} testID="sign-up-screen">
       <Card style={styles.card}>
         <View style={styles.header}>
           <Text variant="title" style={styles.title}>
@@ -212,8 +227,14 @@ export default function SignUpScreen() {
           </ThemedText>
         </View>
 
+        {loading && (
+          <View testID="loading-spinner" style={styles.loadingIndicator}>
+            <ThemedText>Loading...</ThemedText>
+          </View>
+        )}
+
         {errorMessage ? (
-          <View style={styles.alertError}>
+          <View style={styles.alertError} testID="error-message" role="alert">
             <ThemedText style={styles.alertErrorText}>
               {errorMessage}
             </ThemedText>
@@ -222,6 +243,7 @@ export default function SignUpScreen() {
 
         <View style={styles.form}>
           <Input
+            testID="email-input"
             autoCapitalize="none"
             keyboardType="email-address"
             value={emailAddress}
@@ -229,21 +251,28 @@ export default function SignUpScreen() {
             onChangeText={(email) => setEmailAddress(email)}
             style={styles.input}
             accessibilityLabel="Email address"
+            accessibilityRole="textbox"
           />
 
           <Input
+            testID="password-input"
             value={password}
             placeholder="Choose a password"
             secureTextEntry
             onChangeText={(p) => setPassword(p)}
             style={styles.input}
             accessibilityLabel="Password"
+            accessibilityRole="textbox"
           />
 
           <Button
+            testID="sign-up-button"
             onPress={onSignUpPress}
             disabled={!canSubmit}
             style={styles.button}
+            accessibilityLabel="Create new account"
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !canSubmit }}
           >
             {loading ? "Creating account..." : "Create account"}
           </Button>
@@ -251,7 +280,7 @@ export default function SignUpScreen() {
           <View style={styles.row}>
             <ThemedText>Already have an account?</ThemedText>
             <Link href="/sign-in" style={styles.link}>
-              <Text variant="link"> Sign in</Text>
+              <Text variant="link" testID="sign-in-link" accessibilityRole="link"> Sign in</Text>
             </Link>
           </View>
         </View>
@@ -319,5 +348,10 @@ const styles = StyleSheet.create({
   },
   alertInfoText: {
     color: "#0a84ff",
+  },
+  loadingIndicator: {
+    padding: 8,
+    alignItems: 'center',
+    marginBottom: 8,
   },
 });

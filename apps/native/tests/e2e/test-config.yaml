@@ -1,0 +1,220 @@
+# Device-Agnostic Test Configuration
+# Environment and device-specific test settings
+
+# Default environment variables for tests
+env:
+  # Test user credentials (override in CI with real test accounts)
+  TEST_EMAIL: "test+${randomUUID}@turbofit.dev"
+  TEST_PASSWORD: "TestPassword123!"
+  TEST_FIRST_NAME: "Test"
+  TEST_LAST_NAME: "User"
+  
+  # App configuration
+  APP_BUNDLE_ID: "com.turbofit.mobile"
+  
+  # Test timeouts (milliseconds)
+  DEFAULT_TIMEOUT: "10000"
+  LONG_TIMEOUT: "30000"
+  NETWORK_TIMEOUT: "15000"
+  
+  # Performance thresholds
+  MAX_LAUNCH_TIME: "10000"
+  MAX_AUTH_TIME: "15000"
+  MAX_ORIENTATION_CHANGE_TIME: "3000"
+  
+  # Environment-specific settings
+  TEST_MODE: "true"
+  SKIP_ONBOARDING: "true"
+  ENABLE_TEST_HELPERS: "true"
+
+# Test execution configuration by environment
+environments:
+  local:
+    # Local development testing
+    retries: 1
+    timeout: ${DEFAULT_TIMEOUT}
+    screenshots: "on-failure"
+    video: false
+    parallel: false
+    
+  ci:
+    # Continuous integration testing  
+    retries: 3
+    timeout: ${LONG_TIMEOUT}
+    screenshots: "always"
+    video: "on-failure"
+    parallel: true
+    maxParallelDevices: 2
+    
+  staging:
+    # Staging environment testing
+    retries: 2
+    timeout: 20000
+    screenshots: "on-failure"
+    video: "on-failure" 
+    parallel: true
+    maxParallelDevices: 3
+    
+  production:
+    # Production smoke testing (limited)
+    retries: 5
+    timeout: ${LONG_TIMEOUT}
+    screenshots: "always"
+    video: "always"
+    parallel: false
+    testTags: ["smoke", "critical"]
+
+# Device-specific configurations
+devices:
+  ios:
+    # iOS-specific settings
+    simulator:
+      # iPhone configurations
+      iphone_se: "iPhone SE (3rd generation)"
+      iphone_14: "iPhone 14"
+      iphone_14_pro_max: "iPhone 14 Pro Max"
+      # iPad configurations
+      ipad_air: "iPad Air (5th generation)"
+      ipad_pro: "iPad Pro (12.9-inch) (6th generation)"
+    
+    # iOS test settings
+    preferredElementSelector: "accessibility"
+    keyboardDismissalMethod: "tap_done"
+    safeareasConsideration: true
+    
+  android:
+    # Android-specific settings
+    emulator:
+      # Phone configurations
+      pixel_6: "Pixel 6 API 33"
+      pixel_6_pro: "Pixel 6 Pro API 33" 
+      galaxy_s22: "Galaxy S22 API 33"
+      # Tablet configurations
+      pixel_tablet: "Pixel Tablet API 33"
+      
+    # Android test settings  
+    preferredElementSelector: "id"
+    keyboardDismissalMethod: "press_back"
+    systemBarsHandling: true
+
+# Test suites configuration
+testSuites:
+  smoke:
+    # Critical path tests that must pass
+    tests:
+      - "auth-signin.yaml"
+      - "auth-signup.yaml"
+    tags: ["smoke", "critical"]
+    maxExecutionTime: "15m"
+    
+  regression:
+    # Full regression test suite
+    tests:
+      - "auth-signin.yaml"
+      - "auth-signup.yaml" 
+      - "auth-signout.yaml"
+      - "auth-validation.yaml"
+      - "auth-responsive.yaml"
+    tags: ["auth", "regression"]
+    maxExecutionTime: "45m"
+    
+  responsive:
+    # Responsive design tests
+    tests:
+      - "auth-responsive.yaml"
+    devices: 
+      - "iphone_se"
+      - "iphone_14"
+      - "ipad_air"
+      - "pixel_6"
+      - "pixel_tablet"
+    maxExecutionTime: "30m"
+    
+  accessibility:
+    # Accessibility compliance tests
+    tests:
+      - "auth-signin.yaml"
+      - "auth-signup.yaml"
+    accessibilityChecks: true
+    voiceOverTesting: true
+    talkbackTesting: true
+    maxExecutionTime: "25m"
+    
+  performance:
+    # Performance testing
+    tests:
+      - "auth-signin.yaml"
+      - "auth-responsive.yaml"
+    performanceMonitoring: true
+    memoryProfiling: true
+    networkProfiling: true
+    maxExecutionTime: "20m"
+
+# Reporting configuration
+reporting:
+  # Output formats
+  formats:
+    - "junit"
+    - "html"
+    - "json"
+    
+  # Screenshots and videos
+  artifacts:
+    screenshots:
+      onFailure: true
+      onSuccess: false
+      directory: "test-results/screenshots"
+    videos:
+      onFailure: true
+      onSuccess: false
+      directory: "test-results/videos"
+    logs:
+      deviceLogs: true
+      appLogs: true
+      directory: "test-results/logs"
+      
+  # Performance metrics
+  metrics:
+    appLaunchTime: true
+    authenticationTime: true
+    orientationChangeTime: true
+    memoryUsage: true
+    networkRequests: true
+
+# Error handling and recovery
+errorHandling:
+  # Automatic recovery strategies
+  autoRecovery:
+    - restartApp: "on-crash"
+    - clearAppData: "on-auth-failure"
+    - reconnectNetwork: "on-network-error"
+    
+  # Debugging aids
+  debugging:
+    captureDebugLogs: true
+    elementHighlighting: true
+    stepByStepExecution: false
+    
+  # Notification settings
+  notifications:
+    slackWebhook: "${SLACK_WEBHOOK_URL}"
+    emailRecipients: ["${TEST_TEAM_EMAIL}"]
+    onlyOnFailure: true
+
+# Integration settings
+integrations:
+  # CI/CD pipeline integration
+  cicd:
+    githubActions: true
+    buildkite: true
+    jenkins: true
+    
+  # Test management tools
+  testManagement:
+    jiraIntegration: false
+    testRailIntegration: false
+    
+  # Monitoring and alerting
+  monitoring:
+    datadogIntegration: false
+    splunkIntegration: false

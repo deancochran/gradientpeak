@@ -1,0 +1,137 @@
+# Comprehensive Mobile Authentication Test Suite
+---
+appId: ${APP_ID}
+name: Complete Mobile Authentication Flow
+tags:
+  - auth
+  - mobile
+  - comprehensive
+  - smoke
+environments:
+  ios: true
+  android: true
+
+---
+# Test data setup
+- runScript: |
+    const testEmail = `test-${Date.now()}@test.example`;
+    const testPassword = 'TestPassword123!';
+    output.testEmail = testEmail;
+    output.testPassword = testPassword;
+    output.testFirstName = 'Mobile';
+    output.testLastName = 'Test';
+
+# Initial app launch and welcome screen
+- launchApp
+- assertVisible: "TurboFit"
+- assertVisible: "Welcome to TurboFit"
+
+# Navigate to Sign Up
+- tapOn: "Get Started"
+- assertVisible: "Create Account"
+
+# Test Sign Up Form Validation
+- tapOn: "Create Account" # Try submit without data
+- assertVisible:
+    text: "First name is required"
+    timeout: 3000
+- assertVisible: "Last name is required"
+- assertVisible: "Email is required"
+- assertVisible: "Password is required"
+
+# Fill sign up form with invalid email
+- tapOn: "First Name"
+- inputText: "${output.testFirstName}"
+- tapOn: "Last Name"
+- inputText: "${output.testLastName}"
+- tapOn: "Email"
+- inputText: "invalid-email"
+- tapOn: "Password"
+- inputText: "${output.testPassword}"
+- tapOn: "Create Account"
+- assertVisible: "Please enter a valid email address"
+
+# Clear and fill with valid data
+- tapOn: "Email"
+- inputText: "" # Clear field
+- inputText: "${output.testEmail}"
+- tapOn: "Create Account"
+
+# Handle email verification flow
+- assertVisible:
+    text: "Verify your email"
+    timeout: 10000
+
+# For testing purposes, simulate verified email by continuing
+# In real scenario, this would involve email verification
+- tapOn: "I've verified my email"
+
+# Should navigate to onboarding or dashboard
+- assertVisible:
+    text: "Welcome"
+    timeout: 15000
+
+# Complete initial onboarding
+- tapOn: "Continue"
+- assertVisible: "Dashboard"
+- assertVisible: "Record Activity"
+- assertVisible: "Your Activities"
+
+# Test user profile access
+- tapOn: "Profile"
+- assertVisible: "${output.testFirstName}"
+- assertVisible: "${output.testLastName}"
+- assertVisible: "${output.testEmail}"
+
+# Test profile editing
+- tapOn: "Edit Profile"
+- tapOn: "First Name"
+- inputText: "Updated"
+- tapOn: "Save Changes"
+- assertVisible: "Profile updated successfully"
+- assertVisible: "Updated"
+
+# Test sign out functionality
+- tapOn: "Settings"
+- tapOn: "Sign Out"
+- assertVisible: "Are you sure?"
+- tapOn: "Sign Out"
+
+# Should return to welcome/sign in screen
+- assertVisible:
+    text: "Welcome"
+    timeout: 10000
+
+# Test sign in with the created account
+- tapOn: "Sign In"
+- assertVisible: "Welcome Back"
+- tapOn: "Email"
+- inputText: "${output.testEmail}"
+- tapOn: "Password"
+- inputText: "${output.testPassword}"
+- tapOn: "Sign In"
+
+# Should navigate back to dashboard
+- assertVisible:
+    text: "Dashboard"
+    timeout: 15000
+
+# Test session persistence
+- killApp
+- launchApp
+- assertVisible:
+    text: "Dashboard"
+    timeout: 10000
+    optional: false
+
+# Test protected route access
+- tapOn: "Record Activity"
+- assertVisible: "Start Recording"
+- tapOn: "Back"
+
+# Test final sign out
+- tapOn: "Profile"
+- tapOn: "Settings"
+- tapOn: "Sign Out"
+- tapOn: "Sign Out"
+- assertVisible: "Welcome"

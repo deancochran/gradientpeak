@@ -36,20 +36,29 @@ function RecordModal({ visible, onClose }: { visible: boolean; onClose: () => vo
       animationType="slide"
       presentationStyle="pageSheet"
       onRequestClose={onClose}
+      testID="record-modal"
     >
-      <View style={modalStyles.container}>
+      <View style={modalStyles.container} testID="record-modal-container">
         {/* Modal Header */}
         <View style={modalStyles.header}>
           <TouchableOpacity 
             style={modalStyles.closeButton}
             onPress={onClose}
+            testID="record-modal-close-button"
+            accessibilityLabel="Close record workout modal"
+            accessibilityRole="button"
           >
             <Ionicons name="close" size={24} color="#374151" />
           </TouchableOpacity>
           
-          <Text style={modalStyles.headerTitle}>Record Workout</Text>
+          <Text style={modalStyles.headerTitle} testID="record-modal-title">Record Workout</Text>
           
-          <TouchableOpacity style={modalStyles.activityTypeButton}>
+          <TouchableOpacity 
+            style={modalStyles.activityTypeButton}
+            testID="activity-type-selector"
+            accessibilityLabel="Select activity type"
+            accessibilityRole="button"
+          >
             <Ionicons 
               name={activityTypes.find(type => type.id === selectedActivityType)?.icon as any} 
               size={20} 
@@ -106,6 +115,9 @@ function RecordModal({ visible, onClose }: { visible: boolean; onClose: () => vo
               variant="outline" 
               style={modalStyles.footerButton}
               onPress={() => {}}
+              testID="record-actions-button"
+              accessibilityLabel="Workout actions"
+              accessibilityRole="button"
             >
               <Text style={modalStyles.footerButtonTextSecondary}>Actions</Text>
             </Button>
@@ -114,6 +126,9 @@ function RecordModal({ visible, onClose }: { visible: boolean; onClose: () => vo
               variant="default" 
               style={[modalStyles.footerButton, modalStyles.primaryFooterButton]}
               onPress={() => {}}
+              testID="start-recording-button"
+              accessibilityLabel="Start recording workout"
+              accessibilityRole="button"
             >
               <Text style={modalStyles.footerButtonTextPrimary}>Start Recording</Text>
             </Button>
@@ -122,6 +137,9 @@ function RecordModal({ visible, onClose }: { visible: boolean; onClose: () => vo
               variant="ghost" 
               style={modalStyles.footerButton}
               onPress={() => {}}
+              testID="record-settings-button"
+              accessibilityLabel="Workout settings"
+              accessibilityRole="button"
             >
               <Ionicons name="settings-outline" size={20} color="#6b7280" />
             </Button>
@@ -136,12 +154,13 @@ export default function RecordScreen() {
   const [modalVisible, setModalVisible] = useState(false);
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={styles.container} testID="record-screen">
       {/* Main Record Screen Content */}
       <ScrollView 
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        testID="record-scroll-view"
       >
         <View style={styles.content}>
           <View style={styles.iconContainer}>
@@ -187,6 +206,9 @@ export default function RecordScreen() {
           style={styles.recordButton}
           onPress={() => setModalVisible(true)}
           activeOpacity={0.8}
+          testID="main-record-button"
+          accessibilityLabel="Open workout recording options"
+          accessibilityRole="button"
         >
           <Ionicons name="add" size={32} color="white" />
           <Text style={styles.recordButtonText}>Start Workout</Text>

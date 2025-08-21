@@ -5,7 +5,7 @@
     "build": {
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": [".next/**", "!.next/cache/**"]
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
     },
     "lint": {
       "dependsOn": ["^lint"]
@@ -16,6 +16,38 @@
     "dev": {
       "cache": false,
       "persistent": true
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*", "tests/**", "**/*.test.*", "src/**"],
+      "outputs": ["coverage/**", "test-results/**", "dist/**"],
+      "cache": true
+    },
+    "test:integration": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*", "tests/integration/**", "src/**"],
+      "outputs": ["coverage/**", "test-results/**"],
+      "cache": true
+    },
+    "test:e2e": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*", "tests/e2e/**", ".maestro/**", "src/**"],
+      "outputs": ["playwright-report/**", "test-results/**", "maestro-results/**"],
+      "cache": false
+    },
+    "test:watch": {
+      "cache": false,
+      "persistent": true
+    },
+    "test:all": {
+      "dependsOn": ["test", "test:e2e"],
+      "cache": false
+    },
+    "test:ci": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*", "tests/**", "**/*.test.*", "src/**"],
+      "outputs": ["coverage/**", "test-results/**", "playwright-report/**", "dist/**"],
+      "cache": true
     }
   }
 }

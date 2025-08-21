@@ -1,0 +1,328 @@
+# Mobile App Authentication E2E Tests using Maestro
+# Tests complete authentication flows on mobile devices
+
+appId: dev.turbofit.native
+---
+
+# Test 1: Complete Sign-In Flow
+- launchApp
+- assertVisible: "Get started" # Welcome screen
+- tapOn: "Sign In" # Navigate to sign in
+
+# Test valid credentials
+- assertVisible: "Email"
+- tapOn: "Email"
+- inputText: "test-e2e@example.com"
+- tapOn: "Password"
+- inputText: "TestPassword123!"
+- tapOn: "Sign In"
+
+# Wait for successful sign in
+- assertVisible: 
+    text: "Dashboard"
+    timeout: 10000
+
+# Verify user is authenticated
+- assertVisible: "Welcome"
+- assertVisible: "test-e2e@example.com"
+
+---
+
+# Test 2: Sign-In Validation Errors
+- launchApp
+- tapOn: "Sign In"
+
+# Test empty form validation
+- tapOn: "Sign In"
+- assertVisible: "Email is required"
+
+# Test invalid email format
+- tapOn: "Email"
+- inputText: "invalid-email"
+- tapOn: "Password"
+- inputText: "validpassword"
+- tapOn: "Sign In"
+- assertVisible: "Please enter a valid email"
+
+# Test invalid credentials
+- clearText
+- tapOn: "Email"
+- inputText: "wrong@example.com"
+- tapOn: "Password" 
+- inputText: "wrongpassword"
+- tapOn: "Sign In"
+- assertVisible:
+    text: "Invalid credentials"
+    timeout: 5000
+
+---
+
+# Test 3: Protected Route Access
+- launchApp
+
+# Try to access protected route without authentication
+- tapOn: "Profile" # Should redirect to sign in
+- assertVisible: "Sign In"
+- assertVisible: "Please sign in to continue"
+
+# Sign in first
+- tapOn: "Email"
+- inputText: "test-e2e@example.com"
+- tapOn: "Password"
+- inputText: "TestPassword123!"
+- tapOn: "Sign In"
+
+# Wait for authentication
+- assertVisible:
+    text: "Dashboard"
+    timeout: 10000
+
+# Now try protected route
+- tapOn: "Profile"
+- assertVisible: "Profile Settings"
+- assertNotVisible: "Please sign in"
+
+---
+
+# Test 4: Sign Out Flow
+- launchApp
+- tapOn: "Sign In"
+
+# Sign in first
+- tapOn: "Email"
+- inputText: "test-e2e@example.com"
+- tapOn: "Password"
+- inputText: "TestPassword123!"
+- tapOn: "Sign In"
+
+- assertVisible:
+    text: "Dashboard"
+    timeout: 10000
+
+# Sign out
+- tapOn: "Settings"
+- tapOn: "Sign Out"
+- assertVisible: "Are you sure you want to sign out?"
+- tapOn: "Confirm"
+
+# Should be back to welcome screen
+- assertVisible: "Get started"
+- assertNotVisible: "Dashboard"
+
+# Verify cannot access protected routes
+- tapOn: "Profile"
+- assertVisible: "Sign In"
+
+---
+
+# Test 5: Deep Link Authentication
+- launchApp:
+    url: "turbofit://profile"
+
+# Should redirect to sign in for protected deep link
+- assertVisible: "Sign In"
+- assertVisible: "Please sign in to continue"
+
+# Sign in
+- tapOn: "Email"
+- inputText: "test-e2e@example.com"
+- tapOn: "Password"
+- inputText: "TestPassword123!"
+- tapOn: "Sign In"
+
+# Should redirect to originally requested route
+- assertVisible:
+    text: "Profile Settings"
+    timeout: 10000
+
+---
+
+# Test 6: App State Management
+- launchApp
+- tapOn: "Sign In"
+
+# Sign in
+- tapOn: "Email"
+- inputText: "test-e2e@example.com"
+- tapOn: "Password"
+- inputText: "TestPassword123!"
+- tapOn: "Sign In"
+
+- assertVisible:
+    text: "Dashboard"
+    timeout: 10000
+
+# Send app to background
+- pressKey: "Home"
+- wait: 2000
+
+# Bring app back to foreground
+- launchApp
+- assertVisible: "Dashboard" # Should maintain auth state
+- assertNotVisible: "Sign In"
+
+---
+
+# Test 7: Network Error Handling
+- launchApp
+- tapOn: "Sign In"
+
+# Fill in credentials
+- tapOn: "Email"
+- inputText: "test-e2e@example.com"
+- tapOn: "Password"
+- inputText: "TestPassword123!"
+
+# Simulate network disconnection (would need device setup)
+# This test assumes network can be controlled in test environment
+- tapOn: "Sign In"
+- assertVisible:
+    text: "Network error"
+    timeout: 10000
+
+# Verify user stays on sign in screen
+- assertVisible: "Sign In"
+- assertNotVisible: "Dashboard"
+
+---
+
+# Test 8: Biometric Authentication (if available)
+- launchApp
+- tapOn: "Sign In"
+
+# Check if biometric option is available
+- tapOn: "Use Biometric"
+- assertVisible: "Biometric Authentication"
+
+# Simulate biometric success
+- tapOn: "Authenticate"
+# Note: This would require device-specific biometric simulation
+
+# Should sign in successfully
+- assertVisible:
+    text: "Dashboard"
+    timeout: 15000
+
+---
+
+# Test 9: Cross-Platform Navigation
+- launchApp
+- tapOn: "Sign In"
+
+# Sign in
+- tapOn: "Email" 
+- inputText: "test-e2e@example.com"
+- tapOn: "Password"
+- inputText: "TestPassword123!"
+- tapOn: "Sign In"
+
+- assertVisible:
+    text: "Dashboard"
+    timeout: 10000
+
+# Test tab navigation
+- tapOn: "Home"
+- assertVisible: "Home Dashboard"
+
+- tapOn: "Record"
+- assertVisible: "Record Activity" 
+
+- tapOn: "Settings"
+- assertVisible: "Settings Menu"
+
+# Test back navigation
+- pressKey: "Back"
+- assertVisible: "Record Activity"
+
+---
+
+# Test 10: Session Persistence
+- launchApp
+- tapOn: "Sign In"
+
+# Sign in
+- tapOn: "Email"
+- inputText: "test-e2e@example.com"
+- tapOn: "Password"
+- inputText: "TestPassword123!"
+- tapOn: "Sign In"
+
+- assertVisible:
+    text: "Dashboard"
+    timeout: 10000
+
+# Force close and reopen app
+- stopApp
+- wait: 3000
+- launchApp
+
+# Should maintain session
+- assertVisible: "Dashboard"
+- assertNotVisible: "Sign In"
+
+# Verify user data is present
+- assertVisible: "test-e2e@example.com"
+
+---
+
+# Test 11: Token Refresh Handling
+- launchApp
+- tapOn: "Sign In"
+
+# Sign in
+- tapOn: "Email"
+- inputText: "test-e2e@example.com" 
+- tapOn: "Password"
+- inputText: "TestPassword123!"
+- tapOn: "Sign In"
+
+- assertVisible:
+    text: "Dashboard"
+    timeout: 10000
+
+# Navigate to API-dependent feature
+- tapOn: "Sync Data"
+- assertVisible: "Syncing..."
+
+# Should handle token refresh automatically
+- assertVisible:
+    text: "Sync complete"
+    timeout: 15000
+- assertNotVisible: "Authentication failed"
+
+---
+
+# Test 12: Multiple Account Scenarios
+- launchApp
+- tapOn: "Sign In"
+
+# Sign in with first account
+- tapOn: "Email"
+- inputText: "user1@example.com"
+- tapOn: "Password" 
+- inputText: "TestPassword123!"
+- tapOn: "Sign In"
+
+- assertVisible:
+    text: "Dashboard"
+    timeout: 10000
+- assertVisible: "user1@example.com"
+
+# Sign out
+- tapOn: "Settings"
+- tapOn: "Sign Out"
+- tapOn: "Confirm"
+
+# Sign in with second account
+- tapOn: "Sign In"
+- tapOn: "Email"
+- inputText: "user2@example.com"
+- tapOn: "Password"
+- inputText: "TestPassword123!"
+- tapOn: "Sign In"
+
+- assertVisible:
+    text: "Dashboard"
+    timeout: 10000
+- assertVisible: "user2@example.com"
+- assertNotVisible: "user1@example.com"

@@ -64,7 +64,7 @@ export default function Page() {
   };
 
   return (
-    <ThemedView style={styles.screen}>
+    <ThemedView style={styles.screen} testID="sign-in-screen">
       <Card style={styles.card}>
         <View style={styles.header}>
           <Text variant="title" style={styles.title}>
@@ -75,14 +75,21 @@ export default function Page() {
           </ThemedText>
         </View>
 
+        {loading && (
+          <View testID="loading-spinner" style={styles.loadingIndicator}>
+            <ThemedText>Loading...</ThemedText>
+          </View>
+        )}
+
         {errorMessage ? (
-          <View style={styles.errorBox}>
+          <View style={styles.errorBox} testID="error-message" role="alert">
             <ThemedText style={styles.errorText}>{errorMessage}</ThemedText>
           </View>
         ) : null}
 
         <View style={styles.form}>
           <Input
+            testID="email-input"
             value={emailAddress}
             placeholder="Email address"
             autoCapitalize="none"
@@ -90,21 +97,27 @@ export default function Page() {
             onChangeText={(text: string) => setEmailAddress(text)}
             style={styles.input}
             accessibilityLabel="Email address"
+            accessibilityRole="textbox"
           />
           <Input
+            testID="password-input"
             value={password}
             placeholder="Password"
             secureTextEntry
             onChangeText={(text: string) => setPassword(text)}
             style={styles.input}
             accessibilityLabel="Password"
+            accessibilityRole="textbox"
           />
 
           <Button
+            testID="sign-in-button"
             onPress={onSignInPress}
             disabled={!canSubmit}
             style={styles.primaryButton}
-            accessibilityLabel="Sign in"
+            accessibilityLabel="Sign in to your account"
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !canSubmit }}
           >
             {loading ? "Signing in..." : "Continue"}
           </Button>
@@ -112,7 +125,7 @@ export default function Page() {
           <View style={styles.footerRow}>
             <ThemedText>Don't have an account?</ThemedText>
             <Link href="/sign-up" style={styles.link}>
-              <Text variant="link"> Sign up</Text>
+              <Text variant="link" testID="sign-up-link" accessibilityRole="link"> Sign up</Text>
             </Link>
           </View>
         </View>
@@ -170,5 +183,10 @@ const styles = StyleSheet.create({
   },
   link: {
     // Let the Text variant="link" drive link styling; keep spacing here.
+  },
+  loadingIndicator: {
+    padding: 8,
+    alignItems: 'center',
+    marginBottom: 8,
   },
 });

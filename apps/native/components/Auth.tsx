@@ -49,41 +49,54 @@ export default function Auth() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} testID="auth-container">
       <View style={[styles.verticallySpaced, styles.mt20]}>
         <Input
-          // label="Email"
-          // leftIcon={{ type: "font-awesome", name: "envelope" }}
+          testID="auth-email-input"
           onChangeText={(text) => setEmail(text)}
           value={email}
           placeholder="email@address.com"
           autoCapitalize={"none"}
+          accessibilityLabel="Email address"
+          accessibilityRole="text"
+          keyboardType="email-address"
         />
       </View>
       <View style={styles.verticallySpaced}>
         <Input
-          // label="Password"
-          // leftIcon={{ type: "font-awesome", name: "lock" }}
+          testID="auth-password-input"
           onChangeText={(text) => setPassword(text)}
           value={password}
           secureTextEntry={true}
           placeholder="Password"
           autoCapitalize={"none"}
+          accessibilityLabel="Password"
+          accessibilityRole="text"
         />
       </View>
       <View style={[styles.verticallySpaced, styles.mt20]}>
         <Button
-          // title="Sign in"
+          testID="auth-sign-in-button"
           disabled={loading}
           onPress={() => signInWithEmail()}
-        />
+          accessibilityLabel="Sign in with email"
+          accessibilityRole="button"
+          accessibilityState={{ disabled: loading }}
+        >
+          {loading ? "Signing in..." : "Sign in"}
+        </Button>
       </View>
       <View style={styles.verticallySpaced}>
         <Button
-          // title="Sign up"
+          testID="auth-sign-up-button"
           disabled={loading}
           onPress={() => signUpWithEmail()}
-        />
+          accessibilityLabel="Sign up with email"
+          accessibilityRole="button"
+          accessibilityState={{ disabled: loading }}
+        >
+          {loading ? "Signing up..." : "Sign up"}
+        </Button>
       </View>
     </View>
   );

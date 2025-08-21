@@ -8,40 +8,41 @@ import { Button } from '@/components/ui/button';
 
 export default function HomeScreen() {
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={styles.container} testID="dashboard-screen">
       {/* Content Area */}
       <ScrollView 
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        testID="dashboard-scroll-view"
       >
         {/* Main Content */}
         <View style={styles.mainContent}>
-          <Text style={styles.centeredText}>Home</Text>
+          <Text style={styles.centeredText} testID="dashboard-title">Dashboard</Text>
         </View>
 
         {/* Quick Stats Cards */}
-        <View style={styles.statsContainer}>
-          <Card style={styles.statCard}>
+        <View style={styles.statsContainer} testID="stats-container">
+          <Card style={styles.statCard} testID="activities-stat-card">
             <Text style={styles.statNumber}>0</Text>
             <Text style={styles.statLabel}>Activities</Text>
           </Card>
           
-          <Card style={styles.statCard}>
+          <Card style={styles.statCard} testID="distance-stat-card">
             <Text style={styles.statNumber}>0 km</Text>
             <Text style={styles.statLabel}>Distance</Text>
           </Card>
           
-          <Card style={styles.statCard}>
+          <Card style={styles.statCard} testID="duration-stat-card">
             <Text style={styles.statNumber}>0h</Text>
             <Text style={styles.statLabel}>Duration</Text>
           </Card>
         </View>
 
         {/* Recent Activities Section */}
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Recent Activities</Text>
-          <Card style={styles.emptyStateCard}>
+        <View style={styles.sectionContainer} testID="activities-section">
+          <Text style={styles.sectionTitle} testID="activities-list-title">Your Activities</Text>
+          <Card style={styles.emptyStateCard} testID="empty-activities-state">
             <Text style={styles.emptyStateText}>No activities yet</Text>
             <Text style={styles.emptyStateSubtext}>
               Start recording your first workout!
@@ -56,8 +57,11 @@ export default function HomeScreen() {
           variant="default" 
           style={styles.footerButton}
           onPress={() => {}}
+          testID="record-activity-button"
+          accessibilityLabel="Record new activity"
+          accessibilityRole="button"
         >
-          <Text style={styles.footerButtonText}>Start New Activity</Text>
+          <Text style={styles.footerButtonText}>Record Activity</Text>
         </Button>
       </View>
     </ThemedView>
