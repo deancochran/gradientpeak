@@ -13,7 +13,7 @@ export const SignOutButton = () => {
   };
 
   return (
-    <Button onPress={onSignOutPress}>
+    <Button testID="sign-out-button" onPress={onSignOutPress}>
           Sign out
     </Button>
   );

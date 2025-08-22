@@ -1,58 +1,63 @@
 import { Ionicons } from '@expo/vector-icons'
 import { Redirect, Tabs } from 'expo-router'
 import React from 'react'
-import { Platform } from 'react-native'
+import { Animated } from 'react-native'
 
-import { useColorScheme } from '@/hooks/useColorScheme'
+import { useColorScheme } from '@/lib/useColorScheme'
 import { useAuth } from '@clerk/clerk-expo'
 
-// function TabBarHeader() {
-// 	return (
-// 		<View style={{
-// 		flexDirection: 'row',
-// 		alignItems: 'center',
-// 		justifyContent: 'space-between',
-// 	}}>
-// 			<View >
-// 				<TouchableOpacity onPress={() => {}}>
-// 					<Ionicons name="notifications-outline" size={24} color="#374151" />
-// 				</TouchableOpacity>
-
-// 				<TouchableOpacity onPress={() => {}}>
-// 					<Ionicons name="calendar-outline" size={24}  />
-// 				</TouchableOpacity>
-// 			</View>
-// 		</View>
-// 	)
-// }
-
 export default function TabLayout() {
-	const colorScheme = useColorScheme()
 	const { isLoaded, isSignedIn } = useAuth()
+	const { isDarkColorScheme } = useColorScheme()
 
-	// Wait until Clerk finishes loading
-	if (!isLoaded) {
-		return null
-	}
+	const backgroundColor = isDarkColorScheme ? '#000000' : '#ffffff'
+	const borderColor = isDarkColorScheme ? '#222222' : '#e5e5e5'
+	const activeColor = isDarkColorScheme ? '#ffffff' : '#000000'
+	const inactiveColor = isDarkColorScheme ? '#666666' : '#999999'
 
-	// If user is not signed in, redirect to the sign-in flow
-	if (!isSignedIn) {
-		return <Redirect href="/welcome" />
+	if (!isLoaded) return null
+	if (!isSignedIn) return <Redirect href="/welcome" />
+
+	// Animated icon that reacts to focus
+	function AnimatedIcon({ focused, name }: { focused: boolean; name: string }) {
+		const scaleAnim = React.useRef(new Animated.Value(focused ? 1 : 0.9)).current
+
+		React.useEffect(() => {
+			Animated.spring(scaleAnim, {
+				toValue: focused ? 1 : 0.9,
+				friction: 6,
+				tension: 80,
+				useNativeDriver: true,
+			}).start()
+		}, [focused])
+
+		return (
+			<Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+				<Ionicons
+					name={name as any}
+					size={focused ? 30 : 26}
+					color={focused ? activeColor : inactiveColor}
+				/>
+			</Animated.View>
+		)
 	}
 
 	return (
 		<Tabs
 			screenOptions={{
-				// header: () => <TabBarHeader />,
-        headerShown: false,
-        tabBarShowLabel: false,
-				tabBarStyle: Platform.select({
-          default: { alignItems: "center", justifyContent: "center", height: 0, backgroundColor: 'white'  },
-
-				}),
-				tabBarItemStyle: {
-					alignItems: "center", // Center horizontally
-
+				headerShown: false,
+				tabBarActiveTintColor: activeColor,
+				tabBarInactiveTintColor: inactiveColor,
+				tabBarStyle: {
+					backgroundColor,
+					borderTopWidth: 1,
+					borderTopColor: borderColor,
+					height: 50, // shrink the tab bar
+					position: 'absolute', // make it hug bottom
+					bottom: 0,
+					left: 0,
+					right: 0,
+					paddingBottom: 4, // small padding for iPhone home indicator
 				},
 			}}
 		>
@@ -60,8 +65,8 @@ export default function TabLayout() {
 				name="index"
 				options={{
 					title: 'Home',
-					tabBarIcon: ({ color, focused }) => (
-						<Ionicons name={focused ? 'home' : 'home-outline'} size={24} color={color} />
+					tabBarIcon: ({ focused }) => (
+						<AnimatedIcon focused={focused} name={focused ? 'home' : 'home-outline'} />
 					),
 				}}
 			/>
@@ -69,13 +74,8 @@ export default function TabLayout() {
 				name="record"
 				options={{
 					title: 'Record',
-          
-					tabBarIcon: ({ color, focused }) => (
-						<Ionicons
-							name={focused ? 'add-circle' : 'add-circle-outline'}
-							size={24}
-							color={color}
-						/>
+					tabBarIcon: ({ focused }) => (
+						<AnimatedIcon focused={focused} name={focused ? 'add-circle' : 'add-circle-outline'} />
 					),
 				}}
 			/>
@@ -83,12 +83,11 @@ export default function TabLayout() {
 				name="settings"
 				options={{
 					title: 'Settings',
-					tabBarIcon: ({ color, focused }) => (
-						<Ionicons name={focused ? 'person' : 'person-outline'} size={24} color={color} />
+					tabBarIcon: ({ focused }) => (
+						<AnimatedIcon focused={focused} name={focused ? 'person' : 'person-outline'} />
 					),
 				}}
 			/>
 		</Tabs>
 	)
 }
-
