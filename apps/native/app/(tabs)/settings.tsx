@@ -1,11 +1,12 @@
-import React from 'react';
-import { StyleSheet, View, ScrollView, TouchableOpacity, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import React from 'react';
+import { Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
+import { SignOutButton } from '@/components/SignOutButton';
 import { ThemedView } from '@/components/ThemedView';
-import { Text } from '@/components/ui/text';
-import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Text } from '@/components/ui/text';
 
 export default function SettingsScreen() {
   // Mock user data (would come from authentication/database in real app)
@@ -204,13 +205,7 @@ export default function SettingsScreen() {
 
         {/* Sign Out Button */}
         <View style={styles.signOutSection}>
-          <Button 
-            variant="outline" 
-            style={styles.signOutButton}
-            onPress={() => {}}
-          >
-            <Text style={styles.signOutButtonText}>Sign Out</Text>
-          </Button>
+          <SignOutButton />
         </View>
       </ScrollView>
     </ThemedView>

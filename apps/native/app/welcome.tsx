@@ -1,10 +1,10 @@
-import React from 'react';
-import { StyleSheet, View, Image, StatusBar } from 'react-native';
 import { useRouter } from 'expo-router';
+import React from 'react';
+import { StatusBar, StyleSheet, View } from 'react-native';
 
+import { ThemedView } from '@/components/ThemedView';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
-import { ThemedView } from '@/components/ThemedView';
 
 export default function WelcomeScreen() {
   const router = useRouter();
@@ -40,7 +40,7 @@ export default function WelcomeScreen() {
             variant="default" 
             size="lg" 
             style={styles.primaryButton}
-            onPress={() => router.push('/auth/login')}
+            onPress={() => router.replace("/(auth)/sign-in")}
           >
             <Text style={styles.primaryButtonText}>Login</Text>
           </Button>
@@ -49,7 +49,7 @@ export default function WelcomeScreen() {
             variant="outline" 
             size="lg" 
             style={styles.secondaryButton}
-            onPress={() => router.push('/auth/signup')}
+            onPress={() => router.replace("/(auth)/sign-up")}
           >
             <Text style={styles.secondaryButtonText}>Sign Up</Text>
           </Button>

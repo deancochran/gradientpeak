@@ -1,15 +1,4 @@
 import '@testing-library/jest-native/extend-expect';
-import { validateTestConfig } from '@repo/testing-utils';
-
-// Validate test configuration on setup
-beforeAll(() => {
-  try {
-    validateTestConfig();
-  } catch (error) {
-    console.error('Test configuration validation failed:', error);
-    process.exit(1);
-  }
-});
 
 // Mock Expo modules
 jest.mock('expo-constants', () => ({

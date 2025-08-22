@@ -4,18 +4,22 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "dev:with-webhooks": "concurrently \"next dev --turbopack\" \"ngrok http 3000 --domain=outgoing-ape-repeatedly.ngrok-free.app \"",
+    "ngrok": "ngrok http 3000 --domain=outgoing-ape-repeatedly.ngrok-free.app",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "check-types": "tsc --noEmit",
-    "test": "jest",
+
+    "test": "npm run test:unit && npm run test:e2e",
+
+    "test:unit": "jest",
     "test:watch": "jest --watch",
-    "test:e2e": "playwright test",
-    "test:integration": "jest tests/integration",
-    "test:e2e:headed": "playwright test --headed",
-    "test:e2e:debug": "playwright test --debug",
-    "test:all": "npm run test && npm run test:e2e",
+
+    "test:e2e": "NODE_ENV=test playwright test",
+    
+    "test:e2e:headed": "npm run test:e2e -- --headed",
+    "test:e2e:debug": "npm run test:e2e -- --debug",
+    
     "test:ci": "jest --ci --coverage --watchAll=false && playwright test"
   },
   "dependencies": {
