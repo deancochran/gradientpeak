@@ -60,7 +60,6 @@ packages/drizzle/migrations/
 # Supabase generated stuff
 packages/supabase/.temp/
 packages/supabase/.branches/
-packages/supabase/migrations
 packages/supabase/config.toml
 # ------------------------------
 # Logs & Debug

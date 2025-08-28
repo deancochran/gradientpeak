@@ -11,8 +11,8 @@ const OWNER = "deancochran";
 const APP_NAME = "Turbo Fit";
 const BUNDLE_IDENTIFIER = "com.company.turbofit";
 const PACKAGE_NAME = "com.company.turbofit";
-const ICON = "./assets/images/icons/slash-icon-prod.png";
-const ADAPTIVE_ICON = "./assets/images/icons/slash-icon-prod.png";
+const ICON = "./assets/images/icons/splash-icon-prod.png";
+const ADAPTIVE_ICON = "./assets/images/icons/splash-icon-prod.png";
 const SCHEME = "app-scheme";
 
 export default ({ config }: ConfigContext): ExpoConfig => {
