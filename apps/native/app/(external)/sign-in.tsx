@@ -17,6 +17,7 @@ import { z } from "zod";
 
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/contexts";
+import { supabase } from "@/lib/supabase";
 import { useColorScheme } from "@/lib/useColorScheme";
 
 const signInSchema = z.object({
@@ -41,7 +42,8 @@ const mapSupabaseErrorToFormField = (error: string) => {
 export default function SignInScreen() {
   const router = useRouter();
   const { isDarkColorScheme } = useColorScheme();
-  const { signIn, loading } = useAuth();
+  const { loading } = useAuth();
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   // Animation refs
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
@@ -53,7 +55,7 @@ export default function SignInScreen() {
     control,
     handleSubmit,
     setError,
-    formState: { errors, isSubmitting },
+    formState: { errors },
   } = useForm<SignInFields>({
     resolver: zodResolver(signInSchema),
   });
@@ -89,8 +91,12 @@ export default function SignInScreen() {
       }),
     ]).start();
 
+    setIsSubmitting(true);
     try {
-      const { user, error } = await signIn(data.email, data.password);
+      const { data: authData, error } = await supabase.auth.signInWithPassword({
+        email: data.email,
+        password: data.password,
+      });
 
       if (error) {
         console.log("Sign in error:", error);
@@ -115,13 +121,15 @@ export default function SignInScreen() {
             message: error.message || "An unexpected error occurred",
           });
         }
-      } else if (user) {
+      } else if (authData.user) {
         // Successfully signed in - the auth state change will handle navigation
-        console.log("Successfully signed in:", user.email);
+        console.log("Successfully signed in:", authData.user.email);
       }
     } catch (err) {
       console.log("Unexpected sign in error:", err);
       setError("root", { message: "An unexpected error occurred" });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 

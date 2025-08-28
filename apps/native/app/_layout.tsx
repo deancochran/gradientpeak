@@ -1,6 +1,6 @@
 import "@/global.css";
 
-import { AuthProvider, ProtectedRoute, useAuth } from "@/lib/contexts";
+import { AuthProvider, useAuth } from "@/lib/contexts";
 import { useColorScheme } from "@/lib/useColorScheme";
 import {
   DarkTheme,
@@ -120,40 +120,53 @@ function LoadingScreen() {
 }
 
 function RootLayoutInner() {
-  const { user, initializing } = useAuth();
+  const { session, loading } = useAuth();
   const { isDarkColorScheme } = useColorScheme();
-  const [isAppReady, setIsAppReady] = React.useState(false);
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
+  const [hasRedirected, setHasRedirected] = React.useState(false);
 
-  useIsomorphicLayoutEffect(() => {
+  React.useEffect(() => {
     // Animate app entrance
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 600,
       useNativeDriver: true,
     }).start();
-
-    setIsAppReady(true);
   }, []);
 
-  // Show loading screen while auth is initializing or app is getting ready
-  if (initializing || !isAppReady) {
+  // Debug logging
+  React.useEffect(() => {
+    console.log("🔍 RootLayout State:", {
+      loading,
+      hasSession: !!session,
+      hasUser: !!session?.user,
+      emailConfirmed: session?.user?.email_confirmed_at,
+      hasRedirected,
+    });
+  }, [loading, session, hasRedirected]);
+
+  // Show loading screen while auth is loading
+  if (loading) {
     return <LoadingScreen />;
   }
 
-  // Handle authentication routing
-  if (!user) {
-    // User is not authenticated, redirect to welcome page
-    return <Redirect href="/(external)/welcome" />;
-  }
+  // Handle authentication routing - only redirect once
+  if (!hasRedirected) {
+    if (!session?.user) {
+      console.log("🚪 No user, redirecting to welcome");
+      setHasRedirected(true);
+      return <Redirect href="/(external)/welcome" />;
+    }
 
-  // Check if user is authenticated but not verified
-  if (user && !user.email_confirmed_at) {
-    // User exists but email not verified, redirect to verification flow
-    return <Redirect href="/(external)/verify" />;
+    if (session.user && !session.user.email_confirmed_at) {
+      console.log("📧 User not verified, redirecting to verify");
+      setHasRedirected(true);
+      return <Redirect href="/(external)/verify" />;
+    }
   }
 
   // User is authenticated and verified, show the main app
+  console.log("✅ User authenticated and verified, showing main app");
   return (
     <SafeAreaView
       style={{

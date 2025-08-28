@@ -70,15 +70,15 @@ function AuthLoadingScreen() {
 
 export default function AuthLayout() {
   const { isDarkColorScheme } = useColorScheme();
-  const { user, initializing } = useAuth();
+  const { session, loading } = useAuth();
 
   // Show loading screen while auth state is being determined
-  if (initializing) {
+  if (loading) {
     return <AuthLoadingScreen />;
   }
 
   // Redirect to internal app if user is authenticated and verified
-  if (user && user.email_confirmed_at) {
+  if (session?.user && session.user.email_confirmed_at) {
     return <Redirect href="/(internal)" />;
   }
 

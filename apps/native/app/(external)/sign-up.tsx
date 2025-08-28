@@ -17,6 +17,7 @@ import { z } from "zod";
 
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/contexts";
+import { supabase } from "@/lib/supabase";
 import { useColorScheme } from "@/lib/useColorScheme";
 
 const signUpSchema = z.object({
@@ -43,7 +44,8 @@ const mapSupabaseErrorToFormField = (error: string) => {
 export default function SignUpScreen() {
   const router = useRouter();
   const { isDarkColorScheme } = useColorScheme();
-  const { signUp, loading } = useAuth();
+  const { loading } = useAuth();
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   // Animation refs
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
@@ -55,7 +57,7 @@ export default function SignUpScreen() {
     control,
     handleSubmit,
     setError,
-    formState: { errors, isSubmitting },
+    formState: { errors },
   } = useForm<SignUpFields>({
     resolver: zodResolver(signUpSchema),
   });
@@ -91,8 +93,12 @@ export default function SignUpScreen() {
       }),
     ]).start();
 
+    setIsSubmitting(true);
     try {
-      const { user, error } = await signUp(data.email, data.password);
+      const { data: authData, error } = await supabase.auth.signUp({
+        email: data.email,
+        password: data.password,
+      });
 
       if (error) {
         console.log("Sign up error:", error);
@@ -116,14 +122,16 @@ export default function SignUpScreen() {
             message: error.message || "An unexpected error occurred",
           });
         }
-      } else if (user) {
-        // Successfully signed up - redirect to verification page
-        console.log("Successfully signed up:", user.email);
+      } else if (authData.user) {
+        // Successfully signed up - show verification message
+        console.log("Successfully signed up:", authData.user.email);
         router.push("/(external)/verify");
       }
     } catch (err) {
       console.log("Unexpected sign up error:", err);
       setError("root", { message: "An unexpected error occurred" });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 

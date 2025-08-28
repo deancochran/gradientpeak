@@ -1,311 +1,92 @@
-import type { AuthError, Session, User } from "@supabase/supabase-js";
-import {
-    createContext,
-    ReactNode,
-    useContext,
-    useEffect,
-    useState,
+import { Session } from "@supabase/supabase-js";
+import React, {
+  createContext,
+  ReactNode,
+  useContext,
+  useEffect,
+  useState,
 } from "react";
-import { Alert } from "react-native";
-import { auth, profiles, supabase, type Profile } from "../supabase";
+import { supabase } from "../supabase";
 
 interface AuthContextType {
-  // Auth state
-  user: User | null;
   session: Session | null;
-  profile: Profile | null;
   loading: boolean;
-  initializing: boolean;
-
-  // Auth actions
-  signUp: (email: string, password: string) => Promise<{
-    user: User | null;
-    error: AuthError | null;
-  }>;
-  signIn: (email: string, password: string) => Promise<{
-    user: User | null;
-    error: AuthError | null;
-  }>;
-  signOut: () => Promise<{ error: AuthError | null }>;
-  resetPassword: (email: string) => Promise<{ error: AuthError | null }>;
-  updatePassword: (password: string) => Promise<{ error: AuthError | null }>;
-
-  // Profile actions
-  updateProfile: (updates: Partial<Profile>) => Promise<{
-    profile: Profile | null;
-    error: any;
-  }>;
-  refreshProfile: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType>({
+  session: null,
+  loading: true,
+});
 
 interface AuthProviderProps {
   children: ReactNode;
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
-  const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [initializing, setInitializing] = useState(true);
+  const [loading, setLoading] = useState(true);
 
-  // Initialize auth state
   useEffect(() => {
-    let mounted = true;
+    console.log("🔧 AuthProvider: Setting up auth listeners");
 
-    async function getInitialSession() {
-      try {
-        const { data: sessionData, error: sessionError } = await auth.getSession();
+    let isMounted = true;
 
-        if (sessionError) {
-          console.error("Error getting session:", sessionError);
-        } else if (sessionData.session && mounted) {
-          setSession(sessionData.session);
-          setUser(sessionData.session.user);
-
-          // Load user profile
-          await loadUserProfile(sessionData.session.user.id);
+    // Get initial session
+    supabase.auth
+      .getSession()
+      .then(({ data: { session }, error }) => {
+        if (error) {
+          console.error("🔧 AuthProvider: Error getting session:", error);
+        } else {
+          console.log("🔧 AuthProvider: Initial session loaded", {
+            hasSession: !!session,
+            userEmail: session?.user?.email,
+          });
         }
-      } catch (error) {
-        console.error("Error initializing auth:", error);
-      } finally {
-        if (mounted) {
-          setInitializing(false);
-        }
-      }
-    }
 
-    getInitialSession();
+        if (isMounted) {
+          setSession(session);
+          setLoading(false);
+        }
+      })
+      .catch((error) => {
+        console.error("🔧 AuthProvider: Unexpected error:", error);
+        if (isMounted) {
+          setLoading(false);
+        }
+      });
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log("Auth state change:", event);
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("🔧 AuthProvider: Auth state changed", {
+        event,
+        hasSession: !!session,
+        userEmail: session?.user?.email,
+      });
 
-        if (mounted) {
-          setSession(session);
-          setUser(session?.user ?? null);
-
-          if (session?.user) {
-            await loadUserProfile(session.user.id);
-          } else {
-            setProfile(null);
-          }
-
-          setInitializing(false);
-        }
+      if (isMounted) {
+        setSession(session);
+        setLoading(false);
       }
-    );
+    });
 
     return () => {
-      mounted = false;
-      subscription?.unsubscribe();
+      console.log("🔧 AuthProvider: Cleaning up auth subscription");
+      isMounted = false;
+      subscription.unsubscribe();
     };
   }, []);
 
-  const loadUserProfile = async (userId: string) => {
-    try {
-      const { data, error } = await profiles.getProfile(userId);
-      if (error) {
-        console.error("Error loading profile:", error);
-        // If profile doesn't exist, create a basic one
-        if (error.code === 'PGRST116') {
-          const { data: newProfile, error: createError } = await profiles.upsertProfile({
-            id: userId,
-            updated_at: new Date().toISOString(),
-          });
-
-          if (createError) {
-            console.error("Error creating profile:", createError);
-          } else {
-            setProfile(newProfile);
-          }
-        }
-      } else {
-        setProfile(data);
-      }
-    } catch (error) {
-      console.error("Error in loadUserProfile:", error);
-    }
-  };
-
-  const handleSignUp = async (email: string, password: string) => {
-    setLoading(true);
-    try {
-      const { data, error } = await auth.signUp(email, password);
-
-      if (error) {
-        Alert.alert("Sign Up Error", error.message);
-        return { user: null, error };
-      }
-
-      if (data.user && !data.user.email_confirmed_at) {
-        Alert.alert(
-          "Check Your Email",
-          "We sent you a confirmation link. Please check your email to activate your account."
-        );
-      }
-
-      return { user: data.user, error: null };
-    } catch (error) {
-      const authError = error as AuthError;
-      Alert.alert("Sign Up Error", authError.message);
-      return { user: null, error: authError };
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSignIn = async (email: string, password: string) => {
-    setLoading(true);
-    try {
-      const { data, error } = await auth.signIn(email, password);
-
-      if (error) {
-        Alert.alert("Sign In Error", error.message);
-        return { user: null, error };
-      }
-
-      return { user: data.user, error: null };
-    } catch (error) {
-      const authError = error as AuthError;
-      Alert.alert("Sign In Error", authError.message);
-      return { user: null, error: authError };
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSignOut = async () => {
-    setLoading(true);
-    try {
-      const { error } = await auth.signOut();
-
-      if (error) {
-        Alert.alert("Sign Out Error", error.message);
-        return { error };
-      }
-
-      // Clear local state
-      setUser(null);
-      setSession(null);
-      setProfile(null);
-
-      return { error: null };
-    } catch (error) {
-      const authError = error as AuthError;
-      Alert.alert("Sign Out Error", authError.message);
-      return { error: authError };
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleResetPassword = async (email: string) => {
-    setLoading(true);
-    try {
-      const { error } = await auth.resetPassword(email);
-
-      if (error) {
-        Alert.alert("Reset Password Error", error.message);
-        return { error };
-      }
-
-      Alert.alert(
-        "Check Your Email",
-        "We sent you a password reset link. Please check your email."
-      );
-
-      return { error: null };
-    } catch (error) {
-      const authError = error as AuthError;
-      Alert.alert("Reset Password Error", authError.message);
-      return { error: authError };
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleUpdatePassword = async (password: string) => {
-    setLoading(true);
-    try {
-      const { error } = await auth.updatePassword(password);
-
-      if (error) {
-        Alert.alert("Update Password Error", error.message);
-        return { error };
-      }
-
-      Alert.alert("Success", "Your password has been updated successfully.");
-
-      return { error: null };
-    } catch (error) {
-      const authError = error as AuthError;
-      Alert.alert("Update Password Error", authError.message);
-      return { error: authError };
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleUpdateProfile = async (updates: Partial<Profile>) => {
-    if (!user) {
-      return { profile: null, error: new Error("No authenticated user") };
-    }
-
-    setLoading(true);
-    try {
-      const { data, error } = await profiles.updateProfile(user.id, updates);
-
-      if (error) {
-        Alert.alert("Profile Update Error", error.message);
-        return { profile: null, error };
-      }
-
-      setProfile(data);
-      return { profile: data, error: null };
-    } catch (error) {
-      Alert.alert("Profile Update Error", "Failed to update profile");
-      return { profile: null, error };
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRefreshProfile = async () => {
-    if (!user) return;
-
-    await loadUserProfile(user.id);
-  };
-
-  const value: AuthContextType = {
-    // State
-    user,
-    session,
-    profile,
-    loading,
-    initializing,
-
-    // Actions
-    signUp: handleSignUp,
-    signIn: handleSignIn,
-    signOut: handleSignOut,
-    resetPassword: handleResetPassword,
-    updatePassword: handleUpdatePassword,
-    updateProfile: handleUpdateProfile,
-    refreshProfile: handleRefreshProfile,
-  };
-
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={{ session, loading }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
-export function useAuth(): AuthContextType {
+export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
     throw new Error("useAuth must be used within an AuthProvider");
@@ -313,18 +94,13 @@ export function useAuth(): AuthContextType {
   return context;
 }
 
-// Helper hooks
-export function useUser() {
-  const { user } = useAuth();
-  return user;
-}
-
-export function useProfile() {
-  const { profile } = useAuth();
-  return profile;
-}
-
+// Helper hooks for convenience
 export function useSession() {
   const { session } = useAuth();
   return session;
+}
+
+export function useUser() {
+  const { session } = useAuth();
+  return session?.user ?? null;
 }

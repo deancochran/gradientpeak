@@ -16,10 +16,10 @@ export function ProtectedRoute({
   redirectTo = "/(external)/welcome",
   requireVerification = true,
 }: ProtectedRouteProps) {
-  const { user, initializing } = useAuth();
+  const { session, loading } = useAuth();
 
-  // Show loading spinner while initializing auth
-  if (initializing) {
+  // Show loading spinner while auth is loading
+  if (loading) {
     return (
       fallback || (
         <View
@@ -37,12 +37,12 @@ export function ProtectedRoute({
   }
 
   // Redirect to welcome/auth if not authenticated
-  if (!user) {
+  if (!session?.user) {
     return <Redirect href={redirectTo} />;
   }
 
   // If user exists but email is not verified and verification is required
-  if (requireVerification && user && !user.email_confirmed_at) {
+  if (requireVerification && session.user && !session.user.email_confirmed_at) {
     return <Redirect href="/(external)/verify" />;
   }
 

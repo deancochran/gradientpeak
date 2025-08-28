@@ -1,19 +1,7 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Database } from "@repo/supabase";
 import { createClient } from "@supabase/supabase-js";
-import * as SecureStore from "expo-secure-store";
-
-// Enhanced session storage using SecureStore for sensitive data
-const ExpoSecureStoreAdapter = {
-  getItem: (key: string) => {
-    return SecureStore.getItemAsync(key);
-  },
-  setItem: (key: string, value: string) => {
-    return SecureStore.setItemAsync(key, value);
-  },
-  removeItem: (key: string) => {
-    return SecureStore.deleteItemAsync(key);
-  },
-};
+import { AppState } from "react-native";
 
 // Re-export types for convenience
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
@@ -27,9 +15,6 @@ export type ActivityUpdate =
   Database["public"]["Tables"]["activities"]["Update"];
 
 // Enum type aliases
-export type SportType = Database["public"]["Enums"]["sport_type"];
-export type ActivityStatus = Database["public"]["Enums"]["activity_status"];
-export type PrivacyLevel = Database["public"]["Enums"]["privacy_level"];
 export type SyncStatus = Database["public"]["Enums"]["sync_status"];
 
 // Supabase client with authentication
@@ -38,13 +23,22 @@ export const supabase = createClient<Database>(
   process.env.EXPO_PUBLIC_SUPABASE_KEY!,
   {
     auth: {
-      storage: ExpoSecureStoreAdapter,
+      storage: AsyncStorage,
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: false,
     },
   },
 );
+
+// Auto refresh handling like in official tutorial
+AppState.addEventListener("change", (state) => {
+  if (state === "active") {
+    supabase.auth.startAutoRefresh();
+  } else {
+    supabase.auth.stopAutoRefresh();
+  }
+});
 
 // Authentication API functions
 export const auth = {

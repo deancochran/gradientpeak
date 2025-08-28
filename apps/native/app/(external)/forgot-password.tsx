@@ -17,6 +17,7 @@ import { z } from "zod";
 
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/contexts";
+import { supabase } from "@/lib/supabase";
 import { useColorScheme } from "@/lib/useColorScheme";
 
 const forgotPasswordSchema = z.object({
@@ -28,8 +29,9 @@ type ForgotPasswordFields = z.infer<typeof forgotPasswordSchema>;
 export default function ForgotPasswordScreen() {
   const router = useRouter();
   const { isDarkColorScheme } = useColorScheme();
-  const { resetPassword, loading } = useAuth();
+  const { loading } = useAuth();
   const [emailSent, setEmailSent] = React.useState(false);
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   // Animation refs
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
@@ -77,8 +79,9 @@ export default function ForgotPasswordScreen() {
       }),
     ]).start();
 
+    setIsSubmitting(true);
     try {
-      const { error } = await resetPassword(data.email);
+      const { error } = await supabase.auth.resetPasswordForEmail(data.email);
 
       if (error) {
         console.log("Reset password error:", error);
@@ -104,6 +107,8 @@ export default function ForgotPasswordScreen() {
       setError("email", {
         message: "An unexpected error occurred. Please try again.",
       });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -320,7 +325,7 @@ export default function ForgotPasswordScreen() {
             >
               <TouchableOpacity
                 onPress={handleSubmit(onSendResetEmail)}
-                disabled={loading}
+                disabled={isSubmitting}
                 style={[
                   styles.primaryButton,
                   {

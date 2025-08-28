@@ -16,7 +16,8 @@ import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { Input } from "@/components/ui/input";
-import { useAuth } from "@/lib/contexts";
+import { useAuth, useUser } from "@/lib/contexts";
+import { supabase } from "@/lib/supabase";
 import { useColorScheme } from "@/lib/useColorScheme";
 
 const resendSchema = z.object({
@@ -28,8 +29,10 @@ type ResendFields = z.infer<typeof resendSchema>;
 export default function VerifyScreen() {
   const router = useRouter();
   const { isDarkColorScheme } = useColorScheme();
-  const { user, signUp, loading } = useAuth();
+  const { loading } = useAuth();
+  const user = useUser();
   const [showResendForm, setShowResendForm] = React.useState(false);
+  const [isResending, setIsResending] = React.useState(false);
 
   // Animation refs
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
@@ -82,11 +85,15 @@ export default function VerifyScreen() {
       }),
     ]).start();
 
+    setIsResending(true);
     try {
-      // Try to resend verification by attempting to sign up again
-      const { error } = await signUp(email, "temporary-password");
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: email,
+      });
 
-      if (error && !error.message?.includes("User already registered")) {
+      if (error) {
+        console.log("Resend verification error:", error);
         setError("email", {
           message: error.message || "Failed to resend verification email",
         });
@@ -98,8 +105,10 @@ export default function VerifyScreen() {
         });
       }
     } catch (err) {
-      console.log("Resend verification error:", err);
+      console.log("Unexpected resend verification error:", err);
       setError("email", { message: "Failed to resend verification email" });
+    } finally {
+      setIsResending(false);
     }
   };
 
@@ -244,12 +253,12 @@ export default function VerifyScreen() {
                 >
                   <TouchableOpacity
                     onPress={handleSubmit(onResendVerification)}
-                    disabled={loading}
+                    disabled={isResending}
                     style={[
                       styles.secondaryButton,
                       {
                         borderColor,
-                        opacity: loading ? 0.7 : 1,
+                        opacity: isResending ? 0.7 : 1,
                       },
                     ]}
                     testID="resend-button"
@@ -258,7 +267,7 @@ export default function VerifyScreen() {
                       style={[styles.secondaryButtonText, { color: textColor }]}
                       testID="resend-button-text"
                     >
-                      {loading ? "Sending..." : "Send verification email"}
+                      {isResending ? "Sending..." : "Send verification email"}
                     </Text>
                   </TouchableOpacity>
                 </Animated.View>
