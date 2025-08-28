@@ -11,12 +11,11 @@ TurboFit is built as a **Turborepo monorepo** with enterprise-grade local-first 
 - **WatermelonDB** - High-performance local database for activity recording
 - **Supabase Client** - Cloud sync and real-time features
 - **NativeWind 4.1** - Native Tailwind CSS styling
-- **Clerk Authentication** - Seamless JWT-based auth
 - **Hybrid Architecture** - Local-first recording with intelligent cloud sync
 
 ### 🌐 Web Dashboard (`apps/web`)
 - **Next.js 15** + React 19 (cutting-edge performance)
-- **Turbopack** - Lightning-fast development builds  
+- **Turbopack** - Lightning-fast development builds
 - **Supabase** - PostgreSQL backend with real-time subscriptions
 - **Analytics Interface** - Comprehensive fitness insights and admin tools
 
@@ -41,13 +40,12 @@ TurboFit is built as a **Turborepo monorepo** with enterprise-grade local-first 
 - **Dashboard Views** - Pre-calculated metrics for instant loading
 
 ### 🔐 Enterprise Security
-- **JWT Authentication** - Clerk integration with Supabase RLS
 - **Row Level Security** - Database-level access control
 - **Encrypted Storage** - Secure local data management
 - **Audit Logging** - Comprehensive tracking for compliance
 
 ### 🚀 Developer Experience
-- **Type Safety** - End-to-end TypeScript with shared schemas  
+- **Type Safety** - End-to-end TypeScript with shared schemas
 - **Hot Reloading** - Instant development feedback
 - **Shared Components** - Consistent UI across platforms
 - **Testing Suite** - Unit, integration, and E2E testing
@@ -60,17 +58,15 @@ TurboFit is built as a **Turborepo monorepo** with enterprise-grade local-first 
 | **Local Storage** | WatermelonDB (SQLite) | - | - |
 | **Cloud Database** | Supabase Client | Supabase | PostgreSQL |
 | **Styling** | NativeWind 4.1 | Tailwind CSS | - |
-| **Auth** | Clerk (JWT) | Clerk (JWT) | Supabase RLS |
 | **State** | WatermelonDB + React Query | React Query + Zustand | - |
 
 ## 🚦 Getting Started
 
 ### Prerequisites
-- **Node.js** 18+ 
+- **Node.js** 18+
 - **Bun** package manager
 - **Expo CLI** for mobile development
 - **Supabase** account for cloud database
-- **Clerk** account for authentication
 
 ### Quick Setup
 
@@ -95,16 +91,13 @@ bun dev
 **Mobile App** (`apps/native/.env`):
 ```env
 EXPO_PUBLIC_SUPABASE_URL=your_supabase_url
-EXPO_PUBLIC_SUPABASE_KEY=your_supabase_anon_key  
-EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_key
+EXPO_PUBLIC_SUPABASE_KEY=your_supabase_anon_key
 ```
 
 **Web Dashboard** (`apps/web/.env.local`):
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-CLERK_SECRET_KEY=your_clerk_secret
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_key
 ```
 
 ## 📖 Development Guide
@@ -116,7 +109,7 @@ turbofit/
 │   ├── native/          # Mobile app (Expo + React Native)
 │   └── web/             # Web dashboard (Next.js)
 ├── packages/
-│   ├── database/        # Shared database schemas  
+│   ├── database/        # Shared database schemas
 │   └── config/          # Shared configuration
 └── docs/                # Documentation
 ```
@@ -126,7 +119,7 @@ turbofit/
 **Root level** (runs across all apps):
 ```bash
 bun dev          # Start all development servers
-bun build        # Build all applications  
+bun build        # Build all applications
 bun lint         # Lint all code
 bun test         # Run all tests
 ```
@@ -141,7 +134,7 @@ bun android      # Run on Android emulator
 
 **Web development**:
 ```bash
-cd apps/web  
+cd apps/web
 bun dev          # Start Next.js development server
 bun build        # Build production application
 ```
@@ -151,7 +144,6 @@ bun build        # Build production application
 1. **Create Supabase Project** and copy credentials
 2. **Apply migrations** from `packages/database/migrations/`
 3. **Configure Row Level Security** policies
-4. **Set up Clerk JWT template** for Supabase integration
 
 > See [SETUP_GUIDE.md](./SETUP_GUIDE.md) for detailed setup instructions
 
@@ -160,7 +152,7 @@ bun build        # Build production application
 ### Core Tables (Supabase PostgreSQL)
 - **users** - User profiles and preferences
 - **activities** - Synced workout activities with comprehensive metrics
-- **activity_segments** - GPS and time-based activity segments  
+- **activity_segments** - GPS and time-based activity segments
 - **user_metrics** - Pre-calculated performance analytics
 - **user_achievements** - Gamification and milestone tracking
 - **fit_files** - Metadata and cloud storage references
@@ -179,8 +171,6 @@ bun build        # Build production application
 
 ## 🔐 Authentication Flow
 
-### Clerk + Supabase Integration
-1. **User signs in** through Clerk (mobile/web)
 2. **JWT token generated** with custom Supabase claims
 3. **Database access** authorized via Row Level Security policies
 4. **Local data sync** authenticated with bearer tokens
@@ -199,7 +189,7 @@ bun build        # Build production application
 - **Background cloud sync** - Automatic sync to Supabase when network available
 - **FIT file generation** - Local processing and cloud storage integration
 
-### Performance Optimizations  
+### Performance Optimizations
 - **WatermelonDB reactive queries** - Real-time UI updates during workouts
 - **Efficient GPS batching** - Optimized location data collection
 - **Smart sync scheduling** - Network-aware background uploads
@@ -214,7 +204,7 @@ bun build        # Build production application
 - **User management** - Administrative tools and account oversight
 
 ### Administrative Features
-- **User management** - Account administration  
+- **User management** - Account administration
 - **Data insights** - Platform-wide analytics
 - **System monitoring** - Performance and health metrics
 - **Bulk operations** - Efficient data management
@@ -223,7 +213,7 @@ bun build        # Build production application
 
 ### Comprehensive Test Coverage
 - **Unit tests** - Component and function testing
-- **Integration tests** - API and database integration  
+- **Integration tests** - API and database integration
 - **E2E tests** - Full user journey validation
 - **Performance tests** - Load and stress testing
 
@@ -240,7 +230,7 @@ bun build        # Build production application
 # Production builds
 eas build --platform all --profile production
 
-# Over-the-air updates  
+# Over-the-air updates
 eas update --branch production --message "Feature update"
 ```
 
@@ -257,7 +247,7 @@ vercel --prod
 
 ### Hybrid Architecture Benefits
 - **⚡ Real-time recording** - Instant GPS tracking and activity capture via WatermelonDB
-- **🔄 Smart sync** - Automatic background sync to Supabase cloud database  
+- **🔄 Smart sync** - Automatic background sync to Supabase cloud database
 - **📱 Offline workouts** - Full functionality without internet connection
 - **☁️ Cloud analytics** - Rich dashboard insights powered by Supabase
 
@@ -295,7 +285,6 @@ Built with modern tools and technologies:
 - [Next.js](https://nextjs.org) - React web framework
 - [WatermelonDB](https://watermelondb.dev) - Reactive database
 - [Supabase](https://supabase.com) - Backend-as-a-service
-- [Clerk](https://clerk.com) - Authentication and user management
 - [Turborepo](https://turbo.build) - Monorepo build system
 
 ---

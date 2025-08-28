@@ -1,8 +1,7 @@
 import "@/global.css";
 
+import { AuthProvider, ProtectedRoute, useAuth } from "@/lib/contexts";
 import { useColorScheme } from "@/lib/useColorScheme";
-import { ClerkProvider } from "@clerk/clerk-expo";
-import { tokenCache } from "@clerk/clerk-expo/token-cache";
 import {
   DarkTheme,
   DefaultTheme,
@@ -10,7 +9,7 @@ import {
   ThemeProvider,
 } from "@react-navigation/native";
 
-import { Slot } from "expo-router";
+import { Redirect, Slot } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as React from "react";
 import { Animated, Platform, View } from "react-native";
@@ -21,12 +20,12 @@ const LIGHT_THEME: Theme = {
   ...DefaultTheme,
   colors: {
     ...DefaultTheme.colors,
-    primary: '#000000',
-    background: '#ffffff',
-    card: '#ffffff',
-    text: '#000000',
-    border: '#e5e5e5',
-    notification: '#000000',
+    primary: "#000000",
+    background: "#ffffff",
+    card: "#ffffff",
+    text: "#000000",
+    border: "#e5e5e5",
+    notification: "#000000",
   },
 };
 
@@ -34,21 +33,22 @@ const DARK_THEME: Theme = {
   ...DarkTheme,
   colors: {
     ...DarkTheme.colors,
-    primary: '#ffffff',
-    background: '#000000',
-    card: '#111111',
-    text: '#ffffff',
-    border: '#333333',
-    notification: '#ffffff',
+    primary: "#ffffff",
+    background: "#000000",
+    card: "#111111",
+    text: "#ffffff",
+    border: "#333333",
+    notification: "#ffffff",
   },
 };
 
 export {
   // Catch any errors thrown by the Layout component.
-  ErrorBoundary
+  ErrorBoundary,
 } from "expo-router";
 
 function LoadingScreen() {
+  const { isDarkColorScheme } = useColorScheme();
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
   const scaleAnim = React.useRef(new Animated.Value(0.8)).current;
 
@@ -68,13 +68,17 @@ function LoadingScreen() {
     ]).start();
   }, []);
 
+  const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";
+  const logoColor = isDarkColorScheme ? "#ffffff" : "#000000";
+  const logoInnerColor = isDarkColorScheme ? "#000000" : "#ffffff";
+
   return (
-    <View 
+    <View
       style={{
         flex: 1,
-        backgroundColor: '#000000',
-        justifyContent: 'center',
-        alignItems: 'center',
+        backgroundColor,
+        justifyContent: "center",
+        alignItems: "center",
       }}
       testID="loading-screen"
     >
@@ -89,10 +93,10 @@ function LoadingScreen() {
             width: 80,
             height: 80,
             borderRadius: 20,
-            backgroundColor: '#ffffff',
-            justifyContent: 'center',
-            alignItems: 'center',
-            shadowColor: '#ffffff',
+            backgroundColor: logoColor,
+            justifyContent: "center",
+            alignItems: "center",
+            shadowColor: logoColor,
             shadowOffset: { width: 0, height: 0 },
             shadowOpacity: 0.3,
             shadowRadius: 20,
@@ -105,9 +109,9 @@ function LoadingScreen() {
               width: 40,
               height: 40,
               borderRadius: 10,
-              backgroundColor: '#000000',
+              backgroundColor: logoInnerColor,
             }}
-            testID="loading-logo-inner" 
+            testID="loading-logo-inner"
           />
         </View>
       </Animated.View>
@@ -115,17 +119,13 @@ function LoadingScreen() {
   );
 }
 
-export default function RootLayout() {
-  const hasMounted = React.useRef(false);
-  const { colorScheme, isDarkColorScheme } = useColorScheme();
-  const [isColorSchemeLoaded, setIsColorSchemeLoaded] = React.useState(false);
+function RootLayoutInner() {
+  const { user, initializing } = useAuth();
+  const { isDarkColorScheme } = useColorScheme();
+  const [isAppReady, setIsAppReady] = React.useState(false);
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
 
   useIsomorphicLayoutEffect(() => {
-    if (hasMounted.current) {
-      return;
-    }
-
     // Animate app entrance
     Animated.timing(fadeAnim, {
       toValue: 1,
@@ -133,42 +133,58 @@ export default function RootLayout() {
       useNativeDriver: true,
     }).start();
 
-    setIsColorSchemeLoaded(true);
-    hasMounted.current = true;
+    setIsAppReady(true);
   }, []);
 
-  if (!isColorSchemeLoaded) {
+  // Show loading screen while auth is initializing or app is getting ready
+  if (initializing || !isAppReady) {
     return <LoadingScreen />;
   }
 
-  const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
-
-  if (!publishableKey) {
-    throw new Error(
-      "Missing Publishable Key. Please set EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY in your .env"
-    );
+  // Handle authentication routing
+  if (!user) {
+    // User is not authenticated, redirect to welcome page
+    return <Redirect href="/(external)/welcome" />;
   }
 
+  // Check if user is authenticated but not verified
+  if (user && !user.email_confirmed_at) {
+    // User exists but email not verified, redirect to verification flow
+    return <Redirect href="/(external)/verify" />;
+  }
+
+  // User is authenticated and verified, show the main app
   return (
-    <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
-      <ThemeProvider value={isDarkColorScheme ? DARK_THEME : LIGHT_THEME}>
-        <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
-        <SafeAreaView 
-          style={{ flex: 1, backgroundColor: isDarkColorScheme ? '#000000' : '#ffffff' }}
-          testID="root-safe-area"
-        >
-          <Animated.View 
-            style={{ 
-              flex: 1,
-              opacity: fadeAnim,
-            }}
-            testID="root-content"
-          >
-            <Slot />
-          </Animated.View>
-        </SafeAreaView>
-      </ThemeProvider>
-    </ClerkProvider>
+    <SafeAreaView
+      style={{
+        flex: 1,
+        backgroundColor: isDarkColorScheme ? "#000000" : "#ffffff",
+      }}
+      testID="root-safe-area"
+    >
+      <Animated.View
+        style={{
+          flex: 1,
+          opacity: fadeAnim,
+        }}
+        testID="root-content"
+      >
+        <Slot />
+      </Animated.View>
+    </SafeAreaView>
+  );
+}
+
+export default function RootLayout() {
+  const { colorScheme, isDarkColorScheme } = useColorScheme();
+
+  return (
+    <ThemeProvider value={isDarkColorScheme ? DARK_THEME : LIGHT_THEME}>
+      <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
+      <AuthProvider>
+        <RootLayoutInner />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
 

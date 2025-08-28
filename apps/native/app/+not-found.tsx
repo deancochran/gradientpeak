@@ -5,10 +5,11 @@ import { Animated, StyleSheet, TouchableOpacity, View } from "react-native";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { useColorScheme } from "@/lib/useColorScheme";
+import { router } from "expo-router";
 
 export default function NotFoundScreen() {
   const { isDarkColorScheme } = useColorScheme();
-  
+
   // Animation refs
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
   const slideAnim = React.useRef(new Animated.Value(30)).current;
@@ -50,11 +51,11 @@ export default function NotFoundScreen() {
           duration: 2000,
           useNativeDriver: true,
         }),
-      ])
+      ]),
     );
-    
+
     setTimeout(() => bounceAnimation.start(), 1000);
-    
+
     return () => bounceAnimation.stop();
   }, []);
 
@@ -71,12 +72,13 @@ export default function NotFoundScreen() {
         useNativeDriver: true,
       }),
     ]).start();
+    router.replace("/");
   };
 
-  const backgroundColor = isDarkColorScheme ? '#000000' : '#ffffff';
-  const textColor = isDarkColorScheme ? '#ffffff' : '#000000';
-  const subtleColor = isDarkColorScheme ? '#666666' : '#999999';
-  const accentColor = isDarkColorScheme ? '#ffffff' : '#000000';
+  const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";
+  const textColor = isDarkColorScheme ? "#ffffff" : "#000000";
+  const subtleColor = isDarkColorScheme ? "#666666" : "#999999";
+  const accentColor = isDarkColorScheme ? "#ffffff" : "#000000";
 
   const bounceTransform = bounceAnim.interpolate({
     inputRange: [0, 1],
@@ -85,19 +87,19 @@ export default function NotFoundScreen() {
 
   return (
     <>
-      <Stack.Screen 
-        options={{ 
+      <Stack.Screen
+        options={{
           title: "Page Not Found",
           headerStyle: {
             backgroundColor: backgroundColor,
           },
           headerTintColor: textColor,
           headerTitleStyle: {
-            fontWeight: '600',
+            fontWeight: "600",
           },
-        }} 
+        }}
       />
-      <ThemedView 
+      <ThemedView
         style={[styles.container, { backgroundColor }]}
         testID="not-found-screen"
       >
@@ -106,38 +108,32 @@ export default function NotFoundScreen() {
             styles.content,
             {
               opacity: fadeAnim,
-              transform: [
-                { translateY: slideAnim },
-                { scale: scaleAnim }
-              ],
-            }
+              transform: [{ translateY: slideAnim }, { scale: scaleAnim }],
+            },
           ]}
           testID="not-found-content"
         >
           {/* 404 Visual */}
-          <Animated.View 
+          <Animated.View
             style={[
               styles.errorContainer,
               {
-                transform: [{ translateY: bounceTransform }]
-              }
+                transform: [{ translateY: bounceTransform }],
+              },
             ]}
             testID="error-visual"
           >
-            <View 
+            <View
               style={[
                 styles.errorNumber,
-                { 
+                {
                   borderColor: subtleColor,
-                }
+                },
               ]}
               testID="error-number"
             >
-              <ThemedText 
-                style={[
-                  styles.fourZeroFour,
-                  { color: textColor }
-                ]}
+              <ThemedText
+                style={[styles.fourZeroFour, { color: textColor }]}
                 testID="404-text"
               >
                 404
@@ -147,17 +143,17 @@ export default function NotFoundScreen() {
 
           {/* Error Message */}
           <View style={styles.messageContainer} testID="message-container">
-            <ThemedText 
+            <ThemedText
               style={[styles.title, { color: textColor }]}
               testID="error-title"
             >
               Page Not Found
             </ThemedText>
-            <ThemedText 
+            <ThemedText
               style={[styles.subtitle, { color: subtleColor }]}
               testID="error-subtitle"
             >
-              The page you're looking for doesn't exist.{'\n'}
+              The page you're looking for doesn't exist.{"\n"}
               Let's get you back on track.
             </ThemedText>
           </View>
@@ -167,33 +163,26 @@ export default function NotFoundScreen() {
             style={[
               styles.buttonContainer,
               {
-                transform: [{ scale: buttonPressAnim }]
-              }
+                transform: [{ scale: buttonPressAnim }],
+              },
             ]}
             testID="home-button-container"
           >
-            <Link 
-              href="/" 
-              asChild
-              testID="home-link"
-            >
+            <Link href="/" asChild testID="home-link">
               <TouchableOpacity
                 onPress={handleHomePress}
                 style={[
                   styles.homeButton,
-                  { 
+                  {
                     backgroundColor: accentColor,
                     shadowColor: accentColor,
-                  }
+                  },
                 ]}
                 activeOpacity={0.9}
                 testID="home-button"
               >
-                <ThemedText 
-                  style={[
-                    styles.homeButtonText,
-                    { color: backgroundColor }
-                  ]}
+                <ThemedText
+                  style={[styles.homeButtonText, { color: backgroundColor }]}
                   testID="home-button-text"
                 >
                   Go Home
@@ -213,8 +202,8 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     paddingHorizontal: 40,
   },
   errorContainer: {
@@ -225,41 +214,41 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 100,
     borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   fourZeroFour: {
     fontSize: 56,
-    fontWeight: '900',
+    fontWeight: "900",
     letterSpacing: -2,
   },
   messageContainer: {
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 60,
   },
   title: {
     fontSize: 32,
-    fontWeight: '800',
-    textAlign: 'center',
+    fontWeight: "800",
+    textAlign: "center",
     marginBottom: 16,
     letterSpacing: -1,
   },
   subtitle: {
     fontSize: 16,
-    textAlign: 'center',
+    textAlign: "center",
     lineHeight: 24,
     maxWidth: 300,
-    fontWeight: '400',
+    fontWeight: "400",
   },
   buttonContainer: {
-    width: '100%',
+    width: "100%",
     maxWidth: 280,
   },
   homeButton: {
     height: 56,
     borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     shadowOffset: {
       width: 0,
       height: 6,
@@ -270,7 +259,7 @@ const styles = StyleSheet.create({
   },
   homeButtonText: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: "700",
     letterSpacing: -0.5,
   },
 });

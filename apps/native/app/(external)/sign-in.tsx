@@ -1,54 +1,53 @@
-import { Stack, useRouter } from 'expo-router'
-import React from 'react'
+import { Stack, useRouter } from "expo-router";
+import React from "react";
 import {
-	Animated,
-	KeyboardAvoidingView,
-	Platform,
-	ScrollView,
-	StyleSheet,
-	Text,
-	TouchableOpacity,
-	View
-} from 'react-native'
+  Animated,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
-import { zodResolver } from '@hookform/resolvers/zod'
-import { Controller, useForm } from 'react-hook-form'
-import { z } from 'zod'
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Controller, useForm } from "react-hook-form";
+import { z } from "zod";
 
-import { Input } from '@/components/ui/input'
-import { useColorScheme } from '@/lib/useColorScheme'
-import { isClerkAPIResponseError, useSignIn } from '@clerk/clerk-expo'
+import { Input } from "@/components/ui/input";
+import { useAuth } from "@/lib/contexts";
+import { useColorScheme } from "@/lib/useColorScheme";
 
 const signInSchema = z.object({
-  email: z.email('Invalid email address'),
+  email: z.email("Invalid email address"),
   password: z
-    .string({ message: 'Password is required' })
-    .min(8, 'Password must be at least 8 characters'),
-})
+    .string({ message: "Password is required" })
+    .min(8, "Password must be at least 8 characters"),
+});
 
-type SignInFields = z.infer<typeof signInSchema>
+type SignInFields = z.infer<typeof signInSchema>;
 
-const mapClerkErrorToFormField = (error: any) => {
-  switch (error.meta?.paramName) {
-    case 'identifier':
-      return 'email'
-    case 'password':
-      return 'password'
-    default:
-      return 'root'
+const mapSupabaseErrorToFormField = (error: string) => {
+  if (error.includes("email") || error.includes("Email")) {
+    return "email";
   }
-}
+  if (error.includes("password") || error.includes("Password")) {
+    return "password";
+  }
+  return "root";
+};
 
 export default function SignInScreen() {
-  const router = useRouter()
-  const { isDarkColorScheme } = useColorScheme()
-  const [isLoading, setIsLoading] = React.useState(false)
-  
+  const router = useRouter();
+  const { isDarkColorScheme } = useColorScheme();
+  const { signIn, loading } = useAuth();
+
   // Animation refs
-  const fadeAnim = React.useRef(new Animated.Value(0)).current
-  const slideAnim = React.useRef(new Animated.Value(30)).current
-  const buttonScaleAnim = React.useRef(new Animated.Value(1)).current
-  const signupScaleAnim = React.useRef(new Animated.Value(1)).current
+  const fadeAnim = React.useRef(new Animated.Value(0)).current;
+  const slideAnim = React.useRef(new Animated.Value(30)).current;
+  const buttonScaleAnim = React.useRef(new Animated.Value(1)).current;
+  const signupScaleAnim = React.useRef(new Animated.Value(1)).current;
 
   const {
     control,
@@ -57,9 +56,7 @@ export default function SignInScreen() {
     formState: { errors, isSubmitting },
   } = useForm<SignInFields>({
     resolver: zodResolver(signInSchema),
-  })
-
-  const { signIn, isLoaded, setActive } = useSignIn()
+  });
 
   React.useEffect(() => {
     // Entrance animations
@@ -74,14 +71,10 @@ export default function SignInScreen() {
         duration: 600,
         useNativeDriver: true,
       }),
-    ]).start()
-  }, [])
+    ]).start();
+  }, []);
 
   const onSignIn = async (data: SignInFields) => {
-    if (!isLoaded) return
-
-    setIsLoading(true)
-    
     // Button press animation
     Animated.sequence([
       Animated.timing(buttonScaleAnim, {
@@ -94,36 +87,43 @@ export default function SignInScreen() {
         duration: 100,
         useNativeDriver: true,
       }),
-    ]).start()
+    ]).start();
 
     try {
-      const signInAttempt = await signIn.create({
-        identifier: data.email,
-        password: data.password,
-      })
+      const { user, error } = await signIn(data.email, data.password);
 
-      if (signInAttempt.status === 'complete') {
-        await setActive({ session: signInAttempt.createdSessionId })
-      } else {
-        setError('root', { message: 'Sign in could not be completed' })
+      if (error) {
+        console.log("Sign in error:", error);
+
+        // Handle specific Supabase auth errors
+        if (error.message?.includes("Invalid login credentials")) {
+          setError("root", {
+            message: "Invalid email or password. Please try again.",
+          });
+        } else if (error.message?.includes("Email not confirmed")) {
+          setError("root", {
+            message:
+              "Please verify your email address before signing in. Check your email for a verification link.",
+          });
+        } else if (error.message?.includes("Too many requests")) {
+          setError("root", {
+            message: "Too many login attempts. Please try again later.",
+          });
+        } else {
+          const fieldName = mapSupabaseErrorToFormField(error.message || "");
+          setError(fieldName, {
+            message: error.message || "An unexpected error occurred",
+          });
+        }
+      } else if (user) {
+        // Successfully signed in - the auth state change will handle navigation
+        console.log("Successfully signed in:", user.email);
       }
     } catch (err) {
-      console.log('Sign in error:', JSON.stringify(err, null, 2))
-
-      if (isClerkAPIResponseError(err)) {
-        err.errors.forEach((error) => {
-          const fieldName = mapClerkErrorToFormField(error)
-          setError(fieldName, {
-            message: error.longMessage,
-          })
-        })
-      } else {
-        setError('root', { message: 'An unexpected error occurred' })
-      }
-    } finally {
-      setIsLoading(false)
+      console.log("Unexpected sign in error:", err);
+      setError("root", { message: "An unexpected error occurred" });
     }
-  }
+  };
 
   const handleSignUpPress = () => {
     Animated.sequence([
@@ -138,28 +138,32 @@ export default function SignInScreen() {
         useNativeDriver: true,
       }),
     ]).start(() => {
-      router.replace('/(auth)/sign-up')
-    })
-  }
+      router.replace("/(external)/sign-up");
+    });
+  };
 
-  const backgroundColor = isDarkColorScheme ? '#000000' : '#ffffff'
-  const textColor = isDarkColorScheme ? '#ffffff' : '#000000'
-  const subtleColor = isDarkColorScheme ? '#666666' : '#999999'
-  const borderColor = isDarkColorScheme ? '#333333' : '#e5e5e5'
-  const errorColor = isDarkColorScheme ? '#ff6b6b' : '#dc3545'
+  const handleForgotPasswordPress = () => {
+    router.push("/(external)/forgot-password");
+  };
+
+  const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";
+  const textColor = isDarkColorScheme ? "#ffffff" : "#000000";
+  const subtleColor = isDarkColorScheme ? "#666666" : "#999999";
+  const borderColor = isDarkColorScheme ? "#333333" : "#e5e5e5";
+  const errorColor = isDarkColorScheme ? "#ff6b6b" : "#dc3545";
 
   return (
     <>
-      <Stack.Screen 
-        options={{ 
+      <Stack.Screen
+        options={{
           title: "",
           headerStyle: {
             backgroundColor,
           },
-        }} 
+        }}
       />
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={[styles.container, { backgroundColor }]}
         testID="sign-in-screen"
       >
@@ -174,19 +178,19 @@ export default function SignInScreen() {
               {
                 opacity: fadeAnim,
                 transform: [{ translateY: slideAnim }],
-              }
+              },
             ]}
             testID="sign-in-content"
           >
             {/* Header */}
             <View style={styles.header} testID="sign-in-header">
-              <Text 
+              <Text
                 style={[styles.title, { color: textColor }]}
                 testID="sign-in-title"
               >
                 Welcome Back
               </Text>
-              <Text 
+              <Text
                 style={[styles.subtitle, { color: subtleColor }]}
                 testID="sign-in-subtitle"
               >
@@ -211,17 +215,17 @@ export default function SignInScreen() {
                       autoComplete="email"
                       style={[
                         styles.input,
-                        { 
+                        {
                           borderColor: errors.email ? errorColor : borderColor,
                           color: textColor,
-                        }
+                        },
                       ]}
                       testID="email-input"
                     />
                   )}
                 />
                 {errors.email && (
-                  <Text 
+                  <Text
                     style={[styles.errorText, { color: errorColor }]}
                     testID="email-error"
                   >
@@ -242,17 +246,19 @@ export default function SignInScreen() {
                       secureTextEntry
                       style={[
                         styles.input,
-                        { 
-                          borderColor: errors.password ? errorColor : borderColor,
+                        {
+                          borderColor: errors.password
+                            ? errorColor
+                            : borderColor,
                           color: textColor,
-                        }
+                        },
                       ]}
                       testID="password-input"
                     />
                   )}
                 />
                 {errors.password && (
-                  <Text 
+                  <Text
                     style={[styles.errorText, { color: errorColor }]}
                     testID="password-error"
                   >
@@ -262,12 +268,20 @@ export default function SignInScreen() {
               </View>
 
               {errors.root && (
-                <Text 
-                  style={[styles.errorText, { color: errorColor, textAlign: 'center' }]}
-                  testID="form-error"
+                <View
+                  style={styles.rootErrorContainer}
+                  testID="root-error-container"
                 >
-                  {errors.root.message}
-                </Text>
+                  <Text
+                    style={[
+                      styles.errorText,
+                      { color: errorColor, textAlign: "center" },
+                    ]}
+                    testID="form-error"
+                  >
+                    {errors.root.message}
+                  </Text>
+                </View>
               )}
             </View>
 
@@ -275,52 +289,67 @@ export default function SignInScreen() {
             <Animated.View
               style={[
                 styles.buttonContainer,
-                { transform: [{ scale: buttonScaleAnim }] }
+                { transform: [{ scale: buttonScaleAnim }] },
               ]}
               testID="sign-in-button-container"
             >
               <TouchableOpacity
                 onPress={handleSubmit(onSignIn)}
-                disabled={isLoading || isSubmitting}
+                disabled={loading || isSubmitting}
                 style={[
                   styles.primaryButton,
-                  { 
+                  {
                     backgroundColor: textColor,
-                    opacity: (isLoading || isSubmitting) ? 0.7 : 1,
-                  }
+                    opacity: loading || isSubmitting ? 0.7 : 1,
+                  },
                 ]}
                 testID="sign-in-button"
               >
-                <Text 
+                <Text
                   style={[styles.primaryButtonText, { color: backgroundColor }]}
                   testID="sign-in-button-text"
                 >
-                  {isLoading ? 'Signing In...' : 'Sign In'}
+                  {loading ? "Signing In..." : "Sign In"}
                 </Text>
               </TouchableOpacity>
             </Animated.View>
+
+            {/* Forgot Password Link */}
+            <View
+              style={styles.forgotPasswordContainer}
+              testID="forgot-password-container"
+            >
+              <TouchableOpacity
+                onPress={handleForgotPasswordPress}
+                testID="forgot-password-button"
+              >
+                <Text
+                  style={[styles.forgotPasswordText, { color: subtleColor }]}
+                  testID="forgot-password-text"
+                >
+                  Forgot your password?
+                </Text>
+              </TouchableOpacity>
+            </View>
 
             {/* Sign Up Link */}
             <Animated.View
               style={[
                 styles.linkContainer,
-                { transform: [{ scale: signupScaleAnim }] }
+                { transform: [{ scale: signupScaleAnim }] },
               ]}
               testID="sign-up-link-container"
             >
               <TouchableOpacity
                 onPress={handleSignUpPress}
-                style={[
-                  styles.secondaryButton,
-                  { borderColor }
-                ]}
+                style={[styles.secondaryButton, { borderColor }]}
                 testID="sign-up-link-button"
               >
-                <Text 
+                <Text
                   style={[styles.secondaryButtonText, { color: textColor }]}
                   testID="sign-up-link-text"
                 >
-                  Don't have an account? Sign up
+                  Don&apos;t have an account? Sign up
                 </Text>
               </TouchableOpacity>
             </Animated.View>
@@ -328,7 +357,7 @@ export default function SignInScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
     </>
-  )
+  );
 }
 
 const styles = StyleSheet.create({
@@ -337,28 +366,28 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'center',
+    justifyContent: "center",
     paddingHorizontal: 32,
     paddingVertical: 40,
   },
   content: {
-    width: '100%',
+    width: "100%",
   },
   header: {
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 40,
   },
   title: {
     fontSize: 32,
-    fontWeight: '800',
-    textAlign: 'center',
+    fontWeight: "800",
+    textAlign: "center",
     marginBottom: 8,
     letterSpacing: -1,
   },
   subtitle: {
     fontSize: 16,
-    textAlign: 'center',
-    fontWeight: '400',
+    textAlign: "center",
+    fontWeight: "400",
   },
   form: {
     marginBottom: 32,
@@ -372,12 +401,16 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     paddingHorizontal: 20,
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   errorText: {
     fontSize: 14,
     marginTop: 8,
-    fontWeight: '500',
+    fontWeight: "500",
+  },
+  rootErrorContainer: {
+    marginTop: 8,
+    marginBottom: 8,
   },
   buttonContainer: {
     marginBottom: 20,
@@ -385,8 +418,8 @@ const styles = StyleSheet.create({
   primaryButton: {
     height: 56,
     borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     shadowOffset: {
       width: 0,
       height: 6,
@@ -397,11 +430,20 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: "700",
     letterSpacing: -0.5,
   },
+  forgotPasswordContainer: {
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  forgotPasswordText: {
+    fontSize: 16,
+    fontWeight: "500",
+    textAlign: "center",
+  },
   linkContainer: {
-    alignItems: 'center',
+    alignItems: "center",
   },
   secondaryButton: {
     paddingVertical: 16,
@@ -411,7 +453,7 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: {
     fontSize: 16,
-    fontWeight: '600',
-    textAlign: 'center',
+    fontWeight: "600",
+    textAlign: "center",
   },
-})
+});

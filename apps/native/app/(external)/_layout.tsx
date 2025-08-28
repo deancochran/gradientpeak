@@ -1,5 +1,5 @@
+import { useAuth } from "@/lib/contexts";
 import { useColorScheme } from "@/lib/useColorScheme";
-import { useAuth } from "@clerk/clerk-expo";
 import { Redirect, Stack } from "expo-router";
 import React from "react";
 import { Animated, View } from "react-native";
@@ -25,15 +25,15 @@ function AuthLoadingScreen() {
     ]).start();
   }, []);
 
-  const backgroundColor = isDarkColorScheme ? '#000000' : '#ffffff';
+  const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";
 
   return (
-    <View 
+    <View
       style={{
         flex: 1,
         backgroundColor,
-        justifyContent: 'center',
-        alignItems: 'center',
+        justifyContent: "center",
+        alignItems: "center",
       }}
       testID="auth-loading-screen"
     >
@@ -49,9 +49,9 @@ function AuthLoadingScreen() {
             width: 60,
             height: 60,
             borderRadius: 16,
-            backgroundColor: isDarkColorScheme ? '#ffffff' : '#000000',
-            justifyContent: 'center',
-            alignItems: 'center',
+            backgroundColor: isDarkColorScheme ? "#ffffff" : "#000000",
+            justifyContent: "center",
+            alignItems: "center",
           }}
         >
           <View
@@ -69,21 +69,25 @@ function AuthLoadingScreen() {
 }
 
 export default function AuthLayout() {
-  const { isSignedIn, isLoaded } = useAuth();
   const { isDarkColorScheme } = useColorScheme();
+  const { user, initializing } = useAuth();
 
   // Show loading screen while auth state is being determined
-  if (!isLoaded) {
+  if (initializing) {
     return <AuthLoadingScreen />;
   }
 
-  // Redirect to home if already signed in
-  if (isSignedIn) {
-    return <Redirect href={"/"} />;
+  // Redirect to internal app if user is authenticated and verified
+  if (user && user.email_confirmed_at) {
+    return <Redirect href="/(internal)" />;
   }
 
-  const backgroundColor = isDarkColorScheme ? '#000000' : '#ffffff';
-  const textColor = isDarkColorScheme ? '#ffffff' : '#000000';
+  // If user exists but is not verified, allow access to external auth flows
+  // (like verification, sign-in, etc.)
+  // If no user, also allow access to auth flows
+
+  const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";
+  const textColor = isDarkColorScheme ? "#ffffff" : "#000000";
 
   return (
     <Stack
@@ -93,11 +97,11 @@ export default function AuthLayout() {
         },
         headerTintColor: textColor,
         headerTitleStyle: {
-          fontWeight: '600',
+          fontWeight: "600",
         },
         // headerBackTitleVisible: false,
         headerShadowVisible: false,
-        animation: 'slide_from_right',
+        animation: "slide_from_right",
       }}
     />
   );

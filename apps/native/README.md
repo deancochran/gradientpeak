@@ -17,7 +17,6 @@ A cross-platform fitness tracking mobile app built with Expo, React Native, and 
 - **Expo Symbols** - Native iOS symbol integration
 
 ### Authentication & Database
-- **Clerk Expo 2.14** - Authentication with JWT tokens
 - **Supabase** - PostgreSQL database with real-time features
 - **Row Level Security** - JWT-based data access control
 
@@ -98,14 +97,14 @@ import { Button } from '@/components/ui/button'
 **Available Sizes:**
 - `default` - Standard button size
 - `sm` - Small button
-- `lg` - Large button  
+- `lg` - Large button
 - `icon` - Square icon button
 
 #### Input Component (`components/ui/input.tsx`)
 ```tsx
 import { Input } from '@/components/ui/input'
 
-<Input 
+<Input
   placeholder="Enter text"
   value={value}
   onChangeText={setValue}
@@ -204,151 +203,11 @@ const buttonVariants = cva(
 )
 ```
 
-## 🔐 Clerk Authentication Integration
 
-### Setup & Configuration
 
-#### Provider Setup (`app/_layout.tsx`)
-```tsx
-import { ClerkProvider } from '@clerk/clerk-expo'
-import { tokenCache } from '@clerk/clerk-expo/token-cache'
 
-export default function RootLayout() {
-  const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY
 
-  return (
-    <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
-      {/* App content */}
-    </ClerkProvider>
-  )
-}
-```
 
-#### Authentication Hooks
-```tsx
-import { useAuth, useUser } from '@clerk/clerk-expo'
-
-function AuthenticatedComponent() {
-  const { isSignedIn, getToken } = useAuth()
-  const { user } = useUser()
-  
-  // Get JWT token for Supabase
-  const token = await getToken({ template: "supabase" })
-}
-```
-
-### Authentication Screens
-
-#### Sign In Screen (`app/(auth)/sign-in.tsx`)
-- Email/password authentication
-- Form validation and error handling
-- Loading states and accessibility
-- Navigation to sign-up flow
-
-```tsx
-const onSignInPress = async () => {
-  const signInAttempt = await signIn.create({
-    identifier: emailAddress,
-    password,
-  })
-
-  if (signInAttempt.status === "complete") {
-    await setActive({ session: signInAttempt.createdSessionId })
-    router.replace("/")
-  }
-}
-```
-
-#### Auth Layout (`app/(auth)/_layout.tsx`)
-- Redirects authenticated users to main app
-- Handles authentication state changes
-- Provides consistent auth screen styling
-
-### JWT Integration with Supabase
-
-#### Clerk JWT Template Configuration
-Create a JWT template named "supabase" in Clerk Dashboard:
-
-```json
-{
-  "iss": "{{org.slug}}",
-  "sub": "{{user.id}}",
-  "aud": "authenticated",
-  "exp": {{exp}},
-  "iat": {{iat}},
-  "email": "{{user.primary_email_address.email_address}}",
-  "app_metadata": {
-    "provider": "clerk",
-    "providers": ["clerk"]
-  },
-  "user_metadata": {
-    "full_name": "{{user.full_name}}",
-    "avatar_url": "{{user.image_url}}"
-  }
-}
-```
-
-#### Token Usage in API Calls
-```tsx
-const { getAuthenticatedClient } = useSupabaseClient()
-
-const loadData = async () => {
-  const client = await getAuthenticatedClient()
-  const api = createAuthenticatedApi(client)
-  
-  const user = await api.getUser(clerkUser.id)
-}
-```
-
-## 🗄️ Supabase Integration Patterns
-
-### Database Client Setup
-
-#### Authenticated Client (`lib/supabase.ts`)
-```tsx
-export const useSupabaseClient = () => {
-  const { getToken } = useAuth()
-
-  const getAuthenticatedClient = async () => {
-    const token = await getToken({ template: "supabase" })
-    
-    return createClient(supabaseUrl, supabaseKey, {
-      global: {
-        fetch: async (url, options = {}) => {
-          const headers = new Headers(options?.headers)
-          if (token) {
-            headers.set('Authorization', `Bearer ${token}`)
-          }
-          return fetch(url, { ...options, headers })
-        }
-      }
-    })
-  }
-
-  return { getAuthenticatedClient }
-}
-```
-
-### API Patterns
-
-#### Type-Safe Database Operations
-```tsx
-// User management
-const api = createAuthenticatedApi(supabaseClient)
-
-// Create user
-await api.createUser({
-  clerk_user_id: clerkUser.id,
-  email: clerkUser.primaryEmailAddress.emailAddress,
-  full_name: clerkUser.fullName,
-})
-
-// Get activities with pagination
-const activities = await api.getActivities(userId, 20, 0)
-
-// Activity statistics
-const stats = await api.getActivityStats(userId)
-```
 
 #### Local-First Data Patterns
 ```tsx
@@ -359,7 +218,7 @@ const [refreshing, setRefreshing] = useState(false)
 const loadData = async (isRefresh = false) => {
   if (isRefresh) setRefreshing(true)
   else setLoading(true)
-  
+
   try {
     const client = await getAuthenticatedClient()
     const api = createAuthenticatedApi(client)
@@ -401,10 +260,10 @@ const recordActivity = async (activityData: {
 useEffect(() => {
   const subscription = supabase
     .channel('activities')
-    .on('postgres_changes', 
-      { 
-        event: 'INSERT', 
-        schema: 'public', 
+    .on('postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
         table: 'activities',
         filter: `user_id=eq.${userId}`
       },
@@ -503,8 +362,6 @@ Create `.env` file:
 EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 EXPO_PUBLIC_SUPABASE_KEY=your-anon-key
 
-# Clerk Configuration
-EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_your-key
 ```
 
 #### App Configuration (`app.json`)
@@ -693,12 +550,6 @@ npx expo run:android --clean
 
 ## 🐛 Troubleshooting
 
-### Common Issues
-
-#### Authentication Problems
-- **JWT Token Issues**: Verify Clerk JWT template is named "supabase"
-- **PGRST301 Errors**: Check RLS policies match JWT `sub` claim
-- **Token Refresh**: Ensure `getToken({ template: "supabase" })` is used
 
 #### Build Issues
 - **iOS Build Failures**: Run `cd ios && pod install`
@@ -712,7 +563,7 @@ npx expo run:android --clean
 
 ### Performance Optimization
 - **Bundle Size**: Use Expo bundle analyzer
-- **Memory Usage**: Monitor with React DevTools Profiler  
+- **Memory Usage**: Monitor with React DevTools Profiler
 - **Network**: Implement proper caching strategies
 - **Animations**: Use `react-native-reanimated` for 60fps animations
 
@@ -723,7 +574,6 @@ npx expo run:android --clean
 - [Expo Documentation](https://docs.expo.dev/)
 - [React Native Reusables](https://github.com/mrzachnugent/react-native-reusables)
 - [NativeWind Documentation](https://www.nativewind.dev/)
-- [Clerk Expo Documentation](https://clerk.com/docs/quickstarts/expo)
 - [Supabase React Native Guide](https://supabase.com/docs/guides/getting-started/tutorials/with-expo-react-native)
 - [Maestro Testing Documentation](https://maestro.mobile.dev/)
 

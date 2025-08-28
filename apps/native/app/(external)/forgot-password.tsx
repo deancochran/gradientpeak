@@ -19,45 +19,31 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/contexts";
 import { useColorScheme } from "@/lib/useColorScheme";
 
-const signUpSchema = z.object({
+const forgotPasswordSchema = z.object({
   email: z.email("Invalid email address"),
-  password: z
-    .string({ message: "Password is required" })
-    .min(8, "Password must be at least 8 characters")
-    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-    .regex(/[0-9]/, "Password must contain at least one number"),
 });
 
-type SignUpFields = z.infer<typeof signUpSchema>;
+type ForgotPasswordFields = z.infer<typeof forgotPasswordSchema>;
 
-const mapSupabaseErrorToFormField = (error: string) => {
-  if (error.includes("email") || error.includes("Email")) {
-    return "email";
-  }
-  if (error.includes("password") || error.includes("Password")) {
-    return "password";
-  }
-  return "root";
-};
-
-export default function SignUpScreen() {
+export default function ForgotPasswordScreen() {
   const router = useRouter();
   const { isDarkColorScheme } = useColorScheme();
-  const { signUp, loading } = useAuth();
+  const { resetPassword, loading } = useAuth();
+  const [emailSent, setEmailSent] = React.useState(false);
 
   // Animation refs
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
   const slideAnim = React.useRef(new Animated.Value(30)).current;
   const buttonScaleAnim = React.useRef(new Animated.Value(1)).current;
-  const signinScaleAnim = React.useRef(new Animated.Value(1)).current;
 
   const {
     control,
     handleSubmit,
     setError,
-    formState: { errors, isSubmitting },
-  } = useForm<SignUpFields>({
-    resolver: zodResolver(signUpSchema),
+    getValues,
+    formState: { errors },
+  } = useForm<ForgotPasswordFields>({
+    resolver: zodResolver(forgotPasswordSchema),
   });
 
   React.useEffect(() => {
@@ -76,7 +62,7 @@ export default function SignUpScreen() {
     ]).start();
   }, []);
 
-  const onSignUp = async (data: SignUpFields) => {
+  const onSendResetEmail = async (data: ForgotPasswordFields) => {
     // Button press animation
     Animated.sequence([
       Animated.timing(buttonScaleAnim, {
@@ -92,56 +78,41 @@ export default function SignUpScreen() {
     ]).start();
 
     try {
-      const { user, error } = await signUp(data.email, data.password);
+      const { error } = await resetPassword(data.email);
 
       if (error) {
-        console.log("Sign up error:", error);
+        console.log("Reset password error:", error);
 
-        // Handle specific Supabase auth errors
-        if (error.message?.includes("User already registered")) {
+        if (error.message?.includes("User not found")) {
           setError("email", {
-            message: "An account with this email already exists",
+            message: "No account found with this email address",
           });
-        } else if (error.message?.includes("Password should be")) {
-          setError("password", {
-            message: error.message,
-          });
-        } else if (error.message?.includes("Unable to validate email")) {
+        } else if (error.message?.includes("Email rate limit")) {
           setError("email", {
-            message: "Please enter a valid email address",
+            message: "Too many requests. Please try again later.",
           });
         } else {
-          const fieldName = mapSupabaseErrorToFormField(error.message || "");
-          setError(fieldName, {
-            message: error.message || "An unexpected error occurred",
+          setError("email", {
+            message: error.message || "Failed to send reset email",
           });
         }
-      } else if (user) {
-        // Successfully signed up - redirect to verification page
-        console.log("Successfully signed up:", user.email);
-        router.push("/(external)/verify");
+      } else {
+        setEmailSent(true);
       }
     } catch (err) {
-      console.log("Unexpected sign up error:", err);
-      setError("root", { message: "An unexpected error occurred" });
+      console.log("Unexpected reset password error:", err);
+      setError("email", {
+        message: "An unexpected error occurred. Please try again.",
+      });
     }
   };
 
-  const handleSignInPress = () => {
-    Animated.sequence([
-      Animated.timing(signinScaleAnim, {
-        toValue: 0.95,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(signinScaleAnim, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      router.replace("/(external)/sign-in");
-    });
+  const handleBackToSignIn = () => {
+    router.replace("/(external)/sign-in");
+  };
+
+  const handleTryDifferentEmail = () => {
+    setEmailSent(false);
   };
 
   const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";
@@ -149,6 +120,111 @@ export default function SignUpScreen() {
   const subtleColor = isDarkColorScheme ? "#666666" : "#999999";
   const borderColor = isDarkColorScheme ? "#333333" : "#e5e5e5";
   const errorColor = isDarkColorScheme ? "#ff6b6b" : "#dc3545";
+  const successColor = isDarkColorScheme ? "#4ade80" : "#16a34a";
+
+  if (emailSent) {
+    return (
+      <>
+        <Stack.Screen
+          options={{
+            title: "",
+            headerStyle: {
+              backgroundColor,
+            },
+          }}
+        />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={[styles.container, { backgroundColor }]}
+          testID="reset-email-sent-screen"
+        >
+          <Animated.View
+            style={[
+              styles.content,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }],
+              },
+            ]}
+            testID="reset-email-sent-content"
+          >
+            {/* Success Icon */}
+            <View style={styles.iconContainer} testID="success-icon-container">
+              <View
+                style={[
+                  styles.successIcon,
+                  {
+                    backgroundColor: successColor,
+                    shadowColor: successColor,
+                  },
+                ]}
+                testID="success-icon"
+              >
+                <Text
+                  style={[styles.checkmark, { color: backgroundColor }]}
+                  testID="checkmark"
+                >
+                  ✓
+                </Text>
+              </View>
+            </View>
+
+            {/* Success Message */}
+            <View style={styles.messageContainer} testID="message-container">
+              <Text
+                style={[styles.title, { color: textColor }]}
+                testID="success-title"
+              >
+                Check your email
+              </Text>
+              <Text
+                style={[styles.description, { color: subtleColor }]}
+                testID="success-description"
+              >
+                We&apos;ve sent password reset instructions to{"\n"}
+                <Text style={{ fontWeight: "600" }}>{getValues("email")}</Text>
+              </Text>
+            </View>
+
+            {/* Action Buttons */}
+            <View style={styles.buttonsContainer} testID="buttons-container">
+              <TouchableOpacity
+                onPress={handleBackToSignIn}
+                style={[
+                  styles.primaryButton,
+                  {
+                    backgroundColor: textColor,
+                    shadowColor: textColor,
+                  },
+                ]}
+                testID="back-to-signin-button"
+              >
+                <Text
+                  style={[styles.primaryButtonText, { color: backgroundColor }]}
+                  testID="back-to-signin-button-text"
+                >
+                  Back to Sign In
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleTryDifferentEmail}
+                style={[styles.secondaryButton, { borderColor }]}
+                testID="try-different-email-button"
+              >
+                <Text
+                  style={[styles.secondaryButtonText, { color: textColor }]}
+                  testID="try-different-email-button-text"
+                >
+                  Try different email
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+        </KeyboardAvoidingView>
+      </>
+    );
+  }
 
   return (
     <>
@@ -163,7 +239,7 @@ export default function SignUpScreen() {
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={[styles.container, { backgroundColor }]}
-        testID="sign-up-screen"
+        testID="forgot-password-screen"
       >
         <ScrollView
           contentContainerStyle={styles.scrollContent}
@@ -178,26 +254,27 @@ export default function SignUpScreen() {
                 transform: [{ translateY: slideAnim }],
               },
             ]}
-            testID="sign-up-content"
+            testID="forgot-password-content"
           >
             {/* Header */}
-            <View style={styles.header} testID="sign-up-header">
+            <View style={styles.header} testID="forgot-password-header">
               <Text
                 style={[styles.title, { color: textColor }]}
-                testID="sign-up-title"
+                testID="forgot-password-title"
               >
-                Create Account
+                Reset your password
               </Text>
               <Text
                 style={[styles.subtitle, { color: subtleColor }]}
-                testID="sign-up-subtitle"
+                testID="forgot-password-subtitle"
               >
-                Start tracking your fitness progress today
+                Enter your email address and we&apos;ll send you instructions to
+                reset your password
               </Text>
             </View>
 
             {/* Form */}
-            <View style={styles.form} testID="sign-up-form">
+            <View style={styles.form} testID="forgot-password-form">
               <View style={styles.inputContainer}>
                 <Controller
                   control={control}
@@ -231,129 +308,54 @@ export default function SignUpScreen() {
                   </Text>
                 )}
               </View>
-
-              <View style={styles.inputContainer}>
-                <Controller
-                  control={control}
-                  name="password"
-                  render={({ field: { onChange, value } }) => (
-                    <Input
-                      placeholder="Password"
-                      value={value}
-                      onChangeText={onChange}
-                      secureTextEntry
-                      style={[
-                        styles.input,
-                        {
-                          borderColor: errors.password
-                            ? errorColor
-                            : borderColor,
-                          color: textColor,
-                        },
-                      ]}
-                      testID="password-input"
-                    />
-                  )}
-                />
-                {errors.password && (
-                  <Text
-                    style={[styles.errorText, { color: errorColor }]}
-                    testID="password-error"
-                  >
-                    {errors.password.message}
-                  </Text>
-                )}
-
-                {/* Password Requirements */}
-                <View style={styles.passwordHints} testID="password-hints">
-                  <Text style={[styles.hintText, { color: subtleColor }]}>
-                    Password must contain:
-                  </Text>
-                  <Text style={[styles.hintText, { color: subtleColor }]}>
-                    • At least 8 characters
-                  </Text>
-                  <Text style={[styles.hintText, { color: subtleColor }]}>
-                    • One uppercase letter
-                  </Text>
-                  <Text style={[styles.hintText, { color: subtleColor }]}>
-                    • One number
-                  </Text>
-                </View>
-              </View>
-
-              {errors.root && (
-                <Text
-                  style={[
-                    styles.errorText,
-                    { color: errorColor, textAlign: "center" },
-                  ]}
-                  testID="form-error"
-                >
-                  {errors.root.message}
-                </Text>
-              )}
             </View>
 
-            {/* Sign Up Button */}
+            {/* Send Reset Email Button */}
             <Animated.View
               style={[
                 styles.buttonContainer,
                 { transform: [{ scale: buttonScaleAnim }] },
               ]}
-              testID="sign-up-button-container"
+              testID="send-reset-button-container"
             >
               <TouchableOpacity
-                onPress={handleSubmit(onSignUp)}
-                disabled={loading || isSubmitting}
+                onPress={handleSubmit(onSendResetEmail)}
+                disabled={loading}
                 style={[
                   styles.primaryButton,
                   {
                     backgroundColor: textColor,
-                    opacity: loading || isSubmitting ? 0.7 : 1,
+                    opacity: loading ? 0.7 : 1,
                   },
                 ]}
-                testID="sign-up-button"
+                testID="send-reset-button"
               >
                 <Text
                   style={[styles.primaryButtonText, { color: backgroundColor }]}
-                  testID="sign-up-button-text"
+                  testID="send-reset-button-text"
                 >
-                  {loading ? "Creating Account..." : "Create Account"}
+                  {loading ? "Sending..." : "Send Reset Instructions"}
                 </Text>
               </TouchableOpacity>
             </Animated.View>
 
-            {/* Sign In Link */}
-            <Animated.View
-              style={[
-                styles.linkContainer,
-                { transform: [{ scale: signinScaleAnim }] },
-              ]}
-              testID="sign-in-link-container"
+            {/* Back to Sign In Link */}
+            <View
+              style={styles.linkContainer}
+              testID="back-to-signin-link-container"
             >
               <TouchableOpacity
-                onPress={handleSignInPress}
+                onPress={handleBackToSignIn}
                 style={[styles.secondaryButton, { borderColor }]}
-                testID="sign-in-link-button"
+                testID="back-to-signin-link-button"
               >
                 <Text
                   style={[styles.secondaryButtonText, { color: textColor }]}
-                  testID="sign-in-link-text"
+                  testID="back-to-signin-link-text"
                 >
-                  Already have an account? Sign in
+                  Back to Sign In
                 </Text>
               </TouchableOpacity>
-            </Animated.View>
-
-            {/* Terms */}
-            <View style={styles.termsContainer} testID="terms-container">
-              <Text
-                style={[styles.termsText, { color: subtleColor }]}
-                testID="terms-text"
-              >
-                By creating an account, you agree to our{"\n"}Terms of Service
-                and Privacy Policy
-              </Text>
             </View>
           </Animated.View>
         </ScrollView>
@@ -374,6 +376,7 @@ const styles = StyleSheet.create({
   },
   content: {
     width: "100%",
+    alignItems: "center",
   },
   header: {
     alignItems: "center",
@@ -383,15 +386,18 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: "800",
     textAlign: "center",
-    marginBottom: 8,
+    marginBottom: 12,
     letterSpacing: -1,
   },
   subtitle: {
     fontSize: 16,
     textAlign: "center",
     fontWeight: "400",
+    lineHeight: 24,
+    maxWidth: 300,
   },
   form: {
+    width: "100%",
     marginBottom: 32,
   },
   inputContainer: {
@@ -410,15 +416,8 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontWeight: "500",
   },
-  passwordHints: {
-    marginTop: 12,
-  },
-  hintText: {
-    fontSize: 13,
-    marginBottom: 4,
-    fontWeight: "400",
-  },
   buttonContainer: {
+    width: "100%",
     marginBottom: 20,
   },
   primaryButton: {
@@ -441,7 +440,7 @@ const styles = StyleSheet.create({
   },
   linkContainer: {
     alignItems: "center",
-    marginBottom: 20,
+    width: "100%",
   },
   secondaryButton: {
     paddingVertical: 16,
@@ -454,13 +453,40 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textAlign: "center",
   },
-  termsContainer: {
-    alignItems: "center",
+  iconContainer: {
+    marginBottom: 40,
   },
-  termsText: {
-    fontSize: 12,
+  successIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  checkmark: {
+    fontSize: 32,
+    fontWeight: "900",
+  },
+  messageContainer: {
+    alignItems: "center",
+    marginBottom: 60,
+    maxWidth: 320,
+  },
+  description: {
+    fontSize: 16,
     textAlign: "center",
-    lineHeight: 16,
+    lineHeight: 24,
     fontWeight: "400",
+  },
+  buttonsContainer: {
+    width: "100%",
+    gap: 16,
   },
 });

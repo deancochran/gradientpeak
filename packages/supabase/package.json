@@ -1,0 +1,16 @@
+{
+  "name": "@repo/supabase",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./database.types.ts",
+  "types": "./database.types.ts",
+  "exports": {
+    ".": "./database.types.ts"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

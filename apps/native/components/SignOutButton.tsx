@@ -1,20 +1,24 @@
-import { useAuth } from "@clerk/clerk-expo";
+import { useAuth } from "@/lib/contexts";
 import { Button } from "./ui/button";
 
-
 export const SignOutButton = () => {
-  // Use `useClerk()` to access the `signOut()` function
-  const { signOut } = useAuth();
+  const { signOut, loading } = useAuth();
 
-   const onSignOutPress = async () => {
+  const onSignOutPress = async () => {
     try {
-      await signOut({ redirectUrl: "/" });
-    } catch (err: any) {}
+      await signOut();
+    } catch (err: any) {
+      console.error("Sign out error:", err);
+    }
   };
 
   return (
-    <Button testID="sign-out-button" onPress={onSignOutPress}>
-          Sign out
+    <Button
+      testID="sign-out-button"
+      onPress={onSignOutPress}
+      disabled={loading}
+    >
+      {loading ? "Signing out..." : "Sign out"}
     </Button>
   );
 };

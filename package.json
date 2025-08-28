@@ -1,5 +1,14 @@
 {
   "name": "turbo-fit",
+  "devDependencies": {
+    "prettier": "^3.6.2",
+    "turbo": "^2.5.6",
+    "typescript": "5.9.2"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "packageManager": "bun@1.2.20",
   "private": true,
   "scripts": {
     "build": "turbo run build",
@@ -18,15 +27,6 @@
     "test:coverage": "turbo run test --coverage",
     "test:ci": "turbo run test:ci"
   },
-  "devDependencies": {
-    "prettier": "^3.6.2",
-    "turbo": "^2.5.6",
-    "typescript": "5.9.2"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "packageManager": "bun@1.2.20",
   "workspaces": [
     "apps/*",
     "packages/*"
