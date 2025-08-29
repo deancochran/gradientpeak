@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Animated,
   Image,
   ScrollView,
@@ -17,27 +18,50 @@ import { Text } from "@/components/ui/text";
 
 export default function SettingsScreen() {
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
+  const [activityStats, setActivityStats] = useState({
+    totalActivities: 0,
+    totalDistance: 0,
+    totalTime: "0h 0m",
+    favoriteActivity: "None",
+  });
+  const [statsLoaded, setStatsLoaded] = useState(false);
+  const [statsError, setStatsError] = useState<string | null>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
+    // Load mock activity stats instead of fetching from database
+    const loadMockStats = async () => {
+      try {
+        // Simulate network delay
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        setActivityStats({
+          totalActivities: 24,
+          totalDistance: 156.8,
+          totalTime: "24h 32m",
+          favoriteActivity: "Running",
+        });
+
+        setStatsLoaded(true);
+      } catch (err) {
+        console.error("Error loading mock stats:", err);
+        setStatsError("Could not load your activity stats");
+      }
+    };
+
+    loadMockStats();
+
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 500,
       useNativeDriver: true,
     }).start();
-  }, []);
+  }, [fadeAnim]);
 
   const userData = {
     name: "John Doe",
     email: "john.doe@example.com",
     joinDate: "January 2025",
     avatar: null,
-  };
-
-  const activityStats = {
-    totalActivities: 24,
-    totalDistance: 156.8,
-    totalTime: "24h 32m",
-    favoriteActivity: "Running",
   };
 
   const recentWorkouts = [
@@ -126,16 +150,45 @@ export default function SettingsScreen() {
           {/* Activity Stats */}
           <View style={styles.statsSection}>
             <Text style={styles.sectionTitle}>Activity Overview</Text>
-            <View style={styles.statsGrid}>
-              {Object.entries(activityStats).map(([key, value]) => (
-                <Card key={key} style={styles.statCard}>
-                  <Text style={styles.statNumber}>{value}</Text>
-                  <Text style={styles.statLabel}>
-                    {key.replace(/([A-Z])/g, " $1")}
+            {statsError ? (
+              <Card style={styles.errorCard}>
+                <Text style={styles.errorText}>{statsError}</Text>
+              </Card>
+            ) : !statsLoaded ? (
+              <Card style={styles.statCard}>
+                <ActivityIndicator size="small" color="#666" />
+                <Text style={[styles.statLabel, { marginTop: 8 }]}>
+                  Loading stats...
+                </Text>
+              </Card>
+            ) : (
+              <View style={styles.statsGrid}>
+                <Card style={styles.statCard}>
+                  <Text style={styles.statNumber}>
+                    {activityStats.totalActivities}
                   </Text>
+                  <Text style={styles.statLabel}>Total Activities</Text>
                 </Card>
-              ))}
-            </View>
+                <Card style={styles.statCard}>
+                  <Text style={styles.statNumber}>
+                    {activityStats.totalDistance}
+                  </Text>
+                  <Text style={styles.statLabel}>Total Distance</Text>
+                </Card>
+                <Card style={styles.statCard}>
+                  <Text style={styles.statNumber}>
+                    {activityStats.totalTime}
+                  </Text>
+                  <Text style={styles.statLabel}>Total Time</Text>
+                </Card>
+                <Card style={styles.statCard}>
+                  <Text style={styles.statNumber}>
+                    {activityStats.favoriteActivity}
+                  </Text>
+                  <Text style={styles.statLabel}>Favorite Activity</Text>
+                </Card>
+              </View>
+            )}
           </View>
 
           {/* Recent Workouts */}
@@ -365,4 +418,16 @@ const styles = StyleSheet.create({
   settingText: { flex: 1, fontSize: 16, fontWeight: "500", color: "#000" },
   settingDivider: { height: 1, backgroundColor: "#e5e5e5", marginLeft: 68 },
   signOutSection: { marginBottom: 24 },
+  errorCard: {
+    padding: 16,
+    marginBottom: 12,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  errorText: { fontSize: 14, color: "#ff3b30", textAlign: "center" },
 });

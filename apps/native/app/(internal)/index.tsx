@@ -30,47 +30,48 @@ export default function HomeScreen() {
   const { session } = useAuth();
   const [stats, setStats] = useState<UserStats | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+
   const [refreshing, setRefreshing] = useState(false);
 
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
   const slideAnim = React.useRef(new Animated.Value(30)).current;
 
-  const loadData = async (showRefresh = false) => {
-    if (!session?.user?.id) return;
+  const loadData = React.useCallback(
+    async (showRefresh = false) => {
+      if (!session?.user?.id) return;
 
-    try {
-      if (showRefresh) setRefreshing(true);
-      else setLoading(true);
+      try {
+        if (showRefresh) setRefreshing(true);
 
-      console.log("📊 Loading user data for home screen");
+        console.log("📊 Loading user data for home screen");
 
-      // Simulating loading profile and stats
-      // In a real app, this would fetch from the database
-      const mockProfile = {
-        full_name: "John Doe",
-        preferred_units: "metric" as const,
-      };
+        // Simulating loading profile and stats
+        // In a real app, this would fetch from the database
+        const mockProfile = {
+          full_name: "John Doe",
+          preferred_units: "metric" as const,
+        };
 
-      // Get mock stats from our updated method
-      const statsResult = await activities.getActivityStats(session.user.id);
+        // Get mock stats from our updated method
+        const statsResult = await activities.getActivityStats(session.user.id);
 
-      setProfile(mockProfile);
-      console.log("👤 Profile loaded:", mockProfile);
+        setProfile(mockProfile);
+        console.log("👤 Profile loaded:", mockProfile);
 
-      if (statsResult.error) {
-        console.error("❌ Error loading stats:", statsResult.error);
-      } else {
-        setStats(statsResult.data);
-        console.log("📈 Stats loaded:", statsResult.data);
+        if (statsResult.error) {
+          console.error("❌ Error loading stats:", statsResult.error);
+        } else {
+          setStats(statsResult.data);
+          console.log("📈 Stats loaded:", statsResult.data);
+        }
+      } catch (error) {
+        console.log("❌ Unexpected error loading home data:", error);
+      } finally {
+        setRefreshing(false);
       }
-    } catch (error) {
-      console.error("❌ Unexpected error loading home data:", error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
+    },
+    [session?.user?.id],
+  );
 
   const onRefresh = () => {
     loadData(true);
@@ -93,7 +94,7 @@ export default function HomeScreen() {
         useNativeDriver: true,
       }),
     ]).start();
-  }, [session?.user?.id]);
+  }, [session?.user?.id, fadeAnim, slideAnim, loadData]);
 
   // Get display name
   const displayName =
@@ -221,10 +222,10 @@ export default function HomeScreen() {
             ) : (
               <Card style={styles.summaryCard} testID="activities-summary">
                 <Text style={styles.summaryText}>
-                  You`&apos;'ve completed {stats.totalActivities} activities
+                  You&apos;ve completed {stats.totalActivities} activities
                 </Text>
                 <Text style={styles.summarySubtext}>
-                  Tap `&apos;"Record`&apos;" to add your next workout
+                  Tap &quot;Record&quot; to add your next workout
                 </Text>
               </Card>
             )}

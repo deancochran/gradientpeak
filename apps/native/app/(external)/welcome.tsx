@@ -2,7 +2,6 @@ import { useRouter } from "expo-router";
 import React from "react";
 import {
   Animated,
-  Dimensions,
   Platform,
   StatusBar,
   StyleSheet,
@@ -12,13 +11,13 @@ import {
 
 import { ThemedView } from "@/components/ThemedView";
 import { Text } from "@/components/ui/text";
+import { useAuth } from "@/lib/contexts";
 import { useColorScheme } from "@/lib/useColorScheme";
-
-const { width, height } = Dimensions.get("window");
 
 export default function WelcomeScreen() {
   const router = useRouter();
   const { isDarkColorScheme } = useColorScheme();
+  const { isAuthenticated } = useAuth();
 
   // Animation refs
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
@@ -32,6 +31,9 @@ export default function WelcomeScreen() {
   const signupPressAnim = React.useRef(new Animated.Value(1)).current;
 
   React.useEffect(() => {
+    // Log authentication state on mount
+    console.log("🏠 Welcome Screen: isAuthenticated =", isAuthenticated);
+
     // Stagger animations for smooth entrance
     Animated.sequence([
       Animated.timing(fadeAnim, {
@@ -63,7 +65,7 @@ export default function WelcomeScreen() {
         useNativeDriver: true,
       }),
     ]).start();
-  }, []);
+  }, [fadeAnim, scaleAnim, logoAnim, slideAnim, buttonAnim, isAuthenticated]);
 
   const handleLoginPress = () => {
     Animated.sequence([
@@ -78,6 +80,7 @@ export default function WelcomeScreen() {
         useNativeDriver: true,
       }),
     ]).start(() => {
+      console.log("👉 Navigating to sign-in");
       router.replace("/(external)/sign-in");
     });
   };
@@ -95,6 +98,7 @@ export default function WelcomeScreen() {
         useNativeDriver: true,
       }),
     ]).start(() => {
+      console.log("👉 Navigating to sign-up");
       router.replace("/(external)/sign-up");
     });
   };

@@ -3,7 +3,7 @@ import { useAuth } from "@/lib/contexts";
 import { useColorScheme } from "@/lib/useColorScheme";
 import { Redirect, Stack } from "expo-router";
 import React from "react";
-import { Animated, View } from "react-native";
+import { ActivityIndicator, Animated, View } from "react-native";
 
 function AuthLoadingScreen() {
   const { isDarkColorScheme } = useColorScheme();
@@ -24,7 +24,7 @@ function AuthLoadingScreen() {
         useNativeDriver: true,
       }),
     ]).start();
-  }, []);
+  }, [fadeAnim, scaleAnim]);
 
   const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";
 
@@ -45,25 +45,10 @@ function AuthLoadingScreen() {
         }}
         testID="auth-loading-indicator"
       >
-        <View
-          style={{
-            width: 60,
-            height: 60,
-            borderRadius: 16,
-            backgroundColor: isDarkColorScheme ? "#ffffff" : "#000000",
-            justifyContent: "center",
-            alignItems: "center",
-          }}
-        >
-          <View
-            style={{
-              width: 30,
-              height: 30,
-              borderRadius: 8,
-              backgroundColor: backgroundColor,
-            }}
-          />
-        </View>
+        <ActivityIndicator
+          size="large"
+          color={isDarkColorScheme ? "#ffffff" : "#000000"}
+        />
       </Animated.View>
     </View>
   );
@@ -71,23 +56,17 @@ function AuthLoadingScreen() {
 
 export default function ExternalLayout() {
   const { isDarkColorScheme } = useColorScheme();
-  const { session, loading } = useAuth();
+  const { loading, isAuthenticated } = useAuth();
 
   // Show loading screen while auth state is being determined
   if (loading) {
     return <AuthLoadingScreen />;
   }
 
-  // If user is authenticated and verified, redirect to internal app
-  if (session?.user?.email_confirmed_at) {
-    console.log("🔄 External: User verified, redirecting to internal");
+  // Redirect to internal if authenticated
+  if (isAuthenticated) {
     return <Redirect href="/(internal)" />;
   }
-
-  // Allow access to external auth flows
-  // - No user: can access sign-up, sign-in, etc.
-  // - User exists but not verified: can access verification flow
-  console.log("📱 External: Showing auth screens");
 
   const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";
   const textColor = isDarkColorScheme ? "#ffffff" : "#000000";
@@ -105,6 +84,15 @@ export default function ExternalLayout() {
         headerShadowVisible: false,
         animation: "slide_from_right",
       }}
-    />
+    >
+      <Stack.Screen name="welcome" />
+      <Stack.Screen name="sign-in" />
+      <Stack.Screen name="sign-up" />
+      <Stack.Screen name="forgot-password" />
+      <Stack.Screen name="auth-error" />
+      <Stack.Screen name="sign-up-success" />
+      <Stack.Screen name="verify" />
+      <Stack.Screen name="verification-success" />
+    </Stack>
   );
 }
