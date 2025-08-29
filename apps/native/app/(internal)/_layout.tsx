@@ -37,7 +37,18 @@ function AnimatedIcon({ focused, name }: { focused: boolean; name: string }) {
 
 export default function InternalLayout() {
   const { isDarkColorScheme } = useColorScheme();
-  const { loading, isAuthenticated } = useAuth();
+  const { loading, isAuthenticated, session } = useAuth();
+
+  // Debug logging to see what's happening
+  React.useEffect(() => {
+    console.log("🛡️ Internal Layout Auth State:", {
+      loading,
+      isAuthenticated,
+      hasSession: !!session,
+      userEmail: session?.user?.email,
+      emailConfirmed: !!session?.user?.email_confirmed_at,
+    });
+  }, [loading, isAuthenticated, session]);
 
   // Show loading spinner while auth is loading
   if (loading) {

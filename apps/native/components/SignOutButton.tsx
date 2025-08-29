@@ -1,4 +1,5 @@
 import { useAuth } from "@/lib/contexts";
+import { router } from "expo-router";
 import { Button } from "./ui/button";
 
 export const SignOutButton = () => {
@@ -6,7 +7,12 @@ export const SignOutButton = () => {
 
   const onSignOutPress = async () => {
     try {
+      console.log("🚪 SignOutButton: Starting sign out process");
       await signOut();
+
+      // Force redirect to welcome screen after sign out
+      console.log("🚪 SignOutButton: Redirecting to welcome screen");
+      router.replace("/(external)/welcome");
     } catch (err: any) {
       console.error("Sign out error:", err);
     }

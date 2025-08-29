@@ -36,12 +36,41 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const signOut = async (): Promise<void> => {
     try {
       setLoading(true);
+
+      // Immediately clear local session state
+      setSession(null);
+      console.log("📝 Sign out: Cleared local session state");
+
+      // Check if there's an active session before attempting sign out
+      const {
+        data: { session: currentSession },
+      } = await supabase.auth.getSession();
+
+      if (!currentSession) {
+        console.log("📝 Sign out: No active session to sign out");
+        return;
+      }
+
       const { error } = await supabase.auth.signOut();
       if (error) {
-        console.error("Sign out error:", error);
+        // Handle AuthSessionMissingError gracefully - user is already signed out
+        if (error.message?.includes("Auth session missing")) {
+          console.log("📝 Sign out: Session already cleared");
+        } else {
+          console.error("Sign out error:", error);
+          // Even on error, keep local session cleared since we already cleared it
+        }
+      } else {
+        console.log("📝 Sign out: Successfully signed out");
       }
-    } catch (err) {
-      console.error("Sign out error:", err);
+    } catch (err: any) {
+      // Handle AuthSessionMissingError gracefully - user is already signed out
+      if (err.message?.includes("Auth session missing")) {
+        console.log("📝 Sign out: Session already cleared");
+      } else {
+        console.error("Sign out error:", err);
+        // Even on error, keep local session cleared since we already cleared it
+      }
     } finally {
       setLoading(false);
     }
@@ -80,11 +109,37 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("🔧 Auth: State changed", { event, hasSession: !!session });
+      console.log("🔧 Auth: State changed", {
+        event,
+        hasSession: !!session,
+        userEmail: session?.user?.email,
+        isVerified: !!session?.user?.email_confirmed_at,
+        isMounted,
+      });
 
       if (isMounted) {
         setSession(session);
         setLoading(false);
+
+        // Handle specific auth events for better UX
+        switch (event) {
+          case "SIGNED_OUT":
+            console.log("🚪 User signed out - session cleared");
+            // Ensure session is fully cleared
+            setSession(null);
+            break;
+          case "SIGNED_IN":
+            console.log("🚪 User signed in", {
+              verified: !!session?.user?.email_confirmed_at,
+            });
+            break;
+          case "TOKEN_REFRESHED":
+            console.log("🔄 Token refreshed");
+            break;
+          case "USER_UPDATED":
+            console.log("👤 User updated");
+            break;
+        }
       }
     });
 
@@ -93,6 +148,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
       subscription.unsubscribe();
     };
   }, []);
+
+  // Debug logging for auth state
+  React.useEffect(() => {
+    console.log("🔍 Auth Context State:", {
+      hasSession: !!session,
+      isAuthenticated,
+      loading,
+      userEmail: session?.user?.email,
+      emailConfirmed: !!session?.user?.email_confirmed_at,
+    });
+  }, [session, isAuthenticated, loading]);
 
   return (
     <AuthContext.Provider
