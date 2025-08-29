@@ -1,6 +1,6 @@
 // apps/native/lib/contexts/ProtectedRoute.tsx
 import { Redirect } from "expo-router";
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { useAuth } from "./AuthContext";
 
@@ -17,10 +17,37 @@ export function ProtectedRoute({
   redirectTo = "/(external)/welcome",
   requireVerification = true,
 }: ProtectedRouteProps) {
-  const { session, loading } = useAuth();
+  const { session, loading, isValidSession, refreshSession } = useAuth();
+  const [isValidating, setIsValidating] = useState(false);
+  const [sessionValid, setSessionValid] = useState<boolean | null>(null);
+
+  // Validate session when component mounts
+  useEffect(() => {
+    const validateSession = async () => {
+      if (!session) {
+        setSessionValid(false);
+        return;
+      }
+
+      setIsValidating(true);
+      try {
+        const isValid = await refreshSession();
+        setSessionValid(isValid);
+      } catch (err) {
+        console.error("Session validation error:", err);
+        setSessionValid(false);
+      } finally {
+        setIsValidating(false);
+      }
+    };
+
+    validateSession();
+  }, [session]);
 
   console.log("🛡️ ProtectedRoute check:", {
     loading,
+    isValidating,
+    sessionValid,
     hasSession: !!session,
     hasUser: !!session?.user,
     emailConfirmed: !!session?.user?.email_confirmed_at,
@@ -28,8 +55,8 @@ export function ProtectedRoute({
     redirectTo,
   });
 
-  // Show loading spinner while auth is loading
-  if (loading) {
+  // Show loading spinner while auth is loading or validating
+  if (loading || isValidating) {
     return (
       fallback || (
         <View
@@ -47,9 +74,12 @@ export function ProtectedRoute({
     );
   }
 
-  // Redirect if not authenticated
-  if (!session?.user) {
-    console.log("🚫 ProtectedRoute: No user, redirecting to:", redirectTo);
+  // Redirect if not authenticated or session is invalid
+  if (!session?.user || sessionValid === false) {
+    console.log(
+      "🚫 ProtectedRoute: No valid user session, redirecting to:",
+      redirectTo,
+    );
     return <Redirect href={redirectTo} />;
   }
 

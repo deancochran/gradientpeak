@@ -12,12 +12,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/contexts";
-import {
-  activities,
-  formatDistance,
-  formatDuration,
-  profiles,
-} from "@/lib/supabase";
+import { activities, formatDistance, formatDuration } from "@/lib/supabase";
 
 interface UserStats {
   totalActivities: number;
@@ -50,18 +45,18 @@ export default function HomeScreen() {
 
       console.log("📊 Loading user data for home screen");
 
-      // Load user profile and stats in parallel
-      const [profileResult, statsResult] = await Promise.all([
-        profiles.getProfile(session.user.id),
-        activities.getActivityStats(session.user.id),
-      ]);
+      // Simulating loading profile and stats
+      // In a real app, this would fetch from the database
+      const mockProfile = {
+        full_name: "John Doe",
+        preferred_units: "metric" as const,
+      };
 
-      if (profileResult.error) {
-        console.error("❌ Error loading profile:", profileResult.error);
-      } else {
-        setProfile(profileResult.data);
-        console.log("👤 Profile loaded:", profileResult.data);
-      }
+      // Get mock stats from our updated method
+      const statsResult = await activities.getActivityStats(session.user.id);
+
+      setProfile(mockProfile);
+      console.log("👤 Profile loaded:", mockProfile);
 
       if (statsResult.error) {
         console.error("❌ Error loading stats:", statsResult.error);

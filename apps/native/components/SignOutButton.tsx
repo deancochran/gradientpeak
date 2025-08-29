@@ -1,16 +1,12 @@
 import { useAuth } from "@/lib/contexts";
-import { supabase } from "@/lib/supabase";
 import { Button } from "./ui/button";
 
 export const SignOutButton = () => {
-  const { loading } = useAuth();
+  const { loading, signOut } = useAuth();
 
   const onSignOutPress = async () => {
     try {
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        console.error("Sign out error:", error);
-      }
+      await signOut();
     } catch (err: any) {
       console.error("Sign out error:", err);
     }
