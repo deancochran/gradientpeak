@@ -1,8 +1,4 @@
--- Use Postgres to create a bucket.
-insert into storage.buckets
-  (id, name, public)
-values
-  ('profile-avatars', 'profile-avatars', true);
+-- Note: Storage bucket creation moved to seed.sql
 
 create table "profiles" (
   "id" uuid not null references auth.users on delete cascade,
@@ -12,7 +8,6 @@ create table "profiles" (
   "updated_at" timestamp with time zone default now(),
   primary key (id)
 );
-
 
 -- Enable RLS on profiles table
 alter table public.profiles enable row level security;
@@ -61,8 +56,8 @@ begin
   return new;
 end;
 $$;
+
 -- trigger the function every time a user is created
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
-
