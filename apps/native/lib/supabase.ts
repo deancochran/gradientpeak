@@ -196,26 +196,26 @@ export const activities = {
 
     if (error) return { data: null, error };
 
-    const stats = {
-      totalActivities: data.length,
-      totalDistance: data.reduce(
-        (sum, activity) => sum + (activity.distance_meters || 0),
-        0,
-      ),
-      totalDuration: data.reduce(
-        (sum, activity) => sum + (activity.duration_seconds || 0),
-        0,
-      ),
-      activitiesBySport: data.reduce(
-        (acc, activity) => {
-          acc[activity.sport] = (acc[activity.sport] || 0) + 1;
-          return acc;
-        },
-        {} as Record<string, number>,
-      ),
-    };
+    // const stats = {
+    //   totalActivities: data.length,
+    //   totalDistance: data.reduce(
+    //     (sum, activity) => sum + (activity.distance_meters || 0),
+    //     0,
+    //   ),
+    //   totalDuration: data.reduce(
+    //     (sum, activity) => sum + (activity.duration_seconds || 0),
+    //     0,
+    //   ),
+    //   activitiesBySport: data.reduce(
+    //     (acc, activity) => {
+    //       acc[activity.sport] = (acc[activity.sport] || 0) + 1;
+    //       return acc;
+    //     },
+    //     {} as Record<string, number>,
+    //   ),
+    // };
 
-    return { data: stats, error: null };
+    return { data: {}, error: null };
   },
 };
 

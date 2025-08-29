@@ -1,3 +1,4 @@
+// apps/native/app/_layout.tsx
 import "@/global.css";
 
 import { AuthProvider, useAuth } from "@/lib/contexts";
@@ -9,7 +10,7 @@ import {
   ThemeProvider,
 } from "@react-navigation/native";
 
-import { Redirect, Slot } from "expo-router";
+import { Slot } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as React from "react";
 import { Animated, Platform, View } from "react-native";
@@ -123,7 +124,6 @@ function RootLayoutInner() {
   const { session, loading } = useAuth();
   const { isDarkColorScheme } = useColorScheme();
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
-  const [hasRedirected, setHasRedirected] = React.useState(false);
 
   React.useEffect(() => {
     // Animate app entrance
@@ -134,39 +134,24 @@ function RootLayoutInner() {
     }).start();
   }, []);
 
-  // Debug logging
+  // Debug logging - cleaner and more accurate
   React.useEffect(() => {
-    console.log("🔍 RootLayout State:", {
+    console.log("🔍 Auth State:", {
       loading,
       hasSession: !!session,
       hasUser: !!session?.user,
-      emailConfirmed: session?.user?.email_confirmed_at,
-      hasRedirected,
+      emailConfirmed: !!session?.user?.email_confirmed_at,
+      userEmail: session?.user?.email,
     });
-  }, [loading, session, hasRedirected]);
+  }, [loading, session]);
 
   // Show loading screen while auth is loading
   if (loading) {
     return <LoadingScreen />;
   }
 
-  // Handle authentication routing - only redirect once
-  if (!hasRedirected) {
-    if (!session?.user) {
-      console.log("🚪 No user, redirecting to welcome");
-      setHasRedirected(true);
-      return <Redirect href="/(external)/welcome" />;
-    }
-
-    if (session.user && !session.user.email_confirmed_at) {
-      console.log("📧 User not verified, redirecting to verify");
-      setHasRedirected(true);
-      return <Redirect href="/(external)/verify" />;
-    }
-  }
-
-  // User is authenticated and verified, show the main app
-  console.log("✅ User authenticated and verified, showing main app");
+  // Let expo-router handle all routing logic
+  // The layouts will handle redirects based on auth state
   return (
     <SafeAreaView
       style={{

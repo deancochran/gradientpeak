@@ -1,3 +1,4 @@
+// apps/native/app/(external)/_layout.tsx
 import { useAuth } from "@/lib/contexts";
 import { useColorScheme } from "@/lib/useColorScheme";
 import { Redirect, Stack } from "expo-router";
@@ -68,7 +69,7 @@ function AuthLoadingScreen() {
   );
 }
 
-export default function AuthLayout() {
+export default function ExternalLayout() {
   const { isDarkColorScheme } = useColorScheme();
   const { session, loading } = useAuth();
 
@@ -77,14 +78,16 @@ export default function AuthLayout() {
     return <AuthLoadingScreen />;
   }
 
-  // Redirect to internal app if user is authenticated and verified
-  if (session?.user && session.user.email_confirmed_at) {
+  // If user is authenticated and verified, redirect to internal app
+  if (session?.user?.email_confirmed_at) {
+    console.log("🔄 External: User verified, redirecting to internal");
     return <Redirect href="/(internal)" />;
   }
 
-  // If user exists but is not verified, allow access to external auth flows
-  // (like verification, sign-in, etc.)
-  // If no user, also allow access to auth flows
+  // Allow access to external auth flows
+  // - No user: can access sign-up, sign-in, etc.
+  // - User exists but not verified: can access verification flow
+  console.log("📱 External: Showing auth screens");
 
   const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";
   const textColor = isDarkColorScheme ? "#ffffff" : "#000000";
@@ -99,7 +102,6 @@ export default function AuthLayout() {
         headerTitleStyle: {
           fontWeight: "600",
         },
-        // headerBackTitleVisible: false,
         headerShadowVisible: false,
         animation: "slide_from_right",
       }}

@@ -1,3 +1,4 @@
+// apps/native/lib/contexts/ProtectedRoute.tsx
 import { Redirect } from "expo-router";
 import { ReactNode } from "react";
 import { ActivityIndicator, View } from "react-native";
@@ -18,6 +19,15 @@ export function ProtectedRoute({
 }: ProtectedRouteProps) {
   const { session, loading } = useAuth();
 
+  console.log("🛡️ ProtectedRoute check:", {
+    loading,
+    hasSession: !!session,
+    hasUser: !!session?.user,
+    emailConfirmed: !!session?.user?.email_confirmed_at,
+    requireVerification,
+    redirectTo,
+  });
+
   // Show loading spinner while auth is loading
   if (loading) {
     return (
@@ -29,6 +39,7 @@ export function ProtectedRoute({
             alignItems: "center",
             backgroundColor: "#ffffff",
           }}
+          testID="protected-route-loading"
         >
           <ActivityIndicator size="large" color="#0066cc" />
         </View>
@@ -36,17 +47,20 @@ export function ProtectedRoute({
     );
   }
 
-  // Redirect to welcome/auth if not authenticated
+  // Redirect if not authenticated
   if (!session?.user) {
+    console.log("🚫 ProtectedRoute: No user, redirecting to:", redirectTo);
     return <Redirect href={redirectTo} />;
   }
 
-  // If user exists but email is not verified and verification is required
-  if (requireVerification && session.user && !session.user.email_confirmed_at) {
+  // If verification is required but user is not verified
+  if (requireVerification && !session.user.email_confirmed_at) {
+    console.log("📧 ProtectedRoute: User not verified, redirecting to verify");
     return <Redirect href="/(external)/verify" />;
   }
 
-  // Render protected content
+  // All checks passed, render protected content
+  console.log("✅ ProtectedRoute: Access granted");
   return <>{children}</>;
 }
 

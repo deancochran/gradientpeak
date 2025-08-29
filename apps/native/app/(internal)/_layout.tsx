@@ -1,3 +1,4 @@
+// apps/native/app/(internal)/_layout.tsx
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import React from "react";
@@ -6,7 +7,7 @@ import { Animated } from "react-native";
 import { ProtectedRoute } from "@/lib/contexts";
 import { useColorScheme } from "@/lib/useColorScheme";
 
-export default function TabLayout() {
+export default function InternalLayout() {
   const { isDarkColorScheme } = useColorScheme();
 
   const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";
@@ -41,7 +42,7 @@ export default function TabLayout() {
   }
 
   return (
-    <ProtectedRoute redirectTo="/welcome">
+    <ProtectedRoute redirectTo="/(external)/welcome" requireVerification={true}>
       <Tabs
         screenOptions={{
           headerShown: false,
@@ -51,12 +52,12 @@ export default function TabLayout() {
             backgroundColor,
             borderTopWidth: 1,
             borderTopColor: borderColor,
-            height: 50, // shrink the tab bar
-            position: "absolute", // make it hug bottom
+            height: 50,
+            position: "absolute",
             bottom: 0,
             left: 0,
             right: 0,
-            paddingBottom: 4, // small padding for iPhone home indicator
+            paddingBottom: 4,
           },
         }}
       >
