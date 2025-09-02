@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Database } from "@repo/supabase";
 import { createClient } from "@supabase/supabase-js";
 import { AppState } from "react-native";
+import { getDynamicAppConfig } from "../app.config";
 
 // Re-export types for convenience
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
@@ -40,6 +41,24 @@ AppState.addEventListener("change", (state) => {
   }
 });
 
+// Get the current app scheme based on environment
+const getAppScheme = () => {
+  const environment =
+    (process.env.APP_ENV as "development" | "preview" | "production") ||
+    "development";
+  const config = getDynamicAppConfig(environment);
+  const scheme = `${config.scheme}://`;
+
+  console.log("🔧 Deep link configuration:", {
+    APP_ENV: process.env.APP_ENV,
+    environment,
+    scheme,
+    configScheme: config.scheme,
+  });
+
+  return scheme;
+};
+
 // Authentication API functions
 export const auth = {
   // Sign up with email verification
@@ -48,7 +67,7 @@ export const auth = {
       email,
       password,
       options: {
-        emailRedirectTo: `${process.env.EXPO_PUBLIC_APP_URL || "turbofit://"}auth/callback`,
+        emailRedirectTo: `${getAppScheme()}auth/callback`,
       },
     });
     return { data, error };
@@ -72,7 +91,7 @@ export const auth = {
   // Reset password
   async resetPassword(email: string) {
     const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${process.env.EXPO_PUBLIC_APP_URL || "turbofit://"}auth/reset-password`,
+      redirectTo: `${getAppScheme()}auth/reset-password`,
     });
     return { data, error };
   },

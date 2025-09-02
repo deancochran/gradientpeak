@@ -9,12 +9,14 @@ import {
   View,
 } from "react-native";
 
+import DeepLinkDebugger from "@/components/DeepLinkDebugger";
 import { useColorScheme } from "@/lib/useColorScheme";
 import { Stack, useRouter } from "expo-router";
 
 export default function SignUpSuccessScreen() {
   const router = useRouter();
   const { isDarkColorScheme } = useColorScheme();
+  const [showDebugger, setShowDebugger] = React.useState(false);
 
   // Animation refs
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
@@ -58,6 +60,36 @@ export default function SignUpSuccessScreen() {
   const textColor = isDarkColorScheme ? "#ffffff" : "#000000";
   const subtleColor = isDarkColorScheme ? "#666666" : "#999999";
   const successColor = isDarkColorScheme ? "#4ade80" : "#16a34a";
+
+  // Show debugger if requested
+  if (showDebugger) {
+    return (
+      <>
+        <Stack.Screen
+          options={{
+            title: "Deep Link Debug",
+            headerStyle: {
+              backgroundColor,
+            },
+          }}
+        />
+        <DeepLinkDebugger />
+        <TouchableOpacity
+          style={{
+            position: "absolute",
+            top: 60,
+            right: 20,
+            padding: 10,
+            backgroundColor: textColor,
+            borderRadius: 8,
+          }}
+          onPress={() => setShowDebugger(false)}
+        >
+          <Text style={{ color: backgroundColor }}>Back</Text>
+        </TouchableOpacity>
+      </>
+    );
+  }
 
   return (
     <>
@@ -155,6 +187,25 @@ export default function SignUpSuccessScreen() {
               </Text>
             </TouchableOpacity>
           </Animated.View>
+
+          {/* Debug Button - Temporary */}
+          <TouchableOpacity
+            onPress={() => setShowDebugger(true)}
+            style={[
+              styles.debugButton,
+              {
+                backgroundColor: subtleColor,
+              },
+            ]}
+            testID="debug-button"
+          >
+            <Text
+              style={[styles.debugButtonText, { color: backgroundColor }]}
+              testID="debug-button-text"
+            >
+              Debug Deep Links
+            </Text>
+          </TouchableOpacity>
         </Animated.View>
       </KeyboardAvoidingView>
     </>
@@ -237,5 +288,17 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
     letterSpacing: -0.5,
+  },
+  debugButton: {
+    height: 40,
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 20,
+    opacity: 0.7,
+  },
+  debugButtonText: {
+    fontSize: 14,
+    fontWeight: "500",
   },
 });

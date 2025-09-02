@@ -351,6 +351,94 @@ bun run format
 bun start
 ```
 
+## 🔗 Deep Link Authentication
+
+The app supports deep linking for seamless authentication flows, allowing users to complete email verification and password resets directly in the mobile app.
+
+### Features
+
+✅ **Email Verification** - Users can verify their email directly in the app  
+✅ **Password Reset** - Users can set new passwords directly in the app  
+✅ **Dynamic URL Schemes** - Different schemes for dev/preview/production environments  
+✅ **Error Handling** - Graceful handling of expired or invalid links  
+
+### URL Schemes
+
+The app uses environment-specific URL schemes:
+
+- **Development**: `app-scheme-dev://`
+- **Preview**: `app-scheme-prev://` 
+- **Production**: `app-scheme://`
+
+### Auth Flow Routes
+
+- **`/auth/callback`** - Handles email verification deep links
+- **`/auth/reset-password`** - Handles password reset deep links
+
+### Setup Required
+
+1. **Configure Supabase Dashboard**:
+   - Go to Authentication > URL Configuration
+   - Add redirect URLs for each environment:
+   ```
+   app-scheme-dev://auth/callback
+   app-scheme-dev://auth/reset-password
+   app-scheme-prev://auth/callback
+   app-scheme-prev://auth/reset-password
+   app-scheme://auth/callback
+   app-scheme://auth/reset-password
+   ```
+
+2. **Environment Variables**:
+   ```bash
+   EXPO_PUBLIC_APP_URL=app-scheme-dev://
+   APP_ENV=development
+   ```
+
+### Testing Deep Links
+
+```bash
+# Test all deep links
+npm run test:deep-links
+
+# Test iOS only
+npm run test:deep-links:ios
+
+# Test Android only
+npm run test:deep-links:android
+
+# Show configuration URLs
+npm run deep-links:config
+```
+
+### Manual Testing
+
+**iOS Simulator:**
+```bash
+xcrun simctl openurl booted "app-scheme-dev://auth/callback?access_token=test&refresh_token=test"
+```
+
+**Android Emulator:**
+```bash
+adb shell am start -W -a android.intent.action.VIEW \
+  -d "app-scheme-dev://auth/callback?access_token=test&refresh_token=test" \
+  com.company.turbofit.dev
+```
+
+### How It Works
+
+**Email Verification:**
+1. User signs up → receives verification email
+2. Taps link → app opens to `/auth/callback`
+3. App processes tokens → user verified and signed in
+
+**Password Reset:**
+1. User requests reset → receives email
+2. Taps link → app opens to `/auth/reset-password`
+3. User sets new password → signed in with new password
+
+For detailed setup instructions, see [`DEEP_LINK_SETUP.md`](./DEEP_LINK_SETUP.md).
+
 ## 🚀 Staging & Deployment
 
 ### Environment Configuration
@@ -362,6 +450,9 @@ Create `.env` file:
 EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 EXPO_PUBLIC_SUPABASE_KEY=your-anon-key
 
+# Deep Link Configuration (matches app.config.ts schemes)
+EXPO_PUBLIC_APP_URL=app-scheme-dev://
+APP_ENV=development
 ```
 
 #### App Configuration (`app.json`)
@@ -575,6 +666,8 @@ npx expo run:android --clean
 - [React Native Reusables](https://github.com/mrzachnugent/react-native-reusables)
 - [NativeWind Documentation](https://www.nativewind.dev/)
 - [Supabase React Native Guide](https://supabase.com/docs/guides/getting-started/tutorials/with-expo-react-native)
+- [Supabase Deep Linking Guide](https://supabase.com/docs/guides/auth/native-mobile-deep-linking)
+- [Expo Router Deep Linking](https://docs.expo.dev/router/reference/linking/)
 - [Maestro Testing Documentation](https://maestro.mobile.dev/)
 
 This comprehensive setup provides a robust foundation for developing, testing, and deploying a modern React Native application with best practices for performance, type safety, and user experience.

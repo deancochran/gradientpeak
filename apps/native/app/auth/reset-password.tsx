@@ -1,5 +1,11 @@
-import React from "react";
+import { supabase } from "@/lib/supabase";
+import { useColorScheme } from "@/lib/useColorScheme";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useState } from "react";
+import { Controller, useForm } from "react-hook-form";
 import {
+  Alert,
   Animated,
   KeyboardAvoidingView,
   Platform,
@@ -9,66 +15,48 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Stack, useRouter } from "expo-router";
-import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { Input } from "@/components/ui/input";
-import { useAuth } from "@/lib/contexts";
-import { auth } from "@/lib/supabase";
-import { useColorScheme } from "@/lib/useColorScheme";
 
-const signUpSchema = z
+const resetPasswordSchema = z
   .object({
-    email: z.email("Invalid email address"),
     password: z
-      .string({ message: "Password is required" })
+      .string()
       .min(8, "Password must be at least 8 characters")
       .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
       .regex(/[0-9]/, "Password must contain at least one number"),
-    repeatPassword: z.string({ message: "Please confirm your password" }),
+    confirmPassword: z.string(),
   })
-  .refine((data) => data.password === data.repeatPassword, {
-    message: "Passwords do not match",
-    path: ["repeatPassword"],
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords don't match",
+    path: ["confirmPassword"],
   });
 
-type SignUpFields = z.infer<typeof signUpSchema>;
+type ResetPasswordFields = z.infer<typeof resetPasswordSchema>;
 
-const mapSupabaseErrorToFormField = (error: string) => {
-  if (error.includes("email") || error.includes("Email")) {
-    return "email";
-  }
-  if (error.includes("password") || error.includes("Password")) {
-    return "password";
-  }
-  return "root";
-};
-
-export default function SignUpScreen() {
+export default function ResetPasswordScreen() {
   const router = useRouter();
+  const { access_token, refresh_token } = useLocalSearchParams();
+  const [isLoading, setIsLoading] = useState(false);
+  const [sessionSet, setSessionSet] = useState(false);
   const { isDarkColorScheme } = useColorScheme();
-  const { loading } = useAuth();
-  const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   // Animation refs
-  const fadeAnim = React.useRef(new Animated.Value(0)).current;
-  const slideAnim = React.useRef(new Animated.Value(30)).current;
-  const buttonScaleAnim = React.useRef(new Animated.Value(1)).current;
-  const signinScaleAnim = React.useRef(new Animated.Value(1)).current;
+  const fadeAnim = useState(new Animated.Value(0))[0];
+  const slideAnim = useState(new Animated.Value(30))[0];
+  const buttonScaleAnim = useState(new Animated.Value(1))[0];
 
   const {
     control,
     handleSubmit,
     setError,
     formState: { errors },
-  } = useForm<SignUpFields>({
-    resolver: zodResolver(signUpSchema),
+  } = useForm<ResetPasswordFields>({
+    resolver: zodResolver(resetPasswordSchema),
   });
 
-  React.useEffect(() => {
+  useEffect(() => {
     // Entrance animations
     Animated.parallel([
       Animated.timing(fadeAnim, {
@@ -82,9 +70,72 @@ export default function SignUpScreen() {
         useNativeDriver: true,
       }),
     ]).start();
-  }, []);
 
-  const onSignUp = async (data: SignUpFields) => {
+    // Set the session from the deep link tokens
+    const setSessionFromTokens = async () => {
+      console.log("🔗 Password reset callback received:", {
+        hasAccessToken: !!access_token,
+        hasRefreshToken: !!refresh_token,
+      });
+
+      if (access_token && refresh_token) {
+        try {
+          console.log("🔑 Setting session from reset password tokens...");
+          const { error } = await supabase.auth.setSession({
+            access_token: access_token as string,
+            refresh_token: refresh_token as string,
+          });
+
+          if (error) {
+            console.error("❌ Session error:", error.message);
+            Alert.alert(
+              "Invalid Link",
+              "This password reset link is invalid or has expired. Please request a new one.",
+              [
+                {
+                  text: "OK",
+                  onPress: () => router.replace("/(external)/forgot-password"),
+                },
+              ],
+            );
+            return;
+          }
+
+          console.log("✅ Session set successfully for password reset");
+          setSessionSet(true);
+        } catch (err) {
+          console.error("💥 Error setting session:", err);
+          Alert.alert("Error", "Something went wrong. Please try again.", [
+            {
+              text: "OK",
+              onPress: () => router.replace("/(external)/forgot-password"),
+            },
+          ]);
+        }
+      } else {
+        console.warn("⚠️ No tokens found in reset password callback");
+        Alert.alert(
+          "Invalid Link",
+          "This password reset link is invalid. Please request a new one.",
+          [
+            {
+              text: "OK",
+              onPress: () => router.replace("/(external)/forgot-password"),
+            },
+          ],
+        );
+      }
+    };
+
+    setSessionFromTokens();
+  }, [access_token, refresh_token, router, fadeAnim, slideAnim]);
+
+  const onUpdatePassword = async (data: ResetPasswordFields) => {
+    if (!sessionSet) {
+      setError("root", { message: "Session not ready. Please try again." });
+      return;
+    }
+
     // Button press animation
     Animated.sequence([
       Animated.timing(buttonScaleAnim, {
@@ -99,63 +150,33 @@ export default function SignUpScreen() {
       }),
     ]).start();
 
-    setIsSubmitting(true);
+    setIsLoading(true);
+
     try {
-      const { data: authData, error } = await auth.signUp(
-        data.email,
-        data.password,
-      );
+      console.log("🔄 Updating password...");
+      const { error } = await supabase.auth.updateUser({
+        password: data.password,
+      });
 
       if (error) {
-        console.log("Sign up error:", error);
-
-        // Handle specific Supabase auth errors
-        if (error.message?.includes("User already registered")) {
-          setError("email", {
-            message: "An account with this email already exists",
-          });
-        } else if (error.message?.includes("Password should be")) {
-          setError("password", {
-            message: error.message,
-          });
-        } else if (error.message?.includes("Unable to validate email")) {
-          setError("email", {
-            message: "Please enter a valid email address",
-          });
-        } else {
-          const fieldName = mapSupabaseErrorToFormField(error.message || "");
-          setError(fieldName, {
-            message: error.message || "An unexpected error occurred",
-          });
-        }
-      } else if (authData.user) {
-        // Successfully signed up - show verification message
-        console.log("Successfully signed up:", authData.user.email);
-        router.push("/(external)/verify");
+        console.error("❌ Password update error:", error.message);
+        setError("root", { message: error.message });
+        return;
       }
+
+      console.log("✅ Password updated successfully");
+
+      Alert.alert(
+        "Success!",
+        "Your password has been updated successfully. You are now signed in.",
+        [{ text: "OK", onPress: () => router.replace("/") }],
+      );
     } catch (err) {
-      console.log("Unexpected sign up error:", err);
+      console.error("💥 Unexpected password update error:", err);
       setError("root", { message: "An unexpected error occurred" });
     } finally {
-      setIsSubmitting(false);
+      setIsLoading(false);
     }
-  };
-
-  const handleSignInPress = () => {
-    Animated.sequence([
-      Animated.timing(signinScaleAnim, {
-        toValue: 0.95,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(signinScaleAnim, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      router.replace("/(external)/sign-in");
-    });
   };
 
   const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";
@@ -177,7 +198,7 @@ export default function SignUpScreen() {
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={[styles.container, { backgroundColor }]}
-        testID="sign-up-screen"
+        testID="reset-password-screen"
       >
         <ScrollView
           contentContainerStyle={styles.scrollContent}
@@ -192,74 +213,40 @@ export default function SignUpScreen() {
                 transform: [{ translateY: slideAnim }],
               },
             ]}
-            testID="sign-up-content"
+            testID="reset-password-content"
           >
             {/* Header */}
-            <View style={styles.header} testID="sign-up-header">
+            <View style={styles.header} testID="reset-password-header">
               <Text
                 style={[styles.title, { color: textColor }]}
-                testID="sign-up-title"
+                testID="reset-password-title"
               >
-                Create Account
+                Set New Password
               </Text>
               <Text
                 style={[styles.subtitle, { color: subtleColor }]}
-                testID="sign-up-subtitle"
+                testID="reset-password-subtitle"
               >
-                Start tracking your fitness progress today
+                Please enter your new password below
               </Text>
             </View>
 
             {/* Form */}
-            <View style={styles.form} testID="sign-up-form">
-              <View style={styles.inputContainer}>
-                <Text style={[styles.label, { color: textColor }]}>Email</Text>
-                <Controller
-                  control={control}
-                  name="email"
-                  render={({ field: { onChange, value } }) => (
-                    <Input
-                      placeholder="m@example.com"
-                      value={value}
-                      onChangeText={onChange}
-                      autoFocus
-                      autoCapitalize="none"
-                      keyboardType="email-address"
-                      autoComplete="email"
-                      style={[
-                        styles.input,
-                        {
-                          borderColor: errors.email ? errorColor : borderColor,
-                          color: textColor,
-                        },
-                      ]}
-                      testID="email-input"
-                    />
-                  )}
-                />
-                {errors.email && (
-                  <Text
-                    style={[styles.errorText, { color: errorColor }]}
-                    testID="email-error"
-                  >
-                    {errors.email.message}
-                  </Text>
-                )}
-              </View>
-
+            <View style={styles.form} testID="reset-password-form">
               <View style={styles.inputContainer}>
                 <Text style={[styles.label, { color: textColor }]}>
-                  Password
+                  New Password
                 </Text>
                 <Controller
                   control={control}
                   name="password"
                   render={({ field: { onChange, value } }) => (
                     <Input
-                      placeholder="Enter your password"
+                      placeholder="Enter new password"
                       value={value}
                       onChangeText={onChange}
                       secureTextEntry
+                      autoFocus
                       style={[
                         styles.input,
                         {
@@ -301,36 +288,36 @@ export default function SignUpScreen() {
 
               <View style={styles.inputContainer}>
                 <Text style={[styles.label, { color: textColor }]}>
-                  Repeat Password
+                  Confirm Password
                 </Text>
                 <Controller
                   control={control}
-                  name="repeatPassword"
+                  name="confirmPassword"
                   render={({ field: { onChange, value } }) => (
                     <Input
-                      placeholder="Confirm your password"
+                      placeholder="Confirm new password"
                       value={value}
                       onChangeText={onChange}
                       secureTextEntry
                       style={[
                         styles.input,
                         {
-                          borderColor: errors.repeatPassword
+                          borderColor: errors.confirmPassword
                             ? errorColor
                             : borderColor,
                           color: textColor,
                         },
                       ]}
-                      testID="repeat-password-input"
+                      testID="confirm-password-input"
                     />
                   )}
                 />
-                {errors.repeatPassword && (
+                {errors.confirmPassword && (
                   <Text
                     style={[styles.errorText, { color: errorColor }]}
-                    testID="repeat-password-error"
+                    testID="confirm-password-error"
                   >
-                    {errors.repeatPassword.message}
+                    {errors.confirmPassword.message}
                   </Text>
                 )}
               </View>
@@ -348,65 +335,42 @@ export default function SignUpScreen() {
               )}
             </View>
 
-            {/* Sign Up Button */}
+            {/* Update Password Button */}
             <Animated.View
               style={[
                 styles.buttonContainer,
                 { transform: [{ scale: buttonScaleAnim }] },
               ]}
-              testID="sign-up-button-container"
+              testID="update-password-button-container"
             >
               <TouchableOpacity
-                onPress={handleSubmit(onSignUp)}
-                disabled={loading || isSubmitting}
+                onPress={handleSubmit(onUpdatePassword)}
+                disabled={isLoading || !sessionSet}
                 style={[
                   styles.primaryButton,
                   {
                     backgroundColor: textColor,
-                    opacity: loading || isSubmitting ? 0.7 : 1,
+                    opacity: isLoading || !sessionSet ? 0.7 : 1,
                   },
                 ]}
-                testID="sign-up-button"
+                testID="update-password-button"
               >
                 <Text
                   style={[styles.primaryButtonText, { color: backgroundColor }]}
-                  testID="sign-up-button-text"
+                  testID="update-password-button-text"
                 >
-                  {loading ? "Creating Account..." : "Create Account"}
+                  {isLoading ? "Updating Password..." : "Update Password"}
                 </Text>
               </TouchableOpacity>
             </Animated.View>
 
-            {/* Sign In Link */}
-            <Animated.View
-              style={[
-                styles.linkContainer,
-                { transform: [{ scale: signinScaleAnim }] },
-              ]}
-              testID="sign-in-link-container"
-            >
-              <TouchableOpacity
-                onPress={handleSignInPress}
-                style={[styles.secondaryButton, { borderColor }]}
-                testID="sign-in-link-button"
-              >
-                <Text
-                  style={[styles.secondaryButtonText, { color: textColor }]}
-                  testID="sign-in-link-text"
-                >
-                  Already have an account? Sign in
-                </Text>
-              </TouchableOpacity>
-            </Animated.View>
-
-            {/* Terms */}
-            <View style={styles.termsContainer} testID="terms-container">
+            {/* Help Text */}
+            <View style={styles.helpContainer} testID="help-container">
               <Text
-                style={[styles.termsText, { color: subtleColor }]}
-                testID="terms-text"
+                style={[styles.helpText, { color: subtleColor }]}
+                testID="help-text"
               >
-                By creating an account, you agree to our{"\n"}Terms of Service
-                and Privacy Policy
+                After updating your password, you'll be automatically signed in
               </Text>
             </View>
           </Animated.View>
@@ -498,28 +462,14 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: -0.5,
   },
-  linkContainer: {
+  helpContainer: {
     alignItems: "center",
-    marginBottom: 20,
+    marginTop: 20,
   },
-  secondaryButton: {
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  secondaryButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
+  helpText: {
+    fontSize: 14,
     textAlign: "center",
-  },
-  termsContainer: {
-    alignItems: "center",
-  },
-  termsText: {
-    fontSize: 12,
-    textAlign: "center",
-    lineHeight: 16,
     fontWeight: "400",
+    lineHeight: 20,
   },
 });

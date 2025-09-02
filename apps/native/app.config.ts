@@ -1,13 +1,10 @@
 import { ConfigContext, ExpoConfig } from "expo/config";
 import { version } from "./package.json";
 
-// Replace these with your EAS project ID and project slug.
-// You can find them at https://expo.dev/accounts/[account]/projects/[project].
 const EAS_PROJECT_ID = "c891c73b-ec96-4a19-ba21-9574d28ea5db";
 const PROJECT_SLUG = "turbo-fit";
 const OWNER = "deancochran";
 
-// App production config
 const APP_NAME = "Turbo Fit";
 const BUNDLE_IDENTIFIER = "com.company.turbofit";
 const PACKAGE_NAME = "com.company.turbofit";
@@ -16,29 +13,25 @@ const ADAPTIVE_ICON = "./assets/images/icons/splash-icon-prod.png";
 const SCHEME = "app-scheme";
 
 export default ({ config }: ConfigContext): ExpoConfig => {
-  console.log("⚙️ Building app for environment:", process.env.APP_ENV);
   const { name, bundleIdentifier, icon, adaptiveIcon, packageName, scheme } =
     getDynamicAppConfig(
       (process.env.APP_ENV as "development" | "preview" | "production") ||
-        "development"
+        "development",
     );
 
   return {
     ...config,
-    name: name,
-    version, // Automatically bump your project version with `npm version patch`, `npm version minor` or `npm version major`.
-    slug: PROJECT_SLUG, // Must be consistent across all environments.
+    name,
+    version,
+    slug: PROJECT_SLUG,
     orientation: "portrait",
     userInterfaceStyle: "automatic",
     newArchEnabled: true,
-    icon: icon,
-    scheme: scheme,
+    icon,
+    scheme,
     ios: {
+      bundleIdentifier,
       supportsTablet: true,
-      bundleIdentifier: bundleIdentifier,
-      infoPlist: {
-        ITSAppUsesNonExemptEncryption: false,
-      },
     },
     android: {
       adaptiveIcon: {
@@ -46,6 +39,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         backgroundColor: "#ffffff",
       },
       package: packageName,
+      edgeToEdgeEnabled: true,
     },
     updates: {
       url: `https://u.expo.dev/${EAS_PROJECT_ID}`,
@@ -58,34 +52,29 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         projectId: EAS_PROJECT_ID,
       },
     },
-    web: {
-      bundler: "metro",
-      output: "static",
-      favicon: "./assets/images/favicon-32x32.png",
-    },
     plugins: [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          image: "./assets/image/icons/splash-icon.png",
+          image: "./assets/images/icons/splash-icon-prod.png",
           imageWidth: 200,
           resizeMode: "contain",
           backgroundColor: "#ffffff",
         },
       ],
+      ["react-native-ble-plx"],
     ],
     experiments: {
       typedRoutes: true,
+      buildCacheProvider: "eas",
     },
     owner: OWNER,
   };
 };
 
-// Dynamically configure the app based on the environment.
-// Update these placeholders with your actual values.
 export const getDynamicAppConfig = (
-  environment: "development" | "preview" | "production"
+  environment: "development" | "preview" | "production",
 ) => {
   if (environment === "production") {
     return {

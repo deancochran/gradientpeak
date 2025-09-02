@@ -17,7 +17,7 @@ import { z } from "zod";
 
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/contexts";
-import { supabase } from "@/lib/supabase";
+import { auth } from "@/lib/supabase";
 import { useColorScheme } from "@/lib/useColorScheme";
 
 const forgotPasswordSchema = z.object({
@@ -81,7 +81,7 @@ export default function ForgotPasswordScreen() {
 
     setIsSubmitting(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(data.email);
+      const { error } = await auth.resetPassword(data.email);
 
       if (error) {
         console.log("Reset password error:", error);

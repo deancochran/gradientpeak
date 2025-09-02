@@ -10,6 +10,7 @@ import {
   Theme,
   ThemeProvider,
 } from "@react-navigation/native";
+import * as Linking from "expo-linking";
 import { Slot } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as React from "react";
@@ -49,6 +50,30 @@ export {
 
 function RootLayoutInner() {
   const { isDarkColorScheme } = useColorScheme();
+
+  React.useEffect(() => {
+    // Handle deep link when app is already running
+    const handleDeepLink = (url: string) => {
+      console.log("🔗 Deep link received:", url);
+      // Expo Router will automatically handle routing based on the URL
+    };
+
+    // Listen for incoming links when app is running
+    const subscription = Linking.addEventListener("url", ({ url }) => {
+      handleDeepLink(url);
+    });
+
+    // Handle deep link when app starts from a link
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        handleDeepLink(url);
+      }
+    });
+
+    return () => {
+      subscription?.remove();
+    };
+  }, []);
 
   return (
     <SafeAreaView
