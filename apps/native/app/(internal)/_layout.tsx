@@ -1,6 +1,6 @@
 // apps/native/app/(internal)/_layout.tsx
 import { Ionicons } from "@expo/vector-icons";
-import { Redirect, Tabs } from "expo-router";
+import { Tabs } from "expo-router";
 import React from "react";
 import { ActivityIndicator, Animated, View } from "react-native";
 
@@ -50,7 +50,7 @@ export default function InternalLayout() {
     });
   }, [loading, isAuthenticated, session]);
 
-  // Show loading spinner while auth is loading
+  // Don't handle redirects here - let AuthProvider handle it
   if (loading) {
     return (
       <View
@@ -68,11 +68,6 @@ export default function InternalLayout() {
         />
       </View>
     );
-  }
-
-  // Redirect to external if not authenticated
-  if (!isAuthenticated) {
-    return <Redirect href="/(external)/welcome" />;
   }
 
   const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";

@@ -1,4 +1,5 @@
 import { Session } from "@supabase/supabase-js";
+import { router } from "expo-router";
 import React, {
   createContext,
   ReactNode,
@@ -6,7 +7,24 @@ import React, {
   useEffect,
   useState,
 } from "react";
+import { AppState } from "react-native";
 import { supabase } from "../supabase";
+
+// Custom hook for navigation readiness
+function useNavigationReady() {
+  const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    // Wait for next tick to ensure navigation is mounted
+    const timer = setTimeout(() => {
+      setIsReady(true);
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  return isReady;
+}
 
 interface AuthContextType {
   session: Session | null;
@@ -29,6 +47,8 @@ interface AuthProviderProps {
 export function AuthProvider({ children }: AuthProviderProps) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [initialized, setInitialized] = useState(false);
+  const navigationReady = useNavigationReady();
 
   // Simple authentication check - user exists and email is confirmed
   const isAuthenticated = !!session?.user?.email_confirmed_at;
@@ -82,6 +102,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Get initial session
     const getInitialSession = async () => {
       try {
+        console.log("🔐 Initializing auth state...");
+
         const {
           data: { session },
           error,
@@ -93,11 +115,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
         if (isMounted) {
           setSession(session);
+          setInitialized(true);
           setLoading(false);
+          console.log("✅ Auth initialized:", {
+            hasSession: !!session,
+            userEmail: session?.user?.email,
+            isVerified: !!session?.user?.email_confirmed_at,
+          });
         }
       } catch (error) {
         console.error("🔧 Auth: Unexpected error:", error);
         if (isMounted) {
+          setInitialized(true);
           setLoading(false);
         }
       }
@@ -105,7 +134,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     getInitialSession();
 
-    // Listen for auth changes
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Listen for auth changes
+  useEffect(() => {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
@@ -114,39 +149,95 @@ export function AuthProvider({ children }: AuthProviderProps) {
         hasSession: !!session,
         userEmail: session?.user?.email,
         isVerified: !!session?.user?.email_confirmed_at,
-        isMounted,
       });
 
-      if (isMounted) {
-        setSession(session);
-        setLoading(false);
+      setSession(session);
+      setLoading(false);
 
-        // Handle specific auth events for better UX
-        switch (event) {
-          case "SIGNED_OUT":
-            console.log("🚪 User signed out - session cleared");
-            // Ensure session is fully cleared
-            setSession(null);
-            break;
-          case "SIGNED_IN":
-            console.log("🚪 User signed in", {
-              verified: !!session?.user?.email_confirmed_at,
-            });
-            break;
-          case "TOKEN_REFRESHED":
-            console.log("🔄 Token refreshed");
-            break;
-          case "USER_UPDATED":
-            console.log("👤 User updated");
-            break;
-        }
+      // Handle specific auth events for better UX
+      switch (event) {
+        case "SIGNED_OUT":
+          console.log("🚪 User signed out - session cleared");
+          // Ensure session is fully cleared
+          setSession(null);
+          break;
+        case "SIGNED_IN":
+          console.log("🚪 User signed in", {
+            verified: !!session?.user?.email_confirmed_at,
+          });
+          break;
+        case "TOKEN_REFRESHED":
+          console.log("🔄 Token refreshed");
+          break;
+        case "USER_UPDATED":
+          console.log("👤 User updated");
+          break;
       }
     });
 
     return () => {
-      isMounted = false;
       subscription.unsubscribe();
     };
+  }, []);
+
+  // Handle navigation after auth state changes
+  useEffect(() => {
+    if (!initialized || !navigationReady || loading) {
+      console.log("🚦 Navigation blocked:", {
+        initialized,
+        navigationReady,
+        loading,
+      });
+      return;
+    }
+
+    const handleAuthNavigation = () => {
+      try {
+        if (isAuthenticated) {
+          console.log("🏠 Navigating to internal (authenticated)");
+          router.replace("/(internal)");
+        } else {
+          console.log("🔓 Navigating to external (not authenticated)");
+          router.replace("/(external)/welcome");
+        }
+      } catch (error) {
+        console.error("❌ Navigation error:", error);
+        // Fallback navigation with retry
+        setTimeout(() => {
+          try {
+            if (isAuthenticated) {
+              router.push("/(internal)");
+            } else {
+              router.push("/(external)/welcome");
+            }
+          } catch (retryError) {
+            console.error("❌ Navigation retry failed:", retryError);
+          }
+        }, 500);
+      }
+    };
+
+    // Small delay to ensure navigation is fully ready
+    const navigationTimer = setTimeout(handleAuthNavigation, 50);
+
+    return () => clearTimeout(navigationTimer);
+  }, [isAuthenticated, initialized, navigationReady, loading]);
+
+  // Handle app state changes (for deep linking)
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: string) => {
+      if (nextAppState === "active") {
+        console.log("📱 App became active - refreshing session");
+        // Refresh session when app becomes active
+        supabase.auth.getSession();
+      }
+    };
+
+    const subscription = AppState.addEventListener(
+      "change",
+      handleAppStateChange,
+    );
+    return () => subscription?.remove();
   }, []);
 
   // Debug logging for auth state
@@ -155,10 +246,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
       hasSession: !!session,
       isAuthenticated,
       loading,
+      initialized,
+      navigationReady,
       userEmail: session?.user?.email,
       emailConfirmed: !!session?.user?.email_confirmed_at,
     });
-  }, [session, isAuthenticated, loading]);
+  }, [session, isAuthenticated, loading, initialized, navigationReady]);
 
   return (
     <AuthContext.Provider

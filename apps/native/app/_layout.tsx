@@ -11,7 +11,7 @@ import {
   ThemeProvider,
 } from "@react-navigation/native";
 import * as Linking from "expo-linking";
-import { Slot } from "expo-router";
+import { Slot, router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as React from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -52,25 +52,52 @@ function RootLayoutInner() {
   const { isDarkColorScheme } = useColorScheme();
 
   React.useEffect(() => {
-    // Handle deep link when app is already running
-    const handleDeepLink = (url: string) => {
-      console.log("🔗 Deep link received:", url);
-      // Expo Router will automatically handle routing based on the URL
+    let mounted = true;
+
+    const handleDeepLink = async (url: string) => {
+      console.log("🔗 Processing deep link:", url);
+
+      // Wait a bit to ensure navigation is ready
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      if (!mounted) return;
+
+      try {
+        // Extract the path from the deep link
+        const urlObj = new URL(url);
+        const path = urlObj.pathname;
+
+        console.log("🔗 Navigating to path:", path);
+
+        // Use replace to avoid navigation stack issues
+        if (path.startsWith("/(internal)") || path.startsWith("/(external)")) {
+          router.replace(path as any);
+        } else {
+          // Default handling for other paths
+          console.log("🔗 Unknown path, letting Expo Router handle it");
+        }
+      } catch (error) {
+        console.error("❌ Deep link parsing error:", error);
+      }
     };
+
+    // Handle initial URL when app starts from a link
+    Linking.getInitialURL().then((url) => {
+      if (url && mounted) {
+        console.log("🔗 Initial deep link:", url);
+        handleDeepLink(url);
+      }
+    });
 
     // Listen for incoming links when app is running
     const subscription = Linking.addEventListener("url", ({ url }) => {
-      handleDeepLink(url);
-    });
-
-    // Handle deep link when app starts from a link
-    Linking.getInitialURL().then((url) => {
-      if (url) {
+      if (mounted) {
         handleDeepLink(url);
       }
     });
 
     return () => {
+      mounted = false;
       subscription?.remove();
     };
   }, []);

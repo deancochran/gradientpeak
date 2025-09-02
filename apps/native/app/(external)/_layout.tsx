@@ -1,7 +1,7 @@
 // apps/native/app/(external)/_layout.tsx
 import { useAuth } from "@/lib/contexts";
 import { useColorScheme } from "@/lib/useColorScheme";
-import { Redirect, Stack } from "expo-router";
+import { Stack } from "expo-router";
 import React from "react";
 import { ActivityIndicator, Animated, View } from "react-native";
 
@@ -56,16 +56,12 @@ function AuthLoadingScreen() {
 
 export default function ExternalLayout() {
   const { isDarkColorScheme } = useColorScheme();
-  const { loading, isAuthenticated } = useAuth();
+  const { loading } = useAuth();
 
-  // Show loading screen while auth state is being determined
+  // Don't handle redirects here - let AuthProvider handle it
+  // Just show loading if still determining auth state
   if (loading) {
     return <AuthLoadingScreen />;
-  }
-
-  // Redirect to internal if authenticated
-  if (isAuthenticated) {
-    return <Redirect href="/(internal)" />;
   }
 
   const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";
