@@ -1,5 +1,5 @@
 // apps/native/app/(external)/_layout.tsx
-import { useAuth } from "@/lib/contexts";
+import { useAuth } from "@/contexts/AuthContext";
 import { useColorScheme } from "@/lib/useColorScheme";
 import { Stack } from "expo-router";
 import React from "react";

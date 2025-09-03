@@ -1,4 +1,4 @@
-import { useAuth } from "@/lib/contexts";
+import { useAuth } from "@/contexts/AuthContext";
 import { useColorScheme } from "@/lib/useColorScheme";
 import { useFocusEffect } from "expo-router";
 import React from "react";

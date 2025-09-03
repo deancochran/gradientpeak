@@ -1,9 +1,9 @@
 // apps/native/app/_layout.tsx
 import "@/global.css";
 
-import { AuthProvider } from "@/lib/contexts/AuthContext";
-import { AuthErrorBoundary } from "@/lib/contexts/AuthErrorBoundary";
-import { PermissionsProvider } from "@/lib/contexts/PermissionsContext";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { AuthErrorBoundary } from "@/contexts/AuthErrorBoundary";
+import { PermissionsProvider } from "@/contexts/PermissionsContext";
 import { useColorScheme } from "@/lib/useColorScheme";
 import {
   DarkTheme,
@@ -120,7 +120,7 @@ export default function RootLayout() {
   const { isDarkColorScheme } = useColorScheme();
 
   return (
-    <PermissionsProvider blockAppWhenMissing={false}>
+    <PermissionsProvider>
       <ThemeProvider value={isDarkColorScheme ? DARK_THEME : LIGHT_THEME}>
         <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
         <AuthErrorBoundary>

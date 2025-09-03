@@ -11,7 +11,7 @@ import {
 import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
-import { useAuth } from "@/lib/contexts";
+import { useAuth } from "@/contexts/AuthContext";
 import { activities, formatDistance, formatDuration } from "@/lib/supabase";
 
 interface UserStats {

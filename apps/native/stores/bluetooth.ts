@@ -3,7 +3,7 @@ import { BleManager, Device } from "react-native-ble-plx";
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 
-// Bluetooth Service UUIDs for common fitness sensors
+// Bluetooth Service UUIDs for fitness sensors
 export const BLE_SERVICES = {
   HEART_RATE: "180D",
   CYCLING_POWER: "1818",
@@ -26,6 +26,37 @@ export const BLE_CHARACTERISTICS = {
   BATTERY_LEVEL: "2A19",
 } as const;
 
+// Fitness service UUIDs for device detection
+const FITNESS_SERVICE_UUIDS = [
+  "180D", // Heart Rate
+  "1818", // Cycling Power
+  "1816", // Cycling Speed and Cadence
+  "1814", // Running Speed and Cadence
+] as const;
+
+// Fitness device name patterns
+const FITNESS_DEVICE_PATTERNS = [
+  /heart\s*rate/i,
+  /hrm/i,
+  /polar/i,
+  /garmin/i,
+  /wahoo/i,
+  /suunto/i,
+  /stages/i,
+  /quarq/i,
+  /kickr/i,
+  /trainer/i,
+  /power/i,
+  /cadence/i,
+  /speed/i,
+  /fitness/i,
+  /bike/i,
+  /cycling/i,
+  /running/i,
+  /watch/i,
+  /sensor/i,
+] as const;
+
 export interface SensorData {
   heartRate?: number;
   power?: number;
@@ -35,25 +66,28 @@ export interface SensorData {
   timestamp: number;
 }
 
+export type SensorType = "heartRate" | "power" | "cadence" | "speed";
+
+export type ConnectionStatus = "disconnected" | "connecting" | "connected";
+
 export interface BluetoothDevice {
   id: string;
   name: string;
   rssi: number;
   serviceUUIDs: string[];
   manufacturerData?: string;
-  isConnected: boolean;
-  isConnecting: boolean;
+  connectionStatus: ConnectionStatus;
+  supportedSensors: SensorType[];
+  deviceType: "fitness" | "other";
+  lastSeen: number;
+  connectionError?: string;
   deviceInfo?: {
     manufacturer?: string;
     model?: string;
     serialNumber?: string;
     batteryLevel?: number;
   };
-  supportedSensors: SensorType[];
-  lastSeen: number;
 }
-
-export type SensorType = "heartRate" | "power" | "cadence" | "speed";
 
 export interface DevicePreferences {
   preferredHeartRateDevice?: string;
@@ -62,18 +96,19 @@ export interface DevicePreferences {
   preferredSpeedDevice?: string;
   autoConnect: boolean;
   reconnectAttempts: number;
+  showUnknownDevices: boolean;
 }
 
 export interface BluetoothState {
   // BLE Manager
   bleManager: BleManager;
 
-  // Scanning
+  // State
   isScanning: boolean;
+  isBluetoothEnabled: boolean;
 
-  // Devices
-  discoveredDevices: Map<string, BluetoothDevice>;
-  connectedDevices: Map<string, BluetoothDevice>;
+  // Simplified: Single devices array instead of dual Maps
+  devices: BluetoothDevice[];
 
   // Sensor data
   currentSensorData: SensorData;
@@ -81,10 +116,6 @@ export interface BluetoothState {
 
   // Preferences
   devicePreferences: DevicePreferences;
-
-  // Connection state
-  isBluetoothEnabled: boolean;
-  connectionErrors: Map<string, string>;
 
   // Actions
   initializeBluetooth: () => Promise<void>;
@@ -98,6 +129,96 @@ export interface BluetoothState {
   clearSensorData: () => void;
   getDeviceInfo: (deviceId: string) => Promise<void>;
   autoConnectPreferredDevices: () => Promise<void>;
+  toggleShowUnknownDevices: () => void;
+
+  // Computed getters (derived state)
+  getConnectedDevices: () => BluetoothDevice[];
+  getFitnessDevices: () => BluetoothDevice[];
+  getDeviceById: (id: string) => BluetoothDevice | undefined;
+}
+
+// Helper functions
+function isFitnessDevice(device: Device): boolean {
+  const serviceUUIDs = device.serviceUUIDs || [];
+  const name = (device.name || "").toLowerCase();
+
+  // Check services first (most reliable)
+  const hasFitnessService = serviceUUIDs.some((uuid) =>
+    FITNESS_SERVICE_UUIDS.includes(uuid.toUpperCase() as any),
+  );
+
+  // Check name for fitness keywords
+  const hasFitnessName = FITNESS_DEVICE_PATTERNS.some((pattern) =>
+    pattern.test(name),
+  );
+
+  return hasFitnessService || hasFitnessName;
+}
+
+function getDeviceName(device: Device): string {
+  if (device.name?.trim()) {
+    return device.name;
+  }
+
+  // Fallback based on services
+  const serviceUUIDs = device.serviceUUIDs || [];
+  const upperCaseUUIDs = serviceUUIDs.map((uuid) => uuid.toUpperCase());
+
+  if (upperCaseUUIDs.includes("180D")) return "Heart Rate Monitor";
+  if (upperCaseUUIDs.includes("1818")) return "Power Meter";
+  if (upperCaseUUIDs.includes("1816")) return "Speed/Cadence Sensor";
+
+  return "Bluetooth Device";
+}
+
+function getSupportedSensors(serviceUUIDs: string[]): SensorType[] {
+  const sensors: SensorType[] = [];
+  const upperCaseUUIDs = serviceUUIDs.map((uuid) => uuid.toUpperCase());
+
+  if (upperCaseUUIDs.includes(BLE_SERVICES.HEART_RATE)) {
+    sensors.push("heartRate");
+  }
+  if (upperCaseUUIDs.includes(BLE_SERVICES.CYCLING_POWER)) {
+    sensors.push("power");
+  }
+  if (upperCaseUUIDs.includes(BLE_SERVICES.CYCLING_SPEED_CADENCE)) {
+    sensors.push("cadence", "speed");
+  }
+
+  return sensors;
+}
+
+// Device update helper
+function updateDevice(
+  devices: BluetoothDevice[],
+  deviceId: string,
+  updates: Partial<BluetoothDevice>,
+): BluetoothDevice[] {
+  return devices.map((device) =>
+    device.id === deviceId ? { ...device, ...updates } : device,
+  );
+}
+
+// Add or update device helper
+function upsertDevice(
+  devices: BluetoothDevice[],
+  newDevice: BluetoothDevice,
+): BluetoothDevice[] {
+  const existingIndex = devices.findIndex((d) => d.id === newDevice.id);
+
+  if (existingIndex >= 0) {
+    // Update existing device
+    const updated = [...devices];
+    updated[existingIndex] = {
+      ...updated[existingIndex],
+      ...newDevice,
+      lastSeen: Date.now(),
+    };
+    return updated;
+  } else {
+    // Add new device
+    return [...devices, { ...newDevice, lastSeen: Date.now() }];
+  }
 }
 
 export const useBluetoothStore = create<BluetoothState>()(
@@ -105,16 +226,15 @@ export const useBluetoothStore = create<BluetoothState>()(
     // Initial state
     bleManager: new BleManager(),
     isScanning: false,
-    discoveredDevices: new Map(),
-    connectedDevices: new Map(),
+    isBluetoothEnabled: false,
+    devices: [], // Simplified: single array instead of dual Maps
     currentSensorData: { timestamp: Date.now() },
     sensorDataHistory: [],
     devicePreferences: {
       autoConnect: true,
       reconnectAttempts: 3,
+      showUnknownDevices: false,
     },
-    isBluetoothEnabled: false,
-    connectionErrors: new Map(),
 
     // Initialize Bluetooth
     initializeBluetooth: async () => {
@@ -123,19 +243,20 @@ export const useBluetoothStore = create<BluetoothState>()(
         const state = await bleManager.state();
         set({ isBluetoothEnabled: state === "PoweredOn" });
 
-        // Listen for Bluetooth state changes
         bleManager.onStateChange((newState) => {
           set({ isBluetoothEnabled: newState === "PoweredOn" });
+
           if (newState === "PoweredOn") {
-            // Auto-connect to preferred devices when Bluetooth becomes available
             get().autoConnectPreferredDevices();
           } else if (newState === "PoweredOff") {
-            // Clear connected devices when Bluetooth is disabled
-            set({
-              connectedDevices: new Map(),
-              discoveredDevices: new Map(),
+            // Reset all devices to disconnected
+            set((state) => ({
+              devices: state.devices.map((device) => ({
+                ...device,
+                connectionStatus: "disconnected" as ConnectionStatus,
+              })),
               isScanning: false,
-            });
+            }));
           }
         }, true);
       } catch (error) {
@@ -144,22 +265,19 @@ export const useBluetoothStore = create<BluetoothState>()(
       }
     },
 
+    // Start scanning
     startScanning: async (timeout = 10000) => {
-      const { isBluetoothEnabled, bleManager, set } = get();
+      const { isBluetoothEnabled, bleManager, devicePreferences } = get();
 
       if (!isBluetoothEnabled) {
         console.warn("Bluetooth is not enabled.");
         return;
       }
 
-      set({
-        isScanning: true,
-        discoveredDevices: new Map(),
-        connectionErrors: new Map(),
-      });
+      set({ isScanning: true });
 
       bleManager.startDeviceScan(
-        null,
+        null, // Scan for all devices
         { allowDuplicates: false },
         (error, device) => {
           if (error) {
@@ -169,18 +287,34 @@ export const useBluetoothStore = create<BluetoothState>()(
           }
 
           if (device) {
-            set((state) => {
-              const newMap = new Map(state.discoveredDevices).set(
-                device.id,
-                device as BluetoothDevice,
-              );
-              return { discoveredDevices: newMap };
-            });
+            const isFitness = isFitnessDevice(device);
+            const shouldShow =
+              isFitness || devicePreferences.showUnknownDevices;
+
+            if (shouldShow) {
+              const bluetoothDevice: BluetoothDevice = {
+                id: device.id,
+                name: getDeviceName(device),
+                rssi: device.rssi || 0,
+                serviceUUIDs: device.serviceUUIDs || [],
+                manufacturerData: device.manufacturerData,
+                connectionStatus: "disconnected",
+                supportedSensors: getSupportedSensors(
+                  device.serviceUUIDs || [],
+                ),
+                deviceType: isFitness ? "fitness" : "other",
+                lastSeen: Date.now(),
+              };
+
+              set((state) => ({
+                devices: upsertDevice(state.devices, bluetoothDevice),
+              }));
+            }
           }
         },
       );
 
-      // Stop scanning after the specified timeout
+      // Stop scanning after timeout
       setTimeout(() => {
         bleManager.stopDeviceScan();
         set({ isScanning: false });
@@ -196,87 +330,65 @@ export const useBluetoothStore = create<BluetoothState>()(
 
     // Connect to device
     connectToDevice: async (deviceId: string) => {
-      const { bleManager, discoveredDevices } = get();
-      const device = discoveredDevices.get(deviceId);
+      const { bleManager, devices } = get();
+      const device = devices.find((d) => d.id === deviceId);
+
       if (!device) {
         throw new Error("Device not found");
       }
 
-      // Mark device as connecting
+      // Mark as connecting
       set((state) => ({
-        discoveredDevices: new Map(state.discoveredDevices).set(deviceId, {
-          ...device,
-          isConnecting: true,
+        devices: updateDevice(state.devices, deviceId, {
+          connectionStatus: "connecting",
+          connectionError: undefined,
         }),
-        connectionErrors: new Map(state.connectionErrors).set(deviceId, ""),
       }));
 
       try {
         const connectedDevice = await bleManager.connectToDevice(deviceId);
         await connectedDevice.discoverAllServicesAndCharacteristics();
-        const updatedDevice: BluetoothDevice = {
-          ...device,
-          isConnected: true,
-          isConnecting: false,
-        };
 
         // Subscribe to sensor data
         await subscribeToSensorData(connectedDevice, deviceId);
 
+        // Update connection status
+        set((state) => ({
+          devices: updateDevice(state.devices, deviceId, {
+            connectionStatus: "connected",
+          }),
+        }));
+
         // Get device information
         await get().getDeviceInfo(deviceId);
-
-        set((state) => ({
-          connectedDevices: new Map(state.connectedDevices).set(
-            deviceId,
-            updatedDevice,
-          ),
-          discoveredDevices: new Map(state.discoveredDevices).set(
-            deviceId,
-            updatedDevice,
-          ),
-        }));
       } catch (error) {
         console.error(`Failed to connect to device ${deviceId}:`, error);
 
         set((state) => ({
-          discoveredDevices: new Map(state.discoveredDevices).set(deviceId, {
-            ...device,
-            isConnecting: false,
-            isConnected: false,
+          devices: updateDevice(state.devices, deviceId, {
+            connectionStatus: "disconnected",
+            connectionError:
+              error instanceof Error ? error.message : "Connection failed",
           }),
-          connectionErrors: new Map(state.connectionErrors).set(
-            deviceId,
-            error instanceof Error ? error.message : "Connection failed",
-          ),
         }));
+
         throw error;
       }
     },
 
     // Disconnect from device
     disconnectFromDevice: async (deviceId: string) => {
-      const { bleManager, connectedDevices } = get();
+      const { bleManager } = get();
 
       try {
         await bleManager.cancelDeviceConnection(deviceId);
-        const device = connectedDevices.get(deviceId);
-        if (device) {
-          const updatedDevice = { ...device, isConnected: false };
 
-          set((state) => {
-            const newConnectedDevices = new Map(state.connectedDevices);
-            newConnectedDevices.delete(deviceId);
-
-            return {
-              connectedDevices: newConnectedDevices,
-              discoveredDevices: new Map(state.discoveredDevices).set(
-                deviceId,
-                updatedDevice,
-              ),
-            };
-          });
-        }
+        set((state) => ({
+          devices: updateDevice(state.devices, deviceId, {
+            connectionStatus: "disconnected",
+            connectionError: undefined,
+          }),
+        }));
       } catch (error) {
         console.error(`Failed to disconnect from device ${deviceId}:`, error);
         throw error;
@@ -285,14 +397,17 @@ export const useBluetoothStore = create<BluetoothState>()(
 
     // Disconnect all devices
     disconnectAllDevices: async () => {
-      const { connectedDevices } = get();
-      const disconnectPromises = Array.from(connectedDevices.keys()).map(
-        (deviceId) => get().disconnectFromDevice(deviceId),
+      const { getConnectedDevices } = get();
+      const connectedDevices = getConnectedDevices();
+
+      const disconnectPromises = connectedDevices.map((device) =>
+        get().disconnectFromDevice(device.id),
       );
+
       await Promise.allSettled(disconnectPromises);
     },
 
-    // Set preferred device for sensor type
+    // Set preferred device
     setPreferredDevice: (sensorType: SensorType, deviceId: string) => {
       set((state) => ({
         devicePreferences: {
@@ -328,78 +443,64 @@ export const useBluetoothStore = create<BluetoothState>()(
           (s) => s.uuid.toUpperCase() === BLE_SERVICES.DEVICE_INFORMATION,
         );
 
-        if (deviceInfoService) {
-          const deviceCharacteristics =
-            await bleManager.characteristicsForDevice(
-              deviceId,
-              deviceInfoService.uuid,
-            );
+        if (!deviceInfoService) return;
 
-          const manufacturerCharacteristic = deviceCharacteristics.find(
-            (c) =>
-              c.uuid.toUpperCase() === BLE_CHARACTERISTICS.MANUFACTURER_NAME,
-          );
-          const modelCharacteristic = deviceCharacteristics.find(
-            (c) => c.uuid.toUpperCase() === BLE_CHARACTERISTICS.MODEL_NUMBER,
-          );
-          const serialCharacteristic = deviceCharacteristics.find(
-            (c) => c.uuid.toUpperCase() === BLE_CHARACTERISTICS.SERIAL_NUMBER,
-          );
-          const batteryCharacteristic = deviceCharacteristics.find(
-            (c) => c.uuid.toUpperCase() === BLE_CHARACTERISTICS.BATTERY_LEVEL,
-          );
+        const characteristics = await bleManager.characteristicsForDevice(
+          deviceId,
+          deviceInfoService.uuid,
+        );
 
-          let deviceInfo = {};
-          if (manufacturerCharacteristic) {
-            const data = await manufacturerCharacteristic.read();
-            if (data?.value) {
-              deviceInfo = { ...deviceInfo, manufacturer: atob(data.value) };
-            }
-          }
-          if (modelCharacteristic) {
-            const data = await modelCharacteristic.read();
-            if (data?.value) {
-              deviceInfo = { ...deviceInfo, model: atob(data.value) };
-            }
-          }
-          if (serialCharacteristic) {
-            const data = await serialCharacteristic.read();
-            if (data?.value) {
-              deviceInfo = { ...deviceInfo, serialNumber: atob(data.value) };
-            }
-          }
-          if (batteryCharacteristic) {
-            const data = await batteryCharacteristic.read();
-            if (data?.value) {
-              deviceInfo = {
-                ...deviceInfo,
-                batteryLevel: Buffer.from(data.value, "base64").readUInt8(0),
-              };
-            }
-          }
+        const deviceInfo: any = {};
 
-          set((state) => {
-            const currentDevice =
-              state.connectedDevices.get(deviceId) ||
-              state.discoveredDevices.get(deviceId);
-            if (currentDevice) {
-              const updatedDevice = { ...currentDevice, deviceInfo };
-              const newConnectedDevices = new Map(state.connectedDevices).set(
-                deviceId,
-                updatedDevice,
-              );
-              const newDiscoveredDevices = new Map(state.discoveredDevices).set(
-                deviceId,
-                updatedDevice,
-              );
-              return {
-                connectedDevices: newConnectedDevices,
-                discoveredDevices: newDiscoveredDevices,
-              };
+        // Helper to read characteristic data
+        const readCharacteristic = async (uuid: string) => {
+          const char = characteristics.find(
+            (c) => c.uuid.toUpperCase() === uuid,
+          );
+          if (char) {
+            try {
+              const data = await char.read();
+              return data?.value ? atob(data.value) : undefined;
+            } catch (error) {
+              console.warn(`Failed to read ${uuid}:`, error);
+              return undefined;
             }
-            return state;
-          });
+          }
+        };
+
+        // Read device information
+        deviceInfo.manufacturer = await readCharacteristic(
+          BLE_CHARACTERISTICS.MANUFACTURER_NAME,
+        );
+        deviceInfo.model = await readCharacteristic(
+          BLE_CHARACTERISTICS.MODEL_NUMBER,
+        );
+        deviceInfo.serialNumber = await readCharacteristic(
+          BLE_CHARACTERISTICS.SERIAL_NUMBER,
+        );
+
+        // Read battery level (special handling for numeric value)
+        const batteryChar = characteristics.find(
+          (c) => c.uuid.toUpperCase() === BLE_CHARACTERISTICS.BATTERY_LEVEL,
+        );
+        if (batteryChar) {
+          try {
+            const data = await batteryChar.read();
+            if (data?.value) {
+              deviceInfo.batteryLevel = Buffer.from(
+                data.value,
+                "base64",
+              ).readUInt8(0);
+            }
+          } catch (error) {
+            console.warn("Failed to read battery level:", error);
+          }
         }
+
+        // Update device with info
+        set((state) => ({
+          devices: updateDevice(state.devices, deviceId, { deviceInfo }),
+        }));
       } catch (error) {
         console.error(`Failed to get device info for ${deviceId}:`, error);
       }
@@ -407,158 +508,188 @@ export const useBluetoothStore = create<BluetoothState>()(
 
     // Auto-connect to preferred devices
     autoConnectPreferredDevices: async () => {
-      const {
-        isBluetoothEnabled,
-        devicePreferences,
-        connectedDevices,
-        connectToDevice,
-      } = get();
+      const { isBluetoothEnabled, devicePreferences, getConnectedDevices } =
+        get();
 
-      if (!isBluetoothEnabled) {
-        return;
-      }
+      if (!isBluetoothEnabled) return;
 
-      const preferredDeviceIds = Object.values(devicePreferences).filter(
-        (id) => typeof id === "string",
-      ) as string[];
+      const connectedDeviceIds = new Set(
+        getConnectedDevices().map((d) => d.id),
+      );
+      const preferredDeviceIds = Object.values(devicePreferences)
+        .filter((id): id is string => typeof id === "string")
+        .filter((id) => !connectedDeviceIds.has(id));
 
-      const devicesToConnect = preferredDeviceIds.filter(
-        (id) => !connectedDevices.has(id),
+      if (preferredDeviceIds.length === 0) return;
+
+      console.log(
+        `Attempting to auto-connect to preferred devices: ${preferredDeviceIds.join(", ")}`,
       );
 
-      if (devicesToConnect.length > 0) {
-        console.log(
-          `Attempting to auto-connect to preferred devices: ${devicesToConnect.join(", ")}`,
-        );
-
-        const connectionPromises = devicesToConnect.map((deviceId) =>
-          connectToDevice(deviceId).catch((error) => {
+      const connectionPromises = preferredDeviceIds.map((deviceId) =>
+        get()
+          .connectToDevice(deviceId)
+          .catch((error) => {
             console.error(`Auto-connect failed for device ${deviceId}:`, error);
           }),
-        );
-        await Promise.allSettled(connectionPromises);
-      }
+      );
+
+      await Promise.allSettled(connectionPromises);
+    },
+
+    // Toggle showing unknown devices
+    toggleShowUnknownDevices: () => {
+      set((state) => ({
+        devicePreferences: {
+          ...state.devicePreferences,
+          showUnknownDevices: !state.devicePreferences.showUnknownDevices,
+        },
+      }));
+    },
+
+    // Computed getters (derived state)
+    getConnectedDevices: () => {
+      return get().devices.filter(
+        (device) => device.connectionStatus === "connected",
+      );
+    },
+
+    getFitnessDevices: () => {
+      return get().devices.filter((device) => device.deviceType === "fitness");
+    },
+
+    getDeviceById: (id: string) => {
+      return get().devices.find((device) => device.id === id);
     },
   })),
 );
 
-// Subscribe to sensor data
+// Subscribe to sensor data (simplified error handling)
 async function subscribeToSensorData(device: Device, deviceId: string) {
-  const { set } = useBluetoothStore.getState();
+  try {
+    const services = await device.services();
 
-  const services = await device.services();
+    // Heart Rate Service
+    await subscribeToHeartRate(services, deviceId);
 
-  // Handle Heart Rate Service
-  const heartRateService = services.find(
-    (s) => s.uuid.toUpperCase() === BLE_SERVICES.HEART_RATE,
-  );
-  if (heartRateService) {
-    const characteristics = await heartRateService.characteristics();
-    const heartRateCharacteristic = characteristics.find(
-      (c) =>
-        c.uuid.toUpperCase() === BLE_CHARACTERISTICS.HEART_RATE_MEASUREMENT,
-    );
-    if (heartRateCharacteristic) {
-      heartRateCharacteristic.monitor((error, char) => {
-        if (error) {
-          console.error("Heart Rate Monitor Error:", error);
-          return;
-        }
-        if (char && char.value) {
-          const heartRate = parseHeartRateData(char.value);
-          set((state) => ({
-            currentSensorData: { ...state.currentSensorData, heartRate },
-          }));
-        }
-      });
-    }
-  }
+    // Cycling Power Service
+    await subscribeToPower(services, deviceId);
 
-  // Handle Cycling Power Service
-  const cyclingPowerService = services.find(
-    (s) => s.uuid.toUpperCase() === BLE_SERVICES.CYCLING_POWER,
-  );
-  if (cyclingPowerService) {
-    const characteristics = await cyclingPowerService.characteristics();
-    const cyclingPowerCharacteristic = characteristics.find(
-      (c) =>
-        c.uuid.toUpperCase() === BLE_CHARACTERISTICS.CYCLING_POWER_MEASUREMENT,
-    );
-    if (cyclingPowerCharacteristic) {
-      cyclingPowerCharacteristic.monitor((error, char) => {
-        if (error) {
-          console.error("Cycling Power Monitor Error:", error);
-          return;
-        }
-        if (char && char.value) {
-          const power = parsePowerData(char.value);
-          set((state) => ({
-            currentSensorData: { ...state.currentSensorData, power },
-          }));
-        }
-      });
-    }
-  }
+    // CSC Service (Cadence/Speed)
+    await subscribeToCSC(services, deviceId);
 
-  // Handle CSC Service (Cadence/Speed)
-  const cscService = services.find(
-    (s) => s.uuid.toUpperCase() === BLE_SERVICES.CYCLING_SPEED_CADENCE,
-  );
-  if (cscService) {
-    const characteristics = await cscService.characteristics();
-    const cscCharacteristic = characteristics.find(
-      (c) => c.uuid.toUpperCase() === BLE_CHARACTERISTICS.CSC_MEASUREMENT,
-    );
-    if (cscCharacteristic) {
-      cscCharacteristic.monitor((error, char) => {
-        if (error) {
-          console.error("CSC Monitor Error:", error);
-          return;
-        }
-        if (char && char.value) {
-          const { cadence, speed } = parseCSCData(char.value);
-          set((state) => {
-            const newSensorData = { ...state.currentSensorData };
-            if (cadence !== undefined) newSensorData.cadence = cadence;
-            if (speed !== undefined) newSensorData.speed = speed;
-            return { currentSensorData: newSensorData };
-          });
-        }
-      });
-    }
-  }
+    // Update timestamp periodically
+    const updateInterval = setInterval(() => {
+      useBluetoothStore.setState((state) => {
+        const currentSensorData = {
+          ...state.currentSensorData,
+          timestamp: Date.now(),
+        };
 
-  // Update last seen timestamp and sensor data timestamp for all connected sensors
-  const updateTimestamp = setInterval(() => {
-    set((state) => {
-      const currentSensorData = {
-        ...state.currentSensorData,
-        timestamp: Date.now(),
-      };
-      const connected = state.connectedDevices.get(deviceId);
-      if (connected) {
-        const updated = { ...connected, lastSeen: Date.now() };
-        const newMap = new Map(state.connectedDevices).set(deviceId, updated);
         return {
-          connectedDevices: newMap,
+          devices: updateDevice(state.devices, deviceId, {
+            lastSeen: Date.now(),
+          }),
           currentSensorData,
           sensorDataHistory: [
             ...state.sensorDataHistory,
             currentSensorData,
           ].slice(-1000), // Keep last 1000 readings
         };
-      }
-      return state;
-    });
-  }, 1000); // Update every second
+      });
+    }, 1000);
 
-  // Cleanup function for subscriptions (not used in this file but good practice)
-  return () => {
-    // Note: React-Native-BLE-PLX doesn't have a simple way to unsubscribe all monitors
-    // at once. This would require storing individual subscriptions and calling remove() on each.
-    // For simplicity, we just clear the interval.
-    clearInterval(updateTimestamp);
-  };
+    return () => clearInterval(updateInterval);
+  } catch (error) {
+    console.error("Error subscribing to sensor data:", error);
+  }
+}
+
+// Helper functions for specific sensor subscriptions
+async function subscribeToHeartRate(services: any[], deviceId: string) {
+  const heartRateService = services.find(
+    (s) => s.uuid.toUpperCase() === BLE_SERVICES.HEART_RATE,
+  );
+  if (!heartRateService) return;
+
+  const characteristics = await heartRateService.characteristics();
+  const heartRateChar = characteristics.find(
+    (c) => c.uuid.toUpperCase() === BLE_CHARACTERISTICS.HEART_RATE_MEASUREMENT,
+  );
+
+  if (heartRateChar) {
+    heartRateChar.monitor((error, char) => {
+      if (error || !char?.value) return;
+
+      const heartRate = parseHeartRateData(char.value);
+      useBluetoothStore.setState((state) => ({
+        currentSensorData: {
+          ...state.currentSensorData,
+          heartRate,
+          timestamp: Date.now(),
+        },
+      }));
+    });
+  }
+}
+
+async function subscribeToPower(services: any[], deviceId: string) {
+  const powerService = services.find(
+    (s) => s.uuid.toUpperCase() === BLE_SERVICES.CYCLING_POWER,
+  );
+  if (!powerService) return;
+
+  const characteristics = await powerService.characteristics();
+  const powerChar = characteristics.find(
+    (c) =>
+      c.uuid.toUpperCase() === BLE_CHARACTERISTICS.CYCLING_POWER_MEASUREMENT,
+  );
+
+  if (powerChar) {
+    powerChar.monitor((error, char) => {
+      if (error || !char?.value) return;
+
+      const power = parsePowerData(char.value);
+      useBluetoothStore.setState((state) => ({
+        currentSensorData: {
+          ...state.currentSensorData,
+          power,
+          timestamp: Date.now(),
+        },
+      }));
+    });
+  }
+}
+
+async function subscribeToCSC(services: any[], deviceId: string) {
+  const cscService = services.find(
+    (s) => s.uuid.toUpperCase() === BLE_SERVICES.CYCLING_SPEED_CADENCE,
+  );
+  if (!cscService) return;
+
+  const characteristics = await cscService.characteristics();
+  const cscChar = characteristics.find(
+    (c) => c.uuid.toUpperCase() === BLE_CHARACTERISTICS.CSC_MEASUREMENT,
+  );
+
+  if (cscChar) {
+    cscChar.monitor((error, char) => {
+      if (error || !char?.value) return;
+
+      const { cadence, speed } = parseCSCData(char.value);
+      useBluetoothStore.setState((state) => {
+        const newSensorData = {
+          ...state.currentSensorData,
+          timestamp: Date.now(),
+        };
+
+        if (cadence !== undefined) newSensorData.cadence = cadence;
+        if (speed !== undefined) newSensorData.speed = speed;
+
+        return { currentSensorData: newSensorData };
+      });
+    });
+  }
 }
 
 // Data parsing functions
@@ -571,7 +702,7 @@ function parseHeartRateData(base64Data: string): number {
 
 function parsePowerData(base64Data: string): number {
   const buffer = Buffer.from(base64Data, "base64");
-  return buffer.readUInt16LE(2); // Instantaneous power is at bytes 2-3
+  return buffer.readUInt16LE(2); // Instantaneous power at bytes 2-3
 }
 
 function parseCSCData(base64Data: string): {
@@ -590,16 +721,16 @@ function parseCSCData(base64Data: string): {
     const wheelRevolutions = buffer.readUInt32LE(offset);
     const wheelEventTime = buffer.readUInt16LE(offset + 4);
     offset += 6;
-    // Calculate speed from wheel data if previous data exists
+    // Calculate speed from wheel data (requires previous values)
   }
 
   // Crank Revolution Data Present
   if (flags & 0x02) {
     const crankRevolutions = buffer.readUInt16LE(offset);
     const crankEventTime = buffer.readUInt16LE(offset + 2);
-    offset += 4;
-    // Calculate cadence from crank data if previous data exists
-    cadence = crankRevolutions; // Simplified for now
+    // Calculate cadence from crank data (requires previous values)
+    cadence = crankRevolutions; // Simplified - calculate actual RPM
   }
+
   return { cadence, speed };
 }

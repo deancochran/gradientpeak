@@ -25,15 +25,13 @@ export const useBluetooth = (options: BluetoothHookOptions = {}) => {
   const appState = useRef(AppState.currentState);
   const lastSensorDataRef = useRef<SensorData | null>(null);
 
+  const store = useBluetoothStore();
   const {
-    bleManager,
+    devices,
     isScanning,
-    discoveredDevices,
-    connectedDevices,
+    isBluetoothEnabled,
     currentSensorData,
     devicePreferences,
-    isBluetoothEnabled,
-    connectionErrors,
     initializeBluetooth,
     startScanning,
     stopScanning,
@@ -42,7 +40,14 @@ export const useBluetooth = (options: BluetoothHookOptions = {}) => {
     disconnectAllDevices,
     autoConnectPreferredDevices,
     clearSensorData,
-  } = useBluetoothStore();
+    getConnectedDevices,
+    getDeviceById,
+  } = store;
+
+  const connectedDevices = getConnectedDevices();
+  const discoveredDevices = devices.filter(
+    (d) => d.connectionStatus === "disconnected",
+  );
 
   // Initialize Bluetooth on mount
   useEffect(() => {
@@ -56,7 +61,7 @@ export const useBluetooth = (options: BluetoothHookOptions = {}) => {
       // Cleanup - disconnect all devices when component unmounts
       disconnectAllDevices().catch(console.error);
     };
-  }, [autoInitialize]);
+  }, [autoInitialize, initializeBluetooth, disconnectAllDevices]);
 
   // Handle app state changes
   useEffect(() => {
@@ -83,7 +88,7 @@ export const useBluetooth = (options: BluetoothHookOptions = {}) => {
       handleAppStateChange,
     );
     return () => subscription.remove();
-  }, [autoConnect, isBluetoothEnabled]);
+  }, [autoConnect, isBluetoothEnabled, autoConnectPreferredDevices]);
 
   // Monitor sensor data changes
   useEffect(() => {
@@ -102,13 +107,8 @@ export const useBluetooth = (options: BluetoothHookOptions = {}) => {
 
   // Monitor device connections
   useEffect(() => {
-    const connectedDeviceIds = Array.from(connectedDevices.keys());
-
-    connectedDeviceIds.forEach((deviceId) => {
-      const device = connectedDevices.get(deviceId);
+    connectedDevices.forEach((device) => {
       if (device && onDeviceConnected) {
-        // This is a simple way to detect new connections
-        // In a real app, you might want more sophisticated connection event handling
         onDeviceConnected(device.id, device.name);
       }
     });
@@ -117,13 +117,13 @@ export const useBluetooth = (options: BluetoothHookOptions = {}) => {
   // Monitor connection errors
   useEffect(() => {
     if (onConnectionError) {
-      connectionErrors.forEach((error, deviceId) => {
-        if (error) {
-          onConnectionError(deviceId, error);
+      devices.forEach((device) => {
+        if (device.connectionError) {
+          onConnectionError(device.id, device.connectionError);
         }
       });
     }
-  }, [connectionErrors, onConnectionError]);
+  }, [devices, onConnectionError]);
 
   // Scanning utilities
   const scanForDevices = async (duration: number = 10000) => {
@@ -145,7 +145,7 @@ export const useBluetooth = (options: BluetoothHookOptions = {}) => {
   const connectDevice = async (deviceId: string) => {
     try {
       await connectToDevice(deviceId);
-      const device = connectedDevices.get(deviceId);
+      const device = getDeviceById(deviceId);
       if (device && onDeviceConnected) {
         onDeviceConnected(device.id, device.name);
       }
@@ -162,7 +162,7 @@ export const useBluetooth = (options: BluetoothHookOptions = {}) => {
 
   const disconnectDevice = async (deviceId: string) => {
     try {
-      const device = connectedDevices.get(deviceId);
+      const device = getDeviceById(deviceId);
       await disconnectFromDevice(deviceId);
       if (device && onDeviceDisconnected) {
         onDeviceDisconnected(device.id, device.name);
@@ -177,7 +177,7 @@ export const useBluetooth = (options: BluetoothHookOptions = {}) => {
   const getConnectedDevicesBySensor = (
     sensorType: "heartRate" | "power" | "cadence" | "speed",
   ) => {
-    return Array.from(connectedDevices.values()).filter((device) =>
+    return connectedDevices.filter((device) =>
       device.supportedSensors.includes(sensorType),
     );
   };
@@ -198,9 +198,7 @@ export const useBluetooth = (options: BluetoothHookOptions = {}) => {
       `preferred${sensorType.charAt(0).toUpperCase() + sensorType.slice(1)}Device` as keyof typeof devicePreferences
     ] as string;
 
-    return preferredDeviceId
-      ? connectedDevices.get(preferredDeviceId)
-      : undefined;
+    return preferredDeviceId ? getDeviceById(preferredDeviceId) : undefined;
   };
 
   // Check if all preferred devices are connected
@@ -213,7 +211,7 @@ export const useBluetooth = (options: BluetoothHookOptions = {}) => {
     ].filter(Boolean);
 
     return preferredDevices.every(
-      (deviceId) => deviceId && connectedDevices.has(deviceId),
+      (deviceId) => deviceId && connectedDevices.some((d) => d.id === deviceId),
     );
   };
 
@@ -231,15 +229,15 @@ export const useBluetooth = (options: BluetoothHookOptions = {}) => {
 
     return {
       connectedSensors,
-      connectedDeviceCount: connectedDevices.size,
-      isReady: connectedDevices.size > 0,
+      connectedDeviceCount: connectedDevices.length,
+      isReady: connectedDevices.length > 0,
     };
   };
 
   // Get current sensor values with validation
   const getCurrentSensorValues = () => {
     const now = Date.now();
-    const dataAge = now - currentSensorData.timestamp;
+    const dataAge = now - (currentSensorData?.timestamp ?? 0);
     const isDataFresh = dataAge < 5000; // Consider data fresh if less than 5 seconds old
 
     return {
@@ -257,11 +255,10 @@ export const useBluetooth = (options: BluetoothHookOptions = {}) => {
     // State
     isScanning,
     isBluetoothEnabled,
-    discoveredDevices: Array.from(discoveredDevices.values()),
-    connectedDevices: Array.from(connectedDevices.values()),
+    discoveredDevices,
+    connectedDevices,
     currentSensorData,
     devicePreferences,
-    connectionErrors,
 
     // Actions
     scanForDevices,
@@ -282,9 +279,9 @@ export const useBluetooth = (options: BluetoothHookOptions = {}) => {
     getCurrentSensorValues,
 
     // Computed values
-    hasConnectedDevices: connectedDevices.size > 0,
-    connectedDeviceCount: connectedDevices.size,
-    discoveredDeviceCount: discoveredDevices.size,
+    hasConnectedDevices: connectedDevices.length > 0,
+    connectedDeviceCount: connectedDevices.length,
+    discoveredDeviceCount: discoveredDevices.length,
   };
 };
 

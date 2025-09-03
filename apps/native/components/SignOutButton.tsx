@@ -1,4 +1,4 @@
-import { useAuth } from "@/lib/contexts";
+import { useAuth } from "@/contexts/AuthContext";
 import { router } from "expo-router";
 import { Button } from "./ui/button";
 

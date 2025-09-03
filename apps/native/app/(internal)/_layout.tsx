@@ -4,7 +4,7 @@ import { Tabs } from "expo-router";
 import React from "react";
 import { ActivityIndicator, Animated, View } from "react-native";
 
-import { useAuth } from "@/lib/contexts";
+import { useAuth } from "@/contexts/AuthContext";
 import { useColorScheme } from "@/lib/useColorScheme";
 
 // Animated icon component
