@@ -1,4 +1,3 @@
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useGlobalPermissions } from "@/contexts/PermissionsContext";
 import { useBluetooth } from "@/hooks/useBluetooth";
@@ -7,6 +6,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Animated,
+  Button,
   Dimensions,
   Modal,
   ScrollView,
@@ -15,6 +15,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { BluetoothDeviceModal } from "./BluetoothDeviceModal";
 
 const screenWidth = Dimensions.get("window").width;
 
@@ -36,14 +37,12 @@ const formatDuration = (totalSeconds: number) => {
 interface RecordModalProps {
   visible: boolean;
   onClose: () => void;
-  onOpenBluetoothModal: () => void;
   bluetooth: ReturnType<typeof useBluetooth>;
 }
 
 export const RecordModal = ({
   visible,
   onClose,
-  onOpenBluetoothModal,
   bluetooth,
 }: RecordModalProps) => {
   const [selectedActivityType, setSelectedActivityType] = useState("running");
@@ -51,6 +50,7 @@ export const RecordModal = ({
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [duration, setDuration] = useState(0);
+  const [bluetoothModalVisible, setBluetoothModalVisible] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -130,6 +130,7 @@ export const RecordModal = ({
       setIsPaused(false);
       setDuration(0);
       setCurrentPage(0);
+      setBluetoothModalVisible(false); // Reset bluetooth modal state
 
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -139,6 +140,8 @@ export const RecordModal = ({
     } else {
       // Reset animation value when hidden
       fadeAnim.setValue(0);
+      // Also close bluetooth modal if record modal is closing
+      setBluetoothModalVisible(false);
     }
   }, [visible]);
 
@@ -184,6 +187,22 @@ export const RecordModal = ({
     );
   };
 
+  const handleOpenBluetoothModal = () => {
+    console.log("Opening Bluetooth modal from RecordModal");
+    setBluetoothModalVisible(true);
+  };
+
+  const handleCloseBluetoothModal = () => {
+    console.log("Closing Bluetooth modal from RecordModal");
+    setBluetoothModalVisible(false);
+  };
+
+  const handleDeviceSelect = (deviceId: string) => {
+    console.log("Device selected in RecordModal:", deviceId);
+    // Handle device selection here if needed
+    setBluetoothModalVisible(false);
+  };
+
   const renderFooterButtons = () => {
     if (!isRecording) {
       return (
@@ -226,142 +245,151 @@ export const RecordModal = ({
   };
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
-      testID="record-modal"
-    >
-      <Animated.View
-        style={[modalStyles.container, { opacity: fadeAnim }]}
-        testID="record-modal-container"
+    <>
+      <Modal
+        visible={visible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={onClose}
+        testID="record-modal"
       >
-        {/* Header */}
-        <View style={modalStyles.header}>
-          <TouchableOpacity style={modalStyles.closeButton} onPress={onClose}>
-            <Ionicons name="close" size={24} color="#111827" />
-          </TouchableOpacity>
-          <Text style={modalStyles.headerTitle}>
-            {isRecording ? "Recording Workout" : "Record Workout"}
-          </Text>
-          <TouchableOpacity style={modalStyles.activityTypeButton}>
+        <Animated.View
+          style={[modalStyles.container, { opacity: fadeAnim }]}
+          testID="record-modal-container"
+        >
+          {/* Header */}
+          <View style={modalStyles.header}>
+            <TouchableOpacity style={modalStyles.closeButton} onPress={onClose}>
+              <Ionicons name="close" size={24} color="#111827" />
+            </TouchableOpacity>
+            <Text style={modalStyles.headerTitle}>
+              {isRecording ? "Recording Workout" : "Record Workout"}
+            </Text>
+            <TouchableOpacity style={modalStyles.activityTypeButton}>
+              <Ionicons
+                name={
+                  activityTypes.find((type) => type.id === selectedActivityType)
+                    ?.icon as any
+                }
+                size={20}
+                color="#111827"
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* Bluetooth Status */}
+          <TouchableOpacity
+            style={modalStyles.bluetoothStatus}
+            onPress={handleOpenBluetoothModal}
+            testID="bluetooth-status-button"
+          >
             <Ionicons
               name={
-                activityTypes.find((type) => type.id === selectedActivityType)
-                  ?.icon as any
+                hasConnectedDevices && isBluetoothEnabled
+                  ? "bluetooth"
+                  : "bluetooth-outline"
               }
               size={20}
-              color="#111827"
+              color={
+                hasConnectedDevices && isBluetoothEnabled
+                  ? "#10b981"
+                  : "#9ca3af"
+              }
             />
+            <Text
+              style={[
+                modalStyles.bluetoothStatusText,
+                hasConnectedDevices && isBluetoothEnabled
+                  ? modalStyles.bluetoothConnectedText
+                  : modalStyles.bluetoothDisconnectedText,
+              ]}
+            >
+              {!isBluetoothEnabled
+                ? "Bluetooth Off - Tap to manage"
+                : hasConnectedDevices
+                  ? `${connectedDevices.length} sensor(s) connected`
+                  : "No sensors - Tap to connect"}
+            </Text>
+            <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
           </TouchableOpacity>
-        </View>
 
-        {/* Bluetooth Status */}
-        <TouchableOpacity
-          style={modalStyles.bluetoothStatus}
-          onPress={() => {
-            console.log("Bluetooth status pressed - opening modal");
-            onOpenBluetoothModal();
-          }}
-          testID="bluetooth-status-button"
-        >
-          <Ionicons
-            name={
-              hasConnectedDevices && isBluetoothEnabled
-                ? "bluetooth"
-                : "bluetooth-outline"
-            }
-            size={20}
-            color={
-              hasConnectedDevices && isBluetoothEnabled ? "#10b981" : "#9ca3af"
-            }
-          />
-          <Text
-            style={[
-              modalStyles.bluetoothStatusText,
-              hasConnectedDevices && isBluetoothEnabled
-                ? modalStyles.bluetoothConnectedText
-                : modalStyles.bluetoothDisconnectedText,
-            ]}
-          >
-            {!isBluetoothEnabled
-              ? "Bluetooth Off - Tap to manage"
-              : hasConnectedDevices
-                ? `${connectedDevices.length} sensor(s) connected`
-                : "No sensors - Tap to connect"}
-          </Text>
-          <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
-        </TouchableOpacity>
-
-        {/* Metrics */}
-        <View style={modalStyles.content}>
-          <ScrollView
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            onMomentumScrollEnd={(event) => {
-              const pageIndex = Math.round(
-                event.nativeEvent.contentOffset.x /
-                  event.nativeEvent.layoutMeasurement.width,
-              );
-              setCurrentPage(pageIndex);
-            }}
-            style={modalStyles.metricsContainer}
-          >
-            {workoutPages.map((page, index) => (
-              <View
-                key={index}
-                style={{
-                  width: screenWidth,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  paddingHorizontal: 40,
-                }}
-              >
-                <Card style={modalStyles.metricCard}>
-                  <View style={modalStyles.metricHeader}>
-                    <Text style={modalStyles.metricTitle}>{page.title}</Text>
-                    {page.isLive && (
-                      <View style={modalStyles.liveIndicator}>
-                        <View style={modalStyles.liveDot} />
-                        <Text style={modalStyles.liveText}>LIVE</Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text
-                    style={[
-                      modalStyles.metricValue,
-                      page.isLive && modalStyles.liveMetricValue,
-                    ]}
-                  >
-                    {page.value}
-                  </Text>
-                  <Text style={modalStyles.metricUnit}>{page.unit}</Text>
-                </Card>
-              </View>
-            ))}
-          </ScrollView>
-          <View style={modalStyles.pageIndicators}>
-            {workoutPages.map((_, index) => (
-              <View
-                key={index}
-                style={[
-                  modalStyles.pageIndicator,
-                  {
-                    backgroundColor:
-                      index === currentPage ? "#111827" : "#d1d5db",
-                  },
-                ]}
-              />
-            ))}
+          {/* Metrics */}
+          <View style={modalStyles.content}>
+            <ScrollView
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={(event) => {
+                const pageIndex = Math.round(
+                  event.nativeEvent.contentOffset.x /
+                    event.nativeEvent.layoutMeasurement.width,
+                );
+                setCurrentPage(pageIndex);
+              }}
+              style={modalStyles.metricsContainer}
+            >
+              {workoutPages.map((page, index) => (
+                <View
+                  key={index}
+                  style={{
+                    width: screenWidth,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    paddingHorizontal: 40,
+                  }}
+                >
+                  <Card style={modalStyles.metricCard}>
+                    <View style={modalStyles.metricHeader}>
+                      <Text style={modalStyles.metricTitle}>{page.title}</Text>
+                      {page.isLive && (
+                        <View style={modalStyles.liveIndicator}>
+                          <View style={modalStyles.liveDot} />
+                          <Text style={modalStyles.liveText}>LIVE</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text
+                      style={[
+                        modalStyles.metricValue,
+                        page.isLive && modalStyles.liveMetricValue,
+                      ]}
+                    >
+                      {page.value}
+                    </Text>
+                    <Text style={modalStyles.metricUnit}>{page.unit}</Text>
+                  </Card>
+                </View>
+              ))}
+            </ScrollView>
+            <View style={modalStyles.pageIndicators}>
+              {workoutPages.map((_, index) => (
+                <View
+                  key={index}
+                  style={[
+                    modalStyles.pageIndicator,
+                    {
+                      backgroundColor:
+                        index === currentPage ? "#111827" : "#d1d5db",
+                    },
+                  ]}
+                />
+              ))}
+            </View>
           </View>
-        </View>
 
-        {/* Footer */}
-        <View style={modalStyles.footer}>{renderFooterButtons()}</View>
-      </Animated.View>
-    </Modal>
+          {/* Footer */}
+          <View style={modalStyles.footer}>{renderFooterButtons()}</View>
+        </Animated.View>
+      </Modal>
+
+      {/* Bluetooth Device Modal - Now inside RecordModal */}
+      <BluetoothDeviceModal
+        visible={bluetoothModalVisible}
+        onClose={handleCloseBluetoothModal}
+        onDeviceSelect={handleDeviceSelect}
+        bluetooth={bluetooth}
+      />
+    </>
   );
 };
 
