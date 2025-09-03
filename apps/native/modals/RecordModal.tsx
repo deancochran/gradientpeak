@@ -260,7 +260,11 @@ export const RecordModal = ({
         {/* Bluetooth Status */}
         <TouchableOpacity
           style={modalStyles.bluetoothStatus}
-          onPress={onOpenBluetoothModal}
+          onPress={() => {
+            console.log("Bluetooth status pressed - opening modal");
+            onOpenBluetoothModal();
+          }}
+          testID="bluetooth-status-button"
         >
           <Ionicons
             name={
@@ -282,10 +286,10 @@ export const RecordModal = ({
             ]}
           >
             {!isBluetoothEnabled
-              ? "Bluetooth Off"
+              ? "Bluetooth Off - Tap to manage"
               : hasConnectedDevices
                 ? `${connectedDevices.length} sensor(s) connected`
-                : "No sensors"}
+                : "No sensors - Tap to connect"}
           </Text>
           <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
         </TouchableOpacity>

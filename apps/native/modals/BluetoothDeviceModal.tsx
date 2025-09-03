@@ -1,7 +1,7 @@
 import { useGlobalPermissions } from "@/contexts/PermissionsContext";
 import { useBluetooth } from "@/hooks/useBluetooth";
 import { Ionicons } from "@expo/vector-icons";
-import React from "react";
+import React, { useEffect } from "react";
 import {
   Alert,
   Modal,
@@ -35,6 +35,15 @@ export const BluetoothDeviceModal = ({
 }: BluetoothDeviceModalProps) => {
   const { permissions, requestSinglePermission } = useGlobalPermissions();
 
+  // Debug logging
+  useEffect(() => {
+    console.log("🔵 BluetoothDeviceModal - visible prop changed:", visible);
+  }, [visible]);
+
+  useEffect(() => {
+    console.log("🔵 BluetoothDeviceModal - component mounted/updated");
+  });
+
   const {
     isScanning,
     discoveredDevices,
@@ -46,6 +55,7 @@ export const BluetoothDeviceModal = ({
   } = bluetooth;
 
   const handleScanPress = async () => {
+    console.log("🔍 Scan button pressed");
     if (isScanning) {
       stopScanForDevices();
       return;
@@ -53,16 +63,19 @@ export const BluetoothDeviceModal = ({
 
     const isBluetoothPermissionGranted = permissions.bluetooth?.granted;
     if (!isBluetoothPermissionGranted) {
+      console.log("🔍 Requesting bluetooth permission");
       await requestSinglePermission("bluetooth");
       return;
     }
 
     if (isBluetoothEnabled) {
+      console.log("🔍 Starting device scan");
       scanForDevices(10000);
     }
   };
 
   const handleDevicePress = async (device: BluetoothDevice) => {
+    console.log("📱 Device pressed:", device.name);
     if (device.isConnected) {
       onDeviceSelect(device.id);
       onClose();
@@ -72,23 +85,43 @@ export const BluetoothDeviceModal = ({
         onDeviceSelect(device.id);
         onClose();
       } catch (error) {
+        console.log("❌ Connection failed:", error);
         Alert.alert("Connection Failed", "Could not connect to device");
       }
     }
   };
+
+  const handleClose = () => {
+    console.log("❌ Closing Bluetooth modal");
+    onClose();
+  };
+
+  // Debug render
+  console.log("🔵 BluetoothDeviceModal rendering with visible:", visible);
 
   return (
     <Modal
       visible={visible}
       animationType="slide"
       presentationStyle="pageSheet"
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
+      transparent={false}
+      testID="bluetooth-device-modal"
     >
       <View style={bluetoothModalStyles.container}>
+        <View style={bluetoothModalStyles.debugInfo}>
+          <Text style={bluetoothModalStyles.debugText}>
+            Modal Visible: {visible ? "YES" : "NO"}
+          </Text>
+          <Text style={bluetoothModalStyles.debugText}>
+            Bluetooth Enabled: {isBluetoothEnabled ? "YES" : "NO"}
+          </Text>
+        </View>
+
         <View style={bluetoothModalStyles.header}>
           <TouchableOpacity
             style={bluetoothModalStyles.closeButton}
-            onPress={onClose}
+            onPress={handleClose}
           >
             <Ionicons name="close" size={24} color="#111827" />
           </TouchableOpacity>
@@ -130,7 +163,7 @@ export const BluetoothDeviceModal = ({
                 >
                   <View style={bluetoothModalStyles.deviceInfo}>
                     <Text style={bluetoothModalStyles.deviceName}>
-                      {device.name}
+                      {device.name || "Unknown Device"}
                     </Text>
                     <View style={bluetoothModalStyles.sensorTypes}>
                       {device.supportedSensors.map((sensor) => (
@@ -172,7 +205,7 @@ export const BluetoothDeviceModal = ({
                   >
                     <View style={bluetoothModalStyles.deviceInfo}>
                       <Text style={bluetoothModalStyles.deviceName}>
-                        {device.name}
+                        {device.name || "Unknown Device"}
                       </Text>
                       <View style={bluetoothModalStyles.sensorTypes}>
                         {device.supportedSensors.map((sensor) => (
@@ -215,6 +248,7 @@ export const BluetoothDeviceModal = ({
 
           {!isScanning &&
             discoveredDevices.length === 0 &&
+            connectedDevices.length === 0 &&
             isBluetoothEnabled && (
               <View style={bluetoothModalStyles.emptyState}>
                 <Ionicons name="bluetooth-outline" size={48} color="#d1d5db" />
@@ -222,10 +256,76 @@ export const BluetoothDeviceModal = ({
                   No devices found
                 </Text>
                 <Text style={bluetoothModalStyles.emptyStateSubtext}>
-                  Make sure your fitness devices are in pairing mode
+                  Make sure your fitness devices are in pairing mode and tap the
+                  scan button
                 </Text>
+                <TouchableOpacity
+                  style={bluetoothModalStyles.scanAgainButton}
+                  onPress={handleScanPress}
+                >
+                  <Text style={bluetoothModalStyles.scanAgainButtonText}>
+                    Scan for Devices
+                  </Text>
+                </TouchableOpacity>
               </View>
             )}
+
+          {/* Always show some test devices for debugging */}
+          <View style={bluetoothModalStyles.debugSection}>
+            <Text style={bluetoothModalStyles.sectionTitle}>
+              Test Devices (Debug)
+            </Text>
+            <TouchableOpacity
+              style={bluetoothModalStyles.deviceCard}
+              onPress={() => {
+                console.log("Test device selected");
+                onDeviceSelect("test-device-1");
+                handleClose();
+              }}
+            >
+              <View style={bluetoothModalStyles.deviceInfo}>
+                <Text style={bluetoothModalStyles.deviceName}>
+                  Test Heart Rate Monitor
+                </Text>
+                <View style={bluetoothModalStyles.sensorTypes}>
+                  <View style={bluetoothModalStyles.sensorChip}>
+                    <Text style={bluetoothModalStyles.sensorChipText}>
+                      Heart Rate
+                    </Text>
+                  </View>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={bluetoothModalStyles.deviceCard}
+              onPress={() => {
+                console.log("Test device 2 selected");
+                onDeviceSelect("test-device-2");
+                handleClose();
+              }}
+            >
+              <View style={bluetoothModalStyles.deviceInfo}>
+                <Text style={bluetoothModalStyles.deviceName}>
+                  Test Power Meter
+                </Text>
+                <View style={bluetoothModalStyles.sensorTypes}>
+                  <View style={bluetoothModalStyles.sensorChip}>
+                    <Text style={bluetoothModalStyles.sensorChipText}>
+                      Power
+                    </Text>
+                  </View>
+                  <View style={bluetoothModalStyles.sensorChip}>
+                    <Text style={bluetoothModalStyles.sensorChipText}>
+                      Cadence
+                    </Text>
+                  </View>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </View>
     </Modal>
@@ -240,8 +340,17 @@ const bluetoothModalStyles = StyleSheet.create({
     paddingBottom: 30,
     paddingHorizontal: 20,
     backgroundColor: "#fff",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+  },
+  debugInfo: {
+    backgroundColor: "#f3f4f6",
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  debugText: {
+    fontSize: 12,
+    color: "#374151",
+    fontWeight: "500",
   },
   header: {
     flexDirection: "row",
@@ -289,10 +398,11 @@ const bluetoothModalStyles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 2,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
   },
   connectedDeviceCard: {
     backgroundColor: "#f0f9ff",
-    borderWidth: 1,
     borderColor: "#bae6fd",
   },
   deviceInfo: { flexShrink: 1, marginRight: 10 },
@@ -326,12 +436,41 @@ const bluetoothModalStyles = StyleSheet.create({
     paddingVertical: 20,
   },
   scanningText: { fontSize: 14, color: "#6b7280" },
-  emptyState: { alignItems: "center", justifyContent: "center", marginTop: 40 },
+  emptyState: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 40,
+    paddingHorizontal: 20,
+  },
   emptyStateText: {
     fontSize: 18,
     fontWeight: "600",
     color: "#d1d5db",
     marginBottom: 8,
+    marginTop: 16,
   },
-  emptyStateSubtext: { fontSize: 14, color: "#9ca3af", textAlign: "center" },
+  emptyStateSubtext: {
+    fontSize: 14,
+    color: "#9ca3af",
+    textAlign: "center",
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  scanAgainButton: {
+    backgroundColor: "#111827",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  scanAgainButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  debugSection: {
+    marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 2,
+    borderTopColor: "#fbbf24",
+  },
 });
