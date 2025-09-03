@@ -464,23 +464,18 @@ export const useBluetooth = () => {
     (duration: number = 15000) => {
       if (!isBluetoothEnabled || isScanning) return;
 
-      console.log("🔍 Starting dynamic Bluetooth scan for all devices...");
+      console.log("🔍 Starting Bluetooth scan (filtering unknown devices)...");
+
       updateGlobalState((prev: any) => ({ ...prev, isScanning: true }));
 
-      // Clear any existing timeout
       if (scanTimeoutRef.current) {
         clearTimeout(scanTimeoutRef.current);
         scanTimeoutRef.current = null;
       }
 
-      // Scan for ALL devices (no service filter)
       manager.startDeviceScan(
-        null, // No service filter - scan all devices
-        {
-          allowDuplicates: false,
-          scanMode: 1, // Low power scan mode
-          callbackType: 1, // All matches
-        },
+        null,
+        { allowDuplicates: false, scanMode: 1, callbackType: 1 },
         (error, device) => {
           if (error) {
             console.warn("❌ BLE scan error:", error);
@@ -489,20 +484,28 @@ export const useBluetooth = () => {
           }
 
           if (device) {
-            console.log(
-              "📱 Found device:",
-              device.name || "Unknown",
-              "RSSI:",
-              device.rssi,
-              "Services:",
-              device.serviceUUIDs?.length || 0,
-            );
-            addOrUpdateDevice(device);
+            // FILTER: Only devices with a valid name
+            if (device.name && device.name.trim() !== "") {
+              console.log(
+                "📱 Found device:",
+                device.name,
+                "RSSI:",
+                device.rssi,
+                "Services:",
+                device.serviceUUIDs?.length || 0,
+              );
+              addOrUpdateDevice(device);
+            } else {
+              console.log(
+                "⚪ Skipping unknown/unidentifiable device:",
+                device.id,
+              );
+            }
           }
         },
       );
 
-      // Set timeout to stop scanning
+      // Stop scan after duration
       scanTimeoutRef.current = setTimeout(() => {
         stopScan();
       }, duration) as unknown as number;
