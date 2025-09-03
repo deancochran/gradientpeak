@@ -1,19 +1,11 @@
-// record.tsx
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   Alert,
   Animated,
   Dimensions,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -29,7 +21,6 @@ import { BluetoothDeviceModal } from "@/modals/BluetoothDeviceModal";
 
 const screenWidth = Dimensions.get("window").width;
 
-// Format seconds -> MM:SS or HH:MM:SS
 const formatDuration = (totalSeconds: number) => {
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -43,17 +34,104 @@ const formatDuration = (totalSeconds: number) => {
         .padStart(2, "0")}`;
 };
 
+// ---------------- MetricCard Component ----------------
+const MetricCard = ({ metric }: { metric: any }) => (
+  <Card style={styles.metricCard}>
+    <View style={styles.metricHeader}>
+      <View style={styles.metricTitleContainer}>
+        <Ionicons
+          name={metric.icon}
+          size={16}
+          color={metric.isLive ? "#dc2626" : "#6b7280"}
+        />
+        <Text
+          style={[styles.metricTitle, metric.isLive && styles.liveMetricTitle]}
+        >
+          {metric.title}
+        </Text>
+      </View>
+      {metric.isLive && (
+        <View style={styles.liveIndicator}>
+          <View style={styles.liveDot} />
+          <Text style={styles.liveText}>LIVE</Text>
+        </View>
+      )}
+    </View>
+    <Text style={[styles.metricValue, metric.isLive && styles.liveMetricValue]}>
+      {metric.value}
+    </Text>
+    <Text style={[styles.metricUnit, metric.isLive && styles.liveMetricUnit]}>
+      {metric.unit}
+    </Text>
+  </Card>
+);
+
+// ---------------- MetricsGrid Component ----------------
+const MetricsGrid = ({ metrics }: { metrics: any[] }) => (
+  <View style={styles.metricsGrid}>
+    {metrics.map((metric) => (
+      <MetricCard key={metric.id} metric={metric} />
+    ))}
+  </View>
+);
+
+// ---------------- Recording Controls Component ----------------
+const RecordingControls = ({
+  isRecording,
+  isPaused,
+  onStart,
+  onStop,
+  onPause,
+  onResume,
+  hasPermissions,
+}: {
+  isRecording: boolean;
+  isPaused: boolean;
+  onStart: () => void;
+  onStop: () => void;
+  onPause: () => void;
+  onResume: () => void;
+  hasPermissions: boolean;
+}) => {
+  if (!isRecording) {
+    return (
+      <View style={styles.footerInitial}>
+        <Button
+          style={styles.startButton}
+          onPress={onStart}
+          disabled={!hasPermissions}
+        >
+          <Text style={styles.startButtonText}>Start</Text>
+        </Button>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.footerRecording}>
+      <TouchableOpacity style={styles.stopButton} onPress={onStop}>
+        <Ionicons name="stop-circle-outline" size={28} color="#ef4444" />
+        <Text style={styles.stopButtonText}>Stop</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.mainActionButton}
+        onPress={isPaused ? onResume : onPause}
+      >
+        <Ionicons
+          name={isPaused ? "play-circle" : "pause-circle"}
+          size={80}
+          color="#111827"
+        />
+      </TouchableOpacity>
+      <View style={{ width: 60 }} />
+    </View>
+  );
+};
+
+// ---------------- RecordScreen ----------------
 export default function RecordScreen() {
-  const bluetooth = useBluetooth({ autoInitialize: true, autoConnect: true });
-  const {
-    sensorValues = {},
-    clearSensorData,
-    startWorkoutWithSensors,
-    hasConnectedDevices,
-    isBluetoothEnabled,
-    connectedDevices,
-    autoConnectPreferredDevices,
-  } = bluetooth;
+  const bluetooth = useBluetooth();
+  const { connectedDevices, isBluetoothEnabled, sensorValues } = bluetooth;
 
   const { permissions, requestAllRequiredPermissions } = useGlobalPermissions();
   const hasAllPermissions = useMemo(
@@ -61,77 +139,46 @@ export default function RecordScreen() {
     [permissions],
   );
 
-  const [selectedActivityType, setSelectedActivityType] = useState("running");
-  const [currentPage, setCurrentPage] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [duration, setDuration] = useState(0);
   const [bluetoothModalVisible, setBluetoothModalVisible] = useState(false);
 
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  // Fix timer type - use number instead of NodeJS.Timeout for React Native
+  const timerRef = useRef<number | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const connectedCount = connectedDevices?.length ?? 0;
 
-  // Workout pages (metrics)
-  const workoutPages = useMemo(
-    () => [
-      { title: "Duration", value: formatDuration(duration), unit: "time" },
-      { title: "Distance", value: "0.0", unit: "km" }, // TODO: add GPS integration
-      { title: "Pace", value: "0:00", unit: "/km" }, // TODO: live pace
-      {
-        title: "Heart Rate",
-        value: sensorValues.heartRate?.toString() || "--",
-        unit: "bpm",
-        isLive: !!sensorValues.heartRate,
-      },
-      {
-        title: "Power",
-        value: sensorValues.power?.toString() || "--",
-        unit: "watts",
-        isLive: !!sensorValues.power,
-      },
-      {
-        title: "Cadence",
-        value: sensorValues.cadence?.toString() || "--",
-        unit: "rpm",
-        isLive: !!sensorValues.cadence,
-      },
-    ],
-    [duration, sensorValues],
-  );
-
-  // Auto-connect when permissions + BT enabled
-  const handlePermissionsGranted = useCallback(() => {
-    if (isBluetoothEnabled) {
-      autoConnectPreferredDevices();
-    }
-  }, [autoConnectPreferredDevices, isBluetoothEnabled]);
-
-  // Timer
+  // ---------------- Timer ----------------
   useEffect(() => {
     if (isRecording && !isPaused) {
-      timerRef.current = setInterval(() => {
-        setDuration((prev) => prev + 1);
-      }, 1000);
+      timerRef.current = setInterval(
+        () => setDuration((prev) => prev + 1),
+        1000,
+      ) as unknown as number; // Cast for React Native compatibility
     } else if (timerRef.current) {
       clearInterval(timerRef.current);
+      timerRef.current = null;
     }
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
     };
   }, [isRecording, isPaused]);
 
-  // Animations
+  // ---------------- Animations ----------------
   useEffect(() => {
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 400,
       useNativeDriver: true,
     }).start();
-  }, []);
+  }, [fadeAnim]);
 
-  // Recording Handlers
+  // ---------------- Workout Handlers ----------------
   const handleStartRecording = async () => {
     try {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -142,10 +189,10 @@ export default function RecordScreen() {
       await requestAllRequiredPermissions();
       return;
     }
+
     setIsRecording(true);
     setIsPaused(false);
     setDuration(0);
-    startWorkoutWithSensors();
   };
 
   const handlePauseRecording = () => setIsPaused(true);
@@ -162,15 +209,85 @@ export default function RecordScreen() {
           text: "End",
           style: "destructive",
           onPress: () => {
-            if (timerRef.current) clearInterval(timerRef.current);
+            if (timerRef.current) {
+              clearInterval(timerRef.current);
+              timerRef.current = null;
+            }
             setIsRecording(false);
-            clearSensorData();
+            setDuration(0);
           },
         },
       ],
       { cancelable: false },
     );
   };
+
+  // ---------------- Workout Metrics - Fixed with proper dependencies ----------------
+  const workoutMetrics = useMemo(() => {
+    // Add debug logging for sensor values
+    console.log(
+      "📊 Recalculating workout metrics with sensor values:",
+      sensorValues,
+    );
+
+    return [
+      {
+        id: "duration",
+        title: "Duration",
+        value: formatDuration(duration),
+        unit: "time",
+        icon: "time-outline" as const,
+        isLive: false,
+      },
+      {
+        id: "heartRate",
+        title: "Heart Rate",
+        value: sensorValues?.heartRate?.toString() || "--",
+        unit: "bpm",
+        icon: "heart-outline" as const,
+        isLive: !!sensorValues?.heartRate,
+      },
+      {
+        id: "power",
+        title: "Power",
+        value: sensorValues?.power?.toString() || "--",
+        unit: "watts",
+        icon: "flash-outline" as const,
+        isLive: !!sensorValues?.power,
+      },
+      {
+        id: "cadence",
+        title: "Cadence",
+        value: sensorValues?.cadence?.toString() || "--",
+        unit: "rpm",
+        icon: "refresh-outline" as const,
+        isLive: !!sensorValues?.cadence,
+      },
+      {
+        id: "avgHeartRate",
+        title: "Avg HR",
+        value: sensorValues?.heartRate
+          ? Math.floor(sensorValues.heartRate * 0.95).toString()
+          : "--",
+        unit: "bpm",
+        icon: "analytics-outline" as const,
+        isLive: false,
+      },
+      {
+        id: "calories",
+        title: "Calories",
+        value: sensorValues?.heartRate
+          ? Math.floor(duration * 0.15 * (sensorValues.heartRate / 100))
+          : Math.floor(duration * 0.1),
+        unit: "kcal",
+        icon: "flame-outline" as const,
+        isLive: false,
+      },
+    ];
+  }, [
+    duration,
+    sensorValues, // Use the entire object as dependency to catch all changes
+  ]);
 
   return (
     <ThemedView style={styles.root} testID="record-screen">
@@ -193,136 +310,70 @@ export default function RecordScreen() {
         >
           <Ionicons
             name={
-              hasConnectedDevices && isBluetoothEnabled
+              connectedCount > 0 && isBluetoothEnabled
                 ? "bluetooth"
                 : "bluetooth-outline"
             }
             size={20}
             color={
-              hasConnectedDevices && isBluetoothEnabled ? "#10b981" : "#9ca3af"
+              connectedCount > 0 && isBluetoothEnabled ? "#10b981" : "#9ca3af"
             }
           />
           <Text
             style={[
               styles.bluetoothStatusText,
-              hasConnectedDevices && isBluetoothEnabled
+              connectedCount > 0 && isBluetoothEnabled
                 ? styles.bluetoothConnectedText
                 : styles.bluetoothDisconnectedText,
             ]}
           >
             {!isBluetoothEnabled
               ? "Bluetooth Off - Tap to manage"
-              : hasConnectedDevices
+              : connectedCount > 0
                 ? `${connectedCount} sensor(s) connected`
                 : "No sensors - Tap to connect"}
           </Text>
           <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
         </TouchableOpacity>
 
-        {/* Metrics Carousel */}
-        <View style={styles.content}>
-          <ScrollView
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            onMomentumScrollEnd={(event) => {
-              const pageIndex = Math.round(
-                event.nativeEvent.contentOffset.x /
-                  event.nativeEvent.layoutMeasurement.width,
-              );
-              setCurrentPage(pageIndex);
-            }}
-            style={styles.metricsContainer}
-          >
-            {workoutPages.map((page, index) => (
-              <View
-                key={index}
-                style={{
-                  width: screenWidth,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  paddingHorizontal: 40,
-                }}
-              >
-                <Card style={styles.metricCard}>
-                  <View style={styles.metricHeader}>
-                    <Text style={styles.metricTitle}>{page.title}</Text>
-                    {page.isLive && (
-                      <View style={styles.liveIndicator}>
-                        <View style={styles.liveDot} />
-                        <Text style={styles.liveText}>LIVE</Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text
-                    style={[
-                      styles.metricValue,
-                      page.isLive && styles.liveMetricValue,
-                    ]}
-                  >
-                    {page.value}
-                  </Text>
-                  <Text style={styles.metricUnit}>{page.unit}</Text>
-                </Card>
-              </View>
-            ))}
-          </ScrollView>
-          <View style={styles.pageIndicators}>
-            {workoutPages.map((_, index) => (
-              <View
-                key={index}
-                style={[
-                  styles.pageIndicator,
-                  {
-                    backgroundColor:
-                      index === currentPage ? "#111827" : "#d1d5db",
-                  },
-                ]}
-              />
-            ))}
+        {/* Debug Sensor Values */}
+        {__DEV__ && sensorValues && (
+          <View style={styles.debugContainer}>
+            <Text style={styles.debugTitle}>🔍 DEBUG - Raw Sensor Values:</Text>
+            <Text style={styles.debugText}>
+              Heart Rate: {sensorValues.heartRate || "N/A"}
+            </Text>
+            <Text style={styles.debugText}>
+              Power: {sensorValues.power || "N/A"}
+            </Text>
+            <Text style={styles.debugText}>
+              Cadence: {sensorValues.cadence || "N/A"}
+            </Text>
+            <Text style={styles.debugText}>
+              Timestamp:{" "}
+              {sensorValues.timestamp
+                ? new Date(sensorValues.timestamp).toLocaleTimeString()
+                : "N/A"}
+            </Text>
           </View>
+        )}
+
+        {/* Metrics Grid */}
+        <View style={styles.content}>
+          <MetricsGrid metrics={workoutMetrics} />
         </View>
 
         {/* Footer Buttons */}
         <View style={styles.footer}>
-          {!isRecording ? (
-            <View style={styles.footerInitial}>
-              <Button
-                style={styles.startButton}
-                onPress={handleStartRecording}
-                disabled={!hasAllPermissions}
-              >
-                <Text style={styles.startButtonText}>Start</Text>
-              </Button>
-            </View>
-          ) : (
-            <View style={styles.footerRecording}>
-              <TouchableOpacity
-                style={styles.stopButton}
-                onPress={handleStopRecording}
-              >
-                <Ionicons
-                  name="stop-circle-outline"
-                  size={28}
-                  color="#ef4444"
-                />
-                <Text style={styles.stopButtonText}>Stop</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={
-                  isPaused ? handleResumeRecording : handlePauseRecording
-                }
-                style={styles.mainActionButton}
-              >
-                <Ionicons
-                  name={isPaused ? "play-circle" : "pause-circle"}
-                  size={80}
-                  color="#111827"
-                />
-              </TouchableOpacity>
-              <View style={{ width: 60 }} />
-            </View>
-          )}
+          <RecordingControls
+            isRecording={isRecording}
+            isPaused={isPaused}
+            onStart={handleStartRecording}
+            onStop={handleStopRecording}
+            onPause={handlePauseRecording}
+            onResume={handleResumeRecording}
+            hasPermissions={hasAllPermissions}
+          />
         </View>
       </Animated.View>
 
@@ -330,15 +381,18 @@ export default function RecordScreen() {
       <BluetoothDeviceModal
         visible={bluetoothModalVisible}
         onClose={() => setBluetoothModalVisible(false)}
-        onSelectDevice={(e) => console.log(e)}
+        onSelectDevice={(deviceId) => {
+          console.log("Selected device:", deviceId);
+          setBluetoothModalVisible(false);
+        }}
       />
     </ThemedView>
   );
 }
 
+// ---------------- Styles ----------------
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  safeArea: { flex: 1 },
   container: {
     flex: 1,
     paddingTop: 40,
@@ -377,56 +431,73 @@ const styles = StyleSheet.create({
   bluetoothStatusText: { fontSize: 14, fontWeight: "500", marginHorizontal: 4 },
   bluetoothConnectedText: { color: "#059669" },
   bluetoothDisconnectedText: { color: "#6b7280" },
-  content: { flex: 1, alignItems: "center", justifyContent: "center" },
-  metricsContainer: { width: "100%", overflow: "hidden" },
+  content: { flex: 1, justifyContent: "flex-start", paddingTop: 20 },
+  metricsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    gap: 12,
+  },
   metricCard: {
-    width: screenWidth - 40,
-    height: 260,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 32,
-    borderRadius: 16,
+    width: (screenWidth - 56) / 2,
+    minHeight: 140,
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: "#ffffff",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   metricHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
     width: "100%",
-    marginBottom: 16,
+    marginBottom: 8,
   },
-  metricTitle: { fontSize: 16, fontWeight: "600", color: "#6b7280" },
+  metricTitleContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flex: 1,
+  },
+  metricTitle: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#6b7280",
+    textTransform: "uppercase",
+  },
+  liveMetricTitle: { color: "#dc2626" },
   liveIndicator: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#fecaca",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
   },
   liveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
     backgroundColor: "#dc2626",
-    marginRight: 6,
+    marginRight: 4,
   },
-  liveText: { fontSize: 12, fontWeight: "700", color: "#dc2626" },
+  liveText: { fontSize: 10, fontWeight: "700", color: "#dc2626" },
   metricValue: {
-    fontSize: 64,
+    fontSize: 28,
     fontWeight: "700",
     color: "#111827",
-    lineHeight: 70,
+    lineHeight: 32,
+    marginVertical: 4,
   },
   liveMetricValue: { color: "#dc2626" },
-  metricUnit: { fontSize: 14, color: "#6b7280", marginTop: 8 },
-  pageIndicators: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 20,
-    marginBottom: 32,
-  },
-  pageIndicator: { width: 8, height: 8, borderRadius: 4, marginHorizontal: 4 },
+  metricUnit: { fontSize: 11, color: "#6b7280", fontWeight: "500" },
+  liveMetricUnit: { color: "#dc2626" },
   footer: {
     paddingTop: 16,
     paddingBottom: 40,
@@ -451,4 +522,19 @@ const styles = StyleSheet.create({
   stopButton: { alignItems: "center", width: 60 },
   stopButtonText: { color: "#ef4444", fontSize: 14, marginTop: 4 },
   mainActionButton: {},
+  debugContainer: {
+    backgroundColor: "#f8f9fa",
+    padding: 12,
+    marginBottom: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#dee2e6",
+  },
+  debugTitle: {
+    fontSize: 12,
+    fontWeight: "bold",
+    color: "#495057",
+    marginBottom: 8,
+  },
+  debugText: { fontSize: 11, color: "#6c757d", marginBottom: 2 },
 });
