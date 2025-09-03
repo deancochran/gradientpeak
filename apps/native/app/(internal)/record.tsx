@@ -130,8 +130,13 @@ const RecordingControls = ({
 
 // ---------------- RecordScreen ----------------
 export default function RecordScreen() {
+  // Debug: Track component lifecycle to identify multiple instances
+  const componentIdRef = useRef(Math.random().toString(36).substring(7));
+
   const bluetooth = useBluetooth();
   const { connectedDevices, isBluetoothEnabled, sensorValues } = bluetooth;
+
+  // Debug: Log exactly what the component receives
 
   const { permissions, requestAllRequiredPermissions } = useGlobalPermissions();
   const hasAllPermissions = useMemo(
@@ -222,72 +227,62 @@ export default function RecordScreen() {
     );
   };
 
-  // ---------------- Workout Metrics - Fixed with proper dependencies ----------------
-  const workoutMetrics = useMemo(() => {
-    // Add debug logging for sensor values
-    console.log(
-      "📊 Recalculating workout metrics with sensor values:",
-      sensorValues,
-    );
-
-    return [
-      {
-        id: "duration",
-        title: "Duration",
-        value: formatDuration(duration),
-        unit: "time",
-        icon: "time-outline" as const,
-        isLive: false,
-      },
-      {
-        id: "heartRate",
-        title: "Heart Rate",
-        value: sensorValues?.heartRate?.toString() || "--",
-        unit: "bpm",
-        icon: "heart-outline" as const,
-        isLive: !!sensorValues?.heartRate,
-      },
-      {
-        id: "power",
-        title: "Power",
-        value: sensorValues?.power?.toString() || "--",
-        unit: "watts",
-        icon: "flash-outline" as const,
-        isLive: !!sensorValues?.power,
-      },
-      {
-        id: "cadence",
-        title: "Cadence",
-        value: sensorValues?.cadence?.toString() || "--",
-        unit: "rpm",
-        icon: "refresh-outline" as const,
-        isLive: !!sensorValues?.cadence,
-      },
-      {
-        id: "avgHeartRate",
-        title: "Avg HR",
-        value: sensorValues?.heartRate
-          ? Math.floor(sensorValues.heartRate * 0.95).toString()
-          : "--",
-        unit: "bpm",
-        icon: "analytics-outline" as const,
-        isLive: false,
-      },
-      {
-        id: "calories",
-        title: "Calories",
-        value: sensorValues?.heartRate
-          ? Math.floor(duration * 0.15 * (sensorValues.heartRate / 100))
-          : Math.floor(duration * 0.1),
-        unit: "kcal",
-        icon: "flame-outline" as const,
-        isLive: false,
-      },
-    ];
-  }, [
-    duration,
-    sensorValues, // Use the entire object as dependency to catch all changes
-  ]);
+  // ---------------- Workout Metrics - Direct calculation (no useMemo) ----------------
+  // Simple calculations that don't need memoization - React is fast enough!
+  const workoutMetrics = [
+    {
+      id: "duration",
+      title: "Duration",
+      value: formatDuration(duration),
+      unit: "time",
+      icon: "time-outline" as const,
+      isLive: false,
+    },
+    {
+      id: "heartRate",
+      title: "Heart Rate",
+      value: sensorValues?.heartRate?.toString() || "--",
+      unit: "bpm",
+      icon: "heart-outline" as const,
+      isLive: !!sensorValues?.heartRate,
+    },
+    {
+      id: "power",
+      title: "Power",
+      value: sensorValues?.power?.toString() || "--",
+      unit: "watts",
+      icon: "flash-outline" as const,
+      isLive: !!sensorValues?.power,
+    },
+    {
+      id: "cadence",
+      title: "Cadence",
+      value: sensorValues?.cadence?.toString() || "--",
+      unit: "rpm",
+      icon: "refresh-outline" as const,
+      isLive: !!sensorValues?.cadence,
+    },
+    {
+      id: "avgHeartRate",
+      title: "Avg HR",
+      value: sensorValues?.heartRate
+        ? Math.floor(sensorValues.heartRate * 0.95).toString()
+        : "--",
+      unit: "bpm",
+      icon: "analytics-outline" as const,
+      isLive: false,
+    },
+    {
+      id: "calories",
+      title: "Calories",
+      value: sensorValues?.heartRate
+        ? Math.floor(duration * 0.15 * (sensorValues.heartRate / 100))
+        : Math.floor(duration * 0.1),
+      unit: "kcal",
+      icon: "flame-outline" as const,
+      isLive: false,
+    },
+  ];
 
   return (
     <ThemedView style={styles.root} testID="record-screen">
@@ -335,28 +330,6 @@ export default function RecordScreen() {
           </Text>
           <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
         </TouchableOpacity>
-
-        {/* Debug Sensor Values */}
-        {__DEV__ && sensorValues && (
-          <View style={styles.debugContainer}>
-            <Text style={styles.debugTitle}>🔍 DEBUG - Raw Sensor Values:</Text>
-            <Text style={styles.debugText}>
-              Heart Rate: {sensorValues.heartRate || "N/A"}
-            </Text>
-            <Text style={styles.debugText}>
-              Power: {sensorValues.power || "N/A"}
-            </Text>
-            <Text style={styles.debugText}>
-              Cadence: {sensorValues.cadence || "N/A"}
-            </Text>
-            <Text style={styles.debugText}>
-              Timestamp:{" "}
-              {sensorValues.timestamp
-                ? new Date(sensorValues.timestamp).toLocaleTimeString()
-                : "N/A"}
-            </Text>
-          </View>
-        )}
 
         {/* Metrics Grid */}
         <View style={styles.content}>
