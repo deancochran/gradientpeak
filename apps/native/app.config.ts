@@ -26,12 +26,20 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     slug: PROJECT_SLUG,
     orientation: "portrait",
     userInterfaceStyle: "automatic",
-    newArchEnabled: true,
+    newArchEnabled: true, // Important for TurboModules
     icon,
     scheme,
     ios: {
       bundleIdentifier,
       supportsTablet: true,
+      infoPlist: {
+        NSBluetoothAlwaysUsageDescription:
+          "This app needs Bluetooth to connect to your devices.",
+        NSLocationWhenInUseUsageDescription:
+          "This app needs your location to track activities.",
+        NSMotionUsageDescription:
+          "This app needs motion access to track your activity.",
+      },
     },
     android: {
       adaptiveIcon: {
@@ -40,6 +48,14 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       },
       package: packageName,
       edgeToEdgeEnabled: true,
+      // These permissions are declared here AND managed by the plugin.
+      // The plugin will ensure they are properly added/updated.
+      permissions: [
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACTIVITY_RECOGNITION",
+      ],
     },
     updates: {
       url: `https://u.expo.dev/${EAS_PROJECT_ID}`,
@@ -63,7 +79,15 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           backgroundColor: "#ffffff",
         },
       ],
-      ["react-native-ble-plx"],
+      [
+        "react-native-ble-plx",
+        {
+          isBackgroundEnabled: true,
+          modes: ["peripheral", "central"],
+          bluetoothAlwaysPermission:
+            "Allow $(PRODUCT_NAME) to connect to bluetooth devices",
+        },
+      ],
     ],
     experiments: {
       typedRoutes: true,

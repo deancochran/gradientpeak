@@ -1,11 +1,10 @@
-import { Link, Stack } from "expo-router";
+import { Link, Stack, router } from "expo-router";
 import React from "react";
 import { Animated, StyleSheet, TouchableOpacity, View } from "react-native";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { useColorScheme } from "@/lib/useColorScheme";
-import { router } from "expo-router";
 
 export default function NotFoundScreen() {
   const { isDarkColorScheme } = useColorScheme();

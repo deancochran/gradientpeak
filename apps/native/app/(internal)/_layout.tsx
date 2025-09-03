@@ -69,13 +69,13 @@ export default function InternalLayout() {
       </View>
     );
   }
-
   const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";
   const borderColor = isDarkColorScheme ? "#222222" : "#e5e5e5";
   const activeColor = isDarkColorScheme ? "#ffffff" : "#000000";
   const inactiveColor = isDarkColorScheme ? "#666666" : "#999999";
 
   return (
+    // Wrap the Tabs with PermissionsProvider
     <Tabs
       screenOptions={{
         headerShown: false,

@@ -237,7 +237,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       "change",
       handleAppStateChange,
     );
-    return () => subscription?.remove();
+    return () => subscription.remove();
   }, []);
 
   // Debug logging for auth state
