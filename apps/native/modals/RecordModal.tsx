@@ -64,7 +64,6 @@ export const RecordModal = ({
     sensorValues = {},
     clearSensorData,
     startWorkoutWithSensors,
-    stopWorkoutWithSensors,
     hasConnectedDevices,
     isBluetoothEnabled,
     connectedDevices,
@@ -130,6 +129,7 @@ export const RecordModal = ({
       setIsRecording(false);
       setIsPaused(false);
       setDuration(0);
+      setCurrentPage(0);
 
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -160,27 +160,27 @@ export const RecordModal = ({
   };
 
   const handleStopRecording = () => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
-    setIsRecording(false);
-    stopWorkoutWithSensors();
+    setIsPaused(true);
 
     Alert.alert(
       "End Workout",
       "Are you sure you want to end this workout? All data will be discarded.",
       [
-        { text: "Cancel", style: "cancel" },
+        { text: "Cancel", style: "cancel", onPress: () => setIsPaused(false) }, // Resume if cancelled
         {
           text: "End",
           onPress: () => {
+            if (timerRef.current) {
+              clearInterval(timerRef.current);
+            }
+            setIsRecording(false);
             clearSensorData();
             onClose();
           },
           style: "destructive",
         },
       ],
-      { cancelable: true },
+      { cancelable: false },
     );
   };
 
