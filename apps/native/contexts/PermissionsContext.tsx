@@ -8,6 +8,7 @@ const ALL_GLOBAL_PERMISSION_TYPES: PermissionType[] = [
   "bluetooth",
   "location",
   "motion",
+  "location-background", // <-- Added this to request background location permission
 ];
 
 type PermissionsContextType = ReturnType<typeof usePermissions>;
@@ -33,6 +34,7 @@ export const PermissionsProvider = ({ children }: PermissionsProviderProps) => {
   }, [
     permissionsManager.checkedOnce,
     permissionsManager.checkAllRequiredPermissions,
+    permissionsManager,
   ]);
 
   if (permissionsManager.isLoading && !permissionsManager.checkedOnce) {

@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Encoder, Profile } from "@garmin/fitsdk";
 import * as FileSystem from "expo-file-system";
 import * as Haptics from "expo-haptics";
+import * as Location from "expo-location";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
@@ -23,6 +24,17 @@ import { BluetoothDeviceModal } from "@/modals/BluetoothDeviceModal";
 
 const screenWidth = Dimensions.get("window").width;
 
+// Types
+interface GpsLocation {
+  latitude: number;
+  longitude: number;
+  altitude?: number | null;
+  timestamp: number;
+  speed?: number | null;
+  accuracy?: number | null;
+}
+
+// Utility Functions
 const formatDuration = (totalSeconds: number) => {
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -34,6 +46,161 @@ const formatDuration = (totalSeconds: number) => {
     : `${minutes.toString().padStart(2, "0")}:${seconds
         .toString()
         .padStart(2, "0")}`;
+};
+
+const calculateDistance = (
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+): number => {
+  const R = 6371000; // Earth's radius in meters
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
+const formatPace = (speedMs: number): string => {
+  if (speedMs <= 0) return "--:--";
+  const paceSeconds = 1000 / speedMs; // seconds per kilometer
+  const minutes = Math.floor(paceSeconds / 60);
+  const seconds = Math.floor(paceSeconds % 60);
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+};
+
+// Custom Hooks
+const useGPSTracking = (isActive: boolean) => {
+  const [locations, setLocations] = useState<GpsLocation[]>([]);
+  const [totalDistance, setTotalDistance] = useState(0);
+  const [currentSpeed, setCurrentSpeed] = useState(0);
+  const [isTracking, setIsTracking] = useState(false);
+
+  const locationSubscription = useRef<Location.LocationSubscription | null>(
+    null,
+  );
+
+  // Reset data when starting new session
+  useEffect(() => {
+    if (isActive) {
+      setLocations([]);
+      setTotalDistance(0);
+      setCurrentSpeed(0);
+    }
+  }, [isActive]);
+
+  // Handle location tracking
+  useEffect(() => {
+    if (!isActive) {
+      if (locationSubscription.current) {
+        locationSubscription.current.remove();
+        locationSubscription.current = null;
+      }
+      setIsTracking(false);
+      return;
+    }
+
+    const startTracking = async () => {
+      try {
+        // Check if location services are enabled
+        const isEnabled = await Location.hasServicesEnabledAsync();
+        if (!isEnabled) {
+          Alert.alert(
+            "GPS Disabled",
+            "Please enable location services to track your workout with GPS.",
+          );
+          return;
+        }
+
+        // Request location permissions if not already granted
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert(
+            "Permission Required",
+            "Location permission is required for GPS tracking during workouts.",
+          );
+          return;
+        }
+
+        locationSubscription.current = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.BestForNavigation,
+            timeInterval: 1000,
+            distanceInterval: 2,
+          },
+          (location) => {
+            const newLocation: GpsLocation = {
+              latitude: location.coords.latitude,
+              longitude: location.coords.longitude,
+              altitude: location.coords.altitude,
+              timestamp: location.timestamp,
+              speed: location.coords.speed,
+              accuracy: location.coords.accuracy,
+            };
+
+            setLocations((prev) => {
+              const updated = [...prev, newLocation];
+
+              // Calculate distance and speed if we have multiple points
+              if (updated.length >= 2) {
+                const last = updated[updated.length - 1];
+                const secondLast = updated[updated.length - 2];
+
+                const segmentDistance = calculateDistance(
+                  secondLast.latitude,
+                  secondLast.longitude,
+                  last.latitude,
+                  last.longitude,
+                );
+
+                setTotalDistance(
+                  (prevDistance) => prevDistance + segmentDistance,
+                );
+
+                // Update current speed (prefer GPS speed if available)
+                const gpsSpeed = last.speed || 0;
+                setCurrentSpeed(gpsSpeed > 0 ? gpsSpeed : 0);
+              }
+
+              return updated;
+            });
+          },
+        );
+
+        setIsTracking(true);
+      } catch (error) {
+        console.error("GPS tracking error:", error);
+        Alert.alert(
+          "GPS Error",
+          "Failed to start GPS tracking. Workout will continue without GPS data.",
+        );
+      }
+    };
+
+    startTracking();
+
+    return () => {
+      if (locationSubscription.current) {
+        locationSubscription.current.remove();
+        locationSubscription.current = null;
+      }
+    };
+  }, [isActive]);
+
+  return {
+    locations,
+    totalDistance,
+    currentSpeed,
+    isTracking,
+  };
 };
 
 // ---------------- MetricCard Component ----------------
@@ -103,7 +270,7 @@ const RecordingControls = ({
           onPress={onStart}
           disabled={!hasPermissions}
         >
-          <Text style={styles.startButtonText}>Start</Text>
+          <Text style={styles.startButtonText}>Start Workout</Text>
         </Button>
       </View>
     );
@@ -147,6 +314,11 @@ export default function RecordScreen() {
   const [fitRecords, setFitRecords] = useState<any[]>([]);
   const [bluetoothModalVisible, setBluetoothModalVisible] = useState(false);
 
+  // GPS tracking hook
+  const { locations, totalDistance, currentSpeed, isTracking } = useGPSTracking(
+    isRecording && !isPaused,
+  );
+
   const timerRef = useRef<number | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -158,7 +330,7 @@ export default function RecordScreen() {
       timerRef.current = setInterval(() => {
         setDuration((prev) => prev + 1);
 
-        // Record FIT point
+        // Record FIT point with GPS data
         setFitRecords((prev) => [
           ...prev,
           {
@@ -166,7 +338,12 @@ export default function RecordScreen() {
             heartRate: sensorValues?.heartRate,
             power: sensorValues?.power,
             cadence: sensorValues?.cadence,
-            speed: sensorValues?.pace,
+            speed: currentSpeed,
+            // Add GPS data to FIT records
+            latitude: locations[locations.length - 1]?.latitude,
+            longitude: locations[locations.length - 1]?.longitude,
+            altitude: locations[locations.length - 1]?.altitude,
+            distance: totalDistance,
           },
         ]);
       }, 1000) as unknown as number;
@@ -180,7 +357,14 @@ export default function RecordScreen() {
         timerRef.current = null;
       }
     };
-  }, [isRecording, isPaused, sensorValues]);
+  }, [
+    isRecording,
+    isPaused,
+    sensorValues,
+    currentSpeed,
+    locations,
+    totalDistance,
+  ]);
 
   // ---------------- Animations ----------------
   useEffect(() => {
@@ -195,36 +379,62 @@ export default function RecordScreen() {
   const saveFitFile = async () => {
     if (fitRecords.length === 0) return;
 
-    const encoder = new Encoder();
-    encoder.onMesg(Profile.MesgNum.FILE_ID, {
-      manufacturer: "development",
-      product: 1,
-      timeCreated: new Date(),
-      type: "activity",
-    });
+    try {
+      const encoder = new Encoder();
 
-    fitRecords.forEach((rec) => {
-      encoder.writeMesg({
-        mesgNum: Profile.MesgNum.RECORD,
-        timestamp: rec.timestamp,
-        heartRate: rec.heartRate,
-        power: rec.power,
-        cadence: rec.cadence,
-        speed: rec.speed,
+      // File ID message
+      const fileId = new Profile.FileIdMessage();
+      fileId.type = Profile.FileType.ACTIVITY;
+      fileId.manufacturer = Profile.Manufacturer.GARMIN;
+      fileId.product = 12345;
+      fileId.serialNumber = Date.now();
+      fileId.timeCreated = new Date();
+
+      encoder.addMessage(fileId);
+
+      // Add activity/session data
+      fitRecords.forEach((rec, index) => {
+        const record = new Profile.RecordMessage();
+        record.timestamp = rec.timestamp;
+
+        // Sensor data
+        if (rec.heartRate) record.heartRate = rec.heartRate;
+        if (rec.power) record.power = rec.power;
+        if (rec.cadence) record.cadence = rec.cadence;
+        if (rec.speed) record.speed = rec.speed;
+
+        // GPS data
+        if (rec.latitude && rec.longitude) {
+          record.positionLat = Math.round(rec.latitude * 11930464.7111); // Convert to semicircles
+          record.positionLong = Math.round(rec.longitude * 11930464.7111);
+        }
+        if (rec.altitude) record.altitude = rec.altitude;
+        if (rec.distance) record.distance = rec.distance;
+
+        encoder.addMessage(record);
       });
-    });
 
-    const uint8Array = encoder.close();
-    const fileUri = `${FileSystem.documentDirectory}workout_${Date.now()}.fit`;
+      const data = encoder.encode();
+      const fileName = `workout-${new Date().toISOString().split("T")[0]}-${Date.now()}.fit`;
+      const filePath = `${FileSystem.documentDirectory}${fileName}`;
 
-    await FileSystem.writeAsStringAsync(
-      fileUri,
-      Buffer.from(uint8Array).toString("base64"),
-      { encoding: FileSystem.EncodingType.Base64 },
-    );
+      // Convert Uint8Array to base64
+      const base64Data = btoa(String.fromCharCode(...data));
 
-    Alert.alert("FIT File Saved", `Workout saved at ${fileUri}`);
-    setFitRecords([]);
+      await FileSystem.writeAsStringAsync(filePath, base64Data, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      Alert.alert(
+        "Success",
+        `Workout saved as ${fileName}\n\nTotal Distance: ${(totalDistance / 1000).toFixed(2)}km\nGPS Points: ${locations.length}`,
+      );
+    } catch (error) {
+      console.error("Save error:", error);
+      Alert.alert("Error", "Failed to save workout data.");
+    } finally {
+      setFitRecords([]);
+    }
   };
 
   // ---------------- Workout Handlers ----------------
@@ -252,7 +462,7 @@ export default function RecordScreen() {
     setIsPaused(true);
     Alert.alert(
       "End Workout",
-      "Are you sure you want to end this workout? Your data will be saved.",
+      `Are you sure you want to end this workout?\n\nDuration: ${formatDuration(duration)}\nDistance: ${(totalDistance / 1000).toFixed(2)}km\n\nYour data will be saved.`,
       [
         { text: "Cancel", style: "cancel", onPress: () => setIsPaused(false) },
         {
@@ -273,6 +483,32 @@ export default function RecordScreen() {
     );
   };
 
+  // Calculate average pace for the workout
+  const averagePace = useMemo(() => {
+    if (totalDistance > 0 && duration > 0) {
+      const avgSpeedMs = totalDistance / duration;
+      return formatPace(avgSpeedMs);
+    }
+    return "--:--";
+  }, [totalDistance, duration]);
+
+  // Calculate estimated calories
+  const estimatedCalories = useMemo(() => {
+    const baseCaloriesPerSecond = 0.1;
+    const heartRateMultiplier = sensorValues?.heartRate
+      ? sensorValues.heartRate / 100
+      : 1;
+    const distanceMultiplier =
+      totalDistance > 0 ? 1 + totalDistance / 10000 : 1;
+
+    return Math.floor(
+      duration *
+        baseCaloriesPerSecond *
+        heartRateMultiplier *
+        distanceMultiplier,
+    );
+  }, [duration, sensorValues?.heartRate, totalDistance]);
+
   // ---------------- Workout Metrics ----------------
   const workoutMetrics = [
     {
@@ -281,6 +517,30 @@ export default function RecordScreen() {
       value: formatDuration(duration),
       unit: "time",
       icon: "time-outline" as const,
+      isLive: isRecording && !isPaused,
+    },
+    {
+      id: "distance",
+      title: "Distance",
+      value: (totalDistance / 1000).toFixed(2),
+      unit: "km",
+      icon: "navigate-outline" as const,
+      isLive: isTracking,
+    },
+    {
+      id: "pace",
+      title: "Current Pace",
+      value: formatPace(currentSpeed),
+      unit: "/km",
+      icon: "speedometer-outline" as const,
+      isLive: isTracking && currentSpeed > 0,
+    },
+    {
+      id: "avgPace",
+      title: "Avg Pace",
+      value: averagePace,
+      unit: "/km",
+      icon: "analytics-outline" as const,
       isLive: false,
     },
     {
@@ -292,40 +552,12 @@ export default function RecordScreen() {
       isLive: !!sensorValues?.heartRate,
     },
     {
-      id: "power",
-      title: "Power",
-      value: sensorValues?.power?.toString() || "--",
-      unit: "watts",
-      icon: "flash-outline" as const,
-      isLive: !!sensorValues?.power,
-    },
-    {
-      id: "cadence",
-      title: "Cadence",
-      value: sensorValues?.cadence?.toString() || "--",
-      unit: "rpm",
-      icon: "refresh-outline" as const,
-      isLive: !!sensorValues?.cadence,
-    },
-    {
-      id: "avgHeartRate",
-      title: "Avg HR",
-      value: sensorValues?.heartRate
-        ? Math.floor(sensorValues.heartRate * 0.95).toString()
-        : "--",
-      unit: "bpm",
-      icon: "analytics-outline" as const,
-      isLive: false,
-    },
-    {
       id: "calories",
       title: "Calories",
-      value: sensorValues?.heartRate
-        ? Math.floor(duration * 0.15 * (sensorValues.heartRate / 100))
-        : Math.floor(duration * 0.1),
+      value: estimatedCalories.toString(),
       unit: "kcal",
       icon: "flame-outline" as const,
-      isLive: false,
+      isLive: isRecording,
     },
   ];
 
@@ -342,39 +574,60 @@ export default function RecordScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Bluetooth Status */}
-        <TouchableOpacity
-          style={styles.bluetoothStatus}
-          onPress={() => setBluetoothModalVisible(true)}
-          testID="bluetooth-status-button"
-        >
-          <Ionicons
-            name={
-              connectedCount > 0 && isBluetoothEnabled
-                ? "bluetooth"
-                : "bluetooth-outline"
-            }
-            size={20}
-            color={
-              connectedCount > 0 && isBluetoothEnabled ? "#10b981" : "#9ca3af"
-            }
-          />
-          <Text
-            style={[
-              styles.bluetoothStatusText,
-              connectedCount > 0 && isBluetoothEnabled
-                ? styles.bluetoothConnectedText
-                : styles.bluetoothDisconnectedText,
-            ]}
+        {/* Status Row - Bluetooth and GPS */}
+        <View style={styles.statusContainer}>
+          {/* Bluetooth Status */}
+          <TouchableOpacity
+            style={styles.statusButton}
+            onPress={() => setBluetoothModalVisible(true)}
+            testID="bluetooth-status-button"
           >
-            {!isBluetoothEnabled
-              ? "Bluetooth Off - Tap to manage"
-              : connectedCount > 0
-                ? `${connectedCount} sensor(s) connected`
-                : "No sensors - Tap to connect"}
-          </Text>
-          <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
-        </TouchableOpacity>
+            <Ionicons
+              name={
+                connectedCount > 0 && isBluetoothEnabled
+                  ? "bluetooth"
+                  : "bluetooth-outline"
+              }
+              size={16}
+              color={
+                connectedCount > 0 && isBluetoothEnabled ? "#10b981" : "#9ca3af"
+              }
+            />
+            <Text
+              style={[
+                styles.statusText,
+                connectedCount > 0 &&
+                  isBluetoothEnabled &&
+                  styles.statusActiveText,
+              ]}
+            >
+              {!isBluetoothEnabled
+                ? "BT Off"
+                : connectedCount > 0
+                  ? `${connectedCount} sensor(s)`
+                  : "No sensors"}
+            </Text>
+          </TouchableOpacity>
+
+          {/* GPS Status */}
+          <View style={styles.statusButton}>
+            <Ionicons
+              name={isTracking ? "locate" : "locate-outline"}
+              size={16}
+              color={isTracking ? "#10b981" : "#9ca3af"}
+            />
+            <Text
+              style={[styles.statusText, isTracking && styles.statusActiveText]}
+            >
+              GPS {isTracking ? "Active" : "Inactive"}
+            </Text>
+            {isTracking && locations.length > 0 && (
+              <Text style={styles.statusDetailText}>
+                {locations.length} points
+              </Text>
+            )}
+          </View>
+        </View>
 
         {/* Metrics Grid */}
         <View style={styles.content}>
@@ -410,149 +663,181 @@ export default function RecordScreen() {
 
 // ---------------- Styles ----------------
 const styles = StyleSheet.create({
-  root: { flex: 1 },
+  root: {
+    flex: 1,
+    backgroundColor: "#f8fafc",
+  },
   container: {
     flex: 1,
-    paddingTop: 40,
-    paddingHorizontal: 20,
-    backgroundColor: "#fff",
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 24,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
+    paddingHorizontal: 20,
+    paddingTop: 60,
+    paddingBottom: 20,
   },
-  headerTitle: { fontSize: 20, fontWeight: "700", color: "#111827" },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: "600",
+    color: "#111827",
+  },
   activityTypeButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#f3f4f6",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    gap: 8,
-  },
-  bluetoothStatus: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#f3f4f6",
-    padding: 12,
+    padding: 8,
     borderRadius: 8,
-    marginBottom: 24,
-    gap: 8,
+    backgroundColor: "#f3f4f6",
   },
-  bluetoothStatusText: { fontSize: 14, fontWeight: "500", marginHorizontal: 4 },
-  bluetoothConnectedText: { color: "#059669" },
-  bluetoothDisconnectedText: { color: "#6b7280" },
-  content: { flex: 1, justifyContent: "flex-start", paddingTop: 20 },
+  statusContainer: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  statusButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  statusText: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginLeft: 4,
+    fontWeight: "500",
+  },
+  statusActiveText: {
+    color: "#10b981",
+  },
+  statusDetailText: {
+    fontSize: 10,
+    color: "#9ca3af",
+    marginLeft: 4,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
   metricsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
-    gap: 12,
   },
   metricCard: {
-    width: (screenWidth - 56) / 2,
-    minHeight: 140,
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    padding: 16,
-    borderRadius: 12,
+    width: (screenWidth - 48) / 2,
     backgroundColor: "#ffffff",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowRadius: 4,
+    elevation: 3,
   },
   metricHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    width: "100%",
-    marginBottom: 8,
+    alignItems: "center",
+    marginBottom: 12,
   },
   metricTitleContainer: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    flex: 1,
   },
   metricTitle: {
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "500",
     color: "#6b7280",
+    marginLeft: 6,
     textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
-  liveMetricTitle: { color: "#dc2626" },
+  liveMetricTitle: {
+    color: "#dc2626",
+  },
   liveIndicator: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fecaca",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
   },
   liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
     backgroundColor: "#dc2626",
     marginRight: 4,
   },
-  liveText: { fontSize: 10, fontWeight: "700", color: "#dc2626" },
+  liveText: {
+    fontSize: 8,
+    fontWeight: "600",
+    color: "#dc2626",
+    letterSpacing: 0.5,
+  },
   metricValue: {
     fontSize: 28,
     fontWeight: "700",
     color: "#111827",
-    lineHeight: 32,
-    marginVertical: 4,
+    marginBottom: 4,
   },
-  liveMetricValue: { color: "#dc2626" },
-  metricUnit: { fontSize: 11, color: "#6b7280", fontWeight: "500" },
-  liveMetricUnit: { color: "#dc2626" },
+  liveMetricValue: {
+    color: "#dc2626",
+  },
+  metricUnit: {
+    fontSize: 12,
+    color: "#6b7280",
+    fontWeight: "500",
+  },
+  liveMetricUnit: {
+    color: "#dc2626",
+  },
   footer: {
-    paddingTop: 16,
-    paddingBottom: 40,
     paddingHorizontal: 20,
-    marginTop: "auto",
-    borderTopWidth: 1,
-    borderTopColor: "#e5e7eb",
+    paddingBottom: 40,
   },
-  footerInitial: { alignItems: "center" },
+  footerInitial: {
+    alignItems: "center",
+  },
   startButton: {
     backgroundColor: "#111827",
-    borderRadius: 30,
+    borderRadius: 25,
     paddingVertical: 16,
-    paddingHorizontal: 64,
+    paddingHorizontal: 60,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
   },
-  startButtonText: { color: "white", fontSize: 20, fontWeight: "700" },
+  startButtonText: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "600",
+  },
   footerRecording: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-  stopButton: { alignItems: "center", width: 60 },
-  stopButtonText: { color: "#ef4444", fontSize: 14, marginTop: 4 },
-  mainActionButton: {},
-  debugContainer: {
-    backgroundColor: "#f8f9fa",
-    padding: 12,
-    marginBottom: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#dee2e6",
+  stopButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    width: 60,
   },
-  debugTitle: {
+  stopButtonText: {
     fontSize: 12,
-    fontWeight: "bold",
-    color: "#495057",
-    marginBottom: 8,
+    color: "#ef4444",
+    fontWeight: "500",
+    marginTop: 4,
   },
-  debugText: { fontSize: 11, color: "#6c757d", marginBottom: 2 },
+  mainActionButton: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });
