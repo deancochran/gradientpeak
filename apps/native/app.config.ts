@@ -85,21 +85,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           jsi: true,
         },
       ],
-      [
-        "expo-build-properties",
-        {
-          ios: {
-            extraPods: [
-              {
-                name: "simdjson",
-                path: "../../../node_modules/@nozbe/simdjson",
-                modular_headers: true,
-                configurations: ["Debug", "Release"],
-              },
-            ],
-          },
-        },
-      ],
+      ["expo-sqlite"],
+      ["expo-file-system"],
       ["expo-location"],
       ["expo-task-manager"],
       ["expo-secure-store"],

@@ -1,6 +1,6 @@
 # TurboFit Mobile App
 
-A cross-platform fitness tracking mobile app built with Expo, React Native, and modern tooling. Features local-first architecture with cloud sync, comprehensive activity tracking, and real-time analytics.
+A cross-platform fitness tracking mobile app built with Expo, React Native, and modern tooling. Features a lightweight, offline-first architecture with robust cloud sync, comprehensive activity tracking, and real-time analytics.
 
 ## 📱 Tech Stack
 
@@ -16,8 +16,10 @@ A cross-platform fitness tracking mobile app built with Expo, React Native, and 
 - **Class Variance Authority** - Type-safe component variants
 - **Expo Symbols** - Native iOS symbol integration
 
-### Authentication & Database
-- **Supabase** - PostgreSQL database with real-time features
+### Offline-First, Authentication & Database
+- **Supabase** - PostgreSQL backend, authentication, and file storage
+- **Expo SQLite** - Local database for activity metadata
+- **Expo FileSystem** - Local storage for `.fit` activity files
 - **Row Level Security** - JWT-based data access control
 
 ### Utilities & Performance
@@ -32,250 +34,54 @@ A cross-platform fitness tracking mobile app built with Expo, React Native, and 
 apps/native/
 ├── app/                          # Expo Router file-based routing
 │   ├── (auth)/                   # Authentication screens
-│   │   ├── _layout.tsx          # Auth layout with routing logic
-│   │   ├── sign-in.tsx          # Sign in screen
-│   │   └── sign-up.tsx          # Sign up screen
 │   ├── (tabs)/                  # Main app tab navigation
-│   │   ├── _layout.tsx          # Tab layout configuration
-│   │   ├── index.tsx            # Dashboard/Home screen
-│   │   ├── record.tsx           # Activity recording screen
-│   │   └── settings.tsx         # User settings screen
-│   ├── _layout.tsx              # Root layout with providers
-│   └── +not-found.tsx           # 404 fallback screen
+│   └── _layout.tsx              # Root layout with providers
+├── assets/                      # Static assets (images, fonts)
 ├── components/                   # Reusable UI components
-│   ├── ui/                      # React Native Reusables components
-│   │   ├── button.tsx           # Button with variants
-│   │   ├── card.tsx             # Card component
-│   │   ├── input.tsx            # Input field
-│   │   ├── text.tsx             # Typography component
-│   │   └── alert.tsx            # Alert/notification component
-│   ├── Account.tsx              # User account management
-│   ├── Auth.tsx                 # Legacy authentication component
-│   ├── Avatar.tsx               # User avatar display
-│   ├── SignOutButton.tsx        # Authentication actions
-│   ├── ThemedText.tsx           # Theme-aware text component
-│   └── ThemedView.tsx           # Theme-aware view container
-├── lib/                         # Utilities and integrations
-│   ├── supabase.ts              # Database client and API functions
-│   ├── constants.ts             # App constants and configuration
-│   ├── utils.ts                 # Utility functions (cn, etc.)
-│   └── useColorScheme.tsx       # Theme management hook
-├── assets/                      # Static assets
-│   ├── images/                  # App icons, splash screens
-│   └── fonts/                   # Custom fonts
+├── constants/                   # App-wide constants
+├── contexts/                    # React Context providers
+├── hooks/                       # Reusable hooks
+├── lib/                         # Core logic, utilities, and integrations
+│   ├── supabase.ts              # Supabase client
+│   ├── database.ts              # Local SQLite database setup
+│   ├── sync.ts                  # Offline-first sync manager
+│   └── utils.ts                 # Utility functions
 ├── app.json                     # Expo app configuration
-├── components.json              # React Native Reusables config
-├── tailwind.config.js           # NativeWind configuration
-├── global.css                   # Global CSS variables and themes
 └── package.json                 # Dependencies and scripts
 ```
 
-## 🎨 React Native Reusables Integration
+##  архитектура Офлайн-сначала
 
-The app uses React Native Reusables, a port of shadcn/ui components optimized for React Native.
+The application is built with an offline-first approach, ensuring that core functionality—like recording and viewing activities—remains available without a network connection. This is achieved through a custom, lightweight synchronization mechanism instead of heavy-duty solutions like WatermelonDB.
 
-### Component System
+### Core Components
+1.  **Local SQLite Database (`expo-sqlite`)**: All activity metadata (e.g., duration, distance, date) is stored locally in a SQLite database. This allows for fast, native-speed queries on the device.
 
-#### Button Component (`components/ui/button.tsx`)
-```tsx
-import { Button } from '@/components/ui/button'
+2.  **Local File System (`expo-file-system`)**: Raw activity data, such as `.fit` files, are saved directly to the device's local filesystem. This is efficient for handling potentially large binary files.
 
-// Usage with variants
-<Button variant="default" size="lg">Primary Action</Button>
-<Button variant="outline" size="sm">Secondary</Button>
-<Button variant="ghost">Ghost Button</Button>
-```
+3.  **Supabase Backend**:
+    *   **PostgreSQL**: Serves as the source of truth for all user data once synced.
+    *   **Storage**: Securely stores the `.fit` files in the cloud.
 
-**Available Variants:**
-- `default` - Primary button with brand colors
-- `destructive` - Red destructive actions
-- `outline` - Outlined button
-- `secondary` - Secondary styling
-- `ghost` - Transparent background
-- `link` - Link-style button
+4.  **Sync Manager**: A custom logic layer responsible for orchestrating the synchronization process between the local device and the Supabase backend.
 
-**Available Sizes:**
-- `default` - Standard button size
-- `sm` - Small button
-- `lg` - Large button
-- `icon` - Square icon button
+### Synchronization Strategy
 
-#### Input Component (`components/ui/input.tsx`)
-```tsx
-import { Input } from '@/components/ui/input'
+The sync process is designed to be robust and transparent, using a status tracking system for each local record.
 
-<Input
-  placeholder="Enter text"
-  value={value}
-  onChangeText={setValue}
-  className="mb-4"
-/>
-```
+#### Sync Status
+Each record in the local database is tagged with a sync status:
+- `local_only`: The record has been created on the device but not yet synced.
+- `syncing`: The record is actively being uploaded.
+- `synced`: The record is successfully stored in the cloud.
+- `sync_failed`: An error occurred during the sync attempt.
 
-#### Card Component (`components/ui/card.tsx`)
-```tsx
-import { Card } from '@/components/ui/card'
+#### Two-Step Sync Process
+Synchronization happens in two main steps to ensure data integrity:
+1.  **File Upload**: The local `.fit` file is first uploaded to Supabase Storage.
+2.  **Metadata Push**: Once the file is successfully uploaded, the corresponding activity metadata (with the file's new cloud URL) is pushed to the PostgreSQL database.
 
-<Card className="p-4">
-  <Text>Card content</Text>
-</Card>
-```
-
-### Styling System
-
-#### NativeWind Configuration
-The app uses NativeWind 4.1 with a custom theme supporting both light and dark modes:
-
-```javascript
-// tailwind.config.js
-module.exports = {
-  darkMode: "class",
-  content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
-  presets: [require("nativewind/preset")],
-  theme: {
-    extend: {
-      colors: {
-        // Design system colors using CSS variables
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
-        primary: {
-          DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))",
-        },
-        // ... more theme colors
-      },
-    },
-  },
-}
-```
-
-#### CSS Variables (`global.css`)
-Theme colors are defined using CSS variables for seamless light/dark mode switching:
-
-```css
-:root {
-  --background: 0 0% 100%;
-  --foreground: 240 10% 3.9%;
-  --primary: 240 5.9% 10%;
-  /* ... */
-}
-
-.dark:root {
-  --background: 240 10% 3.9%;
-  --foreground: 0 0% 98%;
-  --primary: 0 0% 98%;
-  /* ... */
-}
-```
-
-#### Utility Functions (`lib/utils.ts`)
-```tsx
-import { cn } from '@/lib/utils'
-
-// Combines clsx and tailwind-merge for optimal class handling
-<View className={cn("bg-background p-4", className)} />
-```
-
-### Component Patterns
-
-#### Class Variance Authority Integration
-Components use CVA for type-safe variants:
-
-```tsx
-const buttonVariants = cva(
-  "base-classes",
-  {
-    variants: {
-      variant: {
-        default: "bg-primary",
-        outline: "border border-input",
-      },
-      size: {
-        default: "h-10 px-4",
-        lg: "h-11 px-8",
-      },
-    },
-    defaultVariants: {
-      variant: "default",
-      size: "default",
-    },
-  }
-)
-```
-
-
-
-
-
-
-
-#### Local-First Data Patterns
-```tsx
-const [activities, setActivities] = useState<Activity[]>([])
-const [loading, setLoading] = useState(true)
-const [refreshing, setRefreshing] = useState(false)
-
-const loadData = async (isRefresh = false) => {
-  if (isRefresh) setRefreshing(true)
-  else setLoading(true)
-
-  try {
-    const client = await getAuthenticatedClient()
-    const api = createAuthenticatedApi(client)
-    const data = await api.getActivities(userId)
-    setActivities(data)
-  } catch (error) {
-    console.error('Failed to load data:', error)
-  } finally {
-    setLoading(false)
-    setRefreshing(false)
-  }
-}
-```
-
-### Database Schema Integration
-
-#### Activity Recording
-```tsx
-// Record new activity
-const recordActivity = async (activityData: {
-  name: string
-  sport: string
-  distance_meters: number
-  duration_seconds: number
-  // ... other fields
-}) => {
-  await api.createActivity({
-    user_id: userId,
-    client_id: generateUUID(),
-    device_id: deviceId,
-    sync_status: 'pending_sync',
-    ...activityData,
-  })
-}
-```
-
-#### Real-time Updates
-```tsx
-useEffect(() => {
-  const subscription = supabase
-    .channel('activities')
-    .on('postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'activities',
-        filter: `user_id=eq.${userId}`
-      },
-      (payload) => {
-        setActivities(prev => [payload.new, ...prev])
-      }
-    )
-    .subscribe()
-
-  return () => subscription.unsubscribe()
-}, [userId])
-```
+This process is managed by the sync manager, which also handles retries for failed attempts and provides feedback to the user on the status of their data. This architecture eliminates complex native dependencies, reduces overhead, and gives us full control over the data flow.
 
 ## 🧪 Testing Strategy
 

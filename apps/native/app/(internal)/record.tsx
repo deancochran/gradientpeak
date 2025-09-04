@@ -1,8 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Encoder, Profile } from "@garmin/fitsdk";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as FileSystem from "expo-file-system";
 import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
+import * as TaskManager from "expo-task-manager";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
@@ -20,11 +22,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useGlobalPermissions } from "@/contexts/PermissionsContext";
 import { useBluetooth } from "@/hooks/useBluetooth";
-import { BluetoothDeviceModal } from "@/modals/BluetoothDeviceModal";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as TaskManager from "expo-task-manager";
-
 import { workoutService } from "@/lib/database/workout.service";
+import { BluetoothDeviceModal } from "@/modals/BluetoothDeviceModal";
 
 const LOCATION_TRACKING_TASK = "LOCATION_TRACKING_TASK";
 const ACTIVE_WORKOUT_ID_KEY = "active_workout_id";
@@ -41,7 +40,6 @@ TaskManager.defineTask(LOCATION_TRACKING_TASK, async ({ data, error }) => {
 
       if (activeWorkoutId) {
         for (const location of locations) {
-          // The service expects our GpsLocation type, so we map it here.
           const gpsLocation = {
             latitude: location.coords.latitude,
             longitude: location.coords.longitude,
@@ -115,7 +113,7 @@ const formatPace = (speedMs: number): string => {
 };
 
 // Custom Hooks
-const useGPSTracking = (isActive: boolean) => {
+const useGPSTracking = (isActive: boolean, activityId: string | null) => {
   const [locations, setLocations] = useState<GpsLocation[]>([]);
   const [totalDistance, setTotalDistance] = useState(0);
   const [currentSpeed, setCurrentSpeed] = useState(0);
@@ -147,7 +145,6 @@ const useGPSTracking = (isActive: boolean) => {
 
     const startTracking = async () => {
       try {
-        // Check if location services are enabled
         const isEnabled = await Location.hasServicesEnabledAsync();
         if (!isEnabled) {
           Alert.alert(
@@ -157,7 +154,6 @@ const useGPSTracking = (isActive: boolean) => {
           return;
         }
 
-        // Request foreground and background permissions
         const { status: foregroundStatus } =
           await Location.requestForegroundPermissionsAsync();
         const { status: backgroundStatus } =
@@ -170,7 +166,6 @@ const useGPSTracking = (isActive: boolean) => {
           return;
         }
 
-        // Start background location updates
         await Location.startLocationUpdatesAsync(LOCATION_TRACKING_TASK, {
           accuracy: Location.Accuracy.BestForNavigation,
           timeInterval: 1000,
@@ -178,7 +173,6 @@ const useGPSTracking = (isActive: boolean) => {
           showsBackgroundLocationIndicator: true,
         });
 
-        // Start foreground location updates
         locationSubscription.current = await Location.watchPositionAsync(
           {
             accuracy: Location.Accuracy.BestForNavigation,
@@ -194,6 +188,15 @@ const useGPSTracking = (isActive: boolean) => {
               speed: location.coords.speed,
               accuracy: location.coords.accuracy,
             };
+
+            if (activityId) {
+              workoutService
+                .addLocationPoint(activityId, newLocation)
+                .catch((e) =>
+                  console.error("Failed to save foreground location", e),
+                );
+            }
+
             setLocations((prev) => {
               const updated = [...prev, newLocation];
               if (updated.length >= 2) {
@@ -234,7 +237,7 @@ const useGPSTracking = (isActive: boolean) => {
       }
       Location.stopLocationUpdatesAsync(LOCATION_TRACKING_TASK);
     };
-  }, [isActive]);
+  }, [isActive, activityId]);
 
   return {
     locations,
@@ -352,12 +355,12 @@ export default function RecordScreen() {
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [duration, setDuration] = useState(0);
-  const [fitRecords, setFitRecords] = useState<any[]>([]);
+  const [activeWorkoutId, setActiveWorkoutId] = useState<string | null>(null);
   const [bluetoothModalVisible, setBluetoothModalVisible] = useState(false);
 
-  // GPS tracking hook
   const { locations, totalDistance, currentSpeed, isTracking } = useGPSTracking(
     isRecording && !isPaused,
+    activeWorkoutId,
   );
 
   const timerRef = useRef<number | null>(null);
@@ -365,28 +368,11 @@ export default function RecordScreen() {
 
   const connectedCount = connectedDevices?.length ?? 0;
 
-  // ---------------- Timer ----------------
+  // Timer for duration display
   useEffect(() => {
     if (isRecording && !isPaused) {
       timerRef.current = setInterval(() => {
         setDuration((prev) => prev + 1);
-
-        // Record FIT point with GPS data
-        setFitRecords((prev) => [
-          ...prev,
-          {
-            timestamp: new Date(),
-            heartRate: sensorValues?.heartRate,
-            power: sensorValues?.power,
-            cadence: sensorValues?.cadence,
-            speed: currentSpeed,
-            // Add GPS data to FIT records
-            latitude: locations[locations.length - 1]?.latitude,
-            longitude: locations[locations.length - 1]?.longitude,
-            altitude: locations[locations.length - 1]?.altitude,
-            distance: totalDistance,
-          },
-        ]);
       }, 1000) as unknown as number;
     } else if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -398,16 +384,9 @@ export default function RecordScreen() {
         timerRef.current = null;
       }
     };
-  }, [
-    isRecording,
-    isPaused,
-    sensorValues,
-    currentSpeed,
-    locations,
-    totalDistance,
-  ]);
+  }, [isRecording, isPaused]);
 
-  // ---------------- Animations ----------------
+  // Animations
   useEffect(() => {
     Animated.timing(fadeAnim, {
       toValue: 1,
@@ -416,41 +395,34 @@ export default function RecordScreen() {
     }).start();
   }, [fadeAnim]);
 
-  // ---------------- FIT Recording ----------------
-  const saveFitFile = async () => {
-    if (fitRecords.length === 0) return;
+  // FIT File Generation
+  const saveFitFile = async (workoutId: string) => {
+    const dbRecords = await workoutService.getWorkoutLocationPoints(workoutId);
+    if (dbRecords.length === 0) return;
 
     try {
       const encoder = new Encoder();
 
-      // File ID message
       const fileId = new Profile.FileIdMessage();
       fileId.type = Profile.FileType.ACTIVITY;
       fileId.manufacturer = Profile.Manufacturer.GARMIN;
       fileId.product = 12345;
       fileId.serialNumber = Date.now();
       fileId.timeCreated = new Date();
-
       encoder.addMessage(fileId);
 
-      // Add activity/session data
-      fitRecords.forEach((rec, index) => {
+      dbRecords.forEach((rec) => {
         const record = new Profile.RecordMessage();
         record.timestamp = rec.timestamp;
 
-        // Sensor data
-        if (rec.heartRate) record.heartRate = rec.heartRate;
-        if (rec.power) record.power = rec.power;
-        if (rec.cadence) record.cadence = rec.cadence;
+        // GPS data from the database
+        record.positionLat = Math.round(rec.latitude * 11930464.7111);
+        record.positionLong = Math.round(rec.longitude * 11930464.7111);
+        if (rec.altitude) record.altitude = rec.altitude;
         if (rec.speed) record.speed = rec.speed;
 
-        // GPS data
-        if (rec.latitude && rec.longitude) {
-          record.positionLat = Math.round(rec.latitude * 11930464.7111); // Convert to semicircles
-          record.positionLong = Math.round(rec.longitude * 11930464.7111);
-        }
-        if (rec.altitude) record.altitude = rec.altitude;
-        if (rec.distance) record.distance = rec.distance;
+        // TODO: Phase 4 - Add sensor data (HR, cadence, power) to the database
+        // For now, sensor data from the UI is not included in the FIT file as it's not persisted.
 
         encoder.addMessage(record);
       });
@@ -459,7 +431,6 @@ export default function RecordScreen() {
       const fileName = `workout-${new Date().toISOString().split("T")[0]}-${Date.now()}.fit`;
       const filePath = `${FileSystem.documentDirectory}${fileName}`;
 
-      // Convert Uint8Array to base64
       const base64Data = btoa(String.fromCharCode(...data));
 
       await FileSystem.writeAsStringAsync(filePath, base64Data, {
@@ -468,17 +439,15 @@ export default function RecordScreen() {
 
       Alert.alert(
         "Success",
-        `Workout saved as ${fileName}\n\nTotal Distance: ${(totalDistance / 1000).toFixed(2)}km\nGPS Points: ${locations.length}`,
+        `Workout saved as ${fileName}\n\nTotal Distance: ${(totalDistance / 1000).toFixed(2)}km\nGPS Points: ${dbRecords.length}`,
       );
     } catch (error) {
       console.error("Save error:", error);
       Alert.alert("Error", "Failed to save workout data.");
-    } finally {
-      setFitRecords([]);
     }
   };
 
-  // ---------------- Workout Handlers ----------------
+  // Workout Handlers
   const handleStartRecording = async () => {
     try {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -490,10 +459,16 @@ export default function RecordScreen() {
       return;
     }
 
+    // TODO: Get the real profileId from an auth context
+    const FAKE_PROFILE_ID = "a1b2c3d4-e5f6-7890-1234-567890abcdef";
+    const newWorkout = await workoutService.createWorkout(FAKE_PROFILE_ID);
+
+    await AsyncStorage.setItem(ACTIVE_WORKOUT_ID_KEY, newWorkout.id);
+    setActiveWorkoutId(newWorkout.id);
+
     setIsRecording(true);
     setIsPaused(false);
     setDuration(0);
-    setFitRecords([]);
   };
 
   const handlePauseRecording = () => setIsPaused(true);
@@ -510,13 +485,24 @@ export default function RecordScreen() {
           text: "End",
           style: "destructive",
           onPress: async () => {
+            if (!activeWorkoutId) return;
+
             if (timerRef.current) {
               clearInterval(timerRef.current);
               timerRef.current = null;
             }
+
+            await workoutService.finishWorkout(
+              activeWorkoutId,
+              totalDistance,
+              duration,
+            );
+            await saveFitFile(activeWorkoutId);
+
             setIsRecording(false);
             setDuration(0);
-            await saveFitFile();
+            setActiveWorkoutId(null);
+            await AsyncStorage.removeItem(ACTIVE_WORKOUT_ID_KEY);
           },
         },
       ],
@@ -524,7 +510,6 @@ export default function RecordScreen() {
     );
   };
 
-  // Calculate average pace for the workout
   const averagePace = useMemo(() => {
     if (totalDistance > 0 && duration > 0) {
       const avgSpeedMs = totalDistance / duration;
@@ -533,7 +518,6 @@ export default function RecordScreen() {
     return "--:--";
   }, [totalDistance, duration]);
 
-  // Calculate estimated calories
   const estimatedCalories = useMemo(() => {
     const baseCaloriesPerSecond = 0.1;
     const heartRateMultiplier = sensorValues?.heartRate
@@ -550,7 +534,6 @@ export default function RecordScreen() {
     );
   }, [duration, sensorValues?.heartRate, totalDistance]);
 
-  // ---------------- Workout Metrics ----------------
   const workoutMetrics = [
     {
       id: "duration",
@@ -568,7 +551,6 @@ export default function RecordScreen() {
       icon: "navigate-outline" as const,
       isLive: isTracking,
     },
-
     {
       id: "pace",
       title: "Current Pace",
@@ -622,7 +604,6 @@ export default function RecordScreen() {
   return (
     <ThemedView style={styles.root} testID="record-screen">
       <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
-        {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>
             {isRecording ? "Recording Workout" : "Ready to Record"}
@@ -632,9 +613,7 @@ export default function RecordScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Status Row - Bluetooth and GPS */}
         <View style={styles.statusContainer}>
-          {/* Bluetooth Status */}
           <TouchableOpacity
             style={styles.statusButton}
             onPress={() => setBluetoothModalVisible(true)}
@@ -667,7 +646,6 @@ export default function RecordScreen() {
             </Text>
           </TouchableOpacity>
 
-          {/* GPS Status */}
           <View style={styles.statusButton}>
             <Ionicons
               name={isTracking ? "locate" : "locate-outline"}
@@ -687,12 +665,10 @@ export default function RecordScreen() {
           </View>
         </View>
 
-        {/* Metrics Grid */}
         <View style={styles.content}>
           <MetricsGrid metrics={workoutMetrics} />
         </View>
 
-        {/* Footer Buttons */}
         <View style={styles.footer}>
           <RecordingControls
             isRecording={isRecording}
@@ -706,7 +682,6 @@ export default function RecordScreen() {
         </View>
       </Animated.View>
 
-      {/* Bluetooth Device Modal */}
       <BluetoothDeviceModal
         visible={bluetoothModalVisible}
         onClose={() => setBluetoothModalVisible(false)}
