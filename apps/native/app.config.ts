@@ -79,12 +79,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           backgroundColor: "#ffffff",
         },
       ],
-      [
-        "expo-sqlite",
-        {
-          jsi: true,
-        },
-      ],
       ["expo-sqlite"],
       ["expo-file-system"],
       ["expo-location"],

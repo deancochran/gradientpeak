@@ -22,11 +22,17 @@ A cross-platform fitness tracking mobile app built with Expo, React Native, and 
 - **Expo FileSystem** - Local storage for `.fit` activity files
 - **Row Level Security** - JWT-based data access control
 
+### Activity Tracking & FIT Files
+- **@garmin/fitsdk** - Official Garmin FIT SDK for activity file generation/parsing
+- **Expo Location** - GPS tracking with background support
+- **Expo Task Manager** - Background location tracking
+- **Expo Network** - Network connectivity monitoring for sync
+
 ### Utilities & Performance
-- **Expo Location** - GPS and location tracking
 - **Expo Secure Store** - Encrypted local storage
 - **React Native Reanimated** - Performant animations
 - **React Native Gesture Handler** - Native gesture recognition
+- **React Native Quick Base64** - Binary data encoding for FIT files
 
 ## 🏗️ Project Structure
 
@@ -35,37 +41,120 @@ apps/native/
 ├── app/                          # Expo Router file-based routing
 │   ├── (auth)/                   # Authentication screens
 │   ├── (tabs)/                  # Main app tab navigation
+│   ├── (internal)/              # Internal screens (record.tsx)
 │   └── _layout.tsx              # Root layout with providers
 ├── assets/                      # Static assets (images, fonts)
 ├── components/                   # Reusable UI components
+│   ├── ui/                      # Base UI components (buttons, cards)
+│   └── workout/                 # Workout-specific components
+│       ├── MetricCard.tsx       # Individual metric display
+│       ├── MetricsGrid.tsx      # Grid layout for metrics
+│       ├── RecordingControls.tsx # Start/pause/stop controls
+│       └── WorkoutStatusBar.tsx # GPS/Bluetooth status
 ├── constants/                   # App-wide constants
 ├── contexts/                    # React Context providers
 ├── hooks/                       # Reusable hooks
+│   ├── useAdvancedWorkoutRecorder.ts # Advanced recording with fault tolerance
+│   ├── useActivityManager.ts    # Activity management and sync
+│   └── useWorkoutMetrics.ts     # Dynamic metrics calculation
 ├── lib/                         # Core logic, utilities, and integrations
-│   ├── supabase.ts              # Supabase client
-│   ├── database.ts              # Local SQLite database setup
-│   ├── sync.ts                  # Offline-first sync manager
-│   └── utils.ts                 # Utility functions
+│   ├── services/                # Core business logic services
+│   │   ├── activity-recorder.ts # Fault-tolerant activity recording
+│   │   ├── activity-sync-service.ts # Cloud sync with Supabase
+│   │   ├── fit-file-service.ts  # FIT file generation/parsing (Garmin SDK)
+│   │   ├── local-activity-database.ts # SQLite for local storage
+│   │   ├── workout-service.ts       # High-level workout orchestration
+│   │   └── index.ts             # Service exports
+│   ├── types/                   # TypeScript type definitions
+│   │   ├── activity.ts          # Activity and recording types
+│   │   ├── workout.ts           # Legacy workout types
+│   │   └── index.ts             # Type exports
+│   ├── utils/                   # Utility functions
+│   │   ├── workout-utils.ts     # Activity calculations and formatting
+│   │   └── index.ts             # Utility exports
+│   ├── supabase.ts              # Supabase client and auth
+│   └── utils.ts                 # General utility functions
+├── modals/                      # Modal components
+│   └── BluetoothDeviceModal.tsx # Bluetooth device selection
 ├── app.json                     # Expo app configuration
 └── package.json                 # Dependencies and scripts
 ```
 
-##  архитектура Офлайн-сначала
+## 🎯 Advanced Activity Recording System
 
-The application is built with an offline-first approach, ensuring that core functionality—like recording and viewing activities—remains available without a network connection. This is achieved through a custom, lightweight synchronization mechanism instead of heavy-duty solutions like WatermelonDB.
+The application features a comprehensive, fault-tolerant activity recording system built around the **FIT file format as the source of truth**. This approach ensures maximum compatibility with third-party fitness applications and devices while maintaining flexibility for future enhancements.
 
-### Core Components
-1.  **Local SQLite Database (`expo-sqlite`)**: All activity metadata (e.g., duration, distance, date) is stored locally in a SQLite database. This allows for fast, native-speed queries on the device.
+### 🔧 Core Architecture
 
-2.  **Local File System (`expo-file-system`)**: Raw activity data, such as `.fit` files, are saved directly to the device's local filesystem. This is efficient for handling potentially large binary files.
+#### **1. FIT-First Design Philosophy**
+- **No hardcoded activity types** - the system dynamically extracts whatever data is available from FIT files
+- **Garmin SDK integration** - uses the official `@garmin/fitsdk` for maximum compatibility
+- **Future-proof** - can handle any FIT file structure without code changes
+- **Third-party imports** - seamlessly imports activities from Strava, Garmin Connect, etc.
 
-3.  **Supabase Backend**:
-    *   **PostgreSQL**: Serves as the source of truth for all user data once synced.
-    *   **Storage**: Securely stores the `.fit` files in the cloud.
+#### **2. Fault-Tolerant Recording**
+- **Interruption recovery** - automatically recovers from app crashes, phone restarts, or sensor disconnections
+- **Background location tracking** - continues GPS tracking even when app is backgrounded using Expo Task Manager
+- **Data buffering** - buffers sensor data to prevent loss during interruptions
+- **Session persistence** - saves recording state to AsyncStorage for recovery
 
-4.  **Sync Manager**: A custom logic layer responsible for orchestrating the synchronization process between the local device and the Supabase backend.
+#### **3. Local-First with Smart Sync**
+- **Offline recording** - activities are recorded and stored locally first for immediate availability
+- **User decision point** - after stopping, users choose to save or discard each activity
+- **Automatic sync** - activities sync to Supabase when network is available
+- **Cleanup after sync** - local data is automatically cleaned up after successful cloud storage
 
-### Synchronization Strategy
+### 🏗️ Service Architecture
+
+#### **Core Services:**
+1. **`ActivityRecorderService`** - Handles real-time recording with fault tolerance
+2. **`FitFileService`** - FIT file generation and parsing using Garmin SDK
+3. **`LocalActivityDatabaseService`** - SQLite storage for activities before sync
+4. **`ActivitySyncService`** - Smart sync to Supabase with network awareness
+5. **`WorkoutService`** - High-level orchestration of all activity operations
+
+#### **React Hooks:**
+1. **`useAdvancedWorkoutRecorder`** - Complete recording interface with live metrics
+2. **`useActivityManager`** - Activity management, viewing, syncing, and importing
+3. **`useWorkoutMetrics`** - Dynamic metrics calculation from any sensor data
+
+### 📊 Dynamic Data Handling
+
+#### **Flexible Sensor Support:**
+- **GPS data** - Location, altitude, speed, accuracy
+- **Heart rate** - BPM with zones and variability (HRV)
+- **Power** - Watts, normalized power, functional threshold power
+- **Cadence** - Steps/minute or RPM depending on activity
+- **Environmental** - Temperature, barometric pressure
+- **Custom sensors** - Extensible for any future sensor types
+
+#### **Smart Metadata Extraction:**
+The system automatically extracts and caches metadata from FIT files:
+```typescript
+interface ActivityMetadata {
+  startTime: Date;
+  totalDistance?: number;
+  avgHeartRate?: number;
+  maxPower?: number;
+  elevationGain?: number;
+  hasGpsData: boolean;
+  hasPowerData: boolean;
+  // ... and any other data found in the FIT file
+}
+```
+
+### 🔄 Recording Flow
+
+1. **Start Recording** → `ActivityRecorderService` creates fault-tolerant session
+2. **Data Collection** → GPS and sensors collected in real-time with buffering
+3. **Background Persistence** → Session state saved for interruption recovery
+4. **Stop & Decision** → User prompted to save or discard the activity
+5. **FIT Generation** → Complete FIT file generated using Garmin SDK
+6. **Local Storage** → Activity stored in SQLite with metadata cache
+7. **Smart Sync** → Automatic upload to Supabase when connected
+8. **Cleanup** → Local files cleaned up after successful sync
+
+### 🔄 Synchronization Strategy
 
 The sync process is designed to be robust and transparent, using a status tracking system for each local record.
 
@@ -79,9 +168,119 @@ Each record in the local database is tagged with a sync status:
 #### Two-Step Sync Process
 Synchronization happens in two main steps to ensure data integrity:
 1.  **File Upload**: The local `.fit` file is first uploaded to Supabase Storage.
-2.  **Metadata Push**: Once the file is successfully uploaded, the corresponding activity metadata (with the file's new cloud URL) is pushed to the PostgreSQL database.
+2.  **Metadata Push**: Once the file is successfully uploaded, the corresponding activity metadata is pushed to the PostgreSQL database.
 
-This process is managed by the sync manager, which also handles retries for failed attempts and provides feedback to the user on the status of their data. This architecture eliminates complex native dependencies, reduces overhead, and gives us full control over the data flow.
+This process is managed by the sync manager, which also handles retries for failed attempts and provides feedback to the user on the status of their data.
+
+## 💻 Usage Examples
+
+### Recording an Activity
+
+```typescript
+import { useAdvancedWorkoutRecorder } from '@/hooks/useAdvancedWorkoutRecorder';
+
+function RecordScreen() {
+  const {
+    isRecording,
+    duration,
+    distance,
+    currentHeartRate,
+    startWorkout,
+    pauseWorkout,
+    stopWorkout,
+    addSensorData,
+  } = useAdvancedWorkoutRecorder();
+
+  const handleStart = async () => {
+    await startWorkout(profileId);
+  };
+
+  // Add sensor data from Bluetooth devices
+  const handleSensorData = (data) => {
+    addSensorData({
+      messageType: 'record',
+      data: {
+        heartRate: data.heartRate,
+        power: data.power,
+        cadence: data.cadence,
+      }
+    });
+  };
+
+  return (
+    <View>
+      <Text>Duration: {duration}s</Text>
+      <Text>Distance: {(distance / 1000).toFixed(2)}km</Text>
+      {currentHeartRate && <Text>HR: {currentHeartRate} bpm</Text>}
+      
+      {!isRecording ? (
+        <Button onPress={handleStart}>Start Workout</Button>
+      ) : (
+        <>
+          <Button onPress={pauseWorkout}>Pause</Button>
+          <Button onPress={stopWorkout}>Stop</Button>
+        </>
+      )}
+    </View>
+  );
+}
+```
+
+### Managing Activities
+
+```typescript
+import { useActivityManager } from '@/hooks/useActivityManager';
+
+function ActivitiesScreen() {
+  const {
+    activities,
+    syncStatus,
+    loadActivities,
+    syncAllActivities,
+    importFitFile,
+  } = useActivityManager();
+
+  useEffect(() => {
+    loadActivities(profileId);
+  }, [profileId]);
+
+  return (
+    <View>
+      <Text>Total Activities: {syncStatus.totalActivities}</Text>
+      <Text>Pending Sync: {syncStatus.pendingActivities}</Text>
+      
+      <Button onPress={syncAllActivities}>
+        Sync All Activities
+      </Button>
+      
+      <Button onPress={() => importFitFile(selectedFilePath)}>
+        Import FIT File
+      </Button>
+
+      {activities.map(activity => (
+        <ActivityItem key={activity.id} activity={activity} />
+      ))}
+    </View>
+  );
+}
+```
+
+### Importing Third-Party Activities
+
+```typescript
+// Import from file picker
+const result = await DocumentPicker.getDocumentAsync({
+  type: 'application/octet-stream',
+  copyToCacheDirectory: false,
+});
+
+if (result.type === 'success') {
+  const activityId = await importFitFile(result.uri, result.name);
+  if (activityId) {
+    Alert.alert('Success', 'Activity imported and will sync automatically');
+  }
+}
+```
 
 ## 🧪 Testing Strategy
 
@@ -466,14 +665,57 @@ npx expo run:android --clean
 
 ---
 
+## 🚀 Key Features Implemented
+
+### ✅ **Fault-Tolerant Activity Recording**
+- Automatic recovery from app crashes, phone restarts, or sensor disconnections
+- Background GPS tracking continues even when app is closed
+- Real-time sensor data collection (heart rate, power, cadence, temperature)
+- Session persistence for interruption recovery
+
+### ✅ **FIT-First Data Architecture**
+- Official Garmin FIT SDK integration for maximum compatibility
+- Dynamic metadata extraction from any FIT file structure
+- Support for importing third-party activities (Strava, Garmin Connect, etc.)
+- No hardcoded activity types - system adapts to available data
+
+### ✅ **Smart Sync System**
+- Local-first storage with automatic cloud sync
+- Network-aware sync that handles poor connectivity
+- User control over activity saving (save/discard decision)
+- Automatic cleanup of local data after successful sync
+
+### ✅ **Comprehensive UI Components**
+- Modular workout recording interface
+- Real-time metrics display with live updates  
+- GPS and Bluetooth status indicators
+- Activity management and sync status screens
+
+### ✅ **Developer Experience**
+- Fully typed TypeScript interfaces
+- React hooks for easy state management
+- Modular service architecture for maintainability
+- Comprehensive error handling and logging
+
 ## 📚 Additional Resources
 
+### Framework & SDK Documentation
 - [Expo Documentation](https://docs.expo.dev/)
 - [React Native Reusables](https://github.com/mrzachnugent/react-native-reusables)
 - [NativeWind Documentation](https://www.nativewind.dev/)
+- [Garmin FIT SDK Documentation](https://developer.garmin.com/fit/overview/)
+
+### Backend & Authentication
 - [Supabase React Native Guide](https://supabase.com/docs/guides/getting-started/tutorials/with-expo-react-native)
 - [Supabase Deep Linking Guide](https://supabase.com/docs/guides/auth/native-mobile-deep-linking)
 - [Expo Router Deep Linking](https://docs.expo.dev/router/reference/linking/)
-- [Maestro Testing Documentation](https://maestro.mobile.dev/)
 
-This comprehensive setup provides a robust foundation for developing, testing, and deploying a modern React Native application with best practices for performance, type safety, and user experience.
+### Testing & Quality
+- [Maestro Testing Documentation](https://maestro.mobile.dev/)
+- [React Native Testing Library](https://callstack.github.io/react-native-testing-library/)
+
+### Fitness & Activity Tracking
+- [FIT File Format Specification](https://developer.garmin.com/fit/file-types/)
+- [ANT+ Device Profiles](https://www.thisisant.com/developer/ant-plus/device-profiles/)
+
+This comprehensive setup provides a robust, production-ready foundation for a modern fitness tracking application with enterprise-grade fault tolerance, data integrity, and user experience.
