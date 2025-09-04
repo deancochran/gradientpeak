@@ -79,6 +79,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           backgroundColor: "#ffffff",
         },
       ],
+      ["expo-location"],
+      ["expo-task-manager"],
       ["expo-secure-store"],
       [
         "react-native-ble-plx",

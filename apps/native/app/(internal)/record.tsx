@@ -21,6 +21,21 @@ import { Card } from "@/components/ui/card";
 import { useGlobalPermissions } from "@/contexts/PermissionsContext";
 import { useBluetooth } from "@/hooks/useBluetooth";
 import { BluetoothDeviceModal } from "@/modals/BluetoothDeviceModal";
+import * as TaskManager from "expo-task-manager";
+
+const LOCATION_TRACKING_TASK = "LOCATION_TRACKING_TASK";
+
+TaskManager.defineTask(LOCATION_TRACKING_TASK, ({ data, error }) => {
+  if (error) {
+    console.error("Background location error:", error);
+    return;
+  }
+  if (data) {
+    const { locations } = data as { locations: Location.LocationObject[] };
+    // In a real app, you might want to send this data to your state management or database
+    console.log("Background location update:", locations);
+  }
+});
 
 const screenWidth = Dimensions.get("window").width;
 
@@ -83,7 +98,6 @@ const useGPSTracking = (isActive: boolean) => {
   const [totalDistance, setTotalDistance] = useState(0);
   const [currentSpeed, setCurrentSpeed] = useState(0);
   const [isTracking, setIsTracking] = useState(false);
-
   const locationSubscription = useRef<Location.LocationSubscription | null>(
     null,
   );
@@ -104,6 +118,7 @@ const useGPSTracking = (isActive: boolean) => {
         locationSubscription.current.remove();
         locationSubscription.current = null;
       }
+      Location.stopLocationUpdatesAsync(LOCATION_TRACKING_TASK);
       setIsTracking(false);
       return;
     }
@@ -120,16 +135,28 @@ const useGPSTracking = (isActive: boolean) => {
           return;
         }
 
-        // Request location permissions if not already granted
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== "granted") {
+        // Request foreground and background permissions
+        const { status: foregroundStatus } =
+          await Location.requestForegroundPermissionsAsync();
+        const { status: backgroundStatus } =
+          await Location.requestBackgroundPermissionsAsync();
+        if (foregroundStatus !== "granted" || backgroundStatus !== "granted") {
           Alert.alert(
             "Permission Required",
-            "Location permission is required for GPS tracking during workouts.",
+            "Location permission (foreground and background) is required for GPS tracking during workouts.",
           );
           return;
         }
 
+        // Start background location updates
+        await Location.startLocationUpdatesAsync(LOCATION_TRACKING_TASK, {
+          accuracy: Location.Accuracy.BestForNavigation,
+          timeInterval: 1000,
+          distanceInterval: 2,
+          showsBackgroundLocationIndicator: true,
+        });
+
+        // Start foreground location updates
         locationSubscription.current = await Location.watchPositionAsync(
           {
             accuracy: Location.Accuracy.BestForNavigation,
@@ -145,36 +172,27 @@ const useGPSTracking = (isActive: boolean) => {
               speed: location.coords.speed,
               accuracy: location.coords.accuracy,
             };
-
             setLocations((prev) => {
               const updated = [...prev, newLocation];
-
-              // Calculate distance and speed if we have multiple points
               if (updated.length >= 2) {
                 const last = updated[updated.length - 1];
                 const secondLast = updated[updated.length - 2];
-
                 const segmentDistance = calculateDistance(
                   secondLast.latitude,
                   secondLast.longitude,
                   last.latitude,
                   last.longitude,
                 );
-
                 setTotalDistance(
                   (prevDistance) => prevDistance + segmentDistance,
                 );
-
-                // Update current speed (prefer GPS speed if available)
                 const gpsSpeed = last.speed || 0;
                 setCurrentSpeed(gpsSpeed > 0 ? gpsSpeed : 0);
               }
-
               return updated;
             });
           },
         );
-
         setIsTracking(true);
       } catch (error) {
         console.error("GPS tracking error:", error);
@@ -192,6 +210,7 @@ const useGPSTracking = (isActive: boolean) => {
         locationSubscription.current.remove();
         locationSubscription.current = null;
       }
+      Location.stopLocationUpdatesAsync(LOCATION_TRACKING_TASK);
     };
   }, [isActive]);
 
@@ -527,12 +546,13 @@ export default function RecordScreen() {
       icon: "navigate-outline" as const,
       isLive: isTracking,
     },
+
     {
       id: "pace",
       title: "Current Pace",
       value: formatPace(currentSpeed),
       unit: "/km",
-      icon: "speedometer-outline" as const,
+      icon: "speedometer-outline",
       isLive: isTracking && currentSpeed > 0,
     },
     {
@@ -540,7 +560,7 @@ export default function RecordScreen() {
       title: "Avg Pace",
       value: averagePace,
       unit: "/km",
-      icon: "analytics-outline" as const,
+      icon: "analytics-outline",
       isLive: false,
     },
     {
@@ -558,6 +578,22 @@ export default function RecordScreen() {
       unit: "kcal",
       icon: "flame-outline" as const,
       isLive: isRecording,
+    },
+    {
+      id: "altitude",
+      title: "Altitude",
+      value: locations[locations.length - 1]?.altitude?.toFixed(0) || "--",
+      unit: "m",
+      icon: "altitude-outline",
+      isLive: isTracking,
+    },
+    {
+      id: "accuracy",
+      title: "GPS Accuracy",
+      value: locations[locations.length - 1]?.accuracy?.toFixed(0) || "--",
+      unit: "m",
+      icon: "gps-fixed",
+      isLive: isTracking,
     },
   ];
 
