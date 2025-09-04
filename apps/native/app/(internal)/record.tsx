@@ -18,6 +18,9 @@ import { useBluetooth } from "@/hooks/useBluetooth";
 import { useWorkoutMetrics } from "@/hooks/useWorkoutMetrics";
 import { BluetoothDeviceModal } from "@/modals/BluetoothDeviceModal";
 
+// Supabase
+import { supabase } from "@/lib/supabase";
+
 export default function RecordScreen() {
   // Hooks
   const { connectedDevices, isBluetoothEnabled, sensorValues } = useBluetooth();
@@ -48,11 +51,12 @@ export default function RecordScreen() {
     sensorValues,
     isRecording,
     isPaused,
-    isTracking: isRecording, // Use isRecording as GPS tracking indicator
+    isTracking: isRecording,
   });
 
   // Local state
   const [bluetoothModalVisible, setBluetoothModalVisible] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
 
   // Animation
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -65,14 +69,41 @@ export default function RecordScreen() {
     }).start();
   }, [fadeAnim]);
 
+  // Fetch user
+  useEffect(() => {
+    const fetchUser = async () => {
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser();
+      if (error) {
+        console.error("Error fetching user:", error);
+      } else {
+        setUserId(user?.id ?? null);
+      }
+    };
+    fetchUser();
+  }, []);
+
   // Handlers
   const handleStartRecording = async () => {
-    if (!hasAllPermissions) {
-      await requestAllRequiredPermissions();
-      return;
+    try {
+      console.log("Starting workout...");
+      if (!hasAllPermissions) {
+        console.warn(
+          "Cannot start workout: user permissions haven't been granted yet",
+        );
+        await requestAllRequiredPermissions();
+        return;
+      }
+      if (!userId) {
+        console.warn("Cannot start workout: user not available yet");
+        return;
+      }
+      await startWorkout(userId);
+    } catch (error) {
+      console.error("Failed to start workout:", error);
     }
-    // TODO: Get profileId from user context or auth
-    await startWorkout("temp-profile-id");
   };
 
   const handleBluetoothPress = () => {
@@ -119,10 +150,6 @@ export default function RecordScreen() {
         {/* Metrics */}
         <View style={styles.content}>
           <MetricsGrid metrics={workoutMetrics} />
-        </View>
-
-        {/* Controls */}
-        <View style={styles.footer}>
           <RecordingControls
             isRecording={isRecording}
             isPaused={isPaused}
@@ -146,13 +173,8 @@ export default function RecordScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: "#f8fafc",
-  },
-  container: {
-    flex: 1,
-  },
+  root: { flex: 1, backgroundColor: "#f8fafc" },
+  container: { flex: 1 },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -161,21 +183,12 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 20,
   },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: "600",
-    color: "#111827",
-  },
+  headerTitle: { fontSize: 22, fontWeight: "600", color: "#111827" },
   activityTypeButton: {
     padding: 8,
     borderRadius: 8,
     backgroundColor: "#f3f4f6",
   },
-  content: {
-    flex: 1,
-  },
-  footer: {
-    paddingHorizontal: 20,
-    paddingBottom: 40,
-  },
+  content: { flex: 1 },
+  // footer: { paddingHorizontal: 20, paddingBottom: 40 },
 });

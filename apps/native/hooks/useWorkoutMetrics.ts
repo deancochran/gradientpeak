@@ -9,8 +9,6 @@ import type {
 import {
   calculateAveragePace,
   estimateCalories,
-  formatAccuracy,
-  formatAltitude,
   formatDuration,
   formatPace,
   metersToKm,
@@ -95,22 +93,22 @@ export const useWorkoutMetrics = ({
         icon: "flame-outline" as keyof typeof Ionicons.glyphMap,
         isLive: isRecording,
       },
-      {
-        id: "altitude",
-        title: "Altitude",
-        value: formatAltitude(currentLocation?.altitude),
-        unit: "m",
-        icon: "trending-up-outline" as keyof typeof Ionicons.glyphMap,
-        isLive: isTracking,
-      },
-      {
-        id: "accuracy",
-        title: "GPS Accuracy",
-        value: formatAccuracy(currentLocation?.accuracy),
-        unit: "m",
-        icon: "locate-outline" as keyof typeof Ionicons.glyphMap,
-        isLive: isTracking,
-      },
+      // {
+      //   id: "altitude",
+      //   title: "Altitude",
+      //   value: formatAltitude(currentLocation?.altitude),
+      //   unit: "m",
+      //   icon: "trending-up-outline" as keyof typeof Ionicons.glyphMap,
+      //   isLive: isTracking,
+      // },
+      // {
+      //   id: "accuracy",
+      //   title: "GPS Accuracy",
+      //   value: formatAccuracy(currentLocation?.accuracy),
+      //   unit: "m",
+      //   icon: "locate-outline" as keyof typeof Ionicons.glyphMap,
+      //   isLive: isTracking,
+      // },
     ];
 
     return metrics;

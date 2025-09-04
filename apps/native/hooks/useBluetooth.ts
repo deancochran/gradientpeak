@@ -1,11 +1,11 @@
+import { Buffer } from "buffer";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BleManager,
+  Characteristic,
   Device,
   Service,
-  Characteristic,
 } from "react-native-ble-plx";
-import { Buffer } from "buffer";
 
 // Singleton pattern to prevent multiple hook instances
 let globalBluetoothState: {
@@ -111,15 +111,15 @@ export const useBluetooth = () => {
     };
 
     subscribers.add(updateState);
-    console.log(
-      `🔧 [useBluetooth:${HOOK_INSTANCE_ID}] Subscribed to singleton state. Total subscribers: ${subscribers.size}`,
-    );
+    // console.log(
+    //   `🔧 [useBluetooth:${HOOK_INSTANCE_ID}] Subscribed to singleton state. Total subscribers: ${subscribers.size}`,
+    // );
 
     return () => {
       subscribers.delete(updateState);
-      console.log(
-        `🔧 [useBluetooth:${HOOK_INSTANCE_ID}] Unsubscribed from singleton state. Remaining subscribers: ${subscribers.size}`,
-      );
+      // console.log(
+      //   `🔧 [useBluetooth:${HOOK_INSTANCE_ID}] Unsubscribed from singleton state. Remaining subscribers: ${subscribers.size}`,
+      // );
     };
   }, []);
 
@@ -161,15 +161,15 @@ export const useBluetooth = () => {
       stateHistoryRef.current.shift();
     }
 
-    console.log(
-      `📈 [useBluetooth:${HOOK_INSTANCE_ID}] State History:`,
-      stateHistoryRef.current
-        .map(
-          (s) =>
-            `R${s.render}: devices=${s.connectedDevicesCount} hr=${s.sensorValuesHeartRate}`,
-        )
-        .join(" | "),
-    );
+    // console.log(
+    //   `📈 [useBluetooth:${HOOK_INSTANCE_ID}] State History:`,
+    //   stateHistoryRef.current
+    //     .map(
+    //       (s) =>
+    //         `R${s.render}: devices=${s.connectedDevicesCount} hr=${s.sensorValuesHeartRate}`,
+    //     )
+    //     .join(" | "),
+    // );
   });
 
   // Use number type for React Native setTimeout compatibility
@@ -885,13 +885,13 @@ export const useBluetooth = () => {
   // Debug: Log hook state before returning (simple approach)
   const deviceArray = connectedDevices.map((cd) => cd.device);
 
-  console.log(`🔄 [useBluetooth:${HOOK_INSTANCE_ID}] Hook state:`, {
-    allDevicesCount: allDevices.length,
-    connectedDevicesCount: connectedDevices.length,
-    sensorValues,
-    isBluetoothEnabled,
-    isScanning,
-  });
+  // console.log(`🔄 [useBluetooth:${HOOK_INSTANCE_ID}] Hook state:`, {
+  //   allDevicesCount: allDevices.length,
+  //   connectedDevicesCount: connectedDevices.length,
+  //   sensorValues,
+  //   isBluetoothEnabled,
+  //   isScanning,
+  // });
 
   return {
     // Device management

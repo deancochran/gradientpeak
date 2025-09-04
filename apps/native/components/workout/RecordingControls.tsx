@@ -2,8 +2,6 @@ import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-import { Button } from "../ui/button";
-
 interface RecordingControlsProps {
   isRecording: boolean;
   isPaused: boolean;
@@ -26,13 +24,9 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
   if (!isRecording) {
     return (
       <View style={styles.footerInitial}>
-        <Button
-          style={styles.startButton}
-          onPress={onStart}
-          disabled={!hasPermissions}
-        >
+        <TouchableOpacity style={styles.startButton} onPress={onStart}>
           <Text style={styles.startButtonText}>Start Workout</Text>
-        </Button>
+        </TouchableOpacity>
       </View>
     );
   }
