@@ -1,4 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
+import { Encoder, Profile } from "@garmin/fitsdk";
+import * as FileSystem from "expo-file-system";
 import * as Haptics from "expo-haptics";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -75,7 +77,7 @@ const MetricsGrid = ({ metrics }: { metrics: any[] }) => (
   </View>
 );
 
-// ---------------- Recording Controls Component ----------------
+// ---------------- RecordingControls Component ----------------
 const RecordingControls = ({
   isRecording,
   isPaused,
@@ -130,13 +132,8 @@ const RecordingControls = ({
 
 // ---------------- RecordScreen ----------------
 export default function RecordScreen() {
-  // Debug: Track component lifecycle to identify multiple instances
-  const componentIdRef = useRef(Math.random().toString(36).substring(7));
-
   const bluetooth = useBluetooth();
   const { connectedDevices, isBluetoothEnabled, sensorValues } = bluetooth;
-
-  // Debug: Log exactly what the component receives
 
   const { permissions, requestAllRequiredPermissions } = useGlobalPermissions();
   const hasAllPermissions = useMemo(
@@ -147,9 +144,9 @@ export default function RecordScreen() {
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [duration, setDuration] = useState(0);
+  const [fitRecords, setFitRecords] = useState<any[]>([]);
   const [bluetoothModalVisible, setBluetoothModalVisible] = useState(false);
 
-  // Fix timer type - use number instead of NodeJS.Timeout for React Native
   const timerRef = useRef<number | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -158,10 +155,21 @@ export default function RecordScreen() {
   // ---------------- Timer ----------------
   useEffect(() => {
     if (isRecording && !isPaused) {
-      timerRef.current = setInterval(
-        () => setDuration((prev) => prev + 1),
-        1000,
-      ) as unknown as number; // Cast for React Native compatibility
+      timerRef.current = setInterval(() => {
+        setDuration((prev) => prev + 1);
+
+        // Record FIT point
+        setFitRecords((prev) => [
+          ...prev,
+          {
+            timestamp: new Date(),
+            heartRate: sensorValues?.heartRate,
+            power: sensorValues?.power,
+            cadence: sensorValues?.cadence,
+            speed: sensorValues?.pace,
+          },
+        ]);
+      }, 1000) as unknown as number;
     } else if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -172,7 +180,7 @@ export default function RecordScreen() {
         timerRef.current = null;
       }
     };
-  }, [isRecording, isPaused]);
+  }, [isRecording, isPaused, sensorValues]);
 
   // ---------------- Animations ----------------
   useEffect(() => {
@@ -182,6 +190,42 @@ export default function RecordScreen() {
       useNativeDriver: true,
     }).start();
   }, [fadeAnim]);
+
+  // ---------------- FIT Recording ----------------
+  const saveFitFile = async () => {
+    if (fitRecords.length === 0) return;
+
+    const encoder = new Encoder();
+    encoder.onMesg(Profile.MesgNum.FILE_ID, {
+      manufacturer: "development",
+      product: 1,
+      timeCreated: new Date(),
+      type: "activity",
+    });
+
+    fitRecords.forEach((rec) => {
+      encoder.writeMesg({
+        mesgNum: Profile.MesgNum.RECORD,
+        timestamp: rec.timestamp,
+        heartRate: rec.heartRate,
+        power: rec.power,
+        cadence: rec.cadence,
+        speed: rec.speed,
+      });
+    });
+
+    const uint8Array = encoder.close();
+    const fileUri = `${FileSystem.documentDirectory}workout_${Date.now()}.fit`;
+
+    await FileSystem.writeAsStringAsync(
+      fileUri,
+      Buffer.from(uint8Array).toString("base64"),
+      { encoding: FileSystem.EncodingType.Base64 },
+    );
+
+    Alert.alert("FIT File Saved", `Workout saved at ${fileUri}`);
+    setFitRecords([]);
+  };
 
   // ---------------- Workout Handlers ----------------
   const handleStartRecording = async () => {
@@ -198,6 +242,7 @@ export default function RecordScreen() {
     setIsRecording(true);
     setIsPaused(false);
     setDuration(0);
+    setFitRecords([]);
   };
 
   const handlePauseRecording = () => setIsPaused(true);
@@ -207,19 +252,20 @@ export default function RecordScreen() {
     setIsPaused(true);
     Alert.alert(
       "End Workout",
-      "Are you sure you want to end this workout? All data will be discarded.",
+      "Are you sure you want to end this workout? Your data will be saved.",
       [
         { text: "Cancel", style: "cancel", onPress: () => setIsPaused(false) },
         {
           text: "End",
           style: "destructive",
-          onPress: () => {
+          onPress: async () => {
             if (timerRef.current) {
               clearInterval(timerRef.current);
               timerRef.current = null;
             }
             setIsRecording(false);
             setDuration(0);
+            await saveFitFile();
           },
         },
       ],
@@ -227,8 +273,7 @@ export default function RecordScreen() {
     );
   };
 
-  // ---------------- Workout Metrics - Direct calculation (no useMemo) ----------------
-  // Simple calculations that don't need memoization - React is fast enough!
+  // ---------------- Workout Metrics ----------------
   const workoutMetrics = [
     {
       id: "duration",
