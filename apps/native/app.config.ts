@@ -79,6 +79,27 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           backgroundColor: "#ffffff",
         },
       ],
+      [
+        "expo-sqlite",
+        {
+          jsi: true,
+        },
+      ],
+      [
+        "expo-build-properties",
+        {
+          ios: {
+            extraPods: [
+              {
+                name: "simdjson",
+                path: "../../../node_modules/@nozbe/simdjson",
+                modular_headers: true,
+                configurations: ["Debug", "Release"],
+              },
+            ],
+          },
+        },
+      ],
       ["expo-location"],
       ["expo-task-manager"],
       ["expo-secure-store"],

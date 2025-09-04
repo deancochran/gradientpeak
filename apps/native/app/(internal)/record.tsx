@@ -21,19 +21,41 @@ import { Card } from "@/components/ui/card";
 import { useGlobalPermissions } from "@/contexts/PermissionsContext";
 import { useBluetooth } from "@/hooks/useBluetooth";
 import { BluetoothDeviceModal } from "@/modals/BluetoothDeviceModal";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as TaskManager from "expo-task-manager";
 
-const LOCATION_TRACKING_TASK = "LOCATION_TRACKING_TASK";
+import { workoutService } from "@/lib/database/workout.service";
 
-TaskManager.defineTask(LOCATION_TRACKING_TASK, ({ data, error }) => {
+const LOCATION_TRACKING_TASK = "LOCATION_TRACKING_TASK";
+const ACTIVE_WORKOUT_ID_KEY = "active_workout_id";
+
+TaskManager.defineTask(LOCATION_TRACKING_TASK, async ({ data, error }) => {
   if (error) {
     console.error("Background location error:", error);
     return;
   }
   if (data) {
     const { locations } = data as { locations: Location.LocationObject[] };
-    // In a real app, you might want to send this data to your state management or database
-    console.log("Background location update:", locations);
+    try {
+      const activeWorkoutId = await AsyncStorage.getItem(ACTIVE_WORKOUT_ID_KEY);
+
+      if (activeWorkoutId) {
+        for (const location of locations) {
+          // The service expects our GpsLocation type, so we map it here.
+          const gpsLocation = {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+            altitude: location.coords.altitude,
+            timestamp: location.timestamp,
+            speed: location.coords.speed,
+            accuracy: location.coords.accuracy,
+          };
+          await workoutService.addLocationPoint(activeWorkoutId, gpsLocation);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to save background location:", e);
+    }
   }
 });
 
