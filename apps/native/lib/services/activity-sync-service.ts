@@ -4,7 +4,7 @@ import * as Network from "expo-network";
 import { Alert, AppState } from "react-native";
 
 import { supabase, type ActivityInsert } from "../supabase";
-import type { ActivityMetadata, LocalActivity } from "../types/activity";
+import type { LocalActivity } from "../types/activity";
 import { FitFileService } from "./fit-file-service";
 import { LocalActivityDatabaseService } from "./local-activity-database";
 
@@ -212,7 +212,7 @@ export class ActivitySyncService {
     fileName?: string,
   ): Promise<string | null> {
     try {
-      // Check if it's a valid FIT file
+      // Check if it's a valid FIT file (import still supports FIT files for parsing)
       const isValid = await FitFileService.isValidFitFile(filePath);
       if (!isValid) {
         Alert.alert(
@@ -222,7 +222,7 @@ export class ActivitySyncService {
         return null;
       }
 
-      // Parse the FIT file to extract metadata
+      // Parse the FIT file to extract metadata (import still uses FIT parsing)
       const metadata = await FitFileService.parseActivityFile(filePath);
       if (!metadata) {
         Alert.alert("Error", "Failed to read the FIT file.");
@@ -293,42 +293,21 @@ export class ActivitySyncService {
         "syncing",
       );
 
-      // Check if FIT file exists
+      // Check if JSON file exists (changed from FIT file)
       const fileExists = await FileSystem.getInfoAsync(
-        activity.local_fit_file_path,
+        activity.local_fit_file_path, // Note: keeping same field name for compatibility
       );
       if (!fileExists.exists) {
-        throw new Error("FIT file not found on device");
+        throw new Error("Activity JSON file not found on device");
       }
 
-      // Parse metadata from FIT file if not cached
-      let metadata: ActivityMetadata | null = null;
-      if (activity.cached_metadata) {
-        try {
-          metadata = JSON.parse(activity.cached_metadata);
-        } catch {
-          // If cached metadata is corrupted, re-parse
-          metadata = await FitFileService.parseActivityFile(
-            activity.local_fit_file_path,
-          );
-        }
-      } else {
-        metadata = await FitFileService.parseActivityFile(
-          activity.local_fit_file_path,
-        );
-      }
-
-      if (!metadata) {
-        throw new Error("Failed to parse FIT file metadata");
-      }
-
-      // Upload FIT file to Supabase Storage
-      const cloudPath = await this.uploadFitFile(
+      // Upload JSON file to Supabase Storage
+      const cloudPath = await this.uploadJsonFile(
         activity.local_fit_file_path,
         activity.id,
       );
       if (!cloudPath) {
-        throw new Error("Failed to upload FIT file");
+        throw new Error("Failed to upload activity JSON file");
       }
 
       // Create activity record in Supabase
@@ -376,12 +355,12 @@ export class ActivitySyncService {
         cloudPath,
       );
 
-      // Delete local FIT file after successful sync
+      // Delete local JSON file after successful sync
       try {
         await FileSystem.deleteAsync(activity.local_fit_file_path);
-        console.log(`Local FIT file deleted: ${activity.local_fit_file_path}`);
+        console.log(`Local JSON file deleted: ${activity.local_fit_file_path}`);
       } catch (deleteError) {
-        console.warn("Failed to delete local FIT file:", deleteError);
+        console.warn("Failed to delete local JSON file:", deleteError);
       }
 
       console.log(`Successfully synced activity: ${activity.id}`);
@@ -402,31 +381,27 @@ export class ActivitySyncService {
   }
 
   /**
-   * Upload FIT file to Supabase Storage
+   * Upload JSON file to Supabase Storage for backend processing
    */
-  private static async uploadFitFile(
+  private static async uploadJsonFile(
     localPath: string,
     activityId: string,
   ): Promise<string | null> {
     try {
-      // Read the FIT file
-      const base64Data = await FileSystem.readAsStringAsync(localPath, {
-        encoding: FileSystem.EncodingType.Base64,
+      // Read the JSON file
+      const jsonData = await FileSystem.readAsStringAsync(localPath, {
+        encoding: FileSystem.EncodingType.UTF8,
       });
 
-      // Convert base64 to ArrayBuffer
-      const binaryString = atob(base64Data);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
+      // Convert to blob for upload
+      const blob = new Blob([jsonData], { type: "application/json" });
 
-      // Upload to Supabase Storage
-      const fileName = `${activityId}.fit`;
+      // Upload to Supabase Storage bucket for JSON processing
+      const fileName = `${activityId}.json`;
       const { data, error } = await supabase.storage
-        .from("activity-files")
-        .upload(`fit-files/${fileName}`, bytes.buffer, {
-          contentType: "application/octet-stream",
+        .from("activity-json-uploads")
+        .upload(fileName, blob, {
+          contentType: "application/json",
           upsert: true,
         });
 
@@ -437,7 +412,7 @@ export class ActivitySyncService {
 
       return data.path;
     } catch (error) {
-      console.error("Error uploading FIT file:", error);
+      console.error("Error uploading JSON file:", error);
       return null;
     }
   }

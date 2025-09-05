@@ -18,6 +18,8 @@ export interface LocalActivity {
   profile_id: string;
   local_fit_file_path: string;
   sync_status: SyncStatus;
+  cloud_storage_path?: string;
+  sync_error_message?: string;
   created_at: number;
   updated_at: number;
 

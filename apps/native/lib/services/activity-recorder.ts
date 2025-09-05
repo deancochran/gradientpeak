@@ -20,7 +20,7 @@ export class ActivityRecorderService {
   private static currentSession: RecordingSession | null = null;
   private static locationSubscription: Location.LocationSubscription | null =
     null;
-  private static recordingTimer: NodeJS.Timeout | null = null;
+  private static recordingTimer: ReturnType<typeof setInterval> | null = null;
   private static isInitialized = false;
   private static sensorDataBuffer: SensorDataPoint[] = [];
   private static gpsDataBuffer: GpsDataPoint[] = [];
@@ -246,24 +246,44 @@ export class ActivityRecorderService {
 
       const session = this.currentSession;
 
-      // Generate FIT file
-      const fitFilePath = await FitFileService.generateActivityFile(session);
-      if (!fitFilePath) {
-        throw new Error("Failed to generate FIT file");
+      // Save activity as JSON file for backend processing
+      const jsonFilePath = await FitFileService.saveActivityJson(session);
+      if (!jsonFilePath) {
+        throw new Error("Failed to save activity JSON file");
       }
 
-      // Parse the generated FIT file to extract metadata
-      const metadata = await FitFileService.parseActivityFile(fitFilePath);
+      // Create basic metadata from session data
+      const metadata = {
+        startTime: session.startedAt,
+        endTime: new Date(),
+        totalTimerTime: session.liveMetrics.duration || 0,
+        totalDistance: session.liveMetrics.distance,
+        avgHeartRate: session.liveMetrics.avgHeartRate,
+        avgPower: session.liveMetrics.avgPower,
+        hasGpsData: session.recordMessages.some(
+          (r) => r.positionLat !== undefined,
+        ),
+        hasHeartRateData: session.recordMessages.some(
+          (r) => r.heartRate !== undefined,
+        ),
+        hasPowerData: session.recordMessages.some((r) => r.power !== undefined),
+        hasCadenceData: session.recordMessages.some(
+          (r) => r.cadence !== undefined,
+        ),
+        hasTemperatureData: session.recordMessages.some(
+          (r) => r.temperature !== undefined,
+        ),
+      };
 
       // Save activity to local database
       const activityId = await LocalActivityDatabaseService.createActivity({
         id: session.id,
         profile_id: session.profileId,
-        local_fit_file_path: fitFilePath,
+        local_fit_file_path: jsonFilePath, // Now points to JSON file instead of FIT file
         sync_status: "local_only",
         created_at: Date.now(),
         updated_at: Date.now(),
-        cached_metadata: metadata ? JSON.stringify(metadata) : undefined,
+        cached_metadata: JSON.stringify(metadata),
       });
 
       // Clean up
@@ -271,7 +291,7 @@ export class ActivityRecorderService {
 
       Alert.alert(
         "Activity Saved",
-        `Your activity has been saved locally and will sync when connected.`,
+        `Your activity has been saved locally as JSON and will be processed on sync.`,
         [{ text: "OK" }],
       );
 

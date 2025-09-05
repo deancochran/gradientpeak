@@ -101,7 +101,9 @@ export class WorkoutService {
       await this.initialize();
     }
 
-    return await LocalActivityDatabaseService.getActivitiesForProfile(profileId);
+    return await LocalActivityDatabaseService.getActivitiesForProfile(
+      profileId,
+    );
   }
 
   /**
@@ -120,14 +122,15 @@ export class WorkoutService {
    */
   static async deleteActivity(activityId: string): Promise<boolean> {
     try {
-      const activity = await LocalActivityDatabaseService.getActivity(activityId);
+      const activity =
+        await LocalActivityDatabaseService.getActivity(activityId);
       if (!activity) {
         return false;
       }
 
-      // Delete local FIT file if it exists
+      // Delete local JSON file if it exists
       if (activity.local_fit_file_path) {
-        await FitFileService.deleteFitFile(activity.local_fit_file_path);
+        await FitFileService.deleteJsonFile(activity.local_fit_file_path);
       }
 
       // Delete from local database
@@ -144,10 +147,20 @@ export class WorkoutService {
   }
 
   /**
-   * Parse and get metadata from a FIT file
+   * Get metadata from cached activity data
    */
-  static async getActivityMetadata(fitFilePath: string) {
-    return await FitFileService.parseActivityFile(fitFilePath);
+  static async getActivityMetadata(activityId: string) {
+    const activity = await LocalActivityDatabaseService.getActivity(activityId);
+    if (!activity || !activity.cached_metadata) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(activity.cached_metadata);
+    } catch (error) {
+      console.error("Error parsing cached metadata:", error);
+      return null;
+    }
   }
 
   // Sync Management
@@ -155,7 +168,10 @@ export class WorkoutService {
   /**
    * Sync all pending activities
    */
-  static async syncAllActivities(): Promise<{ success: number; failed: number }> {
+  static async syncAllActivities(): Promise<{
+    success: number;
+    failed: number;
+  }> {
     if (!this.initialized) {
       await this.initialize();
     }
@@ -196,7 +212,10 @@ export class WorkoutService {
   /**
    * Import a FIT file from external source
    */
-  static async importFitFile(filePath: string, fileName?: string): Promise<string | null> {
+  static async importFitFile(
+    filePath: string,
+    fileName?: string,
+  ): Promise<string | null> {
     if (!this.initialized) {
       await this.initialize();
     }
@@ -205,21 +224,27 @@ export class WorkoutService {
   }
 
   /**
-   * Export a FIT file (copy from app directory to external location)
+   * Export activity data (JSON file copy to external location)
    */
-  static async exportFitFile(activityId: string, destinationPath: string): Promise<boolean> {
+  static async exportActivityData(
+    activityId: string,
+    destinationPath: string,
+  ): Promise<boolean> {
     try {
-      const activity = await LocalActivityDatabaseService.getActivity(activityId);
+      const activity =
+        await LocalActivityDatabaseService.getActivity(activityId);
       if (!activity || !activity.local_fit_file_path) {
         return false;
       }
 
       // TODO: Implement file export
-      // This would copy the FIT file to the destination path
-      console.log(`Export ${activity.local_fit_file_path} to ${destinationPath}`);
+      // This would copy the JSON file to the destination path
+      console.log(
+        `Export ${activity.local_fit_file_path} to ${destinationPath}`,
+      );
       return true;
     } catch (error) {
-      console.error("Error exporting FIT file:", error);
+      console.error("Error exporting activity data:", error);
       return false;
     }
   }
@@ -261,9 +286,9 @@ export class WorkoutService {
     const secs = seconds % 60;
 
     if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+      return `${hours}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
     }
-    return `${minutes}:${secs.toString().padStart(2, '0')}`;
+    return `${minutes}:${secs.toString().padStart(2, "0")}`;
   }
 
   /**
@@ -286,7 +311,7 @@ export class WorkoutService {
     const minutes = Math.floor(paceSeconds / 60);
     const seconds = Math.floor(paceSeconds % 60);
 
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   }
 
   /**
@@ -300,8 +325,8 @@ export class WorkoutService {
       Alert.alert(
         "Storage Status",
         `Total Activities: ${storageInfo.totalActivities}\n` +
-        `Pending Sync: ${syncStatus.pendingActivities}\n` +
-        `Failed Sync: ${syncStatus.failedActivities}`,
+          `Pending Sync: ${syncStatus.pendingActivities}\n` +
+          `Failed Sync: ${syncStatus.failedActivities}`,
         [
           { text: "Cancel" },
           {
@@ -310,11 +335,11 @@ export class WorkoutService {
               const result = await this.syncAllActivities();
               Alert.alert(
                 "Sync Complete",
-                `Synced: ${result.success}\nFailed: ${result.failed}`
+                `Synced: ${result.success}\nFailed: ${result.failed}`,
               );
             },
           },
-        ]
+        ],
       );
     } catch (error) {
       console.error("Error showing storage status:", error);

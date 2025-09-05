@@ -1,201 +1,71 @@
 import * as GarminFitSDK from "@garmin/fitsdk";
 import * as FileSystem from "expo-file-system";
-import { fromByteArray, toByteArray } from "react-native-quick-base64";
+import { toByteArray } from "react-native-quick-base64";
 
 import type { ActivityMetadata, RecordingSession } from "../types/activity";
 
 export class FitFileService {
   /**
-   * Generate a FIT file from a recording session using the Garmin SDK
+   * Save recording session as JSON file for backend processing
    */
-  static async generateActivityFile(
+  static async saveActivityJson(
     session: RecordingSession,
   ): Promise<string | null> {
     try {
-      const encoder = new GarminFitSDK.Encoder();
-      const startTime = session.startedAt;
       const endTime = new Date();
+      const activityData = {
+        id: session.id,
+        profileId: session.profileId,
+        startedAt: session.startedAt.toISOString(),
+        endedAt: endTime.toISOString(),
+        recordMessages: session.recordMessages.map((msg) => ({
+          ...msg,
+          timestamp:
+            msg.timestamp instanceof Date
+              ? msg.timestamp.toISOString()
+              : msg.timestamp,
+        })),
+        eventMessages: session.eventMessages.map((msg) => ({
+          ...msg,
+          timestamp:
+            msg.timestamp instanceof Date
+              ? msg.timestamp.toISOString()
+              : msg.timestamp,
+        })),
+        hrMessages: session.hrMessages.map((msg) => ({
+          ...msg,
+          timestamp:
+            msg.timestamp instanceof Date
+              ? msg.timestamp.toISOString()
+              : msg.timestamp,
+        })),
+        hrvMessages:
+          session.hrvMessages?.map((msg) => ({
+            ...msg,
+            timestamp:
+              msg.timestamp instanceof Date
+                ? msg.timestamp.toISOString()
+                : msg.timestamp,
+          })) || [],
+        liveMetrics: session.liveMetrics,
+        status: session.status,
+      };
 
-      // Create File ID message (required)
-      const fileId = new GarminFitSDK.Profile.FileIdMessage();
-      fileId.type = GarminFitSDK.Profile.FileType.ACTIVITY;
-      fileId.manufacturer = GarminFitSDK.Profile.Manufacturer.DEVELOPMENT;
-      fileId.product = 1;
-      fileId.serialNumber = Date.now();
-      fileId.timeCreated = startTime;
-      encoder.addMessage(fileId);
-
-      // Add Device Info message (recommended)
-      const deviceInfo = new GarminFitSDK.Profile.DeviceInfoMessage();
-      deviceInfo.timestamp = startTime;
-      deviceInfo.deviceIndex = 0; // Creator device
-      deviceInfo.manufacturer = GarminFitSDK.Profile.Manufacturer.DEVELOPMENT;
-      deviceInfo.product = 1;
-      deviceInfo.softwareVersion = 100; // Version 1.00
-      encoder.addMessage(deviceInfo);
-
-      // Process all collected data to calculate session summary
-      const sessionSummary = this.calculateSessionSummary(
-        session.recordMessages,
-        session.eventMessages,
-        startTime,
-        endTime,
-      );
-
-      // Create Session message (required)
-      const sessionMsg = new GarminFitSDK.Profile.SessionMessage();
-      sessionMsg.timestamp = endTime;
-      sessionMsg.startTime = startTime;
-      sessionMsg.sport =
-        sessionSummary.sport || GarminFitSDK.Profile.Sport.GENERIC;
-      sessionMsg.subSport =
-        sessionSummary.subSport || GarminFitSDK.Profile.SubSport.GENERIC;
-
-      // Add session summary data dynamically
-      if (sessionSummary.totalDistance !== undefined) {
-        sessionMsg.totalDistance = sessionSummary.totalDistance;
-      }
-      if (sessionSummary.totalTimerTime !== undefined) {
-        sessionMsg.totalTimerTime = sessionSummary.totalTimerTime;
-      }
-      if (sessionSummary.totalElapsedTime !== undefined) {
-        sessionMsg.totalElapsedTime = sessionSummary.totalElapsedTime;
-      }
-      if (sessionSummary.totalCalories !== undefined) {
-        sessionMsg.totalCalories = sessionSummary.totalCalories;
-      }
-      if (sessionSummary.avgHeartRate !== undefined) {
-        sessionMsg.avgHeartRate = sessionSummary.avgHeartRate;
-      }
-      if (sessionSummary.maxHeartRate !== undefined) {
-        sessionMsg.maxHeartRate = sessionSummary.maxHeartRate;
-      }
-      if (sessionSummary.avgPower !== undefined) {
-        sessionMsg.avgPower = sessionSummary.avgPower;
-      }
-      if (sessionSummary.maxPower !== undefined) {
-        sessionMsg.maxPower = sessionSummary.maxPower;
-      }
-      if (sessionSummary.avgSpeed !== undefined) {
-        sessionMsg.avgSpeed = sessionSummary.avgSpeed;
-      }
-      if (sessionSummary.maxSpeed !== undefined) {
-        sessionMsg.maxSpeed = sessionSummary.maxSpeed;
-      }
-      if (sessionSummary.totalAscent !== undefined) {
-        sessionMsg.totalAscent = sessionSummary.totalAscent;
-      }
-      if (sessionSummary.totalDescent !== undefined) {
-        sessionMsg.totalDescent = sessionSummary.totalDescent;
-      }
-
-      encoder.addMessage(sessionMsg);
-
-      // Create default Lap message (required)
-      const lapMsg = new GarminFitSDK.Profile.LapMessage();
-      lapMsg.timestamp = endTime;
-      lapMsg.startTime = startTime;
-      lapMsg.totalTimerTime = sessionSummary.totalTimerTime;
-      lapMsg.totalElapsedTime = sessionSummary.totalElapsedTime;
-      if (sessionSummary.totalDistance !== undefined) {
-        lapMsg.totalDistance = sessionSummary.totalDistance;
-      }
-      encoder.addMessage(lapMsg);
-
-      // Add Timer Start event
-      const startEvent = new GarminFitSDK.Profile.EventMessage();
-      startEvent.timestamp = startTime;
-      startEvent.event = GarminFitSDK.Profile.Event.TIMER;
-      startEvent.eventType = GarminFitSDK.Profile.EventType.START;
-      encoder.addMessage(startEvent);
-
-      // Add all Record messages in chronological order
-      const sortedRecords = [...session.recordMessages].sort(
-        (a, b) =>
-          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
-      );
-
-      for (const record of sortedRecords) {
-        const recordMsg = new GarminFitSDK.Profile.RecordMessage();
-
-        // Copy all available fields from the collected data
-        Object.keys(record).forEach((key) => {
-          if (key === "timestamp") {
-            recordMsg.timestamp = new Date(record[key]);
-          } else if (record[key] !== undefined && record[key] !== null) {
-            (recordMsg as any)[key] = record[key];
-          }
-        });
-
-        encoder.addMessage(recordMsg);
-      }
-
-      // Add all Event messages
-      const sortedEvents = [...session.eventMessages].sort(
-        (a, b) =>
-          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
-      );
-
-      for (const event of sortedEvents) {
-        const eventMsg = new GarminFitSDK.Profile.EventMessage();
-        Object.keys(event).forEach((key) => {
-          if (key === "timestamp") {
-            eventMsg.timestamp = new Date(event[key]);
-          } else if (event[key] !== undefined && event[key] !== null) {
-            (eventMsg as any)[key] = event[key];
-          }
-        });
-        encoder.addMessage(eventMsg);
-      }
-
-      // Add compressed HR messages if available
-      if (GarminFitSDK.Profile.HrMessage) {
-        for (const hrMsg of session.hrMessages) {
-          const hrMessage = new GarminFitSDK.Profile.HrMessage();
-          Object.keys(hrMsg).forEach((key) => {
-            if (key === "timestamp") {
-              hrMessage.timestamp = new Date(hrMsg[key]);
-            } else if (hrMsg[key] !== undefined && hrMsg[key] !== null) {
-              (hrMessage as any)[key] = hrMsg[key];
-            }
-          });
-          encoder.addMessage(hrMessage);
-        }
-      } else {
-        console.warn(
-          "Profile.HrMessage is not available in the FIT SDK. Skipping HR data.",
-        );
-      }
-
-      // Add Timer Stop event
-      const stopEvent = new GarminFitSDK.Profile.EventMessage();
-      stopEvent.timestamp = endTime;
-      stopEvent.event = GarminFitSDK.Profile.Event.TIMER;
-      stopEvent.eventType = GarminFitSDK.Profile.EventType.STOP_DISABLE_ALL;
-      encoder.addMessage(stopEvent);
-
-      // Create Activity message (required)
-      const activityMsg = new GarminFitSDK.Profile.ActivityMessage();
-      activityMsg.timestamp = endTime;
-      activityMsg.totalTimerTime = sessionSummary.totalTimerTime;
-      activityMsg.numSessions = 1;
-      activityMsg.type = GarminFitSDK.Profile.Activity.MANUAL;
-      encoder.addMessage(activityMsg);
-
-      // Encode the FIT file
-      const data = encoder.encode();
-      const fileName = `activity-${session.id}.fit`;
+      const fileName = `activity-${session.id}.json`;
       const filePath = `${FileSystem.documentDirectory}${fileName}`;
-      const base64Data = fromByteArray(new Uint8Array(data));
 
-      await FileSystem.writeAsStringAsync(filePath, base64Data, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
+      await FileSystem.writeAsStringAsync(
+        filePath,
+        JSON.stringify(activityData, null, 2),
+        {
+          encoding: FileSystem.EncodingType.UTF8,
+        },
+      );
 
-      console.log(`FIT activity file created: ${filePath}`);
+      console.log(`Activity JSON file created: ${filePath}`);
       return filePath;
     } catch (error) {
-      console.error("Error generating FIT activity file:", error);
+      console.error("Error saving activity JSON file:", error);
       return null;
     }
   }
@@ -520,91 +390,32 @@ export class FitFileService {
   }
 
   /**
-   * Calculate session summary from raw messages
+   * Delete a JSON activity file
    */
-  private static calculateSessionSummary(
-    recordMessages: any[],
-    eventMessages: any[],
-    startTime: Date,
-    endTime: Date,
-  ) {
-    const summary: any = {
-      totalTimerTime: (endTime.getTime() - startTime.getTime()) / 1000,
-      totalElapsedTime: (endTime.getTime() - startTime.getTime()) / 1000,
-    };
+  static async deleteJsonFile(filePath: string): Promise<boolean> {
+    try {
+      const fileExists = await FileSystem.getInfoAsync(filePath);
+      if (!fileExists.exists) return true;
 
-    if (recordMessages.length === 0) {
-      return summary;
+      await FileSystem.deleteAsync(filePath);
+      console.log(`JSON file deleted: ${filePath}`);
+      return true;
+    } catch (error) {
+      console.error("Error deleting JSON file:", error);
+      return false;
     }
+  }
 
-    // Calculate metrics from record messages
-    const distances = recordMessages
-      .filter((r) => r.distance !== undefined)
-      .map((r) => r.distance);
-    const speeds = recordMessages
-      .filter((r) => r.speed !== undefined)
-      .map((r) => r.speed);
-    const heartRates = recordMessages
-      .filter((r) => r.heartRate !== undefined)
-      .map((r) => r.heartRate);
-    const powers = recordMessages
-      .filter((r) => r.power !== undefined)
-      .map((r) => r.power);
-    const cadences = recordMessages
-      .filter((r) => r.cadence !== undefined)
-      .map((r) => r.cadence);
-    const elevations = recordMessages
-      .filter((r) => r.altitude !== undefined)
-      .map((r) => r.altitude);
-
-    // Distance
-    if (distances.length > 0) {
-      summary.totalDistance = Math.max(...distances);
+  /**
+   * Get JSON file size in bytes
+   */
+  static async getJsonFileSize(filePath: string): Promise<number | null> {
+    try {
+      const fileInfo = await FileSystem.getInfoAsync(filePath);
+      return fileInfo.exists ? fileInfo.size || 0 : null;
+    } catch (error) {
+      console.error("Error getting JSON file size:", error);
+      return null;
     }
-
-    // Speed
-    if (speeds.length > 0) {
-      summary.avgSpeed = speeds.reduce((a, b) => a + b, 0) / speeds.length;
-      summary.maxSpeed = Math.max(...speeds);
-    }
-
-    // Heart Rate
-    if (heartRates.length > 0) {
-      summary.avgHeartRate = Math.round(
-        heartRates.reduce((a, b) => a + b, 0) / heartRates.length,
-      );
-      summary.maxHeartRate = Math.max(...heartRates);
-    }
-
-    // Power
-    if (powers.length > 0) {
-      summary.avgPower = Math.round(
-        powers.reduce((a, b) => a + b, 0) / powers.length,
-      );
-      summary.maxPower = Math.max(...powers);
-    }
-
-    // Cadence
-    if (cadences.length > 0) {
-      summary.avgCadence = Math.round(
-        cadences.reduce((a, b) => a + b, 0) / cadences.length,
-      );
-      summary.maxCadence = Math.max(...cadences);
-    }
-
-    // Elevation
-    if (elevations.length > 0) {
-      let ascent = 0;
-      let descent = 0;
-      for (let i = 1; i < elevations.length; i++) {
-        const diff = elevations[i] - elevations[i - 1];
-        if (diff > 0) ascent += diff;
-        else descent += Math.abs(diff);
-      }
-      summary.totalAscent = ascent;
-      summary.totalDescent = descent;
-    }
-
-    return summary;
   }
 }

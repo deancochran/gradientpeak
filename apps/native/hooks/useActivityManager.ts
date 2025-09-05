@@ -96,10 +96,8 @@ export const useActivityManager = (): UseActivityManagerReturn => {
           }
         }
 
-        // Parse metadata from FIT file
-        return await WorkoutService.getActivityMetadata(
-          activity.local_fit_file_path,
-        );
+        // Get metadata from cached activity data
+        return await WorkoutService.getActivityMetadata(activityId);
       } catch (err) {
         console.error("Error getting activity metadata:", err);
         return null;
@@ -170,7 +168,7 @@ export const useActivityManager = (): UseActivityManagerReturn => {
           setActivities((prev) =>
             prev.map((activity) =>
               activity.id === activityId
-                ? { ...activity, sync_status: "synced" }
+                ? { ...activity, sync_status: "synced" as const }
                 : activity,
             ),
           );
@@ -202,8 +200,8 @@ export const useActivityManager = (): UseActivityManagerReturn => {
               activity.id === activityId
                 ? {
                     ...activity,
-                    sync_status: "synced",
-                    sync_error_message: null,
+                    sync_status: "synced" as const,
+                    sync_error_message: undefined,
                   }
                 : activity,
             ),
