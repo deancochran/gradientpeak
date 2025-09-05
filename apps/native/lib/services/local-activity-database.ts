@@ -69,9 +69,12 @@ export class LocalActivityDatabaseService {
     if (!this.db) await this.initDatabase();
 
     // Validate that the activity ID looks like a UUID
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(activity.id)) {
-      console.warn(`Activity ID does not appear to be a valid UUID: ${activity.id}`);
+      console.warn(
+        `Activity ID does not appear to be a valid UUID: ${activity.id}`,
+      );
     }
 
     try {
@@ -327,9 +330,34 @@ export class LocalActivityDatabaseService {
     if (!this.db) await this.initDatabase();
 
     try {
+      // First, get all file paths from the database
+      const activitiesToDelete = await this.db!.getAllAsync<LocalActivity>(
+        "SELECT local_fit_file_path FROM activities",
+      );
+
+      // Delete each associated file from the filesystem
+      for (const activity of activitiesToDelete) {
+        if (activity.local_fit_file_path) {
+          try {
+            await FileSystem.deleteAsync(activity.local_fit_file_path);
+            console.log(`Deleted local file: ${activity.local_fit_file_path}`);
+          } catch (fileError) {
+            // Log error if a file doesn't exist, but don't stop the process
+            console.warn(
+              `Could not delete file (it may already be gone): ${activity.local_fit_file_path}`,
+              fileError,
+            );
+          }
+        }
+      }
+
+      // Now, drop the table
       await this.db!.execAsync("DROP TABLE IF EXISTS activities");
-      console.log("Database reset complete");
+      console.log("Activities table dropped.");
+
+      // Recreate the tables for future use
       await this.createTables();
+      console.log("Database reset complete");
     } catch (error) {
       console.error("Error resetting database:", error);
       throw error;

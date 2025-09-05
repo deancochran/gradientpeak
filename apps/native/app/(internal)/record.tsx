@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert, // Import Alert
   Animated,
   StyleSheet,
   Text,
@@ -17,6 +18,9 @@ import { useAdvancedWorkoutRecorder } from "@/hooks/useAdvancedWorkoutRecorder";
 import { useBluetooth } from "@/hooks/useBluetooth";
 import { useWorkoutMetrics } from "@/hooks/useWorkoutMetrics";
 import { BluetoothDeviceModal } from "@/modals/BluetoothDeviceModal";
+
+// Import WorkoutService
+import { WorkoutService } from "@/lib/services/workout-service";
 
 // Supabase
 import { supabase } from "@/lib/supabase";
@@ -115,6 +119,33 @@ export default function RecordScreen() {
     setBluetoothModalVisible(false);
   };
 
+  // *** ADD THIS HANDLER ***
+  const handleResetDatabase = () => {
+    Alert.alert(
+      "Reset Database",
+      "Are you sure you want to delete all local activities? This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Reset",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await WorkoutService.clearAllData();
+              Alert.alert(
+                "Success",
+                "Local database has been reset successfully.",
+              );
+            } catch (error) {
+              Alert.alert("Error", "Failed to reset local database.");
+              console.error(error);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   // Add sensor data to recording when available
   useEffect(() => {
     if (isRecording && sensorValues) {
@@ -130,6 +161,16 @@ export default function RecordScreen() {
       <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
         {/* Header */}
         <View style={styles.header}>
+          {/* *** ADD THIS BUTTON (DEV ONLY) *** */}
+          {__DEV__ && (
+            <TouchableOpacity
+              onPress={handleResetDatabase}
+              style={styles.resetButton}
+            >
+              <Ionicons name="trash-outline" size={24} color="#ef4444" />
+            </TouchableOpacity>
+          )}
+
           <Text style={styles.headerTitle}>
             {isRecording ? "Recording Workout" : "Ready to Record"}
           </Text>
@@ -188,6 +229,10 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 8,
     backgroundColor: "#f3f4f6",
+  },
+  // *** ADD THIS STYLE ***
+  resetButton: {
+    padding: 8,
   },
   content: { flex: 1 },
   // footer: { paddingHorizontal: 20, paddingBottom: 40 },

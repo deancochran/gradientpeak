@@ -21,7 +21,7 @@ export class ActivitySyncService {
 
     try {
       await LocalActivityDatabaseService.initDatabase();
-      this.setupAppStateListener();
+      this.setupSyncListeners();
       this.isInitialized = true;
       console.log("Activity sync service initialized");
     } catch (error) {
@@ -114,7 +114,16 @@ export class ActivitySyncService {
       await this.initialize();
     }
 
+    if (this.syncInProgress) {
+      console.log(
+        `Sync already in progress. The new activity (${activityId}) will be synced later.`,
+      );
+      return true; // Not an error, it will be picked up by the next sync cycle
+    }
+
     try {
+      this.syncInProgress = true;
+
       // Check authentication
       const {
         data: { user },
@@ -134,6 +143,8 @@ export class ActivitySyncService {
     } catch (error) {
       console.error(`Failed to sync activity ${activityId}:`, error);
       return false;
+    } finally {
+      this.syncInProgress = false;
     }
   }
 
@@ -298,24 +309,32 @@ export class ActivitySyncService {
         activity.local_fit_file_path,
       );
       if (!fileExists.exists) {
-        console.error(`JSON file not found at path: ${activity.local_fit_file_path}`);
-        console.error('This could be due to:');
-        console.error('1. File was deleted or moved');
-        console.error('2. App was uninstalled/reinstalled');
-        console.error('3. File path format has changed');
-        
+        console.error(
+          `JSON file not found at path: ${activity.local_fit_file_path}`,
+        );
+        console.error("This could be due to:");
+        console.error("1. File was deleted or moved");
+        console.error("2. App was uninstalled/reinstalled");
+        console.error("3. File path format has changed");
+
         // List files in the document directory to help debug
         try {
           const documentDirectory = FileSystem.documentDirectory;
           if (documentDirectory) {
-            const files = await FileSystem.readDirectoryAsync(documentDirectory);
-            console.error(`Files in document directory (${files.length}):`, files.slice(0, 10));
+            const files =
+              await FileSystem.readDirectoryAsync(documentDirectory);
+            console.error(
+              `Files in document directory (${files.length}):`,
+              files.slice(0, 10),
+            );
           }
         } catch (listError) {
-          console.error('Could not list document directory:', listError);
+          console.error("Could not list document directory:", listError);
         }
-        
-        throw new Error(`Activity JSON file not found: ${activity.local_fit_file_path}`);
+
+        throw new Error(
+          `Activity JSON file not found: ${activity.local_fit_file_path}`,
+        );
       }
 
       // Read the JSON file
@@ -363,9 +382,10 @@ export class ActivitySyncService {
       }
 
       // Get the Supabase URL from the Expo constants
-      const supabaseUrl = Constants.expoConfig?.extra?.supabaseUrl || 
-                         process.env.EXPO_PUBLIC_SUPABASE_URL || 
-                         'https://your-project.supabase.co';
+      const supabaseUrl =
+        Constants.expoConfig?.extra?.supabaseUrl ||
+        process.env.EXPO_PUBLIC_SUPABASE_URL ||
+        "https://your-project.supabase.co";
       const edgeFunctionUrl = `${supabaseUrl}/functions/v1/json-to-fit`;
       const response = await fetch(edgeFunctionUrl, {
         method: "POST",
@@ -447,23 +467,33 @@ export class ActivitySyncService {
   }
 
   /**
-   * Setup app state listener for automatic sync
+   * Setup app state and network listeners for automatic sync
    */
-  private static setupAppStateListener(): void {
+  private static setupSyncListeners(): void {
+    // Listener for app state changes (e.g., app comes to foreground)
     AppState.addEventListener("change", async (nextAppState) => {
       if (nextAppState === "active" && !this.syncInProgress) {
-        // Check network and sync when app becomes active
         try {
           const networkState = await Network.getNetworkStateAsync();
           if (networkState.isConnected) {
             console.log("App became active with network, starting auto-sync");
             this.syncAll().catch((error) => {
-              console.error("Auto-sync failed:", error);
+              console.error("Auto-sync on app active failed:", error);
             });
           }
         } catch (error) {
-          console.error("Error checking network state:", error);
+          console.error("Error checking network state on app active:", error);
         }
+      }
+    });
+
+    // Listener for network connectivity changes
+    Network.addNetworkStateListener(async (networkState) => {
+      if (networkState.isConnected && !this.syncInProgress) {
+        console.log("Network connection detected, starting auto-sync");
+        this.syncAll().catch((error) => {
+          console.error("Auto-sync on network change failed:", error);
+        });
       }
     });
   }

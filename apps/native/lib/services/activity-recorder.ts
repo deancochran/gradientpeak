@@ -5,12 +5,12 @@ import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 import { Alert } from "react-native";
 
-
 import type {
   GpsDataPoint,
   RecordingSession,
   SensorDataPoint,
 } from "../types/activity";
+import { ActivitySyncService } from "./activity-sync-service";
 import { FitFileService } from "./fit-file-service";
 import { LocalActivityDatabaseService } from "./local-activity-database";
 
@@ -299,6 +299,15 @@ export class ActivityRecorderService {
       );
 
       console.log(`Activity saved: ${activityId}`);
+
+      // Automatically trigger a sync for the new activity
+      try {
+        console.log(`Triggering sync for new activity: ${activityId}`);
+        // Use a dynamic require here to break the circular dependency cycle
+        ActivitySyncService.syncActivity(activityId);
+      } catch (syncError) {
+        console.error("Failed to trigger automatic sync:", syncError);
+      }
     } catch (error) {
       console.error("Error saving activity:", error);
       Alert.alert("Error", "Failed to save activity. Please try again.");
