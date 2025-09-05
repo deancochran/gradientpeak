@@ -51,7 +51,8 @@ export class FitFileService {
         status: session.status,
       };
 
-      const fileName = `activity-${session.id}.json`;
+      // Use a simpler, consistent naming scheme
+      const fileName = `${session.id}.json`;
       const filePath = `${FileSystem.documentDirectory}${fileName}`;
 
       await FileSystem.writeAsStringAsync(

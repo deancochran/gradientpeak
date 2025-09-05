@@ -32,6 +32,7 @@ export class LocalActivityDatabaseService {
 
     try {
       // Activities table - matches the Supabase schema structure but with local timestamps
+      // Note: SQLite doesn't have native UUID type, so we use TEXT but validate UUID format
       await this.db.execAsync(`
         CREATE TABLE IF NOT EXISTS activities (
           id TEXT PRIMARY KEY NOT NULL,
@@ -66,6 +67,12 @@ export class LocalActivityDatabaseService {
    */
   static async createActivity(activity: LocalActivity): Promise<string> {
     if (!this.db) await this.initDatabase();
+
+    // Validate that the activity ID looks like a UUID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(activity.id)) {
+      console.warn(`Activity ID does not appear to be a valid UUID: ${activity.id}`);
+    }
 
     try {
       await this.db!.runAsync(

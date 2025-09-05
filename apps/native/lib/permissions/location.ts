@@ -1,5 +1,6 @@
 import * as Location from "expo-location";
 
+
 interface PermissionResult {
   granted: boolean;
   canAskAgain: boolean;

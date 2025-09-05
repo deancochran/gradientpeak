@@ -1,5 +1,5 @@
+import Constants from "expo-constants";
 import * as FileSystem from "expo-file-system";
-
 import * as Network from "expo-network";
 import { Alert, AppState } from "react-native";
 
@@ -278,7 +278,7 @@ export class ActivitySyncService {
   // Private methods
 
   /**
-   * Sync a single activity to Supabase
+   * Sync a single activity to Supabase using Edge Function
    */
   private static async syncSingleActivity(
     activity: LocalActivity,
@@ -293,66 +293,119 @@ export class ActivitySyncService {
         "syncing",
       );
 
-      // Check if JSON file exists (changed from FIT file)
+      // Check if JSON file exists
       const fileExists = await FileSystem.getInfoAsync(
-        activity.local_fit_file_path, // Note: keeping same field name for compatibility
+        activity.local_fit_file_path,
       );
       if (!fileExists.exists) {
-        throw new Error("Activity JSON file not found on device");
+        console.error(`JSON file not found at path: ${activity.local_fit_file_path}`);
+        console.error('This could be due to:');
+        console.error('1. File was deleted or moved');
+        console.error('2. App was uninstalled/reinstalled');
+        console.error('3. File path format has changed');
+        
+        // List files in the document directory to help debug
+        try {
+          const documentDirectory = FileSystem.documentDirectory;
+          if (documentDirectory) {
+            const files = await FileSystem.readDirectoryAsync(documentDirectory);
+            console.error(`Files in document directory (${files.length}):`, files.slice(0, 10));
+          }
+        } catch (listError) {
+          console.error('Could not list document directory:', listError);
+        }
+        
+        throw new Error(`Activity JSON file not found: ${activity.local_fit_file_path}`);
       }
 
-      // Upload JSON file to Supabase Storage
-      const cloudPath = await this.uploadJsonFile(
+      // Read the JSON file
+      const jsonData = await FileSystem.readAsStringAsync(
         activity.local_fit_file_path,
-        activity.id,
+        {
+          encoding: FileSystem.EncodingType.UTF8,
+        },
       );
-      if (!cloudPath) {
-        throw new Error("Failed to upload activity JSON file");
+
+      let activityData;
+      try {
+        activityData = JSON.parse(jsonData);
+      } catch (parseError) {
+        throw new Error("Failed to parse activity JSON file");
       }
 
-      // Create activity record in Supabase
-      const activityData: ActivityInsert = {
+      // Create or update activity record in Supabase first
+      const activityRecord: ActivityInsert = {
         id: activity.id,
         profile_id: userId,
         local_fit_file_path: activity.local_fit_file_path,
-        sync_status: "synced",
-        cloud_storage_path: cloudPath,
+        sync_status: "syncing",
         created_at: new Date(activity.created_at).toISOString(),
         updated_at: new Date().toISOString(),
       };
 
-      const { data, error } = await supabase
+      const { error: dbError } = await supabase
         .from("activities")
-        .insert(activityData)
-        .select()
-        .single();
+        .upsert(activityRecord, {
+          onConflict: "id",
+          ignoreDuplicates: false,
+        });
 
-      if (error) {
-        // If the activity already exists, update it
-        if (error.code === "23505") {
-          // Unique violation
-          const { error: updateError } = await supabase
-            .from("activities")
-            .update({
-              cloud_storage_path: cloudPath,
-              sync_status: "synced",
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", activity.id);
-
-          if (updateError) {
-            throw updateError;
-          }
-        } else {
-          throw error;
-        }
+      if (dbError) {
+        throw new Error(
+          `Failed to create/update activity record: ${dbError.message}`,
+        );
       }
+
+      // Call the Edge Function to convert JSON to FIT
+      const { data: authData } = await supabase.auth.getSession();
+      if (!authData.session) {
+        throw new Error("No active session");
+      }
+
+      // Get the Supabase URL from the Expo constants
+      const supabaseUrl = Constants.expoConfig?.extra?.supabaseUrl || 
+                         process.env.EXPO_PUBLIC_SUPABASE_URL || 
+                         'https://your-project.supabase.co';
+      const edgeFunctionUrl = `${supabaseUrl}/functions/v1/json-to-fit`;
+      const response = await fetch(edgeFunctionUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authData.session.access_token}`,
+        },
+        body: JSON.stringify({
+          activityId: activity.id,
+          profileId: userId,
+          activityData: activityData,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage;
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.error || errorText;
+        } catch {
+          errorMessage = errorText;
+        }
+        throw new Error(`Edge function failed: ${errorMessage}`);
+      }
+
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || "Edge function returned failure");
+      }
+
+      console.log(
+        `Edge function completed: FIT file size ${result.fitSize} bytes`,
+      );
 
       // Update local status to synced
       await LocalActivityDatabaseService.updateSyncStatus(
         activity.id,
         "synced",
-        cloudPath,
+        result.fitPath,
       );
 
       // Delete local JSON file after successful sync
@@ -377,43 +430,6 @@ export class ActivitySyncService {
       );
 
       return false;
-    }
-  }
-
-  /**
-   * Upload JSON file to Supabase Storage for backend processing
-   */
-  private static async uploadJsonFile(
-    localPath: string,
-    activityId: string,
-  ): Promise<string | null> {
-    try {
-      // Read the JSON file
-      const jsonData = await FileSystem.readAsStringAsync(localPath, {
-        encoding: FileSystem.EncodingType.UTF8,
-      });
-
-      // Convert to blob for upload
-      const blob = new Blob([jsonData], { type: "application/json" });
-
-      // Upload to Supabase Storage bucket for JSON processing
-      const fileName = `${activityId}.json`;
-      const { data, error } = await supabase.storage
-        .from("activity-json-uploads")
-        .upload(fileName, blob, {
-          contentType: "application/json",
-          upsert: true,
-        });
-
-      if (error) {
-        console.error("Storage upload error:", error);
-        return null;
-      }
-
-      return data.path;
-    } catch (error) {
-      console.error("Error uploading JSON file:", error);
-      return null;
     }
   }
 

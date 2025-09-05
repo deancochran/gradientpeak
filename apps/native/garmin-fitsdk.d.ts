@@ -1,1 +1,0 @@
-declare module '@garmin/fitsdk';

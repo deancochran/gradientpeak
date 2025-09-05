@@ -1,8 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Crypto from "expo-crypto";
 import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 import { Alert } from "react-native";
+
 
 import type {
   GpsDataPoint,
@@ -56,7 +58,8 @@ export class ActivityRecorderService {
         throw new Error("Recording session already in progress");
       }
 
-      const sessionId = `session_${Date.now()}`;
+      // Generate a proper UUID for the activity ID
+      const sessionId = Crypto.randomUUID();
       const startTime = new Date();
 
       this.currentSession = {
