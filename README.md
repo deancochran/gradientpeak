@@ -109,7 +109,7 @@ turbofit/
 │   ├── native/          # Mobile app (Expo + React Native)
 │   └── web/             # Web dashboard (Next.js)
 ├── packages/
-│   ├── database/        # Shared database schemas
+│   ├── supabase/        # Shared supabase schemas
 │   └── config/          # Shared configuration
 └── docs/                # Documentation
 ```
