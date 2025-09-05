@@ -1,29 +1,26 @@
-export type SyncStatus = "local_only" | "syncing" | "synced" | "sync_failed";
+import type { Database } from "@repo/supabase";
 
-// Core activity record that matches Supabase schema
-export interface Activity {
-  id: string;
-  profile_id: string;
-  local_fit_file_path: string;
-  sync_status: SyncStatus;
-  cloud_storage_path?: string;
-  sync_error_message?: string;
-  created_at: string;
-  updated_at: string;
-}
+// Use generated types from database
+export type SyncStatus = Database["public"]["Enums"]["sync_status"];
+export type Activity = Database["public"]["Tables"]["activities"]["Row"];
+export type ActivityInsert =
+  Database["public"]["Tables"]["activities"]["Insert"];
+export type ActivityUpdate =
+  Database["public"]["Tables"]["activities"]["Update"];
 
-// Local activity record for SQLite (before sync)
+// Local activity record for SQLite (before sync) - uses timestamps as numbers
 export interface LocalActivity {
   id: string;
   profile_id: string;
   local_fit_file_path: string;
   sync_status: SyncStatus;
+  json_storage_path?: string;
   cloud_storage_path?: string;
   sync_error_message?: string;
-  created_at: number;
-  updated_at: number;
+  created_at: number; // SQLite timestamp
+  updated_at: number; // SQLite timestamp
 
-  // Cached metadata extracted from FIT file (for quick display)
+  // Cached metadata extracted from activity file (for quick display)
   cached_metadata?: string; // JSON string of ActivityMetadata
 }
 

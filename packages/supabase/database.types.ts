@@ -36,33 +36,72 @@ export type Database = {
     Tables: {
       activities: {
         Row: {
+          avg_cadence: number | null
+          avg_heart_rate: number | null
+          avg_power: number | null
+          avg_speed: number | null
           cloud_storage_path: string | null
           created_at: string
+          distance: number | null
+          duration: number | null
           id: string
+          json_storage_path: string | null
           local_fit_file_path: string
+          max_heart_rate: number | null
+          max_speed: number | null
+          normalized_power: number | null
           profile_id: string
+          summary_metrics: Json | null
           sync_error_message: string | null
           sync_status: Database["public"]["Enums"]["sync_status"]
+          total_ascent: number | null
+          total_descent: number | null
           updated_at: string
         }
         Insert: {
+          avg_cadence?: number | null
+          avg_heart_rate?: number | null
+          avg_power?: number | null
+          avg_speed?: number | null
           cloud_storage_path?: string | null
           created_at?: string
+          distance?: number | null
+          duration?: number | null
           id?: string
+          json_storage_path?: string | null
           local_fit_file_path: string
+          max_heart_rate?: number | null
+          max_speed?: number | null
+          normalized_power?: number | null
           profile_id: string
+          summary_metrics?: Json | null
           sync_error_message?: string | null
           sync_status?: Database["public"]["Enums"]["sync_status"]
+          total_ascent?: number | null
+          total_descent?: number | null
           updated_at?: string
         }
         Update: {
+          avg_cadence?: number | null
+          avg_heart_rate?: number | null
+          avg_power?: number | null
+          avg_speed?: number | null
           cloud_storage_path?: string | null
           created_at?: string
+          distance?: number | null
+          duration?: number | null
           id?: string
+          json_storage_path?: string | null
           local_fit_file_path?: string
+          max_heart_rate?: number | null
+          max_speed?: number | null
+          normalized_power?: number | null
           profile_id?: string
+          summary_metrics?: Json | null
           sync_error_message?: string | null
           sync_status?: Database["public"]["Enums"]["sync_status"]
+          total_ascent?: number | null
+          total_descent?: number | null
           updated_at?: string
         }
         Relationships: [
@@ -104,7 +143,19 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_activity_sync_status: {
+        Args: { p_activity_id: string }
+        Returns: Json
+      }
+      update_activity_with_fit: {
+        Args: {
+          p_activity_id: string
+          p_cloud_storage_path: string
+          p_profile_id: string
+          p_updated_at: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       sync_status: "local_only" | "syncing" | "synced" | "sync_failed"

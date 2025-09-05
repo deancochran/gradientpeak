@@ -5,24 +5,25 @@ interface SyncActivityRequest {
   activityId: string;
   profileId: string;
   startedAt: string;
-  endedAt: string;
   liveMetrics: Record<string, any>;
   filePath: string;
 }
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
 serve(async (req) => {
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405 });
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+    });
   }
 
   try {
     const body: SyncActivityRequest = await req.json();
-    const { activityId, profileId, startedAt, endedAt, liveMetrics, filePath } = body;
+    const { activityId, profileId, startedAt, liveMetrics, filePath } = body;
 
     console.log(`Processing activity sync for ${activityId}`);
 
@@ -33,7 +34,9 @@ serve(async (req) => {
 
     if (storageError || !fileExists || fileExists.length === 0) {
       console.error("JSON file not found in storage:", storageError);
-      return new Response(JSON.stringify({ error: "JSON file not found" }), { status: 400 });
+      return new Response(JSON.stringify({ error: "JSON file not found" }), {
+        status: 400,
+      });
     }
 
     // Step 2: Extract metrics for database storage
@@ -48,10 +51,10 @@ serve(async (req) => {
       profile_id: profileId,
       json_storage_path: filePath,
       started_at: startedAt,
-      ended_at: endedAt,
       sync_status: "synced",
       summary_metrics: liveMetrics,
-      duration: extractMetric("duration"),
+      total_elapsed_time: extractMetric("totalElapsedTime"),
+      total_timer_time: extractMetric("totalTimerTime"),
       distance: extractMetric("distance"),
       avg_speed: extractMetric("avgSpeed"),
       max_speed: extractMetric("maxSpeed"),
@@ -62,7 +65,7 @@ serve(async (req) => {
       avg_power: extractMetric("avgPower"),
       normalized_power: extractMetric("normalizedPower"),
       avg_cadence: extractMetric("avgCadence"),
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     };
 
     // Step 4: Upsert activity metadata to database
@@ -72,27 +75,34 @@ serve(async (req) => {
 
     if (dbError) {
       console.error("Database update failed:", dbError);
-      return new Response(JSON.stringify({ error: dbError.message }), { status: 500 });
+      return new Response(JSON.stringify({ error: dbError.message }), {
+        status: 500,
+      });
     }
 
     console.log(`Activity ${activityId} synced successfully`);
 
-    return new Response(JSON.stringify({
-      success: true,
-      activityId,
-      message: "Activity synced successfully"
-    }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" }
-    });
-
+    return new Response(
+      JSON.stringify({
+        success: true,
+        activityId,
+        message: "Activity synced successfully",
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   } catch (error) {
     console.error("Sync activity error:", error);
-    return new Response(JSON.stringify({
-      error: error instanceof Error ? error.message : "Unknown error"
-    }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    });
+    return new Response(
+      JSON.stringify({
+        error: error instanceof Error ? error.message : "Unknown error",
+      }),
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   }
 });

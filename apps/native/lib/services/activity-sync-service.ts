@@ -301,7 +301,9 @@ export class ActivitySyncService {
       const fileName = `${userId}/${activity.id}.json`;
       const { error: uploadError } = await supabase.storage
         .from("activity-json-files")
-        .upload(fileName, new Blob([jsonData]), { upsert: true });
+        .upload(fileName, new Blob([jsonData], { type: "application/json" }), {
+          upsert: true,
+        });
 
       if (uploadError) {
         throw new Error(`JSON upload failed: ${uploadError.message}`);
@@ -326,7 +328,6 @@ export class ActivitySyncService {
           activityId: activity.id,
           profileId: userId,
           startedAt: activityData.startedAt,
-          endedAt: activityData.endedAt,
           liveMetrics: activityData.liveMetrics,
           filePath: fileName,
         }),

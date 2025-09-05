@@ -26,6 +26,10 @@ export class ActivityRecorderService {
   private static sensorDataBuffer: SensorDataPoint[] = [];
   private static gpsDataBuffer: GpsDataPoint[] = [];
 
+  // Duration tracking
+  private static totalTimerTime: number = 0; // Active recording time (excludes pauses)
+  private static lastResumeTime: Date | null = null; // When recording was last resumed
+
   /**
    * Initialize the activity recorder service
    */
@@ -71,9 +75,14 @@ export class ActivityRecorderService {
         hrMessages: [],
         hrvMessages: [],
         liveMetrics: {
-          duration: 0,
+          totalElapsedTime: 0, // Wall clock time
+          totalTimerTime: 0, // Active recording time
         },
       };
+
+      // Initialize duration tracking
+      this.totalTimerTime = 0;
+      this.lastResumeTime = startTime;
 
       // Save session to storage for recovery
       await this.saveSessionToStorage();
@@ -116,7 +125,24 @@ export class ActivityRecorderService {
         return false;
       }
 
+      const pauseTime = new Date();
+
+      // Update total timer time with the time since last resume
+      if (this.lastResumeTime) {
+        const activeTimeThisSession =
+          (pauseTime.getTime() - this.lastResumeTime.getTime()) / 1000;
+        this.totalTimerTime += activeTimeThisSession;
+        this.lastResumeTime = null;
+      }
+
       this.currentSession.status = "paused";
+
+      // Update live metrics with both duration types
+      const elapsedTime =
+        (pauseTime.getTime() - this.currentSession.startedAt.getTime()) / 1000;
+      this.currentSession.liveMetrics.totalElapsedTime = elapsedTime;
+      this.currentSession.liveMetrics.totalTimerTime = this.totalTimerTime;
+
       await this.saveSessionToStorage();
 
       // Stop location tracking
@@ -130,12 +156,14 @@ export class ActivityRecorderService {
 
       // Add pause event
       this.addEventMessage({
-        timestamp: new Date(),
+        timestamp: pauseTime,
         event: "timer",
         eventType: "stop",
       });
 
-      console.log("Activity recording paused");
+      console.log(
+        `Activity recording paused. Active time: ${this.totalTimerTime}s, Elapsed time: ${elapsedTime}s`,
+      );
       return true;
     } catch (error) {
       console.error("Error pausing recording:", error);
@@ -152,6 +180,9 @@ export class ActivityRecorderService {
         return false;
       }
 
+      const resumeTime = new Date();
+      this.lastResumeTime = resumeTime;
+
       this.currentSession.status = "recording";
       await this.saveSessionToStorage();
 
@@ -163,7 +194,7 @@ export class ActivityRecorderService {
 
       // Add resume event
       this.addEventMessage({
-        timestamp: new Date(),
+        timestamp: resumeTime,
         event: "timer",
         eventType: "start",
       });
@@ -186,7 +217,23 @@ export class ActivityRecorderService {
       }
 
       const wasRecording = this.currentSession.status === "recording";
+      const stopTime = new Date();
+
+      // Finalize timer time if we were recording when stopped
+      if (wasRecording && this.lastResumeTime) {
+        const activeTimeThisSession =
+          (stopTime.getTime() - this.lastResumeTime.getTime()) / 1000;
+        this.totalTimerTime += activeTimeThisSession;
+        this.lastResumeTime = null;
+      }
+
       this.currentSession.status = "stopped";
+
+      // Calculate final metrics
+      const totalElapsedTime =
+        (stopTime.getTime() - this.currentSession.startedAt.getTime()) / 1000;
+      this.currentSession.liveMetrics.totalElapsedTime = totalElapsedTime;
+      this.currentSession.liveMetrics.totalTimerTime = this.totalTimerTime;
 
       // Stop all tracking
       if (wasRecording) {
@@ -260,7 +307,7 @@ export class ActivityRecorderService {
       const metadata = {
         startTime: session.startedAt,
         endTime: new Date(),
-        totalTimerTime: session.liveMetrics.duration || 0,
+        totalTimerTime: session.liveMetrics.totalTimerTime || 0,
         totalDistance: session.liveMetrics.distance,
         avgHeartRate: session.liveMetrics.avgHeartRate,
         avgPower: session.liveMetrics.avgPower,
@@ -516,11 +563,26 @@ export class ActivityRecorderService {
   private static startRecordingTimer(): void {
     this.recordingTimer = setInterval(() => {
       if (this.currentSession && this.currentSession.status === "recording") {
-        const duration = Math.floor(
-          (new Date().getTime() - this.currentSession.startedAt.getTime()) /
-            1000,
+        const now = new Date();
+
+        // Calculate total elapsed time (wall clock)
+        const totalElapsedTime = Math.floor(
+          (now.getTime() - this.currentSession.startedAt.getTime()) / 1000,
         );
-        this.currentSession.liveMetrics.duration = duration;
+
+        // Calculate total timer time (active recording time)
+        let currentTimerTime = this.totalTimerTime;
+        if (this.lastResumeTime) {
+          const activeTimeThisSession =
+            (now.getTime() - this.lastResumeTime.getTime()) / 1000;
+          currentTimerTime += activeTimeThisSession;
+        }
+
+        // Update live metrics
+
+        this.currentSession.liveMetrics.totalElapsedTime = totalElapsedTime;
+        this.currentSession.liveMetrics.totalTimerTime =
+          Math.floor(currentTimerTime);
 
         // Save session periodically for recovery
         this.saveSessionToStorage();
@@ -695,6 +757,8 @@ export class ActivityRecorderService {
 
   private static async cleanupSession(): Promise<void> {
     this.currentSession = null;
+    this.totalTimerTime = 0;
+    this.lastResumeTime = null;
     await AsyncStorage.removeItem(ACTIVE_RECORDING_KEY);
     await AsyncStorage.removeItem(RECOVERY_DATA_KEY);
     this.sensorDataBuffer = [];

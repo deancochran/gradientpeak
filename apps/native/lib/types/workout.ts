@@ -1,4 +1,4 @@
-export type SyncStatus = "local_only" | "syncing" | "synced" | "sync_failed";
+import type { SyncStatus } from "./activity";
 
 export interface Workout {
   id: string;
@@ -25,7 +25,7 @@ export interface WorkoutMetric {
   title: string;
   value: string;
   unit: string;
-  icon: keyof typeof import('@expo/vector-icons').Ionicons.glyphMap;
+  icon: keyof typeof import("@expo/vector-icons").Ionicons.glyphMap;
   isLive: boolean;
 }
 

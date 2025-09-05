@@ -62,3 +62,30 @@ FOR ALL USING (
     bucket_id = 'activity-json-files'
     AND auth.role() = 'service_role'
 );
+
+-- Policy: Users can upload their own activity files (folder structure: user_id/filename)
+create policy "Users can upload their own activity files"
+on storage.objects
+for insert
+with check (
+  bucket_id = 'activity-json-files'
+  and auth.uid()::text = (storage.foldername(name))[1]
+);
+
+-- Policy: Users can read their own activity files
+create policy "Users can read their own activity files"
+on storage.objects
+for select
+using (
+  bucket_id = 'activity-json-files'
+  and auth.uid()::text = (storage.foldername(name))[1]
+);
+
+-- Policy: Users can update their own activity files
+create policy "Users can update their own activity files"
+on storage.objects
+for update
+using (
+  bucket_id = 'activity-json-files'
+  and auth.uid()::text = (storage.foldername(name))[1]
+);
