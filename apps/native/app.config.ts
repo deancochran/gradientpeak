@@ -33,6 +33,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       bundleIdentifier,
       supportsTablet: true,
       infoPlist: {
+        UIBackgroundModes: ["location", "fetch"],
         NSBluetoothAlwaysUsageDescription:
           "This app needs Bluetooth to connect to your devices.",
         NSLocationWhenInUseUsageDescription:

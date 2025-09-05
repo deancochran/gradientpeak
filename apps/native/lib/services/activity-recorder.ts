@@ -181,10 +181,14 @@ export class ActivityRecorderService {
         return;
       }
 
+      const wasRecording = this.currentSession.status === "recording";
       this.currentSession.status = "stopped";
 
       // Stop all tracking
-      await this.stopLocationTracking();
+      if (wasRecording) {
+        await this.stopLocationTracking();
+      }
+
       if (this.recordingTimer) {
         clearInterval(this.recordingTimer);
         this.recordingTimer = null;

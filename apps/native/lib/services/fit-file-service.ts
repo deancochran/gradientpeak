@@ -1,4 +1,4 @@
-import { Decoder, Encoder, Profile, Stream } from "@garmin/fitsdk";
+import * as GarminFitSDK from "@garmin/fitsdk";
 import * as FileSystem from "expo-file-system";
 import { fromByteArray, toByteArray } from "react-native-quick-base64";
 
@@ -8,26 +8,28 @@ export class FitFileService {
   /**
    * Generate a FIT file from a recording session using the Garmin SDK
    */
-  static async generateActivityFile(session: RecordingSession): Promise<string | null> {
+  static async generateActivityFile(
+    session: RecordingSession,
+  ): Promise<string | null> {
     try {
-      const encoder = new Encoder();
+      const encoder = new GarminFitSDK.Encoder();
       const startTime = session.startedAt;
       const endTime = new Date();
 
       // Create File ID message (required)
-      const fileId = new Profile.FileIdMessage();
-      fileId.type = Profile.FileType.ACTIVITY;
-      fileId.manufacturer = Profile.Manufacturer.DEVELOPMENT;
+      const fileId = new GarminFitSDK.Profile.FileIdMessage();
+      fileId.type = GarminFitSDK.Profile.FileType.ACTIVITY;
+      fileId.manufacturer = GarminFitSDK.Profile.Manufacturer.DEVELOPMENT;
       fileId.product = 1;
       fileId.serialNumber = Date.now();
       fileId.timeCreated = startTime;
       encoder.addMessage(fileId);
 
       // Add Device Info message (recommended)
-      const deviceInfo = new Profile.DeviceInfoMessage();
+      const deviceInfo = new GarminFitSDK.Profile.DeviceInfoMessage();
       deviceInfo.timestamp = startTime;
       deviceInfo.deviceIndex = 0; // Creator device
-      deviceInfo.manufacturer = Profile.Manufacturer.DEVELOPMENT;
+      deviceInfo.manufacturer = GarminFitSDK.Profile.Manufacturer.DEVELOPMENT;
       deviceInfo.product = 1;
       deviceInfo.softwareVersion = 100; // Version 1.00
       encoder.addMessage(deviceInfo);
@@ -37,15 +39,17 @@ export class FitFileService {
         session.recordMessages,
         session.eventMessages,
         startTime,
-        endTime
+        endTime,
       );
 
       // Create Session message (required)
-      const sessionMsg = new Profile.SessionMessage();
+      const sessionMsg = new GarminFitSDK.Profile.SessionMessage();
       sessionMsg.timestamp = endTime;
       sessionMsg.startTime = startTime;
-      sessionMsg.sport = sessionSummary.sport || Profile.Sport.GENERIC;
-      sessionMsg.subSport = sessionSummary.subSport || Profile.SubSport.GENERIC;
+      sessionMsg.sport =
+        sessionSummary.sport || GarminFitSDK.Profile.Sport.GENERIC;
+      sessionMsg.subSport =
+        sessionSummary.subSport || GarminFitSDK.Profile.SubSport.GENERIC;
 
       // Add session summary data dynamically
       if (sessionSummary.totalDistance !== undefined) {
@@ -88,7 +92,7 @@ export class FitFileService {
       encoder.addMessage(sessionMsg);
 
       // Create default Lap message (required)
-      const lapMsg = new Profile.LapMessage();
+      const lapMsg = new GarminFitSDK.Profile.LapMessage();
       lapMsg.timestamp = endTime;
       lapMsg.startTime = startTime;
       lapMsg.totalTimerTime = sessionSummary.totalTimerTime;
@@ -99,23 +103,24 @@ export class FitFileService {
       encoder.addMessage(lapMsg);
 
       // Add Timer Start event
-      const startEvent = new Profile.EventMessage();
+      const startEvent = new GarminFitSDK.Profile.EventMessage();
       startEvent.timestamp = startTime;
-      startEvent.event = Profile.Event.TIMER;
-      startEvent.eventType = Profile.EventType.START;
+      startEvent.event = GarminFitSDK.Profile.Event.TIMER;
+      startEvent.eventType = GarminFitSDK.Profile.EventType.START;
       encoder.addMessage(startEvent);
 
       // Add all Record messages in chronological order
-      const sortedRecords = [...session.recordMessages].sort((a, b) =>
-        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      const sortedRecords = [...session.recordMessages].sort(
+        (a, b) =>
+          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
       );
 
       for (const record of sortedRecords) {
-        const recordMsg = new Profile.RecordMessage();
+        const recordMsg = new GarminFitSDK.Profile.RecordMessage();
 
         // Copy all available fields from the collected data
-        Object.keys(record).forEach(key => {
-          if (key === 'timestamp') {
+        Object.keys(record).forEach((key) => {
+          if (key === "timestamp") {
             recordMsg.timestamp = new Date(record[key]);
           } else if (record[key] !== undefined && record[key] !== null) {
             (recordMsg as any)[key] = record[key];
@@ -126,14 +131,15 @@ export class FitFileService {
       }
 
       // Add all Event messages
-      const sortedEvents = [...session.eventMessages].sort((a, b) =>
-        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      const sortedEvents = [...session.eventMessages].sort(
+        (a, b) =>
+          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
       );
 
       for (const event of sortedEvents) {
-        const eventMsg = new Profile.EventMessage();
-        Object.keys(event).forEach(key => {
-          if (key === 'timestamp') {
+        const eventMsg = new GarminFitSDK.Profile.EventMessage();
+        Object.keys(event).forEach((key) => {
+          if (key === "timestamp") {
             eventMsg.timestamp = new Date(event[key]);
           } else if (event[key] !== undefined && event[key] !== null) {
             (eventMsg as any)[key] = event[key];
@@ -143,31 +149,37 @@ export class FitFileService {
       }
 
       // Add compressed HR messages if available
-      for (const hrMsg of session.hrMessages) {
-        const hrMessage = new Profile.HrMessage();
-        Object.keys(hrMsg).forEach(key => {
-          if (key === 'timestamp') {
-            hrMessage.timestamp = new Date(hrMsg[key]);
-          } else if (hrMsg[key] !== undefined && hrMsg[key] !== null) {
-            (hrMessage as any)[key] = hrMsg[key];
-          }
-        });
-        encoder.addMessage(hrMessage);
+      if (GarminFitSDK.Profile.HrMessage) {
+        for (const hrMsg of session.hrMessages) {
+          const hrMessage = new GarminFitSDK.Profile.HrMessage();
+          Object.keys(hrMsg).forEach((key) => {
+            if (key === "timestamp") {
+              hrMessage.timestamp = new Date(hrMsg[key]);
+            } else if (hrMsg[key] !== undefined && hrMsg[key] !== null) {
+              (hrMessage as any)[key] = hrMsg[key];
+            }
+          });
+          encoder.addMessage(hrMessage);
+        }
+      } else {
+        console.warn(
+          "Profile.HrMessage is not available in the FIT SDK. Skipping HR data.",
+        );
       }
 
       // Add Timer Stop event
-      const stopEvent = new Profile.EventMessage();
+      const stopEvent = new GarminFitSDK.Profile.EventMessage();
       stopEvent.timestamp = endTime;
-      stopEvent.event = Profile.Event.TIMER;
-      stopEvent.eventType = Profile.EventType.STOP_DISABLE_ALL;
+      stopEvent.event = GarminFitSDK.Profile.Event.TIMER;
+      stopEvent.eventType = GarminFitSDK.Profile.EventType.STOP_DISABLE_ALL;
       encoder.addMessage(stopEvent);
 
       // Create Activity message (required)
-      const activityMsg = new Profile.ActivityMessage();
+      const activityMsg = new GarminFitSDK.Profile.ActivityMessage();
       activityMsg.timestamp = endTime;
       activityMsg.totalTimerTime = sessionSummary.totalTimerTime;
       activityMsg.numSessions = 1;
-      activityMsg.type = Profile.Activity.MANUAL;
+      activityMsg.type = GarminFitSDK.Profile.Activity.MANUAL;
       encoder.addMessage(activityMsg);
 
       // Encode the FIT file
@@ -191,7 +203,9 @@ export class FitFileService {
   /**
    * Parse any FIT file and extract metadata dynamically using Garmin SDK
    */
-  static async parseActivityFile(filePath: string): Promise<ActivityMetadata | null> {
+  static async parseActivityFile(
+    filePath: string,
+  ): Promise<ActivityMetadata | null> {
     try {
       const fileExists = await FileSystem.getInfoAsync(filePath);
       if (!fileExists.exists) {
@@ -204,19 +218,21 @@ export class FitFileService {
       });
 
       const binaryData = toByteArray(base64Data);
-      const stream = Stream.fromByteArray(Array.from(binaryData));
+      const stream = GarminFitSDK.Stream.fromByteArray(Array.from(binaryData));
 
       // Check if it's a valid FIT file
-      if (!Decoder.isFIT(stream)) {
+      if (!GarminFitSDK.Decoder.isFIT(stream)) {
         console.error("File is not a valid FIT file");
         return null;
       }
 
-      const decoder = new Decoder(stream);
+      const decoder = new GarminFitSDK.Decoder(stream);
 
       // Verify integrity if needed
       if (!decoder.checkIntegrity()) {
-        console.warn("FIT file integrity check failed, but attempting to decode anyway");
+        console.warn(
+          "FIT file integrity check failed, but attempting to decode anyway",
+        );
       }
 
       // Decode with all options enabled for maximum data extraction
@@ -227,7 +243,7 @@ export class FitFileService {
         convertTypesToStrings: true,
         convertDateTimesToDates: true,
         includeUnknownData: true,
-        mergeHeartRates: true
+        mergeHeartRates: true,
       });
 
       if (errors.length > 0) {
@@ -375,7 +391,10 @@ export class FitFileService {
 
         for (const record of records) {
           // Check for GPS data
-          if (record.positionLat !== undefined && record.positionLong !== undefined) {
+          if (
+            record.positionLat !== undefined &&
+            record.positionLong !== undefined
+          ) {
             hasGps = true;
           }
 
@@ -427,8 +446,12 @@ export class FitFileService {
 
       // Store any additional/unknown data
       const additionalData: Record<string, any> = {};
-      Object.keys(messages).forEach(messageType => {
-        if (!['fileId', 'activity', 'session', 'lap', 'record', 'event'].includes(messageType)) {
+      Object.keys(messages).forEach((messageType) => {
+        if (
+          !["fileId", "activity", "session", "lap", "record", "event"].includes(
+            messageType,
+          )
+        ) {
           additionalData[messageType] = messages[messageType];
         }
       });
@@ -457,9 +480,9 @@ export class FitFileService {
       });
 
       const binaryData = toByteArray(base64Data);
-      const stream = Stream.fromByteArray(Array.from(binaryData));
+      const stream = GarminFitSDK.Stream.fromByteArray(Array.from(binaryData));
 
-      return Decoder.isFIT(stream);
+      return GarminFitSDK.Decoder.isFIT(stream);
     } catch (error) {
       console.error("Error checking FIT file validity:", error);
       return false;
@@ -489,7 +512,7 @@ export class FitFileService {
   static async getFitFileSize(filePath: string): Promise<number | null> {
     try {
       const fileInfo = await FileSystem.getInfoAsync(filePath);
-      return fileInfo.exists ? (fileInfo.size || 0) : null;
+      return fileInfo.exists ? fileInfo.size || 0 : null;
     } catch (error) {
       console.error("Error getting FIT file size:", error);
       return null;
@@ -503,7 +526,7 @@ export class FitFileService {
     recordMessages: any[],
     eventMessages: any[],
     startTime: Date,
-    endTime: Date
+    endTime: Date,
   ) {
     const summary: any = {
       totalTimerTime: (endTime.getTime() - startTime.getTime()) / 1000,
@@ -515,12 +538,24 @@ export class FitFileService {
     }
 
     // Calculate metrics from record messages
-    const distances = recordMessages.filter(r => r.distance !== undefined).map(r => r.distance);
-    const speeds = recordMessages.filter(r => r.speed !== undefined).map(r => r.speed);
-    const heartRates = recordMessages.filter(r => r.heartRate !== undefined).map(r => r.heartRate);
-    const powers = recordMessages.filter(r => r.power !== undefined).map(r => r.power);
-    const cadences = recordMessages.filter(r => r.cadence !== undefined).map(r => r.cadence);
-    const elevations = recordMessages.filter(r => r.altitude !== undefined).map(r => r.altitude);
+    const distances = recordMessages
+      .filter((r) => r.distance !== undefined)
+      .map((r) => r.distance);
+    const speeds = recordMessages
+      .filter((r) => r.speed !== undefined)
+      .map((r) => r.speed);
+    const heartRates = recordMessages
+      .filter((r) => r.heartRate !== undefined)
+      .map((r) => r.heartRate);
+    const powers = recordMessages
+      .filter((r) => r.power !== undefined)
+      .map((r) => r.power);
+    const cadences = recordMessages
+      .filter((r) => r.cadence !== undefined)
+      .map((r) => r.cadence);
+    const elevations = recordMessages
+      .filter((r) => r.altitude !== undefined)
+      .map((r) => r.altitude);
 
     // Distance
     if (distances.length > 0) {
@@ -535,19 +570,25 @@ export class FitFileService {
 
     // Heart Rate
     if (heartRates.length > 0) {
-      summary.avgHeartRate = Math.round(heartRates.reduce((a, b) => a + b, 0) / heartRates.length);
+      summary.avgHeartRate = Math.round(
+        heartRates.reduce((a, b) => a + b, 0) / heartRates.length,
+      );
       summary.maxHeartRate = Math.max(...heartRates);
     }
 
     // Power
     if (powers.length > 0) {
-      summary.avgPower = Math.round(powers.reduce((a, b) => a + b, 0) / powers.length);
+      summary.avgPower = Math.round(
+        powers.reduce((a, b) => a + b, 0) / powers.length,
+      );
       summary.maxPower = Math.max(...powers);
     }
 
     // Cadence
     if (cadences.length > 0) {
-      summary.avgCadence = Math.round(cadences.reduce((a, b) => a + b, 0) / cadences.length);
+      summary.avgCadence = Math.round(
+        cadences.reduce((a, b) => a + b, 0) / cadences.length,
+      );
       summary.maxCadence = Math.max(...cadences);
     }
 
