@@ -49,18 +49,16 @@ using (
 -- Create storage bucket for activity files
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
-  'activity-fit-files',
-  'activity-fit-files',
+  'activity-json-files',
+  'activity-json-files',
   false, -- keep private since these are user workouts
   104857600, -- 100MB per activity file, adjust if needed
-  array['application/octet-stream', 'application/fit']::text[]
+  array['application/octet-stream', 'application/json']::text[]
 ) on conflict (id) do nothing;
 
--- Service role can manage FIT files (create/read/update/delete)
-CREATE POLICY "Service role can manage FIT files" ON storage.objects
+-- Service role can manage json files (create/read/update/delete)
+CREATE POLICY "Service role can manage json files" ON storage.objects
 FOR ALL USING (
-    bucket_id = 'activity-fit-files'
+    bucket_id = 'activity-json-files'
     AND auth.role() = 'service_role'
 );
-
-

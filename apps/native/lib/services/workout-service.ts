@@ -1,9 +1,8 @@
+import * as FileSystem from "expo-file-system";
 import { Alert } from "react-native";
-
 import type { LocalActivity, RecordingSession } from "../types/activity";
 import { ActivityRecorderService } from "./activity-recorder";
 import { ActivitySyncService } from "./activity-sync-service";
-import { FitFileService } from "./fit-file-service";
 import { LocalActivityDatabaseService } from "./local-activity-database";
 
 /**
@@ -35,6 +34,10 @@ export class WorkoutService {
    * Start recording a new workout
    */
   static async startWorkout(profileId: string): Promise<string | null> {
+    if (!profileId?.trim()) {
+      throw new Error("Profile ID is required");
+    }
+
     if (!this.initialized) {
       await this.initialize();
     }
@@ -124,21 +127,29 @@ export class WorkoutService {
     try {
       const activity =
         await LocalActivityDatabaseService.getActivity(activityId);
-      if (!activity) {
-        return false;
-      }
+      if (!activity) return false;
 
       // Delete local JSON file if it exists
       if (activity.local_fit_file_path) {
-        await FitFileService.deleteJsonFile(activity.local_fit_file_path);
+        try {
+          const fileExists = await FileSystem.getInfoAsync(
+            activity.local_fit_file_path,
+          );
+          if (fileExists.exists) {
+            await FileSystem.deleteAsync(activity.local_fit_file_path);
+            console.log(
+              `Local JSON file deleted: ${activity.local_fit_file_path}`,
+            );
+          }
+        } catch (fileError) {
+          console.warn(
+            "File deletion failed, continuing with database cleanup:",
+            fileError,
+          );
+        }
       }
 
-      // Delete from local database
       await LocalActivityDatabaseService.deleteActivity(activityId);
-
-      // TODO: Delete from cloud storage if synced
-      // This would require additional Supabase calls
-
       return true;
     } catch (error) {
       console.error("Error deleting activity:", error);

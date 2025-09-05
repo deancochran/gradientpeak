@@ -1,17 +1,16 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Crypto from "expo-crypto";
+import * as FileSystem from "expo-file-system";
 import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 import { Alert } from "react-native";
-
 import type {
   GpsDataPoint,
   RecordingSession,
   SensorDataPoint,
 } from "../types/activity";
 import { ActivitySyncService } from "./activity-sync-service";
-import { FitFileService } from "./fit-file-service";
 import { LocalActivityDatabaseService } from "./local-activity-database";
 
 const LOCATION_TRACKING_TASK = "ACTIVITY_LOCATION_TRACKING";
@@ -101,6 +100,8 @@ export class ActivityRecorderService {
       return sessionId;
     } catch (error) {
       console.error("Error starting activity recording:", error);
+      // Clean up any timers or subscriptions
+      await this.cleanup();
       Alert.alert("Error", "Failed to start activity recording");
       return null;
     }
@@ -250,7 +251,7 @@ export class ActivityRecorderService {
       const session = this.currentSession;
 
       // Save activity as JSON file for backend processing
-      const jsonFilePath = await FitFileService.saveActivityJson(session);
+      const jsonFilePath = await this.saveActivityJson(session);
       if (!jsonFilePath) {
         throw new Error("Failed to save activity JSON file");
       }
@@ -362,6 +363,11 @@ export class ActivityRecorderService {
     // Update live metrics
     this.updateLiveMetrics(dataPoint);
 
+    // Prevent buffer overflow
+    if (this.sensorDataBuffer.length > 1000) {
+      this.flushBufferedData();
+    }
+
     // Flush buffer periodically
     if (this.sensorDataBuffer.length >= 10) {
       this.flushBufferedData();
@@ -390,6 +396,17 @@ export class ActivityRecorderService {
   }
 
   // Private methods
+
+  private static async cleanup(): Promise<void> {
+    if (this.recordingTimer) {
+      clearInterval(this.recordingTimer);
+      this.recordingTimer = null;
+    }
+    if (this.locationSubscription) {
+      this.locationSubscription.remove();
+      this.locationSubscription = null;
+    }
+  }
 
   private static setupBackgroundLocationTask(): void {
     TaskManager.defineTask(LOCATION_TRACKING_TASK, async ({ data, error }) => {
@@ -693,5 +710,68 @@ export class ActivityRecorderService {
       return `${hours}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
     }
     return `${minutes}:${secs.toString().padStart(2, "0")}`;
+  }
+
+  private static async saveActivityJson(
+    session: RecordingSession,
+  ): Promise<string | null> {
+    try {
+      const endTime = new Date();
+      const activityData = {
+        id: session.id,
+        profileId: session.profileId,
+        startedAt: session.startedAt.toISOString(),
+        endedAt: endTime.toISOString(),
+        recordMessages: session.recordMessages.map((msg) => ({
+          ...msg,
+          timestamp:
+            msg.timestamp instanceof Date
+              ? msg.timestamp.toISOString()
+              : msg.timestamp,
+        })),
+        eventMessages: session.eventMessages.map((msg) => ({
+          ...msg,
+          timestamp:
+            msg.timestamp instanceof Date
+              ? msg.timestamp.toISOString()
+              : msg.timestamp,
+        })),
+        hrMessages: session.hrMessages.map((msg) => ({
+          ...msg,
+          timestamp:
+            msg.timestamp instanceof Date
+              ? msg.timestamp.toISOString()
+              : msg.timestamp,
+        })),
+        hrvMessages:
+          session.hrvMessages?.map((msg) => ({
+            ...msg,
+            timestamp:
+              msg.timestamp instanceof Date
+                ? msg.timestamp.toISOString()
+                : msg.timestamp,
+          })) || [],
+        liveMetrics: session.liveMetrics,
+        status: session.status,
+      };
+
+      // Use a consistent naming scheme
+      const fileName = `${session.id}.json`;
+      const filePath = `${FileSystem.documentDirectory}${fileName}`;
+
+      await FileSystem.writeAsStringAsync(
+        filePath,
+        JSON.stringify(activityData, null, 2),
+        {
+          encoding: FileSystem.EncodingType.UTF8,
+        },
+      );
+
+      console.log(`Activity JSON file created: ${filePath}`);
+      return filePath;
+    } catch (error) {
+      console.error("Error saving activity JSON file:", error);
+      return null;
+    }
   }
 }

@@ -1,6 +1,0 @@
-{
-  "imports": {
-    "@garmin/fitsdk": "npm:@garmin/fitsdk@21",
-    "supabase": "npm:@supabase/supabase-js@2"
-  }
-}

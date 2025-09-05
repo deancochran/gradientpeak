@@ -3,9 +3,8 @@ import * as FileSystem from "expo-file-system";
 import * as Network from "expo-network";
 import { Alert, AppState } from "react-native";
 
-import { supabase, type ActivityInsert } from "../supabase";
+import { supabase } from "../supabase";
 import type { LocalActivity } from "../types/activity";
-import { FitFileService } from "./fit-file-service";
 import { LocalActivityDatabaseService } from "./local-activity-database";
 
 export class ActivitySyncService {
@@ -77,7 +76,7 @@ export class ActivitySyncService {
 
       for (const activity of allActivities) {
         try {
-          const success = await this.syncSingleActivity(activity, user.id);
+          const success = await this.syncWithRetry(activity, user.id);
           if (success) {
             successCount++;
           } else {
@@ -139,7 +138,7 @@ export class ActivitySyncService {
         throw new Error("Activity not found");
       }
 
-      return await this.syncSingleActivity(activity, user.id);
+      return await this.syncWithRetry(activity, user.id);
     } catch (error) {
       console.error(`Failed to sync activity ${activityId}:`, error);
       return false;
@@ -216,80 +215,49 @@ export class ActivitySyncService {
   }
 
   /**
-   * Import a FIT file from external source
+   * Import a FIT file from external source - Legacy method, now disabled
    */
   static async importFitFile(
     filePath: string,
     fileName?: string,
   ): Promise<string | null> {
-    try {
-      // Check if it's a valid FIT file (import still supports FIT files for parsing)
-      const isValid = await FitFileService.isValidFitFile(filePath);
-      if (!isValid) {
-        Alert.alert(
-          "Invalid File",
-          "The selected file is not a valid FIT file.",
-        );
-        return null;
-      }
-
-      // Parse the FIT file to extract metadata (import still uses FIT parsing)
-      const metadata = await FitFileService.parseActivityFile(filePath);
-      if (!metadata) {
-        Alert.alert("Error", "Failed to read the FIT file.");
-        return null;
-      }
-
-      // Get current user
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
-      if (authError || !user) {
-        Alert.alert(
-          "Authentication Error",
-          "Please sign in to import activities.",
-        );
-        return null;
-      }
-
-      // Copy file to our app directory
-      const newFileName = fileName || `imported_${Date.now()}.fit`;
-      const newFilePath = `${FileSystem.documentDirectory}${newFileName}`;
-      await FileSystem.copyAsync({
-        from: filePath,
-        to: newFilePath,
-      });
-
-      // Create local activity record
-      const activityId = `imported_${Date.now()}`;
-      await LocalActivityDatabaseService.createActivity({
-        id: activityId,
-        profile_id: user.id,
-        local_fit_file_path: newFilePath,
-        sync_status: "local_only",
-        created_at: Date.now(),
-        updated_at: Date.now(),
-        cached_metadata: JSON.stringify(metadata),
-      });
-
-      Alert.alert(
-        "Import Successful",
-        `Activity imported successfully!\n\nStart: ${metadata.startTime.toLocaleDateString()}\nDuration: ${metadata.totalTimerTime ? this.formatDuration(metadata.totalTimerTime) : "N/A"}\nDistance: ${metadata.totalDistance ? `${(metadata.totalDistance / 1000).toFixed(2)}km` : "N/A"}`,
-      );
-
-      return activityId;
-    } catch (error) {
-      console.error("Error importing FIT file:", error);
-      Alert.alert("Import Error", "Failed to import the FIT file.");
-      return null;
-    }
+    Alert.alert(
+      "Feature Disabled",
+      "FIT file import is disabled in the new JSON-first architecture. Please use the native app to record activities instead.",
+    );
+    return null;
   }
 
   // Private methods
 
+  private static async syncWithRetry(
+    activity: LocalActivity,
+    userId: string,
+    maxRetries = 3,
+  ): Promise<boolean> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await this.syncSingleActivity(activity, userId);
+      } catch (error) {
+        if (attempt === maxRetries) throw error;
+        await new Promise((resolve) =>
+          setTimeout(resolve, Math.pow(2, attempt) * 1000),
+        );
+      }
+    }
+    return false;
+  }
+
+  private static getSupabaseUrl(): string {
+    const url =
+      Constants.expoConfig?.extra?.supabaseUrl ||
+      process.env.EXPO_PUBLIC_SUPABASE_URL;
+    if (!url) throw new Error("Supabase URL not configured");
+    return url;
+  }
+
   /**
-   * Sync a single activity to Supabase using Edge Function
+   * Sync a single activity to Supabase using new JSON-first approach
    */
   private static async syncSingleActivity(
     activity: LocalActivity,
@@ -309,29 +277,6 @@ export class ActivitySyncService {
         activity.local_fit_file_path,
       );
       if (!fileExists.exists) {
-        console.error(
-          `JSON file not found at path: ${activity.local_fit_file_path}`,
-        );
-        console.error("This could be due to:");
-        console.error("1. File was deleted or moved");
-        console.error("2. App was uninstalled/reinstalled");
-        console.error("3. File path format has changed");
-
-        // List files in the document directory to help debug
-        try {
-          const documentDirectory = FileSystem.documentDirectory;
-          if (documentDirectory) {
-            const files =
-              await FileSystem.readDirectoryAsync(documentDirectory);
-            console.error(
-              `Files in document directory (${files.length}):`,
-              files.slice(0, 10),
-            );
-          }
-        } catch (listError) {
-          console.error("Could not list document directory:", listError);
-        }
-
         throw new Error(
           `Activity JSON file not found: ${activity.local_fit_file_path}`,
         );
@@ -352,41 +297,25 @@ export class ActivitySyncService {
         throw new Error("Failed to parse activity JSON file");
       }
 
-      // Create or update activity record in Supabase first
-      const activityRecord: ActivityInsert = {
-        id: activity.id,
-        profile_id: userId,
-        local_fit_file_path: activity.local_fit_file_path,
-        sync_status: "syncing",
-        created_at: new Date(activity.created_at).toISOString(),
-        updated_at: new Date().toISOString(),
-      };
+      // Step 1: Upload JSON to Supabase Storage
+      const fileName = `${userId}/${activity.id}.json`;
+      const { error: uploadError } = await supabase.storage
+        .from("activity-json-files")
+        .upload(fileName, new Blob([jsonData]), { upsert: true });
 
-      const { error: dbError } = await supabase
-        .from("activities")
-        .upsert(activityRecord, {
-          onConflict: "id",
-          ignoreDuplicates: false,
-        });
-
-      if (dbError) {
-        throw new Error(
-          `Failed to create/update activity record: ${dbError.message}`,
-        );
+      if (uploadError) {
+        throw new Error(`JSON upload failed: ${uploadError.message}`);
       }
 
-      // Call the Edge Function to convert JSON to FIT
+      // Step 2: Call the new sync-activity Edge Function
       const { data: authData } = await supabase.auth.getSession();
       if (!authData.session) {
         throw new Error("No active session");
       }
 
-      // Get the Supabase URL from the Expo constants
-      const supabaseUrl =
-        Constants.expoConfig?.extra?.supabaseUrl ||
-        process.env.EXPO_PUBLIC_SUPABASE_URL ||
-        "https://your-project.supabase.co";
-      const edgeFunctionUrl = `${supabaseUrl}/functions/v1/json-to-fit`;
+      const supabaseUrl = this.getSupabaseUrl();
+      const edgeFunctionUrl = `${supabaseUrl}/functions/v1/sync-activity`;
+
       const response = await fetch(edgeFunctionUrl, {
         method: "POST",
         headers: {
@@ -396,7 +325,10 @@ export class ActivitySyncService {
         body: JSON.stringify({
           activityId: activity.id,
           profileId: userId,
-          activityData: activityData,
+          startedAt: activityData.startedAt,
+          endedAt: activityData.endedAt,
+          liveMetrics: activityData.liveMetrics,
+          filePath: fileName,
         }),
       });
 
@@ -417,15 +349,13 @@ export class ActivitySyncService {
         throw new Error(result.error || "Edge function returned failure");
       }
 
-      console.log(
-        `Edge function completed: FIT file size ${result.fitSize} bytes`,
-      );
+      console.log(`Activity ${activity.id} synced successfully`);
 
       // Update local status to synced
       await LocalActivityDatabaseService.updateSyncStatus(
         activity.id,
         "synced",
-        result.fitPath,
+        fileName, // Store the JSON storage path
       );
 
       // Delete local JSON file after successful sync
@@ -436,7 +366,6 @@ export class ActivitySyncService {
         console.warn("Failed to delete local JSON file:", deleteError);
       }
 
-      console.log(`Successfully synced activity: ${activity.id}`);
       return true;
     } catch (error) {
       console.error(`Error syncing activity ${activity.id}:`, error);

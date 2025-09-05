@@ -1,5 +1,5 @@
+import * as FileSystem from "expo-file-system";
 import * as SQLite from "expo-sqlite";
-
 import type { LocalActivity } from "../types/activity";
 
 const DATABASE_NAME = "turbofit_local.db";
@@ -17,6 +17,7 @@ export class LocalActivityDatabaseService {
     try {
       this.db = await SQLite.openDatabaseAsync(DATABASE_NAME);
       await this.createTables();
+      await this.checkDatabaseVersion();
       console.log("Local activity database initialized");
     } catch (error) {
       console.error("Error initializing local database:", error);
@@ -60,6 +61,37 @@ export class LocalActivityDatabaseService {
       console.error("Database creation error:", error);
       throw error;
     }
+  }
+
+  private static async checkDatabaseVersion(): Promise<void> {
+    if (!this.db) throw new Error("Database not initialized");
+
+    const result = await this.db!.getFirstAsync<{ user_version: number }>(
+      "PRAGMA user_version",
+    );
+
+    const currentVersion = result?.user_version || 0;
+
+    if (currentVersion < DATABASE_VERSION) {
+      console.log(
+        `Database version mismatch. Migrating from ${currentVersion} to ${DATABASE_VERSION}`,
+      );
+      await this.migrateDatabaseSchema(currentVersion);
+      await this.db!.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);
+    }
+  }
+
+  private static async migrateDatabaseSchema(
+    fromVersion: number,
+  ): Promise<void> {
+    if (!this.db) throw new Error("Database not initialized");
+
+    // In a real app, you would have a switch statement here based on `fromVersion`
+    // to apply migrations incrementally.
+    console.warn(
+      `Placeholder migration from version ${fromVersion}. Implement actual schema changes here.`,
+    );
+    // Example: if (fromVersion < 2) { await this.db.execAsync('ALTER TABLE ...'); }
   }
 
   /**
