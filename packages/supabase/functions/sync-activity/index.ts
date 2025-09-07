@@ -39,32 +39,79 @@ serve(async (req) => {
       });
     }
 
-    // Step 2: Extract metrics for database storage
+    // Step 2: Download and parse the JSON file from storage
+    const { data: fileBlob, error: downloadError } = await supabase.storage
+      .from("activity-json-files")
+      .download(filePath);
+
+    if (downloadError) {
+      console.error(
+        `Error downloading JSON file from path: ${filePath}`,
+        downloadError,
+      );
+      return new Response(
+        JSON.stringify({ error: "Failed to download activity data" }),
+        {
+          status: 500,
+        },
+      );
+    }
+
+    const fileText = await fileBlob.text();
+    let activityData = {};
+    if (fileText) {
+      try {
+        activityData = JSON.parse(fileText);
+      } catch (e) {
+        console.error(`Error parsing activity data for ${activityId}:`, e);
+        return new Response(
+          JSON.stringify({ error: "Malformed activity data file" }),
+          {
+            status: 400,
+          },
+        );
+      }
+    }
+
+    // Merge liveMetrics with file data, giving precedence to file data
+    const fullActivityMetrics = { ...liveMetrics, ...activityData };
+
+    // Step 3: Extract metrics for database storage
     const extractMetric = (key: string): number | null => {
-      const value = liveMetrics[key];
-      return value != null ? Number(value) : null;
+      const value = fullActivityMetrics[key];
+      if (value == null) return null;
+      const num = Number(value);
+      return isNaN(num) ? null : num;
     };
 
-    // Step 3: Prepare activity payload for database
+    const extractAndRoundMetric = (key: string): number | null => {
+      const value = fullActivityMetrics[key];
+      if (value == null) return null;
+      const num = Number(value);
+      return isNaN(num) ? null : Math.round(num);
+    };
+
+    // Step 4: Prepare activity payload for database
     const activityPayload = {
       id: activityId,
       profile_id: profileId,
       json_storage_path: filePath,
       started_at: startedAt,
       sync_status: "synced",
-      summary_metrics: liveMetrics,
-      total_elapsed_time: extractMetric("totalElapsedTime"),
-      total_timer_time: extractMetric("totalTimerTime"),
+      summary_metrics: fullActivityMetrics,
+      total_elapsed_time: extractAndRoundMetric("totalElapsedTime"),
+      total_timer_time: extractAndRoundMetric("totalTimerTime"),
+      duration: extractAndRoundMetric("totalTimerTime"), // Map to existing duration column
       distance: extractMetric("distance"),
       avg_speed: extractMetric("avgSpeed"),
       max_speed: extractMetric("maxSpeed"),
       total_ascent: extractMetric("totalAscent"),
       total_descent: extractMetric("totalDescent"),
-      avg_heart_rate: extractMetric("avgHeartRate"),
-      max_heart_rate: extractMetric("maxHeartRate"),
-      avg_power: extractMetric("avgPower"),
-      normalized_power: extractMetric("normalizedPower"),
-      avg_cadence: extractMetric("avgCadence"),
+      avg_heart_rate: extractAndRoundMetric("avgHeartRate"),
+      max_heart_rate: extractAndRoundMetric("maxHeartRate"),
+      avg_power: extractAndRoundMetric("avgPower"),
+      normalized_power: extractAndRoundMetric("normalizedPower"),
+      avg_cadence: extractAndRoundMetric("avgCadence"),
       updated_at: new Date().toISOString(),
     };
 
