@@ -15,7 +15,7 @@ TurboFit is a sophisticated fitness tracking platform built with modern local-fi
 
 ### Applications
 - **`apps/native/`** - Expo 53 + React Native 0.79.5 mobile app
-  - WatermelonDB for local-first data storage
+  - Expo-SQLite for local-first data storage
   - Supabase client for cloud synchronization
   - NativeWind 4.1 for styling
   - Jest for testing with Maestro for E2E tests
@@ -35,7 +35,7 @@ TurboFit is a sophisticated fitness tracking platform built with modern local-fi
 ### Root Level Commands (run from project root)
 ```bash
 bun dev          # Start all development servers
-bun build        # Build all applications  
+bun build        # Build all applications
 bun lint         # Lint all code across monorepo
 bun test         # Run all tests
 bun check-types  # Type check all packages
@@ -74,14 +74,14 @@ bun lint    # ESLint for web app
 ## Key Technologies & Patterns
 
 ### Mobile App Architecture
-- **Local-first design** - WatermelonDB SQLite for instant data access
+- **Local-first design** - Expo-SQLite SQLite for instant data access
 - **Cloud synchronization** - Background sync to Supabase when connected
 - **FIT file processing** - Local generation and cloud storage of fitness data
 - **Real-time GPS tracking** - High-frequency location data collection
 - **Offline functionality** - Full app functionality without internet
 
 ### Data Flow
-- **Recording** - Activities recorded locally first (WatermelonDB)
+- **Recording** - Activities recorded locally first (Expo-SQLite)
 - **Synchronization** - Background sync to Supabase PostgreSQL
 - **Analytics** - Cloud processing for dashboard insights
 - **Conflict resolution** - Smart merging of local and server data
@@ -116,7 +116,7 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 - **user_achievements** - Gamification and milestones
 - **fit_files** - FIT file metadata and storage references
 
-### Local Storage (WatermelonDB SQLite - Mobile Only)
+### Local Storage (Expo-SQLite - Mobile Only)
 - **local_activities** - Real-time activity recording
 - **local_segments** - GPS tracking during workouts
 - **local_fit_data** - Raw FIT file data before cloud upload
@@ -158,7 +158,7 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
 ### Key Dependencies
 - **Supabase** - Backend-as-a-service (PostgreSQL, Auth, Storage)
-- **WatermelonDB** - Reactive database for React Native
+- **Expo-SQLite** - Reactive database for React Native
 - **React Query** - Data fetching and synchronization
 - **Zustand** - State management
 - **React Navigation** - Mobile navigation

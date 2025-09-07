@@ -8,7 +8,7 @@ TurboFit is built as a **Turborepo monorepo** with enterprise-grade local-first 
 
 ### 📱 Native Mobile App (`apps/native`)
 - **Expo 53** + React Native 0.79.5 (New Architecture)
-- **WatermelonDB** - High-performance local database for activity recording
+- **Expo-SQLite** - High-performance local database for activity recording
 - **Supabase Client** - Cloud sync and real-time features
 - **NativeWind 4.1** - Native Tailwind CSS styling
 - **Hybrid Architecture** - Local-first recording with intelligent cloud sync
@@ -28,7 +28,7 @@ TurboFit is built as a **Turborepo monorepo** with enterprise-grade local-first 
 ## ✨ Key Features
 
 ### 🔄 Hybrid Local-First Architecture
-- **Instant Activity Recording** - WatermelonDB handles real-time GPS tracking and FIT file creation
+- **Instant Activity Recording** - Expo-SQLite handles real-time GPS tracking and FIT file creation
 - **Intelligent Cloud Sync** - Automatic sync to Supabase when network is available
 - **Conflict Resolution** - Smart merging of local and cloud data
 - **FIT File Processing** - Local parsing and analysis with cloud backup storage
@@ -55,10 +55,10 @@ TurboFit is built as a **Turborepo monorepo** with enterprise-grade local-first 
 | Layer | Mobile | Web | Backend |
 |-------|--------|-----|---------|
 | **Frontend** | Expo 53, React Native | Next.js 15, React 19 | - |
-| **Local Storage** | WatermelonDB (SQLite) | - | - |
+| **Local Storage** | Expo-SQLite (SQLite) | - | - |
 | **Cloud Database** | Supabase Client | Supabase | PostgreSQL |
 | **Styling** | NativeWind 4.1 | Tailwind CSS | - |
-| **State** | WatermelonDB + React Query | React Query + Zustand | - |
+| **State** | Expo-SQLite + React Query | React Query + Zustand | - |
 
 ## 🚦 Getting Started
 
@@ -157,14 +157,14 @@ bun build        # Build production application
 - **user_achievements** - Gamification and milestone tracking
 - **fit_files** - Metadata and cloud storage references
 
-### Local Storage (WatermelonDB SQLite)
+### Local Storage (Expo-SQLite SQLite)
 - **local_activities** - Real-time activity recording during workouts
 - **local_segments** - GPS tracking data and time series
 - **local_fit_data** - Raw FIT file data before processing
 - **sync_queue** - Pending uploads and sync operations
 
 ### Hybrid Sync Strategy
-- **Record Locally** - All activity data written to WatermelonDB first
+- **Record Locally** - All activity data written to Expo-SQLite first
 - **Background Sync** - Automatic upload to Supabase when connected
 - **Conflict Resolution** - Smart merging with server-side validation
 - **FIT File Pipeline** - Local processing → Cloud storage → Analytics
@@ -184,13 +184,13 @@ bun build        # Build production application
 ## 📱 Mobile Features
 
 ### Hybrid Recording Architecture
-- **Local-first activity recording** - WatermelonDB captures all workout data instantly
+- **Local-first activity recording** - Expo-SQLite captures all workout data instantly
 - **Real-time GPS tracking** - High-frequency location data stored locally
 - **Background cloud sync** - Automatic sync to Supabase when network available
 - **FIT file generation** - Local processing and cloud storage integration
 
 ### Performance Optimizations
-- **WatermelonDB reactive queries** - Real-time UI updates during workouts
+- **Expo-SQLite reactive queries** - Real-time UI updates during workouts
 - **Efficient GPS batching** - Optimized location data collection
 - **Smart sync scheduling** - Network-aware background uploads
 - **Local FIT processing** - Parse and analyze without internet dependency
@@ -283,7 +283,6 @@ This project is licensed under the [MIT License](LICENSE).
 Built with modern tools and technologies:
 - [Expo](https://expo.dev) - Cross-platform mobile development
 - [Next.js](https://nextjs.org) - React web framework
-- [WatermelonDB](https://watermelondb.dev) - Reactive database
 - [Supabase](https://supabase.com) - Backend-as-a-service
 - [Turborepo](https://turbo.build) - Monorepo build system
 
