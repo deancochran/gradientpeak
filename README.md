@@ -2,114 +2,216 @@
 
 A sophisticated, enterprise-grade fitness tracking platform built with modern local-first architecture. TurboFit delivers seamless offline-first experiences with intelligent cloud synchronization, real-time analytics, and cross-platform consistency.
 
+---
+
 ## 🏗️ Architecture Overview
 
 TurboFit is built as a **Turborepo monorepo** with enterprise-grade local-first architecture:
 
+### 📦 Core Package (`packages/turbofit-core`)
+
+* Centralized **shared types, schemas, calculations, and utilities**
+* Single source of truth for:
+
+  * Activity, profile, and workout data structures
+  * Validation with Zod schemas
+  * Training zone and performance calculations (TSS, IF, NP)
+  * Shared utilities like time, units, formatting, constants
+* Ensures **type safety, consistency, and maintainability** across web and mobile apps
+
 ### 📱 Native Mobile App (`apps/native`)
-- **Expo 53** + React Native 0.79.5 (New Architecture)
-- **Expo-SQLite** - High-performance local database for activity recording
-- **Supabase Client** - Cloud sync and real-time features
-- **NativeWind 4.1** - Native Tailwind CSS styling
-- **Hybrid Architecture** - Local-first recording with intelligent cloud sync
+
+* **Expo 53** + React Native 0.79.5 (New Architecture)
+* **Expo-SQLite** - High-performance local database for activity recording
+* **Supabase Client** - Cloud sync and real-time features
+* **NativeWind 4.1** - Native Tailwind CSS styling
+* **Hybrid Architecture** - Local-first recording with intelligent cloud sync
+* **Uses `@turbofit/core`** for types, validation, calculations, and utilities
 
 ### 🌐 Web Dashboard (`apps/web`)
-- **Next.js 15** + React 19 (cutting-edge performance)
-- **Turbopack** - Lightning-fast development builds
-- **Supabase** - PostgreSQL backend with real-time subscriptions
-- **Analytics Interface** - Comprehensive fitness insights and admin tools
+
+* **Next.js 15** + React 19
+* **Turbopack** - Lightning-fast development builds
+* **Supabase** - PostgreSQL backend with real-time subscriptions
+* **Analytics Interface** - Comprehensive fitness insights and admin tools
+* **Uses `@turbofit/core`** for shared business logic and type safety
 
 ### 🔗 Shared Infrastructure
-- **Turborepo** with **Bun** package manager
-- **TypeScript** throughout the stack
-- **Supabase** - PostgreSQL with Row Level Security
-- **Intelligent Sync Engine** - Conflict resolution and offline-first
+
+* **Turborepo** with **Bun** package manager
+* **TypeScript** throughout the stack
+* **Supabase** - PostgreSQL with Row Level Security
+* **Intelligent Sync Engine** - Conflict resolution and offline-first
+
+---
+
+## 🧑‍💻 Profiles & Preferences
+
+User-centric design anchors the system around **profiles** extended from `auth.users`. Each profile stores athlete-specific metrics, preferences, and personalization settings:
+
+| Field               | Description                                                |
+| ------------------- | ---------------------------------------------------------- |
+| `profile_id`        | Primary key, UUID, FK → `auth.users.id`                    |
+| `threshold_hr`      | Threshold heart rate (bpm); nullable for new users         |
+| `ftp`               | Functional Threshold Power (watts); nullable for new users |
+| `weight_kg`         | Athlete’s weight for power-to-weight calculations          |
+| `gender`            | Used in predictive models and analytics                    |
+| `dob`               | Date of birth; calculates age-based zones & targets        |
+| `username`          | Unique public-facing handle                                |
+| `language`          | Preferred UI language/locale                               |
+| `preferred_units`   | Metric vs imperial                                         |
+| `preferred_metrics` | Focus metrics (power, HR, pace, RPE)                       |
+| `avatar_url`        | Optional profile picture/avatar                            |
+| `bio`               | Optional short biography                                   |
+
+> These metrics enable **personalized, adaptive training**, ensuring workouts match an athlete’s physiology and goals.
+
+---
+
+## 📋 Training Plans & Planned Activities
+
+### Profile Plans
+
+`profile_plans` stores personalized training plans generated from library templates:
+
+* Enables multiple plans per user
+* Tracks progress individually per plan
+
+### Planned Activities
+
+`planned_activities` contains the scheduled workouts derived from plans:
+
+* `id` — Primary key, UUID
+* `plan_id` — FK → `profile_plans.id`
+* `structure` — JSON object defining steps, repetitions, intensity targets
+* `structure_version` — Tracks JSON/Zod schema version
+* `requires_threshold_hr` / `requires_ftp` — Flags for mandatory metrics
+* Optional fields: notes, estimated duration, TSS
+
+**Workout Structure (JSON Example)**:
+
+```json
+{
+  "Structure": [
+    {
+      "IntensityClass": "WarmUp",
+      "Name": "Warm up",
+      "Length": { "Unit": "Second", "Value": 600 },
+      "Type": "Step",
+      "IntensityTarget": { "Unit": "PercentOfFtp", "Value": 60, "MinValue": 55, "MaxValue": 65 }
+    }
+  ]
+}
+```
+
+* Supports Step or Repetition types
+* Length units: Second, Meter, Repetition
+* IntensityClass: WarmUp, Active, Rest, CoolDown
+* IntensityTarget: %FTP, %MaxHR, %ThresholdHR, speed, cadence, or RPE
+* Optional: Name, Notes, CadenceTarget, OpenDuration
+
+> JSON structure allows **portable, schema-validated workouts** compatible with Garmin, Wahoo, and TrainingPeaks formats.
+
+---
+
+## 🏃 Activities & Performance Analysis
+
+### Completed Activities
+
+`activities` captures all finished sessions:
+
+* `id` — Primary key, UUID
+* `profile_id` — FK → `profiles.profile_id`
+* `planned_activity_id` — Optional FK → `planned_activities.id`
+* `started_at`, `ended_at` — Timestamps
+* `source` — Device or manual entry
+
+### Activity Results
+
+`activity_results` stores analytical metrics:
+
+* `activity_id` — FK → `activities.id`
+* Metrics include TSS, CTL, compliance score, normalized power, etc.
+* Numeric fields default to NULL if data is missing
+
+### Activity Streams
+
+`activity_streams` stores granular, timestamped metrics:
+
+* Columns: activity\_id, timestamp, metric\_type, value
+* Recommended indexing/partitioning for large datasets
+
+> This separation of planned vs completed activities allows **intelligent plan adaptation** and **compliance tracking** for personalized, evolving training.
+
+---
+
+## 🔄 Hybrid Local-First Architecture
+
+* **Record Locally** — Expo-SQLite handles all activity data instantly
+* **Background Sync** — Automatic upload to Supabase when connected
+* **Conflict Resolution** — Smart merging with server-side validation
+* **FIT File Pipeline** — Local processing → Cloud storage → Analytics
+* **Alerts** — Planned activities requiring missing threshold HR or FTP trigger notifications
+
+---
 
 ## ✨ Key Features
 
 ### 🔄 Hybrid Local-First Architecture
-- **Instant Activity Recording** - Expo-SQLite handles real-time GPS tracking and FIT file creation
-- **Intelligent Cloud Sync** - Automatic sync to Supabase when network is available
-- **Conflict Resolution** - Smart merging of local and cloud data
-- **FIT File Processing** - Local parsing and analysis with cloud backup storage
+
+* **Instant Activity Recording** - Expo-SQLite handles real-time GPS tracking and FIT file creation
+* **Intelligent Cloud Sync** - Automatic sync to Supabase when network is available
+* **Conflict Resolution** - Smart merging of local and cloud data
+* **FIT File Processing** - Local parsing and analysis with cloud backup storage
+* **Shared calculations** via `@turbofit/core` ensure consistency between platforms
 
 ### 📊 Advanced Analytics
-- **Real-Time Metrics** - Power curves, training load, recovery tracking
-- **Performance Analytics** - Trends, comparisons, and insights
-- **Achievement System** - Automated milestone detection and gamification
-- **Dashboard Views** - Pre-calculated metrics for instant loading
+
+* **Real-Time Metrics** - Power curves, training load, recovery tracking
+* **Performance Analytics** - Trends, comparisons, and insights
+* **Achievement System** - Automated milestone detection and gamification
+* **Dashboard Views** - Pre-calculated metrics for instant loading
 
 ### 🔐 Enterprise Security
-- **Row Level Security** - Database-level access control
-- **Encrypted Storage** - Secure local data management
-- **Audit Logging** - Comprehensive tracking for compliance
+
+* **Row Level Security** - Database-level access control
+* **Encrypted Storage** - Secure local data management
+* **Audit Logging** - Comprehensive tracking for compliance
 
 ### 🚀 Developer Experience
-- **Type Safety** - End-to-end TypeScript with shared schemas
-- **Hot Reloading** - Instant development feedback
-- **Shared Components** - Consistent UI across platforms
-- **Testing Suite** - Unit, integration, and E2E testing
+
+* **Type Safety** - End-to-end TypeScript with shared schemas
+* **Hot Reloading** - Instant development feedback
+* **Shared Components** - Consistent UI across platforms
+* **Testing Suite** - Unit, integration, and E2E testing
+
+---
 
 ## 🛠️ Tech Stack
 
-| Layer | Mobile | Web | Backend |
-|-------|--------|-----|---------|
-| **Frontend** | Expo 53, React Native | Next.js 15, React 19 | - |
-| **Local Storage** | Expo-SQLite (SQLite) | - | - |
-| **Cloud Database** | Supabase Client | Supabase | PostgreSQL |
-| **Styling** | NativeWind 4.1 | Tailwind CSS | - |
-| **State** | Expo-SQLite + React Query | React Query + Zustand | - |
+| Layer              | Mobile                    | Web                   | Backend    |
+| ------------------ | ------------------------- | --------------------- | ---------- |
+| **Frontend**       | Expo 53, React Native     | Next.js 15, React 19  | -          |
+| **Local Storage**  | Expo-SQLite (SQLite)      | -                     | -          |
+| **Cloud Database** | Supabase Client           | Supabase              | PostgreSQL |
+| **Shared Core**    | `@turbofit/core`          | `@turbofit/core`      | -          |
+| **Styling**        | NativeWind 4.1            | Tailwind CSS          | -          |
+| **State**          | Expo-SQLite + React Query | React Query + Zustand | -          |
 
-## 🚦 Getting Started
-
-### Prerequisites
-- **Node.js** 18+
-- **Bun** package manager
-- **Expo CLI** for mobile development
-- **Supabase** account for cloud database
-
-### Quick Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/your-org/turbofit
-cd turbofit
-
-# Install dependencies
-bun install
-
-# Set up environment variables
-cp apps/native/.env.example apps/native/.env
-cp apps/web/.env.local.example apps/web/.env.local
-
-# Start development servers
-bun dev
-```
-
-### Environment Configuration
-
-**Mobile App** (`apps/native/.env`):
-```env
-EXPO_PUBLIC_SUPABASE_URL=your_supabase_url
-EXPO_PUBLIC_SUPABASE_KEY=your_supabase_anon_key
-```
-
-**Web Dashboard** (`apps/web/.env.local`):
-```env
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-```
+---
 
 ## 📖 Development Guide
 
 ### Project Structure
+
 ```
 turbofit/
 ├── apps/
 │   ├── native/          # Mobile app (Expo + React Native)
 │   └── web/             # Web dashboard (Next.js)
 ├── packages/
-│   ├── supabase/        # Shared supabase schemas
+│   ├── turbofit-core/   # Shared types, calculations, validation, utilities
+│   ├── supabase/        # Shared Supabase schemas
 │   └── config/          # Shared configuration
 └── docs/                # Documentation
 ```
@@ -117,6 +219,7 @@ turbofit/
 ### Common Commands
 
 **Root level** (runs across all apps):
+
 ```bash
 bun dev          # Start all development servers
 bun build        # Build all applications
@@ -125,6 +228,7 @@ bun test         # Run all tests
 ```
 
 **Mobile development**:
+
 ```bash
 cd apps/native
 bun start        # Start Expo development server
@@ -133,11 +237,41 @@ bun android      # Run on Android emulator
 ```
 
 **Web development**:
+
 ```bash
 cd apps/web
 bun dev          # Start Next.js development server
 bun build        # Build production application
 ```
+
+---
+
+## 📦 Using `@turbofit/core`
+
+### Example: Training Zones (Mobile or Web)
+
+```ts
+import { TrainingZoneCalculator } from '@turbofit/core';
+
+const zones = TrainingZoneCalculator.getZonesForProfile(profile);
+```
+
+### Example: Performance Analysis
+
+```ts
+import { PerformanceCalculator } from '@turbofit/core';
+
+const metrics = PerformanceCalculator.analyzeActivity(
+  activity.streams,
+  activity.duration_seconds,
+  activity.profile?.ftp,
+  activity.profile?.threshold_hr
+);
+```
+
+> `@turbofit/core` ensures **type safety, centralized calculations, validation, and utilities** across the entire TurboFit stack.
+
+`
 
 ### Database Setup
 
