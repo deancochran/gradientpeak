@@ -1,38 +1,38 @@
 -- Note: Storage bucket creation moved to seed.sql
 
 create table "profiles" (
-  "id" uuid not null references auth.users on delete cascade,
-  "avatar_url" text,
-  "full_name" text,
-  "created_at" timestamp with time zone not null default now(),
-  "updated_at" timestamp with time zone default now(),
-  primary key (id)
+    "id" uuid primary key references "auth"."users"("id") on delete cascade,
+
+    -- key fitness metrics
+    "threshold_hr" integer,
+    "ftp" integer,
+    "weight_kg" numeric(5,2),
+
+    -- personal info
+    "gender" text check ("gender" in ('male', 'female', 'other')),
+    "dob" date,
+    "username" text unique,
+    "language" text default 'en',
+    "preferred_units" text check ("preferred_units" in ('metric', 'imperial')) default 'metric',
+    "avatar_url" text,
+    "bio" text,
+
+    -- onboarding & measurement tracking
+    "onboarded" boolean default false,
+    "last_ftp_update" timestamptz,
+    "last_threshold_hr_update" timestamptz,
+
+    "created_at" timestamptz not null default now(),
+    "updated_at" timestamptz default now()
 );
 
--- Enable RLS on profiles table
-alter table public.profiles enable row level security;
 
--- Create policies for profiles table
-create policy "Users can view their own profile" 
-on "profiles" 
-for select 
-using (auth.uid() = id);
 
-create policy "Users can update their own profile" 
-on "profiles" 
-for update 
-using (auth.uid() = id);
+-- RLS policies for profiles table
+alter table "profiles" enable row level security;
 
-create policy "Users can insert their own profile" 
-on "profiles" 
-for insert 
-with check (auth.uid() = id);
-
--- Allow service role to do everything (for the trigger)
-create policy "Service role can do everything" 
-on "profiles" 
-for all 
-using (current_setting('role') = 'service_role');
+create policy "Users can manage own profiles" on "profiles"
+    for all using (auth.uid() = id);
 
 -- function to create a profile when a new user is created
 create or replace function public.handle_new_user()
@@ -41,7 +41,7 @@ language plpgsql
 security definer set search_path = ''
 as $$
 begin
-  insert into public.profiles (id, full_name, avatar_url)
+  insert into public.profiles (id, username, avatar_url)
   values (
     new.id,
     coalesce(

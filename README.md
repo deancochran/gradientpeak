@@ -8,7 +8,7 @@ A sophisticated, enterprise-grade fitness tracking platform built with modern lo
 
 TurboFit is built as a **Turborepo monorepo** with enterprise-grade local-first architecture:
 
-### 📦 Core Package (`packages/turbofit-core`)
+### 📦 Core Package (`packages/core`)
 
 **The heart of TurboFit's shared business logic** - A centralized package that eliminates duplication and ensures consistency across all platforms.
 
@@ -58,7 +58,7 @@ User-centric design anchors the system around **profiles** extended from `auth.u
 
 | Field               | Description                                                |
 | ------------------- | ---------------------------------------------------------- |
-| `profile_id`        | Primary key, UUID, FK → `auth.users.id`                    |
+| `id`        | Primary key, UUID, FK → `auth.users.id`                    |
 | `threshold_hr`      | Threshold heart rate (bpm); nullable for new users         |
 | `ftp`               | Functional Threshold Power (watts); nullable for new users |
 | `weight_kg`         | Athlete's weight for power-to-weight calculations          |
@@ -188,10 +188,9 @@ turbofit/
 │   ├── native/          # Mobile app (Expo + React Native)
 │   └── web/             # Web dashboard (Next.js)
 ├── packages/
-│   ├── turbofit-core/   # 🌟 Shared business logic, types, calculations
+│   ├── core/   # 🌟 Shared business logic, types, calculations
 │   ├── supabase/        # Database schemas and migrations
 │   └── config/          # Shared configuration
-└── docs/                # Documentation
 ```
 
 ### Core Package Structure
@@ -199,7 +198,7 @@ turbofit/
 The `@turbofit/core` package is organized into focused modules:
 
 ```
-packages/turbofit-core/
+packages/core/
 ├── types/               # Database types and enhanced interfaces
 ├── schemas/             # Zod validation schemas
 ├── calculations/        # Performance and training calculations
@@ -221,7 +220,7 @@ bun test         # Run all tests including core package tests
 **Core package development**:
 
 ```bash
-cd packages/turbofit-core
+cd packages/core
 bun build        # Build core package
 bun test         # Test core package
 bun dev          # Watch mode for core package development
@@ -488,7 +487,6 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 - [**Setup Guide**](SETUP_GUIDE.md) - Complete installation and configuration
 - [**Architecture Guide**](CLAUDE.md) - Technical implementation details
-- [**API Documentation**](docs/api/) - Database schemas and endpoints
 - [**Component Library**](packages/ui/README.md) - Shared UI components
 
 ## 📝 License
