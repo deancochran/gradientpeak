@@ -245,51 +245,6 @@ Complex workout structures are validated using shared schemas, ensuring data int
 ### Type Safety
 Database types and enhanced interfaces are shared, providing compile-time safety and consistent data structures.
 
----
-
-⸻
-
-<<<<<<< HEAD
-🗄️ Database Architecture
-
-Core Tables (Supabase PostgreSQL)
-
-Table	Description
-auth.users	Built-in Supabase table for authentication, login credentials, and security.
-profiles	Extends auth.users with personal information, athlete metrics, and preferences. Key fields include threshold_hr, ftp, weight_kg, gender, dob, username, language, preferred_units, preferred_metrics, avatar_url, bio.
-profile_plans	Stores personalized training plans generated for each profile. Enables multiple active plans per user, tracking progress individually.
-planned_activities	Scheduled workouts for each plan. Includes structure JSON for workout steps, structure_version, and flags like requires_threshold_hr and requires_ftp. Optional fields: notes, estimated duration, TSS.
-activities	Captures all completed sessions (device-recorded or manual). Fields: profile_id, planned_activity_id (optional), started_at, ended_at, source.
-activity_results	Analytical metrics per activity: TSS, CTL, compliance score, normalized power, and more. Numeric fields allow NULL for missing data.
-activity_streams	Time-series data for each activity: timestamped HR, power, cadence, GPS coordinates, speed, etc. Optimized indexing recommended for large datasets.
-activity_segments	Optional table for pre-aggregated GPS/time-based segments per activity.
-user_metrics	Pre-calculated performance analytics and trend data for dashboards.
-user_achievements	Gamification and milestone tracking per profile.
-fit_files	Metadata and cloud storage references for FIT files.
-
-All tables include created_at and updated_at timestamps for auditing.
-
-⸻
-
-Local Storage (Expo-SQLite SQLite)
-
-Table	Description
-local_activities	Real-time activity recording during workouts. Mirrors activities structure locally.
-local_segments	GPS tracking data and time-series for local rendering.
-local_fit_data	Raw FIT file data before processing and cloud upload.
-sync_queue	Pending uploads and synchronization tasks with Supabase.
-
-
-⸻
-
-Hybrid Sync Strategy
-	1.	Record Locally — All activity and GPS data are captured in Expo-SQLite immediately.
-	2.	Background Sync — Automatic upload to Supabase when network is available.
-	3.	Conflict Resolution — Smart merging of local and cloud data with server-side validation.
-	4.	FIT File Pipeline — Local FIT processing → Cloud storage → Analytics.
-	5.	Validation Alerts — Planned activities that require threshold HR or FTP trigger warnings if user attempts to plan an activity without proper requirements 
-=======
-TurboFit uses a **user-centric database design** built on Supabase PostgreSQL that supports personalized training with comprehensive performance tracking. The **core package** provides enhanced type definitions, validation schemas, and processing algorithms for all database interactions.
 
 ### Core Architecture Principles
 
@@ -422,7 +377,6 @@ This **core package-enhanced architecture** delivers:
 The separation of planned vs completed activities enables **intelligent training adaptation** through core package algorithms that analyze compliance patterns and adjust future workouts based on actual performance and athlete development.
 
 ---
->>>>>>> b7314c9 (readme update)
 
 ## 🔐 Authentication Flow
 
