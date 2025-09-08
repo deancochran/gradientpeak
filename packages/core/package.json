@@ -9,8 +9,12 @@
     "check-types": "tsc --noEmit",
     "lint": "eslint src/"
   },
+  "dependencies": {
+    "zod": "^4.1.3"
+  },
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",
+    "@repo/supabase": "workspace:*",
     "@repo/eslint-config": "workspace:*"
   }
 }

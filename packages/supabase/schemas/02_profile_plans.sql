@@ -16,11 +16,13 @@ create table "profile_plans" (
     "start_date" date not null,
     "end_date" date not null,
 
-    -- athlete baseline snapshot
+    -- profile snapshot
+    "snapshot_weight_kg" numeric(5,2),
     "snapshot_ftp" numeric(5,2),
     "snapshot_threshold_hr" integer,
 
     -- progression config (JSONB)
+    "config_version" text not null default '1.0',
     "config" jsonb default '{
         "ramp_rate": 0.07,
         "recovery_weeks": [4, 8, 12],

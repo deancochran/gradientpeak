@@ -8,11 +8,11 @@ create table "activity_results" (
     "moving_time" integer,   -- active recording time
 
     -- profile snapshot
-    "weight_kg" numeric(5,2),
-    "ftp" numeric(5,2),
-    "threshold_hr" integer,
+    "snapshot_weight_kg" numeric(5,2),
+    "snapshot_ftp" numeric(5,2),
+    "snapshot_threshold_hr" integer,
 
-    -- training load
+    -- profile training load
     "tss" numeric(6,2),
     "ctl" numeric(6,2),
     "atl" numeric(6,2),

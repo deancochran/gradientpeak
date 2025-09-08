@@ -99,7 +99,6 @@
     "@jest/globals": "^29.7.0",
     "@repo/eslint-config": "workspace:*",
     "@repo/supabase": "workspace:*",
-    "@repo/testing-utils": "workspace:*",
     "@repo/typescript-config": "workspace:*",
     "@testing-library/jest-native": "^5.4.3",
     "@testing-library/react-native": "^13.3.1",
