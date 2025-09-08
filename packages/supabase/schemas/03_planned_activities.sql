@@ -32,9 +32,6 @@ create table "planned_activities" (
     "completed_activity_id" uuid references "activities"("id"),
     "completion_date" date,
 
-    -- compliance (core package responsibility)
-    "adherence_score" numeric(4,2), -- NULL until calculated
-
     "created_at" timestamptz not null default now(),
     "updated_at" timestamptz not null default now()
 );
