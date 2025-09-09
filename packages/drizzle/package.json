@@ -3,12 +3,13 @@
   "module": "index.ts",
   "type": "module",
   "devDependencies": {
+    "@repo/core": "workspace:*",
+    "@repo/eslint-config": "workspace:*",
+    "@repo/supabase": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
     "@types/bun": "latest",
     "drizzle-kit": "^0.31.4",
     "tsx": "^4.20.5"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
   },
   "dependencies": {
     "dotenv": "^17.2.2",

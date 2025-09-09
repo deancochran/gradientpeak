@@ -53,9 +53,7 @@ android/
 # ------------------------------
 # Shared Packages (packages/)
 # ------------------------------
-# Drizzle ORM generated files
-packages/drizzle/drizzle/
-packages/drizzle/migrations/
+
 
 # Supabase generated stuff
 packages/supabase/.temp/
