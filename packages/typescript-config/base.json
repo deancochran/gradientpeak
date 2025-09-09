@@ -4,7 +4,8 @@
     "declaration": true,
     "declarationMap": true,
     "esModuleInterop": true,
-    "incremental": false,
+    "forceConsistentCasingInFileNames": true,
+    "incremental": true,
     "isolatedModules": true,
     "lib": ["es2022", "DOM", "DOM.Iterable"],
     "module": "NodeNext",
@@ -14,6 +15,10 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "strict": true,
-    "target": "ES2022"
-  }
+    "target": "ES2022",
+    "types": [],
+    "baseUrl": ".",
+    "paths": {}
+  },
+  "exclude": ["node_modules", "dist", "build", "coverage"]
 }

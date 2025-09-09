@@ -1,5 +1,6 @@
 {
-  "extends": "expo/tsconfig.base",
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "@repo/typescript-config/base.json",
   "compilerOptions": {
     "strict": true,
     "baseUrl": ".",
