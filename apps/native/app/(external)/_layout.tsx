@@ -1,9 +1,11 @@
 // apps/native/app/(external)/_layout.tsx
-import { useAuth } from "@lib/contexts/AuthContext";
+import { useAuth } from "@lib/stores";
 import { useColorScheme } from "@lib/useColorScheme";
-import { Stack } from "expo-router";
+import { router, Stack } from "expo-router";
 import React from "react";
 import { ActivityIndicator, Animated, View } from "react-native";
+
+console.log("📱 EXTERNAL LAYOUT: File loaded and executing");
 
 function AuthLoadingScreen() {
   const { isDarkColorScheme } = useColorScheme();
@@ -55,12 +57,59 @@ function AuthLoadingScreen() {
 }
 
 export default function ExternalLayout() {
-  const { isDarkColorScheme } = useColorScheme();
-  const { loading } = useAuth();
+  console.log("📱 EXTERNAL LAYOUT: Component function called");
 
-  // Don't handle redirects here - let AuthProvider handle it
-  // Just show loading if still determining auth state
-  if (loading) {
+  const { isDarkColorScheme } = useColorScheme();
+  const { loading, initialized, isAuthenticated, hydrated } = useAuth();
+
+  console.log("🚦 External Layout: Rendering with state", {
+    loading,
+    initialized,
+    isAuthenticated,
+    hydrated,
+  });
+
+  // Direct navigation effect
+  React.useEffect(() => {
+    console.log("🚦 External Layout: Auth state changed", {
+      loading,
+      initialized,
+      isAuthenticated,
+      hydrated,
+    });
+
+    if (initialized && hydrated && !loading) {
+      console.log("🚦 External Layout: Navigation conditions met");
+      if (isAuthenticated) {
+        console.log(
+          "🏠 External Layout: Navigating to internal (authenticated)",
+        );
+        router.replace("/(internal)");
+      } else {
+        console.log(
+          "🔓 External Layout: User not authenticated, staying on external",
+        );
+      }
+    }
+  }, [loading, initialized, isAuthenticated, hydrated]);
+
+  // Show loading while determining auth state
+  if (!initialized || !hydrated || loading) {
+    console.log("🚦 External Layout: Showing loading screen", {
+      initialized,
+      hydrated,
+      loading,
+    });
+    return <AuthLoadingScreen />;
+  }
+
+  console.log("🚦 External Layout: Auth state ready, checking authentication");
+
+  // If authenticated, let navigation effect handle redirect
+  if (isAuthenticated) {
+    console.log(
+      "🚦 External Layout: User authenticated, should navigate soon...",
+    );
     return <AuthLoadingScreen />;
   }
 

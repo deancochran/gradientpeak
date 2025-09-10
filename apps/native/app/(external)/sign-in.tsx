@@ -16,8 +16,7 @@ import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { Input } from "@/components/ui/input";
-import { useAuth } from "@lib/contexts/AuthContext";
-import { supabase } from "@lib/supabase";
+import { useAuth } from "@lib/stores";
 import { useColorScheme } from "@lib/useColorScheme";
 
 const signInSchema = z.object({
@@ -42,7 +41,7 @@ const mapSupabaseErrorToFormField = (error: string) => {
 export default function SignInScreen() {
   const router = useRouter();
   const { isDarkColorScheme } = useColorScheme();
-  const { loading } = useAuth();
+  const { loading, signIn } = useAuth();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   // Animation refs
@@ -93,10 +92,7 @@ export default function SignInScreen() {
 
     setIsSubmitting(true);
     try {
-      const { data: authData, error } = await supabase.auth.signInWithPassword({
-        email: data.email,
-        password: data.password,
-      });
+      const { error } = await signIn(data.email, data.password);
 
       if (error) {
         console.log("Sign in error:", error);

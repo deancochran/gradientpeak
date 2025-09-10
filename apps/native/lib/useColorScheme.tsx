@@ -1,12 +1,19 @@
-import { useColorScheme as useNativewindColorScheme } from "nativewind";
+import { useColorScheme as useNativeColorScheme } from "react-native";
 
 export function useColorScheme() {
-  const { colorScheme, setColorScheme, toggleColorScheme } =
-    useNativewindColorScheme();
+  const nativeColorScheme = useNativeColorScheme();
+  const colorScheme = nativeColorScheme ?? "dark";
+
   return {
-    colorScheme: colorScheme ?? "dark",
+    colorScheme,
     isDarkColorScheme: colorScheme === "dark",
-    setColorScheme,
-    toggleColorScheme,
+    setColorScheme: () => {
+      // TODO: Implement theme switching
+      console.log("Theme switching not implemented yet");
+    },
+    toggleColorScheme: () => {
+      // TODO: Implement theme toggling
+      console.log("Theme toggling not implemented yet");
+    },
   };
 }

@@ -16,8 +16,7 @@ import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { Input } from "@/components/ui/input";
-import { useAuth } from "@lib/contexts/AuthContext";
-import { auth } from "@lib/supabase";
+import { useAuth } from "@lib/stores";
 import { useColorScheme } from "@lib/useColorScheme";
 
 const forgotPasswordSchema = z.object({
@@ -29,7 +28,7 @@ type ForgotPasswordFields = z.infer<typeof forgotPasswordSchema>;
 export default function ForgotPasswordScreen() {
   const router = useRouter();
   const { isDarkColorScheme } = useColorScheme();
-  const { loading } = useAuth();
+  const { loading, resetPassword } = useAuth();
   const [emailSent, setEmailSent] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
@@ -81,7 +80,7 @@ export default function ForgotPasswordScreen() {
 
     setIsSubmitting(true);
     try {
-      const { error } = await auth.resetPassword(data.email);
+      const { error } = await resetPassword(data.email);
 
       if (error) {
         console.log("Reset password error:", error);

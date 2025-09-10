@@ -16,7 +16,6 @@ import { SignOutButton } from "@components/SignOutButton";
 import { ThemedView } from "@components/ThemedView";
 import { Card } from "@components/ui/card";
 import { Text } from "@components/ui/text";
-import { useAuth } from "@lib/contexts/AuthContext";
 import {
   useCreateProfile,
   useProfile,
@@ -24,6 +23,7 @@ import {
 } from "@lib/hooks/api/profiles";
 import { ActivityService } from "@lib/services/activity-service";
 import { ProfileService } from "@lib/services/profile-service";
+import { useAuth } from "@lib/stores";
 import { calculateHrZones } from "@repo/core/calculations";
 
 export default function SettingsScreen() {

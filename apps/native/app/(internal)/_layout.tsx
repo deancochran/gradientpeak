@@ -3,8 +3,9 @@ import { Tabs } from "expo-router";
 import React from "react";
 import { ActivityIndicator, Animated, View } from "react-native";
 
-import { useAuth } from "@lib/contexts/AuthContext";
+import { useAuth } from "@lib/stores";
 import { useColorScheme } from "@lib/useColorScheme";
+import { router } from "expo-router";
 
 // Animated icon component with enhanced styling
 function AnimatedIcon({ focused, name }: { focused: boolean; name: string }) {
@@ -86,20 +87,39 @@ function RecordButton({ focused }: { focused: boolean }) {
 
 export default function InternalLayout() {
   const { isDarkColorScheme } = useColorScheme();
-  const { loading, isAuthenticated, session } = useAuth();
+  const { loading, initialized, isAuthenticated, hydrated } = useAuth();
 
-  // Enhanced debug logging for navigation
+  // Direct navigation effect
   React.useEffect(() => {
-    console.log("🧭 Navigation Layout - Auth State:", {
+    console.log("🧭 Internal Layout: Auth state changed", {
       loading,
+      initialized,
       isAuthenticated,
-      hasSession: !!session,
-      userEmail: session?.user?.email,
+      hydrated,
     });
-  }, [loading, isAuthenticated, session]);
 
-  if (loading) {
-    console.log("🧭 Navigation Layout - Loading state");
+    if (initialized && hydrated && !loading) {
+      console.log("🧭 Internal Layout: Navigation conditions met");
+      if (!isAuthenticated) {
+        console.log(
+          "🔓 Internal Layout: Navigating to external (not authenticated)",
+        );
+        router.replace("/(external)/welcome");
+      } else {
+        console.log(
+          "🏠 Internal Layout: User authenticated, staying on internal",
+        );
+      }
+    }
+  }, [loading, initialized, isAuthenticated, hydrated]);
+
+  // Show loading while determining auth state
+  if (!initialized || !hydrated || loading) {
+    console.log("🧭 Internal Layout: Showing loading screen", {
+      initialized,
+      hydrated,
+      loading,
+    });
     return (
       <View
         style={{
@@ -108,11 +128,32 @@ export default function InternalLayout() {
           alignItems: "center",
           backgroundColor: isDarkColorScheme ? "#000000" : "#ffffff",
         }}
-        testID="navigation-loading"
       >
         <ActivityIndicator
           size="large"
-          color={isDarkColorScheme ? "#3b82f6" : "#3b82f6"}
+          color={isDarkColorScheme ? "#ffffff" : "#000000"}
+        />
+      </View>
+    );
+  }
+
+  // If not authenticated, let navigation effect handle redirect
+  if (!isAuthenticated) {
+    console.log(
+      "🧭 Internal Layout: User not authenticated, should navigate soon...",
+    );
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: isDarkColorScheme ? "#000000" : "#ffffff",
+        }}
+      >
+        <ActivityIndicator
+          size="large"
+          color={isDarkColorScheme ? "#ffffff" : "#000000"}
         />
       </View>
     );

@@ -73,18 +73,32 @@ export {
 } from "./ui-store";
 
 // Store initialization utilities
+let _storesInitialized = false;
+
 export const initializeStores = async () => {
-  // Initialize auth store
-  const { useAuthStore } = await import("./auth-store");
-  const authStore = useAuthStore.getState();
-  await authStore.initialize();
+  if (_storesInitialized) {
+    console.log("⚠️ Stores already initialized, skipping...");
+    return;
+  }
 
-  // Recover any active workout session
-  const { useWorkoutStore } = await import("./workout-store");
-  const workoutStore = useWorkoutStore.getState();
-  await workoutStore.recoverWorkout();
+  _storesInitialized = true;
 
-  console.log("✅ All stores initialized");
+  try {
+    // Initialize auth store
+    const { useAuthStore } = await import("./auth-store");
+    const authStore = useAuthStore.getState();
+    await authStore.initialize();
+
+    // Recover any active workout session
+    const { useWorkoutStore } = await import("./workout-store");
+    const workoutStore = useWorkoutStore.getState();
+    await workoutStore.recoverWorkout();
+
+    console.log("✅ All stores initialized");
+  } catch (error) {
+    _storesInitialized = false; // Reset on error so retry is possible
+    throw error;
+  }
 };
 
 // Store cleanup utilities

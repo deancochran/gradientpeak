@@ -1,6 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Session, User } from "@supabase/supabase-js";
-import { router } from "expo-router";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { supabase } from "../supabase";
@@ -11,12 +10,14 @@ export interface AuthState {
   user: User | null;
   loading: boolean;
   initialized: boolean;
+  hydrated: boolean;
   isAuthenticated: boolean;
 
   // Actions
   setSession: (session: Session | null) => void;
   setLoading: (loading: boolean) => void;
   setInitialized: (initialized: boolean) => void;
+  setHydrated: (hydrated: boolean) => void;
   signOut: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (
@@ -28,6 +29,9 @@ export interface AuthState {
   initialize: () => Promise<void>;
 }
 
+let _autoInitialized = false;
+let _initializationInProgress = false;
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -36,6 +40,7 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       loading: true,
       initialized: false,
+      hydrated: false, // Will be set to true after persistence rehydration
       isAuthenticated: false,
 
       // Actions
@@ -51,6 +56,8 @@ export const useAuthStore = create<AuthState>()(
       setLoading: (loading) => set({ loading }),
 
       setInitialized: (initialized) => set({ initialized }),
+
+      setHydrated: (hydrated) => set({ hydrated }),
 
       signOut: async () => {
         const { setSession, setLoading } = get();
@@ -83,8 +90,7 @@ export const useAuthStore = create<AuthState>()(
             console.log("📝 Auth Store: Successfully signed out");
           }
 
-          // Navigate to welcome screen
-          router.replace("/(external)/welcome");
+          // Let layouts handle navigation
         } catch (err: unknown) {
           const errorMessage = err instanceof Error ? err.message : String(err);
           if (errorMessage.includes("Auth session missing")) {
@@ -174,6 +180,17 @@ export const useAuthStore = create<AuthState>()(
       },
 
       initialize: async () => {
+        if (_autoInitialized) {
+          console.log("🔐 Auth Store: Already initialized, skipping");
+          return;
+        }
+
+        if (_initializationInProgress) {
+          console.log("🔐 Auth Store: Initialization in progress, waiting...");
+          return;
+        }
+
+        _initializationInProgress = true;
         const { setSession, setLoading, setInitialized } = get();
 
         try {
@@ -207,23 +224,13 @@ export const useAuthStore = create<AuthState>()(
 
             setSession(session);
 
-            // Handle navigation based on auth state
-            const isAuthenticated = !!session?.user?.email_confirmed_at;
-
+            // Just log auth events - let layouts handle navigation
             switch (event) {
               case "SIGNED_OUT":
-                console.log(
-                  "🚪 Auth Store: User signed out - navigating to welcome",
-                );
-                router.replace("/(external)/welcome");
+                console.log("🚪 Auth Store: User signed out");
                 break;
               case "SIGNED_IN":
-                if (isAuthenticated) {
-                  console.log(
-                    "🚪 Auth Store: User signed in - navigating to internal",
-                  );
-                  router.replace("/(internal)");
-                }
+                console.log("🚪 Auth Store: User signed in");
                 break;
               case "TOKEN_REFRESHED":
                 console.log("🔄 Auth Store: Token refreshed");
@@ -233,11 +240,15 @@ export const useAuthStore = create<AuthState>()(
                 break;
             }
           });
+
+          _autoInitialized = true;
         } catch (error) {
           console.error("🔧 Auth Store: Unexpected error:", error);
+          _autoInitialized = false; // Reset on error
         } finally {
           setLoading(false);
           setInitialized(true);
+          _initializationInProgress = false;
         }
       },
     }),
@@ -248,13 +259,62 @@ export const useAuthStore = create<AuthState>()(
         // Only persist non-sensitive data
         initialized: state.initialized,
       }),
+      onRehydrateStorage: () => (state, error) => {
+        console.log("🔐 Auth Store: Rehydration complete", {
+          hasState: !!state,
+          error: error?.message || null,
+          autoInitialized: _autoInitialized,
+        });
+        if (state && !error) {
+          console.log("🔐 Auth Store: Setting hydrated to true");
+          state.setHydrated(true);
+          // Also auto-initialize after hydration
+          if (!_autoInitialized) {
+            console.log("🔐 Auth Store: Auto-initializing after hydration");
+            state.initialize();
+          }
+        } else if (error) {
+          console.error("🔐 Auth Store: Rehydration error:", error);
+          // Still set hydrated to true to prevent blocking
+          if (state) {
+            state.setHydrated(true);
+          }
+        }
+      },
     },
   ),
 );
 
-// Convenience hooks
-export const useAuth = () => useAuthStore();
+// Initialize hydrated state for non-persisted usage
+setTimeout(() => {
+  const state = useAuthStore.getState();
+  console.log("🔐 Auth Store: Checking hydration state", {
+    hydrated: state.hydrated,
+    initialized: state.initialized,
+    loading: state.loading,
+  });
+  if (!state.hydrated) {
+    console.log("🔐 Auth Store: Setting hydrated to true (fallback)");
+    state.setHydrated(true);
+    // Also initialize if not done yet
+    if (!_autoInitialized) {
+      console.log("🔐 Auth Store: Auto-initializing (fallback)");
+      state.initialize();
+    }
+  }
+}, 100);
+
+// Convenience hooks with auto-initialization
+export const useAuth = () => {
+  const store = useAuthStore();
+  if (!_autoInitialized && store.hydrated) {
+    console.log("🔐 Auth Store: Auto-initializing from hook...");
+    store.initialize();
+  }
+  return store;
+};
 export const useSession = () => useAuthStore((state) => state.session);
 export const useUser = () => useAuthStore((state) => state.user);
 export const useIsAuthenticated = () =>
   useAuthStore((state) => state.isAuthenticated);
+export const useAuthHydrated = () => useAuthStore((state) => state.hydrated);

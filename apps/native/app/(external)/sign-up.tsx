@@ -16,8 +16,7 @@ import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { Input } from "@components/ui/input";
-import { useAuth } from "@lib/contexts/AuthContext";
-import { auth } from "@lib/supabase";
+import { useAuth } from "@lib/stores";
 import { useColorScheme } from "@lib/useColorScheme";
 
 const signUpSchema = z
@@ -50,7 +49,7 @@ const mapSupabaseErrorToFormField = (error: string) => {
 export default function SignUpScreen() {
   const router = useRouter();
   const { isDarkColorScheme } = useColorScheme();
-  const { loading } = useAuth();
+  const { loading, signUp } = useAuth();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   // Animation refs
@@ -101,15 +100,12 @@ export default function SignUpScreen() {
 
     setIsSubmitting(true);
     try {
-      const { data: authData, error } = await auth.signUp(
-        data.email,
-        data.password,
-      );
+      const { error } = await signUp(data.email, data.password);
 
       if (error) {
         console.log("Sign up error:", error);
 
-        // Handle specific Supabase auth errors
+        // Handle specific auth errors
         if (error.message?.includes("User already registered")) {
           setError("email", {
             message: "An account with this email already exists",
@@ -128,9 +124,9 @@ export default function SignUpScreen() {
             message: error.message || "An unexpected error occurred",
           });
         }
-      } else if (authData.user) {
+      } else {
         // Successfully signed up - show verification message
-        console.log("Successfully signed up:", authData.user.email);
+        console.log("Successfully signed up:", data.email);
         router.push("/(external)/verify");
       }
     } catch (err) {

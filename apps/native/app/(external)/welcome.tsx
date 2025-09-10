@@ -11,7 +11,7 @@ import {
 
 import { ThemedView } from "@components/ThemedView";
 import { Text } from "@components/ui/text";
-import { useAuth } from "@lib/contexts/AuthContext";
+import { useAuth } from "@lib/stores";
 import { useColorScheme } from "@lib/useColorScheme";
 
 export default function WelcomeScreen() {
