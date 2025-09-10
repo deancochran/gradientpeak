@@ -1,6 +1,6 @@
+import { db } from "@/lib/drizzle";
+import { activities, activityResults } from "@repo/drizzle/schemas";
 import { and, avg, desc, eq, gte, sum } from "drizzle-orm";
-import { db } from "../index";
-import { activities, activityResults } from "../schemas";
 
 export async function createActivityResult(
   resultData: Omit<

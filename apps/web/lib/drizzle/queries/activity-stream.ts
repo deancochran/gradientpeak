@@ -1,6 +1,6 @@
+import { db } from "@/lib/drizzle";
+import { activityStreams } from "@repo/drizzle/schemas";
 import { and, eq } from "drizzle-orm";
-import { db } from "../db";
-import { activityStreams } from "../schemas";
 
 export async function createActivityStream(
   streamData: Omit<

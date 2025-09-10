@@ -1,11 +1,3 @@
-// Export all schemas and enums
-export * from "./activities";
-export * from "./activity_results";
-export * from "./activity_streams";
-export * from "./planned_activities";
-export * from "./profile_plans";
-export * from "./profiles";
-
 // Re-export relations if you need them
 import { relations } from "drizzle-orm";
 import { activities } from "./activities";
@@ -14,16 +6,6 @@ import { activityStreams } from "./activity_streams";
 import { plannedActivities } from "./planned_activities";
 import { profilePlans } from "./profile_plans";
 import { profiles } from "./profiles";
-
-// Re-export schema tables for type inference
-export {
-  activities,
-  activityResults,
-  activityStreams,
-  plannedActivities,
-  profilePlans,
-  profiles,
-};
 
 // Define relationships
 export const profilesRelations = relations(profiles, ({ many }) => ({
@@ -85,3 +67,31 @@ export const activityStreamsRelations = relations(
     }),
   }),
 );
+
+export type SelectActivity = typeof activities.$inferSelect;
+export type InsertActivity = typeof activities.$inferInsert;
+
+export type SelectActivityResult = typeof activityResults.$inferSelect;
+export type InsertActivityResult = typeof activityResults.$inferInsert;
+
+export type SelectActivityStream = typeof activityStreams.$inferSelect;
+export type InsertActivityStream = typeof activityStreams.$inferInsert;
+
+export type SelectPlannedActivity = typeof plannedActivities.$inferSelect;
+export type InsertPlannedActivity = typeof plannedActivities.$inferInsert;
+
+export type SelectProfilePlan = typeof profilePlans.$inferSelect;
+export type InsertProfilePlan = typeof profilePlans.$inferInsert;
+
+export type SelectProfile = typeof profiles.$inferSelect;
+export type InsertProfile = typeof profiles.$inferInsert;
+
+// Re-export schema tables for type inference
+export {
+  activities,
+  activityResults,
+  activityStreams,
+  plannedActivities,
+  profilePlans,
+  profiles,
+};

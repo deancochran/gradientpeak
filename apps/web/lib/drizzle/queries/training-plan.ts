@@ -4,14 +4,8 @@
 
 import { eq } from "drizzle-orm";
 
-import { db } from "../index";
-import { plannedActivities, type PlannedActivityStructure } from "../schemas";
-import {
-  estimateWorkoutDuration,
-  estimateWorkoutTSS,
-  requiresFTP,
-  requiresThresholdHR,
-} from "../training-plan";
+import { db } from "@/lib/drizzle";
+import { plannedActivities } from "@repo/drizzle/schemas";
 
 // ================================
 // Database Integration

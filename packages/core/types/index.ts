@@ -6,7 +6,7 @@ import type {
   PlannedActivityStructure,
   Step,
   WeeklySchedule,
-} from "../schemas";
+} from "@repo/drizzle/schemas";
 
 // ================================
 // Training Zone Types

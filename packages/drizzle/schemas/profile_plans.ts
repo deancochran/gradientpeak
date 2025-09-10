@@ -66,6 +66,3 @@ export const profilePlans = pgTable("profile_plans", {
     precision: 3,
   }).$onUpdate(() => new Date()),
 });
-
-export type SelectProfilePlan = typeof profilePlans.$inferSelect;
-export type InsertProfilePlan = typeof profilePlans.$inferInsert;

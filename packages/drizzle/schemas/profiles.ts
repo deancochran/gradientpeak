@@ -58,6 +58,3 @@ export const profiles = pgTable(
     ),
   }),
 );
-
-export type SelectProfile = typeof profiles.$inferSelect;
-export type InsertProfile = typeof profiles.$inferInsert;

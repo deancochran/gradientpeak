@@ -1,6 +1,6 @@
+import { db } from "@/lib/drizzle";
+import { profiles } from "@repo/drizzle/schemas";
 import { eq } from "drizzle-orm";
-import { db } from "../db";
-import { profiles } from "../schemas/profiles";
 
 export async function createProfile(
   profileData: Omit<

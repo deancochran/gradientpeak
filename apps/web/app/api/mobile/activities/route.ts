@@ -1,5 +1,5 @@
 import { getUserFromHeaders, handleApiError, parsePagination, successResponse, validateRequest } from '@/lib/api-utils'
-import { createActivity, getActivitiesByProfile } from '@repo/drizzle/queries'
+import { createActivity, getActivitiesByProfile } from '@/lib/drizzle/queries'
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 

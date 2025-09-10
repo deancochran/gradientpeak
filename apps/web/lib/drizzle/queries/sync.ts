@@ -1,11 +1,11 @@
-import { and, eq, gt } from "drizzle-orm";
-import { db } from "../db";
+import { db } from "@/lib/drizzle";
 import {
   activities,
   activityResults,
   activityStreams,
   profiles,
-} from "../schemas";
+} from "@repo/drizzle/schemas";
+import { and, eq, gt } from "drizzle-orm";
 
 export interface CompleteActivityData {
   activity: Omit<

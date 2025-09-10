@@ -1,6 +1,6 @@
+import { db } from "@/lib/drizzle";
+import { plannedActivities, profilePlans } from "@repo/drizzle/schemas";
 import { and, desc, eq, gte, lte } from "drizzle-orm";
-import { db } from "../db";
-import { plannedActivities, profilePlans } from "../schemas";
 
 export async function createProfilePlan(
   planData: Omit<
