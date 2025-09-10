@@ -307,7 +307,9 @@ class ApiClient {
     sport?: string;
     startDate?: string;
     endDate?: string;
-  ): Promise<ApiResponse<{ activities: SelectActivity[]; pagination: unknown }>> {
+  }): Promise<
+    ApiResponse<{ activities: SelectActivity[]; pagination: unknown }>
+  > {
     const searchParams = new URLSearchParams();
 
     if (params?.limit) searchParams.set("limit", params.limit.toString());
