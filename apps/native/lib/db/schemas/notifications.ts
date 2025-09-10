@@ -1,6 +1,6 @@
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
-export const local_notifications = sqliteTable("local_notifications", {
+export const localNotifications = sqliteTable("local_notifications", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
   body: text("body").notNull(),

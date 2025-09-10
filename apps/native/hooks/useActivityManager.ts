@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { SelectLocalActivity } from "@/lib/db/schemas";
 import { WorkoutService } from "@/lib/services/workout-service";
-import type { ActivityMetadata, LocalActivity } from "@/lib/types/activity";
 
 export interface UseActivityManagerReturn {
   // Activities data
-  activities: LocalActivity[];
+  activities: SelectLocalActivity[];
   isLoading: boolean;
   error: string | null;
 
@@ -37,7 +37,7 @@ export interface UseActivityManagerReturn {
 
 export const useActivityManager = (): UseActivityManagerReturn => {
   // State
-  const [activities, setActivities] = useState<LocalActivity[]>([]);
+  const [activities, setActivities] = useState<SelectLocalActivity[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);

@@ -3,8 +3,8 @@ import * as FileSystem from "expo-file-system";
 import * as Network from "expo-network";
 import { Alert, AppState } from "react-native";
 
+import { SelectLocalActivity } from "../db/schemas";
 import { supabase } from "../supabase";
-import type { LocalActivity } from "../types/activity";
 import { LocalActivityDatabaseService } from "./local-activity-database";
 
 export class ActivitySyncService {
@@ -391,7 +391,7 @@ export class ActivitySyncService {
   // Private methods
 
   private static async syncWithRetry(
-    activity: LocalActivity,
+    activity: SelectLocalActivity,
     userId: string,
     maxRetries = 3,
   ): Promise<boolean> {
@@ -420,7 +420,7 @@ export class ActivitySyncService {
    * Sync a single activity to Next.js API using hybrid approach
    */
   private static async syncSingleActivity(
-    activity: LocalActivity,
+    activity: SelectLocalActivity,
     userId: string,
   ): Promise<boolean> {
     try {

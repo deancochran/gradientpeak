@@ -1,8 +1,8 @@
 import { useActivityManager } from "@/hooks/useActivityManager";
+import { SelectLocalActivity } from "@/lib/db/schemas";
 import { ProfileService } from "@/lib/services/profile-service";
 import { WorkoutService } from "@/lib/services/workout-service";
 import { Ionicons } from "@expo/vector-icons";
-import type { LocalActivity } from "@repo/core/schemas";
 import { useCallback, useEffect, useState } from "react";
 import {
   Alert,
@@ -92,7 +92,7 @@ export default function ActivitiesScreen() {
     [deleteActivity],
   );
 
-  const renderActivity = ({ item }: { item: LocalActivity }) => (
+  const renderActivity = ({ item }: { item: SelectLocalActivity }) => (
     <TouchableOpacity style={styles.activityCard}>
       <View style={styles.activityHeader}>
         <View style={styles.activityInfo}>

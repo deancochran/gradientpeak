@@ -1,11 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useMemo } from "react";
 
-import type {
-  GpsLocation,
-  SensorValues,
-  WorkoutMetric,
-} from "@/lib/types/workout";
 import {
   calculateAveragePace,
   estimateCalories,

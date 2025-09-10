@@ -1,6 +1,6 @@
 import * as FileSystem from "expo-file-system";
 import { Alert } from "react-native";
-import type { LocalActivity, RecordingSession } from "../types/activity";
+import { SelectLocalActivity } from "../db/schemas";
 import { ActivityRecorderService } from "./activity-recorder";
 import { ActivitySyncService } from "./activity-sync-service";
 import { LocalActivityDatabaseService } from "./local-activity-database";
@@ -99,7 +99,9 @@ export class WorkoutService {
   /**
    * Get all activities for a user
    */
-  static async getActivities(profileId: string): Promise<LocalActivity[]> {
+  static async getActivities(
+    profileId: string,
+  ): Promise<SelectLocalActivity[]> {
     if (!this.initialized) {
       await this.initialize();
     }
@@ -112,7 +114,9 @@ export class WorkoutService {
   /**
    * Get a specific activity
    */
-  static async getActivity(activityId: string): Promise<LocalActivity | null> {
+  static async getActivity(
+    activityId: string,
+  ): Promise<SelectLocalActivity | null> {
     if (!this.initialized) {
       await this.initialize();
     }

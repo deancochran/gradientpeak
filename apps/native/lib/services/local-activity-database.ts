@@ -1,6 +1,6 @@
 import * as FileSystem from "expo-file-system";
 import * as SQLite from "expo-sqlite";
-import type { LocalActivity } from "../types/activity";
+import { SelectLocalActivity } from "../db/schemas";
 
 const DATABASE_NAME = "turbofit_local.db";
 const DATABASE_VERSION = 1;
@@ -97,7 +97,7 @@ export class LocalActivityDatabaseService {
   /**
    * Create a new activity record
    */
-  static async createActivity(activity: LocalActivity): Promise<string> {
+  static async createActivity(activity: SelectLocalActivity): Promise<string> {
     if (!this.db) await this.initDatabase();
 
     // Validate that the activity ID looks like a UUID
@@ -139,11 +139,13 @@ export class LocalActivityDatabaseService {
   /**
    * Get an activity by ID
    */
-  static async getActivity(activityId: string): Promise<LocalActivity | null> {
+  static async getActivity(
+    activityId: string,
+  ): Promise<SelectLocalActivity | null> {
     if (!this.db) await this.initDatabase();
 
     try {
-      const result = await this.db!.getFirstAsync<LocalActivity>(
+      const result = await this.db!.getFirstAsync<SelectLocalActivity>(
         "SELECT * FROM activities WHERE id = ?",
         [activityId],
       );
@@ -159,11 +161,11 @@ export class LocalActivityDatabaseService {
    */
   static async getActivitiesForProfile(
     profileId: string,
-  ): Promise<LocalActivity[]> {
+  ): Promise<SelectLocalActivity[]> {
     if (!this.db) await this.initDatabase();
 
     try {
-      const results = await this.db!.getAllAsync<LocalActivity>(
+      const results = await this.db!.getAllAsync<SelectLocalActivity>(
         "SELECT * FROM activities WHERE profile_id = ? ORDER BY created_at DESC",
         [profileId],
       );
@@ -179,11 +181,11 @@ export class LocalActivityDatabaseService {
    */
   static async getActivitiesByStatus(
     syncStatus: string,
-  ): Promise<LocalActivity[]> {
+  ): Promise<SelectLocalActivity[]> {
     if (!this.db) await this.initDatabase();
 
     try {
-      const results = await this.db!.getAllAsync<LocalActivity>(
+      const results = await this.db!.getAllAsync<SelectLocalActivity>(
         "SELECT * FROM activities WHERE sync_status = ? ORDER BY created_at DESC",
         [syncStatus],
       );
@@ -271,14 +273,14 @@ export class LocalActivityDatabaseService {
   /**
    * Get activities that need to be synced
    */
-  static async getActivitiesNeedingSync(): Promise<LocalActivity[]> {
+  static async getActivitiesNeedingSync(): Promise<SelectLocalActivity[]> {
     return this.getActivitiesByStatus("local_only");
   }
 
   /**
    * Get failed sync activities
    */
-  static async getFailedSyncActivities(): Promise<LocalActivity[]> {
+  static async getFailedSyncActivities(): Promise<SelectLocalActivity[]> {
     return this.getActivitiesByStatus("sync_failed");
   }
 
@@ -363,9 +365,10 @@ export class LocalActivityDatabaseService {
 
     try {
       // First, get all file paths from the database
-      const activitiesToDelete = await this.db!.getAllAsync<LocalActivity>(
-        "SELECT local_fit_file_path FROM activities",
-      );
+      const activitiesToDelete =
+        await this.db!.getAllAsync<SelectLocalActivity>(
+          "SELECT local_fit_file_path FROM activities",
+        );
 
       // Delete each associated file from the filesystem
       for (const activity of activitiesToDelete) {
