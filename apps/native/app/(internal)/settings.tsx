@@ -1,110 +1,194 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
-  Image,
   ScrollView,
   StyleSheet,
+  Switch,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 
 import { SignOutButton } from "@/components/SignOutButton";
 import { ThemedView } from "@/components/ThemedView";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
+import { useAuth } from "@/contexts/AuthContext";
+import { ProfileService } from "@/lib/services/profile-service";
+import { WorkoutService } from "@/lib/services/workout-service";
+import { calculateHrZones } from "@repo/core/calculations";
+import type { Profile, UpdateProfileInput } from "@repo/core/schemas";
 
 export default function SettingsScreen() {
-  const fadeAnim = React.useRef(new Animated.Value(0)).current;
-  const [activityStats, setActivityStats] = useState({
-    totalActivities: 0,
-    totalDistance: 0,
-    totalTime: "0h 0m",
-    favoriteActivity: "None",
+  const { session } = useAuth();
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Form state
+  const [formData, setFormData] = useState<Partial<UpdateProfileInput>>({
+    username: "",
+    weightKg: undefined,
+    ftp: undefined,
+    thresholdHr: undefined,
+    gender: "other",
+    preferredUnits: "metric",
   });
-  const [statsLoaded, setStatsLoaded] = useState(false);
-  const [statsError, setStatsError] = useState<string | null>(null);
+
+  const fadeAnim = React.useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Load mock activity stats instead of fetching from database
-    const loadMockStats = async () => {
-      try {
-        // Simulate network delay
-        await new Promise((resolve) => setTimeout(resolve, 500));
+    console.log("⚙️ Settings Screen - Initializing");
+    initializeSettings();
+  }, []);
 
-        setActivityStats({
-          totalActivities: 24,
-          totalDistance: 156.8,
-          totalTime: "24h 32m",
-          favoriteActivity: "Running",
+  const initializeSettings = async () => {
+    try {
+      setIsLoading(true);
+      console.log("⚙️ Settings Screen - Loading profile");
+
+      const currentProfile = await ProfileService.getCurrentProfile();
+
+      if (currentProfile) {
+        setProfile(currentProfile);
+        setFormData({
+          username: currentProfile.username || "",
+          weightKg: currentProfile.weightKg
+            ? Number(currentProfile.weightKg)
+            : undefined,
+          ftp: currentProfile.ftp || undefined,
+          thresholdHr: currentProfile.thresholdHr || undefined,
+          gender: currentProfile.gender || "other",
+          preferredUnits: currentProfile.preferredUnits || "metric",
         });
-
-        setStatsLoaded(true);
-      } catch (err) {
-        console.error("Error loading mock stats:", err);
-        setStatsError("Could not load your activity stats");
+        console.log("⚙️ Settings Screen - Profile loaded:", {
+          username: currentProfile.username,
+          ftp: currentProfile.ftp,
+          units: currentProfile.preferredUnits,
+        });
+      } else {
+        console.log(
+          "⚙️ Settings Screen - No profile found, starting in edit mode",
+        );
+        setIsEditing(true);
       }
-    };
 
-    loadMockStats();
-
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 500,
-      useNativeDriver: true,
-    }).start();
-  }, [fadeAnim]);
-
-  const userData = {
-    name: "John Doe",
-    email: "john.doe@example.com",
-    joinDate: "January 2025",
-    avatar: null,
-  };
-
-  const recentWorkouts = [
-    {
-      id: 1,
-      name: "Morning Run",
-      date: "2 days ago",
-      type: "running",
-      distance: "5.2 km",
-      duration: "28:45",
-    },
-    {
-      id: 2,
-      name: "Evening Bike Ride",
-      date: "4 days ago",
-      type: "cycling",
-      distance: "15.8 km",
-      duration: "45:12",
-    },
-    {
-      id: 3,
-      name: "Park Walk",
-      date: "1 week ago",
-      type: "walking",
-      distance: "3.1 km",
-      duration: "42:30",
-    },
-  ];
-
-  const getActivityIcon = (type: string) => {
-    switch (type) {
-      case "running":
-        return "walk";
-      case "cycling":
-        return "bicycle";
-      case "walking":
-        return "walk";
-      case "swimming":
-        return "water";
-      default:
-        return "fitness";
+      // Animate entrance
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }).start();
+    } catch (error) {
+      console.error("⚙️ Settings Screen - Initialization error:", error);
+      Alert.alert("Error", "Failed to load profile");
+    } finally {
+      setIsLoading(false);
     }
   };
+
+  const saveProfile = async () => {
+    try {
+      setIsSaving(true);
+      console.log("⚙️ Settings Screen - Saving profile:", formData);
+
+      let updatedProfile: Profile | null;
+
+      if (profile) {
+        updatedProfile = await ProfileService.updateProfile(formData);
+      } else {
+        updatedProfile = await ProfileService.createProfile(formData);
+      }
+
+      if (updatedProfile) {
+        setProfile(updatedProfile);
+        setIsEditing(false);
+        console.log("⚙️ Settings Screen - Profile saved successfully");
+        Alert.alert("Success", "Profile saved successfully");
+      } else {
+        Alert.alert("Error", "Failed to save profile");
+      }
+    } catch (error) {
+      console.error("⚙️ Settings Screen - Save error:", error);
+      Alert.alert("Error", "Failed to save profile");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const cancelEdit = () => {
+    console.log("⚙️ Settings Screen - Canceling edit");
+    if (profile) {
+      setFormData({
+        username: profile.username || "",
+        weightKg: profile.weightKg ? Number(profile.weightKg) : undefined,
+        ftp: profile.ftp || undefined,
+        thresholdHr: profile.thresholdHr || undefined,
+        gender: profile.gender || "other",
+        preferredUnits: profile.preferredUnits || "metric",
+      });
+      setIsEditing(false);
+    }
+  };
+
+  const handleStorageStatus = useCallback(async () => {
+    console.log("⚙️ Settings Screen - Showing storage status");
+    if (profile) {
+      await WorkoutService.showStorageStatus(profile.id);
+    }
+  }, [profile]);
+
+  const handleClearCache = useCallback(async () => {
+    Alert.alert(
+      "Clear Cache",
+      "This will clear all cached data. Are you sure?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: () => {
+            ProfileService.clearCache();
+            console.log("⚙️ Settings Screen - Cache cleared");
+            Alert.alert("Success", "Cache cleared successfully");
+          },
+        },
+      ],
+    );
+  }, []);
+
+  const getHeartRateZones = () => {
+    if (!profile?.thresholdHr) return null;
+    return calculateHrZones(profile);
+  };
+
+  const userData = {
+    name: profile?.username || session?.user?.email?.split("@")[0] || "User",
+    email: session?.user?.email || "No email",
+    joinDate: profile?.createdAt
+      ? new Date(profile.createdAt).toLocaleDateString("en-US", {
+          month: "long",
+          year: "numeric",
+        })
+      : "Unknown",
+  };
+
+  if (isLoading) {
+    return (
+      <ThemedView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#3b82f6" />
+          <Text style={styles.loadingText}>Loading settings...</Text>
+        </View>
+      </ThemedView>
+    );
+  }
+
+  const hrZones = getHeartRateZones();
 
   return (
     <ThemedView style={styles.container}>
@@ -114,20 +198,38 @@ export default function SettingsScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Animated.View style={{ opacity: fadeAnim }}>
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={styles.headerTitle}>Settings</Text>
+            <TouchableOpacity
+              onPress={isEditing ? saveProfile : () => setIsEditing(true)}
+              disabled={isSaving}
+              style={[styles.editButton, isSaving && styles.buttonDisabled]}
+            >
+              <Ionicons
+                name={isEditing ? "checkmark" : "pencil"}
+                size={20}
+                color="#3b82f6"
+              />
+              <Text style={styles.editButtonText}>
+                {isSaving ? "Saving..." : isEditing ? "Save" : "Edit"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {isEditing && (
+            <TouchableOpacity onPress={cancelEdit} style={styles.cancelButton}>
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          )}
+
           {/* User Profile */}
           <Card style={styles.profileCard} testID="profile-card">
             <View style={styles.profileHeader}>
               <View style={styles.avatarContainer}>
-                {userData.avatar ? (
-                  <Image
-                    source={{ uri: userData.avatar }}
-                    style={styles.avatar}
-                  />
-                ) : (
-                  <View style={styles.avatarPlaceholder}>
-                    <Ionicons name="person" size={32} color="#222" />
-                  </View>
-                )}
+                <View style={styles.avatarPlaceholder}>
+                  <Ionicons name="person" size={32} color="#3b82f6" />
+                </View>
               </View>
               <View style={styles.userInfo}>
                 <Text style={styles.userName} testID="user-name">
@@ -138,141 +240,223 @@ export default function SettingsScreen() {
                   Member since {userData.joinDate}
                 </Text>
               </View>
-              <TouchableOpacity
-                style={styles.editButton}
-                testID="edit-profile-btn"
-              >
-                <Ionicons name="pencil" size={20} color="#000" />
-              </TouchableOpacity>
             </View>
           </Card>
 
-          {/* Activity Stats */}
-          <View style={styles.statsSection}>
-            <Text style={styles.sectionTitle}>Activity Overview</Text>
-            {statsError ? (
-              <Card style={styles.errorCard}>
-                <Text style={styles.errorText}>{statsError}</Text>
-              </Card>
-            ) : !statsLoaded ? (
-              <Card style={styles.statCard}>
-                <ActivityIndicator size="small" color="#666" />
-                <Text style={[styles.statLabel, { marginTop: 8 }]}>
-                  Loading stats...
-                </Text>
-              </Card>
-            ) : (
-              <View style={styles.statsGrid}>
-                <Card style={styles.statCard}>
-                  <Text style={styles.statNumber}>
-                    {activityStats.totalActivities}
-                  </Text>
-                  <Text style={styles.statLabel}>Total Activities</Text>
-                </Card>
-                <Card style={styles.statCard}>
-                  <Text style={styles.statNumber}>
-                    {activityStats.totalDistance}
-                  </Text>
-                  <Text style={styles.statLabel}>Total Distance</Text>
-                </Card>
-                <Card style={styles.statCard}>
-                  <Text style={styles.statNumber}>
-                    {activityStats.totalTime}
-                  </Text>
-                  <Text style={styles.statLabel}>Total Time</Text>
-                </Card>
-                <Card style={styles.statCard}>
-                  <Text style={styles.statNumber}>
-                    {activityStats.favoriteActivity}
-                  </Text>
-                  <Text style={styles.statLabel}>Favorite Activity</Text>
-                </Card>
+          {/* Profile Settings */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Profile Information</Text>
+
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>Username</Text>
+              <TextInput
+                style={[
+                  styles.textInput,
+                  !isEditing && styles.textInputDisabled,
+                ]}
+                value={formData.username || ""}
+                onChangeText={(text) =>
+                  setFormData((prev) => ({ ...prev, username: text }))
+                }
+                placeholder="Enter username"
+                editable={isEditing}
+              />
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>Weight (kg)</Text>
+              <TextInput
+                style={[
+                  styles.textInput,
+                  !isEditing && styles.textInputDisabled,
+                ]}
+                value={formData.weightKg?.toString() || ""}
+                onChangeText={(text) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    weightKg: text ? Number(text) : undefined,
+                  }))
+                }
+                placeholder="70"
+                keyboardType="numeric"
+                editable={isEditing}
+              />
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>Gender</Text>
+              <View style={styles.genderRow}>
+                {(["male", "female", "other"] as const).map((gender) => (
+                  <TouchableOpacity
+                    key={gender}
+                    onPress={() =>
+                      isEditing &&
+                      setFormData((prev) => ({
+                        ...prev,
+                        gender,
+                      }))
+                    }
+                    style={[
+                      styles.genderOption,
+                      formData.gender === gender && styles.genderOptionSelected,
+                      !isEditing && styles.genderOptionDisabled,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.genderOptionText,
+                        formData.gender === gender &&
+                          styles.genderOptionTextSelected,
+                      ]}
+                    >
+                      {gender.charAt(0).toUpperCase() + gender.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </View>
+
+          {/* Training Metrics */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Training Metrics</Text>
+
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>FTP (watts)</Text>
+              <TextInput
+                style={[
+                  styles.textInput,
+                  !isEditing && styles.textInputDisabled,
+                ]}
+                value={formData.ftp?.toString() || ""}
+                onChangeText={(text) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    ftp: text ? Number(text) : undefined,
+                  }))
+                }
+                placeholder="250"
+                keyboardType="numeric"
+                editable={isEditing}
+              />
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>Threshold HR (bpm)</Text>
+              <TextInput
+                style={[
+                  styles.textInput,
+                  !isEditing && styles.textInputDisabled,
+                ]}
+                value={formData.thresholdHr?.toString() || ""}
+                onChangeText={(text) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    thresholdHr: text ? Number(text) : undefined,
+                  }))
+                }
+                placeholder="180"
+                keyboardType="numeric"
+                editable={isEditing}
+              />
+            </View>
+
+            {/* Heart Rate Zones Display */}
+            {hrZones && (
+              <View style={styles.zonesContainer}>
+                <Text style={styles.zonesTitle}>Heart Rate Zones</Text>
+                {Object.entries(hrZones).map(([zone, value]) => (
+                  <View key={zone} style={styles.zoneRow}>
+                    <Text style={styles.zoneLabel}>
+                      Zone {zone.replace("zone", "")}:
+                    </Text>
+                    <Text style={styles.zoneValue}>
+                      {Math.round(value)} bpm
+                    </Text>
+                  </View>
+                ))}
               </View>
             )}
           </View>
 
-          {/* Recent Workouts */}
-          <View style={styles.workoutsSection}>
-            <Text style={styles.sectionTitle}>Recent Workouts</Text>
-            {recentWorkouts.map((workout, index) => (
-              <Animated.View
-                key={workout.id}
-                style={{
-                  opacity: fadeAnim,
-                  transform: [
-                    {
-                      translateY: fadeAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [20 * (index + 1), 0],
-                      }),
-                    },
-                  ],
-                }}
-              >
-                <Card
-                  style={styles.workoutCard}
-                  testID={`workout-${workout.id}`}
-                >
-                  <View style={styles.workoutHeader}>
-                    <View style={styles.workoutIcon}>
-                      <Ionicons
-                        name={getActivityIcon(workout.type) as any}
-                        size={20}
-                        color="#000"
-                      />
-                    </View>
-                    <View style={styles.workoutInfo}>
-                      <Text style={styles.workoutName}>{workout.name}</Text>
-                      <Text style={styles.workoutDate}>{workout.date}</Text>
-                    </View>
-                    <View style={styles.workoutStats}>
-                      <Text style={styles.workoutDistance}>
-                        {workout.distance}
-                      </Text>
-                      <Text style={styles.workoutDuration}>
-                        {workout.duration}
-                      </Text>
-                    </View>
-                  </View>
-                </Card>
-              </Animated.View>
-            ))}
-            <Button
-              variant="outline"
-              style={styles.viewAllButton}
-              onPress={() => {}}
-              testID="view-all-btn"
-            >
-              <Text style={styles.viewAllButtonText}>View All Activities</Text>
-            </Button>
+          {/* Preferences */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Preferences</Text>
+
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>Units</Text>
+              <View style={styles.switchRow}>
+                <Text style={styles.switchLabel}>Metric</Text>
+                <Switch
+                  value={formData.preferredUnits === "imperial"}
+                  onValueChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      preferredUnits: value ? "imperial" : "metric",
+                    }))
+                  }
+                  disabled={!isEditing}
+                  trackColor={{ false: "#d1d5db", true: "#3b82f6" }}
+                  thumbColor={
+                    formData.preferredUnits === "imperial"
+                      ? "#ffffff"
+                      : "#f4f3f4"
+                  }
+                />
+                <Text style={styles.switchLabel}>Imperial</Text>
+              </View>
+            </View>
           </View>
 
-          {/* Settings Options */}
-          <View style={styles.settingsSection}>
-            <Text style={styles.sectionTitle}>Settings</Text>
+          {/* App Settings */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>App Settings</Text>
             <Card style={styles.settingsCard}>
               {[
-                { icon: "notifications-outline", label: "Notifications" },
-                { icon: "location-outline", label: "Privacy & Location" },
-                { icon: "speedometer-outline", label: "Units & Measurements" },
-                { icon: "help-circle-outline", label: "Help & Support" },
+                {
+                  icon: "storage-outline",
+                  label: "Storage & Sync",
+                  onPress: handleStorageStatus,
+                },
+                {
+                  icon: "refresh-outline",
+                  label: "Clear Cache",
+                  onPress: handleClearCache,
+                },
+                {
+                  icon: "notifications-outline",
+                  label: "Notifications",
+                },
+                {
+                  icon: "shield-outline",
+                  label: "Privacy & Security",
+                },
+                {
+                  icon: "help-circle-outline",
+                  label: "Help & Support",
+                },
               ].map((item, idx) => (
                 <React.Fragment key={item.label}>
                   <TouchableOpacity
                     style={styles.settingItem}
+                    onPress={item.onPress}
                     testID={`setting-${item.label}`}
                   >
                     <View style={styles.settingIcon}>
                       <Ionicons
                         name={item.icon as any}
                         size={20}
-                        color="#000"
+                        color="#3b82f6"
                       />
                     </View>
                     <Text style={styles.settingText}>{item.label}</Text>
-                    <Ionicons name="chevron-forward" size={16} color="#888" />
+                    <Ionicons
+                      name="chevron-forward"
+                      size={16}
+                      color="#9ca3af"
+                    />
                   </TouchableOpacity>
-                  {idx < 3 && <View style={styles.settingDivider} />}
+                  {idx < 4 && <View style={styles.settingDivider} />}
                 </React.Fragment>
               ))}
             </Card>
@@ -282,6 +466,25 @@ export default function SettingsScreen() {
           <View style={styles.signOutSection}>
             <SignOutButton />
           </View>
+
+          {/* Debug Info */}
+          {__DEV__ && (
+            <View style={styles.debugSection}>
+              <Text style={styles.debugTitle}>Debug Info</Text>
+              <Text style={styles.debugText}>
+                Profile ID: {profile?.id || "None"}
+              </Text>
+              <Text style={styles.debugText}>
+                FTP: {profile?.ftp || "Not set"}
+              </Text>
+              <Text style={styles.debugText}>
+                Threshold HR: {profile?.thresholdHr || "Not set"}
+              </Text>
+              <Text style={styles.debugText}>
+                Units: {profile?.preferredUnits || "metric"}
+              </Text>
+            </View>
+          )}
         </Animated.View>
       </ScrollView>
     </ThemedView>
@@ -289,13 +492,61 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
+  container: { flex: 1, backgroundColor: "#f8fafc" },
   scrollView: { flex: 1 },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 100 },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 120 },
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loadingText: {
+    fontSize: 16,
+    color: "#6b7280",
+    marginTop: 12,
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: "bold",
+    color: "#111827",
+  },
+  editButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "#f0f9ff",
+    borderRadius: 8,
+  },
+  editButtonText: {
+    marginLeft: 4,
+    fontSize: 16,
+    color: "#3b82f6",
+    fontWeight: "500",
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  cancelButton: {
+    alignSelf: "flex-end",
+    marginBottom: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  cancelButtonText: {
+    color: "#ef4444",
+    fontSize: 14,
+  },
   profileCard: {
     padding: 20,
     marginBottom: 24,
-    backgroundColor: "#fff",
+    backgroundColor: "#ffffff",
     borderRadius: 16,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
@@ -305,93 +556,122 @@ const styles = StyleSheet.create({
   },
   profileHeader: { flexDirection: "row", alignItems: "center", gap: 16 },
   avatarContainer: { position: "relative" },
-  avatar: { width: 64, height: 64, borderRadius: 32 },
   avatarPlaceholder: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: "#e5e5e5",
+    backgroundColor: "#f0f9ff",
     alignItems: "center",
     justifyContent: "center",
   },
   userInfo: { flex: 1, gap: 4 },
-  userName: { fontSize: 20, fontWeight: "700", color: "#000" },
-  userEmail: { fontSize: 14, color: "#333" },
-  joinDate: { fontSize: 12, color: "#666" },
-  editButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#f2f2f2",
-    alignItems: "center",
-    justifyContent: "center",
+  userName: { fontSize: 20, fontWeight: "700", color: "#111827" },
+  userEmail: { fontSize: 14, color: "#6b7280" },
+  joinDate: { fontSize: 12, color: "#9ca3af" },
+  section: {
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
-  statsSection: { marginBottom: 24 },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#000",
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#111827",
     marginBottom: 16,
   },
-  statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
-  statCard: {
-    flex: 1,
-    minWidth: "45%",
-    padding: 16,
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+  field: {
+    marginBottom: 16,
   },
-  statNumber: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#000",
-    marginBottom: 4,
+  fieldLabel: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#374151",
+    marginBottom: 8,
   },
-  statLabel: { fontSize: 12, color: "#444", fontWeight: "500" },
-  workoutsSection: { marginBottom: 24 },
-  workoutCard: {
-    padding: 16,
-    marginBottom: 12,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  workoutHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
-  workoutIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#f2f2f2",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  workoutInfo: { flex: 1, gap: 2 },
-  workoutName: { fontSize: 16, fontWeight: "600", color: "#000" },
-  workoutDate: { fontSize: 12, color: "#666" },
-  workoutStats: { alignItems: "flex-end", gap: 2 },
-  workoutDistance: { fontSize: 14, fontWeight: "600", color: "#222" },
-  workoutDuration: { fontSize: 12, color: "#666" },
-  viewAllButton: {
-    height: 44,
-    borderRadius: 12,
+  textInput: {
     borderWidth: 1,
-    borderColor: "#ccc",
-    marginTop: 8,
+    borderColor: "#d1d5db",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    backgroundColor: "#ffffff",
   },
-  viewAllButtonText: { fontSize: 14, fontWeight: "500", color: "#000" },
-  settingsSection: { marginBottom: 24 },
+  textInputDisabled: {
+    backgroundColor: "#f9fafb",
+    color: "#6b7280",
+  },
+  genderRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  genderOption: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  genderOptionSelected: {
+    backgroundColor: "#3b82f6",
+    borderColor: "#3b82f6",
+  },
+  genderOptionDisabled: {
+    opacity: 0.6,
+  },
+  genderOptionText: {
+    fontSize: 14,
+    color: "#374151",
+  },
+  genderOptionTextSelected: {
+    color: "#ffffff",
+    fontWeight: "500",
+  },
+  zonesContainer: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#e5e7eb",
+  },
+  zonesTitle: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#111827",
+    marginBottom: 12,
+  },
+  zoneRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 4,
+  },
+  zoneLabel: {
+    fontSize: 14,
+    color: "#6b7280",
+  },
+  zoneValue: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#111827",
+  },
+  switchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  switchLabel: {
+    fontSize: 14,
+    color: "#374151",
+  },
   settingsCard: {
-    backgroundColor: "#fff",
+    backgroundColor: "#ffffff",
     borderRadius: 16,
     overflow: "hidden",
     shadowColor: "#000",
@@ -411,23 +691,29 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "#f2f2f2",
+    backgroundColor: "#f0f9ff",
     alignItems: "center",
     justifyContent: "center",
   },
-  settingText: { flex: 1, fontSize: 16, fontWeight: "500", color: "#000" },
-  settingDivider: { height: 1, backgroundColor: "#e5e5e5", marginLeft: 68 },
+  settingText: { flex: 1, fontSize: 16, fontWeight: "500", color: "#111827" },
+  settingDivider: { height: 1, backgroundColor: "#e5e7eb", marginLeft: 68 },
   signOutSection: { marginBottom: 24 },
-  errorCard: {
+  debugSection: {
+    backgroundColor: "#f3f4f6",
+    borderRadius: 8,
     padding: 16,
-    marginBottom: 12,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    marginBottom: 24,
   },
-  errorText: { fontSize: 14, color: "#ff3b30", textAlign: "center" },
+  debugTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#374151",
+    marginBottom: 8,
+  },
+  debugText: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginBottom: 4,
+    fontFamily: "monospace",
+  },
 });

@@ -70,3 +70,6 @@ export const activityResults = pgTable("activity_results", {
     precision: 3,
   }).$onUpdate(() => new Date()),
 });
+
+export type SelectActivityResult = typeof activityResults.$inferSelect;
+export type InsertActivityResult = typeof activityResults.$inferInsert;

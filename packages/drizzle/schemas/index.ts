@@ -15,6 +15,16 @@ import { plannedActivities } from "./planned_activities";
 import { profilePlans } from "./profile_plans";
 import { profiles } from "./profiles";
 
+// Re-export schema tables for type inference
+export {
+  activities,
+  activityResults,
+  activityStreams,
+  plannedActivities,
+  profilePlans,
+  profiles,
+};
+
 // Define relationships
 export const profilesRelations = relations(profiles, ({ many }) => ({
   plans: many(profilePlans),

@@ -1,8 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert, // Import Alert
+  Alert,
   Animated,
+  Modal,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -17,13 +18,11 @@ import { useGlobalPermissions } from "@/contexts/PermissionsContext";
 import { useAdvancedWorkoutRecorder } from "@/hooks/useAdvancedWorkoutRecorder";
 import { useBluetooth } from "@/hooks/useBluetooth";
 import { useWorkoutMetrics } from "@/hooks/useWorkoutMetrics";
-import { BluetoothDeviceModal } from "@/modals/BluetoothDeviceModal";
-
-// Import WorkoutService
+import { ProfileService } from "@/lib/services/profile-service";
 import { WorkoutService } from "@/lib/services/workout-service";
-
-// Supabase
 import { supabase } from "@/lib/supabase";
+import { BluetoothDeviceModal } from "@/modals/BluetoothDeviceModal";
+import { router } from "expo-router";
 
 export default function RecordScreen() {
   // Hooks
@@ -51,7 +50,7 @@ export default function RecordScreen() {
     duration,
     totalDistance,
     currentSpeed,
-    locations: [], // TODO: Get from advanced recorder session
+    locations: [],
     sensorValues,
     isRecording,
     isPaused,
@@ -61,52 +60,189 @@ export default function RecordScreen() {
   // Local state
   const [bluetoothModalVisible, setBluetoothModalVisible] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [profile, setProfile] = useState<any>(null);
 
   // Animation
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current;
 
+  // Initialize screen
   useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 400,
-      useNativeDriver: true,
-    }).start();
-  }, [fadeAnim]);
+    console.log("🎬 Record Screen - Initializing");
+    initializeRecordScreen();
 
-  // Fetch user
-  useEffect(() => {
-    const fetchUser = async () => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 400,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
+  const initializeRecordScreen = async () => {
+    try {
+      // Get user session
       const {
         data: { user },
         error,
       } = await supabase.auth.getUser();
       if (error) {
-        console.error("Error fetching user:", error);
+        console.error("🎬 Record Screen - Auth error:", error);
       } else {
         setUserId(user?.id ?? null);
+        console.log("🎬 Record Screen - User loaded:", user?.email);
       }
+
+      // Get user profile
+      const currentProfile = await ProfileService.getCurrentProfile();
+      if (currentProfile) {
+        setProfile(currentProfile);
+        console.log("🎬 Record Screen - Profile loaded:", {
+          id: currentProfile.id,
+          username: currentProfile.username,
+          ftp: currentProfile.ftp,
+        });
+      }
+    } catch (error) {
+      console.error("🎬 Record Screen - Initialization error:", error);
+    }
+  };
+
+  // Show modal when screen is focused
+  useEffect(() => {
+    const unsubscribe = () => {
+      setIsModalVisible(true);
+      console.log("🎬 Record Screen - Modal opened");
     };
-    fetchUser();
+
+    unsubscribe();
+    return () => {
+      console.log("🎬 Record Screen - Component cleanup");
+    };
   }, []);
 
-  // Handlers
   const handleStartRecording = async () => {
     try {
-      console.log("Starting workout...");
+      console.log("🎬 Record Screen - Starting workout");
+
       if (!hasAllPermissions) {
-        console.warn(
-          "Cannot start workout: user permissions haven't been granted yet",
+        console.warn("🎬 Record Screen - Missing permissions");
+        Alert.alert(
+          "Permissions Required",
+          "Location and other permissions are required to record workouts.",
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Grant Permissions",
+              onPress: async () => {
+                await requestAllRequiredPermissions();
+              },
+            },
+          ],
         );
-        await requestAllRequiredPermissions();
         return;
       }
+
       if (!userId) {
-        console.warn("Cannot start workout: user not available yet");
+        console.warn("🎬 Record Screen - No user ID");
+        Alert.alert("Error", "User not authenticated. Please sign in again.");
         return;
       }
+
       await startWorkout(userId);
+      console.log("🎬 Record Screen - Workout started successfully");
     } catch (error) {
-      console.error("Failed to start workout:", error);
+      console.error("🎬 Record Screen - Start recording error:", error);
+      Alert.alert("Error", "Failed to start recording. Please try again.");
+    }
+  };
+
+  const handleStopRecording = async () => {
+    try {
+      console.log("🎬 Record Screen - Stopping workout");
+
+      Alert.alert(
+        "Save Workout?",
+        "Do you want to save this workout to your activities?",
+        [
+          {
+            text: "Discard",
+            style: "destructive",
+            onPress: handleDiscardWorkout,
+          },
+          { text: "Cancel", style: "cancel" },
+          { text: "Save", onPress: handleSaveWorkout },
+        ],
+      );
+    } catch (error) {
+      console.error("🎬 Record Screen - Stop recording error:", error);
+    }
+  };
+
+  const handleSaveWorkout = async () => {
+    try {
+      await stopRecording();
+      console.log("🎬 Record Screen - Workout saved");
+
+      Alert.alert(
+        "Workout Saved!",
+        "Your workout has been saved to your activities.",
+        [
+          {
+            text: "View Activities",
+            onPress: () => router.push("/(internal)/"),
+          },
+          { text: "Start New", onPress: () => setIsModalVisible(false) },
+        ],
+      );
+    } catch (error) {
+      console.error("🎬 Record Screen - Save workout error:", error);
+      Alert.alert("Error", "Failed to save workout");
+    }
+  };
+
+  const handleDiscardWorkout = async () => {
+    try {
+      await stopRecording();
+      console.log("🎬 Record Screen - Workout discarded");
+      setIsModalVisible(false);
+    } catch (error) {
+      console.error("🎬 Record Screen - Discard workout error:", error);
+    }
+  };
+
+  const handleCloseModal = () => {
+    if (isRecording) {
+      Alert.alert(
+        "Recording in Progress",
+        "You have an active workout recording. What would you like to do?",
+        [
+          { text: "Continue Recording", style: "cancel" },
+          {
+            text: "Pause & Close",
+            onPress: () => {
+              pauseWorkout();
+              setIsModalVisible(false);
+            },
+          },
+          {
+            text: "Stop Recording",
+            style: "destructive",
+            onPress: handleStopRecording,
+          },
+        ],
+      );
+    } else {
+      console.log("🎬 Record Screen - Modal closed");
+      setIsModalVisible(false);
+      router.back();
     }
   };
 
@@ -115,11 +251,21 @@ export default function RecordScreen() {
   };
 
   const handleBluetoothDeviceSelect = (deviceId: string) => {
-    console.log("Selected device:", deviceId);
+    console.log("🎬 Record Screen - Bluetooth device selected:", deviceId);
     setBluetoothModalVisible(false);
   };
 
-  // *** ADD THIS HANDLER ***
+  // Add sensor data to recording when available
+  useEffect(() => {
+    if (isRecording && sensorValues) {
+      addSensorData({
+        messageType: "record",
+        data: sensorValues,
+      });
+    }
+  }, [isRecording, sensorValues, addSensorData]);
+
+  // Reset database handler (dev only)
   const handleResetDatabase = () => {
     Alert.alert(
       "Reset Database",
@@ -138,7 +284,7 @@ export default function RecordScreen() {
               );
             } catch (error) {
               Alert.alert("Error", "Failed to reset local database.");
-              console.error(error);
+              console.error("🎬 Record Screen - Reset database error:", error);
             }
           },
         },
@@ -146,94 +292,175 @@ export default function RecordScreen() {
     );
   };
 
-  // Add sensor data to recording when available
-  useEffect(() => {
-    if (isRecording && sensorValues) {
-      addSensorData({
-        messageType: "record",
-        data: sensorValues,
-      });
-    }
-  }, [isRecording, sensorValues, addSensorData]);
-
   return (
-    <ThemedView style={styles.root} testID="record-screen">
-      <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
-        {/* Header */}
-        <View style={styles.header}>
-          {/* *** ADD THIS BUTTON (DEV ONLY) *** */}
-          {__DEV__ && (
+    <Modal
+      visible={isModalVisible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={handleCloseModal}
+    >
+      <ThemedView style={styles.modalContainer} testID="record-modal">
+        <Animated.View
+          style={[
+            styles.container,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
+          {/* Modal Header */}
+          <View style={styles.modalHeader}>
             <TouchableOpacity
-              onPress={handleResetDatabase}
-              style={styles.resetButton}
+              onPress={handleCloseModal}
+              style={styles.closeButton}
             >
-              <Ionicons name="trash-outline" size={24} color="#ef4444" />
+              <Ionicons name="chevron-down" size={28} color="#6b7280" />
             </TouchableOpacity>
+
+            <Text style={styles.modalTitle}>
+              {isRecording ? "Recording Workout" : "Start Workout"}
+            </Text>
+
+            <View style={styles.headerRight}>
+              {__DEV__ && (
+                <TouchableOpacity
+                  onPress={handleResetDatabase}
+                  style={styles.resetButton}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          {/* Status Bar */}
+          <WorkoutStatusBar
+            isBluetoothEnabled={isBluetoothEnabled}
+            connectedDevicesCount={connectedDevices?.length || 0}
+            isGpsTracking={isRecording}
+            gpsPointsCount={0}
+            onBluetoothPress={handleBluetoothPress}
+          />
+
+          {/* Profile Info */}
+          {profile && (
+            <View style={styles.profileInfo}>
+              <Text style={styles.profileText}>
+                Recording as: {profile.username || "User"}
+                {profile.ftp && ` • FTP: ${profile.ftp}W`}
+              </Text>
+            </View>
           )}
 
-          <Text style={styles.headerTitle}>
-            {isRecording ? "Recording Workout" : "Ready to Record"}
-          </Text>
-          <TouchableOpacity style={styles.activityTypeButton}>
-            <Ionicons name="walk" size={20} color="#111827" />
-          </TouchableOpacity>
-        </View>
+          {/* Metrics */}
+          <View style={styles.content}>
+            <MetricsGrid metrics={workoutMetrics} />
 
-        {/* Status Bar */}
-        <WorkoutStatusBar
-          isBluetoothEnabled={isBluetoothEnabled}
-          connectedDevicesCount={connectedDevices?.length || 0}
-          isGpsTracking={isRecording}
-          gpsPointsCount={0} // TODO: Get GPS points from advanced recorder session
-          onBluetoothPress={handleBluetoothPress}
+            <RecordingControls
+              isRecording={isRecording}
+              isPaused={isPaused}
+              onStart={handleStartRecording}
+              onStop={handleStopRecording}
+              onPause={pauseWorkout}
+              onResume={resumeRecording}
+              hasPermissions={hasAllPermissions}
+            />
+          </View>
+
+          {/* Background Recording Indicator */}
+          {isRecording && (
+            <View style={styles.backgroundIndicator}>
+              <View style={styles.recordingDot} />
+              <Text style={styles.backgroundText}>
+                Recording continues in background
+              </Text>
+            </View>
+          )}
+        </Animated.View>
+
+        {/* Bluetooth Modal */}
+        <BluetoothDeviceModal
+          visible={bluetoothModalVisible}
+          onClose={() => setBluetoothModalVisible(false)}
+          onSelectDevice={handleBluetoothDeviceSelect}
         />
-
-        {/* Metrics */}
-        <View style={styles.content}>
-          <MetricsGrid metrics={workoutMetrics} />
-          <RecordingControls
-            isRecording={isRecording}
-            isPaused={isPaused}
-            onStart={handleStartRecording}
-            onStop={stopRecording}
-            onPause={pauseWorkout}
-            onResume={resumeRecording}
-            hasPermissions={hasAllPermissions}
-          />
-        </View>
-      </Animated.View>
-
-      {/* Bluetooth Modal */}
-      <BluetoothDeviceModal
-        visible={bluetoothModalVisible}
-        onClose={() => setBluetoothModalVisible(false)}
-        onSelectDevice={handleBluetoothDeviceSelect}
-      />
-    </ThemedView>
+      </ThemedView>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#f8fafc" },
-  container: { flex: 1 },
-  header: {
+  modalContainer: {
+    flex: 1,
+    backgroundColor: "#f8fafc",
+  },
+  container: {
+    flex: 1,
+  },
+  modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 20,
-    paddingTop: 60,
-    paddingBottom: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
   },
-  headerTitle: { fontSize: 22, fontWeight: "600", color: "#111827" },
-  activityTypeButton: {
+  closeButton: {
     padding: 8,
-    borderRadius: 8,
+    borderRadius: 20,
     backgroundColor: "#f3f4f6",
   },
-  // *** ADD THIS STYLE ***
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#111827",
+  },
+  headerRight: {
+    flexDirection: "row",
+    gap: 8,
+  },
   resetButton: {
     padding: 8,
   },
-  content: { flex: 1 },
-  // footer: { paddingHorizontal: 20, paddingBottom: 40 },
+  profileInfo: {
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
+  },
+  profileText: {
+    fontSize: 14,
+    color: "#6b7280",
+    textAlign: "center",
+  },
+  content: {
+    flex: 1,
+    paddingTop: 20,
+  },
+  backgroundIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    backgroundColor: "#ef4444",
+    marginHorizontal: 20,
+    marginBottom: 20,
+    borderRadius: 8,
+  },
+  recordingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#ffffff",
+    marginRight: 8,
+  },
+  backgroundText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "500",
+  },
 });

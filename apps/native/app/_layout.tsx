@@ -4,21 +4,24 @@ import "@/global.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { AuthErrorBoundary } from "@/contexts/AuthErrorBoundary";
 import { PermissionsProvider } from "@/contexts/PermissionsContext";
+import migrations from "@/lib/db/local/migrations/migrations";
+import { useMigrations } from "@/lib/db/local/useMigrations";
 import { useColorScheme } from "@/lib/useColorScheme";
 import {
   DarkTheme,
   DefaultTheme,
-  Theme,
   ThemeProvider,
 } from "@react-navigation/native";
 import * as Linking from "expo-linking";
 import { Slot, router } from "expo-router";
+import { SQLiteProvider } from "expo-sqlite";
 import { StatusBar } from "expo-status-bar";
 import * as React from "react";
+import { ActivityIndicator, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 // Modern black and white theme
-const LIGHT_THEME: Theme = {
+const LIGHT_THEME = {
   ...DefaultTheme,
   colors: {
     ...DefaultTheme.colors,
@@ -31,7 +34,7 @@ const LIGHT_THEME: Theme = {
   },
 };
 
-const DARK_THEME: Theme = {
+const DARK_THEME = {
   ...DarkTheme,
   colors: {
     ...DarkTheme.colors,
@@ -48,6 +51,25 @@ export {
   // Catch any errors thrown by the Layout component.
   ErrorBoundary,
 } from "expo-router";
+
+function DrizzleProvider({ children }: { children: React.ReactNode }) {
+  const { success, error } = useMigrations(migrations);
+
+  if (error) {
+    // This will be caught by the ErrorBoundary
+    throw new Error(`Failed to apply migrations: ${error.message}`);
+  }
+
+  if (!success) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  return <>{children}</>;
+}
 
 function RootLayoutInner() {
   const { isDarkColorScheme } = useColorScheme();
@@ -120,15 +142,29 @@ export default function RootLayout() {
   const { isDarkColorScheme } = useColorScheme();
 
   return (
-    <PermissionsProvider>
-      <ThemeProvider value={isDarkColorScheme ? DARK_THEME : LIGHT_THEME}>
-        <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
-        <AuthErrorBoundary>
-          <AuthProvider>
-            <RootLayoutInner />
-          </AuthProvider>
-        </AuthErrorBoundary>
-      </ThemeProvider>
-    </PermissionsProvider>
+    <React.Suspense
+      fallback={
+        <View
+          style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
+        >
+          <ActivityIndicator size="large" />
+        </View>
+      }
+    >
+      <SQLiteProvider databaseName="turbofit.db">
+        <DrizzleProvider>
+          <PermissionsProvider>
+            <ThemeProvider value={isDarkColorScheme ? DARK_THEME : LIGHT_THEME}>
+              <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
+              <AuthErrorBoundary>
+                <AuthProvider>
+                  <RootLayoutInner />
+                </AuthProvider>
+              </AuthErrorBoundary>
+            </ThemeProvider>
+          </PermissionsProvider>
+        </DrizzleProvider>
+      </SQLiteProvider>
+    </React.Suspense>
   );
 }

@@ -25,10 +25,11 @@ TurboFit is a sophisticated fitness tracking platform built with modern local-fi
   - Tailwind CSS for styling
 
 ### Shared Packages
+- **`packages/core/`** - Core business logic, types, and calculations (Zod schemas)
 - **`packages/supabase/`** - Shared database types and schemas
+- **`packages/drizzle/`** - Database schema, migrations, and queries using Drizzle ORM
 - **`packages/eslint-config/`** - Common ESLint configuration
 - **`packages/typescript-config/`** - Shared TypeScript settings
-- **`packages/testing-utils/`** - Common testing utilities
 
 ## Development Commands
 
@@ -51,6 +52,8 @@ bun test:e2e:web       # Web E2E tests only
 bun test:e2e:mobile    # Mobile E2E tests only (Maestro)
 bun test:watch         # Watch mode for tests
 bun test:coverage      # Tests with coverage reports
+bun test:all           # All tests including E2E
+bun test:ci            # CI-optimized test run
 ```
 
 ### Mobile App Commands (from apps/native/)
@@ -60,6 +63,8 @@ bun android          # Run on Android emulator
 bun ios              # Run on iOS simulator
 bun test             # Jest tests in watch mode
 bun test:e2e         # Maestro E2E tests
+bun test:e2e:android # Maestro tests on Android
+bun test:e2e:ios     # Maestro tests on iOS
 bun lint             # ESLint with expo config
 ```
 
@@ -74,15 +79,16 @@ bun lint    # ESLint for web app
 ## Key Technologies & Patterns
 
 ### Mobile App Architecture
-- **Local-first design** - Expo-SQLite SQLite for instant data access
+- **Local-first design** - Expo-SQLite for instant data access
 - **Cloud synchronization** - Background sync to Supabase when connected
 - **FIT file processing** - Local generation and cloud storage of fitness data
 - **Real-time GPS tracking** - High-frequency location data collection
 - **Offline functionality** - Full app functionality without internet
+- **New Architecture enabled** - React Native 0.79.5 with TurboModules
 
 ### Data Flow
 - **Recording** - Activities recorded locally first (Expo-SQLite)
-- **Synchronization** - Background sync to Supabase PostgreSQL
+- **Synchronization** - Background sync to Supabase PostgreSQL via Drizzle ORM
 - **Analytics** - Cloud processing for dashboard insights
 - **Conflict resolution** - Smart merging of local and server data
 
@@ -127,6 +133,7 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 ### TypeScript
 - Strict mode enabled across all packages
 - Shared types from `@repo/supabase` package
+- Core business logic in `@repo/core` package
 - Database types auto-generated from Supabase schema
 
 ### Testing Strategy
@@ -155,10 +162,13 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 - **Expo SDK 53** with React Native 0.79.5 New Architecture
 - **EAS Build** for production deployments
 - **Maestro** for mobile E2E testing
+- Multi-environment support (development, preview, production)
 
 ### Key Dependencies
 - **Supabase** - Backend-as-a-service (PostgreSQL, Auth, Storage)
-- **Expo-SQLite** - Reactive database for React Native
+- **Drizzle ORM** - Type-safe database operations
+- **Expo-SQLite** - Local-first database for React Native
 - **React Query** - Data fetching and synchronization
 - **Zustand** - State management
 - **React Navigation** - Mobile navigation
+- **Zod** - Schema validation (via core package)

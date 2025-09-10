@@ -2,6 +2,8 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "extends": "@repo/typescript-config/base.json",
   "compilerOptions": {
+    "types": ["expo-router"],
+    "jsx": "react-jsx", // required for Expo + React 18+
     "strict": true,
     "baseUrl": ".",
     "paths": {

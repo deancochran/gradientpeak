@@ -1,33 +1,7 @@
-// ================================
-// @turbofit/core/trainingPlan
-// ================================
-import {
-  plannedActivityStructureSchema,
-  type WeeklySchedule,
-  type PlannedActivityStructure,
-  type Step,
-} from "@repo/core";
-import { db } from "..";
-
-// A type for more explicit day scheduling
-type DayOfWeek =
-  | "monday"
-  | "tuesday"
-  | "wednesday"
-  | "thursday"
-  | "friday"
-  | "saturday"
-  | "sunday";
-type ScheduledWorkout = {
-  day: DayOfWeek;
-  workout: PlannedActivityStructure;
-  key?: "priority" | "standard" | "optional";
-};
-
-// ================================
-// Planned Activity Generator
-// ================================
-export function createPlannedActivity(
+// // ================================
+// // Planned Activity Generator
+// // ================================
+export function createNewPlannedActivity(
   name: string,
   steps: PlannedActivityStructure["steps"],
   description?: string,
@@ -40,7 +14,7 @@ export function createPlannedActivity(
 }
 
 // ================================
-// Weekly Schedule Generator (Refactored)
+// Weekly Schedule Generator
 // ================================
 export function createWeeklySchedule(
   weekNumber: number,
@@ -58,15 +32,15 @@ export function createWeeklySchedule(
   };
 }
 
-// =_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=
-// TSS Estimation Logic (Refactored)
-// =_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=_=
+// ================================
+// TSS Estimation Logic
+// ================================
 
 /**
  * Estimates the TSS for a single workout structure based on user's FTP.
  * Note: This is a simplified estimation. A true NP calculation is more complex.
  */
-function estimateWorkoutTSS(
+export function estimateWorkoutTSS(
   workout: PlannedActivityStructure,
   ftp: number,
 ): number {
@@ -131,7 +105,7 @@ export function estimateWeeklyTSS(week: WeeklySchedule, ftp: number): number {
 }
 
 // ================================
-// Adaptive Scaling (Refactored)
+// Adaptive Scaling
 // ================================
 export function adaptWeeklyPlan(
   week: WeeklySchedule,
@@ -171,28 +145,57 @@ export function adaptWeeklyPlan(
 }
 
 // ================================
-// Database Integration (Refactored)
+// Utility Functions
 // ================================
-export const trainingPlanDB = {
-  async createPlannedActivity(
-    profileId: string,
-    planId: string | null,
-    activity: PlannedActivityStructure,
-    scheduledDate: string,
-  ) {
-    // Correctly determine requirements by inspecting the workout structure
-    const requiresFtp = activity.steps.some((step) => {
-      const steps = (step as any).steps || [step];
-      return steps.some((s: any) => s.intensity?.type === "%FTP");
-    });
-    const requiresThresholdHr = activity.steps.some((step) => {
-      const steps = (step as any).steps || [step];
-      return steps.some((s: any) => s.intensity?.type === "%ThresholdHR");
-    });
 
-    // Here you would also call a function to get estimated TSS and duration
-    // const estimated_tss = estimateWorkoutTSS(activity, user_ftp_from_db);
-    // const estimated_duration = ...
+/**
+ * Determines if a workout requires FTP for intensity calculations
+ */
+export function requiresFTP(activity: PlannedActivityStructure): boolean {
+  return activity.steps.some((step) => {
+    const steps = (step as any).steps || [step];
+    return steps.some((s: any) => s.intensity?.type === "%FTP");
+  });
+}
 
-    return db.planned_activities.create();
-  },
+/**
+ * Determines if a workout requires threshold HR for intensity calculations
+ */
+export function requiresThresholdHR(
+  activity: PlannedActivityStructure,
+): boolean {
+  return activity.steps.some((step) => {
+    const steps = (step as any).steps || [step];
+    return steps.some((s: any) => s.intensity?.type === "%ThresholdHR");
+  });
+}
+
+/**
+ * Calculates estimated duration of a workout in seconds
+ */
+export function estimateWorkoutDuration(
+  activity: PlannedActivityStructure,
+): number {
+  let totalDuration = 0;
+
+  for (const item of activity.steps) {
+    if ("repeat" in item && "steps" in item) {
+      // Repetition block
+      for (let i = 0; i < item.repeat; i++) {
+        for (const step of item.steps) {
+          if (step.duration.type === "time") {
+            totalDuration += step.duration.value;
+          }
+        }
+      }
+    } else {
+      // Single step
+      const step = item as Step;
+      if (step.duration.type === "time") {
+        totalDuration += step.duration.value;
+      }
+    }
+  }
+
+  return totalDuration;
+}

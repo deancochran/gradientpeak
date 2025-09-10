@@ -20,6 +20,8 @@
     "@radix-ui/react-navigation-menu": "^1.2.14",
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-tooltip": "^1.2.8",
+    "@repo/core": "workspace:*",
+    "@repo/drizzle": "workspace:*",
     "@supabase/postgrest-js": "*",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.56.0",

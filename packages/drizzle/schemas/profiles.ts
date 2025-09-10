@@ -59,5 +59,5 @@ export const profiles = pgTable(
   }),
 );
 
-// Note: RLS policies, triggers, and functions would need to be handled separately
-// as they are database-specific features not directly supported by Drizzle ORM
+export type SelectProfile = typeof profiles.$inferSelect;
+export type InsertProfile = typeof profiles.$inferInsert;

@@ -2,15 +2,6 @@
 
 A sophisticated, enterprise-grade fitness tracking platform built with modern local-first architecture. TurboFit delivers seamless offline-first experiences with intelligent cloud synchronization, real-time analytics, and cross-platform consistency.
 
----
-
-## Key Advantages of the New Architecture
-
-* **Decoupled backend** — No longer dependent on Supabase migrations; Drizzle manages everything.
-* **Type-safe queries & transactions** — Database interactions are fully type-checked.
-* **Shared business logic** — Core package powers calculations, validations, and algorithms for web, mobile, and backend.
-* **Maintainable monorepo** — Easy to update schemas, logic, and apps in one place.
-* **Offline-first & sync-ready** — Mobile and web apps remain responsive with local-first storage.
 
 ---
 
@@ -45,6 +36,36 @@ A new centralized backend layer replacing Supabase migrations and client-side de
 * **Integration** — Powers both web and mobile apps with a single database interface
 
 **Key Benefit:** Decouples your applications from Supabase migrations while keeping the database fully type-safe and maintainable.
+
+---
+
+### 📦 TypeScript Config Package (`packages/typescript-config`)
+
+A shared TypeScript configuration used across all apps and packages in the TurboFit monorepo.
+
+**Responsibilities:**
+
+* **Centralized TS Configuration** — Base `tsconfig` defines compiler options, strict type checking, and module resolution
+* **Standardized Paths & Aliases** — Ensures consistent `@/*` imports across apps
+* **Extensible per App** — Apps can extend the base config for Next.js, Expo, or library-specific overrides
+* **Version Control** — Single source of truth for TypeScript settings to reduce discrepancies and errors
+
+**Key Benefit:** All apps and packages share a **consistent TypeScript environment**, simplifying cross-package type safety and refactoring.
+
+---
+
+### 📦 ESLint Config Package (`packages/eslint-config`)
+
+A shared ESLint configuration used across all apps and packages in the TurboFit monorepo.
+
+**Responsibilities:**
+
+* **Centralized Linting Rules** — Base ESLint rules and plugins (`@eslint/js`, `typescript-eslint`, `eslint-config-prettier`) applied across all apps
+* **Next.js & React Support** — Optional per-app overrides for Next.js or React library requirements
+* **Custom Plugins** — Turbo-specific rules, `eslint-plugin-only-warn`, and other shared rules enforced consistently
+* **Ignored Paths** — Standard exclusions for `dist`, `.next`, and build artifacts
+
+**Key Benefit:** Provides **uniform code quality standards** across all apps and packages, making maintenance and onboarding simpler.
 
 ---
 

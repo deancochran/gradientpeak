@@ -49,3 +49,6 @@ export const activityStreams = pgTable(
     ),
   }),
 );
+
+export type SelectActivityStream = typeof activityStreams.$inferSelect;
+export type InsertActivityStream = typeof activityStreams.$inferInsert;

@@ -1,7 +1,8 @@
-import "dotenv/config";
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+// Export all schemas, types, and relations
+export * from "./schemas";
 
-// Use connection pooling or Supabase connection
-const client = postgres(process.env.DATABASE_URL!, { prepare: false });
-export const db = drizzle({ client });
+// Export all query functions
+export * from "./queries";
+
+// export the database client instance
+export * from "./db";

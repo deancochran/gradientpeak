@@ -82,7 +82,3 @@ packages/*/lib/
 .vscode/
 .idea/
 *.log
-
-# AI Tools
-CLAUDE.md
-.claude
