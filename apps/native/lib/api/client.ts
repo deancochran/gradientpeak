@@ -1,4 +1,4 @@
-import type { SelectActivity } from "@repo/drizzle/schemas";
+import type { SelectActivity, SelectProfile } from "@repo/drizzle/schemas";
 import { apiConfig } from "../config/api";
 import { supabase } from "../supabase";
 
@@ -232,13 +232,13 @@ class ApiClient {
   }
 
   // Profile endpoints
-  async getProfile(): Promise<ApiResponse<Profile>> {
+  async getProfile(): Promise<ApiResponse<SelectProfile>> {
     return this.request("/profile");
   }
 
   async updateProfile(
-    updates: Partial<Profile>,
-  ): Promise<ApiResponse<Profile>> {
+    updates: Partial<SelectProfile>,
+  ): Promise<ApiResponse<SelectProfile>> {
     return this.request("/profile", {
       method: "PUT",
       body: JSON.stringify(updates),
