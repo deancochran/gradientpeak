@@ -1,5 +1,6 @@
-import { getProfile } from "@lib/services/ProfileService";
-import { useQuery } from "@tanstack/react-query";
+import { ProfileService } from "@lib/services/profile-service";
+import type { SelectProfile } from "@repo/drizzle/schemas";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 // Centralized query keys prevent typos and simplify cache invalidation
 export const profileKeys = {
@@ -10,6 +11,36 @@ export const profileKeys = {
 export const useProfile = () => {
   return useQuery({
     queryKey: profileKeys.detail(),
-    queryFn: getProfile,
+    queryFn: () => ProfileService.getCurrentProfile(),
+  });
+};
+
+export const useUpdateProfile = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: Partial<SelectProfile>) =>
+      ProfileService.updateProfile(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: profileKeys.detail() });
+    },
+    onError: (error) => {
+      console.error("Failed to update profile", error);
+    },
+  });
+};
+
+export const useCreateProfile = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: Partial<SelectProfile>) =>
+      ProfileService.createProfile(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: profileKeys.detail() });
+    },
+    onError: (error) => {
+      console.error("Failed to create profile", error);
+    },
   });
 };

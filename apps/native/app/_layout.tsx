@@ -25,6 +25,8 @@ import { Slot, router } from "expo-router";
 import { SQLiteProvider } from "expo-sqlite";
 import { StatusBar } from "expo-status-bar";
 import * as React from "react";
+import { ReactQueryDevtools } from "react-query-native-devtools";
+
 import {
   ActivityIndicator,
   AppState,
@@ -188,7 +190,7 @@ export default function RootLayout() {
       }
     >
       <QueryClientProvider client={queryClient}>
-        <ReactQueryDevtools />
+        <ReactQueryDevtools initialIsOpen={false} />
         <SQLiteProvider databaseName="db.db">
           <DrizzleProvider>
             <PermissionsProvider>

@@ -1,8 +1,7 @@
 import { ThemedView } from "@components/ThemedView";
 import { Ionicons } from "@expo/vector-icons";
+import { useProfile } from "@lib/hooks/api/profiles";
 import { usePerformanceMetrics } from "@lib/hooks/usePerformanceMetrics";
-import { ProfileService } from "@lib/services/profile-service";
-import type { SelectProfile } from "@repo/drizzle/schemas";
 import { useCallback, useEffect, useState } from "react";
 import {
   Dimensions,
@@ -57,12 +56,18 @@ interface ChartData {
 }
 
 export default function TrendsScreen() {
-  const [profile, setProfile] = useState<SelectProfile | null>(null);
+  // TanStack Query hooks
+  const {
+    data: profile,
+    isLoading: profileLoading,
+    error: profileError,
+    refetch: refetchProfile,
+  } = useProfile();
+
   const [selectedPeriod, setSelectedPeriod] = useState<TrendsPeriod>(
     TREND_PERIODS[1],
   ); // 30D default
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Training load data
@@ -70,36 +75,36 @@ export default function TrendsScreen() {
     null,
   );
   const [tssData, setTssData] = useState<ChartData | null>(null);
-  const [performanceData, setPerformanceData] = useState<any>(null);
+  const [performanceData, setPerformanceData] = useState<{
+    currentCtl: number;
+    currentAtl: number;
+    currentTsb: number;
+    ctlTrend: number;
+    weeklyTss: number;
+    avgDailyTss: number;
+  } | null>(null);
 
-  const {
-    metrics: performanceMetrics,
-    isLoading: metricsLoading,
-    refreshMetrics,
-  } = usePerformanceMetrics();
+  const { metrics: performanceMetrics, refreshMetrics } =
+    usePerformanceMetrics();
 
   useEffect(() => {
     console.log("📊 Trends Screen - Initializing");
     initializeTrendsScreen();
-  }, [selectedPeriod]);
+  }, [selectedPeriod, profile?.id]);
 
   const initializeTrendsScreen = async () => {
-    setIsLoading(true);
-    setError(null);
+    if (profile) {
+      setIsLoading(true);
+      setError(null);
 
-    console.log("📊 Trends Screen - Loading profile and data");
-
-    const currentProfile = await ProfileService.getCurrentProfile();
-    if (currentProfile) {
-      setProfile(currentProfile);
       console.log("📊 Trends Screen - Profile loaded:", {
-        id: currentProfile.id,
-        ftp: currentProfile.ftp,
-        thresholdHr: currentProfile.thresholdHr,
+        id: profile.id,
+        ftp: profile.ftp,
+        thresholdHr: profile.thresholdHr,
       });
 
       await loadTrendsData();
-    } else {
+    } else if (profileError) {
       setError("Profile not found. Please set up your profile first.");
       console.warn("📊 Trends Screen - No profile found");
     }
@@ -127,393 +132,378 @@ export default function TrendsScreen() {
       // Format label based on period
       let label: string;
       if (days <= 7) {
-        let label: string;
-        if (days <= 7) {
-          label = date.toLocaleDateString("en-US", { weekday: "short" });
-        } else if (days <= 30) {
-          label = date.getDate().toString();
-        } else {
-          label = date.toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-          });
-        }
-
-        labels.push(label);
-
-        // Mock CTL/ATL/TSB progression
-        const dayIndex = days - 1 - i;
-        const ctl = 40 + Math.sin(dayIndex / 10) * 15 + dayIndex * 0.3;
-        const atl = 35 + Math.sin(dayIndex / 5) * 20 + dayIndex * 0.2;
-        const tsb = ctl - atl;
-        const dailyTss = Math.max(0, 50 + Math.sin(dayIndex / 3) * 40);
-
-        ctlData.push(Math.max(0, ctl));
-        atlData.push(Math.max(0, atl));
-        tsbData.push(tsb);
-        tssValues.push(dailyTss);
+        label = date.toLocaleDateString("en-US", { weekday: "short" });
+      } else if (days <= 30) {
+        label = date.getDate().toString();
+      } else {
+        label = date.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        });
       }
 
-      // Sample every nth point for readability
-      const sampleRate = Math.max(1, Math.floor(days / 10));
-      const sampledLabels = labels.filter(
-        (_, index) => index % sampleRate === 0,
-      );
-      const sampledCtlData = ctlData.filter(
-        (_, index) => index % sampleRate === 0,
-      );
-      const sampledAtlData = atlData.filter(
-        (_, index) => index % sampleRate === 0,
-      );
-      const sampledTsbData = tsbData.filter(
-        (_, index) => index % sampleRate === 0,
-      );
-      const sampledTssData = tssValues.filter(
-        (_, index) => index % sampleRate === 0,
-      );
+      labels.push(label);
 
-      setTrainingLoadData({
-        labels: sampledLabels,
-        datasets: [
-          {
-            data: sampledCtlData,
-            color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
-            strokeWidth: 2,
-          },
-          {
-            data: sampledAtlData,
-            color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})`,
-            strokeWidth: 2,
-          },
-        ],
-      });
+      // Mock CTL/ATL/TSB progression
+      const dayIndex = days - 1 - i;
+      const ctl = 40 + Math.sin(dayIndex / 10) * 15 + dayIndex * 0.3;
+      const atl = 35 + Math.sin(dayIndex / 5) * 20 + dayIndex * 0.2;
+      const tsb = ctl - atl;
+      const dailyTss = Math.max(0, 50 + Math.sin(dayIndex / 3) * 40);
 
-      setTssData({
-        labels: sampledLabels,
-        datasets: [
-          {
-            data: sampledTssData,
-          },
-        ],
-      });
-
-      // Calculate performance trends
-      const currentCtl = ctlData[ctlData.length - 1];
-      const currentAtl = atlData[atlData.length - 1];
-      const currentTsb = tsbData[tsbData.length - 1];
-      const weekAgoCtl = ctlData[Math.max(0, ctlData.length - 7)];
-
-      setPerformanceData({
-        currentCtl,
-        currentAtl,
-        currentTsb,
-        ctlTrend: currentCtl - weekAgoCtl,
-        weeklyTss: tssValues.slice(-7).reduce((sum, val) => sum + val, 0),
-        avgDailyTss:
-          tssValues.reduce((sum, val) => sum + val, 0) / tssValues.length,
-      });
-
-      console.log("📊 Trends Screen - Data loaded:", {
-        points: sampledLabels.length,
-        currentCtl: currentCtl.toFixed(1),
-        currentTsb: currentTsb.toFixed(1),
-      });
+      ctlData.push(Math.max(0, ctl));
+      atlData.push(Math.max(0, atl));
+      tsbData.push(tsb);
+      tssValues.push(dailyTss);
     }
 
-    const handleRefresh = useCallback(async () => {
-      console.log("📊 Trends Screen - Refreshing");
-      setIsRefreshing(true);
-      try {
-        await loadTrendsData();
-        refreshMetrics();
-      } catch (err) {
-        console.error("📊 Trends Screen - Refresh error:", err);
-      } finally {
-        setIsRefreshing(false);
-      }
-    }, [selectedPeriod, refreshMetrics]);
+    // Sample every nth point for readability
+    const sampleRate = Math.max(1, Math.floor(days / 10));
+    const sampledLabels = labels.filter((_, index) => index % sampleRate === 0);
+    const sampledCtlData = ctlData.filter(
+      (_, index) => index % sampleRate === 0,
+    );
+    const sampledAtlData = atlData.filter(
+      (_, index) => index % sampleRate === 0,
+    );
+    // Remove unused sampledTsbData and sampledTssData variables
 
-    const handlePeriodChange = (period: TrendsPeriod) => {
-      console.log("📊 Trends Screen - Period changed:", period.label);
-      setSelectedPeriod(period);
-    };
+    setTrainingLoadData({
+      labels: sampledLabels,
+      datasets: [
+        {
+          data: sampledCtlData,
+          color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
+          strokeWidth: 2,
+        },
+        {
+          data: sampledAtlData,
+          color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})`,
+          strokeWidth: 2,
+        },
+      ],
+    });
 
-    const getFormColor = (form: string) => {
-      switch (form) {
-        case "optimal":
-          return "#10b981";
-        case "good":
-          return "#3b82f6";
-        case "tired":
-          return "#f59e0b";
-        case "very_tired":
-          return "#ef4444";
-        default:
-          return "#6b7280";
-      }
-    };
+    setTssData({
+      labels: sampledLabels,
+      datasets: [
+        {
+          data: tssValues.filter((_, index) => index % sampleRate === 0),
+        },
+      ],
+    });
 
-    const getTrendIcon = (trend: number) => {
-      if (trend > 2) return { name: "trending-up", color: "#10b981" };
-      if (trend < -2) return { name: "trending-down", color: "#ef4444" };
-      return { name: "remove", color: "#6b7280" };
-    };
+    // Calculate performance trends
+    const currentCtl = ctlData[ctlData.length - 1];
+    const currentAtl = atlData[atlData.length - 1];
+    const currentTsb = tsbData[tsbData.length - 1];
+    const weekAgoCtl = ctlData[Math.max(0, ctlData.length - 7)];
 
-    if (isLoading) {
-      return (
-        <ThemedView style={styles.container}>
-          <SafeAreaView style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>
-              Loading performance trends...
-            </Text>
-          </SafeAreaView>
-        </ThemedView>
-      );
+    setPerformanceData({
+      currentCtl,
+      currentAtl,
+      currentTsb,
+      ctlTrend: currentCtl - weekAgoCtl,
+      weeklyTss: tssValues.slice(-7).reduce((sum, val) => sum + val, 0),
+      avgDailyTss:
+        tssValues.reduce((sum, val) => sum + val, 0) / tssValues.length,
+    });
+
+    console.log("📊 Trends Screen - Data loaded:", {
+      points: sampledLabels.length,
+      currentCtl: currentCtl.toFixed(1),
+      currentTsb: currentTsb.toFixed(1),
+    });
+  };
+
+  const handleRefresh = useCallback(async () => {
+    console.log("📊 Trends Screen - Refreshing");
+    try {
+      await refetchProfile();
+      await loadTrendsData();
+      refreshMetrics();
+    } catch (err) {
+      console.error("📊 Trends Screen - Refresh error:", err);
     }
+  }, [refetchProfile, selectedPeriod, refreshMetrics]);
 
+  const handlePeriodChange = (period: TrendsPeriod) => {
+    console.log("📊 Trends Screen - Period changed:", period.label);
+    setSelectedPeriod(period);
+  };
+
+  const getFormColor = (
+    form: "optimal" | "good" | "tired" | "very_tired" | "unknown",
+  ) => {
+    switch (form) {
+      case "optimal":
+        return "#10b981";
+      case "good":
+        return "#3b82f6";
+      case "tired":
+        return "#f59e0b";
+      case "very_tired":
+        return "#ef4444";
+      default:
+        return "#6b7280";
+    }
+  };
+
+  const getTrendIcon = (trend: number) => {
+    if (trend > 2) return { name: "trending-up", color: "#10b981" };
+    if (trend < -2) return { name: "trending-down", color: "#ef4444" };
+    return { name: "remove", color: "#6b7280" };
+  };
+
+  if (isLoading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <ScrollView
-          style={styles.scrollView}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={handleRefresh}
+      <ThemedView style={styles.container}>
+        <SafeAreaView style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading performance trends...</Text>
+        </SafeAreaView>
+      </ThemedView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView
+        style={styles.scrollView}
+        refreshControl={
+          <RefreshControl
+            refreshing={profileLoading || isLoading}
+            onRefresh={handleRefresh}
+            tintColor="#3b82f6"
+          />
+        }
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Performance Trends</Text>
+          <TouchableOpacity style={styles.infoButton}>
+            <Ionicons
+              name="information-circle-outline"
+              size={20}
+              color="#6b7280"
             />
-          }
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Header */}
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>Performance Trends</Text>
-            <TouchableOpacity style={styles.infoButton}>
-              <Ionicons
-                name="information-circle-outline"
-                size={20}
-                color="#6b7280"
-              />
-            </TouchableOpacity>
+          </TouchableOpacity>
+        </View>
+
+        {error && (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>{error}</Text>
           </View>
+        )}
 
-          {error && (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          )}
-
-          {/* Period Selector */}
-          <View style={styles.periodSelector}>
-            {TREND_PERIODS.map((period) => (
-              <TouchableOpacity
-                key={period.value}
-                onPress={() => handlePeriodChange(period)}
+        {/* Period Selector */}
+        <View style={styles.periodSelector}>
+          {TREND_PERIODS.map((period) => (
+            <TouchableOpacity
+              key={period.value}
+              onPress={() => handlePeriodChange(period)}
+              style={[
+                styles.periodButton,
+                selectedPeriod.value === period.value &&
+                  styles.periodButtonActive,
+              ]}
+            >
+              <Text
                 style={[
-                  styles.periodButton,
+                  styles.periodButtonText,
                   selectedPeriod.value === period.value &&
-                    styles.periodButtonActive,
+                    styles.periodButtonTextActive,
                 ]}
               >
+                {period.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Current Performance Metrics */}
+        {performanceMetrics && performanceData && (
+          <View style={styles.metricsSection}>
+            <Text style={styles.sectionTitle}>Current Performance</Text>
+            <View style={styles.metricsGrid}>
+              <View style={styles.metricCard}>
+                <Text style={styles.metricValue}>
+                  {performanceData.currentCtl.toFixed(1)}
+                </Text>
+                <Text style={styles.metricLabel}>CTL (Fitness)</Text>
+                <View style={styles.trendIndicator}>
+                  <Ionicons
+                    name={
+                      getTrendIcon(performanceData.ctlTrend)
+                        .name as keyof typeof Ionicons.glyphMap
+                    }
+                    size={16}
+                    color={getTrendIcon(performanceData.ctlTrend).color}
+                  />
+                  <Text
+                    style={[
+                      styles.trendText,
+                      { color: getTrendIcon(performanceData.ctlTrend).color },
+                    ]}
+                  >
+                    {Math.abs(performanceData.ctlTrend).toFixed(1)}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.metricCard}>
+                <Text style={styles.metricValue}>
+                  {performanceData.currentAtl.toFixed(1)}
+                </Text>
+                <Text style={styles.metricLabel}>ATL (Fatigue)</Text>
+                <Text style={styles.metricSubtext}>7-day avg</Text>
+              </View>
+
+              <View style={styles.metricCard}>
                 <Text
                   style={[
-                    styles.periodButtonText,
-                    selectedPeriod.value === period.value &&
-                      styles.periodButtonTextActive,
+                    styles.metricValue,
+                    {
+                      color:
+                        performanceData.currentTsb > 0 ? "#10b981" : "#ef4444",
+                    },
                   ]}
                 >
-                  {period.label}
+                  {performanceData.currentTsb > 0 ? "+" : ""}
+                  {performanceData.currentTsb.toFixed(1)}
                 </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Current Performance Metrics */}
-          {performanceMetrics && performanceData && (
-            <View style={styles.metricsSection}>
-              <Text style={styles.sectionTitle}>Current Performance</Text>
-              <View style={styles.metricsGrid}>
-                <View style={styles.metricCard}>
-                  <Text style={styles.metricValue}>
-                    {performanceData.currentCtl.toFixed(1)}
-                  </Text>
-                  <Text style={styles.metricLabel}>CTL (Fitness)</Text>
-                  <View style={styles.trendIndicator}>
-                    <Ionicons
-                      name={getTrendIcon(performanceData.ctlTrend).name as any}
-                      size={16}
-                      color={getTrendIcon(performanceData.ctlTrend).color}
-                    />
-                    <Text
-                      style={[
-                        styles.trendText,
-                        { color: getTrendIcon(performanceData.ctlTrend).color },
-                      ]}
-                    >
-                      {Math.abs(performanceData.ctlTrend).toFixed(1)}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.metricCard}>
-                  <Text style={styles.metricValue}>
-                    {performanceData.currentAtl.toFixed(1)}
-                  </Text>
-                  <Text style={styles.metricLabel}>ATL (Fatigue)</Text>
-                  <Text style={styles.metricSubtext}>7-day avg</Text>
-                </View>
-
-                <View style={styles.metricCard}>
-                  <Text
-                    style={[
-                      styles.metricValue,
-                      {
-                        color:
-                          performanceData.currentTsb > 0
-                            ? "#10b981"
-                            : "#ef4444",
-                      },
-                    ]}
-                  >
-                    {performanceData.currentTsb > 0 ? "+" : ""}
-                    {performanceData.currentTsb.toFixed(1)}
-                  </Text>
-                  <Text style={styles.metricLabel}>TSB (Form)</Text>
-                  <Text
-                    style={[
-                      styles.formBadge,
-                      { color: getFormColor(performanceMetrics.form) },
-                    ]}
-                  >
-                    {performanceMetrics.form.replace("_", " ").toUpperCase()}
-                  </Text>
-                </View>
-
-                <View style={styles.metricCard}>
-                  <Text style={styles.metricValue}>
-                    {Math.round(performanceData.weeklyTss)}
-                  </Text>
-                  <Text style={styles.metricLabel}>Weekly TSS</Text>
-                  <Text style={styles.metricSubtext}>
-                    Avg: {Math.round(performanceData.avgDailyTss)}/day
-                  </Text>
-                </View>
+                <Text style={styles.metricLabel}>TSB (Form)</Text>
+                <Text
+                  style={[
+                    styles.formBadge,
+                    { color: getFormColor(performanceMetrics.form) },
+                  ]}
+                >
+                  {performanceMetrics.form.replace("_", " ").toUpperCase()}
+                </Text>
               </View>
-            </View>
-          )}
 
-          {/* Training Load Chart */}
-          {trainingLoadData && (
-            <View style={styles.chartSection}>
-              <Text style={styles.sectionTitle}>
-                Training Load (CTL vs ATL)
-              </Text>
-              <View style={styles.chartContainer}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <LineChart
-                    data={trainingLoadData}
-                    width={Math.max(
-                      width - 40,
-                      trainingLoadData.labels.length * 30,
-                    )}
-                    height={220}
-                    chartConfig={{
-                      ...chartConfig,
-                      color: (opacity = 1, index = 0) => {
-                        const colors = [
-                          "rgba(59, 130, 246, opacity)",
-                          "rgba(239, 68, 68, opacity)",
-                        ];
-                        return (
-                          colors[index] || `rgba(59, 130, 246, ${opacity})`
-                        );
-                      },
-                    }}
-                    bezier
-                    style={styles.chart}
-                    withDots={trainingLoadData.labels.length <= 14}
-                    withShadow={false}
-                  />
-                </ScrollView>
-                <View style={styles.chartLegend}>
-                  <View style={styles.legendItem}>
-                    <View
-                      style={[styles.legendDot, { backgroundColor: "#3b82f6" }]}
-                    />
-                    <Text style={styles.legendText}>
-                      CTL (Chronic Training Load)
-                    </Text>
-                  </View>
-                  <View style={styles.legendItem}>
-                    <View
-                      style={[styles.legendDot, { backgroundColor: "#ef4444" }]}
-                    />
-                    <Text style={styles.legendText}>
-                      ATL (Acute Training Load)
-                    </Text>
-                  </View>
-                </View>
+              <View style={styles.metricCard}>
+                <Text style={styles.metricValue}>
+                  {Math.round(performanceData.weeklyTss)}
+                </Text>
+                <Text style={styles.metricLabel}>Weekly TSS</Text>
+                <Text style={styles.metricSubtext}>
+                  Avg: {Math.round(performanceData.avgDailyTss)}/day
+                </Text>
               </View>
-            </View>
-          )}
-
-          {/* Daily TSS Chart */}
-          {tssData && (
-            <View style={styles.chartSection}>
-              <Text style={styles.sectionTitle}>
-                Daily Training Stress Score
-              </Text>
-              <View style={styles.chartContainer}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <BarChart
-                    data={tssData}
-                    width={Math.max(width - 40, tssData.labels.length * 40)}
-                    height={220}
-                    chartConfig={chartConfig}
-                    style={styles.chart}
-                    yAxisSuffix=""
-                    showValuesOnTopOfBars
-                    fromZero
-                  />
-                </ScrollView>
-              </View>
-            </View>
-          )}
-
-          {/* Performance Insights */}
-          <View style={styles.insightsSection}>
-            <Text style={styles.sectionTitle}>Performance Insights</Text>
-            <View style={styles.insightCard}>
-              <View style={styles.insightHeader}>
-                <Ionicons name="bulb-outline" size={20} color="#f59e0b" />
-                <Text style={styles.insightTitle}>Training Recommendation</Text>
-              </View>
-              <Text style={styles.insightText}>
-                {performanceMetrics?.form === "optimal"
-                  ? "Your form is optimal! Consider scheduling a high-intensity activity or test."
-                  : performanceMetrics?.form === "tired" ||
-                      performanceMetrics?.form === "very_tired"
-                    ? "You appear fatigued. Focus on recovery or light training for the next few days."
-                    : "Your training is well balanced. Maintain current intensity distribution."}
-              </Text>
-            </View>
-
-            <View style={styles.insightCard}>
-              <View style={styles.insightHeader}>
-                <Ionicons name="fitness-outline" size={20} color="#3b82f6" />
-                <Text style={styles.insightTitle}>Fitness Trend</Text>
-              </View>
-              <Text style={styles.insightText}>
-                {performanceData?.ctlTrend > 2
-                  ? "Your fitness is improving steadily. Great progress!"
-                  : performanceData?.ctlTrend < -2
-                    ? "Your fitness has declined recently. Consider increasing training volume."
-                    : "Your fitness is stable. Consistent training pays off!"}
-              </Text>
             </View>
           </View>
-        </ScrollView>
-      </SafeAreaView>
-    );
-  };
+        )}
+
+        {/* Training Load Chart */}
+        {trainingLoadData && (
+          <View style={styles.chartSection}>
+            <Text style={styles.sectionTitle}>Training Load (CTL vs ATL)</Text>
+            <View style={styles.chartContainer}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <LineChart
+                  data={trainingLoadData}
+                  width={Math.max(
+                    width - 40,
+                    trainingLoadData.labels.length * 30,
+                  )}
+                  height={220}
+                  chartConfig={{
+                    ...chartConfig,
+                    color: (opacity = 1, index = 0) => {
+                      const colors = [
+                        "rgba(59, 130, 246, opacity)",
+                        "rgba(239, 68, 68, opacity)",
+                      ];
+                      return colors[index] || `rgba(59, 130, 246, ${opacity})`;
+                    },
+                  }}
+                  bezier
+                  style={styles.chart}
+                  withDots={trainingLoadData.labels.length <= 14}
+                  withShadow={false}
+                />
+              </ScrollView>
+              <View style={styles.chartLegend}>
+                <View style={styles.legendItem}>
+                  <View
+                    style={[styles.legendDot, { backgroundColor: "#3b82f6" }]}
+                  />
+                  <Text style={styles.legendText}>
+                    CTL (Chronic Training Load)
+                  </Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View
+                    style={[styles.legendDot, { backgroundColor: "#ef4444" }]}
+                  />
+                  <Text style={styles.legendText}>
+                    ATL (Acute Training Load)
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Daily TSS Chart */}
+        {tssData && (
+          <View style={styles.chartSection}>
+            <Text style={styles.sectionTitle}>Daily Training Stress Score</Text>
+            <View style={styles.chartContainer}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <BarChart
+                  data={tssData}
+                  width={Math.max(width - 40, tssData.labels.length * 40)}
+                  height={220}
+                  chartConfig={chartConfig}
+                  style={styles.chart}
+                  yAxisLabel=""
+                  yAxisSuffix=""
+                  showValuesOnTopOfBars
+                  fromZero
+                />
+              </ScrollView>
+            </View>
+          </View>
+        )}
+
+        {/* Performance Insights */}
+        <View style={styles.insightsSection}>
+          <Text style={styles.sectionTitle}>Performance Insights</Text>
+          <View style={styles.insightCard}>
+            <View style={styles.insightHeader}>
+              <Ionicons name="bulb-outline" size={20} color="#f59e0b" />
+              <Text style={styles.insightTitle}>Training Recommendation</Text>
+            </View>
+            <Text style={styles.insightText}>
+              {performanceMetrics?.form === "optimal"
+                ? "Your form is optimal! Consider scheduling a high-intensity activity or test."
+                : performanceMetrics?.form === "tired" ||
+                    performanceMetrics?.form === "very_tired"
+                  ? "You appear fatigued. Focus on recovery or light training for the next few days."
+                  : "Your training is well balanced. Maintain current intensity distribution."}
+            </Text>
+          </View>
+
+          <View style={styles.insightCard}>
+            <View style={styles.insightHeader}>
+              <Ionicons name="fitness-outline" size={20} color="#3b82f6" />
+              <Text style={styles.insightTitle}>Fitness Trend</Text>
+            </View>
+            <Text style={styles.insightText}>
+              {(performanceData?.ctlTrend || 0) > 2
+                ? "Your fitness is improving steadily. Great progress!"
+                : (performanceData?.ctlTrend || 0) < -2
+                  ? "Your fitness has declined recently. Consider increasing training volume."
+                  : "Your fitness is stable. Consistent training pays off!"}
+            </Text>
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
 }
 
 const styles = StyleSheet.create({

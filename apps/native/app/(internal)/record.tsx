@@ -1,13 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-    Alert,
-    Animated,
-    Modal,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  Animated,
+  Modal,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 import { ActivityStatusBar } from "@components/activity/ActivityStatusBar";
@@ -16,11 +16,11 @@ import { RecordingControls } from "@components/activity/RecordingControls";
 import { BluetoothDeviceModal } from "@components/modals/BluetoothDeviceModal";
 import { ThemedView } from "@components/ThemedView";
 import { useGlobalPermissions } from "@lib/contexts/PermissionsContext";
+import { useProfile } from "@lib/hooks/api/profiles";
 import { useActivityMetrics } from "@lib/hooks/useActivityMetrics";
 import { useAdvancedActivityRecorder } from "@lib/hooks/useAdvancedActivityRecorder";
 import { useBluetooth } from "@lib/hooks/useBluetooth";
 import { ActivityService } from "@lib/services/activity-service";
-import { ProfileService } from "@lib/services/profile-service";
 import { supabase } from "@lib/supabase";
 import { router } from "expo-router";
 
@@ -61,7 +61,9 @@ export default function RecordScreen() {
   const [bluetoothModalVisible, setBluetoothModalVisible] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
-  const [profile, setProfile] = useState<any>(null);
+
+  // TanStack Query hooks
+  const { data: profile, isLoading: profileLoading } = useProfile();
 
   // Animation
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -100,14 +102,12 @@ export default function RecordScreen() {
         console.log("🎬 Record Screen - User loaded:", user?.email);
       }
 
-      // Get user profile
-      const currentProfile = await ProfileService.getCurrentProfile();
-      if (currentProfile) {
-        setProfile(currentProfile);
+      // Profile is now handled by useProfile hook
+      if (profile) {
         console.log("🎬 Record Screen - Profile loaded:", {
-          id: currentProfile.id,
-          username: currentProfile.username,
-          ftp: currentProfile.ftp,
+          id: profile.id,
+          username: profile.username,
+          ftp: profile.ftp,
         });
       }
     } catch (error) {
@@ -197,7 +197,7 @@ export default function RecordScreen() {
         [
           {
             text: "View Activities",
-            onPress: () => router.push("/(internal)/"),
+            onPress: () => router.push("/(internal)"),
           },
           { text: "Start New", onPress: () => setIsModalVisible(false) },
         ],

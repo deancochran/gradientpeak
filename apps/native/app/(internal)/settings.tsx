@@ -1,15 +1,15 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Animated,
-    ScrollView,
-    StyleSheet,
-    Switch,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Animated,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 import { SignOutButton } from "@components/SignOutButton";
@@ -17,26 +17,37 @@ import { ThemedView } from "@components/ThemedView";
 import { Card } from "@components/ui/card";
 import { Text } from "@components/ui/text";
 import { useAuth } from "@lib/contexts/AuthContext";
-import { ProfileService } from "@lib/services/profile-service";
+import {
+  useCreateProfile,
+  useProfile,
+  useUpdateProfile,
+} from "@lib/hooks/api/profiles";
 import { ActivityService } from "@lib/services/activity-service";
+import { ProfileService } from "@lib/services/profile-service";
 import { calculateHrZones } from "@repo/core/calculations";
-import type { Profile, UpdateProfileInput } from "@repo/core/schemas";
 
 export default function SettingsScreen() {
   const { session } = useAuth();
-  const [profile, setProfile] = useState<Profile | null>(null);
+
+  // TanStack Query hooks
+  const {
+    data: profile,
+    isLoading: profileLoading,
+    error: profileError,
+  } = useProfile();
+  const updateProfileMutation = useUpdateProfile();
+  const createProfileMutation = useCreateProfile();
+
   const [isEditing, setIsEditing] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
 
   // Form state
-  const [formData, setFormData] = useState<Partial<UpdateProfileInput>>({
+  const [formData, setFormData] = useState({
     username: "",
-    weightKg: undefined,
-    ftp: undefined,
-    thresholdHr: undefined,
-    gender: "other",
-    preferredUnits: "metric",
+    weightKg: undefined as number | undefined,
+    ftp: undefined as number | undefined,
+    thresholdHr: undefined as number | undefined,
+    gender: "other" as string,
+    preferredUnits: "metric" as string,
   });
 
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
@@ -44,33 +55,25 @@ export default function SettingsScreen() {
   useEffect(() => {
     console.log("⚙️ Settings Screen - Initializing");
     initializeSettings();
-  }, []);
+  }, [profile, profileLoading]);
 
   const initializeSettings = async () => {
-    try {
-      setIsLoading(true);
-      console.log("⚙️ Settings Screen - Loading profile");
-
-      const currentProfile = await ProfileService.getCurrentProfile();
-
-      if (currentProfile) {
-        setProfile(currentProfile);
+    if (!profileLoading) {
+      if (profile) {
         setFormData({
-          username: currentProfile.username || "",
-          weightKg: currentProfile.weightKg
-            ? Number(currentProfile.weightKg)
-            : undefined,
-          ftp: currentProfile.ftp || undefined,
-          thresholdHr: currentProfile.thresholdHr || undefined,
-          gender: currentProfile.gender || "other",
-          preferredUnits: currentProfile.preferredUnits || "metric",
+          username: profile.username || "",
+          weightKg: profile.weightKg ? Number(profile.weightKg) : undefined,
+          ftp: profile.ftp || undefined,
+          thresholdHr: profile.thresholdHr || undefined,
+          gender: profile.gender || "other",
+          preferredUnits: profile.preferredUnits || "metric",
         });
         console.log("⚙️ Settings Screen - Profile loaded:", {
-          username: currentProfile.username,
-          ftp: currentProfile.ftp,
-          units: currentProfile.preferredUnits,
+          username: profile.username,
+          ftp: profile.ftp,
+          units: profile.preferredUnits,
         });
-      } else {
+      } else if (!profile && !profileError) {
         console.log(
           "⚙️ Settings Screen - No profile found, starting in edit mode",
         );
@@ -80,43 +83,34 @@ export default function SettingsScreen() {
       // Animate entrance
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 500,
+        duration: 600,
         useNativeDriver: true,
       }).start();
-    } catch (error) {
-      console.error("⚙️ Settings Screen - Initialization error:", error);
-      Alert.alert("Error", "Failed to load profile");
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const saveProfile = async () => {
-    try {
-      setIsSaving(true);
-      console.log("⚙️ Settings Screen - Saving profile:", formData);
+    console.log("⚙️ Settings Screen - Saving profile:", formData);
 
-      let updatedProfile: Profile | null;
+    try {
+      // Convert weightKg to string for database storage
+      const profileData = {
+        ...formData,
+        weightKg: formData.weightKg ? formData.weightKg.toString() : null,
+      };
 
       if (profile) {
-        updatedProfile = await ProfileService.updateProfile(formData);
+        await updateProfileMutation.mutateAsync(profileData);
       } else {
-        updatedProfile = await ProfileService.createProfile(formData);
+        await createProfileMutation.mutateAsync(profileData);
       }
 
-      if (updatedProfile) {
-        setProfile(updatedProfile);
-        setIsEditing(false);
-        console.log("⚙️ Settings Screen - Profile saved successfully");
-        Alert.alert("Success", "Profile saved successfully");
-      } else {
-        Alert.alert("Error", "Failed to save profile");
-      }
+      setIsEditing(false);
+      console.log("⚙️ Settings Screen - Profile saved successfully");
+      Alert.alert("Success", "Profile saved successfully");
     } catch (error) {
       console.error("⚙️ Settings Screen - Save error:", error);
       Alert.alert("Error", "Failed to save profile");
-    } finally {
-      setIsSaving(false);
     }
   };
 
@@ -137,7 +131,7 @@ export default function SettingsScreen() {
 
   const handleStorageStatus = useCallback(async () => {
     console.log("⚙️ Settings Screen - Showing storage status");
-    if (profile) {
+    if (profile?.id) {
       await ActivityService.showStorageStatus(profile.id);
     }
   }, [profile]);
@@ -163,7 +157,7 @@ export default function SettingsScreen() {
 
   const getHeartRateZones = () => {
     if (!profile?.thresholdHr) return null;
-    return calculateHrZones(profile);
+    return calculateHrZones(profile.thresholdHr);
   };
 
   const userData = {
@@ -177,7 +171,7 @@ export default function SettingsScreen() {
       : "Unknown",
   };
 
-  if (isLoading) {
+  if (profileLoading) {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.loadingContainer}>
@@ -203,8 +197,16 @@ export default function SettingsScreen() {
             <Text style={styles.headerTitle}>Settings</Text>
             <TouchableOpacity
               onPress={isEditing ? saveProfile : () => setIsEditing(true)}
-              disabled={isSaving}
-              style={[styles.editButton, isSaving && styles.buttonDisabled]}
+              disabled={
+                updateProfileMutation.isPending ||
+                createProfileMutation.isPending
+              }
+              style={[
+                styles.editButton,
+                (updateProfileMutation.isPending ||
+                  createProfileMutation.isPending) &&
+                  styles.buttonDisabled,
+              ]}
             >
               <Ionicons
                 name={isEditing ? "checkmark" : "pencil"}
@@ -212,7 +214,12 @@ export default function SettingsScreen() {
                 color="#3b82f6"
               />
               <Text style={styles.editButtonText}>
-                {isSaving ? "Saving..." : isEditing ? "Save" : "Edit"}
+                {updateProfileMutation.isPending ||
+                createProfileMutation.isPending
+                  ? "Saving..."
+                  : isEditing
+                    ? "Save"
+                    : "Edit"}
               </Text>
             </TouchableOpacity>
           </View>
@@ -444,7 +451,7 @@ export default function SettingsScreen() {
                   >
                     <View style={styles.settingIcon}>
                       <Ionicons
-                        name={item.icon as any}
+                        name={item.icon as keyof typeof Ionicons.glyphMap}
                         size={20}
                         color="#3b82f6"
                       />

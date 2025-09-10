@@ -1,7 +1,9 @@
 import {
   createCompletedActivity,
   getPlannedActivities,
+  getPlannedActivitiesByDate,
 } from "@lib/services/ActivityService";
+import { ActivityService } from "@lib/services/activity-service";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 export const activityKeys = {
@@ -17,6 +19,22 @@ export const usePlannedActivities = (filters: {
   return useQuery({
     queryKey: activityKeys.list(filters),
     queryFn: () => getPlannedActivities(filters),
+  });
+};
+
+export const usePlannedActivitiesByDate = (filters: { date: string }) => {
+  return useQuery({
+    queryKey: activityKeys.list({ type: "planned", ...filters }),
+    queryFn: () => getPlannedActivitiesByDate(filters),
+    enabled: !!filters.date,
+  });
+};
+
+export const useActivities = (profileId: string | undefined) => {
+  return useQuery({
+    queryKey: activityKeys.list({ profileId }),
+    queryFn: () => ActivityService.getActivities(profileId!),
+    enabled: !!profileId,
   });
 };
 

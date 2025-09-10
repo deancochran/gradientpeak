@@ -1,9 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { SelectLocalActivity } from "@lib/db/schemas";
+import { useActivities } from "@lib/hooks/api/activities";
+import { useProfile } from "@lib/hooks/api/profiles";
 import { useActivityManager } from "@lib/hooks/useActivityManager";
 import { ActivityService } from "@lib/services/activity-service";
-import { ProfileService } from "@lib/services/profile-service";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 import {
   Alert,
   FlatList,
@@ -16,45 +17,28 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function ActivitiesScreen() {
+  // TanStack Query hooks
+  const { data: profile } = useProfile();
   const {
-    activities,
+    data: activities = [],
     isLoading,
     error,
+    refetch: refetchActivities,
+  } = useActivities(profile?.id);
+
+  const {
     syncStatus,
     isSyncing,
-    loadActivities,
     deleteActivity,
     syncActivity,
     syncAllActivities,
     clearError,
   } = useActivityManager();
 
-  const [profileId, setProfileId] = useState<string | null>(null);
-
-  useEffect(() => {
-    console.log("📋 Activities Screen - Initializing");
-    initializeScreen();
-  }, []);
-
-  const initializeScreen = async () => {
-    try {
-      const profile = await ProfileService.getCurrentProfile();
-      if (profile) {
-        setProfileId(profile.id);
-        console.log("📋 Activities Screen - Profile loaded:", profile.id);
-        await loadActivities(profile.id);
-      }
-    } catch (error) {
-      console.error("📋 Activities Screen - Initialization error:", error);
-    }
-  };
-
   const handleRefresh = useCallback(async () => {
     console.log("📋 Activities Screen - Refreshing");
-    if (profileId) {
-      await loadActivities(profileId);
-    }
-  }, [profileId, loadActivities]);
+    await refetchActivities();
+  }, [refetchActivities]);
 
   const handleSyncAll = useCallback(async () => {
     console.log("📋 Activities Screen - Syncing all activities");
@@ -97,21 +81,21 @@ export default function ActivitiesScreen() {
       <View style={styles.activityHeader}>
         <View style={styles.activityInfo}>
           <Text style={styles.activityTitle}>
-            {item.sport_type || "Activity"}
+            {item.activityType || "Activity"}
           </Text>
           <Text style={styles.activityDate}>
-            {new Date(item.startTime).toLocaleDateString()}
+            {new Date(item.startDate).toLocaleDateString()}
           </Text>
         </View>
         <View style={styles.syncStatusContainer}>
           <View
             style={[
               styles.syncIndicator,
-              { backgroundColor: getSyncStatusColor(item.sync_status) },
+              { backgroundColor: getSyncStatusColor("local") },
             ]}
           />
           <Text style={styles.syncStatusText}>
-            {getSyncStatusLabel(item.sync_status)}
+            {getSyncStatusLabel("local")}
           </Text>
         </View>
       </View>
@@ -120,19 +104,19 @@ export default function ActivitiesScreen() {
         <View style={styles.metricItem}>
           <Text style={styles.metricLabel}>Duration</Text>
           <Text style={styles.metricValue}>
-            {ActivityService.formatDuration(item.elapsedTime || 0)}
+            {ActivityService.formatDuration(item.totalTime || 0)}
           </Text>
         </View>
         <View style={styles.metricItem}>
           <Text style={styles.metricLabel}>Distance</Text>
           <Text style={styles.metricValue}>
-            {ActivityService.formatDistance(item.distance || 0)}
+            {ActivityService.formatDistance(item.totalDistance || 0)}
           </Text>
         </View>
       </View>
 
       <View style={styles.activityActions}>
-        {item.sync_status === "local_only" && (
+        {true && (
           <TouchableOpacity
             onPress={() => {
               console.log("📋 Activities Screen - Syncing activity:", item.id);
@@ -219,7 +203,7 @@ export default function ActivitiesScreen() {
 
       {error && (
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
+          <Text style={styles.errorText}>{String(error)}</Text>
           <TouchableOpacity onPress={clearError} style={styles.errorDismiss}>
             <Ionicons name="close" size={16} color="#ef4444" />
           </TouchableOpacity>

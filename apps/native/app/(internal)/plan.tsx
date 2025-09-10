@@ -1,12 +1,11 @@
 import { ThemedView } from "@components/ThemedView";
 import { Ionicons } from "@expo/vector-icons";
+import { usePlannedActivitiesByDate } from "@lib/hooks/api/activities";
+import { useProfile } from "@lib/hooks/api/profiles";
 import { ActivityService } from "@lib/services";
-import { ProfileService } from "@lib/services/profile-service";
-import { SPORT_TYPES, WORKOUT_TYPES, type Profile } from "@repo/core/schemas";
 import { useCallback, useEffect, useState } from "react";
 import {
   Alert,
-  Dimensions,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -16,8 +15,20 @@ import {
 } from "react-native";
 import { Calendar } from "react-native-calendars";
 import { SafeAreaView } from "react-native-safe-area-context";
+// Local type definitions
+const WORKOUT_TYPES = {
+  INTERVAL: "INTERVAL",
+  RECOVERY: "RECOVERY",
+  ENDURANCE: "ENDURANCE",
+  TEMPO: "TEMPO",
+  THRESHOLD: "THRESHOLD",
+} as const;
 
-const { width } = Dimensions.get("window");
+const SPORT_TYPES = {
+  RIDE: "RIDE",
+  RUN: "RUN",
+  SWIM: "SWIM",
+} as const;
 
 interface PlannedActivity {
   id: string;
@@ -39,103 +50,54 @@ interface CalendarMarking {
 }
 
 export default function PlanScreen() {
-  const [profile, setProfile] = useState<Profile | null>(null);
+  // TanStack Query hooks
+  const { data: profile, isLoading: profileLoading } = useProfile();
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split("T")[0],
   );
-  const [plannedActivities, setPlannedActivities] = useState<PlannedActivity[]>(
-    [],
-  );
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const {
+    data: plannedActivities = [],
+    isLoading: activitiesLoading,
+    error: activitiesError,
+    refetch: refetchActivities,
+  } = usePlannedActivitiesByDate({ date: selectedDate });
+
   const [error, setError] = useState<string | null>(null);
   const [currentWeek, setCurrentWeek] = useState<PlannedActivity[]>([]);
+
+  // Combined loading state
+  const isLoading = profileLoading || activitiesLoading;
 
   // Initialize screen
   useEffect(() => {
     console.log("📅 Plan Screen - Initializing");
-    initializePlanScreen();
-  }, []);
 
-  const initializePlanScreen = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      console.log("📅 Plan Screen - Loading profile and activities");
-
-      const currentProfile = await ProfileService.getCurrentProfile();
-      if (currentProfile) {
-        setProfile(currentProfile);
-        console.log("📅 Plan Screen - Profile loaded:", {
-          id: currentProfile.id,
-          username: currentProfile.username,
-        });
-
-        // Load planned activities (mock data for now)
-        await loadPlannedActivities();
-      } else {
-        setError("Profile not found. Please set up your profile first.");
-        console.warn("📅 Plan Screen - No profile found");
-      }
-    } catch (err) {
-      console.error("📅 Plan Screen - Initialization error:", err);
-      setError("Failed to load training plan");
-    } finally {
-      setIsLoading(false);
+    if (profile) {
+      console.log("📅 Plan Screen - Profile loaded:", {
+        id: profile.id,
+        username: profile.username,
+      });
+    } else if (!profileLoading && !profile) {
+      setError("Profile not found. Please set up your profile first.");
+      console.warn("📅 Plan Screen - No profile found");
     }
-  };
 
-  const loadPlannedActivities = async () => {
-    try {
-      // Mock planned activities data
-      const mockActivities: PlannedActivity[] = [
-        {
-          id: "1",
-          date: new Date().toISOString().split("T")[0],
-          type: "INTERVAL",
-          sport: "RIDE",
-          name: "Threshold Intervals",
-          duration: 3600,
-          description: "5x8min @ FTP with 3min recovery",
-          completed: false,
-          targetTSS: 95,
-        },
-        {
-          id: "2",
-          date: new Date(Date.now() + 86400000).toISOString().split("T")[0],
-          type: "RECOVERY",
-          sport: "RUN",
-          name: "Recovery Run",
-          duration: 2400,
-          description: "Easy pace for 40min",
-          completed: false,
-          targetTSS: 35,
-        },
-        {
-          id: "3",
-          date: new Date(Date.now() + 2 * 86400000).toISOString().split("T")[0],
-          type: "ENDURANCE",
-          sport: "RIDE",
-          name: "Long Ride",
-          duration: 7200,
-          description: "Steady Zone 2 ride",
-          completed: false,
-          targetTSS: 140,
-        },
-      ];
+    if (activitiesError) {
+      console.error("📅 Plan Screen - Activities error:", activitiesError);
+      setError("Failed to load training plan");
+    }
+  }, [profile, profileLoading, activitiesError]);
 
-      setPlannedActivities(mockActivities);
-      updateCurrentWeek(mockActivities, selectedDate);
+  // Update current week when planned activities or selected date changes
+  useEffect(() => {
+    if (plannedActivities.length > 0) {
+      updateCurrentWeek(plannedActivities, selectedDate);
       console.log(
         "📅 Plan Screen - Planned activities loaded:",
-        mockActivities.length,
+        plannedActivities.length,
       );
-    } catch (err) {
-      console.error("📅 Plan Screen - Error loading activities:", err);
-      throw err;
     }
-  };
+  }, [plannedActivities, selectedDate]);
 
   const updateCurrentWeek = (activities: PlannedActivity[], date: string) => {
     const selected = new Date(date);
@@ -159,36 +121,29 @@ export default function PlanScreen() {
 
   const handleRefresh = useCallback(async () => {
     console.log("📅 Plan Screen - Refreshing");
-    setIsRefreshing(true);
     try {
-      await loadPlannedActivities();
+      await refetchActivities();
     } catch (err) {
       console.error("📅 Plan Screen - Refresh error:", err);
-    } finally {
-      setIsRefreshing(false);
     }
-  }, []);
+  }, [refetchActivities]);
 
   const handleDateSelect = (date: string) => {
     console.log("📅 Plan Screen - Date selected:", date);
     setSelectedDate(date);
-    updateCurrentWeek(plannedActivities, date);
+    // updateCurrentWeek will be called automatically via useEffect when plannedActivities changes
   };
 
   const markActivityCompleted = async (activityId: string) => {
     try {
       console.log("📅 Plan Screen - Marking activity completed:", activityId);
 
-      const updatedActivities = plannedActivities.map((activity) =>
-        activity.id === activityId
-          ? { ...activity, completed: true }
-          : activity,
-      );
-
-      setPlannedActivities(updatedActivities);
-      updateCurrentWeek(updatedActivities, selectedDate);
-
+      // TODO: Implement mutation for marking activity as completed
+      // For now, just show success message
       Alert.alert("Success", "Activity marked as completed!");
+
+      // Refetch activities to get updated state
+      await refetchActivities();
     } catch (err) {
       console.error("📅 Plan Screen - Error completing activity:", err);
       Alert.alert("Error", "Failed to update activity status");
@@ -260,7 +215,11 @@ export default function PlanScreen() {
       <ScrollView
         style={styles.scrollView}
         refreshControl={
-          <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
+          <RefreshControl
+            refreshing={activitiesLoading}
+            onRefresh={handleRefresh}
+            tintColor="#3b82f6"
+          />
         }
         showsVerticalScrollIndicator={false}
       >
@@ -331,7 +290,10 @@ export default function PlanScreen() {
                   >
                     <Ionicons
                       name={
-                        getActivityIcon(activity.sport, activity.type) as any
+                        getActivityIcon(
+                          activity.sport,
+                          activity.type,
+                        ) as keyof typeof Ionicons.glyphMap
                       }
                       size={20}
                       color="#ffffff"

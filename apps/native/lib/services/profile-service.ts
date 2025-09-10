@@ -1,15 +1,16 @@
-import { apiClient, type Profile } from "../api/client";
+import { SelectProfile } from "@repo/drizzle/schemas";
+import { apiClient } from "../api/client";
 import { supabase } from "../supabase";
 
 export class ProfileService {
-  private static profileCache: Profile | null = null;
+  private static profileCache: SelectProfile | null = null;
   private static lastCacheUpdate = 0;
   private static readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
   /**
    * Get current user profile from Next.js API
    */
-  static async getCurrentProfile(): Promise<Profile | null> {
+  static async getCurrentProfile(): Promise<SelectProfile | null> {
     try {
       const {
         data: { user },
@@ -63,8 +64,8 @@ export class ProfileService {
    * Update user profile via Next.js API
    */
   static async updateProfile(
-    updates: Partial<Profile>,
-  ): Promise<Profile | null> {
+    updates: Partial<SelectProfile>,
+  ): Promise<SelectProfile | null> {
     try {
       console.log("🌐 ProfileService - Updating profile via API");
       const response = await apiClient.updateProfile(updates);
@@ -90,10 +91,10 @@ export class ProfileService {
   /**
    * Update FTP with timestamp
    */
-  static async updateFTP(ftp: number): Promise<Profile | null> {
+  static async updateFTP(ftp: number): Promise<SelectProfile | null> {
     try {
       console.log("🌐 ProfileService - Updating FTP:", ftp);
-      return await this.updateProfile({ ftpWatts: ftp });
+      return await this.updateProfile({ ftp: ftp });
     } catch (error) {
       console.error("❌ ProfileService - Error updating FTP:", error);
       return null;
@@ -105,16 +106,16 @@ export class ProfileService {
    */
   static async updateThresholdHR(
     maxHR: number,
-    restingHR?: number,
-  ): Promise<Profile | null> {
+    thresholdHr?: number,
+  ): Promise<SelectProfile | null> {
     try {
       console.log("🌐 ProfileService - Updating HR thresholds:", {
         maxHR,
-        restingHR,
+        thresholdHr,
       });
-      const updates: Partial<Profile> = { maxHeartRate: maxHR };
-      if (restingHR !== undefined) {
-        updates.restingHeartRate = restingHR;
+      const updates: Partial<SelectProfile> = { thresholdHr: thresholdHr };
+      if (thresholdHr !== undefined) {
+        updates.thresholdHr = thresholdHr;
       }
       return await this.updateProfile(updates);
     } catch (error) {
@@ -347,8 +348,8 @@ export class ProfileService {
       if (!profile) return false;
 
       // Check if essential fields are filled
-      const hasBasicInfo = !!(profile.displayName && profile.weightKg);
-      const hasTrainingMetrics = !!(profile.ftpWatts || profile.maxHeartRate);
+      const hasBasicInfo = !!(profile.username && profile.weightKg);
+      const hasTrainingMetrics = !!(profile.ftp || profile.thresholdHr);
 
       return hasBasicInfo && hasTrainingMetrics;
     } catch (error) {
@@ -370,12 +371,11 @@ export class ProfileService {
 
       let progress = 0;
       const fields = [
-        profile.displayName,
+        profile.username,
         profile.weightKg,
         profile.gender,
-        profile.ftpWatts,
-        profile.maxHeartRate,
-        profile.heightCm,
+        profile.ftp,
+        profile.thresholdHr,
       ];
 
       const filledFields = fields.filter(

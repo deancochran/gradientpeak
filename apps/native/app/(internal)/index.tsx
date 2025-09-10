@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect } from "react";
 import {
   Animated,
   RefreshControl,
@@ -13,18 +13,21 @@ import { Card } from "@components/ui/card";
 import { Text } from "@components/ui/text";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@lib/contexts/AuthContext";
+import { useProfile } from "@lib/hooks/api/profiles";
 import { useActivityManager } from "@lib/hooks/useActivityManager";
 import { usePerformanceMetrics } from "@lib/hooks/usePerformanceMetrics";
 import { ActivityService } from "@lib/services/activity-service";
-import { ProfileService } from "@lib/services/profile-service";
-import type { SelectProfile } from "@repo/drizzle/schemas";
 import { router } from "expo-router";
 
 export default function HomeScreen() {
   const { session } = useAuth();
-  const [profile, setProfile] = useState<SelectProfile | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+
+  // TanStack Query hooks
+  const {
+    data: profile,
+    isLoading: profileLoading,
+    refetch: refetchProfile,
+  } = useProfile();
 
   // Animations
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
@@ -38,74 +41,56 @@ export default function HomeScreen() {
     isLoading: activitiesLoading,
   } = useActivityManager();
 
-  const {
-    metrics: performanceMetrics,
-    refreshMetrics,
-    isLoading: metricsLoading,
-  } = usePerformanceMetrics();
+  const { metrics: performanceMetrics, refreshMetrics } =
+    usePerformanceMetrics();
+
+  // Combined loading state
+  const isLoading = profileLoading || activitiesLoading;
 
   // Initialize screen
   useEffect(() => {
     console.log("🏠 Home Screen - Initializing");
-    initializeHomeScreen();
-  }, [session?.user?.id]);
 
-  const initializeHomeScreen = async () => {
-    try {
-      setIsLoading(true);
-      console.log("🏠 Home Screen - Loading user data");
-
-      if (session?.user?.id) {
-        // Load profile
-        const currentProfile = await ProfileService.getCurrentProfile();
-        if (currentProfile) {
-          setProfile(currentProfile);
-          console.log("🏠 Home Screen - Profile loaded:", {
-            username: currentProfile.username,
-            ftp: currentProfile.ftp,
-            thresholdHr: currentProfile.thresholdHr,
-          });
-
-          // Load activities
-          await loadActivities(currentProfile.id);
-        }
-      }
-
-      // Animate entrance
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 600,
-          useNativeDriver: true,
-        }),
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: 600,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    } catch (error) {
-      console.error("🏠 Home Screen - Initialization error:", error);
-    } finally {
-      setIsLoading(false);
+    // Load activities when profile is available
+    if (profile?.id) {
+      console.log("🏠 Home Screen - Profile loaded:", {
+        username: profile.username,
+        ftp: profile.ftp,
+        thresholdHr: profile.thresholdHr,
+      });
+      loadActivities(profile.id);
     }
-  };
+
+    // Animate entrance
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [profile?.id]);
 
   const handleRefresh = useCallback(async () => {
     console.log("🏠 Home Screen - Refreshing");
-    setRefreshing(true);
 
     try {
-      if (profile) {
+      // Refetch profile data
+      await refetchProfile();
+
+      if (profile?.id) {
         await loadActivities(profile.id);
       }
       refreshMetrics();
     } catch (error) {
       console.error("🏠 Home Screen - Refresh error:", error);
-    } finally {
-      setRefreshing(false);
     }
-  }, [profile, loadActivities, refreshMetrics]);
+  }, [profile, loadActivities, refreshMetrics, refetchProfile]);
 
   const navigateToRecord = () => {
     console.log("🏠 Home Screen - Navigate to record");
@@ -124,18 +109,19 @@ export default function HomeScreen() {
 
   const navigateToActivities = () => {
     console.log("🏠 Home Screen - Navigate to activities");
-    router.push("/(internal)/activities");
+    // TODO: Create activities route or use existing one
+    console.log("Activities navigation not implemented yet");
   };
 
   // Calculate recent activity stats
   const recentActivities = activities.slice(0, 3);
   const totalActivities = activities.length;
   const totalDistance = activities.reduce(
-    (sum, activity) => sum + (activity.distance || 0),
+    (sum, activity) => sum + (activity.totalDistance || 0),
     0,
   );
   const totalDuration = activities.reduce(
-    (sum, activity) => sum + (activity.elapsedTime || 0),
+    (sum, activity) => sum + (activity.totalTime || 0),
     0,
   );
 
@@ -161,7 +147,7 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
+            refreshing={profileLoading || activitiesLoading}
             onRefresh={handleRefresh}
             tintColor="#3b82f6"
           />
@@ -365,7 +351,7 @@ export default function HomeScreen() {
                     <View style={styles.activityHeader}>
                       <View style={styles.activityIcon}>
                         <Ionicons
-                          name={getActivityIcon(activity.sport_type)}
+                          name={getActivityIcon(activity.activityType)}
                           size={20}
                           color="#3b82f6"
                         />
@@ -373,22 +359,22 @@ export default function HomeScreen() {
 
                       <View style={styles.activityInfo}>
                         <Text style={styles.activityName}>
-                          {activity.sport_type || "Activity"}
+                          {activity.activityType || "Activity"}
                         </Text>
                         <Text style={styles.activityDate}>
-                          {new Date(activity.startTime).toLocaleDateString()}
+                          {new Date(activity.startDate).toLocaleDateString()}
                         </Text>
                       </View>
 
                       <View style={styles.activityStats}>
                         <Text style={styles.activityStat}>
                           {ActivityService.formatDuration(
-                            activity.elapsedTime || 0,
+                            activity.totalTime || 0,
                           )}
                         </Text>
                         <Text style={styles.activityStat}>
                           {ActivityService.formatDistance(
-                            activity.distance || 0,
+                            activity.totalDistance || 0,
                           )}
                         </Text>
                       </View>
@@ -397,9 +383,7 @@ export default function HomeScreen() {
                         style={[
                           styles.syncStatus,
                           {
-                            backgroundColor: getSyncStatusColor(
-                              activity.sync_status,
-                            ),
+                            backgroundColor: getSyncStatusColor("local"),
                           },
                         ]}
                       />
@@ -411,7 +395,7 @@ export default function HomeScreen() {
           </View>
 
           {/* Profile Setup Reminder */}
-          {!profile?.ftp && !profile?.thresholdHr && (
+          {profile && !profile.ftp && !profile.thresholdHr && (
             <View style={styles.reminderSection}>
               <Card style={styles.reminderCard}>
                 <View style={styles.reminderHeader}>
