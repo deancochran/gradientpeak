@@ -18,7 +18,7 @@ import { Card } from "@components/ui/card";
 import { Text } from "@components/ui/text";
 import { useAuth } from "@lib/contexts/AuthContext";
 import { ProfileService } from "@lib/services/profile-service";
-import { WorkoutService } from "@lib/services/workout-service";
+import { ActivityService } from "@lib/services/activity-service";
 import { calculateHrZones } from "@repo/core/calculations";
 import type { Profile, UpdateProfileInput } from "@repo/core/schemas";
 
@@ -138,7 +138,7 @@ export default function SettingsScreen() {
   const handleStorageStatus = useCallback(async () => {
     console.log("⚙️ Settings Screen - Showing storage status");
     if (profile) {
-      await WorkoutService.showStorageStatus(profile.id);
+      await ActivityService.showStorageStatus(profile.id);
     }
   }, [profile]);
 

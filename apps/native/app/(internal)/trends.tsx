@@ -1,7 +1,7 @@
 import { ThemedView } from "@components/ThemedView";
+import { Ionicons } from "@expo/vector-icons";
 import { usePerformanceMetrics } from "@lib/hooks/usePerformanceMetrics";
 import { ProfileService } from "@lib/services/profile-service";
-import { Ionicons } from "@expo/vector-icons";
 import type { Profile } from "@repo/core/schemas";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -488,7 +488,7 @@ export default function TrendsScreen() {
               </View>
               <Text style={styles.insightText}>
                 {performanceMetrics?.form === "optimal"
-                  ? "Your form is optimal! Consider scheduling a high-intensity workout or test."
+                  ? "Your form is optimal! Consider scheduling a high-intensity activity or test."
                   : performanceMetrics?.form === "tired" ||
                       performanceMetrics?.form === "very_tired"
                     ? "You appear fatigued. Focus on recovery or light training for the next few days."

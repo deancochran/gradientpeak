@@ -11,12 +11,12 @@ import {
 import { ThemedView } from "@components/ThemedView";
 import { Card } from "@components/ui/card";
 import { Text } from "@components/ui/text";
+import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@lib/contexts/AuthContext";
 import { useActivityManager } from "@lib/hooks/useActivityManager";
 import { usePerformanceMetrics } from "@lib/hooks/usePerformanceMetrics";
+import { ActivityService } from "@lib/services/activity-service";
 import { ProfileService } from "@lib/services/profile-service";
-import { WorkoutService } from "@lib/services/workout-service";
-import { Ionicons } from "@expo/vector-icons";
 import type { Profile } from "@repo/core/schemas";
 import { router } from "expo-router";
 
@@ -201,7 +201,7 @@ export default function HomeScreen() {
               onPress={navigateToRecord}
             >
               <Ionicons name="add-circle" size={32} color="#ffffff" />
-              <Text style={styles.primaryActionText}>Start Workout</Text>
+              <Text style={styles.primaryActionText}>Start Activity</Text>
             </TouchableOpacity>
 
             <View style={styles.secondaryActions}>
@@ -238,14 +238,14 @@ export default function HomeScreen() {
 
               <Card style={styles.statCard} testID="distance-stat-card">
                 <Text style={styles.statNumber}>
-                  {WorkoutService.formatDistance(totalDistance)}
+                  {ActivityService.formatDistance(totalDistance)}
                 </Text>
                 <Text style={styles.statLabel}>Distance</Text>
               </Card>
 
               <Card style={styles.statCard} testID="duration-stat-card">
                 <Text style={styles.statNumber}>
-                  {WorkoutService.formatDuration(totalDuration)}
+                  {ActivityService.formatDuration(totalDuration)}
                 </Text>
                 <Text style={styles.statLabel}>Time</Text>
               </Card>
@@ -339,7 +339,7 @@ export default function HomeScreen() {
                 <Ionicons name="bicycle" size={48} color="#9ca3af" />
                 <Text style={styles.emptyStateText}>No activities yet</Text>
                 <Text style={styles.emptyStateSubtext}>
-                  Tap "Start Workout" to record your first activity!
+                  Tap "Start Activity" to record your first activity!
                 </Text>
               </Card>
             ) : (
@@ -382,12 +382,12 @@ export default function HomeScreen() {
 
                       <View style={styles.activityStats}>
                         <Text style={styles.activityStat}>
-                          {WorkoutService.formatDuration(
+                          {ActivityService.formatDuration(
                             activity.elapsedTime || 0,
                           )}
                         </Text>
                         <Text style={styles.activityStat}>
-                          {WorkoutService.formatDistance(
+                          {ActivityService.formatDistance(
                             activity.distance || 0,
                           )}
                         </Text>

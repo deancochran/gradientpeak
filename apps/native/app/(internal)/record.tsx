@@ -1,26 +1,26 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
-  Animated,
-  Modal,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Alert,
+    Animated,
+    Modal,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
+import { ActivityStatusBar } from "@components/activity/ActivityStatusBar";
+import { MetricsGrid } from "@components/activity/MetricsGrid";
+import { RecordingControls } from "@components/activity/RecordingControls";
 import { BluetoothDeviceModal } from "@components/modals/BluetoothDeviceModal";
 import { ThemedView } from "@components/ThemedView";
-import { MetricsGrid } from "@components/workout/MetricsGrid";
-import { RecordingControls } from "@components/workout/RecordingControls";
-import { WorkoutStatusBar } from "@components/workout/WorkoutStatusBar";
 import { useGlobalPermissions } from "@lib/contexts/PermissionsContext";
-import { useAdvancedWorkoutRecorder } from "@lib/hooks/useAdvancedWorkoutRecorder";
+import { useActivityMetrics } from "@lib/hooks/useActivityMetrics";
+import { useAdvancedActivityRecorder } from "@lib/hooks/useAdvancedActivityRecorder";
 import { useBluetooth } from "@lib/hooks/useBluetooth";
-import { useWorkoutMetrics } from "@lib/hooks/useWorkoutMetrics";
+import { ActivityService } from "@lib/services/activity-service";
 import { ProfileService } from "@lib/services/profile-service";
-import { WorkoutService } from "@lib/services/workout-service";
 import { supabase } from "@lib/supabase";
 import { router } from "expo-router";
 
@@ -39,14 +39,14 @@ export default function RecordScreen() {
     duration,
     distance: totalDistance,
     currentSpeed,
-    startWorkout,
-    pauseWorkout,
-    resumeWorkout: resumeRecording,
-    stopWorkout: stopRecording,
+    startActivity,
+    pauseActivity,
+    resumeActivity: resumeRecording,
+    stopActivity: stopRecording,
     addSensorData,
-  } = useAdvancedWorkoutRecorder();
+  } = useAdvancedActivityRecorder();
 
-  const workoutMetrics = useWorkoutMetrics({
+  const activityMetrics = useActivityMetrics({
     duration,
     totalDistance,
     currentSpeed,
@@ -130,13 +130,13 @@ export default function RecordScreen() {
 
   const handleStartRecording = async () => {
     try {
-      console.log("🎬 Record Screen - Starting workout");
+      console.log("🎬 Record Screen - Starting activity");
 
       if (!hasAllPermissions) {
         console.warn("🎬 Record Screen - Missing permissions");
         Alert.alert(
           "Permissions Required",
-          "Location and other permissions are required to record workouts.",
+          "Location and other permissions are required to record activitys.",
           [
             { text: "Cancel", style: "cancel" },
             {
@@ -156,8 +156,8 @@ export default function RecordScreen() {
         return;
       }
 
-      await startWorkout(userId);
-      console.log("🎬 Record Screen - Workout started successfully");
+      await startActivity(userId);
+      console.log("🎬 Record Screen - Activity started successfully");
     } catch (error) {
       console.error("🎬 Record Screen - Start recording error:", error);
       Alert.alert("Error", "Failed to start recording. Please try again.");
@@ -166,19 +166,19 @@ export default function RecordScreen() {
 
   const handleStopRecording = async () => {
     try {
-      console.log("🎬 Record Screen - Stopping workout");
+      console.log("🎬 Record Screen - Stopping activity");
 
       Alert.alert(
-        "Save Workout?",
-        "Do you want to save this workout to your activities?",
+        "Save Activity?",
+        "Do you want to save this activity to your activities?",
         [
           {
             text: "Discard",
             style: "destructive",
-            onPress: handleDiscardWorkout,
+            onPress: handleDiscardActivity,
           },
           { text: "Cancel", style: "cancel" },
-          { text: "Save", onPress: handleSaveWorkout },
+          { text: "Save", onPress: handleSaveActivity },
         ],
       );
     } catch (error) {
@@ -186,14 +186,14 @@ export default function RecordScreen() {
     }
   };
 
-  const handleSaveWorkout = async () => {
+  const handleSaveActivity = async () => {
     try {
       await stopRecording();
-      console.log("🎬 Record Screen - Workout saved");
+      console.log("🎬 Record Screen - Activity saved");
 
       Alert.alert(
-        "Workout Saved!",
-        "Your workout has been saved to your activities.",
+        "Activity Saved!",
+        "Your activity has been saved to your activities.",
         [
           {
             text: "View Activities",
@@ -203,18 +203,18 @@ export default function RecordScreen() {
         ],
       );
     } catch (error) {
-      console.error("🎬 Record Screen - Save workout error:", error);
-      Alert.alert("Error", "Failed to save workout");
+      console.error("🎬 Record Screen - Save activity error:", error);
+      Alert.alert("Error", "Failed to save activity");
     }
   };
 
-  const handleDiscardWorkout = async () => {
+  const handleDiscardActivity = async () => {
     try {
       await stopRecording();
-      console.log("🎬 Record Screen - Workout discarded");
+      console.log("🎬 Record Screen - Activity discarded");
       setIsModalVisible(false);
     } catch (error) {
-      console.error("🎬 Record Screen - Discard workout error:", error);
+      console.error("🎬 Record Screen - Discard activity error:", error);
     }
   };
 
@@ -222,13 +222,13 @@ export default function RecordScreen() {
     if (isRecording) {
       Alert.alert(
         "Recording in Progress",
-        "You have an active workout recording. What would you like to do?",
+        "You have an active activity recording. What would you like to do?",
         [
           { text: "Continue Recording", style: "cancel" },
           {
             text: "Pause & Close",
             onPress: () => {
-              pauseWorkout();
+              pauseActivity();
               setIsModalVisible(false);
             },
           },
@@ -277,7 +277,7 @@ export default function RecordScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              await WorkoutService.clearAllData();
+              await ActivityService.clearAllData();
               Alert.alert(
                 "Success",
                 "Local database has been reset successfully.",
@@ -319,7 +319,7 @@ export default function RecordScreen() {
             </TouchableOpacity>
 
             <Text style={styles.modalTitle}>
-              {isRecording ? "Recording Workout" : "Start Workout"}
+              {isRecording ? "Recording Activity" : "Start Activity"}
             </Text>
 
             <View style={styles.headerRight}>
@@ -335,7 +335,7 @@ export default function RecordScreen() {
           </View>
 
           {/* Status Bar */}
-          <WorkoutStatusBar
+          <ActivityStatusBar
             isBluetoothEnabled={isBluetoothEnabled}
             connectedDevicesCount={connectedDevices?.length || 0}
             isGpsTracking={isRecording}
@@ -355,14 +355,14 @@ export default function RecordScreen() {
 
           {/* Metrics */}
           <View style={styles.content}>
-            <MetricsGrid metrics={workoutMetrics} />
+            <MetricsGrid metrics={activityMetrics} />
 
             <RecordingControls
               isRecording={isRecording}
               isPaused={isPaused}
               onStart={handleStartRecording}
               onStop={handleStopRecording}
-              onPause={pauseWorkout}
+              onPause={pauseActivity}
               onResume={resumeRecording}
               hasPermissions={hasAllPermissions}
             />

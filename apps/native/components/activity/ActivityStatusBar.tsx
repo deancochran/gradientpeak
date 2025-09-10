@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-interface WorkoutStatusBarProps {
+interface ActivityStatusBarProps {
   isBluetoothEnabled: boolean;
   connectedDevicesCount: number;
   isGpsTracking: boolean;
@@ -10,7 +10,7 @@ interface WorkoutStatusBarProps {
   onBluetoothPress?: () => void;
 }
 
-export const WorkoutStatusBar: React.FC<WorkoutStatusBarProps> = ({
+export const ActivityStatusBar: React.FC<ActivityStatusBarProps> = ({
   isBluetoothEnabled,
   connectedDevicesCount,
   isGpsTracking,
@@ -65,9 +65,7 @@ export const WorkoutStatusBar: React.FC<WorkoutStatusBarProps> = ({
           GPS {isGpsTracking ? "Active" : "Inactive"}
         </Text>
         {isGpsTracking && gpsPointsCount > 0 && (
-          <Text style={styles.statusDetailText}>
-            {gpsPointsCount} points
-          </Text>
+          <Text style={styles.statusDetailText}>{gpsPointsCount} points</Text>
         )}
       </View>
     </View>

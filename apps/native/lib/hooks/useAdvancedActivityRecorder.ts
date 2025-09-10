@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { WorkoutService } from "@lib/services/workout-service";
+import { ActivityService } from "@lib/services/activity-service";
 
-export interface UseAdvancedWorkoutRecorderReturn {
+export interface UseAdvancedActivityRecorderReturn {
   // Recording state
   isRecording: boolean;
   isPaused: boolean;
@@ -21,10 +21,10 @@ export interface UseAdvancedWorkoutRecorderReturn {
   elevation?: number;
 
   // Recording controls
-  startWorkout: (profileId: string) => Promise<boolean>;
-  pauseWorkout: () => Promise<boolean>;
-  resumeWorkout: () => Promise<boolean>;
-  stopWorkout: () => Promise<void>;
+  startActivity: (profileId: string) => Promise<boolean>;
+  pauseActivity: () => Promise<boolean>;
+  resumeActivity: () => Promise<boolean>;
+  stopActivity: () => Promise<void>;
 
   // Sensor data
   addSensorData: (data: any) => void;
@@ -34,8 +34,8 @@ export interface UseAdvancedWorkoutRecorderReturn {
   clearError: () => void;
 }
 
-export const useAdvancedWorkoutRecorder =
-  (): UseAdvancedWorkoutRecorderReturn => {
+export const useAdvancedActivityRecorder =
+  (): UseAdvancedActivityRecorderReturn => {
     // State
     const [isRecording, setIsRecording] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
@@ -59,8 +59,8 @@ export const useAdvancedWorkoutRecorder =
 
     // Initialize service on mount
     useEffect(() => {
-      WorkoutService.initialize().catch((err) => {
-        setError("Failed to initialize workout service");
+      ActivityService.initialize().catch((err) => {
+        setError("Failed to initialize activity service");
         console.error(err);
       });
     }, []);
@@ -68,7 +68,7 @@ export const useAdvancedWorkoutRecorder =
     // Poll current session and update state
     useEffect(() => {
       const pollSession = () => {
-        const session = WorkoutService.getCurrentSession();
+        const session = ActivityService.getCurrentSession();
         setCurrentSession(session);
 
         if (session) {
@@ -95,7 +95,7 @@ export const useAdvancedWorkoutRecorder =
             metrics.duration > 0
           ) {
             const avgSpeedMs = metrics.distance / metrics.duration;
-            setAvgPace(WorkoutService.formatPace(avgSpeedMs));
+            setAvgPace(ActivityService.formatPace(avgSpeedMs));
           } else {
             setAvgPace("--:--");
           }
@@ -127,79 +127,79 @@ export const useAdvancedWorkoutRecorder =
     }, []);
 
     // Recording controls
-    const startWorkout = useCallback(
+    const startActivity = useCallback(
       async (profileId: string): Promise<boolean> => {
         try {
           setError(null);
-          const sessionId = await WorkoutService.startWorkout(profileId);
+          const sessionId = await ActivityService.startActivity(profileId);
 
           if (sessionId) {
-            console.log(`Workout started: ${sessionId}`);
+            console.log(`Activity started: ${sessionId}`);
             return true;
           } else {
-            setError("Failed to start workout");
+            setError("Failed to start activity");
             return false;
           }
         } catch (err) {
           const errorMessage =
             err instanceof Error ? err.message : "Unknown error";
-          setError(`Error starting workout: ${errorMessage}`);
+          setError(`Error starting activity: ${errorMessage}`);
           return false;
         }
       },
       [],
     );
 
-    const pauseWorkout = useCallback(async (): Promise<boolean> => {
+    const pauseActivity = useCallback(async (): Promise<boolean> => {
       try {
         setError(null);
-        const success = await WorkoutService.pauseWorkout();
+        const success = await ActivityService.pauseActivity();
 
         if (!success) {
-          setError("Failed to pause workout");
+          setError("Failed to pause activity");
         }
 
         return success;
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err.message : "Unknown error";
-        setError(`Error pausing workout: ${errorMessage}`);
+        setError(`Error pausing activity: ${errorMessage}`);
         return false;
       }
     }, []);
 
-    const resumeWorkout = useCallback(async (): Promise<boolean> => {
+    const resumeActivity = useCallback(async (): Promise<boolean> => {
       try {
         setError(null);
-        const success = await WorkoutService.resumeWorkout();
+        const success = await ActivityService.resumeActivity();
 
         if (!success) {
-          setError("Failed to resume workout");
+          setError("Failed to resume activity");
         }
 
         return success;
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err.message : "Unknown error";
-        setError(`Error resuming workout: ${errorMessage}`);
+        setError(`Error resuming activity: ${errorMessage}`);
         return false;
       }
     }, []);
 
-    const stopWorkout = useCallback(async (): Promise<void> => {
+    const stopActivity = useCallback(async (): Promise<void> => {
       try {
         setError(null);
-        await WorkoutService.stopWorkout();
+        await ActivityService.stopActivity();
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err.message : "Unknown error";
-        setError(`Error stopping workout: ${errorMessage}`);
+        setError(`Error stopping activity: ${errorMessage}`);
       }
     }, []);
 
     const addSensorData = useCallback((data: any): void => {
       try {
-        WorkoutService.addSensorData(data);
+        ActivityService.addSensorData(data);
       } catch (err) {
         console.warn("Error adding sensor data:", err);
       }
@@ -228,10 +228,10 @@ export const useAdvancedWorkoutRecorder =
       elevation,
 
       // Recording controls
-      startWorkout,
-      pauseWorkout,
-      resumeWorkout,
-      stopWorkout,
+      startActivity,
+      pauseActivity,
+      resumeActivity,
+      stopActivity,
 
       // Sensor data
       addSensorData,

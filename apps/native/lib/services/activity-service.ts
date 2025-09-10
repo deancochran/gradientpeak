@@ -6,13 +6,13 @@ import { ActivitySyncService } from "./activity-sync-service";
 import { LocalActivityDatabaseService } from "./local-activity-database";
 
 /**
- * Advanced workout service that orchestrates activity recording, storage, and sync
+ * Advanced activity service that orchestrates activity recording, storage, and sync
  */
-export class WorkoutService {
+export class ActivityService {
   private static initialized = false;
 
   /**
-   * Initialize all workout-related services
+   * Initialize all activity-related services
    */
   static async initialize(): Promise<void> {
     if (this.initialized) return;
@@ -23,17 +23,17 @@ export class WorkoutService {
       await LocalActivityDatabaseService.initDatabase();
 
       this.initialized = true;
-      console.log("Workout service initialized successfully");
+      console.log("Activity service initialized successfully");
     } catch (error) {
-      console.error("Failed to initialize workout service:", error);
+      console.error("Failed to initialize activity service:", error);
       throw error;
     }
   }
 
   /**
-   * Start recording a new workout
+   * Start recording a new activity
    */
-  static async startWorkout(profileId: string): Promise<string | null> {
+  static async startActivity(profileId: string): Promise<string | null> {
     if (!profileId?.trim()) {
       throw new Error("Profile ID is required");
     }
@@ -46,28 +46,28 @@ export class WorkoutService {
   }
 
   /**
-   * Pause the current workout
+   * Pause the current activity
    */
-  static async pauseWorkout(): Promise<boolean> {
+  static async pauseActivity(): Promise<boolean> {
     return await ActivityRecorderService.pauseRecording();
   }
 
   /**
-   * Resume the current workout
+   * Resume the current activity
    */
-  static async resumeWorkout(): Promise<boolean> {
+  static async resumeActivity(): Promise<boolean> {
     return await ActivityRecorderService.resumeRecording();
   }
 
   /**
-   * Stop the current workout (will prompt user to save/discard)
+   * Stop the current activity (will prompt user to save/discard)
    */
-  static async stopWorkout(): Promise<void> {
+  static async stopActivity(): Promise<void> {
     await ActivityRecorderService.stopRecording();
   }
 
   /**
-   * Add sensor data to the current workout
+   * Add sensor data to the current activity
    */
   static addSensorData(sensorData: any): void {
     ActivityRecorderService.addSensorData(sensorData);
@@ -283,7 +283,7 @@ export class WorkoutService {
   static async clearAllData(): Promise<void> {
     try {
       await LocalActivityDatabaseService.resetDatabase();
-      console.log("All local workout data cleared");
+      console.log("All local activity data cleared");
     } catch (error) {
       console.error("Error clearing local data:", error);
       throw error;

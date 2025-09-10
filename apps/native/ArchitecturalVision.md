@@ -1,6 +1,6 @@
 Architectural Vision: A Local-First Fitness Application**
 
-The primary goal of the TurboFit native app is to provide a **local-first, offline-capable experience**. This ensures that the user can reliably record workouts and interact with their data with or without an internet connection. The architecture is built on a clear separation of concerns, using two distinct database clients powered by Drizzle ORM to manage local and remote data, with Supabase Auth handling user identity.
+The primary goal of the TurboFit native app is to provide a **local-first, offline-capable experience**. This ensures that the user can reliably record activitys and interact with their data with or without an internet connection. The architecture is built on a clear separation of concerns, using two distinct database clients powered by Drizzle ORM to manage local and remote data, with Supabase Auth handling user identity.
 
 ---
 
@@ -10,10 +10,10 @@ This is the app's primary operational database, designed for speed and offline a
 
 *   **Technology**: It uses **Expo SQLite** as the database engine and the **Drizzle ORM SQLite client** for type-safe queries.
 *   **Function**:
-    *   All new data, such as a newly started workout, GPS data points, or user notes, is written **immediately** to the local SQLite database.
+    *   All new data, such as a newly started activity, GPS data points, or user notes, is written **immediately** to the local SQLite database.
     *   This makes the UI extremely fast and responsive, as it does not need to wait for a network request to complete.
     *   The app can be used entirely offline for its core functions.
-*   **Key Tables**: `local_activities` for in-progress workouts and a `sync_queue` to track all local changes that need to be sent to the cloud.
+*   **Key Tables**: `local_activities` for in-progress activitys and a `sync_queue` to track all local changes that need to be sent to the cloud.
 *   **Access**: Code interacts with this database via the `useLocalDb` hook we created (`import { useLocalDb } from "@lib/db"`).
 
 ---

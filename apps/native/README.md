@@ -54,31 +54,31 @@ apps/native/
 ├── assets/                      # Static assets (images, fonts)
 ├── components/                   # Reusable UI components
 │   ├── ui/                      # Base UI components (buttons, cards)
-│   └── workout/                 # Workout-specific components
+│   └── activity/                 # activity-specific components
 │       ├── MetricCard.tsx       # Individual metric display
 │       ├── MetricsGrid.tsx      # Grid layout for metrics
 │       ├── RecordingControls.tsx # Start/pause/stop controls
-│       └── WorkoutStatusBar.tsx # GPS/Bluetooth status
+│       └── activityStatusBar.tsx # GPS/Bluetooth status
 ├── constants/                   # App-wide constants
 ├── contexts/                    # React Context providers
 ├── hooks/                       # Reusable hooks
-│   ├── useAdvancedWorkoutRecorder.ts # Advanced recording with fault tolerance
+│   ├── useAdvancedactivityRecorder.ts # Advanced recording with fault tolerance
 │   ├── useActivityManager.ts    # Activity management and sync
-│   └── useWorkoutMetrics.ts     # Dynamic metrics calculation
+│   └── useactivityMetrics.ts     # Dynamic metrics calculation
 ├── lib/                         # Core logic, utilities, and integrations
 │   ├── services/                # Core business logic services
 │   │   ├── activity-recorder.ts # Fault-tolerant activity recording
 │   │   ├── activity-sync-service.ts # Cloud sync with Supabase
 │   │   ├── fit-file-service.ts  # FIT file generation/parsing (Garmin SDK)
 │   │   ├── local-activity-database.ts # SQLite for local storage
-│   │   ├── workout-service.ts       # High-level workout orchestration
+│   │   ├── activity-service.ts       # High-level activity orchestration
 │   │   └── index.ts             # Service exports
 │   ├── types/                   # TypeScript type definitions
 │   │   ├── activity.ts          # Activity and recording types
-│   │   ├── workout.ts           # Legacy workout types
+│   │   ├── activity.ts           # Legacy activity types
 │   │   └── index.ts             # Type exports
 │   ├── utils/                   # Utility functions
-│   │   ├── workout-utils.ts     # Activity calculations and formatting
+│   │   ├── activity-utils.ts     # Activity calculations and formatting
 │   │   └── index.ts             # Utility exports
 │   ├── supabase.ts              # Supabase client and auth
 │   └── utils.ts                 # General utility functions

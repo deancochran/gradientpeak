@@ -1,8 +1,8 @@
-import { useActivityManager } from "@lib/hooks/useActivityManager";
-import { SelectLocalActivity } from "@lib/db/schemas";
-import { ProfileService } from "@lib/services/profile-service";
-import { WorkoutService } from "@lib/services/workout-service";
 import { Ionicons } from "@expo/vector-icons";
+import { SelectLocalActivity } from "@lib/db/schemas";
+import { useActivityManager } from "@lib/hooks/useActivityManager";
+import { ActivityService } from "@lib/services/activity-service";
+import { ProfileService } from "@lib/services/profile-service";
 import { useCallback, useEffect, useState } from "react";
 import {
   Alert,
@@ -120,13 +120,13 @@ export default function ActivitiesScreen() {
         <View style={styles.metricItem}>
           <Text style={styles.metricLabel}>Duration</Text>
           <Text style={styles.metricValue}>
-            {WorkoutService.formatDuration(item.elapsedTime || 0)}
+            {ActivityService.formatDuration(item.elapsedTime || 0)}
           </Text>
         </View>
         <View style={styles.metricItem}>
           <Text style={styles.metricLabel}>Distance</Text>
           <Text style={styles.metricValue}>
-            {WorkoutService.formatDistance(item.distance || 0)}
+            {ActivityService.formatDistance(item.distance || 0)}
           </Text>
         </View>
       </View>
@@ -239,7 +239,7 @@ export default function ActivitiesScreen() {
             <Ionicons name="bicycle" size={64} color="#9ca3af" />
             <Text style={styles.emptyTitle}>No Activities Yet</Text>
             <Text style={styles.emptySubtitle}>
-              Start recording your first workout!
+              Start recording your first activity!
             </Text>
           </View>
         }

@@ -7,9 +7,9 @@ import {
   formatDuration,
   formatPace,
   metersToKm,
-} from "@lib/utils/workout-utils";
+} from "@lib/utils/activity-utils";
 
-interface UseWorkoutMetricsParams {
+interface UseActivityMetricsParams {
   duration: number;
   totalDistance: number;
   currentSpeed: number;
@@ -20,7 +20,7 @@ interface UseWorkoutMetricsParams {
   isTracking: boolean;
 }
 
-export const useWorkoutMetrics = ({
+export const useActivityMetrics = ({
   duration,
   totalDistance,
   currentSpeed,
@@ -29,7 +29,7 @@ export const useWorkoutMetrics = ({
   isRecording,
   isPaused,
   isTracking,
-}: UseWorkoutMetricsParams): WorkoutMetric[] => {
+}: UseActivityMetricsParams): ActivityMetric[] => {
   return useMemo(() => {
     const currentLocation = locations[locations.length - 1];
     const averagePace = calculateAveragePace(totalDistance, duration);
@@ -39,7 +39,7 @@ export const useWorkoutMetrics = ({
       sensorValues?.heartRate,
     );
 
-    const metrics: WorkoutMetric[] = [
+    const metrics: ActivityMetric[] = [
       {
         id: "duration",
         title: "Duration",

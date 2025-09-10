@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { SelectLocalActivity } from "@lib/db/schemas";
-import { WorkoutService } from "@lib/services/workout-service";
+import { ActivityService } from "@lib/services/activity-service";
 
 export interface UseActivityManagerReturn {
   // Activities data
@@ -49,8 +49,8 @@ export const useActivityManager = (): UseActivityManagerReturn => {
 
   // Initialize service
   useEffect(() => {
-    WorkoutService.initialize().catch((err) => {
-      setError("Failed to initialize workout service");
+    ActivityService.initialize().catch((err) => {
+      setError("Failed to initialize activity service");
       console.error(err);
     });
   }, []);
@@ -62,7 +62,7 @@ export const useActivityManager = (): UseActivityManagerReturn => {
         setIsLoading(true);
         setError(null);
 
-        const activitiesList = await WorkoutService.getActivities(profileId);
+        const activitiesList = await ActivityService.getActivities(profileId);
         setActivities(activitiesList);
 
         // Also refresh sync status
@@ -82,7 +82,7 @@ export const useActivityManager = (): UseActivityManagerReturn => {
   const getActivityMetadata = useCallback(
     async (activityId: string): Promise<ActivityMetadata | null> => {
       try {
-        const activity = await WorkoutService.getActivity(activityId);
+        const activity = await ActivityService.getActivity(activityId);
         if (!activity || !activity.local_fit_file_path) {
           return null;
         }
@@ -97,7 +97,7 @@ export const useActivityManager = (): UseActivityManagerReturn => {
         }
 
         // Get metadata from cached activity data
-        return await WorkoutService.getActivityMetadata(activityId);
+        return await ActivityService.getActivityMetadata(activityId);
       } catch (err) {
         console.error("Error getting activity metadata:", err);
         return null;
@@ -111,7 +111,7 @@ export const useActivityManager = (): UseActivityManagerReturn => {
     async (activityId: string): Promise<boolean> => {
       try {
         setError(null);
-        const success = await WorkoutService.deleteActivity(activityId);
+        const success = await ActivityService.deleteActivity(activityId);
 
         if (success) {
           // Remove from local state
@@ -141,7 +141,7 @@ export const useActivityManager = (): UseActivityManagerReturn => {
       setIsSyncing(true);
       setError(null);
 
-      const result = await WorkoutService.syncAllActivities();
+      const result = await ActivityService.syncAllActivities();
 
       // Refresh activities and sync status after sync
       await refreshSyncStatus();
@@ -161,7 +161,7 @@ export const useActivityManager = (): UseActivityManagerReturn => {
     async (activityId: string): Promise<boolean> => {
       try {
         setError(null);
-        const success = await WorkoutService.syncActivity(activityId);
+        const success = await ActivityService.syncActivity(activityId);
 
         if (success) {
           // Update the activity in local state
@@ -191,7 +191,7 @@ export const useActivityManager = (): UseActivityManagerReturn => {
     async (activityId: string): Promise<boolean> => {
       try {
         setError(null);
-        const success = await WorkoutService.retrySyncActivity(activityId);
+        const success = await ActivityService.retrySyncActivity(activityId);
 
         if (success) {
           // Update the activity in local state
@@ -225,14 +225,14 @@ export const useActivityManager = (): UseActivityManagerReturn => {
     async (filePath: string, fileName?: string): Promise<string | null> => {
       try {
         setError(null);
-        const activityId = await WorkoutService.importFitFile(
+        const activityId = await ActivityService.importFitFile(
           filePath,
           fileName,
         );
 
         if (activityId) {
           // Reload activities to include the new import
-          const newActivity = await WorkoutService.getActivity(activityId);
+          const newActivity = await ActivityService.getActivity(activityId);
           if (newActivity) {
             setActivities((prev) => [newActivity, ...prev]);
           }
@@ -253,7 +253,7 @@ export const useActivityManager = (): UseActivityManagerReturn => {
   // Refresh sync status
   const refreshSyncStatus = useCallback(async (): Promise<void> => {
     try {
-      const status = await WorkoutService.getSyncStatus();
+      const status = await ActivityService.getSyncStatus();
       setSyncStatus(status);
     } catch (err) {
       console.error("Error refreshing sync status:", err);
@@ -264,7 +264,7 @@ export const useActivityManager = (): UseActivityManagerReturn => {
   const cleanupSyncedActivities = useCallback(async (): Promise<number> => {
     try {
       setError(null);
-      const deletedCount = await WorkoutService.cleanupSyncedActivities();
+      const deletedCount = await ActivityService.cleanupSyncedActivities();
 
       // Remove synced activities from local state
       setActivities((prev) =>

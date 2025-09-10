@@ -1,7 +1,7 @@
 import { ThemedView } from "@components/ThemedView";
-import { ProfileService } from "@lib/services/profile-service";
-import { WorkoutService } from "@lib/services/workout-service";
 import { Ionicons } from "@expo/vector-icons";
+import { ActivityService } from "@lib/services";
+import { ProfileService } from "@lib/services/profile-service";
 import { SPORT_TYPES, WORKOUT_TYPES, type Profile } from "@repo/core/schemas";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -19,7 +19,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 const { width } = Dimensions.get("window");
 
-interface PlannedWorkout {
+interface PlannedActivity {
   id: string;
   date: string;
   type: keyof typeof WORKOUT_TYPES;
@@ -43,11 +43,13 @@ export default function PlanScreen() {
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split("T")[0],
   );
-  const [plannedWorkouts, setPlannedWorkouts] = useState<PlannedWorkout[]>([]);
+  const [plannedActivities, setPlannedActivities] = useState<PlannedActivity[]>(
+    [],
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [currentWeek, setCurrentWeek] = useState<PlannedWorkout[]>([]);
+  const [currentWeek, setCurrentWeek] = useState<PlannedActivity[]>([]);
 
   // Initialize screen
   useEffect(() => {
@@ -60,7 +62,7 @@ export default function PlanScreen() {
       setIsLoading(true);
       setError(null);
 
-      console.log("📅 Plan Screen - Loading profile and workouts");
+      console.log("📅 Plan Screen - Loading profile and activities");
 
       const currentProfile = await ProfileService.getCurrentProfile();
       if (currentProfile) {
@@ -70,8 +72,8 @@ export default function PlanScreen() {
           username: currentProfile.username,
         });
 
-        // Load planned workouts (mock data for now)
-        await loadPlannedWorkouts();
+        // Load planned activities (mock data for now)
+        await loadPlannedActivities();
       } else {
         setError("Profile not found. Please set up your profile first.");
         console.warn("📅 Plan Screen - No profile found");
@@ -84,10 +86,10 @@ export default function PlanScreen() {
     }
   };
 
-  const loadPlannedWorkouts = async () => {
+  const loadPlannedActivities = async () => {
     try {
-      // Mock planned workouts data
-      const mockWorkouts: PlannedWorkout[] = [
+      // Mock planned activities data
+      const mockActivities: PlannedActivity[] = [
         {
           id: "1",
           date: new Date().toISOString().split("T")[0],
@@ -123,19 +125,19 @@ export default function PlanScreen() {
         },
       ];
 
-      setPlannedWorkouts(mockWorkouts);
-      updateCurrentWeek(mockWorkouts, selectedDate);
+      setPlannedActivities(mockActivities);
+      updateCurrentWeek(mockActivities, selectedDate);
       console.log(
-        "📅 Plan Screen - Planned workouts loaded:",
-        mockWorkouts.length,
+        "📅 Plan Screen - Planned activities loaded:",
+        mockActivities.length,
       );
     } catch (err) {
-      console.error("📅 Plan Screen - Error loading workouts:", err);
+      console.error("📅 Plan Screen - Error loading activities:", err);
       throw err;
     }
   };
 
-  const updateCurrentWeek = (workouts: PlannedWorkout[], date: string) => {
+  const updateCurrentWeek = (activities: PlannedActivity[], date: string) => {
     const selected = new Date(date);
     const startOfWeek = new Date(selected);
     startOfWeek.setDate(selected.getDate() - selected.getDay());
@@ -143,15 +145,15 @@ export default function PlanScreen() {
     const endOfWeek = new Date(startOfWeek);
     endOfWeek.setDate(startOfWeek.getDate() + 6);
 
-    const weekWorkouts = workouts.filter((workout) => {
-      const workoutDate = new Date(workout.date);
-      return workoutDate >= startOfWeek && workoutDate <= endOfWeek;
+    const weekActivities = activities.filter((activity) => {
+      const activityDate = new Date(activity.date);
+      return activityDate >= startOfWeek && activityDate <= endOfWeek;
     });
 
-    setCurrentWeek(weekWorkouts);
+    setCurrentWeek(weekActivities);
     console.log("📅 Plan Screen - Current week updated:", {
       date,
-      workouts: weekWorkouts.length,
+      activities: weekActivities.length,
     });
   };
 
@@ -159,7 +161,7 @@ export default function PlanScreen() {
     console.log("📅 Plan Screen - Refreshing");
     setIsRefreshing(true);
     try {
-      await loadPlannedWorkouts();
+      await loadPlannedActivities();
     } catch (err) {
       console.error("📅 Plan Screen - Refresh error:", err);
     } finally {
@@ -170,35 +172,37 @@ export default function PlanScreen() {
   const handleDateSelect = (date: string) => {
     console.log("📅 Plan Screen - Date selected:", date);
     setSelectedDate(date);
-    updateCurrentWeek(plannedWorkouts, date);
+    updateCurrentWeek(plannedActivities, date);
   };
 
-  const markWorkoutCompleted = async (workoutId: string) => {
+  const markActivityCompleted = async (activityId: string) => {
     try {
-      console.log("📅 Plan Screen - Marking workout completed:", workoutId);
+      console.log("📅 Plan Screen - Marking activity completed:", activityId);
 
-      const updatedWorkouts = plannedWorkouts.map((workout) =>
-        workout.id === workoutId ? { ...workout, completed: true } : workout,
+      const updatedActivities = plannedActivities.map((activity) =>
+        activity.id === activityId
+          ? { ...activity, completed: true }
+          : activity,
       );
 
-      setPlannedWorkouts(updatedWorkouts);
-      updateCurrentWeek(updatedWorkouts, selectedDate);
+      setPlannedActivities(updatedActivities);
+      updateCurrentWeek(updatedActivities, selectedDate);
 
-      Alert.alert("Success", "Workout marked as completed!");
+      Alert.alert("Success", "Activity marked as completed!");
     } catch (err) {
-      console.error("📅 Plan Screen - Error completing workout:", err);
-      Alert.alert("Error", "Failed to update workout status");
+      console.error("📅 Plan Screen - Error completing activity:", err);
+      Alert.alert("Error", "Failed to update activity status");
     }
   };
 
   const getCalendarMarkedDates = (): Record<string, CalendarMarking> => {
     const marked: Record<string, CalendarMarking> = {};
 
-    plannedWorkouts.forEach((workout) => {
-      marked[workout.date] = {
+    plannedActivities.forEach((activity) => {
+      marked[activity.date] = {
         marked: true,
-        dotColor: workout.completed ? "#10b981" : "#3b82f6",
-        completed: workout.completed,
+        dotColor: activity.completed ? "#10b981" : "#3b82f6",
+        completed: activity.completed,
       };
     });
 
@@ -213,13 +217,13 @@ export default function PlanScreen() {
     return marked;
   };
 
-  const getWorkoutIcon = (sport: string, type: string) => {
+  const getActivityIcon = (sport: string, type: string) => {
     const sportIcon =
       sport === "RIDE" ? "bicycle" : sport === "RUN" ? "walk" : "fitness";
     return sportIcon;
   };
 
-  const getWorkoutColor = (type: string) => {
+  const getActivityColor = (type: string) => {
     switch (type) {
       case "INTERVAL":
         return "#ef4444";
@@ -236,7 +240,7 @@ export default function PlanScreen() {
     }
   };
 
-  const selectedDateWorkouts = plannedWorkouts.filter(
+  const selectedDateActivities = plannedActivities.filter(
     (w) => w.date === selectedDate,
   );
   const weeklyTSS = currentWeek.reduce((sum, w) => sum + (w.targetTSS || 0), 0);
@@ -299,62 +303,64 @@ export default function PlanScreen() {
           />
         </View>
 
-        {/* Selected Date Workouts */}
-        <View style={styles.workoutsSection}>
+        {/* Selected Date Activities */}
+        <View style={styles.activitysSection}>
           <Text style={styles.sectionTitle}>
             {selectedDate === new Date().toISOString().split("T")[0]
-              ? "Today's Workouts"
-              : `Workouts for ${new Date(selectedDate).toLocaleDateString()}`}
+              ? "Today's Activities"
+              : `Activities for ${new Date(selectedDate).toLocaleDateString()}`}
           </Text>
 
-          {selectedDateWorkouts.length === 0 ? (
+          {selectedDateActivities.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="calendar-outline" size={48} color="#9ca3af" />
-              <Text style={styles.emptyStateText}>No workouts scheduled</Text>
+              <Text style={styles.emptyStateText}>No activitys scheduled</Text>
               <Text style={styles.emptyStateSubtext}>
-                Tap + to add a workout
+                Tap + to add a activity
               </Text>
             </View>
           ) : (
-            selectedDateWorkouts.map((workout) => (
-              <View key={workout.id} style={styles.workoutCard}>
-                <View style={styles.workoutHeader}>
+            selectedDateActivities.map((activity) => (
+              <View key={activity.id} style={styles.activityCard}>
+                <View style={styles.activityHeader}>
                   <View
                     style={[
-                      styles.workoutIconContainer,
-                      { backgroundColor: getWorkoutColor(workout.type) },
+                      styles.activityIconContainer,
+                      { backgroundColor: getActivityColor(activity.type) },
                     ]}
                   >
                     <Ionicons
-                      name={getWorkoutIcon(workout.sport, workout.type) as any}
+                      name={
+                        getActivityIcon(activity.sport, activity.type) as any
+                      }
                       size={20}
                       color="#ffffff"
                     />
                   </View>
 
-                  <View style={styles.workoutInfo}>
-                    <Text style={styles.workoutName}>{workout.name}</Text>
-                    <Text style={styles.workoutType}>
-                      {workout.type.replace("_", " ")} •{" "}
-                      {WorkoutService.formatDuration(workout.duration)}
+                  <View style={styles.activityInfo}>
+                    <Text style={styles.activityName}>{activity.name}</Text>
+                    <Text style={styles.activityType}>
+                      {activity.type.replace("_", " ")} •{" "}
+                      {ActivityService.formatDuration(activity.duration)}
                     </Text>
-                    {workout.targetTSS && (
-                      <Text style={styles.workoutTSS}>
-                        Target: {workout.targetTSS} TSS
+                    {activity.targetTSS && (
+                      <Text style={styles.activityTSS}>
+                        Target: {activity.targetTSS} TSS
                       </Text>
                     )}
                   </View>
 
-                  {!workout.completed && (
+                  {!activity.completed && (
                     <TouchableOpacity
-                      onPress={() => markWorkoutCompleted(workout.id)}
+                      onPress={() => markActivityCompleted(activity.id)}
                       style={styles.completeButton}
                     >
                       <Ionicons name="checkmark" size={16} color="#10b981" />
                     </TouchableOpacity>
                   )}
 
-                  {workout.completed && (
+                  {activity.completed && (
                     <View style={styles.completedBadge}>
                       <Ionicons
                         name="checkmark-circle"
@@ -365,9 +371,9 @@ export default function PlanScreen() {
                   )}
                 </View>
 
-                {workout.description && (
-                  <Text style={styles.workoutDescription}>
-                    {workout.description}
+                {activity.description && (
+                  <Text style={styles.activityDescription}>
+                    {activity.description}
                   </Text>
                 )}
               </View>
@@ -382,7 +388,7 @@ export default function PlanScreen() {
             <View style={styles.weekStats}>
               <View style={styles.weekStatItem}>
                 <Text style={styles.weekStatValue}>{currentWeek.length}</Text>
-                <Text style={styles.weekStatLabel}>Workouts</Text>
+                <Text style={styles.weekStatLabel}>Activities</Text>
               </View>
               <View style={styles.weekStatItem}>
                 <Text style={styles.weekStatValue}>{weeklyTSS}</Text>
@@ -467,7 +473,7 @@ const styles = StyleSheet.create({
   calendar: {
     borderRadius: 8,
   },
-  workoutsSection: {
+  activitysSection: {
     paddingHorizontal: 20,
     marginBottom: 24,
   },
@@ -497,7 +503,7 @@ const styles = StyleSheet.create({
     color: "#9ca3af",
     marginTop: 4,
   },
-  workoutCard: {
+  activityCard: {
     backgroundColor: "#ffffff",
     borderRadius: 12,
     padding: 16,
@@ -508,12 +514,12 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
-  workoutHeader: {
+  activityHeader: {
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 8,
   },
-  workoutIconContainer: {
+  activityIconContainer: {
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -521,21 +527,21 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginRight: 12,
   },
-  workoutInfo: {
+  activityInfo: {
     flex: 1,
   },
-  workoutName: {
+  activityName: {
     fontSize: 16,
     fontWeight: "600",
     color: "#111827",
     marginBottom: 2,
   },
-  workoutType: {
+  activityType: {
     fontSize: 14,
     color: "#6b7280",
     marginBottom: 2,
   },
-  workoutTSS: {
+  activityTSS: {
     fontSize: 12,
     color: "#3b82f6",
     fontWeight: "500",
@@ -548,7 +554,7 @@ const styles = StyleSheet.create({
   completedBadge: {
     padding: 4,
   },
-  workoutDescription: {
+  activityDescription: {
     fontSize: 14,
     color: "#374151",
     fontStyle: "italic",

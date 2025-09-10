@@ -25,7 +25,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
     return (
       <View style={styles.footerInitial}>
         <TouchableOpacity style={styles.startButton} onPress={onStart}>
-          <Text style={styles.startButtonText}>Start Workout</Text>
+          <Text style={styles.startButtonText}>Start Activity</Text>
         </TouchableOpacity>
       </View>
     );
