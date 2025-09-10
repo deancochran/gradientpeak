@@ -1,6 +1,6 @@
 
-import { useGlobalPermissions } from "@/contexts/PermissionsContext";
-import { PermissionType } from "@/hooks/usePermissions";
+import { useGlobalPermissions } from "@lib/contexts/PermissionsContext";
+import { PermissionType } from "@lib/hooks/usePermissions";
 import React, { ReactNode, useEffect } from "react";
 import { View, Text, Button, StyleSheet } from "react-native";
 

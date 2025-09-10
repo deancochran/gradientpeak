@@ -1,5 +1,5 @@
-import { supabase } from "@/lib/supabase";
-import { useColorScheme } from "@/lib/useColorScheme";
+import { supabase } from "@lib/supabase";
+import { useColorScheme } from "@lib/useColorScheme";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
@@ -17,7 +17,7 @@ import {
 } from "react-native";
 import { z } from "zod";
 
-import { Input } from "@/components/ui/input";
+import { Input } from "@components/ui/input";
 
 const resetPasswordSchema = z
   .object({

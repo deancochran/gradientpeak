@@ -9,10 +9,10 @@ import {
   View,
 } from "react-native";
 
-import { ThemedView } from "@/components/ThemedView";
-import { Text } from "@/components/ui/text";
-import { useAuth } from "@/contexts/AuthContext";
-import { useColorScheme } from "@/lib/useColorScheme";
+import { ThemedView } from "@components/ThemedView";
+import { Text } from "@components/ui/text";
+import { useAuth } from "@lib/contexts/AuthContext";
+import { useColorScheme } from "@lib/useColorScheme";
 
 export default function WelcomeScreen() {
   const router = useRouter();

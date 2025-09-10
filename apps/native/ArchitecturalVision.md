@@ -14,7 +14,7 @@ This is the app's primary operational database, designed for speed and offline a
     *   This makes the UI extremely fast and responsive, as it does not need to wait for a network request to complete.
     *   The app can be used entirely offline for its core functions.
 *   **Key Tables**: `local_activities` for in-progress workouts and a `sync_queue` to track all local changes that need to be sent to the cloud.
-*   **Access**: Code interacts with this database via the `useLocalDb` hook we created (`import { useLocalDb } from "@/lib/db"`).
+*   **Access**: Code interacts with this database via the `useLocalDb` hook we created (`import { useLocalDb } from "@lib/db"`).
 
 ---
 
@@ -27,7 +27,7 @@ This is the central, persistent data store for the entire TurboFit platform.
     *   It stores the complete, normalized history of all user data.
     *   It enables data synchronization across multiple clients (e.g., the native app and the web dashboard).
     *   It's where long-term analytics and data processing will occur.
-*   **Access**: The native app interacts with this database via the `onlineDb` client (`import { onlineDb } from "@/lib/db"`).
+*   **Access**: The native app interacts with this database via the `onlineDb` client (`import { onlineDb } from "@lib/db"`).
 
 ---
 

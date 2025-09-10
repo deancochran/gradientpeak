@@ -1,5 +1,5 @@
-import { useAuth } from "@/contexts/AuthContext";
-import { useColorScheme } from "@/lib/useColorScheme";
+import { useAuth } from "@lib/contexts/AuthContext";
+import { useColorScheme } from "@lib/useColorScheme";
 import { useFocusEffect } from "expo-router";
 import React from "react";
 import { ActivityIndicator, View } from "react-native";

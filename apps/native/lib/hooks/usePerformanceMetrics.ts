@@ -1,4 +1,4 @@
-import { ProfileService } from "@/lib/services/profile-service";
+import { ProfileService } from "@lib/services/profile-service";
 import { calculateTrainingLoad } from "@repo/core/calculations";
 import type { PerformanceMetrics } from "@repo/core/schemas";
 import { useEffect, useState } from "react";

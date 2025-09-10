@@ -11,7 +11,7 @@ import {
   View,
 } from "react-native";
 
-import { useBluetooth, type BluetoothDevice } from "@/hooks/useBluetooth";
+import { useBluetooth, type BluetoothDevice } from "@lib/hooks/useBluetooth";
 
 interface BluetoothDeviceModalProps {
   visible: boolean;

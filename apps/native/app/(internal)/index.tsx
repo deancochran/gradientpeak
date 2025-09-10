@@ -8,14 +8,14 @@ import {
   View,
 } from "react-native";
 
-import { ThemedView } from "@/components/ThemedView";
-import { Card } from "@/components/ui/card";
-import { Text } from "@/components/ui/text";
-import { useAuth } from "@/contexts/AuthContext";
-import { useActivityManager } from "@/hooks/useActivityManager";
-import { usePerformanceMetrics } from "@/hooks/usePerformanceMetrics";
-import { ProfileService } from "@/lib/services/profile-service";
-import { WorkoutService } from "@/lib/services/workout-service";
+import { ThemedView } from "@components/ThemedView";
+import { Card } from "@components/ui/card";
+import { Text } from "@components/ui/text";
+import { useAuth } from "@lib/contexts/AuthContext";
+import { useActivityManager } from "@lib/hooks/useActivityManager";
+import { usePerformanceMetrics } from "@lib/hooks/usePerformanceMetrics";
+import { ProfileService } from "@lib/services/profile-service";
+import { WorkoutService } from "@lib/services/workout-service";
 import { Ionicons } from "@expo/vector-icons";
 import type { Profile } from "@repo/core/schemas";
 import { router } from "expo-router";

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 // Import your permission strategies
-import { Alert, Linking } from "react-native"; // For rationale
 import {
   checkBluetoothPermission,
   checkLocationPermission,
@@ -8,7 +7,8 @@ import {
   requestBluetoothPermission,
   requestLocationPermission,
   requestMotionPermission,
-} from "../lib/permissions";
+} from "@lib/permissions";
+import { Alert, Linking } from "react-native"; // For rationale
 
 export type PermissionType = "bluetooth" | "location" | "motion";
 

@@ -1,25 +1,37 @@
 // apps/native/app/_layout.tsx
 import "@/global.css";
 
-import { AuthProvider } from "@/contexts/AuthContext";
-import { AuthErrorBoundary } from "@/contexts/AuthErrorBoundary";
-import { PermissionsProvider } from "@/contexts/PermissionsContext";
-import { db } from "@/lib/db";
-import migrations from "@/lib/db/migrations/migrations";
-import { useColorScheme } from "@/lib/useColorScheme";
-import { useMigrations } from "drizzle-orm/expo-sqlite/migrator";
-
+import { AuthProvider } from "@lib/contexts/AuthContext";
+import { AuthErrorBoundary } from "@lib/contexts/AuthErrorBoundary";
+import { PermissionsProvider } from "@lib/contexts/PermissionsContext";
+import { db } from "@lib/db";
+import migrations from "@lib/db/migrations/migrations";
+import { useColorScheme } from "@lib/useColorScheme";
 import {
   DarkTheme,
   DefaultTheme,
   ThemeProvider,
 } from "@react-navigation/native";
+import {
+  QueryClient,
+  QueryClientProvider,
+  focusManager,
+  onlineManager,
+} from "@tanstack/react-query";
+import { useMigrations } from "drizzle-orm/expo-sqlite/migrator";
 import * as Linking from "expo-linking";
+import * as Network from "expo-network";
 import { Slot, router } from "expo-router";
 import { SQLiteProvider } from "expo-sqlite";
 import { StatusBar } from "expo-status-bar";
 import * as React from "react";
-import { ActivityIndicator, View } from "react-native";
+import {
+  ActivityIndicator,
+  AppState,
+  AppStateStatus,
+  Platform,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 // Modern black and white theme
@@ -53,6 +65,23 @@ export {
   // Catch any errors thrown by the Layout component.
   ErrorBoundary,
 } from "expo-router";
+
+// 1. Create a client
+const queryClient = new QueryClient();
+
+// 2. Configure online manager for React Native
+onlineManager.setEventListener((setOnline) => {
+  return Network.addNetworkStateListener((state) => {
+    setOnline(!!state.isConnected);
+  });
+});
+
+// 3. Configure focus manager for React Native
+function onAppStateChange(status: AppStateStatus) {
+  if (Platform.OS !== "web") {
+    focusManager.setFocused(status === "active");
+  }
+}
 
 function DrizzleProvider({ children }: { children: React.ReactNode }) {
   const { success, error } = useMigrations(db, migrations);
@@ -143,6 +172,11 @@ function RootLayoutInner() {
 export default function RootLayout() {
   const { isDarkColorScheme } = useColorScheme();
 
+  React.useEffect(() => {
+    const subscription = AppState.addEventListener("change", onAppStateChange);
+    return () => subscription.remove();
+  }, []);
+
   return (
     <React.Suspense
       fallback={
@@ -153,20 +187,24 @@ export default function RootLayout() {
         </View>
       }
     >
-      <SQLiteProvider databaseName="turbofit.db">
-        <DrizzleProvider>
-          <PermissionsProvider>
-            <ThemeProvider value={isDarkColorScheme ? DARK_THEME : LIGHT_THEME}>
-              <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
-              <AuthErrorBoundary>
-                <AuthProvider>
-                  <RootLayoutInner />
-                </AuthProvider>
-              </AuthErrorBoundary>
-            </ThemeProvider>
-          </PermissionsProvider>
-        </DrizzleProvider>
-      </SQLiteProvider>
+      <QueryClientProvider client={queryClient}>
+        <SQLiteProvider databaseName="db.db">
+          <DrizzleProvider>
+            <PermissionsProvider>
+              <ThemeProvider
+                value={isDarkColorScheme ? DARK_THEME : LIGHT_THEME}
+              >
+                <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
+                <AuthErrorBoundary>
+                  <AuthProvider>
+                    <RootLayoutInner />
+                  </AuthProvider>
+                </AuthErrorBoundary>
+              </ThemeProvider>
+            </PermissionsProvider>
+          </DrizzleProvider>
+        </SQLiteProvider>
+      </QueryClientProvider>
     </React.Suspense>
   );
 }

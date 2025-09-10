@@ -10,18 +10,18 @@ import {
   View,
 } from "react-native";
 
-import { ThemedView } from "@/components/ThemedView";
-import { MetricsGrid } from "@/components/workout/MetricsGrid";
-import { RecordingControls } from "@/components/workout/RecordingControls";
-import { WorkoutStatusBar } from "@/components/workout/WorkoutStatusBar";
-import { useGlobalPermissions } from "@/contexts/PermissionsContext";
-import { useAdvancedWorkoutRecorder } from "@/hooks/useAdvancedWorkoutRecorder";
-import { useBluetooth } from "@/hooks/useBluetooth";
-import { useWorkoutMetrics } from "@/hooks/useWorkoutMetrics";
-import { ProfileService } from "@/lib/services/profile-service";
-import { WorkoutService } from "@/lib/services/workout-service";
-import { supabase } from "@/lib/supabase";
-import { BluetoothDeviceModal } from "@/modals/BluetoothDeviceModal";
+import { BluetoothDeviceModal } from "@components/modals/BluetoothDeviceModal";
+import { ThemedView } from "@components/ThemedView";
+import { MetricsGrid } from "@components/workout/MetricsGrid";
+import { RecordingControls } from "@components/workout/RecordingControls";
+import { WorkoutStatusBar } from "@components/workout/WorkoutStatusBar";
+import { useGlobalPermissions } from "@lib/contexts/PermissionsContext";
+import { useAdvancedWorkoutRecorder } from "@lib/hooks/useAdvancedWorkoutRecorder";
+import { useBluetooth } from "@lib/hooks/useBluetooth";
+import { useWorkoutMetrics } from "@lib/hooks/useWorkoutMetrics";
+import { ProfileService } from "@lib/services/profile-service";
+import { WorkoutService } from "@lib/services/workout-service";
+import { supabase } from "@lib/supabase";
 import { router } from "expo-router";
 
 export default function RecordScreen() {

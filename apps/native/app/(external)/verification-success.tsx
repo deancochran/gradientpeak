@@ -9,7 +9,7 @@ import {
     View
 } from 'react-native'
 
-import { useColorScheme } from '@/lib/useColorScheme'
+import { useColorScheme } from '@lib/useColorScheme'
 import { Stack, useRouter } from 'expo-router'
 
 export default function VerificationSuccessScreen() {

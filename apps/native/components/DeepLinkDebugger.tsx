@@ -1,4 +1,4 @@
-import { useColorScheme } from '@/lib/useColorScheme';
+import { useColorScheme } from '@lib/useColorScheme';
 import * as Linking from 'expo-linking';
 import React from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';

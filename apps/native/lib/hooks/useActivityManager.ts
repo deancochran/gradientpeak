@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { SelectLocalActivity } from "@/lib/db/schemas";
-import { WorkoutService } from "@/lib/services/workout-service";
+import { SelectLocalActivity } from "@lib/db/schemas";
+import { WorkoutService } from "@lib/services/workout-service";
 
 export interface UseActivityManagerReturn {
   // Activities data

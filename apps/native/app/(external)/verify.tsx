@@ -15,10 +15,10 @@ import { Stack, useRouter } from "expo-router";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
-import { Input } from "@/components/ui/input";
-import { useAuth, useUser } from "@/contexts/AuthContext";
-import { supabase } from "@/lib/supabase";
-import { useColorScheme } from "@/lib/useColorScheme";
+import { Input } from "@components/ui/input";
+import { useAuth, useUser } from "@lib/contexts/AuthContext";
+import { supabase } from "@lib/supabase";
+import { useColorScheme } from "@lib/useColorScheme";
 
 const resendSchema = z.object({
   email: z.email("Invalid email address"),

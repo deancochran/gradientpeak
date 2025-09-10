@@ -1,6 +1,6 @@
-import { ThemedView } from "@/components/ThemedView";
-import { ProfileService } from "@/lib/services/profile-service";
-import { WorkoutService } from "@/lib/services/workout-service";
+import { ThemedView } from "@components/ThemedView";
+import { ProfileService } from "@lib/services/profile-service";
+import { WorkoutService } from "@lib/services/workout-service";
 import { Ionicons } from "@expo/vector-icons";
 import { SPORT_TYPES, WORKOUT_TYPES, type Profile } from "@repo/core/schemas";
 import { useCallback, useEffect, useState } from "react";

@@ -3,8 +3,8 @@ import { Tabs } from "expo-router";
 import React from "react";
 import { ActivityIndicator, Animated, View } from "react-native";
 
-import { useAuth } from "@/contexts/AuthContext";
-import { useColorScheme } from "@/lib/useColorScheme";
+import { useAuth } from "@lib/contexts/AuthContext";
+import { useColorScheme } from "@lib/useColorScheme";
 
 // Animated icon component with enhanced styling
 function AnimatedIcon({ focused, name }: { focused: boolean; name: string }) {

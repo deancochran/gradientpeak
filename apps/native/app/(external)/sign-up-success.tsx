@@ -10,7 +10,7 @@ import {
 } from "react-native";
 
 import DeepLinkDebugger from "@/components/DeepLinkDebugger";
-import { useColorScheme } from "@/lib/useColorScheme";
+import { useColorScheme } from "@lib/useColorScheme";
 import { Stack, useRouter } from "expo-router";
 
 export default function SignUpSuccessScreen() {

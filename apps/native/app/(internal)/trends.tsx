@@ -1,6 +1,6 @@
-import { ThemedView } from "@/components/ThemedView";
-import { usePerformanceMetrics } from "@/hooks/usePerformanceMetrics";
-import { ProfileService } from "@/lib/services/profile-service";
+import { ThemedView } from "@components/ThemedView";
+import { usePerformanceMetrics } from "@lib/hooks/usePerformanceMetrics";
+import { ProfileService } from "@lib/services/profile-service";
 import { Ionicons } from "@expo/vector-icons";
 import type { Profile } from "@repo/core/schemas";
 import { useCallback, useEffect, useState } from "react";

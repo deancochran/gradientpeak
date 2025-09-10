@@ -7,7 +7,7 @@ import {
   formatDuration,
   formatPace,
   metersToKm,
-} from "@/lib/utils/workout-utils";
+} from "@lib/utils/workout-utils";
 
 interface UseWorkoutMetricsParams {
   duration: number;

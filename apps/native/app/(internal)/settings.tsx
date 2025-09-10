@@ -1,24 +1,24 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  Animated,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    Animated,
+    ScrollView,
+    StyleSheet,
+    Switch,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
-import { SignOutButton } from "@/components/SignOutButton";
-import { ThemedView } from "@/components/ThemedView";
-import { Card } from "@/components/ui/card";
-import { Text } from "@/components/ui/text";
-import { useAuth } from "@/contexts/AuthContext";
-import { ProfileService } from "@/lib/services/profile-service";
-import { WorkoutService } from "@/lib/services/workout-service";
+import { SignOutButton } from "@components/SignOutButton";
+import { ThemedView } from "@components/ThemedView";
+import { Card } from "@components/ui/card";
+import { Text } from "@components/ui/text";
+import { useAuth } from "@lib/contexts/AuthContext";
+import { ProfileService } from "@lib/services/profile-service";
+import { WorkoutService } from "@lib/services/workout-service";
 import { calculateHrZones } from "@repo/core/calculations";
 import type { Profile, UpdateProfileInput } from "@repo/core/schemas";
 

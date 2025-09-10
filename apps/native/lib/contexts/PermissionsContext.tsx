@@ -1,5 +1,5 @@
-import { ThemedView } from "@/components/ThemedView";
-import { Text } from "@/components/ui/text";
+import { ThemedView } from "@components/ThemedView";
+import { Text } from "@components/ui/text";
 import React, { createContext, ReactNode, useContext, useEffect } from "react";
 import { AppState, StyleSheet } from "react-native";
 import { PermissionType, usePermissions } from "../hooks/usePermissions";

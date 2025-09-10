@@ -1,7 +1,7 @@
-import { useActivityManager } from "@/hooks/useActivityManager";
-import { SelectLocalActivity } from "@/lib/db/schemas";
-import { ProfileService } from "@/lib/services/profile-service";
-import { WorkoutService } from "@/lib/services/workout-service";
+import { useActivityManager } from "@lib/hooks/useActivityManager";
+import { SelectLocalActivity } from "@lib/db/schemas";
+import { ProfileService } from "@lib/services/profile-service";
+import { WorkoutService } from "@lib/services/workout-service";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import {

@@ -1,6 +1,6 @@
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { supabase } from "@/lib/supabase";
+import { Button } from "@components/ui/button";
+import { Input } from "@components/ui/input";
+import { supabase } from "@lib/supabase";
 import React, { useState } from "react";
 import { Alert, AppState, StyleSheet, View } from "react-native";
 

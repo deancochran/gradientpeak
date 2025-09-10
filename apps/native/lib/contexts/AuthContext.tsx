@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@lib/supabase";
 import { Session } from "@supabase/supabase-js";
 import { router } from "expo-router";
 import React, {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { WorkoutService } from "@/lib/services/workout-service";
+import { WorkoutService } from "@lib/services/workout-service";
 
 export interface UseAdvancedWorkoutRecorderReturn {
   // Recording state

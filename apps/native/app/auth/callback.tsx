@@ -1,5 +1,5 @@
-import { supabase } from "@/lib/supabase";
-import { useColorScheme } from "@/lib/useColorScheme";
+import { supabase } from "@lib/supabase";
+import { useColorScheme } from "@lib/useColorScheme";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
