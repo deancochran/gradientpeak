@@ -197,6 +197,166 @@ export class ActivitySyncService {
   }
 
   /**
+   * Bulk sync multiple activities to Next.js API
+   */
+  static async syncMultipleActivities(
+    activityIds: string[],
+  ): Promise<{ success: number; failed: number }> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    console.log(`🔄 Starting bulk sync for ${activityIds.length} activities`);
+
+    let successCount = 0;
+    let failedCount = 0;
+
+    // Process in batches to avoid overwhelming the API
+    const batchSize = 10;
+    for (let i = 0; i < activityIds.length; i += batchSize) {
+      const batch = activityIds.slice(i, i + batchSize);
+      const batchActivities = [];
+
+      // Prepare batch data
+      for (const activityId of batch) {
+        try {
+          const activity =
+            await LocalActivityDatabaseService.getActivity(activityId);
+          if (!activity) continue;
+
+          const fileExists = await FileSystem.getInfoAsync(
+            activity.local_fit_file_path,
+          );
+          if (!fileExists.exists) continue;
+
+          const jsonData = await FileSystem.readAsStringAsync(
+            activity.local_fit_file_path,
+            {
+              encoding: FileSystem.EncodingType.UTF8,
+            },
+          );
+
+          const activityData = JSON.parse(jsonData);
+
+          // Upload to Supabase Storage first
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          if (!user) throw new Error("User not authenticated");
+
+          const fileName = `${user.id}/${activity.id}.json`;
+          await supabase.storage
+            .from("activity-json-files")
+            .upload(
+              fileName,
+              new Blob([jsonData], { type: "application/json" }),
+              {
+                upsert: true,
+              },
+            );
+
+          batchActivities.push({
+            activityId: activity.id,
+            startedAt: activityData.startedAt,
+            liveMetrics: activityData.liveMetrics,
+            filePath: fileName,
+          });
+
+          // Update status to syncing
+          await LocalActivityDatabaseService.updateSyncStatus(
+            activity.id,
+            "syncing",
+          );
+        } catch (error) {
+          console.error(
+            `Failed to prepare activity ${activityId} for batch sync:`,
+            error,
+          );
+          await LocalActivityDatabaseService.updateSyncStatus(
+            activityId,
+            "sync_failed",
+            undefined,
+            error instanceof Error ? error.message : "Preparation failed",
+          );
+          failedCount++;
+        }
+      }
+
+      // Send batch to API
+      if (batchActivities.length > 0) {
+        try {
+          const response = await apiClient.bulkSyncActivities(batchActivities);
+
+          if (response.success && response.data) {
+            const results = response.data.results || [];
+
+            for (const result of results) {
+              if (result.success) {
+                await LocalActivityDatabaseService.updateSyncStatus(
+                  result.activityId,
+                  "synced",
+                  result.activity?.cloudStoragePath,
+                );
+
+                // Delete local file
+                try {
+                  const activity =
+                    await LocalActivityDatabaseService.getActivity(
+                      result.activityId,
+                    );
+                  if (activity?.local_fit_file_path) {
+                    await FileSystem.deleteAsync(activity.local_fit_file_path);
+                  }
+                } catch (deleteError) {
+                  console.warn("Failed to delete local file:", deleteError);
+                }
+
+                successCount++;
+              } else {
+                await LocalActivityDatabaseService.updateSyncStatus(
+                  result.activityId,
+                  "sync_failed",
+                  undefined,
+                  result.error || "Bulk sync failed",
+                );
+                failedCount++;
+              }
+            }
+          } else {
+            // All activities in batch failed
+            for (const activity of batchActivities) {
+              await LocalActivityDatabaseService.updateSyncStatus(
+                activity.activityId,
+                "sync_failed",
+                undefined,
+                response.error || "Bulk API call failed",
+              );
+              failedCount++;
+            }
+          }
+        } catch (error) {
+          console.error("Batch sync API call failed:", error);
+          // Mark all activities in batch as failed
+          for (const activity of batchActivities) {
+            await LocalActivityDatabaseService.updateSyncStatus(
+              activity.activityId,
+              "sync_failed",
+              undefined,
+              error instanceof Error ? error.message : "Batch sync failed",
+            );
+            failedCount++;
+          }
+        }
+      }
+    }
+
+    console.log(
+      `✅ Bulk sync completed: ${successCount} successful, ${failedCount} failed`,
+    );
+    return { success: successCount, failed: failedCount };
+  }
+
+  /**
    * Clean up successfully synced activities
    */
   static async cleanupSyncedActivities(): Promise<number> {
@@ -257,14 +417,14 @@ export class ActivitySyncService {
   }
 
   /**
-   * Sync a single activity to Supabase using new JSON-first approach
+   * Sync a single activity to Next.js API using hybrid approach
    */
   private static async syncSingleActivity(
     activity: LocalActivity,
     userId: string,
   ): Promise<boolean> {
     try {
-      console.log(`Syncing activity: ${activity.id}`);
+      console.log(`🔄 Syncing activity: ${activity.id} to Next.js API`);
 
       // Update status to syncing
       await LocalActivityDatabaseService.updateSyncStatus(
@@ -297,7 +457,7 @@ export class ActivitySyncService {
         throw new Error("Failed to parse activity JSON file");
       }
 
-      // Step 1: Upload JSON to Supabase Storage
+      // Step 1: Upload JSON to Supabase Storage (keep existing storage)
       const fileName = `${userId}/${activity.id}.json`;
       const { error: uploadError } = await supabase.storage
         .from("activity-json-files")
@@ -309,48 +469,23 @@ export class ActivitySyncService {
         throw new Error(`JSON upload failed: ${uploadError.message}`);
       }
 
-      // Step 2: Call the new sync-activity Edge Function
-      const { data: authData } = await supabase.auth.getSession();
-      if (!authData.session) {
-        throw new Error("No active session");
-      }
+      console.log(`📁 Activity JSON uploaded to Supabase Storage: ${fileName}`);
 
-      const supabaseUrl = this.getSupabaseUrl();
-      const edgeFunctionUrl = `${supabaseUrl}/functions/v1/sync-activity`;
-
-      const response = await fetch(edgeFunctionUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${authData.session.access_token}`,
-        },
-        body: JSON.stringify({
-          activityId: activity.id,
-          profileId: userId,
-          startedAt: activityData.startedAt,
-          liveMetrics: activityData.liveMetrics,
-          filePath: fileName,
-        }),
+      // Step 2: Call the Next.js API endpoint instead of Edge Function
+      const syncResponse = await apiClient.syncActivity({
+        activityId: activity.id,
+        startedAt: activityData.startedAt,
+        liveMetrics: activityData.liveMetrics,
+        filePath: fileName,
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorMessage;
-        try {
-          const errorJson = JSON.parse(errorText);
-          errorMessage = errorJson.error || errorText;
-        } catch {
-          errorMessage = errorText;
-        }
-        throw new Error(`Edge function failed: ${errorMessage}`);
+      if (!syncResponse.success) {
+        throw new Error(syncResponse.error || "Next.js API sync failed");
       }
 
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error || "Edge function returned failure");
-      }
-
-      console.log(`Activity ${activity.id} synced successfully`);
+      console.log(
+        `✅ Activity ${activity.id} synced successfully to Next.js API`,
+      );
 
       // Update local status to synced
       await LocalActivityDatabaseService.updateSyncStatus(
@@ -362,14 +497,16 @@ export class ActivitySyncService {
       // Delete local JSON file after successful sync
       try {
         await FileSystem.deleteAsync(activity.local_fit_file_path);
-        console.log(`Local JSON file deleted: ${activity.local_fit_file_path}`);
+        console.log(
+          `🗑️ Local JSON file deleted: ${activity.local_fit_file_path}`,
+        );
       } catch (deleteError) {
-        console.warn("Failed to delete local JSON file:", deleteError);
+        console.warn("⚠️ Failed to delete local JSON file:", deleteError);
       }
 
       return true;
     } catch (error) {
-      console.error(`Error syncing activity ${activity.id}:`, error);
+      console.error(`❌ Error syncing activity ${activity.id}:`, error);
 
       // Update status to sync_failed
       await LocalActivityDatabaseService.updateSyncStatus(

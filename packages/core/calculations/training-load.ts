@@ -1,3 +1,17 @@
+import {
+  FATIGUE_LEVEL_THRESHOLDS,
+  FITNESS_LEVEL_THRESHOLDS,
+  TIME_CONSTANTS,
+  TRAINING_RECOMMENDATIONS,
+  TSB_THRESHOLDS,
+  TSS_CONSTANTS,
+} from "../constants";
+import type {
+  ActivityStream,
+  TSSHistoryEntry,
+  TrainingLoad,
+  TrainingLoadAnalysis,
+} from "../types";
 import { calculateNormalizedPower } from "./power";
 
 /**
@@ -10,23 +24,21 @@ import { calculateNormalizedPower } from "./power";
 export function calculateTSS(
   powerStream: ActivityStream,
   movingTime: number,
-  profile: Profile,
+  ftp: number,
 ): number {
-  if (!profile.ftp) {
-    throw new Error("FTP is required for TSS calculation");
-  }
-
   if (movingTime <= 0) {
     return 0;
   }
 
   const normalizedPower = calculateNormalizedPower(powerStream);
-  const ftp = profile.ftp;
-  const durationHours = movingTime / 3600; // Convert seconds to hours
+  const durationHours = movingTime / TIME_CONSTANTS.SECONDS_PER_HOUR;
 
   // TSS = (NP/FTP)² × Duration(hours) × 100
   const intensityFactor = normalizedPower / ftp;
-  const tss = Math.pow(intensityFactor, 2) * durationHours * 100;
+  const tss =
+    Math.pow(intensityFactor, 2) *
+    durationHours *
+    TSS_CONSTANTS.BASE_TSS_MULTIPLIER;
 
   return Math.round(tss * 10) / 10; // Round to 1 decimal place
 }
@@ -48,11 +60,14 @@ export function calculateRunningTSS(
     return 0;
   }
 
-  const durationHours = movingTime / 3600;
+  const durationHours = movingTime / TIME_CONSTANTS.SECONDS_PER_HOUR;
 
   // Intensity Factor for running = Threshold Pace / Average Pace
   const intensityFactor = thresholdPace / averagePace;
-  const rTss = Math.pow(intensityFactor, 2) * durationHours * 100;
+  const rTss =
+    Math.pow(intensityFactor, 2) *
+    durationHours *
+    TSS_CONSTANTS.BASE_TSS_MULTIPLIER;
 
   return Math.round(rTss * 10) / 10;
 }
@@ -73,11 +88,14 @@ export function calculateHeartRateTSS(
     return 0;
   }
 
-  const durationHours = movingTime / 3600;
+  const durationHours = movingTime / TIME_CONSTANTS.SECONDS_PER_HOUR;
 
   // Intensity Factor for HR = Average HR / Threshold HR
   const intensityFactor = averageHR / thresholdHR;
-  const hrTss = Math.pow(intensityFactor, 2) * durationHours * 100;
+  const hrTss =
+    Math.pow(intensityFactor, 2) *
+    durationHours *
+    TSS_CONSTANTS.BASE_TSS_MULTIPLIER;
 
   return Math.round(hrTss * 10) / 10;
 }
@@ -108,11 +126,9 @@ export function calculateTrainingLoad(
   let ctl = 0;
   let atl = 0;
 
-  // Exponential weighted moving averages
-  // CTL uses a 42-day time constant (alpha = 1 - e^(-1/42) ≈ 0.0235)
-  // ATL uses a 7-day time constant (alpha = 1 - e^(-1/7) ≈ 0.1353)
-  const ctlAlpha = 1 - Math.exp(-1 / 42);
-  const atlAlpha = 1 - Math.exp(-1 / 7);
+  // Exponential weighted moving averages using constants
+  const ctlAlpha = TSS_CONSTANTS.CTL_ALPHA;
+  const atlAlpha = TSS_CONSTANTS.ATL_ALPHA;
 
   for (const entry of sortedHistory) {
     // Update CTL: exponential weighted moving average with 42-day time constant
@@ -135,20 +151,20 @@ export function calculateTrainingLoad(
 /**
  * Project future CTL based on planned training
  * @param currentCTL - Current CTL value
- * @param plannedTSS - Array of planned TSS values for future days
+ * @param plannedTSS - Daily planned TSS values for future days
  * @param days - Number of days to project into the future
  * @returns Projected CTL value
  */
 export function projectCTL(
   currentCTL: number,
-  plannedTSS: number[],
+  plannedTSS: number,
   days: number,
 ): number {
   let ctl = currentCTL;
-  const ctlAlpha = 1 - Math.exp(-1 / 42);
+  const ctlAlpha = TSS_CONSTANTS.CTL_ALPHA;
 
-  for (let i = 0; i < days && i < plannedTSS.length; i++) {
-    ctl = plannedTSS[i] * ctlAlpha + ctl * (1 - ctlAlpha);
+  for (let i = 0; i < days; i++) {
+    ctl = plannedTSS * ctlAlpha + ctl * (1 - ctlAlpha);
   }
 
   return Math.round(ctl * 10) / 10;
@@ -166,7 +182,7 @@ export function calculateRecommendedTSS(
   currentCTL: number,
   currentATL: number,
   targetCTL: number,
-  rampRate: number = 6,
+  rampRate: number = TRAINING_RECOMMENDATIONS.DEFAULT_RAMP_RATE,
 ): number {
   // Calculate daily ramp rate
   const dailyRampRate = rampRate / 7;
@@ -177,7 +193,7 @@ export function calculateRecommendedTSS(
   }
 
   // Calculate TSS needed to increase CTL by daily ramp rate
-  const ctlAlpha = 1 - Math.exp(-1 / 42);
+  const ctlAlpha = TSS_CONSTANTS.CTL_ALPHA;
   const recommendedTSS =
     (currentCTL + dailyRampRate) / ctlAlpha -
     (currentCTL * (1 - ctlAlpha)) / ctlAlpha;
@@ -186,45 +202,43 @@ export function calculateRecommendedTSS(
 }
 
 /**
- * Analyze training load trends
- * @param trainingLoad - Current training load values
- * @returns Analysis object with insights and recommendations
+ * Analyze training load trends with comprehensive data
+ * @param tssHistory - Array of TSS history entries for analysis
+ * @returns Complete training load analysis
  */
-export function analyzeTrainingLoad(trainingLoad: TrainingLoad): {
-  fitnessLevel: "low" | "moderate" | "high" | "very_high";
-  fatigueLevel: "low" | "moderate" | "high" | "very_high";
-  form: "optimal" | "good" | "tired" | "very_tired";
-  recommendation: string;
-} {
-  const { ctl, atl, tsb } = trainingLoad;
+export function analyzeTrainingLoad(
+  tssHistory: TSSHistoryEntry[],
+): TrainingLoadAnalysis {
+  const currentLoad = calculateTrainingLoad(tssHistory);
+  const { ctl, atl, tsb } = currentLoad;
 
-  // Determine fitness level based on CTL
+  // Determine fitness level based on CTL using constants
   let fitnessLevel: "low" | "moderate" | "high" | "very_high";
-  if (ctl < 40) fitnessLevel = "low";
-  else if (ctl < 60) fitnessLevel = "moderate";
-  else if (ctl < 80) fitnessLevel = "high";
+  if (ctl < FITNESS_LEVEL_THRESHOLDS.LOW) fitnessLevel = "low";
+  else if (ctl < FITNESS_LEVEL_THRESHOLDS.MODERATE) fitnessLevel = "moderate";
+  else if (ctl < FITNESS_LEVEL_THRESHOLDS.HIGH) fitnessLevel = "high";
   else fitnessLevel = "very_high";
 
-  // Determine fatigue level based on ATL
+  // Determine fatigue level based on ATL using constants
   let fatigueLevel: "low" | "moderate" | "high" | "very_high";
-  if (atl < 40) fatigueLevel = "low";
-  else if (atl < 60) fatigueLevel = "moderate";
-  else if (atl < 80) fatigueLevel = "high";
+  if (atl < FATIGUE_LEVEL_THRESHOLDS.LOW) fatigueLevel = "low";
+  else if (atl < FATIGUE_LEVEL_THRESHOLDS.MODERATE) fatigueLevel = "moderate";
+  else if (atl < FATIGUE_LEVEL_THRESHOLDS.HIGH) fatigueLevel = "high";
   else fatigueLevel = "very_high";
 
-  // Determine form based on TSB
+  // Determine form based on TSB using constants
   let form: "optimal" | "good" | "tired" | "very_tired";
   let recommendation: string;
 
-  if (tsb > 10) {
+  if (tsb > TSB_THRESHOLDS.OPTIMAL) {
     form = "optimal";
     recommendation =
       "You are well-rested and ready for high-intensity training or competition.";
-  } else if (tsb > -10) {
+  } else if (tsb > TSB_THRESHOLDS.GOOD) {
     form = "good";
     recommendation =
       "Good balance between fitness and fatigue. Maintain current training intensity.";
-  } else if (tsb > -30) {
+  } else if (tsb > TSB_THRESHOLDS.TIRED) {
     form = "tired";
     recommendation =
       "You are carrying some fatigue. Consider reducing intensity or adding recovery days.";
@@ -234,10 +248,23 @@ export function analyzeTrainingLoad(trainingLoad: TrainingLoad): {
       "High fatigue detected. Focus on recovery and light training until TSB improves.";
   }
 
+  // Calculate ramp rate from recent history
+  const recentEntries = tssHistory.slice(-7); // Last 7 days
+  const rampRate =
+    recentEntries.length > 0
+      ? (recentEntries.reduce((sum, entry) => sum + entry.tss, 0) / 7) * 7 // Weekly average
+      : 0;
+
   return {
+    ...currentLoad,
     fitnessLevel,
     fatigueLevel,
     form,
     recommendation,
+    rampRate,
+    history: tssHistory,
+    currentCTL: ctl,
+    currentATL: atl,
+    currentTSB: tsb,
   };
 }

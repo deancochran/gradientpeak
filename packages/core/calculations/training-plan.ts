@@ -1,16 +1,24 @@
-// // ================================
-// // Planned Activity Generator
-// // ================================
+// Note: Schema validation can be added later if needed
+import type {
+  PlannedActivityStructure,
+  Step,
+  WeeklySchedule,
+} from "../schemas";
+import type { ScheduledWorkout } from "../types";
+
+// ================================
+// Planned Activity Generator
+// ================================
 export function createNewPlannedActivity(
   name: string,
   steps: PlannedActivityStructure["steps"],
   description?: string,
 ): PlannedActivityStructure {
-  return plannedActivityStructureSchema.parse({
+  return {
     name,
     steps,
     description,
-  });
+  };
 }
 
 // ================================

@@ -1,22 +1,17 @@
-import type { SelectProfile as Profile } from "@repo/drizzle";
+import { HR_ZONE_PERCENTAGES } from "../constants";
+import type { HRZones } from "../types";
 /**
  * Calculate heart rate zones based on threshold HR
- * @param profile - User profile containing threshold HR
+ * @param thresholdHr - User profile threshold HR
  * @returns Heart rate zones object
  */
-export function calculateHrZones(profile: Profile): HRZones {
-  if (!profile.thresholdHr) {
-    throw new Error("Threshold HR is required for HR zone calculation");
-  }
-
-  const thresholdHr = profile.thresholdHr;
-
+export function calculateHrZones(thresholdHr: number): HRZones {
   return {
-    zone1: Math.round(thresholdHr * 0.5), // Recovery
-    zone2: Math.round(thresholdHr * 0.6), // Endurance
-    zone3: Math.round(thresholdHr * 0.7), // Tempo
-    zone4: Math.round(thresholdHr * 0.8), // Lactate Threshold
-    zone5: Math.round(thresholdHr * 0.9), // VO2 Max
+    zone1: Math.round(thresholdHr * HR_ZONE_PERCENTAGES.ZONE_1), // Recovery
+    zone2: Math.round(thresholdHr * HR_ZONE_PERCENTAGES.ZONE_2), // Endurance
+    zone3: Math.round(thresholdHr * HR_ZONE_PERCENTAGES.ZONE_3), // Tempo
+    zone4: Math.round(thresholdHr * HR_ZONE_PERCENTAGES.ZONE_4), // Lactate Threshold
+    zone5: Math.round(thresholdHr * HR_ZONE_PERCENTAGES.ZONE_5), // VO2 Max
   };
 }
 

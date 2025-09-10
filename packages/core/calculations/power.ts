@@ -1,21 +1,18 @@
+import { NORMALIZED_POWER, POWER_ZONE_PERCENTAGES } from "../constants";
+import type { ActivityStream, PowerZones } from "../types";
+
 /**
  * Calculate power zones based on FTP
- * @param profile - User profile containing FTP
+ * @param ftp - User profile FTP
  * @returns Power zones object
  */
-export function calculatePowerZones(profile: Profile): PowerZones {
-  if (!profile.ftp) {
-    throw new Error("FTP is required for power zone calculation");
-  }
-
-  const ftp = profile.ftp;
-
+export function calculatePowerZones(ftp: number): PowerZones {
   return {
-    zone1: Math.round(ftp * 0.55), // Active Recovery
-    zone2: Math.round(ftp * 0.75), // Endurance
-    zone3: Math.round(ftp * 0.9), // Tempo
-    zone4: Math.round(ftp * 1.05), // Lactate Threshold
-    zone5: Math.round(ftp * 1.2), // VO2 Max
+    zone1: Math.round(ftp * POWER_ZONE_PERCENTAGES.ZONE_1), // Active Recovery
+    zone2: Math.round(ftp * POWER_ZONE_PERCENTAGES.ZONE_2), // Endurance
+    zone3: Math.round(ftp * POWER_ZONE_PERCENTAGES.ZONE_3), // Tempo
+    zone4: Math.round(ftp * POWER_ZONE_PERCENTAGES.ZONE_4), // Lactate Threshold
+    zone5: Math.round(ftp * POWER_ZONE_PERCENTAGES.ZONE_5), // VO2 Max
   };
 }
 
@@ -35,14 +32,14 @@ export function calculateNormalizedPower(powerStream: ActivityStream): number {
   }
 
   // For short activities, return average power
-  if (powerValues.length < 30) {
+  if (powerValues.length < NORMALIZED_POWER.MIN_DATA_POINTS) {
     return Math.round(
       powerValues.reduce((a, b) => a + b, 0) / powerValues.length,
     );
   }
 
   const smoothed: number[] = [];
-  const window = 30; // 30-second rolling average
+  const window = NORMALIZED_POWER.ROLLING_WINDOW_SECONDS;
 
   // Calculate rolling 30-second averages
   for (let i = 0; i <= powerValues.length - window; i++) {
@@ -75,13 +72,9 @@ export function calculateNormalizedPower(powerStream: ActivityStream): number {
  */
 export function calculateIntensityFactor(
   normalizedPower: number,
-  profile: Profile,
+  ftp: number,
 ): number {
-  if (!profile.ftp) {
-    return 0;
-  }
-
-  const intensityFactor = normalizedPower / profile.ftp;
+  const intensityFactor = normalizedPower / ftp;
   return Math.round(intensityFactor * 100) / 100; // Round to 2 decimal places
 }
 

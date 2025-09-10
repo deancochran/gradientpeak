@@ -2,6 +2,7 @@
 export * from "./hr";
 export * from "./power";
 export * from "./training-load";
+export * from "./training-plan";
 export * from "./utils";
 
 // Re-export commonly used functions for convenience
@@ -29,6 +30,16 @@ export {
   calculateTSS,
   projectCTL,
 } from "./training-load";
+export {
+  adaptWeeklyPlan,
+  createNewPlannedActivity,
+  createWeeklySchedule,
+  estimateWeeklyTSS,
+  estimateWorkoutDuration,
+  estimateWorkoutTSS,
+  requiresFTP,
+  requiresThresholdHR,
+} from "./training-plan";
 export {
   addDays,
   calculateAge,
