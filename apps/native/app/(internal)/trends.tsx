@@ -2,7 +2,7 @@ import { ThemedView } from "@components/ThemedView";
 import { Ionicons } from "@expo/vector-icons";
 import { usePerformanceMetrics } from "@lib/hooks/usePerformanceMetrics";
 import { ProfileService } from "@lib/services/profile-service";
-import type { Profile } from "@repo/core/schemas";
+import type { SelectProfile } from "@repo/drizzle/schemas";
 import { useCallback, useEffect, useState } from "react";
 import {
   Dimensions,
@@ -57,7 +57,7 @@ interface ChartData {
 }
 
 export default function TrendsScreen() {
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profile, setProfile] = useState<SelectProfile | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<TrendsPeriod>(
     TREND_PERIODS[1],
   ); // 30D default

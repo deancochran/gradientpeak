@@ -17,12 +17,12 @@ import { useActivityManager } from "@lib/hooks/useActivityManager";
 import { usePerformanceMetrics } from "@lib/hooks/usePerformanceMetrics";
 import { ActivityService } from "@lib/services/activity-service";
 import { ProfileService } from "@lib/services/profile-service";
-import type { Profile } from "@repo/core/schemas";
+import type { SelectProfile } from "@repo/drizzle/schemas";
 import { router } from "expo-router";
 
 export default function HomeScreen() {
   const { session } = useAuth();
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profile, setProfile] = useState<SelectProfile | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
