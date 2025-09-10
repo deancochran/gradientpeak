@@ -32,6 +32,7 @@
     "packages/*"
   ],
   "dependencies": {
-    "base-64": "^1.0.0"
+    "base-64": "^1.0.0",
+    "react-query-native-devtools": "^4.0.0"
   }
 }

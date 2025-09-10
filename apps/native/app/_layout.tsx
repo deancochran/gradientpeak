@@ -188,6 +188,7 @@ export default function RootLayout() {
       }
     >
       <QueryClientProvider client={queryClient}>
+        <ReactQueryDevtools />
         <SQLiteProvider databaseName="db.db">
           <DrizzleProvider>
             <PermissionsProvider>
