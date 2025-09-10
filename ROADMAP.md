@@ -1,236 +1,248 @@
-# TurboFit Mobile App Roadmap - MVP Completion
+# TurboFit Mobile App - MVP Roadmap
 
-## 🔍 Current State Analysis
+## 🎯 MVP Focus
 
-Based on comprehensive codebase analysis, TurboFit has a solid foundation with advanced activity recording, authentication, and UI infrastructure. However, several critical features need completion to reach MVP status and compete with Strava/TrainingPeaks.
+This roadmap focuses on the **three essential features** needed to compete with Strava/TrainingPeaks as a viable fitness tracking alternative. All features are designed around the **JSON-first architecture** where activities are stored as complete JSON objects in Supabase Storage.
 
-### ✅ **Completed Core Infrastructure**
-- **Authentication System**: Complete Supabase auth flow with all screens
-- **Activity Recording**: Advanced GPS tracking, BLE sensors, background recording with fault tolerance
-- **Local-First Architecture**: Expo SQLite with cloud sync capabilities
-- **FIT File Processing**: Backend JSON-to-FIT conversion with @garmin/fitsdk
-- **UI Foundation**: NativeWind styling, reusable components, tab navigation
-- **Profile Management**: User profiles with FTP, threshold HR, training zones
-- **Core Business Logic**: @repo/core package with calculations, schemas, validations
+---
 
-### 🔄 **Partially Implemented Features**
-- **Home Screen**: Activity dashboard structure exists but uses mock performance data
-- **Plan Screen**: Calendar UI complete but displays mock planned activities
-- **Trends Screen**: Victory Native charts ready but shows mock analytics
-- **Settings Screen**: Profile editing works, missing advanced preferences
-- **Performance Metrics Hook**: Calculations available but not connected to real data
+## 📊 Current State Analysis
 
-### ❌ **Critical Missing Features for MVP**
+### ✅ **Solid Foundation Already Built**
+- **Authentication System**: Complete Supabase auth with all screens
+- **Activity Recording**: Advanced GPS tracking, BLE sensors, fault-tolerant recording
+- **Local-First Architecture**: Expo SQLite with JSON storage and cloud sync
+- **UI Infrastructure**: NativeWind styling, tab navigation, reusable components
+- **Core Business Logic**: Database-independent @repo/core package with calculations
+- **Profile Management**: User profiles, FTP, threshold HR, training zones
 
-## 🚀 MVP Completion Tasks
+### 🔄 **Architecture Strengths**
+- **JSON Source of Truth**: Activities stored as complete JSON in Supabase Storage
+- **Database-Independent Core**: Pure TypeScript calculations without ORM dependencies
+- **Offline-First**: Local SQLite recording with intelligent cloud sync
+- **Metadata Generation**: Activity records and streams derived from JSON post-upload
 
-### 1. **Real Data Integration** (High Priority)
+### 🎯 **MVP Gap Analysis**
+The mobile app has **excellent infrastructure** but displays **mock data**. The main work is **connecting real data flows** through the existing well-designed system.
 
-#### Connect Performance Metrics to Real Data
-- [ ] Implement `getActivitiesByProfile` query in mobile app
-- [ ] Replace mock data in `usePerformanceMetrics` hook with real activity fetching
-- [ ] Connect CTL/ATL/TSB calculations to actual user activities
-- [ ] Fix home screen metrics to show real training load data
-- [ ] Implement activity-based TSS calculations using @repo/core
+---
 
-#### Fix Trends Screen Analytics  
-- [ ] Replace mock chart data with real activity streams
-- [ ] Implement time-filtered activity queries (7D, 30D, 90D, 1Y)
-- [ ] Connect Victory Native charts to actual training load progression
-- [ ] Add real power curves, heart rate trends, and volume analytics
-- [ ] Implement comparative analysis (current vs previous periods)
+## 🚀 MVP Feature Completion
 
-### 2. **Training Plan System** (High Priority)
+## 1. **Real Data Integration** (Priority 1)
 
-#### Implement Real Training Plans
-- [ ] Create training plan templates in database (beginner, intermediate, advanced)
-- [ ] Implement plan assignment and scheduling logic
-- [ ] Connect Plan screen to real `planned_activities` table
-- [ ] Add workout structure following during recording
-- [ ] Implement plan progression and adaptation algorithms
-- [ ] Create plan compliance scoring and feedback
+### **Connect Performance Metrics to Real Activities**
 
-#### Workout Structure Integration
-- [ ] Enhance activity recorder to follow structured workouts
-- [ ] Add workout step guidance during recording (intervals, rest periods)
-- [ ] Implement auto-pause for structured workouts
-- [ ] Add workout completion validation and compliance scoring
-- [ ] Create workout library with common training types
+#### 1.1 Fix Home Screen Data Flow
+- [ ] **Replace Mock Performance Data**
+  - Update `usePerformanceMetrics` hook to query real activities from database
+  - Connect CTL/ATL/TSB calculations to actual user activity metadata
+  - Display real weekly/monthly TSS from user's activity history
+  - Show actual training load progression instead of mock data
 
-### 3. **Activity Management & History** (Medium Priority)
+- [ ] **Real Activity History Display**
+  - Implement `useActivities` query integration in home screen
+  - Display actual recorded activities instead of mock data
+  - Show real activity sync status indicators
+  - Add real activity metrics (distance, duration, TSS) to activity cards
 
-#### Complete Activity History
-- [ ] Implement comprehensive activity list view
-- [ ] Add activity detail screens with full metrics
-- [ ] Create activity editing and deletion functionality
-- [ ] Add activity search and filtering capabilities
-- [ ] Implement activity tagging and categorization
+#### 1.2 Fix Trends Screen Analytics
+- [ ] **Connect Victory Native Charts to Real Data**
+  - Replace mock chart data with actual activity queries by date range
+  - Implement time period filtering (7D, 30D, 90D, 1Y) with real database queries
+  - Connect training load progression charts to actual CTL/ATL/TSB history
+  - Display real power/HR trends from user's activity streams
 
-#### Activity Analysis Features
-- [ ] Add detailed activity analytics (splits, segments, zones)
-- [ ] Implement activity comparison functionality  
-- [ ] Create personal records (PRs) tracking
-- [ ] Add segment analysis and leaderboards
-- [ ] Implement activity photos and notes
+- [ ] **Performance Analytics from JSON**
+  - Process JSON activity data through @repo/core calculations
+  - Generate real power curves from activity JSON streams
+  - Calculate actual training zone distribution from recorded activities
+  - Show comparative analysis using real historical data
 
-### 4. **Data Export & Integration** (Medium Priority)
+#### 1.3 Database Query Implementation
+- [ ] **Activity Data Queries**
+  - Implement efficient activity list queries with pagination
+  - Add activity filtering by date range, sport type, and metrics
+  - Create activity summary statistics queries
+  - Build training load historical data queries
 
-#### Third-Party Platform Integration
-- [ ] Implement Strava API integration for activity export
-- [ ] Add TrainingPeaks integration
-- [ ] Create Garmin Connect compatibility
-- [ ] Implement TCX and GPX export formats
-- [ ] Add bulk activity export functionality
+- [ ] **Performance Metrics Calculation**
+  - Connect @repo/core TSS calculations to real activity data
+  - Implement CTL/ATL/TSB progression from activity metadata
+  - Calculate real training zones usage from activity streams
+  - Generate performance trends from historical JSON data
 
-#### Data Import Capabilities
-- [ ] Create FIT file import functionality
-- [ ] Add activity import from other platforms
-- [ ] Implement workout plan import (TrainingPeaks, etc.)
-- [ ] Create data migration tools
+---
 
-### 5. **Advanced Features** (Medium Priority)
+## 2. **Training Plan System** (Priority 2)
 
-#### Social & Sharing Features
-- [ ] Implement activity sharing to social media
-- [ ] Add basic social feed (following, activity updates)
-- [ ] Create achievement system and badges
-- [ ] Add activity kudos/likes functionality
-- [ ] Implement privacy settings for activities
+### **Implement Real Training Plans**
 
-#### Notifications & Reminders
-- [ ] Create workout reminder notifications
-- [ ] Add achievement and milestone notifications
-- [ ] Implement training plan adherence alerts
-- [ ] Add data sync status notifications
-- [ ] Create weekly training summary notifications
+#### 2.1 Training Plan Infrastructure
+- [ ] **Plan Templates & Assignment**
+  - Create basic training plan templates (beginner, intermediate, advanced)
+  - Implement plan assignment to user profiles
+  - Build plan scheduling logic for weekly/daily workout distribution
+  - Add plan duration and periodization structure
 
-### 6. **Performance & UX Improvements** (Low-Medium Priority)
+- [ ] **Connect Plan Screen to Real Data**
+  - Replace mock planned activities with real `planned_activities` queries
+  - Display actual scheduled workouts from user's assigned plan
+  - Show real plan progress and completion status
+  - Implement workout scheduling and calendar integration
 
-#### UI/UX Enhancements
-- [ ] Add pull-to-refresh patterns across all screens
-- [ ] Implement proper loading states and skeletons
-- [ ] Create better empty states with actionable content
-- [ ] Add haptic feedback for important actions
-- [ ] Implement dark/light theme toggle with persistence
+#### 2.2 Structured Workout Support
+- [ ] **Workout Structure Integration**
+  - Enhance activity recorder to follow structured workout steps
+  - Add workout step guidance during recording (intervals, rest periods, zones)
+  - Implement workout progress tracking within recording session
+  - Create workout step completion validation
 
-#### Performance Optimizations
-- [ ] Add list virtualization for large activity datasets
-- [ ] Implement image lazy loading and caching
-- [ ] Optimize chart rendering performance
-- [ ] Add background sync optimization
-- [ ] Create data cleanup and archiving system
+- [ ] **Workout Compliance & Feedback**
+  - Build workout completion analysis using @repo/core algorithms
+  - Implement plan adherence scoring based on completed vs planned workouts
+  - Add workout effectiveness analysis (actual vs target metrics)
+  - Create plan adaptation recommendations based on performance
 
-### 7. **Offline-First Improvements** (Medium Priority)
+#### 2.3 Workout Library
+- [ ] **Common Workout Types**
+  - Create library of standard workout structures (intervals, tempo, endurance)
+  - Implement workout structure validation using @repo/core schemas
+  - Add workout intensity target calculations (HR zones, power zones)
+  - Build workout duration and TSS estimation algorithms
 
-#### Enhanced Sync Capabilities
-- [ ] Implement sophisticated conflict resolution
-- [ ] Add sync status indicators throughout UI
-- [ ] Create intelligent background sync with exponential backoff
-- [ ] Add optimistic UI updates with rollback capability
-- [ ] Implement partial sync for large datasets
+---
 
-#### Offline Analytics
-- [ ] Cache analytics data for offline viewing
-- [ ] Implement offline training plan access
-- [ ] Create offline activity analysis capabilities
-- [ ] Add offline search and filtering
+## 3. **Activity Management & History** (Priority 3)
+
+### **Complete Activity Experience**
+
+#### 3.1 Activity History & Detail Views
+- [ ] **Comprehensive Activity List**
+  - Build full activity history screen with real data
+  - Implement activity search and filtering capabilities
+  - Add activity sorting by date, sport, distance, duration
+  - Create activity list virtualization for large datasets
+
+- [ ] **Activity Detail Screens**
+  - Display complete activity analysis from JSON data
+  - Show detailed metrics, splits, and zone analysis
+  - Add activity map visualization for GPS activities
+  - Create activity editing capabilities (name, notes, sport type)
+
+#### 3.2 Activity Analysis Features
+- [ ] **Advanced Activity Analytics**
+  - Process activity JSON through @repo/core for detailed analysis
+  - Generate activity power/HR curves and zone distribution
+  - Calculate activity-specific metrics (VI, IF, TSS) from JSON data
+  - Show activity segments and split analysis
+
+- [ ] **Personal Records Tracking**
+  - Identify and track personal bests from activity data
+  - Create PR categories (fastest 5K, longest ride, highest TSS)
+  - Build PR progression tracking over time
+  - Add achievement notifications for new PRs
+
+#### 3.3 Activity Data Management
+- [ ] **Activity Operations**
+  - Implement activity deletion with JSON cleanup
+  - Add activity export functionality (JSON, TCX formats)
+  - Create activity tagging and categorization system
+  - Build activity privacy and sharing controls
+
+- [ ] **Data Integrity & Sync**
+  - Ensure activity JSON and metadata consistency
+  - Implement conflict resolution for offline-recorded activities
+  - Add data validation for activity JSON structures
+  - Create activity data repair and cleanup utilities
+
+---
+
+## 🛠 Technical Implementation Notes
+
+### **JSON-First Architecture Considerations**
+- All activity analysis derives from JSON stored in Supabase Storage
+- Activity metadata records are generated locally and synced post-JSON upload
+- Activity streams are created from JSON data after successful cloud storage
+- @repo/core package processes JSON independently of database structure
+
+### **Database Independence**
+- @repo/core package remains completely database-agnostic
+- All business logic calculations work on JSON data structures
+- Database queries handled by Drizzle package, not core package
+- Type safety maintained through JSON schema validation
+
+### **Performance Optimization**
+- Cache frequently accessed activity JSON for offline analysis
+- Implement efficient JSON parsing and calculation pipelines
+- Use React Query for intelligent data caching and synchronization
+- Optimize large activity dataset handling with virtualization
+
+---
+
+## 📅 MVP Timeline
+
+### **Week 1-2: Real Data Integration**
+- Connect home screen to actual activity data
+- Fix trends screen with real analytics
+- Implement core activity queries and performance calculations
+
+### **Week 3-4: Training Plan System**
+- Build basic training plan templates and assignment
+- Connect plan screen to real planned activities
+- Add structured workout recording capabilities
+
+### **Week 5-6: Activity Management**
+- Complete activity history and detail screens
+- Implement activity analysis and personal records
+- Add activity data management operations
+
+### **Week 7: Integration & Polish**
+- End-to-end testing of complete activity workflow
+- Performance optimization and bug fixes
+- UI/UX refinements and loading states
+
+---
 
 ## 🎯 MVP Success Criteria
 
-### Core Functionality (Must Have)
-- [ ] Users can record activities with GPS, heart rate, and power
-- [ ] Real training load analytics (CTL/ATL/TSB) from actual activities
-- [ ] Working training plans with structured workout following
-- [ ] Activity history with detailed analysis
-- [ ] Export to Strava/TrainingPeaks
-- [ ] Offline-first functionality with reliable sync
+### **Core Functionality Requirements**
+- [ ] Users can record activities with complete JSON data storage
+- [ ] Real training load analytics (CTL/ATL/TSB) from actual recorded activities
+- [ ] Working training plan system with structured workout following
+- [ ] Complete activity history with detailed analysis from JSON data
+- [ ] Offline-first functionality with reliable JSON-based sync
 
-### User Experience (Must Have)
-- [ ] Intuitive onboarding for new users
-- [ ] Smooth activity recording experience
-- [ ] Responsive analytics and trends visualization
-- [ ] Reliable background GPS tracking
-- [ ] Fast app startup and navigation
+### **Competitive Feature Parity**
+- [ ] Activity recording quality matches or exceeds Strava
+- [ ] Training analytics provide actionable insights like TrainingPeaks
+- [ ] Plan adherence tracking and workout structure following
+- [ ] Personal record tracking and achievement recognition
+- [ ] Data export compatibility with major platforms
 
-### Competitive Features (Should Have)
-- [ ] Personal records and achievement tracking
-- [ ] Advanced workout types (intervals, structure following)
-- [ ] Social sharing capabilities
-- [ ] Comprehensive activity analysis
-- [ ] Training plan adaptation based on performance
+### **Technical Quality Standards**
+- [ ] All activity data flows through JSON-first architecture
+- [ ] @repo/core package calculations work on real user data
+- [ ] Robust offline recording with reliable cloud sync
+- [ ] Type-safe data handling throughout the stack
+- [ ] Performance suitable for users with extensive activity histories
 
-## 🛠 Technical Debt & Improvements
+---
 
-### Code Quality
-- [ ] Add comprehensive unit tests for all hooks and services
-- [ ] Implement E2E tests with Maestro
-- [ ] Set up error reporting with Sentry
-- [ ] Add performance monitoring
-- [ ] Create proper logging infrastructure
+## 🚀 Post-MVP Roadmap
 
-### Development Experience
-- [ ] Configure pre-commit hooks with lint-staged and husky
-- [ ] Add type checking to CI/CD pipeline
-- [ ] Implement automated testing in CI
-- [ ] Create development database seeding scripts
-- [ ] Add API documentation and schema validation
+### **Phase 2: Advanced Features**
+- Strava/TrainingPeaks data export integration
+- Social sharing and basic social features
+- Advanced analytics and performance modeling
+- Workout plan adaptation based on performance
 
-## 📊 Priority Matrix
-
-### **Immediate (Week 1-2)**
-1. Connect real data to performance metrics
-2. Fix trends screen with actual activity data
-3. Implement basic activity history
-
-### **Short Term (Week 3-4)** 
-1. Create real training plan system
-2. Add workout structure following
-3. Implement Strava export
-
-### **Medium Term (Month 2)**
-1. Complete activity management features
-2. Add social sharing capabilities
-3. Implement notification system
-
-### **Long Term (Month 3+)**
-1. Advanced analytics features
-2. Social platform features
-3. Performance optimizations
-
-## 🎯 MVP Completion Estimate
-
-**Total Estimated Effort**: 6-8 weeks for full-time development
-
-**Critical Path Items**:
-1. Real data integration (1-2 weeks)
-2. Training plan system (2-3 weeks)  
-3. Activity management (1-2 weeks)
-4. Export functionality (1 week)
-5. Polish and testing (1 week)
-
-**Success Metrics**:
-- Users can complete full training workflow (plan → record → analyze → export)
-- App performs comparably to Strava for basic fitness tracking
-- Offline-first architecture works reliably
-- Training load analytics provide actionable insights
-- User retention and engagement metrics meet benchmarks
-
-## 🎨 Post-MVP Roadmap
-
-### Advanced Features
-- AI-powered training plan generation
-- Advanced performance modeling
-- Weather integration and environmental factors
-- Equipment tracking and maintenance
-- Nutrition tracking integration
-- Recovery and sleep tracking
-- Advanced social features (clubs, challenges)
-
-### Platform Expansion  
+### **Phase 3: Platform Features**
 - Web dashboard completion with advanced analytics
 - Coach/athlete relationship management
-- Team and group training features
-- API for third-party developers
-- White-label solutions for coaches/clubs
+- Advanced social features and community building
+- Third-party integrations and API development
 
-This roadmap provides a clear path from current state to competitive MVP, prioritizing features that will deliver maximum value to users seeking alternatives to Strava and TrainingPeaks.
+---
+
+**Target**: Complete, competitive fitness tracking platform that provides real alternatives to Strava and TrainingPeaks with superior offline-first architecture and JSON-based data integrity.

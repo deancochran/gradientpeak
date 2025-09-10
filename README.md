@@ -2,7 +2,6 @@
 
 A sophisticated, enterprise-grade fitness tracking platform built with modern local-first architecture. TurboFit delivers seamless offline-first experiences with intelligent cloud synchronization, real-time analytics, and cross-platform consistency.
 
-
 ---
 
 ## 🏗️ Architecture Overview
@@ -11,7 +10,7 @@ TurboFit is organized as a **Turborepo monorepo** with modular packages:
 
 ### 📦 Core Package (`packages/core`)
 
-The heart of TurboFit, shared across web, mobile, and backend apps.
+The heart of TurboFit, shared across web, mobile, and backend apps. **Completely independent of database or ORM dependencies.**
 
 **Responsibilities:**
 
@@ -19,14 +18,15 @@ The heart of TurboFit, shared across web, mobile, and backend apps.
 * **Calculations & Analytics** — Training zones, TSS, normalized power, compliance scoring, CTL/ATL/TSB
 * **Business Logic** — Workout plan validation, progression, and adaptive algorithms
 * **Utilities** — Time/duration helpers, unit conversions, constants
+* **Platform Agnostic** — Pure TypeScript with no database, ORM, or platform-specific dependencies
 
-**Key Benefit:** Single source of truth ensures consistent calculations, type safety, and validation across all applications.
+**Key Benefit:** Single source of truth ensures consistent calculations, type safety, and validation across all applications while remaining completely portable and testable in isolation.
 
 ---
 
 ### 📦 Drizzle Backend Package (`packages/drizzle`)
 
-A new centralized backend layer replacing Supabase migrations and client-side dependencies.
+A centralized backend layer providing type-safe database interactions.
 
 **Responsibilities:**
 
@@ -35,7 +35,7 @@ A new centralized backend layer replacing Supabase migrations and client-side de
 * **Queries & Transactions** — Type-safe interactions with PostgreSQL
 * **Integration** — Powers both web and mobile apps with a single database interface
 
-**Key Benefit:** Decouples your applications from Supabase migrations while keeping the database fully type-safe and maintainable.
+**Key Benefit:** Decouples applications from direct database dependencies while providing type-safe data operations.
 
 ---
 
@@ -73,8 +73,8 @@ A shared ESLint configuration used across all apps and packages in the TurboFit 
 
 * Expo + React Native
 * Local-first storage with SQLite for offline recording
-* Powered by `@turbofit/core` & `@turbofit/drizzle` for validation, calculations, and backend queries
-* Cloud sync handled via Drizzle-backed API
+* Powered by `@turbofit/core` for validation and calculations (database-independent)
+* Cloud sync handled via API endpoints
 
 ---
 
@@ -82,16 +82,16 @@ A shared ESLint configuration used across all apps and packages in the TurboFit 
 
 * Next.js + React
 * Real-time analytics and dashboards
-* Powered by `@turbofit/core` & `@turbofit/drizzle`
-* Type-safe database interactions using Drizzle instead of Supabase client
+* Powered by `@turbofit/core` for calculations and validation
+* Database access via Drizzle-powered API endpoints
 
 ---
 
 ### 🔗 Shared Infrastructure
 
 * Turborepo + TypeScript throughout
-* Core package for shared business logic
-* Drizzle package for database schema, migrations, and transactions
+* Core package for shared business logic (database-independent)
+* Drizzle package for centralized database operations
 * Local-first recording + intelligent sync ensures offline usability and data integrity
 
 ---
@@ -145,34 +145,52 @@ The core package ensures **valid workout structures**, calculates **estimated du
 
 ---
 
-## 🏃 Activities & Performance Analysis
+## 🏃 Activity Storage & Performance Analysis
 
-### Completed Activities & Results
+### JSON-First Activity Architecture
+
+TurboFit uses a **JSON-first approach** where all activity data is stored as the single source of truth:
+
+* **Primary Storage** — Complete activity data stored as JSON in Supabase Storage
+* **Local Recording** — Activities initially captured locally in SQLite as JSON
+* **Cloud Sync** — JSON objects uploaded to Supabase Storage when network available
+* **Metadata Generation** — Activity records created locally and synced after JSON storage
+* **Stream Processing** — Activity streams generated from JSON after successful upload
+
+**Data Flow:**
+1. **Record** → Local SQLite stores complete activity as JSON
+2. **Upload** → JSON object uploaded to Supabase Storage (source of truth)
+3. **Process** → Activity metadata record generated locally and inserted
+4. **Streams** → Activity streams generated and inserted after JSON processing
+5. **Analytics** — Core package processes JSON for performance calculations
+
+### Performance Analysis
 
 Activity data flows through the **core package** for consistent analysis:
 
-* **Performance Metrics** — TSS, normalized power, intensity factors
-* **Training Load Analytics** — CTL, ATL, TSB
-* **Compliance Scoring** — Workout matching algorithms
-* **Zone Analysis** — Training zone calculations
+* **Performance Metrics** — TSS, normalized power, intensity factors calculated from JSON
+* **Training Load Analytics** — CTL, ATL, TSB derived from activity metadata
+* **Compliance Scoring** — Workout matching algorithms using JSON activity structure
+* **Zone Analysis** — Training zone calculations using core package algorithms
 
 ### Activity Streams
 
-Time-series data processed through core package utilities:
+Time-series data processed from JSON source through core package utilities:
 
-* Standardized metric types and validation
-* Performance curve calculations
-* Stream processing and aggregation algorithms
-* Real-time analytics during activity recording
+* **Generated from JSON** — All streams derived from primary JSON activity data
+* **Standardized Metrics** — Core package ensures consistent metric types and validation
+* **Performance Curves** — Power/HR curves calculated from JSON streams
+* **Real-time Processing** — Stream aggregation during activity recording
 
 ---
 
-## 🔄 Hybrid Local-First Architecture
+## 🔄 Local-First Architecture
 
-* **Record Locally** — Expo-SQLite with core package validation
-* **Background Sync** — Core package ensures data integrity
-* **Conflict Resolution** — Smart merging with server validation
-* **Intelligent Alerts** — Notifications for missing athlete metrics
+* **Record Locally** — Expo-SQLite captures complete activities as JSON with core package validation
+* **JSON Source of Truth** — All activity data stored primarily as JSON objects
+* **Background Sync** — Core package ensures data integrity during upload process
+* **Metadata Derivation** — Activity records and streams generated from JSON post-upload
+* **Conflict Resolution** — Smart merging using JSON timestamps and core validation
 
 ---
 
@@ -180,32 +198,33 @@ Time-series data processed through core package utilities:
 
 ### 🔄 Shared Business Logic via Core Package
 
-* Consistent calculations across platforms
-* Unified validation
-* Type safety with TypeScript
-* Client-side performance optimization
-* Instant feedback without API calls
+* **Database Independent** — Core package has zero database dependencies
+* **Consistent Calculations** — Same algorithms across platforms
+* **Unified Validation** — JSON schema validation using Zod
+* **Type Safety** — Full TypeScript support without ORM coupling
+* **Client-side Performance** — Instant calculations without API calls
 
 ### 📊 Advanced Analytics
 
-* Training load models: CTL/ATL/TSB
-* Performance analytics: Power curves, trends
-* Compliance tracking: Plan adherence scoring
-* Zone-based analysis: Heart rate and power zones
+* **JSON-Derived Metrics** — All analytics calculated from JSON source data
+* **Training Load Models** — CTL/ATL/TSB from activity metadata
+* **Performance Analytics** — Power curves, trends from JSON streams
+* **Compliance Tracking** — Plan adherence using JSON workout structures
+* **Zone Analysis** — Heart rate and power zones from core calculations
 
 ### 🔐 Enterprise Security
 
-* Validated data integrity
-* Row level security
-* Encrypted storage
-* Audit logging
+* **Validated Data Integrity** — Core package schemas ensure data quality
+* **Row Level Security** — Database-level access control
+* **Encrypted Storage** — Secure local and cloud storage
+* **Audit Logging** — Complete activity history preservation
 
 ### 🚀 Developer Experience
 
-* Shared core package
-* End-to-end TypeScript type safety
-* Hot reloading
-* Consistent behavior across platforms
+* **Independent Core Package** — Pure TypeScript, fully testable in isolation
+* **End-to-end Type Safety** — From JSON validation to UI components
+* **Hot Reloading** — Fast development iteration
+* **Consistent Behavior** — Same business logic across all platforms
 
 ---
 
@@ -216,7 +235,8 @@ Time-series data processed through core package utilities:
 | Business Logic | `@turbofit/core`      | `@turbofit/core`      | Core Package |
 | Frontend       | Expo 53, React Native | Next.js 15, React 19  | -            |
 | Local Storage  | Expo-SQLite (SQLite)  | -                     | -            |
-| Cloud Database | Drizzle API           | Drizzle API           | PostgreSQL   |
+| Cloud Storage  | Supabase Storage      | Supabase Storage      | JSON Files   |
+| Cloud Database | API → Drizzle         | API → Drizzle         | PostgreSQL   |
 | Styling        | NativeWind 4.1        | Tailwind CSS          | -            |
 | State          | SQLite + React Query  | React Query + Zustand | -            |
 
@@ -232,7 +252,7 @@ turbofit/
 │   ├── native/          # Mobile app (Expo + React Native)
 │   └── web/             # Web dashboard (Next.js)
 ├── packages/
-│   ├── core/            # 🌟 Shared business logic, types, calculations
+│   ├── core/            # 🌟 Database-independent business logic, types, calculations
 │   ├── drizzle/         # Database schema, migrations, queries
 │   └── config/          # Shared configuration
 ```
@@ -241,8 +261,8 @@ turbofit/
 
 ```
 packages/core/
-├── types/               # Database types and enhanced interfaces
-├── schemas/             # Zod validation schemas
+├── types/               # Platform-agnostic types and interfaces
+├── schemas/             # Zod validation schemas for JSON data
 ├── calculations/        # Performance and training calculations
 ├── validators/          # Data validation utilities
 └── utils/               # Shared utilities and constants
@@ -266,7 +286,7 @@ bun test     # Run all tests including core package tests
 ```bash
 cd packages/core
 bun build    # Build core package
-bun test     # Test core package
+bun test     # Test core package (no database dependencies)
 bun dev      # Watch mode for core package development
 ```
 
@@ -283,11 +303,11 @@ bun dev      # Watch mode for core package development
 
 ## 📱 Mobile & 🌐 Web Dashboard Features
 
-* Real-time validation
-* Client-side analytics
-* Consistent training zones
-* Intelligent offline-first sync
-* Type-safe database interactions
+* **JSON-First Storage** — Single source of truth for all activity data
+* **Real-time Validation** — Core package schemas ensure data quality
+* **Client-side Analytics** — Performance calculations without server dependencies
+* **Consistent Training Zones** — Core package algorithms across platforms
+* **Intelligent Offline-first Sync** — JSON-based conflict resolution
 
 ---
 
@@ -295,16 +315,16 @@ bun dev      # Watch mode for core package development
 
 **Core Package Testing:**
 
-* Algorithm validation
-* Schema testing
-* Type safety
-* Cross-platform consistency
+* **Algorithm Validation** — Mathematical correctness of calculations
+* **Schema Testing** — JSON validation and type safety
+* **Pure Function Testing** — No database mocking required
+* **Cross-platform Consistency** — Same results across mobile and web
 
 **Application Testing:**
 
-* Integration tests
-* E2E user journey validation
-* Performance tests
+* **Integration Tests** — JSON storage and retrieval workflows
+* **E2E User Journeys** — Complete activity recording and analysis flows
+* **Performance Tests** — Large JSON processing and analytics
 
 ---
 
@@ -366,4 +386,4 @@ Built with modern tools and technologies:
 
 ---
 
-**TurboFit** — Enterprise-grade fitness tracking with local-first architecture 🚀
+**TurboFit** — Enterprise-grade fitness tracking with JSON-first, local-first architecture 🚀
