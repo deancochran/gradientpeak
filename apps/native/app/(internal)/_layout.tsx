@@ -5,6 +5,8 @@ import { router, Tabs } from "expo-router";
 import React from "react";
 import { ActivityIndicator, Animated, View } from "react-native";
 
+import { useRecordingSession } from "@lib/hooks/useRecordingSession";
+
 // Animated icon component with enhanced styling
 function AnimatedIcon({ focused, name }: { focused: boolean; name: string }) {
   const scaleAnim = React.useRef(new Animated.Value(focused ? 1 : 0.9)).current;
@@ -86,6 +88,7 @@ function RecordButton({ focused }: { focused: boolean }) {
 export default function InternalLayout() {
   const { isDarkColorScheme } = useColorScheme();
   const { loading, initialized, isAuthenticated, hydrated } = useAuth();
+  const { hasActiveSession, isCheckingSession } = useRecordingSession();
 
   // Direct navigation effect
   React.useEffect(() => {
@@ -96,8 +99,18 @@ export default function InternalLayout() {
     }
   }, [loading, initialized, isAuthenticated, hydrated]);
 
+  // If there's an active recording session, force navigation to record screen and hide everything else
+  React.useEffect(() => {
+    if (hasActiveSession && !isCheckingSession) {
+      console.log(
+        "🔒 Active recording session detected - forcing navigation to record screen",
+      );
+      router.replace("/(internal)/record");
+    }
+  }, [hasActiveSession, isCheckingSession, router]);
+
   // Show loading while determining auth state
-  if (!initialized || !hydrated || loading) {
+  if (!initialized || !hydrated || loading || isCheckingSession) {
     return (
       <View
         style={{

@@ -21,16 +21,27 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
   onResume,
   hasPermissions,
 }) => {
-  if (!isRecording) {
+  // Show initial state when not recording
+  if (!isRecording && !isPaused) {
     return (
       <View style={styles.footerInitial}>
-        <TouchableOpacity style={styles.startButton} onPress={onStart}>
-          <Text style={styles.startButtonText}>Start Activity</Text>
+        <TouchableOpacity
+          style={[
+            styles.startButton,
+            !hasPermissions && styles.startButtonDisabled,
+          ]}
+          onPress={onStart}
+          disabled={!hasPermissions}
+        >
+          <Text style={styles.startButtonText}>
+            {hasPermissions ? "Start Activity" : "Permissions Required"}
+          </Text>
         </TouchableOpacity>
       </View>
     );
   }
 
+  // Show recording controls when active or paused
   return (
     <View style={styles.footerRecording}>
       <TouchableOpacity style={styles.stopButton} onPress={onStop}>
@@ -39,15 +50,21 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
       </TouchableOpacity>
 
       <TouchableOpacity
-        style={styles.mainActionButton}
+        style={[styles.mainActionButton, isPaused && styles.pausedButton]}
         onPress={isPaused ? onResume : onPause}
       >
         <Ionicons
           name={isPaused ? "play-circle" : "pause-circle"}
           size={80}
-          color="#111827"
+          color={isPaused ? "#10b981" : "#111827"}
         />
       </TouchableOpacity>
+
+      {isPaused && (
+        <View style={styles.pausedIndicator}>
+          <Text style={styles.pausedText}>Activity Paused</Text>
+        </View>
+      )}
 
       {/* Spacer for layout balance */}
       <View style={{ width: 60 }} />
@@ -58,6 +75,8 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
 const styles = StyleSheet.create({
   footerInitial: {
     alignItems: "center",
+    paddingHorizontal: 20,
+    paddingBottom: 20,
   },
   startButton: {
     backgroundColor: "#111827",
@@ -70,15 +89,23 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
+  startButtonDisabled: {
+    backgroundColor: "#9ca3af",
+    shadowOpacity: 0.1,
+  },
   startButtonText: {
     color: "#ffffff",
     fontSize: 18,
     fontWeight: "600",
+    textAlign: "center",
   },
   footerRecording: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    position: "relative",
   },
   stopButton: {
     alignItems: "center",
@@ -94,5 +121,28 @@ const styles = StyleSheet.create({
   mainActionButton: {
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  pausedButton: {
+    opacity: 0.9,
+  },
+  pausedIndicator: {
+    position: "absolute",
+    bottom: 90,
+    left: "50%",
+    transform: [{ translateX: -50 }],
+    backgroundColor: "#f59e0b",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  pausedText: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "600",
   },
 });

@@ -496,26 +496,33 @@ export class ActivityRecorderService {
 
   private static async startLocationTracking(): Promise<void> {
     try {
+      console.log("🛰️ Starting GPS location tracking...");
+
       const { status: foregroundStatus } =
         await Location.requestForegroundPermissionsAsync();
       const { status: backgroundStatus } =
         await Location.requestBackgroundPermissionsAsync();
 
       if (foregroundStatus !== "granted" || backgroundStatus !== "granted") {
-        console.warn("Location permissions not granted");
-        return;
+        console.warn("🛰️ Location permissions not granted:", {
+          foregroundStatus,
+          backgroundStatus,
+        });
+        throw new Error("Location permissions not granted");
       }
 
-      // Start background location updates
+      // Start background location updates with optimized settings
       await Location.startLocationUpdatesAsync(LOCATION_TRACKING_TASK, {
         accuracy: Location.Accuracy.BestForNavigation,
-        timeInterval: 1000,
-        distanceInterval: 2,
+        timeInterval: 1000, // 1 second intervals
+        distanceInterval: 1, // Track every 1 meter
+        deferredUpdatesInterval: 2000, // Defer updates for 2 seconds max
         showsBackgroundLocationIndicator: true,
         foregroundService: {
           notificationTitle: "Recording Activity",
           notificationBody: "TurboFit is tracking your activity",
-          notificationColor: "#ff6600",
+          notificationColor: "#10b981",
+          killServiceOnDestroy: false,
         },
       });
 
@@ -524,25 +531,67 @@ export class ActivityRecorderService {
         {
           accuracy: Location.Accuracy.BestForNavigation,
           timeInterval: 1000,
-          distanceInterval: 2,
+          distanceInterval: 1,
+          mayShowUserSettingsDialog: false,
         },
         (location) => {
-          const gpsPoint: GpsDataPoint = {
-            timestamp: new Date(location.timestamp),
-            positionLat: location.coords.latitude * 11930464.7111,
-            positionLong: location.coords.longitude * 11930464.7111,
-            altitude: location.coords.altitude || undefined,
-            speed: location.coords.speed || undefined,
-            gpsAccuracy: location.coords.accuracy || undefined,
-          };
+          try {
+            const gpsPoint: GpsDataPoint = {
+              timestamp: new Date(location.timestamp),
+              positionLat: location.coords.latitude * 11930464.7111, // Convert to semicircles
+              positionLong: location.coords.longitude * 11930464.7111, // Convert to semicircles
+              altitude: location.coords.altitude || undefined,
+              speed: location.coords.speed
+                ? Math.max(0, location.coords.speed)
+                : undefined, // Ensure non-negative
+              gpsAccuracy: location.coords.accuracy || undefined,
+            };
 
-          this.addRecordMessage(gpsPoint);
+            // Calculate distance from previous point if available
+            if (
+              this.currentSession &&
+              this.currentSession.recordMessages.length > 0
+            ) {
+              const lastMessage =
+                this.currentSession.recordMessages[
+                  this.currentSession.recordMessages.length - 1
+                ];
+              if (lastMessage.positionLat && lastMessage.positionLong) {
+                const distance = this.calculateDistance(
+                  lastMessage.positionLat / 11930464.7111,
+                  lastMessage.positionLong / 11930464.7111,
+                  location.coords.latitude,
+                  location.coords.longitude,
+                );
+
+                // Add cumulative distance
+                const currentDistance =
+                  this.currentSession.liveMetrics.distance || 0;
+                gpsPoint.distance = currentDistance + distance;
+              }
+            }
+
+            this.addRecordMessage(gpsPoint);
+
+            // Log GPS quality periodically
+            if (
+              this.currentSession &&
+              this.currentSession.recordMessages.length % 10 === 0
+            ) {
+              console.log(
+                `🛰️ GPS Update: accuracy=${location.coords.accuracy}m, speed=${location.coords.speed}m/s`,
+              );
+            }
+          } catch (error) {
+            console.error("🛰️ Error processing GPS location:", error);
+          }
         },
       );
 
-      console.log("Location tracking started");
+      console.log("🛰️ Location tracking started successfully");
     } catch (error) {
-      console.error("Error starting location tracking:", error);
+      console.error("🛰️ Error starting location tracking:", error);
+      throw error;
     }
   }
 
@@ -617,8 +666,9 @@ export class ActivityRecorderService {
 
     const { data } = dataPoint;
     const metrics = this.currentSession.liveMetrics;
+    const records = this.currentSession.recordMessages;
 
-    // Update distance
+    // Update distance (from GPS data)
     if (
       data.distance !== undefined &&
       data.distance > (metrics.distance || 0)
@@ -626,38 +676,115 @@ export class ActivityRecorderService {
       metrics.distance = data.distance;
     }
 
-    // Update current values
+    // Update current instantaneous values
     if (data.speed !== undefined) {
       metrics.currentSpeed = data.speed;
+      metrics.maxSpeed = Math.max(metrics.maxSpeed || 0, data.speed);
     }
     if (data.heartRate !== undefined) {
       metrics.currentHeartRate = data.heartRate;
+      metrics.maxHeartRate = Math.max(
+        metrics.maxHeartRate || 0,
+        data.heartRate,
+      );
+      metrics.minHeartRate = Math.min(
+        metrics.minHeartRate || 999,
+        data.heartRate,
+      );
     }
     if (data.power !== undefined) {
       metrics.currentPower = data.power;
+      metrics.maxPower = Math.max(metrics.maxPower || 0, data.power);
     }
     if (data.cadence !== undefined) {
       metrics.currentCadence = data.cadence;
+      metrics.maxCadence = Math.max(metrics.maxCadence || 0, data.cadence);
+    }
+    if (data.altitude !== undefined) {
+      // Simple elevation gain calculation
+      if (metrics.elevation === undefined) {
+        metrics.elevation = 0;
+      }
+      const lastAltitude =
+        records.length > 0 ? records[records.length - 1]?.altitude : undefined;
+      if (lastAltitude && data.altitude > lastAltitude) {
+        metrics.elevation += data.altitude - lastAltitude;
+      }
     }
 
-    // Calculate averages (simplified)
-    const records = this.currentSession.recordMessages;
+    // Calculate running averages (more efficient than recalculating all)
     if (records.length > 0) {
-      const heartRates = records
+      // Heart Rate Average
+      const heartRateRecords = records
         .filter((r) => r.heartRate)
-        .map((r) => r.heartRate);
-      if (heartRates.length > 0) {
+        .map((r) => r.heartRate as number);
+      if (heartRateRecords.length > 0) {
         metrics.avgHeartRate = Math.round(
-          heartRates.reduce((a, b) => a + b, 0) / heartRates.length,
+          heartRateRecords.reduce((a, b) => a + b, 0) / heartRateRecords.length,
         );
       }
 
-      const powers = records.filter((r) => r.power).map((r) => r.power);
-      if (powers.length > 0) {
+      // Power Average
+      const powerRecords = records
+        .filter((r) => r.power)
+        .map((r) => r.power as number);
+      if (powerRecords.length > 0) {
         metrics.avgPower = Math.round(
-          powers.reduce((a, b) => a + b, 0) / powers.length,
+          powerRecords.reduce((a, b) => a + b, 0) / powerRecords.length,
         );
       }
+
+      // Speed Average
+      const speedRecords = records
+        .filter((r) => r.speed && r.speed > 0)
+        .map((r) => r.speed as number);
+      if (speedRecords.length > 0) {
+        metrics.avgSpeed =
+          speedRecords.reduce((a, b) => a + b, 0) / speedRecords.length;
+      }
+
+      // Cadence Average
+      const cadenceRecords = records
+        .filter((r) => r.cadence)
+        .map((r) => r.cadence as number);
+      if (cadenceRecords.length > 0) {
+        metrics.avgCadence = Math.round(
+          cadenceRecords.reduce((a, b) => a + b, 0) / cadenceRecords.length,
+        );
+      }
+
+      // Estimate calories burned (rough calculation)
+      if (metrics.totalTimerTime && metrics.totalTimerTime > 0) {
+        const timeHours = metrics.totalTimerTime / 3600;
+        let caloriesPerHour = 300; // Base metabolic rate
+
+        // Adjust based on heart rate if available
+        if (metrics.avgHeartRate) {
+          caloriesPerHour = Math.max(300, (metrics.avgHeartRate - 50) * 8);
+        }
+
+        // Adjust based on power if available
+        if (metrics.avgPower) {
+          caloriesPerHour = Math.max(caloriesPerHour, metrics.avgPower * 3.6);
+        }
+
+        metrics.calories = Math.round(caloriesPerHour * timeHours);
+      }
+    }
+
+    // Log metrics update occasionally for debugging
+    if (records.length % 20 === 0 && records.length > 0) {
+      console.log("📊 Live Metrics Update:", {
+        distance: metrics.distance
+          ? `${(metrics.distance / 1000).toFixed(2)}km`
+          : "0km",
+        speed: metrics.currentSpeed
+          ? `${metrics.currentSpeed.toFixed(1)}m/s`
+          : "0m/s",
+        hr: metrics.currentHeartRate || "N/A",
+        power: metrics.currentPower || "N/A",
+        duration: metrics.totalTimerTime || 0,
+      });
     }
   }
 
@@ -774,6 +901,30 @@ export class ActivityRecorderService {
       return `${hours}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
     }
     return `${minutes}:${secs.toString().padStart(2, "0")}`;
+  }
+
+  /**
+   * Calculate distance between two GPS points using Haversine formula
+   */
+  private static calculateDistance(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number,
+  ): number {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = (lat1 * Math.PI) / 180;
+    const φ2 = (lat2 * Math.PI) / 180;
+    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+    const a =
+      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    const distance = R * c; // Distance in meters
+    return distance;
   }
 
   private static async saveActivityJson(

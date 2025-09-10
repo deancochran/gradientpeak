@@ -33,24 +33,24 @@ const isAuthenticated = useIsAuthenticated();
 const user = useUser();
 ```
 
-### 🏃 Workout Store (`workout-store.ts`)
+### 🏃 Activity Store (`activity-store.ts`)
 
-Handles active workout recording state and metrics.
+Handles active activity recording state and metrics.
 
 **Key Features:**
-- Real-time workout tracking
-- Workout metrics and settings
+- Real-time activity tracking
+- Activity metrics and settings
 - Integration with ActivityRecorderService
 - Pause/resume functionality
 - Session recovery
 
 **Usage:**
 ```typescript
-import { 
-  useActiveWorkout, 
-  useIsRecording, 
+import {
+  useActiveWorkout,
+  useIsRecording,
   useWorkoutMetrics,
-  useWorkoutStore 
+  useWorkoutStore
 } from '@/lib/stores';
 
 const activeWorkout = useActiveWorkout();
@@ -66,17 +66,17 @@ Manages user preferences and app configuration.
 - Display preferences (theme, units, language)
 - Notification settings
 - Privacy controls
-- Workout preferences
+- Activity preferences
 - Data sync settings
 - Import/export functionality
 
 **Usage:**
 ```typescript
-import { 
-  useTheme, 
-  useUnits, 
+import {
+  useTheme,
+  useUnits,
   useNotificationSettings,
-  useSettingsStore 
+  useSettingsStore
 } from '@/lib/stores';
 
 const theme = useTheme();
@@ -98,11 +98,11 @@ Controls UI state including modals, alerts, and navigation.
 
 **Usage:**
 ```typescript
-import { 
-  useActiveModal, 
-  useLoading, 
+import {
+  useActiveModal,
+  useLoading,
   useAlerts,
-  useUIStore 
+  useUIStore
 } from '@/lib/stores';
 
 const activeModal = useActiveModal();
@@ -145,7 +145,7 @@ await cleanupStores();
 All stores use Zustand's persistence middleware with AsyncStorage:
 
 - **Auth Store**: Only persists non-sensitive initialization state
-- **Workout Store**: Persists settings and session indicators
+- **Activity Store**: Persists settings and session indicators
 - **Settings Store**: Persists all user preferences with migration support
 - **UI Store**: Persists UI preferences like tab history and filters
 
@@ -203,12 +203,12 @@ const alertType: AlertType = 'success';
 Stores can communicate with each other through actions:
 
 ```typescript
-// In workout store - notify UI store of workout completion
+// In activity store - notify UI store of activity completion
 const { showAlert } = useUIStore.getState();
 showAlert({
   type: 'success',
-  title: 'Workout Complete!',
-  message: 'Great job on your workout!',
+  title: 'Activity Complete!',
+  message: 'Great job on your activity!',
 });
 ```
 
@@ -220,13 +220,13 @@ For testing components that use stores:
 import { act, renderHook } from '@testing-library/react-native';
 import { useWorkoutStore } from '@/lib/stores';
 
-test('should start workout correctly', async () => {
+test('should start activity correctly', async () => {
   const { result } = renderHook(() => useWorkoutStore());
-  
+
   await act(async () => {
     await result.current.startWorkout('running');
   });
-  
+
   expect(result.current.isRecording).toBe(true);
 });
 ```
@@ -256,7 +256,7 @@ Enable Zustand devtools for debugging:
 ```typescript
 // In development, you can access store state directly
 console.log('Auth State:', useAuthStore.getState());
-console.log('Workout State:', useWorkoutStore.getState());
+console.log('Activity State:', useWorkoutStore.getState());
 ```
 
 ## Performance Considerations

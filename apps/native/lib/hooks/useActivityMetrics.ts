@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useMemo } from "react";
 
+import type { ActivityMetric, GpsLocation } from "@lib/types/activity";
 import {
   calculateAveragePace,
   estimateCalories,
@@ -8,6 +9,15 @@ import {
   formatPace,
   metersToKm,
 } from "@lib/utils/activity-utils";
+
+// Import from useBluetooth hook
+type SensorValues = {
+  heartRate?: number;
+  power?: number;
+  cadence?: number;
+  speed?: number;
+  temperature?: number;
+};
 
 interface UseActivityMetricsParams {
   duration: number;

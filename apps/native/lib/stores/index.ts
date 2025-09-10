@@ -8,7 +8,7 @@ export {
   type AuthState,
 } from "./auth-store";
 
-// Workout Store
+// Activity Store
 export {
   useActiveWorkout,
   useHasActiveSession,
@@ -22,7 +22,7 @@ export {
   type WorkoutState,
   type WorkoutStatus,
   type WorkoutType,
-} from "./workout-store";
+} from "./activity-store";
 
 // Settings Store
 export {
@@ -112,8 +112,8 @@ export const initializeStores = async () => {
     const authStore = useAuthStore.getState();
     await authStore.initialize();
 
-    // Recover any active workout session
-    const { useWorkoutStore } = await import("./workout-store");
+    // Recover any active activity session
+    const { useWorkoutStore } = await import("./activity-store");
     const workoutStore = useWorkoutStore.getState();
     await workoutStore.recoverWorkout();
 
@@ -133,8 +133,8 @@ export const cleanupStores = async () => {
   const { useUIStore } = await import("./ui-store");
   useUIStore.getState().resetUIState();
 
-  // Clear any temporary workout data
-  const { useWorkoutStore } = await import("./workout-store");
+  // Clear any temporary activity data
+  const { useWorkoutStore } = await import("./activity-store");
   useWorkoutStore.getState().clearActiveWorkout();
 
   // Reset activity data store
