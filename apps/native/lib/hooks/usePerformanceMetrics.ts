@@ -1,6 +1,7 @@
+import { ActivityService } from "@lib/services/activity-service";
 import { ProfileService } from "@lib/services/profile-service";
-import { calculateTrainingLoad } from "@repo/core/calculations";
-import type { PerformanceMetrics } from "@repo/core/schemas";
+import type { PerformanceMetrics, TSSHistoryEntry } from "@repo/core";
+import { analyzeTrainingLoad } from "@repo/core/calculations";
 import { useEffect, useState } from "react";
 
 export function usePerformanceMetrics() {
@@ -12,7 +13,9 @@ export function usePerformanceMetrics() {
     try {
       setIsLoading(true);
       setError(null);
-      console.log("📊 Performance Metrics Hook - Loading metrics");
+      console.log(
+        "📊 Performance Metrics Hook - Loading real metrics from activities",
+      );
 
       const profile = await ProfileService.getCurrentProfile();
       if (!profile) {
@@ -21,47 +24,109 @@ export function usePerformanceMetrics() {
         return;
       }
 
-      // Generate mock training load data for now
-      // In production this would fetch from database using getTrainingLoadData
-      const mockTssHistory = Array.from({ length: 90 }, (_, i) => ({
-        date: new Date(Date.now() - i * 24 * 60 * 60 * 1000),
-        tss: Math.max(0, 50 + Math.sin(i / 7) * 30 + Math.random() * 20),
-      })).reverse();
+      // Get real activities from local database
+      const activities = await ActivityService.getActivities(profile.id);
+      console.log(
+        "📊 Performance Metrics Hook - Loaded activities:",
+        activities.length,
+      );
 
-      // Calculate current training load
-      const trainingLoad = calculateTrainingLoad(mockTssHistory);
-
-      // Calculate weekly and monthly TSS
+      // Build TSS history from real activities
+      const tssHistory: TSSHistoryEntry[] = [];
       const now = new Date();
+      const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+      // Process activities to build TSS history
+      for (const activity of activities) {
+        const activityDate = new Date(activity.startDate);
+
+        // Only include activities from the last 90 days
+        if (activityDate >= ninetyDaysAgo && activityDate <= now) {
+          // Use TSS from activity if available, otherwise estimate based on duration
+          let tss = activity.tss || 0;
+
+          // If no TSS recorded but we have activity data, estimate it
+          if (tss === 0 && activity.totalTime && activity.totalTime > 0) {
+            // Simple estimation: ~50 TSS per hour for moderate intensity
+            const hours = activity.totalTime / 3600;
+            tss = hours * 50;
+
+            // Adjust based on activity type and intensity indicators
+            if (activity.avgHeartRate && profile.thresholdHr) {
+              const intensityFactor =
+                activity.avgHeartRate / profile.thresholdHr;
+              tss = hours * Math.pow(intensityFactor, 2) * 100;
+            }
+
+            // Cap estimated TSS at reasonable values
+            tss = Math.min(tss, 300);
+          }
+
+          if (tss > 0) {
+            tssHistory.push({
+              date: activityDate,
+              tss: Math.round(tss * 10) / 10,
+            });
+          }
+        }
+      }
+
+      // Fill in missing days with 0 TSS for accurate CTL/ATL calculation
+      const filledTssHistory: TSSHistoryEntry[] = [];
+      for (let i = 89; i >= 0; i--) {
+        const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+        const existingEntry = tssHistory.find(
+          (entry) => entry.date.toDateString() === date.toDateString(),
+        );
+
+        filledTssHistory.push({
+          date,
+          tss: existingEntry ? existingEntry.tss : 0,
+        });
+      }
+
+      console.log(
+        "📊 Performance Metrics Hook - TSS History entries:",
+        filledTssHistory.length,
+      );
+
+      // Calculate training load using real data
+      const trainingLoadAnalysis = analyzeTrainingLoad(filledTssHistory);
+      const { ctl, atl, tsb, form, fitnessLevel } = trainingLoadAnalysis;
+
+      // Calculate weekly and monthly TSS from real activities
       const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
       const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-      const weeklyTSS = mockTssHistory
-        .filter((d) => d.date >= oneWeekAgo)
-        .reduce((sum, d) => sum + d.tss, 0);
+      const weeklyTSS = filledTssHistory
+        .filter((entry) => entry.date >= oneWeekAgo)
+        .reduce((sum, entry) => sum + entry.tss, 0);
 
-      const monthlyTSS = mockTssHistory
-        .filter((d) => d.date >= oneMonthAgo)
-        .reduce((sum, d) => sum + d.tss, 0);
+      const monthlyTSS = filledTssHistory
+        .filter((entry) => entry.date >= oneMonthAgo)
+        .reduce((sum, entry) => sum + entry.tss, 0);
 
-      // Determine fitness level based on CTL
+      // Map fitness level to metrics fitness
       let fitness: PerformanceMetrics["fitness"];
-      if (trainingLoad.ctl > 80) fitness = "excellent";
-      else if (trainingLoad.ctl > 60) fitness = "good";
-      else if (trainingLoad.ctl > 40) fitness = "average";
-      else fitness = "poor";
-
-      // Determine form based on TSB
-      let form: PerformanceMetrics["form"];
-      if (trainingLoad.tsb > 10) form = "optimal";
-      else if (trainingLoad.tsb > -10) form = "good";
-      else if (trainingLoad.tsb > -30) form = "tired";
-      else form = "very_tired";
+      switch (fitnessLevel) {
+        case "very_high":
+          fitness = "excellent";
+          break;
+        case "high":
+          fitness = "good";
+          break;
+        case "moderate":
+          fitness = "average";
+          break;
+        default:
+          fitness = "poor";
+          break;
+      }
 
       const calculatedMetrics: PerformanceMetrics = {
-        currentCTL: trainingLoad.ctl,
-        currentATL: trainingLoad.atl,
-        currentTSB: trainingLoad.tsb,
+        currentCTL: Math.round(ctl * 10) / 10,
+        currentATL: Math.round(atl * 10) / 10,
+        currentTSB: Math.round(tsb * 10) / 10,
         weeklyTSS: Math.round(weeklyTSS),
         monthlyTSS: Math.round(monthlyTSS),
         fitness,
@@ -69,18 +134,32 @@ export function usePerformanceMetrics() {
       };
 
       setMetrics(calculatedMetrics);
-      console.log("📊 Performance Metrics Hook - Metrics loaded:", {
-        ctl: trainingLoad.ctl.toFixed(1),
-        atl: trainingLoad.atl.toFixed(1),
-        tsb: trainingLoad.tsb.toFixed(1),
-        form,
+      console.log("📊 Performance Metrics Hook - Real metrics calculated:", {
+        ctl: calculatedMetrics.currentCTL,
+        atl: calculatedMetrics.currentATL,
+        tsb: calculatedMetrics.currentTSB,
+        weeklyTSS: calculatedMetrics.weeklyTSS,
+        monthlyTSS: calculatedMetrics.monthlyTSS,
+        form: calculatedMetrics.form,
+        activitiesProcessed: activities.length,
       });
     } catch (err) {
       console.error(
-        "📊 Performance Metrics Hook - Error loading metrics:",
+        "📊 Performance Metrics Hook - Error loading real metrics:",
         err,
       );
-      setError("Failed to load performance metrics");
+      setError("Failed to load performance metrics from activities");
+
+      // Fallback to empty metrics rather than mock data
+      setMetrics({
+        currentCTL: 0,
+        currentATL: 0,
+        currentTSB: 0,
+        weeklyTSS: 0,
+        monthlyTSS: 0,
+        fitness: "poor",
+        form: "optimal",
+      });
     } finally {
       setIsLoading(false);
     }
@@ -91,7 +170,7 @@ export function usePerformanceMetrics() {
   }, []);
 
   const refreshMetrics = () => {
-    console.log("📊 Performance Metrics Hook - Refreshing metrics");
+    console.log("📊 Performance Metrics Hook - Refreshing real metrics");
     loadMetrics();
   };
 

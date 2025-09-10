@@ -72,6 +72,30 @@ export {
   type UIState,
 } from "./ui-store";
 
+// Activity Data Store
+export {
+  useActivities,
+  useActivitiesError,
+  useActivitiesLoading,
+  useActivityDataStore,
+  useCurrentFitness,
+  useCurrentForm,
+  useGetActivitiesForPeriod,
+  useGetTSSHistoryForPeriod,
+  useLoadActivities,
+  useLoadPerformanceMetrics,
+  usePerformanceMetrics,
+  usePerformanceMetricsError,
+  usePerformanceMetricsLoading,
+  useRecentActivities,
+  useRefreshAllData,
+  useSyncStatus,
+  useTrainingLoadAnalysis,
+  useTSSHistory,
+  useWeeklyTSS,
+  type ActivityDataState,
+} from "./activity-data-store";
+
 // Store initialization utilities
 let _storesInitialized = false;
 
@@ -92,6 +116,11 @@ export const initializeStores = async () => {
     const { useWorkoutStore } = await import("./workout-store");
     const workoutStore = useWorkoutStore.getState();
     await workoutStore.recoverWorkout();
+
+    // Initialize activity data store
+    const { useActivityDataStore } = await import("./activity-data-store");
+    const activityStore = useActivityDataStore.getState();
+    // Activity store will be loaded when profile is available
   } catch (error) {
     _storesInitialized = false; // Reset on error so retry is possible
     throw error;
@@ -107,4 +136,8 @@ export const cleanupStores = async () => {
   // Clear any temporary workout data
   const { useWorkoutStore } = await import("./workout-store");
   useWorkoutStore.getState().clearActiveWorkout();
+
+  // Reset activity data store
+  const { useActivityDataStore } = await import("./activity-data-store");
+  useActivityDataStore.getState().resetStore();
 };

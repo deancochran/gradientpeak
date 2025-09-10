@@ -49,17 +49,7 @@ export default function HomeScreen() {
 
   // Initialize screen
   useEffect(() => {
-    console.log("🏠 Home Screen - Initializing");
-
-    // Load activities when profile is available
-    if (profile?.id) {
-      console.log("🏠 Home Screen - Profile loaded:", {
-        username: profile.username,
-        ftp: profile.ftp,
-        thresholdHr: profile.thresholdHr,
-      });
-      loadActivities(profile.id);
-    }
+    console.log("🏠 Home Screen - Initializing with Zustand store");
 
     // Animate entrance
     Animated.parallel([
@@ -74,6 +64,21 @@ export default function HomeScreen() {
         useNativeDriver: true,
       }),
     ]).start();
+  }, []);
+
+  // Initialize screen
+  useEffect(() => {
+    console.log("🏠 Home Screen - Initializing");
+
+    // Load activities when profile is available
+    if (profile?.id) {
+      console.log("🏠 Home Screen - Profile loaded:", {
+        username: profile.username,
+        ftp: profile.ftp,
+        thresholdHr: profile.thresholdHr,
+      });
+      loadActivities(profile.id);
+    }
   }, [profile?.id]);
 
   const handleRefresh = useCallback(async () => {

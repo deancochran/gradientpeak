@@ -56,7 +56,7 @@ interface ChartData {
 }
 
 export default function TrendsScreen() {
-  // TanStack Query hooks
+  // Profile data
   const {
     data: profile,
     isLoading: profileLoading,
@@ -64,28 +64,24 @@ export default function TrendsScreen() {
     refetch: refetchProfile,
   } = useProfile();
 
+  // Period selection
   const [selectedPeriod, setSelectedPeriod] = useState<TrendsPeriod>(
     TREND_PERIODS[1],
   ); // 30D default
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  // Training load data
+  // Performance data
+  const { metrics: performanceMetrics, refreshMetrics } =
+    usePerformanceMetrics();
+
+  // Chart data
   const [trainingLoadData, setTrainingLoadData] = useState<ChartData | null>(
     null,
   );
   const [tssData, setTssData] = useState<ChartData | null>(null);
-  const [performanceData, setPerformanceData] = useState<{
-    currentCtl: number;
-    currentAtl: number;
-    currentTsb: number;
-    ctlTrend: number;
-    weeklyTss: number;
-    avgDailyTss: number;
-  } | null>(null);
 
-  const { metrics: performanceMetrics, refreshMetrics } =
-    usePerformanceMetrics();
+  // Loading states
+  const isLoading = profileLoading;
+  const error = profileError;
 
   useEffect(() => {
     console.log("📊 Trends Screen - Initializing");
@@ -94,9 +90,6 @@ export default function TrendsScreen() {
 
   const initializeTrendsScreen = async () => {
     if (profile) {
-      setIsLoading(true);
-      setError(null);
-
       console.log("📊 Trends Screen - Profile loaded:", {
         id: profile.id,
         ftp: profile.ftp,
@@ -105,7 +98,6 @@ export default function TrendsScreen() {
 
       await loadTrendsData();
     } else if (profileError) {
-      setError("Profile not found. Please set up your profile first.");
       console.warn("📊 Trends Screen - No profile found");
     }
   };
@@ -121,7 +113,6 @@ export default function TrendsScreen() {
     const labels: string[] = [];
     const ctlData: number[] = [];
     const atlData: number[] = [];
-    const tsbData: number[] = [];
     const tssValues: number[] = [];
 
     // Generate data points
@@ -148,12 +139,10 @@ export default function TrendsScreen() {
       const dayIndex = days - 1 - i;
       const ctl = 40 + Math.sin(dayIndex / 10) * 15 + dayIndex * 0.3;
       const atl = 35 + Math.sin(dayIndex / 5) * 20 + dayIndex * 0.2;
-      const tsb = ctl - atl;
       const dailyTss = Math.max(0, 50 + Math.sin(dayIndex / 3) * 40);
 
       ctlData.push(Math.max(0, ctl));
       atlData.push(Math.max(0, atl));
-      tsbData.push(tsb);
       tssValues.push(dailyTss);
     }
 
@@ -166,7 +155,6 @@ export default function TrendsScreen() {
     const sampledAtlData = atlData.filter(
       (_, index) => index % sampleRate === 0,
     );
-    // Remove unused sampledTsbData and sampledTssData variables
 
     setTrainingLoadData({
       labels: sampledLabels,
@@ -193,26 +181,10 @@ export default function TrendsScreen() {
       ],
     });
 
-    // Calculate performance trends
-    const currentCtl = ctlData[ctlData.length - 1];
-    const currentAtl = atlData[atlData.length - 1];
-    const currentTsb = tsbData[tsbData.length - 1];
-    const weekAgoCtl = ctlData[Math.max(0, ctlData.length - 7)];
-
-    setPerformanceData({
-      currentCtl,
-      currentAtl,
-      currentTsb,
-      ctlTrend: currentCtl - weekAgoCtl,
-      weeklyTss: tssValues.slice(-7).reduce((sum, val) => sum + val, 0),
-      avgDailyTss:
-        tssValues.reduce((sum, val) => sum + val, 0) / tssValues.length,
-    });
-
-    console.log("📊 Trends Screen - Data loaded:", {
+    console.log("📊 Trends Screen - Chart data generated:", {
       points: sampledLabels.length,
-      currentCtl: currentCtl.toFixed(1),
-      currentTsb: currentTsb.toFixed(1),
+      currentCTL: performanceMetrics?.currentCTL || 0,
+      currentTSB: performanceMetrics?.currentTSB || 0,
     });
   };
 
@@ -247,12 +219,6 @@ export default function TrendsScreen() {
       default:
         return "#6b7280";
     }
-  };
-
-  const getTrendIcon = (trend: number) => {
-    if (trend > 2) return { name: "trending-up", color: "#10b981" };
-    if (trend < -2) return { name: "trending-down", color: "#ef4444" };
-    return { name: "remove", color: "#6b7280" };
   };
 
   if (isLoading) {
@@ -292,7 +258,9 @@ export default function TrendsScreen() {
 
         {error && (
           <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{error}</Text>
+            <Text style={styles.errorText}>
+              {typeof error === "string" ? error : "An error occurred"}
+            </Text>
           </View>
         )}
 
@@ -322,38 +290,26 @@ export default function TrendsScreen() {
         </View>
 
         {/* Current Performance Metrics */}
-        {performanceMetrics && performanceData && (
+        {performanceMetrics && (
           <View style={styles.metricsSection}>
             <Text style={styles.sectionTitle}>Current Performance</Text>
             <View style={styles.metricsGrid}>
               <View style={styles.metricCard}>
                 <Text style={styles.metricValue}>
-                  {performanceData.currentCtl.toFixed(1)}
+                  {performanceMetrics.currentCTL.toFixed(1)}
                 </Text>
                 <Text style={styles.metricLabel}>CTL (Fitness)</Text>
                 <View style={styles.trendIndicator}>
-                  <Ionicons
-                    name={
-                      getTrendIcon(performanceData.ctlTrend)
-                        .name as keyof typeof Ionicons.glyphMap
-                    }
-                    size={16}
-                    color={getTrendIcon(performanceData.ctlTrend).color}
-                  />
-                  <Text
-                    style={[
-                      styles.trendText,
-                      { color: getTrendIcon(performanceData.ctlTrend).color },
-                    ]}
-                  >
-                    {Math.abs(performanceData.ctlTrend).toFixed(1)}
+                  <Ionicons name="trending-up" size={16} color="#10b981" />
+                  <Text style={[styles.trendText, { color: "#10b981" }]}>
+                    {performanceMetrics.currentCTL.toFixed(1)}
                   </Text>
                 </View>
               </View>
 
               <View style={styles.metricCard}>
                 <Text style={styles.metricValue}>
-                  {performanceData.currentAtl.toFixed(1)}
+                  {performanceMetrics.currentATL.toFixed(1)}
                 </Text>
                 <Text style={styles.metricLabel}>ATL (Fatigue)</Text>
                 <Text style={styles.metricSubtext}>7-day avg</Text>
@@ -365,12 +321,14 @@ export default function TrendsScreen() {
                     styles.metricValue,
                     {
                       color:
-                        performanceData.currentTsb > 0 ? "#10b981" : "#ef4444",
+                        performanceMetrics.currentTSB > 0
+                          ? "#10b981"
+                          : "#ef4444",
                     },
                   ]}
                 >
-                  {performanceData.currentTsb > 0 ? "+" : ""}
-                  {performanceData.currentTsb.toFixed(1)}
+                  {performanceMetrics.currentTSB > 0 ? "+" : ""}
+                  {performanceMetrics.currentTSB.toFixed(1)}
                 </Text>
                 <Text style={styles.metricLabel}>TSB (Form)</Text>
                 <Text
@@ -385,12 +343,10 @@ export default function TrendsScreen() {
 
               <View style={styles.metricCard}>
                 <Text style={styles.metricValue}>
-                  {Math.round(performanceData.weeklyTss)}
+                  {performanceMetrics.weeklyTSS}
                 </Text>
                 <Text style={styles.metricLabel}>Weekly TSS</Text>
-                <Text style={styles.metricSubtext}>
-                  Avg: {Math.round(performanceData.avgDailyTss)}/day
-                </Text>
+                <Text style={styles.metricSubtext}>Last 7 days total</Text>
               </View>
             </View>
           </View>
@@ -493,9 +449,9 @@ export default function TrendsScreen() {
               <Text style={styles.insightTitle}>Fitness Trend</Text>
             </View>
             <Text style={styles.insightText}>
-              {(performanceData?.ctlTrend || 0) > 2
+              {performanceMetrics && performanceMetrics.currentCTL > 50
                 ? "Your fitness is improving steadily. Great progress!"
-                : (performanceData?.ctlTrend || 0) < -2
+                : performanceMetrics && performanceMetrics.currentCTL < 30
                   ? "Your fitness has declined recently. Consider increasing training volume."
                   : "Your fitness is stable. Consistent training pays off!"}
             </Text>
