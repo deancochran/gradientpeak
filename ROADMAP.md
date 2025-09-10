@@ -1,45 +1,5 @@
 # TurboFit Mobile App Modernization Tasks
 
-## 🔥 Critical Architecture Fixes
-
-### Integrate Modern Data Fetching
-- Install and configure TanStack Query
-- Add QueryClient provider to `app/_layout.tsx`
-- Replace all `useState` + `useEffect` patterns with `useQuery`/`useMutation`
-- Remove manual loading states in favor of Query's built-in states
-- Add React Query DevTools for development
-
-### Complete Backend Migration
-- **Refactor `activity-sync-service.ts`:**
-  - Keep direct Supabase Storage uploads (this is correct!)
-  - Update to use Next.js API for activity metadata and processing
-  - Flow: Upload file to Supabase Storage → Send file URL + metadata to Next.js API
-  - Add proper error handling and retry logic
-
-- **Refactor `profile-service.ts`:**
-  - Use Next.js API for profile operations
-  - Keep Supabase auth operations direct
-  - Implement optimistic updates with Query mutations
-
-- **Update API client methods:**
-  - Business logic operations go through Next.js API
-  - Keep auth and file operations direct to Supabase
-  - Add proper TypeScript return types
-  - Implement request/response interceptors for auth tokens
-
-## ⚡ State Management Modernization
-
-### Implement Zustand for Client State
-- Install Zustand with persistence middleware
-- Create domain-specific stores:
-  - `stores/auth-store.ts` - Auth state and actions
-  - `stores/workout-store.ts` - Active workout recording state
-  - `stores/settings-store.ts` - User preferences
-  - `stores/ui-store.ts` - UI state (modals, tabs, etc.)
-
-- Migrate `AuthContext` to Zustand store
-- Add workout recording store with persistence for recovery
-- Create custom hooks combining Query + Zustand for optimistic updates
 
 ## 🚀 Feature Completion
 
