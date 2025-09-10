@@ -4,9 +4,11 @@ import "@/global.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { AuthErrorBoundary } from "@/contexts/AuthErrorBoundary";
 import { PermissionsProvider } from "@/contexts/PermissionsContext";
-import migrations from "@/lib/db/local/migrations/migrations";
-import { useMigrations } from "@/lib/db/local/useMigrations";
+import { db } from "@/lib/db";
+import migrations from "@/lib/db/migrations/migrations";
 import { useColorScheme } from "@/lib/useColorScheme";
+import { useMigrations } from "drizzle-orm/expo-sqlite/migrator";
+
 import {
   DarkTheme,
   DefaultTheme,
@@ -53,7 +55,7 @@ export {
 } from "expo-router";
 
 function DrizzleProvider({ children }: { children: React.ReactNode }) {
-  const { success, error } = useMigrations(migrations);
+  const { success, error } = useMigrations(db, migrations);
 
   if (error) {
     // This will be caught by the ErrorBoundary

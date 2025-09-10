@@ -4,6 +4,9 @@
   "compilerOptions": {
     "types": ["expo-router"],
     "jsx": "react-jsx", // required for Expo + React 18+
+    "allowJs": true,
+    "checkJs": false,
+    "esModuleInterop": true,
     "strict": true,
     "baseUrl": ".",
     "paths": {

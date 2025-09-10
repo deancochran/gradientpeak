@@ -1,3 +1,5 @@
+import { drizzle } from "drizzle-orm/expo-sqlite";
+import { openDatabaseSync } from "expo-sqlite";
 /**
  * This file serves as the main entry point for all database-related modules.
  * It exports the local database hook and schema, as well as the online (remote)
@@ -7,8 +9,8 @@
  * @module
  */
 
-// Export the local database hook and schema
-export { schema as localSchema, useDb as useLocalDb } from "./local";
+const expoDb = openDatabaseSync("db.db");
+const db = drizzle(expoDb);
 
-// Export the online database client and schema
-export { db as onlineDb, onlineSchema } from "./online";
+// Also exporting the schema for convenience
+export { db };
