@@ -152,53 +152,42 @@ export const useSettingsStore = create<SettingsState>()(
         set((state) => ({
           notifications: { ...state.notifications, ...settings },
         }));
-        console.log(
-          "📳 Settings Store: Updated notification settings",
-          settings,
-        );
       },
 
       updatePrivacySettings: (settings) => {
         set((state) => ({
           privacy: { ...state.privacy, ...settings },
         }));
-        console.log("🔒 Settings Store: Updated privacy settings", settings);
       },
 
       updateWorkoutPreferences: (settings) => {
         set((state) => ({
           workout: { ...state.workout, ...settings },
         }));
-        console.log("🏃 Settings Store: Updated workout preferences", settings);
       },
 
       updateDisplaySettings: (settings) => {
         set((state) => ({
           display: { ...state.display, ...settings },
         }));
-        console.log("🎨 Settings Store: Updated display settings", settings);
       },
 
       updateDataSettings: (settings) => {
         set((state) => ({
           data: { ...state.data, ...settings },
         }));
-        console.log("💾 Settings Store: Updated data settings", settings);
       },
 
       setFirstLaunch: (isFirst) => {
         set({ isFirstLaunch: isFirst });
-        console.log("🚀 Settings Store: Set first launch", isFirst);
       },
 
       setOnboardingCompleted: (completed) => {
         set({ onboardingCompleted: completed });
-        console.log("✅ Settings Store: Set onboarding completed", completed);
       },
 
       setLastSyncTime: (time) => {
         set({ lastSyncTime: time });
-        console.log("🔄 Settings Store: Set last sync time", time);
       },
 
       resetToDefaults: () => {
@@ -209,7 +198,6 @@ export const useSettingsStore = create<SettingsState>()(
           display: defaultDisplaySettings,
           data: defaultDataSettings,
         });
-        console.log("🔄 Settings Store: Reset to defaults");
       },
 
       exportSettings: () => {
@@ -248,10 +236,9 @@ export const useSettingsStore = create<SettingsState>()(
             data: { ...state.data, ...importedData.data },
           });
 
-          console.log("📥 Settings Store: Successfully imported settings");
           return true;
         } catch (error) {
-          console.error("❌ Settings Store: Failed to import settings:", error);
+          console.error("Settings Store: Failed to import settings:", error);
           return false;
         }
       },

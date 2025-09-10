@@ -104,7 +104,6 @@ function DrizzleProvider({ children }: { children: React.ReactNode }) {
 }
 
 function RootLayoutInner() {
-  console.log("📱 ROOT LAYOUT INNER: Component function called");
   const { isDarkColorScheme } = useColorScheme();
 
   React.useEffect(() => {
@@ -162,48 +161,25 @@ function RootLayoutInner() {
   React.useEffect(() => {
     const checkAuthAndNavigate = async () => {
       try {
-        // Import auth store dynamically to avoid circular imports
         const { useAuthStore } = await import("@lib/stores");
         const authState = useAuthStore.getState();
 
-        console.log(
-          "📱 ROOT LAYOUT INNER: Checking auth state for navigation",
-          {
-            initialized: authState.initialized,
-            hydrated: authState.hydrated,
-            loading: authState.loading,
-            isAuthenticated: authState.isAuthenticated,
-          },
-        );
-
-        // Wait for auth state to be ready
         if (authState.initialized && authState.hydrated && !authState.loading) {
           const { router } = await import("expo-router");
 
           if (authState.isAuthenticated) {
-            console.log(
-              "📱 ROOT LAYOUT INNER: Navigating to internal (authenticated)",
-            );
             router.replace("/(internal)");
           } else {
-            console.log(
-              "📱 ROOT LAYOUT INNER: Navigating to external (not authenticated)",
-            );
             router.replace("/(external)/welcome");
           }
         } else {
-          console.log(
-            "📱 ROOT LAYOUT INNER: Auth state not ready yet, will retry",
-          );
-          // Retry after a short delay
           setTimeout(checkAuthAndNavigate, 100);
         }
       } catch (error) {
-        console.error("📱 ROOT LAYOUT INNER: Navigation error:", error);
+        console.error("Navigation error:", error);
       }
     };
 
-    // Start navigation check after a short delay to ensure stores are ready
     const timer = setTimeout(checkAuthAndNavigate, 200);
     return () => clearTimeout(timer);
   }, []);
@@ -222,7 +198,6 @@ function RootLayoutInner() {
 }
 
 export default function RootLayout() {
-  console.log("📱 ROOT LAYOUT: Component function called");
   const { isDarkColorScheme } = useColorScheme();
 
   React.useEffect(() => {

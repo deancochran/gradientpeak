@@ -91,35 +91,15 @@ export default function InternalLayout() {
 
   // Direct navigation effect
   React.useEffect(() => {
-    console.log("🧭 Internal Layout: Auth state changed", {
-      loading,
-      initialized,
-      isAuthenticated,
-      hydrated,
-    });
-
     if (initialized && hydrated && !loading) {
-      console.log("🧭 Internal Layout: Navigation conditions met");
       if (!isAuthenticated) {
-        console.log(
-          "🔓 Internal Layout: Navigating to external (not authenticated)",
-        );
         router.replace("/(external)/welcome");
-      } else {
-        console.log(
-          "🏠 Internal Layout: User authenticated, staying on internal",
-        );
       }
     }
   }, [loading, initialized, isAuthenticated, hydrated]);
 
   // Show loading while determining auth state
   if (!initialized || !hydrated || loading) {
-    console.log("🧭 Internal Layout: Showing loading screen", {
-      initialized,
-      hydrated,
-      loading,
-    });
     return (
       <View
         style={{
@@ -139,9 +119,6 @@ export default function InternalLayout() {
 
   // If not authenticated, let navigation effect handle redirect
   if (!isAuthenticated) {
-    console.log(
-      "🧭 Internal Layout: User not authenticated, should navigate soon...",
-    );
     return (
       <View
         style={{
@@ -158,11 +135,6 @@ export default function InternalLayout() {
       </View>
     );
   }
-
-  const backgroundColor = isDarkColorScheme ? "#1f2937" : "#ffffff";
-  const borderColor = isDarkColorScheme ? "#374151" : "#e5e7eb";
-
-  console.log("🧭 Navigation Layout - Rendering tabs");
 
   return (
     <Tabs

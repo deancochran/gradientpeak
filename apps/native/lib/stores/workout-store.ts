@@ -156,14 +156,9 @@ export const useWorkoutStore = create<WorkoutState>()(
             currentMetrics: { duration: 0 },
           });
 
-          console.log("🏃 Workout Store: Started workout", {
-            id: workoutId,
-            type,
-            plannedActivityId,
-            name,
-          });
+
         } catch (error) {
-          console.error("❌ Workout Store: Failed to start workout:", error);
+          console.error("Workout Store: Failed to start workout:", error);
           throw error;
         }
       },
@@ -171,7 +166,6 @@ export const useWorkoutStore = create<WorkoutState>()(
       pauseWorkout: async () => {
         const { activeWorkout } = get();
         if (!activeWorkout || activeWorkout.status !== "recording") {
-          console.warn("⚠️ Workout Store: Cannot pause - no active recording");
           return;
         }
 
@@ -186,9 +180,9 @@ export const useWorkoutStore = create<WorkoutState>()(
             isPaused: true,
           }));
 
-          console.log("⏸️ Workout Store: Paused workout");
+
         } catch (error) {
-          console.error("❌ Workout Store: Failed to pause workout:", error);
+          console.error("Workout Store: Failed to pause workout:", error);
           throw error;
         }
       },
@@ -196,7 +190,6 @@ export const useWorkoutStore = create<WorkoutState>()(
       resumeWorkout: async () => {
         const { activeWorkout } = get();
         if (!activeWorkout || activeWorkout.status !== "paused") {
-          console.warn("⚠️ Workout Store: Cannot resume - no paused workout");
           return;
         }
 
@@ -211,9 +204,9 @@ export const useWorkoutStore = create<WorkoutState>()(
             isPaused: false,
           }));
 
-          console.log("▶️ Workout Store: Resumed workout");
+
         } catch (error) {
-          console.error("❌ Workout Store: Failed to resume workout:", error);
+          console.error("Workout Store: Failed to resume workout:", error);
           throw error;
         }
       },
@@ -221,7 +214,6 @@ export const useWorkoutStore = create<WorkoutState>()(
       stopWorkout: async () => {
         const { activeWorkout } = get();
         if (!activeWorkout) {
-          console.warn("⚠️ Workout Store: Cannot stop - no active workout");
           return;
         }
 
@@ -249,9 +241,9 @@ export const useWorkoutStore = create<WorkoutState>()(
             isPaused: false,
           }));
 
-          console.log("🛑 Workout Store: Stopped workout", { duration });
+
         } catch (error) {
-          console.error("❌ Workout Store: Failed to stop workout:", error);
+          console.error("Workout Store: Failed to stop workout:", error);
           throw error;
         }
       },
@@ -259,7 +251,6 @@ export const useWorkoutStore = create<WorkoutState>()(
       completeWorkout: async () => {
         const { activeWorkout, stopWorkout } = get();
         if (!activeWorkout) {
-          console.warn("⚠️ Workout Store: Cannot complete - no active workout");
           return;
         }
 
@@ -281,14 +272,14 @@ export const useWorkoutStore = create<WorkoutState>()(
           }));
 
           // Save to database would happen here via ActivityService
-          console.log("✅ Workout Store: Completed workout", activeWorkout.id);
+
 
           // Clear after a short delay to allow UI to show completion
           setTimeout(() => {
             get().clearActiveWorkout();
           }, 2000);
         } catch (error) {
-          console.error("❌ Workout Store: Failed to complete workout:", error);
+          console.error("Workout Store: Failed to complete workout:", error);
           throw error;
         }
       },
@@ -327,14 +318,10 @@ export const useWorkoutStore = create<WorkoutState>()(
           hasActiveSession: false,
           currentMetrics: defaultMetrics,
         });
-        console.log("🧹 Workout Store: Cleared active workout");
       },
 
       recoverWorkout: async () => {
         try {
-          console.log(
-            "🔄 Workout Store: Attempting to recover workout session...",
-          );
 
           // Check if ActivityRecorderService has a session to recover
           const currentSession = ActivityRecorderService.getCurrentSession();
@@ -360,12 +347,9 @@ export const useWorkoutStore = create<WorkoutState>()(
               },
             });
 
-            console.log("✅ Workout Store: Recovered active recording session");
-          } else {
-            console.log("ℹ️ Workout Store: No active session to recover");
-          }
+
         } catch (error) {
-          console.error("❌ Workout Store: Failed to recover workout:", error);
+          console.error("Workout Store: Failed to recover workout:", error);
         }
       },
     }),

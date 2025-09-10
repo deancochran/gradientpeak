@@ -67,7 +67,6 @@ export const useAuthStore = create<AuthState>()(
 
           // Clear local state immediately
           setSession(null);
-          console.log("📝 Auth Store: Cleared local session state");
 
           // Check if there's an active session before attempting sign out
           const {
@@ -75,27 +74,16 @@ export const useAuthStore = create<AuthState>()(
           } = await supabase.auth.getSession();
 
           if (!currentSession) {
-            console.log("📝 Auth Store: No active session to sign out");
             return;
           }
 
           const { error } = await supabase.auth.signOut();
-          if (error) {
-            if (error.message?.includes("Auth session missing")) {
-              console.log("📝 Auth Store: Session already cleared");
-            } else {
-              console.error("Auth Store sign out error:", error);
-            }
-          } else {
-            console.log("📝 Auth Store: Successfully signed out");
+          if (error && !error.message?.includes("Auth session missing")) {
+            console.error("Auth Store sign out error:", error);
           }
-
-          // Let layouts handle navigation
         } catch (err: unknown) {
           const errorMessage = err instanceof Error ? err.message : String(err);
-          if (errorMessage.includes("Auth session missing")) {
-            console.log("📝 Auth Store: Session already cleared");
-          } else {
+          if (!errorMessage.includes("Auth session missing")) {
             console.error("Auth Store sign out error:", err);
           }
         } finally {
@@ -114,14 +102,11 @@ export const useAuthStore = create<AuthState>()(
           });
 
           if (error) {
-            console.error("Auth Store sign in error:", error);
             return { error };
           }
 
-          console.log("✅ Auth Store: Sign in successful");
           return { error: null };
         } catch (err) {
-          console.error("Auth Store sign in error:", err);
           return { error: err as Error };
         } finally {
           setLoading(false);
@@ -146,14 +131,11 @@ export const useAuthStore = create<AuthState>()(
           });
 
           if (error) {
-            console.error("Auth Store sign up error:", error);
             return { error };
           }
 
-          console.log("✅ Auth Store: Sign up successful");
           return { error: null };
         } catch (err) {
-          console.error("Auth Store sign up error:", err);
           return { error: err as Error };
         } finally {
           setLoading(false);
@@ -167,26 +149,21 @@ export const useAuthStore = create<AuthState>()(
           });
 
           if (error) {
-            console.error("Auth Store reset password error:", error);
             return { error };
           }
 
-          console.log("✅ Auth Store: Password reset email sent");
           return { error: null };
         } catch (err) {
-          console.error("Auth Store reset password error:", err);
           return { error: err as Error };
         }
       },
 
       initialize: async () => {
         if (_autoInitialized) {
-          console.log("🔐 Auth Store: Already initialized, skipping");
           return;
         }
 
         if (_initializationInProgress) {
-          console.log("🔐 Auth Store: Initialization in progress, waiting...");
           return;
         }
 
@@ -194,7 +171,6 @@ export const useAuthStore = create<AuthState>()(
         const { setSession, setLoading, setInitialized } = get();
 
         try {
-          console.log("🔐 Auth Store: Initializing auth state...");
           setLoading(true);
 
           const {
@@ -203,47 +179,19 @@ export const useAuthStore = create<AuthState>()(
           } = await supabase.auth.getSession();
 
           if (error) {
-            console.error("🔧 Auth Store: Error getting session:", error);
+            console.error("Auth Store: Error getting session:", error);
           }
 
           setSession(session);
-          console.log("✅ Auth Store: Initialized", {
-            hasSession: !!session,
-            userEmail: session?.user?.email,
-            isVerified: !!session?.user?.email_confirmed_at,
-          });
 
           // Set up auth state change listener
           supabase.auth.onAuthStateChange((event, session) => {
-            console.log("🔧 Auth Store: State changed", {
-              event,
-              hasSession: !!session,
-              userEmail: session?.user?.email,
-              isVerified: !!session?.user?.email_confirmed_at,
-            });
-
             setSession(session);
-
-            // Just log auth events - let layouts handle navigation
-            switch (event) {
-              case "SIGNED_OUT":
-                console.log("🚪 Auth Store: User signed out");
-                break;
-              case "SIGNED_IN":
-                console.log("🚪 Auth Store: User signed in");
-                break;
-              case "TOKEN_REFRESHED":
-                console.log("🔄 Auth Store: Token refreshed");
-                break;
-              case "USER_UPDATED":
-                console.log("👤 Auth Store: User updated");
-                break;
-            }
           });
 
           _autoInitialized = true;
         } catch (error) {
-          console.error("🔧 Auth Store: Unexpected error:", error);
+          console.error("Auth Store: Unexpected error:", error);
           _autoInitialized = false; // Reset on error
         } finally {
           setLoading(false);
@@ -260,21 +208,14 @@ export const useAuthStore = create<AuthState>()(
         initialized: state.initialized,
       }),
       onRehydrateStorage: () => (state, error) => {
-        console.log("🔐 Auth Store: Rehydration complete", {
-          hasState: !!state,
-          error: error?.message || null,
-          autoInitialized: _autoInitialized,
-        });
         if (state && !error) {
-          console.log("🔐 Auth Store: Setting hydrated to true");
           state.setHydrated(true);
           // Also auto-initialize after hydration
           if (!_autoInitialized) {
-            console.log("🔐 Auth Store: Auto-initializing after hydration");
             state.initialize();
           }
         } else if (error) {
-          console.error("🔐 Auth Store: Rehydration error:", error);
+          console.error("Auth Store: Rehydration error:", error);
           // Still set hydrated to true to prevent blocking
           if (state) {
             state.setHydrated(true);
@@ -288,17 +229,10 @@ export const useAuthStore = create<AuthState>()(
 // Initialize hydrated state for non-persisted usage
 setTimeout(() => {
   const state = useAuthStore.getState();
-  console.log("🔐 Auth Store: Checking hydration state", {
-    hydrated: state.hydrated,
-    initialized: state.initialized,
-    loading: state.loading,
-  });
   if (!state.hydrated) {
-    console.log("🔐 Auth Store: Setting hydrated to true (fallback)");
     state.setHydrated(true);
     // Also initialize if not done yet
     if (!_autoInitialized) {
-      console.log("🔐 Auth Store: Auto-initializing (fallback)");
       state.initialize();
     }
   }
@@ -308,7 +242,6 @@ setTimeout(() => {
 export const useAuth = () => {
   const store = useAuthStore();
   if (!_autoInitialized && store.hydrated) {
-    console.log("🔐 Auth Store: Auto-initializing from hook...");
     store.initialize();
   }
   return store;
