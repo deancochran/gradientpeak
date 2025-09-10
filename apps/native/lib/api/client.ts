@@ -1,3 +1,4 @@
+import type { SelectActivity } from "@repo/drizzle/schemas";
 import { apiConfig } from "../config/api";
 import { supabase } from "../supabase";
 
@@ -6,46 +7,6 @@ export interface ApiResponse<T> {
   data?: T;
   error?: string;
   details?: any;
-}
-
-export interface Activity {
-  id: string;
-  name: string;
-  sport: string;
-  startedAt: string;
-  completedAt?: string;
-  duration?: number;
-  distance?: number;
-  elevationGain?: number;
-  calories?: number;
-  avgHeartRate?: number;
-  maxHeartRate?: number;
-  avgPower?: number;
-  maxPower?: number;
-  avgCadence?: number;
-  tss?: number;
-  notes?: string;
-  syncStatus: "local_only" | "syncing" | "synced" | "sync_failed";
-  localStoragePath?: string;
-  cloudStoragePath?: string;
-}
-
-export interface Profile {
-  id: string;
-  email: string;
-  displayName?: string;
-  firstName?: string;
-  lastName?: string;
-  dateOfBirth?: string;
-  gender?: "male" | "female" | "other";
-  heightCm?: number;
-  weightKg?: number;
-  maxHeartRate?: number;
-  restingHeartRate?: number;
-  ftpWatts?: number;
-  vo2Max?: number;
-  preferredUnits?: "metric" | "imperial";
-  trainingZonePreference?: "heart_rate" | "power" | "pace";
 }
 
 export interface SyncStatus {
@@ -171,14 +132,14 @@ class ApiClient {
     });
   }
 
-  // Activity endpoints
+  // SelectActivity endpoints
   async getActivities(params?: {
     limit?: number;
     offset?: number;
     sport?: string;
     startDate?: string;
     endDate?: string;
-  }): Promise<ApiResponse<{ activities: Activity[]; pagination: any }>> {
+  }): Promise<ApiResponse<{ activities: SelectActivity[]; pagination: any }>> {
     const searchParams = new URLSearchParams();
 
     if (params?.limit) searchParams.set("limit", params.limit.toString());
@@ -191,13 +152,13 @@ class ApiClient {
     return this.request(`/activities${query ? `?${query}` : ""}`);
   }
 
-  async getActivity(id: string): Promise<ApiResponse<Activity>> {
+  async getActivity(id: string): Promise<ApiResponse<SelectActivity>> {
     return this.request(`/activities/${id}`);
   }
 
   async createActivity(
-    activity: Omit<Activity, "syncStatus">,
-  ): Promise<ApiResponse<Activity>> {
+    activity: Omit<SelectActivity, "syncStatus">,
+  ): Promise<ApiResponse<SelectActivity>> {
     return this.request("/activities", {
       method: "POST",
       body: JSON.stringify(activity),
@@ -206,8 +167,8 @@ class ApiClient {
 
   async updateActivity(
     id: string,
-    updates: Partial<Activity>,
-  ): Promise<ApiResponse<Activity>> {
+    updates: Partial<SelectActivity>,
+  ): Promise<ApiResponse<SelectActivity>> {
     return this.request(`/activities/${id}`, {
       method: "PUT",
       body: JSON.stringify(updates),
