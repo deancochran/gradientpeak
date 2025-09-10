@@ -1,5 +1,5 @@
 import { supabase } from "@lib/supabase";
-import { useColorScheme } from "@lib/useColorScheme";
+import { useColorScheme } from "@lib/providers/ThemeProvider";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";

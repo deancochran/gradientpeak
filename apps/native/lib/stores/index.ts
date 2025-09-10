@@ -77,7 +77,6 @@ let _storesInitialized = false;
 
 export const initializeStores = async () => {
   if (_storesInitialized) {
-    console.log("⚠️ Stores already initialized, skipping...");
     return;
   }
 
@@ -93,8 +92,6 @@ export const initializeStores = async () => {
     const { useWorkoutStore } = await import("./workout-store");
     const workoutStore = useWorkoutStore.getState();
     await workoutStore.recoverWorkout();
-
-    console.log("✅ All stores initialized");
   } catch (error) {
     _storesInitialized = false; // Reset on error so retry is possible
     throw error;
@@ -110,6 +107,4 @@ export const cleanupStores = async () => {
   // Clear any temporary workout data
   const { useWorkoutStore } = await import("./workout-store");
   useWorkoutStore.getState().clearActiveWorkout();
-
-  console.log("🧹 Stores cleaned up");
 };

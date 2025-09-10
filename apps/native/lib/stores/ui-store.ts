@@ -182,7 +182,6 @@ export const useUIStore = create<UIState>()(
           activeModal: type,
           modalData: data || null,
         });
-        console.log("📱 UI Store: Opened modal", type, data ? "with data" : "");
       },
 
       closeModal: () => {
@@ -190,7 +189,6 @@ export const useUIStore = create<UIState>()(
           activeModal: null,
           modalData: null,
         });
-        console.log("📱 UI Store: Closed modal");
       },
 
       setActiveTab: (tab: TabType) => {
@@ -204,7 +202,6 @@ export const useUIStore = create<UIState>()(
           activeTab: tab,
           tabHistory: newHistory,
         });
-        console.log("📱 UI Store: Changed tab to", tab);
       },
 
       navigateBack: () => {
@@ -225,12 +222,10 @@ export const useUIStore = create<UIState>()(
         };
 
         set({ activeBottomSheet: bottomSheet });
-        console.log("📱 UI Store: Opened bottom sheet", content);
       },
 
       closeBottomSheet: () => {
         set({ activeBottomSheet: null });
-        console.log("📱 UI Store: Closed bottom sheet");
       },
 
       showAlert: (alert: Omit<Alert, "id">) => {
@@ -248,7 +243,6 @@ export const useUIStore = create<UIState>()(
           }, alert.duration);
         }
 
-        console.log("🚨 UI Store: Showed alert", alert.type, alert.title);
         return id;
       },
 
@@ -256,24 +250,20 @@ export const useUIStore = create<UIState>()(
         set((state) => ({
           alerts: state.alerts.filter((alert) => alert.id !== id),
         }));
-        console.log("🚨 UI Store: Dismissed alert", id);
       },
 
       clearAllAlerts: () => {
         set({ alerts: [] });
-        console.log("🚨 UI Store: Cleared all alerts");
       },
 
       setLoading: (key: keyof LoadingState, loading: boolean) => {
         set((state) => ({
           loading: { ...state.loading, [key]: loading },
         }));
-        console.log(`⏳ UI Store: Set ${key} loading:`, loading);
       },
 
       setDrawerOpen: (open: boolean) => {
         set({ isDrawerOpen: open });
-        console.log("📱 UI Store: Set drawer open:", open);
       },
 
       setKeyboardVisible: (visible: boolean, height: number = 0) => {
@@ -281,17 +271,10 @@ export const useUIStore = create<UIState>()(
           isKeyboardVisible: visible,
           keyboardHeight: height,
         });
-        console.log(
-          "⌨️ UI Store: Keyboard visible:",
-          visible,
-          "height:",
-          height,
-        );
       },
 
       setOrientation: (orientation: "portrait" | "landscape") => {
         set({ orientation });
-        console.log("📱 UI Store: Orientation changed:", orientation);
       },
 
       setRefreshing: (
@@ -301,7 +284,6 @@ export const useUIStore = create<UIState>()(
         set((state) => ({
           refreshing: { ...state.refreshing, [screen]: refreshing },
         }));
-        console.log(`🔄 UI Store: Set ${screen} refreshing:`, refreshing);
       },
 
       setSearchQuery: (query: string) => {
@@ -310,7 +292,6 @@ export const useUIStore = create<UIState>()(
 
       setSearchFocused: (focused: boolean) => {
         set({ searchFocused: focused });
-        console.log("🔍 UI Store: Search focused:", focused);
       },
 
       setActiveFilters: (
@@ -320,7 +301,6 @@ export const useUIStore = create<UIState>()(
         set((state) => ({
           activeFilters: { ...state.activeFilters, [screen]: filters },
         }));
-        console.log(`🔽 UI Store: Set ${screen} filters:`, filters);
       },
 
       setScrollPosition: (screen: string, position: number) => {
@@ -346,7 +326,6 @@ export const useUIStore = create<UIState>()(
           searchFocused: false,
           activeFilters: defaultActiveFilters,
         });
-        console.log("🔄 UI Store: Reset UI state");
       },
     }),
     {

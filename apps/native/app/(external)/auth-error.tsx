@@ -1,26 +1,26 @@
-import React from 'react'
+import React from "react";
 import {
-    Animated,
-    KeyboardAvoidingView,
-    Platform,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
-} from 'react-native'
+  Animated,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
-import { useColorScheme } from '@lib/useColorScheme'
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router'
+import { useColorScheme } from "@lib/providers/ThemeProvider";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 
 export default function AuthErrorScreen() {
-  const router = useRouter()
-  const { isDarkColorScheme } = useColorScheme()
-  const params = useLocalSearchParams<{ error?: string }>()
+  const router = useRouter();
+  const { isDarkColorScheme } = useColorScheme();
+  const params = useLocalSearchParams<{ error?: string }>();
 
   // Animation refs
-  const fadeAnim = React.useRef(new Animated.Value(0)).current
-  const slideAnim = React.useRef(new Animated.Value(30)).current
-  const buttonScaleAnim = React.useRef(new Animated.Value(1)).current
+  const fadeAnim = React.useRef(new Animated.Value(0)).current;
+  const slideAnim = React.useRef(new Animated.Value(30)).current;
+  const buttonScaleAnim = React.useRef(new Animated.Value(1)).current;
 
   React.useEffect(() => {
     // Entrance animations
@@ -35,8 +35,8 @@ export default function AuthErrorScreen() {
         duration: 600,
         useNativeDriver: true,
       }),
-    ]).start()
-  }, [])
+    ]).start();
+  }, []);
 
   const handleTryAgainPress = () => {
     Animated.sequence([
@@ -51,19 +51,19 @@ export default function AuthErrorScreen() {
         useNativeDriver: true,
       }),
     ]).start(() => {
-      router.replace('/(external)/sign-in')
-    })
-  }
+      router.replace("/(external)/sign-in");
+    });
+  };
 
   const handleGoBackPress = () => {
-    router.replace('/welcome')
-  }
+    router.replace("/welcome");
+  };
 
-  const backgroundColor = isDarkColorScheme ? '#000000' : '#ffffff'
-  const textColor = isDarkColorScheme ? '#ffffff' : '#000000'
-  const subtleColor = isDarkColorScheme ? '#666666' : '#999999'
-  const errorColor = isDarkColorScheme ? '#ff6b6b' : '#dc3545'
-  const borderColor = isDarkColorScheme ? '#333333' : '#e5e5e5'
+  const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";
+  const textColor = isDarkColorScheme ? "#ffffff" : "#000000";
+  const subtleColor = isDarkColorScheme ? "#666666" : "#999999";
+  const errorColor = isDarkColorScheme ? "#ff6b6b" : "#dc3545";
+  const borderColor = isDarkColorScheme ? "#333333" : "#e5e5e5";
 
   return (
     <>
@@ -76,7 +76,7 @@ export default function AuthErrorScreen() {
         }}
       />
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={[styles.container, { backgroundColor }]}
         testID="auth-error-screen"
       >
@@ -86,7 +86,7 @@ export default function AuthErrorScreen() {
             {
               opacity: fadeAnim,
               transform: [{ translateY: slideAnim }],
-            }
+            },
           ]}
           testID="auth-error-content"
         >
@@ -97,8 +97,8 @@ export default function AuthErrorScreen() {
                 styles.errorIcon,
                 {
                   borderColor: errorColor,
-                  backgroundColor: 'transparent',
-                }
+                  backgroundColor: "transparent",
+                },
               ]}
               testID="error-icon"
             >
@@ -129,7 +129,15 @@ export default function AuthErrorScreen() {
                   Error details:
                 </Text>
                 <View
-                  style={[styles.errorBox, { borderColor: borderColor, backgroundColor: isDarkColorScheme ? '#1a1a1a' : '#f8f9fa' }]}
+                  style={[
+                    styles.errorBox,
+                    {
+                      borderColor: borderColor,
+                      backgroundColor: isDarkColorScheme
+                        ? "#1a1a1a"
+                        : "#f8f9fa",
+                    },
+                  ]}
                   testID="error-box"
                 >
                   <Text
@@ -155,7 +163,7 @@ export default function AuthErrorScreen() {
             <Animated.View
               style={[
                 styles.buttonContainer,
-                { transform: [{ scale: buttonScaleAnim }] }
+                { transform: [{ scale: buttonScaleAnim }] },
               ]}
               testID="try-again-button-container"
             >
@@ -166,7 +174,7 @@ export default function AuthErrorScreen() {
                   {
                     backgroundColor: textColor,
                     shadowColor: textColor,
-                  }
+                  },
                 ]}
                 testID="try-again-button"
               >
@@ -181,10 +189,7 @@ export default function AuthErrorScreen() {
 
             <TouchableOpacity
               onPress={handleGoBackPress}
-              style={[
-                styles.secondaryButton,
-                { borderColor }
-              ]}
+              style={[styles.secondaryButton, { borderColor }]}
               testID="go-back-button"
             >
               <Text
@@ -198,19 +203,19 @@ export default function AuthErrorScreen() {
         </Animated.View>
       </KeyboardAvoidingView>
     </>
-  )
+  );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: "center",
     paddingHorizontal: 32,
     paddingVertical: 40,
   },
   content: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   iconContainer: {
     marginBottom: 40,
@@ -220,42 +225,42 @@ const styles = StyleSheet.create({
     height: 80,
     borderRadius: 40,
     borderWidth: 3,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   errorSymbol: {
     fontSize: 36,
-    fontWeight: '900',
+    fontWeight: "900",
   },
   messageContainer: {
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 60,
     maxWidth: 320,
   },
   title: {
     fontSize: 28,
-    fontWeight: '800',
-    textAlign: 'center',
+    fontWeight: "800",
+    textAlign: "center",
     marginBottom: 20,
     letterSpacing: -1,
   },
   description: {
     fontSize: 16,
-    textAlign: 'center',
+    textAlign: "center",
     lineHeight: 24,
-    fontWeight: '400',
+    fontWeight: "400",
   },
   errorDetailsContainer: {
-    width: '100%',
-    alignItems: 'flex-start',
+    width: "100%",
+    alignItems: "flex-start",
   },
   errorLabel: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
     marginBottom: 8,
   },
   errorBox: {
-    width: '100%',
+    width: "100%",
     padding: 16,
     borderRadius: 12,
     borderWidth: 1,
@@ -263,20 +268,20 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 14,
     lineHeight: 20,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   buttonsContainer: {
-    width: '100%',
+    width: "100%",
     gap: 16,
   },
   buttonContainer: {
-    width: '100%',
+    width: "100%",
   },
   primaryButton: {
     height: 56,
     borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     shadowOffset: {
       width: 0,
       height: 6,
@@ -287,19 +292,19 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: "700",
     letterSpacing: -0.5,
   },
   secondaryButton: {
     height: 56,
     borderRadius: 16,
     borderWidth: 1.5,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   secondaryButtonText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
     letterSpacing: -0.5,
   },
-})
+});

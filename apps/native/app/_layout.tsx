@@ -5,12 +5,15 @@ import { AuthErrorBoundary } from "@lib/contexts/AuthErrorBoundary";
 import { PermissionsProvider } from "@lib/contexts/PermissionsContext";
 import { db } from "@lib/db";
 import migrations from "@lib/db/migrations/migrations";
+import {
+  ThemeProvider as CustomThemeProvider,
+  useColorScheme,
+} from "@lib/providers/ThemeProvider";
 import { StoreProvider } from "@lib/stores/StoreProvider";
-import { useColorScheme } from "@lib/useColorScheme";
 import {
   DarkTheme,
   DefaultTheme,
-  ThemeProvider,
+  ThemeProvider as NavigationThemeProvider,
 } from "@react-navigation/native";
 import {
   QueryClient,
@@ -101,6 +104,19 @@ function DrizzleProvider({ children }: { children: React.ReactNode }) {
   }
 
   return <>{children}</>;
+}
+
+function ThemedApp({ children }: { children: React.ReactNode }) {
+  const { isDarkColorScheme } = useColorScheme();
+
+  return (
+    <NavigationThemeProvider
+      value={isDarkColorScheme ? DARK_THEME : LIGHT_THEME}
+    >
+      <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
+      {children}
+    </NavigationThemeProvider>
+  );
 }
 
 function RootLayoutInner() {
@@ -198,8 +214,6 @@ function RootLayoutInner() {
 }
 
 export default function RootLayout() {
-  const { isDarkColorScheme } = useColorScheme();
-
   React.useEffect(() => {
     const subscription = AppState.addEventListener("change", onAppStateChange);
     return () => subscription.remove();
@@ -219,16 +233,15 @@ export default function RootLayout() {
         <SQLiteProvider databaseName="db.db">
           <DrizzleProvider>
             <PermissionsProvider>
-              <ThemeProvider
-                value={isDarkColorScheme ? DARK_THEME : LIGHT_THEME}
-              >
-                <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
-                <AuthErrorBoundary>
-                  <StoreProvider>
-                    <RootLayoutInner />
-                  </StoreProvider>
-                </AuthErrorBoundary>
-              </ThemeProvider>
+              <CustomThemeProvider>
+                <ThemedApp>
+                  <AuthErrorBoundary>
+                    <StoreProvider>
+                      <RootLayoutInner />
+                    </StoreProvider>
+                  </AuthErrorBoundary>
+                </ThemedApp>
+              </CustomThemeProvider>
             </PermissionsProvider>
           </DrizzleProvider>
         </SQLiteProvider>

@@ -12,7 +12,7 @@ import {
 import { ThemedView } from "@components/ThemedView";
 import { Text } from "@components/ui/text";
 import { useAuth } from "@lib/stores";
-import { useColorScheme } from "@lib/useColorScheme";
+import { useColorScheme } from "@lib/providers/ThemeProvider";
 
 export default function WelcomeScreen() {
   const router = useRouter();

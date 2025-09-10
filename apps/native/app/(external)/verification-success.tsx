@@ -1,25 +1,25 @@
-import React from 'react'
+import React from "react";
 import {
-    Animated,
-    KeyboardAvoidingView,
-    Platform,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
-} from 'react-native'
+  Animated,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
-import { useColorScheme } from '@lib/useColorScheme'
-import { Stack, useRouter } from 'expo-router'
+import { useColorScheme } from "@lib/providers/ThemeProvider";
+import { Stack, useRouter } from "expo-router";
 
 export default function VerificationSuccessScreen() {
-  const router = useRouter()
-  const { isDarkColorScheme } = useColorScheme()
+  const router = useRouter();
+  const { isDarkColorScheme } = useColorScheme();
 
   // Animation refs
-  const fadeAnim = React.useRef(new Animated.Value(0)).current
-  const slideAnim = React.useRef(new Animated.Value(30)).current
-  const buttonScaleAnim = React.useRef(new Animated.Value(1)).current
+  const fadeAnim = React.useRef(new Animated.Value(0)).current;
+  const slideAnim = React.useRef(new Animated.Value(30)).current;
+  const buttonScaleAnim = React.useRef(new Animated.Value(1)).current;
 
   React.useEffect(() => {
     // Entrance animations
@@ -34,8 +34,8 @@ export default function VerificationSuccessScreen() {
         duration: 600,
         useNativeDriver: true,
       }),
-    ]).start()
-  }, [])
+    ]).start();
+  }, []);
 
   const handleContinuePress = () => {
     Animated.sequence([
@@ -50,14 +50,14 @@ export default function VerificationSuccessScreen() {
         useNativeDriver: true,
       }),
     ]).start(() => {
-      router.replace('/(external)/sign-in')
-    })
-  }
+      router.replace("/(external)/sign-in");
+    });
+  };
 
-  const backgroundColor = isDarkColorScheme ? '#000000' : '#ffffff'
-  const textColor = isDarkColorScheme ? '#ffffff' : '#000000'
-  const subtleColor = isDarkColorScheme ? '#666666' : '#999999'
-  const successColor = isDarkColorScheme ? '#4ade80' : '#16a34a'
+  const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";
+  const textColor = isDarkColorScheme ? "#ffffff" : "#000000";
+  const subtleColor = isDarkColorScheme ? "#666666" : "#999999";
+  const successColor = isDarkColorScheme ? "#4ade80" : "#16a34a";
 
   return (
     <>
@@ -70,7 +70,7 @@ export default function VerificationSuccessScreen() {
         }}
       />
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={[styles.container, { backgroundColor }]}
         testID="verification-success-screen"
       >
@@ -80,7 +80,7 @@ export default function VerificationSuccessScreen() {
             {
               opacity: fadeAnim,
               transform: [{ translateY: slideAnim }],
-            }
+            },
           ]}
           testID="verification-success-content"
         >
@@ -92,7 +92,7 @@ export default function VerificationSuccessScreen() {
                 {
                   backgroundColor: successColor,
                   shadowColor: successColor,
-                }
+                },
               ]}
               testID="success-icon"
             >
@@ -123,7 +123,8 @@ export default function VerificationSuccessScreen() {
               style={[styles.description, { color: subtleColor }]}
               testID="success-description"
             >
-              Your email has been verified successfully. You can now sign in to start your fitness journey.
+              Your email has been verified successfully. You can now sign in to
+              start your fitness journey.
             </Text>
           </View>
 
@@ -131,7 +132,7 @@ export default function VerificationSuccessScreen() {
           <Animated.View
             style={[
               styles.buttonContainer,
-              { transform: [{ scale: buttonScaleAnim }] }
+              { transform: [{ scale: buttonScaleAnim }] },
             ]}
             testID="continue-button-container"
           >
@@ -142,7 +143,7 @@ export default function VerificationSuccessScreen() {
                 {
                   backgroundColor: textColor,
                   shadowColor: textColor,
-                }
+                },
               ]}
               testID="continue-button"
             >
@@ -157,19 +158,19 @@ export default function VerificationSuccessScreen() {
         </Animated.View>
       </KeyboardAvoidingView>
     </>
-  )
+  );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: "center",
     paddingHorizontal: 32,
     paddingVertical: 40,
   },
   content: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   iconContainer: {
     marginBottom: 40,
@@ -178,8 +179,8 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     shadowOffset: {
       width: 0,
       height: 8,
@@ -190,40 +191,40 @@ const styles = StyleSheet.create({
   },
   checkmark: {
     fontSize: 32,
-    fontWeight: '900',
+    fontWeight: "900",
   },
   messageContainer: {
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 60,
     maxWidth: 320,
   },
   title: {
     fontSize: 28,
-    fontWeight: '800',
-    textAlign: 'center',
+    fontWeight: "800",
+    textAlign: "center",
     marginBottom: 12,
     letterSpacing: -1,
   },
   subtitle: {
     fontSize: 18,
-    fontWeight: '600',
-    textAlign: 'center',
+    fontWeight: "600",
+    textAlign: "center",
     marginBottom: 20,
   },
   description: {
     fontSize: 16,
-    textAlign: 'center',
+    textAlign: "center",
     lineHeight: 24,
-    fontWeight: '400',
+    fontWeight: "400",
   },
   buttonContainer: {
-    width: '100%',
+    width: "100%",
   },
   continueButton: {
     height: 56,
     borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     shadowOffset: {
       width: 0,
       height: 6,
@@ -234,7 +235,7 @@ const styles = StyleSheet.create({
   },
   continueButtonText: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: "700",
     letterSpacing: -0.5,
   },
-})
+});

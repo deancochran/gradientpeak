@@ -17,7 +17,7 @@ import { z } from "zod";
 
 import { Input } from "@components/ui/input";
 import { useAuth } from "@lib/stores";
-import { useColorScheme } from "@lib/useColorScheme";
+import { useColorScheme } from "@lib/providers/ThemeProvider";
 
 const signUpSchema = z
   .object({

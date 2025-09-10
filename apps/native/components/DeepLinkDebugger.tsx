@@ -1,8 +1,14 @@
-import { useColorScheme } from '@lib/useColorScheme';
-import * as Linking from 'expo-linking';
-import React from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { getDynamicAppConfig } from '../app.config';
+import { useColorScheme } from "@lib/providers/ThemeProvider";
+import * as Linking from "expo-linking";
+import React from "react";
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { getDynamicAppConfig } from "../app.config";
 
 interface ConfigInfo {
   key: string;
@@ -12,49 +18,51 @@ interface ConfigInfo {
 
 export const DeepLinkDebugger: React.FC = () => {
   const { isDarkColorScheme } = useColorScheme();
-  const [urlSchemeTest, setUrlSchemeTest] = React.useState<string>('');
+  const [urlSchemeTest, setUrlSchemeTest] = React.useState<string>("");
 
   // Get current environment and configuration
-  const environment = (process.env.APP_ENV as "development" | "preview" | "production") || "development";
+  const environment =
+    (process.env.APP_ENV as "development" | "preview" | "production") ||
+    "development";
   const config = getDynamicAppConfig(environment);
 
   // Configuration checks
   const configChecks: ConfigInfo[] = [
     {
-      key: 'APP_ENV',
+      key: "APP_ENV",
       value: process.env.APP_ENV,
-      isValid: !!process.env.APP_ENV
+      isValid: !!process.env.APP_ENV,
     },
     {
-      key: 'EXPO_PUBLIC_SUPABASE_URL',
-      value: process.env.EXPO_PUBLIC_SUPABASE_URL ? '✓ Set' : 'Not set',
-      isValid: !!process.env.EXPO_PUBLIC_SUPABASE_URL
+      key: "EXPO_PUBLIC_SUPABASE_URL",
+      value: process.env.EXPO_PUBLIC_SUPABASE_URL ? "✓ Set" : "Not set",
+      isValid: !!process.env.EXPO_PUBLIC_SUPABASE_URL,
     },
     {
-      key: 'EXPO_PUBLIC_SUPABASE_KEY',
-      value: process.env.EXPO_PUBLIC_SUPABASE_KEY ? '✓ Set' : 'Not set',
-      isValid: !!process.env.EXPO_PUBLIC_SUPABASE_KEY
+      key: "EXPO_PUBLIC_SUPABASE_KEY",
+      value: process.env.EXPO_PUBLIC_SUPABASE_KEY ? "✓ Set" : "Not set",
+      isValid: !!process.env.EXPO_PUBLIC_SUPABASE_KEY,
     },
     {
-      key: 'EXPO_PUBLIC_APP_URL',
+      key: "EXPO_PUBLIC_APP_URL",
       value: process.env.EXPO_PUBLIC_APP_URL,
-      isValid: !!process.env.EXPO_PUBLIC_APP_URL
+      isValid: !!process.env.EXPO_PUBLIC_APP_URL,
     },
     {
-      key: 'Current Environment',
+      key: "Current Environment",
       value: environment,
-      isValid: true
+      isValid: true,
     },
     {
-      key: 'App Scheme',
+      key: "App Scheme",
       value: config.scheme,
-      isValid: !!config.scheme
+      isValid: !!config.scheme,
     },
     {
-      key: 'Bundle ID',
+      key: "Bundle ID",
       value: config.bundleIdentifier,
-      isValid: !!config.bundleIdentifier
-    }
+      isValid: !!config.bundleIdentifier,
+    },
   ];
 
   // Expected URLs for Supabase configuration
@@ -67,7 +75,9 @@ export const DeepLinkDebugger: React.FC = () => {
     try {
       const testUrl = `${config.scheme}://auth/callback?test=true`;
       const canOpen = await Linking.canOpenURL(testUrl);
-      setUrlSchemeTest(canOpen ? '✅ URL scheme works' : '❌ URL scheme not registered');
+      setUrlSchemeTest(
+        canOpen ? "✅ URL scheme works" : "❌ URL scheme not registered",
+      );
     } catch (error) {
       setUrlSchemeTest(`❌ Error testing URL scheme: ${error}`);
     }
@@ -77,13 +87,13 @@ export const DeepLinkDebugger: React.FC = () => {
     testUrlScheme();
   }, []);
 
-  const backgroundColor = isDarkColorScheme ? '#000000' : '#ffffff';
-  const cardBackgroundColor = isDarkColorScheme ? '#111111' : '#f8f9fa';
-  const textColor = isDarkColorScheme ? '#ffffff' : '#000000';
-  const subtleColor = isDarkColorScheme ? '#999999' : '#666666';
-  const borderColor = isDarkColorScheme ? '#333333' : '#e5e5e5';
-  const successColor = '#10b981';
-  const errorColor = '#ef4444';
+  const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";
+  const cardBackgroundColor = isDarkColorScheme ? "#111111" : "#f8f9fa";
+  const textColor = isDarkColorScheme ? "#ffffff" : "#000000";
+  const subtleColor = isDarkColorScheme ? "#999999" : "#666666";
+  const borderColor = isDarkColorScheme ? "#333333" : "#e5e5e5";
+  const successColor = "#10b981";
+  const errorColor = "#ef4444";
 
   return (
     <ScrollView
@@ -95,7 +105,12 @@ export const DeepLinkDebugger: React.FC = () => {
       </Text>
 
       {/* Environment Variables */}
-      <View style={[styles.section, { backgroundColor: cardBackgroundColor, borderColor }]}>
+      <View
+        style={[
+          styles.section,
+          { backgroundColor: cardBackgroundColor, borderColor },
+        ]}
+      >
         <Text style={[styles.sectionTitle, { color: textColor }]}>
           Environment Variables
         </Text>
@@ -104,18 +119,25 @@ export const DeepLinkDebugger: React.FC = () => {
             <Text style={[styles.configKey, { color: textColor }]}>
               {check.key}:
             </Text>
-            <Text style={[
-              styles.configValue,
-              { color: check.isValid ? successColor : errorColor }
-            ]}>
-              {check.value || 'Not set'}
+            <Text
+              style={[
+                styles.configValue,
+                { color: check.isValid ? successColor : errorColor },
+              ]}
+            >
+              {check.value || "Not set"}
             </Text>
           </View>
         ))}
       </View>
 
       {/* URL Scheme Test */}
-      <View style={[styles.section, { backgroundColor: cardBackgroundColor, borderColor }]}>
+      <View
+        style={[
+          styles.section,
+          { backgroundColor: cardBackgroundColor, borderColor },
+        ]}
+      >
         <Text style={[styles.sectionTitle, { color: textColor }]}>
           URL Scheme Test
         </Text>
@@ -133,7 +155,12 @@ export const DeepLinkDebugger: React.FC = () => {
       </View>
 
       {/* Expected Supabase URLs */}
-      <View style={[styles.section, { backgroundColor: cardBackgroundColor, borderColor }]}>
+      <View
+        style={[
+          styles.section,
+          { backgroundColor: cardBackgroundColor, borderColor },
+        ]}
+      >
         <Text style={[styles.sectionTitle, { color: textColor }]}>
           Expected Supabase Redirect URLs
         </Text>
@@ -145,15 +172,18 @@ export const DeepLinkDebugger: React.FC = () => {
         </Text>
         {expectedUrls.map((url, index) => (
           <View key={index} style={styles.urlRow}>
-            <Text style={[styles.urlText, { color: successColor }]}>
-              {url}
-            </Text>
+            <Text style={[styles.urlText, { color: successColor }]}>{url}</Text>
           </View>
         ))}
       </View>
 
       {/* Debug Info */}
-      <View style={[styles.section, { backgroundColor: cardBackgroundColor, borderColor }]}>
+      <View
+        style={[
+          styles.section,
+          { backgroundColor: cardBackgroundColor, borderColor },
+        ]}
+      >
         <Text style={[styles.sectionTitle, { color: textColor }]}>
           Debug Information
         </Text>
@@ -162,7 +192,7 @@ export const DeepLinkDebugger: React.FC = () => {
             Process ENV APP_ENV:
           </Text>
           <Text style={[styles.debugValue, { color: textColor }]}>
-            {process.env.APP_ENV || 'undefined'}
+            {process.env.APP_ENV || "undefined"}
           </Text>
         </View>
         <View style={styles.debugRow}>
@@ -192,7 +222,12 @@ export const DeepLinkDebugger: React.FC = () => {
       </View>
 
       {/* Instructions */}
-      <View style={[styles.section, { backgroundColor: cardBackgroundColor, borderColor }]}>
+      <View
+        style={[
+          styles.section,
+          { backgroundColor: cardBackgroundColor, borderColor },
+        ]}
+      >
         <Text style={[styles.sectionTitle, { color: textColor }]}>
           Quick Fix Instructions
         </Text>
@@ -222,9 +257,9 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 24,
-    fontWeight: '700',
+    fontWeight: "700",
     marginBottom: 20,
-    textAlign: 'center',
+    textAlign: "center",
   },
   section: {
     padding: 20,
@@ -234,7 +269,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: "600",
     marginBottom: 12,
   },
   subtitle: {
@@ -242,49 +277,49 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   configRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#333',
+    borderBottomColor: "#333",
   },
   configKey: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: "500",
     flex: 1,
   },
   configValue: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
     flex: 1,
-    textAlign: 'right',
+    textAlign: "right",
   },
   testResult: {
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: "500",
     marginBottom: 12,
-    textAlign: 'center',
+    textAlign: "center",
   },
   button: {
     padding: 12,
     borderWidth: 1,
     borderRadius: 8,
-    alignItems: 'center',
+    alignItems: "center",
   },
   buttonText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   urlRow: {
     paddingVertical: 8,
   },
   urlText: {
     fontSize: 14,
-    fontFamily: 'monospace',
+    fontFamily: "monospace",
   },
   debugRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     marginBottom: 8,
   },
   debugLabel: {
@@ -294,7 +329,7 @@ const styles = StyleSheet.create({
   debugValue: {
     fontSize: 12,
     flex: 1,
-    fontFamily: 'monospace',
+    fontFamily: "monospace",
   },
   instruction: {
     fontSize: 14,

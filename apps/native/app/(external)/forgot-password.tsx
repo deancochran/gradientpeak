@@ -16,8 +16,8 @@ import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { Input } from "@/components/ui/input";
+import { useColorScheme } from "@lib/providers/ThemeProvider";
 import { useAuth } from "@lib/stores";
-import { useColorScheme } from "@lib/useColorScheme";
 
 const forgotPasswordSchema = z.object({
   email: z.email("Invalid email address"),

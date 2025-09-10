@@ -1,11 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Tabs } from "expo-router";
+import { useColorScheme } from "@lib/providers/ThemeProvider";
+import { useAuth } from "@lib/stores";
+import { router, Tabs } from "expo-router";
 import React from "react";
 import { ActivityIndicator, Animated, View } from "react-native";
-
-import { useAuth } from "@lib/stores";
-import { useColorScheme } from "@lib/useColorScheme";
-import { router } from "expo-router";
 
 // Animated icon component with enhanced styling
 function AnimatedIcon({ focused, name }: { focused: boolean; name: string }) {
@@ -135,6 +133,9 @@ export default function InternalLayout() {
       </View>
     );
   }
+
+  const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";
+  const borderColor = isDarkColorScheme ? "#333333" : "#e5e5e5";
 
   return (
     <Tabs

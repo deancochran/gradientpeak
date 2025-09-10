@@ -4,7 +4,7 @@ import { Animated, StyleSheet, TouchableOpacity, View } from "react-native";
 
 import { ThemedText } from "@components/ThemedText";
 import { ThemedView } from "@components/ThemedView";
-import { useColorScheme } from "@lib/useColorScheme";
+import { useColorScheme } from "@lib/providers/ThemeProvider";
 
 export default function NotFoundScreen() {
   const { isDarkColorScheme } = useColorScheme();

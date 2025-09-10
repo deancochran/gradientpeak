@@ -1,6 +1,6 @@
 // apps/native/app/(external)/_layout.tsx
+import { useColorScheme } from "@lib/providers/ThemeProvider";
 import { useAuth } from "@lib/stores";
-import { useColorScheme } from "@lib/useColorScheme";
 import { router, Stack } from "expo-router";
 import React from "react";
 import { ActivityIndicator, Animated, View } from "react-native";

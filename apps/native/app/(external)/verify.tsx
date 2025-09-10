@@ -18,7 +18,7 @@ import { z } from "zod";
 import { Input } from "@components/ui/input";
 import { useAuth, useUser } from "@lib/stores";
 import { supabase } from "@lib/supabase";
-import { useColorScheme } from "@lib/useColorScheme";
+import { useColorScheme } from "@lib/providers/ThemeProvider";
 
 const resendSchema = z.object({
   email: z.email("Invalid email address"),
