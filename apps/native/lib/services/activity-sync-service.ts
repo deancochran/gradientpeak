@@ -1,19 +1,49 @@
-import Constants from "expo-constants";
 import * as FileSystem from "expo-file-system";
 import * as Network from "expo-network";
-import { Alert, AppState } from "react-native";
+import { AppState, AppStateStatus } from "react-native";
 
+import { apiClient } from "../api/client";
 import { SelectLocalActivity } from "../db/schemas";
 import { supabase } from "../supabase";
 import { LocalActivityDatabaseService } from "./local-activity-database";
 
+export interface SyncResult {
+  success: number;
+  failed: number;
+  skipped: number;
+  conflicts: number;
+  details: Array<{
+    activityId: string;
+    status: "success" | "failed" | "skipped" | "conflict";
+    error?: string;
+    action?: "created" | "updated";
+  }>;
+}
+
+export interface SyncStatus {
+  isOnline: boolean;
+  syncInProgress: boolean;
+  pendingCount: number;
+  failedCount: number;
+  lastSyncAttempt: Date | null;
+  nextRetryAt: Date | null;
+}
+
 export class ActivitySyncService {
   private static isInitialized = false;
   private static syncInProgress = false;
-  private static syncQueue: string[] = [];
+  private static syncQueue: Set<string> = new Set();
+  private static retryTimeouts = new Map<string, NodeJS.Timeout>();
+  private static appStateSubscription: any;
+
+  // Configuration
+  private static readonly MAX_RETRY_ATTEMPTS = 3;
+  private static readonly RETRY_DELAYS = [1000, 5000, 15000]; // 1s, 5s, 15s
+  private static readonly BATCH_SIZE = 5;
+  private static readonly MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
   /**
-   * Initialize the sync service
+   * Initialize the sync service with proper error handling
    */
   static async initialize(): Promise<void> {
     if (this.isInitialized) return;
@@ -22,402 +52,345 @@ export class ActivitySyncService {
       await LocalActivityDatabaseService.initDatabase();
       this.setupSyncListeners();
       this.isInitialized = true;
-      console.log("Activity sync service initialized");
+      console.log("✅ Activity sync service initialized successfully");
     } catch (error) {
-      console.error("Failed to initialize activity sync service:", error);
-      throw error;
+      console.error("❌ Failed to initialize activity sync service:", error);
+      throw new Error(
+        `Sync service initialization failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
     }
   }
 
   /**
-   * Sync all pending activities
+   * Sync all pending activities with improved error handling and batching
    */
-  static async syncAll(): Promise<{ success: number; failed: number }> {
+  static async syncAll(): Promise<SyncResult> {
     if (!this.isInitialized) {
       await this.initialize();
     }
 
     if (this.syncInProgress) {
-      console.log("Sync already in progress, skipping");
-      return { success: 0, failed: 0 };
+      console.log("⏳ Sync already in progress, returning previous state");
+      return { success: 0, failed: 0, skipped: 0, conflicts: 0, details: [] };
     }
+
+    const result: SyncResult = {
+      success: 0,
+      failed: 0,
+      skipped: 0,
+      conflicts: 0,
+      details: [],
+    };
 
     try {
       this.syncInProgress = true;
 
       // Check network connectivity
-      const networkState = await Network.getNetworkStateAsync();
-      if (!networkState.isConnected) {
-        console.log("No network connection, skipping sync");
-        return { success: 0, failed: 0 };
+      const isOnline = await this.isNetworkAvailable();
+      if (!isOnline) {
+        console.log("🔌 No network connection, sync postponed");
+        return result;
       }
 
-      // Check authentication
+      // Get user session
       const {
         data: { user },
         error: authError,
       } = await supabase.auth.getUser();
       if (authError || !user) {
-        console.log("User not authenticated, skipping sync");
-        return { success: 0, failed: 0 };
+        throw new Error("Authentication required for sync");
       }
 
-      // Get activities that need syncing
-      const activitiesToSync =
-        await LocalActivityDatabaseService.getActivitiesNeedingSync();
-      const failedActivities =
-        await LocalActivityDatabaseService.getFailedSyncActivities();
-      const allActivities = [...activitiesToSync, ...failedActivities];
-
-      console.log(`Starting sync for ${allActivities.length} activities`);
-
-      let successCount = 0;
-      let failedCount = 0;
-
-      for (const activity of allActivities) {
-        try {
-          const success = await this.syncWithRetry(activity, user.id);
-          if (success) {
-            successCount++;
-          } else {
-            failedCount++;
-          }
-        } catch (error) {
-          console.error(`Failed to sync activity ${activity.id}:`, error);
-          failedCount++;
-
-          // Update local record with error
-          await LocalActivityDatabaseService.updateSyncStatus(
-            activity.id,
-            "sync_failed",
-            undefined,
-            error instanceof Error ? error.message : "Unknown error",
-          );
-        }
+      // Get pending activities
+      const pendingActivities =
+        await LocalActivityDatabaseService.getPendingSync();
+      if (pendingActivities.length === 0) {
+        console.log("📱 No activities to sync");
+        return result;
       }
 
       console.log(
-        `Sync completed: ${successCount} successful, ${failedCount} failed`,
+        `🔄 Starting sync for ${pendingActivities.length} activities`,
       );
-      return { success: successCount, failed: failedCount };
+
+      // Process activities in batches
+      const batches = this.createBatches(pendingActivities, this.BATCH_SIZE);
+
+      for (const batch of batches) {
+        const batchResults = await this.syncBatch(batch, user.id);
+
+        // Aggregate results
+        result.success += batchResults.success;
+        result.failed += batchResults.failed;
+        result.skipped += batchResults.skipped;
+        result.conflicts += batchResults.conflicts;
+        result.details.push(...batchResults.details);
+      }
+
+      console.log(
+        `✅ Sync completed: ${result.success} success, ${result.failed} failed`,
+      );
+
+      return result;
+    } catch (error) {
+      console.error("❌ Sync all failed:", error);
+      throw error;
     } finally {
       this.syncInProgress = false;
     }
   }
 
   /**
-   * Sync a single activity by ID
+   * Sync a single activity with comprehensive error handling
    */
   static async syncActivity(activityId: string): Promise<boolean> {
     if (!this.isInitialized) {
       await this.initialize();
     }
 
-    if (this.syncInProgress) {
-      console.log(
-        `Sync already in progress. The new activity (${activityId}) will be synced later.`,
-      );
-      return true; // Not an error, it will be picked up by the next sync cycle
+    // Prevent duplicate sync attempts
+    if (this.syncQueue.has(activityId)) {
+      console.log(`⏳ Activity ${activityId} already in sync queue`);
+      return false;
     }
 
-    try {
-      this.syncInProgress = true;
+    this.syncQueue.add(activityId);
 
-      // Check authentication
+    try {
+      // Get user session
       const {
         data: { user },
         error: authError,
       } = await supabase.auth.getUser();
       if (authError || !user) {
-        throw new Error("User not authenticated");
+        throw new Error("Authentication required for sync");
       }
 
+      // Get activity from local database
       const activity =
         await LocalActivityDatabaseService.getActivity(activityId);
       if (!activity) {
-        throw new Error("Activity not found");
+        throw new Error(`Activity ${activityId} not found in local database`);
       }
 
-      return await this.syncWithRetry(activity, user.id);
+      // Check if already synced
+      if (activity.syncStatus === "synced") {
+        console.log(`✅ Activity ${activityId} already synced`);
+        return true;
+      }
+
+      const success = await this.syncSingleActivityWithRetry(activity, user.id);
+      return success;
     } catch (error) {
-      console.error(`Failed to sync activity ${activityId}:`, error);
+      console.error(`❌ Error syncing activity ${activityId}:`, error);
+
+      // Update sync status to failed
+      await LocalActivityDatabaseService.updateSyncStatus(
+        activityId,
+        "sync_failed",
+        undefined,
+        error instanceof Error ? error.message : "Unknown error",
+      );
+
       return false;
     } finally {
-      this.syncInProgress = false;
+      this.syncQueue.delete(activityId);
     }
   }
 
   /**
-   * Force sync a specific activity (retry failed sync)
+   * Get comprehensive sync status
    */
-  static async retrySyncActivity(activityId: string): Promise<boolean> {
-    // Reset the status to local_only and try again
-    await LocalActivityDatabaseService.updateSyncStatus(
-      activityId,
-      "local_only",
-    );
-    return this.syncActivity(activityId);
-  }
+  static async getSyncStatus(): Promise<SyncStatus> {
+    try {
+      const isOnline = await this.isNetworkAvailable();
+      const pendingActivities =
+        await LocalActivityDatabaseService.getPendingSync();
+      const failedActivities =
+        await LocalActivityDatabaseService.getFailedSync();
 
-  /**
-   * Get sync status for all activities
-   */
-  static async getSyncStatus(): Promise<{
-    totalActivities: number;
-    syncedActivities: number;
-    pendingActivities: number;
-    failedActivities: number;
-  }> {
-    if (!this.isInitialized) {
-      await this.initialize();
-    }
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
       return {
-        totalActivities: 0,
-        syncedActivities: 0,
-        pendingActivities: 0,
-        failedActivities: 0,
+        isOnline,
+        syncInProgress: this.syncInProgress,
+        pendingCount: pendingActivities.length,
+        failedCount: failedActivities.length,
+        lastSyncAttempt: null, // Could be stored in AsyncStorage
+        nextRetryAt: null, // Could be calculated based on retry logic
+      };
+    } catch (error) {
+      console.error("❌ Error getting sync status:", error);
+      return {
+        isOnline: false,
+        syncInProgress: false,
+        pendingCount: 0,
+        failedCount: 0,
+        lastSyncAttempt: null,
+        nextRetryAt: null,
       };
     }
+  }
 
-    const storageInfo = await LocalActivityDatabaseService.getStorageInfo(
-      user.id,
-    );
+  /**
+   * Retry failed activity sync with exponential backoff
+   */
+  static async retrySyncActivity(activityId: string): Promise<boolean> {
+    try {
+      const activity =
+        await LocalActivityDatabaseService.getActivity(activityId);
+      if (!activity) {
+        throw new Error(`Activity ${activityId} not found`);
+      }
 
-    return {
-      totalActivities: storageInfo.totalActivities,
-      syncedActivities: 0, // We clean up synced activities, so this is always 0
-      pendingActivities: storageInfo.unsyncedActivities,
-      failedActivities: storageInfo.failedSyncActivities,
+      if (activity.syncAttempts >= this.MAX_RETRY_ATTEMPTS) {
+        console.log(
+          `⚠️ Activity ${activityId} has exceeded max retry attempts`,
+        );
+        return false;
+      }
+
+      // Reset sync status and attempt sync
+      await LocalActivityDatabaseService.updateSyncStatus(
+        activityId,
+        "pending",
+      );
+      return await this.syncActivity(activityId);
+    } catch (error) {
+      console.error(
+        `❌ Error retrying sync for activity ${activityId}:`,
+        error,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Clean up successfully synced activities from local storage
+   */
+  static async cleanupSyncedActivities(
+    olderThanDays: number = 7,
+  ): Promise<number> {
+    try {
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
+
+      const cleanedCount =
+        await LocalActivityDatabaseService.cleanupOldSyncedActivities(
+          cutoffDate,
+        );
+      console.log(`🧹 Cleaned up ${cleanedCount} old synced activities`);
+
+      return cleanedCount;
+    } catch (error) {
+      console.error("❌ Error cleaning up synced activities:", error);
+      return 0;
+    }
+  }
+
+  // Private helper methods
+
+  /**
+   * Sync a batch of activities
+   */
+  private static async syncBatch(
+    activities: SelectLocalActivity[],
+    userId: string,
+  ): Promise<SyncResult> {
+    const result: SyncResult = {
+      success: 0,
+      failed: 0,
+      skipped: 0,
+      conflicts: 0,
+      details: [],
     };
-  }
 
-  /**
-   * Bulk sync multiple activities to Next.js API
-   */
-  static async syncMultipleActivities(
-    activityIds: string[],
-  ): Promise<{ success: number; failed: number }> {
-    if (!this.isInitialized) {
-      await this.initialize();
-    }
+    for (const activity of activities) {
+      try {
+        const success = await this.syncSingleActivityWithRetry(
+          activity,
+          userId,
+        );
 
-    console.log(`🔄 Starting bulk sync for ${activityIds.length} activities`);
-
-    let successCount = 0;
-    let failedCount = 0;
-
-    // Process in batches to avoid overwhelming the API
-    const batchSize = 10;
-    for (let i = 0; i < activityIds.length; i += batchSize) {
-      const batch = activityIds.slice(i, i + batchSize);
-      const batchActivities = [];
-
-      // Prepare batch data
-      for (const activityId of batch) {
-        try {
-          const activity =
-            await LocalActivityDatabaseService.getActivity(activityId);
-          if (!activity) continue;
-
-          const fileExists = await FileSystem.getInfoAsync(
-            activity.local_fit_file_path,
-          );
-          if (!fileExists.exists) continue;
-
-          const jsonData = await FileSystem.readAsStringAsync(
-            activity.local_fit_file_path,
-            {
-              encoding: FileSystem.EncodingType.UTF8,
-            },
-          );
-
-          const activityData = JSON.parse(jsonData);
-
-          // Upload to Supabase Storage first
-          const {
-            data: { user },
-          } = await supabase.auth.getUser();
-          if (!user) throw new Error("User not authenticated");
-
-          const fileName = `${user.id}/${activity.id}.json`;
-          await supabase.storage
-            .from("activity-json-files")
-            .upload(
-              fileName,
-              new Blob([jsonData], { type: "application/json" }),
-              {
-                upsert: true,
-              },
-            );
-
-          batchActivities.push({
+        if (success) {
+          result.success++;
+          result.details.push({
             activityId: activity.id,
-            startedAt: activityData.startedAt,
-            liveMetrics: activityData.liveMetrics,
-            filePath: fileName,
+            status: "success",
           });
-
-          // Update status to syncing
-          await LocalActivityDatabaseService.updateSyncStatus(
-            activity.id,
-            "syncing",
-          );
-        } catch (error) {
-          console.error(
-            `Failed to prepare activity ${activityId} for batch sync:`,
-            error,
-          );
-          await LocalActivityDatabaseService.updateSyncStatus(
-            activityId,
-            "sync_failed",
-            undefined,
-            error instanceof Error ? error.message : "Preparation failed",
-          );
-          failedCount++;
+        } else {
+          result.failed++;
+          result.details.push({
+            activityId: activity.id,
+            status: "failed",
+            error: "Sync failed after retries",
+          });
         }
-      }
-
-      // Send batch to API
-      if (batchActivities.length > 0) {
-        try {
-          const response = await apiClient.bulkSyncActivities(batchActivities);
-
-          if (response.success && response.data) {
-            const results = response.data.results || [];
-
-            for (const result of results) {
-              if (result.success) {
-                await LocalActivityDatabaseService.updateSyncStatus(
-                  result.activityId,
-                  "synced",
-                  result.activity?.cloudStoragePath,
-                );
-
-                // Delete local file
-                try {
-                  const activity =
-                    await LocalActivityDatabaseService.getActivity(
-                      result.activityId,
-                    );
-                  if (activity?.local_fit_file_path) {
-                    await FileSystem.deleteAsync(activity.local_fit_file_path);
-                  }
-                } catch (deleteError) {
-                  console.warn("Failed to delete local file:", deleteError);
-                }
-
-                successCount++;
-              } else {
-                await LocalActivityDatabaseService.updateSyncStatus(
-                  result.activityId,
-                  "sync_failed",
-                  undefined,
-                  result.error || "Bulk sync failed",
-                );
-                failedCount++;
-              }
-            }
-          } else {
-            // All activities in batch failed
-            for (const activity of batchActivities) {
-              await LocalActivityDatabaseService.updateSyncStatus(
-                activity.activityId,
-                "sync_failed",
-                undefined,
-                response.error || "Bulk API call failed",
-              );
-              failedCount++;
-            }
-          }
-        } catch (error) {
-          console.error("Batch sync API call failed:", error);
-          // Mark all activities in batch as failed
-          for (const activity of batchActivities) {
-            await LocalActivityDatabaseService.updateSyncStatus(
-              activity.activityId,
-              "sync_failed",
-              undefined,
-              error instanceof Error ? error.message : "Batch sync failed",
-            );
-            failedCount++;
-          }
-        }
+      } catch (error) {
+        result.failed++;
+        result.details.push({
+          activityId: activity.id,
+          status: "failed",
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
       }
     }
 
-    console.log(
-      `✅ Bulk sync completed: ${successCount} successful, ${failedCount} failed`,
-    );
-    return { success: successCount, failed: failedCount };
+    return result;
   }
 
   /**
-   * Clean up successfully synced activities
+   * Sync single activity with retry logic
    */
-  static async cleanupSyncedActivities(): Promise<number> {
-    if (!this.isInitialized) {
-      await this.initialize();
-    }
-
-    // Delete local records of synced activities
-    const deletedCount =
-      await LocalActivityDatabaseService.cleanupSyncedActivities();
-
-    console.log(
-      `Cleaned up ${deletedCount} synced activities from local storage`,
-    );
-    return deletedCount;
-  }
-
-  /**
-   * Import a FIT file from external source - Legacy method, now disabled
-   */
-  static async importFitFile(
-    filePath: string,
-    fileName?: string,
-  ): Promise<string | null> {
-    Alert.alert(
-      "Feature Disabled",
-      "FIT file import is disabled in the new JSON-first architecture. Please use the native app to record activities instead.",
-    );
-    return null;
-  }
-
-  // Private methods
-
-  private static async syncWithRetry(
+  private static async syncSingleActivityWithRetry(
     activity: SelectLocalActivity,
     userId: string,
-    maxRetries = 3,
   ): Promise<boolean> {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < this.MAX_RETRY_ATTEMPTS; attempt++) {
       try {
-        return await this.syncSingleActivity(activity, userId);
-      } catch (error) {
-        if (attempt === maxRetries) throw error;
-        await new Promise((resolve) =>
-          setTimeout(resolve, Math.pow(2, attempt) * 1000),
+        // Update attempt count
+        await LocalActivityDatabaseService.updateSyncStatus(
+          activity.id,
+          "syncing",
+          undefined,
+          undefined,
+          attempt + 1,
         );
+
+        const success = await this.syncSingleActivity(activity, userId);
+
+        if (success) {
+          return true;
+        }
+      } catch (error) {
+        lastError =
+          error instanceof Error ? error : new Error("Unknown sync error");
+        console.error(
+          `❌ Sync attempt ${attempt + 1} failed for ${activity.id}:`,
+          lastError.message,
+        );
+
+        // Wait before retry (except on last attempt)
+        if (attempt < this.MAX_RETRY_ATTEMPTS - 1) {
+          await this.sleep(this.RETRY_DELAYS[attempt] || 15000);
+        }
       }
     }
+
+    // All attempts failed
+    await LocalActivityDatabaseService.updateSyncStatus(
+      activity.id,
+      "sync_failed",
+      undefined,
+      lastError?.message || "All retry attempts failed",
+      this.MAX_RETRY_ATTEMPTS,
+    );
+
     return false;
   }
 
-  private static getSupabaseUrl(): string {
-    const url =
-      Constants.expoConfig?.extra?.supabaseUrl ||
-      process.env.EXPO_PUBLIC_SUPABASE_URL;
-    if (!url) throw new Error("Supabase URL not configured");
-    return url;
-  }
-
   /**
-   * Sync a single activity to Next.js API using hybrid approach
+   * Core sync logic for a single activity
    */
   private static async syncSingleActivity(
     activity: SelectLocalActivity,
@@ -426,38 +399,39 @@ export class ActivitySyncService {
     try {
       console.log(`🔄 Syncing activity: ${activity.id} to Next.js API`);
 
-      // Update status to syncing
-      await LocalActivityDatabaseService.updateSyncStatus(
-        activity.id,
-        "syncing",
-      );
+      // Validate file exists and is readable
+      if (!activity.localFitFilePath) {
+        throw new Error("No local file path found for activity");
+      }
 
-      // Check if JSON file exists
       const fileExists = await FileSystem.getInfoAsync(
-        activity.local_fit_file_path,
+        activity.localFitFilePath,
       );
       if (!fileExists.exists) {
         throw new Error(
-          `Activity JSON file not found: ${activity.local_fit_file_path}`,
+          `Activity file not found: ${activity.localFitFilePath}`,
         );
       }
 
-      // Read the JSON file
+      // Check file size
+      if (fileExists.size && fileExists.size > this.MAX_FILE_SIZE) {
+        throw new Error(`Activity file too large: ${fileExists.size} bytes`);
+      }
+
+      // Read and validate JSON data
       const jsonData = await FileSystem.readAsStringAsync(
-        activity.local_fit_file_path,
-        {
-          encoding: FileSystem.EncodingType.UTF8,
-        },
+        activity.localFitFilePath,
+        { encoding: FileSystem.EncodingType.UTF8 },
       );
 
       let activityData;
       try {
         activityData = JSON.parse(jsonData);
       } catch (parseError) {
-        throw new Error("Failed to parse activity JSON file");
+        throw new Error("Invalid JSON data in activity file");
       }
 
-      // Step 1: Upload JSON to Supabase Storage (keep existing storage)
+      // Step 1: Upload to Supabase Storage (keep this direct!)
       const fileName = `${userId}/${activity.id}.json`;
       const { error: uploadError } = await supabase.storage
         .from("activity-json-files")
@@ -466,116 +440,164 @@ export class ActivitySyncService {
         });
 
       if (uploadError) {
-        throw new Error(`JSON upload failed: ${uploadError.message}`);
+        throw new Error(`Storage upload failed: ${uploadError.message}`);
       }
 
       console.log(`📁 Activity JSON uploaded to Supabase Storage: ${fileName}`);
 
-      // Step 2: Call the Next.js API endpoint instead of Edge Function
+      // Step 2: Call Next.js API for metadata and processing
       const syncResponse = await apiClient.syncActivity({
         activityId: activity.id,
-        startedAt: activityData.startedAt,
-        liveMetrics: activityData.liveMetrics,
+        startedAt: activityData.startedAt || activity.startDate.toISOString(),
+        liveMetrics: {
+          name: activity.name,
+          sport: activity.activityType,
+          duration: activity.totalTime || 0,
+          distance: activity.totalDistance || 0,
+          elevationGain: activity.elevationGain,
+          calories: activity.calories,
+          avgHeartRate: activity.avgHeartRate,
+          maxHeartRate: activity.maxHeartRate,
+          avgPower: activity.avgPower,
+          maxPower: activity.maxPower,
+          avgCadence: activity.avgCadence,
+          tss: activity.tss,
+          notes: activityData.notes,
+        },
         filePath: fileName,
       });
 
       if (!syncResponse.success) {
-        throw new Error(syncResponse.error || "Next.js API sync failed");
+        throw new Error(syncResponse.error || "API sync failed");
       }
 
       console.log(
-        `✅ Activity ${activity.id} synced successfully to Next.js API`,
+        `✅ Activity ${activity.id} synced successfully via Next.js API`,
       );
 
       // Update local status to synced
       await LocalActivityDatabaseService.updateSyncStatus(
         activity.id,
         "synced",
-        fileName, // Store the JSON storage path
+        fileName,
       );
 
-      // Delete local JSON file after successful sync
+      // Clean up local file after successful sync
       try {
-        await FileSystem.deleteAsync(activity.local_fit_file_path);
-        console.log(
-          `🗑️ Local JSON file deleted: ${activity.local_fit_file_path}`,
-        );
+        await FileSystem.deleteAsync(activity.localFitFilePath);
+        console.log(`🗑️ Local file deleted: ${activity.localFitFilePath}`);
       } catch (deleteError) {
-        console.warn("⚠️ Failed to delete local JSON file:", deleteError);
+        console.warn("⚠️ Failed to delete local file:", deleteError);
+        // Don't fail the sync if file deletion fails
       }
 
       return true;
     } catch (error) {
       console.error(`❌ Error syncing activity ${activity.id}:`, error);
-
-      // Update status to sync_failed
-      await LocalActivityDatabaseService.updateSyncStatus(
-        activity.id,
-        "sync_failed",
-        undefined,
-        error instanceof Error ? error.message : "Unknown error",
-      );
-
-      return false;
+      throw error;
     }
   }
 
   /**
-   * Check if network is available
+   * Check network connectivity
    */
   static async isNetworkAvailable(): Promise<boolean> {
     try {
       const networkState = await Network.getNetworkStateAsync();
-      return networkState.isConnected || false;
+      return networkState.isConnected === true;
     } catch (error) {
-      console.error("Error checking network state:", error);
+      console.error("❌ Network check failed:", error);
       return false;
     }
   }
 
   /**
-   * Setup app state and network listeners for automatic sync
+   * Set up sync listeners for app state changes
    */
   private static setupSyncListeners(): void {
-    // Listener for app state changes (e.g., app comes to foreground)
-    AppState.addEventListener("change", async (nextAppState) => {
-      if (nextAppState === "active" && !this.syncInProgress) {
-        try {
-          const networkState = await Network.getNetworkStateAsync();
-          if (networkState.isConnected) {
-            console.log("App became active with network, starting auto-sync");
-            this.syncAll().catch((error) => {
-              console.error("Auto-sync on app active failed:", error);
-            });
-          }
-        } catch (error) {
-          console.error("Error checking network state on app active:", error);
-        }
-      }
-    });
+    // Listen to app state changes
+    this.appStateSubscription = AppState.addEventListener(
+      "change",
+      this.handleAppStateChange.bind(this),
+    );
 
-    // Listener for network connectivity changes
-    Network.addNetworkStateListener(async (networkState) => {
-      if (networkState.isConnected && !this.syncInProgress) {
-        console.log("Network connection detected, starting auto-sync");
-        this.syncAll().catch((error) => {
-          console.error("Auto-sync on network change failed:", error);
-        });
-      }
-    });
+    console.log("🔔 Sync listeners initialized");
   }
 
   /**
-   * Format duration helper
+   * Handle app state changes for automatic sync
+   */
+  private static async handleAppStateChange(
+    nextAppState: AppStateStatus,
+  ): Promise<void> {
+    if (nextAppState === "active") {
+      console.log("📱 App became active, checking for pending sync");
+
+      try {
+        const isOnline = await this.isNetworkAvailable();
+        if (isOnline) {
+          // Trigger background sync after a short delay
+          setTimeout(() => {
+            this.syncAll().catch((error) => {
+              console.error("❌ Background sync failed:", error);
+            });
+          }, 2000);
+        }
+      } catch (error) {
+        console.error("❌ Error in app state change handler:", error);
+      }
+    }
+  }
+
+  /**
+   * Create batches from array
+   */
+  private static createBatches<T>(items: T[], batchSize: number): T[][] {
+    const batches: T[][] = [];
+    for (let i = 0; i < items.length; i += batchSize) {
+      batches.push(items.slice(i, i + batchSize));
+    }
+    return batches;
+  }
+
+  /**
+   * Sleep utility for retry delays
+   */
+  private static sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Format duration for logging
    */
   private static formatDuration(seconds: number): string {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
+    const remainingSeconds = seconds % 60;
 
     if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+      return `${hours}h ${minutes}m ${remainingSeconds}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${remainingSeconds}s`;
+    } else {
+      return `${remainingSeconds}s`;
     }
-    return `${minutes}:${secs.toString().padStart(2, "0")}`;
+  }
+
+  /**
+   * Cleanup method for when the service is destroyed
+   */
+  static cleanup(): void {
+    if (this.appStateSubscription) {
+      this.appStateSubscription.remove();
+      this.appStateSubscription = null;
+    }
+
+    // Clear any pending retry timeouts
+    this.retryTimeouts.forEach((timeout) => clearTimeout(timeout));
+    this.retryTimeouts.clear();
+
+    this.isInitialized = false;
+    console.log("🧹 Activity sync service cleaned up");
   }
 }
