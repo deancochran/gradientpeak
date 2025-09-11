@@ -2,8 +2,11 @@ import { ThemedView } from "@components/ThemedView";
 import { Ionicons } from "@expo/vector-icons";
 import { useProfile } from "@lib/hooks/api/profiles";
 import { usePerformanceMetrics } from "@lib/hooks/usePerformanceMetrics";
+import { TrendsService } from "@lib/services/trends-service";
+import type { TrendsData } from "@repo/core";
 import { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Dimensions,
   RefreshControl,
   ScrollView,
@@ -12,26 +15,51 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { BarChart, LineChart } from "react-native-chart-kit";
 import { SafeAreaView } from "react-native-safe-area-context";
+// Simple chart placeholder components
+const ChartPlaceholder = ({
+  title,
+  height = 220,
+}: {
+  title: string;
+  height?: number;
+}) => (
+  <View
+    style={{
+      height,
+      backgroundColor: "#f9fafb",
+      borderRadius: 8,
+      justifyContent: "center",
+      alignItems: "center",
+      borderWidth: 1,
+      borderColor: "#e5e7eb",
+    }}
+  >
+    <Ionicons name="analytics-outline" size={32} color="#9ca3af" />
+    <Text
+      style={{
+        marginTop: 8,
+        fontSize: 14,
+        color: "#6b7280",
+        textAlign: "center",
+      }}
+    >
+      {title}
+    </Text>
+    <Text
+      style={{
+        marginTop: 4,
+        fontSize: 12,
+        color: "#9ca3af",
+        textAlign: "center",
+      }}
+    >
+      Chart will render with real data
+    </Text>
+  </View>
+);
 
 const { width } = Dimensions.get("window");
-const chartConfig = {
-  backgroundColor: "#ffffff",
-  backgroundGradientFrom: "#ffffff",
-  backgroundGradientTo: "#ffffff",
-  decimalPlaces: 1,
-  color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
-  labelColor: (opacity = 1) => `rgba(107, 114, 128, ${opacity})`,
-  style: {
-    borderRadius: 16,
-  },
-  propsForDots: {
-    r: "4",
-    strokeWidth: "2",
-    stroke: "#3b82f6",
-  },
-};
 
 interface TrendsPeriod {
   label: string;
@@ -46,16 +74,15 @@ const TREND_PERIODS: TrendsPeriod[] = [
   { label: "1Y", days: 365, value: "1y" },
 ];
 
-interface ChartData {
-  labels: string[];
-  datasets: Array<{
-    data: number[];
-    color?: (opacity: number) => string;
-    strokeWidth?: number;
-  }>;
-}
-
 export default function TrendsScreen() {
+  // State management
+  const [selectedPeriod, setSelectedPeriod] = useState<TrendsPeriod>(
+    TREND_PERIODS[1], // 30D default
+  );
+  const [trendsData, setTrendsData] = useState<TrendsData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [trendsError, setTrendsError] = useState<string | null>(null);
+
   // Profile data
   const {
     data: profile,
@@ -64,143 +91,79 @@ export default function TrendsScreen() {
     refetch: refetchProfile,
   } = useProfile();
 
-  // Period selection
-  const [selectedPeriod, setSelectedPeriod] = useState<TrendsPeriod>(
-    TREND_PERIODS[1],
-  ); // 30D default
-
-  // Performance data
+  // Performance metrics
   const { metrics: performanceMetrics, refreshMetrics } =
     usePerformanceMetrics();
 
-  // Chart data
-  const [trainingLoadData, setTrainingLoadData] = useState<ChartData | null>(
-    null,
-  );
-  const [tssData, setTssData] = useState<ChartData | null>(null);
-
-  // Loading states
-  const isLoading = profileLoading;
-  const error = profileError;
-
+  // Initialize and load data
   useEffect(() => {
-    console.log("📊 Trends Screen - Initializing");
-    initializeTrendsScreen();
+    loadTrendsData();
   }, [selectedPeriod, profile?.id]);
 
-  const initializeTrendsScreen = async () => {
-    if (profile) {
-      console.log("📊 Trends Screen - Profile loaded:", {
-        id: profile.id,
-        ftp: profile.ftp,
-        thresholdHr: profile.thresholdHr,
-      });
-
-      await loadTrendsData();
-    } else if (profileError) {
-      console.warn("📊 Trends Screen - No profile found");
-    }
-  };
-
   const loadTrendsData = async () => {
-    console.log(
-      "📊 Trends Screen - Loading trends data for period:",
-      selectedPeriod.label,
-    );
+    if (!profile?.id) {
+      console.log("📊 No profile ID available");
+      setIsLoading(false);
+      return;
+    }
 
-    // Generate mock training load data
-    const days = selectedPeriod.days;
-    const labels: string[] = [];
-    const ctlData: number[] = [];
-    const atlData: number[] = [];
-    const tssValues: number[] = [];
+    setIsLoading(true);
+    setTrendsError(null);
 
-    // Generate data points
-    for (let i = days - 1; i >= 0; i--) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
+    try {
+      console.log("📊 Loading trends data for period:", selectedPeriod.label);
 
-      // Format label based on period
-      let label: string;
-      if (days <= 7) {
-        label = date.toLocaleDateString("en-US", { weekday: "short" });
-      } else if (days <= 30) {
-        label = date.getDate().toString();
-      } else {
-        label = date.toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-        });
+      // Check if we have sufficient data
+      const availability = await TrendsService.checkDataAvailability(
+        profile.id,
+        3, // Minimum 3 activities
+      );
+
+      if (!availability.hasData) {
+        console.log("📊 Insufficient data, using sample data");
+        const timeFrame = TrendsService.getTimeFrameConfig(
+          selectedPeriod.value,
+        );
+        const sampleData = TrendsService.getSampleTrendsData(timeFrame);
+        setTrendsData(sampleData);
+        setIsLoading(false);
+        return;
       }
 
-      labels.push(label);
+      // Load real trends data
+      const timeFrame = TrendsService.getTimeFrameConfig(selectedPeriod.value);
+      const trends = await TrendsService.calculateTrends({
+        timeFrame,
+        profileId: profile.id,
+        ftp: profile.ftp || undefined,
+        maxHR: profile.dob
+          ? 220 - new Date().getFullYear() + new Date(profile.dob).getFullYear()
+          : undefined,
+        thresholdHR: profile.thresholdHr || undefined,
+      });
 
-      // Mock CTL/ATL/TSB progression
-      const dayIndex = days - 1 - i;
-      const ctl = 40 + Math.sin(dayIndex / 10) * 15 + dayIndex * 0.3;
-      const atl = 35 + Math.sin(dayIndex / 5) * 20 + dayIndex * 0.2;
-      const dailyTss = Math.max(0, 50 + Math.sin(dayIndex / 3) * 40);
-
-      ctlData.push(Math.max(0, ctl));
-      atlData.push(Math.max(0, atl));
-      tssValues.push(dailyTss);
+      setTrendsData(trends);
+      console.log("📊 Trends data loaded successfully");
+    } catch (err) {
+      console.error("📊 Failed to load trends data:", err);
+      setTrendsError("Failed to load trends data");
+    } finally {
+      setIsLoading(false);
     }
-
-    // Sample every nth point for readability
-    const sampleRate = Math.max(1, Math.floor(days / 10));
-    const sampledLabels = labels.filter((_, index) => index % sampleRate === 0);
-    const sampledCtlData = ctlData.filter(
-      (_, index) => index % sampleRate === 0,
-    );
-    const sampledAtlData = atlData.filter(
-      (_, index) => index % sampleRate === 0,
-    );
-
-    setTrainingLoadData({
-      labels: sampledLabels,
-      datasets: [
-        {
-          data: sampledCtlData,
-          color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
-          strokeWidth: 2,
-        },
-        {
-          data: sampledAtlData,
-          color: (opacity = 1) => `rgba(239, 68, 68, ${opacity})`,
-          strokeWidth: 2,
-        },
-      ],
-    });
-
-    setTssData({
-      labels: sampledLabels,
-      datasets: [
-        {
-          data: tssValues.filter((_, index) => index % sampleRate === 0),
-        },
-      ],
-    });
-
-    console.log("📊 Trends Screen - Chart data generated:", {
-      points: sampledLabels.length,
-      currentCTL: performanceMetrics?.currentCTL || 0,
-      currentTSB: performanceMetrics?.currentTSB || 0,
-    });
   };
 
   const handleRefresh = useCallback(async () => {
-    console.log("📊 Trends Screen - Refreshing");
     try {
       await refetchProfile();
       await loadTrendsData();
       refreshMetrics();
     } catch (err) {
-      console.error("📊 Trends Screen - Refresh error:", err);
+      console.error("📊 Refresh error:", err);
     }
   }, [refetchProfile, selectedPeriod, refreshMetrics]);
 
   const handlePeriodChange = (period: TrendsPeriod) => {
-    console.log("📊 Trends Screen - Period changed:", period.label);
+    console.log("📊 Period changed:", period.label);
     setSelectedPeriod(period);
   };
 
@@ -221,11 +184,12 @@ export default function TrendsScreen() {
     }
   };
 
-  if (isLoading) {
+  if (profileLoading) {
     return (
       <ThemedView style={styles.container}>
         <SafeAreaView style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading performance trends...</Text>
+          <ActivityIndicator size="large" color="#3b82f6" />
+          <Text style={styles.loadingText}>Loading profile...</Text>
         </SafeAreaView>
       </ThemedView>
     );
@@ -237,7 +201,7 @@ export default function TrendsScreen() {
         style={styles.scrollView}
         refreshControl={
           <RefreshControl
-            refreshing={profileLoading || isLoading}
+            refreshing={isLoading}
             onRefresh={handleRefresh}
             tintColor="#3b82f6"
           />
@@ -256,11 +220,9 @@ export default function TrendsScreen() {
           </TouchableOpacity>
         </View>
 
-        {error && (
+        {(trendsError || profileError) && (
           <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>
-              {typeof error === "string" ? error : "An error occurred"}
-            </Text>
+            <Text style={styles.errorText}>{trendsError || profileError}</Text>
           </View>
         )}
 
@@ -302,7 +264,7 @@ export default function TrendsScreen() {
                 <View style={styles.trendIndicator}>
                   <Ionicons name="trending-up" size={16} color="#10b981" />
                   <Text style={[styles.trendText, { color: "#10b981" }]}>
-                    {performanceMetrics.currentCTL.toFixed(1)}
+                    42-day avg
                   </Text>
                 </View>
               </View>
@@ -346,117 +308,225 @@ export default function TrendsScreen() {
                   {performanceMetrics.weeklyTSS}
                 </Text>
                 <Text style={styles.metricLabel}>Weekly TSS</Text>
-                <Text style={styles.metricSubtext}>Last 7 days total</Text>
+                <Text style={styles.metricSubtext}>Last 7 days</Text>
               </View>
             </View>
           </View>
         )}
 
-        {/* Training Load Chart */}
-        {trainingLoadData && (
+        {/* Training Load Progression Chart */}
+        {trendsData && trendsData.trainingLoad.length > 0 && (
           <View style={styles.chartSection}>
-            <Text style={styles.sectionTitle}>Training Load (CTL vs ATL)</Text>
+            <Text style={styles.sectionTitle}>Training Load Progression</Text>
             <View style={styles.chartContainer}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <LineChart
-                  data={trainingLoadData}
-                  width={Math.max(
-                    width - 40,
-                    trainingLoadData.labels.length * 30,
-                  )}
-                  height={220}
-                  chartConfig={{
-                    ...chartConfig,
-                    color: (opacity = 1, index = 0) => {
-                      const colors = [
-                        "rgba(59, 130, 246, opacity)",
-                        "rgba(239, 68, 68, opacity)",
-                      ];
-                      return colors[index] || `rgba(59, 130, 246, ${opacity})`;
-                    },
-                  }}
-                  bezier
-                  style={styles.chart}
-                  withDots={trainingLoadData.labels.length <= 14}
-                  withShadow={false}
-                />
-              </ScrollView>
+              <ChartPlaceholder title="Training Load Progression (CTL vs ATL)" />
+              <View style={styles.chartData}>
+                <Text style={styles.chartDataText}>
+                  Data Points: {trendsData.trainingLoad.length}
+                </Text>
+                {trendsData.trainingLoad.length > 0 && (
+                  <Text style={styles.chartDataText}>
+                    Latest CTL:{" "}
+                    {trendsData.trainingLoad[
+                      trendsData.trainingLoad.length - 1
+                    ]?.ctl.toFixed(1) || "N/A"}{" "}
+                    | ATL:{" "}
+                    {trendsData.trainingLoad[
+                      trendsData.trainingLoad.length - 1
+                    ]?.atl.toFixed(1) || "N/A"}{" "}
+                    | TSB:{" "}
+                    {trendsData.trainingLoad[
+                      trendsData.trainingLoad.length - 1
+                    ]?.tsb.toFixed(1) || "N/A"}
+                  </Text>
+                )}
+              </View>
               <View style={styles.chartLegend}>
                 <View style={styles.legendItem}>
                   <View
                     style={[styles.legendDot, { backgroundColor: "#3b82f6" }]}
                   />
-                  <Text style={styles.legendText}>
-                    CTL (Chronic Training Load)
-                  </Text>
+                  <Text style={styles.legendText}>CTL (Fitness)</Text>
                 </View>
                 <View style={styles.legendItem}>
                   <View
                     style={[styles.legendDot, { backgroundColor: "#ef4444" }]}
                   />
-                  <Text style={styles.legendText}>
-                    ATL (Acute Training Load)
-                  </Text>
+                  <Text style={styles.legendText}>ATL (Fatigue)</Text>
                 </View>
               </View>
             </View>
           </View>
         )}
 
-        {/* Daily TSS Chart */}
-        {tssData && (
-          <View style={styles.chartSection}>
-            <Text style={styles.sectionTitle}>Daily Training Stress Score</Text>
-            <View style={styles.chartContainer}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <BarChart
-                  data={tssData}
-                  width={Math.max(width - 40, tssData.labels.length * 40)}
-                  height={220}
-                  chartConfig={chartConfig}
-                  style={styles.chart}
-                  yAxisLabel=""
-                  yAxisSuffix=""
-                  showValuesOnTopOfBars
-                  fromZero
-                />
-              </ScrollView>
+        {/* Power Zone Distribution */}
+        {trendsData &&
+          trendsData.powerZones.length > 0 &&
+          trendsData.validation.hasPowerZones && (
+            <View style={styles.chartSection}>
+              <Text style={styles.sectionTitle}>Power Zone Distribution</Text>
+              <Text style={styles.sectionSubtitle}>
+                Time spent in each power zone over time
+              </Text>
+              <View style={styles.chartContainer}>
+                <ChartPlaceholder title="Power Zone Distribution Over Time" />
+                <View style={styles.chartData}>
+                  <Text style={styles.chartDataText}>
+                    Data Points: {trendsData.powerZones.length}
+                  </Text>
+                </View>
+                <View style={styles.zoneLabels}>
+                  <Text style={styles.zoneLabel}>Z1: Active Recovery</Text>
+                  <Text style={styles.zoneLabel}>Z2: Endurance</Text>
+                  <Text style={styles.zoneLabel}>Z3: Tempo</Text>
+                  <Text style={styles.zoneLabel}>Z4: Threshold</Text>
+                  <Text style={styles.zoneLabel}>Z5: VO2 Max</Text>
+                </View>
+              </View>
             </View>
+          )}
+
+        {/* Heart Rate Zone Distribution */}
+        {trendsData &&
+          trendsData.heartRateZones.length > 0 &&
+          trendsData.validation.hasHeartRateZones && (
+            <View style={styles.chartSection}>
+              <Text style={styles.sectionTitle}>
+                Heart Rate Zone Distribution
+              </Text>
+              <Text style={styles.sectionSubtitle}>
+                Cardiovascular load distribution over time
+              </Text>
+              <View style={styles.chartContainer}>
+                <ChartPlaceholder title="Heart Rate Zone Distribution Over Time" />
+                <View style={styles.chartData}>
+                  <Text style={styles.chartDataText}>
+                    Data Points: {trendsData.heartRateZones.length}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
+
+        {/* Power vs Heart Rate Efficiency */}
+        {trendsData &&
+          trendsData.powerHeartRate.length > 0 &&
+          trendsData.validation.hasPowerHeartRate && (
+            <View style={styles.chartSection}>
+              <Text style={styles.sectionTitle}>Power vs Heart Rate Trend</Text>
+              <Text style={styles.sectionSubtitle}>
+                Efficiency improvements over time (5W power buckets)
+              </Text>
+              <View style={styles.chartContainer}>
+                <ChartPlaceholder title="Power vs Heart Rate Efficiency Trend" />
+                <View style={styles.chartData}>
+                  <Text style={styles.chartDataText}>
+                    Data Points: {trendsData.powerHeartRate.length}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
+
+        {/* Power Curve */}
+        {trendsData &&
+          trendsData.powerCurve.length > 0 &&
+          trendsData.validation.hasPowerCurve && (
+            <View style={styles.chartSection}>
+              <Text style={styles.sectionTitle}>Power Curve</Text>
+              <Text style={styles.sectionSubtitle}>
+                Best sustained power efforts across different durations
+              </Text>
+              <View style={styles.chartContainer}>
+                <ChartPlaceholder title="Best Power Efforts (Power Curve)" />
+                <View style={styles.chartData}>
+                  <Text style={styles.chartDataText}>
+                    Data Points: {trendsData.powerCurve.length}
+                  </Text>
+                  {trendsData.powerCurve.length > 0 && (
+                    <ScrollView horizontal style={styles.powerCurveData}>
+                      {trendsData.powerCurve.map((point, index) => (
+                        <View key={index} style={styles.powerCurvePoint}>
+                          <Text style={styles.powerCurveLabel}>
+                            {point.duration < 60
+                              ? `${point.duration}s`
+                              : point.duration < 3600
+                                ? `${Math.round(point.duration / 60)}m`
+                                : `${Math.round(point.duration / 3600)}h`}
+                          </Text>
+                          <Text style={styles.powerCurveValue}>
+                            {point.power}W
+                          </Text>
+                        </View>
+                      ))}
+                    </ScrollView>
+                  )}
+                </View>
+              </View>
+            </View>
+          )}
+
+        {/* No Data Message */}
+        {trendsData && !isLoading && (
+          <View style={styles.noDataContainer}>
+            {trendsData.validation.activityCount === 0 ? (
+              <View style={styles.noDataMessage}>
+                <Ionicons name="analytics-outline" size={48} color="#6b7280" />
+                <Text style={styles.noDataTitle}>No Activities Found</Text>
+                <Text style={styles.noDataText}>
+                  Start recording activities to see your performance trends and
+                  insights.
+                </Text>
+              </View>
+            ) : !trendsData.validation.hasTrainingLoad &&
+              !trendsData.validation.hasPowerZones &&
+              !trendsData.validation.hasHeartRateZones ? (
+              <View style={styles.noDataMessage}>
+                <Ionicons name="time-outline" size={48} color="#6b7280" />
+                <Text style={styles.noDataTitle}>More Data Needed</Text>
+                <Text style={styles.noDataText}>
+                  You have {trendsData.validation.activityCount} activities, but
+                  more completed activities are needed for meaningful trends.
+                </Text>
+              </View>
+            ) : null}
           </View>
         )}
 
         {/* Performance Insights */}
-        <View style={styles.insightsSection}>
-          <Text style={styles.sectionTitle}>Performance Insights</Text>
-          <View style={styles.insightCard}>
-            <View style={styles.insightHeader}>
-              <Ionicons name="bulb-outline" size={20} color="#f59e0b" />
-              <Text style={styles.insightTitle}>Training Recommendation</Text>
+        {performanceMetrics && (
+          <View style={styles.insightsSection}>
+            <Text style={styles.sectionTitle}>Performance Insights</Text>
+            <View style={styles.insightCard}>
+              <View style={styles.insightHeader}>
+                <Ionicons name="bulb-outline" size={20} color="#f59e0b" />
+                <Text style={styles.insightTitle}>Training Recommendation</Text>
+              </View>
+              <Text style={styles.insightText}>
+                {performanceMetrics?.form === "optimal"
+                  ? "Your form is optimal! Consider scheduling a high-intensity activity or test."
+                  : performanceMetrics?.form === "tired" ||
+                      performanceMetrics?.form === "very_tired"
+                    ? "You appear fatigued. Focus on recovery or light training for the next few days."
+                    : "Your training is well balanced. Maintain current intensity distribution."}
+              </Text>
             </View>
-            <Text style={styles.insightText}>
-              {performanceMetrics?.form === "optimal"
-                ? "Your form is optimal! Consider scheduling a high-intensity activity or test."
-                : performanceMetrics?.form === "tired" ||
-                    performanceMetrics?.form === "very_tired"
-                  ? "You appear fatigued. Focus on recovery or light training for the next few days."
-                  : "Your training is well balanced. Maintain current intensity distribution."}
-            </Text>
-          </View>
 
-          <View style={styles.insightCard}>
-            <View style={styles.insightHeader}>
-              <Ionicons name="fitness-outline" size={20} color="#3b82f6" />
-              <Text style={styles.insightTitle}>Fitness Trend</Text>
+            <View style={styles.insightCard}>
+              <View style={styles.insightHeader}>
+                <Ionicons name="fitness-outline" size={20} color="#3b82f6" />
+                <Text style={styles.insightTitle}>Fitness Trend</Text>
+              </View>
+              <Text style={styles.insightText}>
+                {performanceMetrics && performanceMetrics.currentCTL > 50
+                  ? "Your fitness is improving steadily. Great progress!"
+                  : performanceMetrics && performanceMetrics.currentCTL < 30
+                    ? "Your fitness has declined recently. Consider increasing training volume."
+                    : "Your fitness is stable. Consistent training pays off!"}
+              </Text>
             </View>
-            <Text style={styles.insightText}>
-              {performanceMetrics && performanceMetrics.currentCTL > 50
-                ? "Your fitness is improving steadily. Great progress!"
-                : performanceMetrics && performanceMetrics.currentCTL < 30
-                  ? "Your fitness has declined recently. Consider increasing training volume."
-                  : "Your fitness is stable. Consistent training pays off!"}
-            </Text>
           </View>
-        </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -465,67 +535,72 @@ export default function TrendsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8fafc",
-  },
-  scrollView: {
-    flex: 1,
+    backgroundColor: "#ffffff",
   },
   loadingContainer: {
     flex: 1,
-    alignItems: "center",
     justifyContent: "center",
+    alignItems: "center",
   },
   loadingText: {
+    marginTop: 16,
     fontSize: 16,
     color: "#6b7280",
+  },
+  scrollView: {
+    flex: 1,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 20,
-    paddingVertical: 20,
+    paddingVertical: 16,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: "bold",
     color: "#111827",
   },
   infoButton: {
-    padding: 8,
+    padding: 4,
   },
   errorContainer: {
-    backgroundColor: "#fef2f2",
-    borderColor: "#fecaca",
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
     marginHorizontal: 20,
     marginBottom: 16,
+    padding: 12,
+    backgroundColor: "#fef2f2",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#fecaca",
   },
   errorText: {
     fontSize: 14,
     color: "#dc2626",
+    textAlign: "center",
   },
   periodSelector: {
     flexDirection: "row",
-    paddingHorizontal: 20,
+    marginHorizontal: 20,
     marginBottom: 20,
-    gap: 8,
+    backgroundColor: "#f3f4f6",
+    borderRadius: 12,
+    padding: 4,
   },
   periodButton: {
     flex: 1,
     paddingVertical: 8,
-    paddingHorizontal: 16,
-    backgroundColor: "#ffffff",
+    paddingHorizontal: 12,
     borderRadius: 8,
     alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
   },
   periodButtonActive: {
-    backgroundColor: "#3b82f6",
-    borderColor: "#3b82f6",
+    backgroundColor: "#ffffff",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   periodButtonText: {
     fontSize: 14,
@@ -533,17 +608,24 @@ const styles = StyleSheet.create({
     color: "#6b7280",
   },
   periodButtonTextActive: {
-    color: "#ffffff",
+    color: "#3b82f6",
+    fontWeight: "600",
   },
   metricsSection: {
-    paddingHorizontal: 20,
+    marginHorizontal: 20,
     marginBottom: 24,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "600",
     color: "#111827",
+    marginBottom: 12,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: "#6b7280",
     marginBottom: 16,
+    marginTop: -8,
   },
   metricsGrid: {
     flexDirection: "row",
@@ -553,15 +635,11 @@ const styles = StyleSheet.create({
   metricCard: {
     flex: 1,
     minWidth: "45%",
-    backgroundColor: "#ffffff",
+    backgroundColor: "#f9fafb",
     borderRadius: 12,
     padding: 16,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
   },
   metricValue: {
     fontSize: 24,
@@ -570,15 +648,13 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   metricLabel: {
-    fontSize: 12,
+    fontSize: 14,
     color: "#6b7280",
-    textAlign: "center",
     marginBottom: 4,
   },
   metricSubtext: {
-    fontSize: 10,
+    fontSize: 12,
     color: "#9ca3af",
-    textAlign: "center",
   },
   trendIndicator: {
     flexDirection: "row",
@@ -586,36 +662,33 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   trendText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: "500",
   },
   formBadge: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: "600",
-    textAlign: "center",
+    textTransform: "uppercase",
   },
   chartSection: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
+    marginHorizontal: 20,
+    marginBottom: 32,
   },
   chartContainer: {
     backgroundColor: "#ffffff",
     borderRadius: 12,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  chart: {
-    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    overflow: "hidden",
   },
   chartLegend: {
     flexDirection: "row",
+    flexWrap: "wrap",
     justifyContent: "center",
-    marginTop: 12,
-    gap: 20,
+    gap: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: "#f9fafb",
   },
   legendItem: {
     flexDirection: "row",
@@ -630,9 +703,46 @@ const styles = StyleSheet.create({
   legendText: {
     fontSize: 12,
     color: "#6b7280",
+    fontWeight: "500",
+  },
+  zoneLabels: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-around",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: "#f9fafb",
+  },
+  zoneLabel: {
+    fontSize: 10,
+    color: "#6b7280",
+    fontWeight: "500",
+  },
+  noDataContainer: {
+    marginHorizontal: 20,
+    marginBottom: 24,
+  },
+  noDataMessage: {
+    alignItems: "center",
+    paddingVertical: 32,
+    paddingHorizontal: 20,
+  },
+  noDataTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#374151",
+    marginTop: 16,
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  noDataText: {
+    fontSize: 14,
+    color: "#6b7280",
+    textAlign: "center",
+    lineHeight: 20,
   },
   insightsSection: {
-    paddingHorizontal: 20,
+    marginHorizontal: 20,
     marginBottom: 100,
   },
   insightCard: {
@@ -640,11 +750,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
   },
   insightHeader: {
     flexDirection: "row",
@@ -661,5 +768,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#374151",
     lineHeight: 20,
+  },
+  chartData: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "#f9fafb",
+    borderTopWidth: 1,
+    borderTopColor: "#e5e7eb",
+  },
+  chartDataText: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginBottom: 4,
+  },
+  powerCurveData: {
+    marginTop: 8,
+  },
+  powerCurvePoint: {
+    marginRight: 16,
+    alignItems: "center",
+  },
+  powerCurveLabel: {
+    fontSize: 10,
+    color: "#9ca3af",
+    marginBottom: 2,
+  },
+  powerCurveValue: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#374151",
   },
 });

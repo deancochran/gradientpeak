@@ -41,6 +41,9 @@ export const localActivities = sqliteTable("local_activities", {
   calories: integer("calories"),
   tss: real("tss"), // Training Stress Score
 
+  // Cached processed data
+  cached_metadata: text("cached_metadata"), // JSON string of processed activity data
+
   // Timestamps
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()

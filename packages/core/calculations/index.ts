@@ -3,6 +3,7 @@ export * from "./hr";
 export * from "./power";
 export * from "./training-load";
 export * from "./training-plan";
+export * from "./trends";
 export * from "./utils";
 
 // Re-export commonly used functions for convenience
@@ -40,6 +41,14 @@ export {
   requiresFTP,
   requiresThresholdHR,
 } from "./training-plan";
+export {
+  calculateHeartRateZoneDistribution,
+  calculatePowerCurve,
+  calculatePowerHeartRateTrend,
+  calculatePowerZoneDistribution,
+  calculateTrainingLoadProgression,
+  validateTrendsData,
+} from "./trends";
 export {
   addDays,
   calculateAge,

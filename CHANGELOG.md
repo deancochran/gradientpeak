@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Trends Screen**: Complete implementation with fault-tolerant design
+  - Training Load Progression Chart showing CTL, ATL, TSB over time from real activity data
+  - Power Zone Distribution Chart with stacked visualization for cycling activities  
+  - Heart Rate Zone Distribution Chart showing cardiovascular load patterns
+  - Power vs Heart Rate Trend Chart for tracking efficiency improvements
+  - Performance Power Curve Chart displaying best efforts across all durations
+  - Real-time data integration from completed, synced activities only
+  - Graceful handling of missing data with informative placeholder charts
+  - Sample data generation for testing when insufficient activity data exists
+  - Period selection (7D, 30D, 90D, 1Y) with intelligent data sampling
+- **Core Package**: Added comprehensive trends calculation functions in `calculations/trends.ts`
+  - `calculateTrainingLoadProgression()` for exponential weighted CTL/ATL/TSB analysis
+  - `calculatePowerZoneDistribution()` for time-in-zone aggregation across activities
+  - `calculateHeartRateZoneDistribution()` for HR zone time analysis
+  - `calculatePowerHeartRateTrend()` for 5W power bucket efficiency tracking
+  - `calculatePowerCurve()` for best effort power analysis across durations
+  - `validateTrendsData()` for comprehensive data availability validation
+  - New TypeScript types: `TrendsActivity`, `TrendsTimeFrame`, `TrainingLoadTrendPoint`, etc.
+- **Mobile App**: New `TrendsService` for intelligent activity data aggregation
+  - Real activity data loading from local JSON files with stream processing
+  - Comprehensive data validation and availability checking (minimum 3-5 activities)
+  - Automatic fallback to sample data for development and testing
+  - Integration with existing activity recording and sync system
+  - Fault-tolerant design handles missing sensors, incomplete data, sparse activities
+- **Database**: Enhanced local_activities schema with `cached_metadata` field for processed activity data
+
 ### Changed
 - **BREAKING**: Removed FIT file generation and storage in favor of JSON-based local storage
 - Updated local_activities schema to use `localStoragePath` instead of `localFitFilePath`

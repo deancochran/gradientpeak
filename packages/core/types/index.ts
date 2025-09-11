@@ -425,6 +425,80 @@ export interface ValueRange {
 }
 
 // ================================
+// Trends Analysis Types
+// ================================
+
+/**
+ * Activity data optimized for trends analysis
+ */
+export interface TrendsActivity {
+  id: string;
+  date: Date;
+  activityType: string;
+  duration: number; // seconds
+  tss?: number;
+  avgHeartRate?: number;
+  maxHeartRate?: number;
+  avgPower?: number;
+  maxPower?: number;
+  normalizedPower?: number;
+  dataStreams?: ActivityStream[];
+  dataPoints?: ActivityDataPoint[];
+}
+
+/**
+ * Time frame configuration for trends analysis
+ */
+export interface TrendsTimeFrame {
+  days: number;
+  sampleRate: number; // Show every nth day
+}
+
+/**
+ * Training load progression data point
+ */
+export interface TrainingLoadTrendPoint {
+  date: Date;
+  ctl: number;
+  atl: number;
+  tsb: number;
+  dailyTSS: number;
+}
+
+/**
+ * Zone distribution data point
+ */
+export interface ZoneDistributionPoint {
+  date: Date;
+  z1: number; // time in seconds
+  z2: number;
+  z3: number;
+  z4: number;
+  z5: number;
+  z6?: number;
+  z7?: number;
+}
+
+/**
+ * Power vs heart rate trend data point
+ */
+export interface PowerHeartRatePoint {
+  power: number; // watts (5W buckets)
+  heartRate: number; // bpm
+  count: number; // number of data points
+  date: Date;
+}
+
+/**
+ * Power curve data point
+ */
+export interface PowerCurvePoint {
+  duration: number; // seconds
+  power: number; // watts
+  date: Date; // when this best effort was achieved
+}
+
+// ================================
 // Export Collections
 // ================================
 
