@@ -9,6 +9,7 @@ interface RecordingControlsProps {
   onStop: () => void;
   onPause: () => void;
   onResume: () => void;
+  onDiscard?: () => void;
   hasPermissions: boolean;
 }
 
@@ -19,6 +20,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
   onStop,
   onPause,
   onResume,
+  onDiscard,
   hasPermissions,
 }) => {
   // Show initial state when not recording
@@ -44,11 +46,27 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
   // Show recording controls when active or paused
   return (
     <View style={styles.footerRecording}>
-      <TouchableOpacity style={styles.stopButton} onPress={onStop}>
-        <Ionicons name="stop-circle-outline" size={28} color="#ef4444" />
-        <Text style={styles.stopButtonText}>Stop</Text>
-      </TouchableOpacity>
+      {/* Left side - Stop and Discard buttons (only visible when paused) */}
+      {isPaused ? (
+        <View style={styles.pausedActions}>
+          <TouchableOpacity style={styles.stopButton} onPress={onStop}>
+            <Ionicons name="stop-circle-outline" size={28} color="#ef4444" />
+            <Text style={styles.stopButtonText}>Stop</Text>
+          </TouchableOpacity>
 
+          {onDiscard && (
+            <TouchableOpacity style={styles.discardButton} onPress={onDiscard}>
+              <Ionicons name="trash-outline" size={28} color="#6b7280" />
+              <Text style={styles.discardButtonText}>Discard</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      ) : (
+        // Spacer when not paused to maintain layout
+        <View style={styles.spacer} />
+      )}
+
+      {/* Center - Main action button (pause/resume) */}
       <TouchableOpacity
         style={[styles.mainActionButton, isPaused && styles.pausedButton]}
         onPress={isPaused ? onResume : onPause}
@@ -60,14 +78,15 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
         />
       </TouchableOpacity>
 
+      {/* Right side spacer for layout balance */}
+      <View style={styles.spacer} />
+
+      {/* Paused indicator */}
       {isPaused && (
         <View style={styles.pausedIndicator}>
           <Text style={styles.pausedText}>Activity Paused</Text>
         </View>
       )}
-
-      {/* Spacer for layout balance */}
-      <View style={{ width: 60 }} />
     </View>
   );
 };
@@ -107,16 +126,34 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     position: "relative",
   },
+  pausedActions: {
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 12,
+    width: 60,
+  },
   stopButton: {
     alignItems: "center",
     justifyContent: "center",
-    width: 60,
   },
   stopButtonText: {
     fontSize: 12,
     color: "#ef4444",
     fontWeight: "500",
     marginTop: 4,
+  },
+  discardButton: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  discardButtonText: {
+    fontSize: 12,
+    color: "#6b7280",
+    fontWeight: "500",
+    marginTop: 4,
+  },
+  spacer: {
+    width: 60,
   },
   mainActionButton: {
     alignItems: "center",

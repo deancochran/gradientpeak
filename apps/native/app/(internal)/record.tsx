@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useState } from "react";
+import { useFocusEffect } from "expo-router";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Modal,
@@ -22,8 +23,8 @@ import { ActivitySaveService } from "@lib/services/activity-save";
 import { router } from "expo-router";
 
 export default function RecordScreen() {
-  const { connectedDevices, isBluetoothEnabled, sensorValues, scanForDevices } =
-    useBluetooth();
+  // Hooks
+  const { connectedDevices, isBluetoothEnabled, sensorValues } = useBluetooth();
   const { permissions, requestAllRequiredPermissions } = useGlobalPermissions();
   const { data: profile } = useProfile();
 
@@ -38,19 +39,35 @@ export default function RecordScreen() {
     addSensorData,
   } = useActivityRecording();
 
+  // Local state
   const [bluetoothModalVisible, setBluetoothModalVisible] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(true);
 
-  const hasAllPermissions = Object.values(permissions).every((p) => p?.granted);
+  // Memoized permissions check for performance
+  const hasAllPermissions = useMemo(
+    () => Object.values(permissions).every((p) => p?.granted),
+    [permissions],
+  );
 
-  // Debug: Log metrics updates
+  // Reset modal visibility when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log("🎬 Record screen focused - resetting modal visibility");
+      setIsModalVisible(true);
+      return () => {
+        console.log("🎬 Record screen unfocused");
+      };
+    }, []),
+  );
+
+  // Debug: Log metrics updates with better formatting
   useEffect(() => {
     if (isRecording) {
       console.log("📊 Metrics updated:", {
-        duration: metrics.duration,
+        duration: formatDuration(metrics.duration),
         distance: (metrics.distance / 1000).toFixed(2) + "km",
-        heartRate: metrics.heartRate,
-        calories: metrics.calories,
+        heartRate: metrics.heartRate ? `${metrics.heartRate} bpm` : "N/A",
+        calories: `${metrics.calories} kcal`,
         speed: (metrics.currentSpeed * 3.6).toFixed(1) + "km/h",
       });
     }
@@ -63,14 +80,32 @@ export default function RecordScreen() {
     metrics.currentSpeed,
   ]);
 
-  // Add sensor data when available - stream in real time
+  // Stream sensor data with improved validation
   useEffect(() => {
     if (isRecording && sensorValues?.timestamp) {
+      // Filter out stale data (older than 10 seconds)
+      const now = Date.now();
+      const dataAge = now - sensorValues.timestamp;
+
+      if (dataAge > 10000) {
+        console.warn(
+          "🔶 Stale sensor data detected, skipping:",
+          dataAge + "ms old",
+        );
+        return;
+      }
+
       const hasValidSensorData =
         sensorValues.heartRate || sensorValues.power || sensorValues.cadence;
 
       if (hasValidSensorData) {
-        console.log("🔄 Streaming sensor data to recording:", sensorValues);
+        console.log("🔄 Streaming fresh sensor data:", {
+          heartRate: sensorValues.heartRate,
+          power: sensorValues.power,
+          cadence: sensorValues.cadence,
+          age: dataAge + "ms",
+        });
+
         addSensorData({
           ...(sensorValues.heartRate && { heartRate: sensorValues.heartRate }),
           ...(sensorValues.power && { power: sensorValues.power }),
@@ -88,6 +123,7 @@ export default function RecordScreen() {
     addSensorData,
   ]);
 
+  // Handlers
   const handleStartRecording = async () => {
     if (!hasAllPermissions) {
       Alert.alert(
@@ -104,22 +140,17 @@ export default function RecordScreen() {
       return;
     }
 
+    console.log("🎬 Starting activity recording...");
     const success = await startRecording();
     if (!success) {
       Alert.alert("Error", "Failed to start recording. Please try again.");
+    } else {
+      console.log("✅ Activity recording started successfully");
     }
   };
 
   const handleStopRecording = async () => {
-    const formatDuration = (seconds: number) => {
-      const mins = Math.floor(seconds / 60);
-      const secs = seconds % 60;
-      return `${mins}:${secs.toString().padStart(2, "0")}`;
-    };
-
-    const formatDistance = (meters: number) => {
-      return `${(meters / 1000).toFixed(2)} km`;
-    };
+    console.log("🎬 Stopping activity recording...");
 
     Alert.alert(
       "Save Activity?",
@@ -138,6 +169,8 @@ export default function RecordScreen() {
 
   const handleSaveActivity = async () => {
     try {
+      console.log("💾 Saving activity...");
+
       const recording = await stopRecording();
       if (!recording) {
         Alert.alert("Error", "No recording data to save.");
@@ -149,9 +182,7 @@ export default function RecordScreen() {
         return;
       }
 
-      console.log("💾 Saving activity with comprehensive data...");
-
-      // Save activity with comprehensive JSON generation
+      // Save activity with comprehensive data
       const activityId = await ActivitySaveService.saveActivityRecording(
         recording,
         profile.id,
@@ -159,6 +190,7 @@ export default function RecordScreen() {
 
       console.log("✅ Activity saved successfully:", activityId);
 
+      // Close modal and navigate
       setIsModalVisible(false);
       router.replace("/(internal)");
 
@@ -190,23 +222,45 @@ export default function RecordScreen() {
   };
 
   const handleDiscardActivity = async () => {
-    await stopRecording();
-    Alert.alert("Activity Discarded", "Your recording has been discarded.");
-    setIsModalVisible(false);
-    router.replace("/(internal)");
+    try {
+      console.log("🗑️ Discarding activity...");
+
+      await stopRecording();
+
+      setIsModalVisible(false);
+      router.replace("/(internal)");
+
+      // Show confirmation after navigation
+      setTimeout(() => {
+        Alert.alert(
+          "Activity Discarded",
+          "Your recording has been discarded.",
+          [{ text: "OK" }],
+        );
+      }, 500);
+
+      console.log("✅ Activity discarded successfully");
+    } catch (error) {
+      console.error("❌ Failed to discard activity:", error);
+      Alert.alert("Error", "Failed to discard activity. Please try again.");
+    }
   };
 
   const handleCloseModal = () => {
     if (isRecording || isPaused) {
       Alert.alert(
         "Recording in Progress",
-        "Stop the recording before closing.",
+        "You have an active recording. What would you like to do?",
         [
           { text: "Continue Recording", style: "cancel" },
           {
-            text: "Stop Recording",
-            style: "destructive",
+            text: "Stop & Save",
             onPress: handleStopRecording,
+          },
+          {
+            text: "Discard",
+            style: "destructive",
+            onPress: handleDiscardActivity,
           },
         ],
       );
@@ -220,7 +274,7 @@ export default function RecordScreen() {
     setBluetoothModalVisible(true);
   };
 
-  // Format duration as HH:MM:SS or MM:SS
+  // Utility functions
   const formatDuration = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
@@ -233,73 +287,91 @@ export default function RecordScreen() {
     }
   };
 
-  // Format metrics for display
-  const displayMetrics = [
-    {
-      id: "duration",
-      title: "Duration",
-      value: formatDuration(metrics.duration),
-      unit: "",
-      icon: "time-outline" as const,
-      isLive: isRecording && !isPaused,
-    },
-    {
-      id: "distance",
-      title: "Distance",
-      value: (metrics.distance / 1000).toFixed(2),
-      unit: "km",
-      icon: "navigate-outline" as const,
-      isLive: isRecording,
-    },
-    {
-      id: "currentSpeed",
-      title: "Current Speed",
-      value: (metrics.currentSpeed * 3.6).toFixed(1), // Convert m/s to km/h
-      unit: "km/h",
-      icon: "speedometer-outline" as const,
-      isLive: isRecording && metrics.currentSpeed > 0,
-    },
-    {
-      id: "avgSpeed",
-      title: "Avg Speed",
-      value: (metrics.avgSpeed * 3.6).toFixed(1),
-      unit: "km/h",
-      icon: "analytics-outline" as const,
-      isLive: false,
-    },
-    {
-      id: "heartRate",
-      title: "Heart Rate",
-      value: metrics.heartRate?.toString() || "--",
-      unit: "bpm",
-      icon: "heart-outline" as const,
-      isLive: !!metrics.heartRate,
-    },
-    {
-      id: "calories",
-      title: "Calories",
-      value: metrics.calories?.toString() || "0",
-      unit: "kcal",
-      icon: "flame-outline" as const,
-      isLive: isRecording,
-    },
-    {
-      id: "power",
-      title: "Power",
-      value: sensorValues?.power?.toString() || "--",
-      unit: "W",
-      icon: "flash-outline" as const,
-      isLive: !!sensorValues?.power,
-    },
-    {
-      id: "cadence",
-      title: "Cadence",
-      value: sensorValues?.cadence?.toString() || "--",
-      unit: "rpm",
-      icon: "refresh-outline" as const,
-      isLive: !!sensorValues?.cadence,
-    },
-  ];
+  const formatDistance = (meters: number): string => {
+    return `${(meters / 1000).toFixed(2)} km`;
+  };
+
+  // Improved metrics formatting with better live indicators
+  const displayMetrics = useMemo(
+    () => [
+      {
+        id: "duration",
+        title: "Duration",
+        value: formatDuration(metrics.duration),
+        unit: "",
+        icon: "time-outline" as const,
+        isLive: isRecording && !isPaused,
+      },
+      {
+        id: "distance",
+        title: "Distance",
+        value: (metrics.distance / 1000).toFixed(2),
+        unit: "km",
+        icon: "navigate-outline" as const,
+        isLive: isRecording && !isPaused,
+      },
+      {
+        id: "currentSpeed",
+        title: "Current Speed",
+        value: (metrics.currentSpeed * 3.6).toFixed(1),
+        unit: "km/h",
+        icon: "speedometer-outline" as const,
+        isLive: isRecording && !isPaused && metrics.currentSpeed > 0,
+      },
+      {
+        id: "avgSpeed",
+        title: "Avg Speed",
+        value: (metrics.avgSpeed * 3.6).toFixed(1),
+        unit: "km/h",
+        icon: "analytics-outline" as const,
+        isLive: false,
+      },
+      {
+        id: "heartRate",
+        title: "Heart Rate",
+        value: metrics.heartRate?.toString() || "--",
+        unit: "bpm",
+        icon: "heart-outline" as const,
+        isLive: isRecording && !!metrics.heartRate,
+      },
+      {
+        id: "calories",
+        title: "Calories",
+        value: metrics.calories?.toString() || "0",
+        unit: "kcal",
+        icon: "flame-outline" as const,
+        isLive: isRecording && !isPaused,
+      },
+      {
+        id: "power",
+        title: "Power",
+        value: sensorValues?.power?.toString() || "--",
+        unit: "W",
+        icon: "flash-outline" as const,
+        isLive: isRecording && !!sensorValues?.power,
+      },
+      {
+        id: "cadence",
+        title: "Cadence",
+        value: sensorValues?.cadence?.toString() || "--",
+        unit: "rpm",
+        icon: "refresh-outline" as const,
+        isLive: isRecording && !!sensorValues?.cadence,
+      },
+    ],
+    [
+      metrics.duration,
+      metrics.distance,
+      metrics.currentSpeed,
+      metrics.avgSpeed,
+      metrics.heartRate,
+      metrics.calories,
+      sensorValues?.power,
+      sensorValues?.cadence,
+      isRecording,
+      isPaused,
+    ],
+  );
 
   return (
     <Modal
@@ -320,7 +392,11 @@ export default function RecordScreen() {
             </TouchableOpacity>
 
             <Text style={styles.modalTitle}>
-              {isRecording ? "Recording Activity" : "Start Activity"}
+              {isRecording
+                ? isPaused
+                  ? "Activity Paused"
+                  : "Recording Activity"
+                : "Start Activity"}
             </Text>
 
             <View style={styles.headerRight} />
@@ -330,8 +406,8 @@ export default function RecordScreen() {
           <ActivityStatusBar
             isBluetoothEnabled={isBluetoothEnabled}
             connectedDevicesCount={connectedDevices.length}
-            isGpsTracking={isRecording}
-            gpsPointsCount={Math.floor(metrics.distance / 10)} // Rough GPS points estimate
+            isGpsTracking={isRecording && !isPaused}
+            gpsPointsCount={Math.max(1, Math.floor(metrics.distance / 10))}
             onBluetoothPress={handleBluetoothPress}
             sensorValues={sensorValues}
           />
@@ -347,12 +423,13 @@ export default function RecordScreen() {
               onStop={handleStopRecording}
               onPause={pauseRecording}
               onResume={resumeRecording}
+              onDiscard={handleDiscardActivity}
               hasPermissions={hasAllPermissions}
             />
           </View>
 
           {/* Background Recording Indicator */}
-          {isRecording && (
+          {isRecording && !isPaused && (
             <View style={styles.backgroundIndicator}>
               <View style={styles.recordingDot} />
               <Text style={styles.backgroundText}>
@@ -406,18 +483,6 @@ const styles = StyleSheet.create({
   },
   headerRight: {
     width: 44, // Match close button width for centering
-  },
-  profileInfo: {
-    backgroundColor: "#ffffff",
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
-  },
-  profileText: {
-    fontSize: 14,
-    color: "#6b7280",
-    textAlign: "center",
   },
   content: {
     flex: 1,
