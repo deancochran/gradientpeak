@@ -3,263 +3,275 @@ import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 interface RecordingControlsProps {
+  // Recording state
   isRecording: boolean;
   isPaused: boolean;
+
+  // Selection state
+  hasSelectedActivity: boolean;
+  canStartRecording: boolean;
+
+  // Control callbacks
   onStart: () => void;
-  onFinish: () => void;
   onPause: () => void;
   onResume: () => void;
+  onFinish: () => void;
   onDiscard: () => void;
-  hasPermissions: boolean;
-  isLoading?: boolean;
-  plannedActivity?: boolean;
-  onAdvanceStep?: () => void;
-  onSkipStep?: () => void;
+
+  // Loading states
+  isStarting?: boolean;
+  isCompleting?: boolean;
 }
 
 export const RecordingControls: React.FC<RecordingControlsProps> = ({
   isRecording,
   isPaused,
+  hasSelectedActivity,
+  canStartRecording,
   onStart,
-  onFinish,
   onPause,
   onResume,
+  onFinish,
   onDiscard,
-  hasPermissions,
-  isLoading = false,
-  plannedActivity = false,
-  onAdvanceStep,
-  onSkipStep,
+  isStarting = false,
+  isCompleting = false,
 }) => {
-  // Show initial state when not recording
-  if (!isRecording && !isPaused) {
+  // Not recording and no activity selected - show disabled start
+  if (!isRecording && !isPaused && !hasSelectedActivity) {
     return (
-      <View style={styles.footerInitial}>
+      <View style={styles.container}>
         <TouchableOpacity
-          style={[
-            styles.startButton,
-            (!hasPermissions || isLoading) && styles.startButtonDisabled,
-          ]}
-          onPress={onStart}
-          disabled={!hasPermissions || isLoading}
+          style={[styles.startButton, styles.disabledButton]}
+          disabled={true}
         >
-          {isLoading ? (
-            <View style={styles.loadingContainer}>
-              <Text style={styles.startButtonText}>Completing Activity...</Text>
-            </View>
+          <Text style={styles.disabledButtonText}>Select Activity First</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // Activity selected but can't start recording (missing requirements)
+  if (!isRecording && !isPaused && hasSelectedActivity && !canStartRecording) {
+    return (
+      <View style={styles.container}>
+        <TouchableOpacity
+          style={[styles.startButton, styles.disabledButton]}
+          disabled={true}
+        >
+          <Text style={styles.disabledButtonText}>Requirements Not Met</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // Ready to start recording
+  if (!isRecording && !isPaused && hasSelectedActivity && canStartRecording) {
+    return (
+      <View style={styles.container}>
+        <TouchableOpacity
+          style={[styles.startButton, isStarting && styles.loadingButton]}
+          onPress={onStart}
+          disabled={isStarting}
+        >
+          {isStarting ? (
+            <Text style={styles.startButtonText}>Starting...</Text>
           ) : (
-            <Text style={styles.startButtonText}>
-              {hasPermissions ? "Start Activity" : "Permissions Required"}
-            </Text>
+            <>
+              <Ionicons name="play" size={20} color="#ffffff" />
+              <Text style={styles.startButtonText}>Start Recording</Text>
+            </>
           )}
         </TouchableOpacity>
       </View>
     );
   }
 
-  // Show recording controls when active or paused
-  return (
-    <View style={styles.footerRecording}>
-      {/* Left side - Actions available when paused */}
-      {isPaused ? (
-        <View style={styles.pausedActions}>
+  // Currently recording (active)
+  if (isRecording && !isPaused) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.controlsRow}>
+          <TouchableOpacity style={styles.secondaryButton} onPress={onPause}>
+            <Ionicons name="pause" size={20} color="#374151" />
+            <Text style={styles.secondaryButtonText}>Pause</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity
-            style={[styles.actionButton, isLoading && styles.buttonDisabled]}
-            onPress={onDiscard}
-            disabled={isLoading}
+            style={[styles.finishButton, isCompleting && styles.loadingButton]}
+            onPress={onFinish}
+            disabled={isCompleting}
           >
-            <Ionicons name="trash-outline" size={28} />
-            <Text style={styles.discardButtonText}>Discard</Text>
+            {isCompleting ? (
+              <Text style={styles.finishButtonText}>Finishing...</Text>
+            ) : (
+              <>
+                <Ionicons name="stop" size={20} color="#ffffff" />
+                <Text style={styles.finishButtonText}>Finish</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
-      ) : plannedActivity && !isLoading ? (
-        // Planned activity controls when recording
-        <View style={styles.plannedActions}>
-          {onAdvanceStep && (
-            <TouchableOpacity style={styles.stepButton} onPress={onAdvanceStep}>
-              <Ionicons
-                name="checkmark-circle-outline"
-                size={24}
-                color="#10b981"
-              />
-              <Text style={styles.stepButtonText}>Complete Step</Text>
-            </TouchableOpacity>
-          )}
+      </View>
+    );
+  }
 
-          {onSkipStep && (
-            <TouchableOpacity style={styles.stepButton} onPress={onSkipStep}>
-              <Ionicons
-                name="play-skip-forward-outline"
-                size={24}
-                color="#f59e0b"
-              />
-              <Text style={styles.stepButtonText}>Skip Step</Text>
-            </TouchableOpacity>
-          )}
+  // Recording is paused
+  if (isPaused) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.controlsRow}>
+          <TouchableOpacity style={styles.discardButton} onPress={onDiscard}>
+            <Ionicons name="trash-outline" size={18} color="#ef4444" />
+            <Text style={styles.discardButtonText}>Discard</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.resumeButton} onPress={onResume}>
+            <Ionicons name="play" size={20} color="#ffffff" />
+            <Text style={styles.resumeButtonText}>Resume</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.finishButton, isCompleting && styles.loadingButton]}
+            onPress={onFinish}
+            disabled={isCompleting}
+          >
+            {isCompleting ? (
+              <Text style={styles.finishButtonText}>Finishing...</Text>
+            ) : (
+              <>
+                <Ionicons name="stop" size={20} color="#ffffff" />
+                <Text style={styles.finishButtonText}>Finish</Text>
+              </>
+            )}
+          </TouchableOpacity>
         </View>
-      ) : (
-        // Spacer when recording actively to maintain layout
-        <View style={styles.spacer} />
-      )}
+      </View>
+    );
+  }
 
-      {/* Center - Main action button */}
-      {isRecording && !isPaused ? (
-        // Only show pause when actively recording
-        <TouchableOpacity
-          style={[styles.mainActionButton, isLoading && styles.buttonDisabled]}
-          onPress={onPause}
-          disabled={isLoading}
-        >
-          <Ionicons name="pause-circle" size={80} color="#111827" />
-        </TouchableOpacity>
-      ) : isPaused ? (
-        // Show resume when paused
-        <TouchableOpacity
-          style={[styles.mainActionButton, isLoading && styles.buttonDisabled]}
-          onPress={onResume}
-          disabled={isLoading}
-        >
-          <Ionicons name="play-circle" size={80} />
-        </TouchableOpacity>
-      ) : (
-        <View style={styles.spacer} />
-      )}
-
-      {/* Right side - Finish button only when paused */}
-      {isPaused ? (
-        <TouchableOpacity
-          style={[styles.actionButton, isLoading && styles.buttonDisabled]}
-          onPress={onFinish}
-          disabled={isLoading}
-        >
-          <Ionicons name="checkmark-circle-outline" size={28} />
-          <Text style={styles.finishButtonText}>Finish</Text>
-        </TouchableOpacity>
-      ) : (
-        <View style={styles.spacer} />
-      )}
-
-      {isLoading && (
-        <View style={styles.loadingIndicator}>
-          <Text style={styles.loadingText}>Saving Activity...</Text>
-        </View>
-      )}
-    </View>
-  );
+  return null;
 };
 
 const styles = StyleSheet.create({
-  footerInitial: {
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+  container: {
+    padding: 20,
+    backgroundColor: "#ffffff",
+    borderTopWidth: 1,
+    borderTopColor: "#e5e7eb",
   },
+
+  // Single button layouts
   startButton: {
-    backgroundColor: "#111827",
-    borderRadius: 25,
-    paddingVertical: 16,
-    paddingHorizontal: 60,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  startButtonDisabled: {
-    backgroundColor: "#9ca3af",
-    shadowOpacity: 0.1,
-  },
-  startButtonText: {
-    color: "#ffffff",
-    fontSize: 18,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-  footerRecording: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    position: "relative",
-  },
-  pausedActions: {
-    flexDirection: "column",
-    alignItems: "center",
-  },
-  actionButton: {
     alignItems: "center",
     justifyContent: "center",
-  },
-  discardButtonText: {
-    fontSize: 12,
-    fontWeight: "500",
-    marginTop: 4,
-  },
-  finishButtonText: {
-    fontSize: 12,
-    fontWeight: "500",
-    marginTop: 4,
-  },
-  spacer: {
-    width: 60,
-  },
-  mainActionButton: {
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  pausedIndicator: {
-    position: "absolute",
-    bottom: 90,
-    backgroundColor: "#f59e0b",
-  },
-  pausedText: {
-    color: "#ffffff",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  loadingContainer: {
-    alignItems: "center",
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  plannedActions: {
-    flexDirection: "column",
-    alignItems: "center",
+    backgroundColor: "#10b981",
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
     gap: 8,
-    width: 80,
   },
-  stepButton: {
+
+  disabledButton: {
+    backgroundColor: "#f3f4f6",
+  },
+
+  loadingButton: {
+    opacity: 0.7,
+  },
+
+  startButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#ffffff",
+  },
+
+  disabledButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#9ca3af",
+  },
+
+  // Multi-button layout
+  controlsRow: {
+    flexDirection: "row",
+    gap: 12,
+    alignItems: "center",
+  },
+
+  secondaryButton: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 4,
+    backgroundColor: "#f9fafb",
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 6,
+    minWidth: 80,
   },
-  stepButtonText: {
-    fontSize: 10,
-    color: "#374151",
+
+  secondaryButtonText: {
+    fontSize: 14,
     fontWeight: "500",
-    marginTop: 2,
-    textAlign: "center",
+    color: "#374151",
   },
-  loadingIndicator: {
-    position: "absolute",
-    bottom: 90,
-    left: "50%",
-    transform: [{ translateX: -50 }],
-    backgroundColor: "#3b82f6",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+
+  resumeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#10b981",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    gap: 6,
+    flex: 1,
   },
-  loadingText: {
-    color: "#ffffff",
-    fontSize: 12,
+
+  resumeButtonText: {
+    fontSize: 14,
     fontWeight: "600",
+    color: "#ffffff",
+  },
+
+  finishButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ef4444",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    gap: 6,
+    flex: 1,
+  },
+
+  finishButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#ffffff",
+  },
+
+  discardButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#fecaca",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 4,
+    minWidth: 80,
+  },
+
+  discardButtonText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#ef4444",
   },
 });

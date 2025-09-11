@@ -4,23 +4,32 @@ import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 interface RecordingHeaderProps {
-  onClose: () => void;
+  // Close functionality - only show when not recording
+  onClose?: () => void;
+  canClose: boolean;
+
   // Recording state
-  isRecording?: boolean;
-  isPaused?: boolean;
-  // Activity type
-  activityType?: ActivityType | null;
+  isRecording: boolean;
+  isPaused: boolean;
+
+  // Activity selection
+  selectedActivityType?: ActivityType | null;
+  selectedPlannedActivity?: string | null;
+
   // GPS status
   isGpsReady: boolean;
-  gpsPointsCount?: number;
+  gpsSignalStrength?: "excellent" | "good" | "fair" | "poor";
+
   // Permissions status
   hasAllPermissions: boolean;
   onPermissionsPress: () => void;
-  // BLE status
+
+  // Bluetooth status
   isBluetoothEnabled: boolean;
   connectedDevicesCount: number;
   onBluetoothPress: () => void;
-  // Sensor data for live indicators
+
+  // Live sensor indicators
   sensorValues?: {
     heartRate?: number;
     power?: number;
@@ -31,11 +40,13 @@ interface RecordingHeaderProps {
 
 export const RecordingHeader: React.FC<RecordingHeaderProps> = ({
   onClose,
-  isRecording = false,
-  isPaused = false,
-  activityType,
+  canClose,
+  isRecording,
+  isPaused,
+  selectedActivityType,
+  selectedPlannedActivity,
   isGpsReady,
-  gpsPointsCount = 0,
+  gpsSignalStrength = "good",
   hasAllPermissions,
   onPermissionsPress,
   isBluetoothEnabled,
@@ -43,123 +54,108 @@ export const RecordingHeader: React.FC<RecordingHeaderProps> = ({
   onBluetoothPress,
   sensorValues,
 }) => {
+  const getGpsColor = () => {
+    if (!isGpsReady) return "#ef4444";
+    return "#10b981";
+  };
+
+  const getBluetoothColor = () => {
+    if (!isBluetoothEnabled) return "#ef4444";
+    if (connectedDevicesCount === 0) return "#f59e0b";
+    return "#10b981";
+  };
+
+  const getPermissionsColor = () => {
+    return hasAllPermissions ? "#10b981" : "#ef4444";
+  };
+
+  const getRecordingStatusText = () => {
+    if (isRecording && !isPaused) return "Recording";
+    if (isPaused) return "Paused";
+    if (selectedActivityType || selectedPlannedActivity) return "Ready";
+    return "Select Activity";
+  };
+
+  const getRecordingStatusColor = () => {
+    if (isRecording && !isPaused) return "#ef4444";
+    if (isPaused) return "#f59e0b";
+    if (selectedActivityType || selectedPlannedActivity) return "#10b981";
+    return "#6b7280";
+  };
+
   return (
     <View style={styles.container}>
-      {/* Close Button - Only show when not recording */}
-      {!isRecording && !isPaused ? (
-        <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-          <Ionicons name="close" size={24} color="#6b7280" />
-        </TouchableOpacity>
-      ) : (
-        <View style={styles.closeButtonPlaceholder} />
-      )}
+      {/* Left Side - Close button or Status */}
+      <View style={styles.leftSection}>
+        {canClose && onClose ? (
+          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+            <Ionicons name="close" size={24} color="#6b7280" />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.statusContainer}>
+            <View
+              style={[
+                styles.statusDot,
+                { backgroundColor: getRecordingStatusColor() },
+              ]}
+            />
+            <Text
+              style={[styles.statusText, { color: getRecordingStatusColor() }]}
+            >
+              {getRecordingStatusText()}
+            </Text>
+          </View>
+        )}
+      </View>
 
-      {/* Activity Type Display - Center */}
-      {activityType && (
-        <View style={styles.activityTypeContainer}>
-          <View
-            style={[
-              styles.activityTypeIcon,
-              {
-                backgroundColor: `${activityType.displayConfig.primaryColor}20`,
-              },
-            ]}
-          >
+      {/* Center - Activity Type Display */}
+      <View style={styles.centerSection}>
+        {selectedActivityType && (
+          <View style={styles.activityTypeDisplay}>
             <Text style={styles.activityEmoji}>
-              {activityType.displayConfig.emoji}
+              {selectedActivityType.displayConfig.emoji}
             </Text>
+            <Text style={styles.activityName}>{selectedActivityType.name}</Text>
           </View>
-          <View style={styles.activityTypeInfo}>
-            <Text style={styles.activityTypeName}>
-              {activityType.shortName}
-            </Text>
-            <Text style={styles.activityTypeEnvironment}>
-              {activityType.environment.charAt(0).toUpperCase() +
-                activityType.environment.slice(1)}
-            </Text>
+        )}
+        {selectedPlannedActivity && !selectedActivityType && (
+          <View style={styles.plannedActivityDisplay}>
+            <Ionicons name="calendar" size={16} color="#3b82f6" />
+            <Text style={styles.plannedActivityText}>Planned Workout</Text>
           </View>
-        </View>
-      )}
+        )}
+      </View>
 
-      {/* Spacer for flex layout */}
-      <View style={styles.spacer} />
-
-      {/* Status Indicators - Right aligned */}
-      <View style={styles.indicatorsContainer}>
+      {/* Right Side - System Status Indicators */}
+      <View style={styles.rightSection}>
         {/* GPS Indicator */}
-        <TouchableOpacity
-          style={[styles.indicator, isGpsReady && styles.indicatorActive]}
-          onPress={() => {
-            console.log(
-              "📍 [DEBUG] GPS indicator pressed (informational only)",
-            );
-          }}
-        >
-          <Ionicons
-            name={isGpsReady ? "locate" : "locate-outline"}
-            size={16}
-            color={isGpsReady ? "#10b981" : "#9ca3af"}
-          />
-          {isGpsReady && gpsPointsCount > 0 && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{gpsPointsCount}</Text>
-            </View>
-          )}
+        <TouchableOpacity style={styles.indicator} disabled>
+          <Ionicons name="location" size={16} color={getGpsColor()} />
+          <Text style={[styles.indicatorText, { color: getGpsColor() }]}>
+            GPS
+          </Text>
         </TouchableOpacity>
 
         {/* Permissions Indicator */}
-        <TouchableOpacity
-          style={[
-            styles.indicator,
-            hasAllPermissions && styles.indicatorActive,
-          ]}
-          onPress={() => {
-            console.log(
-              "🛡️ [DEBUG] Permissions indicator pressed in RecordingHeader",
-            );
-            onPermissionsPress();
-          }}
-        >
+        <TouchableOpacity style={styles.indicator} onPress={onPermissionsPress}>
           <Ionicons
-            name={hasAllPermissions ? "shield-checkmark" : "shield-outline"}
+            name="shield-checkmark"
             size={16}
-            color={hasAllPermissions ? "#10b981" : "#ef4444"}
+            color={getPermissionsColor()}
           />
+          <Text
+            style={[styles.indicatorText, { color: getPermissionsColor() }]}
+          >
+            Permissions
+          </Text>
         </TouchableOpacity>
 
-        {/* BLE Indicator */}
-        <TouchableOpacity
-          style={[
-            styles.indicator,
-            connectedDevicesCount > 0 &&
-              isBluetoothEnabled &&
-              styles.indicatorActive,
-          ]}
-          onPress={() => {
-            console.log(
-              "🔵 [DEBUG] Bluetooth indicator pressed in RecordingHeader",
-            );
-            onBluetoothPress();
-          }}
-        >
-          <Ionicons
-            name={
-              connectedDevicesCount > 0 && isBluetoothEnabled
-                ? "bluetooth"
-                : "bluetooth-outline"
-            }
-            size={16}
-            color={
-              connectedDevicesCount > 0 && isBluetoothEnabled
-                ? "#10b981"
-                : "#9ca3af"
-            }
-          />
-          {connectedDevicesCount > 0 && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{connectedDevicesCount}</Text>
-            </View>
-          )}
+        {/* Bluetooth Indicator */}
+        <TouchableOpacity style={styles.indicator} onPress={onBluetoothPress}>
+          <Ionicons name="bluetooth" size={16} color={getBluetoothColor()} />
+          <Text style={[styles.indicatorText, { color: getBluetoothColor() }]}>
+            BLE {connectedDevicesCount > 0 ? `(${connectedDevicesCount})` : ""}
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -171,95 +167,90 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     backgroundColor: "#ffffff",
     borderBottomWidth: 1,
     borderBottomColor: "#e5e7eb",
+    minHeight: 60,
   },
-  spacer: {
+
+  leftSection: {
     flex: 1,
-  },
-  closeButton: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: "#f3f4f6",
-  },
-  closeButtonPlaceholder: {
-    width: 40,
-    height: 40,
-  },
-  indicatorsContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  indicator: {
-    position: "relative",
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: "#f3f4f6",
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-  },
-  indicatorActive: {
-    backgroundColor: "#f0fdf4",
-    borderColor: "#10b981",
-  },
-  badge: {
-    position: "absolute",
-    top: -4,
-    right: -4,
-    backgroundColor: "#3b82f6",
-    borderRadius: 10,
-    minWidth: 18,
-    height: 18,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: "#ffffff",
-  },
-  badgeText: {
-    fontSize: 10,
-    color: "#ffffff",
-    fontWeight: "600",
-  },
-  activityTypeContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-    backgroundColor: "#f9fafb",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-  },
-  activityTypeIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 8,
-  },
-  activityEmoji: {
-    fontSize: 16,
-  },
-  activityTypeInfo: {
     alignItems: "flex-start",
   },
-  activityTypeName: {
+
+  centerSection: {
+    flex: 2,
+    alignItems: "center",
+  },
+
+  rightSection: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 12,
+  },
+
+  closeButton: {
+    padding: 4,
+  },
+
+  statusContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+
+  statusText: {
+    fontSize: 12,
+    fontWeight: "500",
+  },
+
+  activityTypeDisplay: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  activityEmoji: {
+    fontSize: 18,
+  },
+
+  activityName: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#1f2937",
-    lineHeight: 16,
+    color: "#111827",
   },
-  activityTypeEnvironment: {
-    fontSize: 11,
+
+  plannedActivityDisplay: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+
+  plannedActivityText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#3b82f6",
+  },
+
+  indicator: {
+    alignItems: "center",
+    gap: 2,
+    minWidth: 40,
+  },
+
+  indicatorText: {
+    fontSize: 9,
     fontWeight: "500",
-    color: "#6b7280",
-    textTransform: "uppercase",
-    lineHeight: 12,
+    textAlign: "center",
   },
 });

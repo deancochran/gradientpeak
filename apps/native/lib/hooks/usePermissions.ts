@@ -173,12 +173,23 @@ export const usePermissions = (requiredTypes: PermissionType[] = []) => {
   }, [requiredTypes, checkSinglePermission]);
 
   const requestAllRequiredPermissions = useCallback(async () => {
-    const results = await Promise.all(
-      requiredTypes.map((type) => requestSinglePermission(type)),
-    );
+    console.log("🛡️ Requesting all required permissions:", requiredTypes);
+
+    // Request permissions in the correct order for dependencies
+    const results: { granted: boolean; canAskAgain: boolean }[] = [];
+
+    for (const type of requiredTypes) {
+      try {
+        const result = await requestSinglePermission(type);
+        results.push(result);
+        console.log(`🛡️ Permission ${type} result:`, result);
+      } catch (error) {
+        console.error(`Error requesting permission ${type}:`, error);
+        results.push({ granted: false, canAskAgain: true });
+      }
+    }
 
     const allGranted = results.every((result) => result.granted);
-
     const permanentlyDenied = requiredTypes.filter(
       (type, index) => !results[index].canAskAgain,
     );
@@ -204,9 +215,9 @@ export const usePermissions = (requiredTypes: PermissionType[] = []) => {
     checkAllRequiredPermissions();
   }, [checkAllRequiredPermissions]);
 
-  const hasAllRequiredPermissions = requiredTypes.every(
-    (type) => permissions[type]?.granted,
-  );
+  const hasAllRequiredPermissions = Object.entries(permissions)
+    .filter(([, permission]) => permission.required)
+    .every(([, permission]) => permission.granted);
 
   const isLoading = Object.values(permissions).some((p) => p.loading);
 

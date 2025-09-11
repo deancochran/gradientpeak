@@ -38,16 +38,6 @@ export default function SessionLayout() {
           animationDuration: 300,
         }}
       />
-      <Stack.Screen
-        name="select-workout"
-        options={{
-          title: "Select Workout",
-          presentation: "containedModal",
-          gestureEnabled: true,
-          animation: "slide_from_bottom",
-          animationDuration: 300,
-        }}
-      />
     </Stack>
   );
 }

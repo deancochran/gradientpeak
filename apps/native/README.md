@@ -99,10 +99,9 @@ The app uses **Expo Router** with route groups for organized navigation:
 
 * **`(internal)/`** - Main tab navigation (Home, Plan, Trends, Settings)
 * **`(session)/`** - Isolated recording session stack preventing modal conflicts
-  * `record.tsx` - Main recording screen (moved from internal tabs)
+  * `record.tsx` - Main recording screen with consolidated activity selection
   * `bluetooth.tsx` - Bluetooth device management modal
   * `permissions.tsx` - Permission request and management modal
-  * `select-workout.tsx` - Planned activity selection modal
 * **`(modal)/`** - App-wide modals (password reset, etc.)
 * **Floating Action Button** - Replaces record tab, navigates to session stack
 
@@ -138,26 +137,37 @@ This structure **prevents modal stacking conflicts** where modals presented over
 #### **4. Unified Recording UX Redesign**
 
 * **Single-screen experience**: Combined workout selection and recording into one seamless interface
-* **State-based UI transitions**: Smooth transitions between selection mode → recording mode → paused states
-* **Progressive disclosure**: Start with workout type selection, then reveal recording controls and metrics
-* **Mandatory selection workflow**: Users must complete workout selection (planned workout or activity type) before recording
-* **Dynamic content adaptation**: 
-  - **Selection mode**: Shows workout options (planned workouts vs. activity types) with search and categorization
-  - **Recording mode**: Displays planned workout guidance OR live metrics based on selection
-  - **Activity type awareness**: Recording interface adapts based on selected activity constraints
-* **Context-aware controls**: Recording controls only appear after selection is complete
-* **Streamlined navigation**: Eliminated separate modals, reducing complexity and improving start time
-* **Visual state feedback**: Clear indication of current mode with appropriate headers and content
+* **Themed View Architecture**: Complete overhaul from modal-based to three-section themed view (header/body/footer)
+* **Reactive Components**: All sections share state and react to recording session, user selections, BLE devices, permissions, GPS data
+* **Minimal UI/UX**: Bare functional styling focused on information visibility without complex animations
+* **Activity Selection Flow**: Binary choice (planned/unplanned) → activity type selection → recording readiness validation
+* **Context-Aware Controls**: Footer contains only recording buttons with state-based visibility and manual user control
+* **Always-Accessible System Controls**: Header provides persistent access to permissions and bluetooth management
 
-#### **5. Enhanced User Experience**
+#### **5. Three-Section Layout Components**
 
-* **Interactive status indicators**: tap GPS, permissions, or BLE indicators for detailed status and controls
-* **Comprehensive permissions modal**: detailed permission explanations with guided setup workflow
-* **Enhanced recording controls**: footer-positioned controls with improved Start/Stop/Pause/Resume layout
-* **Single completion modal**: eliminated multiple popups, replaced with one comprehensive activity summary
-* **No interruption recording**: removed all popups during active recording sessions
-* **Real-time sensor feedback**: live sensor data display with connection quality indicators
-* **Background recording indicator**: clear visual feedback when recording continues in background
+* **RecordingHeader**: 
+  - Always-accessible permissions and bluetooth adjustment buttons
+  - Real-time connection status indicators with minimal styling
+  - Activity type display when selected (emoji + name)
+  - Recording state indicator (Select Activity → Ready → Recording → Paused)
+* **RecordingBodySection**: 
+  - Activity selection interface when no activity chosen
+  - Planned workout display with demo data (current step, target zones, workout overview)
+  - Unplanned activity metrics grid showing all available metrics for activity type
+  - Reactive content switching based on selection state
+* **RecordingControls**: 
+  - Context-aware button visibility (start/pause/resume/finish/discard)
+  - Planned activities blocked until required metrics available for recording
+  - Unplanned activities blocked until activity selection complete
+  - No automatic state changes - all transitions require manual user action
+
+#### **6. Enhanced State Management**
+
+* **Centralized State Access**: Cross-component synchronization of all recording states
+* **Real-time Updates**: Live tracking of device connections, permissions, and GPS status
+* **Selection Validation**: Prevents recording start until all requirements met
+* **Modal Elimination**: Only activity summary modal remains, all other interactions use themed view
 
 #### **6. Enhanced Permission Management**
 

@@ -1,14 +1,20 @@
 import { ThemedView } from "@components/ThemedView";
 import { Text } from "@components/ui/text";
-import React, { createContext, ReactNode, useContext, useEffect } from "react";
+import { createContext, ReactNode, useContext, useEffect } from "react";
 import { AppState, StyleSheet } from "react-native";
 import { PermissionType, usePermissions } from "../hooks/usePermissions";
 
-const ALL_GLOBAL_PERMISSION_TYPES: PermissionType[] = [
+const REQUIRED_RECORDING_PERMISSIONS: PermissionType[] = [
   "bluetooth",
   "location",
   "motion",
-  "location-background", // <-- Added this to request background location permission
+];
+
+const OPTIONAL_PERMISSIONS: PermissionType[] = ["location-background"];
+
+const ALL_GLOBAL_PERMISSION_TYPES: PermissionType[] = [
+  ...REQUIRED_RECORDING_PERMISSIONS,
+  ...OPTIONAL_PERMISSIONS,
 ];
 
 type PermissionsContextType = ReturnType<typeof usePermissions>;

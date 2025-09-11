@@ -126,15 +126,25 @@
   * [x] After activity type selection, users should be able to start the activity immediately
   * [x] Implement smooth state transitions between selection and active recording modes
 
-* [x] Enhanced Recording Controls  
+* [x] Enhanced Recording Controls
   * [x] Once activity is started, users can pause and resume the activity
   * [x] Provide clear visual feedback for recording states (preparing, active, paused)
   * [x] Implement context-aware UI that adapts based on recording state
 
 * [x] Dynamic Content Display
   * [x] Show planned activity display (interactive workout) for planned activities
-  * [x] Show live performance metrics grid for unplanned activities  
+  * [x] Show live performance metrics grid for unplanned activities
   * [x] Seamless switching between planned workout guidance and metrics during recording
+
+* [x] Consolidated Record Screen Implementation
+  * [x] Remove separate SelectWorkoutModal - combine all selection logic into record screen
+  * [x] Record screen opens with activity selection UI (planned vs unplanned)
+  * [x] State management for activity selection vs recording phases
+  * [x] Planned activity selection loads workout visual to follow
+  * [x] Unplanned activity requires activity type selection before recording
+  * [x] Close button available when activity not started, removed when recording active
+  * [x] Record screen and header components remain unchanged during recording
+  * [x] Unified modal approach - single screen handles complete workflow
 
 * [ ] Individual activity detail screens
   * Display basic activity info: name, date, sport type, duration.
@@ -150,6 +160,62 @@
   * Compare selected metrics across multiple activities (same sport type).
   * Highlight personal records for distance, duration, or other key metrics.
   * Minimal UI: side-by-side or simple line/bar comparisons.
+
+### 1.8 Recording UX Refactor
+
+* [x] Remove Modal-Based Recording Interface
+  * Eliminate all modals except activity summary at workout completion
+  * Convert current modal-based record screen to themed view approach
+  * Maintain only ActivitySummaryModal for post-workout display
+
+* [x] Three-Section Themed View Layout
+  * Create recording header component with state access
+  * Create recording body component with state access  
+  * Create recording footer component with state access
+  * Ensure all sections share recording session states, user selections, BLE devices, permissions, GPS data
+
+* [x] Reactive Header Component
+  * Display permissions and bluetooth adjustment buttons always accessible
+  * Show real-time connection status indicators
+  * Allow users to modify permissions/bluetooth at any time during session
+  * Minimal styling with clear visual feedback
+
+* [x] Dynamic Body Component Rendering
+  * Activity selection interface when no activity chosen
+  * Planned workout selection with demo data integration
+  * Unplanned activity type selection interface
+  * Planned activity display after selection (structured workout view)
+  * Unplanned activity metrics display after selection (all available metrics for activity type)
+  * Reactive updates based on activity selection state
+
+* [x] Context-Aware Footer Controls
+  * Recording control buttons only (start/pause/resume/stop/finish)
+  * Planned activity start blocked until required metrics available for recording
+  * Unplanned activity start blocked until activity selection complete
+  * No automatic activity state changes (manual user control only)
+  * Clean, minimal button design with state-based visibility
+
+* [x] State Management Integration
+  * Centralized access to recording session states
+  * User selection tracking (planned vs unplanned, activity type)
+  * Real-time BLE device connection states
+  * Permission grant status monitoring
+  * GPS location and signal quality states
+  * Cross-component state synchronization
+
+* [x] Activity Selection Flow
+  * Binary choice: planned workout or unplanned activity
+  * Planned workout selection from available plans (demo data)
+  * Unplanned activity requires activity type selection first
+  * Display selected activity information in body section
+  * Prevent recording start until selection process complete
+
+* [x] Minimal UI/UX Implementation
+  * Bare, functional styling throughout
+  * No complex animations or transitions
+  * Simple, readable typography and spacing
+  * Clear visual hierarchy without decorative elements
+  * Focus on information visibility and accessibility
 
 ---
 

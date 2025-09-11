@@ -8,10 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Recording UX Refactor**: Complete overhaul of recording interface from modal-based to themed view architecture
+  - **Removed Modal-Based Interface**: Eliminated all modals except activity summary, converted to single themed view
+  - **Three-Section Layout**: Created header/body/footer components with shared state access for recording session, user selections, BLE devices, permissions, GPS data
+  - **Reactive Header Component**: Always-accessible permissions and bluetooth controls with real-time connection status indicators and minimal styling
+  - **Dynamic Body Component**: Activity selection interface transitions to planned workout display or unplanned activity metrics based on selection state
+  - **Context-Aware Footer Controls**: Recording buttons only (start/pause/resume/finish) with state-based visibility, planned activities blocked until required metrics available, no automatic state changes
+  - **Centralized State Management**: Cross-component synchronization of recording states, user selections, device connections, permissions, and GPS data
+  - **Activity Selection Flow**: Binary planned/unplanned choice, activity type selection for unplanned activities, prevents recording until selection complete
+  - **Minimal UI/UX**: Bare functional styling, no complex animations, simple readable typography focused on information visibility
+  - **New Components**: RecordingBodySection for dynamic content rendering, updated RecordingHeader and RecordingControls for reactive behavior
 - **Expo Router Navigation Refactoring**: Resolved modal stacking conflicts in activity recording
   - Created `(session)` route group to isolate recording session from main tab navigation
   - Moved `record.tsx` from `(internal)` to `(session)` group for better isolation
-  - Created dedicated modal screens: `bluetooth.tsx`, `permissions.tsx`, `select-workout.tsx`
+  - Created dedicated modal screens: `bluetooth.tsx`, `permissions.tsx` (select-workout later consolidated into record screen)
   - Created `(modal)` route group for app-wide modals like password reset
   - Updated tab layout with floating action button instead of record tab
   - Integrated existing modal components with navigation-based approach
@@ -44,6 +54,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Dynamic content display: planned workout guidance for structured activities, live metrics for free activities
   - Context-aware UI that adapts based on recording state (selection → recording → paused)
   - Streamlined user flow reduces navigation complexity and improves recording start time
+- **Consolidated Record Screen Implementation**: ✅ Complete - Simplified modal architecture by removing redundant selection modals
+  - Removed separate SelectWorkoutModal and SelectActivityTypeModal files
+  - All activity selection logic now consolidated within single record screen
+  - Record screen handles complete workflow: selection → type confirmation → recording
+  - State management clearly differentiates between selection phase and recording phase
+  - Planned activities automatically load workout guidance visual when selected
+  - Unplanned activities require activity type selection before recording metrics display
+  - Close button available during selection phase, automatically hidden when recording starts
+  - Record screen header and core recording components remain unchanged during recording
+  - Updated session route layout to remove references to deleted modal screens
+  - Implementation verified: all requirements met in current record screen architecture
 - **Activity Type System**: Comprehensive activity type definitions with recording constraints
   - Added 15+ predefined activity types in core package (cycling, running, swimming, etc.)
   - Each activity type includes environment classification (indoor, outdoor, water, mixed)
