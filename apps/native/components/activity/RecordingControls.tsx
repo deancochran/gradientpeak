@@ -68,7 +68,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
             onPress={onDiscard}
             disabled={isLoading}
           >
-            <Ionicons name="trash-outline" size={28} color="#ef4444" />
+            <Ionicons name="trash-outline" size={28} />
             <Text style={styles.discardButtonText}>Discard</Text>
           </TouchableOpacity>
         </View>
@@ -119,7 +119,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
           onPress={onResume}
           disabled={isLoading}
         >
-          <Ionicons name="play-circle" size={80} color="#10b981" />
+          <Ionicons name="play-circle" size={80} />
         </TouchableOpacity>
       ) : (
         <View style={styles.spacer} />
@@ -132,18 +132,11 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
           onPress={onFinish}
           disabled={isLoading}
         >
-          <Ionicons name="checkmark-circle-outline" size={28} color="#10b981" />
+          <Ionicons name="checkmark-circle-outline" size={28} />
           <Text style={styles.finishButtonText}>Finish</Text>
         </TouchableOpacity>
       ) : (
         <View style={styles.spacer} />
-      )}
-
-      {/* Status indicators */}
-      {isPaused && (
-        <View style={styles.pausedIndicator}>
-          <Text style={styles.pausedText}>Activity Paused</Text>
-        </View>
       )}
 
       {isLoading && (
@@ -193,7 +186,6 @@ const styles = StyleSheet.create({
   pausedActions: {
     flexDirection: "column",
     alignItems: "center",
-    width: 60,
   },
   actionButton: {
     alignItems: "center",
@@ -201,13 +193,11 @@ const styles = StyleSheet.create({
   },
   discardButtonText: {
     fontSize: 12,
-    color: "#ef4444",
     fontWeight: "500",
     marginTop: 4,
   },
   finishButtonText: {
     fontSize: 12,
-    color: "#10b981",
     fontWeight: "500",
     marginTop: 4,
   },
@@ -226,12 +216,7 @@ const styles = StyleSheet.create({
   pausedIndicator: {
     position: "absolute",
     bottom: 90,
-    left: "50%",
-    transform: [{ translateX: -50 }],
     backgroundColor: "#f59e0b",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
   },
   pausedText: {
     color: "#ffffff",

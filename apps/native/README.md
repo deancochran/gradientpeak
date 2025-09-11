@@ -135,9 +135,22 @@ This structure **prevents modal stacking conflicts** where modals presented over
 * **Step management**: automatic step progression with manual advance/skip options
 * **Vibration alerts**: haptic feedback on step changes and important workout milestones
 
-#### **4. Streamlined User Experience**
+#### **4. Unified Recording UX Redesign**
 
-* **Redesigned recording modal**: clean header with GPS, permissions, and BLE status indicators
+* **Single-screen experience**: Combined workout selection and recording into one seamless interface
+* **State-based UI transitions**: Smooth transitions between selection mode → recording mode → paused states
+* **Progressive disclosure**: Start with workout type selection, then reveal recording controls and metrics
+* **Mandatory selection workflow**: Users must complete workout selection (planned workout or activity type) before recording
+* **Dynamic content adaptation**: 
+  - **Selection mode**: Shows workout options (planned workouts vs. activity types) with search and categorization
+  - **Recording mode**: Displays planned workout guidance OR live metrics based on selection
+  - **Activity type awareness**: Recording interface adapts based on selected activity constraints
+* **Context-aware controls**: Recording controls only appear after selection is complete
+* **Streamlined navigation**: Eliminated separate modals, reducing complexity and improving start time
+* **Visual state feedback**: Clear indication of current mode with appropriate headers and content
+
+#### **5. Enhanced User Experience**
+
 * **Interactive status indicators**: tap GPS, permissions, or BLE indicators for detailed status and controls
 * **Comprehensive permissions modal**: detailed permission explanations with guided setup workflow
 * **Enhanced recording controls**: footer-positioned controls with improved Start/Stop/Pause/Resume layout
@@ -146,7 +159,7 @@ This structure **prevents modal stacking conflicts** where modals presented over
 * **Real-time sensor feedback**: live sensor data display with connection quality indicators
 * **Background recording indicator**: clear visual feedback when recording continues in background
 
-#### **5. Enhanced Permission Management**
+#### **6. Enhanced Permission Management**
 
 * **Comprehensive permission modal**: detailed explanations for location, Bluetooth, and motion permissions
 * **Background location support**: proper handling of background GPS tracking permissions
@@ -154,7 +167,7 @@ This structure **prevents modal stacking conflicts** where modals presented over
 * **Guided permission setup**: step-by-step workflow for enabling required permissions
 * **Settings integration**: direct links to device settings for manually enabling permissions
 
-#### **6. JSON Storage and Sync Strategy**
+#### **7. JSON Storage and Sync Strategy**
 
 * Activities are first recorded and stored locally as **JSON files** (GPS, BLE sensors, metrics).
 * JSON files are uploaded to Supabase Storage when network is available.
@@ -162,7 +175,7 @@ This structure **prevents modal stacking conflicts** where modals presented over
 * Metadata extracted from the JSON file populates the **activities table** in Supabase.
 * The JSON file serves as the **ground truth** for activity data and can be exported in various formats.
 
-#### **7. Local-First with Smart Sync**
+#### **8. Local-First with Smart Sync**
 
 * **Offline recording**: activities are recorded and stored locally first for immediate availability
 * **Automatic save**: activities are automatically saved with comprehensive completion workflow

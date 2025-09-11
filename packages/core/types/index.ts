@@ -2,6 +2,12 @@
  * Core type definitions for fitness calculations and training analytics
  */
 
+import type {
+  PlannedActivityStructure,
+  Step,
+  WeeklySchedule,
+} from "../schemas";
+
 // Define activity structure types locally since they're not exported from drizzle schemas
 
 // ================================
@@ -203,63 +209,11 @@ export interface PerformanceTrend {
 // ================================
 
 /**
- * Activity step definition
- */
-export interface Step {
-  id?: string;
-  type: "interval" | "rest" | "warmup" | "cooldown" | "freeride";
-  name?: string;
-  description?: string;
-  duration: StepDuration;
-  intensity?: StepIntensity;
-  notes?: string;
-}
-
-/**
- * Activity step duration
- */
-export interface StepDuration {
-  type: "time" | "distance" | "calories" | "open";
-  value: number; // seconds for time, meters for distance, etc.
-}
-
-/**
- * Activity step intensity target
- */
-export interface StepIntensity {
-  type: "%FTP" | "%ThresholdHR" | "watts" | "bpm" | "zone" | "pace" | "RPE";
-  target: number;
-  min?: number;
-  max?: number;
-}
-
-/**
- * Planned activity structure
- */
-export interface PlannedActivityStructure {
-  steps: Step[];
-  repetitions?: RepetitionBlock[];
-  warmup?: Step[];
-  cooldown?: Step[];
-  notes?: string;
-}
-
-/**
  * Repetition block within a activity
  */
 export interface RepetitionBlock {
   repeat: number;
   steps: Step[];
-}
-
-/**
- * Weekly schedule definition
- */
-export interface WeeklySchedule {
-  weekNumber: number;
-  workouts: ScheduledWorkout[];
-  notes?: string;
-  focus?: string;
 }
 
 /**
@@ -428,76 +382,6 @@ export interface ValueRange {
 // Trends Analysis Types
 // ================================
 
-/**
- * Activity data optimized for trends analysis
- */
-export interface TrendsActivity {
-  id: string;
-  date: Date;
-  activityType: string;
-  duration: number; // seconds
-  tss?: number;
-  avgHeartRate?: number;
-  maxHeartRate?: number;
-  avgPower?: number;
-  maxPower?: number;
-  normalizedPower?: number;
-  dataStreams?: ActivityStream[];
-  dataPoints?: ActivityDataPoint[];
-}
-
-/**
- * Time frame configuration for trends analysis
- */
-export interface TrendsTimeFrame {
-  days: number;
-  sampleRate: number; // Show every nth day
-}
-
-/**
- * Training load progression data point
- */
-export interface TrainingLoadTrendPoint {
-  date: Date;
-  ctl: number;
-  atl: number;
-  tsb: number;
-  dailyTSS: number;
-}
-
-/**
- * Zone distribution data point
- */
-export interface ZoneDistributionPoint {
-  date: Date;
-  z1: number; // time in seconds
-  z2: number;
-  z3: number;
-  z4: number;
-  z5: number;
-  z6?: number;
-  z7?: number;
-}
-
-/**
- * Power vs heart rate trend data point
- */
-export interface PowerHeartRatePoint {
-  power: number; // watts (5W buckets)
-  heartRate: number; // bpm
-  count: number; // number of data points
-  date: Date;
-}
-
-/**
- * Power curve data point
- */
-export interface PowerCurvePoint {
-  duration: number; // seconds
-  power: number; // watts
-  date: Date; // when this best effort was achieved
-}
-
 // ================================
 // Export Collections
 // ================================
@@ -523,6 +407,12 @@ export type PlanTypes =
   | TrainingPhase
   | WeeklySchedule
   | ScheduledWorkout;
+
+// ================================
+// Activity Types Export
+// ================================
+
+export * from "./activity-types";
 
 // ================================
 // Performance Metrics Types

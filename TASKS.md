@@ -84,7 +84,7 @@
 
 * [x] Expo Router Navigation Refactoring - Modal Stacking Fix
   * [x] Create `(session)` route group for recording session isolation
-  * [x] Move `record.tsx` from `(internal)` to `(session)` group  
+  * [x] Move `record.tsx` from `(internal)` to `(session)` group
   * [x] Create new modal screens: `bluetooth.tsx`, `permissions.tsx`, `select-workout.tsx`
   * [x] Create `(modal)` route group for app-wide modals
   * [x] Move `reset-password.tsx` from `/auth` to `(modal)` group
@@ -106,6 +106,35 @@
   * [x] Show resume, discard, and finish buttons when paused
   * [x] Remove separate "stop" button in favor of unified "finish" action
   * [x] Redirect to internal home page after activity completion
+  * [x] I want to ensure that when users select a planned acitvity or unplanned activity that the type of activity is displayed.
+  * [x] My app depends on the ability to accurately track and display the type of activity.
+  * [x] My app depends on knowing the constraints of what can or cannot be recorded during an activity.
+  * [x] This helps my app understand the speed and pace can't be tracked on an indoor treadmill run, but can be tracked on an outdoor run.
+  * [x] If bluetooth sensors are available, the app can track heart rate pace and cadence it should override any default recording settings tha app has configured
+  * [x] Any connected device that matches a metric that can be recorded, should be considered as ground truth
+  * [x] For each metric displayed on the activity recording screen, it should subtly indicate the source of the data.
+  * [x] before my user can select start an unplanned workout, they must first select a activity type...
+  * [x] If the activity types do not exist type they should be defined in the core package of my repositorty.
+  * [x] Each type should have a unique title, a displayable name, and some constraints about the available metrics that can be recorded. i.e. gps on/off if the activity is indoors or outdoors, heart rate on/off if the activity is outdoors or indoors, cadence on/off if the activity is outdoors or indoors
+
+### 1.7 Recording UX Redesign
+
+* [x] Unified Record Screen Design
+  * [x] Combine the initial display of the record screen with the contents of the select workout modal
+  * [x] Users cannot start an activity until they complete the workout selection process
+  * [x] The selection of planned workout or activity type must be completed before the start button is enabled
+  * [x] After activity type selection, users should be able to start the activity immediately
+  * [x] Implement smooth state transitions between selection and active recording modes
+
+* [x] Enhanced Recording Controls  
+  * [x] Once activity is started, users can pause and resume the activity
+  * [x] Provide clear visual feedback for recording states (preparing, active, paused)
+  * [x] Implement context-aware UI that adapts based on recording state
+
+* [x] Dynamic Content Display
+  * [x] Show planned activity display (interactive workout) for planned activities
+  * [x] Show live performance metrics grid for unplanned activities  
+  * [x] Seamless switching between planned workout guidance and metrics during recording
 
 * [ ] Individual activity detail screens
   * Display basic activity info: name, date, sport type, duration.

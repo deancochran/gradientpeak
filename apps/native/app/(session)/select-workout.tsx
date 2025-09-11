@@ -56,12 +56,11 @@ export default function SelectWorkoutModal() {
   );
 
   const handleStartFreeActivity = useCallback(() => {
-    console.log("🏋️ [DEBUG] Starting free activity");
-    // Navigate back to record screen without planned activity
-    router.replace({
-      pathname: "/(session)/record",
-      params: { startRecording: "true" },
-    });
+    console.log(
+      "🏋️ [DEBUG] Starting unplanned activity - redirecting to activity type selection",
+    );
+    // Navigate to activity type selection modal
+    router.push("/(session)/select-activity-type");
   }, []);
 
   const renderPlannedActivity = ({ item }: { item: PlannedActivity }) => (

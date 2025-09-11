@@ -1,9 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect, useLocalSearchParams } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
+import { ActivityType, getPopularActivityTypes } from "@repo/core";
+import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   AppState,
+  FlatList,
   Modal,
   StyleSheet,
   Text,
@@ -22,8 +25,9 @@ import { useProfile } from "@lib/hooks/api/profiles";
 import { useAdvancedBluetooth } from "@lib/hooks/useAdvancedBluetooth";
 import { useEnhancedActivityRecording } from "@lib/hooks/useEnhancedActivityRecording";
 import ActivityCompletionService from "@lib/services/activity-completion-service";
-import PlannedActivityService from "@lib/services/planned-activity-service";
-import { router } from "expo-router";
+import PlannedActivityService, {
+  PlannedActivity,
+} from "@lib/services/planned-activity-service";
 
 interface ActivitySummary {
   id: string;
@@ -58,7 +62,6 @@ interface PlannedActivityGuidance {
 }
 
 export default function EnhancedRecordScreen() {
-  const params = useLocalSearchParams();
   // Hooks
   const { connectedDevices, isBluetoothEnabled, sensorValues } =
     useAdvancedBluetooth();
@@ -92,6 +95,20 @@ export default function EnhancedRecordScreen() {
     string | null
   >(null);
   const [isCompletingActivity, setIsCompletingActivity] = useState(false);
+  const [selectedActivityType, setSelectedActivityType] =
+    useState<ActivityType | null>(null);
+
+  // Unified screen state management
+  const [recordingState, setRecordingState] = useState<
+    "selection" | "recording"
+  >("selection");
+  const [workoutSelectionMode, setWorkoutSelectionMode] = useState<
+    "options" | "planned" | "activity-type"
+  >("options");
+  const [plannedActivities, setPlannedActivities] = useState<PlannedActivity[]>(
+    [],
+  );
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Check permissions - only require essential permissions for recording
   const essentialPermissions: (keyof typeof permissions)[] = [
@@ -127,26 +144,29 @@ export default function EnhancedRecordScreen() {
       console.log("🎬 Enhanced Record screen focused");
       setIsModalVisible(true);
 
-      // Handle navigation params from select-workout modal
-      if (
-        params.plannedActivityId &&
-        typeof params.plannedActivityId === "string"
-      ) {
-        console.log(
-          "🏋️ [DEBUG] Starting planned activity from params:",
-          params.plannedActivityId,
-        );
-        startPlannedActivity(params.plannedActivityId);
-      } else if (params.startRecording === "true") {
-        console.log("🏋️ [DEBUG] Starting free activity from params");
-        startFreeActivity();
-      }
+      // Reset to selection state when screen opens fresh
+      setRecordingState("selection");
+      setWorkoutSelectionMode("options");
 
       return () => {
         console.log("🎬 Enhanced Record screen unfocused");
       };
-    }, [params.plannedActivityId, params.startRecording]),
+    }, []),
   );
+
+  // Load planned activities
+  useEffect(() => {
+    const loadPlannedActivities = async () => {
+      try {
+        const activities =
+          await PlannedActivityService.getAllPlannedActivities();
+        setPlannedActivities(activities);
+      } catch (error) {
+        console.error("Failed to load planned activities:", error);
+      }
+    };
+    loadPlannedActivities();
+  }, []);
 
   // Listen for app state changes to recheck permissions when returning from Settings
   useEffect(() => {
@@ -285,15 +305,14 @@ export default function EnhancedRecordScreen() {
     }
   }, [isRecording, selectedPlannedActivity, sensorValues]);
 
-  // Handle start recording with planned activity picker
+  // Handle permissions check and navigation to permissions if needed
   const handleStartRecording = async () => {
     if (!hasAllPermissions) {
       router.push("/(session)/permissions");
       return;
     }
-
-    // Navigate to planned activity picker
-    router.push("/(session)/select-workout");
+    // Start recording is now handled by selection handlers
+    console.log("🎬 Permissions check passed");
   };
 
   const startFreeActivity = async () => {
@@ -306,6 +325,28 @@ export default function EnhancedRecordScreen() {
       );
     } else {
       console.log("✅ Activity recording started successfully");
+      setRecordingState("recording");
+    }
+  };
+
+  const startFreeActivityWithType = async (activityType: ActivityType) => {
+    console.log(
+      "🎬 Starting free activity recording with type:",
+      activityType.name,
+    );
+    setSelectedActivityType(activityType);
+    const success = await startRecording();
+    if (!success) {
+      Alert.alert(
+        "Error",
+        "Failed to start recording. Please check your permissions and GPS signal.",
+      );
+    } else {
+      console.log(
+        "✅ Activity recording started successfully with type:",
+        activityType.name,
+      );
+      setRecordingState("recording");
     }
   };
 
@@ -326,6 +367,7 @@ export default function EnhancedRecordScreen() {
           `recording_${Date.now()}`,
         );
         console.log("✅ Planned activity session started");
+        setRecordingState("recording");
       } catch (error) {
         console.warn("Failed to start planned activity session:", error);
       }
@@ -374,12 +416,19 @@ export default function EnhancedRecordScreen() {
         ? `Planned Workout - ${new Date().toLocaleDateString()}`
         : `Activity - ${new Date().toLocaleDateString()}`;
 
+      // Determine activity type
+      const activityType = selectedActivityType
+        ? selectedActivityType.id
+        : selectedPlannedActivity
+          ? "cycling" // Default for planned activities
+          : "other"; // Default fallback
+
       // Complete activity using enhanced workflow
       const completionResult = await ActivityCompletionService.completeActivity(
         recording,
         profile.id,
         activityName,
-        "cycling",
+        activityType,
         {
           uploadToCloud: true,
           createStreams: true,
@@ -503,7 +552,16 @@ export default function EnhancedRecordScreen() {
     return `${(metersPerSecond * 3.6).toFixed(1)} km/h`;
   };
 
-  // Improved metrics formatting with better live indicators
+  const formatPace = (metersPerSecond: number): string => {
+    if (metersPerSecond <= 0) return "--:--";
+    const kmh = metersPerSecond * 3.6;
+    const minPerKm = 60 / kmh;
+    const minutes = Math.floor(minPerKm);
+    const seconds = Math.round((minPerKm - minutes) * 60);
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  };
+
+  // Improved metrics formatting with data source indicators
   const displayMetrics = useMemo(
     () => [
       {
@@ -513,6 +571,8 @@ export default function EnhancedRecordScreen() {
         unit: "",
         icon: "time-outline" as const,
         isLive: isRecording && !isPaused,
+        dataSource: "device_sensors" as const,
+        sourceIcon: "timer-outline" as const,
       },
       {
         id: "distance",
@@ -521,30 +581,71 @@ export default function EnhancedRecordScreen() {
         unit: "km",
         icon: "navigate-outline" as const,
         isLive: isRecording && !isPaused,
+        dataSource:
+          connectionStatus.gps === "connected"
+            ? ("gps" as const)
+            : ("calculated" as const),
+        sourceIcon:
+          connectionStatus.gps === "connected" ? "location" : "calculator",
       },
       {
         id: "currentSpeed",
-        title: "Current Speed",
-        value: (metrics.currentSpeed * 3.6).toFixed(1),
-        unit: "km/h",
+        title: selectedActivityType?.displayConfig.showPaceInsteadOfSpeed
+          ? "Current Pace"
+          : "Current Speed",
+        value: selectedActivityType?.displayConfig.showPaceInsteadOfSpeed
+          ? formatPace(metrics.currentSpeed)
+          : (metrics.currentSpeed * 3.6).toFixed(1),
+        unit: selectedActivityType?.displayConfig.showPaceInsteadOfSpeed
+          ? selectedActivityType.displayConfig.primaryPaceUnit === "min_per_km"
+            ? "min/km"
+            : "min/mi"
+          : "km/h",
         icon: "speedometer-outline" as const,
         isLive: isRecording && !isPaused && metrics.currentSpeed > 0,
+        dataSource:
+          connectionStatus.gps === "connected"
+            ? ("gps" as const)
+            : ("calculated" as const),
+        sourceIcon:
+          connectionStatus.gps === "connected" ? "location" : "calculator",
       },
       {
         id: "avgSpeed",
-        title: "Avg Speed",
-        value: (metrics.avgSpeed * 3.6).toFixed(1),
-        unit: "km/h",
+        title: selectedActivityType?.displayConfig.showPaceInsteadOfSpeed
+          ? "Avg Pace"
+          : "Avg Speed",
+        value: selectedActivityType?.displayConfig.showPaceInsteadOfSpeed
+          ? formatPace(metrics.avgSpeed)
+          : (metrics.avgSpeed * 3.6).toFixed(1),
+        unit: selectedActivityType?.displayConfig.showPaceInsteadOfSpeed
+          ? selectedActivityType.displayConfig.primaryPaceUnit === "min_per_km"
+            ? "min/km"
+            : "min/mi"
+          : "km/h",
         icon: "analytics-outline" as const,
         isLive: false,
+        dataSource:
+          connectionStatus.gps === "connected"
+            ? ("gps" as const)
+            : ("calculated" as const),
+        sourceIcon:
+          connectionStatus.gps === "connected" ? "location" : "calculator",
       },
       {
         id: "heartRate",
         title: "Heart Rate",
-        value: metrics.heartRate?.toString() || "--",
+        value:
+          (sensorValues?.heartRate || metrics.heartRate)?.toString() || "--",
         unit: "bpm",
         icon: "heart-outline" as const,
-        isLive: isRecording && !!metrics.heartRate,
+        isLive: isRecording && !!(sensorValues?.heartRate || metrics.heartRate),
+        dataSource: sensorValues?.heartRate
+          ? ("bluetooth_hr" as const)
+          : ("estimated" as const),
+        sourceIcon: sensorValues?.heartRate
+          ? "bluetooth"
+          : "help-circle-outline",
       },
       {
         id: "calories",
@@ -553,6 +654,8 @@ export default function EnhancedRecordScreen() {
         unit: "kcal",
         icon: "flame-outline" as const,
         isLive: isRecording && !isPaused,
+        dataSource: "calculated" as const,
+        sourceIcon: "calculator" as const,
       },
       {
         id: "power",
@@ -561,14 +664,22 @@ export default function EnhancedRecordScreen() {
         unit: "W",
         icon: "flash-outline" as const,
         isLive: isRecording && !!sensorValues?.power,
+        dataSource: sensorValues?.power
+          ? ("bluetooth_power" as const)
+          : ("manual_entry" as const),
+        sourceIcon: sensorValues?.power ? "bluetooth" : "pencil-outline",
       },
       {
         id: "cadence",
         title: "Cadence",
         value: sensorValues?.cadence?.toString() || "--",
-        unit: "rpm",
+        unit: selectedActivityType?.category === "cycling" ? "rpm" : "spm",
         icon: "refresh-outline" as const,
         isLive: isRecording && !!sensorValues?.cadence,
+        dataSource: sensorValues?.cadence
+          ? ("bluetooth_cadence" as const)
+          : ("manual_entry" as const),
+        sourceIcon: sensorValues?.cadence ? "bluetooth" : "pencil-outline",
       },
     ],
     [
@@ -580,10 +691,44 @@ export default function EnhancedRecordScreen() {
       metrics.calories,
       sensorValues?.power,
       sensorValues?.cadence,
+      sensorValues?.heartRate,
       isRecording,
       isPaused,
+      selectedActivityType,
+      connectionStatus.gps,
     ],
   );
+
+  // Workout selection handlers
+  const handleWorkoutModeSelection = (mode: "planned" | "activity-type") => {
+    setWorkoutSelectionMode(mode);
+  };
+
+  const handlePlannedActivitySelection = (plannedActivityId: string) => {
+    startPlannedActivity(plannedActivityId);
+  };
+
+  const handleActivityTypeSelection = (activityType: ActivityType) => {
+    setSelectedActivityType(activityType);
+    startFreeActivityWithType(activityType);
+  };
+
+  const handleBackToOptions = () => {
+    setWorkoutSelectionMode("options");
+    setSearchQuery("");
+  };
+
+  // Filter activities based on search
+  const filteredPlannedActivities = plannedActivities.filter(
+    (activity) =>
+      activity.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (activity.description
+        ?.toLowerCase()
+        .includes(searchQuery.toLowerCase()) ??
+        false),
+  );
+
+  const popularActivityTypes = getPopularActivityTypes();
 
   return (
     <>
@@ -596,121 +741,345 @@ export default function EnhancedRecordScreen() {
       >
         <ThemedView style={styles.modalContainer}>
           <View style={styles.container}>
-            {/* Modal Header */}
-            <RecordingHeader
-              onClose={handleCloseModal}
-              isRecording={isRecording}
-              isPaused={isPaused}
-              isGpsReady={connectionStatus.gps === "connected"}
-              gpsPointsCount={Math.max(1, Math.floor(metrics.distance / 10))}
-              hasAllPermissions={hasAllPermissions}
-              onPermissionsPress={() => {
-                console.log(
-                  "🎯 [DEBUG] RecordingHeader permissions press triggered",
-                );
-                handlePermissionsPress();
-              }}
-              isBluetoothEnabled={isBluetoothEnabled}
-              connectedDevicesCount={connectedDevices.length}
-              onBluetoothPress={() => {
-                console.log(
-                  "🎯 [DEBUG] RecordingHeader bluetooth press triggered",
-                );
-                handleBluetoothPress();
-              }}
-              sensorValues={sensorValues}
-            />
-
-            {/* Recovery Indicator */}
-            {isRecovering && (
-              <View style={styles.recoveryIndicator}>
-                <Ionicons name="refresh-outline" size={16} color="#f59e0b" />
-                <Text style={styles.recoveryText}>
-                  Recovering previous session...
-                </Text>
-              </View>
-            )}
-
-            {/* Error Indicator */}
-            {lastError && !isRecovering && (
-              <View style={styles.errorIndicator}>
-                <Ionicons name="warning-outline" size={16} color="#dc2626" />
-                <Text style={styles.errorText}>{lastError}</Text>
+            {/* Unified Header - Show different content based on state */}
+            {recordingState === "recording" ? (
+              <RecordingHeader
+                onClose={handleCloseModal}
+                isRecording={isRecording}
+                isPaused={isPaused}
+                activityType={selectedActivityType}
+                isGpsReady={connectionStatus.gps === "connected"}
+                gpsPointsCount={Math.max(1, Math.floor(metrics.distance / 10))}
+                hasAllPermissions={hasAllPermissions}
+                onPermissionsPress={() => {
+                  console.log(
+                    "🎯 [DEBUG] RecordingHeader permissions press triggered",
+                  );
+                  handlePermissionsPress();
+                }}
+                isBluetoothEnabled={isBluetoothEnabled}
+                connectedDevicesCount={connectedDevices.length}
+                onBluetoothPress={() => {
+                  console.log(
+                    "🎯 [DEBUG] RecordingHeader bluetooth press triggered",
+                  );
+                  handleBluetoothPress();
+                }}
+                sensorValues={sensorValues}
+              />
+            ) : (
+              <View style={styles.selectionHeader}>
                 <TouchableOpacity
-                  onPress={() => clearRecoveryData()}
-                  style={styles.clearErrorButton}
+                  onPress={handleCloseModal}
+                  style={styles.closeButton}
                 >
-                  <Ionicons name="close" size={16} color="#dc2626" />
+                  <Ionicons name="close" size={24} color="#6b7280" />
                 </TouchableOpacity>
-              </View>
-            )}
 
-            {/* Planned Activity Guidance */}
-            {plannedActivityGuidance && isRecording && (
-              <View style={styles.guidanceContainer}>
-                <View style={styles.guidanceHeader}>
-                  <Text style={styles.guidanceTitle}>
-                    {plannedActivityGuidance.stepName}
-                  </Text>
-                  <View style={styles.progressContainer}>
-                    <View
-                      style={[
-                        styles.progressBar,
-                        { width: `${plannedActivityGuidance.overall * 100}%` },
-                      ]}
-                    />
-                  </View>
-                </View>
-                <Text style={styles.guidanceInstructions}>
-                  {plannedActivityGuidance.instructions}
-                </Text>
-                <View style={styles.complianceIndicator}>
-                  <Ionicons
-                    name={
-                      plannedActivityGuidance.compliance.inRange
-                        ? "checkmark-circle"
-                        : "warning"
-                    }
-                    size={14}
-                    color={
-                      plannedActivityGuidance.compliance.inRange
-                        ? "#10b981"
-                        : "#f59e0b"
-                    }
-                  />
-                  <Text
-                    style={[
-                      styles.complianceText,
-                      {
-                        color: plannedActivityGuidance.compliance.inRange
-                          ? "#10b981"
-                          : "#f59e0b",
-                      },
-                    ]}
+                {workoutSelectionMode !== "options" && (
+                  <TouchableOpacity
+                    onPress={handleBackToOptions}
+                    style={styles.backButton}
                   >
-                    {plannedActivityGuidance.compliance.message || "On target"}
-                  </Text>
-                </View>
+                    <Ionicons name="chevron-back" size={24} color="#6b7280" />
+                    <Text style={styles.backText}>Back</Text>
+                  </TouchableOpacity>
+                )}
+
+                <Text style={styles.selectionTitle}>
+                  {workoutSelectionMode === "options" && "Start Activity"}
+                  {workoutSelectionMode === "planned" && "Select Workout"}
+                  {workoutSelectionMode === "activity-type" &&
+                    "Select Activity Type"}
+                </Text>
+
+                <View style={styles.headerSpacer} />
               </View>
             )}
 
-            {/* Metrics */}
-            <View style={styles.content}>
-              <MetricsGrid metrics={displayMetrics} />
-            </View>
+            {/* Content based on recording state */}
+            {recordingState === "selection" ? (
+              <View style={styles.selectionContent}>
+                {workoutSelectionMode === "options" && (
+                  <View style={styles.optionsContainer}>
+                    <TouchableOpacity
+                      style={styles.workoutOptionButton}
+                      onPress={() => handleWorkoutModeSelection("planned")}
+                    >
+                      <View style={styles.optionIconContainer}>
+                        <Ionicons name="calendar" size={32} color="#3b82f6" />
+                      </View>
+                      <View style={styles.optionContent}>
+                        <Text style={styles.optionTitle}>Planned Workout</Text>
+                        <Text style={styles.optionDescription}>
+                          Follow a structured training plan with guided
+                          intervals
+                        </Text>
+                      </View>
+                      <Ionicons
+                        name="chevron-forward"
+                        size={20}
+                        color="#9ca3af"
+                      />
+                    </TouchableOpacity>
 
-            {/* Recording Controls Footer */}
-            <RecordingControls
-              isRecording={isRecording}
-              isPaused={isPaused}
-              onStart={handleStartRecording}
-              onFinish={handleStopRecording}
-              onPause={pauseRecording}
-              onResume={resumeRecording}
-              onDiscard={handleDiscardActivity}
-              hasPermissions={hasAllPermissions}
-              isLoading={isCompletingActivity}
-            />
+                    <TouchableOpacity
+                      style={styles.workoutOptionButton}
+                      onPress={() =>
+                        handleWorkoutModeSelection("activity-type")
+                      }
+                    >
+                      <View style={styles.optionIconContainer}>
+                        <Ionicons name="fitness" size={32} color="#10b981" />
+                      </View>
+                      <View style={styles.optionContent}>
+                        <Text style={styles.optionTitle}>Free Activity</Text>
+                        <Text style={styles.optionDescription}>
+                          Start an unstructured activity with live metrics
+                        </Text>
+                      </View>
+                      <Ionicons
+                        name="chevron-forward"
+                        size={20}
+                        color="#9ca3af"
+                      />
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {workoutSelectionMode === "planned" && (
+                  <View style={styles.listContainer}>
+                    {plannedActivities.length > 0 ? (
+                      <FlatList
+                        data={filteredPlannedActivities}
+                        keyExtractor={(item) => item.id}
+                        renderItem={({ item }) => (
+                          <TouchableOpacity
+                            style={styles.listItem}
+                            onPress={() =>
+                              handlePlannedActivitySelection(item.id)
+                            }
+                          >
+                            <View style={styles.listItemContent}>
+                              <Text style={styles.listItemTitle}>
+                                {item.name}
+                              </Text>
+                              {item.description && (
+                                <Text style={styles.listItemDescription}>
+                                  {item.description}
+                                </Text>
+                              )}
+                              {item.estimatedDuration && (
+                                <Text style={styles.listItemMeta}>
+                                  Duration: {item.estimatedDuration} min
+                                </Text>
+                              )}
+                            </View>
+                            <Ionicons
+                              name="chevron-forward"
+                              size={20}
+                              color="#9ca3af"
+                            />
+                          </TouchableOpacity>
+                        )}
+                        showsVerticalScrollIndicator={false}
+                      />
+                    ) : (
+                      <View style={styles.emptyState}>
+                        <Ionicons
+                          name="calendar-outline"
+                          size={64}
+                          color="#9ca3af"
+                        />
+                        <Text style={styles.emptyTitle}>
+                          No Planned Workouts
+                        </Text>
+                        <Text style={styles.emptyDescription}>
+                          Create a workout plan to see structured activities
+                          here
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {workoutSelectionMode === "activity-type" && (
+                  <View style={styles.listContainer}>
+                    <View style={styles.popularSection}>
+                      <Text style={styles.sectionTitle}>
+                        Popular Activities
+                      </Text>
+                      <FlatList
+                        data={popularActivityTypes}
+                        keyExtractor={(item) => item.id}
+                        renderItem={({ item }) => (
+                          <TouchableOpacity
+                            style={styles.activityTypeItem}
+                            onPress={() => handleActivityTypeSelection(item)}
+                          >
+                            <View
+                              style={[
+                                styles.activityIcon,
+                                {
+                                  backgroundColor: `${item.displayConfig.primaryColor}20`,
+                                },
+                              ]}
+                            >
+                              <Text style={styles.activityEmoji}>
+                                {item.displayConfig.emoji}
+                              </Text>
+                            </View>
+                            <View style={styles.activityInfo}>
+                              <Text style={styles.activityName}>
+                                {item.name}
+                              </Text>
+                              <Text style={styles.activityDescription}>
+                                {item.description}
+                              </Text>
+                            </View>
+                            <Ionicons
+                              name="chevron-forward"
+                              size={20}
+                              color="#9ca3af"
+                            />
+                          </TouchableOpacity>
+                        )}
+                        showsVerticalScrollIndicator={false}
+                      />
+                    </View>
+                  </View>
+                )}
+              </View>
+            ) : (
+              <View style={styles.recordingContent}>
+                {/* Recovery Indicator */}
+                {isRecovering && (
+                  <View style={styles.recoveryIndicator}>
+                    <Ionicons
+                      name="refresh-outline"
+                      size={16}
+                      color="#f59e0b"
+                    />
+                    <Text style={styles.recoveryText}>
+                      Recovering previous session...
+                    </Text>
+                  </View>
+                )}
+
+                {/* Error Indicator */}
+                {lastError && !isRecovering && (
+                  <View style={styles.errorIndicator}>
+                    <Ionicons
+                      name="warning-outline"
+                      size={16}
+                      color="#dc2626"
+                    />
+                    <Text style={styles.errorText}>{lastError}</Text>
+                    <TouchableOpacity
+                      onPress={() => clearRecoveryData()}
+                      style={styles.clearErrorButton}
+                    >
+                      <Ionicons name="close" size={16} color="#dc2626" />
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* Planned Activity Guidance */}
+                {plannedActivityGuidance && isRecording && (
+                  <View style={styles.guidanceContainer}>
+                    <View style={styles.guidanceHeader}>
+                      <Text style={styles.guidanceTitle}>
+                        {plannedActivityGuidance.stepName}
+                      </Text>
+                      <View style={styles.progressContainer}>
+                        <View
+                          style={[
+                            styles.progressBar,
+                            {
+                              width: `${plannedActivityGuidance.overall * 100}%`,
+                            },
+                          ]}
+                        />
+                      </View>
+                    </View>
+                    <Text style={styles.guidanceInstructions}>
+                      {plannedActivityGuidance.instructions}
+                    </Text>
+                    <View style={styles.complianceIndicator}>
+                      <Ionicons
+                        name={
+                          plannedActivityGuidance.compliance.inRange
+                            ? "checkmark-circle"
+                            : "warning"
+                        }
+                        size={14}
+                        color={
+                          plannedActivityGuidance.compliance.inRange
+                            ? "#10b981"
+                            : "#f59e0b"
+                        }
+                      />
+                      <Text
+                        style={[
+                          styles.complianceText,
+                          {
+                            color: plannedActivityGuidance.compliance.inRange
+                              ? "#10b981"
+                              : "#f59e0b",
+                          },
+                        ]}
+                      >
+                        {plannedActivityGuidance.compliance.message ||
+                          "On target"}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* Metrics - Only show when recording */}
+                {isRecording || isPaused ? (
+                  <View style={styles.content}>
+                    <MetricsGrid metrics={displayMetrics} />
+                  </View>
+                ) : null}
+
+                {/* Recording Controls Footer */}
+                <RecordingControls
+                  isRecording={isRecording}
+                  isPaused={isPaused}
+                  onStart={handleStartRecording}
+                  onFinish={handleStopRecording}
+                  onPause={pauseRecording}
+                  onResume={resumeRecording}
+                  onDiscard={handleDiscardActivity}
+                  hasPermissions={hasAllPermissions}
+                  isLoading={isCompletingActivity}
+                />
+              </View>
+            )}
+
+            {/* Selection Footer */}
+            {recordingState === "selection" && (
+              <View style={styles.selectionFooter}>
+                <View style={styles.footerContent}>
+                  {workoutSelectionMode === "options" && (
+                    <Text style={styles.footerHint}>
+                      Choose how you want to track your activity
+                    </Text>
+                  )}
+                  {workoutSelectionMode === "planned" && (
+                    <Text style={styles.footerHint}>
+                      Select a planned workout to get guided training
+                    </Text>
+                  )}
+                  {workoutSelectionMode === "activity-type" && (
+                    <Text style={styles.footerHint}>
+                      Choose your activity type to start recording
+                    </Text>
+                  )}
+                </View>
+              </View>
+            )}
           </View>
         </ThemedView>
       </Modal>
@@ -732,16 +1101,208 @@ export default function EnhancedRecordScreen() {
 const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
-    backgroundColor: "#f8fafc",
   },
   container: {
     flex: 1,
+  },
+  selectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
+  },
+  closeButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: "#f3f4f6",
+  },
+  backButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: "#f3f4f6",
+    marginLeft: 12,
+  },
+  backText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#6b7280",
+    marginLeft: 4,
+  },
+  selectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#111827",
+    textAlign: "center",
+    flex: 1,
+  },
+  headerSpacer: {
+    width: 40,
+  },
+  selectionContent: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  recordingContent: {
+    flex: 1,
+  },
+  optionsContainer: {
+    paddingTop: 24,
+    gap: 16,
+  },
+  workoutOptionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 20,
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  optionIconContainer: {
+    marginRight: 16,
+  },
+  optionContent: {
+    flex: 1,
+  },
+  optionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 4,
+  },
+  optionDescription: {
+    fontSize: 14,
+    color: "#6b7280",
+    lineHeight: 20,
+  },
+  listContainer: {
+    flex: 1,
+    paddingTop: 16,
+  },
+  listItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+  },
+  listItemContent: {
+    flex: 1,
+  },
+  listItemTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#111827",
+    marginBottom: 4,
+  },
+  listItemDescription: {
+    fontSize: 14,
+    color: "#6b7280",
+    marginBottom: 4,
+  },
+  listItemMeta: {
+    fontSize: 12,
+    color: "#9ca3af",
+    fontWeight: "500",
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#111827",
+    marginTop: 16,
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  emptyDescription: {
+    fontSize: 14,
+    color: "#6b7280",
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  popularSection: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 12,
+    marginLeft: 4,
+  },
+  activityTypeItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+  },
+  activityIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  activityEmoji: {
+    fontSize: 24,
+  },
+  activityInfo: {
+    flex: 1,
+  },
+  activityName: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#111827",
+    marginBottom: 2,
+  },
+  activityDescription: {
+    fontSize: 14,
+    color: "#6b7280",
+  },
+  selectionFooter: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#e5e7eb",
+    backgroundColor: "#f9fafb",
+  },
+  footerContent: {
+    alignItems: "center",
+  },
+  footerHint: {
+    fontSize: 14,
+    color: "#6b7280",
+    textAlign: "center",
+    fontWeight: "500",
   },
 
   content: {
     flex: 1,
     paddingTop: 20,
-    paddingHorizontal: 20,
   },
   recoveryIndicator: {
     flexDirection: "row",

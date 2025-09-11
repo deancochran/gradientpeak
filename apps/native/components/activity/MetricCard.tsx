@@ -1,3 +1,4 @@
+import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 
@@ -9,24 +10,50 @@ interface MetricCardProps {
     title: string;
     value: string;
     unit: string;
+    isLive?: boolean;
+    dataSource?: string;
+    sourceIcon?: string;
   };
   cardWidth?: number;
 }
 
-export const MetricCard: React.FC<MetricCardProps> = ({
-  metric,
-  cardWidth,
-}) => (
-  <Card style={[styles.metricCard, { width: cardWidth }]}>
-    <View style={styles.metricHeader}>
-      <View style={styles.metricTitleContainer}>
-        <Text style={[styles.metricTitle]}>{metric.title}</Text>
+export const MetricCar: React.FC<MetricCardProps> = ({ metric, cardWidth }) => {
+  return (
+    <Card style={[styles.metricCard, { width: cardWidth }]}>
+      <View style={styles.metricHeader}>
+        <View style={styles.metricTitleContainer}>
+          {metric.isLive && (
+            <View style={styles.liveIndicator}>
+              <View style={styles.liveDot} />
+              <Text style={styles.liveText}>LIVE</Text>
+            </View>
+          )}
+          <Text
+            style={[
+              styles.metricTitle,
+              metric.isLive && styles.liveMetricTitle,
+            ]}
+          >
+            {metric.title}
+          </Text>
+        </View>
+        {metric.dataSource && metric.sourceIcon && (
+          <View style={styles.dataSourceContainer}>
+            <Ionicons name={metric.sourceIcon as any} size={12} />
+          </View>
+        )}
       </View>
-    </View>
-    <Text style={[styles.metricValue]}>{metric.value}</Text>
-    <Text style={[styles.metricUnit]}>{metric.unit}</Text>
-  </Card>
-);
+      <Text
+        style={[styles.metricValue, metric.isLive && styles.liveMetricValue]}
+      >
+        {metric.value}
+      </Text>
+      <Text style={[styles.metricUnit, metric.isLive && styles.liveMetricUnit]}>
+        {metric.unit}
+      </Text>
+    </Card>
+  );
+};
 
 const styles = StyleSheet.create({
   metricCard: {
@@ -94,5 +121,20 @@ const styles = StyleSheet.create({
   },
   liveMetricUnit: {
     color: "#dc2626",
+  },
+  dataSourceContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f9fafb",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  dataSourceText: {
+    fontSize: 9,
+    fontWeight: "600",
+    marginLeft: 3,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
 });

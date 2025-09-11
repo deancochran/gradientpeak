@@ -11,6 +11,9 @@ interface MetricsGridProps {
     title: string;
     value: string;
     unit: string;
+    isLive?: boolean;
+    dataSource?: string;
+    sourceIcon?: string;
   }[];
   columns?: number;
 }

@@ -28,8 +28,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Removed "recording continues in background" notice for cleaner interface
   - Simplified recording controls: only pause button visible when actively recording
   - When paused, users can only resume, discard, or finish the activity
+  - Users must now select an activity type before starting unplanned activities
+  - Activity type is prominently displayed in the recording header with emoji and environment info
+  - Activity recording automatically adapts based on activity type constraints (indoor vs outdoor)
+  - Speed/pace display switches based on activity type (running shows pace, cycling shows speed)
+  - Each metric now displays its data source (GPS, Bluetooth sensors, calculated, etc.)
+  - Bluetooth sensor data takes precedence over default recording settings when available
+  - Activity constraints prevent inappropriate metrics (e.g., no GPS tracking for indoor activities)
   - Unified "finish" action replaces separate "stop" button for consistency
   - Activity completion automatically redirects to internal home page
+- **Recording UX Redesign**: Unified single-screen experience for activity selection and recording
+  - Combined workout selection directly into the record screen, eliminating separate modals
+  - Users must complete workout selection (planned workout or activity type) before recording
+  - Smooth state transitions between selection mode and active recording mode
+  - Dynamic content display: planned workout guidance for structured activities, live metrics for free activities
+  - Context-aware UI that adapts based on recording state (selection → recording → paused)
+  - Streamlined user flow reduces navigation complexity and improves recording start time
+- **Activity Type System**: Comprehensive activity type definitions with recording constraints
+  - Added 15+ predefined activity types in core package (cycling, running, swimming, etc.)
+  - Each activity type includes environment classification (indoor, outdoor, water, mixed)
+  - Recording constraints define which metrics are required, available, or excluded
+  - Display configuration includes colors, icons, emojis, and preferred units
+  - Activity-specific constraints (GPS for outdoor activities, power for cycling, etc.)
+  - Data source tracking for all metrics with visual indicators
+  - Activity type selection modal with search and categorization
+  - Automatic activity recording adaptation based on selected type constraints
 - **Activity Recording System**: Enhanced GPS and Bluetooth indicator UX improvements
   - GPS ready indicator now shows green when GPS is connected and capable of recording location info (not just when actively recording)
   - Bluetooth indicator shows green when devices are connected and Bluetooth is enabled

@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { ActivityType } from "@repo/core";
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
@@ -7,6 +8,8 @@ interface RecordingHeaderProps {
   // Recording state
   isRecording?: boolean;
   isPaused?: boolean;
+  // Activity type
+  activityType?: ActivityType | null;
   // GPS status
   isGpsReady: boolean;
   gpsPointsCount?: number;
@@ -30,6 +33,7 @@ export const RecordingHeader: React.FC<RecordingHeaderProps> = ({
   onClose,
   isRecording = false,
   isPaused = false,
+  activityType,
   isGpsReady,
   gpsPointsCount = 0,
   hasAllPermissions,
@@ -48,6 +52,33 @@ export const RecordingHeader: React.FC<RecordingHeaderProps> = ({
         </TouchableOpacity>
       ) : (
         <View style={styles.closeButtonPlaceholder} />
+      )}
+
+      {/* Activity Type Display - Center */}
+      {activityType && (
+        <View style={styles.activityTypeContainer}>
+          <View
+            style={[
+              styles.activityTypeIcon,
+              {
+                backgroundColor: `${activityType.displayConfig.primaryColor}20`,
+              },
+            ]}
+          >
+            <Text style={styles.activityEmoji}>
+              {activityType.displayConfig.emoji}
+            </Text>
+          </View>
+          <View style={styles.activityTypeInfo}>
+            <Text style={styles.activityTypeName}>
+              {activityType.shortName}
+            </Text>
+            <Text style={styles.activityTypeEnvironment}>
+              {activityType.environment.charAt(0).toUpperCase() +
+                activityType.environment.slice(1)}
+            </Text>
+          </View>
+        </View>
       )}
 
       {/* Spacer for flex layout */}
@@ -193,5 +224,42 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: "#ffffff",
     fontWeight: "600",
+  },
+  activityTypeContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    backgroundColor: "#f9fafb",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+  },
+  activityTypeIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+  },
+  activityEmoji: {
+    fontSize: 16,
+  },
+  activityTypeInfo: {
+    alignItems: "flex-start",
+  },
+  activityTypeName: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1f2937",
+    lineHeight: 16,
+  },
+  activityTypeEnvironment: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: "#6b7280",
+    textTransform: "uppercase",
+    lineHeight: 12,
   },
 });
