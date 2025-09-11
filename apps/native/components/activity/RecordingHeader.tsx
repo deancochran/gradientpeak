@@ -106,7 +106,6 @@ export const RecordingHeader: React.FC<RecordingHeaderProps> = ({
             styles.indicator,
             connectedDevicesCount > 0 &&
               isBluetoothEnabled &&
-              hasFreshSensorData &&
               styles.indicatorActive,
           ]}
           onPress={() => {
@@ -119,27 +118,19 @@ export const RecordingHeader: React.FC<RecordingHeaderProps> = ({
           <Ionicons
             name={
               connectedDevicesCount > 0 && isBluetoothEnabled
-                ? hasFreshSensorData
-                  ? "bluetooth"
-                  : "bluetooth-outline"
+                ? "bluetooth"
                 : "bluetooth-outline"
             }
             size={16}
             color={
-              connectedDevicesCount > 0 &&
-              isBluetoothEnabled &&
-              hasFreshSensorData
+              connectedDevicesCount > 0 && isBluetoothEnabled
                 ? "#10b981"
-                : connectedDevicesCount > 0 && isBluetoothEnabled
-                  ? "#f59e0b"
-                  : "#9ca3af"
+                : "#9ca3af"
             }
           />
           {connectedDevicesCount > 0 && (
             <View style={styles.badge}>
-              <Text style={styles.badgeText}>
-                {hasFreshSensorData ? activeSensors : connectedDevicesCount}
-              </Text>
+              <Text style={styles.badgeText}>{connectedDevicesCount}</Text>
             </View>
           )}
         </TouchableOpacity>

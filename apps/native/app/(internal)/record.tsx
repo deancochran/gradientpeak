@@ -72,6 +72,7 @@ export default function EnhancedRecordScreen() {
     isRecording,
     isPaused,
     metrics,
+    connectionStatus,
     isRecovering,
     lastError,
     startRecording,
@@ -712,7 +713,7 @@ export default function EnhancedRecordScreen() {
             {/* Modal Header */}
             <RecordingHeader
               onClose={handleCloseModal}
-              isGpsReady={isRecording && !isPaused}
+              isGpsReady={connectionStatus.gps === "connected"}
               gpsPointsCount={Math.max(1, Math.floor(metrics.distance / 10))}
               hasAllPermissions={hasAllPermissions}
               onPermissionsPress={() => {

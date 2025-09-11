@@ -1,7 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
-  Alert,
+  ActivityIndicator,
   FlatList,
   Modal,
   StyleSheet,
@@ -22,76 +28,6 @@ interface EnhancedBluetoothModalProps {
   onSelectDevice?: (deviceId: string) => void;
 }
 
-const getDeviceIcon = (type: DeviceType): keyof typeof Ionicons.glyphMap => {
-  switch (type) {
-    case "SMARTWATCH":
-      return "watch-outline";
-    case "HEART_RATE_MONITOR":
-      return "heart-outline";
-    case "POWER_METER":
-      return "flash-outline";
-    case "CADENCE_SENSOR":
-      return "refresh-outline";
-    case "SPEED_SENSOR":
-      return "speedometer-outline";
-    case "FITNESS_SENSOR":
-      return "fitness-outline";
-    default:
-      return "bluetooth-outline";
-  }
-};
-
-const getDeviceTypeColor = (type: DeviceType): string => {
-  switch (type) {
-    case "SMARTWATCH":
-      return "#8b5cf6";
-    case "HEART_RATE_MONITOR":
-      return "#ef4444";
-    case "POWER_METER":
-      return "#f59e0b";
-    case "CADENCE_SENSOR":
-      return "#10b981";
-    case "SPEED_SENSOR":
-      return "#3b82f6";
-    case "FITNESS_SENSOR":
-      return "#6366f1";
-    default:
-      return "#6b7280";
-  }
-};
-
-const getConnectionStateColor = (state: string): string => {
-  switch (state) {
-    case "connected":
-      return "#10b981";
-    case "connecting":
-    case "reconnecting":
-      return "#f59e0b";
-    case "disconnected":
-    default:
-      return "#ef4444";
-  }
-};
-
-const getConnectionStateText = (
-  state: string,
-  reconnectAttempts: number = 0,
-): string => {
-  switch (state) {
-    case "connected":
-      return "Connected";
-    case "connecting":
-      return "Connecting...";
-    case "reconnecting":
-      return reconnectAttempts > 0
-        ? `Reconnecting (${reconnectAttempts})`
-        : "Reconnecting...";
-    case "disconnected":
-    default:
-      return "Disconnected";
-  }
-};
-
 const getDeviceTypeDisplayName = (type: DeviceType): string => {
   switch (type) {
     case "SMARTWATCH":
@@ -111,6 +47,22 @@ const getDeviceTypeDisplayName = (type: DeviceType): string => {
   }
 };
 
+const getSignalStrengthIcon = (
+  rssi?: number | null,
+): keyof typeof Ionicons.glyphMap => {
+  if (!rssi) return "radio-outline";
+  if (rssi > -50) return "radio";
+  if (rssi > -70) return "radio-outline";
+  return "radio-outline";
+};
+
+const getSignalStrengthColor = (rssi?: number | null): string => {
+  if (!rssi) return "#9ca3af";
+  if (rssi > -50) return "#10b981";
+  if (rssi > -70) return "#f59e0b";
+  return "#ef4444";
+};
+
 export const EnhancedBluetoothModal: React.FC<EnhancedBluetoothModalProps> = ({
   visible,
   onClose,
@@ -126,17 +78,100 @@ export const EnhancedBluetoothModal: React.FC<EnhancedBluetoothModalProps> = ({
     disconnectDevice,
     stopScan,
     getConnectionState,
-    getReconnectAttempts,
-    toggleAutoReconnect,
-    forceReconnect,
   } = useAdvancedBluetooth();
 
   const [connectionStates, setConnectionStates] = useState<
     Record<string, string>
   >({});
+  const [connectingDevices, setConnectingDevices] = useState<Set<string>>(
+    new Set(),
+  );
+  const autoSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const noNewDevicesTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const lastDeviceCountRef = useRef<number>(0);
 
   // Memoize device IDs to prevent unnecessary re-renders
   const deviceIds = useMemo(() => allDevices.map((d) => d.id), [allDevices]);
+
+  // Separate connected and available devices
+  const { connectedDevicesList, availableDevicesList } = useMemo(() => {
+    const connected = allDevices.filter((device) =>
+      connectedDevices.some(
+        (connectedDevice) => connectedDevice.id === device.id,
+      ),
+    );
+    const available = allDevices.filter(
+      (device) =>
+        !connectedDevices.some(
+          (connectedDevice) => connectedDevice.id === device.id,
+        ),
+    );
+    return {
+      connectedDevicesList: connected,
+      availableDevicesList: available,
+    };
+  }, [allDevices, connectedDevices]);
+
+  // Auto-start search when modal opens
+  useEffect(() => {
+    if (visible && isBluetoothEnabled && !isScanning) {
+      console.log("🔍 Auto-starting Bluetooth scan on modal open");
+      scanForDevices(20000); // 20 second initial scan
+
+      // Set timeout to stop scanning
+      autoSearchTimeoutRef.current = setTimeout(() => {
+        if (isScanning) {
+          console.log("🛑 Auto-stopping scan after timeout");
+          stopScan();
+        }
+      }, 20000);
+    }
+
+    return () => {
+      if (autoSearchTimeoutRef.current !== null) {
+        clearTimeout(autoSearchTimeoutRef.current);
+        autoSearchTimeoutRef.current = null;
+      }
+      if (noNewDevicesTimeoutRef.current !== null) {
+        clearTimeout(noNewDevicesTimeoutRef.current);
+        noNewDevicesTimeoutRef.current = null;
+      }
+    };
+  }, [visible, isBluetoothEnabled, isScanning, scanForDevices, stopScan]);
+
+  // Auto-stop scanning when no new devices found for 10 seconds
+  useEffect(() => {
+    if (!isScanning) return;
+
+    const currentDeviceCount = allDevices.length;
+
+    if (currentDeviceCount !== lastDeviceCountRef.current) {
+      // New device found, reset timeout
+      lastDeviceCountRef.current = currentDeviceCount;
+
+      if (noNewDevicesTimeoutRef.current !== null) {
+        clearTimeout(noNewDevicesTimeoutRef.current);
+      }
+
+      noNewDevicesTimeoutRef.current = setTimeout(() => {
+        if (isScanning) {
+          console.log("🛑 Auto-stopping scan - no new devices found for 10s");
+          stopScan();
+        }
+      }, 10000);
+    }
+
+    return () => {
+      if (noNewDevicesTimeoutRef.current !== null) {
+        clearTimeout(noNewDevicesTimeoutRef.current);
+        noNewDevicesTimeoutRef.current = null;
+      }
+    };
+  }, [allDevices.length, isScanning, stopScan]);
 
   // Update connection states periodically - optimized to prevent loops
   useEffect(() => {
@@ -168,21 +203,22 @@ export const EnhancedBluetoothModal: React.FC<EnhancedBluetoothModalProps> = ({
     async (device: BluetoothDevice) => {
       try {
         console.log(`🔄 Connecting to ${device.name} (${device.type})`);
+        setConnectingDevices((prev) => new Set(prev).add(device.id));
+
         await connectDevice(device.id);
         onSelectDevice?.(device.id);
+
+        // Don't close modal - keep it open as per requirements
+        console.log(`✅ Successfully connected to ${device.name}`);
       } catch (error) {
         console.warn("Connection failed:", error);
-        Alert.alert(
-          "Connection Failed",
-          `Failed to connect to ${device.name}. Please try again.`,
-          [
-            { text: "OK" },
-            {
-              text: "Retry",
-              onPress: () => handleConnect(device),
-            },
-          ],
-        );
+        // Simple error handling - just log for MVP
+      } finally {
+        setConnectingDevices((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(device.id);
+          return newSet;
+        });
       }
     },
     [connectDevice, onSelectDevice],
@@ -192,150 +228,98 @@ export const EnhancedBluetoothModal: React.FC<EnhancedBluetoothModalProps> = ({
     async (device: BluetoothDevice) => {
       try {
         console.log(`🔌 Disconnecting from ${device.name}`);
+        setConnectingDevices((prev) => new Set(prev).add(device.id));
+
         await disconnectDevice(device.id);
+        console.log(`✅ Successfully disconnected from ${device.name}`);
       } catch (error) {
         console.warn("Disconnection failed:", error);
-        Alert.alert(
-          "Disconnection Failed",
-          `Failed to disconnect from ${device.name}.`,
-        );
+        // Simple error handling - just log for MVP
+      } finally {
+        setConnectingDevices((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(device.id);
+          return newSet;
+        });
       }
     },
     [disconnectDevice],
   );
 
-  const handleDeviceOptions = useCallback(
-    (device: BluetoothDevice) => {
-      const state = connectionStates[device.id] || "disconnected";
-      const reconnectAttempts = getReconnectAttempts(device.id);
-
-      const options = [{ text: "Cancel", style: "cancel" as const }];
-
-      if (state === "connected") {
-        options.unshift({
-          text: "Disconnect",
-          onPress: () => handleDisconnect(device),
-        });
-      } else if (state === "disconnected") {
-        options.unshift({
-          text: "Connect",
-          onPress: () => handleConnect(device),
-        });
-      } else if (state === "reconnecting") {
-        options.unshift({
-          text: "Force Reconnect",
-          onPress: () => forceReconnect(device.id),
-        });
-      }
-
-      options.unshift({
-        text: device.autoReconnect
-          ? "Disable Auto-Reconnect"
-          : "Enable Auto-Reconnect",
-        onPress: () => toggleAutoReconnect(device.id, !device.autoReconnect),
-      });
-
-      Alert.alert(
-        `${device.name} Options`,
-        `Type: ${getDeviceTypeDisplayName(device.type)}`,
-        options,
-      );
-    },
-    [
-      connectionStates,
-      getReconnectAttempts,
-      handleConnect,
-      handleDisconnect,
-      forceReconnect,
-      toggleAutoReconnect,
-    ],
-  );
-
   const renderDevice = ({ item: device }: { item: BluetoothDevice }) => {
     const state = connectionStates[device.id] || "disconnected";
-    const reconnectAttempts = getReconnectAttempts(device.id);
     const isConnected = state === "connected";
-    const isConnecting = state === "connecting" || state === "reconnecting";
+    const isProcessing = connectingDevices.has(device.id);
 
     return (
-      <TouchableOpacity
-        style={[styles.deviceItem, isConnected && styles.connectedDevice]}
-        onPress={() => {
-          if (isConnected) {
-            onSelectDevice?.(device.id);
-          } else if (!isConnecting) {
-            handleConnect(device);
-          }
-        }}
-        onLongPress={() => handleDeviceOptions(device)}
-      >
+      <View style={[styles.deviceItem, isConnected && styles.connectedDevice]}>
         <View style={styles.deviceMain}>
-          <View
-            style={[
-              styles.deviceIcon,
-              { backgroundColor: getDeviceTypeColor(device.type) },
-            ]}
-          >
+          {/* Signal Strength Icon */}
+          <View style={styles.signalContainer}>
             <Ionicons
-              name={getDeviceIcon(device.type)}
-              size={24}
-              color="#ffffff"
+              name={getSignalStrengthIcon(device.rssi)}
+              size={20}
+              color={getSignalStrengthColor(device.rssi)}
             />
           </View>
 
+          {/* Device Info */}
           <View style={styles.deviceInfo}>
             <Text style={styles.deviceName}>{device.name}</Text>
-            <View style={styles.deviceMeta}>
-              <Text style={styles.deviceType}>
-                {getDeviceTypeDisplayName(device.type)}
-              </Text>
-              {device.rssi && (
-                <Text style={styles.deviceRssi}>• {device.rssi} dBm</Text>
-              )}
-            </View>
-          </View>
-
-          <View style={styles.deviceStatus}>
-            <View
-              style={[
-                styles.connectionIndicator,
-                { backgroundColor: getConnectionStateColor(state) },
-              ]}
-            />
-            <Text
-              style={[
-                styles.connectionText,
-                { color: getConnectionStateColor(state) },
-              ]}
-            >
-              {getConnectionStateText(state, reconnectAttempts)}
+            <Text style={styles.deviceType}>
+              {getDeviceTypeDisplayName(device.type)}
             </Text>
-
-            {device.autoReconnect && (
-              <View style={styles.autoReconnectBadge}>
-                <Ionicons name="refresh" size={12} color="#3b82f6" />
-              </View>
-            )}
           </View>
-        </View>
 
-        {isConnected && (
+          {/* Connect/Disconnect Button */}
           <TouchableOpacity
-            style={styles.disconnectButton}
-            onPress={() => handleDisconnect(device)}
+            style={[
+              styles.actionButton,
+              isConnected ? styles.disconnectButton : styles.connectButton,
+            ]}
+            onPress={() => {
+              if (isConnected) {
+                handleDisconnect(device);
+              } else {
+                handleConnect(device);
+              }
+            }}
+            disabled={isProcessing}
           >
-            <Ionicons name="close-circle" size={20} color="#ef4444" />
+            {isProcessing ? (
+              <ActivityIndicator size={16} color="#ffffff" />
+            ) : (
+              <Text style={styles.actionButtonText}>
+                {isConnected ? "Disconnect" : "Connect"}
+              </Text>
+            )}
           </TouchableOpacity>
-        )}
-      </TouchableOpacity>
+        </View>
+      </View>
     );
   };
 
-  const handleScan = useCallback(() => {
+  const handleManualScan = useCallback(() => {
     if (isScanning) {
       stopScan();
+      if (autoSearchTimeoutRef.current !== null) {
+        clearTimeout(autoSearchTimeoutRef.current);
+        autoSearchTimeoutRef.current = null;
+      }
+      if (noNewDevicesTimeoutRef.current !== null) {
+        clearTimeout(noNewDevicesTimeoutRef.current);
+        noNewDevicesTimeoutRef.current = null;
+      }
     } else {
+      console.log("🔍 Manual Bluetooth scan triggered");
       scanForDevices(20000); // 20 second scan
+
+      autoSearchTimeoutRef.current = setTimeout(() => {
+        if (isScanning) {
+          console.log("🛑 Stopping manual scan after timeout");
+          stopScan();
+        }
+      }, 20000);
     }
   }, [isScanning, scanForDevices, stopScan]);
 
@@ -356,7 +340,7 @@ export const EnhancedBluetoothModal: React.FC<EnhancedBluetoothModalProps> = ({
           <Text style={styles.title}>Bluetooth Devices</Text>
 
           <TouchableOpacity
-            onPress={handleScan}
+            onPress={handleManualScan}
             style={[styles.scanButton, isScanning && styles.scanButtonActive]}
             disabled={!isBluetoothEnabled}
           >
@@ -378,7 +362,7 @@ export const EnhancedBluetoothModal: React.FC<EnhancedBluetoothModalProps> = ({
         <View style={styles.statusContainer}>
           <View style={styles.statusItem}>
             <Ionicons
-              name={isBluetoothEnabled ? "bluetooth" : "bluetooth-off"}
+              name={isBluetoothEnabled ? "bluetooth" : "bluetooth-outline"}
               size={16}
               color={isBluetoothEnabled ? "#10b981" : "#ef4444"}
             />
@@ -403,21 +387,58 @@ export const EnhancedBluetoothModal: React.FC<EnhancedBluetoothModalProps> = ({
         </View>
 
         {/* Devices List */}
-        <FlatList
-          data={allDevices}
-          keyExtractor={(item) => item.id}
-          renderItem={renderDevice}
-          style={styles.devicesList}
-          contentContainerStyle={styles.devicesListContent}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
+        <View style={styles.devicesList}>
+          {/* Connected Devices Section */}
+          {connectedDevicesList.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Connected Devices</Text>
+              <FlatList
+                data={connectedDevicesList}
+                keyExtractor={(item) => `connected-${item.id}`}
+                renderItem={renderDevice}
+                showsVerticalScrollIndicator={false}
+                scrollEnabled={false}
+              />
+            </View>
+          )}
+
+          {/* Available Devices Section */}
+          {availableDevicesList.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Available Devices</Text>
+              <FlatList
+                data={availableDevicesList}
+                keyExtractor={(item) => `available-${item.id}`}
+                renderItem={renderDevice}
+                showsVerticalScrollIndicator={false}
+                scrollEnabled={false}
+              />
+            </View>
+          )}
+
+          {/* Empty State */}
+          {allDevices.length === 0 && (
             <View style={styles.emptyState}>
               {!isBluetoothEnabled ? (
                 <>
-                  <Ionicons name="bluetooth-off" size={48} color="#9ca3af" />
+                  <Ionicons
+                    name="bluetooth-outline"
+                    size={48}
+                    color="#9ca3af"
+                  />
                   <Text style={styles.emptyStateText}>Bluetooth is Off</Text>
                   <Text style={styles.emptyStateSubtext}>
                     Turn on Bluetooth to discover devices
+                  </Text>
+                </>
+              ) : isScanning ? (
+                <>
+                  <ActivityIndicator size={48} color="#3b82f6" />
+                  <Text style={styles.emptyStateText}>
+                    Searching for Devices...
+                  </Text>
+                  <Text style={styles.emptyStateSubtext}>
+                    Make sure your devices are in pairing mode
                   </Text>
                 </>
               ) : (
@@ -425,18 +446,20 @@ export const EnhancedBluetoothModal: React.FC<EnhancedBluetoothModalProps> = ({
                   <Ionicons name="search" size={48} color="#9ca3af" />
                   <Text style={styles.emptyStateText}>No Devices Found</Text>
                   <Text style={styles.emptyStateSubtext}>
-                    Tap the search icon to scan for devices
+                    Search automatically started. Ensure devices are in pairing
+                    mode.
                   </Text>
                 </>
               )}
             </View>
-          }
-        />
+          )}
+        </View>
 
         {/* Footer Info */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>
-            Long press devices for more options
+            Search starts automatically. Modal stays open when connecting
+            devices.
           </Text>
         </View>
       </View>
@@ -500,13 +523,24 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   devicesListContent: {
-    padding: 20,
+    paddingVertical: 20,
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#374151",
+    marginBottom: 12,
+    paddingHorizontal: 20,
   },
   deviceItem: {
     backgroundColor: "#ffffff",
     borderRadius: 12,
     padding: 16,
-    marginBottom: 12,
+    marginBottom: 8,
+    marginHorizontal: 20,
     borderWidth: 1,
     borderColor: "#e5e7eb",
   },
@@ -518,10 +552,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-  deviceIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  signalContainer: {
+    width: 40,
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
@@ -535,43 +567,29 @@ const styles = StyleSheet.create({
     color: "#111827",
     marginBottom: 4,
   },
-  deviceMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
   deviceType: {
     fontSize: 14,
     color: "#6b7280",
+    marginTop: 2,
   },
-  deviceRssi: {
-    fontSize: 12,
-    color: "#9ca3af",
-    marginLeft: 4,
+  actionButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    minWidth: 80,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  deviceStatus: {
-    alignItems: "flex-end",
-  },
-  connectionIndicator: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginBottom: 4,
-  },
-  connectionText: {
-    fontSize: 12,
-    fontWeight: "500",
-  },
-  autoReconnectBadge: {
-    marginTop: 4,
-    padding: 2,
-    backgroundColor: "#dbeafe",
-    borderRadius: 4,
+  connectButton: {
+    backgroundColor: "#3b82f6",
   },
   disconnectButton: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    padding: 4,
+    backgroundColor: "#ef4444",
+  },
+  actionButtonText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "600",
   },
   emptyState: {
     alignItems: "center",

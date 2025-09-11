@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Activity Recording System**: Enhanced GPS and Bluetooth indicator UX improvements
+  - GPS ready indicator now shows green when GPS is connected and capable of recording location info (not just when actively recording)
+  - Bluetooth indicator shows green when devices are connected and Bluetooth is enabled
+  - **Enhanced Bluetooth Modal**: Complete UX overhaul for MVP simplicity
+    - Auto-triggers device search when modal opens (no manual button press required)
+    - Auto-stops search after timeout or when no new devices found for 10 seconds
+    - Modal stays open when user connects/disconnects devices for easier multi-device management
+    - Connected devices listed above available devices for better organization
+    - Simplified device listing with signal strength icon and connect/disconnect buttons
+    - Connect/disconnect buttons show loading states during connection process
+    - Removed device icons, descriptions, and dBM counts for cleaner MVP interface
+    - Improved timeout management and error handling for better reliability
+
 ### Fixed
 - **Activity Recording System**: Complete consolidation and modal fixes
   - **Consolidated Recording Screens**: Merged `record.tsx` and `record-enhanced.tsx` into single, optimized recording screen

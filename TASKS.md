@@ -51,6 +51,17 @@
     * [x] Stop Recording button (if paused)
     * [x] Pause Recording button (if active)
     * [x] Resume Recording button (if paused)
+* [x] GPS and Bluetooth Indicator UX Improvements
+* [x] GPS ready indicator should be green when GPS is active (capable of recording location info)
+* [x] Bluetooth indicator should be green when all user-selected connections are active
+* [x] Bluetooth Modal Enhancements:
+  * [x] Auto-trigger search when modal opens (no manual search button press)
+  * [x] Auto-stop search after timeout or when no new devices found for 10 seconds
+  * [x] Modal stays open when user selects/connects to devices
+  * [x] List connected devices above available devices
+  * [x] Simplified device listing with signal strength icon and connect/disconnect button
+  * [x] Connect/disconnect buttons show loading states during connection process
+  * [x] Remove device icons, descriptions, and dBM counts for MVP simplicity
 
 
 ### 1.4 Local Storage Refactoring
