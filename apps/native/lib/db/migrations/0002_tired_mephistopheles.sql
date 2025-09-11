@@ -1,1 +1,0 @@
-ALTER TABLE `local_activities` RENAME COLUMN "local_fit_file_path" TO "local_storage_path";
