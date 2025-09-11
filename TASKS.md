@@ -32,6 +32,25 @@
 * [x] Remove pop ups on activity completion workflow
 * [x] Remove pop ups during activity recording session
 * [x] Have only one pop up after activity completion for viewing a summary, activity metadata, Performance metrics, activity streams, etc...
+* [x] Fix: Permissions Required displays correctly, but is not working as expected, fix permissions issue
+  * [x] Permissions Required (when clicked) doesn't display popup to enable permissions
+* [x] Fix: BLE is not working as expected, fix ble modal issue
+  * [x] No Sensors (when clicked) doesn't display modal to select ble device
+  * [x] No Updates to sensor information to indicated how many devices are connected (when successful connection occurs)
+  * [x] Unable to disconnect from BLE device, device in modal doesn't change its ui. it should be reactive
+* [x] Layout of record modal isn't as expected, fix layout issue.
+  * [x] Next to the modal close button, remove content holding the "Start Activity" text and replace with the following:
+    * [x] a gps is ready indicator
+    * [x] The permissions indicator, indicating if all permissions needed for a recording session are granted (if clicked, it should open a popup to enable permissions)
+    * [x] The BLE indicator, indicating if BLE is enabled and connected (if clicked, it should open a popup to enable BLE) If ble is enabled, the ble device connection modal should display and users should be able to connect multiple devices
+  * [x] The current no sensors indicator and gps active indicator should be removed
+  * [x] The performance metrics should stay as they are
+  * [x] the footer of the modal should hold the recording controls.
+    * [x] Start Recording button
+    * [x] Stop Recording button (if paused)
+    * [x] Pause Recording button (if active)
+    * [x] Resume Recording button (if paused)
+
 
 ### 1.4 Local Storage Refactoring
 
@@ -43,46 +62,13 @@
 
 ### 1.5 Trends Screen
 * [x] Replace mock charts with Victory Native charts
-  * Swap all placeholder charts for Victory Native components.
-  * Ensure charts render cleanly on standard mobile screens.
-  * Insight: Provides a clear and consistent way to visualize all trends.
-
 * [x] Training Load Progression Chart
-  * Aggregate CTL, ATL, TSB from past activity JSON streams.
-  * Display a single line chart over time (daily/weekly).
-  * Minimal UI: no smoothing, annotations, or advanced interactions.
-  * Insight: Shows how the athlete's training load and fatigue balance evolves over time, helping prevent overtraining and track progress.
-
 * [x] Power Zone Distribution Chart
-  * Aggregate time-in-power-zone from past rides.
-  * Display a stacked bar chart over time.
-  * Pull thresholds from user profile (ftp).
-  * Minimal UI: readable, mobile-friendly.
-  * Insight: Shows where the athlete spends most of their training effort in power zones, helping optimize training intensity and focus.
-
 * [x] Heart Rate Zone Distribution Chart
-  * Aggregate time-in-HR-zone from past rides.
-  * Display a stacked bar chart over time.
-  * Pull thresholds from user profile (threshold_hr).
-  * Minimal UI: readable, mobile-friendly.
-  * Insight: Highlights cardiovascular load over time and the athlete's adaptation to endurance training.
-
 * [x] Power vs Heart Rate Trend Chart
-  * Aggregate HR lag-adjusted power vs HR curves from past rides.
-  * Use 5W power buckets.
-  * Show fitness progression: curve shifts right as fitness improves.
-  * Minimal UI: scatter/line chart, mobile-friendly.
-  * Insight: Allows the athlete to see efficiency and fitness improvements, as more power is produced for the same heart rate over time.
-
 * [x] Performance / Power Curve Chart
-  * Aggregate best efforts across multiple rides or entire seasons.
-  * X-axis = time (seconds/minutes), Y-axis = power (watts).
-  * Shows overall cyclist capabilities (hockey-stick shape: steep short-term drop, flattening over long durations).
-  * Minimal UI: clean line chart, mobile-optimized.
-  * Insight: Helps the athlete understand maximal sustainable power across durations, tracking long-term performance improvements.
 
-
-1.6 Activity Detail Views – MVP Task List
+### 1.6 Activity Detail Views – MVP Task List
 
 * [ ] Individual activity detail screens
   * Display basic activity info: name, date, sport type, duration.

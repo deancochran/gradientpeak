@@ -1,16 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 // Import your permission strategies
 import {
+  checkBackgroundLocationPermission,
   checkBluetoothPermission,
   checkLocationPermission,
   checkMotionPermission,
+  requestBackgroundLocationPermission,
   requestBluetoothPermission,
   requestLocationPermission,
   requestMotionPermission,
 } from "@lib/permissions";
 import { Alert, Linking } from "react-native"; // For rationale
 
-export type PermissionType = "bluetooth" | "location" | "motion";
+export type PermissionType =
+  | "bluetooth"
+  | "location"
+  | "motion"
+  | "location-background";
 
 interface PermissionState {
   granted: boolean;
@@ -42,6 +48,12 @@ const permissionStrategies = {
     request: requestMotionPermission,
     name: "Motion & Fitness",
     description: "Detect movement and calculate calories",
+  },
+  "location-background": {
+    check: checkBackgroundLocationPermission,
+    request: requestBackgroundLocationPermission,
+    name: "Background Location",
+    description: "Continue tracking your route when app is in background",
   },
   // Add other permission types here as needed
 };

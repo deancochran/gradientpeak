@@ -11,18 +11,19 @@ import {
   View,
 } from "react-native";
 
-import { ActivityStatusBar } from "@components/activity/ActivityStatusBar";
 import { MetricsGrid } from "@components/activity/MetricsGrid";
 import { RecordingControls } from "@components/activity/RecordingControls";
+import { RecordingHeader } from "@components/activity/RecordingHeader";
 import { ActivitySummaryModal } from "@components/modals/ActivitySummaryModal";
 import { EnhancedBluetoothModal } from "@components/modals/EnhancedBluetoothModal";
+import { PermissionsModal } from "@components/modals/PermissionsModal";
 import { PlannedActivityModal } from "@components/modals/PlannedActivityModal";
 import { ThemedView } from "@components/ThemedView";
 import { useGlobalPermissions } from "@lib/contexts/PermissionsContext";
 import { useProfile } from "@lib/hooks/api/profiles";
 import { useAdvancedBluetooth } from "@lib/hooks/useAdvancedBluetooth";
 import { useEnhancedActivityRecording } from "@lib/hooks/useEnhancedActivityRecording";
-import { ActivityCompletionService } from "@lib/services/activity-completion-service";
+import ActivityCompletionService from "@lib/services/activity-completion-service";
 import PlannedActivityService from "@lib/services/planned-activity-service";
 import { router } from "expo-router";
 
@@ -60,13 +61,8 @@ interface PlannedActivityGuidance {
 
 export default function EnhancedRecordScreen() {
   // Hooks
-  const {
-    connectedDevices,
-    isBluetoothEnabled,
-    sensorValues,
-    getConnectionState,
-    getReconnectAttempts,
-  } = useAdvancedBluetooth();
+  const { connectedDevices, isBluetoothEnabled, sensorValues } =
+    useAdvancedBluetooth();
   const { permissions, requestAllRequiredPermissions } = useGlobalPermissions();
   const { data: profile } = useProfile();
 
@@ -74,7 +70,6 @@ export default function EnhancedRecordScreen() {
     isRecording,
     isPaused,
     metrics,
-    connectionStatus,
     isRecovering,
     lastError,
     startRecording,
@@ -82,12 +77,13 @@ export default function EnhancedRecordScreen() {
     resumeRecording,
     stopRecording,
     addSensorData,
-    attemptRecovery,
+
     clearRecoveryData,
   } = useEnhancedActivityRecording();
 
   // Local state
   const [bluetoothModalVisible, setBluetoothModalVisible] = useState(false);
+  const [permissionsModalVisible, setPermissionsModalVisible] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(true);
   const [activitySummary, setActivitySummary] =
     useState<ActivitySummary | null>(null);
@@ -100,6 +96,7 @@ export default function EnhancedRecordScreen() {
     string | null
   >(null);
   const [isCompletingActivity, setIsCompletingActivity] = useState(false);
+  const [isRequestingPermissions, setIsRequestingPermissions] = useState(false);
 
   // Check permissions
   const hasAllPermissions = Object.values(permissions).every((p) => p?.granted);
@@ -194,10 +191,21 @@ export default function EnhancedRecordScreen() {
           );
 
           setPlannedActivityGuidance({
-            stepName: stepInfo.step.name,
-            stepType: stepInfo.step.type,
-            instructions: stepInfo.step.instructions,
-            targetIntensity: stepInfo.step.targetIntensity,
+            stepName: stepInfo.step.name || "Current Step",
+            stepType: stepInfo.step.type as
+              | "warmup"
+              | "cooldown"
+              | "work"
+              | "rest",
+            instructions:
+              stepInfo.step.instructions || "Continue with current step",
+            targetIntensity: stepInfo.step.targetIntensity
+              ? {
+                  zone: 1, // Default zone
+                  power: stepInfo.step.targetIntensity.target,
+                  heartRate: stepInfo.step.targetIntensity.target,
+                }
+              : undefined,
             timeProgress: progress.timeProgress,
             distanceProgress: progress.distanceProgress,
             overall: progress.overall,
@@ -217,17 +225,7 @@ export default function EnhancedRecordScreen() {
   // Handle start recording with planned activity picker
   const handleStartRecording = async () => {
     if (!hasAllPermissions) {
-      Alert.alert(
-        "Permissions Required",
-        "Location permissions are required to record activities.",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Grant Permissions",
-            onPress: () => requestAllRequiredPermissions(),
-          },
-        ],
-      );
+      setPermissionsModalVisible(true);
       return;
     }
 
@@ -341,10 +339,10 @@ export default function EnhancedRecordScreen() {
         maxHeartRate: completionResult.activityRecord.maxHeartRate,
         averagePower: completionResult.activityRecord.averagePower,
         maxPower: completionResult.activityRecord.maxPower,
-        elevation: completionResult.activityRecord.elevationGain
+        elevation: completionResult.activityRecord.elevation
           ? {
-              gain: completionResult.activityRecord.elevationGain,
-              loss: completionResult.activityRecord.elevationLoss || 0,
+              gain: completionResult.activityRecord.elevation.gain,
+              loss: completionResult.activityRecord.elevation.loss || 0,
             }
           : undefined,
         tss: completionResult.activityRecord.trainingStressScore,
@@ -417,21 +415,25 @@ export default function EnhancedRecordScreen() {
     setBluetoothModalVisible(true);
   };
 
+  const handlePermissionsPress = () => {
+    setPermissionsModalVisible(true);
+  };
+
+  const handleRequestPermissions = async (): Promise<boolean> => {
+    setIsRequestingPermissions(true);
+    try {
+      const success = await requestAllRequiredPermissions();
+      return success;
+    } finally {
+      setIsRequestingPermissions(false);
+    }
+  };
+
   const handleSummaryClose = () => {
     setSummaryModalVisible(false);
     setActivitySummary(null);
     setSelectedPlannedActivity(null);
     router.replace("/(internal)");
-  };
-
-  const handleRecoveryAttempt = async () => {
-    const recovered = await attemptRecovery();
-    if (!recovered) {
-      Alert.alert(
-        "Recovery Failed",
-        "Could not recover previous session. Starting fresh.",
-      );
-    }
   };
 
   // Vibrate on step changes for planned activities
@@ -544,6 +546,40 @@ export default function EnhancedRecordScreen() {
     ],
   );
 
+  // Format permissions for the modal
+  const formattedPermissions = {
+    location: {
+      name: permissions.location?.name || "Location",
+      description:
+        permissions.location?.description ||
+        "Track your route and calculate distance",
+      granted: permissions.location?.granted || false,
+      canAskAgain: permissions.location?.canAskAgain || true,
+      icon: "location" as const,
+      required: true,
+    },
+    bluetooth: {
+      name: permissions.bluetooth?.name || "Bluetooth",
+      description:
+        permissions.bluetooth?.description ||
+        "Connect to heart rate monitors and cycling sensors",
+      granted: permissions.bluetooth?.granted || false,
+      canAskAgain: permissions.bluetooth?.canAskAgain || true,
+      icon: "bluetooth" as const,
+      required: true,
+    },
+    motion: {
+      name: permissions.motion?.name || "Motion & Fitness",
+      description:
+        permissions.motion?.description ||
+        "Detect movement and calculate calories",
+      granted: permissions.motion?.granted || false,
+      canAskAgain: permissions.motion?.canAskAgain || true,
+      icon: "fitness" as const,
+      required: true,
+    },
+  };
+
   return (
     <>
       <Modal
@@ -555,24 +591,19 @@ export default function EnhancedRecordScreen() {
         <ThemedView style={styles.modalContainer}>
           <View style={styles.container}>
             {/* Modal Header */}
-            <View style={styles.modalHeader}>
-              <TouchableOpacity
-                onPress={handleCloseModal}
-                style={styles.closeButton}
-              >
-                <Ionicons name="chevron-down" size={28} color="#6b7280" />
-              </TouchableOpacity>
-
-              <Text style={styles.modalTitle}>
-                {isRecording
-                  ? isPaused
-                    ? "Activity Paused"
-                    : "Recording Activity"
-                  : "Start Activity"}
-              </Text>
-
-              <View style={styles.headerRight} />
-            </View>
+            <RecordingHeader
+              onClose={handleCloseModal}
+              isRecording={isRecording}
+              isPaused={isPaused}
+              isGpsReady={isRecording && !isPaused}
+              gpsPointsCount={Math.max(1, Math.floor(metrics.distance / 10))}
+              hasAllPermissions={hasAllPermissions}
+              onPermissionsPress={handlePermissionsPress}
+              isBluetoothEnabled={isBluetoothEnabled}
+              connectedDevicesCount={connectedDevices.length}
+              onBluetoothPress={handleBluetoothPress}
+              sensorValues={sensorValues}
+            />
 
             {/* Recovery Indicator */}
             {isRecovering && (
@@ -647,32 +678,23 @@ export default function EnhancedRecordScreen() {
               </View>
             )}
 
-            {/* Status Bar */}
-            <ActivityStatusBar
-              isBluetoothEnabled={isBluetoothEnabled}
-              connectedDevicesCount={connectedDevices.length}
-              isGpsTracking={isRecording && !isPaused}
-              gpsPointsCount={Math.max(1, Math.floor(metrics.distance / 10))}
-              onBluetoothPress={handleBluetoothPress}
-              sensorValues={sensorValues}
-            />
-
             {/* Metrics */}
             <View style={styles.content}>
               <MetricsGrid metrics={displayMetrics} />
-
-              <RecordingControls
-                isRecording={isRecording}
-                isPaused={isPaused}
-                onStart={handleStartRecording}
-                onStop={handleStopRecording}
-                onPause={pauseRecording}
-                onResume={resumeRecording}
-                onDiscard={handleDiscardActivity}
-                hasPermissions={hasAllPermissions}
-                isLoading={isCompletingActivity}
-              />
             </View>
+
+            {/* Recording Controls Footer */}
+            <RecordingControls
+              isRecording={isRecording}
+              isPaused={isPaused}
+              onStart={handleStartRecording}
+              onStop={handleStopRecording}
+              onPause={pauseRecording}
+              onResume={resumeRecording}
+              onDiscard={handleDiscardActivity}
+              hasPermissions={hasAllPermissions}
+              isLoading={isCompletingActivity}
+            />
 
             {/* Background Recording Indicator */}
             {isRecording && !isPaused && (
@@ -695,6 +717,15 @@ export default function EnhancedRecordScreen() {
           console.log("Selected enhanced device:", deviceId);
           setBluetoothModalVisible(false);
         }}
+      />
+
+      {/* Permissions Modal */}
+      <PermissionsModal
+        visible={permissionsModalVisible}
+        onClose={() => setPermissionsModalVisible(false)}
+        permissions={formattedPermissions}
+        onRequestPermissions={handleRequestPermissions}
+        isRequesting={isRequestingPermissions}
       />
 
       {/* Planned Activity Modal */}
@@ -726,29 +757,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
-  },
-  closeButton: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: "#f3f4f6",
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#111827",
-  },
-  headerRight: {
-    width: 44,
-  },
+
   content: {
     flex: 1,
     paddingTop: 20,

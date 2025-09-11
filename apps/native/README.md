@@ -108,6 +108,7 @@ The application features a comprehensive, fault-tolerant activity recording syst
 * **Real-time data validation**: filters out stale sensor data (>15 seconds old) and validates accuracy
 * **Auto-reconnection**: automatically attempts to reconnect to disconnected sensors during recording
 * **Device management**: comprehensive device pairing, connection status monitoring, and manual reconnection controls
+* **Reactive UI**: real-time connection status updates with visual indicators for device connectivity
 
 #### **3. Planned Activity System**
 
@@ -119,13 +120,24 @@ The application features a comprehensive, fault-tolerant activity recording syst
 
 #### **4. Streamlined User Experience**
 
+* **Redesigned recording modal**: clean header with GPS, permissions, and BLE status indicators
+* **Interactive status indicators**: tap GPS, permissions, or BLE indicators for detailed status and controls
+* **Comprehensive permissions modal**: detailed permission explanations with guided setup workflow
+* **Enhanced recording controls**: footer-positioned controls with improved Start/Stop/Pause/Resume layout
 * **Single completion modal**: eliminated multiple popups, replaced with one comprehensive activity summary
 * **No interruption recording**: removed all popups during active recording sessions
-* **Enhanced metrics display**: real-time live indicators, comprehensive post-activity analysis
-* **Error recovery UI**: visual indicators for recovery status, errors, and connection issues
+* **Real-time sensor feedback**: live sensor data display with connection quality indicators
 * **Background recording indicator**: clear visual feedback when recording continues in background
 
-#### **5. JSON Storage and Sync Strategy**
+#### **5. Enhanced Permission Management**
+
+* **Comprehensive permission modal**: detailed explanations for location, Bluetooth, and motion permissions
+* **Background location support**: proper handling of background GPS tracking permissions
+* **Visual permission status**: real-time indicators for permission states with tap-to-manage functionality
+* **Guided permission setup**: step-by-step workflow for enabling required permissions
+* **Settings integration**: direct links to device settings for manually enabling permissions
+
+#### **6. JSON Storage and Sync Strategy**
 
 * Activities are first recorded and stored locally as **JSON files** (GPS, BLE sensors, metrics).
 * JSON files are uploaded to Supabase Storage when network is available.
@@ -133,7 +145,7 @@ The application features a comprehensive, fault-tolerant activity recording syst
 * Metadata extracted from the JSON file populates the **activities table** in Supabase.
 * The JSON file serves as the **ground truth** for activity data and can be exported in various formats.
 
-#### **6. Local-First with Smart Sync**
+#### **7. Local-First with Smart Sync**
 
 * **Offline recording**: activities are recorded and stored locally first for immediate availability
 * **Automatic save**: activities are automatically saved with comprehensive completion workflow
@@ -188,7 +200,9 @@ Each activity record has a **sync status**:
 ### ✅ Key Advantages of Enhanced System
 
 * **Fault-tolerant**: Automatic recovery from crashes, disconnections, and interruptions
-* **User-friendly**: Streamlined workflow with single completion modal and no interrupting popups
+* **Intuitive interface**: Clean recording modal with integrated status indicators and footer controls
+* **Permission-aware**: Comprehensive permission management with guided setup and visual status
+* **BLE reactive**: Real-time Bluetooth device connection status with interactive device management
 * **Multi-sensor ready**: Universal BLE support with smartwatch integration and auto-reconnection
 * **Planned activity support**: Structured workouts with real-time guidance and compliance monitoring
 * **Performance optimized**: No heavy processing on mobile, efficient background recording

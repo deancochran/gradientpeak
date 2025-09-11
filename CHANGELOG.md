@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Activity Recording System**: Fixed permissions, BLE connectivity, and modal layout issues
+  - Fixed permissions indicator not showing popup when clicked - now opens comprehensive permissions modal
+  - Fixed BLE indicator not opening device selection modal - now properly triggers EnhancedBluetoothModal
+  - Fixed BLE connection UI reactivity - device connection states now update in real-time
+  - Restructured recording modal layout with new RecordingHeader component
+  - Replaced "Start Activity" text in header with GPS ready, permissions, and BLE status indicators
+  - Moved recording controls to footer with improved Start/Stop/Pause/Resume layout
+  - Removed redundant ActivityStatusBar component and replaced with integrated header indicators
+  - Added PermissionsModal for comprehensive permission management with detailed explanations
+  - Enhanced RecordingControls component with better visual hierarchy and accessibility
+  - Fixed permission request flow to use proper modal workflow instead of system alerts
+  - Added background location permission support for continuous GPS tracking
+  - Improved sensor connection status indicators with real-time badge updates
+
 ### Added
 - **Trends Screen**: Complete implementation with fault-tolerant design
   - Training Load Progression Chart showing CTL, ATL, TSB over time from real activity data
