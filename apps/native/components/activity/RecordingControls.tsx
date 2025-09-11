@@ -58,7 +58,8 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
           style={[styles.startButton, styles.disabledButton]}
           disabled={true}
         >
-          <Text style={styles.disabledButtonText}>Requirements Not Met</Text>
+          <Ionicons name="alert-circle-outline" size={16} color="#9ca3af" />
+          <Text style={styles.disabledButtonText}>Resolve Issues Above</Text>
         </TouchableOpacity>
       </View>
     );
@@ -190,6 +191,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#9ca3af",
+    marginLeft: 6,
   },
 
   // Multi-button layout

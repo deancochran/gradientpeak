@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { StyleSheet } from "react-native";
 
 import { RecordingBodySection } from "@components/activity/RecordingBodySection";
@@ -141,10 +141,18 @@ export default function RecordScreen() {
     selectedActivityType !== null || selectedPlannedActivity !== null;
 
   // Determine if recording can start (activity selected and requirements met)
+  const requiresGPS = useMemo(() => {
+    if (!selectedActivityType) return true; // Default to requiring GPS if no activity type
+
+    // Check if GPS is required for this activity type
+    const constraints = selectedActivityType.recordingConstraints;
+    return constraints.requiresGPS ?? true; // Default to requiring GPS if not specified
+  }, [selectedActivityType]);
+
   const canStartRecording =
     hasSelectedActivity &&
     hasAllRequiredPermissions &&
-    connectionStatus.gps === "connected";
+    (requiresGPS ? connectionStatus.gps === "connected" : true);
 
   // Navigation handlers
   const handleClose = useCallback(() => {
@@ -357,6 +365,10 @@ export default function RecordScreen() {
         selectedPlannedActivity={selectedPlannedActivity}
         isRecording={isRecording}
         isPaused={isPaused}
+        hasSelectedActivity={hasSelectedActivity}
+        canStartRecording={canStartRecording}
+        hasAllRequiredPermissions={hasAllRequiredPermissions}
+        requiresGPS={requiresGPS}
         plannedActivities={plannedActivities}
         metrics={{
           duration: metrics.duration,
@@ -385,6 +397,7 @@ export default function RecordScreen() {
         onPlannedActivitySelection={handlePlannedActivitySelection}
         onActivityTypeSelection={handleActivityTypeSelection}
         onBackToOptions={handleBackToOptions}
+        onPermissionsPress={handlePermissionsPress}
       />
 
       {/* Recording Footer */}

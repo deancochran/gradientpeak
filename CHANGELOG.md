@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Activity Selection Flow**: Binary planned/unplanned choice, activity type selection for unplanned activities, prevents recording until selection complete
   - **Minimal UI/UX**: Bare functional styling, no complex animations, simple readable typography focused on information visibility
   - **New Components**: RecordingBodySection for dynamic content rendering, updated RecordingHeader and RecordingControls for reactive behavior
+  - **Requirements Display Enhancement**: When activity selected but requirements not met, body displays detailed breakdown with interactive permission buttons and GPS guidance instead of generic footer message
 - **Expo Router Navigation Refactoring**: Resolved modal stacking conflicts in activity recording
   - Created `(session)` route group to isolate recording session from main tab navigation
   - Moved `record.tsx` from `(internal)` to `(session)` group for better isolation

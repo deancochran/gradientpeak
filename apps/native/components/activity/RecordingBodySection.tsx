@@ -22,6 +22,12 @@ interface RecordingBodySectionProps {
   isRecording: boolean;
   isPaused: boolean;
 
+  // Requirements checking
+  hasSelectedActivity: boolean;
+  canStartRecording: boolean;
+  hasAllRequiredPermissions: boolean;
+  requiresGPS: boolean;
+
   // Activity data
   plannedActivities: PlannedActivity[];
 
@@ -54,6 +60,7 @@ interface RecordingBodySectionProps {
   onPlannedActivitySelection: (activityId: string) => void;
   onActivityTypeSelection: (activityType: ActivityType) => void;
   onBackToOptions: () => void;
+  onPermissionsPress?: () => void;
 }
 
 export const RecordingBodySection: React.FC<RecordingBodySectionProps> = ({
@@ -62,6 +69,10 @@ export const RecordingBodySection: React.FC<RecordingBodySectionProps> = ({
   selectedPlannedActivity,
   isRecording,
   isPaused,
+  hasSelectedActivity,
+  canStartRecording,
+  hasAllRequiredPermissions,
+  requiresGPS,
   plannedActivities,
   metrics,
   connectionStatus,
@@ -70,6 +81,7 @@ export const RecordingBodySection: React.FC<RecordingBodySectionProps> = ({
   onPlannedActivitySelection,
   onActivityTypeSelection,
   onBackToOptions,
+  onPermissionsPress,
 }) => {
   // Show metrics grid when activity is selected and recording
   if (
@@ -196,6 +208,84 @@ export const RecordingBodySection: React.FC<RecordingBodySectionProps> = ({
         </View>
       );
     }
+  }
+
+  // Show requirements not met message when activity is selected but can't start recording
+  if (hasSelectedActivity && !canStartRecording) {
+    const requirementsIssues = [];
+
+    if (!hasAllRequiredPermissions) {
+      requirementsIssues.push("Permissions required");
+    }
+
+    if (requiresGPS && connectionStatus.gps !== "connected") {
+      requirementsIssues.push("GPS connection needed");
+    }
+
+    return (
+      <View style={styles.container}>
+        <View style={styles.requirementsContainer}>
+          <Ionicons name="alert-circle-outline" size={48} color="#f59e0b" />
+          <Text style={styles.requirementsTitle}>Requirements Not Met</Text>
+          <Text style={styles.requirementsDescription}>
+            Your activity is selected but some requirements need to be resolved
+            before recording can start.
+          </Text>
+
+          <View style={styles.requirementsList}>
+            {!hasAllRequiredPermissions && (
+              <TouchableOpacity
+                style={styles.requirementItem}
+                onPress={onPermissionsPress}
+              >
+                <View style={styles.requirementIcon}>
+                  <Ionicons name="shield-outline" size={20} color="#ef4444" />
+                </View>
+                <View style={styles.requirementContent}>
+                  <Text style={styles.requirementTitle}>
+                    Permissions Required
+                  </Text>
+                  <Text style={styles.requirementSubtext}>
+                    Tap to grant location, bluetooth, and motion permissions
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
+              </TouchableOpacity>
+            )}
+
+            {requiresGPS && connectionStatus.gps !== "connected" && (
+              <View style={styles.requirementItem}>
+                <View style={styles.requirementIcon}>
+                  <Ionicons name="location-outline" size={20} color="#f59e0b" />
+                </View>
+                <View style={styles.requirementContent}>
+                  <Text style={styles.requirementTitle}>
+                    GPS Connection Required
+                  </Text>
+                  <Text style={styles.requirementSubtext}>
+                    {connectionStatus.gps === "connecting"
+                      ? "Waiting for GPS signal..."
+                      : selectedActivityType?.environment === "outdoor"
+                        ? "Move to an area with better sky visibility"
+                        : "GPS is required for accurate distance tracking"}
+                  </Text>
+                </View>
+              </View>
+            )}
+          </View>
+
+          <Text style={styles.requirementsFooter}>
+            Activity: {selectedActivityType?.name || "Planned Workout"}
+            {selectedActivityType?.environment && (
+              <Text style={styles.environmentBadge}>
+                {" • "}
+                {selectedActivityType.environment}
+              </Text>
+            )}
+          </Text>
+        </View>
+      </View>
+    );
   }
 
   // Show selection interface when no activity is selected
@@ -572,6 +662,72 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#475569",
     fontWeight: "500",
+  },
+
+  // Requirements Not Met Styles
+  requirementsContainer: {
+    flex: 1,
+    padding: 32,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  requirementsTitle: {
+    fontSize: 22,
+    fontWeight: "600",
+    color: "#111827",
+    textAlign: "center",
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  requirementsDescription: {
+    fontSize: 16,
+    color: "#6b7280",
+    textAlign: "center",
+    lineHeight: 22,
+    marginBottom: 32,
+  },
+  requirementsList: {
+    width: "100%",
+    gap: 12,
+    marginBottom: 24,
+  },
+  requirementItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    backgroundColor: "#f9fafb",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+  },
+  requirementIcon: {
+    marginRight: 12,
+  },
+  requirementContent: {
+    flex: 1,
+  },
+  requirementTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#111827",
+    marginBottom: 2,
+  },
+  requirementSubtext: {
+    fontSize: 14,
+    color: "#6b7280",
+    lineHeight: 18,
+  },
+  requirementsFooter: {
+    fontSize: 14,
+    color: "#9ca3af",
+    fontStyle: "italic",
+    textAlign: "center",
+  },
+  environmentBadge: {
+    fontSize: 12,
+    color: "#6b7280",
+    fontWeight: "500",
+    textTransform: "capitalize",
   },
 });
 

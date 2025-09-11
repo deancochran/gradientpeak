@@ -217,6 +217,13 @@
   * Clear visual hierarchy without decorative elements
   * Focus on information visibility and accessibility
 
+* [x] Requirements Display UX Enhancement
+  * Replace generic "Requirements Not Met" footer message with contextual body content
+  * Show detailed requirements breakdown when activity selected but can't start recording
+  * Interactive permissions button that directs users to grant missing permissions
+  * GPS connection status with helpful guidance text
+  * Footer shows "Resolve Issues Above" instead of generic blocking message
+
 ---
 
 ## 2 Core Activity Features
