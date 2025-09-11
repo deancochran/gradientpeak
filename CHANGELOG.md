@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Consolidated Recording Screens**: Merged `record.tsx` and `record-enhanced.tsx` into single, optimized recording screen
   - **Fixed Modal Visibility Issues**: Resolved React Native modal conflicts where permissions and BLE modals weren't appearing
   - **Fixed Modal Stacking**: Main recording modal now conditionally hides when sub-modals (permissions/BLE) are open
+  - **Fixed "Permissions Required" Button**: Resolved issue where button text never changed to "Start Activity" after granting permissions
+  - Fixed permissions check to only require essential permissions (location, bluetooth, motion) for recording start
+  - Made background location permission optional for basic recording functionality
   - Fixed permissions indicator not showing popup when clicked - now opens comprehensive permissions modal
   - Fixed BLE indicator not opening device selection modal - now properly triggers EnhancedBluetoothModal
   - Fixed BLE connection UI reactivity - device connection states now update in real-time
@@ -22,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added PermissionsModal for comprehensive permission management with detailed explanations
   - Enhanced RecordingControls component with better visual hierarchy and accessibility
   - Fixed permission request flow to use proper modal workflow instead of system alerts
-  - Added background location permission support for continuous GPS tracking
+  - Added background location permission support for continuous GPS tracking (optional)
   - Improved sensor connection status indicators with real-time badge updates
   - Added extensive debug logging for troubleshooting modal and permission issues
 

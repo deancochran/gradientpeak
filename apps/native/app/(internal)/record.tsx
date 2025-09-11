@@ -115,15 +115,25 @@ export default function EnhancedRecordScreen() {
   const [isCompletingActivity, setIsCompletingActivity] = useState(false);
   const [isRequestingPermissions, setIsRequestingPermissions] = useState(false);
 
-  // Check permissions
-  const hasAllPermissions = Object.values(permissions).every((p) => p?.granted);
+  // Check permissions - only require essential permissions for recording
+  const essentialPermissions: (keyof typeof permissions)[] = [
+    "location",
+    "bluetooth",
+    "motion",
+  ];
+  const hasAllPermissions = essentialPermissions.every(
+    (permType) => permissions[permType]?.granted,
+  );
 
   // Debug logs for permissions
   useEffect(() => {
     console.log("🔍 [DEBUG] Permissions state changed:", {
       permissions,
       hasAllPermissions,
-      permissionValues: Object.entries(permissions).map(([key, value]) => ({
+      essentialPermissionsCheck: essentialPermissions.map((permType) => ({
+        [permType]: permissions[permType as keyof typeof permissions]?.granted,
+      })),
+      allPermissionsCheck: Object.entries(permissions).map(([key, value]) => ({
         [key]: {
           granted: value?.granted,
           canAskAgain: value?.canAskAgain,
@@ -673,6 +683,16 @@ export default function EnhancedRecordScreen() {
       canAskAgain: permissions.motion?.canAskAgain || true,
       icon: "fitness" as const,
       required: true,
+    },
+    "location-background": {
+      name: permissions["location-background"]?.name || "Background Location",
+      description:
+        permissions["location-background"]?.description ||
+        "Continue tracking when app is in background (optional)",
+      granted: permissions["location-background"]?.granted || false,
+      canAskAgain: permissions["location-background"]?.canAskAgain || true,
+      icon: "location" as const,
+      required: false,
     },
   };
 
