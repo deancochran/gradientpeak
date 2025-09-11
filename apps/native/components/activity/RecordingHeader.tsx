@@ -4,6 +4,9 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 interface RecordingHeaderProps {
   onClose: () => void;
+  // Recording state
+  isRecording?: boolean;
+  isPaused?: boolean;
   // GPS status
   isGpsReady: boolean;
   gpsPointsCount?: number;
@@ -25,6 +28,8 @@ interface RecordingHeaderProps {
 
 export const RecordingHeader: React.FC<RecordingHeaderProps> = ({
   onClose,
+  isRecording = false,
+  isPaused = false,
   isGpsReady,
   gpsPointsCount = 0,
   hasAllPermissions,
@@ -34,30 +39,21 @@ export const RecordingHeader: React.FC<RecordingHeaderProps> = ({
   onBluetoothPress,
   sensorValues,
 }) => {
-  // Check if sensor data is fresh (within last 5 seconds)
-  const now = Date.now();
-  const sensorDataAge = sensorValues?.timestamp
-    ? now - sensorValues.timestamp
-    : Infinity;
-  const hasFreshSensorData = sensorDataAge < 5000;
-
-  const activeSensors = sensorValues
-    ? Object.keys(sensorValues).filter(
-        (key) =>
-          key !== "timestamp" &&
-          sensorValues[key as keyof typeof sensorValues] != null &&
-          sensorValues[key as keyof typeof sensorValues]! > 0,
-      ).length
-    : 0;
-
   return (
     <View style={styles.container}>
-      {/* Close Button */}
-      <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-        <Ionicons name="chevron-down" size={28} color="#6b7280" />
-      </TouchableOpacity>
+      {/* Close Button - Only show when not recording */}
+      {!isRecording && !isPaused ? (
+        <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+          <Ionicons name="close" size={24} color="#6b7280" />
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.closeButtonPlaceholder} />
+      )}
 
-      {/* Status Indicators */}
+      {/* Spacer for flex layout */}
+      <View style={styles.spacer} />
+
+      {/* Status Indicators - Right aligned */}
       <View style={styles.indicatorsContainer}>
         {/* GPS Indicator */}
         <TouchableOpacity
@@ -143,6 +139,7 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 16,
@@ -150,15 +147,21 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#e5e7eb",
   },
+  spacer: {
+    flex: 1,
+  },
   closeButton: {
     padding: 8,
     borderRadius: 20,
     backgroundColor: "#f3f4f6",
   },
+  closeButtonPlaceholder: {
+    width: 40,
+    height: 40,
+  },
   indicatorsContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginLeft: 16,
     gap: 12,
   },
   indicator: {

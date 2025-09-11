@@ -68,7 +68,7 @@ export const DeepLinkDebugger: React.FC = () => {
   // Expected URLs for Supabase configuration
   const expectedUrls = [
     `${config.scheme}://auth/callback`,
-    `${config.scheme}://auth/reset-password`,
+    `${config.scheme}://(modal)/reset-password`,
   ];
 
   const testUrlScheme = async () => {

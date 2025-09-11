@@ -3,7 +3,12 @@ import { useColorScheme } from "@lib/providers/ThemeProvider";
 import { useAuth } from "@lib/stores";
 import { router, Tabs } from "expo-router";
 import React from "react";
-import { ActivityIndicator, Animated, View } from "react-native";
+import {
+  ActivityIndicator,
+  Animated,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 import { useRecordingSession } from "@lib/hooks/useRecordingSession";
 
@@ -51,22 +56,15 @@ function AnimatedIcon({ focused, name }: { focused: boolean; name: string }) {
 }
 
 // Special Record button component for center position
-function RecordButton({ focused }: { focused: boolean }) {
-  const scaleAnim = React.useRef(new Animated.Value(1)).current;
-
-  React.useEffect(() => {
-    Animated.spring(scaleAnim, {
-      toValue: focused ? 1.2 : 1,
-      friction: 6,
-      tension: 80,
-      useNativeDriver: true,
-    }).start();
-  }, [focused, scaleAnim]);
+function RecordButton() {
+  const handleRecordPress = () => {
+    router.push("/(session)/record");
+  };
 
   return (
-    <Animated.View
+    <TouchableOpacity
+      onPress={handleRecordPress}
       style={{
-        transform: [{ scale: scaleAnim }],
         backgroundColor: "#3b82f6",
         borderRadius: 28,
         width: 56,
@@ -78,10 +76,12 @@ function RecordButton({ focused }: { focused: boolean }) {
         shadowOpacity: 0.3,
         shadowRadius: 8,
         elevation: 8,
+        marginBottom: 20,
       }}
+      activeOpacity={0.8}
     >
       <Ionicons name="add" size={32} color="#ffffff" />
-    </Animated.View>
+    </TouchableOpacity>
   );
 }
 
@@ -105,7 +105,7 @@ export default function InternalLayout() {
       console.log(
         "🔒 Active recording session detected - forcing navigation to record screen",
       );
-      router.replace("/(internal)/record");
+      router.replace("/(session)/record");
     }
   }, [hasActiveSession, isCheckingSession, router]);
 
@@ -151,95 +151,100 @@ export default function InternalLayout() {
   const borderColor = isDarkColorScheme ? "#333333" : "#e5e5e5";
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: "#3b82f6",
-        tabBarInactiveTintColor: isDarkColorScheme ? "#9ca3af" : "#6b7280",
-        tabBarStyle: {
-          backgroundColor,
-          borderTopWidth: 1,
-          borderTopColor: borderColor,
-          height: 80,
-          paddingBottom: 20,
-          paddingTop: 10,
+    <View style={{ flex: 1 }}>
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+          tabBarActiveTintColor: "#3b82f6",
+          tabBarInactiveTintColor: isDarkColorScheme ? "#9ca3af" : "#6b7280",
+          tabBarStyle: {
+            backgroundColor,
+            borderTopWidth: 1,
+            borderTopColor: borderColor,
+            height: 80,
+            paddingBottom: 20,
+            paddingTop: 10,
+            position: "absolute",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: -2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 8,
+            elevation: 8,
+          },
+          tabBarLabelStyle: {
+            fontSize: 11,
+            fontWeight: "500",
+            marginTop: 4,
+          },
+        }}
+      >
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: "Home",
+            tabBarIcon: ({ focused }) => (
+              <AnimatedIcon
+                focused={focused}
+                name={focused ? "home" : "home-outline"}
+              />
+            ),
+          }}
+        />
+
+        <Tabs.Screen
+          name="plan"
+          options={{
+            title: "Plan",
+            tabBarIcon: ({ focused }) => (
+              <AnimatedIcon
+                focused={focused}
+                name={focused ? "calendar" : "calendar-outline"}
+              />
+            ),
+          }}
+        />
+
+        <Tabs.Screen
+          name="trends"
+          options={{
+            title: "Trends",
+            tabBarIcon: ({ focused }) => (
+              <AnimatedIcon
+                focused={focused}
+                name={focused ? "trending-up" : "trending-up-outline"}
+              />
+            ),
+          }}
+        />
+
+        <Tabs.Screen
+          name="settings"
+          options={{
+            title: "Settings",
+            tabBarIcon: ({ focused }) => (
+              <AnimatedIcon
+                focused={focused}
+                name={focused ? "person" : "person-outline"}
+              />
+            ),
+          }}
+        />
+      </Tabs>
+
+      {/* Floating Action Button for Recording */}
+      <View
+        style={{
           position: "absolute",
-          bottom: 0,
-          left: 0,
-          right: 0,
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.1,
-          shadowRadius: 8,
-          elevation: 8,
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: "500",
-          marginTop: 4,
-        },
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "Home",
-          tabBarIcon: ({ focused }) => (
-            <AnimatedIcon
-              focused={focused}
-              name={focused ? "home" : "home-outline"}
-            />
-          ),
+          bottom: 90,
+          alignSelf: "center",
+          zIndex: 1000,
         }}
-      />
-
-      <Tabs.Screen
-        name="plan"
-        options={{
-          title: "Plan",
-          tabBarIcon: ({ focused }) => (
-            <AnimatedIcon
-              focused={focused}
-              name={focused ? "calendar" : "calendar-outline"}
-            />
-          ),
-        }}
-      />
-
-      <Tabs.Screen
-        name="record"
-        options={{
-          title: "Record",
-          tabBarIcon: ({ focused }) => <RecordButton focused={focused} />,
-          tabBarLabel: () => null, // Hide label for record button
-        }}
-      />
-
-      <Tabs.Screen
-        name="trends"
-        options={{
-          title: "Trends",
-          tabBarIcon: ({ focused }) => (
-            <AnimatedIcon
-              focused={focused}
-              name={focused ? "trending-up" : "trending-up-outline"}
-            />
-          ),
-        }}
-      />
-
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: "Settings",
-          tabBarIcon: ({ focused }) => (
-            <AnimatedIcon
-              focused={focused}
-              name={focused ? "person" : "person-outline"}
-            />
-          ),
-        }}
-      />
-    </Tabs>
+      >
+        <RecordButton />
+      </View>
+    </View>
   );
 }

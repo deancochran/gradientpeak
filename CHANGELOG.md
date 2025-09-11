@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Expo Router Navigation Refactoring**: Resolved modal stacking conflicts in activity recording
+  - Created `(session)` route group to isolate recording session from main tab navigation
+  - Moved `record.tsx` from `(internal)` to `(session)` group for better isolation
+  - Created dedicated modal screens: `bluetooth.tsx`, `permissions.tsx`, `select-workout.tsx`
+  - Created `(modal)` route group for app-wide modals like password reset
+  - Updated tab layout with floating action button instead of record tab
+  - Integrated existing modal components with navigation-based approach
+  - Updated deep links and Supabase redirect URLs to use new modal paths
+  - Recording session now remains mounted during modal presentation, preventing state loss
+- **Recording Session UX Improvements**: Enhanced user experience during activity recording
+  - Recording state is now controlled exclusively by recording buttons after session starts
+  - Close button (X) is hidden when activity is actively recording to prevent accidental exits
+  - Changed close button icon from down arrow to X mark for better clarity
+  - Performance metrics now display in a responsive 2-column grid layout
+  - GPS, permissions, and BLE status indicators moved to top-right corner for better visibility
+  - Updated terminology: "Start Free Activity" changed to "Start Unplanned Activity"
+  - Fixed modal black screen issues with improved presentation configuration
+  - Removed "recording continues in background" notice for cleaner interface
+  - Simplified recording controls: only pause button visible when actively recording
+  - When paused, users can only resume, discard, or finish the activity
+  - Unified "finish" action replaces separate "stop" button for consistency
+  - Activity completion automatically redirects to internal home page
 - **Activity Recording System**: Enhanced GPS and Bluetooth indicator UX improvements
   - GPS ready indicator now shows green when GPS is connected and capable of recording location info (not just when actively recording)
   - Bluetooth indicator shows green when devices are connected and Bluetooth is enabled

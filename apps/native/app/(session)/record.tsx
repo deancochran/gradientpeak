@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
@@ -16,9 +16,6 @@ import { MetricsGrid } from "@components/activity/MetricsGrid";
 import { RecordingControls } from "@components/activity/RecordingControls";
 import { RecordingHeader } from "@components/activity/RecordingHeader";
 import { ActivitySummaryModal } from "@components/modals/ActivitySummaryModal";
-import { EnhancedBluetoothModal } from "@components/modals/EnhancedBluetoothModal";
-import { PermissionsModal } from "@components/modals/PermissionsModal";
-import { PlannedActivityModal } from "@components/modals/PlannedActivityModal";
 import { ThemedView } from "@components/ThemedView";
 import { useGlobalPermissions } from "@lib/contexts/PermissionsContext";
 import { useProfile } from "@lib/hooks/api/profiles";
@@ -61,11 +58,11 @@ interface PlannedActivityGuidance {
 }
 
 export default function EnhancedRecordScreen() {
+  const params = useLocalSearchParams();
   // Hooks
   const { connectedDevices, isBluetoothEnabled, sensorValues } =
     useAdvancedBluetooth();
-  const { permissions, requestAllRequiredPermissions, forceCheckPermissions } =
-    useGlobalPermissions();
+  const { permissions, forceCheckPermissions } = useGlobalPermissions();
   const { data: profile } = useProfile();
 
   const {
@@ -85,36 +82,16 @@ export default function EnhancedRecordScreen() {
   } = useEnhancedActivityRecording();
 
   // Local state
-  const [bluetoothModalVisible, setBluetoothModalVisible] = useState(false);
-  const [permissionsModalVisible, setPermissionsModalVisible] = useState(false);
-
-  // Debug modal visibility changes
-  useEffect(() => {
-    console.log(
-      "🔵 [DEBUG] Bluetooth modal visibility changed:",
-      bluetoothModalVisible,
-    );
-  }, [bluetoothModalVisible]);
-
-  useEffect(() => {
-    console.log(
-      "🛡️ [DEBUG] Permissions modal visibility changed:",
-      permissionsModalVisible,
-    );
-  }, [permissionsModalVisible]);
   const [isModalVisible, setIsModalVisible] = useState(true);
   const [activitySummary, setActivitySummary] =
     useState<ActivitySummary | null>(null);
   const [summaryModalVisible, setSummaryModalVisible] = useState(false);
   const [plannedActivityGuidance, setPlannedActivityGuidance] =
     useState<PlannedActivityGuidance | null>(null);
-  const [showPlannedActivityPicker, setShowPlannedActivityPicker] =
-    useState(false);
   const [selectedPlannedActivity, setSelectedPlannedActivity] = useState<
     string | null
   >(null);
   const [isCompletingActivity, setIsCompletingActivity] = useState(false);
-  const [isRequestingPermissions, setIsRequestingPermissions] = useState(false);
 
   // Check permissions - only require essential permissions for recording
   const essentialPermissions: (keyof typeof permissions)[] = [
@@ -149,10 +126,26 @@ export default function EnhancedRecordScreen() {
     useCallback(() => {
       console.log("🎬 Enhanced Record screen focused");
       setIsModalVisible(true);
+
+      // Handle navigation params from select-workout modal
+      if (
+        params.plannedActivityId &&
+        typeof params.plannedActivityId === "string"
+      ) {
+        console.log(
+          "🏋️ [DEBUG] Starting planned activity from params:",
+          params.plannedActivityId,
+        );
+        startPlannedActivity(params.plannedActivityId);
+      } else if (params.startRecording === "true") {
+        console.log("🏋️ [DEBUG] Starting free activity from params");
+        startFreeActivity();
+      }
+
       return () => {
         console.log("🎬 Enhanced Record screen unfocused");
       };
-    }, []),
+    }, [params.plannedActivityId, params.startRecording]),
   );
 
   // Listen for app state changes to recheck permissions when returning from Settings
@@ -295,12 +288,12 @@ export default function EnhancedRecordScreen() {
   // Handle start recording with planned activity picker
   const handleStartRecording = async () => {
     if (!hasAllPermissions) {
-      setPermissionsModalVisible(true);
+      router.push("/(session)/permissions");
       return;
     }
 
-    // Show planned activity picker first
-    setShowPlannedActivityPicker(true);
+    // Navigate to planned activity picker
+    router.push("/(session)/select-workout");
   };
 
   const startFreeActivity = async () => {
@@ -322,7 +315,6 @@ export default function EnhancedRecordScreen() {
     }
 
     setSelectedPlannedActivity(plannedActivityId);
-    setShowPlannedActivityPicker(false);
 
     console.log("🎯 Starting planned activity recording...");
     const success = await startRecording();
@@ -440,27 +432,12 @@ export default function EnhancedRecordScreen() {
   };
 
   const handleCloseModal = () => {
-    if (isRecording || isPaused) {
-      Alert.alert(
-        "Recording in Progress",
-        "You have an active recording. What would you like to do?",
-        [
-          { text: "Continue Recording", style: "cancel" },
-          {
-            text: "Stop & Save",
-            onPress: handleStopRecording,
-          },
-          {
-            text: "Discard",
-            style: "destructive",
-            onPress: handleDiscardActivity,
-          },
-        ],
-      );
-    } else {
+    // Only allow closing if no recording is active
+    if (!isRecording && !isPaused) {
       setIsModalVisible(false);
       router.back();
     }
+    // If recording is active, do nothing - user must use recording controls
   };
 
   const handleDiscardActivity = async () => {
@@ -482,58 +459,13 @@ export default function EnhancedRecordScreen() {
   };
 
   const handleBluetoothPress = () => {
-    console.log("🔵 [DEBUG] Bluetooth button pressed, opening modal");
-    console.log(
-      "🔵 [DEBUG] Current bluetooth modal state before set:",
-      bluetoothModalVisible,
-    );
-    setBluetoothModalVisible(true);
-    console.log("🔵 [DEBUG] Called setBluetoothModalVisible(true)");
+    console.log("🔵 [DEBUG] Navigating to bluetooth modal");
+    router.push("/(session)/bluetooth");
   };
 
   const handlePermissionsPress = () => {
-    console.log("🛡️ [DEBUG] Permissions button pressed, opening modal");
-    console.log(
-      "🛡️ [DEBUG] Current permissions modal state before set:",
-      permissionsModalVisible,
-    );
-    console.log("🛡️ [DEBUG] Current permissions state:", {
-      permissions,
-      hasAllPermissions,
-    });
-    setPermissionsModalVisible(true);
-    console.log("🛡️ [DEBUG] Called setPermissionsModalVisible(true)");
-  };
-
-  const handleRequestPermissions = async (): Promise<boolean> => {
-    console.log("🔧 [DEBUG] Starting permission request...");
-    setIsRequestingPermissions(true);
-    try {
-      console.log(
-        "🔧 [DEBUG] Before requestAllRequiredPermissions, current state:",
-        { permissions, hasAllPermissions },
-      );
-      const success = await requestAllRequiredPermissions();
-      console.log("🔧 [DEBUG] Permission request result:", success);
-
-      if (success) {
-        console.log("🔧 [DEBUG] Success! Force checking permissions...");
-        // Force a recheck of permissions to update the UI state
-        await forceCheckPermissions();
-        console.log("🔧 [DEBUG] After force check, new state:", {
-          permissions,
-          hasAllPermissions: Object.values(permissions).every(
-            (p) => p?.granted,
-          ),
-        });
-      }
-      return success;
-    } catch (error) {
-      console.error("🔧 [DEBUG] Error in permission request:", error);
-      return false;
-    } finally {
-      setIsRequestingPermissions(false);
-    }
+    console.log("🛡️ [DEBUG] Navigating to permissions modal");
+    router.push("/(session)/permissions");
   };
 
   const handleSummaryClose = () => {
@@ -653,57 +585,11 @@ export default function EnhancedRecordScreen() {
     ],
   );
 
-  // Format permissions for the modal
-  const formattedPermissions = {
-    location: {
-      name: permissions.location?.name || "Location",
-      description:
-        permissions.location?.description ||
-        "Track your route and calculate distance",
-      granted: permissions.location?.granted || false,
-      canAskAgain: permissions.location?.canAskAgain || true,
-      icon: "location" as const,
-      required: true,
-    },
-    bluetooth: {
-      name: permissions.bluetooth?.name || "Bluetooth",
-      description:
-        permissions.bluetooth?.description ||
-        "Connect to heart rate monitors and cycling sensors",
-      granted: permissions.bluetooth?.granted || false,
-      canAskAgain: permissions.bluetooth?.canAskAgain || true,
-      icon: "bluetooth" as const,
-      required: true,
-    },
-    motion: {
-      name: permissions.motion?.name || "Motion & Fitness",
-      description:
-        permissions.motion?.description ||
-        "Detect movement and calculate calories",
-      granted: permissions.motion?.granted || false,
-      canAskAgain: permissions.motion?.canAskAgain || true,
-      icon: "fitness" as const,
-      required: true,
-    },
-    "location-background": {
-      name: permissions["location-background"]?.name || "Background Location",
-      description:
-        permissions["location-background"]?.description ||
-        "Continue tracking when app is in background (optional)",
-      granted: permissions["location-background"]?.granted || false,
-      canAskAgain: permissions["location-background"]?.canAskAgain || true,
-      icon: "location" as const,
-      required: false,
-    },
-  };
-
   return (
     <>
       {/* Main Recording Modal - Hidden when sub-modals are open */}
       <Modal
-        visible={
-          isModalVisible && !bluetoothModalVisible && !permissionsModalVisible
-        }
+        visible={isModalVisible}
         animationType="slide"
         presentationStyle="pageSheet"
         onRequestClose={handleCloseModal}
@@ -713,6 +599,8 @@ export default function EnhancedRecordScreen() {
             {/* Modal Header */}
             <RecordingHeader
               onClose={handleCloseModal}
+              isRecording={isRecording}
+              isPaused={isPaused}
               isGpsReady={connectionStatus.gps === "connected"}
               gpsPointsCount={Math.max(1, Math.floor(metrics.distance / 10))}
               hasAllPermissions={hasAllPermissions}
@@ -816,66 +704,16 @@ export default function EnhancedRecordScreen() {
               isRecording={isRecording}
               isPaused={isPaused}
               onStart={handleStartRecording}
-              onStop={handleStopRecording}
+              onFinish={handleStopRecording}
               onPause={pauseRecording}
               onResume={resumeRecording}
               onDiscard={handleDiscardActivity}
               hasPermissions={hasAllPermissions}
               isLoading={isCompletingActivity}
             />
-
-            {/* Background Recording Indicator */}
-            {isRecording && !isPaused && (
-              <View style={styles.backgroundIndicator}>
-                <View style={styles.recordingDot} />
-                <Text style={styles.backgroundText}>
-                  Recording continues in background
-                </Text>
-              </View>
-            )}
           </View>
         </ThemedView>
       </Modal>
-
-      {/* Enhanced Bluetooth Modal - Separate from main modal */}
-      {console.log(
-        "🔵 [DEBUG] Rendering EnhancedBluetoothModal with visible:",
-        bluetoothModalVisible,
-      )}
-      <EnhancedBluetoothModal
-        visible={bluetoothModalVisible}
-        onClose={() => {
-          console.log("🔵 [DEBUG] Bluetooth modal closed");
-          setBluetoothModalVisible(false);
-        }}
-        onSelectDevice={(deviceId) => {
-          console.log("🔵 [DEBUG] Selected enhanced device:", deviceId);
-          setBluetoothModalVisible(false);
-        }}
-      />
-
-      {/* Permissions Modal - Separate from main modal */}
-      {console.log(
-        "🛡️ [DEBUG] Rendering PermissionsModal with visible:",
-        permissionsModalVisible,
-      )}
-      <PermissionsModal
-        visible={permissionsModalVisible}
-        onClose={() => {
-          console.log("🛡️ [DEBUG] Permissions modal closed");
-          setPermissionsModalVisible(false);
-        }}
-        permissions={formattedPermissions}
-        onRequestPermissions={handleRequestPermissions}
-        isRequesting={isRequestingPermissions}
-      />
-
-      {/* Planned Activity Modal */}
-      <PlannedActivityModal
-        visible={showPlannedActivityPicker}
-        onClose={() => setShowPlannedActivityPicker(false)}
-        onSelect={startPlannedActivity}
-      />
 
       {/* Activity Summary Modal */}
       <ActivitySummaryModal
@@ -991,30 +829,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "500",
     marginLeft: 6,
-  },
-  backgroundIndicator: {
-    position: "absolute",
-    bottom: 100,
-    left: 20,
-    right: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#111827",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  recordingDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#ef4444",
-    marginRight: 8,
-  },
-  backgroundText: {
-    color: "#ffffff",
-    fontSize: 12,
-    fontWeight: "500",
   },
 });

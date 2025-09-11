@@ -47,9 +47,11 @@ A cross-platform fitness tracking mobile app built with Expo, React Native, and 
 ```
 apps/native/
 ├── app/                          # Expo Router file-based routing
-│   ├── (auth)/                   # Authentication screens
-│   ├── (tabs)/                  # Main app tab navigation
-│   ├── (internal)/              # Internal screens (record.tsx)
+│   ├── (external)/               # Public screens (welcome, auth)
+│   ├── (internal)/              # Main app tab navigation
+│   ├── (session)/               # Recording session and related modals
+│   ├── (modal)/                 # App-wide modals (password reset)
+│   ├── auth/                    # Auth callback handling
 │   └── _layout.tsx              # Root layout with providers
 ├── assets/                      # Static assets (images, fonts)
 ├── components/                   # Reusable UI components
@@ -90,6 +92,21 @@ apps/native/
 ## 🎯 Enhanced Fault-Tolerant Activity Recording System
 
 The application features a comprehensive, fault-tolerant activity recording system with **automatic recovery**, **multi-sensor BLE integration**, **planned activity guidance**, and **streamlined completion workflow**. Built around **local JSON storage as source-of-truth** with **export capabilities** for maximum compatibility with third-party fitness applications while maintaining offline-first functionality.
+
+### 🗂️ Navigation Architecture
+
+The app uses **Expo Router** with route groups for organized navigation:
+
+* **`(internal)/`** - Main tab navigation (Home, Plan, Trends, Settings)
+* **`(session)/`** - Isolated recording session stack preventing modal conflicts
+  * `record.tsx` - Main recording screen (moved from internal tabs)
+  * `bluetooth.tsx` - Bluetooth device management modal
+  * `permissions.tsx` - Permission request and management modal
+  * `select-workout.tsx` - Planned activity selection modal
+* **`(modal)/`** - App-wide modals (password reset, etc.)
+* **Floating Action Button** - Replaces record tab, navigates to session stack
+
+This structure **prevents modal stacking conflicts** where modals presented over the recording session would cause it to unmount, ensuring the recording session remains active and mounted while other modals can be presented and dismissed on top of it.
 
 ### 🔧 Enhanced Architecture Features
 

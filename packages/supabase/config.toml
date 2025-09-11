@@ -125,11 +125,11 @@ additional_redirect_urls = [
     "http://192.168.0.96:3000",
     "https://192.168.0.96:3000",
     "app-scheme-dev://auth/callback",
-    "app-scheme-dev://auth/reset-password",
+    "app-scheme-dev://(modal)/reset-password",
     "app-scheme-prev://auth/callback",
-    "app-scheme-prev://auth/reset-password",
+    "app-scheme-prev://(modal)/reset-password",
     "app-scheme://auth/callback",
-    "app-scheme://auth/reset-password",
+    "app-scheme://(modal)/reset-password",
 ]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600

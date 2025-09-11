@@ -82,6 +82,31 @@
 
 ### 1.6 Activity Detail Views – MVP Task List
 
+* [x] Expo Router Navigation Refactoring - Modal Stacking Fix
+  * [x] Create `(session)` route group for recording session isolation
+  * [x] Move `record.tsx` from `(internal)` to `(session)` group  
+  * [x] Create new modal screens: `bluetooth.tsx`, `permissions.tsx`, `select-workout.tsx`
+  * [x] Create `(modal)` route group for app-wide modals
+  * [x] Move `reset-password.tsx` from `/auth` to `(modal)` group
+  * [x] Update tab layout to remove record tab and add floating action button
+  * [x] Integrate existing modal components with new navigation-based screens
+  * [x] Update deep links and Supabase redirect URLs to use new modal paths
+  * [x] Ensure recording session stays mounted during modal presentation
+
+* [x] Recording Session UX Improvements
+  * [x] Recording state controls - only recording buttons control session after start
+  * [x] Remove close button (X) from record screen when activity is actively recording
+  * [x] Change close button icon from down arrow to X mark
+  * [x] Update performance metrics to use 2-column grid layout
+  * [x] Move GPS, permissions, and BLE indicators to top-right corner
+  * [x] Change "Start Free Activity" to "Start Unplanned Activity"
+  * [x] Fix modal black screen issues with improved presentation configuration
+  * [x] Remove "recording continues in background" notice
+  * [x] Show only pause button when actively recording
+  * [x] Show resume, discard, and finish buttons when paused
+  * [x] Remove separate "stop" button in favor of unified "finish" action
+  * [x] Redirect to internal home page after activity completion
+
 * [ ] Individual activity detail screens
   * Display basic activity info: name, date, sport type, duration.
   * Pull data directly from JSON activity records via the core package.

@@ -6,7 +6,7 @@ interface RecordingControlsProps {
   isRecording: boolean;
   isPaused: boolean;
   onStart: () => void;
-  onStop: () => void;
+  onFinish: () => void;
   onPause: () => void;
   onResume: () => void;
   onDiscard: () => void;
@@ -21,7 +21,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
   isRecording,
   isPaused,
   onStart,
-  onStop,
+  onFinish,
   onPause,
   onResume,
   onDiscard,
@@ -60,24 +60,15 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
   // Show recording controls when active or paused
   return (
     <View style={styles.footerRecording}>
-      {/* Left side - Stop and Discard buttons (only visible when paused) */}
+      {/* Left side - Actions available when paused */}
       {isPaused ? (
         <View style={styles.pausedActions}>
           <TouchableOpacity
-            style={[styles.stopButton, isLoading && styles.buttonDisabled]}
-            onPress={onStop}
-            disabled={isLoading}
-          >
-            <Ionicons name="stop-circle-outline" size={28} color="#ef4444" />
-            <Text style={styles.stopButtonText}>Stop</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.discardButton, isLoading && styles.buttonDisabled]}
+            style={[styles.actionButton, isLoading && styles.buttonDisabled]}
             onPress={onDiscard}
             disabled={isLoading}
           >
-            <Ionicons name="trash-outline" size={28} color="#6b7280" />
+            <Ionicons name="trash-outline" size={28} color="#ef4444" />
             <Text style={styles.discardButtonText}>Discard</Text>
           </TouchableOpacity>
         </View>
@@ -107,36 +98,42 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
           )}
         </View>
       ) : (
-        // Spacer when not paused to maintain layout
+        // Spacer when recording actively to maintain layout
         <View style={styles.spacer} />
       )}
 
-      {/* Center - Main action button (pause/resume) */}
-      <TouchableOpacity
-        style={[
-          styles.mainActionButton,
-          isPaused && styles.pausedButton,
-          isLoading && styles.buttonDisabled,
-        ]}
-        onPress={isPaused ? onResume : onPause}
-        disabled={isLoading}
-      >
-        <Ionicons
-          name={isPaused ? "play-circle" : "pause-circle"}
-          size={80}
-          color={isPaused ? "#10b981" : "#111827"}
-        />
-      </TouchableOpacity>
-
-      {/* Right side - Stop when recording or spacer */}
+      {/* Center - Main action button */}
       {isRecording && !isPaused ? (
+        // Only show pause when actively recording
         <TouchableOpacity
-          style={[styles.stopButton, isLoading && styles.buttonDisabled]}
-          onPress={onStop}
+          style={[styles.mainActionButton, isLoading && styles.buttonDisabled]}
+          onPress={onPause}
           disabled={isLoading}
         >
-          <Ionicons name="stop-circle-outline" size={28} color="#ef4444" />
-          <Text style={styles.stopButtonText}>Finish</Text>
+          <Ionicons name="pause-circle" size={80} color="#111827" />
+        </TouchableOpacity>
+      ) : isPaused ? (
+        // Show resume when paused
+        <TouchableOpacity
+          style={[styles.mainActionButton, isLoading && styles.buttonDisabled]}
+          onPress={onResume}
+          disabled={isLoading}
+        >
+          <Ionicons name="play-circle" size={80} color="#10b981" />
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.spacer} />
+      )}
+
+      {/* Right side - Finish button only when paused */}
+      {isPaused ? (
+        <TouchableOpacity
+          style={[styles.actionButton, isLoading && styles.buttonDisabled]}
+          onPress={onFinish}
+          disabled={isLoading}
+        >
+          <Ionicons name="checkmark-circle-outline" size={28} color="#10b981" />
+          <Text style={styles.finishButtonText}>Finish</Text>
         </TouchableOpacity>
       ) : (
         <View style={styles.spacer} />
@@ -196,26 +193,21 @@ const styles = StyleSheet.create({
   pausedActions: {
     flexDirection: "column",
     alignItems: "center",
-    gap: 12,
     width: 60,
   },
-  stopButton: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  stopButtonText: {
-    fontSize: 12,
-    color: "#ef4444",
-    fontWeight: "500",
-    marginTop: 4,
-  },
-  discardButton: {
+  actionButton: {
     alignItems: "center",
     justifyContent: "center",
   },
   discardButtonText: {
     fontSize: 12,
-    color: "#6b7280",
+    color: "#ef4444",
+    fontWeight: "500",
+    marginTop: 4,
+  },
+  finishButtonText: {
+    fontSize: 12,
+    color: "#10b981",
     fontWeight: "500",
     marginTop: 4,
   },
@@ -230,9 +222,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 4,
-  },
-  pausedButton: {
-    opacity: 0.9,
   },
   pausedIndicator: {
     position: "absolute",
