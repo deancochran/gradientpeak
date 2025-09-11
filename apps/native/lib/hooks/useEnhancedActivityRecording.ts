@@ -73,7 +73,8 @@ const RECOVERY_CONFIG = {
 export const useEnhancedActivityRecording = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const [currentRecording, setCurrentRecording] = useState<ActivityRecording | null>(null);
+  const [currentRecording, setCurrentRecording] =
+    useState<ActivityRecording | null>(null);
   const [metrics, setMetrics] = useState<ActivityMetrics>({
     duration: 0,
     distance: 0,
@@ -93,7 +94,9 @@ export const useEnhancedActivityRecording = () => {
   const [lastError, setLastError] = useState<string | null>(null);
 
   // Refs for tracking state
-  const locationSubscription = useRef<Location.LocationSubscription | null>(null);
+  const locationSubscription = useRef<Location.LocationSubscription | null>(
+    null,
+  );
   const startTime = useRef<number>(0);
   const pausedDuration = useRef<number>(0);
   const pauseStart = useRef<number | null>(null);
@@ -118,24 +121,36 @@ export const useEnhancedActivityRecording = () => {
   const rafRef = useRef<number>();
 
   // Error logging utility
-  const logError = useCallback((error: string, context: string, recovered: boolean = false) => {
-    const errorEntry: ErrorLogEntry = {
-      timestamp: Date.now(),
-      error,
-      context,
-      recovered,
-    };
+  const logError = useCallback(
+    (error: string, context: string, recovered: boolean = false) => {
+      const errorEntry: ErrorLogEntry = {
+        timestamp: Date.now(),
+        error,
+        context,
+        recovered,
+      };
 
-    recoveryDataRef.current.errorLog.push(errorEntry);
+      recoveryDataRef.current.errorLog.push(errorEntry);
 
-    // Keep only the last N errors
-    if (recoveryDataRef.current.errorLog.length > RECOVERY_CONFIG.MAX_ERROR_LOG_SIZE) {
-      recoveryDataRef.current.errorLog = recoveryDataRef.current.errorLog.slice(-RECOVERY_CONFIG.MAX_ERROR_LOG_SIZE);
-    }
+      // Keep only the last N errors
+      if (
+        recoveryDataRef.current.errorLog.length >
+        RECOVERY_CONFIG.MAX_ERROR_LOG_SIZE
+      ) {
+        recoveryDataRef.current.errorLog =
+          recoveryDataRef.current.errorLog.slice(
+            -RECOVERY_CONFIG.MAX_ERROR_LOG_SIZE,
+          );
+      }
 
-    setLastError(error);
-    console.error(`🚨 [${context}] ${error}`, { recovered, timestamp: errorEntry.timestamp });
-  }, []);
+      setLastError(error);
+      console.error(`🚨 [${context}] ${error}`, {
+        recovered,
+        timestamp: errorEntry.timestamp,
+      });
+    },
+    [],
+  );
 
   // Create checkpoint for recovery
   const createCheckpoint = useCallback(() => {
@@ -153,32 +168,43 @@ export const useEnhancedActivityRecording = () => {
 
     // Keep only last 10 checkpoints
     if (recoveryDataRef.current.checkpoints.length > 10) {
-      recoveryDataRef.current.checkpoints = recoveryDataRef.current.checkpoints.slice(-10);
+      recoveryDataRef.current.checkpoints =
+        recoveryDataRef.current.checkpoints.slice(-10);
     }
 
     // Save to storage
-    AsyncStorage.setItem(STORAGE_KEYS.CHECKPOINT_DATA, JSON.stringify(recoveryDataRef.current))
-      .catch(error => logError(`Failed to save checkpoint: ${error}`, "checkpoint"));
+    AsyncStorage.setItem(
+      STORAGE_KEYS.CHECKPOINT_DATA,
+      JSON.stringify(recoveryDataRef.current),
+    ).catch((error) =>
+      logError(`Failed to save checkpoint: ${error}`, "checkpoint"),
+    );
 
     console.log("📍 Checkpoint created", {
       timestamp: checkpoint.timestamp,
       metrics: checkpoint.metrics,
-      locationCount: checkpoint.locationCount
+      locationCount: checkpoint.locationCount,
     });
   }, [currentRecording, metrics, logError]);
 
   // Save recording session to storage for recovery
-  const saveRecordingSession = useCallback(async (recording: ActivityRecording) => {
-    try {
-      await AsyncStorage.setItem(STORAGE_KEYS.ACTIVE_RECORDING, JSON.stringify({
-        ...recording,
-        locations: locationsRef.current,
-        sensorData: sensorDataRef.current,
-      }));
-    } catch (error) {
-      logError(`Failed to save session: ${error}`, "storage");
-    }
-  }, [logError]);
+  const saveRecordingSession = useCallback(
+    async (recording: ActivityRecording) => {
+      try {
+        await AsyncStorage.setItem(
+          STORAGE_KEYS.ACTIVE_RECORDING,
+          JSON.stringify({
+            ...recording,
+            locations: locationsRef.current,
+            sensorData: sensorDataRef.current,
+          }),
+        );
+      } catch (error) {
+        logError(`Failed to save session: ${error}`, "storage");
+      }
+    },
+    [logError],
+  );
 
   // Clear recovery data
   const clearRecoveryData = useCallback(async () => {
@@ -215,7 +241,9 @@ export const useEnhancedActivityRecording = () => {
       }
 
       const session: ActivityRecording = JSON.parse(sessionData);
-      const recovery: RecoveryData | null = recoveryData ? JSON.parse(recoveryData) : null;
+      const recovery: RecoveryData | null = recoveryData
+        ? JSON.parse(recoveryData)
+        : null;
 
       // Check if session is recoverable (less than 24 hours old)
       const sessionAge = Date.now() - session.startTime;
@@ -255,7 +283,6 @@ export const useEnhancedActivityRecording = () => {
       setIsRecovering(false);
       logError("Session recovered successfully", "recovery", true);
       return true;
-
     } catch (error) {
       logError(`Recovery failed: ${error}`, "recovery");
       await clearRecoveryData();
@@ -264,33 +291,79 @@ export const useEnhancedActivityRecording = () => {
     }
   }, [logError, clearRecoveryData]);
 
-  // Enhanced GPS connection with retry logic
+  // Enhanced GPS connection with retry logic and comprehensive debugging
   const connectGPS = useCallback(async (): Promise<boolean> => {
-    setConnectionStatus(prev => ({ ...prev, gps: "connecting" }));
+    console.log("📍 [GPS DEBUG] Starting GPS connection test...");
+    setConnectionStatus((prev) => ({ ...prev, gps: "connecting" }));
 
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        setConnectionStatus(prev => ({ ...prev, gps: "error" }));
-        logError("Location permission denied", "gps");
+      // Check location services enabled globally
+      const isLocationEnabled = await Location.hasServicesEnabledAsync();
+      console.log(
+        "📍 [GPS DEBUG] Location services enabled:",
+        isLocationEnabled,
+      );
+
+      if (!isLocationEnabled) {
+        console.log("📍 [GPS DEBUG] Location services are disabled globally");
+        setConnectionStatus((prev) => ({ ...prev, gps: "error" }));
+        logError("Location services are disabled on this device", "gps");
         return false;
       }
 
-      // Test GPS availability
-      const testLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
+      // Check app permissions
+      const { status, canAskAgain } =
+        await Location.requestForegroundPermissionsAsync();
+      console.log("📍 [GPS DEBUG] Permission status:", { status, canAskAgain });
 
-      if (!testLocation) {
-        throw new Error("GPS signal unavailable");
+      if (status !== "granted") {
+        console.log("📍 [GPS DEBUG] Location permission not granted:", status);
+        setConnectionStatus((prev) => ({ ...prev, gps: "error" }));
+        logError(`Location permission denied: ${status}`, "gps");
+        return false;
       }
 
-      setConnectionStatus(prev => ({ ...prev, gps: "connected" }));
-      return true;
+      console.log("📍 [GPS DEBUG] Attempting to get current position...");
 
+      // Test GPS availability with timeout and detailed error handling
+      const testLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+        maximumAge: 10000, // Accept location up to 10 seconds old
+        timeout: 15000, // 15 second timeout
+      });
+
+      console.log("📍 [GPS DEBUG] GPS test location received:", {
+        latitude: testLocation.coords.latitude,
+        longitude: testLocation.coords.longitude,
+        accuracy: testLocation.coords.accuracy,
+        timestamp: new Date(testLocation.timestamp).toISOString(),
+      });
+
+      if (!testLocation || !testLocation.coords) {
+        throw new Error("GPS signal unavailable - no coordinates received");
+      }
+
+      if (testLocation.coords.accuracy > 100) {
+        console.log(
+          "📍 [GPS DEBUG] WARNING: Poor GPS accuracy:",
+          testLocation.coords.accuracy,
+          "meters",
+        );
+      }
+
+      console.log("📍 [GPS DEBUG] GPS connection successful!");
+      setConnectionStatus((prev) => ({ ...prev, gps: "connected" }));
+      return true;
     } catch (error) {
-      setConnectionStatus(prev => ({ ...prev, gps: "error" }));
-      logError(`GPS connection failed: ${error}`, "gps");
+      console.log("📍 [GPS DEBUG] GPS connection failed:", error);
+      console.log("📍 [GPS DEBUG] Error details:", {
+        message: error.message,
+        code: error.code,
+        name: error.name,
+      });
+
+      setConnectionStatus((prev) => ({ ...prev, gps: "error" }));
+      logError(`GPS connection failed: ${error.message || error}`, "gps");
       return false;
     }
   }, [logError]);
@@ -318,16 +391,19 @@ export const useEnhancedActivityRecording = () => {
 
             // Validate location accuracy
             if (location.coords.accuracy && location.coords.accuracy > 50) {
-              console.warn("🚫 Rejecting inaccurate GPS reading:", location.coords.accuracy + "m");
+              console.warn(
+                "🚫 Rejecting inaccurate GPS reading:",
+                location.coords.accuracy + "m",
+              );
               return;
             }
 
             locationsRef.current = [...locationsRef.current, location];
-            setConnectionStatus(prev => ({ ...prev, gps: "connected" }));
+            setConnectionStatus((prev) => ({ ...prev, gps: "connected" }));
 
             // Set GPS timeout for next reading
             gpsTimeout.current = setTimeout(() => {
-              setConnectionStatus(prev => ({ ...prev, gps: "error" }));
+              setConnectionStatus((prev) => ({ ...prev, gps: "error" }));
               logError("GPS timeout", "gps");
             }, RECOVERY_CONFIG.GPS_TIMEOUT);
           }
@@ -335,7 +411,6 @@ export const useEnhancedActivityRecording = () => {
       );
 
       return true;
-
     } catch (error) {
       logError(`Location tracking failed: ${error}`, "gps");
       return false;
@@ -399,7 +474,11 @@ export const useEnhancedActivityRecording = () => {
 
       const currentSpeed = locations[locations.length - 1]?.coords?.speed || 0;
       const avgSpeed = duration > 0 ? totalDistance / duration : 0;
-      const calories = calculateCalories(duration, totalDistance, currentHeartRate.current);
+      const calories = calculateCalories(
+        duration,
+        totalDistance,
+        currentHeartRate.current,
+      );
 
       return {
         duration,
@@ -461,7 +540,10 @@ export const useEnhancedActivityRecording = () => {
   useEffect(() => {
     if (!isRecording) return;
 
-    checkpointInterval.current = setInterval(createCheckpoint, RECOVERY_CONFIG.CHECKPOINT_INTERVAL);
+    checkpointInterval.current = setInterval(
+      createCheckpoint,
+      RECOVERY_CONFIG.CHECKPOINT_INTERVAL,
+    );
 
     return () => {
       if (checkpointInterval.current) {
@@ -474,14 +556,19 @@ export const useEnhancedActivityRecording = () => {
   useEffect(() => {
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
       if (isRecording) {
-        if (nextAppState === 'background' || nextAppState === 'inactive') {
-          console.log("📱 App going to background - creating emergency checkpoint");
+        if (nextAppState === "background" || nextAppState === "inactive") {
+          console.log(
+            "📱 App going to background - creating emergency checkpoint",
+          );
           createCheckpoint();
         }
       }
     };
 
-    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    const subscription = AppState.addEventListener(
+      "change",
+      handleAppStateChange,
+    );
     return () => subscription?.remove();
   }, [isRecording, createCheckpoint]);
 
@@ -506,7 +593,7 @@ export const useEnhancedActivityRecording = () => {
               },
             },
             { text: "Resume", onPress: () => console.log("Session resumed") },
-          ]
+          ],
         );
         return true;
       }
@@ -514,7 +601,10 @@ export const useEnhancedActivityRecording = () => {
       // Connect GPS
       const gpsConnected = await connectGPS();
       if (!gpsConnected) {
-        Alert.alert("GPS Error", "Unable to connect to GPS. Please check your location settings.");
+        Alert.alert(
+          "GPS Error",
+          "Unable to connect to GPS. Please check your location settings.",
+        );
         return false;
       }
 
@@ -556,19 +646,27 @@ export const useEnhancedActivityRecording = () => {
 
       console.log("✅ Enhanced recording started:", recordingId);
       return true;
-
     } catch (error) {
       logError(`Failed to start recording: ${error}`, "start");
       return false;
     }
-  }, [attemptRecovery, clearRecoveryData, connectGPS, startLocationTracking, saveRecordingSession, logError]);
+  }, [
+    attemptRecovery,
+    clearRecoveryData,
+    connectGPS,
+    startLocationTracking,
+    saveRecordingSession,
+    logError,
+  ]);
 
   // Pause recording
   const pauseRecording = useCallback((): boolean => {
     if (!isRecording || isPaused) return false;
 
     setIsPaused(true);
-    setCurrentRecording(prev => prev ? { ...prev, status: "paused" } : prev);
+    setCurrentRecording((prev) =>
+      prev ? { ...prev, status: "paused" } : prev,
+    );
     createCheckpoint();
     console.log("⏸️ Recording paused");
     return true;
@@ -579,117 +677,129 @@ export const useEnhancedActivityRecording = () => {
     if (!isRecording || !isPaused) return false;
 
     setIsPaused(false);
-    setCurrentRecording(prev => prev ? { ...prev, status: "recording" } : prev);
+    setCurrentRecording((prev) =>
+      prev ? { ...prev, status: "recording" } : prev,
+    );
     console.log("▶️ Recording resumed");
     return true;
   }, [isRecording, isPaused]);
 
   // Stop recording with cleanup
-  const stopRecording = useCallback(async (): Promise<ActivityRecording | null> => {
-    if (!isRecording || !currentRecording) return null;
+  const stopRecording =
+    useCallback(async (): Promise<ActivityRecording | null> => {
+      if (!isRecording || !currentRecording) return null;
 
-    try {
-      console.log("⏹️ Stopping enhanced recording...");
+      try {
+        console.log("⏹️ Stopping enhanced recording...");
 
-      // Stop location tracking
-      if (locationSubscription.current) {
-        locationSubscription.current.remove();
-        locationSubscription.current = null;
+        // Stop location tracking
+        if (locationSubscription.current) {
+          locationSubscription.current.remove();
+          locationSubscription.current = null;
+        }
+
+        // Clear timeouts
+        if (gpsTimeout.current) clearTimeout(gpsTimeout.current);
+        if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
+        if (checkpointInterval.current)
+          clearInterval(checkpointInterval.current);
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+
+        // Final metrics calculation
+        const now = Date.now();
+        const elapsed = now - startTime.current - pausedDuration.current;
+        const finalDuration = Math.max(0, Math.floor(elapsed / 1000));
+        const finalMetrics = calculateMetrics(finalDuration);
+
+        const finalRecording: ActivityRecording = {
+          ...currentRecording,
+          locations: [...locationsRef.current],
+          sensorData: [...sensorDataRef.current],
+          metrics: finalMetrics,
+          status: "stopped",
+        };
+
+        // Create final checkpoint
+        createCheckpoint();
+
+        // Reset state
+        setIsRecording(false);
+        setIsPaused(false);
+        setCurrentRecording(null);
+        setMetrics({ duration: 0, distance: 0, currentSpeed: 0, avgSpeed: 0 });
+        setConnectionStatus({
+          gps: "disabled",
+          bluetooth: "disabled",
+          sensors: {
+            heartRate: "disabled",
+            power: "disabled",
+            cadence: "disabled",
+          },
+        });
+
+        // Clear recovery data
+        await clearRecoveryData();
+
+        console.log("✅ Enhanced recording stopped successfully");
+        return finalRecording;
+      } catch (error) {
+        logError(`Failed to stop recording: ${error}`, "stop");
+        return currentRecording;
       }
-
-      // Clear timeouts
-      if (gpsTimeout.current) clearTimeout(gpsTimeout.current);
-      if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
-      if (checkpointInterval.current) clearInterval(checkpointInterval.current);
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-
-      // Final metrics calculation
-      const now = Date.now();
-      const elapsed = now - startTime.current - pausedDuration.current;
-      const finalDuration = Math.max(0, Math.floor(elapsed / 1000));
-      const finalMetrics = calculateMetrics(finalDuration);
-
-      const finalRecording: ActivityRecording = {
-        ...currentRecording,
-        locations: [...locationsRef.current],
-        sensorData: [...sensorDataRef.current],
-        metrics: finalMetrics,
-        status: "stopped",
-      };
-
-      // Create final checkpoint
-      createCheckpoint();
-
-      // Reset state
-      setIsRecording(false);
-      setIsPaused(false);
-      setCurrentRecording(null);
-      setMetrics({ duration: 0, distance: 0, currentSpeed: 0, avgSpeed: 0 });
-      setConnectionStatus({
-        gps: "disabled",
-        bluetooth: "disabled",
-        sensors: {
-          heartRate: "disabled",
-          power: "disabled",
-          cadence: "disabled",
-        },
-      });
-
-      // Clear recovery data
-      await clearRecoveryData();
-
-      console.log("✅ Enhanced recording stopped successfully");
-      return finalRecording;
-
-    } catch (error) {
-      logError(`Failed to stop recording: ${error}`, "stop");
-      return currentRecording;
-    }
-  }, [isRecording, currentRecording, calculateMetrics, createCheckpoint, clearRecoveryData, logError]);
+    }, [
+      isRecording,
+      currentRecording,
+      calculateMetrics,
+      createCheckpoint,
+      clearRecoveryData,
+      logError,
+    ]);
 
   // Add sensor data with validation
-  const addSensorData = useCallback((data: any) => {
-    if (!isRecording) return;
+  const addSensorData = useCallback(
+    (data: any) => {
+      if (!isRecording) return;
 
-    try {
-      // Validate sensor data
-      const timestamp = data.timestamp || Date.now();
-      const validatedData = {
-        ...data,
-        timestamp,
-      };
+      try {
+        // Validate sensor data
+        const timestamp = data.timestamp || Date.now();
+        const validatedData = {
+          ...data,
+          timestamp,
+        };
 
-      // Update sensor refs
-      if (data.heartRate && typeof data.heartRate === "number") {
-        currentHeartRate.current = data.heartRate;
-        setConnectionStatus(prev => ({
-          ...prev,
-          sensors: { ...prev.sensors, heartRate: "connected" },
-        }));
+        // Update sensor refs
+        if (data.heartRate && typeof data.heartRate === "number") {
+          currentHeartRate.current = data.heartRate;
+          setConnectionStatus((prev) => ({
+            ...prev,
+            sensors: { ...prev.sensors, heartRate: "connected" },
+          }));
+        }
+
+        if (data.power && typeof data.power === "number") {
+          currentPower.current = data.power;
+          setConnectionStatus((prev) => ({
+            ...prev,
+            sensors: { ...prev.sensors, power: "connected" },
+          }));
+        }
+
+        if (data.cadence && typeof data.cadence === "number") {
+          currentCadence.current = data.cadence;
+          setConnectionStatus((prev) => ({
+            ...prev,
+            sensors: { ...prev.sensors, cadence: "connected" },
+          }));
+        }
+
+        sensorDataRef.current = [...sensorDataRef.current, validatedData];
+      } catch (error) {
+        logError(`Sensor data processing failed: ${error}`, "sensor");
       }
-
-      if (data.power && typeof data.power === "number") {
-        currentPower.current = data.power;
-        setConnectionStatus(prev => ({
-          ...prev,
-          sensors: { ...prev.sensors, power: "connected" },
-        }));
-      }
-
-      if (data.cadence && typeof data.cadence === "number") {
-        currentCadence.current = data.cadence;
-        setConnectionStatus(prev => ({
-          ...prev,
-          sensors: { ...prev.sensors, cadence: "connected" },
-        }));
-      }
-
-      sensorDataRef.current = [...sensorDataRef.current, validatedData];
-
-    } catch (error) {
-      logError(`Sensor data processing failed: ${error}`, "sensor");
-    }
-  }, [isRecording, logError]);
+    },
+    [isRecording, logError],
+  );
 
   // Initialize recovery check on mount
   useEffect(() => {

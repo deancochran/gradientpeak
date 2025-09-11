@@ -161,7 +161,37 @@
   * Highlight personal records for distance, duration, or other key metrics.
   * Minimal UI: side-by-side or simple line/bar comparisons.
 
-### 1.8 Recording UX Refactor
+### 1.8 Critical Recording Flow Fixes
+
+* [ ] Fix MetricCard Component Import Error
+  * Fix typo in MetricCard component export (MetricCar → MetricCard)
+  * Ensure MetricsGrid component properly imports and displays metrics
+  * Test activity selection and recording flow works without crashes
+  * Verify performance metrics display correctly during recording
+
+* [ ] Dynamic Recording Body State Management  
+  * Implement reactive recording body based on activity selection state
+  * Show activity selection UI when no activity chosen
+  * Display performance metrics for unplanned indoor activities (like treadmill runs)
+  * Show planned activity interactive display for planned activities
+  * Hide activity selection buttons and show appropriate content based on activity type and planning status
+  * Ensure smooth state transitions between selection and recording phases
+
+* [ ] Post-Recording Navigation & Summary Flow
+  * Fix blank white home page after recording completion
+  * Ensure proper navigation back to internal main app home page after finish
+  * Implement activity summary modal display on recording completion
+  * Show recently completed activity summary with key metrics and performance data
+  * Prevent navigation issues and ensure clean session completion
+
+* [ ] Activity Type-Based UI Adaptation
+  * Update recording interface to adapt based on selected activity type constraints
+  * For indoor activities (treadmill): hide GPS-dependent metrics, show available sensor data
+  * For outdoor activities: show GPS, pace, speed metrics when available
+  * Prioritize BLE sensor data over calculated metrics when sensors are connected
+  * Display subtle data source indicators for each metric (GPS, BLE sensor, calculated)
+
+### 1.9 Recording UX Refactor
 
 * [x] Remove Modal-Based Recording Interface
   * Eliminate all modals except activity summary at workout completion

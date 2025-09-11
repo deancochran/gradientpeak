@@ -17,7 +17,10 @@ interface MetricCardProps {
   cardWidth?: number;
 }
 
-export const MetricCar: React.FC<MetricCardProps> = ({ metric, cardWidth }) => {
+export const MetricCard: React.FC<MetricCardProps> = ({
+  metric,
+  cardWidth,
+}) => {
   return (
     <Card style={[styles.metricCard, { width: cardWidth }]}>
       <View style={styles.metricHeader}>
