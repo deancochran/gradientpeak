@@ -4,8 +4,6 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 interface RecordingHeaderProps {
   onClose: () => void;
-  isRecording: boolean;
-  isPaused: boolean;
   // GPS status
   isGpsReady: boolean;
   gpsPointsCount?: number;
@@ -27,8 +25,6 @@ interface RecordingHeaderProps {
 
 export const RecordingHeader: React.FC<RecordingHeaderProps> = ({
   onClose,
-  isRecording,
-  isPaused,
   isGpsReady,
   gpsPointsCount = 0,
   hasAllPermissions,
@@ -54,13 +50,6 @@ export const RecordingHeader: React.FC<RecordingHeaderProps> = ({
       ).length
     : 0;
 
-  const getStatusText = () => {
-    if (isRecording) {
-      return isPaused ? "Activity Paused" : "Recording Activity";
-    }
-    return "Start Activity";
-  };
-
   return (
     <View style={styles.container}>
       {/* Close Button */}
@@ -73,7 +62,11 @@ export const RecordingHeader: React.FC<RecordingHeaderProps> = ({
         {/* GPS Indicator */}
         <TouchableOpacity
           style={[styles.indicator, isGpsReady && styles.indicatorActive]}
-          disabled={true} // GPS indicator is informational only
+          onPress={() => {
+            console.log(
+              "📍 [DEBUG] GPS indicator pressed (informational only)",
+            );
+          }}
         >
           <Ionicons
             name={isGpsReady ? "locate" : "locate-outline"}
@@ -93,7 +86,12 @@ export const RecordingHeader: React.FC<RecordingHeaderProps> = ({
             styles.indicator,
             hasAllPermissions && styles.indicatorActive,
           ]}
-          onPress={onPermissionsPress}
+          onPress={() => {
+            console.log(
+              "🛡️ [DEBUG] Permissions indicator pressed in RecordingHeader",
+            );
+            onPermissionsPress();
+          }}
         >
           <Ionicons
             name={hasAllPermissions ? "shield-checkmark" : "shield-outline"}
@@ -111,7 +109,12 @@ export const RecordingHeader: React.FC<RecordingHeaderProps> = ({
               hasFreshSensorData &&
               styles.indicatorActive,
           ]}
-          onPress={onBluetoothPress}
+          onPress={() => {
+            console.log(
+              "🔵 [DEBUG] Bluetooth indicator pressed in RecordingHeader",
+            );
+            onBluetoothPress();
+          }}
         >
           <Ionicons
             name={
@@ -140,11 +143,6 @@ export const RecordingHeader: React.FC<RecordingHeaderProps> = ({
             </View>
           )}
         </TouchableOpacity>
-      </View>
-
-      {/* Title */}
-      <View style={styles.titleContainer}>
-        <Text style={styles.title}>{getStatusText()}</Text>
       </View>
     </View>
   );
@@ -201,14 +199,5 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: "#ffffff",
     fontWeight: "600",
-  },
-  titleContainer: {
-    flex: 1,
-    alignItems: "center",
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#111827",
   },
 });

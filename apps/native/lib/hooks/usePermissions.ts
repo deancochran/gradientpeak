@@ -168,6 +168,10 @@ export const usePermissions = (requiredTypes: PermissionType[] = []) => {
     checkedOnceRef.current = true;
   }, [requiredTypes, checkSinglePermission]);
 
+  const forceCheckPermissions = useCallback(async () => {
+    await Promise.all(requiredTypes.map((type) => checkSinglePermission(type)));
+  }, [requiredTypes, checkSinglePermission]);
+
   const requestAllRequiredPermissions = useCallback(async () => {
     const results = await Promise.all(
       requiredTypes.map((type) => requestSinglePermission(type)),
@@ -215,5 +219,6 @@ export const usePermissions = (requiredTypes: PermissionType[] = []) => {
     requestAllRequiredPermissions,
     checkSinglePermission,
     requestSinglePermission,
+    forceCheckPermissions,
   };
 };

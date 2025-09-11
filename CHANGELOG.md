@@ -8,12 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- **Activity Recording System**: Fixed permissions, BLE connectivity, and modal layout issues
+- **Activity Recording System**: Complete consolidation and modal fixes
+  - **Consolidated Recording Screens**: Merged `record.tsx` and `record-enhanced.tsx` into single, optimized recording screen
+  - **Fixed Modal Visibility Issues**: Resolved React Native modal conflicts where permissions and BLE modals weren't appearing
+  - **Fixed Modal Stacking**: Main recording modal now conditionally hides when sub-modals (permissions/BLE) are open
   - Fixed permissions indicator not showing popup when clicked - now opens comprehensive permissions modal
   - Fixed BLE indicator not opening device selection modal - now properly triggers EnhancedBluetoothModal
   - Fixed BLE connection UI reactivity - device connection states now update in real-time
   - Restructured recording modal layout with new RecordingHeader component
-  - Replaced "Start Activity" text in header with GPS ready, permissions, and BLE status indicators
+  - Completely removed "Start Activity" text from header, leaving only GPS, permissions, and BLE indicators
   - Moved recording controls to footer with improved Start/Stop/Pause/Resume layout
   - Removed redundant ActivityStatusBar component and replaced with integrated header indicators
   - Added PermissionsModal for comprehensive permission management with detailed explanations
@@ -21,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed permission request flow to use proper modal workflow instead of system alerts
   - Added background location permission support for continuous GPS tracking
   - Improved sensor connection status indicators with real-time badge updates
+  - Added extensive debug logging for troubleshooting modal and permission issues
 
 ### Added
 - **Trends Screen**: Complete implementation with fault-tolerant design

@@ -40,6 +40,7 @@
   * [x] Unable to disconnect from BLE device, device in modal doesn't change its ui. it should be reactive
 * [x] Layout of record modal isn't as expected, fix layout issue.
   * [x] Next to the modal close button, remove content holding the "Start Activity" text and replace with the following:
+    * [x] remove the "Start Activity" text
     * [x] a gps is ready indicator
     * [x] The permissions indicator, indicating if all permissions needed for a recording session are granted (if clicked, it should open a popup to enable permissions)
     * [x] The BLE indicator, indicating if BLE is enabled and connected (if clicked, it should open a popup to enable BLE) If ble is enabled, the ble device connection modal should display and users should be able to connect multiple devices

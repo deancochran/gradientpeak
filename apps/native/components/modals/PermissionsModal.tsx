@@ -1,14 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
-import React from "react";
+import React, { useEffect } from "react";
 import {
-    Alert,
-    Linking,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  Linking,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 interface PermissionItem {
@@ -35,6 +35,28 @@ export const PermissionsModal: React.FC<PermissionsModalProps> = ({
   onRequestPermissions,
   isRequesting = false,
 }) => {
+  // Debug logs for permissions modal
+  useEffect(() => {
+    if (visible) {
+      console.log("🛡️ [DEBUG] PermissionsModal opened with data:", {
+        permissions,
+        permissionsList: Object.values(permissions),
+        hasAllRequired: Object.values(permissions)
+          .filter((p) => p.required)
+          .every((p) => p.granted),
+        deniedCount: Object.values(permissions).filter(
+          (p) => !p.granted && p.required,
+        ).length,
+      });
+    }
+  }, [visible, permissions]);
+
+  useEffect(() => {
+    console.log(
+      "🛡️ [DEBUG] PermissionsModal permissions prop changed:",
+      permissions,
+    );
+  }, [permissions]);
   const permissionsList = Object.values(permissions);
   const hasAllRequiredPermissions = permissionsList
     .filter((p) => p.required)
@@ -48,16 +70,20 @@ export const PermissionsModal: React.FC<PermissionsModalProps> = ({
   );
 
   const handleRequestPermissions = async () => {
+    console.log("🛡️ [DEBUG] PermissionsModal handleRequestPermissions called");
     try {
+      console.log("🛡️ [DEBUG] Calling onRequestPermissions...");
       const success = await onRequestPermissions();
+      console.log("🛡️ [DEBUG] onRequestPermissions result:", success);
       if (success) {
+        console.log("🛡️ [DEBUG] Success! Closing modal in 1 second...");
         // Brief delay to show success before closing
         setTimeout(() => {
           onClose();
         }, 1000);
       }
     } catch (error) {
-      console.error("Failed to request permissions:", error);
+      console.error("🛡️ [DEBUG] Failed to request permissions:", error);
       Alert.alert(
         "Error",
         "Failed to request permissions. Please try again or enable them manually in Settings.",
@@ -159,11 +185,7 @@ export const PermissionsModal: React.FC<PermissionsModalProps> = ({
             {permissionsList.map((permission, index) => (
               <View key={index} style={styles.permissionItem}>
                 <View style={styles.permissionIcon}>
-                  <Ionicons
-                    name={permission.icon}
-                    size={24}
-                    color="#3b82f6"
-                  />
+                  <Ionicons name={permission.icon} size={24} color="#3b82f6" />
                 </View>
 
                 <View style={styles.permissionInfo}>
@@ -207,19 +229,22 @@ export const PermissionsModal: React.FC<PermissionsModalProps> = ({
             <View style={styles.helpItem}>
               <Ionicons name="location" size={16} color="#6b7280" />
               <Text style={styles.helpText}>
-                Location: Track your route, calculate distance, and provide GPS-based metrics
+                Location: Track your route, calculate distance, and provide
+                GPS-based metrics
               </Text>
             </View>
             <View style={styles.helpItem}>
               <Ionicons name="bluetooth" size={16} color="#6b7280" />
               <Text style={styles.helpText}>
-                Bluetooth: Connect to heart rate monitors, power meters, and other fitness sensors
+                Bluetooth: Connect to heart rate monitors, power meters, and
+                other fitness sensors
               </Text>
             </View>
             <View style={styles.helpItem}>
               <Ionicons name="fitness" size={16} color="#6b7280" />
               <Text style={styles.helpText}>
-                Motion & Fitness: Detect activity and calculate calories burned during your workout
+                Motion & Fitness: Detect activity and calculate calories burned
+                during your workout
               </Text>
             </View>
           </View>
@@ -249,7 +274,9 @@ export const PermissionsModal: React.FC<PermissionsModalProps> = ({
               ) : (
                 <>
                   <Ionicons name="shield-checkmark" size={20} color="#ffffff" />
-                  <Text style={styles.requestButtonText}>Grant Permissions</Text>
+                  <Text style={styles.requestButtonText}>
+                    Grant Permissions
+                  </Text>
                 </>
               )}
             </TouchableOpacity>
