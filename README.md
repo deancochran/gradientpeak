@@ -16,7 +16,7 @@ The heart of TurboFit, shared across web, mobile, and backend apps. **Completely
 
 * **Type Definitions & Schemas** — Zod validation for profiles, workouts, activities, and flexible JSON structures
 * **Calculations & Analytics** — Training zones, TSS, normalized power, compliance scoring, CTL/ATL/TSB
-* **Business Logic** — Workout plan validation, progression, and adaptive algorithms
+* **Business Logic** — Activity plan validation, progression, and adaptive algorithms
 * **Utilities** — Time/duration helpers, unit conversions, constants
 * **Platform Agnostic** — Pure TypeScript with no database, ORM, or platform-specific dependencies
 
@@ -128,12 +128,12 @@ The core package handles **profile validation**, **training zone calculations**,
 
 `planned_activities` contains scheduled workouts with flexible JSON structures validated by the **core package**:
 
-* `structure` — Complex JSON objects defining workout steps
+* `structure` — Complex JSON objects defining activity steps
 * `structure_version` — Version tracked by core package
 * `requires_threshold_hr` / `requires_ftp` — Validated against core profile requirements
 * Performance estimates calculated by core algorithms
 
-**Workout Structure Features:**
+**Activity Structure Features:**
 
 * Nested repetitions and complex step sequences
 * Multiple intensity target types with validation
@@ -141,7 +141,7 @@ The core package handles **profile validation**, **training zone calculations**,
 * Intensity classes with core classification logic
 * Portable format compatible with major training platforms
 
-The core package ensures **valid workout structures**, calculates **estimated durations and training stress**, and provides **compliance scoring algorithms**.
+The core package ensures **valid activity structures**, calculates **estimated durations and training stress**, and provides **compliance scoring algorithms**.
 
 ---
 
@@ -170,7 +170,7 @@ Activity data flows through the **core package** for consistent analysis:
 
 * **Performance Metrics** — TSS, normalized power, intensity factors calculated from JSON
 * **Training Load Analytics** — CTL, ATL, TSB derived from activity metadata
-* **Compliance Scoring** — Workout matching algorithms using JSON activity structure
+* **Compliance Scoring** — Activity matching algorithms using JSON activity structure
 * **Zone Analysis** — Training zone calculations using core package algorithms
 
 ### Activity Streams
@@ -209,7 +209,7 @@ Time-series data processed from JSON source through core package utilities:
 * **JSON-Derived Metrics** — All analytics calculated from JSON source data
 * **Training Load Models** — CTL/ATL/TSB from activity metadata
 * **Performance Analytics** — Power curves, trends from JSON streams
-* **Compliance Tracking** — Plan adherence using JSON workout structures
+* **Compliance Tracking** — Plan adherence using JSON activity structures
 * **Zone Analysis** — Heart rate and power zones from core calculations
 
 ### 🔐 Enterprise Security

@@ -1,0 +1,10 @@
+# eslint.rules
+
+You are working on **ESLint configuration** (`packages/eslint-config/`).
+
+- Ensure consistent coding standards across the monorepo
+- Avoid breaking rules for individual packages
+- Use `/file` to fetch configuration files
+
+Example:
+/file packages/eslint-config/*

@@ -2,11 +2,7 @@
  * Core type definitions for fitness calculations and training analytics
  */
 
-import type {
-  PlannedActivityStructure,
-  Step,
-  WeeklySchedule,
-} from "@repo/drizzle/schemas";
+// Define activity structure types locally since they're not exported from drizzle schemas
 
 // ================================
 // Training Zone Types
@@ -207,7 +203,20 @@ export interface PerformanceTrend {
 // ================================
 
 /**
- * Workout step duration
+ * Activity step definition
+ */
+export interface Step {
+  id?: string;
+  type: "interval" | "rest" | "warmup" | "cooldown" | "freeride";
+  name?: string;
+  description?: string;
+  duration: StepDuration;
+  intensity?: StepIntensity;
+  notes?: string;
+}
+
+/**
+ * Activity step duration
  */
 export interface StepDuration {
   type: "time" | "distance" | "calories" | "open";
@@ -215,7 +224,7 @@ export interface StepDuration {
 }
 
 /**
- * Workout step intensity target
+ * Activity step intensity target
  */
 export interface StepIntensity {
   type: "%FTP" | "%ThresholdHR" | "watts" | "bpm" | "zone" | "pace" | "RPE";
@@ -225,7 +234,18 @@ export interface StepIntensity {
 }
 
 /**
- * Repetition block within a workout
+ * Planned activity structure
+ */
+export interface PlannedActivityStructure {
+  steps: Step[];
+  repetitions?: RepetitionBlock[];
+  warmup?: Step[];
+  cooldown?: Step[];
+  notes?: string;
+}
+
+/**
+ * Repetition block within a activity
  */
 export interface RepetitionBlock {
   repeat: number;
@@ -233,11 +253,21 @@ export interface RepetitionBlock {
 }
 
 /**
- * Scheduled workout with timing
+ * Weekly schedule definition
+ */
+export interface WeeklySchedule {
+  weekNumber: number;
+  workouts: ScheduledWorkout[];
+  notes?: string;
+  focus?: string;
+}
+
+/**
+ * Scheduled activity with timing
  */
 export interface ScheduledWorkout {
   day: number; // 0-6 (Sunday-Saturday)
-  workout: PlannedActivityStructure;
+  activity: PlannedActivityStructure;
   key?: string;
   notes?: string;
   completed?: boolean;
@@ -419,3 +449,27 @@ export type PlanTypes =
   | TrainingPhase
   | WeeklySchedule
   | ScheduledWorkout;
+
+// ================================
+// Performance Metrics Types
+// ================================
+
+/**
+ * Performance metrics for dashboard display
+ */
+export interface PerformanceMetrics {
+  /** Current Chronic Training Load (fitness) */
+  currentCTL: number;
+  /** Current Acute Training Load (fatigue) */
+  currentATL: number;
+  /** Current Training Stress Balance (form) */
+  currentTSB: number;
+  /** Weekly Training Stress Score total */
+  weeklyTSS: number;
+  /** Monthly Training Stress Score total */
+  monthlyTSS: number;
+  /** Overall fitness level category */
+  fitness: "poor" | "average" | "good" | "excellent";
+  /** Current form/readiness category */
+  form: "optimal" | "good" | "tired" | "very_tired";
+}

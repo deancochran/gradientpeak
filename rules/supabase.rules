@@ -1,0 +1,16 @@
+supabase.rules
+
+You are working on **Supabase utilities** (`packages/supabase/`) in TurboFit.
+
+- **Contains:** Shared types, helpers, API utilities
+- **Used by:** Web and mobile apps
+- **Goal:** Ensure type safety and consistent Supabase integration
+
+Rules:
+- Keep type definitions synced with Supabase schema
+- Reuse helpers across apps
+- Avoid introducing app-specific logic
+- Use `/file` to fetch relevant Supabase helpers or types
+
+Example:
+/file packages/supabase/*
