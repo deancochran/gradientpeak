@@ -13,18 +13,22 @@ import {
 import { ActivityStatusBar } from "@components/activity/ActivityStatusBar";
 import { MetricsGrid } from "@components/activity/MetricsGrid";
 import { RecordingControls } from "@components/activity/RecordingControls";
-import { BluetoothDeviceModal } from "@components/modals/BluetoothDeviceModal";
 import { ThemedView } from "@components/ThemedView";
 import { useGlobalPermissions } from "@lib/contexts/PermissionsContext";
 import { useProfile } from "@lib/hooks/api/profiles";
 import { useActivityRecording } from "@lib/hooks/useActivityRecording";
-import { useBluetooth } from "@lib/hooks/useBluetooth";
 import { ActivitySaveService } from "@lib/services/activity-save";
 import { router } from "expo-router";
 
 export default function RecordScreen() {
   // Hooks
-  const { connectedDevices, isBluetoothEnabled, sensorValues } = useBluetooth();
+  const {
+    connectedDevices,
+    isBluetoothEnabled,
+    sensorValues,
+    getConnectionState,
+    getReconnectAttempts,
+  } = useAdvancedBluetooth();
   const { permissions, requestAllRequiredPermissions } = useGlobalPermissions();
   const { data: profile } = useProfile();
 
@@ -80,14 +84,14 @@ export default function RecordScreen() {
     metrics.currentSpeed,
   ]);
 
-  // Stream sensor data with improved validation
+  // Stream sensor data with enhanced validation and smartwatch support
   useEffect(() => {
     if (isRecording && sensorValues?.timestamp) {
-      // Filter out stale data (older than 10 seconds)
+      // Filter out stale data (older than 15 seconds for smartwatches)
       const now = Date.now();
       const dataAge = now - sensorValues.timestamp;
 
-      if (dataAge > 10000) {
+      if (dataAge > 15000) {
         console.warn(
           "🔶 Stale sensor data detected, skipping:",
           dataAge + "ms old",
@@ -96,20 +100,32 @@ export default function RecordScreen() {
       }
 
       const hasValidSensorData =
-        sensorValues.heartRate || sensorValues.power || sensorValues.cadence;
+        sensorValues.heartRate ||
+        sensorValues.power ||
+        sensorValues.cadence ||
+        sensorValues.speed ||
+        sensorValues.calories ||
+        sensorValues.steps;
 
       if (hasValidSensorData) {
-        console.log("🔄 Streaming fresh sensor data:", {
+        console.log("🔄 Streaming enhanced sensor data:", {
           heartRate: sensorValues.heartRate,
           power: sensorValues.power,
           cadence: sensorValues.cadence,
+          speed: sensorValues.speed,
+          calories: sensorValues.calories,
+          steps: sensorValues.steps,
           age: dataAge + "ms",
+          devices: connectedDevices.length,
         });
 
         addSensorData({
           ...(sensorValues.heartRate && { heartRate: sensorValues.heartRate }),
           ...(sensorValues.power && { power: sensorValues.power }),
           ...(sensorValues.cadence && { cadence: sensorValues.cadence }),
+          ...(sensorValues.speed && { speed: sensorValues.speed }),
+          ...(sensorValues.calories && { calories: sensorValues.calories }),
+          ...(sensorValues.steps && { steps: sensorValues.steps }),
           timestamp: sensorValues.timestamp,
         });
       }
@@ -119,7 +135,11 @@ export default function RecordScreen() {
     sensorValues?.heartRate,
     sensorValues?.power,
     sensorValues?.cadence,
+    sensorValues?.speed,
+    sensorValues?.calories,
+    sensorValues?.steps,
     sensorValues?.timestamp,
+    connectedDevices.length,
     addSensorData,
   ]);
 
@@ -358,6 +378,14 @@ export default function RecordScreen() {
         icon: "refresh-outline" as const,
         isLive: isRecording && !!sensorValues?.cadence,
       },
+      {
+        id: "steps",
+        title: "Steps",
+        value: sensorValues?.steps?.toString() || "--",
+        unit: "steps",
+        icon: "footsteps-outline" as const,
+        isLive: isRecording && !!sensorValues?.steps,
+      },
     ],
     [
       metrics.duration,
@@ -439,12 +467,12 @@ export default function RecordScreen() {
           )}
         </View>
 
-        {/* Bluetooth Modal */}
-        <BluetoothDeviceModal
+        {/* Enhanced Bluetooth Modal */}
+        <EnhancedBluetoothModal
           visible={bluetoothModalVisible}
           onClose={() => setBluetoothModalVisible(false)}
           onSelectDevice={(deviceId) => {
-            console.log("Selected device:", deviceId);
+            console.log("Selected enhanced device:", deviceId);
             setBluetoothModalVisible(false);
           }}
         />
