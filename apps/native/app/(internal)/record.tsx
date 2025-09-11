@@ -1,8 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Alert,
-  Animated,
   Modal,
   StyleSheet,
   Text,
@@ -17,297 +16,191 @@ import { BluetoothDeviceModal } from "@components/modals/BluetoothDeviceModal";
 import { ThemedView } from "@components/ThemedView";
 import { useGlobalPermissions } from "@lib/contexts/PermissionsContext";
 import { useProfile } from "@lib/hooks/api/profiles";
-import { useActivityMetrics } from "@lib/hooks/useActivityMetrics";
-import { useAdvancedActivityRecorder } from "@lib/hooks/useAdvancedActivityRecorder";
+import { useActivityRecording } from "@lib/hooks/useActivityRecording";
 import { useBluetooth } from "@lib/hooks/useBluetooth";
-import { ActivityService } from "@lib/services";
-import { supabase } from "@lib/supabase";
+import { ActivitySaveService } from "@lib/services/activity-save";
 import { router } from "expo-router";
 
 export default function RecordScreen() {
-  // Hooks
-  const { connectedDevices, isBluetoothEnabled, sensorValues } = useBluetooth();
+  const { connectedDevices, isBluetoothEnabled, sensorValues, scanForDevices } =
+    useBluetooth();
   const { permissions, requestAllRequiredPermissions } = useGlobalPermissions();
-  const hasAllPermissions = useMemo(
-    () => Object.values(permissions).every((p) => p?.granted),
-    [permissions],
-  );
+  const { data: profile } = useProfile();
 
   const {
     isRecording,
     isPaused,
-    duration,
-    distance: totalDistance,
-    currentSpeed,
-    startActivity,
-    pauseActivity,
-    resumeActivity: resumeRecording,
-    stopActivity: stopRecording,
+    metrics,
+    startRecording,
+    pauseRecording,
+    resumeRecording,
+    stopRecording,
     addSensorData,
-  } = useAdvancedActivityRecorder();
+  } = useActivityRecording();
 
-  const activityMetrics = useActivityMetrics({
-    duration,
-    totalDistance,
-    currentSpeed,
-    locations: [],
-    sensorValues,
-    isRecording,
-    isPaused,
-    isTracking: isRecording,
-  });
-
-  // Local state
   const [bluetoothModalVisible, setBluetoothModalVisible] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [isModalVisible, setIsModalVisible] = useState(true); // Always visible by default
+  const [isModalVisible, setIsModalVisible] = useState(true);
 
-  // TanStack Query hooks
-  const { data: profile, isLoading: profileLoading } = useProfile();
+  const hasAllPermissions = Object.values(permissions).every((p) => p?.granted);
 
-  // Animation
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(50)).current;
-
-  // Initialize screen
+  // Debug: Log metrics updates
   useEffect(() => {
-    console.log("🎬 Record Screen - Initializing");
-    initializeRecordScreen();
+    if (isRecording) {
+      console.log("📊 Metrics updated:", {
+        duration: metrics.duration,
+        distance: (metrics.distance / 1000).toFixed(2) + "km",
+        heartRate: metrics.heartRate,
+        calories: metrics.calories,
+        speed: (metrics.currentSpeed * 3.6).toFixed(1) + "km/h",
+      });
+    }
+  }, [
+    isRecording,
+    metrics.duration,
+    metrics.distance,
+    metrics.heartRate,
+    metrics.calories,
+    metrics.currentSpeed,
+  ]);
 
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 400,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 400,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, []);
+  // Add sensor data when available - stream in real time
+  useEffect(() => {
+    if (isRecording && sensorValues?.timestamp) {
+      const hasValidSensorData =
+        sensorValues.heartRate || sensorValues.power || sensorValues.cadence;
 
-  const initializeRecordScreen = async () => {
-    try {
-      // Get user session
-      const {
-        data: { user },
-        error,
-      } = await supabase.auth.getUser();
-      if (error) {
-        console.error("🎬 Record Screen - Auth error:", error);
-      } else {
-        setUserId(user?.id ?? null);
-        console.log("🎬 Record Screen - User loaded:", user?.email);
-      }
-
-      // Profile is now handled by useProfile hook
-      if (profile) {
-        console.log("🎬 Record Screen - Profile loaded:", {
-          id: profile.id,
-          username: profile.username,
-          ftp: profile.ftp,
+      if (hasValidSensorData) {
+        console.log("🔄 Streaming sensor data to recording:", sensorValues);
+        addSensorData({
+          ...(sensorValues.heartRate && { heartRate: sensorValues.heartRate }),
+          ...(sensorValues.power && { power: sensorValues.power }),
+          ...(sensorValues.cadence && { cadence: sensorValues.cadence }),
+          timestamp: sensorValues.timestamp,
         });
       }
-    } catch (error) {
-      console.error("🎬 Record Screen - Initialization error:", error);
     }
-  };
-
-  // Check for existing recording session on mount
-  useEffect(() => {
-    const checkExistingSession = async () => {
-      try {
-        await ActivityService.initialize();
-        const session = ActivityService.getCurrentSession();
-
-        if (
-          session &&
-          (session.status === "recording" || session.status === "paused")
-        ) {
-          console.log("🎬 Record Screen - Existing session detected:", {
-            id: session.id,
-            status: session.status,
-            duration: session.liveMetrics.totalTimerTime || 0,
-          });
-          setIsModalVisible(true);
-        } else {
-          console.log(
-            "🎬 Record Screen - No existing session, showing new recording modal",
-          );
-          setIsModalVisible(true);
-        }
-      } catch (error) {
-        console.error(
-          "🎬 Record Screen - Error checking existing session:",
-          error,
-        );
-        setIsModalVisible(true); // Show modal anyway
-      }
-    };
-
-    checkExistingSession();
-
-    return () => {
-      console.log("🎬 Record Screen - Component cleanup");
-    };
-  }, []);
+  }, [
+    isRecording,
+    sensorValues?.heartRate,
+    sensorValues?.power,
+    sensorValues?.cadence,
+    sensorValues?.timestamp,
+    addSensorData,
+  ]);
 
   const handleStartRecording = async () => {
-    try {
-      console.log("🎬 Record Screen - Starting activity");
+    if (!hasAllPermissions) {
+      Alert.alert(
+        "Permissions Required",
+        "Location permissions are required to record activities.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Grant Permissions",
+            onPress: () => requestAllRequiredPermissions(),
+          },
+        ],
+      );
+      return;
+    }
 
-      if (!hasAllPermissions) {
-        console.warn("🎬 Record Screen - Missing permissions");
-        Alert.alert(
-          "Permissions Required",
-          "Location and other permissions are required to record activitys.",
-          [
-            { text: "Cancel", style: "cancel" },
-            {
-              text: "Grant Permissions",
-              onPress: async () => {
-                await requestAllRequiredPermissions();
-              },
-            },
-          ],
-        );
-        return;
-      }
-
-      if (!userId) {
-        console.warn("🎬 Record Screen - No user ID");
-        Alert.alert("Error", "User not authenticated. Please sign in again.");
-        return;
-      }
-
-      await startActivity(userId);
-      console.log("🎬 Record Screen - Activity started successfully");
-    } catch (error) {
-      console.error("🎬 Record Screen - Start recording error:", error);
+    const success = await startRecording();
+    if (!success) {
       Alert.alert("Error", "Failed to start recording. Please try again.");
     }
   };
 
   const handleStopRecording = async () => {
-    try {
-      console.log("🎬 Record Screen - Stopping activity");
+    const formatDuration = (seconds: number) => {
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${mins}:${secs.toString().padStart(2, "0")}`;
+    };
 
-      // Get current session metrics for display in confirmation dialog
-      const session = ActivityService.getCurrentSession();
-      const durationText = session?.liveMetrics?.totalTimerTime
-        ? ActivityService.formatDuration(session.liveMetrics.totalTimerTime)
-        : "0:00";
-      const distanceText = session?.liveMetrics?.distance
-        ? `${(session.liveMetrics.distance / 1000).toFixed(2)} km`
-        : "0.00 km";
+    const formatDistance = (meters: number) => {
+      return `${(meters / 1000).toFixed(2)} km`;
+    };
 
-      Alert.alert(
-        "Save Activity?",
-        `Duration: ${durationText}\nDistance: ${distanceText}\n\nDo you want to save this activity?`,
-        [
-          {
-            text: "Discard",
-            style: "destructive",
-            onPress: handleDiscardActivity,
-          },
-          { text: "Cancel", style: "cancel" },
-          { text: "Save", onPress: handleSaveActivity },
-        ],
-      );
-    } catch (error) {
-      console.error("🎬 Record Screen - Stop recording error:", error);
-      Alert.alert("Error", "Failed to stop recording. Please try again.");
-    }
+    Alert.alert(
+      "Save Activity?",
+      `Duration: ${formatDuration(metrics.duration)}\nDistance: ${formatDistance(metrics.distance)}`,
+      [
+        {
+          text: "Discard",
+          style: "destructive",
+          onPress: handleDiscardActivity,
+        },
+        { text: "Cancel", style: "cancel" },
+        { text: "Save", onPress: handleSaveActivity },
+      ],
+    );
   };
 
   const handleSaveActivity = async () => {
     try {
-      console.log("🎬 Record Screen - Saving activity...");
-
-      // Stop the recording and let the service handle saving
-      await stopRecording();
-
-      console.log("🎬 Record Screen - Activity saved successfully");
-
-      // Ensure session is properly cleaned up
-      const session = ActivityService.getCurrentSession();
-      if (!session || session.status === "stopped") {
-        console.log("🎬 Record Screen - Session cleaned up, safe to navigate");
-        setIsModalVisible(false);
-        router.replace("/(internal)");
-
-        // Show success message after navigation
-        setTimeout(() => {
-          Alert.alert(
-            "Activity Saved!",
-            "Your activity has been saved and will sync to the cloud when connected.",
-            [
-              {
-                text: "View Activities",
-                onPress: () => router.replace("/(internal)"),
-              },
-              { text: "OK" },
-            ],
-          );
-        }, 500);
-      } else {
-        console.warn(
-          "🎬 Record Screen - Session not properly cleaned up, staying on record screen",
-        );
-        Alert.alert("Error", "Session cleanup incomplete. Please try again.");
+      const recording = await stopRecording();
+      if (!recording) {
+        Alert.alert("Error", "No recording data to save.");
+        return;
       }
+
+      if (!profile?.id) {
+        Alert.alert("Error", "Profile not found. Please try again.");
+        return;
+      }
+
+      console.log("💾 Saving activity with comprehensive data...");
+
+      // Save activity with comprehensive JSON generation
+      const activityId = await ActivitySaveService.saveActivityRecording(
+        recording,
+        profile.id,
+      );
+
+      console.log("✅ Activity saved successfully:", activityId);
+
+      setIsModalVisible(false);
+      router.replace("/(internal)");
+
+      // Show success message after navigation
+      setTimeout(() => {
+        Alert.alert(
+          "Activity Saved! 🎉",
+          `Duration: ${formatDuration(recording.metrics.duration)}\nDistance: ${(recording.metrics.distance / 1000).toFixed(2)} km\n\nYour activity has been saved locally and will sync to the cloud when connected.`,
+          [
+            {
+              text: "View Activities",
+              onPress: () => router.replace("/(internal)"),
+            },
+            { text: "OK" },
+          ],
+        );
+      }, 500);
     } catch (error) {
-      console.error("🎬 Record Screen - Save activity error:", error);
-      Alert.alert("Error", "Failed to save activity. Please try again.");
+      console.error("❌ Failed to save activity:", error);
+      Alert.alert(
+        "Save Failed",
+        "Failed to save your activity. Please try again.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Retry", onPress: handleSaveActivity },
+        ],
+      );
     }
   };
 
   const handleDiscardActivity = async () => {
-    try {
-      console.log("🎬 Record Screen - Discarding activity...");
-
-      // Stop the recording without saving
-      await stopRecording();
-
-      console.log("🎬 Record Screen - Activity discarded");
-
-      // Ensure session is properly cleaned up
-      const session = ActivityService.getCurrentSession();
-      if (!session || session.status === "stopped") {
-        console.log(
-          "🎬 Record Screen - Session discarded and cleaned up, safe to navigate",
-        );
-        setIsModalVisible(false);
-        router.replace("/(internal)");
-
-        // Show confirmation
-        setTimeout(() => {
-          Alert.alert(
-            "Activity Discarded",
-            "Your activity recording has been discarded.",
-            [{ text: "OK" }],
-          );
-        }, 500);
-      } else {
-        console.warn(
-          "🎬 Record Screen - Session not properly cleaned up after discard, staying on record screen",
-        );
-        Alert.alert("Error", "Session cleanup incomplete. Please try again.");
-      }
-    } catch (error) {
-      console.error("🎬 Record Screen - Discard activity error:", error);
-      Alert.alert("Error", "Failed to discard activity. Please try again.");
-    }
+    await stopRecording();
+    Alert.alert("Activity Discarded", "Your recording has been discarded.");
+    setIsModalVisible(false);
+    router.replace("/(internal)");
   };
 
   const handleCloseModal = () => {
-    // Prevent closing modal if there's any active recording session
     if (isRecording || isPaused) {
       Alert.alert(
         "Recording in Progress",
-        "You must complete or stop the current activity recording before you can navigate away.",
+        "Stop the recording before closing.",
         [
           { text: "Continue Recording", style: "cancel" },
           {
@@ -318,19 +211,8 @@ export default function RecordScreen() {
         ],
       );
     } else {
-      // Only allow closing if there's no active session
-      const session = ActivityService.getCurrentSession();
-      if (session) {
-        Alert.alert(
-          "Active Session Detected",
-          "There's still an active recording session. Please complete or stop it first.",
-          [{ text: "OK", style: "cancel" }],
-        );
-      } else {
-        console.log("🎬 Record Screen - Modal closed");
-        setIsModalVisible(false);
-        router.back();
-      }
+      setIsModalVisible(false);
+      router.back();
     }
   };
 
@@ -338,62 +220,86 @@ export default function RecordScreen() {
     setBluetoothModalVisible(true);
   };
 
-  const handleBluetoothDeviceSelect = (deviceId: string) => {
-    console.log("🎬 Record Screen - Bluetooth device selected:", deviceId);
-    setBluetoothModalVisible(false);
+  // Format duration as HH:MM:SS or MM:SS
+  const formatDuration = (seconds: number): string => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = seconds % 60;
+
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
+    } else {
+      return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+    }
   };
 
-  // Add sensor data to recording when available with improved validation
-  useEffect(() => {
-    if (isRecording && sensorValues && Object.keys(sensorValues).length > 0) {
-      // Only add sensor data if we have meaningful values
-      const validSensorData = Object.entries(sensorValues).reduce(
-        (acc, [key, value]) => {
-          // Filter out invalid or stale data
-          if (value != null && value > 0) {
-            // Check timestamp freshness (within last 10 seconds)
-            const now = Date.now();
-            const dataAge = sensorValues.timestamp
-              ? now - sensorValues.timestamp
-              : 0;
-
-            if (dataAge < 10000) {
-              // Data is fresh (less than 10 seconds old)
-              acc[key] = value;
-            } else {
-              console.warn(`🔶 Stale sensor data for ${key}: ${dataAge}ms old`);
-            }
-          }
-          return acc;
-        },
-        {} as Record<string, any>,
-      );
-
-      // Only add if we have valid sensor data
-      if (Object.keys(validSensorData).length > 0) {
-        addSensorData({
-          messageType: "record",
-          data: {
-            ...validSensorData,
-            sensorTimestamp: sensorValues.timestamp,
-          },
-        });
-
-        // Log sensor data integration occasionally
-        const recordMessages =
-          ActivityService.getCurrentSession()?.recordMessages || [];
-        if (recordMessages.length % 30 === 0 && recordMessages.length > 0) {
-          console.log("📡 BLE Sensor Data Integrated:", {
-            sensors: Object.keys(validSensorData),
-            values: validSensorData,
-            recordCount: recordMessages.length,
-          });
-        }
-      }
-    }
-  }, [isRecording, sensorValues, addSensorData]);
-
-  // Removed reset database handler - moved to settings/debug screen
+  // Format metrics for display
+  const displayMetrics = [
+    {
+      id: "duration",
+      title: "Duration",
+      value: formatDuration(metrics.duration),
+      unit: "",
+      icon: "time-outline" as const,
+      isLive: isRecording && !isPaused,
+    },
+    {
+      id: "distance",
+      title: "Distance",
+      value: (metrics.distance / 1000).toFixed(2),
+      unit: "km",
+      icon: "navigate-outline" as const,
+      isLive: isRecording,
+    },
+    {
+      id: "currentSpeed",
+      title: "Current Speed",
+      value: (metrics.currentSpeed * 3.6).toFixed(1), // Convert m/s to km/h
+      unit: "km/h",
+      icon: "speedometer-outline" as const,
+      isLive: isRecording && metrics.currentSpeed > 0,
+    },
+    {
+      id: "avgSpeed",
+      title: "Avg Speed",
+      value: (metrics.avgSpeed * 3.6).toFixed(1),
+      unit: "km/h",
+      icon: "analytics-outline" as const,
+      isLive: false,
+    },
+    {
+      id: "heartRate",
+      title: "Heart Rate",
+      value: metrics.heartRate?.toString() || "--",
+      unit: "bpm",
+      icon: "heart-outline" as const,
+      isLive: !!metrics.heartRate,
+    },
+    {
+      id: "calories",
+      title: "Calories",
+      value: metrics.calories?.toString() || "0",
+      unit: "kcal",
+      icon: "flame-outline" as const,
+      isLive: isRecording,
+    },
+    {
+      id: "power",
+      title: "Power",
+      value: sensorValues?.power?.toString() || "--",
+      unit: "W",
+      icon: "flash-outline" as const,
+      isLive: !!sensorValues?.power,
+    },
+    {
+      id: "cadence",
+      title: "Cadence",
+      value: sensorValues?.cadence?.toString() || "--",
+      unit: "rpm",
+      icon: "refresh-outline" as const,
+      isLive: !!sensorValues?.cadence,
+    },
+  ];
 
   return (
     <Modal
@@ -402,16 +308,8 @@ export default function RecordScreen() {
       presentationStyle="pageSheet"
       onRequestClose={handleCloseModal}
     >
-      <ThemedView style={styles.modalContainer} testID="record-modal">
-        <Animated.View
-          style={[
-            styles.container,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
-            },
-          ]}
-        >
+      <ThemedView style={styles.modalContainer}>
+        <View style={styles.container}>
           {/* Modal Header */}
           <View style={styles.modalHeader}>
             <TouchableOpacity
@@ -425,51 +323,29 @@ export default function RecordScreen() {
               {isRecording ? "Recording Activity" : "Start Activity"}
             </Text>
 
-            <View style={styles.headerRight}>
-              {/* Removed dev reset button - use settings or dedicated debug screen instead */}
-            </View>
+            <View style={styles.headerRight} />
           </View>
 
           {/* Status Bar */}
           <ActivityStatusBar
             isBluetoothEnabled={isBluetoothEnabled}
-            connectedDevicesCount={connectedDevices?.length || 0}
+            connectedDevicesCount={connectedDevices.length}
             isGpsTracking={isRecording}
-            gpsPointsCount={
-              activityMetrics.find((m) => m.id === "distance")?.value
-                ? Math.max(
-                    1,
-                    parseInt(
-                      activityMetrics.find((m) => m.id === "distance")?.value ||
-                        "0",
-                    ),
-                  )
-                : 0
-            }
+            gpsPointsCount={Math.floor(metrics.distance / 10)} // Rough GPS points estimate
             onBluetoothPress={handleBluetoothPress}
             sensorValues={sensorValues}
           />
 
-          {/* Profile Info */}
-          {profile && (
-            <View style={styles.profileInfo}>
-              <Text style={styles.profileText}>
-                Recording as: {profile.username || "User"}
-                {profile.ftp && ` • FTP: ${profile.ftp}W`}
-              </Text>
-            </View>
-          )}
-
           {/* Metrics */}
           <View style={styles.content}>
-            <MetricsGrid metrics={activityMetrics} />
+            <MetricsGrid metrics={displayMetrics} />
 
             <RecordingControls
               isRecording={isRecording}
               isPaused={isPaused}
               onStart={handleStartRecording}
               onStop={handleStopRecording}
-              onPause={pauseActivity}
+              onPause={pauseRecording}
               onResume={resumeRecording}
               hasPermissions={hasAllPermissions}
             />
@@ -484,13 +360,16 @@ export default function RecordScreen() {
               </Text>
             </View>
           )}
-        </Animated.View>
+        </View>
 
         {/* Bluetooth Modal */}
         <BluetoothDeviceModal
           visible={bluetoothModalVisible}
           onClose={() => setBluetoothModalVisible(false)}
-          onSelectDevice={handleBluetoothDeviceSelect}
+          onSelectDevice={(deviceId) => {
+            console.log("Selected device:", deviceId);
+            setBluetoothModalVisible(false);
+          }}
         />
       </ThemedView>
     </Modal>
@@ -526,10 +405,8 @@ const styles = StyleSheet.create({
     color: "#111827",
   },
   headerRight: {
-    flexDirection: "row",
-    gap: 8,
+    width: 44, // Match close button width for centering
   },
-
   profileInfo: {
     backgroundColor: "#ffffff",
     paddingHorizontal: 20,

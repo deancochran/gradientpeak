@@ -1,11 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-    Alert,
-    Animated,
-    StyleSheet,
-    Text,
-    View
-} from "react-native";
+import { Alert, Animated, StyleSheet, Text, View } from "react-native";
 
 import { ActivityStatusBar } from "@components/activity/ActivityStatusBar";
 import { MetricsGrid } from "@components/activity/MetricsGrid";
@@ -208,7 +202,9 @@ export default function RecordScreen({ onSessionComplete }: RecordScreenProps) {
           );
         }, 500);
       } else {
-        console.warn("🎬 Record Screen - Session not properly cleaned up, staying on record screen");
+        console.warn(
+          "🎬 Record Screen - Session not properly cleaned up, staying on record screen",
+        );
         Alert.alert("Error", "Session cleanup incomplete. Please try again.");
       }
     } catch (error) {
@@ -229,7 +225,9 @@ export default function RecordScreen({ onSessionComplete }: RecordScreenProps) {
       // Ensure session is properly cleaned up
       const session = ActivityService.getCurrentSession();
       if (!session || session.status === "stopped") {
-        console.log("🎬 Record Screen - Session discarded and cleaned up, safe to navigate");
+        console.log(
+          "🎬 Record Screen - Session discarded and cleaned up, safe to navigate",
+        );
 
         // Call callback to notify parent that session is complete
         onSessionComplete?.();
@@ -239,11 +237,13 @@ export default function RecordScreen({ onSessionComplete }: RecordScreenProps) {
           Alert.alert(
             "Activity Discarded",
             "Your activity recording has been discarded.",
-            [{ text: "OK" }]
+            [{ text: "OK" }],
           );
         }, 500);
       } else {
-        console.warn("🎬 Record Screen - Session not properly cleaned up after discard, staying on record screen");
+        console.warn(
+          "🎬 Record Screen - Session not properly cleaned up after discard, staying on record screen",
+        );
         Alert.alert("Error", "Session cleanup incomplete. Please try again.");
       }
     } catch (error) {
@@ -265,21 +265,27 @@ export default function RecordScreen({ onSessionComplete }: RecordScreenProps) {
   useEffect(() => {
     if (isRecording && sensorValues && Object.keys(sensorValues).length > 0) {
       // Only add sensor data if we have meaningful values
-      const validSensorData = Object.entries(sensorValues).reduce((acc, [key, value]) => {
-        // Filter out invalid or stale data
-        if (value != null && value > 0) {
-          // Check timestamp freshness (within last 10 seconds)
-          const now = Date.now();
-          const dataAge = sensorValues.timestamp ? (now - sensorValues.timestamp) : 0;
+      const validSensorData = Object.entries(sensorValues).reduce(
+        (acc, [key, value]) => {
+          // Filter out invalid or stale data
+          if (value != null && value > 0) {
+            // Check timestamp freshness (within last 10 seconds)
+            const now = Date.now();
+            const dataAge = sensorValues.timestamp
+              ? now - sensorValues.timestamp
+              : 0;
 
-          if (dataAge < 10000) { // Data is fresh (less than 10 seconds old)
-            acc[key] = value;
-          } else {
-            console.warn(`🔶 Stale sensor data for ${key}: ${dataAge}ms old`);
+            if (dataAge < 10000) {
+              // Data is fresh (less than 10 seconds old)
+              acc[key] = value;
+            } else {
+              console.warn(`🔶 Stale sensor data for ${key}: ${dataAge}ms old`);
+            }
           }
-        }
-        return acc;
-      }, {} as Record<string, any>);
+          return acc;
+        },
+        {} as Record<string, any>,
+      );
 
       // Only add if we have valid sensor data
       if (Object.keys(validSensorData).length > 0) {
@@ -292,7 +298,8 @@ export default function RecordScreen({ onSessionComplete }: RecordScreenProps) {
         });
 
         // Log sensor data integration occasionally
-        const recordMessages = ActivityService.getCurrentSession()?.recordMessages || [];
+        const recordMessages =
+          ActivityService.getCurrentSession()?.recordMessages || [];
         if (recordMessages.length % 30 === 0 && recordMessages.length > 0) {
           console.log("📡 BLE Sensor Data Integrated:", {
             sensors: Object.keys(validSensorData),
@@ -327,20 +334,20 @@ export default function RecordScreen({ onSessionComplete }: RecordScreenProps) {
           isBluetoothEnabled={isBluetoothEnabled}
           connectedDevicesCount={connectedDevices?.length || 0}
           isGpsTracking={isRecording}
-          gpsPointsCount={activityMetrics.find(m => m.id === 'distance')?.value ? Math.max(1, parseInt(activityMetrics.find(m => m.id === 'distance')?.value || '0')) : 0}
+          gpsPointsCount={
+            activityMetrics.find((m) => m.id === "distance")?.value
+              ? Math.max(
+                  1,
+                  parseInt(
+                    activityMetrics.find((m) => m.id === "distance")?.value ||
+                      "0",
+                  ),
+                )
+              : 0
+          }
           onBluetoothPress={handleBluetoothPress}
           sensorValues={sensorValues}
         />
-
-        {/* Profile Info */}
-        {profile && (
-          <View style={styles.profileInfo}>
-            <Text style={styles.profileText}>
-              Recording as: {profile.username || "User"}
-              {profile.ftp && ` • FTP: ${profile.ftp}W`}
-            </Text>
-          </View>
-        )}
 
         {/* Metrics */}
         <View style={styles.content}>
