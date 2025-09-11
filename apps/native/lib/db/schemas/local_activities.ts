@@ -28,8 +28,8 @@ export const localActivities = sqliteTable("local_activities", {
   syncError: text("sync_error"),
 
   // File storage paths
-  localFitFilePath: text("local_fit_file_path"), // Path to local JSON/FIT file
-  cloudStoragePath: text("cloud_storage_path"), // Path in Supabase Storage after upload
+  localStoragePath: text("local_storage_path"), // Path to local JSON
+  cloudStoragePath: text("cloud_storage_path"), // Path in Supabase Storage
 
   // Activity metrics
   avgHeartRate: integer("avg_heart_rate"),

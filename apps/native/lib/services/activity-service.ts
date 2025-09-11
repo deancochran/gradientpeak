@@ -134,15 +134,15 @@ export class ActivityService {
       if (!activity) return false;
 
       // Delete local JSON file if it exists
-      if (activity.local_fit_file_path) {
+      if (activity.localStoragePath) {
         try {
           const fileExists = await FileSystem.getInfoAsync(
-            activity.local_fit_file_path,
+            activity.localStoragePath,
           );
           if (fileExists.exists) {
-            await FileSystem.deleteAsync(activity.local_fit_file_path);
+            await FileSystem.deleteAsync(activity.localStoragePath);
             console.log(
-              `Local JSON file deleted: ${activity.local_fit_file_path}`,
+              `Local JSON file deleted: ${activity.localStoragePath}`,
             );
           }
         } catch (fileError) {
@@ -225,9 +225,9 @@ export class ActivityService {
   // Import/Export
 
   /**
-   * Import a FIT file from external source
+   * Import a JSON file from external source
    */
-  static async importFitFile(
+  static async importJsonFile(
     filePath: string,
     fileName?: string,
   ): Promise<string | null> {
@@ -235,7 +235,7 @@ export class ActivityService {
       await this.initialize();
     }
 
-    return await ActivitySyncService.importFitFile(filePath, fileName);
+    return await ActivitySyncService.importJsonFile(filePath, fileName);
   }
 
   /**
@@ -248,15 +248,13 @@ export class ActivityService {
     try {
       const activity =
         await LocalActivityDatabaseService.getActivity(activityId);
-      if (!activity || !activity.local_fit_file_path) {
+      if (!activity || !activity.localStoragePath) {
         return false;
       }
 
       // TODO: Implement file export
       // This would copy the JSON file to the destination path
-      console.log(
-        `Export ${activity.local_fit_file_path} to ${destinationPath}`,
-      );
+      console.log(`Export ${activity.localStoragePath} to ${destinationPath}`);
       return true;
     } catch (error) {
       console.error("Error exporting activity data:", error);

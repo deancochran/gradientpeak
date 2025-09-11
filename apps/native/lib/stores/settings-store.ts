@@ -54,7 +54,7 @@ export interface DataSettings {
   wifiOnlySync: boolean;
   autoBackup: boolean;
   dataRetention: number; // in days
-  exportFormat: "fit" | "gpx" | "tcx" | "csv";
+  exportFormat: "json" | "gpx" | "tcx" | "csv";
 }
 
 export interface SettingsState {
@@ -131,7 +131,7 @@ const defaultDataSettings: DataSettings = {
   wifiOnlySync: false,
   autoBackup: true,
   dataRetention: 365, // 1 year
-  exportFormat: "fit",
+  exportFormat: "json",
 };
 
 export const useSettingsStore = create<SettingsState>()(

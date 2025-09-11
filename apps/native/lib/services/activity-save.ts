@@ -1,14 +1,14 @@
-import * as FileSystem from 'expo-file-system';
-import { InsertLocalActivity } from '../db/schemas';
-import { ActivityRecording } from '../hooks/useActivityRecording';
-import { LocalActivityDatabaseService } from './local-activity-database';
+import * as FileSystem from "expo-file-system";
+import { InsertLocalActivity } from "../db/schemas";
+import { ActivityRecording } from "../hooks/useActivityRecording";
+import { LocalActivityDatabaseService } from "./local-activity-database";
 
 // Comprehensive activity JSON format for storage
 export interface ActivityJSON {
   // Basic metadata
   id: string;
   name: string;
-  activityType: 'run' | 'bike' | 'walk' | 'hike' | 'other';
+  activityType: "run" | "bike" | "walk" | "hike" | "other";
   startTime: string; // ISO string
   endTime: string; // ISO string
   duration: number; // seconds
@@ -68,17 +68,16 @@ export interface ActivityJSON {
 }
 
 export class ActivitySaveService {
-
   /**
    * Save activity recording with comprehensive JSON generation
    */
   static async saveActivityRecording(
     recording: ActivityRecording,
     profileId: string,
-    activityName?: string
+    activityName?: string,
   ): Promise<string> {
     try {
-      console.log('💾 Starting activity save process...');
+      console.log("💾 Starting activity save process...");
 
       // Generate comprehensive activity JSON
       const activityJSON = this.generateActivityJSON(recording, activityName);
@@ -99,7 +98,7 @@ export class ActivitySaveService {
         totalDistance: summary.totalDistance,
         totalTime: summary.totalTime,
         profileId,
-        localFitFilePath: localFilePath,
+        localStoragePath: localFilePath,
         avgHeartRate: summary.avgHeartRate,
         maxHeartRate: summary.maxHeartRate,
         avgPower: summary.avgPower,
@@ -108,26 +107,28 @@ export class ActivitySaveService {
         elevationGain: summary.elevationGain,
         calories: summary.calories,
         tss: summary.tss,
-        syncStatus: 'pending',
+        syncStatus: "pending",
         syncAttempts: 0,
       };
 
       // Save to local database
-      const activityId = await LocalActivityDatabaseService.createActivity(localActivity);
+      const activityId =
+        await LocalActivityDatabaseService.createActivity(localActivity);
 
-      console.log('✅ Activity saved successfully:', {
+      console.log("✅ Activity saved successfully:", {
         id: activityId,
-        duration: `${Math.floor(summary.totalTime / 60)}:${(summary.totalTime % 60).toString().padStart(2, '0')}`,
+        duration: `${Math.floor(summary.totalTime / 60)}:${(summary.totalTime % 60).toString().padStart(2, "0")}`,
         distance: `${(summary.totalDistance / 1000).toFixed(2)} km`,
         avgHeartRate: summary.avgHeartRate,
         localFile: localFilePath,
       });
 
       return activityId;
-
     } catch (error) {
-      console.error('❌ Failed to save activity:', error);
-      throw new Error(`Failed to save activity: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error("❌ Failed to save activity:", error);
+      throw new Error(
+        `Failed to save activity: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
     }
   }
 
@@ -136,7 +137,7 @@ export class ActivitySaveService {
    */
   private static generateActivityJSON(
     recording: ActivityRecording,
-    activityName?: string
+    activityName?: string,
   ): ActivityJSON {
     const startTime = new Date(recording.startTime).toISOString();
     const endTime = new Date(Date.now()).toISOString();
@@ -146,7 +147,7 @@ export class ActivitySaveService {
     const name = activityName || this.generateActivityName(recording);
 
     // Convert locations to standardized format
-    const locations = recording.locations.map(loc => ({
+    const locations = recording.locations.map((loc) => ({
       timestamp: loc.timestamp,
       latitude: loc.coords.latitude,
       longitude: loc.coords.longitude,
@@ -176,9 +177,9 @@ export class ActivitySaveService {
         maxSpeed: recording.metrics.currentSpeed,
       },
       deviceInfo: {
-        platform: 'react-native',
-        appVersion: '1.0.0',
-        recordingVersion: '1.0.0',
+        platform: "react-native",
+        appVersion: "1.0.0",
+        recordingVersion: "1.0.0",
       },
       privacy: {
         isPublic: false,
@@ -195,47 +196,53 @@ export class ActivitySaveService {
 
     // Heart rate analysis
     const heartRateValues = sensorData
-      .map(d => d.heartRate)
-      .filter((hr): hr is number => typeof hr === 'number' && hr > 0);
+      .map((d) => d.heartRate)
+      .filter((hr): hr is number => typeof hr === "number" && hr > 0);
 
-    const avgHeartRate = heartRateValues.length > 0
-      ? Math.round(heartRateValues.reduce((a, b) => a + b, 0) / heartRateValues.length)
-      : undefined;
+    const avgHeartRate =
+      heartRateValues.length > 0
+        ? Math.round(
+            heartRateValues.reduce((a, b) => a + b, 0) / heartRateValues.length,
+          )
+        : undefined;
 
-    const maxHeartRate = heartRateValues.length > 0
-      ? Math.max(...heartRateValues)
-      : undefined;
+    const maxHeartRate =
+      heartRateValues.length > 0 ? Math.max(...heartRateValues) : undefined;
 
     // Power analysis
     const powerValues = sensorData
-      .map(d => d.power)
-      .filter((p): p is number => typeof p === 'number' && p > 0);
+      .map((d) => d.power)
+      .filter((p): p is number => typeof p === "number" && p > 0);
 
-    const avgPower = powerValues.length > 0
-      ? Math.round(powerValues.reduce((a, b) => a + b, 0) / powerValues.length)
-      : undefined;
+    const avgPower =
+      powerValues.length > 0
+        ? Math.round(
+            powerValues.reduce((a, b) => a + b, 0) / powerValues.length,
+          )
+        : undefined;
 
-    const maxPower = powerValues.length > 0
-      ? Math.max(...powerValues)
-      : undefined;
+    const maxPower =
+      powerValues.length > 0 ? Math.max(...powerValues) : undefined;
 
     // Cadence analysis
     const cadenceValues = sensorData
-      .map(d => d.cadence)
-      .filter((c): c is number => typeof c === 'number' && c > 0);
+      .map((d) => d.cadence)
+      .filter((c): c is number => typeof c === "number" && c > 0);
 
-    const avgCadence = cadenceValues.length > 0
-      ? Math.round(cadenceValues.reduce((a, b) => a + b, 0) / cadenceValues.length)
-      : undefined;
+    const avgCadence =
+      cadenceValues.length > 0
+        ? Math.round(
+            cadenceValues.reduce((a, b) => a + b, 0) / cadenceValues.length,
+          )
+        : undefined;
 
-    const maxCadence = cadenceValues.length > 0
-      ? Math.max(...cadenceValues)
-      : undefined;
+    const maxCadence =
+      cadenceValues.length > 0 ? Math.max(...cadenceValues) : undefined;
 
     // Elevation analysis
     const altitudes = locations
-      .map(l => l.coords.altitude)
-      .filter((alt): alt is number => typeof alt === 'number');
+      .map((l) => l.coords.altitude)
+      .filter((alt): alt is number => typeof alt === "number");
 
     let elevationGain = 0;
     let elevationLoss = 0;
@@ -253,23 +260,25 @@ export class ActivitySaveService {
 
     // Speed analysis
     const speeds = locations
-      .map(l => l.coords.speed)
-      .filter((s): s is number => typeof s === 'number' && s > 0);
+      .map((l) => l.coords.speed)
+      .filter((s): s is number => typeof s === "number" && s > 0);
 
-    const maxSpeed = speeds.length > 0 ? Math.max(...speeds) : metrics.currentSpeed;
+    const maxSpeed =
+      speeds.length > 0 ? Math.max(...speeds) : metrics.currentSpeed;
 
     // Calories estimation (improved)
     const calories = this.calculateCalories(
       metrics.duration,
       metrics.distance,
       avgHeartRate,
-      avgPower
+      avgPower,
     );
 
     // Training Stress Score (basic estimation)
-    const tss = avgPower && metrics.duration > 600 // Only if we have power and >10 min
-      ? this.calculateTSS(avgPower, metrics.duration)
-      : undefined;
+    const tss =
+      avgPower && metrics.duration > 600 // Only if we have power and >10 min
+        ? this.calculateTSS(avgPower, metrics.duration)
+        : undefined;
 
     return {
       totalDistance: metrics.distance,
@@ -293,7 +302,9 @@ export class ActivitySaveService {
   /**
    * Save activity JSON to local file system
    */
-  private static async saveActivityJSONFile(activityJSON: ActivityJSON): Promise<string> {
+  private static async saveActivityJSONFile(
+    activityJSON: ActivityJSON,
+  ): Promise<string> {
     const fileName = `activity_${activityJSON.id}.json`;
     const filePath = `${FileSystem.documentDirectory}activities/${fileName}`;
 
@@ -306,9 +317,12 @@ export class ActivitySaveService {
     }
 
     // Write JSON file
-    await FileSystem.writeAsStringAsync(filePath, JSON.stringify(activityJSON, null, 2));
+    await FileSystem.writeAsStringAsync(
+      filePath,
+      JSON.stringify(activityJSON, null, 2),
+    );
 
-    console.log('📄 Activity JSON saved to:', filePath);
+    console.log("📄 Activity JSON saved to:", filePath);
     return filePath;
   }
 
@@ -317,15 +331,18 @@ export class ActivitySaveService {
    */
   private static generateActivityName(recording: ActivityRecording): string {
     const date = new Date(recording.startTime);
-    const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const timeStr = date.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
     const activityType = this.detectActivityType(recording);
 
     const typeNames = {
-      run: 'Morning Run',
-      bike: 'Bike Ride',
-      walk: 'Walk',
-      hike: 'Hike',
-      other: 'Activity'
+      run: "Morning Run",
+      bike: "Bike Ride",
+      walk: "Walk",
+      hike: "Hike",
+      other: "Activity",
     };
 
     return `${typeNames[activityType]} - ${timeStr}`;
@@ -334,19 +351,21 @@ export class ActivitySaveService {
   /**
    * Detect activity type based on speed patterns
    */
-  private static detectActivityType(recording: ActivityRecording): 'run' | 'bike' | 'walk' | 'hike' | 'other' {
+  private static detectActivityType(
+    recording: ActivityRecording,
+  ): "run" | "bike" | "walk" | "hike" | "other" {
     const avgSpeedKmh = recording.metrics.avgSpeed * 3.6;
 
     if (avgSpeedKmh > 15) {
-      return 'bike'; // >15 km/h likely cycling
+      return "bike"; // >15 km/h likely cycling
     } else if (avgSpeedKmh > 7) {
-      return 'run'; // 7-15 km/h likely running
+      return "run"; // 7-15 km/h likely running
     } else if (avgSpeedKmh > 3) {
-      return 'walk'; // 3-7 km/h likely walking
+      return "walk"; // 3-7 km/h likely walking
     } else if (recording.metrics.distance > 1000) {
-      return 'hike'; // Slow but long distance
+      return "hike"; // Slow but long distance
     } else {
-      return 'other';
+      return "other";
     }
   }
 
@@ -357,7 +376,7 @@ export class ActivitySaveService {
     duration: number,
     distance: number,
     avgHeartRate?: number,
-    avgPower?: number
+    avgPower?: number,
   ): number {
     if (duration === 0) return 0;
 

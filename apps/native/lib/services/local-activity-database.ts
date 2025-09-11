@@ -206,18 +206,17 @@ export class LocalActivityDatabaseService {
         .where(eq(localActivities.id, activityId));
 
       // Delete local file if it exists and deleteLocalFile is true
-      if (deleteLocalFile && activity?.localFitFilePath) {
+      if (deleteLocalFile && activity?.localStoragePath) {
         try {
           const fileInfo = await FileSystem.getInfoAsync(
-            activity.localFitFilePath,
+            activity.localStoragePath,
           );
           if (fileInfo.exists) {
-            await FileSystem.deleteAsync(activity.localFitFilePath);
-            console.log(`🗑️ Local file deleted: ${activity.localFitFilePath}`);
+            await FileSystem.deleteAsync(activity.localStoragePath);
+            console.log(`🗑️ Local file deleted: ${activity.localStoragePath}`);
           }
         } catch (fileError) {
-          console.warn("⚠️ Could not delete local file:", fileError);
-          // Don't throw error if file deletion fails
+          console.warn("⚠️ Failed to delete local file:", fileError);
         }
       }
 
@@ -289,7 +288,7 @@ export class LocalActivityDatabaseService {
       const activitiesToDelete = await db
         .select({
           id: localActivities.id,
-          localFitFilePath: localActivities.localFitFilePath,
+          localStoragePath: localActivities.localStoragePath,
         })
         .from(localActivities)
         .where(
@@ -301,13 +300,13 @@ export class LocalActivityDatabaseService {
 
       // Delete local files first
       for (const activity of activitiesToDelete) {
-        if (activity.localFitFilePath) {
+        if (activity.localStoragePath) {
           try {
             const fileInfo = await FileSystem.getInfoAsync(
-              activity.localFitFilePath,
+              activity.localStoragePath,
             );
             if (fileInfo.exists) {
-              await FileSystem.deleteAsync(activity.localFitFilePath);
+              await FileSystem.deleteAsync(activity.localStoragePath);
             }
           } catch (fileError) {
             console.warn(
@@ -439,6 +438,29 @@ export class LocalActivityDatabaseService {
       console.log(`📱 Activity file path updated: ${activityId}`);
     } catch (error) {
       console.error("❌ Error updating file path:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update an activity with partial data
+   */
+  static async updateActivity(
+    activityId: string,
+    updates: Partial<InsertLocalActivity>,
+  ): Promise<void> {
+    try {
+      await db
+        .update(localActivities)
+        .set({
+          ...updates,
+          updatedAt: new Date(),
+        })
+        .where(eq(localActivities.id, activityId));
+
+      console.log(`📝 Activity updated: ${activityId}`);
+    } catch (error) {
+      console.error("❌ Error updating activity:", error);
       throw error;
     }
   }

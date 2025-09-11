@@ -9,8 +9,12 @@ interface RecordingControlsProps {
   onStop: () => void;
   onPause: () => void;
   onResume: () => void;
-  onDiscard?: () => void;
+  onDiscard: () => void;
   hasPermissions: boolean;
+  isLoading?: boolean;
+  plannedActivity?: boolean;
+  onAdvanceStep?: () => void;
+  onSkipStep?: () => void;
 }
 
 export const RecordingControls: React.FC<RecordingControlsProps> = ({
@@ -22,6 +26,10 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
   onResume,
   onDiscard,
   hasPermissions,
+  isLoading = false,
+  plannedActivity = false,
+  onAdvanceStep,
+  onSkipStep,
 }) => {
   // Show initial state when not recording
   if (!isRecording && !isPaused) {
@@ -30,14 +38,20 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
         <TouchableOpacity
           style={[
             styles.startButton,
-            !hasPermissions && styles.startButtonDisabled,
+            (!hasPermissions || isLoading) && styles.startButtonDisabled,
           ]}
           onPress={onStart}
-          disabled={!hasPermissions}
+          disabled={!hasPermissions || isLoading}
         >
-          <Text style={styles.startButtonText}>
-            {hasPermissions ? "Start Activity" : "Permissions Required"}
-          </Text>
+          {isLoading ? (
+            <View style={styles.loadingContainer}>
+              <Text style={styles.startButtonText}>Completing Activity...</Text>
+            </View>
+          ) : (
+            <Text style={styles.startButtonText}>
+              {hasPermissions ? "Start Activity" : "Permissions Required"}
+            </Text>
+          )}
         </TouchableOpacity>
       </View>
     );
@@ -49,15 +63,46 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
       {/* Left side - Stop and Discard buttons (only visible when paused) */}
       {isPaused ? (
         <View style={styles.pausedActions}>
-          <TouchableOpacity style={styles.stopButton} onPress={onStop}>
+          <TouchableOpacity
+            style={[styles.stopButton, isLoading && styles.buttonDisabled]}
+            onPress={onStop}
+            disabled={isLoading}
+          >
             <Ionicons name="stop-circle-outline" size={28} color="#ef4444" />
             <Text style={styles.stopButtonText}>Stop</Text>
           </TouchableOpacity>
 
-          {onDiscard && (
-            <TouchableOpacity style={styles.discardButton} onPress={onDiscard}>
-              <Ionicons name="trash-outline" size={28} color="#6b7280" />
-              <Text style={styles.discardButtonText}>Discard</Text>
+          <TouchableOpacity
+            style={[styles.discardButton, isLoading && styles.buttonDisabled]}
+            onPress={onDiscard}
+            disabled={isLoading}
+          >
+            <Ionicons name="trash-outline" size={28} color="#6b7280" />
+            <Text style={styles.discardButtonText}>Discard</Text>
+          </TouchableOpacity>
+        </View>
+      ) : plannedActivity && !isLoading ? (
+        // Planned activity controls when recording
+        <View style={styles.plannedActions}>
+          {onAdvanceStep && (
+            <TouchableOpacity style={styles.stepButton} onPress={onAdvanceStep}>
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={24}
+                color="#10b981"
+              />
+              <Text style={styles.stepButtonText}>Complete Step</Text>
+            </TouchableOpacity>
+          )}
+
+          {onSkipStep && (
+            <TouchableOpacity style={styles.stepButton} onPress={onSkipStep}>
+              <Ionicons
+                name="play-skip-forward-outline"
+                size={24}
+                color="#f59e0b"
+              />
+              <Text style={styles.stepButtonText}>Skip Step</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -68,8 +113,13 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
 
       {/* Center - Main action button (pause/resume) */}
       <TouchableOpacity
-        style={[styles.mainActionButton, isPaused && styles.pausedButton]}
+        style={[
+          styles.mainActionButton,
+          isPaused && styles.pausedButton,
+          isLoading && styles.buttonDisabled,
+        ]}
         onPress={isPaused ? onResume : onPause}
+        disabled={isLoading}
       >
         <Ionicons
           name={isPaused ? "play-circle" : "pause-circle"}
@@ -78,13 +128,30 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
         />
       </TouchableOpacity>
 
-      {/* Right side spacer for layout balance */}
-      <View style={styles.spacer} />
+      {/* Right side - Stop when recording or spacer */}
+      {isRecording && !isPaused ? (
+        <TouchableOpacity
+          style={[styles.stopButton, isLoading && styles.buttonDisabled]}
+          onPress={onStop}
+          disabled={isLoading}
+        >
+          <Ionicons name="stop-circle-outline" size={28} color="#ef4444" />
+          <Text style={styles.stopButtonText}>Finish</Text>
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.spacer} />
+      )}
 
-      {/* Paused indicator */}
+      {/* Status indicators */}
       {isPaused && (
         <View style={styles.pausedIndicator}>
           <Text style={styles.pausedText}>Activity Paused</Text>
+        </View>
+      )}
+
+      {isLoading && (
+        <View style={styles.loadingIndicator}>
+          <Text style={styles.loadingText}>Saving Activity...</Text>
         </View>
       )}
     </View>
@@ -178,6 +245,45 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   pausedText: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  loadingContainer: {
+    alignItems: "center",
+  },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+  plannedActions: {
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 8,
+    width: 80,
+  },
+  stepButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 4,
+  },
+  stepButtonText: {
+    fontSize: 10,
+    color: "#374151",
+    fontWeight: "500",
+    marginTop: 2,
+    textAlign: "center",
+  },
+  loadingIndicator: {
+    position: "absolute",
+    bottom: 90,
+    left: "50%",
+    transform: [{ translateX: -50 }],
+    backgroundColor: "#3b82f6",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  loadingText: {
     color: "#ffffff",
     fontSize: 12,
     fontWeight: "600",

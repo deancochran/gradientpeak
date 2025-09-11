@@ -400,16 +400,16 @@ export class ActivitySyncService {
       console.log(`🔄 Syncing activity: ${activity.id} to Next.js API`);
 
       // Validate file exists and is readable
-      if (!activity.localFitFilePath) {
+      if (!activity.localStoragePath) {
         throw new Error("No local file path found for activity");
       }
 
       const fileExists = await FileSystem.getInfoAsync(
-        activity.localFitFilePath,
+        activity.localStoragePath,
       );
       if (!fileExists.exists) {
         throw new Error(
-          `Activity file not found: ${activity.localFitFilePath}`,
+          `Activity file not found: ${activity.localStoragePath}`,
         );
       }
 
@@ -420,7 +420,7 @@ export class ActivitySyncService {
 
       // Read and validate JSON data
       const jsonData = await FileSystem.readAsStringAsync(
-        activity.localFitFilePath,
+        activity.localStoragePath,
         { encoding: FileSystem.EncodingType.UTF8 },
       );
 
@@ -482,13 +482,17 @@ export class ActivitySyncService {
         fileName,
       );
 
-      // Clean up local file after successful sync
+      // Clean up local JSON file after successful sync
       try {
-        await FileSystem.deleteAsync(activity.localFitFilePath);
-        console.log(`🗑️ Local file deleted: ${activity.localFitFilePath}`);
+        await FileSystem.deleteAsync(activity.localStoragePath);
+        console.log(`🗑️ Local JSON file deleted: ${activity.localStoragePath}`);
+
+        // Clear the local storage path from the database
+        await LocalActivityDatabaseService.updateActivity(activity.id, {
+          localStoragePath: null,
+        });
       } catch (deleteError) {
-        console.warn("⚠️ Failed to delete local file:", deleteError);
-        // Don't fail the sync if file deletion fails
+        console.warn(`⚠️ Failed to delete local JSON file: ${deleteError}`);
       }
 
       return true;
@@ -581,6 +585,69 @@ export class ActivitySyncService {
       return `${minutes}m ${remainingSeconds}s`;
     } else {
       return `${remainingSeconds}s`;
+    }
+  }
+
+  /**
+   * Import a JSON file from external source
+   */
+  static async importJsonFile(
+    filePath: string,
+    fileName?: string,
+  ): Promise<string | null> {
+    try {
+      console.log("📂 Importing JSON file:", filePath);
+
+      // Check if file exists
+      const fileInfo = await FileSystem.getInfoAsync(filePath);
+      if (!fileInfo.exists) {
+        throw new Error("JSON file not found");
+      }
+
+      // Read and parse JSON file
+      const jsonContent = await FileSystem.readAsStringAsync(filePath, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+
+      const activityData = JSON.parse(jsonContent);
+
+      // Validate required fields
+      if (!activityData.activityRecord) {
+        throw new Error("Invalid JSON format: missing activityRecord");
+      }
+
+      const activityRecord = activityData.activityRecord;
+
+      // Create local activity entry
+      const localActivity = {
+        id: activityRecord.id,
+        name: fileName || activityRecord.name,
+        activityType: activityRecord.activityType,
+        startDate: new Date(activityRecord.startTime),
+        totalDistance: activityRecord.distance,
+        totalTime: activityRecord.totalTime,
+        profileId: activityRecord.profileId,
+        localStoragePath: filePath,
+        avgHeartRate: activityRecord.averageHeartRate,
+        maxHeartRate: activityRecord.maxHeartRate,
+        avgPower: activityRecord.averagePower,
+        maxPower: activityRecord.maxPower,
+        avgCadence: activityRecord.averageCadence,
+        elevationGain: activityRecord.elevation?.gain,
+        calories: activityRecord.calories,
+        tss: activityRecord.trainingStressScore,
+        syncStatus: "pending" as const,
+        syncAttempts: 0,
+      };
+
+      // Save to local database
+      await LocalActivityDatabaseService.createActivity(localActivity);
+
+      console.log("✅ JSON file imported successfully:", activityRecord.id);
+      return activityRecord.id;
+    } catch (error) {
+      console.error("❌ Failed to import JSON file:", error);
+      throw error;
     }
   }
 

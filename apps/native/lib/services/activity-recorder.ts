@@ -329,12 +329,11 @@ export class ActivityRecorderService {
       // Save activity to local database
       const activityId = await LocalActivityDatabaseService.createActivity({
         id: session.id,
-        profile_id: session.profileId,
-        local_fit_file_path: jsonFilePath, // Now points to JSON file instead of FIT file
-        sync_status: "local_only",
-        created_at: Date.now(),
-        updated_at: Date.now(),
-        cached_metadata: JSON.stringify(metadata),
+        profileId: session.profileId,
+        localStoragePath: jsonFilePath, // Points to local JSON file
+        syncStatus: "pending",
+        createdAt: new Date(),
+        updatedAt: new Date(),
       });
 
       // Clean up

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { SelectLocalActivity } from "@lib/db/schemas";
-import { ActivityService } from "@lib/services/activity-service";
+import { SelectLocalActivity } from "../db/schemas";
+import { ActivityService } from "../services/activity-service";
+import { SyncStatus } from "../services/activity-sync-service";
 
 export interface UseActivityManagerReturn {
   // Activities data
@@ -10,21 +11,17 @@ export interface UseActivityManagerReturn {
   error: string | null;
 
   // Sync status
-  syncStatus: {
-    totalActivities: number;
-    pendingActivities: number;
-    failedActivities: number;
-  };
+  syncStatus: SyncStatus;
   isSyncing: boolean;
 
   // Actions
   loadActivities: (profileId: string) => Promise<void>;
-  getActivityMetadata: (activityId: string) => Promise<ActivityMetadata | null>;
+  getActivityMetadata: (activityId: string) => Promise<any | null>;
   deleteActivity: (activityId: string) => Promise<boolean>;
   syncAllActivities: () => Promise<{ success: number; failed: number }>;
   syncActivity: (activityId: string) => Promise<boolean>;
   retrySyncActivity: (activityId: string) => Promise<boolean>;
-  importFitFile: (
+  importJsonFile: (
     filePath: string,
     fileName?: string,
   ) => Promise<string | null>;
@@ -41,10 +38,13 @@ export const useActivityManager = (): UseActivityManagerReturn => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [syncStatus, setSyncStatus] = useState({
-    totalActivities: 0,
-    pendingActivities: 0,
-    failedActivities: 0,
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>({
+    isOnline: false,
+    syncInProgress: false,
+    pendingCount: 0,
+    failedCount: 0,
+    lastSyncAttempt: null,
+    nextRetryAt: null,
   });
 
   // Initialize service
@@ -80,21 +80,15 @@ export const useActivityManager = (): UseActivityManagerReturn => {
 
   // Get metadata for a specific activity
   const getActivityMetadata = useCallback(
-    async (activityId: string): Promise<ActivityMetadata | null> => {
+    async (activityId: string): Promise<any | null> => {
       try {
         const activity = await ActivityService.getActivity(activityId);
-        if (!activity || !activity.local_fit_file_path) {
+        if (!activity || !activity.localStoragePath) {
           return null;
         }
 
-        // Check if we have cached metadata
-        if (activity.cached_metadata) {
-          try {
-            return JSON.parse(activity.cached_metadata);
-          } catch {
-            // Fall through to re-parse if cached data is corrupted
-          }
-        }
+        // For now, return basic metadata since cached_metadata is not in schema
+        // TODO: Implement metadata caching if needed
 
         // Get metadata from cached activity data
         return await ActivityService.getActivityMetadata(activityId);
@@ -220,12 +214,12 @@ export const useActivityManager = (): UseActivityManagerReturn => {
     [],
   );
 
-  // Import a FIT file
-  const importFitFile = useCallback(
+  // Import a JSON file
+  const importJsonFile = useCallback(
     async (filePath: string, fileName?: string): Promise<string | null> => {
       try {
         setError(null);
-        const activityId = await ActivityService.importFitFile(
+        const activityId = await ActivityService.importJsonFile(
           filePath,
           fileName,
         );
@@ -241,9 +235,9 @@ export const useActivityManager = (): UseActivityManagerReturn => {
 
         return activityId;
       } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : "Unknown error";
-        setError(`Import failed: ${errorMessage}`);
+        const message = err instanceof Error ? err.message : "Import failed";
+        setError(message);
+        console.error("Activity import failed:", err);
         return null;
       }
     },
@@ -268,7 +262,7 @@ export const useActivityManager = (): UseActivityManagerReturn => {
 
       // Remove synced activities from local state
       setActivities((prev) =>
-        prev.filter((activity) => activity.sync_status !== "synced"),
+        prev.filter((activity) => activity.syncStatus !== "synced"),
       );
       await refreshSyncStatus();
 
@@ -311,7 +305,7 @@ export const useActivityManager = (): UseActivityManagerReturn => {
     syncAllActivities,
     syncActivity,
     retrySyncActivity,
-    importFitFile,
+    importJsonFile,
     refreshSyncStatus,
     cleanupSyncedActivities,
 
