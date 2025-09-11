@@ -13,10 +13,12 @@ import {
 import { ActivityStatusBar } from "@components/activity/ActivityStatusBar";
 import { MetricsGrid } from "@components/activity/MetricsGrid";
 import { RecordingControls } from "@components/activity/RecordingControls";
+import { EnhancedBluetoothModal } from "@components/modals/EnhancedBluetoothModal";
 import { ThemedView } from "@components/ThemedView";
 import { useGlobalPermissions } from "@lib/contexts/PermissionsContext";
 import { useProfile } from "@lib/hooks/api/profiles";
 import { useActivityRecording } from "@lib/hooks/useActivityRecording";
+import { useAdvancedBluetooth } from "@lib/hooks/useAdvancedBluetooth";
 import { ActivitySaveService } from "@lib/services/activity-save";
 import { router } from "expo-router";
 
@@ -30,6 +32,13 @@ export default function RecordScreen() {
     getReconnectAttempts,
   } = useAdvancedBluetooth();
   const { permissions, requestAllRequiredPermissions } = useGlobalPermissions();
+
+  // Debug sensor values updates
+  useEffect(() => {
+    if (sensorValues && Object.keys(sensorValues).length > 0) {
+      console.log("🎬 Record Screen - Received sensor values:", sensorValues);
+    }
+  }, [sensorValues]);
   const { data: profile } = useProfile();
 
   const {
@@ -107,6 +116,18 @@ export default function RecordScreen() {
         sensorValues.calories ||
         sensorValues.steps;
 
+      console.log("🔍 Record Screen - Sensor data check:", {
+        heartRate: sensorValues.heartRate,
+        power: sensorValues.power,
+        cadence: sensorValues.cadence,
+        speed: sensorValues.speed,
+        calories: sensorValues.calories,
+        steps: sensorValues.steps,
+        hasValidSensorData,
+        dataAge: dataAge + "ms",
+        isRecording,
+      });
+
       if (hasValidSensorData) {
         console.log("🔄 Streaming enhanced sensor data:", {
           heartRate: sensorValues.heartRate,
@@ -125,7 +146,6 @@ export default function RecordScreen() {
           ...(sensorValues.cadence && { cadence: sensorValues.cadence }),
           ...(sensorValues.speed && { speed: sensorValues.speed }),
           ...(sensorValues.calories && { calories: sensorValues.calories }),
-          ...(sensorValues.steps && { steps: sensorValues.steps }),
           timestamp: sensorValues.timestamp,
         });
       }
@@ -137,7 +157,6 @@ export default function RecordScreen() {
     sensorValues?.cadence,
     sensorValues?.speed,
     sensorValues?.calories,
-    sensorValues?.steps,
     sensorValues?.timestamp,
     connectedDevices.length,
     addSensorData,
@@ -377,14 +396,6 @@ export default function RecordScreen() {
         unit: "rpm",
         icon: "refresh-outline" as const,
         isLive: isRecording && !!sensorValues?.cadence,
-      },
-      {
-        id: "steps",
-        title: "Steps",
-        value: sensorValues?.steps?.toString() || "--",
-        unit: "steps",
-        icon: "footsteps-outline" as const,
-        isLive: isRecording && !!sensorValues?.steps,
       },
     ],
     [

@@ -1,16 +1,20 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-    Alert,
-    FlatList,
-    Modal,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  FlatList,
+  Modal,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
-import { useAdvancedBluetooth, type BluetoothDevice, type DeviceType } from "@lib/hooks/useAdvancedBluetooth";
+import {
+  useAdvancedBluetooth,
+  type BluetoothDevice,
+  type DeviceType,
+} from "@lib/hooks/useAdvancedBluetooth";
 
 interface EnhancedBluetoothModalProps {
   visible: boolean;
@@ -20,85 +24,90 @@ interface EnhancedBluetoothModalProps {
 
 const getDeviceIcon = (type: DeviceType): keyof typeof Ionicons.glyphMap => {
   switch (type) {
-    case 'SMARTWATCH':
-      return 'watch-outline';
-    case 'HEART_RATE_MONITOR':
-      return 'heart-outline';
-    case 'POWER_METER':
-      return 'flash-outline';
-    case 'CADENCE_SENSOR':
-      return 'refresh-outline';
-    case 'SPEED_SENSOR':
-      return 'speedometer-outline';
-    case 'FITNESS_SENSOR':
-      return 'fitness-outline';
+    case "SMARTWATCH":
+      return "watch-outline";
+    case "HEART_RATE_MONITOR":
+      return "heart-outline";
+    case "POWER_METER":
+      return "flash-outline";
+    case "CADENCE_SENSOR":
+      return "refresh-outline";
+    case "SPEED_SENSOR":
+      return "speedometer-outline";
+    case "FITNESS_SENSOR":
+      return "fitness-outline";
     default:
-      return 'bluetooth-outline';
+      return "bluetooth-outline";
   }
 };
 
 const getDeviceTypeColor = (type: DeviceType): string => {
   switch (type) {
-    case 'SMARTWATCH':
-      return '#8b5cf6';
-    case 'HEART_RATE_MONITOR':
-      return '#ef4444';
-    case 'POWER_METER':
-      return '#f59e0b';
-    case 'CADENCE_SENSOR':
-      return '#10b981';
-    case 'SPEED_SENSOR':
-      return '#3b82f6';
-    case 'FITNESS_SENSOR':
-      return '#6366f1';
+    case "SMARTWATCH":
+      return "#8b5cf6";
+    case "HEART_RATE_MONITOR":
+      return "#ef4444";
+    case "POWER_METER":
+      return "#f59e0b";
+    case "CADENCE_SENSOR":
+      return "#10b981";
+    case "SPEED_SENSOR":
+      return "#3b82f6";
+    case "FITNESS_SENSOR":
+      return "#6366f1";
     default:
-      return '#6b7280';
+      return "#6b7280";
   }
 };
 
 const getConnectionStateColor = (state: string): string => {
   switch (state) {
-    case 'connected':
-      return '#10b981';
-    case 'connecting':
-    case 'reconnecting':
-      return '#f59e0b';
-    case 'disconnected':
+    case "connected":
+      return "#10b981";
+    case "connecting":
+    case "reconnecting":
+      return "#f59e0b";
+    case "disconnected":
     default:
-      return '#ef4444';
+      return "#ef4444";
   }
 };
 
-const getConnectionStateText = (state: string, reconnectAttempts: number = 0): string => {
+const getConnectionStateText = (
+  state: string,
+  reconnectAttempts: number = 0,
+): string => {
   switch (state) {
-    case 'connected':
-      return 'Connected';
-    case 'connecting':
-      return 'Connecting...';
-    case 'reconnecting':
-      return reconnectAttempts > 0 ? `Reconnecting (${reconnectAttempts})` : 'Reconnecting...';
-    case 'disconnected':
+    case "connected":
+      return "Connected";
+    case "connecting":
+      return "Connecting...";
+    case "reconnecting":
+      return reconnectAttempts > 0
+        ? `Reconnecting (${reconnectAttempts})`
+        : "Reconnecting...";
+    case "disconnected":
     default:
-      return 'Disconnected';
+      return "Disconnected";
   }
 };
 
 const getDeviceTypeDisplayName = (type: DeviceType): string => {
   switch (type) {
-    case 'SMARTWATCH':
-      return 'Smart Watch';
-    case 'HEART_RATE_MONITOR':
-      return 'Heart Rate Monitor';
-    case 'POWER_METER':
-      return 'Power Meter';
-    case 'CADENCE_SENSOR':
-      return 'Cadence Sensor';
-    case 'SPEED_SENSOR':
-      return 'Speed Sensor';
-    case 'FITNESS_SENSOR':
-      return 'Fitness Sensor';
+    case "SMARTWATCH":
+      return "Smart Watch";
+    case "HEART_RATE_MONITOR":
+      return "Heart Rate Monitor";
+    case "POWER_METER":
+      return "Power Meter";
+    case "CADENCE_SENSOR":
+      return "Cadence Sensor";
+    case "SPEED_SENSOR":
+      return "Speed Sensor";
+    case "FITNESS_SENSOR":
+      return "Fitness Sensor";
     default:
-      return 'Unknown Device';
+      return "Unknown Device";
   }
 };
 
@@ -122,93 +131,135 @@ export const EnhancedBluetoothModal: React.FC<EnhancedBluetoothModalProps> = ({
     forceReconnect,
   } = useAdvancedBluetooth();
 
-  const [connectionStates, setConnectionStates] = useState<Record<string, string>>({});
+  const [connectionStates, setConnectionStates] = useState<
+    Record<string, string>
+  >({});
 
-  // Update connection states periodically
+  // Memoize device IDs to prevent unnecessary re-renders
+  const deviceIds = useMemo(() => allDevices.map((d) => d.id), [allDevices]);
+
+  // Update connection states periodically - optimized to prevent loops
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || deviceIds.length === 0) return;
 
     const updateStates = () => {
       const states: Record<string, string> = {};
-      allDevices.forEach(device => {
-        states[device.id] = getConnectionState(device.id);
+      deviceIds.forEach((deviceId) => {
+        states[deviceId] = getConnectionState(deviceId);
       });
-      setConnectionStates(states);
+
+      setConnectionStates((prev) => {
+        // Only update if states actually changed
+        const hasChanged =
+          deviceIds.some((id) => prev[id] !== states[id]) ||
+          Object.keys(prev).length !== deviceIds.length;
+
+        return hasChanged ? states : prev;
+      });
     };
 
     updateStates();
     const interval = setInterval(updateStates, 2000);
 
     return () => clearInterval(interval);
-  }, [visible, allDevices, getConnectionState]);
+  }, [visible, deviceIds.length, getConnectionState]);
 
-  const handleConnect = useCallback(async (device: BluetoothDevice) => {
-    try {
-      console.log(`🔄 Connecting to ${device.name} (${device.type})`);
-      await connectDevice(device.id);
-      onSelectDevice?.(device.id);
-    } catch (error) {
-      console.warn("Connection failed:", error);
+  const handleConnect = useCallback(
+    async (device: BluetoothDevice) => {
+      try {
+        console.log(`🔄 Connecting to ${device.name} (${device.type})`);
+        await connectDevice(device.id);
+        onSelectDevice?.(device.id);
+      } catch (error) {
+        console.warn("Connection failed:", error);
+        Alert.alert(
+          "Connection Failed",
+          `Failed to connect to ${device.name}. Please try again.`,
+          [
+            { text: "OK" },
+            {
+              text: "Retry",
+              onPress: () => handleConnect(device),
+            },
+          ],
+        );
+      }
+    },
+    [connectDevice, onSelectDevice],
+  );
+
+  const handleDisconnect = useCallback(
+    async (device: BluetoothDevice) => {
+      try {
+        console.log(`🔌 Disconnecting from ${device.name}`);
+        await disconnectDevice(device.id);
+      } catch (error) {
+        console.warn("Disconnection failed:", error);
+        Alert.alert(
+          "Disconnection Failed",
+          `Failed to disconnect from ${device.name}.`,
+        );
+      }
+    },
+    [disconnectDevice],
+  );
+
+  const handleDeviceOptions = useCallback(
+    (device: BluetoothDevice) => {
+      const state = connectionStates[device.id] || "disconnected";
+      const reconnectAttempts = getReconnectAttempts(device.id);
+
+      const options = [{ text: "Cancel", style: "cancel" as const }];
+
+      if (state === "connected") {
+        options.unshift({
+          text: "Disconnect",
+          onPress: () => handleDisconnect(device),
+        });
+      } else if (state === "disconnected") {
+        options.unshift({
+          text: "Connect",
+          onPress: () => handleConnect(device),
+        });
+      } else if (state === "reconnecting") {
+        options.unshift({
+          text: "Force Reconnect",
+          onPress: () => forceReconnect(device.id),
+        });
+      }
+
+      options.unshift({
+        text: device.autoReconnect
+          ? "Disable Auto-Reconnect"
+          : "Enable Auto-Reconnect",
+        onPress: () => toggleAutoReconnect(device.id, !device.autoReconnect),
+      });
+
       Alert.alert(
-        "Connection Failed",
-        `Failed to connect to ${device.name}. Please try again.`,
-        [
-          { text: "OK" },
-          {
-            text: "Retry",
-            onPress: () => handleConnect(device)
-          },
-        ]
+        `${device.name} Options`,
+        `Type: ${getDeviceTypeDisplayName(device.type)}`,
+        options,
       );
-    }
-  }, [connectDevice, onSelectDevice]);
-
-  const handleDisconnect = useCallback(async (device: BluetoothDevice) => {
-    try {
-      console.log(`🔌 Disconnecting from ${device.name}`);
-      await disconnectDevice(device.id);
-    } catch (error) {
-      console.warn("Disconnection failed:", error);
-      Alert.alert("Disconnection Failed", `Failed to disconnect from ${device.name}.`);
-    }
-  }, [disconnectDevice]);
-
-  const handleDeviceOptions = useCallback((device: BluetoothDevice) => {
-    const state = connectionStates[device.id] || 'disconnected';
-    const reconnectAttempts = getReconnectAttempts(device.id);
-
-    const options = [
-      { text: "Cancel", style: "cancel" as const },
-    ];
-
-    if (state === 'connected') {
-      options.unshift({ text: "Disconnect", onPress: () => handleDisconnect(device) });
-    } else if (state === 'disconnected') {
-      options.unshift({ text: "Connect", onPress: () => handleConnect(device) });
-    } else if (state === 'reconnecting') {
-      options.unshift({ text: "Force Reconnect", onPress: () => forceReconnect(device.id) });
-    }
-
-    options.unshift({
-      text: device.autoReconnect ? "Disable Auto-Reconnect" : "Enable Auto-Reconnect",
-      onPress: () => toggleAutoReconnect(device.id, !device.autoReconnect),
-    });
-
-    Alert.alert(`${device.name} Options`, `Type: ${getDeviceTypeDisplayName(device.type)}`, options);
-  }, [connectionStates, getReconnectAttempts, handleConnect, handleDisconnect, forceReconnect, toggleAutoReconnect]);
+    },
+    [
+      connectionStates,
+      getReconnectAttempts,
+      handleConnect,
+      handleDisconnect,
+      forceReconnect,
+      toggleAutoReconnect,
+    ],
+  );
 
   const renderDevice = ({ item: device }: { item: BluetoothDevice }) => {
-    const state = connectionStates[device.id] || 'disconnected';
+    const state = connectionStates[device.id] || "disconnected";
     const reconnectAttempts = getReconnectAttempts(device.id);
-    const isConnected = state === 'connected';
-    const isConnecting = state === 'connecting' || state === 'reconnecting';
+    const isConnected = state === "connected";
+    const isConnecting = state === "connecting" || state === "reconnecting";
 
     return (
       <TouchableOpacity
-        style={[
-          styles.deviceItem,
-          isConnected && styles.connectedDevice,
-        ]}
+        style={[styles.deviceItem, isConnected && styles.connectedDevice]}
         onPress={() => {
           if (isConnected) {
             onSelectDevice?.(device.id);
@@ -306,16 +357,19 @@ export const EnhancedBluetoothModal: React.FC<EnhancedBluetoothModalProps> = ({
 
           <TouchableOpacity
             onPress={handleScan}
-            style={[
-              styles.scanButton,
-              isScanning && styles.scanButtonActive,
-            ]}
+            style={[styles.scanButton, isScanning && styles.scanButtonActive]}
             disabled={!isBluetoothEnabled}
           >
             <Ionicons
               name={isScanning ? "stop-circle" : "search"}
               size={24}
-              color={isBluetoothEnabled ? (isScanning ? "#ef4444" : "#3b82f6") : "#9ca3af"}
+              color={
+                isBluetoothEnabled
+                  ? isScanning
+                    ? "#ef4444"
+                    : "#3b82f6"
+                  : "#9ca3af"
+              }
             />
           </TouchableOpacity>
         </View>

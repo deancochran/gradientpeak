@@ -25,15 +25,19 @@ export type BluetoothDevice = {
 };
 
 export type DeviceType =
-  | 'FITNESS_SENSOR'
-  | 'SMARTWATCH'
-  | 'HEART_RATE_MONITOR'
-  | 'POWER_METER'
-  | 'CADENCE_SENSOR'
-  | 'SPEED_SENSOR'
-  | 'UNKNOWN';
+  | "FITNESS_SENSOR"
+  | "SMARTWATCH"
+  | "HEART_RATE_MONITOR"
+  | "POWER_METER"
+  | "CADENCE_SENSOR"
+  | "SPEED_SENSOR"
+  | "UNKNOWN";
 
-type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+type ConnectionState =
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "reconnecting";
 
 type DeviceConnection = {
   device: Device;
@@ -80,17 +84,17 @@ const FITNESS_SERVICES = {
 
 const FITNESS_CHARACTERISTICS = {
   // Heart Rate
-  HEART_RATE_MEASUREMENT: "2A37",
+  HEART_RATE_MEASUREMENT: "00002A37-0000-1000-8000-00805F9B34FB",
   HEART_RATE_CONTROL_POINT: "2A39",
 
   // Power
-  CYCLING_POWER_MEASUREMENT: "2A63",
+  CYCLING_POWER_MEASUREMENT: "00002A63-0000-1000-8000-00805F9B34FB",
   CYCLING_POWER_FEATURE: "2A65",
   CYCLING_POWER_CONTROL_POINT: "2A66",
 
   // Speed & Cadence
-  RSC_MEASUREMENT: "2A53", // Running Speed and Cadence
-  CSC_MEASUREMENT: "2A5B", // Cycling Speed and Cadence
+  RSC_MEASUREMENT: "00002A53-0000-1000-8000-00805F9B34FB", // Running Speed and Cadence
+  CSC_MEASUREMENT: "00002A5B-0000-1000-8000-00805F9B34FB", // Cycling Speed and Cadence
 
   // Fitness Machine
   FITNESS_MACHINE_FEATURE: "2ACC",
@@ -141,8 +145,8 @@ const DEVICE_PATTERNS = {
 } as const;
 
 const STORAGE_KEYS = {
-  PAIRED_DEVICES: 'ble_paired_devices',
-  AUTO_RECONNECT_DEVICES: 'ble_auto_reconnect_devices',
+  PAIRED_DEVICES: "ble_paired_devices",
+  AUTO_RECONNECT_DEVICES: "ble_auto_reconnect_devices",
 } as const;
 
 export const useAdvancedBluetooth = () => {
@@ -159,53 +163,83 @@ export const useAdvancedBluetooth = () => {
 
   // Computed values
   const connectedDevices = Array.from(connectionsRef.current.values())
-    .filter(conn => conn.state === 'connected')
-    .map(conn => conn.device);
+    .filter((conn) => conn.state === "connected")
+    .map((conn) => conn.device);
 
   // Device type detection
-  const detectDeviceType = useCallback((deviceName: string | null, serviceUUIDs?: string[]): DeviceType => {
-    if (!deviceName) return 'UNKNOWN';
+  const detectDeviceType = useCallback(
+    (deviceName: string | null, serviceUUIDs?: string[]): DeviceType => {
+      if (!deviceName) return "UNKNOWN";
 
-    const name = deviceName.toLowerCase();
-    const services = serviceUUIDs?.map(s => s.toUpperCase()) || [];
+      const name = deviceName.toLowerCase();
+      const services = serviceUUIDs?.map((s) => s.toUpperCase()) || [];
 
-    // Check for smartwatches first (most specific)
-    if (DEVICE_PATTERNS.APPLE_WATCH.test(name)) return 'SMARTWATCH';
-    if (DEVICE_PATTERNS.SAMSUNG_WATCH.test(name)) return 'SMARTWATCH';
-    if (DEVICE_PATTERNS.FITBIT.test(name)) return 'SMARTWATCH';
-    if (DEVICE_PATTERNS.GARMIN.test(name)) return 'SMARTWATCH';
-    if (DEVICE_PATTERNS.POLAR.test(name)) return 'SMARTWATCH';
-    if (DEVICE_PATTERNS.SUUNTO.test(name)) return 'SMARTWATCH';
+      // Check for smartwatches first (most specific)
+      if (DEVICE_PATTERNS.APPLE_WATCH.test(name)) return "SMARTWATCH";
+      if (DEVICE_PATTERNS.SAMSUNG_WATCH.test(name)) return "SMARTWATCH";
+      if (DEVICE_PATTERNS.FITBIT.test(name)) return "SMARTWATCH";
+      if (DEVICE_PATTERNS.GARMIN.test(name)) return "SMARTWATCH";
+      if (DEVICE_PATTERNS.POLAR.test(name)) return "SMARTWATCH";
+      if (DEVICE_PATTERNS.SUUNTO.test(name)) return "SMARTWATCH";
 
-    // Check service UUIDs for device type
-    if (services.includes(FITNESS_SERVICES.FITNESS_MACHINE)) return 'SMARTWATCH';
-    if (services.includes(FITNESS_SERVICES.CYCLING_POWER)) return 'POWER_METER';
-    if (services.includes(FITNESS_SERVICES.HEART_RATE)) return 'HEART_RATE_MONITOR';
-    if (services.includes(FITNESS_SERVICES.CYCLING_SPEED_CADENCE)) return 'CADENCE_SENSOR';
-    if (services.includes(FITNESS_SERVICES.RUNNING_SPEED_CADENCE)) return 'SPEED_SENSOR';
+      // Check service UUIDs for device type
+      if (services.includes(FITNESS_SERVICES.FITNESS_MACHINE))
+        return "SMARTWATCH";
+      if (services.includes(FITNESS_SERVICES.CYCLING_POWER))
+        return "POWER_METER";
+      if (services.includes(FITNESS_SERVICES.HEART_RATE))
+        return "HEART_RATE_MONITOR";
+      if (services.includes(FITNESS_SERVICES.CYCLING_SPEED_CADENCE))
+        return "CADENCE_SENSOR";
+      if (services.includes(FITNESS_SERVICES.RUNNING_SPEED_CADENCE))
+        return "SPEED_SENSOR";
 
-    // Check device name patterns
-    if (DEVICE_PATTERNS.POWER_METER.test(name)) return 'POWER_METER';
-    if (DEVICE_PATTERNS.HEART_RATE.test(name)) return 'HEART_RATE_MONITOR';
+      // Check device name patterns
+      if (DEVICE_PATTERNS.POWER_METER.test(name)) return "POWER_METER";
+      if (DEVICE_PATTERNS.HEART_RATE.test(name)) return "HEART_RATE_MONITOR";
 
-    return 'FITNESS_SENSOR';
-  }, []);
+      return "FITNESS_SENSOR";
+    },
+    [],
+  );
 
   // Enhanced parsing functions for smartwatch data
   const parseHeartRate = useCallback((base64Value: string): number => {
     try {
       const buffer = Buffer.from(base64Value, "base64");
-      if (buffer.length < 2) return 0;
+      console.log(
+        "🔍 HR Debug - Raw buffer:",
+        Array.from(buffer),
+        "Length:",
+        buffer.length,
+      );
+
+      if (buffer.length < 2) {
+        console.warn("🔍 HR Debug - Buffer too short:", buffer.length);
+        return 0;
+      }
 
       const flags = buffer.readUInt8(0);
       const hrFormat = flags & 0x01;
 
+      console.log(
+        "🔍 HR Debug - Flags:",
+        flags.toString(2),
+        "HR Format:",
+        hrFormat,
+      );
+
       if (hrFormat === 0 && buffer.length >= 2) {
-        return buffer.readUInt8(1);
+        const heartRate = buffer.readUInt8(1);
+        console.log("🔍 HR Debug - 8-bit HR:", heartRate);
+        return heartRate;
       } else if (hrFormat === 1 && buffer.length >= 3) {
-        return buffer.readUInt16LE(1);
+        const heartRate = buffer.readUInt16LE(1);
+        console.log("🔍 HR Debug - 16-bit HR:", heartRate);
+        return heartRate;
       }
 
+      console.warn("🔍 HR Debug - No valid format found");
       return 0;
     } catch (error) {
       console.warn("Heart rate parsing error:", error);
@@ -224,133 +258,163 @@ export const useAdvancedBluetooth = () => {
     }
   }, []);
 
-  const parseRSC = useCallback((base64Value: string): { speed?: number; cadence?: number } => {
-    try {
-      const buffer = Buffer.from(base64Value, "base64");
-      if (buffer.length < 4) return {};
+  const parseRSC = useCallback(
+    (base64Value: string): { speed?: number; cadence?: number } => {
+      try {
+        const buffer = Buffer.from(base64Value, "base64");
+        if (buffer.length < 4) return {};
 
-      const flags = buffer.readUInt8(0);
-      const instantaneousSpeed = buffer.readUInt16LE(1);
-      const instantaneousCadence = buffer.readUInt8(3);
+        const flags = buffer.readUInt8(0);
+        const instantaneousSpeed = buffer.readUInt16LE(1);
+        const instantaneousCadence = buffer.readUInt8(3);
 
-      const result: { speed?: number; cadence?: number } = {};
+        const result: { speed?: number; cadence?: number } = {};
 
-      if (flags & 0x01) { // Instantaneous Speed Present
-        result.speed = instantaneousSpeed / 256; // Convert to m/s
+        if (flags & 0x01) {
+          // Instantaneous Speed Present
+          result.speed = instantaneousSpeed / 256; // Convert to m/s
+        }
+
+        if (flags & 0x02) {
+          // Instantaneous Cadence Present
+          result.cadence = instantaneousCadence;
+        }
+
+        return result;
+      } catch (error) {
+        console.warn("RSC parsing error:", error);
+        return {};
       }
+    },
+    [],
+  );
 
-      if (flags & 0x02) { // Instantaneous Cadence Present
-        result.cadence = instantaneousCadence;
+  const parseCSC = useCallback(
+    (base64Value: string): { speed?: number; cadence?: number } => {
+      try {
+        const buffer = Buffer.from(base64Value, "base64");
+        if (buffer.length < 5) return {};
+
+        const flags = buffer.readUInt8(0);
+        let offset = 1;
+
+        // Skip wheel data if present
+        if (flags & 0x01) {
+          offset += 6;
+        }
+
+        // Crank revolution data present
+        if (flags & 0x02 && buffer.length >= offset + 4) {
+          const crankRevolutions = buffer.readUInt16LE(offset);
+          const lastCrankEventTime = buffer.readUInt16LE(offset + 2);
+
+          // Calculate cadence (simplified)
+          return { cadence: crankRevolutions };
+        }
+
+        return {};
+      } catch (error) {
+        console.warn("CSC parsing error:", error);
+        return {};
       }
-
-      return result;
-    } catch (error) {
-      console.warn("RSC parsing error:", error);
-      return {};
-    }
-  }, []);
-
-  const parseCSC = useCallback((base64Value: string): { speed?: number; cadence?: number } => {
-    try {
-      const buffer = Buffer.from(base64Value, "base64");
-      if (buffer.length < 5) return {};
-
-      const flags = buffer.readUInt8(0);
-      let offset = 1;
-
-      // Skip wheel data if present
-      if (flags & 0x01) {
-        offset += 6;
-      }
-
-      // Crank revolution data present
-      if (flags & 0x02 && buffer.length >= offset + 4) {
-        const crankRevolutions = buffer.readUInt16LE(offset);
-        const lastCrankEventTime = buffer.readUInt16LE(offset + 2);
-
-        // Calculate cadence (simplified)
-        return { cadence: crankRevolutions };
-      }
-
-      return {};
-    } catch (error) {
-      console.warn("CSC parsing error:", error);
-      return {};
-    }
-  }, []);
+    },
+    [],
+  );
 
   // Enhanced fitness machine data parsing for smartwatches
-  const parseFitnessMachineData = useCallback((base64Value: string, characteristicUUID: string): Partial<SensorValues> => {
-    try {
-      const buffer = Buffer.from(base64Value, "base64");
-      if (buffer.length < 2) return {};
+  const parseFitnessMachineData = useCallback(
+    (
+      base64Value: string,
+      characteristicUUID: string,
+    ): Partial<SensorValues> => {
+      try {
+        const buffer = Buffer.from(base64Value, "base64");
+        if (buffer.length < 2) return {};
 
-      const flags = buffer.readUInt16LE(0);
-      let offset = 2;
-      const result: Partial<SensorValues> = {};
+        const flags = buffer.readUInt16LE(0);
+        let offset = 2;
+        const result: Partial<SensorValues> = {};
 
-      switch (characteristicUUID.toUpperCase()) {
-        case FITNESS_CHARACTERISTICS.TREADMILL_DATA:
-          // Parse treadmill data
-          if (flags & 0x01 && buffer.length >= offset + 2) { // Speed present
-            result.speed = buffer.readUInt16LE(offset) / 100; // km/h
-            offset += 2;
-          }
-          if (flags & 0x02 && buffer.length >= offset + 2) { // Average Speed present
-            offset += 2;
-          }
-          if (flags & 0x04 && buffer.length >= offset + 3) { // Total Distance present
-            result.distance = buffer.readUInt24LE ? buffer.readUInt24LE(offset) : 0;
-            offset += 3;
-          }
-          if (flags & 0x08 && buffer.length >= offset + 2) { // Total Energy present
-            result.calories = buffer.readUInt16LE(offset);
-            offset += 2;
-          }
-          break;
+        switch (characteristicUUID.toUpperCase()) {
+          case FITNESS_CHARACTERISTICS.TREADMILL_DATA:
+            // Parse treadmill data
+            if (flags & 0x01 && buffer.length >= offset + 2) {
+              // Speed present
+              result.speed = buffer.readUInt16LE(offset) / 100; // km/h
+              offset += 2;
+            }
+            if (flags & 0x02 && buffer.length >= offset + 2) {
+              // Average Speed present
+              offset += 2;
+            }
+            if (flags & 0x04 && buffer.length >= offset + 3) {
+              // Total Distance present
+              result.distance = buffer.readUInt24LE
+                ? buffer.readUInt24LE(offset)
+                : 0;
+              offset += 3;
+            }
+            if (flags & 0x08 && buffer.length >= offset + 2) {
+              // Total Energy present
+              result.calories = buffer.readUInt16LE(offset);
+              offset += 2;
+            }
+            break;
 
-        case FITNESS_CHARACTERISTICS.INDOOR_BIKE_DATA:
-          // Parse indoor bike data
-          if (flags & 0x01 && buffer.length >= offset + 2) { // Speed present
-            result.speed = buffer.readUInt16LE(offset) / 100; // km/h
-            offset += 2;
-          }
-          if (flags & 0x04 && buffer.length >= offset + 2) { // Average Cadence present
-            result.cadence = buffer.readUInt16LE(offset) / 2;
-            offset += 2;
-          }
-          if (flags & 0x40 && buffer.length >= offset + 2) { // Instantaneous Power present
-            result.power = buffer.readUInt16LE(offset);
-            offset += 2;
-          }
-          if (flags & 0x10 && buffer.length >= offset + 2) { // Total Energy present
-            result.calories = buffer.readUInt16LE(offset);
-            offset += 2;
-          }
-          if (flags & 0x20 && buffer.length >= offset + 2) { // Heart Rate present
-            result.heartRate = buffer.readUInt8(offset);
-            offset += 1;
-          }
-          break;
+          case FITNESS_CHARACTERISTICS.INDOOR_BIKE_DATA:
+            // Parse indoor bike data
+            if (flags & 0x01 && buffer.length >= offset + 2) {
+              // Speed present
+              result.speed = buffer.readUInt16LE(offset) / 100; // km/h
+              offset += 2;
+            }
+            if (flags & 0x04 && buffer.length >= offset + 2) {
+              // Average Cadence present
+              result.cadence = buffer.readUInt16LE(offset) / 2;
+              offset += 2;
+            }
+            if (flags & 0x40 && buffer.length >= offset + 2) {
+              // Instantaneous Power present
+              result.power = buffer.readUInt16LE(offset);
+              offset += 2;
+            }
+            if (flags & 0x10 && buffer.length >= offset + 2) {
+              // Total Energy present
+              result.calories = buffer.readUInt16LE(offset);
+              offset += 2;
+            }
+            if (flags & 0x20 && buffer.length >= offset + 2) {
+              // Heart Rate present
+              result.heartRate = buffer.readUInt8(offset);
+              offset += 1;
+            }
+            break;
+        }
+
+        return result;
+      } catch (error) {
+        console.warn("Fitness machine data parsing error:", error);
+        return {};
       }
-
-      return result;
-    } catch (error) {
-      console.warn("Fitness machine data parsing error:", error);
-      return {};
-    }
-  }, []);
+    },
+    [],
+  );
 
   // Device persistence
   const savePairedDevices = useCallback(async (devices: BluetoothDevice[]) => {
     try {
-      await AsyncStorage.setItem(STORAGE_KEYS.PAIRED_DEVICES, JSON.stringify(devices));
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.PAIRED_DEVICES,
+        JSON.stringify(devices),
+      );
     } catch (error) {
       console.warn("Failed to save paired devices:", error);
     }
   }, []);
 
-  const loadPairedDevices = useCallback(async (): Promise<BluetoothDevice[]> => {
+  const loadPairedDevices = useCallback(async (): Promise<
+    BluetoothDevice[]
+  > => {
     try {
       const saved = await AsyncStorage.getItem(STORAGE_KEYS.PAIRED_DEVICES);
       return saved ? JSON.parse(saved) : [];
@@ -369,11 +433,16 @@ export const useAdvancedBluetooth = () => {
       try {
         const isConnected = await connection.device.isConnected();
         if (!isConnected) {
-          console.warn(`🔥 Health check failed for ${connection.device.name}, attempting reconnect`);
+          console.warn(
+            `🔥 Health check failed for ${connection.device.name}, attempting reconnect`,
+          );
           await initiateReconnect(deviceId);
         }
       } catch (error) {
-        console.warn(`🔥 Health check error for ${connection.device.name}:`, error);
+        console.warn(
+          `🔥 Health check error for ${connection.device.name}:`,
+          error,
+        );
         await initiateReconnect(deviceId);
       }
     }, 30000); // Check every 30 seconds
@@ -393,13 +462,17 @@ export const useAdvancedBluetooth = () => {
   // Enhanced reconnection logic
   const initiateReconnect = useCallback(async (deviceId: string) => {
     const connection = connectionsRef.current.get(deviceId);
-    if (!connection || connection.state === 'connecting' || connection.state === 'reconnecting') {
+    if (
+      !connection ||
+      connection.state === "connecting" ||
+      connection.state === "reconnecting"
+    ) {
       return;
     }
 
     console.log(`🔄 Starting reconnect for ${connection.device.name}`);
 
-    connection.state = 'reconnecting';
+    connection.state = "reconnecting";
     connection.reconnectAttempts++;
     connectionsRef.current.set(deviceId, connection);
 
@@ -410,19 +483,27 @@ export const useAdvancedBluetooth = () => {
     }
 
     // Exponential backoff: 1s, 2s, 4s, 8s, 16s, max 30s
-    const delay = Math.min(1000 * Math.pow(2, connection.reconnectAttempts - 1), 30000);
+    const delay = Math.min(
+      1000 * Math.pow(2, connection.reconnectAttempts - 1),
+      30000,
+    );
 
     const timer = setTimeout(async () => {
       try {
         await connectDevice(deviceId, true);
       } catch (error) {
-        console.warn(`❌ Reconnect attempt ${connection.reconnectAttempts} failed for ${connection.device.name}:`, error);
+        console.warn(
+          `❌ Reconnect attempt ${connection.reconnectAttempts} failed for ${connection.device.name}:`,
+          error,
+        );
 
         // Max 10 attempts, then give up for 5 minutes
         if (connection.reconnectAttempts < 10) {
           await initiateReconnect(deviceId);
         } else {
-          console.log(`🛑 Max reconnect attempts reached for ${connection.device.name}, waiting 5 minutes`);
+          console.log(
+            `🛑 Max reconnect attempts reached for ${connection.device.name}, waiting 5 minutes`,
+          );
           setTimeout(() => {
             const conn = connectionsRef.current.get(deviceId);
             if (conn) {
@@ -439,318 +520,441 @@ export const useAdvancedBluetooth = () => {
   }, []);
 
   // Enhanced device scanning with smartwatch support
-  const scanForDevices = useCallback((duration: number = 15000) => {
-    if (!isBluetoothEnabled || isScanning) return;
+  const scanForDevices = useCallback(
+    (duration: number = 15000) => {
+      if (!isBluetoothEnabled || isScanning) return;
 
-    console.log("🔍 Starting enhanced BLE scan for fitness devices and smartwatches...");
-    setIsScanning(true);
-    setDevices([]);
+      console.log(
+        "🔍 Starting enhanced BLE scan for fitness devices and smartwatches...",
+      );
+      setIsScanning(true);
+      setDevices([]);
 
-    const allServices = Object.values(FITNESS_SERVICES);
-    console.log("🔍 Scanning for services:", allServices);
+      const allServices = Object.values(FITNESS_SERVICES);
+      console.log("🔍 Scanning for services:", allServices);
 
-    manager.startDeviceScan(
-      allServices,
-      { allowDuplicates: false },
-      (error, device) => {
-        if (error) {
-          console.warn("BLE scan error:", error);
+      manager.startDeviceScan(
+        allServices,
+        { allowDuplicates: false },
+        (error, device) => {
+          if (error) {
+            console.warn("BLE scan error:", error);
+            return;
+          }
+
+          if (device?.name) {
+            const deviceType = detectDeviceType(
+              device.name,
+              device.serviceUUIDs,
+            );
+
+            console.log(`📱 Found ${deviceType}: ${device.name}`, {
+              rssi: device.rssi,
+              services: device.serviceUUIDs,
+            });
+
+            setDevices((prev) => {
+              const exists = prev.find((d) => d.id === device.id);
+              if (exists) return prev;
+
+              return [
+                ...prev,
+                {
+                  id: device.id,
+                  name: device.name,
+                  rssi: device.rssi,
+                  isConnected: false,
+                  type: deviceType,
+                  lastSeen: Date.now(),
+                  autoReconnect: false,
+                },
+              ];
+            });
+          }
+        },
+      );
+
+      setTimeout(() => {
+        console.log("🛑 Stopping enhanced BLE scan");
+        manager.stopDeviceScan();
+        setIsScanning(false);
+      }, duration);
+    },
+    [manager, isBluetoothEnabled, isScanning, detectDeviceType],
+  );
+
+  // Enhanced connection with multi-characteristic support
+  const connectDevice = useCallback(
+    async (deviceId: string, isReconnect = false) => {
+      try {
+        const existingConnection = connectionsRef.current.get(deviceId);
+        if (existingConnection && existingConnection.state === "connecting") {
+          console.log(`🔄 Already connecting to device: ${deviceId}`);
           return;
         }
 
-        if (device?.name) {
-          const deviceType = detectDeviceType(device.name, device.serviceUUIDs);
+        console.log(
+          `🔄 ${isReconnect ? "Reconnecting" : "Connecting"} to device: ${deviceId}`,
+        );
 
-          console.log(`📱 Found ${deviceType}: ${device.name}`, {
-            rssi: device.rssi,
-            services: device.serviceUUIDs,
-          });
+        const device = await manager.connectToDevice(deviceId, {
+          autoConnect: false,
+          requestMTU: 512, // Request larger MTU for more data
+          timeout: 20000, // 20 second timeout
+        });
 
-          setDevices((prev) => {
-            const exists = prev.find((d) => d.id === device.id);
-            if (exists) return prev;
+        console.log(`✅ Connected to ${device.name}`);
 
-            return [
-              ...prev,
-              {
-                id: device.id,
-                name: device.name,
-                rssi: device.rssi,
-                isConnected: false,
-                type: deviceType,
-                lastSeen: Date.now(),
-                autoReconnect: false,
-              },
-            ];
-          });
+        // Create connection record
+        const connection: DeviceConnection = {
+          device,
+          state: "connected",
+          subscriptions: [],
+          reconnectAttempts: isReconnect
+            ? existingConnection?.reconnectAttempts || 0
+            : 0,
+          lastConnected: Date.now(),
+        };
+
+        connectionsRef.current.set(deviceId, connection);
+
+        // Clear reconnect timer if exists
+        const timer = reconnectTimersRef.current.get(deviceId);
+        if (timer) {
+          clearTimeout(timer);
+          reconnectTimersRef.current.delete(deviceId);
         }
-      }
-    );
 
-    setTimeout(() => {
-      console.log("🛑 Stopping enhanced BLE scan");
-      manager.stopDeviceScan();
-      setIsScanning(false);
-    }, duration);
-  }, [manager, isBluetoothEnabled, isScanning, detectDeviceType]);
+        // Discover services and characteristics
+        await device.discoverAllServicesAndCharacteristics();
+        const services = await device.services();
 
-  // Enhanced connection with multi-characteristic support
-  const connectDevice = useCallback(async (deviceId: string, isReconnect = false) => {
-    try {
-      const existingConnection = connectionsRef.current.get(deviceId);
-      if (existingConnection && existingConnection.state === 'connecting') {
-        console.log(`🔄 Already connecting to device: ${deviceId}`);
-        return;
-      }
+        console.log(
+          `📋 Available services on ${device.name}:`,
+          services.map((s) => s.uuid.toUpperCase()),
+        );
 
-      console.log(`🔄 ${isReconnect ? 'Reconnecting' : 'Connecting'} to device: ${deviceId}`);
+        // Subscribe to multiple characteristics
+        for (const service of services) {
+          const serviceUuid = service.uuid.toUpperCase();
+          const characteristics = await service.characteristics();
 
-      const device = await manager.connectToDevice(deviceId, {
-        autoConnect: false,
-        requestMTU: 512, // Request larger MTU for more data
-        timeout: 20000, // 20 second timeout
-      });
+          console.log(
+            `🔍 Service ${serviceUuid} characteristics:`,
+            characteristics.map((c) => ({
+              uuid: c.uuid.toUpperCase(),
+              notifiable: c.isNotifiable,
+            })),
+          );
 
-      console.log(`✅ Connected to ${device.name}`);
+          for (const characteristic of characteristics) {
+            if (!characteristic.isNotifiable) continue;
 
-      // Create connection record
-      const connection: DeviceConnection = {
-        device,
-        state: 'connected',
-        subscriptions: [],
-        reconnectAttempts: isReconnect ? (existingConnection?.reconnectAttempts || 0) : 0,
-        lastConnected: Date.now(),
-      };
+            const charUuid = characteristic.uuid.toUpperCase();
 
-      connectionsRef.current.set(deviceId, connection);
+            try {
+              const subscription = characteristic.monitor((error, char) => {
+                if (error) {
+                  console.warn(`❌ Monitor error for ${device.name}:`, error);
+                  return;
+                }
 
-      // Clear reconnect timer if exists
-      const timer = reconnectTimersRef.current.get(deviceId);
-      if (timer) {
-        clearTimeout(timer);
-        reconnectTimersRef.current.delete(deviceId);
-      }
+                if (!char?.value) return;
 
-      // Discover services and characteristics
-      await device.discoverAllServicesAndCharacteristics();
-      const services = await device.services();
+                const now = Date.now();
+                let sensorData: Partial<SensorValues> = { timestamp: now };
 
-      console.log(`📋 Available services on ${device.name}:`, services.map(s => s.uuid.toUpperCase()));
+                // Parse based on characteristic UUID
+                console.log(
+                  `🔍 Checking characteristic ${charUuid} against known UUIDs`,
+                );
+                switch (charUuid) {
+                  case FITNESS_CHARACTERISTICS.HEART_RATE_MEASUREMENT:
+                    console.log(
+                      `🔍 Processing HR characteristic ${charUuid} from ${device.name}`,
+                    );
+                    const heartRate = parseHeartRate(char.value);
+                    console.log(`🔍 Parsed HR result: ${heartRate}`);
+                    if (heartRate > 0 && heartRate <= 220) {
+                      sensorData.heartRate = heartRate;
+                      console.log(
+                        `💓 Heart rate from ${device.name}: ${heartRate} bpm`,
+                      );
+                    } else {
+                      console.warn(
+                        `🔍 HR out of range: ${heartRate} from ${device.name}`,
+                      );
+                    }
+                    break;
 
-      // Subscribe to multiple characteristics
-      for (const service of services) {
-        const serviceUuid = service.uuid.toUpperCase();
-        const characteristics = await service.characteristics();
+                  case FITNESS_CHARACTERISTICS.CYCLING_POWER_MEASUREMENT:
+                    console.log(
+                      `🔍 Processing Power characteristic ${charUuid} from ${device.name}`,
+                    );
+                    const power = parseCyclingPower(char.value);
+                    console.log(`🔍 Parsed Power result: ${power}`);
+                    if (power > 0 && power <= 2000) {
+                      sensorData.power = power;
+                      console.log(`⚡ Power from ${device.name}: ${power} W`);
+                    } else {
+                      console.warn(
+                        `🔍 Power out of range: ${power} from ${device.name}`,
+                      );
+                    }
+                    break;
 
-        console.log(`🔍 Service ${serviceUuid} characteristics:`,
-          characteristics.map(c => ({ uuid: c.uuid.toUpperCase(), notifiable: c.isNotifiable })));
+                  case FITNESS_CHARACTERISTICS.RSC_MEASUREMENT:
+                    console.log(
+                      `🔍 Processing RSC characteristic ${charUuid} from ${device.name}`,
+                    );
+                    const rscData = parseRSC(char.value);
+                    console.log(`🔍 Parsed RSC result:`, rscData);
+                    if (rscData.speed || rscData.cadence) {
+                      Object.assign(sensorData, rscData);
+                      console.log(`🏃 RSC from ${device.name}:`, rscData);
+                    }
+                    break;
 
-        for (const characteristic of characteristics) {
-          if (!characteristic.isNotifiable) continue;
+                  case FITNESS_CHARACTERISTICS.CSC_MEASUREMENT:
+                    const cscData = parseCSC(char.value);
+                    if (cscData.cadence) {
+                      Object.assign(sensorData, cscData);
+                      console.log(`🚴 CSC from ${device.name}:`, cscData);
+                    }
+                    break;
 
-          const charUuid = characteristic.uuid.toUpperCase();
+                  case FITNESS_CHARACTERISTICS.TREADMILL_DATA:
+                  case FITNESS_CHARACTERISTICS.INDOOR_BIKE_DATA:
+                  case FITNESS_CHARACTERISTICS.CROSS_TRAINER_DATA:
+                    const fitnessData = parseFitnessMachineData(
+                      char.value,
+                      charUuid,
+                    );
+                    if (Object.keys(fitnessData).length > 0) {
+                      Object.assign(sensorData, fitnessData);
+                      console.log(
+                        `🏋️ Fitness machine data from ${device.name}:`,
+                        fitnessData,
+                      );
+                    }
+                    break;
 
-          try {
-            const subscription = characteristic.monitor((error, char) => {
-              if (error) {
-                console.warn(`❌ Monitor error for ${device.name}:`, error);
-                return;
-              }
+                  case FITNESS_CHARACTERISTICS.BATTERY_LEVEL:
+                    try {
+                      const buffer = Buffer.from(char.value, "base64");
+                      const batteryLevel = buffer.readUInt8(0);
+                      console.log(
+                        `🔋 Battery level from ${device.name}: ${batteryLevel}%`,
+                      );
+                    } catch (e) {
+                      console.warn("Battery level parsing error:", e);
+                    }
+                    break;
 
-              if (!char?.value) return;
+                  default:
+                    console.log(
+                      `📊 Raw data from ${device.name} (${charUuid}):`,
+                      char.value,
+                    );
 
-              const now = Date.now();
-              let sensorData: Partial<SensorValues> = { timestamp: now };
+                    // Try to decode common data patterns for unknown characteristics
+                    try {
+                      const buffer = Buffer.from(char.value, "base64");
+                      if (buffer.length >= 2) {
+                        console.log(
+                          `🔍 Unknown characteristic buffer:`,
+                          Array.from(buffer),
+                        );
 
-              // Parse based on characteristic UUID
-              switch (charUuid) {
-                case FITNESS_CHARACTERISTICS.HEART_RATE_MEASUREMENT:
-                  const heartRate = parseHeartRate(char.value);
-                  if (heartRate > 0 && heartRate <= 220) {
-                    sensorData.heartRate = heartRate;
-                    console.log(`💓 Heart rate from ${device.name}: ${heartRate} bpm`);
-                  }
-                  break;
+                        // Check if it might be heart rate data (common pattern)
+                        if (buffer.length === 2 && buffer[0] === 0) {
+                          const possibleHR = buffer[1];
+                          if (possibleHR > 30 && possibleHR < 220) {
+                            console.log(
+                              `🔍 Possible HR data in unknown characteristic: ${possibleHR} bpm`,
+                            );
+                          }
+                        }
+                      }
+                    } catch (e) {
+                      console.warn(
+                        "Failed to decode unknown characteristic:",
+                        e,
+                      );
+                    }
+                    break;
+                }
 
-                case FITNESS_CHARACTERISTICS.CYCLING_POWER_MEASUREMENT:
-                  const power = parseCyclingPower(char.value);
-                  if (power > 0 && power <= 2000) {
-                    sensorData.power = power;
-                    console.log(`⚡ Power from ${device.name}: ${power} W`);
-                  }
-                  break;
+                // Update sensor values if we got valid data
+                if (Object.keys(sensorData).length > 1) {
+                  // More than just timestamp
+                  console.log(`🔄 Updating sensor values with:`, sensorData);
+                  setSensorValues((prev) => {
+                    const newValues = {
+                      ...prev,
+                      ...sensorData,
+                    };
+                    console.log(`🔄 New sensor values state:`, newValues);
+                    return newValues;
+                  });
+                } else {
+                  console.log(
+                    `🔍 No valid sensor data to update, only got:`,
+                    sensorData,
+                  );
+                }
+              });
 
-                case FITNESS_CHARACTERISTICS.RSC_MEASUREMENT:
-                  const rscData = parseRSC(char.value);
-                  if (rscData.speed || rscData.cadence) {
-                    Object.assign(sensorData, rscData);
-                    console.log(`🏃 RSC from ${device.name}:`, rscData);
-                  }
-                  break;
-
-                case FITNESS_CHARACTERISTICS.CSC_MEASUREMENT:
-                  const cscData = parseCSC(char.value);
-                  if (cscData.cadence) {
-                    Object.assign(sensorData, cscData);
-                    console.log(`🚴 CSC from ${device.name}:`, cscData);
-                  }
-                  break;
-
-                case FITNESS_CHARACTERISTICS.TREADMILL_DATA:
-                case FITNESS_CHARACTERISTICS.INDOOR_BIKE_DATA:
-                case FITNESS_CHARACTERISTICS.CROSS_TRAINER_DATA:
-                  const fitnessData = parseFitnessMachineData(char.value, charUuid);
-                  if (Object.keys(fitnessData).length > 0) {
-                    Object.assign(sensorData, fitnessData);
-                    console.log(`🏋️ Fitness machine data from ${device.name}:`, fitnessData);
-                  }
-                  break;
-
-                case FITNESS_CHARACTERISTICS.BATTERY_LEVEL:
-                  try {
-                    const buffer = Buffer.from(char.value, "base64");
-                    const batteryLevel = buffer.readUInt8(0);
-                    console.log(`🔋 Battery level from ${device.name}: ${batteryLevel}%`);
-                  } catch (e) {
-                    console.warn("Battery level parsing error:", e);
-                  }
-                  break;
-
-                default:
-                  console.log(`📊 Raw data from ${device.name} (${charUuid}):`, char.value);
-                  break;
-              }
-
-              // Update sensor values if we got valid data
-              if (Object.keys(sensorData).length > 1) { // More than just timestamp
-                setSensorValues(prev => ({
-                  ...prev,
-                  ...sensorData,
-                }));
-              }
-            });
-
-            connection.subscriptions.push(subscription);
-            console.log(`📡 Monitoring ${charUuid} on ${device.name}`);
-
-          } catch (error) {
-            console.warn(`❌ Failed to monitor ${charUuid} on ${device.name}:`, error);
+              connection.subscriptions.push(subscription);
+              console.log(`📡 Monitoring ${charUuid} on ${device.name}`);
+            } catch (error) {
+              console.warn(
+                `❌ Failed to monitor ${charUuid} on ${device.name}:`,
+                error,
+              );
+            }
           }
         }
-      }
 
-      connectionsRef.current.set(deviceId, connection);
-
-      // Update device list
-      setDevices(prev =>
-        prev.map(d =>
-          d.id === deviceId ? { ...d, isConnected: true } : d
-        )
-      );
-
-      // Start health monitoring
-      startHealthCheck(deviceId);
-
-      // Save to paired devices
-      const currentDevices = await loadPairedDevices();
-      const updatedDevices = [...currentDevices.filter(d => d.id !== deviceId), {
-        id: deviceId,
-        name: device.name,
-        rssi: null,
-        isConnected: true,
-        type: detectDeviceType(device.name),
-        lastSeen: Date.now(),
-        autoReconnect: true,
-      }];
-      await savePairedDevices(updatedDevices);
-
-    } catch (error) {
-      console.warn("❌ Failed to connect:", error);
-
-      const connection = connectionsRef.current.get(deviceId);
-      if (connection) {
-        connection.state = 'disconnected';
         connectionsRef.current.set(deviceId, connection);
-      }
 
-      throw error;
-    }
-  }, [manager, parseHeartRate, parseCyclingPower, parseRSC, parseCSC, parseFitnessMachineData, detectDeviceType, startHealthCheck, loadPairedDevices, savePairedDevices]);
+        // Update device list
+        setDevices((prev) =>
+          prev.map((d) =>
+            d.id === deviceId ? { ...d, isConnected: true } : d,
+          ),
+        );
+
+        // Start health monitoring
+        startHealthCheck(deviceId);
+
+        // Save to paired devices
+        const currentDevices = await loadPairedDevices();
+        const updatedDevices = [
+          ...currentDevices.filter((d) => d.id !== deviceId),
+          {
+            id: deviceId,
+            name: device.name,
+            rssi: null,
+            isConnected: true,
+            type: detectDeviceType(device.name),
+            lastSeen: Date.now(),
+            autoReconnect: true,
+          },
+        ];
+        await savePairedDevices(updatedDevices);
+      } catch (error) {
+        console.warn("❌ Failed to connect:", error);
+
+        const connection = connectionsRef.current.get(deviceId);
+        if (connection) {
+          connection.state = "disconnected";
+          connectionsRef.current.set(deviceId, connection);
+        }
+
+        throw error;
+      }
+    },
+    [
+      manager,
+      parseHeartRate,
+      parseCyclingPower,
+      parseRSC,
+      parseCSC,
+      parseFitnessMachineData,
+      detectDeviceType,
+      startHealthCheck,
+      loadPairedDevices,
+      savePairedDevices,
+    ],
+  );
 
   // Enhanced disconnect with cleanup
-  const disconnectDevice = useCallback(async (deviceId: string) => {
-    const connection = connectionsRef.current.get(deviceId);
-    if (!connection) return;
+  const disconnectDevice = useCallback(
+    async (deviceId: string) => {
+      const connection = connectionsRef.current.get(deviceId);
+      if (!connection) return;
 
-    try {
-      console.log(`🔌 Disconnecting from ${connection.device.name}`);
+      try {
+        console.log(`🔌 Disconnecting from ${connection.device.name}`);
 
-      // Stop health check
-      stopHealthCheck(deviceId);
+        // Stop health check
+        stopHealthCheck(deviceId);
 
-      // Clear reconnect timer
-      const timer = reconnectTimersRef.current.get(deviceId);
-      if (timer) {
-        clearTimeout(timer);
-        reconnectTimersRef.current.delete(deviceId);
-      }
-
-      // Remove subscriptions
-      connection.subscriptions.forEach(sub => {
-        try {
-          sub.remove();
-        } catch (e) {
-          console.warn("Error removing subscription:", e);
+        // Clear reconnect timer
+        const timer = reconnectTimersRef.current.get(deviceId);
+        if (timer) {
+          clearTimeout(timer);
+          reconnectTimersRef.current.delete(deviceId);
         }
-      });
 
-      // Disconnect device
-      await connection.device.cancelConnection();
+        // Remove subscriptions
+        connection.subscriptions.forEach((sub) => {
+          try {
+            sub.remove();
+          } catch (e) {
+            console.warn("Error removing subscription:", e);
+          }
+        });
 
-      // Clean up connection
-      connectionsRef.current.delete(deviceId);
+        // Disconnect device
+        await connection.device.cancelConnection();
 
-      // Update device list
-      setDevices(prev =>
-        prev.map(d =>
-          d.id === deviceId ? { ...d, isConnected: false } : d
-        )
-      );
+        // Clean up connection
+        connectionsRef.current.delete(deviceId);
 
-      // Clear sensor values if this was the last device
-      if (connectionsRef.current.size === 0) {
-        setSensorValues({});
+        // Update device list
+        setDevices((prev) =>
+          prev.map((d) =>
+            d.id === deviceId ? { ...d, isConnected: false } : d,
+          ),
+        );
+
+        // Clear sensor values if this was the last device
+        if (connectionsRef.current.size === 0) {
+          setSensorValues({});
+        }
+
+        console.log(`✅ Disconnected from ${connection.device.name}`);
+      } catch (error) {
+        console.warn("❌ Failed to disconnect:", error);
       }
-
-      console.log(`✅ Disconnected from ${connection.device.name}`);
-
-    } catch (error) {
-      console.warn("❌ Failed to disconnect:", error);
-    }
-  }, [stopHealthCheck]);
+    },
+    [stopHealthCheck],
+  );
 
   // Auto-reconnect to saved devices on startup
   const autoReconnectSavedDevices = useCallback(async () => {
     try {
       const savedDevices = await loadPairedDevices();
-      const autoReconnectDevices = savedDevices.filter(d => d.autoReconnect);
+      const autoReconnectDevices = savedDevices.filter((d) => d.autoReconnect);
 
       if (autoReconnectDevices.length === 0) return;
 
-      console.log("🔄 Auto-reconnecting to saved devices:", autoReconnectDevices.map(d => d.name));
+      console.log(
+        "🔄 Auto-reconnecting to saved devices:",
+        autoReconnectDevices.map((d) => d.name),
+      );
 
       // Get system connected devices
-      const systemConnected = await manager.connectedDevices(Object.values(FITNESS_SERVICES));
+      const systemConnected = await manager.connectedDevices(
+        Object.values(FITNESS_SERVICES),
+      );
 
       for (const savedDevice of autoReconnectDevices) {
         try {
-          const systemDevice = systemConnected.find(d => d.id === savedDevice.id);
+          const systemDevice = systemConnected.find(
+            (d) => d.id === savedDevice.id,
+          );
           if (systemDevice) {
             console.log(`🔄 Auto-reconnecting to ${systemDevice.name}`);
             await connectDevice(systemDevice.id, true);
           }
         } catch (error) {
-          console.warn(`❌ Auto-reconnect failed for ${savedDevice.name}:`, error);
+          console.warn(
+            `❌ Auto-reconnect failed for ${savedDevice.name}:`,
+            error,
+          );
         }
       }
     } catch (error) {
@@ -771,7 +975,7 @@ export const useAdvancedBluetooth = () => {
 
         // Clear all connections
         connectionsRef.current.clear();
-        reconnectTimersRef.current.forEach(timer => clearTimeout(timer));
+        reconnectTimersRef.current.forEach((timer) => clearTimeout(timer));
         reconnectTimersRef.current.clear();
       } else {
         // Auto-reconnect when Bluetooth is enabled
@@ -782,51 +986,67 @@ export const useAdvancedBluetooth = () => {
     return () => subscription.remove();
   }, [manager, autoReconnectSavedDevices]);
 
-  // Set up device disconnection monitoring
+  // Set up device disconnection monitoring - optimize to prevent loops
   useEffect(() => {
+    // This effect should only run when manager changes, not the callback functions
+    // Store subscriptions locally to avoid stale closure issues
+    const currentSubscriptions: Subscription[] = [];
+
     const setupDisconnectionMonitoring = () => {
       connectionsRef.current.forEach((connection, deviceId) => {
-        const subscription = manager.onDeviceDisconnected(deviceId, (error, device) => {
-          if (error) {
-            console.warn(`🔥 Disconnection error for ${device?.name || deviceId}:`, error);
-          }
-
-          if (device) {
-            console.log(`🔌 Device disconnected: ${device.name}`);
-
-            const conn = connectionsRef.current.get(deviceId);
-            if (conn) {
-              conn.state = 'disconnected';
-              connectionsRef.current.set(deviceId, conn);
-
-              // Check if we should auto-reconnect
-              loadPairedDevices().then(devices => {
-                const savedDevice = devices.find(d => d.id === deviceId);
-                if (savedDevice?.autoReconnect) {
-                  setTimeout(() => initiateReconnect(deviceId), 5000);
-                }
-              });
+        const subscription = manager.onDeviceDisconnected(
+          deviceId,
+          (error, device) => {
+            if (error) {
+              console.warn(
+                `🔥 Disconnection error for ${device?.name || deviceId}:`,
+                error,
+              );
             }
-          }
-        });
 
-        subscriptionsRef.current.push(subscription);
+            if (device) {
+              console.log(`🔌 Device disconnected: ${device.name}`);
+
+              const conn = connectionsRef.current.get(deviceId);
+              if (conn) {
+                conn.state = "disconnected";
+                connectionsRef.current.set(deviceId, conn);
+
+                // Check if we should auto-reconnect
+                loadPairedDevices()
+                  .then((devices) => {
+                    const savedDevice = devices.find((d) => d.id === deviceId);
+                    if (savedDevice?.autoReconnect) {
+                      setTimeout(() => initiateReconnect(deviceId), 5000);
+                    }
+                  })
+                  .catch((err) => {
+                    console.warn("Failed to check auto-reconnect:", err);
+                  });
+              }
+            }
+          },
+        );
+
+        currentSubscriptions.push(subscription);
       });
     };
 
-    setupDisconnectionMonitoring();
+    // Only set up monitoring if we have connections
+    if (connectionsRef.current.size > 0) {
+      setupDisconnectionMonitoring();
+    }
 
     return () => {
-      subscriptionsRef.current.forEach(sub => {
+      currentSubscriptions.forEach((sub) => {
         try {
           sub.remove();
         } catch (e) {
           // Ignore cleanup errors
         }
       });
-      subscriptionsRef.current = [];
     };
-  }, [manager, loadPairedDevices, initiateReconnect]);
+  }, [manager]); // Only depend on manager
 
   // Cleanup on unmount
   useEffect(() => {
@@ -835,13 +1055,15 @@ export const useAdvancedBluetooth = () => {
         manager.stopDeviceScan();
 
         // Clear all timers
-        reconnectTimersRef.current.forEach(timer => clearTimeout(timer));
+        reconnectTimersRef.current.forEach((timer) => clearTimeout(timer));
 
         // Stop health checks
-        connectionsRef.current.forEach((_, deviceId) => stopHealthCheck(deviceId));
+        connectionsRef.current.forEach((_, deviceId) =>
+          stopHealthCheck(deviceId),
+        );
 
         // Clean up subscriptions
-        subscriptionsRef.current.forEach(sub => {
+        subscriptionsRef.current.forEach((sub) => {
           try {
             sub.remove();
           } catch (e) {
@@ -876,21 +1098,23 @@ export const useAdvancedBluetooth = () => {
     },
 
     // Connection state
-    getConnectionState: (deviceId: string) => connectionsRef.current.get(deviceId)?.state || 'disconnected',
-    getReconnectAttempts: (deviceId: string) => connectionsRef.current.get(deviceId)?.reconnectAttempts || 0,
+    getConnectionState: (deviceId: string) =>
+      connectionsRef.current.get(deviceId)?.state || "disconnected",
+    getReconnectAttempts: (deviceId: string) =>
+      connectionsRef.current.get(deviceId)?.reconnectAttempts || 0,
 
     // Device management
     toggleAutoReconnect: async (deviceId: string, enabled: boolean) => {
       const devices = await loadPairedDevices();
-      const updated = devices.map(d =>
-        d.id === deviceId ? { ...d, autoReconnect: enabled } : d
+      const updated = devices.map((d) =>
+        d.id === deviceId ? { ...d, autoReconnect: enabled } : d,
       );
       await savePairedDevices(updated);
 
-      setDevices(prev =>
-        prev.map(d =>
-          d.id === deviceId ? { ...d, autoReconnect: enabled } : d
-        )
+      setDevices((prev) =>
+        prev.map((d) =>
+          d.id === deviceId ? { ...d, autoReconnect: enabled } : d,
+        ),
       );
     },
 
