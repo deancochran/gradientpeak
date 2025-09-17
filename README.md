@@ -14,7 +14,7 @@ The heart of TurboFit, shared across web, mobile, and backend apps. **Completely
 
 **Responsibilities:**
 
-* **Type Definitions & Schemas** — Zod validation for profiles, workouts, activities, and flexible JSON structures
+* **Type Definitions & Schemas** — Zod validation for profiles, activities, activities, and flexible JSON structures
 * **Calculations & Analytics** — Training zones, TSS, normalized power, compliance scoring, CTL/ATL/TSB
 * **Business Logic** — Activity plan validation, progression, and adaptive algorithms
 * **Utilities** — Time/duration helpers, unit conversions, constants
@@ -69,7 +69,7 @@ A shared ESLint configuration used across all apps and packages in the TurboFit 
 
 ---
 
-### 📱 Mobile App (`apps/native`)
+### 📱 Mobile App (`apps/mobile`)
 
 * Expo + React Native
 * Local-first storage with SQLite for offline recording
@@ -126,7 +126,7 @@ The core package handles **profile validation**, **training zone calculations**,
 
 ### Planned Activities
 
-`planned_activities` contains scheduled workouts with flexible JSON structures validated by the **core package**:
+`planned_activities` contains scheduled activities with flexible JSON structures validated by the **core package**:
 
 * `structure` — Complex JSON objects defining activity steps
 * `structure_version` — Version tracked by core package
@@ -249,12 +249,11 @@ Time-series data processed from JSON source through core package utilities:
 ```
 turbofit/
 ├── apps/
-│   ├── native/          # Mobile app (Expo + React Native)
+│   ├── mobile/          # Mobile app (Expo + React Native)
 │   └── web/             # Web dashboard (Next.js)
 ├── packages/
 │   ├── core/            # 🌟 Database-independent business logic, types, calculations
 │   ├── drizzle/         # Database schema, migrations, queries
-│   └── config/          # Shared configuration
 ```
 
 ### Core Package Structure

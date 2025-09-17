@@ -1,12 +1,19 @@
 // Export all calculation modules
+export * from "./compliance-scoring";
 export * from "./hr";
 export * from "./power";
+export * from "./schema-navigation";
 export * from "./training-load";
 export * from "./training-plan";
 export * from "./trends";
 export * from "./utils";
 
 // Re-export commonly used functions for convenience
+export {
+  calculateComplianceScore,
+  createSampleActualMetrics,
+  createSamplePlannedMetrics,
+} from "./compliance-scoring";
 export {
   calculateAverageHRZone,
   calculateHrZones,
@@ -36,8 +43,8 @@ export {
   createNewPlannedActivity,
   createWeeklySchedule,
   estimateWeeklyTSS,
-  estimateWorkoutDuration,
-  estimateWorkoutTSS,
+  estimateActivityDuration,
+  estimateActivityTSS,
   requiresFTP,
   requiresThresholdHR,
 } from "./training-plan";

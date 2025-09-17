@@ -13,7 +13,7 @@ All tables include `created_at` and `updated_at` timestamps for auditing purpose
 ### User Management
 `auth.users` serves as the foundation, utilizing Supabase's built-in authentication system to handle user accounts, login credentials, and security.
 
-This table is extended by **`profiles`**, which stores comprehensive personal information, preferences, and athlete-specific metrics. These metrics are critical for defining workout intensity, scaling training plans, and tailoring analytics to each athlete’s physiology.
+This table is extended by **`profiles`**, which stores comprehensive personal information, preferences, and athlete-specific metrics. These metrics are critical for defining activity intensity, scaling training plans, and tailoring analytics to each athlete’s physiology.
 
 ### Key fields in `profiles` include:
 
@@ -40,36 +40,36 @@ Key fields include:
 - `config_version` — Indicates which schema version is used for the `config` JSONB, ensuring backward compatibility.
 
 ### Activity Planning and Execution
-`planned_activities` stores scheduled workouts, which can be part of a plan or standalone sessions.
+`planned_activities` stores scheduled activities, which can be part of a plan or standalone sessions.
 - `id` — Primary key, UUID.
 - `profile_plan_id` — Optional foreign key → `profile_plans.id`.
-- `structure` — JSONB object defining workout steps, repetitions, and targets.
+- `structure` — JSONB object defining activity steps, repetitions, and targets.
 - `structure_version` — Indicates which schema version is used for the `structure` JSONB, ensuring backward compatibility.
-- `requires_threshold_hr` / `requires_ftp` — Boolean flags for quick checks on workout requirements.
-- `estimated_duration` & `estimated_tss` — Pre-calculated estimates of the workout's length and training stress, computed by the core application logic.
-- `adherence_score` — A nullable field to be populated by the core package after a workout is completed and analyzed.
+- `requires_threshold_hr` / `requires_ftp` — Boolean flags for quick checks on activity requirements.
+- `estimated_duration` & `estimated_tss` — Pre-calculated estimates of the activity's length and training stress, computed by the core application logic.
+- `adherence_score` — A nullable field to be populated by the core package after a activity is completed and analyzed.
 
-Each planned activity includes a **`structure`** field (stored as JSONB) that defines the workout steps. This approach avoids an unbounded relational table of steps while keeping workouts portable and compatible with common training formats.
+Each planned activity includes a **`structure`** field (stored as JSONB) that defines the activity steps. This approach avoids an unbounded relational table of steps while keeping activitys portable and compatible with common training formats.
 
 ## Activities & Performance Analysis
 
-This part of the schema is designed to handle completed workouts, from the raw data file to a full analytical summary.
+This part of the schema is designed to handle completed activities, from the raw data file to a full analytical summary.
 
 ### `activities`
-This is the central table for a completed workout. Instead of storing all the data here, it primarily acts as a pointer to the raw activity data file and tracks its synchronization status.
+This is the central table for a completed activity. Instead of storing all the data here, it primarily acts as a pointer to the raw activity data file and tracks its synchronization status.
 - `local_storage_path` — The path to the activity file on the user's device.
 - `cloud_storage_path` — The path to the activity file once uploaded to cloud storage.
 - `sync_status` — The synchronization state of the file (e.g., `local_only`, `syncing`, `synced`).
 
 ### `activity_results`
-This table stores the comprehensive analytical summary of a completed workout, calculated by the core package from the raw data.
+This table stores the comprehensive analytical summary of a completed activity, calculated by the core package from the raw data.
 - `activity_id` — Foreign key → `activities.id`.
 - **Profile Snapshot:** Captures the user's `weight_kg`, `ftp`, and `threshold_hr` at the time of the activity for accurate calculations.
 - **Training Load:** `tss`, `ctl`, `atl`, `tsb`.
 - **Power Metrics:** `normalized_power`, `avg_power`, `intensity_factor`, etc.
 - **Heart Rate Metrics:** `avg_heart_rate`, `max_heart_rate`.
 - **Cadence, Speed, Distance, and Elevation** metrics.
-- **Compliance:** `adherence_score` and `workout_match` to score performance against a planned activity.
+- **Compliance:** `adherence_score` and `activity_match` to score performance against a planned activity.
 
 ### `activity_streams`
 This table contains the granular, time-series data from a recorded activity, optimized for storage and retrieval.

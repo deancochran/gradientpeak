@@ -62,7 +62,7 @@ export const activityResults = pgTable("activity_results", {
 
   // compliance
   adherenceScore: numeric("adherence_score", { precision: 4, scale: 2 }),
-  workoutMatch: boolean("workout_match"),
+  activityMatch: boolean("activity_match"),
 
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at", {

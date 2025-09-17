@@ -47,7 +47,7 @@ export const plannedActivities = pgTable("planned_activities", {
   activityType: activityTypeEnum("activity_type").notNull(),
   description: text("description"),
 
-  // workout structure
+  // activity structure
   structure: jsonb("structure").notNull(),
   structureVersion: text("structure_version").notNull().default("1.0"),
 

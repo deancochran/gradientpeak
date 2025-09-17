@@ -24,8 +24,8 @@ export const trainingPlanDB = {
     const requiresThresholdHr = requiresThresholdHR(activity);
 
     // Calculate estimates using core functions
-    const estimatedDuration = estimateWorkoutDuration(activity);
-    const estimatedTss = userFtp ? estimateWorkoutTSS(activity, userFtp) : null;
+    const estimatedDuration = estimateActivityDuration(activity);
+    const estimatedTss = userFtp ? estimateActivityTSS(activity, userFtp) : null;
 
     const [createdActivity] = await db
       .insert(plannedActivities)

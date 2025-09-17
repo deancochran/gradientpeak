@@ -1,231 +1,93 @@
 # TurboFit Agent Rules
 
-You are contributing to the **TurboFit monorepo**, a local-first fitness tracking platform.
-
-Your role is to **develop, update, and maintain code** while **keeping documentation, types, and shared logic centralized** and consistent.
+You are contributing to the **TurboFit monorepo**, a fitness tracking platform.
+Your responsibility is to **design, develop, and maintain code** while ensuring **documentation, shared logic, and types remain centralized and consistent**.
 
 ---
 
-## 1. Agent Objectives
+## 1. Objectives
 
-* Maintain **context awareness** across mobile (`apps/native`) and web (`apps/web`) applications.
-* Follow the **TurboFit Development Workflow** at all times.
-* Keep **all documentation in sync** with code changes.
-* Prefer **incremental, reviewable changes** over sweeping modifications.
+* Maintain **context awareness** across web (`apps/web`) and mobile (`apps/mobile`).
+* Follow the **development workflow** strictly.
+* Keep **documentation synchronized** with all code changes.
+* Favor **incremental, reviewable updates** over broad changes.
 * Use **shared packages (`core`, `drizzle`)** for types, schemas, and calculations.
-* Ask clarifying questions whenever requirements or context are unclear.
-* Actively report on actions, decisions, and learned context to allow review or interruption.
+* Ask questions when requirements are unclear.
+* Ensure all work is **traceable and reviewable**.
 
 ---
 
 ## 2. Project Overview
 
 * **Monorepo**: Turborepo + Bun
-* **Shared Packages**: Centralized types, validation, business logic, and schemas
-* **Mobile**: React Native 0.79.5 + Expo SDK 53 (offline-first SQLite with Supabase sync)
-* **Web**: Next.js 15 + React 19 dashboard (Supabase backend)
+* **Applications**:
 
-**Key Technology Rationale:**
+  * `apps/mobile/` → React Native + Expo (offline-first, SQLite + Supabase sync)
+  * `apps/web/` → Next.js + React dashboard (Supabase backend)
+* **Shared Packages**:
 
-* **Drizzle ORM** → TypeScript-first schemas, strong typing, migrations
-* **core package** → Business logic, Zod schemas, calculations
-* **Zustand** → Lightweight state management, offline-first
-* **React Query** → Offline caching, background sync
-* **Expo-SQLite** → Local-first storage
-* **Supabase** → Cloud storage, authentication, synchronization
+  * `core/` → Business logic, Zod schemas, calculations
+  * `drizzle/` → DB schemas + migrations
+  * `supabase/` → Supabase types + helpers
+  * Config packages (ESLint, TS)
 
----
-
-## 3. Monorepo Structure
-
-### Applications
-
-* `apps/native/` → Mobile app
-* `apps/web/` → Web dashboard
-
-### Shared Packages
-
-* `packages/core/` → Business logic, shared types, Zod schemas, calculations
-* `packages/drizzle/` → Database schemas + migrations
-* `packages/supabase/` → Supabase types & helpers
-* `packages/eslint-config/` → ESLint rules
-* `packages/typescript-config/` → TypeScript configs
-
-**Principle:** Avoid defining app-specific types. Always import shared types from `core` or `drizzle`.
+**Rule:** Never define app-specific types or interfaces. Always import from `core` or `drizzle`. If you need to define a type or interface, consider creating a new file in the `core` package.
 
 ---
 
-## 4. Agentic Instructions
+## 3. Context & Documentation
 
-### 4.1 Context Management
-
-* Always load **context manifest** (`context.json`) first.
-* Check **active tasks** (`TASKS.md`) and **recent changes** (`CHANGELOG.md`) before modifying code.
-* Check scoped **README.md** for each package/app for purpose, entrypoints, and pending tasks.
-
-**Slash Commands for Context:**
-
-```
-/file context.json
-/file TASKS.md
-/file CHANGELOG.md
-/file WORKFLOW.md
-/file rules/core.rules
-/file rules/drizzle.rules
-/file rules/web.rules
-/file rules/native.rules
-```
+* Load `context.json` first.
+* Review `TASKS.md` (active work) and `CHANGELOG.md` (recent changes) before editing.
+* Check scoped `README.md` files for purpose, entrypoints, and TODOs.
+* If a README is missing or outdated, create or update it.
 
 ---
 
-### 4.2 Documentation-First Workflow
+## 4. Development Workflow
 
-* **Do not create new files** unless strictly necessary.
-* If a new file replaces an old one:
+### Documentation-First
 
-  * Update **all references** to point to the new file.
-  * Remove the **old file immediately**.
-* Always update existing documentation to reflect code changes:
+* Do not create files unless necessary.
+* If replacing a file, update all references and delete the old version.
+* Update documentation with every change:
 
-  * `TASKS.md` → track task progress and completion
-  * `CHANGELOG.md` → record what changed, why, and affected types/modules
-  * Scoped `README.md` → update usage, API, setup, or conventions
-* Keep documentation synchronized with the repo at all times.
+  * `TASKS.md` → task state
+  * `CHANGELOG.md` → summary, rationale, impacted modules
+  * Scoped `README.md` → purpose, APIs, setup, conventions
 
----
+### Code Changes
 
-### 4.3 Code Change Workflow
+1. **Plan**: Confirm or add the task in `TASKS.md`.
+2. **Review**: Read the directory’s `README.md`.
+3. **Change**:
 
-1. **Check Tasks**
+   * Modify only relevant files.
+   * Keep responsibilities clear:
 
-   * Verify the requested change exists in `TASKS.md`.
-   * If missing, add it under “In Progress” before starting.
-
-2. **Check Local Context**
-
-   * Review the relevant `README.md`.
-   * Understand the directory’s purpose and TODOs.
-
-3. **Perform Changes**
-
-   * Modify **only relevant files**.
-   * Centralize **business logic in `core`**, **DB logic in `drizzle`**, **API endpoints in `web`**, **UI in `native`/`web`**.
-   * Reference **shared types and schemas** instead of creating new ones.
-
-4. **Update Docs**
-
-   * Mark tasks complete or adjust scope in `TASKS.md`.
-   * Add a clear summary in `CHANGELOG.md`.
-   * Update scoped `README.md` if functionality, setup, or conventions changed.
-
-5. **Clean-Up**
-
-   * Replace superseded files and remove old versions.
-   * Ensure **no orphan references** remain in code or docs.
+     * `core` → business logic, shared types
+     * `drizzle` → schemas + migrations
+     * `web/api` → API endpoints, orchestrating DB + core
+   * Always use shared types/schemas.
+4. **Document**: Mark task complete in `TASKS.md`, log in `CHANGELOG.md`, update README if needed.
+5. **Clean-Up**: Remove replaced files, fix references.
 
 ---
 
-### 4.4 Shared Types & Logic
+## 5. Code Discipline
 
-* Always **import types, schemas, and validation** from `core` or `drizzle`.
-* Avoid app-specific types or duplications.
-* If extending functionality, create **enhanced modules** in shared packages and replace old versions.
-* Centralize calculations, activity models, and analytics in `core`.
-
----
-
-### 4.5 Traceability
-
-* Every agent action must be **visible and documented**:
-
-  * What changed
-  * Why it changed
-  * Which shared modules/types were affected
-* Ensures human developers can review, interrupt, or continue work without losing context.
+* **Shared Logic**: Centralize types, schemas, and validation in `core` or `drizzle`. Extend by enhancing shared modules, not duplicating them. Keep calculations, analytics, and models in `core`.
+* **Traceability**: Every change must document: what changed, why, and which shared modules/types were affected.
+* **Dependencies**: App/package deps remain local; shared tooling lives at root.
+* **Testing & CI**: Run `bun test` locally; lint and format must pass.
+* **Change Size**: Prefer small, reviewable updates; avoid sweeping, unreviewable changes.
 
 ---
 
-## 5. Development Rules
+## 6. Agentic Development Loop
 
-* **Code Organization**
-
-  * `core` → db-agnostic functions, shared types, and calculations
-  * `drizzle` → schema + migrations
-  * `web/api` → orchestrates DB + core
-  * `web/components` / `native/components` → presentation/UI
-
-* **Dependencies**
-
-  * App/package-specific deps at package level
-  * Shared dev tooling at root
-
-* **Testing & CI**
-
-  * Run `bun test` locally before PRs
-  * Ensure linting and formatting pass before committing
-
-* **Incremental Changes**
-
-  * Prefer small, reviewable updates
-  * Avoid large sweeping changes without prior planning
-
----
-
-## 6. Git & PR Discipline
-
-1. Every feature or bugfix → new branch
-2. Update `TASKS.md` and `CHANGELOG.md` before committing
-3. Commit messages → reference task ID from `TASKS.md`
-4. PR Checklist:
-
-   * ✅ Tests pass
-   * ✅ Lint/format applied
-   * ✅ Task closed in `TASKS.md`
-   * ✅ Change logged in `CHANGELOG.md`
-   * ✅ README updated if scope changed
-
----
-
-## 7. Development Commands
-
-**Root (project-level)**
-
-```bash
-bun dev
-bun build
-bun lint
-bun test
-bun check-types
-bun format
-```
-
-**Mobile (`apps/native/`)**
-
-```bash
-bun dev
-bun ios
-bun run android
-bun test
-bun test:e2e
-```
-
-**Web (`apps/web/`)**
-
-```bash
-bun dev
-bun build
-bun start
-bun lint
-```
-
----
-
-## 8. Summary: Agentic Loop
-
-1. **Intent** → log in `TASKS.md`
-2. **Context** → consult `README.md` and shared packages
-3. **Action** → modify code using shared types/logic
-4. **Traceability** → update `CHANGELOG.md`
-5. **Continuity** → update docs, remove replaced files, maintain references
-
-Following this ensures that both **human and AI contributors** operate with the right context and leave the project in a **consistent, documented state**.
+1. **Intent** → confirm task in `TASKS.md`.
+2. **Context** → consult `README.md` and shared modules.
+3. **Action** → implement with centralized logic and conventions.
+4. **Traceability** → update `CHANGELOG.md` with reasoning and impacts.
+5. **Continuity** → sync docs, remove obsolete files, ensure no orphan references.

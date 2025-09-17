@@ -4,7 +4,7 @@ import type {
   Step,
   WeeklySchedule,
 } from "@repo/drizzle/schemas";
-import type { ScheduledWorkout } from "../types";
+import type { ScheduledActivity } from "../types";
 
 // ================================
 // Planned Activity Generator
@@ -26,15 +26,15 @@ export function createNewPlannedActivity(
 // ================================
 export function createWeeklySchedule(
   weekNumber: number,
-  scheduledWorkouts: ScheduledWorkout[],
+  scheduledActivitys: ScheduledActivity[],
   weeklyTargets?: Partial<WeeklySchedule["targets"]>,
 ): WeeklySchedule {
   return {
     weekNumber,
-    workouts: scheduledWorkouts.map((sw) => ({
+    activities: scheduledActivitys.map((sw) => ({
       dayOfWeek: sw.day,
       key: sw.key ?? "standard",
-      workoutTemplate: sw.workout,
+      activityTemplate: sw.activity,
     })),
     targets: weeklyTargets ?? { tss: 0 },
   };
@@ -45,11 +45,11 @@ export function createWeeklySchedule(
 // ================================
 
 /**
- * Estimates the TSS for a single workout structure based on user's FTP.
+ * Estimates the TSS for a single activity structure based on user's FTP.
  * Note: This is a simplified estimation. A true NP calculation is more complex.
  */
-export function estimateWorkoutTSS(
-  workout: PlannedActivityStructure,
+export function estimateActivityTSS(
+  activity: PlannedActivityStructure,
   ftp: number,
 ): number {
   if (!ftp || ftp <= 0) return 0;
@@ -85,7 +85,7 @@ export function estimateWorkoutTSS(
     return isNaN(stepTSS) ? 0 : stepTSS;
   };
 
-  for (const item of workout.steps) {
+  for (const item of activity.steps) {
     // Check if it's a repetition block
     if ("repeat" in item && "steps" in item) {
       for (let i = 0; i < item.repeat; i++) {
@@ -103,11 +103,11 @@ export function estimateWorkoutTSS(
 }
 
 /**
- * Estimates the total weekly TSS by summing the estimated TSS of each workout.
+ * Estimates the total weekly TSS by summing the estimated TSS of each activity.
  */
 export function estimateWeeklyTSS(week: WeeklySchedule, ftp: number): number {
-  return week.workouts.reduce(
-    (sum, w) => sum + estimateWorkoutTSS(w.workoutTemplate, ftp),
+  return week.activities.reduce(
+    (sum, w) => sum + estimateActivityTSS(w.activityTemplate, ftp),
     0,
   );
 }
@@ -122,8 +122,8 @@ export function adaptWeeklyPlan(
   // Deep copy the week to avoid mutating the original object
   const adaptedWeek = JSON.parse(JSON.stringify(week));
 
-  adaptedWeek.workouts.forEach((w: any) => {
-    w.workoutTemplate.steps.forEach((step: any) => {
+  adaptedWeek.activities.forEach((w: any) => {
+    w.activityTemplate.steps.forEach((step: any) => {
       if (step.intensity && step.intensity.target) {
         // Only scale scalable intensity types
         if (["%FTP", "watts"].includes(step.intensity.type)) {
@@ -157,7 +157,7 @@ export function adaptWeeklyPlan(
 // ================================
 
 /**
- * Determines if a workout requires FTP for intensity calculations
+ * Determines if a activity requires FTP for intensity calculations
  */
 export function requiresFTP(activity: PlannedActivityStructure): boolean {
   return activity.steps.some((step) => {
@@ -167,7 +167,7 @@ export function requiresFTP(activity: PlannedActivityStructure): boolean {
 }
 
 /**
- * Determines if a workout requires threshold HR for intensity calculations
+ * Determines if a activity requires threshold HR for intensity calculations
  */
 export function requiresThresholdHR(
   activity: PlannedActivityStructure,
@@ -179,9 +179,9 @@ export function requiresThresholdHR(
 }
 
 /**
- * Calculates estimated duration of a workout in seconds
+ * Calculates estimated duration of a activity in seconds
  */
-export function estimateWorkoutDuration(
+export function estimateActivityDuration(
   activity: PlannedActivityStructure,
 ): number {
   let totalDuration = 0;

@@ -219,7 +219,7 @@ export interface RepetitionBlock {
 /**
  * Scheduled activity with timing
  */
-export interface ScheduledWorkout {
+export interface ScheduledActivity {
   day: number; // 0-6 (Sunday-Saturday)
   activity: PlannedActivityStructure;
   key?: string;
@@ -406,7 +406,7 @@ export type PlanTypes =
   | TrainingPlan
   | TrainingPhase
   | WeeklySchedule
-  | ScheduledWorkout;
+  | ScheduledActivity;
 
 // ================================
 // Activity Types Export
@@ -437,3 +437,9 @@ export interface PerformanceMetrics {
   /** Current form/readiness category */
   form: "optimal" | "good" | "tired" | "very_tired";
 }
+
+// ================================
+// Session Types Export
+// ================================
+
+export * from "./session-types";

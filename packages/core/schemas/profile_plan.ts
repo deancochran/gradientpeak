@@ -5,7 +5,7 @@ import { plannedActivityStructureSchema } from "./planned_activity";
 // Adaptive Logic for Plan Progression
 //======================================
 const adaptiveLogicSchema = z.object({
-  complianceThreshold: z.number().min(0).max(100).optional(), // % of workouts completed required to trigger adaptive adjustments
+  complianceThreshold: z.number().min(0).max(100).optional(), // % of activities completed required to trigger adaptive adjustments
   intensityMultiplier: z.number().default(1.0), // Factor to scale planned intensity for adaptive progression
 });
 
@@ -42,9 +42,9 @@ const weeklyTargetsSchema = z.object({
 });
 
 //======================================
-// Scheduled Workouts
+// Scheduled Activities
 //======================================
-const scheduledWorkoutSchema = z.object({
+const scheduledActivitySchema = z.object({
   dayOfWeek: z.enum([
     "monday",
     "tuesday",
@@ -55,7 +55,7 @@ const scheduledWorkoutSchema = z.object({
     "sunday",
   ]),
   key: z.enum(["priority", "standard", "optional"]).default("standard"),
-  workoutTemplate: plannedActivityStructureSchema,
+  activityTemplate: plannedActivityStructureSchema,
 });
 
 //======================================
@@ -64,7 +64,7 @@ const scheduledWorkoutSchema = z.object({
 const weeklyScheduleSchema = z.object({
   weekNumber: z.number().min(1), // Calendar week number in the training plan
   targets: weeklyTargetsSchema, // Weekly training targets and metrics
-  workouts: z.array(scheduledWorkoutSchema), // List of scheduled workouts for this week
+  activities: z.array(scheduledActivitySchema), // List of scheduled activities for this week
 });
 
 //======================================
@@ -89,7 +89,7 @@ export const profilePlanConfigSchema = z.object({
     )
     .optional(),
   progression: progressionRulesSchema.optional(), // Rules for ramping fitness and recovery
-  schedule: z.array(weeklyScheduleSchema).optional(), // Full weekly schedule with workouts
+  schedule: z.array(weeklyScheduleSchema).optional(), // Full weekly schedule with activities
   raceSettings: raceSettingsSchema.optional(), // Settings for goal events or races
 });
 

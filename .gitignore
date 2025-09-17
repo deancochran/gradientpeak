@@ -82,3 +82,4 @@ packages/*/lib/
 .vscode/
 .idea/
 *.log
+.aider*

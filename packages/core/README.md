@@ -7,7 +7,7 @@ The database-independent heart of TurboFit, providing shared business logic, cal
 This package contains **pure TypeScript** business logic with **zero database or ORM dependencies**. It serves as the single source of truth for:
 
 - **Type Definitions** - Shared interfaces and types
-- **Zod Schemas** - Data validation and JSON schema validation  
+- **Zod Schemas** - Data validation and JSON schema validation
 - **Calculations** - Training metrics, analytics, and performance algorithms
 - **Business Logic** - Platform-agnostic core functionality
 
@@ -17,7 +17,7 @@ This package contains **pure TypeScript** business logic with **zero database or
 packages/core/
 ├── calculations/           # Performance and training calculations
 │   ├── hr.ts              # Heart rate zone calculations
-│   ├── power.ts           # Power metrics and FTP calculations  
+│   ├── power.ts           # Power metrics and FTP calculations
 │   ├── training-load.ts   # CTL/ATL/TSB and training stress
 │   ├── training-plan.ts   # Plan validation and progression
 │   └── utils.ts           # Calculation utilities
@@ -39,13 +39,13 @@ packages/core/
 - **Fully testable** - No mocking required for unit tests
 
 ### Zod Schema Validation
-- **Activity structures** - Complex workout step validation
+- **Activity structures** - Complex activity step validation
 - **Training plans** - Plan configuration and progression rules
 - **Profile data** - User preferences and fitness metrics
 - **JSON compatibility** - Validates data from any source
 
 ### Performance Calculations
-- **Training Stress Score (TSS)** - Workout intensity quantification
+- **Training Stress Score (TSS)** - Activity intensity quantification
 - **Training Load Analytics** - CTL/ATL/TSB progression modeling
 - **Heart Rate Zones** - Age and threshold-based zone calculations
 - **Power Metrics** - FTP, normalized power, intensity factors
@@ -127,7 +127,7 @@ bun coverage # Test coverage report
 
 ### Performance
 - **Client-side calculations** - No API calls required for metrics
-- **Optimized algorithms** - Efficient training load calculations  
+- **Optimized algorithms** - Efficient training load calculations
 - **Minimal bundle size** - Pure TypeScript with minimal dependencies
 
 ### Maintainability
@@ -140,7 +140,7 @@ bun coverage # Test coverage report
 ### Runtime Dependencies
 - `zod` - Schema validation and type generation
 
-### Development Dependencies  
+### Development Dependencies
 - `@repo/typescript-config` - Shared TypeScript configuration
 - `@repo/eslint-config` - Linting rules
 - `typescript` - TypeScript compiler
@@ -149,7 +149,7 @@ bun coverage # Test coverage report
 
 This package is consumed by:
 
-- **Mobile App (`apps/native`)** - Activity recording and analysis
+- **Mobile App (`apps/mobile`)** - Activity recording and analysis
 - **Web Dashboard (`apps/web`)** - Analytics and reporting
 - **Backend APIs** - Server-side calculations and validation
 

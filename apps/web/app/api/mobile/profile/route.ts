@@ -14,38 +14,24 @@ import { z } from "zod";
 
 const UpdateProfileSchema = z
   .object({
-    displayName: z.string().min(1).max(100).optional(),
-    firstName: z.string().min(1).max(50).optional(),
-    lastName: z.string().min(1).max(50).optional(),
-    dateOfBirth: z.string().datetime().optional(),
+    username: z
+      .string()
+      .min(1)
+      .max(50)
+      .nullish()
+      .transform((val) => val ?? null),
     gender: z.enum(["male", "female", "other"]).optional(),
-    heightCm: z.number().min(100).max(250).optional(),
-    weightKg: z.number().min(30).max(300).optional(),
-    activityLevel: z
-      .enum([
-        "sedentary",
-        "lightly_active",
-        "moderately_active",
-        "very_active",
-        "extremely_active",
-      ])
-      .optional(),
-    fitnessGoals: z.array(z.string()).optional(),
+    dob: z.string().optional(),
+    weightKg: z.string().optional(),
+    thresholdHr: z.number().min(100).max(250).optional(),
+    ftp: z.number().min(50).max(500).optional(),
     preferredUnits: z.enum(["metric", "imperial"]).optional(),
-    timezone: z.string().optional(),
-    maxHeartRate: z.number().min(100).max(250).optional(),
-    restingHeartRate: z.number().min(30).max(120).optional(),
-    ftpWatts: z.number().min(50).max(500).optional(),
-    vo2Max: z.number().min(20).max(80).optional(),
-    trainingZonePreference: z.enum(["heart_rate", "power", "pace"]).optional(),
-    privacySettings: z
-      .object({
-        profileVisibility: z.enum(["public", "friends", "private"]).optional(),
-        activityVisibility: z.enum(["public", "friends", "private"]).optional(),
-      })
-      .optional(),
+    language: z.string().optional(),
+    avatarUrl: z.string().url().optional(),
+    bio: z.string().max(500).optional(),
+    onboarded: z.boolean().optional(),
   })
-  .partial();
+  .strict();
 
 export async function GET(request: NextRequest) {
   try {
@@ -59,8 +45,7 @@ export async function GET(request: NextRequest) {
       // Create a minimal profile if one doesn't exist
       const newProfile = await createProfile({
         id: user.id,
-        email: user.email,
-        displayName: user.email.split("@")[0], // Use email prefix as default display name
+        username: user.email.split("@")[0], // Use email prefix as default username
         preferredUnits: "metric",
       });
 
@@ -89,9 +74,11 @@ export async function PUT(request: NextRequest) {
       // Create profile first if it doesn't exist
       profile = await createProfile({
         id: user.id,
-        email: user.email,
-        displayName: user.email.split("@")[0],
+        username: user.email.split("@")[0],
         preferredUnits: "metric",
+        weightKg: updateData.weightKg
+          ? updateData.weightKg.toString()
+          : undefined,
         ...updateData,
       });
 
@@ -102,8 +89,9 @@ export async function PUT(request: NextRequest) {
     // Update existing profile
     const updatedProfile = await updateProfile(user.id, {
       ...updateData,
-      dateOfBirth: updateData.dateOfBirth
-        ? new Date(updateData.dateOfBirth)
+      dob: updateData.dob,
+      weightKg: updateData.weightKg
+        ? updateData.weightKg.toString()
         : undefined,
     });
 

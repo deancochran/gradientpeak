@@ -1,11 +1,11 @@
 import { db } from "@/lib/drizzle";
 import { profiles } from "@repo/drizzle/schemas";
-import { eq } from "drizzle-orm";
+import { eq, isNull, not } from "drizzle-orm";
 
 export async function createProfile(
   profileData: Omit<
     typeof profiles.$inferInsert,
-    "id" | "idx" | "createdAt" | "updatedAt"
+    "idx" | "createdAt" | "updatedAt"
   >,
 ) {
   const [profile] = await db.insert(profiles).values(profileData).returning();
@@ -24,7 +24,7 @@ export async function getProfileByUserId(userId: string) {
   const [profile] = await db
     .select()
     .from(profiles)
-    .where(eq(profiles.userId, userId));
+    .where(eq(profiles.id, userId));
   return profile;
 }
 
@@ -86,14 +86,17 @@ export async function getProfilesByGender(gender: "male" | "female" | "other") {
 }
 
 export async function getProfilesWithFTP() {
-  return await db.select().from(profiles).where(profiles.ftp.isNotNull());
+  return await db
+    .select()
+    .from(profiles)
+    .where(not(isNull(profiles.ftp)));
 }
 
 export async function getProfilesWithThresholdHR() {
   return await db
     .select()
     .from(profiles)
-    .where(profiles.thresholdHr.isNotNull());
+    .where(not(isNull(profiles.thresholdHr)));
 }
 
 export async function updateProfileOnboarding(

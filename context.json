@@ -2,7 +2,7 @@
   "tasks": "TASKS.md",
   "changelog": "CHANGELOG.md",
   "frontend": "apps/web/README.md",
-  "native": "apps/native/README.md",
+  "mobile": "apps/mobile/README.md",
   "backend": "apps/web/app/api/README.md",
   "core": "packages/core/README.md",
   "drizzle": "packages/drizzle/README.md"

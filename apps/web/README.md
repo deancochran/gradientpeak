@@ -84,7 +84,7 @@ apps/web/
 
 ### 📊 Advanced Analytics Dashboard
 - **Training Load Analysis** - CTL/ATL/TSB progression charts
-- **Performance Trends** - Power/pace progression over time  
+- **Performance Trends** - Power/pace progression over time
 - **Zone Distribution** - Heart rate and power zone analysis
 - **Activity Comparisons** - Side-by-side performance analysis
 - **Personal Records** - PR tracking and historical analysis
@@ -99,7 +99,7 @@ apps/web/
 - **Plan Library** - Browse and assign training plans
 - **Plan Progress** - Visual progress tracking and compliance scoring
 - **Plan Customization** - Modify plans based on performance
-- **Scheduled Workouts** - Calendar view of planned activities
+- **Scheduled Activities** - Calendar view of planned activities
 
 ### 🔐 User Management
 - **Profile Settings** - FTP, zones, preferences, and goals
@@ -125,7 +125,7 @@ NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 
-# Next.js Configuration  
+# Next.js Configuration
 NEXTAUTH_URL=http://localhost:3000
 NEXTAUTH_SECRET=your_nextauth_secret
 

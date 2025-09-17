@@ -29,6 +29,13 @@
       "when": 1757434812623,
       "tag": "20250909162012_activities_json_file_storage_bucket",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1758051530172,
+      "tag": "20250916193850_removing_old_coluimns",
+      "breakpoints": true
     }
   ]
 }
