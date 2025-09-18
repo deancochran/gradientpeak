@@ -19,12 +19,15 @@ import {
 const Navbar = () => {
   const router = useRouter();
   const { user } = useAuth();
+  const utils = trpc.useUtils();
   const signOutMutation = trpc.auth.signOut.useMutation();
 
   const isAuthenticated = !!user;
   const logout = async () => {
     try {
       await signOutMutation.mutateAsync();
+      // Invalidate auth queries to update UI state
+      await utils.auth.getUser.invalidate();
       router.push("/auth/login");
     } catch (error) {
       console.error("Logout failed:", error);
@@ -97,8 +100,6 @@ const Navbar = () => {
                     <span className="text-popover-foreground">Sign Out</span>
                   </Button>
                 </DropdownMenuItem>
-
-                {/* <Button onClick={logout}>Logout</Button> */}
               </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>

@@ -25,19 +25,24 @@ export function LoginForm({
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const signInMutation = trpc.auth.signInWithPassword.useMutation();
-
+  const utils = trpc.useUtils();
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
     try {
       await signInMutation.mutateAsync({ email, password });
+
+      // Invalidate the getUser query
+      await utils.auth.getUser.invalidate();
+
+      // Refresh the router cache and navigate
+      router.refresh();
       router.push("/");
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "An error occurred");
     }
   };
-
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <Card>

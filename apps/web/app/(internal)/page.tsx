@@ -1,12 +1,21 @@
-import { HydrateClient, trpc } from "@/lib/trpc/server";
+import { HydrateClient, createServerCaller } from "@/lib/trpc/server";
 import { redirect } from "next/navigation";
 
 export default async function ProtectedPage() {
   try {
-    // Use the server-side tRPC client
+    console.log("🏠 Home page: Attempting to get user...");
+
+    // Use the server caller instead of the proxy
+    const trpc = await createServerCaller();
     const user = await trpc.auth.getUser();
 
+    console.log(
+      "🏠 Home page: User result:",
+      user ? "✅ User found" : "❌ No user",
+    );
+
     if (!user) {
+      console.log("🏠 Home page: No user, redirecting to login");
       redirect("/auth/login");
     }
 
@@ -19,7 +28,8 @@ export default async function ProtectedPage() {
         </div>
       </HydrateClient>
     );
-  } catch {
+  } catch (error) {
+    console.log("🏠 Home page: Error getting user:", error);
     redirect("/auth/login");
   }
 }

@@ -1,9 +1,18 @@
+import {
+  appRouter,
+  createQueryClient,
+  createTRPCContext,
+  type AppRouter,
+} from "@repo/trpc/server";
+import {
+  dehydrate,
+  HydrationBoundary,
+  type DehydratedState,
+} from "@tanstack/react-query";
 import type { TRPCQueryOptions } from "@trpc/tanstack-react-query";
-import { cache } from "react";
-import { headers } from "next/headers";
-import { dehydrate, HydrationBoundary, type DehydratedState } from "@tanstack/react-query";
 import { createTRPCOptionsProxy } from "@trpc/tanstack-react-query";
-import { appRouter, createTRPCContext, createQueryClient, type AppRouter } from "@repo/trpc/server";
+import { headers } from "next/headers";
+import { cache } from "react";
 import { createClient } from "../supabase/server";
 
 /**
@@ -28,17 +37,19 @@ export const trpc = createTRPCOptionsProxy<AppRouter>({
   queryClient: getQueryClient,
 });
 
+// Export for route handlers and other server-side code
+export async function createServerCaller() {
+  const context = await createContext();
+  return appRouter.createCaller(context);
+}
+
 interface HydrateClientProps {
   children: React.ReactNode;
   state?: DehydratedState;
 }
 
 export function HydrateClient({ children, state }: HydrateClientProps) {
-  return (
-    <HydrationBoundary state={state}>
-      {children}
-    </HydrationBoundary>
-  );
+  return <HydrationBoundary state={state}>{children}</HydrationBoundary>;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

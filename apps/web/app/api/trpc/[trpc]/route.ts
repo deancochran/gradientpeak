@@ -1,5 +1,5 @@
 import { Database } from "@repo/supabase";
-import { appRouter, createTRPCContext } from "@repo/trpc";
+import { appRouter, createTRPCContext } from "@repo/trpc/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
