@@ -24,20 +24,7 @@ The heart of TurboFit, shared across web, mobile, and backend apps. **Completely
 
 ---
 
-### 📦 Drizzle Backend Package (`packages/drizzle`)
 
-A centralized backend layer providing type-safe database interactions.
-
-**Responsibilities:**
-
-* **Schema Definition** — Table structures and relations managed via Drizzle
-* **Migrations** — Database versioning and schema updates fully controlled
-* **Queries & Transactions** — Type-safe interactions with PostgreSQL
-* **Integration** — Powers both web and mobile apps with a single database interface
-
-**Key Benefit:** Decouples applications from direct database dependencies while providing type-safe data operations.
-
----
 
 ### 📦 TypeScript Config Package (`packages/typescript-config`)
 
@@ -83,7 +70,6 @@ A shared ESLint configuration used across all apps and packages in the TurboFit 
 * Next.js + React
 * Real-time analytics and dashboards
 * Powered by `@turbofit/core` for calculations and validation
-* Database access via Drizzle-powered API endpoints
 
 ---
 
@@ -91,7 +77,6 @@ A shared ESLint configuration used across all apps and packages in the TurboFit 
 
 * Turborepo + TypeScript throughout
 * Core package for shared business logic (database-independent)
-* Drizzle package for centralized database operations
 * Local-first recording + intelligent sync ensures offline usability and data integrity
 
 ---
@@ -236,7 +221,7 @@ Time-series data processed from JSON source through core package utilities:
 | Frontend       | Expo 53, React Native | Next.js 15, React 19  | -            |
 | Local Storage  | Expo-SQLite (SQLite)  | -                     | -            |
 | Cloud Storage  | Supabase Storage      | Supabase Storage      | JSON Files   |
-| Cloud Database | API → Drizzle         | API → Drizzle         | PostgreSQL   |
+| Cloud Database | API          | API       | PostgreSQL   |
 | Styling        | NativeWind 4.1        | Tailwind CSS          | -            |
 | State          | SQLite + React Query  | React Query + Zustand | -            |
 
@@ -253,7 +238,6 @@ turbofit/
 │   └── web/             # Web dashboard (Next.js)
 ├── packages/
 │   ├── core/            # 🌟 Database-independent business logic, types, calculations
-│   ├── drizzle/         # Database schema, migrations, queries
 ```
 
 ### Core Package Structure

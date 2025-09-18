@@ -10,6 +10,7 @@
     "ngrok": "ngrok http 3000 --domain=outgoing-ape-repeatedly.ngrok-free.app"
   },
   "dependencies": {
+    "@repo/trpc": "workspace:*",
     "@hookform/resolvers": "^5.2.1",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -21,7 +22,6 @@
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@repo/core": "workspace:*",
-    "@repo/drizzle": "workspace:*",
     "@supabase/postgrest-js": "*",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.56.0",
@@ -36,8 +36,8 @@
     "zod": "^4.1.3"
   },
   "devDependencies": {
-    "@repo/typescript-config": "^1.0.0",
-    "@repo/eslint-config": "^1.0.0",
+    "@repo/typescript-config": "workspace:*",
+    "@repo/eslint-config": "workspace:*",
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",

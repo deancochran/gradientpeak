@@ -1,5 +1,275 @@
 # TurboFit Mobile App Recovery Documentation
 
+## 📋 Version Information
+- **Expo SDK**: 54.0.0
+- **React Native**: 0.81.4
+- **Expo Router**: 6.0.6
+- **Navigation**: Expo Router with file-based routing
+- **State Management**: Zustand + React Context + Custom Hooks
+- **Styling**: NativeWind (Tailwind CSS for React Native)
+- **Database**: SQLite (offline) + Supabase (cloud sync)
+- **Bluetooth**: react-native-ble-plx with advanced device management
+- **Build System**: Turborepo + Bun
+
+## 📱 Current State Assessment
+
+### ✅ What's Still Intact
+- **Monorepo Structure**: Core packages (`core`, , `supabase`) are preserved
+- **Web App**: Next.js dashboard remains functional
+- **Authentication**: External routes (sign-in, sign-up, etc.) are preserved
+- **UI Components**: Basic UI components are available in OLD_components
+- **Configuration**: All build/config files are intact
+
+### ❌ What Needs Recreation
+- **Main Tab Navigation**: Home, Record, Activities, Trends, Settings screens
+- **Activity Recording System**: Stepper flow, recording screen, real-time metrics
+- **Navigation Guards**: Session recovery and recording protection
+- **Bluetooth Integration**: Device management and sensor data processing
+- **State Management**: Zustand stores and React contexts
+
+### 📁 Current Directory Structure
+```
+apps/mobile/src/
+├── OLD_app/                 # Previous app structure (reference only)
+├── OLD_components/          # Previous components (reference)
+├── OLD_lib/                 # Previous lib files (reference)
+├── components/              # Current UI components (incomplete)
+├── routes/                  # Current routes (incomplete)
+│   ├── (external)/          # ✅ Authentication flows (intact)
+│   └── (internal)/          # ❌ Main app (needs recreation)
+└── lib/                     # Current lib files (incomplete)
+```
+
+## 🏗️ Reconstruction Priorities
+
+### 🚨 Phase 1: Critical Foundation (Week 1)
+1. **Recreate Main Tab Structure**
+   - [ ] Home screen with quick actions
+   - [ ] Record screen with stepper navigation
+   - [ ] Activities list screen
+   - [ ] Trends dashboard
+   - [ ] Settings screen
+
+2. **Restore Navigation System**
+   - [ ] Tab navigation layout
+   - [ ] Protected route structure
+   - [ ] Deep linking support
+   - [ ] Navigation state management
+
+3. **Rebuild Core UI Components**
+   - [ ] Button variants system (recently refactored)
+   - [ ] Card components
+   - [ ] Form elements
+   - [ ] Modal system
+
+### ⚡ Phase 2: Core Functionality (Week 2)
+4. **Activity Recording Flow**
+   - [ ] Stepper-based selection (5-step flow)
+   - [ ] Permission management system
+   - [ ] Bluetooth device scanning/connection
+   - [ ] Real-time recording screen
+
+5. **State Management**
+   - [ ] Zustand stores for global state
+   - [ ] React contexts for UI state
+   - [ ] Session persistence system
+   - [ ] Navigation guards
+
+6. **Data Services**
+   - [ ] ActivityRecorder service
+   - [ ] ActivityService for CRUD operations
+   - [ ] Bluetooth service integration
+   - [ ] Location tracking service
+
+### 🎯 Phase 3: Advanced Features (Week 3)
+7. **Real-time Metrics System**
+   - [ ] GPS data processing
+   - [ ] Bluetooth sensor integration
+   - [ ] Live metrics display
+   - [ ] Background location tracking
+
+8. **Error Handling & Resilience**
+   - [ ] Offline mode support
+   - [ ] Permission fallbacks
+   - [ ] Bluetooth reconnection logic
+   - [ ] Network status monitoring
+
+9. **Performance Optimization**
+   - [ ] Memoization strategies
+   - [ ] FlatList virtualization
+   - [ ] Image optimization
+   - [ ] Memory management
+
+## 🔄 Key Components to Recreate
+
+### 1. Tab Navigation Structure
+```typescript
+// routes/(internal)/(tabs)/_layout.tsx
+export default function TabLayout() {
+  return (
+    <Tabs>
+      <Tabs.Screen name="index" options={{ title: 'Home' }} />
+      <Tabs.Screen name="record" options={{ title: 'Record' }} />
+      <Tabs.Screen name="activities" options={{ title: 'Activities' }} />
+      <Tabs.Screen name="trends" options={{ title: 'Trends' }} />
+      <Tabs.Screen name="settings" options={{ title: 'Settings' }} />
+    </Tabs>
+  );
+}
+```
+
+### 2. Record Screen with Stepper
+```typescript
+// routes/(internal)/(tabs)/record.tsx
+export default function RecordScreen() {
+  const { state, goToNextStep, goToPreviousStep } = useRecordSelection();
+
+  return (
+    <View className="flex-1 bg-background">
+      <StepIndicator currentStep={state.currentStep} />
+      {renderCurrentStep()}
+    </View>
+  );
+}
+```
+
+### 3. Recording Screen with Navigation Guards
+```typescript
+// routes/(internal)/recording.tsx
+export default function RecordingScreen() {
+  const params = useLocalSearchParams();
+  const [isRecording, setIsRecording] = useState(false);
+
+  // Navigation guard - prevent back navigation during recording
+  useFocusEffect(useCallback(() => {
+    const beforeRemove = (e: any) => {
+      if (isRecording) {
+        e.preventDefault();
+        Alert.alert('Recording in progress', 'Please stop recording first');
+      }
+    };
+
+    router.addListener('beforeRemove', beforeRemove);
+    return () => router.removeListener('beforeRemove', beforeRemove);
+  }, [isRecording]));
+}
+```
+
+### 4. ActivityRecorder Service
+```typescript
+class ActivityRecorder {
+  private static currentSession: ActivitySession | null = null;
+
+  static async startRecording(profileId: string): Promise<string> {
+    // Initialize session with background location tracking
+    // Start Bluetooth device monitoring
+    // Begin real-time metrics collection
+  }
+
+  static async processLocationUpdates(locations: LocationObject[]) {
+    // Update distance, speed, elevation metrics
+    // Calculate training load metrics
+    // Store session data
+  }
+}
+```
+
+## 🎨 UI Component Reference (From OLD_components)
+
+### Available Components for Reference:
+- **Button**: Variant system with `default`, `destructive`, `outline`, `secondary`, `ghost`, `link`
+- **Text**: Proper text styling with context-based variants
+- **Card**: Container components with consistent styling
+- **Input**: Form inputs with validation states
+- **Modal**: Modal system for permissions and device management
+
+### Recent Button Refactoring:
+All Button components have been updated to use the variant system instead of manual className styling:
+- `variant="default"` - Primary actions
+- `variant="outline"` - Secondary actions
+- `variant="ghost"` - Subtle interactive elements
+- `variant="destructive"` - Delete/discard actions
+- Proper size props: `sm`, `default`, `lg`, `icon`
+
+## 🔧 Technical Implementation Strategy
+
+### 1. Incremental Recreation
+Start with the basic tab structure and gradually add complexity:
+1. Static screens → Interactive components → Real-time features
+2. Basic navigation → Advanced routing → Navigation guards
+3. Mock data → Local storage → Cloud sync
+
+### 2. Leverage Existing Code
+Use OLD_ directories as reference but rebuild with modern patterns:
+- Copy component structures but update with current best practices
+- Extract business logic into dedicated services
+- Implement proper TypeScript typing from core package
+
+### 3. Test-Driven Approach
+Build with testing in mind from the start:
+- Unit tests for services and utilities
+- Integration tests for navigation flows
+- E2E tests for critical user journeys
+
+## 📋 Recovery Checklist
+
+### Phase 1: Foundation (Current Priority)
+- [ ] Recreate tab navigation structure
+- [ ] Build basic Home screen with quick actions
+- [ ] Implement Record screen skeleton
+- [ ] Create Activities list screen
+- [ ] Build Trends dashboard framework
+- [ ] Implement Settings screen structure
+
+### Phase 2: Core Features
+- [ ] Implement stepper-based activity selection
+- [ ] Build recording screen with real-time metrics
+- [ ] Add navigation guards and session recovery
+- [ ] Integrate Bluetooth device management
+- [ ] Implement permission system
+
+### Phase 3: Advanced Functionality
+- [ ] Add background location tracking
+- [ ] Implement real-time sensor data processing
+- [ ] Build training load analytics
+- [ ] Add offline mode support
+- [ ] Implement comprehensive error handling
+
+## 🚀 Quick Start Commands
+
+```bash
+# Install dependencies
+bun install
+
+# Start development
+bun run dev
+
+# Build for production
+bun run build
+
+# Run tests
+bun run test
+```
+
+## 📞 Support Resources
+
+### Reference Files Available:
+- `OLD_app/` - Previous app structure reference
+- `OLD_components/` - Component implementation examples
+- `OLD_lib/` - Service and hook patterns
+- `packages/core/` - Shared types and schemas
+
+### Key Files to Examine:
+- `OLD_app/(internal)/*.tsx` - Main screen implementations
+- `OLD_components/activity/` - Recording components
+- `OLD_components/modals/` - Modal implementations
+- `OLD_lib/services/` - Business logic services
+
+This recovery plan provides a structured approach to rebuilding your mobile application while leveraging the existing codebase and infrastructure. Focus on Phase 1 first to reestablish the basic navigation and UI structure before moving to more complex features.
+
+
+# TurboFit Mobile App Recovery Documentation
+
 ## 📱 Mobile Application Overview
 
 TurboFit is a React Native + Expo fitness tracking application with offline-first capabilities and comprehensive activity recording features.
@@ -76,7 +346,6 @@ apps/mobile/
 ├── app-env.d.ts
 ├── babel.config.js
 ├── components.json
-├── drizzle.config.ts
 ├── eslint.config.js
 ├── global.css
 ├── metro.config.js
@@ -98,11 +367,11 @@ apps/mobile/
 The record screen uses a 5-step guided flow:
 
 ```typescript
-type SelectionStep = 
-  | 'activity-mode' 
-  | 'activity-selection' 
-  | 'permissions' 
-  | 'bluetooth' 
+type SelectionStep =
+  | 'activity-mode'
+  | 'activity-selection'
+  | 'permissions'
+  | 'bluetooth'
   | 'ready';
 ```
 
@@ -113,7 +382,7 @@ type SelectionStep =
 // Simplified structure
 export default function RecordScreen() {
   const { permissions, requestAllRequiredPermissions } = useGlobalPermissions();
-  
+
   useFocusEffect(useCallback(() => {
     // Reset state on tab focus
   }, []));
@@ -166,7 +435,7 @@ interface SelectionState {
 export const useRecordSelection = () => {
   const [state, setState] = useState<SelectionState>(initialState);
   const router = useRouter();
-  
+
   // Navigation logic with conditional step skipping
   const goToNextStep = useCallback(() => {
     // Skip permissions if already granted
@@ -390,4 +659,4 @@ bun run build
 bun run test
 ```
 
-This documentation provides a comprehensive overview of the TurboFit mobile application structure and implementation details to facilitate recovery and reconstruction of the codebase.
+This documentation provides a comprehensive overview of the TurboFit mobile application structure and implementation details to facilitate recovery and reconstruction of the codebase

@@ -2,15 +2,21 @@
   "name": "@repo/supabase",
   "version": "0.0.0",
   "private": true,
-  "main": "./database.types.ts",
-  "types": "./database.types.ts",
+  "main": "./index.ts",
   "exports": {
-    ".": "./database.types.ts"
+    ".": "./index.ts"
+  },
+  "scripts": {
+    "generate-types": "supabase gen types typescript --local > database.types.ts",
+    "generate-schemas": "supazod -i database.types.ts -o supazod/schemas.ts -t supazod/schemas.types.ts -s public,schema_a,schema_b"
   },
   "devDependencies": {
     "@repo/typescript-config": "workspace:*"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "supazod": "^2.0.0"
   }
 }

@@ -11,7 +11,7 @@ Your responsibility is to **design, develop, and maintain code** while ensuring 
 * Follow the **development workflow** strictly.
 * Keep **documentation synchronized** with all code changes.
 * Favor **incremental, reviewable updates** over broad changes.
-* Use **shared packages (`core`, `drizzle`)** for types, schemas, and calculations.
+* Use **shared packages (`core`)** for  calculations.
 * Ask questions when requirements are unclear.
 * Ensure all work is **traceable and reviewable**.
 
@@ -27,7 +27,6 @@ Your responsibility is to **design, develop, and maintain code** while ensuring 
 * **Shared Packages**:
 
   * `core/` → Business logic, Zod schemas, calculations
-  * `drizzle/` → DB schemas + migrations
   * `supabase/` → Supabase types + helpers
   * Config packages (ESLint, TS)
 
@@ -66,7 +65,6 @@ Your responsibility is to **design, develop, and maintain code** while ensuring 
    * Keep responsibilities clear:
 
      * `core` → business logic, shared types
-     * `drizzle` → schemas + migrations
      * `web/api` → API endpoints, orchestrating DB + core
    * Always use shared types/schemas.
 4. **Document**: Mark task complete in `TASKS.md`, log in `CHANGELOG.md`, update README if needed.
@@ -76,7 +74,7 @@ Your responsibility is to **design, develop, and maintain code** while ensuring 
 
 ## 5. Code Discipline
 
-* **Shared Logic**: Centralize types, schemas, and validation in `core` or `drizzle`. Extend by enhancing shared modules, not duplicating them. Keep calculations, analytics, and models in `core`.
+* **Shared Logic**: Centralize types, schemas, and validation in `core`  Extend by enhancing shared modules, not duplicating them. Keep calculations, analytics, and models in `core`.
 * **Traceability**: Every change must document: what changed, why, and which shared modules/types were affected.
 * **Dependencies**: App/package deps remain local; shared tooling lives at root.
 * **Testing & CI**: Run `bun test` locally; lint and format must pass.

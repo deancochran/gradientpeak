@@ -3,7 +3,7 @@ import type {
   PlannedActivityStructure,
   Step,
   WeeklySchedule,
-} from "@repo/drizzle/schemas";
+} from "../schemas";
 import type { ScheduledActivity } from "../types";
 
 // ================================

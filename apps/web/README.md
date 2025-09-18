@@ -16,7 +16,6 @@ The TurboFit web dashboard serves as the analytical companion to the mobile app,
 
 ### Backend & Database
 - **Supabase** - PostgreSQL backend with real-time subscriptions
-- **Drizzle ORM** - Type-safe database queries via `@repo/drizzle`
 - **Row Level Security** - JWT-based data access control
 - **Server Components** - Optimized data fetching with caching
 
@@ -154,11 +153,8 @@ bun run check-types
 
 ### Database Integration
 
-The web app connects to the shared database via the `@repo/drizzle` package:
 
 ```typescript
-import { db } from '@repo/drizzle';
-import { activities } from '@repo/drizzle/schemas';
 
 // Type-safe database queries
 const userActivities = await db

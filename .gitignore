@@ -1,6 +1,6 @@
 # ------------------------------
 # Root Monorepo Gitignore
-# Covers apps/ (Next.js + Expo) and packages/ (Drizzle + Supabase)
+# Covers apps/ (Next.js + Expo) and packages/ ( Supabase)
 # ------------------------------
 
 # Dependencies

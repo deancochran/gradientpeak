@@ -168,7 +168,7 @@
 - **Core Infrastructure**: Initial project setup with Turborepo + Bun
 - **Mobile App**: React Native 0.79.5 + Expo SDK 53 with offline-first SQLite
 - **Web Dashboard**: Next.js 15 + React 19 with Supabase backend
-- **Shared Packages**: Core business logic, Drizzle ORM schemas, TypeScript configs
+- **Shared Packages**: Core business logic,  TypeScript configs
 - **Authentication**: Supabase Auth with email/password and social providers
 - **Database**: Drizzle ORM with SQLite (mobile) and PostgreSQL (web)
 - **Activity Recording**: Real-time GPS tracking and BLE sensor integration
