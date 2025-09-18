@@ -21,7 +21,14 @@ const activityListFiltersSchema = z.object({
 });
 
 const activitySyncSchema = z.object({
-  activities: z.array(publicActivitiesInsertSchema.omit({ profile_id: true })),
+  activityId: z.string(),
+  startedAt: z.string(),
+  liveMetrics: z.unknown(),
+  filePath: z.string().optional(),
+});
+
+const bulkActivitySyncSchema = z.object({
+  activities: z.array(activitySyncSchema),
 });
 
 // Remove profile_id from insert schema for API use (we'll add it from context)
@@ -212,9 +219,57 @@ export const activitiesRouter = createTRPCRouter({
     .input(activitySyncSchema)
     .mutation(async ({ ctx, input }) => {
       try {
-        const activitiesToInsert = input.activities.map((activity) => ({
-          ...activity,
+        // Handle single activity sync
+        const activityData = {
+          id: input.activityId,
+          started_at: input.startedAt,
+          live_metrics: input.liveMetrics,
+          file_path: input.filePath,
           profile_id: ctx.user.id,
+          sync_status: "synced",
+        };
+
+        const { data: activity, error } = await ctx.supabase
+          .from("activities")
+          .upsert(activityData, {
+            onConflict: "id",
+            ignoreDuplicates: false,
+          })
+          .select();
+
+        if (error) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: error.message,
+          });
+        }
+
+        return {
+          synced: activity ? 1 : 0,
+          activity: activity,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to sync activity",
+        });
+      }
+    }),
+
+  bulkSync: protectedProcedure
+    .input(bulkActivitySyncSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const activitiesToInsert = input.activities.map((activity) => ({
+          id: activity.activityId,
+          started_at: activity.startedAt,
+          live_metrics: activity.liveMetrics,
+          file_path: activity.filePath,
+          profile_id: ctx.user.id,
+          sync_status: "synced",
         }));
 
         const { data: activities, error } = await ctx.supabase
@@ -242,7 +297,7 @@ export const activitiesRouter = createTRPCRouter({
         }
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to sync activities",
+          message: "Failed to bulk sync activities",
         });
       }
     }),

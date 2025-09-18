@@ -1,5 +1,47 @@
 ## [Unreleased]
 
+### BREAKING: Complete tRPC Migration
+- **Full API Layer Migration to tRPC**: Complete replacement of direct Supabase calls with type-safe tRPC procedures
+  - **New tRPC Routers**: Added comprehensive routers for `auth`, `profiles`, `activities`, `storage`, `sync`, `analytics`
+  - **Mobile API Migration**: Replaced entire REST API client (`apps/mobile/src/lib/api/index.ts`) with tRPC hooks
+  - **Web Auth Migration**: Updated all web authentication forms to use tRPC instead of direct Supabase calls
+  - **Centralized Type Safety**: All client-server communication now flows through typed tRPC procedures
+  - **Backward Compatibility**: Legacy API exports retained with deprecation notices during transition period
+
+- **New tRPC Procedures**: Comprehensive coverage of all mobile/web API needs
+  - **Auth**: `signUp`, `signInWithPassword`, `signOut`, `getUser`, `sendPasswordResetEmail`, `updatePassword`
+  - **Storage**: `createSignedUploadUrl`, `getSignedUrl`, `deleteFile` with user-scoped security
+  - **Activities**: `get`, `create`, `update`, `delete`, `list`, `sync`, `bulkSync` with filtering
+  - **Profiles**: `get`, `update`, `list`, `getStats`, `getZones`, `updateZones` with analytics
+  - **Sync**: `status`, `conflicts`, `resolveConflict` for offline-first mobile sync
+  - **Analytics**: `trainingLoad`, `performanceTrends` with configurable time periods
+
+- **Mobile App tRPC Integration**: 
+  - Created `apps/mobile/src/lib/trpc.ts` with authenticated header injection
+  - Created `apps/mobile/src/lib/api/trpc-hooks.ts` with React Query integration  
+  - Updated all route components (`index.tsx`, `settings.tsx`, `trends.tsx`, `plan.tsx`, `record.tsx`)
+  - Migrated auth store, avatar component, and service classes to tRPC calls
+  - Deprecated legacy API client with re-exports for compatibility
+
+- **Web App tRPC Integration**:
+  - Created `apps/web/lib/trpc/hooks.ts` with client-side tRPC hooks
+  - Updated authentication forms: `login-form.tsx`, `sign-up-form.tsx`, `forgot-password-form.tsx`
+  - Replaced direct Supabase auth calls with type-safe tRPC mutations
+  - Added proper loading states using React Query's `isPending` status
+
+### Impact
+- **Type Safety**: End-to-end type safety from client to server with shared schemas
+- **Performance**: Reduced bundle size by eliminating duplicate API client code
+- **Maintainability**: Single source of truth for API definitions and schemas  
+- **Developer Experience**: IntelliSense and compile-time error catching for all API calls
+- **Security**: Consistent authentication and authorization through tRPC middleware
+
+### Migration Guide
+- **Mobile**: Import hooks from `@/lib/api/trpc-hooks` instead of `@/lib/api`
+- **Web**: Import hooks from `@/lib/trpc/hooks` for client-side components
+- **Breaking**: Direct Supabase client usage is now deprecated - use tRPC procedures
+- **Legacy Support**: Old API exports available during transition but will be removed
+
 ### Added
 - **Stepper-Based Activity Selection Implementation**: Complete transformation of record screen into guided step-by-step flow
   - Created comprehensive stepper system with 5-step progression: Activity Mode → Activity Selection → Permissions → Bluetooth → Ready
