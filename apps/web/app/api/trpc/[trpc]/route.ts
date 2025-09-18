@@ -1,6 +1,7 @@
+import { Database } from "@repo/supabase";
 import { appRouter, createTRPCContext } from "@repo/trpc";
 import { createServerClient } from "@supabase/ssr";
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { cookies, headers } from "next/headers";
 

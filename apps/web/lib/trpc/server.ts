@@ -3,8 +3,7 @@ import { cache } from "react";
 import { headers } from "next/headers";
 import { dehydrate, HydrationBoundary, type DehydratedState } from "@tanstack/react-query";
 import { createTRPCOptionsProxy } from "@trpc/tanstack-react-query";
-import type { AppRouter } from "@repo/trpc";
-import { appRouter, createTRPCContext, createQueryClient } from "@repo/trpc";
+import { appRouter, createTRPCContext, createQueryClient, type AppRouter } from "@repo/trpc/server";
 import { createClient } from "../supabase/server";
 
 /**
