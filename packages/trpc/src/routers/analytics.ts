@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { createTRPCRouter, protectedProcedure } from "../index";
+import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 // Analytics-specific schemas
 const trainingLoadParamsSchema = z.object({
@@ -28,7 +28,7 @@ export const analyticsRouter = createTRPCRouter({
         const { data: activities, error } = await ctx.supabase
           .from("activities")
           .select("started_at, duration, tss, activity_type")
-          .eq("profile_id", ctx.user.id)
+          .eq("profile_id", ctx.session.user.id)
           .gte("started_at", startDate.toISOString())
           .lte("started_at", endDate.toISOString())
           .order("started_at", { ascending: true });
@@ -105,7 +105,7 @@ export const analyticsRouter = createTRPCRouter({
         let query = ctx.supabase
           .from("activities")
           .select("started_at, average_power, max_power, average_heart_rate, max_heart_rate, activity_type, duration")
-          .eq("profile_id", ctx.user.id)
+          .eq("profile_id", ctx.session.user.id)
           .gte("started_at", startDate.toISOString())
           .lte("started_at", endDate.toISOString())
           .order("started_at", { ascending: true });

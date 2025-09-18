@@ -1,10 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import {
-  createTRPCRouter,
-  protectedProcedure,
-  publicProcedure,
-} from "../index";
+import { createTRPCRouter, protectedProcedure, publicProcedure } from "../trpc";
 
 // Auth-specific schemas (not database tables)
 const signUpSchema = z.object({
@@ -33,6 +29,12 @@ const verifyOtpSchema = z.object({
 });
 
 export const authRouter = createTRPCRouter({
+  getSession: publicProcedure.query(({ ctx }) => {
+    return ctx.session;
+  }),
+  getSecretMessage: protectedProcedure.query(() => {
+    return "you can see this secret message!";
+  }),
   signUp: publicProcedure
     .input(signUpSchema)
     .mutation(async ({ ctx, input }) => {
@@ -114,7 +116,8 @@ export const authRouter = createTRPCRouter({
   }),
 
   getUser: protectedProcedure.query(async ({ ctx }) => {
-    return { user: ctx.user };
+    const user = await ctx.supabase.auth.getUser();
+    return { user };
   }),
 
   sendPasswordResetEmail: publicProcedure
@@ -208,7 +211,7 @@ export const authRouter = createTRPCRouter({
       const { error: profileError } = await ctx.supabase
         .from("profiles")
         .delete()
-        .eq("id", ctx.user.id);
+        .eq("id", ctx.session.user.id);
 
       if (profileError) {
         throw new TRPCError({
@@ -219,7 +222,7 @@ export const authRouter = createTRPCRouter({
 
       // Then delete the auth user
       const { error: authError } = await ctx.supabase.auth.admin.deleteUser(
-        ctx.user.id,
+        ctx.session.user.id,
       );
 
       if (authError) {

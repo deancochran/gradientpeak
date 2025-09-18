@@ -1,5 +1,5 @@
 // packages/trpc/src/routers/index.ts
-import { createTRPCRouter } from "../index";
+import { createTRPCRouter } from "../trpc";
 import { activitiesRouter } from "./activities";
 import { activityStreamsRouter } from "./activity_streams";
 import { analyticsRouter } from "./analytics";

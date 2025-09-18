@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { createTRPCRouter, protectedProcedure } from "../index";
+import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 // Sync-specific schemas
 const syncActivitySchema = z.object({
@@ -27,7 +27,7 @@ export const syncRouter = createTRPCRouter({
       const { data, error } = await ctx.supabase
         .from("activities")
         .select("sync_status, id, name, activity_type, started_at")
-        .eq("profile_id", ctx.user.id);
+        .eq("profile_id", ctx.session.user.id);
 
       if (error) {
         throw new TRPCError({
@@ -38,19 +38,26 @@ export const syncRouter = createTRPCRouter({
 
       const syncHealth = {
         total: data.length,
-        synced: data.filter(a => a.sync_status === 'synced').length,
-        pending: data.filter(a => a.sync_status === 'pending').length,
-        inProgress: data.filter(a => a.sync_status === 'syncing').length,
-        failed: data.filter(a => a.sync_status === 'failed').length,
-        syncPercentage: data.length > 0 ? Math.round((data.filter(a => a.sync_status === 'synced').length / data.length) * 100) : 100,
+        synced: data.filter((a) => a.sync_status === "synced").length,
+        pending: data.filter((a) => a.sync_status === "pending").length,
+        inProgress: data.filter((a) => a.sync_status === "syncing").length,
+        failed: data.filter((a) => a.sync_status === "failed").length,
+        syncPercentage:
+          data.length > 0
+            ? Math.round(
+                (data.filter((a) => a.sync_status === "synced").length /
+                  data.length) *
+                  100,
+              )
+            : 100,
       };
 
       const pendingActivities = data
-        .filter(a => a.sync_status !== 'synced')
-        .map(a => ({
+        .filter((a) => a.sync_status !== "synced")
+        .map((a) => ({
           id: a.id,
-          name: a.name || 'Untitled Activity',
-          sport: a.activity_type || 'unknown',
+          name: a.name || "Untitled Activity",
+          sport: a.activity_type || "unknown",
           startedAt: a.started_at,
           syncStatus: a.sync_status,
           hasLocalFile: false, // Would need to check file system
@@ -88,7 +95,7 @@ export const syncRouter = createTRPCRouter({
       const { data, error } = await ctx.supabase
         .from("activities")
         .select("*")
-        .eq("profile_id", ctx.user.id)
+        .eq("profile_id", ctx.session.user.id)
         .eq("sync_status", "conflict");
 
       if (error) {
@@ -142,7 +149,7 @@ export const syncRouter = createTRPCRouter({
           .from("activities")
           .update(updateData)
           .eq("id", input.activityId)
-          .eq("profile_id", ctx.user.id);
+          .eq("profile_id", ctx.session.user.id);
 
         if (error) {
           throw new TRPCError({

@@ -5,7 +5,7 @@ import {
 } from "@repo/supabase";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { createTRPCRouter, protectedProcedure } from "../index";
+import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 // API-specific schemas for filtering and operations
 const activityListFiltersSchema = z.object({
@@ -46,7 +46,7 @@ export const activitiesRouter = createTRPCRouter({
           .from("activities")
           .select("*")
           .eq("id", input.id)
-          .eq("profile_id", ctx.user.id)
+          .eq("profile_id", ctx.session.user.id)
           .single();
 
         if (error) {
@@ -82,7 +82,7 @@ export const activitiesRouter = createTRPCRouter({
           .from("activities")
           .insert({
             ...input,
-            profile_id: ctx.user.id,
+            profile_id: ctx.session.user.id,
           })
           .select()
           .single();
@@ -119,7 +119,7 @@ export const activitiesRouter = createTRPCRouter({
           .from("activities")
           .update(input.data)
           .eq("id", input.id)
-          .eq("profile_id", ctx.user.id)
+          .eq("profile_id", ctx.session.user.id)
           .select()
           .single();
 
@@ -156,7 +156,7 @@ export const activitiesRouter = createTRPCRouter({
           .from("activities")
           .delete()
           .eq("id", input.id)
-          .eq("profile_id", ctx.user.id);
+          .eq("profile_id", ctx.session.user.id);
 
         if (error) {
           throw new TRPCError({
@@ -184,7 +184,7 @@ export const activitiesRouter = createTRPCRouter({
         let query = ctx.supabase
           .from("activities")
           .select("*")
-          .eq("profile_id", ctx.user.id)
+          .eq("profile_id", ctx.session.user.id)
           .order("started_at", { ascending: false })
           .range(input.offset, input.offset + input.limit - 1);
 
@@ -225,7 +225,7 @@ export const activitiesRouter = createTRPCRouter({
           started_at: input.startedAt,
           live_metrics: input.liveMetrics,
           file_path: input.filePath,
-          profile_id: ctx.user.id,
+          profile_id: ctx.session.user.id,
           sync_status: "synced",
         };
 
@@ -268,7 +268,7 @@ export const activitiesRouter = createTRPCRouter({
           started_at: activity.startedAt,
           live_metrics: activity.liveMetrics,
           file_path: activity.filePath,
-          profile_id: ctx.user.id,
+          profile_id: ctx.session.user.id,
           sync_status: "synced",
         }));
 

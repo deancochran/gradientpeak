@@ -1,15 +1,16 @@
-// packages/trpc/src/context.ts
-import { createExpoSupabase } from "./utils/supabase/expo";
-import { createNextjsClient } from "./utils/supabase/nextjs";
+import type { Database } from "@repo/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-export async function createTRPCContext() {
-  const supabase =
-    typeof window === "undefined"
-      ? await createNextjsClient()
-      : createExpoSupabase();
+export async function createTRPCContext(opts: {
+  headers: Headers;
+  supabase: SupabaseClient<Database>;
+}) {
+  const { data, error } = await opts.supabase.auth.getSession();
 
   return {
-    supabase,
+    supabase: opts.supabase,
+    headers: opts.headers,
+    session: data?.session,
   };
 }
 export type Context = Awaited<ReturnType<typeof createTRPCContext>>;

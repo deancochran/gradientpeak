@@ -5,7 +5,7 @@ import {
 } from "@repo/supabase";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { createTRPCRouter, protectedProcedure } from "../index";
+import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 // API-specific schemas
 const plannedActivityListFiltersSchema = z.object({
@@ -36,7 +36,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
           `,
           )
           .eq("id", input.id)
-          .eq("profile_plans.profile_id", ctx.user.id)
+          .eq("profile_plans.profile_id", ctx.session.user.id)
           .single();
 
         if (error) {
@@ -74,7 +74,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
             .from("profile_plans")
             .select("id")
             .eq("id", input.profile_plan_id)
-            .eq("profile_id", ctx.user.id)
+            .eq("profile_id", ctx.session.user.id)
             .single();
 
           if (planError || !profilePlan) {
@@ -129,7 +129,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
           `,
           )
           .eq("id", input.id)
-          .eq("profile_plans.profile_id", ctx.user.id)
+          .eq("profile_plans.profile_id", ctx.session.user.id)
           .single();
 
         if (existingError || !existing) {
@@ -145,7 +145,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
             .from("profile_plans")
             .select("id")
             .eq("id", input.data.profile_plan_id)
-            .eq("profile_id", ctx.user.id)
+            .eq("profile_id", ctx.session.user.id)
             .single();
 
           if (planError || !profilePlan) {
@@ -196,7 +196,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
           `,
           )
           .eq("id", input.id)
-          .eq("profile_plans.profile_id", ctx.user.id)
+          .eq("profile_plans.profile_id", ctx.session.user.id)
           .single();
 
         if (existingError || !existing) {
@@ -242,7 +242,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
             profile_plans!inner(profile_id)
           `,
           )
-          .eq("profile_plans.profile_id", ctx.user.id)
+          .eq("profile_plans.profile_id", ctx.session.user.id)
           .order("scheduled_date", { ascending: true })
           .range(input.offset, input.offset + input.limit - 1);
 

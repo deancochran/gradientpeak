@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { createTRPCRouter, protectedProcedure } from "../index";
+import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 // Storage-specific schemas (not database tables)
 const createSignedUploadUrlSchema = z.object({

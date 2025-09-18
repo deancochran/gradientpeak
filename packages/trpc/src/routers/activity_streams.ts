@@ -1,7 +1,7 @@
 import { publicActivityStreamsInsertSchema } from "@repo/supabase";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { createTRPCRouter, protectedProcedure } from "../index";
+import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 // API-specific schemas
 const activityStreamBatchCreateSchema = z.object({
@@ -21,7 +21,7 @@ export const activityStreamsRouter = createTRPCRouter({
           .from("activities")
           .select("id")
           .eq("id", input.activityId)
-          .eq("profile_id", ctx.user.id)
+          .eq("profile_id", ctx.session.user.id)
           .single();
 
         if (activityError || !activity) {
@@ -66,7 +66,7 @@ export const activityStreamsRouter = createTRPCRouter({
           .from("activities")
           .select("id")
           .eq("id", input.activity_id)
-          .eq("profile_id", ctx.user.id)
+          .eq("profile_id", ctx.session.user.id)
           .single();
 
         if (activityError || !activity) {

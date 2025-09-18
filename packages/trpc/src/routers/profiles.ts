@@ -1,7 +1,7 @@
 import { publicProfilesUpdateSchema } from "@repo/supabase";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { createTRPCRouter, protectedProcedure } from "../index";
+import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 // API-specific schemas
 const profileListFiltersSchema = z.object({
@@ -27,7 +27,7 @@ export const profilesRouter = createTRPCRouter({
       const { data: profile, error } = await ctx.supabase
         .from("profiles")
         .select("*")
-        .eq("id", ctx.user.id)
+        .eq("id", ctx.session.user.id)
         .single();
 
       if (error) {
@@ -62,7 +62,7 @@ export const profilesRouter = createTRPCRouter({
         const { data: profile, error } = await ctx.supabase
           .from("profiles")
           .update(input)
-          .eq("id", ctx.user.id)
+          .eq("id", ctx.session.user.id)
           .select()
           .single();
 
@@ -131,7 +131,7 @@ export const profilesRouter = createTRPCRouter({
         const { data: activities, error } = await ctx.supabase
           .from("activities")
           .select("duration, distance, tss, activity_type, started_at")
-          .eq("profile_id", ctx.user.id)
+          .eq("profile_id", ctx.session.user.id)
           .gte("started_at", startDate.toISOString())
           .lte("started_at", endDate.toISOString());
 
@@ -177,7 +177,7 @@ export const profilesRouter = createTRPCRouter({
         .select(
           "max_heart_rate, resting_heart_rate, ftp_watts, zone_calculation_method",
         )
-        .eq("id", ctx.user.id)
+        .eq("id", ctx.session.user.id)
         .single();
 
       if (error) {
@@ -304,7 +304,7 @@ export const profilesRouter = createTRPCRouter({
         const { data: profile, error } = await ctx.supabase
           .from("profiles")
           .update(updateData)
-          .eq("id", ctx.user.id)
+          .eq("id", ctx.session.user.id)
           .select()
           .single();
 
