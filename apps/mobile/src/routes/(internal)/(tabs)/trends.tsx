@@ -1,5 +1,5 @@
 import { ThemedView } from "@/components/ThemedView";
-import { useProfile } from "@/lib/hooks/api/profiles";
+import { useProfile } from "@/lib/api/trpc-hooks";
 import { usePerformanceMetrics } from "@/lib/hooks/usePerformanceMetrics";
 import { TrendsService } from "@/lib/services/trends-service";
 import { Ionicons } from "@expo/vector-icons";

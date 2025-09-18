@@ -1,7 +1,15 @@
 /**
- * Simplified API Layer using TanStack Query
- * Eliminates most of the manual API client code
+ * @deprecated This file is deprecated. Use tRPC hooks from ./trpc-hooks.ts instead.
+ *
+ * Legacy API Layer - DO NOT USE FOR NEW CODE
+ * This file will be removed in a future version.
+ * Please migrate to tRPC-based API calls in ./trpc-hooks.ts
  */
+
+// Re-export new hooks for backward compatibility during migration
+export * from "./trpc-hooks";
+
+// @deprecated - Legacy implementation below
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../supabase";

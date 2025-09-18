@@ -63,10 +63,7 @@ export const useAuthStore = create<AuthState>()(
 
           if (!currentSession) return;
 
-          const { error } = await supabase.auth.signOut();
-          if (error && !error.message?.includes("Auth session missing")) {
-            console.error("Auth Store sign out error:", error);
-          }
+          await trpc.auth.signOut.mutate();
         } catch (err: unknown) {
           const errorMessage = err instanceof Error ? err.message : String(err);
           if (!errorMessage.includes("Auth session missing")) {
@@ -81,12 +78,12 @@ export const useAuthStore = create<AuthState>()(
         const { setLoading } = get();
         try {
           setLoading(true);
-          const { error, data } = await supabase.auth.signInWithPassword({
+          const { session } = await trpc.auth.signInWithPassword.mutate({
             email,
             password,
           });
-          if (data?.session) get().setSession(data.session);
-          return { error };
+          if (session) get().setSession(session);
+          return { error: null };
         } catch (err) {
           return { error: err as Error };
         } finally {
@@ -98,13 +95,13 @@ export const useAuthStore = create<AuthState>()(
         const { setLoading } = get();
         try {
           setLoading(true);
-          const { error, data } = await supabase.auth.signUp({
+          const { session } = await trpc.auth.signUp.mutate({
             email,
             password,
-            options: { data: metadata },
+            metadata,
           });
-          if (data?.session) get().setSession(data.session);
-          return { error };
+          if (session) get().setSession(session);
+          return { error: null };
         } catch (err) {
           return { error: err as Error };
         } finally {
@@ -114,10 +111,11 @@ export const useAuthStore = create<AuthState>()(
 
       resetPassword: async (email) => {
         try {
-          const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          await trpc.auth.sendPasswordResetEmail.mutate({
+            email,
             redirectTo: "turbofit://reset-password",
           });
-          return { error };
+          return { error: null };
         } catch (err) {
           return { error: err as Error };
         }

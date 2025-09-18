@@ -11,12 +11,12 @@ import {
 import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
-import { Ionicons } from "@expo/vector-icons";
-import { useProfile } from "@/lib/hooks/api/profiles";
+import { useProfile } from "@/lib/api/trpc-hooks";
 import { useActivityManager } from "@/lib/hooks/useActivityManager";
 import { usePerformanceMetrics } from "@/lib/hooks/usePerformanceMetrics";
 import { ActivityService } from "@/lib/services/activity-service";
 import { useAuth } from "@/lib/stores";
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 
 export default function HomeScreen() {

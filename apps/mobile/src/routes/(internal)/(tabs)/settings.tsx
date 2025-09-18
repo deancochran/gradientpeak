@@ -16,11 +16,7 @@ import { SignOutButton } from "@/components/SignOutButton";
 import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
-import {
-  useCreateProfile,
-  useProfile,
-  useUpdateProfile,
-} from "@/lib/hooks/api/profiles";
+import { useProfile, useUpdateProfile } from "@/lib/api/trpc-hooks";
 import { ActivityService } from "@/lib/services/activity-service";
 import { ProfileService } from "@/lib/services/profile-service";
 import { useAuth } from "@/lib/stores";

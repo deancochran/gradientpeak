@@ -7,7 +7,7 @@ import { RecordingControls } from "@/components/activity/RecordingControls";
 import { RecordingHeader } from "@/components/activity/RecordingHeader";
 import { ActivitySummaryModal } from "@/components/modals/ActivitySummaryModal";
 import { ThemedView } from "@/components/ThemedView";
-import { useProfile } from "@/lib/hooks/api/profiles";
+import { useProfile } from "@/lib/api/trpc-hooks";
 import { useAdvancedBluetooth } from "@/lib/hooks/useAdvancedBluetooth";
 import { useEnhancedActivityRecording } from "@/lib/hooks/useEnhancedActivityRecording";
 import { useGlobalPermissions } from "@/lib/providers/PermissionsContext";

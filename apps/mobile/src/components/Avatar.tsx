@@ -1,4 +1,3 @@
-import { supabase } from "@/lib/supabase";
 import * as ImagePicker from "expo-image-picker";
 import { useEffect, useState } from "react";
 import { Alert, Button, Image, StyleSheet, View } from "react-native";
@@ -20,19 +19,10 @@ export default function Avatar({ url, size = 150, onUpload }: Props) {
 
   async function downloadImage(path: string) {
     try {
-      const { data, error } = await supabase.storage
-        .from("avatars")
-        .download(path);
-
-      if (error) {
-        throw error;
-      }
-
-      const fr = new FileReader();
-      fr.readAsDataURL(data);
-      fr.onload = () => {
-        setAvatarUrl(fr.result as string);
-      };
+      const { signedUrl } = await trpc.storage.getSignedUrl.query({
+        filePath: path,
+      });
+      setAvatarUrl(signedUrl);
     } catch (error) {
       if (error instanceof Error) {
         console.log("Error downloading image: ", error.message);
@@ -64,23 +54,35 @@ export default function Avatar({ url, size = 150, onUpload }: Props) {
         throw new Error("No image uri!"); // Realistically, this should never happen, but just in case...
       }
 
+      const fileExt = image.uri?.split(".").pop()?.toLowerCase() ?? "jpeg";
+      const fileName = `${Date.now()}.${fileExt}`;
+      const fileType = image.mimeType ?? "image/jpeg";
+
+      // Get signed upload URL
+      const { signedUrl, path } =
+        await trpc.storage.createSignedUploadUrl.mutate({
+          fileName,
+          fileType,
+        });
+
+      // Upload to the signed URL
       const arraybuffer = await fetch(image.uri).then((res) =>
         res.arrayBuffer(),
       );
 
-      const fileExt = image.uri?.split(".").pop()?.toLowerCase() ?? "jpeg";
-      const path = `${Date.now()}.${fileExt}`;
-      const { data, error: uploadError } = await supabase.storage
-        .from("avatars")
-        .upload(path, arraybuffer, {
-          contentType: image.mimeType ?? "image/jpeg",
-        });
+      const uploadResponse = await fetch(signedUrl, {
+        method: "PUT",
+        body: arraybuffer,
+        headers: {
+          "Content-Type": fileType,
+        },
+      });
 
-      if (uploadError) {
-        throw uploadError;
+      if (!uploadResponse.ok) {
+        throw new Error(`Upload failed: ${uploadResponse.statusText}`);
       }
 
-      onUpload(data.path);
+      onUpload(path);
     } catch (error) {
       if (error instanceof Error) {
         Alert.alert(error.message);

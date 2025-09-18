@@ -1,8 +1,7 @@
 import { ThemedView } from "@/components/ThemedView";
-import { Ionicons } from "@expo/vector-icons";
-import { usePlannedActivitiesByDate } from "@/lib/hooks/api/activities";
-import { useProfile } from "@/lib/hooks/api/profiles";
+import { useProfile } from "@/lib/api/trpc-hooks";
 import { ActivityService } from "@/lib/services";
+import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import {
   Alert,
