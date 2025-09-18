@@ -1,20 +1,22 @@
-import { redirect } from 'next/navigation'
-
-import { createClient } from '@/lib/supabase/server'
+import { trpc } from "@/lib/trpc/server";
+import { redirect } from "next/navigation";
 
 export default async function ProtectedPage() {
-  const supabase = await createClient()
+  try {
+    const { user } = await trpc.auth.getUser();
 
-  const { data, error } = await supabase.auth.getClaims()
-  if (error || !data?.claims) {
-    redirect('/auth/login')
+    if (!user) {
+      redirect("/auth/login");
+    }
+
+    return (
+      <div className="flex h-svh w-full items-center justify-center gap-2">
+        <p>
+          Hello <span>{user.email}</span>
+        </p>
+      </div>
+    );
+  } catch {
+    redirect("/auth/login");
   }
-
-  return (
-    <div className="flex h-svh w-full items-center justify-center gap-2">
-      <p>
-        Hello <span>{data.claims.email}</span>
-      </p>
-    </div>
-  )
 }

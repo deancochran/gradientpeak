@@ -1,5 +1,4 @@
 import { ThemedView } from "@/components/ThemedView";
-import { useProfile } from "@/lib/api/trpc-hooks";
 import { ActivityService } from "@/lib/services";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
@@ -50,7 +49,8 @@ interface CalendarMarking {
 
 export default function PlanScreen() {
   // TanStack Query hooks
-  const { data: profile, isLoading: profileLoading } = useProfile();
+  const { data: profile, isLoading: profileLoading } =
+    trpc.profiles.get.useQuery();
   const [selectedDate, setSelectedDate] = useState<string>(
     new Date().toISOString().split("T")[0],
   );

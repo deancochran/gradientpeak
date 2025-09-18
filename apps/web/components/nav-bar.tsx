@@ -1,11 +1,11 @@
 "use client";
 import { Button } from "@/components/ui/button";
-import { createClient } from "@/lib/supabase/client";
-import { type User } from "@supabase/supabase-js";
+import { trpc } from "@/lib/trpc/client";
 import { House, LogOut, Settings } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useAuth } from "./auth-provider";
 import { CurrentUserAvatar } from "./current-user-avatar";
 import {
   DropdownMenu,
@@ -18,37 +18,17 @@ import {
 
 const Navbar = () => {
   const router = useRouter();
-
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const supabase = createClient();
-
-  useEffect(() => {
-    const getUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      setUser(user);
-      setLoading(false);
-    };
-
-    getUser();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, [supabase.auth]);
+  const { user } = useAuth();
+  const signOutMutation = trpc.auth.signOut.useMutation();
 
   const isAuthenticated = !!user;
   const logout = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/auth/login");
+    try {
+      await signOutMutation.mutateAsync();
+      router.push("/auth/login");
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
   };
 
   return (
@@ -89,10 +69,10 @@ const Navbar = () => {
                     variant="ghost"
                     className="w-full justify-start  cursor-pointer"
                   >
-                    <a href="/" className="text-popover-foreground">
+                    <Link href="/" className="text-popover-foreground">
                       <House />
                       Dashboard
-                    </a>
+                    </Link>
                   </Button>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
@@ -101,10 +81,10 @@ const Navbar = () => {
                     variant="ghost"
                     className="w-full justify-start  cursor-pointer"
                   >
-                    <a href="/settings" className="text-popover-foreground">
+                    <Link href="/settings" className="text-popover-foreground">
                       <Settings />
                       Settings
-                    </a>
+                    </Link>
                   </Button>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>

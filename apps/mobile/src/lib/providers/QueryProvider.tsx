@@ -25,12 +25,34 @@ const onAppStateChange = (status: string) => {
 };
 
 export function QueryProvider({ children }: { children: React.ReactNode }) {
+  const [trpcClient] = React.useState(() =>
+    trpc.createClient({
+      links: [
+        httpBatchLink({
+          url:
+            process.env.EXPO_PUBLIC_API_URL + "/api/trpc" ||
+            "http://localhost:3000/api/trpc",
+          async headers() {
+            const { data } = await supabase.auth.getSession();
+            const token = data.session?.access_token;
+
+            return {
+              authorization: token ? `Bearer ${token}` : "",
+            };
+          },
+        }),
+      ],
+    }),
+  );
+
   React.useEffect(() => {
     const subscription = AppState.addEventListener("change", onAppStateChange);
     return () => subscription.remove();
   }, []);
 
   return (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    </trpc.Provider>
   );
 }

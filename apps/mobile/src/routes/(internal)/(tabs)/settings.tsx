@@ -16,7 +16,6 @@ import { SignOutButton } from "@/components/SignOutButton";
 import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
-import { useProfile, useUpdateProfile } from "@/lib/api/trpc-hooks";
 import { ActivityService } from "@/lib/services/activity-service";
 import { ProfileService } from "@/lib/services/profile-service";
 import { useAuth } from "@/lib/stores";
@@ -30,9 +29,8 @@ export default function SettingsScreen() {
     data: profile,
     isLoading: profileLoading,
     error: profileError,
-  } = useProfile();
-  const updateProfileMutation = useUpdateProfile();
-  const createProfileMutation = useCreateProfile();
+  } = trpc.profiles.get.useQuery();
+  const updateProfileMutation = trpc.profiles.update.useMutation();
 
   const [isEditing, setIsEditing] = useState(false);
 

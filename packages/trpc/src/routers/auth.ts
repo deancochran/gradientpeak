@@ -27,6 +27,11 @@ const updatePasswordSchema = z.object({
   newPassword: z.string().min(6),
 });
 
+const verifyOtpSchema = z.object({
+  type: z.string(),
+  token_hash: z.string(),
+});
+
 export const authRouter = createTRPCRouter({
   signUp: publicProcedure
     .input(signUpSchema)
@@ -168,4 +173,71 @@ export const authRouter = createTRPCRouter({
         });
       }
     }),
+
+  verifyOtp: publicProcedure
+    .input(verifyOtpSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const { error } = await ctx.supabase.auth.verifyOtp({
+          type: input.type as any,
+          token_hash: input.token_hash,
+        });
+
+        if (error) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: error.message,
+          });
+        }
+
+        return { success: true };
+      } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to verify OTP",
+        });
+      }
+    }),
+
+  deleteAccount: protectedProcedure.mutation(async ({ ctx }) => {
+    try {
+      // First delete the user profile (will cascade to related data)
+      const { error: profileError } = await ctx.supabase
+        .from("profiles")
+        .delete()
+        .eq("id", ctx.user.id);
+
+      if (profileError) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to delete profile data",
+        });
+      }
+
+      // Then delete the auth user
+      const { error: authError } = await ctx.supabase.auth.admin.deleteUser(
+        ctx.user.id,
+      );
+
+      if (authError) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to delete user account",
+        });
+      }
+
+      return { success: true };
+    } catch (error) {
+      if (error instanceof TRPCError) {
+        throw error;
+      }
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to delete account",
+      });
+    }
+  }),
 });

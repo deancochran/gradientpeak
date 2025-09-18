@@ -1,78 +1,51 @@
-import { createClient } from "@/lib/supabase/server";
-import { NextRequest, NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import { type NextRequest, NextResponse } from "next/server";
 
 export async function middleware(request: NextRequest) {
-  // Only process API routes intended for mobile app
-  if (!request.nextUrl.pathname.startsWith("/api/mobile/")) {
-    return NextResponse.next();
-  }
+  let response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
+  });
 
-  try {
-    const authHeader = request.headers.get("authorization");
-
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return NextResponse.json(
-        { error: "Missing or invalid authorization header" },
-        { status: 401 },
-      );
-    }
-
-    const token = authHeader.replace("Bearer ", "");
-
-    if (!token) {
-      return NextResponse.json(
-        { error: "No access token provided" },
-        { status: 401 },
-      );
-    }
-
-    // Create Supabase client and verify the token
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser(token);
-
-    if (error || !user) {
-      console.error("Token verification failed:", error);
-      return NextResponse.json(
-        { error: "Invalid or expired token" },
-        { status: 401 },
-      );
-    }
-
-    // Verify user email is confirmed (required for app access)
-    if (!user.email_confirmed_at) {
-      return NextResponse.json(
-        { error: "Email not confirmed" },
-        { status: 403 },
-      );
-    }
-
-    // Add user information to request headers for API routes
-    const requestHeaders = new Headers(request.headers);
-    requestHeaders.set("x-user-id", user.id);
-    requestHeaders.set("x-user-email", user.email || "");
-
-    // Add user metadata if available
-    if (user.user_metadata) {
-      requestHeaders.set("x-user-metadata", JSON.stringify(user.user_metadata));
-    }
-
-    return NextResponse.next({
-      request: {
-        headers: requestHeaders,
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) =>
+            request.cookies.set(name, value),
+          );
+          response = NextResponse.next({
+            request,
+          });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options),
+          );
+        },
       },
-    });
-  } catch (error) {
-    console.error("Middleware error:", error);
-    return NextResponse.json(
-      { error: "Authentication failed" },
-      { status: 500 },
-    );
-  }
+    },
+  );
+
+  // Refresh session - this is important for tRPC to work properly
+  await supabase.auth.getUser();
+
+  return response;
 }
 
 export const config = {
-  matcher: ["/api/mobile/:path*"],
+  matcher: [
+    /*
+     * Match all request paths except:
+     * - API routes (handled by tRPC)
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico
+     */
+    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+  ],
 };

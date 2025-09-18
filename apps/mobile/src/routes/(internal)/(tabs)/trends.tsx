@@ -1,5 +1,4 @@
 import { ThemedView } from "@/components/ThemedView";
-import { useProfile } from "@/lib/api/trpc-hooks";
 import { usePerformanceMetrics } from "@/lib/hooks/usePerformanceMetrics";
 import { TrendsService } from "@/lib/services/trends-service";
 import { Ionicons } from "@expo/vector-icons";
@@ -89,7 +88,7 @@ export default function TrendsScreen() {
     isLoading: profileLoading,
     error: profileError,
     refetch: refetchProfile,
-  } = useProfile();
+  } = trpc.profiles.get.useQuery();
 
   // Performance metrics
   const { metrics: performanceMetrics, refreshMetrics } =

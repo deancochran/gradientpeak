@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { trpc } from "@/lib/trpc/client";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useState } from "react";
@@ -21,7 +22,16 @@ export function ForgotPasswordForm({
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const resetPasswordMutation = useResetPassword();
+
+  const resetPasswordMutation = trpc.auth.sendPasswordResetEmail.useMutation({
+    onSuccess: () => {
+      setSuccess(true);
+      setError(null);
+    },
+    onError: (error) => {
+      setError(error.message);
+    },
+  });
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,9 +42,8 @@ export function ForgotPasswordForm({
         email,
         redirectTo: `${window.location.origin}/auth/update-password`,
       });
-      setSuccess(true);
-    } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : "An error occurred");
+    } catch {
+      // Error handling is done in mutation onError
     }
   };
 

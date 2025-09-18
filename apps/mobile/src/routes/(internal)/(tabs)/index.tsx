@@ -11,7 +11,6 @@ import {
 import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
-import { useProfile } from "@/lib/api/trpc-hooks";
 import { useActivityManager } from "@/lib/hooks/useActivityManager";
 import { usePerformanceMetrics } from "@/lib/hooks/usePerformanceMetrics";
 import { ActivityService } from "@/lib/services/activity-service";
@@ -27,7 +26,7 @@ export default function HomeScreen() {
     data: profile,
     isLoading: profileLoading,
     refetch: refetchProfile,
-  } = useProfile();
+  } = trpc.profiles.get.useQuery();
 
   // Animations
   const fadeAnim = React.useRef(new Animated.Value(0)).current;

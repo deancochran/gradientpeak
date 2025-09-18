@@ -7,8 +7,8 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import * as z from "zod";
 
-import { createClient } from "@/lib/supabase/client";
-import { User } from "@supabase/supabase-js";
+import { useAuth } from "@/components/auth-provider";
+import { trpc } from "@/lib/trpc/client";
 
 import {
   AlertDialog,
@@ -52,18 +52,11 @@ import {
   UserRound,
 } from "lucide-react";
 
-// Types
-interface Profile {
-  id: string;
-  full_name: string | null;
-  avatar_url: string | null;
-  created_at: string;
-  updated_at: string | null;
-}
+// Types removed - using tRPC generated types
 
 // Zod schema for profile form validation
 const profileSchema = z.object({
-  full_name: z
+  username: z
     .string()
     .min(2, "Name must be at least 2 characters")
     .max(50, "Name must be less than 50 characters"),
@@ -77,98 +70,92 @@ const profileSchema = z.object({
 type ProfileFormValues = z.infer<typeof profileSchema>;
 
 export default function SettingsPage() {
-  // State
-  const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Auth and Profile data
+  const { user, loading: authLoading } = useAuth();
+  const {
+    data: profile,
+    isLoading: profileLoading,
+    refetch: refetchProfile,
+  } = trpc.profiles.get.useQuery(undefined, {
+    enabled: !!user,
+  });
+
+  // Mutations
+  const updateProfileMutation = trpc.profiles.update.useMutation({
+    onSuccess: () => {
+      refetchProfile();
+      toast.success("Profile updated successfully");
+    },
+    onError: (error) => {
+      console.error("Error updating profile:", error);
+      toast.error("Failed to update profile");
+    },
+  });
+  const signOutMutation = trpc.auth.signOut.useMutation({
+    onSuccess: () => {
+      router.push("/login");
+      toast.success("Signed out successfully");
+    },
+    onError: (error) => {
+      console.error("Error signing out:", error);
+      toast.error("Failed to sign out");
+    },
+  });
+  const deleteAccountMutation = trpc.auth.deleteAccount.useMutation({
+    onSuccess: () => {
+      router.push("/login");
+      toast.success("Account deleted successfully");
+    },
+    onError: (error) => {
+      console.error("Error deleting account:", error);
+      toast.error("Failed to delete account");
+    },
+  });
+  const createSignedUploadUrlMutation =
+    trpc.storage.createSignedUploadUrl.useMutation();
+  // Local state
+  const [avatarBlobUrl, setAvatarBlobUrl] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
-  const [avatarBlobUrl, setAvatarBlobUrl] = useState<string | null>(null);
+  const loading = authLoading || profileLoading;
 
   // Hooks
   const router = useRouter();
-  const supabase = createClient();
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
-      full_name: "",
+      username: "",
       avatar_url: "",
     },
   });
 
-  // Effects
+  // Update form when profile data loads
   useEffect(() => {
-    const getProfile = async () => {
-      try {
-        setLoading(true);
+    if (profile) {
+      form.reset({
+        username: profile.username || "",
+        avatar_url: profile.avatar_url || "",
+      });
+    }
+  }, [profile, form]);
 
-        // Get current user
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
+  // Get avatar URL when profile has avatar_url
+  const { data: avatarUrlData } = trpc.storage.getSignedUrl.useQuery(
+    { filePath: profile?.avatar_url || "" },
+    {
+      enabled: !!profile?.avatar_url,
+      refetchOnWindowFocus: false,
+    },
+  );
 
-        if (!user) {
-          router.push("/login");
-          return;
-        }
-
-        setUser(user);
-
-        // Get profile data
-        const { data: profile, error } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", user.id)
-          .single();
-
-        if (error) {
-          console.error("Error fetching profile:", error);
-          toast.error("Failed to load profile");
-          return;
-        }
-
-        setProfile(profile);
-
-        // Update form with profile data
-        form.reset({
-          full_name: profile.full_name || "",
-          avatar_url: profile.avatar_url || "",
-        });
-      } catch (error) {
-        console.error("Error:", error);
-        toast.error("An unexpected error occurred");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    getProfile();
-  }, [supabase, router, form]);
-
+  // Update avatar blob URL when data changes
   useEffect(() => {
-    const downloadAvatar = async (path: string) => {
-      try {
-        const { data, error } = await supabase.storage
-          .from("profile-avatars")
-          .download(path);
-
-        if (error) {
-          console.error("Error downloading avatar:", error);
-          return;
-        }
-
-        const url = URL.createObjectURL(data);
-        setAvatarBlobUrl(url);
-      } catch (error) {
-        console.error("Error downloading image:", error);
-      }
-    };
-
-    if (profile?.avatar_url) {
-      downloadAvatar(profile.avatar_url);
+    if (avatarUrlData?.signedUrl) {
+      setAvatarBlobUrl(avatarUrlData.signedUrl);
+    } else {
+      setAvatarBlobUrl(null);
     }
 
     // Cleanup blob URL when component unmounts or avatar changes
@@ -177,7 +164,7 @@ export default function SettingsPage() {
         URL.revokeObjectURL(avatarBlobUrl);
       }
     };
-  }, [profile?.avatar_url, supabase]);
+  }, [avatarUrlData?.signedUrl, avatarBlobUrl]);
 
   // Cleanup blob URL when component unmounts
   useEffect(() => {
@@ -186,46 +173,20 @@ export default function SettingsPage() {
         URL.revokeObjectURL(avatarBlobUrl);
       }
     };
-  }, []);
+  }, [avatarBlobUrl]);
 
   // Event handlers
   const onSubmit = async (values: ProfileFormValues) => {
     if (!user) return;
 
+    setUpdating(true);
     try {
-      setUpdating(true);
-
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          full_name: values.full_name,
-          avatar_url: values.avatar_url || null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", user.id);
-
-      if (error) {
-        console.error("Error updating profile:", error);
-        toast.error("Failed to update profile");
-        return;
-      }
-
-      // Update local state
-      setProfile((prev) =>
-        prev
-          ? {
-              ...prev,
-              full_name: values.full_name,
-              avatar_url: values.avatar_url || null,
-              updated_at: new Date().toISOString(),
-            }
-          : null,
-      );
-
-      toast.success("Profile updated successfully");
-    } catch (error) {
-      console.error("Error:", error);
-      toast.error("An unexpected error occurred");
+      await updateProfileMutation.mutateAsync({
+        username: values.username,
+        avatar_url: values.avatar_url || null,
+      });
+    } catch {
+      // Error handling is done in mutation onError
     } finally {
       setUpdating(false);
     }
@@ -252,45 +213,31 @@ export default function SettingsPage() {
         return;
       }
 
-      // Create unique filename
-      const fileExt = file.name.split(".").pop();
-      const filePath = `${user.id}/${user.id}-${Math.random()}.${fileExt}`;
-      // Upload to private profile-avatars bucket
-      const { error: uploadError } = await supabase.storage
-        .from("profile-avatars")
-        .upload(filePath, file);
+      // Get signed upload URL
+      const { signedUrl, path: filePath } =
+        await createSignedUploadUrlMutation.mutateAsync({
+          fileName: file.name,
+          fileType: file.type,
+        });
 
-      if (uploadError) {
-        console.error("Error uploading avatar:", uploadError);
-        toast.error("Failed to upload avatar");
-        return;
+      // Upload file directly to the signed URL
+      const uploadResponse = await fetch(signedUrl, {
+        method: "PUT",
+        body: file,
+        headers: {
+          "Content-Type": file.type,
+        },
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error("Upload failed");
       }
 
-      // Update profile with new avatar path (not URL since it's private)
-      const { error: updateError } = await supabase
-        .from("profiles")
-        .update({
-          avatar_url: filePath,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", user.id);
-
-      if (updateError) {
-        console.error("Error updating profile avatar:", updateError);
-        toast.error("Failed to update profile avatar");
-        return;
-      }
-
-      // Update local state
-      setProfile((prev) =>
-        prev
-          ? {
-              ...prev,
-              avatar_url: filePath,
-              updated_at: new Date().toISOString(),
-            }
-          : null,
-      );
+      // Update profile with new avatar path
+      await updateProfileMutation.mutateAsync({
+        username: profile?.username || "",
+        avatar_url: filePath,
+      });
 
       // Update form
       form.setValue("avatar_url", filePath);
@@ -298,7 +245,7 @@ export default function SettingsPage() {
       toast.success("Avatar updated successfully");
     } catch (error) {
       console.error("Error:", error);
-      toast.error("An unexpected error occurred");
+      toast.error("Failed to upload avatar");
     } finally {
       setUploadingAvatar(false);
       // Reset file input
@@ -306,77 +253,20 @@ export default function SettingsPage() {
     }
   };
 
-  const handleSignOut = async () => {
-    try {
-      setSigningOut(true);
-      const { error } = await supabase.auth.signOut();
-
-      if (error) {
-        console.error("Error signing out:", error);
-        toast.error("Failed to sign out");
-        return;
-      }
-
-      router.push("/login");
-      toast.success("Signed out successfully");
-    } catch (error) {
-      console.error("Error:", error);
-      toast.error("An unexpected error occurred");
-    } finally {
-      setSigningOut(false);
-    }
-  };
-
   const handleDeleteAccount = async () => {
     if (!user) return;
 
+    setDeleting(true);
     try {
-      setDeleting(true);
-
-      // Delete profile (user will be deleted via cascade)
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .delete()
-        .eq("id", user.id);
-
-      if (profileError) {
-        console.error("Error deleting profile:", profileError);
-        toast.error("Failed to delete profile");
-        return;
-      }
-
-      // Delete auth user
-      const { error: authError } = await supabase.auth.admin.deleteUser(
-        user.id,
-      );
-
-      if (authError) {
-        console.error("Error deleting user:", authError);
-        toast.error("Failed to delete account");
-        return;
-      }
-
-      router.push("/login");
-      toast.success("Account deleted successfully");
-    } catch (error) {
-      console.error("Error:", error);
-      toast.error("An unexpected error occurred");
+      await deleteAccountMutation.mutateAsync();
+    } catch {
+      // Error handling is done in mutation onError
     } finally {
       setDeleting(false);
     }
   };
 
   // Utility functions
-  const getInitials = (name: string | null) => {
-    if (!name) return "U";
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-  };
-
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
       year: "numeric",
@@ -451,7 +341,7 @@ export default function SettingsPage() {
 
               <div>
                 <h3 className="font-medium">
-                  {profile?.full_name || "No name set"}
+                  {profile?.username || "No name set"}
                 </h3>
                 <p className="text-sm text-muted-foreground">{user?.email}</p>
                 <p className="text-xs text-muted-foreground mt-1">
@@ -468,15 +358,16 @@ export default function SettingsPage() {
               >
                 <FormField
                   control={form.control}
-                  name="full_name"
+                  name="username"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Full Name</FormLabel>
+                      <FormLabel>Username</FormLabel>
                       <FormControl>
-                        <Input placeholder="Enter your full name" {...field} />
+                        <Input placeholder="Enter your username" {...field} />
                       </FormControl>
                       <FormDescription>
-                        This is the name that will be displayed on your profile.
+                        This is the username that will be displayed on your
+                        profile.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -484,11 +375,10 @@ export default function SettingsPage() {
                 />
 
                 <Button type="submit" disabled={updating}>
-                  {updating ? (
+                  {updating && (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Text>Update Profile </Text>
                   )}
+                  Update Profile
                 </Button>
               </form>
             </Form>
@@ -533,15 +423,6 @@ export default function SettingsPage() {
                     : "Unknown"}
                 </p>
               </div>
-
-              <div>
-                <Label className="text-sm font-medium">Last Updated</Label>
-                <p className="text-sm text-muted-foreground">
-                  {profile?.updated_at
-                    ? formatDate(profile.updated_at)
-                    : "Never"}
-                </p>
-              </div>
             </div>
           </CardContent>
         </Card>
@@ -556,6 +437,18 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-col sm:flex-row gap-4">
+              <Button
+                variant="outline"
+                onClick={() => signOutMutation.mutate()}
+                disabled={signOutMutation.isPending}
+                className="flex-1"
+              >
+                {signOutMutation.isPending && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
+                Sign Out
+              </Button>
+
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button

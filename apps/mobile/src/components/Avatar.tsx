@@ -1,3 +1,4 @@
+import { trpc } from "@/lib/trpc";
 import * as ImagePicker from "expo-image-picker";
 import { useEffect, useState } from "react";
 import { Alert, Button, Image, StyleSheet, View } from "react-native";

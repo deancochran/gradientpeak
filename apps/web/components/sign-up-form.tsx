@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { trpc } from "@/lib/trpc/client";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -24,7 +25,15 @@ export function SignUpForm({
   const [repeatPassword, setRepeatPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const signUpMutation = useSignUp();
+
+  const signUpMutation = trpc.auth.signUp.useMutation({
+    onSuccess: () => {
+      router.push("/auth/sign-up-success");
+    },
+    onError: (error) => {
+      setError(error.message);
+    },
+  });
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,9 +52,8 @@ export function SignUpForm({
           emailRedirectTo: `${window.location.origin}/`,
         },
       });
-      router.push("/auth/sign-up-success");
-    } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : "An error occurred");
+    } catch {
+      // Error handling is done in mutation onError
     }
   };
 
