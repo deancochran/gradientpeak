@@ -1,4 +1,4 @@
-import { trpc } from "@/lib/trpc/server";
+import { createServerCaller } from "@/lib/trpc/server";
 import { redirect } from "next/navigation";
 import { type NextRequest } from "next/server";
 
@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
 
   if (token_hash && type) {
     try {
+      const trpc = await createServerCaller();
       await trpc.auth.verifyOtp({
         type,
         token_hash,

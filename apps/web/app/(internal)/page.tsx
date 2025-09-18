@@ -1,11 +1,14 @@
-import { trpc } from "@/lib/trpc/server";
+import { createServerCaller } from "@/lib/trpc/server";
 import { redirect } from "next/navigation";
 
 export default async function ProtectedPage() {
   try {
-    const { user } = await trpc.auth.getUser();
+    const trpc = await createServerCaller();
+    const {
+      user: { data, error },
+    } = await trpc.auth.getUser();
 
-    if (!user) {
+    if (!data) {
       redirect("/auth/login");
     }
 

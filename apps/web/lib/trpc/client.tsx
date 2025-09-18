@@ -1,52 +1,45 @@
 "use client";
 
-import type { AppRouter } from "@repo/trpc";
 import type { QueryClient } from "@tanstack/react-query";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { createTRPCClient, httpBatchLink } from "@trpc/client";
+import { httpBatchLink } from "@trpc/client";
 import { createTRPCReact } from "@trpc/react-query";
 import { useState } from "react";
-import { makeQueryClient } from "./query-client";
+import SuperJSON from "superjson";
+
+import { createQueryClient, type AppRouter } from "@repo/trpc";
 
 export const trpc = createTRPCReact<AppRouter>();
 
-let browserQueryClient: QueryClient;
-
-function getQueryClient() {
+let clientQueryClientSingleton: QueryClient | undefined = undefined;
+const getQueryClient = () => {
   if (typeof window === "undefined") {
     // Server: always make a new query client
-    return makeQueryClient();
+    return createQueryClient();
+  } else {
+    // Browser: use singleton pattern to keep the same query client
+    return (clientQueryClientSingleton ??= createQueryClient());
   }
-  // Browser: make a new query client if we don't already have one
-  // This is very important, so we don't re-make a new client if React
-  // suspends during the initial render.
-  if (!browserQueryClient) browserQueryClient = makeQueryClient();
-  return browserQueryClient;
+};
+
+function getBaseUrl() {
+  if (typeof window !== "undefined") return window.location.origin;
+  return `http://localhost:${process.env.PORT ?? 3000}`;
 }
 
-function getUrl() {
-  const base = (() => {
-    if (typeof window !== "undefined") return "";
-    if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-    return "http://localhost:3000";
-  })();
-  return `${base}/api/trpc`;
-}
-
-export function TRPCReactProvider(
-  props: Readonly<{
-    children: React.ReactNode;
-  }>,
-) {
+export function TRPCReactProvider(props: { children: React.ReactNode }) {
   const queryClient = getQueryClient();
+
   const [trpcClient] = useState(() =>
-    createTRPCClient<AppRouter>({
+    trpc.createClient({
       links: [
         httpBatchLink({
-          url: getUrl(),
-          // Add auth headers if needed - for web, cookies handle auth
-          headers: async () => {
-            return {};
+          transformer: SuperJSON,
+          url: `${getBaseUrl()}/api/trpc`,
+          headers() {
+            const headers = new Headers();
+            headers.set("x-trpc-source", "nextjs-react");
+            return headers;
           },
         }),
       ],
@@ -54,10 +47,10 @@ export function TRPCReactProvider(
   );
 
   return (
-    <trpc.Provider client={trpcClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={queryClient}>
+      <trpc.Provider client={trpcClient} queryClient={queryClient}>
         {props.children}
-      </QueryClientProvider>
-    </trpc.Provider>
+      </trpc.Provider>
+    </QueryClientProvider>
   );
 }
