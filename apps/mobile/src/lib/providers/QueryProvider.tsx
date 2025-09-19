@@ -1,44 +1,37 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import * as React from "react";
+import { Alert } from "react-native";
 
 import { createQueryClient } from "@repo/trpc/client";
-import { createTRPCClient } from "@trpc/client";
+import { logError } from "../services/error-tracking";
 import {
   setupFocusManager,
   setupNetworkListener,
 } from "../services/react-query-setup";
-import { trpc } from "../trpc";
+import { createTRPCClient, trpc } from "../trpc";
 const queryClient = createQueryClient();
 
-// Initialize once
-
 export function QueryProvider({ children }: { children: React.ReactNode }) {
-  // const [trpcClient] = React.useState(() =>
-  //   trpc.createClient({
-  //     links: [
-  //       // Add logger in development
-  //       loggerLink({
-  //         enabled: (opts) =>
-  //           __DEV__ ||
-  //           (opts.direction === "down" && opts.result instanceof Error),
-  //       }),
-  //       httpBatchLink({
-  //         transformer: superjson,
-  //         url: process.env.EXPO_PUBLIC_API_URL
-  //           ? `${process.env.EXPO_PUBLIC_API_URL}/api/trpc`
-  //           : "http://localhost:3000/api/trpc",
-  //         headers: getAuthHeaders,
-  //       }),
-  //     ],
-  //   }),
-  // );
-  const [trpcClient] = React.useState(createTRPCClient);
+  const trpcClient = React.useMemo(() => createTRPCClient(), []);
 
   React.useEffect(() => {
     const cleanupNetwork = setupNetworkListener();
     const cleanupFocus = setupFocusManager();
 
+    // Global error handlers for React Query
+    queryClient.getQueryCache().config.onError = (error) => {
+      logError(error as Error, "Query");
+    };
+
+    queryClient.getMutationCache().config.onError = (error) => {
+      logError(error as Error, "Mutation");
+      if (error instanceof Error) {
+        Alert.alert("Error", error.message);
+      }
+    };
+
     return () => {
+      // @ts-expect-error network cleanup type issue
       cleanupNetwork?.();
       cleanupFocus?.();
     };
@@ -50,32 +43,3 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
     </trpc.Provider>
   );
 }
-
-// import { QueryClientProvider } from "@tanstack/react-query";
-// import * as React from "react";
-// import { queryClient } from "../services/queryClient";
-// import { createTRPCClient } from "../services/trpcClient";
-// import { setupFocusManager, setupNetworkListener } from "../services/reactQuerySetup";
-// import { trpc } from "../trpc";
-
-// export function QueryProvider({ children }: { children: React.ReactNode }) {
-//   const [trpcClient] = React.useState(createTRPCClient);
-
-//   React.useEffect(() => {
-//     const cleanupNetwork = setupNetworkListener();
-//     const cleanupFocus = setupFocusManager();
-
-//     return () => {
-//       cleanupNetwork?.();
-//       cleanupFocus?.();
-//     };
-//   }, []);
-
-//   return (
-//     <trpc.Provider client={trpcClient} queryClient={queryClient}>
-//       <QueryClientProvider client={queryClient}>
-//         {children}
-//       </QueryClientProvider>
-//     </trpc.Provider>
-//   );
-// }

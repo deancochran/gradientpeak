@@ -1,5 +1,7 @@
 // apps/native/app/_layout.tsx
-import "@/global.css";
+
+import { Button } from "@/components/ui/button";
+import { Text } from "@/components/ui/text";
 import { db } from "@/lib/db";
 import migrations from "@/lib/db/migrations/migrations";
 import { LocalDatabaseProvider } from "@/lib/providers/LocalDatabaseProvider";
@@ -10,13 +12,54 @@ import { NAV_THEME } from "@/lib/theme";
 import { ThemeProvider } from "@react-navigation/native";
 import { PortalHost } from "@rn-primitives/portal";
 import { useMigrations } from "drizzle-orm/expo-sqlite/migrator";
-import { Slot } from "expo-router";
+import { router, Slot } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as React from "react";
 import { ActivityIndicator, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-export { ErrorBoundary } from "expo-router";
+// Export ErrorBoundary for the layout
+export function ErrorBoundary({
+  error,
+  retry,
+}: {
+  error: Error;
+  retry: () => void;
+}) {
+  return (
+    <View className="flex-1 justify-center items-center p-5 bg-background">
+      <Text className="text-destructive text-2xl font-bold mb-3 text-center">
+        Something went wrong
+      </Text>
+      <Text className="text-muted-foreground text-base mb-8 text-center">
+        We&apos;re sorry, but something unexpected happened.
+      </Text>
+
+      {__DEV__ && (
+        <View className="bg-muted p-4 rounded-lg mb-5 w-full">
+          <Text className="text-muted-foreground text-sm font-semibold mb-2">
+            Error Details (Dev Mode):
+          </Text>
+          <Text className="text-muted-foreground text-xs font-mono">
+            {error.message}
+          </Text>
+        </View>
+      )}
+
+      <Button onPress={retry} className="mb-3 w-full max-w-xs">
+        <Text className="text-primary-foreground font-semibold">Try Again</Text>
+      </Button>
+
+      <Button
+        variant="outline"
+        onPress={() => router.replace("/")}
+        className="w-full max-w-xs"
+      >
+        <Text className="text-foreground">Go Home</Text>
+      </Button>
+    </View>
+  );
+}
 
 // Main app content
 function AppContent() {

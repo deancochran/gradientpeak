@@ -467,25 +467,6 @@ export default function SettingsScreen() {
           <View style={styles.signOutSection}>
             <SignOutButton />
           </View>
-
-          {/* Debug Info */}
-          {__DEV__ && (
-            <View style={styles.debugSection}>
-              <Text style={styles.debugTitle}>Debug Info</Text>
-              <Text style={styles.debugText}>
-                Profile ID: {profile?.id || "None"}
-              </Text>
-              <Text style={styles.debugText}>
-                FTP: {profile?.ftp || "Not set"}
-              </Text>
-              <Text style={styles.debugText}>
-                Threshold HR: {profile?.thresholdHr || "Not set"}
-              </Text>
-              <Text style={styles.debugText}>
-                Units: {profile?.preferredUnits || "metric"}
-              </Text>
-            </View>
-          )}
         </Animated.View>
       </ScrollView>
     </ThemedView>
