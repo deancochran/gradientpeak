@@ -10,7 +10,7 @@ export default function AuthErrorScreen() {
   const params = useLocalSearchParams<{ error?: string }>();
 
   const handleGoBackPress = () => {
-    router.replace("/(external)/");
+    router.replace("/(external)");
   };
 
   const handleTryAgainPress = () => {

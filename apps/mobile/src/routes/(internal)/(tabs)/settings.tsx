@@ -1,24 +1,15 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useCallback, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  ScrollView,
-  Switch,
-  View,
-} from "react-native";
+import React from "react";
+import { ScrollView, View } from "react-native";
 
 import { SignOutButton } from "@/components/SignOutButton";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { ActivityService } from "@/lib/services/activity-service";
-import { ProfileService } from "@/lib/services/profile-service";
-import { calculateHrZones } from "@repo/core/calculations";
 
 export default function SettingsScreen() {
-  const { session } = useAuth();
+  const { user } = useAuth();
 
   // TanStack Query hooks
   const {
@@ -28,111 +19,11 @@ export default function SettingsScreen() {
   } = trpc.profiles.get.useQuery();
   const updateProfileMutation = trpc.profiles.update.useMutation();
 
-  const [isEditing, setIsEditing] = useState(false);
-
-  // Form state
-  const [formData, setFormData] = useState({
-    username: "",
-    weightKg: undefined as number | undefined,
-    ftp: undefined as number | undefined,
-    thresholdHr: undefined as number | undefined,
-    gender: "other" as string,
-    preferredUnits: "metric" as string,
-  });
-
-  const saveProfile = async () => {
-    try {
-      // Convert weightKg to string for database storage
-      const profileData = {
-        ...formData,
-        weightKg: formData.weightKg ? formData.weightKg.toString() : null,
-      };
-
-      if (profile) {
-        await updateProfileMutation.mutateAsync(profileData);
-      } else {
-        await createProfileMutation.mutateAsync(profileData);
-      }
-
-      setIsEditing(false);
-    } catch (error) {
-      console.error("⚙️ Settings Screen - Save error:", error);
-      Alert.alert("Error", "Failed to save profile");
-    }
-  };
-
-  const cancelEdit = () => {
-    console.log("⚙️ Settings Screen - Canceling edit");
-    if (profile) {
-      setFormData({
-        username: profile.username || "",
-        weightKg: profile.weightKg ? Number(profile.weightKg) : undefined,
-        ftp: profile.ftp || undefined,
-        thresholdHr: profile.thresholdHr || undefined,
-        gender: profile.gender || "other",
-        preferredUnits: profile.preferredUnits || "metric",
-      });
-      setIsEditing(false);
-    }
-  };
-
-  const handleStorageStatus = useCallback(async () => {
-    console.log("⚙️ Settings Screen - Showing storage status");
-    if (profile?.id) {
-      await ActivityService.showStorageStatus(profile.id);
-    }
-  }, [profile]);
-
-  const handleClearCache = useCallback(async () => {
-    Alert.alert(
-      "Clear Cache",
-      "This will clear all cached data. Are you sure?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Clear",
-          style: "destructive",
-          onPress: () => {
-            ProfileService.clearCache();
-            console.log("⚙️ Settings Screen - Cache cleared");
-            Alert.alert("Success", "Cache cleared successfully");
-          },
-        },
-      ],
-    );
-  }, []);
-
-  const getHeartRateZones = () => {
-    if (!profile?.thresholdHr) return null;
-    return calculateHrZones(profile.thresholdHr);
-  };
-
-  const userData = {
-    name: profile?.username || session?.user?.email?.split("@")[0] || "User",
-    email: session?.user?.email || "No email",
-    joinDate: profile?.createdAt
-      ? new Date(profile.createdAt).toLocaleDateString("en-US", {
-          month: "long",
-          year: "numeric",
-        })
-      : "Unknown",
-  };
-
-  if (profileLoading) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#3b82f6" />
-          <Text style={styles.loadingText}>Loading settings...</Text>
-        </View>
-      </View>
-    );
-  }
-
-  const hrZones = getHeartRateZones();
-
   return (
-    <View style={styles.container}>
+    <View
+      testID="settings-screen"
+      className="flex-1 bg-background h-full items-center justify-center"
+    >
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -314,10 +205,7 @@ export default function SettingsScreen() {
                 editable={isEditing}
               />
             </View>
-
           </View>
-
-
 
           {/* Sign Out */}
           <View style={styles.signOutSection}>
@@ -325,6 +213,14 @@ export default function SettingsScreen() {
           </View>
         </View>
       </ScrollView>
+      {/* Debug Info */}
+      {__DEV__ && (
+        <View>
+          <Text>Debug Info</Text>
+          <Text>Profile ID: {user?.id || "None"}</Text>
+          <Text>Profile Username: {user?.email || "None"}</Text>
+        </View>
+      )}
     </View>
   );
 }

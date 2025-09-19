@@ -1,24 +1,24 @@
 import React from "react";
 import { View } from "react-native";
-
 import { Text } from "@/components/ui/text";
-import { useUser } from "@/lib/stores";
+import { useAuth } from "@/lib/hooks/useAuth";
 
 export default function HomeScreen() {
-  const { user } = useUser();
+  const { user } = useAuth();
 
-  // TanStack Query hooks
 
   return (
-    <View testID="home-screen">
+    <View
+      testID="home-screen"
+      className="flex-1 bg-background h-full items-center justify-center"
+    >
+      <Text className="text-2xl font-bold">Home Screen</Text>
       {/* Debug Info */}
       {__DEV__ && (
-        <View style={styles.debugSection}>
-          <Text style={styles.debugTitle}>Debug Info</Text>
-          <Text style={styles.debugText}>Profile ID: {user?.id || "None"}</Text>
-          <Text style={styles.debugText}>
-            Profile Username: {user?.username || "None"}
-          </Text>
+        <View>
+          <Text>Debug Info</Text>
+          <Text>Profile ID: {user?.id || "None"}</Text>
+          <Text>Profile Username: {user?.email || "None"}</Text>
         </View>
       )}
     </View>
