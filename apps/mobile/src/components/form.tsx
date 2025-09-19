@@ -10,8 +10,8 @@ import {
   type FieldPath,
   type FieldValues,
 } from "react-hook-form";
-import type { TextProps } from "react-native";
-import { View, type ViewProps } from "react-native";
+
+import { View, type TextProps, type ViewProps } from "react-native";
 
 // Form component - wrapper around react-hook-form's FormProvider
 const Form = FormProvider;
@@ -117,22 +117,19 @@ interface FormControlProps {
   children: React.ReactElement;
 }
 
-function FormControl({ children, ...props }: FormControlProps) {
-  const { error, formItemId, formDescriptionId, formMessageId } =
-    useFormField();
+function FormControl({ children }: FormControlProps) {
+  const { error, formItemId } = useFormField();
 
-  return React.cloneElement(children, {
-    ...(children.props as object),
-    "aria-labelledby": formItemId,
-    "aria-describedby": error
-      ? `${formDescriptionId} ${formMessageId}`
-      : formDescriptionId,
-    "aria-invalid": !!error,
+  // Create enhanced props for the child component
+  const enhancedProps: Record<string, unknown> = {
+    ...(children.props as Record<string, unknown>),
     accessibilityLabel:
-      (children.props as any)?.accessibilityLabel || formItemId,
+      (children.props as Record<string, unknown>)?.accessibilityLabel ||
+      formItemId,
     accessibilityInvalid: !!error,
-    ...props,
-  });
+  };
+
+  return React.cloneElement(children, enhancedProps);
 }
 
 // FormDescription Component - Helper text for form fields

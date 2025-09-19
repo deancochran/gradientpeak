@@ -2,9 +2,10 @@ import { ActivityService } from "@/lib/services/activity-service";
 import type { PerformanceMetrics, TSSHistoryEntry } from "@repo/core";
 import { analyzeTrainingLoad } from "@repo/core/calculations";
 import { useEffect, useState } from "react";
+import { useAuth } from "./useAuth";
 
 export function usePerformanceMetrics() {
-  const { profile } = useAuthProfile();
+  const { profile } = useAuth();
   const [metrics, setMetrics] = useState<PerformanceMetrics | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,9 +52,9 @@ export function usePerformanceMetrics() {
             tss = hours * 50;
 
             // Adjust based on activity type and intensity indicators
-            if (activity.avgHeartRate && profile.thresholdHr) {
+            if (activity.avgHeartRate && profile.threshold_hr) {
               const intensityFactor =
-                activity.avgHeartRate / profile.thresholdHr;
+                activity.avgHeartRate / profile.threshold_hr;
               tss = hours * Math.pow(intensityFactor, 2) * 100;
             }
 
