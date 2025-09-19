@@ -5,8 +5,8 @@ import { House, LogOut, Settings } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useAuth } from "./auth-provider";
 import { CurrentUserAvatar } from "./current-user-avatar";
+import { useAuth } from "./providers/auth-provider";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,19 +15,15 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-
 const Navbar = () => {
   const router = useRouter();
-  const { user } = useAuth();
-  const utils = trpc.useUtils();
+  const { isAuthenticated, refreshSession } = useAuth();
   const signOutMutation = trpc.auth.signOut.useMutation();
-
-  const isAuthenticated = !!user;
   const logout = async () => {
     try {
       await signOutMutation.mutateAsync();
-      // Invalidate auth queries to update UI state
-      await utils.auth.getUser.invalidate();
+      // Refresh session to clear user data
+      refreshSession();
       router.push("/auth/login");
     } catch (error) {
       console.error("Logout failed:", error);

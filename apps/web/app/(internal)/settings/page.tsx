@@ -7,7 +7,7 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import * as z from "zod";
 
-import { useAuth } from "@/components/auth-provider";
+import { useAuth } from "@/components/providers/auth-provider";
 import { trpc } from "@/lib/trpc/client";
 
 import {
@@ -71,7 +71,7 @@ type ProfileFormValues = z.infer<typeof profileSchema>;
 
 export default function SettingsPage() {
   // Auth and Profile data
-  const { user, loading: authLoading } = useAuth();
+  const { user, isLoading: authLoading, refreshSession } = useAuth();
   const {
     data: profile,
     isLoading: profileLoading,
@@ -93,7 +93,8 @@ export default function SettingsPage() {
   });
   const signOutMutation = trpc.auth.signOut.useMutation({
     onSuccess: () => {
-      router.push("/login");
+      refreshSession();
+      router.push("/auth/login");
       toast.success("Signed out successfully");
     },
     onError: (error) => {
@@ -103,7 +104,8 @@ export default function SettingsPage() {
   });
   const deleteAccountMutation = trpc.auth.deleteAccount.useMutation({
     onSuccess: () => {
-      router.push("/login");
+      refreshSession();
+      router.push("/auth/login");
       toast.success("Account deleted successfully");
     },
     onError: (error) => {

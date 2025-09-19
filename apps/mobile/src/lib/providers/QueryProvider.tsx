@@ -1,53 +1,47 @@
-import {
-  QueryClient,
-  QueryClientProvider,
-  focusManager,
-  onlineManager,
-} from "@tanstack/react-query";
-import * as Network from "expo-network";
+import { QueryClientProvider } from "@tanstack/react-query";
 import * as React from "react";
-import { AppState, Platform } from "react-native";
 
-const queryClient = new QueryClient();
+import { createQueryClient } from "@repo/trpc/client";
+import { createTRPCClient } from "@trpc/client";
+import {
+  setupFocusManager,
+  setupNetworkListener,
+} from "../services/react-query-setup";
+import { trpc } from "../trpc";
+const queryClient = createQueryClient();
 
-// Setup React Query for React Native
-onlineManager.setEventListener((setOnline) => {
-  const subscription = Network.addNetworkStateListener((state) => {
-    setOnline(!!state.isConnected);
-  });
-  return () => subscription.remove();
-});
-
-const onAppStateChange = (status: string) => {
-  if (Platform.OS !== "web") {
-    focusManager.setFocused(status === "active");
-  }
-};
+// Initialize once
 
 export function QueryProvider({ children }: { children: React.ReactNode }) {
-  const [trpcClient] = React.useState(() =>
-    trpc.createClient({
-      links: [
-        httpBatchLink({
-          url:
-            process.env.EXPO_PUBLIC_API_URL + "/api/trpc" ||
-            "http://localhost:3000/api/trpc",
-          async headers() {
-            const { data } = await supabase.auth.getSession();
-            const token = data.session?.access_token;
-
-            return {
-              authorization: token ? `Bearer ${token}` : "",
-            };
-          },
-        }),
-      ],
-    }),
-  );
+  // const [trpcClient] = React.useState(() =>
+  //   trpc.createClient({
+  //     links: [
+  //       // Add logger in development
+  //       loggerLink({
+  //         enabled: (opts) =>
+  //           __DEV__ ||
+  //           (opts.direction === "down" && opts.result instanceof Error),
+  //       }),
+  //       httpBatchLink({
+  //         transformer: superjson,
+  //         url: process.env.EXPO_PUBLIC_API_URL
+  //           ? `${process.env.EXPO_PUBLIC_API_URL}/api/trpc`
+  //           : "http://localhost:3000/api/trpc",
+  //         headers: getAuthHeaders,
+  //       }),
+  //     ],
+  //   }),
+  // );
+  const [trpcClient] = React.useState(createTRPCClient);
 
   React.useEffect(() => {
-    const subscription = AppState.addEventListener("change", onAppStateChange);
-    return () => subscription.remove();
+    const cleanupNetwork = setupNetworkListener();
+    const cleanupFocus = setupFocusManager();
+
+    return () => {
+      cleanupNetwork?.();
+      cleanupFocus?.();
+    };
   }, []);
 
   return (
@@ -56,3 +50,32 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
     </trpc.Provider>
   );
 }
+
+// import { QueryClientProvider } from "@tanstack/react-query";
+// import * as React from "react";
+// import { queryClient } from "../services/queryClient";
+// import { createTRPCClient } from "../services/trpcClient";
+// import { setupFocusManager, setupNetworkListener } from "../services/reactQuerySetup";
+// import { trpc } from "../trpc";
+
+// export function QueryProvider({ children }: { children: React.ReactNode }) {
+//   const [trpcClient] = React.useState(createTRPCClient);
+
+//   React.useEffect(() => {
+//     const cleanupNetwork = setupNetworkListener();
+//     const cleanupFocus = setupFocusManager();
+
+//     return () => {
+//       cleanupNetwork?.();
+//       cleanupFocus?.();
+//     };
+//   }, []);
+
+//   return (
+//     <trpc.Provider client={trpcClient} queryClient={queryClient}>
+//       <QueryClientProvider client={queryClient}>
+//         {children}
+//       </QueryClientProvider>
+//     </trpc.Provider>
+//   );
+// }

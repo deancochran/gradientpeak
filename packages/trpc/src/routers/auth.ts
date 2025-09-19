@@ -115,9 +115,27 @@ export const authRouter = createTRPCRouter({
     }
   }),
 
-  getUser: protectedProcedure.query(async ({ ctx }) => {
-    const user = await ctx.supabase.auth.getUser();
-    return { user };
+  getUser: publicProcedure.query(async ({ ctx }) => {
+    try {
+      const { data, error } = await ctx.supabase.auth.getUser();
+
+      if (error || !data.user) {
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "Not authenticated",
+        });
+      }
+
+      return data.user;
+    } catch (error) {
+      if (error instanceof TRPCError) {
+        throw error;
+      }
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "Authentication failed",
+      });
+    }
   }),
 
   sendPasswordResetEmail: publicProcedure

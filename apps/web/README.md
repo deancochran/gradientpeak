@@ -16,6 +16,7 @@ The TurboFit web dashboard serves as the analytical companion to the mobile app,
 
 ### Backend & Database
 - **Supabase** - PostgreSQL backend with real-time subscriptions
+- **tRPC** - TypeScript-first RPC framework
 - **Row Level Security** - JWT-based data access control
 - **Server Components** - Optimized data fetching with caching
 
@@ -32,52 +33,6 @@ The TurboFit web dashboard serves as the analytical companion to the mobile app,
 - **Zod** - Schema validation and type generation
 - **@repo/core** - Shared business logic and calculations
 
-## 🏗️ Project Structure
-
-```
-apps/web/
-├── app/                          # Next.js App Router
-│   ├── api/                     # API routes and server functions
-│   │   ├── activities/          # Activity data endpoints
-│   │   ├── analytics/           # Performance analytics APIs
-│   │   └── auth/                # Authentication endpoints
-│   ├── dashboard/               # Main dashboard routes
-│   │   ├── activities/          # Activity management pages
-│   │   ├── analytics/           # Performance analysis pages
-│   │   ├── plans/               # Training plan management
-│   │   └── profile/             # User profile settings
-│   ├── globals.css              # Global styles and Tailwind imports
-│   ├── layout.tsx               # Root layout with providers
-│   ├── loading.tsx              # Global loading UI
-│   ├── not-found.tsx            # 404 error page
-│   └── page.tsx                 # Landing page
-├── components/                   # Reusable UI components
-│   ├── ui/                      # Base Shadcn/ui components
-│   │   ├── button.tsx           # Button variants
-│   │   ├── card.tsx             # Card layouts
-│   │   ├── chart.tsx            # Chart components
-│   │   └── form.tsx             # Form components
-│   ├── dashboard/               # Dashboard-specific components
-│   │   ├── ActivityCard.tsx     # Individual activity display
-│   │   ├── MetricsGrid.tsx      # Performance metrics grid
-│   │   ├── TrainingChart.tsx    # Training load charts
-│   │   └── PerformanceChart.tsx # Performance trend visualization
-│   ├── auth/                    # Authentication components
-│   └── layout/                  # Layout components (nav, sidebar)
-├── hooks/                       # Custom React hooks
-│   ├── useActivities.ts         # Activity data management
-│   ├── useAnalytics.ts          # Performance analytics
-│   ├── useAuth.ts               # Authentication state
-│   └── useProfile.ts            # User profile management
-├── lib/                         # Utilities and configurations
-│   ├── auth.ts                  # Supabase auth configuration
-│   ├── supabase.ts              # Supabase client setup
-│   ├── utils.ts                 # General utilities
-│   └── validations.ts           # Form validation schemas
-├── middleware.ts                # Next.js middleware for auth
-├── next.config.ts               # Next.js configuration
-└── package.json                 # Dependencies and scripts
-```
 
 ## 🎯 Key Features
 

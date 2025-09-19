@@ -64,7 +64,7 @@ export const useAuthStore = create<AuthState>()(
 
           if (!currentSession) return;
 
-          await trpc.auth.signOut.mutate();
+          await trpc.auth.signOut();
         } catch (err: unknown) {
           const errorMessage = err instanceof Error ? err.message : String(err);
           if (!errorMessage.includes("Auth session missing")) {

@@ -7,7 +7,7 @@ import { QueryProvider } from "@/lib/providers/QueryProvider";
 import { initializeStores } from "@/lib/stores";
 import { useTheme } from "@/lib/stores/themeStore";
 import { NAV_THEME } from "@/lib/theme";
-import { ThemeProvider as NavigationThemeProvider } from "@react-navigation/native";
+import { ThemeProvider } from "@react-navigation/native";
 import { PortalHost } from "@rn-primitives/portal";
 import { useMigrations } from "drizzle-orm/expo-sqlite/migrator";
 import { Slot } from "expo-router";
@@ -33,16 +33,16 @@ function AppContent() {
 
   // Determine if we're in dark mode - NativeWind handles 'system' automatically for CSS classes
   const isDark = theme === "dark";
-  const navigationTheme = isDark ? NAV_THEME.dark : NAV_THEME.light;
+  const navTheme = isDark ? NAV_THEME.dark : NAV_THEME.light;
 
   return (
-    <NavigationThemeProvider value={navigationTheme}>
+    <ThemeProvider value={navTheme}>
       <StatusBar style={isDark ? "light" : "dark"} />
       <SafeAreaView className="flex-1 bg-background">
         <Slot />
         <PortalHost />
       </SafeAreaView>
-    </NavigationThemeProvider>
+    </ThemeProvider>
   );
 }
 

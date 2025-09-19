@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-
+import { useAuth } from "./providers/auth-provider";
 export function LoginForm({
   className,
   ...props
@@ -24,8 +24,8 @@ export function LoginForm({
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const { refreshSession } = useAuth();
   const signInMutation = trpc.auth.signInWithPassword.useMutation();
-  const utils = trpc.useUtils();
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -33,11 +33,10 @@ export function LoginForm({
     try {
       await signInMutation.mutateAsync({ email, password });
 
-      // Invalidate the getUser query
-      await utils.auth.getUser.invalidate();
+      // Refresh the session to get the updated user data
+      refreshSession();
 
-      // Refresh the router cache and navigate
-      router.refresh();
+      // Navigate to the internal page
       router.push("/");
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "An error occurred");
