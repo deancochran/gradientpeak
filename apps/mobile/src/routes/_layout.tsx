@@ -7,7 +7,7 @@ import migrations from "@/lib/db/migrations/migrations";
 import { LocalDatabaseProvider } from "@/lib/providers/LocalDatabaseProvider";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
 import { initializeStores } from "@/lib/stores";
-import { useTheme } from "@/lib/stores/themeStore";
+import { useTheme } from "@/lib/stores/theme-store";
 import { NAV_THEME } from "@/lib/theme";
 import { ThemeProvider } from "@react-navigation/native";
 import { PortalHost } from "@rn-primitives/portal";

@@ -11,7 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Text } from "@/components/ui/text";
-import { useAuth } from "@/lib/stores/auth-store";
+import { useAuth } from "@/lib/hooks/useAuth";
+import { trpc } from "@/lib/trpc";
 
 const signInSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -34,7 +35,8 @@ const mapSupabaseErrorToFormField = (error: string) => {
 
 export default function SignInScreen() {
   const router = useRouter();
-  const { isLoading: authLoading, signIn } = useAuth();
+  const { loading: authLoading } = useAuth();
+  const signInMutation = trpc.auth.signInWithPassword.useMutation();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   const {
@@ -49,29 +51,41 @@ export default function SignInScreen() {
   const onSignIn = async (data: SignInFields) => {
     setIsSubmitting(true);
     try {
-      const { error } = await signIn(data.email, data.password);
+      await signInMutation.mutateAsync({
+        email: data.email,
+        password: data.password,
+      });
 
-      if (error) {
-        console.log("Sign in error:", error);
+      if (signInMutation.error) {
+        console.log("Sign in error:", signInMutation.error);
 
         // Handle specific Supabase auth errors
-        if (error.message?.includes("Invalid login credentials")) {
+        if (
+          signInMutation.error.message?.includes("Invalid login credentials")
+        ) {
           setError("root", {
             message: "Invalid email or password. Please try again.",
           });
-        } else if (error.message?.includes("Email not confirmed")) {
+        } else if (
+          signInMutation.error.message?.includes("Email not confirmed")
+        ) {
           setError("root", {
             message:
               "Please verify your email address before signing in. Check your email for a verification link.",
           });
-        } else if (error.message?.includes("Too many requests")) {
+        } else if (
+          signInMutation.error.message?.includes("Too many requests")
+        ) {
           setError("root", {
             message: "Too many login attempts. Please try again later.",
           });
         } else {
-          const fieldName = mapSupabaseErrorToFormField(error.message || "");
+          const fieldName = mapSupabaseErrorToFormField(
+            signInMutation.error.message || "",
+          );
           setError(fieldName, {
-            message: error.message || "An unexpected error occurred",
+            message:
+              signInMutation.error.message || "An unexpected error occurred",
           });
         }
       } else {
@@ -93,7 +107,7 @@ export default function SignInScreen() {
     router.push("/(external)/forgot-password");
   };
 
-  const isLoading = authLoading || isSubmitting;
+  const isLoading = authLoading || isSubmitting || signInMutation.isPending;
 
   return (
     <KeyboardAvoidingView

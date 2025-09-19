@@ -11,7 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Text } from "@/components/ui/text";
-import { useAuth } from "@/lib/stores/auth-store";
+import { useAuth } from "@/lib/hooks/useAuth";
+import { trpc } from "@/lib/trpc";
 
 const forgotPasswordSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -21,7 +22,8 @@ type ForgotPasswordFields = z.infer<typeof forgotPasswordSchema>;
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
-  const { isLoading: authLoading, resetPassword } = useAuth();
+  const { loading: authLoading } = useAuth();
+  const resetPasswordMutation = trpc.auth.sendPasswordResetEmail.useMutation();
   const [emailSent, setEmailSent] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
@@ -38,22 +40,29 @@ export default function ForgotPasswordScreen() {
   const onSendResetEmail = async (data: ForgotPasswordFields) => {
     setIsSubmitting(true);
     try {
-      const { error } = await resetPassword(data.email);
+      await resetPasswordMutation.mutateAsync({
+        email: data.email,
+        redirectTo: `${process.env.EXPO_PUBLIC_APP_URL}/(external)/reset-password`,
+      });
 
-      if (error) {
-        console.log("Reset password error:", error);
+      if (resetPasswordMutation.error) {
+        console.log("Reset password error:", resetPasswordMutation.error);
 
-        if (error.message?.includes("User not found")) {
+        if (resetPasswordMutation.error.message?.includes("User not found")) {
           setError("email", {
             message: "No account found with this email address",
           });
-        } else if (error.message?.includes("Email rate limit")) {
+        } else if (
+          resetPasswordMutation.error.message?.includes("Email rate limit")
+        ) {
           setError("email", {
             message: "Too many requests. Please try again later.",
           });
         } else {
           setError("email", {
-            message: error.message || "Failed to send reset email",
+            message:
+              resetPasswordMutation.error.message ||
+              "Failed to send reset email",
           });
         }
       } else {
@@ -77,7 +86,8 @@ export default function ForgotPasswordScreen() {
     setEmailSent(false);
   };
 
-  const isLoading = authLoading || isSubmitting;
+  const isLoading =
+    authLoading || isSubmitting || resetPasswordMutation.isPending;
 
   if (emailSent) {
     return (
@@ -102,7 +112,7 @@ export default function ForgotPasswordScreen() {
                   Check your email
                 </Text>
                 <Text variant="muted" className="text-center">
-                  We've sent password reset instructions to{"\n"}
+                  Weve sent password reset instructions to{"\n"}
                   <Text variant="default" className="font-semibold">
                     {getValues("email")}
                   </Text>
@@ -157,8 +167,8 @@ export default function ForgotPasswordScreen() {
               </Text>
             </CardTitle>
             <Text variant="muted" className="text-center">
-              Enter your email address and we'll send you instructions to reset
-              your password
+              Enter your email address and we will send you instructions to
+              reset your password
             </Text>
           </CardHeader>
 

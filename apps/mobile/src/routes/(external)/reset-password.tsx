@@ -274,7 +274,8 @@ export default function ResetPasswordScreen() {
             {/* Help Text */}
             <View className="pt-4" testID="help-container">
               <Text variant="muted" className="text-center text-xs">
-                After updating your password, you'll be automatically signed in
+                After updating your password, you will be automatically signed
+                in
               </Text>
             </View>
           </CardContent>

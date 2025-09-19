@@ -11,7 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Text } from "@/components/ui/text";
-import { useAuth } from "@/lib/stores/auth-store";
+import { useAuth } from "@/lib/hooks/useAuth";
+import { trpc } from "@/lib/trpc";
 
 const signUpSchema = z
   .object({
@@ -42,7 +43,8 @@ const mapSupabaseErrorToFormField = (error: string) => {
 
 export default function SignUpScreen() {
   const router = useRouter();
-  const { isLoading: authLoading, signUp } = useAuth();
+  const { loading: authLoading } = useAuth();
+  const signUpMutation = trpc.auth.signUp.useMutation();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   const {
@@ -57,28 +59,38 @@ export default function SignUpScreen() {
   const onSignUp = async (data: SignUpFields) => {
     setIsSubmitting(true);
     try {
-      const { error } = await signUp(data.email, data.password);
+      await signUpMutation.mutateAsync({
+        email: data.email,
+        password: data.password,
+      });
 
-      if (error) {
-        console.log("Sign up error:", error);
+      if (signUpMutation.error) {
+        console.log("Sign up error:", signUpMutation.error);
 
         // Handle specific auth errors
-        if (error.message?.includes("User already registered")) {
+        if (signUpMutation.error.message?.includes("User already registered")) {
           setError("email", {
             message: "An account with this email already exists",
           });
-        } else if (error.message?.includes("Password should be")) {
+        } else if (
+          signUpMutation.error.message?.includes("Password should be")
+        ) {
           setError("password", {
-            message: error.message,
+            message: signUpMutation.error.message,
           });
-        } else if (error.message?.includes("Unable to validate email")) {
+        } else if (
+          signUpMutation.error.message?.includes("Unable to validate email")
+        ) {
           setError("email", {
             message: "Please enter a valid email address",
           });
         } else {
-          const fieldName = mapSupabaseErrorToFormField(error.message || "");
+          const fieldName = mapSupabaseErrorToFormField(
+            signUpMutation.error.message || "",
+          );
           setError(fieldName, {
-            message: error.message || "An unexpected error occurred",
+            message:
+              signUpMutation.error.message || "An unexpected error occurred",
           });
         }
       } else {
@@ -98,7 +110,7 @@ export default function SignUpScreen() {
     router.replace("/(external)/sign-in");
   };
 
-  const isLoading = authLoading || isSubmitting;
+  const isLoading = authLoading || isSubmitting || signUpMutation.isPending;
 
   return (
     <KeyboardAvoidingView

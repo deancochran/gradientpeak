@@ -179,7 +179,7 @@ bun run format
 #### Colors & Themes (React Navigation Integrated)
 ```tsx
 // Using React Navigation theme with NativeWind
-import { useTheme } from "@/lib/stores/themeStore";
+import { useTheme } from "@/lib/stores/theme-store";
 import { NAV_THEME } from "@/lib/theme";
 
 // Background colors from theme.ts
@@ -422,7 +422,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 #### Dark Mode Support with React Navigation
 ```tsx
 // Using React Navigation theme integration
-import { useTheme } from "@/lib/stores/themeStore";
+import { useTheme } from "@/lib/stores/theme-store";
 import { NAV_THEME } from "@/lib/theme";
 
 // Automatic dark mode with NativeWind
@@ -433,7 +433,7 @@ import { NAV_THEME } from "@/lib/theme";
 <View className="bg-card dark:bg-card-dark border-border dark:border-border-dark">
 
 // Using theme store for programmatic control
-import { useTheme } from "@/lib/stores/themeStore";
+import { useTheme } from "@/lib/stores/theme-store";
 
 const { theme, setTheme } = useTheme();
 <View className={theme === 'dark' ? "bg-gray-900" : "bg-white"}>

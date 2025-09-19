@@ -1,14 +1,9 @@
-import { useAuth } from "@/lib/stores/auth-store";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { useColorScheme } from "@/lib/providers/ThemeProvider";
 import { Ionicons } from "@expo/vector-icons";
 import { router, Tabs } from "expo-router";
 import React from "react";
-import {
-  ActivityIndicator,
-  Animated,
-  Button,
-  View,
-} from "react-native";
+import { ActivityIndicator, Animated, Button, View } from "react-native";
 
 import { useRecordingSession } from "@/lib/hooks/useRecordingSession";
 
@@ -87,17 +82,15 @@ function RecordButton() {
 
 export default function InternalLayout() {
   const { isDarkColorScheme } = useColorScheme();
-  const { isLoading, isInitialized, isAuthenticated, isHydrated } = useAuth();
+  const { loading, isAuthenticated, isFullyLoaded } = useAuth();
   const { hasActiveSession, isCheckingSession } = useRecordingSession();
 
   // Direct navigation effect
   React.useEffect(() => {
-    if (isInitialized && isHydrated && !isLoading) {
-      if (!isAuthenticated) {
-        router.replace("/(external)/welcome");
-      }
+    if (!loading && !isAuthenticated) {
+      router.replace("/(external)/welcome");
     }
-  }, [isInitialized, isHydrated, isLoading, isAuthenticated, router]);
+  }, [loading, isAuthenticated, router]);
 
   // If there's an active recording session, force navigation to record screen and hide everything else
   React.useEffect(() => {

@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Text } from "@/components/ui/text";
-import { useAuth } from "@/lib/stores/auth-store";
+import { useAuth } from "@/lib/hooks/useAuth";
 
 const resendSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -23,7 +23,7 @@ type ResendFields = z.infer<typeof resendSchema>;
 
 export default function VerifyScreen() {
   const router = useRouter();
-  const user = useAuth();
+  const { user } = useAuth();
   const [showResendForm, setShowResendForm] = React.useState(false);
   const [isResending, setIsResending] = React.useState(false);
 

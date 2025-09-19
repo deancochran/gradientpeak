@@ -38,7 +38,7 @@ export default function SignUpSuccessScreen() {
                 Check your email to confirm
               </Text>
               <Text variant="muted" className="text-center">
-                You've successfully signed up. Please check your email to
+                You have successfully signed up. Please check your email to
                 confirm your account before signing in.
               </Text>
             </View>

@@ -1,13 +1,3 @@
-// Auth Store
-export {
-  useAuth,
-  useAuthStore,
-  useIsAuthenticated,
-  useSession,
-  useUser,
-  type AuthState,
-} from "./auth-store";
-
 // Permissions Store
 export {
   PermissionState,
@@ -30,14 +20,6 @@ export {
   type WorkoutStatus,
   type WorkoutType,
 } from "./activity-store";
-
-// Theme Store
-export {
-  initializeTheme,
-  useTheme,
-  useThemeStore,
-  type ThemePreference,
-} from "./themeStore";
 
 // Activity Data Store
 export {
@@ -73,21 +55,6 @@ export const initializeStores = async () => {
   _storesInitialized = true;
 
   try {
-    // Initialize theme store first (as it affects UI appearance)
-    const { useThemeStore } = await import("./themeStore");
-    const themeStore = useThemeStore.getState();
-    await themeStore.initialize();
-
-    // Initialize permissions store (optional)
-    // const { usePermissionsStore } = await import("./permissions-store");
-    // const permissionsStore = usePermissionsStore.getState();
-    // await permissionsStore.initialize();
-
-    // Initialize auth store
-    const { useAuthStore } = await import("./auth-store");
-    const authStore = useAuthStore.getState();
-    await authStore.initialize();
-
     // Recover any active activity session
     const { useWorkoutStore } = await import("./activity-store");
     const workoutStore = useWorkoutStore.getState();

@@ -6,17 +6,14 @@ import { SignOutButton } from "@/components/SignOutButton";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
-import { useAuth } from "@/lib/stores/auth-store";
+import { useAuth } from "@/lib/hooks/useAuth";
+import { trpc } from "@/lib/trpc";
 
 export default function SettingsScreen() {
-  const { user } = useAuth();
+  const { user, profile, profileLoading, profileError, refreshProfile } =
+    useAuth();
 
   // TanStack Query hooks
-  const {
-    data: profile,
-    isLoading: profileLoading,
-    error: profileError,
-  } = trpc.profiles.get.useQuery();
   const updateProfileMutation = trpc.profiles.update.useMutation();
 
   return (
