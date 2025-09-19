@@ -13,7 +13,7 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./src/*"]
     },
     "incremental": true,
     "target": "ES2017",

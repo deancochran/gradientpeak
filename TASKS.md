@@ -4,6 +4,27 @@
 
 ##  In Progress
 
+* [x] **Mobile Auth Simplification**
+  * [x] Remove duplicate AuthProvider implementation
+  * [x] Create simplified useAuth hook with tRPC reactivity
+  * [x] Add navigation auth hooks for route protection
+  * [x] Ensure single source of truth for authentication state
+  * [x] Maintain Zustand persistence with tRPC real-time updates
+
+* [x] **Unified Auth Store Implementation**
+  * [x] Update Zustand store to combine Supabase user + tRPC profile data
+  * [x] Add profile field with proper typing from Postgres schema
+  * [x] Implement refreshProfile method using tRPC query
+  * [x] Update initialize method to fetch profile on auth state change
+  * [x] Add proper error handling and loading states
+  * [x] Update persistence to include both user and profile data
+  * [x] Create combined useAuthProfile hook for easy access
+  * [x] Ensure type safety with Supabase User and Profile types
+
+---
+
+##  High Priority
+
 
 
 
@@ -54,13 +75,13 @@
   * [ ] Duration & TSS estimation
 
 * [ ] **Planned Activities Listing**
-  * [ ] `apps/mobile/src/routes/(internal)/planned_activities.tsx` - Planned activities browser
+  * [ ] `apps/mobile/src/app/(internal)/planned_activities.tsx` - Planned activities browser
   * [ ] Show both completed and incomplete planned activities
   * [ ] Add filtering by status, difficulty, and type
   * [ ] Include progress tracking indicators
 
 * [ ] **Planned Activity Detail View**
-  * [ ] `apps/mobile/src/routes/(internal)/planned_activity-detail.tsx` - Structured activity viewer
+  * [ ] `apps/mobile/src/app/(internal)/planned_activity-detail.tsx` - Structured activity viewer
   * [ ] Migrate functionality from `PlannedActivityModal.tsx`
   * [ ] Render step-by-step plan structure with intervals
   * [ ] Display intensity targets and duration estimates

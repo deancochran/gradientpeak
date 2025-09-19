@@ -2,7 +2,7 @@
 
 ## 🎯 Core Component Implementation Details
 
-## 1. Record Screen (`apps/mobile/src/routes/(internal)/(tabs)/record.tsx`)
+## 1. Record Screen (`apps/mobile/src/app/(internal)/(tabs)/record.tsx`)
 
 ### Basic Structure
 ```typescript
@@ -38,14 +38,14 @@ export default function RecordScreen() {
   return (
     <View className="flex-1 bg-background">
       <RecordingStepper />
-      
+
       {/* Global modals available but controlled by stepper components */}
       <EnhancedBluetoothModal
         visible={false}
         onClose={() => {}}
         onSelectDevice={() => {}}
       />
-      
+
       <PermissionsModal
         visible={false}
         onClose={() => {}}
@@ -332,7 +332,7 @@ const needsBluetooth = (activityType: ActivityType | null): boolean => {
 };
 ```
 
-## 4. Recording Screen (`apps/mobile/src/routes/(internal)/recording.tsx`)
+## 4. Recording Screen (`apps/mobile/src/app/(internal)/recording.tsx`)
 
 ### Core Implementation
 ```typescript

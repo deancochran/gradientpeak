@@ -1,5 +1,59 @@
 ## [Unreleased]
 
+### Mobile Auth Simplification
+- **Simplified Authentication System**: Removed duplication and streamlined auth state management
+  - **Removed AuthProvider**: Eliminated React Context provider that duplicated Zustand functionality
+  - **Enhanced Zustand Store**: Added tRPC reactivity to existing persistent auth store
+  - **Single Source of Truth**: Unified auth state management using enhanced Zustand store
+  - **Simplified Hooks**: Created minimal `useAuth` hook that exposes store state with tRPC enhancements
+  - **Navigation Utilities**: Added separate `useAuthNavigation` hooks for route protection
+
+- **Key Improvements**:
+  - **Reduced Complexity**: Eliminated duplicate state management systems
+  - **Maintained Persistence**: Kept AsyncStorage persistence for offline capability
+  - **Real-time Updates**: Added tRPC reactivity for fresh user data synchronization
+  - **Backward Compatibility**: Existing auth actions (signIn, signOut, etc.) remain unchanged
+  - **Simplified Usage**: Single `useAuth()` hook provides complete auth state and actions
+
+- **Hook Architecture**:
+  - `useAuth()`: Primary hook combining Zustand persistence with tRPC reactivity
+  - `useUser()`: Convenience hook for user object access
+  - `useIsAuthenticated()`: Boolean authentication status
+  - `useAuthError()`: Error handling utilities
+  - `useRequireAuth()`: Route protection for authenticated routes
+  - `useRedirectIfAuthenticated()`: Redirect from public routes when authenticated
+
+- **Integration**: Removed AuthProvider from root layout, maintaining cleaner component structure
+
+### Unified Auth Store Implementation
+- **Complete Auth State Unification**: Combined Supabase user data with tRPC profile data in single Zustand store
+  - **Enhanced State Interface**: Added `profile` field with proper typing from Postgres schema
+  - **Profile Refresh Method**: Implemented `refreshProfile()` that fetches profile data via tRPC
+  - **Auth State Change Integration**: Updated `onAuthStateChange` to automatically refresh profile
+  - **Error Handling**: Added comprehensive error handling with stale-while-revalidate strategy
+  - **Enhanced Persistence**: Updated AsyncStorage persistence to include both user and profile data
+
+- **New Store Features**:
+  - **Combined Data Access**: Single source for `user`, `profile`, `session`, and authentication state
+  - **Automatic Profile Sync**: Profile automatically fetched on sign-in, sign-up, and auth state changes
+  - **Type Safety**: Full TypeScript integration with Supabase User and Postgres Profile types
+  - **Error Resilience**: Profile fetch failures don't block UI - stale data preserved while retrying
+  - **Consistent State**: `user === null` always implies `profile === null` for clean unauthenticated state
+
+- **New Hook Architecture**:
+  - `useAuthProfile()`: Combined hook for easy access to all auth + profile data
+  - `useProfile()`: Convenience hook for profile-specific data access
+  - `useAuthLoading()`: Loading state utility hook
+  - `useAuthError()`: Error state utility hook
+  - All hooks maintain persistence and real-time updates
+
+- **Integration Benefits**:
+  - **Reduced Network Calls**: Eliminated separate profile fetches - profile automatically syncs with auth state
+  - **Improved Developer Experience**: Single hook provides complete user context
+  - **Better Performance**: Profile data cached and persisted alongside auth state
+  - **Enhanced Reliability**: Error handling prevents auth failures from breaking the app
+  - **Future-Proof**: Ready for real-time profile updates and offline capabilities
+
 ### BREAKING: Complete tRPC Migration
 - **Full API Layer Migration to tRPC**: Complete replacement of direct Supabase calls with type-safe tRPC procedures
   - **New tRPC Routers**: Added comprehensive routers for `auth`, `profiles`, `activities`, `storage`, `sync`, `analytics`
