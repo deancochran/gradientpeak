@@ -5,7 +5,7 @@ import { View } from "react-native";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
-import { useAuth } from "@/lib/hooks/useAuth";
+import { useAuth } from "@/lib/stores/auth-store";
 
 export default function WelcomeScreen() {
   const router = useRouter();

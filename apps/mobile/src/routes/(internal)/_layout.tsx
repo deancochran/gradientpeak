@@ -1,5 +1,5 @@
 // apps/native/app/(internal)/_layout.tsx
-import { useAuth } from "@/lib/hooks/useAuth";
+import { useAuth } from "@/lib/stores/auth-store";
 import { Slot, useRouter } from "expo-router";
 import { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";

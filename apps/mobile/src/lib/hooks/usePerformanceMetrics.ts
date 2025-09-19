@@ -1,10 +1,10 @@
 import { ActivityService } from "@/lib/services/activity-service";
-import { ProfileService } from "@/lib/services/profile-service";
 import type { PerformanceMetrics, TSSHistoryEntry } from "@repo/core";
 import { analyzeTrainingLoad } from "@repo/core/calculations";
 import { useEffect, useState } from "react";
 
 export function usePerformanceMetrics() {
+  const { profile } = useAuthProfile();
   const [metrics, setMetrics] = useState<PerformanceMetrics | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -17,7 +17,6 @@ export function usePerformanceMetrics() {
         "📊 Performance Metrics Hook - Loading real metrics from activities",
       );
 
-      const profile = await ProfileService.getCurrentProfile();
       if (!profile) {
         setError("Profile not found");
         console.warn("📊 Performance Metrics Hook - No profile found");

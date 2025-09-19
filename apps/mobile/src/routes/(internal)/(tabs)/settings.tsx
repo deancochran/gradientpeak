@@ -6,7 +6,7 @@ import { SignOutButton } from "@/components/SignOutButton";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
-import { useAuth } from "@/lib/hooks/useAuth";
+import { useAuth } from "@/lib/stores/auth-store";
 
 export default function SettingsScreen() {
   const { user } = useAuth();

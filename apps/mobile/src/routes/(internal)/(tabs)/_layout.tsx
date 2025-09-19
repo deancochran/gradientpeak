@@ -1,4 +1,4 @@
-import { useAuth } from "@/lib/hooks/useAuth";
+import { useAuth } from "@/lib/stores/auth-store";
 import { useColorScheme } from "@/lib/providers/ThemeProvider";
 import { Ionicons } from "@expo/vector-icons";
 import { router, Tabs } from "expo-router";

@@ -1,11 +1,10 @@
+import { Text } from "@/components/ui/text";
+import { useAuth } from "@/lib/stores/auth-store";
 import React from "react";
 import { View } from "react-native";
-import { Text } from "@/components/ui/text";
-import { useAuth } from "@/lib/hooks/useAuth";
 
 export default function HomeScreen() {
   const { user } = useAuth();
-
 
   return (
     <View

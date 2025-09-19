@@ -1,5 +1,5 @@
 import { Text } from "@/components/ui/text";
-import { useAuth } from "@/lib/hooks/useAuth";
+import { useAuth } from "@/lib/stores/auth-store";
 import React from "react";
 import { View } from "react-native";
 
