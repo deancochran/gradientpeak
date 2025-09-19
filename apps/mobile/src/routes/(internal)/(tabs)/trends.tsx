@@ -11,7 +11,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
+  Button,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -210,13 +210,13 @@ export default function TrendsScreen() {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Performance Trends</Text>
-          <TouchableOpacity style={styles.infoButton}>
+          <Button style={styles.infoButton}>
             <Ionicons
               name="information-circle-outline"
               size={20}
               color="#6b7280"
             />
-          </TouchableOpacity>
+          </Button>
         </View>
 
         {(trendsError || profileError) && (
@@ -228,7 +228,7 @@ export default function TrendsScreen() {
         {/* Period Selector */}
         <View style={styles.periodSelector}>
           {TREND_PERIODS.map((period) => (
-            <TouchableOpacity
+            <Button
               key={period.value}
               onPress={() => handlePeriodChange(period)}
               style={[
@@ -246,7 +246,7 @@ export default function TrendsScreen() {
               >
                 {period.label}
               </Text>
-            </TouchableOpacity>
+            </Button>
           ))}
         </View>
 

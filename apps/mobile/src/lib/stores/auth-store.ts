@@ -1,10 +1,9 @@
+import { supabase } from "@/lib/supabase/client";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Session, User } from "@supabase/supabase-js";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { supabase } from "../supabase";
 import { trpc } from "../trpc";
-
 export interface AuthState {
   session: Session | null;
   user: User | null;

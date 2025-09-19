@@ -7,7 +7,7 @@ import {
   Modal,
   StyleSheet,
   Text,
-  TouchableOpacity,
+  Button,
   View,
 } from "react-native";
 
@@ -133,7 +133,7 @@ export const BluetoothDeviceModal: React.FC<BluetoothDeviceModalProps> = ({
   };
 
   const renderItem = ({ item }: { item: BluetoothDevice }) => (
-    <TouchableOpacity
+    <Button
       style={[styles.deviceItem, item.isConnected && styles.connectedDevice]}
       onPress={() => handleDevicePress(item)}
     >
@@ -178,7 +178,7 @@ export const BluetoothDeviceModal: React.FC<BluetoothDeviceModalProps> = ({
           color={item.isConnected ? "#ef4444" : "#007AFF"}
         />
       </View>
-    </TouchableOpacity>
+    </Button>
   );
 
   return (
@@ -186,9 +186,9 @@ export const BluetoothDeviceModal: React.FC<BluetoothDeviceModalProps> = ({
       <View style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.title}>Bluetooth Devices</Text>
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+          <Button onPress={onClose} style={styles.closeButton}>
             <Ionicons name="close" size={24} color="#111827" />
-          </TouchableOpacity>
+          </Button>
         </View>
 
         {!isBluetoothEnabled && (
@@ -246,7 +246,7 @@ export const BluetoothDeviceModal: React.FC<BluetoothDeviceModalProps> = ({
         />
 
         <View style={styles.actions}>
-          <TouchableOpacity
+          <Button
             style={[
               styles.actionButton,
               styles.scanButton,
@@ -263,7 +263,7 @@ export const BluetoothDeviceModal: React.FC<BluetoothDeviceModalProps> = ({
             <Text style={styles.actionButtonText}>
               {isScanning ? "Stop Scan" : "Scan for Devices"}
             </Text>
-          </TouchableOpacity>
+          </Button>
         </View>
       </View>
     </Modal>

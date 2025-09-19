@@ -8,7 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
+  Button,
   View,
 } from "react-native";
 import { Calendar } from "react-native-calendars";
@@ -313,12 +313,12 @@ export default function PlanScreen() {
                   </View>
 
                   {!activity.completed && (
-                    <TouchableOpacity
+                    <Button
                       onPress={() => markActivityCompleted(activity.id)}
                       style={styles.completeButton}
                     >
                       <Ionicons name="checkmark" size={16} color="#10b981" />
-                    </TouchableOpacity>
+                    </Button>
                   )}
 
                   {activity.completed && (

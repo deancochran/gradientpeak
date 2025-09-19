@@ -1,14 +1,12 @@
-import { supabase } from "@/lib/supabase";
-import { useColorScheme } from "@/lib/providers/ThemeProvider";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Text } from "@/components/ui/text";
+import { Slot, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, View } from "react-native";
 
 export default function AuthCallbackScreen() {
   const router = useRouter();
   const { access_token, refresh_token, error, error_description } =
     useLocalSearchParams();
-  const { isDarkColorScheme } = useColorScheme();
 
   useEffect(() => {
     const handleCallback = async () => {
@@ -63,17 +61,9 @@ export default function AuthCallbackScreen() {
     handleCallback();
   }, [access_token, refresh_token, error, error_description, router]);
 
-  const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";
-  const textColor = isDarkColorScheme ? "#ffffff" : "#000000";
-
   return (
     <>
-      <Stack.Screen
-        options={{
-          title: "",
-          headerShown: false,
-        }}
-      />
+      <Slot />
       <View style={[styles.container, { backgroundColor }]}>
         <ActivityIndicator size="large" color={textColor} />
         <Text style={[styles.text, { color: textColor }]}>
@@ -86,23 +76,3 @@ export default function AuthCallbackScreen() {
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 32,
-  },
-  text: {
-    marginTop: 24,
-    fontSize: 18,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-  subtext: {
-    marginTop: 8,
-    fontSize: 14,
-    textAlign: "center",
-  },
-});

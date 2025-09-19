@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, Button, View } from "react-native";
 
 interface ActivityStatusBarProps {
   isBluetoothEnabled: boolean;
@@ -41,7 +41,7 @@ export const ActivityStatusBar: React.FC<ActivityStatusBarProps> = ({
 
   return (
     <View style={styles.statusContainer}>
-      <TouchableOpacity
+      <Button
         style={styles.statusButton}
         onPress={onBluetoothPress}
         testID="bluetooth-status-button"
@@ -109,7 +109,7 @@ export const ActivityStatusBar: React.FC<ActivityStatusBarProps> = ({
             )}
           </View>
         )}
-      </TouchableOpacity>
+      </Button>
 
       <View style={styles.statusButton}>
         <Ionicons

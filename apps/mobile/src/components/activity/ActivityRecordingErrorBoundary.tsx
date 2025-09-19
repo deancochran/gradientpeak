@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Component, ErrorInfo, ReactNode } from 'react';
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, StyleSheet, Text, Button, View } from 'react-native';
 
 interface Props {
   children: ReactNode;
@@ -209,16 +209,16 @@ export class ActivityRecordingErrorBoundary extends Component<Props, State> {
             )}
 
             <View style={styles.buttonContainer}>
-              <TouchableOpacity
+              <Button
                 style={[styles.button, styles.retryButton]}
                 onPress={this.handleManualRetry}
               >
                 <Ionicons name="refresh" size={20} color="#ffffff" />
                 <Text style={styles.buttonText}>Try Again</Text>
-              </TouchableOpacity>
+              </Button>
 
               {this.state.retryCount < this.maxRetries && (
-                <TouchableOpacity
+                <Button
                   style={[styles.button, styles.reportButton]}
                   onPress={this.handleReportError}
                 >
@@ -226,7 +226,7 @@ export class ActivityRecordingErrorBoundary extends Component<Props, State> {
                   <Text style={[styles.buttonText, { color: '#6b7280' }]}>
                     Report Issue
                   </Text>
-                </TouchableOpacity>
+                </Button>
               )}
             </View>
 

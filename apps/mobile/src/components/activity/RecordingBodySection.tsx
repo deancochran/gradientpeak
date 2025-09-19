@@ -5,7 +5,7 @@ import {
   FlatList,
   StyleSheet,
   Text,
-  TouchableOpacity,
+  Button,
   View,
 } from "react-native";
 
@@ -234,7 +234,7 @@ export const RecordingBodySection: React.FC<RecordingBodySectionProps> = ({
 
           <View style={styles.requirementsList}>
             {!hasAllRequiredPermissions && (
-              <TouchableOpacity
+              <Button
                 style={styles.requirementItem}
                 onPress={onPermissionsPress}
               >
@@ -250,7 +250,7 @@ export const RecordingBodySection: React.FC<RecordingBodySectionProps> = ({
                   </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
-              </TouchableOpacity>
+              </Button>
             )}
 
             {requiresGPS && connectionStatus.gps !== "connected" && (
@@ -297,7 +297,7 @@ export const RecordingBodySection: React.FC<RecordingBodySectionProps> = ({
           <Text style={styles.selectionTitle}>Choose Activity Type</Text>
 
           <View style={styles.optionsContainer}>
-            <TouchableOpacity
+            <Button
               style={styles.optionButton}
               onPress={() => onWorkoutModeSelection("planned")}
             >
@@ -306,9 +306,9 @@ export const RecordingBodySection: React.FC<RecordingBodySectionProps> = ({
               <Text style={styles.optionDescription}>
                 Follow a structured training plan
               </Text>
-            </TouchableOpacity>
+            </Button>
 
-            <TouchableOpacity
+            <Button
               style={styles.optionButton}
               onPress={() => onWorkoutModeSelection("unplanned")}
             >
@@ -317,19 +317,19 @@ export const RecordingBodySection: React.FC<RecordingBodySectionProps> = ({
               <Text style={styles.optionDescription}>
                 Record a free-form activity
               </Text>
-            </TouchableOpacity>
+            </Button>
           </View>
         </View>
       ) : workoutSelectionMode === "planned" ? (
         <View style={styles.listContainer}>
           <View style={styles.navigationHeader}>
-            <TouchableOpacity
+            <Button
               onPress={onBackToOptions}
               style={styles.backButton}
             >
               <Ionicons name="chevron-back" size={20} color="#6b7280" />
               <Text style={styles.backText}>Back</Text>
-            </TouchableOpacity>
+            </Button>
             <Text style={styles.listTitle}>Select Workout</Text>
           </View>
 
@@ -338,7 +338,7 @@ export const RecordingBodySection: React.FC<RecordingBodySectionProps> = ({
               data={plannedActivities}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
-                <TouchableOpacity
+                <Button
                   style={styles.listItem}
                   onPress={() => onPlannedActivitySelection(item.id)}
                 >
@@ -356,7 +356,7 @@ export const RecordingBodySection: React.FC<RecordingBodySectionProps> = ({
                     )}
                   </View>
                   <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
-                </TouchableOpacity>
+                </Button>
               )}
               showsVerticalScrollIndicator={false}
             />
@@ -373,13 +373,13 @@ export const RecordingBodySection: React.FC<RecordingBodySectionProps> = ({
       ) : workoutSelectionMode === "unplanned" ? (
         <View style={styles.listContainer}>
           <View style={styles.navigationHeader}>
-            <TouchableOpacity
+            <Button
               onPress={onBackToOptions}
               style={styles.backButton}
             >
               <Ionicons name="chevron-back" size={20} color="#6b7280" />
               <Text style={styles.backText}>Back</Text>
-            </TouchableOpacity>
+            </Button>
             <Text style={styles.listTitle}>Select Activity Type</Text>
           </View>
 
@@ -387,7 +387,7 @@ export const RecordingBodySection: React.FC<RecordingBodySectionProps> = ({
             data={getPopularActivityTypes()}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
-              <TouchableOpacity
+              <Button
                 style={styles.activityTypeItem}
                 onPress={() => onActivityTypeSelection(item)}
               >
@@ -403,7 +403,7 @@ export const RecordingBodySection: React.FC<RecordingBodySectionProps> = ({
                   </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
-              </TouchableOpacity>
+              </Button>
             )}
             showsVerticalScrollIndicator={false}
           />

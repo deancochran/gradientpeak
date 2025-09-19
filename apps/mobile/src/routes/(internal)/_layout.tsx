@@ -1,21 +1,21 @@
 // apps/native/app/(internal)/_layout.tsx
-import { useAuth } from "@/lib/stores";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { Slot, useRouter } from "expo-router";
 import { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
 
 export default function InternalLayout() {
   const router = useRouter();
-  const { loading, initialized, hydrated, isAuthenticated } = useAuth();
+  const { isLoading, isAuthenticated, isHydrated, isInitialized } = useAuth();
 
   // Redirect automatically if user signs out
   useEffect(() => {
-    if (initialized && hydrated && !loading && !isAuthenticated) {
-      router.replace("/(external)");
+    if (isInitialized && isHydrated && !isLoading && !isAuthenticated) {
+      router.replace("/(external)/welcome");
     }
-  }, [initialized, hydrated, loading, isAuthenticated, router]);
+  }, [isInitialized, isHydrated, isLoading, isAuthenticated, router]);
   // Show loading while auth state resolves
-  if (!initialized || !hydrated || loading) {
+  if (!isInitialized || !isHydrated || isLoading) {
     return (
       <View className="flex-1 bg-background justify-center items-center">
         <ActivityIndicator size="large" className="text-foreground" />

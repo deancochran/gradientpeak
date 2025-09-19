@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, Button, View } from "react-native";
 
 interface RecordingControlsProps {
   // Recording state
@@ -40,12 +40,12 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
   if (!isRecording && !isPaused && !hasSelectedActivity) {
     return (
       <View style={styles.container}>
-        <TouchableOpacity
+        <Button
           style={[styles.startButton, styles.disabledButton]}
           disabled={true}
         >
           <Text style={styles.disabledButtonText}>Select Activity First</Text>
-        </TouchableOpacity>
+        </Button>
       </View>
     );
   }
@@ -54,13 +54,13 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
   if (!isRecording && !isPaused && hasSelectedActivity && !canStartRecording) {
     return (
       <View style={styles.container}>
-        <TouchableOpacity
+        <Button
           style={[styles.startButton, styles.disabledButton]}
           disabled={true}
         >
           <Ionicons name="alert-circle-outline" size={16} color="#9ca3af" />
           <Text style={styles.disabledButtonText}>Resolve Issues Above</Text>
-        </TouchableOpacity>
+        </Button>
       </View>
     );
   }
@@ -69,7 +69,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
   if (!isRecording && !isPaused && hasSelectedActivity && canStartRecording) {
     return (
       <View style={styles.container}>
-        <TouchableOpacity
+        <Button
           style={[styles.startButton, isStarting && styles.loadingButton]}
           onPress={onStart}
           disabled={isStarting}
@@ -82,7 +82,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
               <Text style={styles.startButtonText}>Start Recording</Text>
             </>
           )}
-        </TouchableOpacity>
+        </Button>
       </View>
     );
   }
@@ -92,12 +92,12 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
     return (
       <View style={styles.container}>
         <View style={styles.controlsRow}>
-          <TouchableOpacity style={styles.secondaryButton} onPress={onPause}>
+          <Button style={styles.secondaryButton} onPress={onPause}>
             <Ionicons name="pause" size={20} color="#374151" />
             <Text style={styles.secondaryButtonText}>Pause</Text>
-          </TouchableOpacity>
+          </Button>
 
-          <TouchableOpacity
+          <Button
             style={[styles.finishButton, isCompleting && styles.loadingButton]}
             onPress={onFinish}
             disabled={isCompleting}
@@ -110,7 +110,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
                 <Text style={styles.finishButtonText}>Finish</Text>
               </>
             )}
-          </TouchableOpacity>
+          </Button>
         </View>
       </View>
     );
@@ -121,17 +121,17 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
     return (
       <View style={styles.container}>
         <View style={styles.controlsRow}>
-          <TouchableOpacity style={styles.discardButton} onPress={onDiscard}>
+          <Button style={styles.discardButton} onPress={onDiscard}>
             <Ionicons name="trash-outline" size={18} color="#ef4444" />
             <Text style={styles.discardButtonText}>Discard</Text>
-          </TouchableOpacity>
+          </Button>
 
-          <TouchableOpacity style={styles.resumeButton} onPress={onResume}>
+          <Button style={styles.resumeButton} onPress={onResume}>
             <Ionicons name="play" size={20} color="#ffffff" />
             <Text style={styles.resumeButtonText}>Resume</Text>
-          </TouchableOpacity>
+          </Button>
 
-          <TouchableOpacity
+          <Button
             style={[styles.finishButton, isCompleting && styles.loadingButton]}
             onPress={onFinish}
             disabled={isCompleting}
@@ -144,7 +144,7 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
                 <Text style={styles.finishButtonText}>Finish</Text>
               </>
             )}
-          </TouchableOpacity>
+          </Button>
         </View>
       </View>
     );

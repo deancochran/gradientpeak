@@ -1,23 +1,19 @@
-import { supabase } from "@/lib/supabase";
-import { useColorScheme } from "@/lib/providers/ThemeProvider";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Slot, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import {
   Alert,
-  Animated,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
   View,
 } from "react-native";
 import { z } from "zod";
 
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Text } from "@/components/ui/text";
 
 const resetPasswordSchema = z
   .object({
@@ -42,11 +38,6 @@ export default function ResetPasswordScreen() {
   const [sessionSet, setSessionSet] = useState(false);
   const { isDarkColorScheme } = useColorScheme();
 
-  // Animation refs
-  const fadeAnim = useState(new Animated.Value(0))[0];
-  const slideAnim = useState(new Animated.Value(30))[0];
-  const buttonScaleAnim = useState(new Animated.Value(1))[0];
-
   const {
     control,
     handleSubmit,
@@ -57,20 +48,6 @@ export default function ResetPasswordScreen() {
   });
 
   useEffect(() => {
-    // Entrance animations
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
     // Set the session from the deep link tokens
     const setSessionFromTokens = async () => {
       console.log("🔗 Password reset callback received:", {
@@ -136,20 +113,6 @@ export default function ResetPasswordScreen() {
       return;
     }
 
-    // Button press animation
-    Animated.sequence([
-      Animated.timing(buttonScaleAnim, {
-        toValue: 0.95,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(buttonScaleAnim, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
     setIsLoading(true);
 
     try {
@@ -179,22 +142,9 @@ export default function ResetPasswordScreen() {
     }
   };
 
-  const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";
-  const textColor = isDarkColorScheme ? "#ffffff" : "#000000";
-  const subtleColor = isDarkColorScheme ? "#666666" : "#999999";
-  const borderColor = isDarkColorScheme ? "#333333" : "#e5e5e5";
-  const errorColor = isDarkColorScheme ? "#ff6b6b" : "#dc3545";
-
   return (
     <>
-      <Stack.Screen
-        options={{
-          title: "",
-          headerStyle: {
-            backgroundColor,
-          },
-        }}
-      />
+      <Slot />
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={[styles.container, { backgroundColor }]}
@@ -205,7 +155,7 @@ export default function ResetPasswordScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Animated.View
+          <View
             style={[
               styles.content,
               {
@@ -336,14 +286,14 @@ export default function ResetPasswordScreen() {
             </View>
 
             {/* Update Password Button */}
-            <Animated.View
+            <View
               style={[
                 styles.buttonContainer,
                 { transform: [{ scale: buttonScaleAnim }] },
               ]}
               testID="update-password-button-container"
             >
-              <TouchableOpacity
+              <Button
                 onPress={handleSubmit(onUpdatePassword)}
                 disabled={isLoading || !sessionSet}
                 style={[
@@ -361,8 +311,8 @@ export default function ResetPasswordScreen() {
                 >
                   {isLoading ? "Updating Password..." : "Update Password"}
                 </Text>
-              </TouchableOpacity>
-            </Animated.View>
+              </Button>
+            </View>
 
             {/* Help Text */}
             <View style={styles.helpContainer} testID="help-container">
@@ -373,103 +323,9 @@ export default function ResetPasswordScreen() {
                 After updating your password, you'll be automatically signed in
               </Text>
             </View>
-          </Animated.View>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: "center",
-    paddingHorizontal: 32,
-    paddingVertical: 40,
-  },
-  content: {
-    width: "100%",
-  },
-  header: {
-    alignItems: "center",
-    marginBottom: 40,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: "800",
-    textAlign: "center",
-    marginBottom: 8,
-    letterSpacing: -1,
-  },
-  subtitle: {
-    fontSize: 16,
-    textAlign: "center",
-    fontWeight: "400",
-  },
-  form: {
-    marginBottom: 32,
-  },
-  inputContainer: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 8,
-  },
-  input: {
-    height: 56,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    paddingHorizontal: 20,
-    fontSize: 16,
-    fontWeight: "500",
-  },
-  errorText: {
-    fontSize: 14,
-    marginTop: 8,
-    fontWeight: "500",
-  },
-  passwordHints: {
-    marginTop: 12,
-  },
-  hintText: {
-    fontSize: 13,
-    marginBottom: 4,
-    fontWeight: "400",
-  },
-  buttonContainer: {
-    marginBottom: 20,
-  },
-  primaryButton: {
-    height: 56,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowOffset: {
-      width: 0,
-      height: 6,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 6,
-  },
-  primaryButtonText: {
-    fontSize: 18,
-    fontWeight: "700",
-    letterSpacing: -0.5,
-  },
-  helpContainer: {
-    alignItems: "center",
-    marginTop: 20,
-  },
-  helpText: {
-    fontSize: 14,
-    textAlign: "center",
-    fontWeight: "400",
-    lineHeight: 20,
-  },
-});

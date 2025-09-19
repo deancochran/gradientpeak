@@ -5,7 +5,7 @@ import {
   Platform,
   StyleSheet,
   Text,
-  TouchableOpacity,
+  Button,
   View,
 } from "react-native";
 
@@ -73,7 +73,7 @@ export default function SignUpSuccessScreen() {
           }}
         />
         <DeepLinkDebugger />
-        <TouchableOpacity
+        <Button
           style={{
             position: "absolute",
             top: 60,
@@ -85,7 +85,7 @@ export default function SignUpSuccessScreen() {
           onPress={() => setShowDebugger(false)}
         >
           <Text style={{ color: backgroundColor }}>Back</Text>
-        </TouchableOpacity>
+        </Button>
       </>
     );
   }
@@ -105,7 +105,7 @@ export default function SignUpSuccessScreen() {
         style={[styles.container, { backgroundColor }]}
         testID="sign-up-success-screen"
       >
-        <Animated.View
+        <View
           style={[
             styles.content,
             {
@@ -160,14 +160,14 @@ export default function SignUpSuccessScreen() {
           </View>
 
           {/* Continue Button */}
-          <Animated.View
+          <View
             style={[
               styles.buttonContainer,
               { transform: [{ scale: buttonScaleAnim }] },
             ]}
             testID="continue-button-container"
           >
-            <TouchableOpacity
+            <Button
               onPress={handleContinuePress}
               style={[
                 styles.continueButton,
@@ -184,11 +184,11 @@ export default function SignUpSuccessScreen() {
               >
                 Continue to Sign In
               </Text>
-            </TouchableOpacity>
-          </Animated.View>
+            </Button>
+          </View>
 
           {/* Debug Button - Temporary */}
-          <TouchableOpacity
+          <Button
             onPress={() => setShowDebugger(true)}
             style={[
               styles.debugButton,
@@ -204,8 +204,8 @@ export default function SignUpSuccessScreen() {
             >
               Debug Deep Links
             </Text>
-          </TouchableOpacity>
-        </Animated.View>
+          </Button>
+        </View>
       </KeyboardAvoidingView>
     </>
   );

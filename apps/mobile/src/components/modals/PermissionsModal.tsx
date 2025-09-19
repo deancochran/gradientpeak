@@ -7,7 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
+  Button,
   View,
 } from "react-native";
 
@@ -140,9 +140,9 @@ export const PermissionsModal: React.FC<PermissionsModalProps> = ({
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+          <Button onPress={onClose} style={styles.closeButton}>
             <Ionicons name="close" size={24} color="#6b7280" />
-          </TouchableOpacity>
+          </Button>
 
           <Text style={styles.title}>Activity Permissions</Text>
 
@@ -253,15 +253,15 @@ export const PermissionsModal: React.FC<PermissionsModalProps> = ({
         {/* Footer Actions */}
         <View style={styles.footer}>
           {permanentlyDeniedPermissions.length > 0 ? (
-            <TouchableOpacity
+            <Button
               style={styles.settingsButton}
               onPress={handleOpenSettings}
             >
               <Ionicons name="settings-outline" size={20} color="#3b82f6" />
               <Text style={styles.settingsButtonText}>Open Settings</Text>
-            </TouchableOpacity>
+            </Button>
           ) : deniedPermissions.length > 0 ? (
-            <TouchableOpacity
+            <Button
               style={[
                 styles.requestButton,
                 isRequesting && styles.requestButtonDisabled,
@@ -279,12 +279,12 @@ export const PermissionsModal: React.FC<PermissionsModalProps> = ({
                   </Text>
                 </>
               )}
-            </TouchableOpacity>
+            </Button>
           ) : (
-            <TouchableOpacity style={styles.successButton} onPress={onClose}>
+            <Button style={styles.successButton} onPress={onClose}>
               <Ionicons name="checkmark-circle" size={20} color="#ffffff" />
               <Text style={styles.successButtonText}>All Set!</Text>
-            </TouchableOpacity>
+            </Button>
           )}
         </View>
       </View>

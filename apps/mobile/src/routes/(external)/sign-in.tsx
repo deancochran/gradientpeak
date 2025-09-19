@@ -1,23 +1,14 @@
-import { Stack, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import React from "react";
-import {
-  Animated,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { Input } from "@/components/ui/input";
-import { useColorScheme } from "@/lib/providers/ThemeProvider";
-import { useAuth } from "@/lib/stores";
+import { Text } from "@/components/ui/text";
+import { useAuth } from "@/lib/hooks/useAuth";
 
 const signInSchema = z.object({
   email: z.email("Invalid email address"),
@@ -40,15 +31,8 @@ const mapSupabaseErrorToFormField = (error: string) => {
 
 export default function SignInScreen() {
   const router = useRouter();
-  const { isDarkColorScheme } = useColorScheme();
   const { loading, signIn } = useAuth();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
-
-  // Animation refs
-  const fadeAnim = React.useRef(new Animated.Value(0)).current;
-  const slideAnim = React.useRef(new Animated.Value(30)).current;
-  const buttonScaleAnim = React.useRef(new Animated.Value(1)).current;
-  const signupScaleAnim = React.useRef(new Animated.Value(1)).current;
 
   const {
     control,
@@ -59,36 +43,8 @@ export default function SignInScreen() {
     resolver: zodResolver(signInSchema),
   });
 
-  React.useEffect(() => {
-    // Entrance animations
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, []);
-
   const onSignIn = async (data: SignInFields) => {
     // Button press animation
-    Animated.sequence([
-      Animated.timing(buttonScaleAnim, {
-        toValue: 0.95,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(buttonScaleAnim, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start();
 
     setIsSubmitting(true);
     try {
@@ -117,9 +73,9 @@ export default function SignInScreen() {
             message: error.message || "An unexpected error occurred",
           });
         }
-      } else if (authData.user) {
+      } else {
         // Successfully signed in - the auth state change will handle navigation
-        console.log("Successfully signed in:", authData.user.email);
+        console.log("Successfully signed in");
       }
     } catch (err) {
       console.log("Unexpected sign in error:", err);
@@ -130,45 +86,19 @@ export default function SignInScreen() {
   };
 
   const handleSignUpPress = () => {
-    Animated.sequence([
-      Animated.timing(signupScaleAnim, {
-        toValue: 0.95,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(signupScaleAnim, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      router.replace("/(external)/sign-up");
-    });
+    router.replace("/(external)/sign-up");
   };
 
   const handleForgotPasswordPress = () => {
     router.push("/(external)/forgot-password");
   };
 
-  const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";
-  const textColor = isDarkColorScheme ? "#ffffff" : "#000000";
-  const subtleColor = isDarkColorScheme ? "#666666" : "#999999";
-  const borderColor = isDarkColorScheme ? "#333333" : "#e5e5e5";
-  const errorColor = isDarkColorScheme ? "#ff6b6b" : "#dc3545";
-
   return (
     <>
-      <Stack.Screen
-        options={{
-          title: "",
-          headerStyle: {
-            backgroundColor,
-          },
-        }}
-      />
+      <Slot />
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={[styles.container, { backgroundColor }]}
+        style={[styles.container]}
         testID="sign-in-screen"
       >
         <ScrollView
@@ -176,16 +106,7 @@ export default function SignInScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Animated.View
-            style={[
-              styles.content,
-              {
-                opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }],
-              },
-            ]}
-            testID="sign-in-content"
-          >
+          <View style={[styles.content]} testID="sign-in-content">
             {/* Header */}
             <View style={styles.header} testID="sign-in-header">
               <Text
@@ -290,21 +211,21 @@ export default function SignInScreen() {
             </View>
 
             {/* Sign In Button */}
-            <Animated.View
+            <View
               style={[
                 styles.buttonContainer,
                 { transform: [{ scale: buttonScaleAnim }] },
               ]}
               testID="sign-in-button-container"
             >
-              <TouchableOpacity
+              <Button
                 onPress={handleSubmit(onSignIn)}
-                disabled={loading || isSubmitting}
+                disabled={isLoading || isSubmitting}
                 style={[
                   styles.primaryButton,
                   {
                     backgroundColor: textColor,
-                    opacity: loading || isSubmitting ? 0.7 : 1,
+                    opacity: isLoading || isSubmitting ? 0.7 : 1,
                   },
                 ]}
                 testID="sign-in-button"
@@ -313,17 +234,17 @@ export default function SignInScreen() {
                   style={[styles.primaryButtonText, { color: backgroundColor }]}
                   testID="sign-in-button-text"
                 >
-                  {loading ? "Signing In..." : "Sign In"}
+                  {isLoading ? "Signing In..." : "Sign In"}
                 </Text>
-              </TouchableOpacity>
-            </Animated.View>
+              </Button>
+            </View>
 
             {/* Forgot Password Link */}
             <View
               style={styles.forgotPasswordContainer}
               testID="forgot-password-container"
             >
-              <TouchableOpacity
+              <Button
                 onPress={handleForgotPasswordPress}
                 testID="forgot-password-button"
               >
@@ -333,18 +254,18 @@ export default function SignInScreen() {
                 >
                   Forgot your password?
                 </Text>
-              </TouchableOpacity>
+              </Button>
             </View>
 
             {/* Sign Up Link */}
-            <Animated.View
+            <View
               style={[
                 styles.linkContainer,
                 { transform: [{ scale: signupScaleAnim }] },
               ]}
               testID="sign-up-link-container"
             >
-              <TouchableOpacity
+              <Button
                 onPress={handleSignUpPress}
                 style={[styles.secondaryButton, { borderColor }]}
                 testID="sign-up-link-button"
@@ -355,109 +276,11 @@ export default function SignInScreen() {
                 >
                   Don&apos;t have an account? Sign up
                 </Text>
-              </TouchableOpacity>
-            </Animated.View>
-          </Animated.View>
+              </Button>
+            </View>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: "center",
-    paddingHorizontal: 32,
-    paddingVertical: 40,
-  },
-  content: {
-    width: "100%",
-  },
-  header: {
-    alignItems: "center",
-    marginBottom: 40,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: "800",
-    textAlign: "center",
-    marginBottom: 8,
-    letterSpacing: -1,
-  },
-  subtitle: {
-    fontSize: 16,
-    textAlign: "center",
-    fontWeight: "400",
-  },
-  form: {
-    marginBottom: 32,
-  },
-  inputContainer: {
-    marginBottom: 20,
-  },
-  input: {
-    height: 56,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    paddingHorizontal: 20,
-    fontSize: 16,
-    fontWeight: "500",
-  },
-  errorText: {
-    fontSize: 14,
-    marginTop: 8,
-    fontWeight: "500",
-  },
-  rootErrorContainer: {
-    marginTop: 8,
-    marginBottom: 8,
-  },
-  buttonContainer: {
-    marginBottom: 20,
-  },
-  primaryButton: {
-    height: 56,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowOffset: {
-      width: 0,
-      height: 6,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 6,
-  },
-  primaryButtonText: {
-    fontSize: 18,
-    fontWeight: "700",
-    letterSpacing: -0.5,
-  },
-  forgotPasswordContainer: {
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  forgotPasswordText: {
-    fontSize: 16,
-    fontWeight: "500",
-    textAlign: "center",
-  },
-  linkContainer: {
-    alignItems: "center",
-  },
-  secondaryButton: {
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  secondaryButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-});

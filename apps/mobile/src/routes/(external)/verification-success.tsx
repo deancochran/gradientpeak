@@ -5,7 +5,7 @@ import {
   Platform,
   StyleSheet,
   Text,
-  TouchableOpacity,
+  Button,
   View,
 } from "react-native";
 
@@ -74,7 +74,7 @@ export default function VerificationSuccessScreen() {
         style={[styles.container, { backgroundColor }]}
         testID="verification-success-screen"
       >
-        <Animated.View
+        <View
           style={[
             styles.content,
             {
@@ -129,14 +129,14 @@ export default function VerificationSuccessScreen() {
           </View>
 
           {/* Continue Button */}
-          <Animated.View
+          <View
             style={[
               styles.buttonContainer,
               { transform: [{ scale: buttonScaleAnim }] },
             ]}
             testID="continue-button-container"
           >
-            <TouchableOpacity
+            <Button
               onPress={handleContinuePress}
               style={[
                 styles.continueButton,
@@ -153,9 +153,9 @@ export default function VerificationSuccessScreen() {
               >
                 Sign In Now
               </Text>
-            </TouchableOpacity>
-          </Animated.View>
-        </Animated.View>
+            </Button>
+          </View>
+        </View>
       </KeyboardAvoidingView>
     </>
   );

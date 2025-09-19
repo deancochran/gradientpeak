@@ -1,12 +1,12 @@
 import React from "react";
 import {
   Animated,
+  Button,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from "react-native";
 
@@ -16,8 +16,7 @@ import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { Input } from "@/components/ui/input";
-import { useColorScheme } from "@/lib/providers/ThemeProvider";
-import { useAuth } from "@/lib/stores";
+import { useAuth } from "@/lib/hooks/useAuth";
 
 const signUpSchema = z
   .object({
@@ -180,7 +179,7 @@ export default function SignUpScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Animated.View
+          <View
             style={[
               styles.content,
               {
@@ -345,14 +344,14 @@ export default function SignUpScreen() {
             </View>
 
             {/* Sign Up Button */}
-            <Animated.View
+            <View
               style={[
                 styles.buttonContainer,
                 { transform: [{ scale: buttonScaleAnim }] },
               ]}
               testID="sign-up-button-container"
             >
-              <TouchableOpacity
+              <Button
                 onPress={handleSubmit(onSignUp)}
                 disabled={loading || isSubmitting}
                 style={[
@@ -370,18 +369,18 @@ export default function SignUpScreen() {
                 >
                   {loading ? "Creating Account..." : "Create Account"}
                 </Text>
-              </TouchableOpacity>
-            </Animated.View>
+              </Button>
+            </View>
 
             {/* Sign In Link */}
-            <Animated.View
+            <View
               style={[
                 styles.linkContainer,
                 { transform: [{ scale: signinScaleAnim }] },
               ]}
               testID="sign-in-link-container"
             >
-              <TouchableOpacity
+              <Button
                 onPress={handleSignInPress}
                 style={[styles.secondaryButton, { borderColor }]}
                 testID="sign-in-link-button"
@@ -392,8 +391,8 @@ export default function SignUpScreen() {
                 >
                   Already have an account? Sign in
                 </Text>
-              </TouchableOpacity>
-            </Animated.View>
+              </Button>
+            </View>
 
             {/* Terms */}
             <View style={styles.termsContainer} testID="terms-container">
@@ -405,7 +404,7 @@ export default function SignUpScreen() {
                 and Privacy Policy
               </Text>
             </View>
-          </Animated.View>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </>

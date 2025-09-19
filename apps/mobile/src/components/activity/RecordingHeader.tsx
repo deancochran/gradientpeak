@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { ActivityType } from "@repo/core";
 import React from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, Button, View } from "react-native";
 
 interface RecordingHeaderProps {
   // Close functionality - only show when not recording
@@ -88,9 +88,9 @@ export const RecordingHeader: React.FC<RecordingHeaderProps> = ({
       {/* Left Side - Close button or Status */}
       <View style={styles.leftSection}>
         {canClose && onClose ? (
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+          <Button onPress={onClose} style={styles.closeButton}>
             <Ionicons name="close" size={24} color="#6b7280" />
-          </TouchableOpacity>
+          </Button>
         ) : (
           <View style={styles.statusContainer}>
             <View
@@ -129,15 +129,15 @@ export const RecordingHeader: React.FC<RecordingHeaderProps> = ({
       {/* Right Side - System Status Indicators */}
       <View style={styles.rightSection}>
         {/* GPS Indicator */}
-        <TouchableOpacity style={styles.indicator} disabled>
+        <Button style={styles.indicator} disabled>
           <Ionicons name="location" size={16} color={getGpsColor()} />
           <Text style={[styles.indicatorText, { color: getGpsColor() }]}>
             GPS
           </Text>
-        </TouchableOpacity>
+        </Button>
 
         {/* Permissions Indicator */}
-        <TouchableOpacity style={styles.indicator} onPress={onPermissionsPress}>
+        <Button style={styles.indicator} onPress={onPermissionsPress}>
           <Ionicons
             name="shield-checkmark"
             size={16}
@@ -148,15 +148,15 @@ export const RecordingHeader: React.FC<RecordingHeaderProps> = ({
           >
             Permissions
           </Text>
-        </TouchableOpacity>
+        </Button>
 
         {/* Bluetooth Indicator */}
-        <TouchableOpacity style={styles.indicator} onPress={onBluetoothPress}>
+        <Button style={styles.indicator} onPress={onBluetoothPress}>
           <Ionicons name="bluetooth" size={16} color={getBluetoothColor()} />
           <Text style={[styles.indicatorText, { color: getBluetoothColor() }]}>
             BLE {connectedDevicesCount > 0 ? `(${connectedDevicesCount})` : ""}
           </Text>
-        </TouchableOpacity>
+        </Button>
       </View>
     </View>
   );

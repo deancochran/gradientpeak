@@ -1,12 +1,12 @@
-import { Ionicons } from "@expo/vector-icons";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { useColorScheme } from "@/lib/providers/ThemeProvider";
-import { useAuth } from "@/lib/stores";
+import { Ionicons } from "@expo/vector-icons";
 import { router, Tabs } from "expo-router";
 import React from "react";
 import {
   ActivityIndicator,
   Animated,
-  TouchableOpacity,
+  Button,
   View,
 } from "react-native";
 
@@ -40,7 +40,7 @@ function AnimatedIcon({ focused, name }: { focused: boolean; name: string }) {
   const inactiveColor = isDarkColorScheme ? "#666666" : "#9ca3af";
 
   return (
-    <Animated.View
+    <View
       style={{
         transform: [{ scale: scaleAnim }],
         opacity: opacityAnim,
@@ -51,7 +51,7 @@ function AnimatedIcon({ focused, name }: { focused: boolean; name: string }) {
         size={focused ? 28 : 24}
         color={focused ? activeColor : inactiveColor}
       />
-    </Animated.View>
+    </View>
   );
 }
 
@@ -62,7 +62,7 @@ function RecordButton() {
   };
 
   return (
-    <TouchableOpacity
+    <Button
       onPress={handleRecordPress}
       style={{
         backgroundColor: "#3b82f6",
@@ -81,23 +81,23 @@ function RecordButton() {
       activeOpacity={0.8}
     >
       <Ionicons name="add" size={32} color="#ffffff" />
-    </TouchableOpacity>
+    </Button>
   );
 }
 
 export default function InternalLayout() {
   const { isDarkColorScheme } = useColorScheme();
-  const { loading, initialized, isAuthenticated, hydrated } = useAuth();
+  const { isLoading, isInitialized, isAuthenticated, isHydrated } = useAuth();
   const { hasActiveSession, isCheckingSession } = useRecordingSession();
 
   // Direct navigation effect
   React.useEffect(() => {
-    if (initialized && hydrated && !loading) {
+    if (isInitialized && isHydrated && !isLoading) {
       if (!isAuthenticated) {
         router.replace("/(external)/welcome");
       }
     }
-  }, [loading, initialized, isAuthenticated, hydrated]);
+  }, [isInitialized, isHydrated, isLoading, isAuthenticated, router]);
 
   // If there's an active recording session, force navigation to record screen and hide everything else
   React.useEffect(() => {

@@ -5,7 +5,7 @@ import {
     ScrollView,
     StyleSheet,
     Text,
-    TouchableOpacity,
+    Button,
     View,
 } from "react-native";
 
@@ -156,9 +156,9 @@ export const ActivitySummaryModal: React.FC<ActivitySummaryModalProps> = ({
             </View>
           </View>
 
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+          <Button onPress={onClose} style={styles.closeButton}>
             <Ionicons name="close" size={24} color="#6b7280" />
-          </TouchableOpacity>
+          </Button>
         </View>
 
         <ScrollView
@@ -237,27 +237,27 @@ export const ActivitySummaryModal: React.FC<ActivitySummaryModalProps> = ({
         {/* Action Buttons */}
         <View style={styles.actionContainer}>
           {onViewActivities && (
-            <TouchableOpacity
+            <Button
               style={styles.primaryButton}
               onPress={onViewActivities}
             >
               <Ionicons name="list-outline" size={20} color="#ffffff" />
               <Text style={styles.primaryButtonText}>View All Activities</Text>
-            </TouchableOpacity>
+            </Button>
           )}
 
           <View style={styles.secondaryActions}>
             {onShare && (
-              <TouchableOpacity style={styles.secondaryButton} onPress={onShare}>
+              <Button style={styles.secondaryButton} onPress={onShare}>
                 <Ionicons name="share-outline" size={18} color="#6b7280" />
                 <Text style={styles.secondaryButtonText}>Share</Text>
-              </TouchableOpacity>
+              </Button>
             )}
 
-            <TouchableOpacity style={styles.secondaryButton} onPress={onClose}>
+            <Button style={styles.secondaryButton} onPress={onClose}>
               <Ionicons name="checkmark-outline" size={18} color="#6b7280" />
               <Text style={styles.secondaryButtonText}>Done</Text>
-            </TouchableOpacity>
+            </Button>
           </View>
         </View>
       </View>

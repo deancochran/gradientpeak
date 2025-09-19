@@ -1,12 +1,12 @@
 import React from "react";
 import {
   Animated,
+  Button,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from "react-native";
 
@@ -16,7 +16,7 @@ import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { Input } from "@/components/ui/input";
-import { useAuth, useUser } from "@/lib/stores";
+import { useAuth, useUser } from "@/lib/hooks/useAuth";
 
 const resendSchema = z.object({
   email: z.email("Invalid email address"),
@@ -64,7 +64,7 @@ export default function VerifyScreen() {
 
     // Check if user becomes verified and redirect
     if (user && user.email_confirmed_at) {
-      router.replace("/(internal)");
+      router.replace("/(internal)/(tabs)");
     }
   }, [user]);
 
@@ -157,7 +157,7 @@ export default function VerifyScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Animated.View
+          <View
             style={[
               styles.content,
               {
@@ -242,14 +242,14 @@ export default function VerifyScreen() {
                   )}
                 </View>
 
-                <Animated.View
+                <View
                   style={[
                     styles.buttonContainer,
                     { transform: [{ scale: resendScaleAnim }] },
                   ]}
                   testID="resend-button-container"
                 >
-                  <TouchableOpacity
+                  <Button
                     onPress={handleSubmit(onResendVerification)}
                     disabled={isResending}
                     style={[
@@ -267,21 +267,21 @@ export default function VerifyScreen() {
                     >
                       {isResending ? "Sending..." : "Send verification email"}
                     </Text>
-                  </TouchableOpacity>
-                </Animated.View>
+                  </Button>
+                </View>
               </View>
             )}
 
             {/* Action Buttons */}
             <View style={styles.actionsContainer}>
-              <Animated.View
+              <View
                 style={[
                   styles.buttonContainer,
                   { transform: [{ scale: buttonScaleAnim }] },
                 ]}
                 testID="continue-button-container"
               >
-                <TouchableOpacity
+                <Button
                   onPress={handleContinuePress}
                   style={[
                     styles.primaryButton,
@@ -300,10 +300,10 @@ export default function VerifyScreen() {
                   >
                     Continue to Sign In
                   </Text>
-                </TouchableOpacity>
-              </Animated.View>
+                </Button>
+              </View>
 
-              <TouchableOpacity
+              <Button
                 onPress={handleResendPress}
                 style={styles.linkButton}
                 testID="resend-link"
@@ -314,9 +314,9 @@ export default function VerifyScreen() {
                 >
                   {showResendForm ? "Cancel" : "Didn't receive an email?"}
                 </Text>
-              </TouchableOpacity>
+              </Button>
             </View>
-          </Animated.View>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </>

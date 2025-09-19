@@ -5,7 +5,7 @@ import {
     Modal,
     StyleSheet,
     Text,
-    TouchableOpacity,
+    Button,
     View,
 } from "react-native";
 
@@ -101,7 +101,7 @@ export const PlannedActivityModal: React.FC<PlannedActivityModalProps> = ({
     const isSelected = selectedActivity === item.id;
 
     return (
-      <TouchableOpacity
+      <Button
         style={[styles.activityItem, isSelected && styles.activityItemSelected]}
         onPress={() => setSelectedActivity(item.id)}
       >
@@ -188,7 +188,7 @@ export const PlannedActivityModal: React.FC<PlannedActivityModalProps> = ({
             <Ionicons name="checkmark-circle" size={20} color="#3b82f6" />
           </View>
         )}
-      </TouchableOpacity>
+      </Button>
     );
   };
 
@@ -199,10 +199,10 @@ export const PlannedActivityModal: React.FC<PlannedActivityModalProps> = ({
       <Text style={styles.emptyStateText}>
         Create structured workouts to guide your training sessions.
       </Text>
-      <TouchableOpacity style={styles.createButton} onPress={onClose}>
+      <Button style={styles.createButton} onPress={onClose}>
         <Ionicons name="add" size={20} color="#ffffff" />
         <Text style={styles.createButtonText}>Create Activity</Text>
-      </TouchableOpacity>
+      </Button>
     </View>
   );
 
@@ -216,9 +216,9 @@ export const PlannedActivityModal: React.FC<PlannedActivityModalProps> = ({
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+          <Button onPress={onClose} style={styles.closeButton}>
             <Ionicons name="close" size={24} color="#6b7280" />
-          </TouchableOpacity>
+          </Button>
 
           <Text style={styles.headerTitle}>Choose Planned Activity</Text>
 
@@ -244,7 +244,7 @@ export const PlannedActivityModal: React.FC<PlannedActivityModalProps> = ({
 
             {/* Action Buttons */}
             <View style={styles.actionContainer}>
-              <TouchableOpacity
+              <Button
                 style={[
                   styles.selectButton,
                   !selectedActivity && styles.selectButtonDisabled,
@@ -260,16 +260,16 @@ export const PlannedActivityModal: React.FC<PlannedActivityModalProps> = ({
                 >
                   Start Planned Activity
                 </Text>
-              </TouchableOpacity>
+              </Button>
 
-              <TouchableOpacity
+              <Button
                 style={styles.freeActivityButton}
                 onPress={() => onSelect("")} // Empty string indicates free activity
               >
                 <Text style={styles.freeActivityButtonText}>
                   Record Free Activity Instead
                 </Text>
-              </TouchableOpacity>
+              </Button>
             </View>
           </>
         )}

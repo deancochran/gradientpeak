@@ -1,21 +1,21 @@
 // apps/native/app/(external)/_layout.tsx
-import { useAuth } from "@/lib/stores";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { router, Slot } from "expo-router";
 import React, { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
 
 export default function ExternalLayout() {
-  const { loading, initialized, hydrated, isAuthenticated } = useAuth();
+  const { isLoading, isAuthenticated, isHydrated, isInitialized } = useAuth();
 
   // Redirect authenticated users to internal routes
   useEffect(() => {
-    if (initialized && hydrated && !loading && isAuthenticated) {
-      router.replace("/(internal)");
+    if (isInitialized && isHydrated && !isLoading && isAuthenticated) {
+      router.replace("/(internal)/(tabs)");
     }
-  }, [initialized, hydrated, loading, isAuthenticated]);
+  }, [isInitialized, isHydrated, isLoading, isAuthenticated]);
 
   // Show loading while determining auth state or redirecting
-  if (!initialized || !hydrated || loading || isAuthenticated) {
+  if (!isInitialized || !isHydrated || isLoading || isAuthenticated) {
     return (
       <View
         className="flex-1 bg-background justify-center items-center"

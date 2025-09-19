@@ -12,7 +12,7 @@ import {
   Modal,
   StyleSheet,
   Text,
-  TouchableOpacity,
+  Button,
   View,
 } from "react-native";
 
@@ -272,7 +272,7 @@ export const EnhancedBluetoothModal: React.FC<EnhancedBluetoothModalProps> = ({
           </View>
 
           {/* Connect/Disconnect Button */}
-          <TouchableOpacity
+          <Button
             style={[
               styles.actionButton,
               isConnected ? styles.disconnectButton : styles.connectButton,
@@ -293,7 +293,7 @@ export const EnhancedBluetoothModal: React.FC<EnhancedBluetoothModalProps> = ({
                 {isConnected ? "Disconnect" : "Connect"}
               </Text>
             )}
-          </TouchableOpacity>
+          </Button>
         </View>
       </View>
     );
@@ -333,13 +333,13 @@ export const EnhancedBluetoothModal: React.FC<EnhancedBluetoothModalProps> = ({
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+          <Button onPress={onClose} style={styles.closeButton}>
             <Ionicons name="close" size={24} color="#6b7280" />
-          </TouchableOpacity>
+          </Button>
 
           <Text style={styles.title}>Bluetooth Devices</Text>
 
-          <TouchableOpacity
+          <Button
             onPress={handleManualScan}
             style={[styles.scanButton, isScanning && styles.scanButtonActive]}
             disabled={!isBluetoothEnabled}
@@ -355,7 +355,7 @@ export const EnhancedBluetoothModal: React.FC<EnhancedBluetoothModalProps> = ({
                   : "#9ca3af"
               }
             />
-          </TouchableOpacity>
+          </Button>
         </View>
 
         {/* Status */}
