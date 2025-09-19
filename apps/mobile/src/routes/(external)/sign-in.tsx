@@ -236,7 +236,7 @@ export default function SignInScreen() {
                 testID="sign-up-link-button"
                 className="w-full"
               >
-                <Text>Don't have an account? Sign up</Text>
+                <Text>Need an account? Sign up</Text>
               </Button>
             </View>
           </CardContent>

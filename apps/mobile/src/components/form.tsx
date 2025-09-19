@@ -1,4 +1,4 @@
-import { Text, type TextProps } from "@/components/ui/text";
+import { Text } from "@/components/ui/text";
 import { cn } from "@/lib/utils";
 import * as React from "react";
 import {
@@ -10,9 +10,10 @@ import {
   type FieldPath,
   type FieldValues,
 } from "react-hook-form";
+import type { TextProps } from "react-native";
 import { View, type ViewProps } from "react-native";
 
-// Form is just the FormProvider from react-hook-form
+// Form component - wrapper around react-hook-form's FormProvider
 const Form = FormProvider;
 
 // Form Field Context
@@ -27,7 +28,7 @@ const FormFieldContext = React.createContext<FormFieldContextValue>(
   {} as FormFieldContextValue,
 );
 
-// FormField Component - follows shadcn/ui pattern with React Native support
+// FormField Component - Controlled form field with shadcn/ui pattern
 const FormField = <
   TFieldValues extends FieldValues = FieldValues,
   TName extends FieldPath<TFieldValues> = FieldPath<TFieldValues>,
@@ -74,7 +75,7 @@ const useFormField = () => {
   };
 };
 
-// FormItem Component - container for form field items
+// FormItem Component - Container for form field components
 interface FormItemProps extends ViewProps {
   children: React.ReactNode;
 }
@@ -84,14 +85,15 @@ function FormItem({ className, ...props }: FormItemProps) {
 
   return (
     <FormItemContext.Provider value={{ id }}>
-      <View className={cn("space-y-2", className)} {...props} />
+      <View className={cn("gap-2", className)} {...props} />
     </FormItemContext.Provider>
   );
 }
 
-// FormLabel Component - accessible label for form fields
-interface FormLabelProps extends TextProps {
+// FormLabel Component - Accessible label for form fields
+interface FormLabelProps extends Omit<TextProps, "className"> {
   children: React.ReactNode;
+  className?: string;
 }
 
 function FormLabel({ className, ...props }: FormLabelProps) {
@@ -110,8 +112,8 @@ function FormLabel({ className, ...props }: FormLabelProps) {
   );
 }
 
-// FormControl Component - wrapper for form input components
-interface FormControlProps extends ViewProps {
+// FormControl Component - Wrapper for form input components
+interface FormControlProps {
   children: React.ReactElement;
 }
 
@@ -120,21 +122,23 @@ function FormControl({ children, ...props }: FormControlProps) {
     useFormField();
 
   return React.cloneElement(children, {
-    ...children.props,
+    ...(children.props as object),
     "aria-labelledby": formItemId,
     "aria-describedby": error
       ? `${formDescriptionId} ${formMessageId}`
       : formDescriptionId,
     "aria-invalid": !!error,
-    accessibilityLabel: children.props.accessibilityLabel || formItemId,
+    accessibilityLabel:
+      (children.props as any)?.accessibilityLabel || formItemId,
     accessibilityInvalid: !!error,
     ...props,
   });
 }
 
-// FormDescription Component - provides additional context for form fields
-interface FormDescriptionProps extends TextProps {
+// FormDescription Component - Helper text for form fields
+interface FormDescriptionProps extends Omit<TextProps, "className"> {
   children: React.ReactNode;
+  className?: string;
 }
 
 function FormDescription({ className, ...props }: FormDescriptionProps) {
@@ -149,9 +153,10 @@ function FormDescription({ className, ...props }: FormDescriptionProps) {
   );
 }
 
-// FormMessage Component - displays validation error messages
-interface FormMessageProps extends TextProps {
+// FormMessage Component - Displays validation error messages
+interface FormMessageProps extends Omit<TextProps, "className"> {
   children?: React.ReactNode;
+  className?: string;
 }
 
 function FormMessage({ className, children, ...props }: FormMessageProps) {

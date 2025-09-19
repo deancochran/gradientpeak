@@ -1043,6 +1043,215 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 </ToggleGroup>
 ```
 
+### Form Components (shadcn/ui Pattern)
+
+The form components follow the shadcn/ui pattern with React Native compatibility, providing accessible, type-safe forms with react-hook-form integration.
+
+#### Form Component Structure
+```tsx
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/form";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+
+// Basic form structure
+<Form {...form}>
+  <FormField
+    control={form.control}
+    name="username"
+    render={({ field }) => (
+      <FormItem>
+        <FormLabel>Username</FormLabel>
+        <FormControl>
+          <Input placeholder="shadcn" {...field} />
+        </FormControl>
+        <FormDescription>This is your public display name.</FormDescription>
+        <FormMessage />
+      </FormItem>
+    )}
+  />
+  <Button type="submit">Submit</Button>
+</Form>
+```
+
+#### Complete Form Example with Validation
+```tsx
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/form";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+
+// 1. Define your form schema
+const formSchema = z.object({
+  username: z.string().min(2, {
+    message: "Username must be at least 2 characters.",
+  }),
+  email: z.string().email("Invalid email address"),
+});
+
+export function ProfileForm() {
+  // 2. Define your form
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      username: "",
+      email: "",
+    },
+  });
+
+  // 3. Define a submit handler
+  function onSubmit(values: z.infer<typeof formSchema>) {
+    console.log(values);
+  }
+
+  return (
+    <Form {...form}>
+      <FormField
+        control={form.control}
+        name="username"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Username</FormLabel>
+            <FormControl>
+              <Input placeholder="shadcn" {...field} />
+            </FormControl>
+            <FormDescription>This is your public display name.</FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="email"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Email</FormLabel>
+            <FormControl>
+              <Input 
+                placeholder="email@example.com" 
+                {...field} 
+                autoCapitalize="none"
+                keyboardType="email-address"
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <Button onPress={form.handleSubmit(onSubmit)}>Submit</Button>
+    </Form>
+  );
+}
+```
+
+#### Form Components Overview
+
+| Component | Description | Props |
+|-----------|-------------|-------|
+| `Form` | FormProvider wrapper from react-hook-form | `...FormProviderProps` |
+| `FormField` | Controlled form field with validation | `control`, `name`, `render` |
+| `FormItem` | Container for form field components | `className`, `style` |
+| `FormLabel` | Accessible label with error states | `className`, `children` |
+| `FormControl` | Wrapper for input components | `children` |
+| `FormDescription` | Helper text for form fields | `className`, `children` |
+| `FormMessage` | Validation error messages | `className`, `children` |
+
+#### Form Features
+
+- **Accessibility**: Automatic ARIA attributes and screen reader support
+- **Validation**: Zod integration with type-safe schemas
+- **Error Handling**: Automatic error state propagation
+- **Mobile Optimized**: Touch-friendly and platform-specific styling
+- **Dark Mode**: Full theme compatibility
+- **Type Safety**: Complete TypeScript support
+
+#### Usage with Different Input Types
+
+```tsx
+// Text Input
+<FormField
+  control={form.control}
+  name="email"
+  render={({ field }) => (
+    <FormItem>
+      <FormLabel>Email</FormLabel>
+      <FormControl>
+        <Input 
+          placeholder="email@example.com" 
+          {...field} 
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
+      </FormControl>
+      <FormMessage />
+    </FormItem>
+  )}
+/>
+
+// Password Input
+<FormField
+  control={form.control}
+  name="password"
+  render={({ field }) => (
+    <FormItem>
+      <FormLabel>Password</FormLabel>
+      <FormControl>
+        <Input 
+          placeholder="Password" 
+          {...field} 
+          secureTextEntry
+        />
+      </FormControl>
+      <FormMessage />
+    </FormItem>
+  )}
+/>
+
+// Textarea
+<FormField
+  control={form.control}
+  name="bio"
+  render={({ field }) => (
+    <FormItem>
+      <FormLabel>Bio</FormLabel>
+      <FormControl>
+        <Textarea 
+          placeholder="Tell us about yourself..." 
+          {...field} 
+          numberOfLines={4}
+        />
+      </FormControl>
+      <FormMessage />
+    </FormItem>
+  )}
+/>
+```
+
+#### Best Practices
+
+1. **Schema Validation**: Always define Zod schemas for type safety
+2. **Default Values**: Provide default values for all form fields
+3. **Accessibility**: Use proper labels and ARIA attributes
+4. **Error Handling**: Let FormMessage handle validation errors
+5. **Mobile Optimization**: Use appropriate keyboard types and auto-capitalization
+
 ### Label Component
 ```tsx
 import { Label } from "@/components/ui/label";
@@ -1057,7 +1266,7 @@ import { Label } from "@/components/ui/label";
 <Label nativeID="username">Username</Label>
 <Input aria-labelledby="username" placeholder="Enter username" />
 
-### Card Components
+### Form Integration Example with Card
 ```tsx
 import {
   Card,
@@ -1068,19 +1277,189 @@ import {
   CardFooter
 } from "@/components/ui/card";
 
-// Complete card
+// Form inside a card
 <Card>
   <CardHeader>
-    <CardTitle>Card Title</CardTitle>
-    <CardDescription>Card description text</CardDescription>
+    <CardTitle>Profile Information</CardTitle>
+    <CardDescription>Update your profile details</CardDescription>
   </CardHeader>
   <CardContent>
-    <Text>Card content goes here</Text>
+    <Form {...form}>
+      <FormField
+        control={form.control}
+        name="name"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Name</FormLabel>
+            <FormControl>
+              <Input placeholder="Your name" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="email"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Email</FormLabel>
+            <FormControl>
+              <Input 
+                placeholder="email@example.com" 
+                {...field} 
+                keyboardType="email-address"
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </Form>
   </CardContent>
   <CardFooter>
-    <Button variant="outline">Action</Button>
+    <Button onPress={form.handleSubmit(onSubmit)}>Save Changes</Button>
   </CardFooter>
 </Card>
+```
+
+### Migration from Manual Form Handling
+
+If you're currently using manual form handling with `Controller`, here's how to migrate to the shadcn/ui pattern:
+
+#### Before (Manual Controller)
+```tsx
+import { Controller, useForm } from "react-hook-form";
+
+const { control, handleSubmit } = useForm();
+
+<Controller
+  control={control}
+  name="email"
+  render={({ field: { onChange, value } }) => (
+    <View className="gap-2">
+      <Label nativeID="email">Email</Label>
+      <Input
+        placeholder="Email"
+        value={value}
+        onChangeText={onChange}
+        className={errors.email ? "border-destructive" : ""}
+      />
+      {errors.email && (
+        <Text className="text-destructive text-sm">
+          {errors.email.message}
+        </Text>
+      )}
+    </View>
+  )}
+/>
+```
+
+#### After (shadcn/ui Pattern)
+```tsx
+import { useForm } from "react-hook-form";
+import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/form";
+
+const form = useForm();
+
+<Form {...form}>
+  <FormField
+    control={form.control}
+    name="email"
+    render={({ field }) => (
+      <FormItem>
+        <FormLabel>Email</FormLabel>
+        <FormControl>
+          <Input placeholder="Email" {...field} />
+        </FormControl>
+        <FormMessage />
+      </FormItem>
+    )}
+  />
+</Form>
+```
+
+### Benefits of shadcn/ui Form Pattern
+
+1. **Reduced Boilerplate**: Automatic error handling and styling
+2. **Better Accessibility**: Built-in ARIA attributes and screen reader support
+3. **Consistent Patterns**: Standardized form structure across the app
+4. **Type Safety**: Full TypeScript integration with Zod validation
+5. **Mobile Optimized**: React Native specific enhancements
+
+### Common Form Patterns
+
+#### Form with Loading State
+```tsx
+<Button 
+  onPress={form.handleSubmit(onSubmit)} 
+  disabled={form.formState.isSubmitting}
+>
+  <Text>
+    {form.formState.isSubmitting ? "Submitting..." : "Submit"}
+  </Text>
+</Button>
+```
+
+#### Form with Custom Validation
+```tsx
+const formSchema = z.object({
+  password: z.string()
+    .min(8, "Password must be at least 8 characters")
+    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .regex(/[0-9]/, "Password must contain at least one number"),
+});
+
+// Custom error message display
+<FormMessage>
+  {error && (
+    <View className="flex-row items-center gap-1">
+      <Icon as={AlertCircle} className="text-destructive size-4" />
+      <Text>{error.message}</Text>
+    </View>
+  )}
+</FormMessage>
+```
+
+#### Form with Conditional Fields
+```tsx
+<FormField
+  control={form.control}
+  name="newsletter"
+  render={({ field }) => (
+    <FormItem className="flex-row items-center gap-2">
+      <FormControl>
+        <Switch checked={field.value} onCheckedChange={field.onChange} />
+      </FormControl>
+      <FormLabel>Subscribe to newsletter</FormLabel>
+    </FormItem>
+  )}
+/>
+
+{form.watch("newsletter") && (
+  <FormField
+    control={form.control}
+    name="newsletterFrequency"
+    render={({ field }) => (
+      <FormItem>
+        <FormLabel>Frequency</FormLabel>
+        <FormControl>
+          <Select value={field.value} onValueChange={field.onChange}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select frequency" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="daily">Daily</SelectItem>
+              <SelectItem value="weekly">Weekly</SelectItem>
+            </SelectContent>
+          </Select>
+        </FormControl>
+        <FormMessage />
+      </FormItem>
+    )}
+  />
+)}
+```
 
 // Minimal card
 <Card>
