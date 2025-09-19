@@ -1,133 +1,92 @@
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
-import React from "react";
-import {
-    KeyboardAvoidingView,
-    Platform,
-    View,
-} from "react-native";
-
 import { useLocalSearchParams, useRouter } from "expo-router";
+import React from "react";
+import { KeyboardAvoidingView, Platform, View } from "react-native";
 
 export default function AuthErrorScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ error?: string }>();
 
   const handleGoBackPress = () => {
-    router.replace("/(external)");
+    router.replace("/(external)/");
+  };
+
+  const handleTryAgainPress = () => {
+    router.back();
   };
 
   return (
-    <View >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={[styles.container, { backgroundColor }]}
-        testID="auth-error-screen"
-      >
-
-          {/* Error Icon */}
-          <View style={styles.iconContainer} testID="error-icon-container">
-            <View
-              style={[
-                styles.errorIcon,
-                {
-                  borderColor: errorColor,
-                  backgroundColor: "transparent",
-                },
-              ]}
-              testID="error-icon"
-            >
-              <Text
-                style={[styles.errorSymbol, { color: errorColor }]}
-                testID="error-symbol"
-              >
-                !
-              </Text>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      className="flex-1 bg-background p-6"
+      testID="auth-error-screen"
+    >
+      <View className="flex-1 justify-center items-center">
+        <Card className="w-full max-w-sm bg-card border-border shadow-sm">
+          <CardContent className="p-8 items-center">
+            {/* Error Icon */}
+            <View className="w-20 h-20 border-2 border-destructive rounded-full items-center justify-center mb-6">
+              <Text className="text-destructive text-3xl font-bold">!</Text>
             </View>
-          </View>
 
-          {/* Error Message */}
-          <View style={styles.messageContainer} testID="message-container">
-            <Text
-              style={[styles.title, { color: textColor }]}
-              testID="error-title"
-            >
-              Sorry, something went wrong.
-            </Text>
-
-            {params?.error ? (
-              <View style={styles.errorDetailsContainer} testID="error-details">
-                <Text
-                  style={[styles.errorLabel, { color: subtleColor }]}
-                  testID="error-label"
-                >
-                  Error details:
-                </Text>
-                <View
-                  style={[
-                    styles.errorBox,
-                    {
-                      borderColor: borderColor,
-                      backgroundColor: isDarkColorScheme
-                        ? "#1a1a1a"
-                        : "#f8f9fa",
-                    },
-                  ]}
-                  testID="error-box"
-                >
-                  <Text
-                    style={[styles.errorText, { color: errorColor }]}
-                    testID="error-message"
-                  >
-                    {params.error}
-                  </Text>
-                </View>
-              </View>
-            ) : (
-              <Text
-                style={[styles.description, { color: subtleColor }]}
-                testID="generic-error-description"
-              >
-                An unspecified error occurred. Please try again.
+            {/* Error Message */}
+            <View className="items-center mb-8" testID="message-container">
+              <Text variant="h2" className="text-center mb-4">
+                Sorry, something went wrong.
               </Text>
-            )}
-          </View>
 
-          {/* Action Buttons */}
-          <View style={styles.buttonsContainer} testID="buttons-container">
-
-              <Button
-                onPress={handleTryAgainPress}
-                style={[
-                  styles.primaryButton,
-                  {
-                    backgroundColor: textColor,
-                    shadowColor: textColor,
-                  },
-                ]}
-                testID="try-again-button"
-              >
-                <Text
-                  style={[styles.primaryButtonText, { color: backgroundColor }]}
-                  testID="try-again-button-text"
-                >
-                  Try Again
+              {params?.error ? (
+                <View className="w-full gap-3" testID="error-details">
+                  <Text variant="muted" className="text-center">
+                    Error details:
+                  </Text>
+                  <View
+                    className="bg-muted p-4 rounded-md border border-border"
+                    testID="error-box"
+                  >
+                    <Text
+                      variant="small"
+                      className="text-destructive text-center"
+                      testID="error-message"
+                    >
+                      {params.error}
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <Text variant="muted" className="text-center">
+                  An unspecified error occurred. Please try again.
                 </Text>
+              )}
+            </View>
+
+            {/* Action Buttons */}
+            <View className="w-full gap-4" testID="buttons-container">
+              <Button
+                variant="default"
+                size="lg"
+                onPress={handleTryAgainPress}
+                testID="try-again-button"
+                className="w-full"
+              >
+                <Text>Try Again</Text>
               </Button>
 
-            <Button
-              onPress={handleGoBackPress}
-              style={[styles.secondaryButton, { borderColor }]}
-              testID="go-back-button"
-            >
-              <Text
-                style={[styles.secondaryButtonText, { color: textColor }]}
-                testID="go-back-button-text"
+              <Button
+                variant="outline"
+                size="lg"
+                onPress={handleGoBackPress}
+                testID="go-back-button"
+                className="w-full"
               >
-                Go Back to Welcome
-              </Text>
-            </Button>
-          </View>
-    </View>
+                <Text>Go Back to Welcome</Text>
+              </Button>
+            </View>
+          </CardContent>
+        </Card>
+      </View>
+    </KeyboardAvoidingView>
   );
 }

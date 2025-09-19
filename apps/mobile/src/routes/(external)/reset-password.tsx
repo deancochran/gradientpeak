@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Slot, useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import {
@@ -12,8 +12,11 @@ import {
 import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Text } from "@/components/ui/text";
+import { supabase } from "@/lib/supabase/client";
 
 const resetPasswordSchema = z
   .object({
@@ -36,7 +39,6 @@ export default function ResetPasswordScreen() {
   const { access_token, refresh_token } = useLocalSearchParams();
   const [isLoading, setIsLoading] = useState(false);
   const [sessionSet, setSessionSet] = useState(false);
-  const { isDarkColorScheme } = useColorScheme();
 
   const {
     control,
@@ -105,7 +107,7 @@ export default function ResetPasswordScreen() {
     };
 
     setSessionFromTokens();
-  }, [access_token, refresh_token, router, fadeAnim, slideAnim]);
+  }, [access_token, refresh_token, router]);
 
   const onUpdatePassword = async (data: ResetPasswordFields) => {
     if (!sessionSet) {
@@ -143,50 +145,34 @@ export default function ResetPasswordScreen() {
   };
 
   return (
-    <>
-      <Slot />
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={[styles.container, { backgroundColor }]}
-        testID="reset-password-screen"
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      className="flex-1 bg-background"
+      testID="reset-password-screen"
+    >
+      <ScrollView
+        contentContainerClassName="flex-grow justify-center p-6"
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <View
-            style={[
-              styles.content,
-              {
-                opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }],
-              },
-            ]}
-            testID="reset-password-content"
-          >
-            {/* Header */}
-            <View style={styles.header} testID="reset-password-header">
-              <Text
-                style={[styles.title, { color: textColor }]}
-                testID="reset-password-title"
-              >
+        <Card className="w-full max-w-sm mx-auto bg-card border-border shadow-sm">
+          <CardHeader className="items-center pb-6">
+            <CardTitle>
+              <Text variant="h2" className="text-center">
                 Set New Password
               </Text>
-              <Text
-                style={[styles.subtitle, { color: subtleColor }]}
-                testID="reset-password-subtitle"
-              >
-                Please enter your new password below
-              </Text>
-            </View>
+            </CardTitle>
+            <Text variant="muted" className="text-center">
+              Please enter your new password below
+            </Text>
+          </CardHeader>
 
+          <CardContent className="gap-6">
             {/* Form */}
-            <View style={styles.form} testID="reset-password-form">
-              <View style={styles.inputContainer}>
-                <Text style={[styles.label, { color: textColor }]}>
-                  New Password
-                </Text>
+            <View className="gap-4" testID="reset-password-form">
+              {/* Password Input */}
+              <View className="gap-2">
+                <Label nativeID="password-label">New Password</Label>
                 <Controller
                   control={control}
                   name="password"
@@ -197,49 +183,40 @@ export default function ResetPasswordScreen() {
                       onChangeText={onChange}
                       secureTextEntry
                       autoFocus
-                      style={[
-                        styles.input,
-                        {
-                          borderColor: errors.password
-                            ? errorColor
-                            : borderColor,
-                          color: textColor,
-                        },
-                      ]}
+                      className={errors.password ? "border-destructive" : ""}
                       testID="password-input"
+                      aria-labelledby="password-label"
                     />
                   )}
                 />
                 {errors.password && (
-                  <Text
-                    style={[styles.errorText, { color: errorColor }]}
-                    testID="password-error"
-                  >
+                  <Text variant="small" className="text-destructive">
                     {errors.password.message}
                   </Text>
                 )}
 
                 {/* Password Requirements */}
-                <View style={styles.passwordHints} testID="password-hints">
-                  <Text style={[styles.hintText, { color: subtleColor }]}>
+                <View className="mt-2 gap-1" testID="password-hints">
+                  <Text variant="muted" className="text-xs">
                     Password must contain:
                   </Text>
-                  <Text style={[styles.hintText, { color: subtleColor }]}>
+                  <Text variant="muted" className="text-xs">
                     • At least 8 characters
                   </Text>
-                  <Text style={[styles.hintText, { color: subtleColor }]}>
+                  <Text variant="muted" className="text-xs">
                     • One uppercase letter
                   </Text>
-                  <Text style={[styles.hintText, { color: subtleColor }]}>
+                  <Text variant="muted" className="text-xs">
                     • One number
                   </Text>
                 </View>
               </View>
 
-              <View style={styles.inputContainer}>
-                <Text style={[styles.label, { color: textColor }]}>
+              {/* Confirm Password Input */}
+              <View className="gap-2">
+                <Label nativeID="confirm-password-label">
                   Confirm Password
-                </Text>
+                </Label>
                 <Controller
                   control={control}
                   name="confirmPassword"
@@ -249,83 +226,60 @@ export default function ResetPasswordScreen() {
                       value={value}
                       onChangeText={onChange}
                       secureTextEntry
-                      style={[
-                        styles.input,
-                        {
-                          borderColor: errors.confirmPassword
-                            ? errorColor
-                            : borderColor,
-                          color: textColor,
-                        },
-                      ]}
+                      className={
+                        errors.confirmPassword ? "border-destructive" : ""
+                      }
                       testID="confirm-password-input"
+                      aria-labelledby="confirm-password-label"
                     />
                   )}
                 />
                 {errors.confirmPassword && (
-                  <Text
-                    style={[styles.errorText, { color: errorColor }]}
-                    testID="confirm-password-error"
-                  >
+                  <Text variant="small" className="text-destructive">
                     {errors.confirmPassword.message}
                   </Text>
                 )}
               </View>
 
+              {/* Root Error */}
               {errors.root && (
-                <Text
-                  style={[
-                    styles.errorText,
-                    { color: errorColor, textAlign: "center" },
-                  ]}
+                <View
+                  className="bg-destructive/15 p-3 rounded-md border border-destructive/25"
                   testID="form-error"
                 >
-                  {errors.root.message}
-                </Text>
+                  <Text
+                    variant="small"
+                    className="text-destructive text-center"
+                  >
+                    {errors.root.message}
+                  </Text>
+                </View>
               )}
             </View>
 
             {/* Update Password Button */}
-            <View
-              style={[
-                styles.buttonContainer,
-                { transform: [{ scale: buttonScaleAnim }] },
-              ]}
-              testID="update-password-button-container"
+            <Button
+              variant="default"
+              size="lg"
+              onPress={handleSubmit(onUpdatePassword)}
+              disabled={isLoading || !sessionSet}
+              testID="update-password-button"
+              className="w-full"
             >
-              <Button
-                onPress={handleSubmit(onUpdatePassword)}
-                disabled={isLoading || !sessionSet}
-                style={[
-                  styles.primaryButton,
-                  {
-                    backgroundColor: textColor,
-                    opacity: isLoading || !sessionSet ? 0.7 : 1,
-                  },
-                ]}
-                testID="update-password-button"
-              >
-                <Text
-                  style={[styles.primaryButtonText, { color: backgroundColor }]}
-                  testID="update-password-button-text"
-                >
-                  {isLoading ? "Updating Password..." : "Update Password"}
-                </Text>
-              </Button>
-            </View>
+              <Text>
+                {isLoading ? "Updating Password..." : "Update Password"}
+              </Text>
+            </Button>
 
             {/* Help Text */}
-            <View style={styles.helpContainer} testID="help-container">
-              <Text
-                style={[styles.helpText, { color: subtleColor }]}
-                testID="help-text"
-              >
+            <View className="pt-4" testID="help-container">
+              <Text variant="muted" className="text-center text-xs">
                 After updating your password, you'll be automatically signed in
               </Text>
             </View>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </>
+          </CardContent>
+        </Card>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }

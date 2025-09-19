@@ -1,303 +1,61 @@
+import { useRouter } from "expo-router";
 import React from "react";
-import {
-  Animated,
-  KeyboardAvoidingView,
-  Platform,
-  StyleSheet,
-  Text,
-  Button,
-  View,
-} from "react-native";
+import { KeyboardAvoidingView, Platform, View } from "react-native";
 
-import { useColorScheme } from "@/lib/providers/ThemeProvider";
-import { Stack, useRouter } from "expo-router";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Text } from "@/components/ui/text";
 
 export default function SignUpSuccessScreen() {
   const router = useRouter();
-  const { isDarkColorScheme } = useColorScheme();
-  const [showDebugger, setShowDebugger] = React.useState(false);
-
-  // Animation refs
-  const fadeAnim = React.useRef(new Animated.Value(0)).current;
-  const slideAnim = React.useRef(new Animated.Value(30)).current;
-  const buttonScaleAnim = React.useRef(new Animated.Value(1)).current;
-
-  React.useEffect(() => {
-    // Entrance animations
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, []);
 
   const handleContinuePress = () => {
-    Animated.sequence([
-      Animated.timing(buttonScaleAnim, {
-        toValue: 0.95,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(buttonScaleAnim, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      router.replace("/(external)/sign-in");
-    });
+    router.replace("/(external)/sign-in");
   };
 
-  const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";
-  const textColor = isDarkColorScheme ? "#ffffff" : "#000000";
-  const subtleColor = isDarkColorScheme ? "#666666" : "#999999";
-  const successColor = isDarkColorScheme ? "#4ade80" : "#16a34a";
-
-  // Show debugger if requested
-  if (showDebugger) {
-    return (
-      <>
-        <Stack.Screen
-          options={{
-            title: "Deep Link Debug",
-            headerStyle: {
-              backgroundColor,
-            },
-          }}
-        />
-        <DeepLinkDebugger />
-        <Button
-          style={{
-            position: "absolute",
-            top: 60,
-            right: 20,
-            padding: 10,
-            backgroundColor: textColor,
-            borderRadius: 8,
-          }}
-          onPress={() => setShowDebugger(false)}
-        >
-          <Text style={{ color: backgroundColor }}>Back</Text>
-        </Button>
-      </>
-    );
-  }
-
   return (
-    <>
-      <Stack.Screen
-        options={{
-          title: "",
-          headerStyle: {
-            backgroundColor,
-          },
-        }}
-      />
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={[styles.container, { backgroundColor }]}
-        testID="sign-up-success-screen"
-      >
-        <View
-          style={[
-            styles.content,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
-            },
-          ]}
-          testID="sign-up-success-content"
-        >
-          {/* Success Icon */}
-          <View style={styles.iconContainer} testID="success-icon-container">
-            <View
-              style={[
-                styles.successIcon,
-                {
-                  backgroundColor: successColor,
-                  shadowColor: successColor,
-                },
-              ]}
-              testID="success-icon"
-            >
-              <Text
-                style={[styles.checkmark, { color: backgroundColor }]}
-                testID="checkmark"
-              >
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      className="flex-1 bg-background p-6"
+      testID="sign-up-success-screen"
+    >
+      <View className="flex-1 justify-center items-center">
+        <Card className="w-full max-w-sm bg-card border-border shadow-sm">
+          <CardContent className="p-8 items-center">
+            {/* Success Icon */}
+            <View className="w-20 h-20 bg-success rounded-full items-center justify-center mb-6">
+              <Text className="text-success-foreground text-3xl font-bold">
                 ✓
               </Text>
             </View>
-          </View>
 
-          {/* Success Message */}
-          <View style={styles.messageContainer} testID="message-container">
-            <Text
-              style={[styles.title, { color: textColor }]}
-              testID="success-title"
-            >
-              Thank you for signing up!
-            </Text>
-            <Text
-              style={[styles.subtitle, { color: subtleColor }]}
-              testID="success-subtitle"
-            >
-              Check your email to confirm
-            </Text>
-            <Text
-              style={[styles.description, { color: subtleColor }]}
-              testID="success-description"
-            >
-              You&apos;ve successfully signed up. Please check your email to
-              confirm your account before signing in.
-            </Text>
-          </View>
-
-          {/* Continue Button */}
-          <View
-            style={[
-              styles.buttonContainer,
-              { transform: [{ scale: buttonScaleAnim }] },
-            ]}
-            testID="continue-button-container"
-          >
-            <Button
-              onPress={handleContinuePress}
-              style={[
-                styles.continueButton,
-                {
-                  backgroundColor: textColor,
-                  shadowColor: textColor,
-                },
-              ]}
-              testID="continue-button"
-            >
-              <Text
-                style={[styles.continueButtonText, { color: backgroundColor }]}
-                testID="continue-button-text"
-              >
-                Continue to Sign In
+            {/* Success Message */}
+            <View className="items-center mb-8">
+              <Text variant="h2" className="text-center mb-2">
+                Thank you for signing up!
               </Text>
-            </Button>
-          </View>
+              <Text variant="muted" className="text-center mb-4">
+                Check your email to confirm
+              </Text>
+              <Text variant="muted" className="text-center">
+                You've successfully signed up. Please check your email to
+                confirm your account before signing in.
+              </Text>
+            </View>
 
-          {/* Debug Button - Temporary */}
-          <Button
-            onPress={() => setShowDebugger(true)}
-            style={[
-              styles.debugButton,
-              {
-                backgroundColor: subtleColor,
-              },
-            ]}
-            testID="debug-button"
-          >
-            <Text
-              style={[styles.debugButtonText, { color: backgroundColor }]}
-              testID="debug-button-text"
+            {/* Continue Button */}
+            <Button
+              variant="default"
+              size="lg"
+              onPress={handleContinuePress}
+              testID="continue-button"
+              className="w-full"
             >
-              Debug Deep Links
-            </Text>
-          </Button>
-        </View>
-      </KeyboardAvoidingView>
-    </>
+              <Text>Continue to Sign In</Text>
+            </Button>
+          </CardContent>
+        </Card>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: "center",
-    paddingHorizontal: 32,
-    paddingVertical: 40,
-  },
-  content: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  iconContainer: {
-    marginBottom: 40,
-  },
-  successIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  checkmark: {
-    fontSize: 32,
-    fontWeight: "900",
-  },
-  messageContainer: {
-    alignItems: "center",
-    marginBottom: 60,
-    maxWidth: 320,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "800",
-    textAlign: "center",
-    marginBottom: 12,
-    letterSpacing: -1,
-  },
-  subtitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    textAlign: "center",
-    marginBottom: 20,
-  },
-  description: {
-    fontSize: 16,
-    textAlign: "center",
-    lineHeight: 24,
-    fontWeight: "400",
-  },
-  buttonContainer: {
-    width: "100%",
-  },
-  continueButton: {
-    height: 56,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowOffset: {
-      width: 0,
-      height: 6,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 6,
-  },
-  continueButtonText: {
-    fontSize: 18,
-    fontWeight: "700",
-    letterSpacing: -0.5,
-  },
-  debugButton: {
-    height: 40,
-    borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 20,
-    opacity: 0.7,
-  },
-  debugButtonText: {
-    fontSize: 14,
-    fontWeight: "500",
-  },
-});

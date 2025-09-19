@@ -1,5 +1,6 @@
 import { Text } from "@/components/ui/text";
-import { Slot, useLocalSearchParams, useRouter } from "expo-router";
+import { supabase } from "@/lib/supabase/client";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
 
@@ -59,20 +60,17 @@ export default function AuthCallbackScreen() {
     };
 
     handleCallback();
-  }, [access_token, refresh_token, error, error_description, router]);
+  }, [access_token, refresh_token, error, error_description, router, supabase]);
 
   return (
-    <>
-      <Slot />
-      <View style={[styles.container, { backgroundColor }]}>
-        <ActivityIndicator size="large" color={textColor} />
-        <Text style={[styles.text, { color: textColor }]}>
-          Verifying your email...
-        </Text>
-        <Text style={[styles.subtext, { color: textColor, opacity: 0.6 }]}>
-          Please wait while we confirm your account
-        </Text>
-      </View>
-    </>
+    <View className="flex-1 bg-background justify-center items-center p-6">
+      <ActivityIndicator size="large" className="text-primary mb-4" />
+      <Text variant="h3" className="text-center mb-2">
+        Verifying your email...
+      </Text>
+      <Text variant="muted" className="text-center">
+        Please wait while we confirm your account
+      </Text>
+    </View>
   );
 }

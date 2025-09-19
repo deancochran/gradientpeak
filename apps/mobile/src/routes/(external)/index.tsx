@@ -1,7 +1,9 @@
 import { useRouter } from "expo-router";
 import React from "react";
-import {  Button, View } from "react-native";
+import { View } from "react-native";
 
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/hooks/useAuth";
 
@@ -10,9 +12,8 @@ export default function WelcomeScreen() {
   const { isAuthenticated } = useAuth();
 
   React.useEffect(() => {
-    // Log authentication state on mount
     console.log("🏠 Welcome Screen: isAuthenticated =", isAuthenticated);
-
+  }, [isAuthenticated]);
 
   const handleLoginPress = () => {
     router.replace("/(external)/sign-in");
@@ -22,118 +23,65 @@ export default function WelcomeScreen() {
     router.replace("/(external)/sign-up");
   };
 
-
   return (
-    <View
-      style={[styles.container]}
-      testID="welcome-screen"
-    >
+    <View className="flex-1 bg-background p-6" testID="welcome-screen">
+      {/* Main Content */}
+      <View className="flex-1 justify-center items-center">
+        {/* Hero Card */}
+        <Card className="w-full max-w-sm bg-card border-border shadow-sm">
+          <CardContent className="p-8 items-center">
+            {/* App Logo/Brand */}
+            <View className="w-20 h-20 bg-primary rounded-full items-center justify-center mb-6">
+              <Text variant="h1" className="text-primary-foreground">
+                TF
+              </Text>
+            </View>
 
-      {/* Hero Section */}
-      <View
-        style={[
-          styles.heroSection,
-
-        ]}
-        testID="hero-section"
-      >
-        {/* Logo */}
-        <View
-          style={[styles.logoContainer]}
-          testID="logo-container"
-        >
-          <View
-            style={[
-              styles.logoPlaceholder,
-            ]}
-            testID="app-logo"
-          >
-            <Text
-              style={[
-                styles.logoText,
-              ]}
-              testID="logo-text"
-            >
-              TF
+            {/* App Title */}
+            <Text variant="h1" className="text-center mb-2">
+              TurboFit
             </Text>
-          </View>
-        </View>
 
-        {/* Hero Content */}
-        <View
-          style={[
-            styles.heroContent,
+            {/* Tagline */}
+            <Text variant="muted" className="text-center mb-8">
+              Minimal fitness tracking.{"\n"}Maximum results.
+            </Text>
 
-          ]}
-          testID="hero-content"
-        >
-          <Text
-            style={[styles.heroTitle]}
-            testID="hero-title"
-          >
-            TurboFit
-          </Text>
-          <Text
-            style={[styles.heroSubtitle]}
-            testID="hero-subtitle"
-          >
-            Minimal fitness tracking.{"\n"}Maximum results.
-          </Text>
-        </View>
+            {/* Action Buttons */}
+            <View className="w-full gap-4">
+              <Button
+                variant="default"
+                size="lg"
+                onPress={handleLoginPress}
+                testID="login-button"
+                className="w-full"
+              >
+                <Text>Login</Text>
+              </Button>
+
+              <Button
+                variant="outline"
+                size="lg"
+                onPress={handleSignupPress}
+                testID="signup-button"
+                className="w-full"
+              >
+                <Text>Create Account</Text>
+              </Button>
+            </View>
+          </CardContent>
+        </Card>
       </View>
 
-      {/* Action Buttons */}
-      <View
-        style={[styles.actionSection]}
-        testID="action-section"
-      >
-        <View style={styles.buttonContainer} testID="button-container">
-          <View >
-            <Button
-              onPress={handleLoginPress}
-              style={[
-                styles.primaryButton,
-
-              ]}
-              activeOpacity={0.9}
-              testID="login-button"
-            >
-              <Text
-                style={[styles.primaryButtonText]}
-                testID="login-button-text"
-              >
-                Login
-              </Text>
-            </Button>
-          </View>
-
-          <View
-
-          >
-            <Button
-              onPress={handleSignupPress}
-              activeOpacity={0.8}
-              testID="signup-button"
-            >
-              <Text
-                style={[styles.secondaryButtonText]}
-                testID="signup-button-text"
-              >
-                Create Account
-              </Text>
-            </Button>
-          </View>
-        </View>
-
-        {/* Footer */}
-        <View style={styles.footerText} testID="footer-section">
-          <Text
-            style={[styles.termsText]}
-            testID="terms-text"
-          >
-            By continuing, you agree to our{"\n"}Terms & Privacy Policy
-          </Text>
-        </View>
+      {/* Footer */}
+      <View className="pb-8 items-center" testID="footer-section">
+        <Text
+          variant="muted"
+          className="text-center text-xs"
+          testID="terms-text"
+        >
+          By continuing, you agree to our{"\n"}Terms & Privacy Policy
+        </Text>
       </View>
     </View>
   );

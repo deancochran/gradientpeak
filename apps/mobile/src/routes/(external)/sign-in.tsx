@@ -6,12 +6,15 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/hooks/useAuth";
 
 const signInSchema = z.object({
-  email: z.email("Invalid email address"),
+  email: z.string().email("Invalid email address"),
   password: z
     .string({ message: "Password is required" })
     .min(8, "Password must be at least 8 characters"),
@@ -31,7 +34,7 @@ const mapSupabaseErrorToFormField = (error: string) => {
 
 export default function SignInScreen() {
   const router = useRouter();
-  const { loading, signIn } = useAuth();
+  const { isLoading: authLoading, signIn } = useAuth();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   const {
@@ -44,8 +47,6 @@ export default function SignInScreen() {
   });
 
   const onSignIn = async (data: SignInFields) => {
-    // Button press animation
-
     setIsSubmitting(true);
     try {
       const { error } = await signIn(data.email, data.password);
@@ -74,7 +75,6 @@ export default function SignInScreen() {
           });
         }
       } else {
-        // Successfully signed in - the auth state change will handle navigation
         console.log("Successfully signed in");
       }
     } catch (err) {
@@ -93,39 +93,37 @@ export default function SignInScreen() {
     router.push("/(external)/forgot-password");
   };
 
+  const isLoading = authLoading || isSubmitting;
+
   return (
-    <>
-      <Slot />
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={[styles.container]}
-        testID="sign-in-screen"
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      className="flex-1 bg-background"
+      testID="sign-in-screen"
+    >
+      <ScrollView
+        contentContainerClassName="flex-grow justify-center p-6"
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={[styles.content]} testID="sign-in-content">
-            {/* Header */}
-            <View style={styles.header} testID="sign-in-header">
-              <Text
-                style={[styles.title, { color: textColor }]}
-                testID="sign-in-title"
-              >
+        <Card className="w-full max-w-sm mx-auto bg-card border-border shadow-sm">
+          <CardHeader className="items-center pb-6">
+            <CardTitle>
+              <Text variant="h2" className="text-center">
                 Welcome Back
               </Text>
-              <Text
-                style={[styles.subtitle, { color: subtleColor }]}
-                testID="sign-in-subtitle"
-              >
-                Sign in to continue your fitness journey
-              </Text>
-            </View>
+            </CardTitle>
+            <Text variant="muted" className="text-center">
+              Sign in to continue your fitness journey
+            </Text>
+          </CardHeader>
 
+          <CardContent className="gap-6">
             {/* Form */}
-            <View style={styles.form} testID="sign-in-form">
-              <View style={styles.inputContainer}>
+            <View className="gap-4" testID="sign-in-form">
+              {/* Email Input */}
+              <View className="gap-2">
+                <Label nativeID="email-label">Email</Label>
                 <Controller
                   control={control}
                   name="email"
@@ -138,28 +136,22 @@ export default function SignInScreen() {
                       autoCapitalize="none"
                       keyboardType="email-address"
                       autoComplete="email"
-                      style={[
-                        styles.input,
-                        {
-                          borderColor: errors.email ? errorColor : borderColor,
-                          color: textColor,
-                        },
-                      ]}
+                      className={errors.email ? "border-destructive" : ""}
                       testID="email-input"
+                      aria-labelledby="email-label"
                     />
                   )}
                 />
                 {errors.email && (
-                  <Text
-                    style={[styles.errorText, { color: errorColor }]}
-                    testID="email-error"
-                  >
+                  <Text variant="small" className="text-destructive">
                     {errors.email.message}
                   </Text>
                 )}
               </View>
 
-              <View style={styles.inputContainer}>
+              {/* Password Input */}
+              <View className="gap-2">
+                <Label nativeID="password-label">Password</Label>
                 <Controller
                   control={control}
                   name="password"
@@ -169,40 +161,28 @@ export default function SignInScreen() {
                       value={value}
                       onChangeText={onChange}
                       secureTextEntry
-                      style={[
-                        styles.input,
-                        {
-                          borderColor: errors.password
-                            ? errorColor
-                            : borderColor,
-                          color: textColor,
-                        },
-                      ]}
+                      className={errors.password ? "border-destructive" : ""}
                       testID="password-input"
+                      aria-labelledby="password-label"
                     />
                   )}
                 />
                 {errors.password && (
-                  <Text
-                    style={[styles.errorText, { color: errorColor }]}
-                    testID="password-error"
-                  >
+                  <Text variant="small" className="text-destructive">
                     {errors.password.message}
                   </Text>
                 )}
               </View>
 
+              {/* Root Error */}
               {errors.root && (
                 <View
-                  style={styles.rootErrorContainer}
+                  className="bg-destructive/15 p-3 rounded-md border border-destructive/25"
                   testID="root-error-container"
                 >
                   <Text
-                    style={[
-                      styles.errorText,
-                      { color: errorColor, textAlign: "center" },
-                    ]}
-                    testID="form-error"
+                    variant="small"
+                    className="text-destructive text-center"
                   >
                     {errors.root.message}
                   </Text>
@@ -211,76 +191,43 @@ export default function SignInScreen() {
             </View>
 
             {/* Sign In Button */}
-            <View
-              style={[
-                styles.buttonContainer,
-                { transform: [{ scale: buttonScaleAnim }] },
-              ]}
-              testID="sign-in-button-container"
+            <Button
+              variant="default"
+              size="lg"
+              onPress={handleSubmit(onSignIn)}
+              disabled={isLoading}
+              testID="sign-in-button"
+              className="w-full"
             >
-              <Button
-                onPress={handleSubmit(onSignIn)}
-                disabled={isLoading || isSubmitting}
-                style={[
-                  styles.primaryButton,
-                  {
-                    backgroundColor: textColor,
-                    opacity: isLoading || isSubmitting ? 0.7 : 1,
-                  },
-                ]}
-                testID="sign-in-button"
-              >
-                <Text
-                  style={[styles.primaryButtonText, { color: backgroundColor }]}
-                  testID="sign-in-button-text"
-                >
-                  {isLoading ? "Signing In..." : "Sign In"}
-                </Text>
-              </Button>
-            </View>
+              <Text>{isLoading ? "Signing In..." : "Sign In"}</Text>
+            </Button>
 
             {/* Forgot Password Link */}
-            <View
-              style={styles.forgotPasswordContainer}
-              testID="forgot-password-container"
+            <Button
+              variant="link"
+              onPress={handleForgotPasswordPress}
+              testID="forgot-password-button"
+              className="w-full"
             >
-              <Button
-                onPress={handleForgotPasswordPress}
-                testID="forgot-password-button"
-              >
-                <Text
-                  style={[styles.forgotPasswordText, { color: subtleColor }]}
-                  testID="forgot-password-text"
-                >
-                  Forgot your password?
-                </Text>
-              </Button>
-            </View>
+              <Text className="text-muted-foreground">
+                Forgot your password?
+              </Text>
+            </Button>
 
             {/* Sign Up Link */}
-            <View
-              style={[
-                styles.linkContainer,
-                { transform: [{ scale: signupScaleAnim }] },
-              ]}
-              testID="sign-up-link-container"
-            >
+            <View className="border-t border-border pt-4">
               <Button
+                variant="outline"
                 onPress={handleSignUpPress}
-                style={[styles.secondaryButton, { borderColor }]}
                 testID="sign-up-link-button"
+                className="w-full"
               >
-                <Text
-                  style={[styles.secondaryButtonText, { color: textColor }]}
-                  testID="sign-up-link-text"
-                >
-                  Don&apos;t have an account? Sign up
-                </Text>
+                <Text>Don't have an account? Sign up</Text>
               </Button>
             </View>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </>
+          </CardContent>
+        </Card>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }

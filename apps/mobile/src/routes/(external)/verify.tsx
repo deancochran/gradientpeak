@@ -1,42 +1,31 @@
 import React from "react";
-import {
-  Animated,
-  Button,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+
+import { supabase } from "@/lib/supabase/client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Stack, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { useAuth, useUser } from "@/lib/hooks/useAuth";
+import { Label } from "@/components/ui/label";
+import { Text } from "@/components/ui/text";
+import { useUser } from "@/lib/hooks/useAuth";
 
 const resendSchema = z.object({
-  email: z.email("Invalid email address"),
+  email: z.string().email("Invalid email address"),
 });
 
 type ResendFields = z.infer<typeof resendSchema>;
 
 export default function VerifyScreen() {
   const router = useRouter();
-  const { isDarkColorScheme } = useColorScheme();
-  const { loading } = useAuth();
   const user = useUser();
   const [showResendForm, setShowResendForm] = React.useState(false);
   const [isResending, setIsResending] = React.useState(false);
-
-  // Animation refs
-  const fadeAnim = React.useRef(new Animated.Value(0)).current;
-  const slideAnim = React.useRef(new Animated.Value(30)).current;
-  const buttonScaleAnim = React.useRef(new Animated.Value(1)).current;
-  const resendScaleAnim = React.useRef(new Animated.Value(1)).current;
 
   const {
     control,
@@ -48,41 +37,13 @@ export default function VerifyScreen() {
   });
 
   React.useEffect(() => {
-    // Entrance animations
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
     // Check if user becomes verified and redirect
     if (user && user.email_confirmed_at) {
       router.replace("/(internal)/(tabs)");
     }
-  }, [user]);
+  }, [user, router]);
 
   const onResendVerification = async ({ email }: ResendFields) => {
-    // Button press animation
-    Animated.sequence([
-      Animated.timing(resendScaleAnim, {
-        toValue: 0.95,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(resendScaleAnim, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
     setIsResending(true);
     try {
       const { error } = await supabase.auth.resend({
@@ -111,92 +72,55 @@ export default function VerifyScreen() {
   };
 
   const handleContinuePress = () => {
-    Animated.sequence([
-      Animated.timing(buttonScaleAnim, {
-        toValue: 0.95,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(buttonScaleAnim, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      router.replace("/(external)/sign-in");
-    });
+    router.replace("/(external)/sign-in");
   };
 
   const handleResendPress = () => {
     setShowResendForm(!showResendForm);
   };
 
-  const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";
-  const textColor = isDarkColorScheme ? "#ffffff" : "#000000";
-  const subtleColor = isDarkColorScheme ? "#666666" : "#999999";
-  const borderColor = isDarkColorScheme ? "#333333" : "#e5e5e5";
-  const errorColor = isDarkColorScheme ? "#ff6b6b" : "#dc3545";
-
   return (
-    <>
-      <Stack.Screen
-        options={{
-          title: "",
-          headerStyle: {
-            backgroundColor,
-          },
-        }}
-      />
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={[styles.container, { backgroundColor }]}
-        testID="verify-screen"
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      className="flex-1 bg-background"
+      testID="verify-screen"
+    >
+      <ScrollView
+        contentContainerClassName="flex-grow justify-center p-6"
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <View
-            style={[
-              styles.content,
-              {
-                opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }],
-              },
-            ]}
-            testID="verify-content"
-          >
-            {/* Header */}
-            <View style={styles.header} testID="verify-header">
-              <Text
-                style={[styles.title, { color: textColor }]}
-                testID="verify-title"
-              >
+        <Card className="w-full max-w-sm mx-auto bg-card border-border shadow-sm">
+          <CardHeader className="items-center pb-6">
+            <CardTitle>
+              <Text variant="h2" className="text-center">
                 Check your email
               </Text>
-              <Text
-                style={[styles.subtitle, { color: subtleColor }]}
-                testID="verify-subtitle"
-              >
-                We sent a verification link to {user?.email || "your email"}.
-                Click the link to verify your account and continue.
-              </Text>
-            </View>
+            </CardTitle>
+            <Text variant="muted" className="text-center">
+              We sent a verification link to {user?.email || "your email"}.
+              Click the link to verify your account and continue.
+            </Text>
+          </CardHeader>
 
+          <CardContent className="gap-6">
             {/* Status Message */}
             {errors.root && (
-              <View style={styles.messageContainer} testID="status-message">
+              <View
+                className={`p-3 rounded-md border ${
+                  errors.root?.message?.includes("sent")
+                    ? "bg-success/15 border-success/25"
+                    : "bg-destructive/15 border-destructive/25"
+                }`}
+                testID="status-message"
+              >
                 <Text
-                  style={[
-                    styles.messageText,
-                    {
-                      color: errors.root?.message?.includes("sent")
-                        ? "#10b981"
-                        : errorColor,
-                      textAlign: "center",
-                    },
-                  ]}
+                  variant="small"
+                  className={`text-center ${
+                    errors.root?.message?.includes("sent")
+                      ? "text-success"
+                      : "text-destructive"
+                  }`}
                   testID="status-text"
                 >
                   {errors.root?.message}
@@ -206,8 +130,9 @@ export default function VerifyScreen() {
 
             {/* Resend Form */}
             {showResendForm && (
-              <View style={styles.form} testID="resend-form">
-                <View style={styles.inputContainer}>
+              <View className="gap-4" testID="resend-form">
+                <View className="gap-2">
+                  <Label nativeID="email-label">Email</Label>
                   <Controller
                     control={control}
                     name="email"
@@ -219,212 +144,60 @@ export default function VerifyScreen() {
                         autoCapitalize="none"
                         keyboardType="email-address"
                         autoComplete="email"
-                        style={[
-                          styles.input,
-                          {
-                            borderColor: errors.email
-                              ? errorColor
-                              : borderColor,
-                            color: textColor,
-                          },
-                        ]}
+                        className={errors.email ? "border-destructive" : ""}
                         testID="email-input"
+                        aria-labelledby="email-label"
                       />
                     )}
                   />
                   {errors.email && (
-                    <Text
-                      style={[styles.errorText, { color: errorColor }]}
-                      testID="email-error"
-                    >
+                    <Text variant="small" className="text-destructive">
                       {errors.email.message}
                     </Text>
                   )}
                 </View>
 
-                <View
-                  style={[
-                    styles.buttonContainer,
-                    { transform: [{ scale: resendScaleAnim }] },
-                  ]}
-                  testID="resend-button-container"
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onPress={handleSubmit(onResendVerification)}
+                  disabled={isResending}
+                  testID="resend-button"
+                  className="w-full"
                 >
-                  <Button
-                    onPress={handleSubmit(onResendVerification)}
-                    disabled={isResending}
-                    style={[
-                      styles.secondaryButton,
-                      {
-                        borderColor,
-                        opacity: isResending ? 0.7 : 1,
-                      },
-                    ]}
-                    testID="resend-button"
-                  >
-                    <Text
-                      style={[styles.secondaryButtonText, { color: textColor }]}
-                      testID="resend-button-text"
-                    >
-                      {isResending ? "Sending..." : "Send verification email"}
-                    </Text>
-                  </Button>
-                </View>
+                  <Text>
+                    {isResending ? "Sending..." : "Send verification email"}
+                  </Text>
+                </Button>
               </View>
             )}
 
             {/* Action Buttons */}
-            <View style={styles.actionsContainer}>
-              <View
-                style={[
-                  styles.buttonContainer,
-                  { transform: [{ scale: buttonScaleAnim }] },
-                ]}
-                testID="continue-button-container"
+            <View className="gap-4">
+              <Button
+                variant="default"
+                size="lg"
+                onPress={handleContinuePress}
+                testID="continue-button"
+                className="w-full"
               >
-                <Button
-                  onPress={handleContinuePress}
-                  style={[
-                    styles.primaryButton,
-                    {
-                      backgroundColor: textColor,
-                    },
-                  ]}
-                  testID="continue-button"
-                >
-                  <Text
-                    style={[
-                      styles.primaryButtonText,
-                      { color: backgroundColor },
-                    ]}
-                    testID="continue-button-text"
-                  >
-                    Continue to Sign In
-                  </Text>
-                </Button>
-              </View>
+                <Text>Continue to Sign In</Text>
+              </Button>
 
               <Button
+                variant="link"
                 onPress={handleResendPress}
-                style={styles.linkButton}
                 testID="resend-link"
+                className="w-full"
               >
-                <Text
-                  style={[styles.linkText, { color: subtleColor }]}
-                  testID="resend-link-text"
-                >
+                <Text className="text-muted-foreground">
                   {showResendForm ? "Cancel" : "Didn't receive an email?"}
                 </Text>
               </Button>
             </View>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </>
+          </CardContent>
+        </Card>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: "center",
-    paddingHorizontal: 32,
-    paddingVertical: 40,
-  },
-  content: {
-    width: "100%",
-  },
-  header: {
-    alignItems: "center",
-    marginBottom: 40,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: "800",
-    textAlign: "center",
-    marginBottom: 8,
-    letterSpacing: -1,
-  },
-  subtitle: {
-    fontSize: 16,
-    textAlign: "center",
-    fontWeight: "400",
-  },
-  form: {
-    marginBottom: 32,
-  },
-  inputContainer: {
-    marginBottom: 20,
-  },
-  input: {
-    height: 56,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    paddingHorizontal: 20,
-    fontSize: 20,
-    fontWeight: "600",
-    textAlign: "center",
-    letterSpacing: 8,
-  },
-  errorText: {
-    fontSize: 14,
-    marginTop: 8,
-    fontWeight: "500",
-  },
-  buttonContainer: {
-    marginBottom: 20,
-  },
-  messageContainer: {
-    marginBottom: 32,
-    paddingHorizontal: 16,
-  },
-  messageText: {
-    fontSize: 16,
-    fontWeight: "500",
-    lineHeight: 24,
-  },
-  actionsContainer: {
-    alignItems: "center",
-  },
-  primaryButton: {
-    height: 56,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowOffset: {
-      width: 0,
-      height: 6,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 6,
-    marginBottom: 16,
-  },
-  primaryButtonText: {
-    fontSize: 18,
-    fontWeight: "700",
-    letterSpacing: -0.5,
-  },
-  secondaryButton: {
-    height: 56,
-    borderRadius: 16,
-    borderWidth: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  secondaryButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  linkButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-  },
-  linkText: {
-    fontSize: 16,
-    fontWeight: "500",
-    textAlign: "center",
-  },
-});

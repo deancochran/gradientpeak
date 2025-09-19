@@ -1,26 +1,21 @@
+import { useRouter } from "expo-router";
 import React from "react";
-import {
-  Animated,
-  Button,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Stack, useRouter } from "expo-router";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/hooks/useAuth";
 
 const signUpSchema = z
   .object({
-    email: z.email("Invalid email address"),
+    email: z.string().email("Invalid email address"),
     password: z
       .string({ message: "Password is required" })
       .min(8, "Password must be at least 8 characters")
@@ -47,15 +42,8 @@ const mapSupabaseErrorToFormField = (error: string) => {
 
 export default function SignUpScreen() {
   const router = useRouter();
-  const { isDarkColorScheme } = useColorScheme();
-  const { loading, signUp } = useAuth();
+  const { isLoading: authLoading, signUp } = useAuth();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
-
-  // Animation refs
-  const fadeAnim = React.useRef(new Animated.Value(0)).current;
-  const slideAnim = React.useRef(new Animated.Value(30)).current;
-  const buttonScaleAnim = React.useRef(new Animated.Value(1)).current;
-  const signinScaleAnim = React.useRef(new Animated.Value(1)).current;
 
   const {
     control,
@@ -66,37 +54,7 @@ export default function SignUpScreen() {
     resolver: zodResolver(signUpSchema),
   });
 
-  React.useEffect(() => {
-    // Entrance animations
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, []);
-
   const onSignUp = async (data: SignUpFields) => {
-    // Button press animation
-    Animated.sequence([
-      Animated.timing(buttonScaleAnim, {
-        toValue: 0.95,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(buttonScaleAnim, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
     setIsSubmitting(true);
     try {
       const { error } = await signUp(data.email, data.password);
@@ -137,78 +95,40 @@ export default function SignUpScreen() {
   };
 
   const handleSignInPress = () => {
-    Animated.sequence([
-      Animated.timing(signinScaleAnim, {
-        toValue: 0.95,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(signinScaleAnim, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      router.replace("/(external)/sign-in");
-    });
+    router.replace("/(external)/sign-in");
   };
 
-  const backgroundColor = isDarkColorScheme ? "#000000" : "#ffffff";
-  const textColor = isDarkColorScheme ? "#ffffff" : "#000000";
-  const subtleColor = isDarkColorScheme ? "#666666" : "#999999";
-  const borderColor = isDarkColorScheme ? "#333333" : "#e5e5e5";
-  const errorColor = isDarkColorScheme ? "#ff6b6b" : "#dc3545";
+  const isLoading = authLoading || isSubmitting;
 
   return (
-    <>
-      <Stack.Screen
-        options={{
-          title: "",
-          headerStyle: {
-            backgroundColor,
-          },
-        }}
-      />
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={[styles.container, { backgroundColor }]}
-        testID="sign-up-screen"
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      className="flex-1 bg-background"
+      testID="sign-up-screen"
+    >
+      <ScrollView
+        contentContainerClassName="flex-grow justify-center p-6"
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <View
-            style={[
-              styles.content,
-              {
-                opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }],
-              },
-            ]}
-            testID="sign-up-content"
-          >
-            {/* Header */}
-            <View style={styles.header} testID="sign-up-header">
-              <Text
-                style={[styles.title, { color: textColor }]}
-                testID="sign-up-title"
-              >
+        <Card className="w-full max-w-sm mx-auto bg-card border-border shadow-sm">
+          <CardHeader className="items-center pb-6">
+            <CardTitle>
+              <Text variant="h2" className="text-center">
                 Create Account
               </Text>
-              <Text
-                style={[styles.subtitle, { color: subtleColor }]}
-                testID="sign-up-subtitle"
-              >
-                Start tracking your fitness progress today
-              </Text>
-            </View>
+            </CardTitle>
+            <Text variant="muted" className="text-center">
+              Start tracking your fitness progress today
+            </Text>
+          </CardHeader>
 
+          <CardContent className="gap-6">
             {/* Form */}
-            <View style={styles.form} testID="sign-up-form">
-              <View style={styles.inputContainer}>
-                <Text style={[styles.label, { color: textColor }]}>Email</Text>
+            <View className="gap-4" testID="sign-up-form">
+              {/* Email Input */}
+              <View className="gap-2">
+                <Label nativeID="email-label">Email</Label>
                 <Controller
                   control={control}
                   name="email"
@@ -221,31 +141,22 @@ export default function SignUpScreen() {
                       autoCapitalize="none"
                       keyboardType="email-address"
                       autoComplete="email"
-                      style={[
-                        styles.input,
-                        {
-                          borderColor: errors.email ? errorColor : borderColor,
-                          color: textColor,
-                        },
-                      ]}
+                      className={errors.email ? "border-destructive" : ""}
                       testID="email-input"
+                      aria-labelledby="email-label"
                     />
                   )}
                 />
                 {errors.email && (
-                  <Text
-                    style={[styles.errorText, { color: errorColor }]}
-                    testID="email-error"
-                  >
+                  <Text variant="small" className="text-destructive">
                     {errors.email.message}
                   </Text>
                 )}
               </View>
 
-              <View style={styles.inputContainer}>
-                <Text style={[styles.label, { color: textColor }]}>
-                  Password
-                </Text>
+              {/* Password Input */}
+              <View className="gap-2">
+                <Label nativeID="password-label">Password</Label>
                 <Controller
                   control={control}
                   name="password"
@@ -255,49 +166,38 @@ export default function SignUpScreen() {
                       value={value}
                       onChangeText={onChange}
                       secureTextEntry
-                      style={[
-                        styles.input,
-                        {
-                          borderColor: errors.password
-                            ? errorColor
-                            : borderColor,
-                          color: textColor,
-                        },
-                      ]}
+                      className={errors.password ? "border-destructive" : ""}
                       testID="password-input"
+                      aria-labelledby="password-label"
                     />
                   )}
                 />
                 {errors.password && (
-                  <Text
-                    style={[styles.errorText, { color: errorColor }]}
-                    testID="password-error"
-                  >
+                  <Text variant="small" className="text-destructive">
                     {errors.password.message}
                   </Text>
                 )}
 
                 {/* Password Requirements */}
-                <View style={styles.passwordHints} testID="password-hints">
-                  <Text style={[styles.hintText, { color: subtleColor }]}>
+                <View className="mt-2 gap-1" testID="password-hints">
+                  <Text variant="muted" className="text-xs">
                     Password must contain:
                   </Text>
-                  <Text style={[styles.hintText, { color: subtleColor }]}>
+                  <Text variant="muted" className="text-xs">
                     • At least 8 characters
                   </Text>
-                  <Text style={[styles.hintText, { color: subtleColor }]}>
+                  <Text variant="muted" className="text-xs">
                     • One uppercase letter
                   </Text>
-                  <Text style={[styles.hintText, { color: subtleColor }]}>
+                  <Text variant="muted" className="text-xs">
                     • One number
                   </Text>
                 </View>
               </View>
 
-              <View style={styles.inputContainer}>
-                <Text style={[styles.label, { color: textColor }]}>
-                  Repeat Password
-                </Text>
+              {/* Repeat Password Input */}
+              <View className="gap-2">
+                <Label nativeID="repeat-password-label">Repeat Password</Label>
                 <Controller
                   control={control}
                   name="repeatPassword"
@@ -307,214 +207,77 @@ export default function SignUpScreen() {
                       value={value}
                       onChangeText={onChange}
                       secureTextEntry
-                      style={[
-                        styles.input,
-                        {
-                          borderColor: errors.repeatPassword
-                            ? errorColor
-                            : borderColor,
-                          color: textColor,
-                        },
-                      ]}
+                      className={
+                        errors.repeatPassword ? "border-destructive" : ""
+                      }
                       testID="repeat-password-input"
+                      aria-labelledby="repeat-password-label"
                     />
                   )}
                 />
                 {errors.repeatPassword && (
-                  <Text
-                    style={[styles.errorText, { color: errorColor }]}
-                    testID="repeat-password-error"
-                  >
+                  <Text variant="small" className="text-destructive">
                     {errors.repeatPassword.message}
                   </Text>
                 )}
               </View>
 
+              {/* Root Error */}
               {errors.root && (
-                <Text
-                  style={[
-                    styles.errorText,
-                    { color: errorColor, textAlign: "center" },
-                  ]}
+                <View
+                  className="bg-destructive/15 p-3 rounded-md border border-destructive/25"
                   testID="form-error"
                 >
-                  {errors.root.message}
-                </Text>
+                  <Text
+                    variant="small"
+                    className="text-destructive text-center"
+                  >
+                    {errors.root.message}
+                  </Text>
+                </View>
               )}
             </View>
 
             {/* Sign Up Button */}
-            <View
-              style={[
-                styles.buttonContainer,
-                { transform: [{ scale: buttonScaleAnim }] },
-              ]}
-              testID="sign-up-button-container"
+            <Button
+              variant="default"
+              size="lg"
+              onPress={handleSubmit(onSignUp)}
+              disabled={isLoading}
+              testID="sign-up-button"
+              className="w-full"
             >
-              <Button
-                onPress={handleSubmit(onSignUp)}
-                disabled={loading || isSubmitting}
-                style={[
-                  styles.primaryButton,
-                  {
-                    backgroundColor: textColor,
-                    opacity: loading || isSubmitting ? 0.7 : 1,
-                  },
-                ]}
-                testID="sign-up-button"
-              >
-                <Text
-                  style={[styles.primaryButtonText, { color: backgroundColor }]}
-                  testID="sign-up-button-text"
-                >
-                  {loading ? "Creating Account..." : "Create Account"}
-                </Text>
-              </Button>
-            </View>
+              <Text>
+                {isLoading ? "Creating Account..." : "Create Account"}
+              </Text>
+            </Button>
 
             {/* Sign In Link */}
-            <View
-              style={[
-                styles.linkContainer,
-                { transform: [{ scale: signinScaleAnim }] },
-              ]}
-              testID="sign-in-link-container"
-            >
+            <View className="border-t border-border pt-4">
               <Button
+                variant="outline"
                 onPress={handleSignInPress}
-                style={[styles.secondaryButton, { borderColor }]}
                 testID="sign-in-link-button"
+                className="w-full"
               >
-                <Text
-                  style={[styles.secondaryButtonText, { color: textColor }]}
-                  testID="sign-in-link-text"
-                >
-                  Already have an account? Sign in
-                </Text>
+                <Text>Already have an account? Sign in</Text>
               </Button>
             </View>
 
             {/* Terms */}
-            <View style={styles.termsContainer} testID="terms-container">
+            <View className="pt-4" testID="terms-container">
               <Text
-                style={[styles.termsText, { color: subtleColor }]}
+                variant="muted"
+                className="text-center text-xs"
                 testID="terms-text"
               >
                 By creating an account, you agree to our{"\n"}Terms of Service
                 and Privacy Policy
               </Text>
             </View>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </>
+          </CardContent>
+        </Card>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: "center",
-    paddingHorizontal: 32,
-    paddingVertical: 40,
-  },
-  content: {
-    width: "100%",
-  },
-  header: {
-    alignItems: "center",
-    marginBottom: 40,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: "800",
-    textAlign: "center",
-    marginBottom: 8,
-    letterSpacing: -1,
-  },
-  subtitle: {
-    fontSize: 16,
-    textAlign: "center",
-    fontWeight: "400",
-  },
-  form: {
-    marginBottom: 32,
-  },
-  inputContainer: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 8,
-  },
-  input: {
-    height: 56,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    paddingHorizontal: 20,
-    fontSize: 16,
-    fontWeight: "500",
-  },
-  errorText: {
-    fontSize: 14,
-    marginTop: 8,
-    fontWeight: "500",
-  },
-  passwordHints: {
-    marginTop: 12,
-  },
-  hintText: {
-    fontSize: 13,
-    marginBottom: 4,
-    fontWeight: "400",
-  },
-  buttonContainer: {
-    marginBottom: 20,
-  },
-  primaryButton: {
-    height: 56,
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowOffset: {
-      width: 0,
-      height: 6,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 6,
-  },
-  primaryButtonText: {
-    fontSize: 18,
-    fontWeight: "700",
-    letterSpacing: -0.5,
-  },
-  linkContainer: {
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  secondaryButton: {
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  secondaryButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-  termsContainer: {
-    alignItems: "center",
-  },
-  termsText: {
-    fontSize: 12,
-    textAlign: "center",
-    lineHeight: 16,
-    fontWeight: "400",
-  },
-});
