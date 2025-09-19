@@ -71,7 +71,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       [
         "expo-router",
         {
-          root: "./src/routes",
+          root: "./src/app",
         },
       ],
       "expo-build-properties",
