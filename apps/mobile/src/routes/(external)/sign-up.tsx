@@ -3,13 +3,20 @@ import React from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Controller, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
@@ -47,12 +54,7 @@ export default function SignUpScreen() {
   const signUpMutation = trpc.auth.signUp.useMutation();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
-  const {
-    control,
-    handleSubmit,
-    setError,
-    formState: { errors },
-  } = useForm<SignUpFields>({
+  const form = useForm<SignUpFields>({
     resolver: zodResolver(signUpSchema),
   });
 
@@ -69,26 +71,26 @@ export default function SignUpScreen() {
 
         // Handle specific auth errors
         if (signUpMutation.error.message?.includes("User already registered")) {
-          setError("email", {
+          form.setError("email", {
             message: "An account with this email already exists",
           });
         } else if (
           signUpMutation.error.message?.includes("Password should be")
         ) {
-          setError("password", {
+          form.setError("password", {
             message: signUpMutation.error.message,
           });
         } else if (
           signUpMutation.error.message?.includes("Unable to validate email")
         ) {
-          setError("email", {
+          form.setError("email", {
             message: "Please enter a valid email address",
           });
         } else {
           const fieldName = mapSupabaseErrorToFormField(
             signUpMutation.error.message || "",
           );
-          setError(fieldName, {
+          form.setError(fieldName as any, {
             message:
               signUpMutation.error.message || "An unexpected error occurred",
           });
@@ -100,7 +102,7 @@ export default function SignUpScreen() {
       }
     } catch (err) {
       console.log("Unexpected sign up error:", err);
-      setError("root", { message: "An unexpected error occurred" });
+      form.setError("root", { message: "An unexpected error occurred" });
     } finally {
       setIsSubmitting(false);
     }
@@ -137,124 +139,112 @@ export default function SignUpScreen() {
 
           <CardContent className="gap-6">
             {/* Form */}
-            <View className="gap-4" testID="sign-up-form">
-              {/* Email Input */}
-              <View className="gap-2">
-                <Label nativeID="email-label">Email</Label>
-                <Controller
-                  control={control}
+            <Form {...form}>
+              <View className="gap-4" testID="sign-up-form">
+                {/* Email Input */}
+                <FormField
+                  control={form.control}
                   name="email"
-                  render={({ field: { onChange, value } }) => (
-                    <Input
-                      placeholder="m@example.com"
-                      value={value}
-                      onChangeText={onChange}
-                      autoFocus
-                      autoCapitalize="none"
-                      keyboardType="email-address"
-                      autoComplete="email"
-                      className={errors.email ? "border-destructive" : ""}
-                      testID="email-input"
-                      aria-labelledby="email-label"
-                    />
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="m@example.com"
+                          value={field.value}
+                          onChangeText={field.onChange}
+                          autoFocus
+                          autoCapitalize="none"
+                          keyboardType="email-address"
+                          autoComplete="email"
+                          testID="email-input"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
                   )}
                 />
-                {errors.email && (
-                  <Text variant="small" className="text-destructive">
-                    {errors.email.message}
-                  </Text>
-                )}
-              </View>
 
-              {/* Password Input */}
-              <View className="gap-2">
-                <Label nativeID="password-label">Password</Label>
-                <Controller
-                  control={control}
+                {/* Password Input */}
+                <FormField
+                  control={form.control}
                   name="password"
-                  render={({ field: { onChange, value } }) => (
-                    <Input
-                      placeholder="Enter your password"
-                      value={value}
-                      onChangeText={onChange}
-                      secureTextEntry
-                      className={errors.password ? "border-destructive" : ""}
-                      testID="password-input"
-                      aria-labelledby="password-label"
-                    />
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Password</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Enter your password"
+                          value={field.value}
+                          onChangeText={field.onChange}
+                          secureTextEntry
+                          testID="password-input"
+                        />
+                      </FormControl>
+                      <FormMessage />
+
+                      {/* Password Requirements */}
+                      <View className="mt-2 gap-1" testID="password-hints">
+                        <Text variant="muted" className="text-xs">
+                          Password must contain:
+                        </Text>
+                        <Text variant="muted" className="text-xs">
+                          • At least 8 characters
+                        </Text>
+                        <Text variant="muted" className="text-xs">
+                          • One uppercase letter
+                        </Text>
+                        <Text variant="muted" className="text-xs">
+                          • One number
+                        </Text>
+                      </View>
+                    </FormItem>
                   )}
                 />
-                {errors.password && (
-                  <Text variant="small" className="text-destructive">
-                    {errors.password.message}
-                  </Text>
-                )}
 
-                {/* Password Requirements */}
-                <View className="mt-2 gap-1" testID="password-hints">
-                  <Text variant="muted" className="text-xs">
-                    Password must contain:
-                  </Text>
-                  <Text variant="muted" className="text-xs">
-                    • At least 8 characters
-                  </Text>
-                  <Text variant="muted" className="text-xs">
-                    • One uppercase letter
-                  </Text>
-                  <Text variant="muted" className="text-xs">
-                    • One number
-                  </Text>
-                </View>
-              </View>
-
-              {/* Repeat Password Input */}
-              <View className="gap-2">
-                <Label nativeID="repeat-password-label">Repeat Password</Label>
-                <Controller
-                  control={control}
+                {/* Repeat Password Input */}
+                <FormField
+                  control={form.control}
                   name="repeatPassword"
-                  render={({ field: { onChange, value } }) => (
-                    <Input
-                      placeholder="Confirm your password"
-                      value={value}
-                      onChangeText={onChange}
-                      secureTextEntry
-                      className={
-                        errors.repeatPassword ? "border-destructive" : ""
-                      }
-                      testID="repeat-password-input"
-                      aria-labelledby="repeat-password-label"
-                    />
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Repeat Password</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Confirm your password"
+                          value={field.value}
+                          onChangeText={field.onChange}
+                          secureTextEntry
+                          testID="repeat-password-input"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
                   )}
                 />
-                {errors.repeatPassword && (
-                  <Text variant="small" className="text-destructive">
-                    {errors.repeatPassword.message}
-                  </Text>
+
+                {/* Root Error */}
+                {form.formState.errors.root && (
+                  <View
+                    className="bg-destructive/15 p-3 rounded-md border border-destructive/25"
+                    testID="form-error"
+                  >
+                    <Text
+                      variant="small"
+                      className="text-destructive text-center"
+                    >
+                      {form.formState.errors.root.message}
+                    </Text>
+                  </View>
                 )}
               </View>
-
-              {/* Root Error */}
-              {errors.root && (
-                <View
-                  className="bg-destructive/15 p-3 rounded-md border border-destructive/25"
-                  testID="form-error"
-                >
-                  <Text
-                    variant="small"
-                    className="text-destructive text-center"
-                  >
-                    {errors.root.message}
-                  </Text>
-                </View>
-              )}
-            </View>
+            </Form>
 
             {/* Sign Up Button */}
             <Button
               variant="default"
               size="lg"
-              onPress={handleSubmit(onSignUp)}
+              onPress={form.handleSubmit(onSignUp)}
               disabled={isLoading}
               testID="sign-up-button"
               className="w-full"

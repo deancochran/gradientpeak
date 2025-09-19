@@ -5,13 +5,20 @@ import { supabase } from "@/lib/supabase/client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "expo-router";
-import { Controller, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/hooks/useAuth";
 
@@ -27,12 +34,7 @@ export default function VerifyScreen() {
   const [showResendForm, setShowResendForm] = React.useState(false);
   const [isResending, setIsResending] = React.useState(false);
 
-  const {
-    control,
-    handleSubmit,
-    setError,
-    formState: { errors },
-  } = useForm<ResendFields>({
+  const form = useForm<ResendFields>({
     resolver: zodResolver(resendSchema),
   });
 
@@ -53,19 +55,21 @@ export default function VerifyScreen() {
 
       if (error) {
         console.log("Resend verification error:", error);
-        setError("email", {
+        form.setError("email", {
           message: error.message || "Failed to resend verification email",
         });
       } else {
         // Success - show confirmation
         setShowResendForm(false);
-        setError("root", {
+        form.setError("root", {
           message: "Verification email sent! Please check your inbox.",
         });
       }
     } catch (err) {
       console.log("Unexpected resend verification error:", err);
-      setError("email", { message: "Failed to resend verification email" });
+      form.setError("email", {
+        message: "Failed to resend verification email",
+      });
     } finally {
       setIsResending(false);
     }
@@ -105,10 +109,10 @@ export default function VerifyScreen() {
 
           <CardContent className="gap-6">
             {/* Status Message */}
-            {errors.root && (
+            {form.formState.errors.root && (
               <View
                 className={`p-3 rounded-md border ${
-                  errors.root?.message?.includes("sent")
+                  form.formState.errors.root?.message?.includes("sent")
                     ? "bg-success/15 border-success/25"
                     : "bg-destructive/15 border-destructive/25"
                 }`}
@@ -117,59 +121,57 @@ export default function VerifyScreen() {
                 <Text
                   variant="small"
                   className={`text-center ${
-                    errors.root?.message?.includes("sent")
+                    form.formState.errors.root?.message?.includes("sent")
                       ? "text-success"
                       : "text-destructive"
                   }`}
                   testID="status-text"
                 >
-                  {errors.root?.message}
+                  {form.formState.errors.root?.message}
                 </Text>
               </View>
             )}
 
             {/* Resend Form */}
             {showResendForm && (
-              <View className="gap-4" testID="resend-form">
-                <View className="gap-2">
-                  <Label nativeID="email-label">Email</Label>
-                  <Controller
-                    control={control}
+              <Form {...form}>
+                <View className="gap-4" testID="resend-form">
+                  <FormField
+                    control={form.control}
                     name="email"
-                    render={({ field: { onChange, value } }) => (
-                      <Input
-                        placeholder="Enter your email address"
-                        value={value}
-                        onChangeText={onChange}
-                        autoCapitalize="none"
-                        keyboardType="email-address"
-                        autoComplete="email"
-                        className={errors.email ? "border-destructive" : ""}
-                        testID="email-input"
-                        aria-labelledby="email-label"
-                      />
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="Enter your email address"
+                            value={field.value}
+                            onChangeText={field.onChange}
+                            autoCapitalize="none"
+                            keyboardType="email-address"
+                            autoComplete="email"
+                            testID="email-input"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
                     )}
                   />
-                  {errors.email && (
-                    <Text variant="small" className="text-destructive">
-                      {errors.email.message}
-                    </Text>
-                  )}
-                </View>
 
-                <Button
-                  variant="outline"
-                  size="lg"
-                  onPress={handleSubmit(onResendVerification)}
-                  disabled={isResending}
-                  testID="resend-button"
-                  className="w-full"
-                >
-                  <Text>
-                    {isResending ? "Sending..." : "Send verification email"}
-                  </Text>
-                </Button>
-              </View>
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    onPress={form.handleSubmit(onResendVerification)}
+                    disabled={isResending}
+                    testID="resend-button"
+                    className="w-full"
+                  >
+                    <Text>
+                      {isResending ? "Sending..." : "Send verification email"}
+                    </Text>
+                  </Button>
+                </View>
+              </Form>
             )}
 
             {/* Action Buttons */}

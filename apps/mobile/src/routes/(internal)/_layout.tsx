@@ -11,7 +11,7 @@ export default function InternalLayout() {
   // Redirect automatically if user signs out
   useEffect(() => {
     if (!loading && !isAuthenticated) {
-      router.replace("/(external)/welcome");
+      router.replace("/");
     }
   }, [loading, isAuthenticated, router]);
   // Show loading while auth state resolves

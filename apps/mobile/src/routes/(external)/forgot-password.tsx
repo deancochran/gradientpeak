@@ -1,15 +1,21 @@
-import React from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
-
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "expo-router";
-import { Controller, useForm } from "react-hook-form";
+import React from "react";
+import { useForm } from "react-hook-form";
+import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
@@ -27,13 +33,7 @@ export default function ForgotPasswordScreen() {
   const [emailSent, setEmailSent] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
-  const {
-    control,
-    handleSubmit,
-    setError,
-    getValues,
-    formState: { errors },
-  } = useForm<ForgotPasswordFields>({
+  const form = useForm<ForgotPasswordFields>({
     resolver: zodResolver(forgotPasswordSchema),
   });
 
@@ -49,17 +49,17 @@ export default function ForgotPasswordScreen() {
         console.log("Reset password error:", resetPasswordMutation.error);
 
         if (resetPasswordMutation.error.message?.includes("User not found")) {
-          setError("email", {
+          form.setError("email", {
             message: "No account found with this email address",
           });
         } else if (
           resetPasswordMutation.error.message?.includes("Email rate limit")
         ) {
-          setError("email", {
+          form.setError("email", {
             message: "Too many requests. Please try again later.",
           });
         } else {
-          setError("email", {
+          form.setError("email", {
             message:
               resetPasswordMutation.error.message ||
               "Failed to send reset email",
@@ -70,7 +70,7 @@ export default function ForgotPasswordScreen() {
       }
     } catch (err) {
       console.log("Unexpected reset password error:", err);
-      setError("email", {
+      form.setError("email", {
         message: "An unexpected error occurred. Please try again.",
       });
     } finally {
@@ -114,7 +114,7 @@ export default function ForgotPasswordScreen() {
                 <Text variant="muted" className="text-center">
                   Weve sent password reset instructions to{"\n"}
                   <Text variant="default" className="font-semibold">
-                    {getValues("email")}
+                    {form.getValues("email")}
                   </Text>
                 </Text>
               </View>
@@ -174,40 +174,38 @@ export default function ForgotPasswordScreen() {
 
           <CardContent className="gap-6">
             {/* Form */}
-            <View className="gap-4" testID="forgot-password-form">
-              <View className="gap-2">
-                <Label nativeID="email-label">Email</Label>
-                <Controller
-                  control={control}
+            <Form {...form}>
+              <View className="gap-4" testID="forgot-password-form">
+                <FormField
+                  control={form.control}
                   name="email"
-                  render={({ field: { onChange, value } }) => (
-                    <Input
-                      placeholder="Email address"
-                      value={value}
-                      onChangeText={onChange}
-                      autoFocus
-                      autoCapitalize="none"
-                      keyboardType="email-address"
-                      autoComplete="email"
-                      className={errors.email ? "border-destructive" : ""}
-                      testID="email-input"
-                      aria-labelledby="email-label"
-                    />
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Email address"
+                          value={field.value}
+                          onChangeText={field.onChange}
+                          autoFocus
+                          autoCapitalize="none"
+                          keyboardType="email-address"
+                          autoComplete="email"
+                          testID="email-input"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
                   )}
                 />
-                {errors.email && (
-                  <Text variant="small" className="text-destructive">
-                    {errors.email.message}
-                  </Text>
-                )}
               </View>
-            </View>
+            </Form>
 
             {/* Send Reset Button */}
             <Button
               variant="default"
               size="lg"
-              onPress={handleSubmit(onSendResetEmail)}
+              onPress={form.handleSubmit(onSendResetEmail)}
               disabled={isLoading}
               testID="send-reset-button"
               className="w-full"

@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -13,8 +13,15 @@ import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Text } from "@/components/ui/text";
 import { supabase } from "@/lib/supabase/client";
 
@@ -40,12 +47,7 @@ export default function ResetPasswordScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [sessionSet, setSessionSet] = useState(false);
 
-  const {
-    control,
-    handleSubmit,
-    setError,
-    formState: { errors },
-  } = useForm<ResetPasswordFields>({
+  const form = useForm<ResetPasswordFields>({
     resolver: zodResolver(resetPasswordSchema),
   });
 
@@ -111,7 +113,9 @@ export default function ResetPasswordScreen() {
 
   const onUpdatePassword = async (data: ResetPasswordFields) => {
     if (!sessionSet) {
-      setError("root", { message: "Session not ready. Please try again." });
+      form.setError("root", {
+        message: "Session not ready. Please try again.",
+      });
       return;
     }
 
@@ -125,7 +129,7 @@ export default function ResetPasswordScreen() {
 
       if (error) {
         console.error("❌ Password update error:", error.message);
-        setError("root", { message: error.message });
+        form.setError("root", { message: error.message });
         return;
       }
 
@@ -138,7 +142,7 @@ export default function ResetPasswordScreen() {
       );
     } catch (err) {
       console.error("💥 Unexpected password update error:", err);
-      setError("root", { message: "An unexpected error occurred" });
+      form.setError("root", { message: "An unexpected error occurred" });
     } finally {
       setIsLoading(false);
     }
@@ -169,99 +173,89 @@ export default function ResetPasswordScreen() {
 
           <CardContent className="gap-6">
             {/* Form */}
-            <View className="gap-4" testID="reset-password-form">
-              {/* Password Input */}
-              <View className="gap-2">
-                <Label nativeID="password-label">New Password</Label>
-                <Controller
-                  control={control}
+            <Form {...form}>
+              <View className="gap-4" testID="reset-password-form">
+                {/* Password Input */}
+                <FormField
+                  control={form.control}
                   name="password"
-                  render={({ field: { onChange, value } }) => (
-                    <Input
-                      placeholder="Enter new password"
-                      value={value}
-                      onChangeText={onChange}
-                      secureTextEntry
-                      autoFocus
-                      className={errors.password ? "border-destructive" : ""}
-                      testID="password-input"
-                      aria-labelledby="password-label"
-                    />
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>New Password</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Enter new password"
+                          value={field.value}
+                          onChangeText={field.onChange}
+                          secureTextEntry
+                          autoFocus
+                          testID="password-input"
+                        />
+                      </FormControl>
+                      <FormMessage />
+
+                      {/* Password Requirements */}
+                      <View className="mt-2 gap-1" testID="password-hints">
+                        <Text variant="muted" className="text-xs">
+                          Password must contain:
+                        </Text>
+                        <Text variant="muted" className="text-xs">
+                          • At least 8 characters
+                        </Text>
+                        <Text variant="muted" className="text-xs">
+                          • One uppercase letter
+                        </Text>
+                        <Text variant="muted" className="text-xs">
+                          • One number
+                        </Text>
+                      </View>
+                    </FormItem>
                   )}
                 />
-                {errors.password && (
-                  <Text variant="small" className="text-destructive">
-                    {errors.password.message}
-                  </Text>
-                )}
 
-                {/* Password Requirements */}
-                <View className="mt-2 gap-1" testID="password-hints">
-                  <Text variant="muted" className="text-xs">
-                    Password must contain:
-                  </Text>
-                  <Text variant="muted" className="text-xs">
-                    • At least 8 characters
-                  </Text>
-                  <Text variant="muted" className="text-xs">
-                    • One uppercase letter
-                  </Text>
-                  <Text variant="muted" className="text-xs">
-                    • One number
-                  </Text>
-                </View>
-              </View>
-
-              {/* Confirm Password Input */}
-              <View className="gap-2">
-                <Label nativeID="confirm-password-label">
-                  Confirm Password
-                </Label>
-                <Controller
-                  control={control}
+                {/* Confirm Password Input */}
+                <FormField
+                  control={form.control}
                   name="confirmPassword"
-                  render={({ field: { onChange, value } }) => (
-                    <Input
-                      placeholder="Confirm new password"
-                      value={value}
-                      onChangeText={onChange}
-                      secureTextEntry
-                      className={
-                        errors.confirmPassword ? "border-destructive" : ""
-                      }
-                      testID="confirm-password-input"
-                      aria-labelledby="confirm-password-label"
-                    />
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Confirm Password</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Confirm new password"
+                          value={field.value}
+                          onChangeText={field.onChange}
+                          secureTextEntry
+                          testID="confirm-password-input"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
                   )}
                 />
-                {errors.confirmPassword && (
-                  <Text variant="small" className="text-destructive">
-                    {errors.confirmPassword.message}
-                  </Text>
+
+                {/* Root Error */}
+                {form.formState.errors.root && (
+                  <View
+                    className="bg-destructive/15 p-3 rounded-md border border-destructive/25"
+                    testID="form-error"
+                  >
+                    <Text
+                      variant="small"
+                      className="text-destructive text-center"
+                    >
+                      {form.formState.errors.root.message}
+                    </Text>
+                  </View>
                 )}
               </View>
-
-              {/* Root Error */}
-              {errors.root && (
-                <View
-                  className="bg-destructive/15 p-3 rounded-md border border-destructive/25"
-                  testID="form-error"
-                >
-                  <Text
-                    variant="small"
-                    className="text-destructive text-center"
-                  >
-                    {errors.root.message}
-                  </Text>
-                </View>
-              )}
-            </View>
+            </Form>
 
             {/* Update Password Button */}
             <Button
               variant="default"
               size="lg"
-              onPress={handleSubmit(onUpdatePassword)}
+              onPress={form.handleSubmit(onUpdatePassword)}
               disabled={isLoading || !sessionSet}
               testID="update-password-button"
               className="w-full"

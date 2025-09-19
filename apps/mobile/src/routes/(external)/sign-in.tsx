@@ -3,13 +3,20 @@ import React from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Controller, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
@@ -39,12 +46,7 @@ export default function SignInScreen() {
   const signInMutation = trpc.auth.signInWithPassword.useMutation();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
-  const {
-    control,
-    handleSubmit,
-    setError,
-    formState: { errors },
-  } = useForm<SignInFields>({
+  const form = useForm<SignInFields>({
     resolver: zodResolver(signInSchema),
   });
 
@@ -63,27 +65,27 @@ export default function SignInScreen() {
         if (
           signInMutation.error.message?.includes("Invalid login credentials")
         ) {
-          setError("root", {
+          form.setError("root", {
             message: "Invalid email or password. Please try again.",
           });
         } else if (
           signInMutation.error.message?.includes("Email not confirmed")
         ) {
-          setError("root", {
+          form.setError("root", {
             message:
               "Please verify your email address before signing in. Check your email for a verification link.",
           });
         } else if (
           signInMutation.error.message?.includes("Too many requests")
         ) {
-          setError("root", {
+          form.setError("root", {
             message: "Too many login attempts. Please try again later.",
           });
         } else {
           const fieldName = mapSupabaseErrorToFormField(
             signInMutation.error.message || "",
           );
-          setError(fieldName, {
+          form.setError(fieldName as any, {
             message:
               signInMutation.error.message || "An unexpected error occurred",
           });
@@ -93,7 +95,7 @@ export default function SignInScreen() {
       }
     } catch (err) {
       console.log("Unexpected sign in error:", err);
-      setError("root", { message: "An unexpected error occurred" });
+      form.setError("root", { message: "An unexpected error occurred" });
     } finally {
       setIsSubmitting(false);
     }
@@ -134,81 +136,75 @@ export default function SignInScreen() {
 
           <CardContent className="gap-6">
             {/* Form */}
-            <View className="gap-4" testID="sign-in-form">
-              {/* Email Input */}
-              <View className="gap-2">
-                <Label nativeID="email-label">Email</Label>
-                <Controller
-                  control={control}
+            <Form {...form}>
+              <View className="gap-4" testID="sign-in-form">
+                {/* Email Input */}
+                <FormField
+                  control={form.control}
                   name="email"
-                  render={({ field: { onChange, value } }) => (
-                    <Input
-                      placeholder="Email address"
-                      value={value}
-                      onChangeText={onChange}
-                      autoFocus
-                      autoCapitalize="none"
-                      keyboardType="email-address"
-                      autoComplete="email"
-                      className={errors.email ? "border-destructive" : ""}
-                      testID="email-input"
-                      aria-labelledby="email-label"
-                    />
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Email address"
+                          value={field.value}
+                          onChangeText={field.onChange}
+                          autoFocus
+                          autoCapitalize="none"
+                          keyboardType="email-address"
+                          autoComplete="email"
+                          testID="email-input"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
                   )}
                 />
-                {errors.email && (
-                  <Text variant="small" className="text-destructive">
-                    {errors.email.message}
-                  </Text>
-                )}
-              </View>
 
-              {/* Password Input */}
-              <View className="gap-2">
-                <Label nativeID="password-label">Password</Label>
-                <Controller
-                  control={control}
+                {/* Password Input */}
+                <FormField
+                  control={form.control}
                   name="password"
-                  render={({ field: { onChange, value } }) => (
-                    <Input
-                      placeholder="Password"
-                      value={value}
-                      onChangeText={onChange}
-                      secureTextEntry
-                      className={errors.password ? "border-destructive" : ""}
-                      testID="password-input"
-                      aria-labelledby="password-label"
-                    />
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Password</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Password"
+                          value={field.value}
+                          onChangeText={field.onChange}
+                          secureTextEntry
+                          testID="password-input"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
                   )}
                 />
-                {errors.password && (
-                  <Text variant="small" className="text-destructive">
-                    {errors.password.message}
-                  </Text>
+
+                {/* Root Error */}
+                {form.formState.errors.root && (
+                  <View
+                    className="bg-destructive/15 p-3 rounded-md border border-destructive/25"
+                    testID="root-error-container"
+                  >
+                    <Text
+                      variant="small"
+                      className="text-destructive text-center"
+                    >
+                      {form.formState.errors.root.message}
+                    </Text>
+                  </View>
                 )}
               </View>
-
-              {/* Root Error */}
-              {errors.root && (
-                <View
-                  className="bg-destructive/15 p-3 rounded-md border border-destructive/25"
-                  testID="root-error-container"
-                >
-                  <Text
-                    variant="small"
-                    className="text-destructive text-center"
-                  >
-                    {errors.root.message}
-                  </Text>
-                </View>
-              )}
-            </View>
+            </Form>
 
             {/* Sign In Button */}
             <Button
               variant="default"
               size="lg"
-              onPress={handleSubmit(onSignIn)}
+              onPress={form.handleSubmit(onSignIn)}
               disabled={isLoading}
               testID="sign-in-button"
               className="w-full"
