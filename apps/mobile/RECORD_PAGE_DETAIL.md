@@ -6,89 +6,183 @@ The **Record** page provides a guided **stepper flow** to prepare users for both
 
 ---
 
-## 🏗️ Current Implementation Status
+## 🏗️ Implementation Requirements
 
-**Planned Feature** - This document describes the intended implementation based on current architecture patterns and existing infrastructure.
+### Navigation Behavior
+- **Reset on Tab Focus**: The record selection process must restart every time the user navigates to the `/(internal)/(tabs)/record` tab
+- **Post-Completion Navigation**: After clicking "Begin Activity", the user must be navigated to `/(internal)/recording` page
+- **State Isolation**: Selection state must be separate from recording state to allow clean restarts
 
-### Existing Infrastructure
-- **Activity Store**: `useWorkoutStore` with comprehensive activity state management
-- **Permissions Store**: `usePermissionsStore` with Bluetooth and location permission handling
-- **Core Types**: Shared activity types and constraints from `@repo/core`
-- **Navigation**: Expo Router with file-based routing
+### UI/UX Standards
+- **Minimal Design**: Follow React Native Reusables style guide and README best practices
+- **Consistent Components**: Use existing `@/components/ui` components for all UI elements
+- **NativeWind Styling**: Apply Tailwind CSS classes following established patterns
+- **Accessibility**: Ensure proper contrast, focus states, and screen reader support
 
----
+### Stepper Component Architecture
+- **Component Location**: Create `@/components/Stepper.tsx` with compound component pattern
+- **API Design**: Support declarative step declaration:
+  ```tsx
+  <Stepper>
+    <Stepper.Step title="Activity Type">
+      {/* Step content */}
+    </Stepper.Step>
+    <Stepper.Step title="Permissions">
+      {/* Step content */}
+    </Stepper.Step>
+  </Stepper>
+  ```
+- **Sub-Components**: Include `Stepper.Step`, `Stepper.Indicator`, `Stepper.Controls`
 
-## 🪜 Stepper Flow Design
-
-### **Step 1: Activity Mode Selection**
-* **Planned Activity**
-  * Select from user's training plans and scheduled activities
-  * Each planned activity has associated activity type, duration, and intensity targets
-* **Unplanned Activity**
-  * Direct activity type selection without plan requirements
-  * Supports all activity types defined in `@repo/core/types/activity-types`
-
-### **Step 2: Activity Type Confirmation**
-* Display activity-specific requirements and constraints
-* Show estimated duration and metrics based on activity type
-* Provide option to customize activity settings
-
-### **Step 3: Permission Enablement (Conditional)**
-* **Location Permissions**: Required for GPS-based activities (running, cycling, hiking)
-* **Background Location**: Required for continuous outdoor tracking
-* **Bluetooth Permissions**: Required for external sensors (HR monitors, power meters, cadence sensors)
-* Smart skipping of already-granted permissions
-
-### **Step 4: Bluetooth Device Pairing (Conditional)**
-* Scan for and connect to Bluetooth fitness devices
-* Support for heart rate monitors, cycling sensors, power meters
-* Device validation and connection status monitoring
-* Skip step if no Bluetooth devices required for selected activity
-
-### **Step 5: Ready Confirmation**
-* **Summary Display**: Activity type, connected devices, permission status
-* **Navigation Options**: Back to previous steps for adjustments
-* **Final Action**: "Begin Recording" button to transition to recording screen
+### Modal Redesign Requirements
+- **Bluetooth Modal**: Complete redesign using React Native Reusables components
+- **Permissions Modal**: Redesign following style guide patterns
+- **Consistent Patterns**: Use existing modal components from `@/components/ui`
 
 ---
 
-## 🎬 Navigation Flow
+## 🪜 Stepper Flow Implementation
 
+### Step 1: Activity Mode Selection
+```tsx
+<Stepper.Step title="Activity Type">
+  <View className="p-6">
+    <Text className="text-lg font-semibold mb-4">Choose Activity Type</Text>
+    <Button variant="outline" onPress={() => setMode('planned')}>
+      Planned Workout
+    </Button>
+    <Button variant="outline" onPress={() => setMode('unplanned')}>
+      Unplanned Workout
+    </Button>
+  </View>
+</Stepper.Step>
 ```
-Record (Stepper) → Recording (Active) → Summary → Back to Tabs
-                               ↘ Discard → Cleanup → Back to Tabs
+
+### Step 2: Activity Selection (Conditional)
+- **Planned**: Browse training plans and scheduled activities
+- **Unplanned**: Direct activity type picker using `@repo/core` types
+
+### Step 3: Permission Enablement
+```tsx
+<Stepper.Step title="Permissions" condition={requiresPermissions}>
+  <PermissionsStep 
+    onComplete={handlePermissionsComplete}
+    activityType={selectedActivityType}
+  />
+</Stepper.Step>
 ```
 
-### Transition to Recording
-When user presses **"Begin Recording"**:
-1. `useWorkoutStore` state is initialized with selected activity
-2. Navigation to `/recording` screen with setup parameters
-3. Recording screen handles actual metrics capture and timing
-4. Navigation guards prevent accidental exit during active recording
+### Step 4: Bluetooth Pairing (Conditional)
+```tsx
+<Stepper.Step title="Connect Devices" condition={requiresBluetooth}>
+  <BluetoothStep 
+    onDeviceConnected={handleDeviceConnected}
+    onSkip={handleBluetoothSkip}
+  />
+</Stepper.Step>
+```
+
+### Step 5: Ready Confirmation
+```tsx
+<Stepper.Step title="Ready">
+  <ReadyStep 
+    activityType={selectedActivityType}
+    devices={connectedDevices}
+    onBegin={handleBeginActivity}
+  />
+</Stepper.Step>
+```
 
 ---
 
-## 🗄️ State Management Integration
+## 🔧 Stepper Component Implementation
 
-### Activity Store State (`useWorkoutStore`)
-```ts
-interface ActiveWorkout {
-  id: string;
-  type: WorkoutType; // From @repo/core types
-  status: "idle" | "recording" | "paused" | "completed" | "stopped";
-  plannedActivityId?: string;
-  settings: WorkoutSettings;
-  // ... additional metrics and timing
+### File: `@/components/Stepper.tsx`
+```tsx
+interface StepperProps {
+  children: React.ReactNode;
+  initialStep?: number;
+  onComplete?: () => void;
 }
+
+interface StepProps {
+  title: string;
+  children: React.ReactNode;
+  condition?: boolean;
+}
+
+const Stepper = ({ children, initialStep = 0, onComplete }: StepperProps) => {
+  const [currentStep, setCurrentStep] = useState(initialStep);
+  
+  // Navigation logic with validation
+  const nextStep = () => { /* ... */ };
+  const prevStep = () => { /* ... */ };
+  
+  return (
+    <View className="flex-1">
+      <Stepper.Indicator currentStep={currentStep} totalSteps={React.Children.count(children)} />
+      {React.Children.toArray(children)[currentStep]}
+      <Stepper.Controls 
+        currentStep={currentStep}
+        onNext={nextStep}
+        onPrev={prevStep}
+        onComplete={onComplete}
+      />
+    </View>
+  );
+};
+
+Stepper.Step = ({ children, condition = true }: StepProps) => {
+  if (!condition) return null;
+  return <>{children}</>;
+};
+
+Stepper.Indicator = ({ currentStep, totalSteps }) => {
+  return (
+    <View className="flex-row justify-center p-4">
+      {Array.from({ length: totalSteps }).map((_, index) => (
+        <View
+          key={index}
+          className={`w-3 h-3 rounded-full mx-1 ${
+            index === currentStep ? 'bg-primary' : 'bg-muted'
+          }`}
+        />
+      ))}
+    </View>
+  );
+};
+
+Stepper.Controls = ({ currentStep, totalSteps, onNext, onPrev, onComplete }) => {
+  return (
+    <View className="p-6 border-t border-border">
+      <View className="flex-row justify-between">
+        {currentStep > 0 && (
+          <Button variant="outline" onPress={onPrev}>
+            Back
+          </Button>
+        )}
+        {currentStep < totalSteps - 1 ? (
+          <Button onPress={onNext}>Next</Button>
+        ) : (
+          <Button onPress={onComplete}>Begin Activity</Button>
+        )}
+      </View>
+    </View>
+  );
+};
 ```
 
-### Stepper State (`useRecordSelection`)
-```ts
+---
+
+## 🗄️ State Management Implementation
+
+### File: `@/lib/hooks/useRecordSelection.ts`
+```tsx
 interface RecordSelectionState {
   currentStep: number;
-  mode: "planned" | "unplanned";
-  selectedActivityType?: string;
-  plannedActivityId?: string;
+  mode: 'planned' | 'unplanned' | null;
+  selectedActivityType: string | null;
+  plannedActivityId: string | null;
   permissions: {
     location: boolean;
     backgroundLocation: boolean;
@@ -97,122 +191,330 @@ interface RecordSelectionState {
   connectedDevices: string[];
   setupComplete: boolean;
 }
+
+export const useRecordSelection = () => {
+  const [state, setState] = useState<RecordSelectionState>({
+    currentStep: 0,
+    mode: null,
+    selectedActivityType: null,
+    plannedActivityId: null,
+    permissions: {
+      location: false,
+      backgroundLocation: false,
+      bluetooth: false,
+    },
+    connectedDevices: [],
+    setupComplete: false,
+  });
+
+  // Reset state when hook is initialized (on tab focus)
+  useEffect(() => {
+    setState(prev => ({
+      ...initialState,
+      currentStep: 0,
+    }));
+  }, []);
+
+  const updateStep = (step: number) => {
+    setState(prev => ({ ...prev, currentStep: step }));
+  };
+
+  const setActivityMode = (mode: 'planned' | 'unplanned') => {
+    setState(prev => ({ ...prev, mode, currentStep: 1 }));
+  };
+
+  const completeSelection = () => {
+    setState(prev => ({ ...prev, setupComplete: true }));
+  };
+
+  return {
+    ...state,
+    updateStep,
+    setActivityMode,
+    completeSelection,
+  };
+};
 ```
 
-### Permission Integration
-Leverages existing `usePermissionsStore` with:
-- `checkPermission()` and `requestPermission()` methods
-- Support for Bluetooth, location, and background location
-- Platform-specific permission handling (Android vs iOS)
+---
+
+## 🎬 Navigation Integration
+
+### File: `apps/mobile/src/app/(internal)/(tabs)/record.tsx`
+```tsx
+export default function RecordScreen() {
+  const selection = useRecordSelection();
+  const router = useRouter();
+
+  const handleComplete = async () => {
+    // Prepare workout data for recording
+    const workoutData = {
+      type: selection.selectedActivityType,
+      plannedActivityId: selection.plannedActivityId,
+      devices: selection.connectedDevices,
+    };
+
+    // Navigate to recording screen with prepared data
+    router.push({
+      pathname: '/(internal)/recording',
+      params: { workoutData: JSON.stringify(workoutData) },
+    });
+
+    // Reset selection state for next visit
+    selection.reset();
+  };
+
+  return (
+    <View className="flex-1 bg-background">
+      <Stepper 
+        initialStep={selection.currentStep}
+        onComplete={handleComplete}
+      >
+        <Stepper.Step title="Activity Type">
+          <ActivityModeStep onSelectMode={selection.setActivityMode} />
+        </Stepper.Step>
+
+        <Stepper.Step 
+          title="Select Activity" 
+          condition={selection.mode !== null}
+        >
+          {selection.mode === 'planned' ? (
+            <PlannedActivityStep onSelectActivity={handleActivitySelect} />
+          ) : (
+            <UnplannedActivityStep onSelectActivity={handleActivitySelect} />
+          )}
+        </Stepper.Step>
+
+        <Stepper.Step 
+          title="Permissions" 
+          condition={selection.selectedActivityType !== null}
+        >
+          <PermissionsStep 
+            activityType={selection.selectedActivityType}
+            onPermissionsComplete={handlePermissionsComplete}
+          />
+        </Stepper.Step>
+
+        <Stepper.Step 
+          title="Connect Devices" 
+          condition={requiresBluetooth(selection.selectedActivityType)}
+        >
+          <BluetoothStep 
+            onDevicesConnected={handleDevicesConnected}
+            onSkip={handleBluetoothSkip}
+          />
+        </Stepper.Step>
+
+        <Stepper.Step title="Ready">
+          <ReadyStep 
+            activityType={selection.selectedActivityType}
+            devices={selection.connectedDevices}
+            permissions={selection.permissions}
+          />
+        </Stepper.Step>
+      </Stepper>
+    </View>
+  );
+}
+```
 
 ---
 
-## 🎨 UI Component Structure
+## 🎨 Modal Redesign Specifications
 
-### Stepper Components
-- **`RecordingStepper`**: Main container with step navigation logic
-- **`StepIndicator`**: Visual progress bar with step labels
-- **Step Components**: Individual step screens with focused responsibilities
-  - `ActivityModeStep`: Planned vs unplanned selection
-  - `PlannedActivityStep`: Training plan browsing and selection
-  - `UnplannedActivityStep`: Activity type picker
-  - `PermissionsStep`: Permission request and status
-  - `BluetoothStep`: Device scanning and pairing
-  - `ReadyStep`: Final confirmation and navigation
+### Bluetooth Modal Redesign
+```tsx
+const BluetoothModal = ({ visible, onClose, onDeviceConnected }) => {
+  return (
+    <Dialog open={visible} onOpenChange={onClose}>
+      <Dialog.Content className="w-full max-w-md">
+        <Dialog.Header>
+          <Dialog.Title>Connect Bluetooth Devices</Dialog.Title>
+          <Dialog.Description>
+            Pair your heart rate monitor, cycling sensors, or other fitness devices
+          </Dialog.Description>
+        </Dialog.Header>
+        
+        <View className="p-6">
+          <Button 
+            variant="outline" 
+            onPress={startScanning}
+            className="mb-4"
+          >
+            <BluetoothIcon className="mr-2" />
+            Scan for Devices
+          </Button>
+          
+          {devices.map(device => (
+            <Card key={device.id} className="mb-2">
+              <Card.Content className="p-4">
+                <Text className="font-medium">{device.name}</Text>
+                <Text className="text-muted-foreground">{device.id}</Text>
+                <Button 
+                  size="sm" 
+                  onPress={() => connectDevice(device)}
+                >
+                  Connect
+                </Button>
+              </Card.Content>
+            </Card>
+          ))}
+        </View>
+        
+        <Dialog.Footer>
+          <Button variant="outline" onPress={onClose}>
+            Cancel
+          </Button>
+        </Dialog.Footer>
+      </Dialog.Content>
+    </Dialog>
+  );
+};
+```
 
-### Integration Points
-- **Activity Types**: Uses `ACTIVITY_TYPES` from `@repo/core/types/activity-types`
-- **Permission Checks**: Uses `permissionStrategies` from permissions store
-- **Bluetooth**: Integrates with React Native BLE PLX for device communication
-- **Navigation**: Expo Router with type-safe route parameters
+### Permissions Modal Redesign
+```tsx
+const PermissionsModal = ({ visible, onClose, onPermissionsGranted }) => {
+  return (
+    <Dialog open={visible} onOpenChange={onClose}>
+      <Dialog.Content className="w-full max-w-md">
+        <Dialog.Header>
+          <Dialog.Title>App Permissions</Dialog.Title>
+          <Dialog.Description>
+            TurboFit needs these permissions to track your activities accurately
+          </Dialog.Description>
+        </Dialog.Header>
+        
+        <View className="p-6 space-y-4">
+          <View className="flex-row items-center">
+            <MapPinIcon className="mr-3 text-primary" />
+            <View className="flex-1">
+              <Text className="font-medium">Location Access</Text>
+              <Text className="text-muted-foreground">
+                For GPS tracking and route mapping
+              </Text>
+            </View>
+            <Switch 
+              value={locationGranted}
+              onValueChange={requestLocationPermission}
+            />
+          </View>
+          
+          <View className="flex-row items-center">
+            <BluetoothIcon className="mr-3 text-primary" />
+            <View className="flex-1">
+              <Text className="font-medium">Bluetooth</Text>
+              <Text className="text-muted-foreground">
+                For heart rate monitors and sensors
+              </Text>
+            </View>
+            <Switch 
+              value={bluetoothGranted}
+              onValueChange={requestBluetoothPermission}
+            />
+          </View>
+        </View>
+        
+        <Dialog.Footer>
+          <Button onPress={handleAllPermissionsGranted}>
+            Continue
+          </Button>
+        </Dialog.Footer>
+      </Dialog.Content>
+    </Dialog>
+  );
+};
+```
 
 ---
 
-## 🔄 Conditional Logic & Smart Skipping
+## 🔄 Integration with Existing Stores
 
-### Permission Skipping
-- Skip permission steps if already granted
-- Conditional requirement based on activity type:
-  - GPS activities require location permissions
-  - Sensor-based activities require Bluetooth permissions
+### Permission Store Integration
+```tsx
+const usePermissions = () => {
+  const { checkPermission, requestPermission } = usePermissionsStore();
+  
+  const checkLocation = async () => {
+    return await checkPermission('location');
+  };
+  
+  const requestLocation = async () => {
+    return await requestPermission('location');
+  };
+  
+  return { checkLocation, requestLocation };
+};
+```
 
-### Bluetooth Requirements
-Based on `@repo/core` activity type constraints:
-- **Requires Bluetooth**: Cycling (power/cadence), Running (HR), Strength (HR)
-- **Optional Bluetooth**: Most other activities
-- **No Bluetooth**: Yoga, Meditation, etc.
+### Activity Store Integration
+```tsx
+const useActivitySetup = () => {
+  const { startWorkout } = useWorkoutStore();
+  
+  const prepareWorkout = async (activityType, plannedActivityId) => {
+    await startWorkout(activityType, plannedActivityId);
+  };
+  
+  return { prepareWorkout };
+};
+```
+
+---
+
+## ✅ Validation & Error Handling
 
 ### Step Validation
-- Each step validates its requirements before allowing progression
-- Invalid steps show appropriate error states and guidance
-- Back navigation allows correction of previous choices
+```tsx
+const validateStep = (step: number, state: RecordSelectionState): boolean => {
+  switch (step) {
+    case 0: // Activity Type
+      return state.mode !== null;
+    case 1: // Activity Selection
+      return state.selectedActivityType !== null;
+    case 2: // Permissions
+      return hasRequiredPermissions(state);
+    case 3: // Bluetooth
+      return !requiresBluetooth(state.selectedActivityType) || 
+             state.connectedDevices.length > 0;
+    case 4: // Ready
+      return state.setupComplete;
+    default:
+      return false;
+  }
+};
+```
+
+### Error States
+```tsx
+<Stepper.Step title="Permissions">
+  {permissionsError ? (
+    <Alert variant="destructive" className="mb-4">
+      <Alert.Title>Permission Required</Alert.Title>
+      <Alert.Description>
+        Please enable {missingPermission} to continue
+      </Alert.Description>
+    </Alert>
+  ) : null}
+  
+  <PermissionsContent />
+</Stepper.Step>
+```
 
 ---
 
-## 🛡️ Error Handling & Recovery
+## 📋 Implementation Checklist
 
-### Permission Denials
-- Graceful handling of permission rejections
-- Guidance for enabling permissions in system settings
-- Alternative workflows when permissions unavailable
+- [ ] Create `@/components/Stepper.tsx` with compound component pattern
+- [ ] Implement `useRecordSelection` hook with reset-on-focus behavior
+- [ ] Redesign Bluetooth modal using React Native Reusables components
+- [ ] Redesign Permissions modal following style guide patterns
+- [ ] Update `record.tsx` to use stepper component
+- [ ] Implement navigation to `/(internal)/recording` on completion
+- [ ] Add proper error handling and validation
+- [ ] Test tab focus reset behavior
+- [ ] Validate UI consistency with existing components
+- [ ] Ensure accessibility compliance
+- [ ] Add comprehensive logging and analytics
 
-### Bluetooth Issues
-- Device connection failures handled gracefully
-- Retry mechanisms and connection status monitoring
-- Fallback to manual metric entry when sensors unavailable
-
-### Navigation Interruptions
-- State preservation during app backgrounding
-- Recovery of in-progress selections
-- Clean reset on explicit cancellation
-
----
-
-## ✅ Benefits & Value Proposition
-
-### User Experience
-- **Guided Onboarding**: Step-by-step setup reduces user confusion
-- **Context Awareness**: Smart step skipping based on current state
-- **Final Confirmation**: Reduces errors with comprehensive summary
-- **Seamless Transition**: Clean handoff to recording interface
-
-### Technical Advantages
-- **Modular Design**: Individual step components with single responsibilities
-- **State Isolation**: Separation of selection state from recording state
-- **Reusability**: Step components usable in other contexts (settings, onboarding)
-- **Testability**: Isolated step logic enables comprehensive testing
-
-### Architecture Alignment
-- **Shared Types**: Leverages `@repo/core` for activity definitions
-- **Existing Infrastructure**: Builds on current Zustand stores and permission system
-- **Consistent Patterns**: Follows established React Native Reusables styling
-- **Type Safety**: End-to-end TypeScript integration
-
----
-
-## 🔧 Implementation Priorities
-
-1. **Core Stepper Infrastructure**: Basic step navigation and state management
-2. **Activity Selection**: Planned and unplanned activity type selection
-3. **Permission Integration**: Hook into existing permission system
-4. **Bluetooth Integration**: Device scanning and connection management
-5. **Navigation Flow**: Clean transition to recording screen
-6. **Error Handling**: Comprehensive error states and recovery
-7. **Polish & Animation**: Smooth transitions and visual feedback
-
----
-
-## 📋 Integration Checklist
-
-- [ ] Create stepper component structure
-- [ ] Implement `useRecordSelection` state management
-- [ ] Integrate with existing permission system
-- [ ] Add Bluetooth device scanning and pairing
-- [ ] Connect to core activity types and constraints
-- [ ] Implement navigation to recording screen
-- [ ] Add comprehensive error handling
-- [ ] Test across various permission scenarios
-- [ ] Validate with different activity types
-- [ ] Performance optimization and memory management
-
-This implementation will transform the Record tab into a comprehensive, user-friendly preparation flow that ensures successful activity recording experiences.
+This implementation will provide a seamless, user-friendly record selection flow that resets on each tab visit and cleanly transitions to the recording screen, all while maintaining consistency with the established React Native Reusables design system.

@@ -12,6 +12,7 @@ create table if not exists public.activities (
     profile_id uuid not null references public.profiles(id) on delete cascade,
     name text not null,
     notes text,
+    local_file_path text not null,
     sync_status sync_status not null default 'local_only',
     started_at timestamp not null,
     total_time integer not null default 0,
@@ -63,7 +64,6 @@ create table if not exists public.activity_streams (
     data_type public.activity_metric_data_type not null,
     chunk_index integer not null default 0,
     original_size integer not null,
-    sync_status public.sync_status not null default 'local_only',
     data jsonb not null,
     created_at timestamp not null default now()
 );
