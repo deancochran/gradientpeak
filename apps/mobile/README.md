@@ -557,7 +557,7 @@ theme: {
 ```tsx
 // Creating custom button variants
 <Button variant="fitness" size="lg">
-  <Text className="text-white font-bold">Start Workout</Text>
+  <Text className="text-white font-bold">Start Activity</Text>
 </Button>
 
 // Custom variant implementation in button component
@@ -1786,7 +1786,7 @@ const customButtonVariants = {
 }
 
 <Button className={customButtonVariants.fitness}>
-  <Text>Start Workout</Text>
+  <Text>Start Activity</Text>
 </Button>
 ```
 
@@ -2011,7 +2011,7 @@ const customVariants = {
 
 // 2. Use in your components
 <Button variant="fitness" className={customVariants.fitness}>
-  <Text>Start Workout</Text>
+  <Text>Start Activity</Text>
 </Button>
 ```
 

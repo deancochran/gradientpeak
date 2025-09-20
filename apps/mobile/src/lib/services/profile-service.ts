@@ -1,6 +1,3 @@
-import { apiClient } from "../api";
-import { supabase } from "../supabase";
-
 export class ProfileService {
   private static profileCache: SelectProfile | null = null;
   private static lastCacheUpdate = 0;

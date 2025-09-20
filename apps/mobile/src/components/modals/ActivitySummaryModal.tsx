@@ -122,7 +122,7 @@ export const ActivitySummaryModal: React.FC<ActivitySummaryModalProps> = ({
     ...(summary.tss ? [{
       label: "Training Stress Score",
       value: Math.round(summary.tss),
-      description: "Impact of this workout",
+      description: "Impact of this activity",
     }] : []),
     ...(summary.np ? [{
       label: "Normalized Power",

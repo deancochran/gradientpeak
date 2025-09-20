@@ -62,7 +62,7 @@ export interface PlannedMetrics {
 }
 
 export interface StepCompliance {
-  /** Step position in workout structure */
+  /** Step position in activity structure */
   position: number[];
 
   /** Step name or description */
@@ -369,24 +369,24 @@ function generateSummaryAnalysis(data: {
 
   // Duration analysis
   if (data.durationCompliance >= 90) {
-    strengths.push("Excellent duration adherence to planned workout");
+    strengths.push("Excellent duration adherence to planned activity");
   } else if (data.durationCompliance >= 75) {
-    strengths.push("Good duration compliance with planned workout");
+    strengths.push("Good duration compliance with planned activity");
   } else {
-    areasForImprovement.push("Duration significantly different from planned workout");
+    areasForImprovement.push("Duration significantly different from planned activity");
 
     const durationDelta = data.actualMetrics.duration - data.plannedMetrics.estimatedDuration;
     if (durationDelta > 0) {
       recommendations.push("Consider planning slightly longer workouts or improving pacing");
     } else {
-      recommendations.push("Focus on completing full planned workout duration");
+      recommendations.push("Focus on completing full planned activity duration");
     }
   }
 
   // TSS analysis
   if (data.tssCompliance !== undefined) {
     if (data.tssCompliance >= 85) {
-      strengths.push("Training stress closely matched planned workout");
+      strengths.push("Training stress closely matched planned activity");
     } else {
       areasForImprovement.push("Training stress did not match planned intensity");
       recommendations.push("Focus on hitting target power/heart rate zones more consistently");
@@ -405,12 +405,12 @@ function generateSummaryAnalysis(data: {
 
   // Overall score analysis
   if (data.overallScore >= 85) {
-    strengths.push("Excellent overall workout execution");
+    strengths.push("Excellent overall activity execution");
   } else if (data.overallScore >= 70) {
-    strengths.push("Good workout execution with room for improvement");
+    strengths.push("Good activity execution with room for improvement");
   } else {
-    areasForImprovement.push("Significant gaps between planned and executed workout");
-    recommendations.push("Consider adjusting workout difficulty or improving execution focus");
+    areasForImprovement.push("Significant gaps between planned and executed activity");
+    recommendations.push("Consider adjusting activity difficulty or improving execution focus");
   }
 
   return { strengths, areasForImprovement, recommendations };

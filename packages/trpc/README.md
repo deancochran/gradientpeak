@@ -38,7 +38,7 @@ Manages user profile data:
 
 #### 🏃 Activities Router (`activities`)
 
-Full CRUD operations for workout activities:
+Full CRUD operations for activity activities:
 
 - `get`: Fetch single activity by ID
 - `create`: Create new activities
@@ -49,7 +49,7 @@ Full CRUD operations for workout activities:
 
 #### 📊 Activity Streams Router (`activityStreams`)
 
-Manages time-series workout data:
+Manages time-series activity data:
 
 - `getForActivity`: Fetch all stream data for an activity
 - `batchCreate`: Insert multiple stream data points efficiently

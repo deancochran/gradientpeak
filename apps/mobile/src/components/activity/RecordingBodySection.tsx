@@ -2,11 +2,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { ActivityType, getPopularActivityTypes } from "@repo/core";
 import React from "react";
 import {
-  FlatList,
-  StyleSheet,
-  Text,
-  Button,
-  View,
+    Button,
+    FlatList,
+    StyleSheet,
+    Text,
+    View,
 } from "react-native";
 
 import { PlannedActivity } from "@/lib/services/planned-activity-service";
@@ -118,7 +118,7 @@ export const RecordingBodySection: React.FC<RecordingBodySectionProps> = ({
             </View>
 
             <View style={styles.workoutOverview}>
-              <Text style={styles.overviewTitle}>Workout Steps</Text>
+              <Text style={styles.overviewTitle}>Activity Steps</Text>
               <View style={styles.stepsList}>
                 <View style={[styles.stepItem, styles.activeStep]}>
                   <Text style={styles.stepItemText}>1. Warmup - 10min</Text>
@@ -275,7 +275,7 @@ export const RecordingBodySection: React.FC<RecordingBodySectionProps> = ({
           </View>
 
           <Text style={styles.requirementsFooter}>
-            Activity: {selectedActivityType?.name || "Planned Workout"}
+            Activity: {selectedActivityType?.name || "Planned Activity"}
             {selectedActivityType?.environment && (
               <Text style={styles.environmentBadge}>
                 {" • "}
@@ -302,7 +302,7 @@ export const RecordingBodySection: React.FC<RecordingBodySectionProps> = ({
               onPress={() => onWorkoutModeSelection("planned")}
             >
               <Ionicons name="calendar-outline" size={32} color="#3b82f6" />
-              <Text style={styles.optionTitle}>Planned Workout</Text>
+              <Text style={styles.optionTitle}>Planned Activity</Text>
               <Text style={styles.optionDescription}>
                 Follow a structured training plan
               </Text>
@@ -330,7 +330,7 @@ export const RecordingBodySection: React.FC<RecordingBodySectionProps> = ({
               <Ionicons name="chevron-back" size={20} color="#6b7280" />
               <Text style={styles.backText}>Back</Text>
             </Button>
-            <Text style={styles.listTitle}>Select Workout</Text>
+            <Text style={styles.listTitle}>Select Activity</Text>
           </View>
 
           {plannedActivities.length > 0 ? (
@@ -365,7 +365,7 @@ export const RecordingBodySection: React.FC<RecordingBodySectionProps> = ({
               <Ionicons name="calendar-outline" size={48} color="#9ca3af" />
               <Text style={styles.emptyTitle}>No Planned Workouts</Text>
               <Text style={styles.emptyDescription}>
-                Create a workout plan to see activities here
+                Create a activity plan to see activities here
               </Text>
             </View>
           )}

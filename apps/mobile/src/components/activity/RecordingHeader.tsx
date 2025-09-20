@@ -121,7 +121,7 @@ export const RecordingHeader: React.FC<RecordingHeaderProps> = ({
         {selectedPlannedActivity && !selectedActivityType && (
           <View style={styles.plannedActivityDisplay}>
             <Ionicons name="calendar" size={16} color="#3b82f6" />
-            <Text style={styles.plannedActivityText}>Planned Workout</Text>
+            <Text style={styles.plannedActivityText}>Planned Activity</Text>
           </View>
         )}
       </View>

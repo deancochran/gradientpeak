@@ -172,7 +172,7 @@
   - `activities.tsx`: Complete activities listing with search/filter capabilities
   - `activity-recording-summary.tsx`: Post-activity summary with performance metrics
   - `activity-result.tsx`: Detailed activity analysis with stream data visualization
-  - `planned_activities.tsx`: Planned activities browser with structured workout support
+  - `planned_activities.tsx`: Planned activities browser with structured activity support
   - `planned_activity-detail.tsx`: Detailed planned activity structure viewer
 
 - **Consistent Empty State Patterns**: Unified empty state UI across all screens
@@ -235,7 +235,7 @@
     - `activities.tsx`: Complete activities listing with search/filter capabilities
     - `activity-recording-summary.tsx`: Post-activity summary with performance metrics
     - `activity-result.tsx`: Detailed activity analysis with stream data visualization
-    - `planned_activities.tsx`: Planned activities browser with structured workout support
+    - `planned_activities.tsx`: Planned activities browser with structured activity support
     - `planned_activity-detail.tsx`: Detailed planned activity structure viewer
   - Removed deprecated modal components: `ActivitySummaryModal.tsx` and `PlannedActivityModal.tsx`
   - Updated record screen to use route navigation instead of modal-based UI

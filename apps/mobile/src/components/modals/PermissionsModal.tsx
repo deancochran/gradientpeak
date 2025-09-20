@@ -244,7 +244,7 @@ export const PermissionsModal: React.FC<PermissionsModalProps> = ({
               <Ionicons name="fitness" size={16} color="#6b7280" />
               <Text style={styles.helpText}>
                 Motion & Fitness: Detect activity and calculate calories burned
-                during your workout
+                during your activity
               </Text>
             </View>
           </View>

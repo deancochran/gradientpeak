@@ -975,7 +975,7 @@ export const ACTIVITY_TYPES: Record<ActivityTypeId, ActivityType> = {
     id: ActivityTypeId.ELLIPTICAL,
     name: "Elliptical",
     shortName: "Elliptical",
-    description: "Elliptical machine workout",
+    description: "Elliptical machine activity",
     environment: ActivityEnvironment.INDOOR,
     category: "other",
     isPopular: false,

@@ -2,9 +2,7 @@ import * as FileSystem from "expo-file-system";
 import * as Network from "expo-network";
 import { AppState, AppStateStatus } from "react-native";
 
-import { apiClient } from "../api";
 import { SelectLocalActivity } from "../db/schemas";
-import { supabase } from "../supabase";
 import { LocalActivityDatabaseService } from "./local-activity-database";
 
 export interface SyncResult {
