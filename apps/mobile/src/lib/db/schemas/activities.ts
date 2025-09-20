@@ -1,62 +1,158 @@
-import {
-  integer,
-  numeric,
-  pgEnum,
-  serial,
-  text,
-  timestamp,
-  uuid,
-} from "drizzle-orm/pg-core";
-import { sqliteTable } from "drizzle-orm/sqlite-core";
+import { relations } from "drizzle-orm";
+import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
-// Enum
-export const syncStatusEnum = pgEnum("sync_status", [
-  "local_only",
-  "synced",
-  "sync_failed",
-]);
+// Enum constants for type safety (matching Supabase enums)
+export const ACTIVITY_TYPE = {
+  // OUTDOOR,
+  RUN: "run",
+  WALK: "walk",
+  BIKE: "bike",
+  HIKING: "hike",
+  CYCLING: "cycling",
+  // INDOOR,
+  TREADMILL: "treadmill",
+  STAIRCLIMBER: "stairclimber",
+  STRENGTH: "strength",
+  YOGA: "yoga",
+  // OTHER:
+  SWIM: "swim",
+  OTHER: "other",
+} as const;
 
-// Table
+export const SYNC_STATUS = {
+  LOCAL_ONLY: "local_only",
+  SYNCED: "synced",
+  SYNC_FAILED: "sync_failed",
+} as const;
+
+export const ACTIVITY_METRIC = {
+  HEARTRATE: "heartrate",
+  POWER: "power",
+  SPEED: "speed",
+  CADENCE: "cadence",
+  DISTANCE: "distance",
+  LATLNG: "latlng",
+  MOVING: "moving",
+  ALTITUDE: "altitude",
+  TEMPERATURE: "temperature",
+  GRADIENT: "gradient",
+} as const;
+
+export const ACTIVITY_METRIC_DATA_TYPE = {
+  FLOAT: "float",
+  BOOLEAN: "boolean",
+  STRING: "string",
+  INTEGER: "integer",
+  LATLNG: "latlng",
+} as const;
+
+// Type definitions
+export type ActivityType = (typeof SYNC_STATUS)[keyof typeof SYNC_STATUS];
+
+export type SyncStatus = (typeof SYNC_STATUS)[keyof typeof SYNC_STATUS];
+export type ActivityMetric =
+  (typeof ACTIVITY_METRIC)[keyof typeof ACTIVITY_METRIC];
+export type ActivityMetricDataType =
+  (typeof ACTIVITY_METRIC_DATA_TYPE)[keyof typeof ACTIVITY_METRIC_DATA_TYPE];
+
+// Activities table - matches Supabase schema structure
 export const activities = sqliteTable("activities", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  idx: serial("idx").unique(),
-  profileId: uuid("profile_id").notNull(),
+  // Primary identification
+  id: text("id").primaryKey(), // UUID stored as text in SQLite
+  idx: integer("idx"), // Serial equivalent, managed by app
+  profileId: text("profile_id").notNull(),
 
+  // Activity metadata
   name: text("name").notNull(),
   notes: text("notes"),
-
   localFilePath: text("local_file_path").notNull(),
-  syncStatus: syncStatusEnum("sync_status").notNull().default("local_only"),
+  syncStatus: text("sync_status")
+    .$type<SyncStatus>()
+    .notNull()
+    .default("local_only"),
 
-  startedAt: timestamp("started_at", { withTimezone: false }).notNull(),
+  // Activity Type
+  type: text("type").$type<ActivityType>().notNull().default("other"),
+  // Timing information
+  startedAt: integer("started_at", { mode: "timestamp" }).notNull(),
   totalTime: integer("total_time").notNull().default(0),
   movingTime: integer("moving_time").notNull().default(0),
 
+  // Snapshot data (user's fitness profile at time of activity)
   snapshotWeightKg: integer("snapshot_weight_kg").notNull(),
   snapshotFtp: integer("snapshot_ftp").notNull(),
   snapshotThresholdHr: integer("snapshot_threshold_hr").notNull(),
 
-  tss: integer("tss").notNull(),
-  if: integer("if").notNull(),
-
+  // Performance metrics
+  tss: integer("tss").notNull(), // Training Stress Score
+  intensityFactor: integer("if").notNull(), // Note: 'if' is renamed to avoid keyword conflict
   normalizedPower: integer("normalized_power"),
   avgPower: integer("avg_power"),
   peakPower: integer("peak_power"),
 
+  // Heart rate metrics
   avgHeartRate: integer("avg_heart_rate"),
   maxHeartRate: integer("max_heart_rate"),
 
+  // Cadence metrics
   avgCadence: integer("avg_cadence"),
   maxCadence: integer("max_cadence"),
 
+  // Distance and speed metrics
   distance: integer("distance"),
-  avgSpeed: numeric("avg_speed", { precision: 5, scale: 2 }),
-  maxSpeed: numeric("max_speed", { precision: 5, scale: 2 }),
+  avgSpeed: real("avg_speed"), // numeric(5,2) equivalent in SQLite
+  maxSpeed: real("max_speed"), // numeric(5,2) equivalent in SQLite
 
+  // Elevation metrics
   totalAscent: integer("total_ascent"),
   totalDescent: integer("total_descent"),
 
-  createdAt: timestamp("created_at", { withTimezone: false })
+  // System metadata
+  createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
-    .defaultNow(),
+    .$defaultFn(() => new Date()),
 });
+
+// Activity streams table - matches Supabase schema structure
+export const activityStreams = sqliteTable("activity_streams", {
+  // Primary identification
+  id: text("id").primaryKey(), // UUID stored as text in SQLite
+  activityId: text("activity_id")
+    .notNull()
+    .references(() => activities.id, { onDelete: "cascade" }),
+
+  // Stream metadata
+  type: text("type").$type<ActivityMetric>().notNull(),
+  dataType: text("data_type").$type<ActivityMetricDataType>().notNull(),
+  chunkIndex: integer("chunk_index").notNull().default(0),
+  originalSize: integer("original_size").notNull(),
+
+  // Stream data (JSONB equivalent stored as text in SQLite)
+  data: text("data").notNull(), // JSON stringified data
+
+  // System metadata
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+
+  // Additional local-only fields for fault tolerance
+  syncStatus: text("sync_status")
+    .$type<SyncStatus>()
+    .notNull()
+    .default("local_only"),
+});
+
+// Relations definition
+export const activitiesRelations = relations(activities, ({ many }) => ({
+  streams: many(activityStreams),
+}));
+
+export const activityStreamsRelations = relations(
+  activityStreams,
+  ({ one }) => ({
+    activity: one(activities, {
+      fields: [activityStreams.activityId],
+      references: [activities.id],
+    }),
+  }),
+);

@@ -1,11 +1,9 @@
 // Re-export relations if you need them
-import { localNotifications } from "./notifications";
 
-export type SelectLocalActivity = typeof localActivities.$inferSelect;
-export type InsertLocalActivity = typeof localActivities.$inferInsert;
+import { activities } from "./activities";
 
-export type SelectLocalNotification = typeof localNotifications.$inferSelect;
-export type InsertLocalNotification = typeof localNotifications.$inferInsert;
+export type SelectActivity = typeof activities.$inferSelect;
+export type InsertActivity = typeof activities.$inferInsert;
 
 // Re-export schema tables for type inference
-export { localActivities, localNotifications };
+export { activities };
