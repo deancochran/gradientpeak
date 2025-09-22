@@ -2,7 +2,7 @@ import {
   publicActivityTypeSchema,
   publicPlannedActivitiesInsertSchema,
   publicPlannedActivitiesUpdateSchema,
-} from "@repo/supabase";
+} from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
@@ -16,7 +16,6 @@ const plannedActivityListFiltersSchema = z.object({
       end: z.string(),
     })
     .optional(),
-  profile_plan_id: z.string().uuid().optional(),
   limit: z.number().min(1).max(100).default(20),
   offset: z.number().min(0).default(0),
 });
@@ -26,17 +25,12 @@ export const plannedActivitiesRouter = createTRPCRouter({
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
       try {
-        // First get the planned activity and check ownership through profile_plan
+        // Get the planned activity and check ownership directly through profile_id
         const { data: plannedActivity, error } = await ctx.supabase
           .from("planned_activities")
-          .select(
-            `
-            *,
-            profile_plans!inner(profile_id)
-          `,
-          )
+          .select("*")
           .eq("id", input.id)
-          .eq("profile_plans.profile_id", ctx.session.user.id)
+          .eq("profile_id", ctx.session.user.id)
           .single();
 
         if (error) {
@@ -68,26 +62,15 @@ export const plannedActivitiesRouter = createTRPCRouter({
     .input(publicPlannedActivitiesInsertSchema)
     .mutation(async ({ ctx, input }) => {
       try {
-        // If profile_plan_id is provided, verify it belongs to the user
-        if (input.profile_plan_id) {
-          const { data: profilePlan, error: planError } = await ctx.supabase
-            .from("profile_plans")
-            .select("id")
-            .eq("id", input.profile_plan_id)
-            .eq("profile_id", ctx.session.user.id)
-            .single();
-
-          if (planError || !profilePlan) {
-            throw new TRPCError({
-              code: "NOT_FOUND",
-              message: "Profile plan not found",
-            });
-          }
-        }
+        // Set profile_id to current user
+        const activityData = {
+          ...input,
+          profile_id: ctx.session.user.id,
+        };
 
         const { data: plannedActivity, error } = await ctx.supabase
           .from("planned_activities")
-          .insert(input)
+          .insert(activityData)
           .select()
           .single();
 
@@ -122,14 +105,9 @@ export const plannedActivitiesRouter = createTRPCRouter({
         // First verify ownership
         const { data: existing, error: existingError } = await ctx.supabase
           .from("planned_activities")
-          .select(
-            `
-            id,
-            profile_plans!inner(profile_id)
-          `,
-          )
+          .select("id")
           .eq("id", input.id)
-          .eq("profile_plans.profile_id", ctx.session.user.id)
+          .eq("profile_id", ctx.session.user.id)
           .single();
 
         if (existingError || !existing) {
@@ -137,23 +115,6 @@ export const plannedActivitiesRouter = createTRPCRouter({
             code: "NOT_FOUND",
             message: "Planned activity not found",
           });
-        }
-
-        // If updating profile_plan_id, verify the new plan belongs to the user
-        if (input.data.profile_plan_id) {
-          const { data: profilePlan, error: planError } = await ctx.supabase
-            .from("profile_plans")
-            .select("id")
-            .eq("id", input.data.profile_plan_id)
-            .eq("profile_id", ctx.session.user.id)
-            .single();
-
-          if (planError || !profilePlan) {
-            throw new TRPCError({
-              code: "NOT_FOUND",
-              message: "Profile plan not found",
-            });
-          }
         }
 
         const { data: plannedActivity, error } = await ctx.supabase
@@ -189,14 +150,9 @@ export const plannedActivitiesRouter = createTRPCRouter({
         // First verify ownership
         const { data: existing, error: existingError } = await ctx.supabase
           .from("planned_activities")
-          .select(
-            `
-            id,
-            profile_plans!inner(profile_id)
-          `,
-          )
+          .select("id")
           .eq("id", input.id)
-          .eq("profile_plans.profile_id", ctx.session.user.id)
+          .eq("profile_id", ctx.session.user.id)
           .single();
 
         if (existingError || !existing) {
@@ -236,22 +192,13 @@ export const plannedActivitiesRouter = createTRPCRouter({
       try {
         let query = ctx.supabase
           .from("planned_activities")
-          .select(
-            `
-            *,
-            profile_plans!inner(profile_id)
-          `,
-          )
-          .eq("profile_plans.profile_id", ctx.session.user.id)
+          .select("*")
+          .eq("profile_id", ctx.session.user.id)
           .order("scheduled_date", { ascending: true })
           .range(input.offset, input.offset + input.limit - 1);
 
         if (input.activity_type) {
           query = query.eq("activity_type", input.activity_type);
-        }
-
-        if (input.profile_plan_id) {
-          query = query.eq("profile_plan_id", input.profile_plan_id);
         }
 
         if (input.date_range) {

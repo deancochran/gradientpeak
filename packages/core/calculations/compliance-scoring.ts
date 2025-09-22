@@ -1,5 +1,5 @@
 import type { PlannedActivityStructure, Step } from "../schemas/planned_activity";
-import type { ActivityTypeId } from "../types/activity-types";
+import type { PublicActivityType } from "../types/activity-types";
 import { getCurrentStep } from "./schema-navigation";
 
 /**
@@ -58,7 +58,7 @@ export interface PlannedMetrics {
   targetAvgHeartRate?: number;
 
   /** Activity type for context */
-  activityType: ActivityTypeId;
+  activityType: PublicActivityType;
 }
 
 export interface StepCompliance {
@@ -425,7 +425,7 @@ export function createSamplePlannedMetrics(): PlannedMetrics {
     estimatedTSS: 75,
     targetAvgPower: 200,
     targetAvgHeartRate: 150,
-    activityType: "indoor_cycling" as ActivityTypeId,
+    activityType: "indoor_cycling" as PublicActivityType,
   };
 }
 

@@ -1,10 +1,10 @@
 "use client";
 
+import { useAuth } from "@/components/providers/auth-provider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { trpc } from "@/lib/trpc/client";
 import { UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useAuth } from "./auth-provider";
 
 export function CurrentUserAvatar() {
   const { user } = useAuth();

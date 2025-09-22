@@ -1,4 +1,4 @@
-import { Database } from "@repo/supabase";
+import { Database } from "@repo/core";
 import { appRouter, createTRPCContext } from "@repo/trpc/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";

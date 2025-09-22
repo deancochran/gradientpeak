@@ -127,14 +127,7 @@ export const activitiesRouter = createTRPCRouter({
 });
 ```
 
-### Core Package Integration (`packages/core/types/activity-types.ts`)
-```typescript
-enum ActivityTypeId {
-  RUNNING = "running",
-  CYCLING = "cycling",
-  // ... comprehensive activity types
-}
-```
+
 
 ## Data Structures
 
@@ -595,12 +588,12 @@ Activities and streams progress through coordinated states:
 static async startRecording(activityType: string): Promise<void> {
   await this.initialize();
   this.currentSession = this.createNewSession(activityType);
-  
+
   // Initialize stream buffers for different data types
   this.sensorDataBuffer = [];
   this.gpsDataBuffer = [];
   this.heartRateBuffer = [];
-  
+
   await this.startLocationTracking();
   await this.startSensorTracking();
   this.startRecordingTimer();
@@ -620,7 +613,7 @@ static addSensorData(data: SensorDataPoint) {
       this.gpsDataBuffer.push(data);
       break;
   }
-  
+
   // Periodic buffer flushing to JSON
   if (this.getTotalBufferSize() > 1000) {
     this.flushBuffersToJson();
@@ -687,10 +680,10 @@ static async syncBatchWithStreams(activityIds: string[]): Promise<SyncResult> {
     try {
       // Sync activity metadata first
       const activityResult = await this.syncSingleActivity(activityId);
-      
+
       // Then sync streams in chunks
       const streamResult = await this.syncActivityStreams(activityId);
-      
+
       results.push({
         ...activityResult,
         streamsSynced: streamResult.success,
@@ -754,7 +747,7 @@ export const activitiesRouter = createTRPCRouter({
       // Handle both activity metadata and stream data sync
       const activityResult = await this.syncActivityMetadata(input);
       const streamResult = await this.syncActivityStreams(input.streams || []);
-      
+
       return {
         ...activityResult,
         streamsSynced: streamResult.success,

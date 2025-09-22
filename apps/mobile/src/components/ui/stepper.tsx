@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { cn } from "@/lib/utils";
 import React, { createContext, useContext, useState } from "react";
-import { View } from "react-native";
+import { ScrollView, View } from "react-native";
 
 interface StepperContextType {
   currentStep: number;
@@ -35,6 +35,8 @@ interface StepperProps {
   className?: string;
   header?: (context: StepperContextType) => React.ReactNode;
   footer?: (context: StepperContextType) => React.ReactNode;
+  scrollable?: boolean;
+  showScrollIndicator?: boolean;
 }
 
 function Stepper({
@@ -45,6 +47,8 @@ function Stepper({
   className,
   header,
   footer,
+  scrollable = true,
+  showScrollIndicator = false,
 }: StepperProps) {
   const [currentStep, setCurrentStep] = useState(initialStep);
 
@@ -94,14 +98,30 @@ function Stepper({
     progress,
   };
 
+  const StepContent = () => {
+    if (scrollable) {
+      return (
+        <ScrollView
+          className="flex-1"
+          showsVerticalScrollIndicator={showScrollIndicator}
+          contentContainerStyle={{ flexGrow: 1 }}
+        >
+          {steps[currentStep]}
+        </ScrollView>
+      );
+    }
+
+    return <View className="flex-1">{steps[currentStep]}</View>;
+  };
+
   return (
     <StepperContext.Provider value={contextValue}>
       <View className={cn("flex-1", className)}>
         {/* Dynamic Header */}
         {header && <View>{header(contextValue)}</View>}
 
-        {/* Current Step Content */}
-        <View className="flex-1">{steps[currentStep]}</View>
+        {/* Current Step Content - Now Scrollable */}
+        <StepContent />
 
         {/* Dynamic Footer */}
         {footer && <View>{footer(contextValue)}</View>}

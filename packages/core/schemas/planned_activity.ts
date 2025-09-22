@@ -86,3 +86,25 @@ export const plannedActivityStructureSchema = z.object({
 export type PlannedActivityStructure = z.infer<
   typeof plannedActivityStructureSchema
 >;
+
+//==============================
+// Weekly Schedule
+//==============================
+export const weeklyActivitySchema = z.object({
+  day: z.number().min(0).max(6), // 0-6 (Sunday-Saturday)
+  activityTemplate: plannedActivityStructureSchema,
+  key: z.string().optional(),
+  notes: z.string().optional(),
+  completed: z.boolean().optional(),
+  scheduledDate: z.date().optional(),
+});
+export type WeeklyActivity = z.infer<typeof weeklyActivitySchema>;
+
+export const weeklyScheduleSchema = z.object({
+  week: z.number().min(1),
+  name: z.string().optional(),
+  description: z.string().optional(),
+  activities: z.array(weeklyActivitySchema),
+  notes: z.string().optional(),
+});
+export type WeeklySchedule = z.infer<typeof weeklyScheduleSchema>;

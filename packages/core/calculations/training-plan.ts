@@ -4,41 +4,6 @@ import type {
   Step,
   WeeklySchedule,
 } from "../schemas";
-import type { ScheduledActivity } from "../types";
-
-// ================================
-// Planned Activity Generator
-// ================================
-export function createNewPlannedActivity(
-  name: string,
-  steps: PlannedActivityStructure["steps"],
-  description?: string,
-): PlannedActivityStructure {
-  return {
-    name,
-    steps,
-    description,
-  };
-}
-
-// ================================
-// Weekly Schedule Generator
-// ================================
-export function createWeeklySchedule(
-  weekNumber: number,
-  scheduledActivitys: ScheduledActivity[],
-  weeklyTargets?: Partial<WeeklySchedule["targets"]>,
-): WeeklySchedule {
-  return {
-    weekNumber,
-    activities: scheduledActivitys.map((sw) => ({
-      dayOfWeek: sw.day,
-      key: sw.key ?? "standard",
-      activityTemplate: sw.activity,
-    })),
-    targets: weeklyTargets ?? { tss: 0 },
-  };
-}
 
 // ================================
 // TSS Estimation Logic
@@ -206,4 +171,33 @@ export function estimateActivityDuration(
   }
 
   return totalDuration;
+}
+
+// ================================
+// Missing Exports (placeholders)
+// ================================
+
+/**
+ * Creates a new planned activity structure
+ */
+export function createNewPlannedActivity(
+  name: string,
+  modality: "endurance" | "strength" | "swim" | "other" = "endurance",
+): PlannedActivityStructure {
+  return {
+    version: "1.0",
+    name,
+    modality,
+    steps: [],
+  };
+}
+
+/**
+ * Creates a new weekly schedule
+ */
+export function createWeeklySchedule(week: number): WeeklySchedule {
+  return {
+    week,
+    activities: [],
+  };
 }

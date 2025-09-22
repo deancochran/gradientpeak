@@ -36,6 +36,7 @@ export type Database = {
     Tables: {
       activities: {
         Row: {
+          activity_type: Database["public"]["Enums"]["activity_type"]
           avg_cadence: number | null
           avg_heart_rate: number | null
           avg_power: number | null
@@ -45,6 +46,7 @@ export type Database = {
           id: string
           idx: number
           if: number
+          local_file_path: string
           max_cadence: number | null
           max_heart_rate: number | null
           max_speed: number | null
@@ -65,6 +67,7 @@ export type Database = {
           tss: number
         }
         Insert: {
+          activity_type?: Database["public"]["Enums"]["activity_type"]
           avg_cadence?: number | null
           avg_heart_rate?: number | null
           avg_power?: number | null
@@ -74,6 +77,7 @@ export type Database = {
           id?: string
           idx?: number
           if: number
+          local_file_path: string
           max_cadence?: number | null
           max_heart_rate?: number | null
           max_speed?: number | null
@@ -94,6 +98,7 @@ export type Database = {
           tss: number
         }
         Update: {
+          activity_type?: Database["public"]["Enums"]["activity_type"]
           avg_cadence?: number | null
           avg_heart_rate?: number | null
           avg_power?: number | null
@@ -103,6 +108,7 @@ export type Database = {
           id?: string
           idx?: number
           if?: number
+          local_file_path?: string
           max_cadence?: number | null
           max_heart_rate?: number | null
           max_speed?: number | null
@@ -141,7 +147,6 @@ export type Database = {
           data_type: Database["public"]["Enums"]["activity_metric_data_type"]
           id: string
           original_size: number
-          sync_status: Database["public"]["Enums"]["sync_status"]
           type: Database["public"]["Enums"]["activity_metric"]
         }
         Insert: {
@@ -152,7 +157,6 @@ export type Database = {
           data_type: Database["public"]["Enums"]["activity_metric_data_type"]
           id?: string
           original_size: number
-          sync_status?: Database["public"]["Enums"]["sync_status"]
           type: Database["public"]["Enums"]["activity_metric"]
         }
         Update: {
@@ -163,7 +167,6 @@ export type Database = {
           data_type?: Database["public"]["Enums"]["activity_metric_data_type"]
           id?: string
           original_size?: number
-          sync_status?: Database["public"]["Enums"]["sync_status"]
           type?: Database["public"]["Enums"]["activity_metric"]
         }
         Relationships: [
@@ -188,7 +191,7 @@ export type Database = {
           id: string
           idx: number
           name: string
-          profile_plan_id: string | null
+          profile_id: string | null
           scheduled_date: string
           structure: Json
         }
@@ -203,7 +206,7 @@ export type Database = {
           id?: string
           idx?: number
           name: string
-          profile_plan_id?: string | null
+          profile_id?: string | null
           scheduled_date: string
           structure: Json
         }
@@ -218,51 +221,13 @@ export type Database = {
           id?: string
           idx?: number
           name?: string
-          profile_plan_id?: string | null
+          profile_id?: string | null
           scheduled_date?: string
           structure?: Json
         }
         Relationships: [
           {
-            foreignKeyName: "planned_activities_profile_plan_id_fkey"
-            columns: ["profile_plan_id"]
-            isOneToOne: false
-            referencedRelation: "profile_plans"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      profile_plans: {
-        Row: {
-          config: Json
-          created_at: string
-          description: string | null
-          id: string
-          idx: number
-          name: string
-          profile_id: string
-        }
-        Insert: {
-          config: Json
-          created_at?: string
-          description?: string | null
-          id?: string
-          idx?: number
-          name: string
-          profile_id: string
-        }
-        Update: {
-          config?: Json
-          created_at?: string
-          description?: string | null
-          id?: string
-          idx?: number
-          name?: string
-          profile_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "profile_plans_profile_id_fkey"
+            foreignKeyName: "planned_activities_profile_id_fkey"
             columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
@@ -346,8 +311,14 @@ export type Database = {
         | "string"
         | "integer"
         | "latlng"
-      activity_type: "bike" | "run" | "swim" | "strength" | "other"
-      sync_status: "local_only" | "synced" | "sync_failed"
+      activity_type:
+        | "outdoor_run"
+        | "outdoor_bike"
+        | "indoor_treadmill"
+        | "indoor_strength"
+        | "indoor_swim"
+        | "other"
+      sync_status: "local_only" | "synced"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -497,8 +468,15 @@ export const Constants = {
         "integer",
         "latlng",
       ],
-      activity_type: ["bike", "run", "swim", "strength", "other"],
-      sync_status: ["local_only", "synced", "sync_failed"],
+      activity_type: [
+        "outdoor_run",
+        "outdoor_bike",
+        "indoor_treadmill",
+        "indoor_strength",
+        "indoor_swim",
+        "other",
+      ],
+      sync_status: ["local_only", "synced"],
     },
   },
 } as const

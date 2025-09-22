@@ -1,59 +1,11 @@
+import {
+  PublicActivityMetric,
+  PublicActivityMetricDataType,
+  PublicActivityType,
+  PublicSyncStatus,
+} from "@repo/core";
 import { relations } from "drizzle-orm";
 import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
-
-// Enum constants for type safety (matching Supabase enums)
-export const ACTIVITY_TYPE = {
-  // OUTDOOR,
-  RUN: "run",
-  WALK: "walk",
-  BIKE: "bike",
-  HIKING: "hike",
-  CYCLING: "cycling",
-  // INDOOR,
-  TREADMILL: "treadmill",
-  STAIRCLIMBER: "stairclimber",
-  STRENGTH: "strength",
-  YOGA: "yoga",
-  // OTHER:
-  SWIM: "swim",
-  OTHER: "other",
-} as const;
-
-export const SYNC_STATUS = {
-  LOCAL_ONLY: "local_only",
-  SYNCED: "synced",
-  SYNC_FAILED: "sync_failed",
-} as const;
-
-export const ACTIVITY_METRIC = {
-  HEARTRATE: "heartrate",
-  POWER: "power",
-  SPEED: "speed",
-  CADENCE: "cadence",
-  DISTANCE: "distance",
-  LATLNG: "latlng",
-  MOVING: "moving",
-  ALTITUDE: "altitude",
-  TEMPERATURE: "temperature",
-  GRADIENT: "gradient",
-} as const;
-
-export const ACTIVITY_METRIC_DATA_TYPE = {
-  FLOAT: "float",
-  BOOLEAN: "boolean",
-  STRING: "string",
-  INTEGER: "integer",
-  LATLNG: "latlng",
-} as const;
-
-// Type definitions
-export type ActivityType = (typeof ACTIVITY_TYPE)[keyof typeof ACTIVITY_TYPE];
-
-export type SyncStatus = (typeof SYNC_STATUS)[keyof typeof SYNC_STATUS];
-export type ActivityMetric =
-  (typeof ACTIVITY_METRIC)[keyof typeof ACTIVITY_METRIC];
-export type ActivityMetricDataType =
-  (typeof ACTIVITY_METRIC_DATA_TYPE)[keyof typeof ACTIVITY_METRIC_DATA_TYPE];
 
 // Activities table - matches Supabase schema structure
 export const activities = sqliteTable("activities", {
@@ -67,12 +19,15 @@ export const activities = sqliteTable("activities", {
   notes: text("notes"),
   localFilePath: text("local_file_path").notNull(),
   syncStatus: text("sync_status")
-    .$type<SyncStatus>()
+    .$type<PublicSyncStatus>()
     .notNull()
     .default("local_only"),
 
-  // Activity Type
-  type: text("type").$type<ActivityType>().notNull().default("other"),
+  // Activity Type - renamed to match Supabase column name
+  activityType: text("activity_type")
+    .$type<PublicActivityType>()
+    .notNull()
+    .default("other"),
   // Timing information
   startedAt: integer("started_at", { mode: "timestamp" }).notNull(),
   totalTime: integer("total_time").notNull().default(0),
@@ -122,8 +77,8 @@ export const activityStreams = sqliteTable("activity_streams", {
     .references(() => activities.id, { onDelete: "cascade" }),
 
   // Stream metadata
-  type: text("type").$type<ActivityMetric>().notNull(),
-  dataType: text("data_type").$type<ActivityMetricDataType>().notNull(),
+  type: text("type").$type<PublicActivityMetric>().notNull(),
+  dataType: text("data_type").$type<PublicActivityMetricDataType>().notNull(),
   chunkIndex: integer("chunk_index").notNull().default(0),
   originalSize: integer("original_size").notNull(),
 
@@ -137,7 +92,7 @@ export const activityStreams = sqliteTable("activity_streams", {
 
   // Additional local-only fields for fault tolerance
   syncStatus: text("sync_status")
-    .$type<SyncStatus>()
+    .$type<PublicSyncStatus>()
     .notNull()
     .default("local_only"),
 });

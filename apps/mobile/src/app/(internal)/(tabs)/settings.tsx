@@ -6,7 +6,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
-import { SignOutButton } from "@/components/SignOutButton";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -29,6 +28,7 @@ import { Switch } from "@/components/ui/switch";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useTheme } from "@/lib/stores/theme-store";
+import { supabase } from "@/lib/supabase/client";
 import { trpc } from "@/lib/trpc";
 
 const profileSchema = z.object({
@@ -111,6 +111,19 @@ export default function SettingsScreen() {
   const onCancel = () => {
     form.reset();
     setIsEditing(false);
+  };
+
+  const [signoutLoading, setSignoutLoading] = useState(false);
+
+  const handleSignOut = async () => {
+    setSignoutLoading(true);
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error("Error signing out:", error);
+    } finally {
+      setSignoutLoading(false);
+    }
   };
 
   return (
@@ -357,7 +370,13 @@ export default function SettingsScreen() {
 
           <Separator className="bg-border" />
 
-          <SignOutButton />
+          <Button
+            testID="sign-out-button"
+            onPress={handleSignOut}
+            disabled={signoutLoading}
+          >
+            <Text>{signoutLoading ? "Signing out..." : "Sign out"}</Text>
+          </Button>
         </CardContent>
       </Card>
 

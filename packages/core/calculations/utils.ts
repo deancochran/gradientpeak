@@ -29,10 +29,10 @@ export function parseDuration(durationString: string): number {
 
   if (parts.length === 2) {
     // MM:SS format
-    return parts[0] * 60 + parts[1];
+    return (parts[0] ?? 0) * 60 + (parts[1] ?? 0);
   } else if (parts.length === 3) {
     // HH:MM:SS format
-    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    return (parts[0] ?? 0) * 3600 + (parts[1] ?? 0) * 60 + (parts[2] ?? 0);
   }
 
   throw new Error("Invalid duration format. Expected MM:SS or HH:MM:SS");
@@ -389,13 +389,17 @@ export function calculateTotalDistance(
 
   let totalDistance = 0;
   for (let i = 1; i < locations.length; i++) {
-    const distance = calculateDistance(
-      locations[i - 1].latitude,
-      locations[i - 1].longitude,
-      locations[i].latitude,
-      locations[i].longitude,
-    );
-    totalDistance += distance;
+    const prevLocation = locations[i - 1];
+    const currentLocation = locations[i];
+    if (prevLocation && currentLocation) {
+      const distance = calculateDistance(
+        prevLocation.latitude,
+        prevLocation.longitude,
+        currentLocation.latitude,
+        currentLocation.longitude,
+      );
+      totalDistance += distance;
+    }
   }
 
   return totalDistance;
@@ -544,3 +548,33 @@ export function clamp(value: number, min: number, max: number): number {
 export function lerp(start: number, end: number, factor: number): number {
   return start + (end - start) * clamp(factor, 0, 1);
 }
+
+/**
+ * Convert meters to kilometers with specified decimal places
+ */
+export const metersToKm = (meters: number, decimals = 2): number => {
+  return Number((meters / 1000).toFixed(decimals));
+};
+
+/**
+ * Convert m/s to km/h
+ */
+export const msToKmh = (speedMs: number): number => {
+  return speedMs * 3.6;
+};
+
+/**
+ * Format altitude with appropriate units
+ */
+export const formatAltitude = (altitude: number | null | undefined): string => {
+  if (altitude === null || altitude === undefined) return "--";
+  return Math.round(altitude).toString();
+};
+
+/**
+ * Format GPS accuracy
+ */
+export const formatAccuracy = (accuracy: number | null | undefined): string => {
+  if (accuracy === null || accuracy === undefined) return "--";
+  return Math.round(accuracy).toString();
+};

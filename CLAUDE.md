@@ -1,91 +1,170 @@
-# TurboFit Agent Rules
+# CLAUDE.md
 
-You are contributing to the **TurboFit monorepo**, a fitness tracking platform.
-Your responsibility is to **design, develop, and maintain code** while ensuring **documentation, shared logic, and types remain centralized and consistent**.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
----
+## Commands
 
-## 1. Objectives
+**Root level development:**
+```bash
+bun dev                    # Start all development servers
+bun build                  # Build all applications and packages
+bun lint                   # Lint all code with shared config
+bun format                 # Format all code with Prettier
+bun check-types            # Type check entire monorepo
+bun test                   # Run all tests
+bun test:unit              # Run unit tests only
+bun test:integration       # Run integration tests
+bun test:e2e               # Run end-to-end tests
+bun test:e2e:web          # Run web E2E tests
+bun test:e2e:mobile       # Run mobile E2E tests
+bun test:watch            # Run tests in watch mode
+```
 
-* Maintain **context awareness** across web (`apps/web`) and mobile (`apps/mobile`).
-* Follow the **development workflow** strictly.
-* Keep **documentation synchronized** with all code changes.
-* Favor **incremental, reviewable updates** over broad changes.
-* Use **shared packages (`core`, )** for types, schemas, and calculations.
-* Ask questions when requirements are unclear.
-* Ensure all work is **traceable and reviewable**.
+**Mobile app (from apps/mobile/):**
+```bash
+bun dev                    # Start Expo development server
+bun ios                    # Run on iOS simulator
+bun android               # Run on Android emulator
+```
 
----
+**Core package development:**
+```bash
+cd packages/core && bun test    # Test core package (database-independent)
+```
 
-## 2. Project Overview
+## Architecture
 
-* **Monorepo**: Turborepo + Bun
-* **Applications**:
+**TurboFit** is a Turborepo monorepo with a **local-first, offline-capable** fitness tracking platform.
 
-  * `apps/mobile/` → React Native + Expo (offline-first, SQLite + Supabase sync)
-  * `apps/web/` → Next.js + React dashboard (Supabase backend)
-* **Shared Packages**:
+### Package Structure
 
-  * `core/` → Business logic, Zod schemas, calculations
-  * `supabase/` → Supabase types + helpers
-  * Config packages (ESLint, TS)
+```
+turbofit/
+├── apps/
+│   ├── mobile/          # React Native + Expo app (offline-first)
+│   └── web/             # Next.js dashboard (real-time analytics)
+├── packages/
+│   ├── core/            # 🌟 Database-independent business logic
+│   ├── trpc/            # Type-safe API layer
+│   ├── supabase/        # Database types and client
+│   ├── eslint-config/   # Shared linting rules
+│   └── typescript-config/ # Shared TypeScript config
+```
 
-**Rule:** Never define app-specific types or interfaces. Always import from `core` or `drizzle`. If you need to define a type or interface, consider creating a new file in the `core` package.
+### Core Principles
 
----
+1. **Database-Independent Core**: The `@repo/core` package contains **zero database dependencies**. All business logic, calculations, and validation schemas are pure TypeScript.
 
-## 3. Context & Documentation
+2. **JSON-First Data Storage**: Activities are stored as JSON objects (source of truth) with derived metadata for queries.
 
-* Load `context.json` first.
-* Review `TASKS.md` (active work) and `CHANGELOG.md` (recent changes) before editing.
-* Check scoped `README.md` files for purpose, entrypoints, and TODOs.
-* If a README is missing or outdated, create or update it.
+3. **Shared Type Safety**: All apps import types and schemas from `@repo/core` - never define app-specific interfaces.
 
----
+4. **Local-First Mobile**: Mobile app works offline using SQLite, syncing to Supabase when connected.
 
-## 4. Development Workflow
+### Key Architecture Patterns
 
-### Documentation-First
+**Core Package Design:**
+- **Zero Dependencies**: No database, ORM, or platform-specific code
+- **Pure Functions**: All calculations can be tested without mocking
+- **Zod Schemas**: JSON validation and TypeScript type generation
+- **Cross-Platform**: Same algorithms on mobile and web
 
-* Do not create files unless necessary.
-* If replacing a file, update all references and delete the old version.
-* Update documentation with every change:
+**Data Flow:**
+1. **Record** → Local SQLite stores complete activity as JSON
+2. **Upload** → JSON uploaded to Supabase Storage (single source of truth)
+3. **Process** → Metadata extracted locally and synced
+4. **Analytics** → Core package processes JSON for performance calculations
 
-  * `TASKS.md` → task state
-  * `CHANGELOG.md` → summary, rationale, impacted modules
-  * Scoped `README.md` → purpose, APIs, setup, conventions
+**API Layer (tRPC):**
+- Type-safe procedures shared between mobile and web
+- Authentication via Supabase sessions
+- React Query integration for caching and optimistic updates
 
-### Code Changes
+### Technology Stack
 
-1. **Plan**: Confirm or add the task in `TASKS.md`.
-2. **Review**: Read the directory’s `README.md`.
-3. **Change**:
+| Layer | Mobile | Web | Shared |
+|-------|--------|-----|---------|
+| **Framework** | Expo 54 + RN 0.81.4 | Next.js 15 + React 19 | - |
+| **Business Logic** | `@repo/core` | `@repo/core` | Pure TypeScript |
+| **API** | `@repo/trpc` + React Query | `@repo/trpc` + React Query | Type-safe procedures |
+| **State** | Zustand + AsyncStorage | Zustand + React Query | Persistent patterns |
+| **Storage** | SQLite + Supabase sync | Supabase PostgreSQL | JSON data structures |
+| **Styling** | NativeWind v4 | Tailwind + shadcn/ui | Design consistency |
+| **Navigation** | Expo Router v6 | Next.js App Router | Type-safe routing |
 
-   * Modify only relevant files.
-   * Keep responsibilities clear:
+### Development Workflow
 
-     * `core` → business logic, shared types
-     * `web/api` → API endpoints, orchestrating DB + core
-   * Always use shared types/schemas.
-4. **Document**: Mark task complete in `TASKS.md`, log in `CHANGELOG.md`, update README if needed.
-5. **Clean-Up**: Remove replaced files, fix references.
+1. **Context First**: Always check existing code patterns before implementing
+2. **Core Package**: Put shared logic in `@repo/core`, not in individual apps
+3. **Type Safety**: Import types from `@repo/core` or `@repo/supabase`
+4. **Testing**: Run `bun lint && bun check-types` before committing
+5. **JSON Validation**: Use Zod schemas from core package for all data structures
 
----
+### Common Patterns
 
-## 5. Code Discipline
+**Using Core Package:**
+```typescript
+// ✅ Correct - use core package for calculations
+import { calculateTrainingZones, validateActivity } from '@repo/core';
 
-* **Shared Logic**: Centralize types, schemas, and validation in `core` . Extend by enhancing shared modules, not duplicating them. Keep calculations, analytics, and models in `core`.
-* **Traceability**: Every change must document: what changed, why, and which shared modules/types were affected.
-* **Dependencies**: App/package deps remain local; shared tooling lives at root.
-* **Testing & CI**: Run `bun test` locally; lint and format must pass.
-* **Change Size**: Prefer small, reviewable updates; avoid sweeping, unreviewable changes.
+// ✅ Correct - use core types
+import type { Activity, Profile } from '@repo/core';
 
----
+// ❌ Avoid - don't duplicate logic in apps
+const calculateZones = (threshold: number) => { ... }
+```
 
-## 6. Agentic Development Loop
+**Data Validation:**
+```typescript
+// ✅ Use Zod schemas from core
+import { ActivitySchema } from '@repo/core';
+const result = ActivitySchema.parse(rawData);
 
-1. **Intent** → confirm task in `TASKS.md`.
-2. **Context** → consult `README.md` and shared modules.
-3. **Action** → implement with centralized logic and conventions.
-4. **Traceability** → update `CHANGELOG.md` with reasoning and impacts.
-5. **Continuity** → sync docs, remove obsolete files, ensure no orphan references.
+// ❌ Don't create app-specific validation
+const validateActivity = (data: any) => { ... }
+```
+
+**API Procedures:**
+```typescript
+// tRPC procedures in packages/trpc/src/routers/
+export const activityRouter = router({
+  create: protectedProcedure
+    .input(ActivitySchema) // From @repo/core
+    .mutation(async ({ input, ctx }) => {
+      // Use core package for validation and calculations
+      const validated = validateActivity(input);
+      // Database operations here
+    })
+});
+```
+
+### Testing Strategy
+
+- **Core Package**: Unit tests for pure functions (no database mocking required)
+- **Integration**: Test API procedures with actual database
+- **E2E**: Complete user flows using Playwright (web) and Maestro (mobile)
+- **Performance**: JSON processing and calculation benchmarks
+
+### Mobile-Specific Notes
+
+- **Offline Recording**: SQLite stores activities locally during recording
+- **Background Sync**: Uploads happen when network is available
+- **Expo Development**: Uses development build for native debugging
+- **BLE Integration**: React Native BLE PLX for device connectivity
+
+### Web-Specific Notes
+
+- **Real-time Analytics**: Supabase subscriptions for live updates
+- **Server Actions**: Next.js server components with tRPC
+- **Component Library**: shadcn/ui components with Tailwind
+- **Deployment**: Vercel with automatic deployments
+
+## Key Files to Understand
+
+- `turbo.json` - Monorepo build configuration and task dependencies
+- `packages/core/index.ts` - Entry point for shared business logic
+- `packages/trpc/src/routers/` - API endpoint definitions
+- `packages/core/types/` - Shared TypeScript interfaces
+- `packages/core/calculations/` - Performance calculation algorithms
+- `apps/mobile/src/app/` - Mobile app routing structure (Expo Router)
+- `apps/web/src/app/` - Web app routing structure (Next.js App Router)

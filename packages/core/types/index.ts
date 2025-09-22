@@ -409,14 +409,10 @@ export type PlanTypes =
   | ScheduledActivity;
 
 // ================================
-// Activity Types Export
+// Database Types Export
 // ================================
 
-export * from "./activity-types";
-
-// ================================
-// Performance Metrics Types
-// ================================
+export * from "./database-types";
 
 /**
  * Performance metrics for dashboard display
