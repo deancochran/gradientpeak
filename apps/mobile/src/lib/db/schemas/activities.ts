@@ -47,7 +47,7 @@ export const ACTIVITY_METRIC_DATA_TYPE = {
 } as const;
 
 // Type definitions
-export type ActivityType = (typeof SYNC_STATUS)[keyof typeof SYNC_STATUS];
+export type ActivityType = (typeof ACTIVITY_TYPE)[keyof typeof ACTIVITY_TYPE];
 
 export type SyncStatus = (typeof SYNC_STATUS)[keyof typeof SYNC_STATUS];
 export type ActivityMetric =

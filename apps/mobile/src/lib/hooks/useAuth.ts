@@ -1,21 +1,29 @@
 // auth-hooks.ts - Separate file for auth hooks that use tRPC
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useRouter } from "expo-router";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { trpc } from "../trpc";
 
 export const useAuth = () => {
   const store = useAuthStore();
+  const { session, user } = store;
 
-  if (store.hydrated && !store.initialized) {
-    store.initialize();
-  }
+  const isAuthenticated = useMemo(
+    () => !!session?.user?.email_confirmed_at,
+    [session],
+  );
+
+  useEffect(() => {
+    if (store.hydrated && !store.initialized) {
+      store.initialize();
+    }
+  }, [store.hydrated, store.initialized, store.initialize]);
 
   // Use tRPC query for profile data - this gives you caching, refetching, etc.
   const profileQuery = trpc.profiles.get.useQuery(
     undefined, // or whatever parameters your profile query needs
     {
-      enabled: !!store.user && store.isAuthenticated, // Only fetch if user is authenticated
+      enabled: !!user && isAuthenticated, // Only fetch if user is authenticated
       staleTime: 5 * 60 * 1000, // Consider data stale after 5 minutes
       retry: 3,
     },
@@ -23,11 +31,11 @@ export const useAuth = () => {
 
   return {
     // Auth state from Zustand
-    user: store.user,
-    session: store.session,
+    user,
+    session,
     loading: store.loading,
     error: store.error,
-    isAuthenticated: store.isAuthenticated,
+    isAuthenticated,
 
     // Profile data from tRPC/React Query
     profile: profileQuery.data,

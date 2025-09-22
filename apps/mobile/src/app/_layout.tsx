@@ -1,17 +1,14 @@
 // apps/native/app/_layout.tsx
-
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
-import { db } from "@/lib/db";
-import migrations from "@/lib/db/migrations/migrations";
+import "@/global.css";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { LocalDatabaseProvider } from "@/lib/providers/LocalDatabaseProvider";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
-import { initializeStores } from "@/lib/stores";
 import { useTheme } from "@/lib/stores/theme-store";
 import { NAV_THEME } from "@/lib/theme";
 import { ThemeProvider } from "@react-navigation/native";
 import { PortalHost } from "@rn-primitives/portal";
-import { useMigrations } from "drizzle-orm/expo-sqlite/migrator";
 import { router, Slot } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as React from "react";
@@ -63,17 +60,17 @@ export function ErrorBoundary({
 
 // Main app content
 function AppContent() {
-  const { theme, isLoaded } = useTheme();
+  console.log("AppContent loaded");
+  const { loading: authLoading } = useAuth();
+  const { theme, isLoaded: isThemeLoaded } = useTheme();
 
-  // Show loading until theme is loaded
-  if (!isLoaded) {
+  if (authLoading || !isThemeLoaded) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" />
+      <View className="flex-1 items-center justify-center bg-background">
+        <ActivityIndicator size="large" className="text-foreground" />
       </View>
     );
   }
-
   // Determine if we're in dark mode - NativeWind handles 'system' automatically for CSS classes
   const isDark = theme === "dark";
   const navTheme = isDark ? NAV_THEME.dark : NAV_THEME.light;
@@ -90,18 +87,7 @@ function AppContent() {
 }
 
 export default function RootLayout() {
-  const { success, error } = useMigrations(db, migrations);
-  if (error || !success) {
-    throw new Error(
-      `Database migration failed: ${error ? error.message : "Unsuccessful Migration error"}`,
-    );
-  }
-
-  // Init Stores
-  React.useEffect(() => {
-    initializeStores();
-  }, []);
-
+  console.log("RootLayout loaded");
   return (
     <QueryProvider>
       <LocalDatabaseProvider>

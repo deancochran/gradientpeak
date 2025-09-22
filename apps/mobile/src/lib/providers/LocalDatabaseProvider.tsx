@@ -1,4 +1,4 @@
-// apps/native/app/providers/DatabaseProvider.tsx
+// apps/native/app/providers/LocalDatabaseProvider.tsx
 import { db } from "@/lib/db";
 import migrations from "@/lib/db/migrations/migrations";
 import { useMigrations } from "drizzle-orm/expo-sqlite/migrator";

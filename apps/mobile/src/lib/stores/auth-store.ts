@@ -10,7 +10,6 @@ export interface AuthState {
   loading: boolean;
   initialized: boolean;
   hydrated: boolean;
-  isAuthenticated: boolean;
   error: Error | null;
 
   setSession: (session: Session | null) => void;
@@ -23,6 +22,9 @@ export interface AuthState {
   initialize: () => Promise<void>;
 }
 
+// Track if auth listener has been set up to prevent duplicates
+let authListenerSetup = false;
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -31,14 +33,12 @@ export const useAuthStore = create<AuthState>()(
       loading: true as boolean,
       initialized: false as boolean,
       hydrated: false as boolean,
-      isAuthenticated: false as boolean,
       error: null as Error | null,
 
       setSession: (session: Session | null) => {
         set({
           session,
           user: session?.user || null,
-          isAuthenticated: !!session?.user?.email_confirmed_at,
         });
       },
 
@@ -49,48 +49,92 @@ export const useAuthStore = create<AuthState>()(
       setError: (error: Error | null) => set({ error }),
 
       initialize: async () => {
-        const { setSession, setInitialized, setLoading } = get();
-        if (get().initialized) return;
+        console.log("🔄 Initializing auth store...");
+        const currentState = get();
 
-        setLoading(true);
+        if (currentState.initialized) {
+          console.log("✅ Already initialized, skipping");
+          return;
+        }
+
         try {
+          console.log("🔄 Calling supabase.auth.getSession()");
           const {
             data: { session },
             error,
           } = await supabase.auth.getSession();
 
-          if (error) console.error("Auth Store init error:", error);
-
-          setSession(session);
-
-          // Set up auth state change listener
-          supabase.auth.onAuthStateChange(async (_event, session) => {
-            setSession(session);
+          console.log("✅ Got session response:", {
+            session: !!session,
+            error: !!error,
           });
 
-          setInitialized(true);
+          if (error) {
+            console.error("❌ Auth Store init error:", error);
+            set({ error });
+          }
+
+          console.log("🔄 Setting session");
+          get().setSession(session);
+
+          // Only set up auth listener once globally
+          if (!authListenerSetup) {
+            console.log("🔄 Setting up auth state change listener");
+            authListenerSetup = true;
+
+            supabase.auth.onAuthStateChange(async (event, session) => {
+              console.log("🔄 Auth state changed:", event, !!session);
+
+              // Avoid setting session during initialization to prevent loops
+              const store = get();
+              if (store.initialized) {
+                store.setSession(session);
+              }
+            });
+          } else {
+            console.log("✅ Auth listener already set up, skipping");
+          }
+
+          console.log(
+            "✅ Auth store session loaded, finishing initialization...",
+          );
         } catch (err) {
-          console.error("Auth Store unexpected init error:", err);
+          console.error("❌ Auth Store unexpected init error:", err);
+          set({ error: err instanceof Error ? err : new Error(String(err)) });
         } finally {
-          setLoading(false);
+          console.log(
+            "🔄 Finally block: setting loading=false, initialized=true",
+          );
+          set({ loading: false, initialized: true });
+          console.log("✅ Auth store initialization complete");
         }
       },
     }),
     {
-      name: "turbofit-auth-store",
+      name: "turbofit-auth-store-v1",
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
         session: state.session,
         user: state.user,
-        initialized: state.initialized,
+        // Don't persist loading, initialized, hydrated, or error states
+        // These should always start fresh on app startup
       }),
       onRehydrateStorage: () => (state, error) => {
-        if (state && !error) {
+        if (error) {
+          console.error("❌ Auth Store rehydrate error:", error);
+        }
+
+        if (state) {
+          console.log("🔄 Store rehydrated successfully");
           state.setHydrated(true);
-          state.initialize();
-        } else if (error && state) {
-          console.error("Auth Store rehydrate error:", error);
-          state.setHydrated(true);
+
+          // Don't call initialize here - let the useAuth hook handle it
+          // This prevents the circular dependency issue
+          console.log(
+            "✅ Rehydration complete, waiting for useAuth hook to initialize",
+          );
+        } else {
+          console.error("❌ Auth Store rehydrate failed - no state available");
         }
       },
     },

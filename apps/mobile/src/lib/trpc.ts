@@ -7,7 +7,7 @@ import superjson from "superjson";
 export const trpc = createTRPCReact<AppRouter>();
 
 export const getApiUrl = () => {
-  const baseUrl = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
+  const baseUrl = process.env.EXPO_PUBLIC_API_URL!;
   return `${baseUrl}/api/trpc`;
 };
 
@@ -20,7 +20,7 @@ export function createTRPCClient() {
           (opts.direction === "down" && opts.result instanceof Error),
       }),
       httpBatchLink({
-        transformer: superjson, // belongs here
+        transformer: superjson,
         url: getApiUrl(),
         headers: getAuthHeaders,
       }),

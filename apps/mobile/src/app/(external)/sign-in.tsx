@@ -50,55 +50,48 @@ export default function SignInScreen() {
     resolver: zodResolver(signInSchema),
   });
 
-  const onSignIn = async (data: SignInFields) => {
+  const onSignIn = (data: SignInFields) => {
     setIsSubmitting(true);
-    try {
-      await signInMutation.mutateAsync({
+
+    signInMutation.mutate(
+      {
         email: data.email,
         password: data.password,
-      });
+      },
+      {
+        onSuccess: () => {
+          console.log("Successfully signed in");
+          router.push("/(internal)/(tabs)"); // Navigate on success
+        },
+        onError: (error) => {
+          console.log("Sign in error:", error);
 
-      if (signInMutation.error) {
-        console.log("Sign in error:", signInMutation.error);
-
-        // Handle specific Supabase auth errors
-        if (
-          signInMutation.error.message?.includes("Invalid login credentials")
-        ) {
-          form.setError("root", {
-            message: "Invalid email or password. Please try again.",
-          });
-        } else if (
-          signInMutation.error.message?.includes("Email not confirmed")
-        ) {
-          form.setError("root", {
-            message:
-              "Please verify your email address before signing in. Check your email for a verification link.",
-          });
-        } else if (
-          signInMutation.error.message?.includes("Too many requests")
-        ) {
-          form.setError("root", {
-            message: "Too many login attempts. Please try again later.",
-          });
-        } else {
-          const fieldName = mapSupabaseErrorToFormField(
-            signInMutation.error.message || "",
-          );
-          form.setError(fieldName as any, {
-            message:
-              signInMutation.error.message || "An unexpected error occurred",
-          });
-        }
-      } else {
-        console.log("Successfully signed in");
-      }
-    } catch (err) {
-      console.log("Unexpected sign in error:", err);
-      form.setError("root", { message: "An unexpected error occurred" });
-    } finally {
-      setIsSubmitting(false);
-    }
+          // Handle specific errors
+          if (error.message?.includes("Invalid login credentials")) {
+            form.setError("root", {
+              message: "Invalid email or password. Please try again.",
+            });
+          } else if (error.message?.includes("Email not confirmed")) {
+            form.setError("root", {
+              message:
+                "Please verify your email address before signing in. Check your email for a verification link.",
+            });
+          } else if (error.message?.includes("Too many requests")) {
+            form.setError("root", {
+              message: "Too many login attempts. Please try again later.",
+            });
+          } else {
+            const fieldName = mapSupabaseErrorToFormField(error.message || "");
+            form.setError(fieldName as any, {
+              message: error.message || "An unexpected error occurred",
+            });
+          }
+        },
+        onSettled: () => {
+          setIsSubmitting(false);
+        },
+      },
+    );
   };
 
   const handleSignUpPress = () => {
