@@ -18,6 +18,7 @@ export function createTRPCClient() {
         enabled: (opts) =>
           __DEV__ ||
           (opts.direction === "down" && opts.result instanceof Error),
+        colorMode: "none",
       }),
       httpBatchLink({
         transformer: superjson,

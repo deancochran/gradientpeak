@@ -28,6 +28,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { useTheme } from "@/lib/stores/theme-store";
 import { trpc } from "@/lib/trpc";
 
 const profileSchema = z.object({
@@ -75,9 +76,9 @@ type ProfileFormValues = z.infer<typeof profileSchema>;
 export default function SettingsScreen() {
   const router = useRouter();
   const { user, profile, refreshProfile } = useAuth();
+  const { theme, setTheme } = useTheme();
   const [isEditing, setIsEditing] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [darkModeEnabled, setDarkModeEnabled] = useState(false);
 
   const updateProfileMutation = trpc.profiles.update.useMutation();
 
@@ -300,8 +301,10 @@ export default function SettingsScreen() {
               </Text>
             </View>
             <Switch
-              checked={darkModeEnabled}
-              onCheckedChange={setDarkModeEnabled}
+              checked={theme === "dark"}
+              onCheckedChange={(isChecked) => {
+                setTheme(isChecked ? "dark" : "light");
+              }}
               testID="dark-mode-switch"
             />
           </View>

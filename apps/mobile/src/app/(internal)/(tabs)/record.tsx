@@ -768,26 +768,36 @@ export default function RecordScreen() {
   return (
     <View className="flex-1 bg-background">
       <Stepper
-        resetOnMount={true}
-        validateStep={validateStep}
         onComplete={handleComplete}
+        footer={({
+          currentStep,
+          goToNext,
+          canGoPrev,
+          goToPrev,
+          isLastStep,
+        }) => (
+          <View className="p-6 border-t border-border">
+            <View className="flex-row justify-between">
+              {canGoPrev ? (
+                <Button variant="outline" onPress={goToPrev}>
+                  <Text>Back</Text>
+                </Button>
+              ) : (
+                <View />
+              )}
+
+              <Button onPress={goToNext} disabled={!validateStep(currentStep)}>
+                <Text>{isLastStep ? "Complete" : "Next"}</Text>
+              </Button>
+            </View>
+          </View>
+        )}
       >
-        <Stepper.Step
-          title="Activity Type"
-          description="Choose how you want to start your workout"
-        >
+        <Stepper.Step>
           <ActivityModeStep onSelectMode={selection.setMode} />
         </Stepper.Step>
 
-        <Stepper.Step
-          title="Select Activity"
-          description={
-            selection.mode === "planned"
-              ? "Pick from your scheduled workouts"
-              : "Choose your activity type"
-          }
-          condition={selection.mode !== null}
-        >
+        <Stepper.Step>
           {selection.mode === "planned" ? (
             <PlannedActivityStep onSelectActivity={handleActivitySelect} />
           ) : (
@@ -795,22 +805,14 @@ export default function RecordScreen() {
           )}
         </Stepper.Step>
 
-        <Stepper.Step
-          title="Permissions"
-          description="Grant necessary permissions for tracking"
-          condition={requiresPermissions(selection.selectedActivityType)}
-        >
+        <Stepper.Step>
           <PermissionsStep
             activityType={selection.selectedActivityType}
             onComplete={handlePermissionsComplete}
           />
         </Stepper.Step>
 
-        <Stepper.Step
-          title="Connect Devices"
-          description="Pair your fitness sensors (optional)"
-          condition={requiresBluetooth(selection.selectedActivityType)}
-        >
+        <Stepper.Step>
           <BluetoothStep
             activityType={selection.selectedActivityType}
             onComplete={handleBluetoothComplete}
@@ -818,10 +820,7 @@ export default function RecordScreen() {
           />
         </Stepper.Step>
 
-        <Stepper.Step
-          title="Ready"
-          description="All set! Review your setup and start your activity"
-        >
+        <Stepper.Step>
           <ReadyStep
             activityType={selection.selectedActivityType}
             mode={selection.mode}
