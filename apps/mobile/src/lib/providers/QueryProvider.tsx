@@ -1,15 +1,37 @@
-import { QueryClientProvider } from "@tanstack/react-query";
-import * as React from "react";
-import { Alert } from "react-native";
-
 import { createQueryClient } from "@repo/trpc/client";
-import { logError } from "../services/error-tracking";
 import {
-  setupFocusManager,
-  setupNetworkListener,
-} from "../services/react-query-setup";
+    focusManager,
+    onlineManager,
+    QueryClientProvider,
+} from "@tanstack/react-query";
+import * as Network from "expo-network";
+import * as React from "react";
+import { Alert, AppState, Platform } from "react-native";
 import { createTRPCClient, trpc } from "../trpc";
+
 const queryClient = createQueryClient();
+
+export const setupNetworkListener = () => {
+  const unsubscribe = onlineManager.setEventListener((setOnline) => {
+    const subscription = Network.addNetworkStateListener((state) => {
+      setOnline(!!state.isConnected);
+    });
+    return () => subscription?.remove();
+  });
+
+  return unsubscribe;
+};
+
+export const setupFocusManager = () => {
+  const onAppStateChange = (status: string) => {
+    if (Platform.OS !== "web") {
+      focusManager.setFocused(status === "active");
+    }
+  };
+
+  const subscription = AppState.addEventListener("change", onAppStateChange);
+  return () => subscription?.remove();
+};
 
 export function QueryProvider({ children }: { children: React.ReactNode }) {
   const trpcClient = React.useMemo(() => createTRPCClient(), []);
@@ -18,13 +40,7 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
     const cleanupNetwork = setupNetworkListener();
     const cleanupFocus = setupFocusManager();
 
-    // Global error handlers for React Query
-    queryClient.getQueryCache().config.onError = (error) => {
-      logError(error as Error, "Query");
-    };
-
     queryClient.getMutationCache().config.onError = (error) => {
-      logError(error as Error, "Mutation");
       if (error instanceof Error) {
         Alert.alert("Error", error.message);
       }

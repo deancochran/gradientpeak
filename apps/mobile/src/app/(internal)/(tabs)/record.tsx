@@ -3,29 +3,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Stepper } from "@/components/ui/stepper";
 import { Text } from "@/components/ui/text";
 import {
-  Activity,
-  Bike,
-  Bluetooth,
-  Calendar,
-  CheckCircle,
-  Clock,
-  Heart,
-  MapPin,
-  Play,
-  Target,
-} from "lucide-react-native";
+  ACTIVITY_TYPES,
+  ActivityTypeId,
+  getPopularActivityTypes,
+} from "@repo/core";
+import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 
-// Type definitions
-interface ActivityType {
-  id: string;
-  name: string;
-  icon: React.ComponentType<any>;
-  requiresGPS: boolean;
-  requiresBLE: boolean;
-}
-
+// TODO: Move to core types
 interface PlannedActivity {
   id: string;
   name: string;
@@ -35,6 +21,7 @@ interface PlannedActivity {
   description: string;
 }
 
+// TODO: Move to core types
 interface Device {
   id: string;
   name: string;
@@ -49,50 +36,21 @@ interface PermissionsState {
 
 interface RecordSelectionState {
   mode: "planned" | "unplanned" | null;
-  selectedActivityType: string | null;
+  selectedActivityType: ActivityTypeId | null;
   plannedActivityId: string | null;
   permissions: PermissionsState;
   connectedDevices: string[];
   setupComplete: boolean;
 }
 
-// Mock data for demonstration
-const ACTIVITY_TYPES: ActivityType[] = [
-  {
-    id: "running",
-    name: "Running",
-    icon: Activity,
-    requiresGPS: true,
-    requiresBLE: true,
-  },
-  {
-    id: "cycling",
-    name: "Cycling",
-    icon: Bike,
-    requiresGPS: true,
-    requiresBLE: true,
-  },
-  {
-    id: "workout",
-    name: "Gym Workout",
-    icon: Target,
-    requiresGPS: false,
-    requiresBLE: false,
-  },
-  {
-    id: "cardio",
-    name: "Cardio",
-    icon: Heart,
-    requiresGPS: false,
-    requiresBLE: true,
-  },
-];
+const popularActivityTypes = getPopularActivityTypes();
 
+// TODO: Replace with actual planned activities from a data source
 const PLANNED_ACTIVITIES: PlannedActivity[] = [
   {
     id: "1",
     name: "Morning Run",
-    type: "running",
+    type: "outdoor_run",
     duration: "30 min",
     time: "7:00 AM",
     description: "Easy pace recovery run",
@@ -100,7 +58,7 @@ const PLANNED_ACTIVITIES: PlannedActivity[] = [
   {
     id: "2",
     name: "Strength Training",
-    type: "workout",
+    type: "strength_training",
     duration: "45 min",
     time: "6:00 PM",
     description: "Upper body focus",
@@ -108,7 +66,7 @@ const PLANNED_ACTIVITIES: PlannedActivity[] = [
   {
     id: "3",
     name: "Evening Ride",
-    type: "cycling",
+    type: "road_cycling",
     duration: "60 min",
     time: "5:30 PM",
     description: "Hill intervals",
@@ -150,7 +108,7 @@ function useRecordSelection() {
     setState((prev) => ({ ...prev, mode }));
   };
 
-  const setActivityType = (activityType: string | null) => {
+  const setActivityType = (activityType: ActivityTypeId | null) => {
     setState((prev) => ({ ...prev, selectedActivityType: activityType }));
   };
 
@@ -159,7 +117,7 @@ function useRecordSelection() {
     setState((prev) => ({
       ...prev,
       plannedActivityId: activityId,
-      selectedActivityType: activity?.type || null,
+      selectedActivityType: activity?.type as ActivityTypeId | null,
     }));
   };
 
@@ -204,16 +162,19 @@ function useRecordSelection() {
 }
 
 // Helper functions
-function requiresPermissions(activityType: string | null) {
-  if (!activityType) return false;
-  const activity = ACTIVITY_TYPES.find((a) => a.id === activityType);
-  return activity?.requiresGPS || activity?.requiresBLE;
+function requiresPermissions(activityTypeId: ActivityTypeId | null) {
+  if (!activityTypeId) return false;
+  const activity = ACTIVITY_TYPES[activityTypeId];
+  return (
+    activity.recordingConstraints.requiresGPS ||
+    activity.recordingConstraints.recommendsHeartRate
+  );
 }
 
-function requiresBluetooth(activityType: string | null) {
-  if (!activityType) return false;
-  const activity = ACTIVITY_TYPES.find((a) => a.id === activityType);
-  return activity?.requiresBLE;
+function requiresBluetooth(activityTypeId: ActivityTypeId | null) {
+  if (!activityTypeId) return false;
+  const activity = ACTIVITY_TYPES[activityTypeId];
+  return activity.recordingConstraints.recommendsHeartRate;
 }
 
 // Step Components
@@ -229,14 +190,11 @@ function ActivityModeStep({
       </Text>
 
       <View className="gap-4">
-        <Pressable
+        <Button
           onPress={() => onSelectMode("planned")}
-          className="border border-border rounded-xl p-6 flex-row items-center bg-card min-h-20"
-          style={({ pressed }) => ({
-            backgroundColor: pressed ? "hsl(var(--muted))" : "hsl(var(--card))",
-          })}
+          className="flex-row items-center p-6 min-h-20"
+          variant={"outline"}
         >
-          <Calendar className="text-primary mr-4" size={24} />
           <View className="flex-1">
             <Text className="text-lg font-semibold text-foreground mb-1">
               Planned Workout
@@ -245,16 +203,13 @@ function ActivityModeStep({
               Follow your scheduled training plan
             </Text>
           </View>
-        </Pressable>
+        </Button>
 
-        <Pressable
+        <Button
           onPress={() => onSelectMode("unplanned")}
-          className="border border-border rounded-xl p-6 flex-row items-center bg-card min-h-20"
-          style={({ pressed }) => ({
-            backgroundColor: pressed ? "hsl(var(--muted))" : "hsl(var(--card))",
-          })}
+          className="flex-row items-center p-6 min-h-20"
+          variant={"outline"}
         >
-          <Activity className="text-primary mr-4" size={24} />
           <View className="flex-1">
             <Text className="text-lg font-semibold text-foreground mb-1">
               Quick Start
@@ -263,7 +218,7 @@ function ActivityModeStep({
               Start an activity right now
             </Text>
           </View>
-        </Pressable>
+        </Button>
       </View>
     </View>
   );
@@ -282,15 +237,10 @@ function PlannedActivityStep({
 
       <View className="gap-3">
         {PLANNED_ACTIVITIES.map((activity) => (
-          <Pressable
+          <Button
             key={activity.id}
             onPress={() => onSelectActivity(activity.id)}
-            className="border border-border rounded-xl p-5 bg-card"
-            style={({ pressed }) => ({
-              backgroundColor: pressed
-                ? "hsl(var(--muted))"
-                : "hsl(var(--card))",
-            })}
+            className="p-5"
           >
             <View className="flex-row justify-between items-center mb-2">
               <Text className="text-base font-semibold text-foreground">
@@ -304,12 +254,11 @@ function PlannedActivityStep({
               {activity.description}
             </Text>
             <View className="flex-row items-center">
-              <Clock className="text-muted-foreground mr-2" size={16} />
               <Text className="text-sm text-muted-foreground">
                 {activity.duration}
               </Text>
             </View>
-          </Pressable>
+          </Button>
         ))}
       </View>
     </ScrollView>
@@ -319,7 +268,7 @@ function PlannedActivityStep({
 function UnplannedActivityStep({
   onSelectActivity,
 }: {
-  onSelectActivity: (activityId: string) => void;
+  onSelectActivity: (activityId: ActivityTypeId) => void;
 }) {
   return (
     <View className="px-6 py-4">
@@ -328,40 +277,25 @@ function UnplannedActivityStep({
       </Text>
 
       <View className="gap-4">
-        {ACTIVITY_TYPES.map((activity) => {
-          const IconComponent = activity.icon;
+        {popularActivityTypes.map((activity) => {
           return (
-            <Pressable
+            <Button
               key={activity.id}
               onPress={() => onSelectActivity(activity.id)}
-              className="border border-border rounded-xl p-6 flex-row items-center bg-card min-h-20"
-              style={({ pressed }) => ({
-                backgroundColor: pressed
-                  ? "hsl(var(--muted))"
-                  : "hsl(var(--card))",
-              })}
+              className="p-6 flex-row items-center min-h-20"
             >
-              <IconComponent className="text-primary mr-4" size={24} />
               <View className="flex-1">
                 <Text className="text-lg font-semibold text-foreground mb-1">
                   {activity.name}
                 </Text>
                 <View className="flex-row gap-3">
-                  {activity.requiresGPS && (
+                  {activity.recordingConstraints.recommendsGPS && (
                     <View className="flex-row items-center">
-                      <MapPin
-                        className="text-muted-foreground mr-1"
-                        size={14}
-                      />
                       <Text className="text-xs text-muted-foreground">GPS</Text>
                     </View>
                   )}
-                  {activity.requiresBLE && (
+                  {activity.recordingConstraints.recommendsHeartRate && (
                     <View className="flex-row items-center">
-                      <Bluetooth
-                        className="text-muted-foreground mr-1"
-                        size={14}
-                      />
                       <Text className="text-xs text-muted-foreground">
                         Sensors
                       </Text>
@@ -369,7 +303,7 @@ function UnplannedActivityStep({
                   )}
                 </View>
               </View>
-            </Pressable>
+            </Button>
           );
         })}
       </View>
@@ -381,7 +315,7 @@ function PermissionsStep({
   activityType,
   onComplete,
 }: {
-  activityType: string | null;
+  activityType: ActivityTypeId | null;
   onComplete: (permissions: { location: boolean; bluetooth: boolean }) => void;
 }) {
   const [permissionsState, setPermissionsState] = useState({
@@ -389,9 +323,9 @@ function PermissionsStep({
     bluetooth: false,
   });
 
-  const activity = ACTIVITY_TYPES.find((a) => a.id === activityType);
-  const needsLocation = activity?.requiresGPS;
-  const needsBluetooth = activity?.requiresBLE;
+  const activity = activityType ? ACTIVITY_TYPES[activityType] : null;
+  const needsLocation = activity?.recordingConstraints.requiresGPS;
+  const needsBluetooth = activity?.recordingConstraints.recommendsHeartRate;
 
   const handleLocationPermission = () => {
     console.log("show permissions");
@@ -433,7 +367,6 @@ function PermissionsStep({
           >
             <CardContent className="p-5">
               <View className="flex-row items-center mb-3">
-                <MapPin className="text-primary mr-4" size={24} />
                 <View className="flex-1">
                   <Text className="text-base font-semibold text-foreground">
                     Location Access
@@ -442,9 +375,6 @@ function PermissionsStep({
                     For GPS tracking and route mapping
                   </Text>
                 </View>
-                {permissionsState.location && (
-                  <CheckCircle className="text-success" size={24} />
-                )}
               </View>
               {!permissionsState.location && (
                 <Button onPress={handleLocationPermission} className="w-full">
@@ -467,7 +397,6 @@ function PermissionsStep({
           >
             <CardContent className="p-5">
               <View className="flex-row items-center mb-3">
-                <Bluetooth className="text-primary mr-4" size={24} />
                 <View className="flex-1">
                   <Text className="text-base font-semibold text-foreground">
                     Bluetooth Access
@@ -476,9 +405,6 @@ function PermissionsStep({
                     For heart rate monitors and sensors
                   </Text>
                 </View>
-                {permissionsState.bluetooth && (
-                  <CheckCircle className="text-success" size={24} />
-                )}
               </View>
               {!permissionsState.bluetooth && (
                 <Button onPress={handleBluetoothPermission} className="w-full">
@@ -496,15 +422,14 @@ function PermissionsStep({
 }
 
 function BluetoothStep({
-  activityType,
   onComplete,
   onSkip,
 }: {
-  activityType: string | null;
+  activityType: ActivityTypeId | null;
   onComplete: (devices: string[]) => void;
   onSkip: () => void;
 }) {
-  const [devices, setDevices] = useState([] as Device[]);
+  const [devices, setDevices] = useState<Device[]>([]);
   const [connected, setConnected] = useState<string[]>([]);
   const [scanning, setScanning] = useState(false);
 
@@ -541,34 +466,32 @@ function BluetoothStep({
           variant="outline"
           className="w-full"
         >
-          <Bluetooth className="text-primary mr-3" size={20} />
           <Text className="text-primary">
             {scanning ? "Scanning..." : "Scan for Devices"}
           </Text>
         </Button>
 
         {devices.map((device) => (
-          <Card key={(device as Device).id} className="border-border">
+          <Card key={device.id} className="border-border">
             <CardContent className="p-4">
               <View className="flex-row justify-between items-center">
                 <View className="flex-1">
                   <Text className="text-base font-semibold text-foreground">
-                    {(device as Device).name}
+                    {device.name}
                   </Text>
                   <Text className="text-sm text-muted-foreground">
-                    {(device as Device).type}
+                    {device.type}
                   </Text>
                 </View>
                 {connected.includes(device.id) ? (
                   <View className="flex-row items-center">
-                    <CheckCircle className="text-success mr-2" size={20} />
                     <Text className="text-sm text-success font-medium">
                       Connected
                     </Text>
                   </View>
                 ) : (
                   <Button
-                    onPress={() => handleConnect((device as Device).id)}
+                    onPress={() => handleConnect(device.id)}
                     size="sm"
                     variant="secondary"
                   >
@@ -598,13 +521,13 @@ function ReadyStep({
   connectedDevices,
   permissions,
 }: {
-  activityType: string | null;
+  activityType: ActivityTypeId | null;
   mode: "planned" | "unplanned" | null;
   plannedActivityId: string | null;
   connectedDevices: string[];
   permissions: PermissionsState;
 }) {
-  const activity = ACTIVITY_TYPES.find((a) => a.id === activityType);
+  const activity = activityType ? ACTIVITY_TYPES[activityType] : null;
   const plannedActivity = PLANNED_ACTIVITIES.find(
     (a) => a.id === plannedActivityId,
   );
@@ -612,9 +535,6 @@ function ReadyStep({
   return (
     <ScrollView className="flex-1 px-6 py-4">
       <View className="items-center mb-8">
-        <View className="w-20 h-20 rounded-full bg-primary items-center justify-center mb-4">
-          <Play className="text-primary-foreground" size={32} />
-        </View>
         <Text className="text-2xl font-bold text-foreground text-center mb-2">
           Ready to Start!
         </Text>
@@ -631,7 +551,6 @@ function ReadyStep({
           <CardContent>
             <View className="gap-2">
               <View className="flex-row items-center">
-                <Target className="text-muted-foreground mr-3" size={16} />
                 <Text className="text-foreground">
                   {mode === "planned" && plannedActivity
                     ? plannedActivity.name
@@ -640,7 +559,6 @@ function ReadyStep({
               </View>
               {mode === "planned" && plannedActivity && (
                 <View className="flex-row items-center">
-                  <Clock className="text-muted-foreground mr-3" size={16} />
                   <Text className="text-foreground">
                     {plannedActivity.duration}
                   </Text>
@@ -659,7 +577,6 @@ function ReadyStep({
               <View className="gap-2">
                 {permissions.location && (
                   <View className="flex-row items-center">
-                    <CheckCircle className="text-success mr-3" size={16} />
                     <Text className="text-foreground">
                       Location tracking enabled
                     </Text>
@@ -667,7 +584,6 @@ function ReadyStep({
                 )}
                 {permissions.bluetooth && (
                   <View className="flex-row items-center">
-                    <CheckCircle className="text-success mr-3" size={16} />
                     <Text className="text-foreground">
                       Bluetooth sensors enabled
                     </Text>
@@ -687,7 +603,6 @@ function ReadyStep({
               <View className="gap-2">
                 {connectedDevices.map((deviceId: string, index: number) => (
                   <View key={index} className="flex-row items-center">
-                    <Bluetooth className="text-success mr-3" size={16} />
                     <Text className="text-foreground">Device {deviceId}</Text>
                   </View>
                 ))}
@@ -703,6 +618,7 @@ function ReadyStep({
 // Main Record Page Component
 export default function RecordScreen() {
   const selection = useRecordSelection();
+  const router = useRouter();
 
   // Step validation function
   const validateStep = (step: number) => {
@@ -730,7 +646,7 @@ export default function RecordScreen() {
     if (selection.mode === "planned") {
       selection.setPlannedActivity(activityId);
     } else {
-      selection.setActivityType(activityId);
+      selection.setActivityType(activityId as ActivityTypeId);
     }
   };
 
@@ -750,16 +666,8 @@ export default function RecordScreen() {
   };
 
   const handleComplete = () => {
-    console.log("Navigate to recording screen with data:", {
-      mode: selection.mode,
-      activityType: selection.selectedActivityType,
-      plannedActivityId: selection.plannedActivityId,
-      permissions: selection.permissions,
-      connectedDevices: selection.connectedDevices,
-    });
-
-    // In a real app, you would navigate here:
-    // router.push('/(internal)/recording');
+    // Navigate to recording screen
+    router.push("/(internal)/recording");
 
     // Reset for next time
     selection.reset();
@@ -787,7 +695,7 @@ export default function RecordScreen() {
               )}
 
               <Button onPress={goToNext} disabled={!validateStep(currentStep)}>
-                <Text>{isLastStep ? "Complete" : "Next"}</Text>
+                <Text>{isLastStep ? "Start" : "Next"}</Text>
               </Button>
             </View>
           </View>

@@ -19,27 +19,8 @@ export default function InternalLayout() {
           headerShown: false,
           tabBarActiveTintColor: navTheme.colors.primary,
           tabBarInactiveTintColor: currentTheme.mutedForeground,
-          tabBarStyle: {
-            backgroundColor: navTheme.colors.card,
-            borderTopWidth: 1,
-            borderTopColor: navTheme.colors.border,
-            height: 80,
-            paddingBottom: 20,
-            paddingTop: 10,
-            position: "absolute",
-            bottom: 0,
-            left: 0,
-            right: 0,
-            shadowColor: isDark ? "#000" : "#000",
-            shadowOffset: { width: 0, height: -2 },
-            shadowOpacity: isDark ? 0.3 : 0.1,
-            shadowRadius: 8,
-            elevation: 8,
-          },
           tabBarLabelStyle: {
             fontSize: 11,
-            fontWeight: "500",
-            marginTop: 4,
           },
         }}
       >
