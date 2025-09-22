@@ -1,41 +1,27 @@
+import { useAuthStore } from "@/lib/stores/auth-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createClient } from "@supabase/supabase-js";
-// Supabase client with authentication
-export const supabase = createClient(
-  process.env.EXPO_PUBLIC_SUPABASE_URL!,
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
-  {
-    auth: {
-      storage: AsyncStorage,
-      autoRefreshToken: true,
-      persistSession: true,
-      detectSessionInUrl: false,
-    },
+import "react-native-url-polyfill/auto";
+
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    storage: AsyncStorage,
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
   },
-);
+});
 
-export const getAuthHeaders = async () => {
-  const baseHeaders = {
-    "x-trpc-source": "expo",
-    "x-client-type": "mobile",
-  };
+export const getAuthHeaders = () => {
+  const session = useAuthStore.getState().session;
+  const headers = new Headers();
 
-  try {
-    const { data, error } = await supabase.auth.getSession();
-
-    if (error) {
-      console.warn("Auth session error:", error);
-      return baseHeaders;
-    }
-
-    const token = data.session?.access_token;
-
-    return {
-      ...baseHeaders,
-      ...(token && { authorization: `Bearer ${token}` }),
-    };
-  } catch (error) {
-    console.error("Failed to get auth session:", error);
-    return baseHeaders;
+  if (session?.access_token) {
+    headers.set("Authorization", `Bearer ${session.access_token}`);
   }
+
+  return headers;
 };

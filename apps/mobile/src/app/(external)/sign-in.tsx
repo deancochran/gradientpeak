@@ -19,7 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { trpc } from "@/lib/trpc";
+import { supabase } from "@/lib/supabase/client";
 
 const signInSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -43,55 +43,45 @@ const mapSupabaseErrorToFormField = (error: string) => {
 export default function SignInScreen() {
   const router = useRouter();
   const { loading: authLoading } = useAuth();
-  const signInMutation = trpc.auth.signInWithPassword.useMutation();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   const form = useForm<SignInFields>({
     resolver: zodResolver(signInSchema),
   });
 
-  const onSignIn = (data: SignInFields) => {
+  const onSignIn = async (data: SignInFields) => {
     setIsSubmitting(true);
-
-    signInMutation.mutate(
-      {
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
         email: data.email,
         password: data.password,
-      },
-      {
-        onSuccess: () => {
-          console.log("Successfully signed in");
-          router.push("/(internal)/(tabs)"); // Navigate on success
-        },
-        onError: (error) => {
-          console.log("Sign in error:", error);
+      });
 
-          // Handle specific errors
-          if (error.message?.includes("Invalid login credentials")) {
-            form.setError("root", {
-              message: "Invalid email or password. Please try again.",
-            });
-          } else if (error.message?.includes("Email not confirmed")) {
-            form.setError("root", {
-              message:
-                "Please verify your email address before signing in. Check your email for a verification link.",
-            });
-          } else if (error.message?.includes("Too many requests")) {
-            form.setError("root", {
-              message: "Too many login attempts. Please try again later.",
-            });
-          } else {
-            const fieldName = mapSupabaseErrorToFormField(error.message || "");
-            form.setError(fieldName as any, {
-              message: error.message || "An unexpected error occurred",
-            });
-          }
-        },
-        onSettled: () => {
-          setIsSubmitting(false);
-        },
-      },
-    );
+      if (error) {
+        console.log("Sign in error:", error.message);
+        if (error.message?.includes("Invalid login credentials")) {
+          form.setError("root", {
+            message: "Invalid email or password. Please try again.",
+          });
+        } else if (error.message?.includes("Email not confirmed")) {
+          form.setError("root", {
+            message:
+              "Please verify your email address before signing in. Check your email for a verification link.",
+          });
+        } else {
+          form.setError("root", {
+            message: error.message || "An unexpected error occurred",
+          });
+        }
+      }
+      // On success, the `onAuthStateChange` listener in the auth store
+      // will handle the session and trigger a redirect automatically.
+    } catch (err) {
+      console.log("Unexpected sign in error:", err);
+      form.setError("root", { message: "An unexpected error occurred" });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleSignUpPress = () => {
@@ -102,7 +92,7 @@ export default function SignInScreen() {
     router.push("/(external)/forgot-password");
   };
 
-  const isLoading = authLoading || isSubmitting || signInMutation.isPending;
+  const isLoading = authLoading || isSubmitting;
 
   return (
     <KeyboardAvoidingView

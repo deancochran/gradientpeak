@@ -6,7 +6,7 @@ import { ActivityIndicator, View } from "react-native";
 
 export default function InternalLayout() {
   console.log("InternalLayout loaded");
-  const { loading, isFullyLoaded } = useRequireAuth("/(external)");
+  const { loading, isFullyLoaded } = useRequireAuth("/(external)/sign-in");
 
   // Show loading while auth state resolves
   if (loading || !isFullyLoaded) {

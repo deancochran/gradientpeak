@@ -8,10 +8,7 @@ export const useAuth = () => {
   const store = useAuthStore();
   const { session, user } = store;
 
-  const isAuthenticated = useMemo(
-    () => !!session?.user?.email_confirmed_at,
-    [session],
-  );
+  const isAuthenticated = useMemo(() => !!session?.user, [session]);
 
   useEffect(() => {
     if (store.hydrated && !store.initialized) {

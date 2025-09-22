@@ -19,7 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { trpc } from "@/lib/trpc";
+import { supabase } from "@/lib/supabase/client";
 
 const signUpSchema = z
   .object({
@@ -51,7 +51,6 @@ const mapSupabaseErrorToFormField = (error: string) => {
 export default function SignUpScreen() {
   const router = useRouter();
   const { loading: authLoading } = useAuth();
-  const signUpMutation = trpc.auth.signUp.useMutation();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   const form = useForm<SignUpFields>({
@@ -61,38 +60,28 @@ export default function SignUpScreen() {
   const onSignUp = async (data: SignUpFields) => {
     setIsSubmitting(true);
     try {
-      await signUpMutation.mutateAsync({
+      const { error } = await supabase.auth.signUp({
         email: data.email,
         password: data.password,
       });
 
-      if (signUpMutation.error) {
-        console.log("Sign up error:", signUpMutation.error);
-
-        // Handle specific auth errors
-        if (signUpMutation.error.message?.includes("User already registered")) {
+      if (error) {
+        console.log("Sign up error:", error.message);
+        if (error.message?.includes("User already registered")) {
           form.setError("email", {
             message: "An account with this email already exists",
           });
-        } else if (
-          signUpMutation.error.message?.includes("Password should be")
-        ) {
+        } else if (error.message?.includes("Password should be")) {
           form.setError("password", {
-            message: signUpMutation.error.message,
+            message: error.message,
           });
-        } else if (
-          signUpMutation.error.message?.includes("Unable to validate email")
-        ) {
+        } else if (error.message?.includes("Unable to validate email")) {
           form.setError("email", {
             message: "Please enter a valid email address",
           });
         } else {
-          const fieldName = mapSupabaseErrorToFormField(
-            signUpMutation.error.message || "",
-          );
-          form.setError(fieldName as any, {
-            message:
-              signUpMutation.error.message || "An unexpected error occurred",
+          form.setError("root", {
+            message: error.message || "An unexpected error occurred",
           });
         }
       } else {
@@ -112,7 +101,7 @@ export default function SignUpScreen() {
     router.replace("/(external)/sign-in");
   };
 
-  const isLoading = authLoading || isSubmitting || signUpMutation.isPending;
+  const isLoading = authLoading || isSubmitting;
 
   return (
     <KeyboardAvoidingView

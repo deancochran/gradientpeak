@@ -18,7 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { trpc } from "@/lib/trpc";
+import { supabase } from "@/lib/supabase/client";
 
 const forgotPasswordSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -29,7 +29,6 @@ type ForgotPasswordFields = z.infer<typeof forgotPasswordSchema>;
 export default function ForgotPasswordScreen() {
   const router = useRouter();
   const { loading: authLoading } = useAuth();
-  const resetPasswordMutation = trpc.auth.sendPasswordResetEmail.useMutation();
   const [emailSent, setEmailSent] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
@@ -40,29 +39,23 @@ export default function ForgotPasswordScreen() {
   const onSendResetEmail = async (data: ForgotPasswordFields) => {
     setIsSubmitting(true);
     try {
-      await resetPasswordMutation.mutateAsync({
-        email: data.email,
+      const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
         redirectTo: `${process.env.EXPO_PUBLIC_APP_URL}/(external)/reset-password`,
       });
 
-      if (resetPasswordMutation.error) {
-        console.log("Reset password error:", resetPasswordMutation.error);
-
-        if (resetPasswordMutation.error.message?.includes("User not found")) {
+      if (error) {
+        console.log("Reset password error:", error.message);
+        if (error.message?.includes("User not found")) {
           form.setError("email", {
             message: "No account found with this email address",
           });
-        } else if (
-          resetPasswordMutation.error.message?.includes("Email rate limit")
-        ) {
+        } else if (error.message?.includes("Email rate limit")) {
           form.setError("email", {
             message: "Too many requests. Please try again later.",
           });
         } else {
           form.setError("email", {
-            message:
-              resetPasswordMutation.error.message ||
-              "Failed to send reset email",
+            message: error.message || "Failed to send reset email",
           });
         }
       } else {
@@ -86,8 +79,7 @@ export default function ForgotPasswordScreen() {
     setEmailSent(false);
   };
 
-  const isLoading =
-    authLoading || isSubmitting || resetPasswordMutation.isPending;
+  const isLoading = authLoading || isSubmitting;
 
   if (emailSent) {
     return (

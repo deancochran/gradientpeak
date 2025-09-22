@@ -82,14 +82,9 @@ export const useAuthStore = create<AuthState>()(
             console.log("🔄 Setting up auth state change listener");
             authListenerSetup = true;
 
-            supabase.auth.onAuthStateChange(async (event, session) => {
+            supabase.auth.onAuthStateChange((event, session) => {
               console.log("🔄 Auth state changed:", event, !!session);
-
-              // Avoid setting session during initialization to prevent loops
-              const store = get();
-              if (store.initialized) {
-                store.setSession(session);
-              }
+              get().setSession(session);
             });
           } else {
             console.log("✅ Auth listener already set up, skipping");
