@@ -7,20 +7,20 @@ create type activity_type as enum (
     'other'
 );
 
-
 create type activity_metric as enum (
     'heartrate',
     'power',
     'speed',
     'cadence',
     'distance',
-    'latlng',      -- GPS coordinates
-    'moving',      -- moving/not moving
+    'latlng',
+    'moving',
     'altitude',
     'elevation',
-    'temperature', -- optional sensor metric
-    'gradient'     -- optional hill grade
+    'temperature',
+    'gradient'
 );
+
 create type activity_metric_data_type as enum (
     'float',
     'real',
@@ -31,59 +31,51 @@ create type activity_metric_data_type as enum (
     'latlng'
 );
 
-
-
 create table if not exists public.activities (
-    id uuid primary key default uuid_generate_v4(), -- identifiers
+    id uuid primary key default uuid_generate_v4(),
     idx serial unique,
-
-    name text not null, -- metadata
+    name text not null,
     notes text,
     activity_type activity_type not null default 'other',
     started_at timestamp not null,
     finished_at timestamp not null,
     planned_activity_id uuid references public.planned_activities(id) on delete set null,
-
-    profile_id uuid not null references public.profiles(id) on delete cascade, -- profile metadata
+    profile_id uuid not null references public.profiles(id) on delete cascade,
     profile_age integer,
     profile_weight_kg integer,
     profile_ftp integer,
     profile_threshold_hr integer,
-
     total_time integer,
-    moving_time integer, -- activity aggregates
+    moving_time integer,
     distance integer,
     total_ascent integer,
     total_descent integer,
     calories integer,
-    avg_speed numeric(5,2), -- activity metadata avgs
+    avg_speed numeric(5,2),
     avg_heart_rate integer,
     avg_cadence integer,
     avg_power integer,
-    norm_speed numeric(5,2), -- activity metadata norms
+    norm_speed numeric(5,2),
     norm_heart_rate integer,
     norm_cadence integer,
     norm_power integer,
-    max_speed numeric(5,2), -- activity metadata maxes
+    max_speed numeric(5,2),
     max_heart_rate integer,
     max_power integer,
     max_cadence integer,
-
     created_at timestamp not null default now()
 );
-
 
 create table if not exists public.activity_streams (
     id uuid primary key default uuid_generate_v4(),
     idx serial unique,
     activity_id uuid references public.activities(id) on delete cascade,
-    metric activity_metric not null,
+    type activity_metric not null,
     data_type activity_metric_data_type not null,
     original_size integer not null,
     compressed_data bytea NOT NULL,
     created_at timestamp not null default now()
 );
-
 
 create table if not exists public.planned_activities (
     id uuid primary key default uuid_generate_v4(),

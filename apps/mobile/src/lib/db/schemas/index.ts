@@ -1,11 +1,16 @@
 // Re-export relations if you need them
 
-import { activities, activityStreams } from "./activities";
+import {
+  activityRecordings,
+  activityRecordingStreams,
+} from "./activity_recordings";
 
-export type SelectActivity = typeof activities.$inferSelect;
-export type InsertActivity = typeof activities.$inferInsert;
-export type SelectActivityStream = typeof activityStreams.$inferSelect;
-export type InsertActivityStream = typeof activityStreams.$inferInsert;
+export type SelectActivityRecording = typeof activityRecordings.$inferSelect;
+export type InsertActivityRecording = typeof activityRecordings.$inferInsert;
+export type SelectRecordingStream =
+  typeof activityRecordingStreams.$inferSelect;
+export type InsertRecordingStream =
+  typeof activityRecordingStreams.$inferInsert;
 
 // Re-export schema tables for type inference
-export { activities, activityStreams };
+export { activityRecordings, activityRecordingStreams };

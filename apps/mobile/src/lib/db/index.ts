@@ -10,7 +10,7 @@ import { openDatabaseSync } from "expo-sqlite";
  */
 
 const expoDb = openDatabaseSync("db.db");
-const db = drizzle(expoDb);
+const localdb = drizzle(expoDb);
 
 // Also exporting the schema for convenience
-export { db };
+export { localdb };
