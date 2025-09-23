@@ -1,33 +1,33 @@
-# Technical Implementation Plan: Activity Recording Consolidation
+Technical Implementation Plan: Activity Recording Consolidation
 
 ## Executive Summary
 
-This document outlines the technical implementation for consolidating TurboFit's mobile app activity recording system. The goal is to create a unified `ActivityRecordingService` that manages the complete activity lifecycle while streamlining UI components and hooks. This will reduce codebase complexity by ~40-50% (from current 1,200+ lines across multiple services to ~800 lines in consolidated service) and establish a single source of truth for all recording operations.
+This document outlines the technical implementation for consolidating TurboFit's mobile app activity recording system. The goal is to enhance the existing `ActivityRecorderService` as the unified service that manages the complete activity lifecycle, while streamlining hooks and updating existing UI components. This will reduce codebase complexity by ~7% (from current ~3,050 lines across multiple services, hooks, and UI to ~2,700 lines through deduplication and refactoring) and establish a single source of truth for all recording operations within existing files. All changes will be made in-place: merging logic into primary existing files (e.g., `ActivityRecorderService.ts`, `useEnhancedActivityRecording.ts`, and current UI in `apps/mobile/src/app/modals/record/` and `apps/mobile/src/components/`), without creating new files or components.
 
 ## Current State Analysis
 
 ### Existing Architecture Assessment
 
 **Current Service Layer (To Be Consolidated):**
-- `ActivityRecorderService` (650 lines) - Primary recording logic with GPS, sensors, recovery
-- `ActivityService` (thin orchestrator) - Basic CRUD operations
-- `ActivitySaveService` - Activity persistence logic
-- `ActivityCompletionService` - Post-recording processing
-- `ActivitySyncService` - Background sync operations
-- `LocalActivityDatabaseService` - Database operations
+- `ActivityRecorderService` (650 lines) - Primary recording logic with GPS, sensors, recovery (enhance as unified service)
+- `ActivityService` (thin orchestrator) - Basic CRUD operations (merge into `ActivityRecorderService`)
+- `ActivitySaveService` - Activity persistence logic (merge into `ActivityRecorderService`)
+- `ActivityCompletionService` - Post-recording processing (merge into `ActivityRecorderService`)
+- `ActivitySyncService` - Background sync operations (keep separate, integrate calls)
+- `LocalActivityDatabaseService` - Database operations (merge into `ActivityRecorderService`)
 
 **Current Hook Layer (To Be Simplified):**
-- `useEnhancedActivityRecording` (550 lines) - Complex hook with recovery, checkpointing, error handling
-- `useActivityManager` - Activity lifecycle management
-- `useAdvancedBluetooth` - BLE device management
-- `useRecordSelection` - Activity type selection logic
+- `useEnhancedActivityRecording` (550 lines) - Complex hook with recovery, checkpointing, error handling (refactor to wrap enhanced service)
+- `useActivityManager` - Activity lifecycle management (merge logic into `useEnhancedActivityRecording`)
+- `useAdvancedBluetooth` - BLE device management (merge into `useEnhancedActivityRecording` or keep and simplify)
+- `useRecordSelection` - Activity type selection logic (merge into `useEnhancedActivityRecording`)
 
-**Current UI Components (To Be Preserved/Referenced):**
-- `MetricsGrid.tsx` - Unified metrics display (KEEP for reference)
-- `RecordingControls.tsx` - Pause/Resume/Stop buttons (KEEP for reference) 
-- `RecordingHeader.tsx` - Activity status display
-- `RecordingBodySection.tsx` - Main recording interface
-- `ActivityRecordingErrorBoundary.tsx` - Error handling wrapper
+**Current UI Components (To Be Updated):**
+- `MetricsGrid.tsx` - Unified metrics display (enhance for live updates)
+- `RecordingControls.tsx` - Pause/Resume/Stop buttons (integrate service state)
+- `RecordingHeader.tsx` - Activity status display (add service reactivity)
+- `RecordingBodySection.tsx` - Main recording interface (consolidate flows)
+- `ActivityRecordingErrorBoundary.tsx` - Error handling wrapper (extend for new error logging)
 
 **Current Database Schema (SQLite + Drizzle):**
 ```typescript
@@ -58,7 +58,7 @@ export const activityStreams = sqliteTable("activity_streams", {
 ### Complexity Analysis
 
 **Current Pain Points:**
-- 5+ service files with overlapping responsibilities
+- many service files with overlapping responsibilities
 - AsyncStorage checkpoints scattered across multiple files
 - GPS error handling duplicated between service and hook
 - Sensor data buffering logic in both service and hook layers
@@ -68,24 +68,24 @@ export const activityStreams = sqliteTable("activity_streams", {
 
 ### Consolidation Strategy
 
-**Ground Truth Service:** The new `ActivityRecordingService` will become the single source of truth by consolidating ALL recording logic from existing services while preserving robust recovery mechanisms.
+**Ground Truth Service:** Enhance the existing `ActivityRecorderService` to become the single source of truth by merging ALL recording logic from other services while preserving robust recovery mechanisms. Add consolidated state management, lifecycle methods, and data handling directly to this file.
 
 ```typescript
-// apps/mobile/src/lib/services/activity-recording-service.ts
-class ActivityRecordingService {
-  // ===== CONSOLIDATED STATE MANAGEMENT =====
+// apps/mobile/src/lib/services/activity-recorder.ts (enhance existing file)
+class ActivityRecorderService {
+  // ===== ENHANCED CONSOLIDATED STATE MANAGEMENT =====
   private static currentSession: RecordingSession | null = null
   private static state: RecordingState = 'idle' // idle | selecting | recording | paused | finished
   private static locationSubscription: Location.LocationSubscription | null = null
   private static recordingTimer: NodeJS.Timeout | null = null
-  
-  // ===== PRESERVED ROBUST FEATURES FROM ActivityRecorderService =====
+
+  // ===== PRESERVED & ENHANCED ROBUST FEATURES =====
   private static sensorDataBuffer: SensorDataPoint[] = []
   private static gpsDataBuffer: GpsDataPoint[] = []
-  private static totalTimerTime: number = 0 // Active recording time (excludes pauses)
+  private static startTime: Date | null
   private static lastResumeTime: Date | null = null
-  
-  // ===== PRESERVED RECOVERY LOGIC FROM useEnhancedActivityRecording =====
+
+  // ===== ENHANCED RECOVERY LOGIC (merge from hook) =====
   private static recoveryData: RecoveryData = {
     lastSavedTimestamp: 0,
     checkpoints: [],
@@ -93,32 +93,32 @@ class ActivityRecordingService {
     connectionAttempts: 0
   }
   private static checkpointInterval: NodeJS.Timeout | null = null
-  
-  // ===== CONSOLIDATED LIFECYCLE METHODS =====
+
+  // ===== ENHANCED LIFECYCLE METHODS (merge from other services) =====
   static async startActivity(type: ActivityType, plannedId?: string): Promise<string | null>
   static async pauseActivity(): Promise<boolean>
   static async resumeActivity(): Promise<boolean>
   static async finishActivity(): Promise<ActivityResult>
   static async discardActivity(): Promise<void>
-  
-  // ===== CONSOLIDATED DATA MANAGEMENT =====
+
+  // ===== ENHANCED DATA MANAGEMENT (merge persistence & completion) =====
   private static async recordSensorData(data: SensorDataPoint): Promise<void>
   private static async generateActivityJSON(): Promise<ActivityJSON>
   private static async saveToLocalDB(json: ActivityJSON): Promise<string>
   private static async queueForSync(activityId: string): Promise<void>
-  
+
   // ===== PRESERVED GPS & SENSOR LOGIC =====
   private static async startLocationTracking(): Promise<void>
   private static async stopLocationTracking(): Promise<void>
   private static async connectBluetooth(deviceId: string): Promise<boolean>
-  
-  // ===== PRESERVED RECOVERY MECHANISMS =====
+
+  // ===== ENHANCED RECOVERY MECHANISMS (merge from hook) =====
   private static async createCheckpoint(): Promise<void>
   private static async recoverFromInterruption(): Promise<boolean>
   private static async saveSessionToStorage(): Promise<void>
   private static async clearRecoveryData(): Promise<void>
-  
-  // ===== CONSOLIDATED METRICS CALCULATION =====
+
+  // ===== ENHANCED METRICS CALCULATION =====
   private static updateLiveMetrics(dataPoint: SensorDataPoint): void
   private static calculateFinalMetrics(): ActivityMetrics
 }
@@ -128,16 +128,15 @@ class ActivityRecordingService {
 
 | Current Feature | Source File | Status | New Location | Implementation Notes |
 |----------------|-------------|--------|-------------|---------------------|
-| GPS timeout handling | ActivityRecorderService | **PRESERVE** | ActivityRecordingService.startLocationTracking() | Critical for reliability - maintain 15s timeout |
-| Background location tracking | ActivityRecorderService | **PRESERVE** | ActivityRecordingService.setupBackgroundTask() | Required for mobile - use TaskManager |
-| Checkpoint system | useEnhancedActivityRecording | **PRESERVE** | ActivityRecordingService.createCheckpoint() | Essential for recovery - 30s intervals |
-| Error logging | useEnhancedActivityRecording | **PRESERVE** | ActivityRecordingService.logError() | Production necessity - max 50 entries |
-| Sensor data buffering | ActivityRecorderService | **PRESERVE** | ActivityRecordingService.sensorDataBuffer | Prevent data loss - flush every 10 entries |
-| Recovery from interruption | Both files | **CONSOLIDATE** | ActivityRecordingService.recoverFromInterruption() | Merge both approaches |
-| AsyncStorage checkpoints | useEnhancedActivityRecording | **PRESERVE** | ActivityRecordingService.saveSessionToStorage() | Critical for crash recovery |
-| Live metrics calculation | ActivityRecorderService | **PRESERVE** | ActivityRecordingService.updateLiveMetrics() | Real-time UI updates |
-| Distance calculation | ActivityRecorderService | **PRESERVE** | ActivityRecordingService.calculateDistance() | Haversine formula |
-| Timer duration tracking | ActivityRecorderService | **PRESERVE** | ActivityRecordingService timing logic | Separate elapsed vs active time |
+| GPS timeout handling | ActivityRecorderService | **PRESERVE** | ActivityRecorderService.startLocationTracking() | Critical for reliability - maintain 15s timeout |
+| Background location tracking | ActivityRecorderService | **PRESERVE** | ActivityRecorderService.setupBackgroundTask() | Required for mobile - use TaskManager |
+| Checkpoint system | useEnhancedActivityRecording | **PRESERVE** | ActivityRecorderService.createCheckpoint() | Essential for recovery - 30s intervals |
+| Error logging | useEnhancedActivityRecording | **PRESERVE** | ActivityRecorderService.logError() | Production necessity - max 50 entries |
+| Sensor data buffering | ActivityRecorderService | **PRESERVE** | ActivityRecorderService.sensorDataBuffer | Prevent data loss - flush every 10 entries |
+| AsyncStorage checkpoints | useEnhancedActivityRecording | **PRESERVE** | ActivityRecorderService.saveSessionToStorage() | Critical for crash recovery |
+| Live metrics calculation | ActivityRecorderService | **PRESERVE** | ActivityRecorderService.updateLiveMetrics() | Real-time UI updates |
+| Distance calculation | ActivityRecorderService | **PRESERVE** | ActivityRecorderService.calculateDistance() | Haversine formula |
+| Timer duration tracking | ActivityRecorderService | **PRESERVE** | ActivityRecorderService timing logic | Separate elapsed vs active time |
 
 ### State Machine
 
@@ -147,149 +146,33 @@ idle → selecting → recording → paused → finished
                   discarded  discarded  summary → idle
 ```
 
-## Detailed Recovery & Checkpoint Logic Preservation
-
-### Current Recovery Mechanisms Analysis
-
-**From `ActivityRecorderService` (Ground Truth Approach):**
-```typescript
-// Current checkpoint approach - save to AsyncStorage every interval
-private static async saveSessionToStorage(): Promise<void> {
-  await AsyncStorage.setItem(ACTIVE_RECORDING_KEY, JSON.stringify(this.currentSession))
-}
-
-// Recovery on app restart
-private static async recoverFromInterruption(): Promise<void> {
-  const sessionData = await AsyncStorage.getItem(ACTIVE_RECORDING_KEY)
-  if (sessionData) {
-    this.currentSession = JSON.parse(sessionData)
-    // Show user dialog to continue or discard
-  }
-}
-```
-
-**From `useEnhancedActivityRecording` (Enhanced Approach):**
-```typescript
-// More sophisticated checkpoint system with metadata
-interface ActivityCheckpoint {
-  timestamp: number
-  metrics: ActivityMetrics
-  locationCount: number
-  sensorDataCount: number
-}
-
-// Enhanced error logging
-interface ErrorLogEntry {
-  timestamp: number
-  error: string
-  context: string
-  recovered: boolean
-}
-```
-
-### Consolidated Recovery Strategy
-
-The new `ActivityRecordingService` will merge both approaches:
-
-```typescript
-class ActivityRecordingService {
-  // Enhanced recovery data structure (from useEnhancedActivityRecording)
-  private static recoveryData: RecoveryData = {
-    lastSavedTimestamp: 0,
-    checkpoints: [], // Keep last 10 checkpoints
-    errorLog: [], // Keep last 50 errors
-    connectionAttempts: 0
-  }
-  
-  // Preserve robust checkpoint creation (merge both approaches)
-  private static async createCheckpoint(): Promise<void> {
-    const checkpoint = {
-      timestamp: Date.now(),
-      sessionData: { ...this.currentSession }, // Full session backup
-      metrics: this.currentSession.liveMetrics,
-      locationCount: this.currentSession.recordMessages.filter(r => r.positionLat).length,
-      sensorDataCount: this.sensorDataBuffer.length,
-      gpsDataCount: this.gpsDataBuffer.length
-    }
-    
-    this.recoveryData.checkpoints.push(checkpoint)
-    this.recoveryData.lastSavedTimestamp = checkpoint.timestamp
-    
-    // Save both to AsyncStorage (immediate) and SQLite (persistent)
-    await Promise.all([
-      AsyncStorage.setItem(ACTIVE_RECORDING_KEY, JSON.stringify(checkpoint)),
-      this.saveRecoveryToDatabase(checkpoint)
-    ])
-  }
-  
-  // Enhanced recovery with multiple fallback levels
-  private static async recoverFromInterruption(): Promise<boolean> {
-    try {
-      // Level 1: AsyncStorage (fastest)
-      const asyncData = await AsyncStorage.getItem(ACTIVE_RECORDING_KEY)
-      if (asyncData) {
-        return this.restoreFromCheckpoint(JSON.parse(asyncData))
-      }
-      
-      // Level 2: SQLite recovery table (more persistent)
-      const dbRecovery = await this.getLatestRecoveryFromDatabase()
-      if (dbRecovery) {
-        return this.restoreFromCheckpoint(dbRecovery)
-      }
-      
-      return false
-    } catch (error) {
-      this.logError(`Recovery failed: ${error}`, 'recovery')
-      return false
-    }
-  }
-}
-```
-
-### Database Schema Updates
-
-Add recovery table to existing schema:
-
-```typescript
-// Add to apps/mobile/src/lib/db/schemas/activities.ts
-export const activityRecovery = sqliteTable("activity_recovery", {
-  id: text("id").primaryKey(),
-  sessionId: text("session_id").notNull(),
-  checkpointData: text("checkpoint_data").notNull(), // JSON stringified
-  timestamp: integer("timestamp", { mode: "timestamp" }).notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
-})
-```
-
 ## Concrete File Operations
 
 ### Files to DELETE (After Migration Complete)
 
 **Service Layer Consolidation:**
 ```bash
-# Remove these files - logic moved to ActivityRecordingService
-rm apps/mobile/src/lib/services/activity-recorder.ts           # 650 lines
-rm apps/mobile/src/lib/services/activity-service.ts            # ~100 lines  
-rm apps/mobile/src/lib/services/activity-save.ts               # ~150 lines
-rm apps/mobile/src/lib/services/activity-completion-service.ts # ~200 lines
-rm apps/mobile/src/lib/services/local-activity-database.ts     # ~300 lines
+# Remove these files - logic merged into ActivityRecorderService
+rm apps/mobile/src/lib/services/activity-service.ts            # ~100 lines (CRUD merged)
+rm apps/mobile/src/lib/services/activity-save.ts               # ~150 lines (persistence merged)
+rm apps/mobile/src/lib/services/activity-completion-service.ts # ~200 lines (completion merged)
+rm apps/mobile/src/lib/services/local-activity-database.ts     # ~300 lines (DB ops merged)
 
-# Total removed: ~1,400 lines
+# Total removed: ~750 lines
 ```
 
 **Hook Layer Simplification:**
 ```bash
-# Remove these hooks - logic moved to ActivityRecordingService
-rm apps/mobile/src/lib/hooks/useEnhancedActivityRecording.ts    # 550 lines
+# Remove these hooks - logic merged into useEnhancedActivityRecording
 rm apps/mobile/src/lib/hooks/useActivityManager.ts              # ~200 lines
 rm apps/mobile/src/lib/hooks/useRecordSelection.ts              # ~100 lines
 
-# Total removed: ~850 lines
+# Total removed: ~300 lines
 ```
 
 **UI Component Cleanup:**
 ```bash
-# Remove old stepper components (replaced by unified flow)
+# Remove old stepper components (logic integrated into existing modals/screens)
 rm apps/mobile/src/app/modals/record/old_components/ActivityModeStep.tsx
 rm apps/mobile/src/app/modals/record/old_components/BluetoothStep.tsx
 rm apps/mobile/src/app/modals/record/old_components/PermissionsStep.tsx
@@ -300,666 +183,131 @@ rm apps/mobile/src/app/modals/record/old_components/ReadyStep.tsx
 rm apps/mobile/src/components/activity/ActivityRecordingErrorBoundary.tsx
 ```
 
-### Files to CREATE
-
-**Core Service:**
-```bash
-# New consolidated service (estimated ~800 lines)
-touch apps/mobile/src/lib/services/activity-recording-service.ts
-```
-
-**Simplified Hooks:**
-```bash
-# Thin wrapper hooks for React integration
-touch apps/mobile/src/lib/hooks/useRecording.ts                 # ~100 lines
-touch apps/mobile/src/lib/hooks/usePermissions.ts               # ~150 lines  
-touch apps/mobile/src/lib/hooks/useBluetooth.ts                 # ~200 lines
-touch apps/mobile/src/lib/hooks/useActivitySync.ts              # ~100 lines
-
-# Total new: ~550 lines
-```
-
-**Updated UI Components:**
-```bash
-# Record modal system (in apps/mobile/src/app/modals/record/)
-# Replace existing index.tsx and add new modal components
-apps/mobile/src/app/modals/record/index.tsx                     # ~400 lines (main recording interface)
-apps/mobile/src/app/modals/record/activity_selection.tsx        # ~300 lines (activity type selection)
-apps/mobile/src/app/modals/record/bluetooth.tsx                 # ~250 lines (BLE device management)
-apps/mobile/src/app/modals/record/permissions.tsx               # ~200 lines (location permissions)
-
-# Additional supporting components
-touch apps/mobile/src/components/modals/ActivitySummaryModal.tsx # ~300 lines
-touch apps/mobile/src/app/(internal)/recording.tsx              # ~400 lines (backup screen)
-
-# Total new: ~1,850 lines
-```
-
 ### Files to MODIFY
+
+**Primary Service Enhancements:**
+```bash
+# File: apps/mobile/src/lib/services/activity-recorder.ts
+# Changes: +300 lines (merge state, recovery, lifecycle, data mgmt from other services/hooks)
+```
+
+**Hook Simplification:**
+```bash
+# File: apps/mobile/src/lib/hooks/useEnhancedActivityRecording.ts
+# Changes: -200 lines (simplify by delegating to enhanced service; merge manager/selection logic; +100 lines for wrappers)
+# File: apps/mobile/src/lib/hooks/useAdvancedBluetooth.ts (if kept)
+# Changes: -100 lines (simplify BLE calls to service)
+```
 
 **Database Schema Updates:**
 ```bash
-# Add recovery table and update exports
 # File: apps/mobile/src/lib/db/schemas/activities.ts
-# Changes: +50 lines (recovery table + relations)
+# Changes: +50 lines (add recovery fields inline; update relations without new tables if possible)
 ```
 
 **Service Index Updates:**
 ```bash
-# File: apps/mobile/src/lib/services/index.ts  
-# Remove old exports, add new ActivityRecordingService export
-# Changes: -5 old exports, +1 new export
+# File: apps/mobile/src/lib/services/index.ts
+# Changes: -4 old exports (keep ActivityRecorderService as primary; retain ActivitySyncService), + enhanced exports
 ```
 
 **Hook Index Updates:**
-```bash  
+```bash
 # File: apps/mobile/src/lib/hooks/index.ts (if exists)
-# Remove old hook exports, add new simplified hook exports
-# Changes: -3 old exports, +4 new exports
+# Changes: -2 old exports, + simplified useEnhancedActivityRecording export
 ```
 
-**Route Updates:**
+**UI Component Updates:**
 ```bash
+# File: apps/mobile/src/app/modals/record/index.tsx
+# Changes: +200 lines (integrate unified flow, lock behavior, reactivity to service)
+
+# File: apps/mobile/src/components/MetricsGrid.tsx
+# Changes: +50 lines (enhance for live service metrics)
+
+# File: apps/mobile/src/components/RecordingControls.tsx
+# Changes: +30 lines (wire to service pause/resume/finish)
+
 # File: apps/mobile/src/app/(internal)/(tabs)/record.tsx
-# Currently just redirects to modal - update to show recording screen
-# Changes: Replace 10-line placeholder with 50+ line recording interface
+# Changes: +100 lines (update placeholder to full recording interface using existing components)
+
+# File: apps/mobile/src/app/modals/record/activity_selection.tsx (if exists, or integrate into index.tsx)
+# Changes: +150 lines (merge selection logic)
+
+# File: apps/mobile/src/app/modals/record/bluetooth.tsx (if exists, or integrate)
+# Changes: +100 lines (simplify device mgmt)
+
+# File: apps/mobile/src/app/modals/record/permissions.tsx (if exists, or integrate)
+# Changes: +80 lines (unified permissions)
 ```
 
 ### Migration Impact Analysis
 
 **Before Migration:**
-- Services: ~1,400 lines across 5 files
-- Hooks: ~850 lines across 3 files  
+- Services: ~1,400 lines across 6 files
+- Hooks: ~850 lines across 4 files
 - UI: ~800 lines across various components
 - **Total: ~3,050 lines**
 
 **After Migration:**
-- Services: ~800 lines in 1 file
-- Hooks: ~550 lines across 4 files
-- UI: ~1,350 lines (consolidated + new)
-- **Total: ~2,700 lines**
+- Services: ~950 lines in 2 files (enhanced ActivityRecorderService + ActivitySyncService)
+- Hooks: ~650 lines across 2 files (simplified useEnhancedActivityRecording + useAdvancedBluetooth if kept)
+- UI: ~950 lines (updated existing components)
+- **Total: ~2,550 lines**
 
-**Net Reduction: ~200 lines (6.5%)**
-*Note: Initial 40-50% reduction claim was overestimated - actual reduction is ~7% with significantly improved maintainability and consolidated logic*
+**Net Reduction: ~500 lines (16%)** through deduplication, with improved maintainability via centralized logic in existing files.
 
 ## Record Modal System Specifications
 
-Based on the existing modal structure in `apps/mobile/src/app/modals/record/`, here are the detailed specifications for each modal component:
+Based on the existing modal structure in `apps/mobile/src/app/modals/record/`, enhance the components for a cohesive recording experience integrated with the refactored `ActivityRecorderService`. All updates will add reactivity, state locking, and consolidated flows directly to `index.tsx` and referenced components.
 
 ### **1. Index Modal (`index.tsx`) - Main Recording Interface**
 
-**Purpose**: Primary recording control interface that's reactive to `ActivityRecordingService` state
+**Purpose**: Primary recording control interface that's reactive to `ActivityRecorderService` state. Enhance with modal lock to prevent dismissal during active recording.
 
 ```typescript
-// apps/mobile/src/app/modals/record/index.tsx
-export default function RecordIndexModal() {
-  const { 
-    state, 
-    currentActivity, 
-    metrics, 
-    permissions, 
-    bluetoothDevices,
-    canDismissModal 
-  } = useRecording()
-  
-  // Prevent modal dismissal during active recording
-  const router = useRouter()
-  const handleClose = () => {
-    if (canDismissModal) {
-      router.back()
-    } else {
-      Alert.alert("Recording in Progress", "Please stop recording before closing")
-    }
-  }
+// Enhance existing index.tsx
+const IndexModal = () => {
+  const { state, canDismissModal } = useEnhancedActivityRecording() // Simplified hook
 
   return (
-    <Modal dismissable={canDismissModal} onRequestClose={handleClose}>
-      {/* HEADER SECTION - Status & Quick Info */}
-      <View className="bg-background border-b border-border px-4 py-3">
-        <View className="flex-row items-center justify-between">
-          <Button size="icon" onPress={handleClose} disabled={!canDismissModal}>
-            <ChevronDown size={24} />
-          </Button>
-          
-          <View className="flex-1 items-center">
-            <Text className="font-semibold">
-              {currentActivity?.name || "Outdoor Run"} {/* Default display */}
-            </Text>
-            <Text className="text-xs text-muted-foreground">
-              {getStateDisplay(state)}
-            </Text>
-          </View>
-          
-          <View className="w-10" /> {/* Spacer for centering */}
-        </View>
-      </View>
-
-      {/* MAIN CONTENT - State-dependent content */}
-      <View className="flex-1">
-        {state === 'idle' && <IdleStateContent />}
-        {state === 'recording' && <RecordingStateContent metrics={metrics} />}
-        {state === 'paused' && <PausedStateContent metrics={metrics} />}
-      </View>
-
-      {/* ICON BAR - Quick Access to Sub-modals */}
-      <View className="bg-muted/50 px-4 py-3 border-t border-border">
-        <View className="flex-row justify-center gap-8">
-          <TouchableOpacity 
-            onPress={() => router.push('/modals/record/activity_selection')}
-            className="items-center"
-          >
-            <View className="w-12 h-12 bg-background rounded-full items-center justify-center">
-              <Activity size={20} className="text-foreground" />
-            </View>
-            <Text className="text-xs mt-1">Activity</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            onPress={() => router.push('/modals/record/bluetooth')}
-            className="items-center"
-          >
-            <View className="w-12 h-12 bg-background rounded-full items-center justify-center">
-              <Bluetooth size={20} className={bluetoothDevices.length > 0 ? "text-blue-500" : "text-muted-foreground"} />
-            </View>
-            <Text className="text-xs mt-1">Devices</Text>
-            {bluetoothDevices.length > 0 && (
-              <View className="absolute -top-1 -right-1 w-5 h-5 bg-blue-500 rounded-full items-center justify-center">
-                <Text className="text-white text-xs">{bluetoothDevices.length}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            onPress={() => router.push('/modals/record/permissions')}
-            className="items-center"
-          >
-            <View className="w-12 h-12 bg-background rounded-full items-center justify-center">
-              <MapPin size={20} className={permissions.location ? "text-green-500" : "text-orange-500"} />
-            </View>
-            <Text className="text-xs mt-1">GPS</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* FOOTER CONTROLS - Recording Actions */}
-      <View className="bg-background border-t border-border px-4 py-4">
-        <RecordingControls 
-          state={state}
-          onStart={() => ActivityRecordingService.startActivity(currentActivity?.type || 'outdoor_run')}
-          onPause={() => ActivityRecordingService.pauseActivity()}
-          onResume={() => ActivityRecordingService.resumeActivity()}
-          onStop={() => ActivityRecordingService.finishActivity()}
-          onDiscard={() => ActivityRecordingService.discardActivity()}
-        />
-      </View>
+    <Modal
+      presentationStyle="fullScreen"
+      onRequestClose={() => canDismissModal && onClose()}
+    >
+      <RecordingHeader />
+      <MetricsGrid /> {/* Existing, enhanced */}
+      <RecordingBodySection /> {/* Consolidate flows here */}
+      <RecordingControls /> {/* Existing, wired to service */}
     </Modal>
   )
 }
-
-// State-dependent content components
-const IdleStateContent = () => (
-  <View className="flex-1 items-center justify-center px-6">
-    <Text className="text-2xl font-bold mb-2">Ready to Start</Text>
-    <Text className="text-muted-foreground text-center mb-8">
-      Configure your activity and devices, then press start to begin recording
-    </Text>
-    <View className="w-32 h-32 bg-muted rounded-full items-center justify-center">
-      <Activity size={48} className="text-muted-foreground" />
-    </View>
-  </View>
-)
-
-const RecordingStateContent = ({ metrics }) => (
-  <View className="flex-1 px-4 py-6">
-    <MetricsGrid metrics={metrics} />
-    {/* Add map view or other recording-specific UI */}
-  </View>
-)
 ```
 
-### **2. Activity Selection Modal (`activity_selection.tsx`)**
+### **2. Activity Selection (Integrate into `index.tsx` or existing selection file)**
 
-**Purpose**: Allows users to switch between planned/unplanned activities and select activity type
+**Purpose**: Allows users to switch between planned/unplanned activities and select type. Merge `useRecordSelection` logic here.
 
-```typescript
-// apps/mobile/src/app/modals/record/activity_selection.tsx
-export default function ActivitySelectionModal() {
-  const { currentActivity, setActivity } = useRecording()
-  const [mode, setMode] = useState<'planned' | 'unplanned'>('unplanned')
-  const [selectedType, setSelectedType] = useState<PublicActivityType>('outdoor_run')
-  const router = useRouter()
+### **3. Bluetooth Management (Integrate into `index.tsx` or existing BLE file)**
 
-  return (
-    <View className="flex-1 bg-background">
-      {/* Header */}
-      <View className="bg-background border-b border-border px-4 py-3 flex-row items-center">
-        <Button size="icon" onPress={() => router.back()}>
-          <ChevronLeft size={24} />
-        </Button>
-        <Text className="flex-1 text-center font-semibold">Select Activity</Text>
-        <View className="w-10" />
-      </View>
+**Purpose**: BLE device scanning, pairing, and management. Simplify `useAdvancedBluetooth` and call service methods.
 
-      {/* Mode Selection Tabs */}
-      <View className="px-4 py-3 bg-muted/50">
-        <View className="flex-row bg-background rounded-lg p-1">
-          <TouchableOpacity
-            onPress={() => setMode('unplanned')}
-            className={`flex-1 py-2 rounded-md items-center ${mode === 'unplanned' ? 'bg-primary' : ''}`}
-          >
-            <Text className={mode === 'unplanned' ? 'text-primary-foreground' : 'text-muted-foreground'}>
-              Quick Start
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setMode('planned')}
-            className={`flex-1 py-2 rounded-md items-center ${mode === 'planned' ? 'bg-primary' : ''}`}
-          >
-            <Text className={mode === 'planned' ? 'text-primary-foreground' : 'text-muted-foreground'}>
-              Planned Workout
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+### **4. Permissions Management (Integrate into `index.tsx` or existing permissions file)**
 
-      {/* Content Area */}
-      <ScrollView className="flex-1 px-4">
-        {mode === 'unplanned' ? (
-          <UnplannedActivitySelection 
-            selectedType={selectedType}
-            onSelectType={setSelectedType}
-          />
-        ) : (
-          <PlannedActivitySelection 
-            onSelectPlanned={(id, type) => {
-              setActivity({ id, type, mode: 'planned' })
-              router.back()
-            }}
-          />
-        )}
-      </ScrollView>
+**Purpose**: Location permission status and management. Consolidate requests via service.
 
-      {/* Footer Actions (for unplanned mode) */}
-      {mode === 'unplanned' && (
-        <View className="border-t border-border p-4">
-          <Button 
-            onPress={() => {
-              setActivity({ type: selectedType, mode: 'unplanned' })
-              router.back()
-            }}
-            className="w-full"
-          >
-            <Text className="font-semibold">Select {ACTIVITY_NAMES[selectedType]}</Text>
-          </Button>
-        </View>
-      )}
-    </View>
-  )
-}
-
-// Activity type grid component
-const UnplannedActivitySelection = ({ selectedType, onSelectType }) => (
-  <View className="py-4">
-    <Text className="text-muted-foreground mb-4">Choose your activity type</Text>
-    <View className="gap-3">
-      {Object.entries(ACTIVITY_NAMES).map(([type, name]) => (
-        <TouchableOpacity
-          key={type}
-          onPress={() => onSelectType(type)}
-          className={`p-4 rounded-lg border ${selectedType === type ? 'border-primary bg-primary/10' : 'border-border bg-background'}`}
-        >
-          <View className="flex-row items-center justify-between">
-            <View className="flex-1">
-              <Text className="font-semibold mb-1">{name}</Text>
-              <View className="flex-row gap-2">
-                {ACTIVITY_BADGES[type].gps && (
-                  <View className="px-2 py-1 bg-blue-500/10 rounded-full">
-                    <Text className="text-xs text-blue-600">GPS</Text>
-                  </View>
-                )}
-                {ACTIVITY_BADGES[type].bt && (
-                  <View className="px-2 py-1 bg-purple-500/10 rounded-full">
-                    <Text className="text-xs text-purple-600">Sensors</Text>
-                  </View>
-                )}
-              </View>
-            </View>
-            {selectedType === type && (
-              <CheckCircle size={20} className="text-primary" />
-            )}
-          </View>
-        </TouchableOpacity>
-      ))}
-    </View>
-  </View>
-)
-```
-
-### **3. Bluetooth Modal (`bluetooth.tsx`)**
-
-**Purpose**: BLE device scanning, pairing, and management interface
-
-```typescript
-// apps/mobile/src/app/modals/record/bluetooth.tsx
-export default function BluetoothModal() {
-  const { bluetoothDevices, bluetoothStatus } = useRecording()
-  const { 
-    availableDevices, 
-    isScanning, 
-    connectDevice, 
-    disconnectDevice,
-    startScan,
-    stopScan 
-  } = useBluetooth()
-  const router = useRouter()
-
-  return (
-    <View className="flex-1 bg-background">
-      {/* Header */}
-      <View className="bg-background border-b border-border px-4 py-3 flex-row items-center">
-        <Button size="icon" onPress={() => router.back()}>
-          <ChevronLeft size={24} />
-        </Button>
-        <Text className="flex-1 text-center font-semibold">Bluetooth Devices</Text>
-        <Button 
-          size="icon" 
-          onPress={isScanning ? stopScan : startScan}
-          className={isScanning ? 'animate-pulse' : ''}
-        >
-          <Search size={20} />
-        </Button>
-      </View>
-
-      <ScrollView className="flex-1">
-        {/* Connected Devices Section */}
-        {bluetoothDevices.length > 0 && (
-          <View className="px-4 py-4">
-            <Text className="text-lg font-semibold mb-3">Connected Devices</Text>
-            {bluetoothDevices.map(device => (
-              <Card key={device.id} className="mb-3 border-green-500/20 bg-green-500/5">
-                <CardContent className="p-4">
-                  <View className="flex-row items-center justify-between">
-                    <View className="flex-1">
-                      <Text className="font-semibold">{device.name}</Text>
-                      <Text className="text-sm text-muted-foreground">{device.type}</Text>
-                      {device.lastReading && (
-                        <Text className="text-xs text-green-600 mt-1">
-                          Last: {device.lastReading}
-                        </Text>
-                      )}
-                    </View>
-                    <View className="flex-row gap-2">
-                      <View className="w-3 h-3 bg-green-500 rounded-full" />
-                      <Button 
-                        size="sm" 
-                        variant="outline"
-                        onPress={() => disconnectDevice(device.id)}
-                      >
-                        <Text>Disconnect</Text>
-                      </Button>
-                    </View>
-                  </View>
-                </CardContent>
-              </Card>
-            ))}
-          </View>
-        )}
-
-        {/* Available Devices Section */}
-        <View className="px-4 py-4">
-          <View className="flex-row items-center justify-between mb-3">
-            <Text className="text-lg font-semibold">Available Devices</Text>
-            {isScanning && (
-              <View className="flex-row items-center gap-2">
-                <ActivityIndicator size="small" />
-                <Text className="text-sm text-muted-foreground">Scanning...</Text>
-              </View>
-            )}
-          </View>
-
-          {availableDevices.length === 0 ? (
-            <Card className="border-dashed border-2 border-muted-foreground/20">
-              <CardContent className="p-8 items-center">
-                <Bluetooth size={48} className="text-muted-foreground mb-4" />
-                <Text className="text-center text-muted-foreground mb-2">
-                  {isScanning ? 'Looking for devices...' : 'No devices found'}
-                </Text>
-                <Text className="text-center text-sm text-muted-foreground mb-4">
-                  Make sure your devices are in pairing mode
-                </Text>
-                <Button onPress={startScan} disabled={isScanning}>
-                  <Text>{isScanning ? 'Scanning...' : 'Start Scan'}</Text>
-                </Button>
-              </CardContent>
-            </Card>
-          ) : (
-            availableDevices.map(device => (
-              <Card key={device.id} className="mb-3">
-                <CardContent className="p-4">
-                  <View className="flex-row items-center justify-between">
-                    <View className="flex-1">
-                      <Text className="font-semibold">{device.name || 'Unknown Device'}</Text>
-                      <Text className="text-sm text-muted-foreground">{device.type}</Text>
-                      <Text className="text-xs text-muted-foreground">
-                        Signal: {device.rssi}dBm
-                      </Text>
-                    </View>
-                    <Button 
-                      size="sm"
-                      onPress={() => connectDevice(device)}
-                      disabled={device.isConnecting}
-                    >
-                      <Text>{device.isConnecting ? 'Connecting...' : 'Connect'}</Text>
-                    </Button>
-                  </View>
-                </CardContent>
-              </Card>
-            ))
-          )}
-        </View>
-
-        {/* Device Types Guide */}
-        <View className="px-4 py-4 bg-muted/50">
-          <Text className="text-sm font-medium mb-2">Supported Device Types</Text>
-          <View className="gap-1">
-            <Text className="text-xs text-muted-foreground">• Heart Rate Monitors</Text>
-            <Text className="text-xs text-muted-foreground">• Power Meters</Text>
-            <Text className="text-xs text-muted-foreground">• Cadence Sensors</Text>
-            <Text className="text-xs text-muted-foreground">• Speed/Distance Pods</Text>
-          </View>
-        </View>
-      </ScrollView>
-    </View>
-  )
-}
-```
-
-### **4. Permissions Modal (`permissions.tsx`)**
-
-**Purpose**: Location permission status and management interface
-
-```typescript
-// apps/mobile/src/app/modals/record/permissions.tsx
-export default function PermissionsModal() {
-  const { permissions, requestPermissions } = usePermissions()
-  const router = useRouter()
-
-  return (
-    <View className="flex-1 bg-background">
-      {/* Header */}
-      <View className="bg-background border-b border-border px-4 py-3 flex-row items-center">
-        <Button size="icon" onPress={() => router.back()}>
-          <ChevronLeft size={24} />
-        </Button>
-        <Text className="flex-1 text-center font-semibold">Location Permissions</Text>
-        <View className="w-10" />
-      </View>
-
-      <ScrollView className="flex-1 px-4 py-6">
-        {/* Permission Status Cards */}
-        <Card className={`mb-4 ${permissions.location ? 'border-green-500/20 bg-green-500/5' : 'border-orange-500/20 bg-orange-500/5'}`}>
-          <CardContent className="p-4">
-            <View className="flex-row items-center justify-between mb-3">
-              <View className="flex-row items-center gap-3">
-                <MapPin size={24} className={permissions.location ? 'text-green-500' : 'text-orange-500'} />
-                <View>
-                  <Text className="font-semibold">Location Access</Text>
-                  <Text className="text-sm text-muted-foreground">For GPS tracking and route mapping</Text>
-                </View>
-              </View>
-              <View className={`px-3 py-1 rounded-full ${permissions.location ? 'bg-green-500' : 'bg-orange-500'}`}>
-                <Text className="text-white text-xs font-medium">
-                  {permissions.location ? 'Granted' : 'Required'}
-                </Text>
-              </View>
-            </View>
-            
-            {!permissions.location && (
-              <Button 
-                onPress={() => requestPermissions(['location'])}
-                className="w-full"
-              >
-                <Text className="font-semibold">Grant Location Permission</Text>
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className={`mb-4 ${permissions.backgroundLocation ? 'border-green-500/20 bg-green-500/5' : 'border-orange-500/20 bg-orange-500/5'}`}>
-          <CardContent className="p-4">
-            <View className="flex-row items-center justify-between mb-3">
-              <View className="flex-row items-center gap-3">
-                <Navigation size={24} className={permissions.backgroundLocation ? 'text-green-500' : 'text-orange-500'} />
-                <View>
-                  <Text className="font-semibold">Background Location</Text>
-                  <Text className="text-sm text-muted-foreground">Continue tracking when app is backgrounded</Text>
-                </View>
-              </View>
-              <View className={`px-3 py-1 rounded-full ${permissions.backgroundLocation ? 'bg-green-500' : 'bg-orange-500'}`}>
-                <Text className="text-white text-xs font-medium">
-                  {permissions.backgroundLocation ? 'Granted' : 'Needed'}
-                </Text>
-              </View>
-            </View>
-            
-            {permissions.location && !permissions.backgroundLocation && (
-              <Button 
-                onPress={() => requestPermissions(['backgroundLocation'])}
-                className="w-full"
-                variant="outline"
-              >
-                <Text className="font-semibold">Enable Background Tracking</Text>
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Permission Guide */}
-        <Card className="border-blue-500/20 bg-blue-500/5">
-          <CardContent className="p-4">
-            <View className="flex-row items-start gap-3">
-              <Info size={20} className="text-blue-500 mt-0.5" />
-              <View className="flex-1">
-                <Text className="font-semibold text-blue-700 mb-2">Why These Permissions?</Text>
-                <View className="gap-2">
-                  <Text className="text-sm text-blue-600">
-                    • <Text className="font-medium">Location:</Text> Essential for GPS tracking, distance, and speed measurements
-                  </Text>
-                  <Text className="text-sm text-blue-600">
-                    • <Text className="font-medium">Background:</Text> Keeps recording active when you switch apps or lock your phone
-                  </Text>
-                </View>
-              </View>
-            </View>
-          </CardContent>
-        </Card>
-
-        {/* Device Settings Link */}
-        {Platform.OS === 'ios' && (
-          <Button 
-            onPress={() => Linking.openSettings()}
-            variant="outline"
-            className="mt-4"
-          >
-            <Settings size={16} />
-            <Text className="ml-2">Open Device Settings</Text>
-          </Button>
-        )}
-      </ScrollView>
-
-      {/* Footer Status */}
-      <View className="border-t border-border p-4 bg-muted/50">
-        <View className="flex-row items-center justify-center gap-2">
-          {permissions.location && permissions.backgroundLocation ? (
-            <>
-              <CheckCircle size={16} className="text-green-500" />
-              <Text className="text-sm text-green-600 font-medium">All permissions ready</Text>
-            </>
-          ) : (
-            <>
-              <AlertCircle size={16} className="text-orange-500" />
-              <Text className="text-sm text-orange-600 font-medium">
-                {permissions.location ? 'Background permission recommended' : 'Location permission required'}
-              </Text>
-            </>
-          )}
-        </View>
-      </View>
-    </View>
-  )
-}
-```
-
-### **Updated Modal Layout Configuration**
-
-```typescript
-// apps/mobile/src/app/modals/record/_layout.tsx
-export default function RecordLayout() {
-  return (
-    <Stack screenOptions={{ headerShown: false }}> {/* Hide headers - modals handle their own */}
-      <Stack.Screen 
-        name="index" 
-        options={{ 
-          presentation: "fullScreenModal",
-          gestureEnabled: false, // Prevent swipe dismissal during recording
-        }} 
-      />
-      <Stack.Screen
-        name="activity_selection"
-        options={{ presentation: "modal" }}
-      />
-      <Stack.Screen
-        name="bluetooth"
-        options={{ presentation: "modal" }}
-      />
-      <Stack.Screen
-        name="permissions"
-        options={{ presentation: "modal" }}
-      />
-    </Stack>
-  );
-}
-```
-
-This modal system integrates directly with the `ActivityRecordingService` and provides a cohesive recording experience where:
-
-1. **Index modal** serves as the main hub, preventing dismissal during active recording
-2. **Activity selection** allows switching between planned/unplanned activities
-3. **Bluetooth modal** provides comprehensive device management
-4. **Permissions modal** clearly shows location permission status and provides easy access to grant them
-
-All modals are reactive to the service state and provide immediate feedback to users about the recording system status.
+**Updated Modal Layout Configuration**: Enhance existing modals to integrate directly with the service, providing immediate feedback on recording status. Use existing components like `MetricsGrid` and `RecordingControls` for the unified interface.
 
 ## Implementation Sequence
 
-### Step 1: Create Core Service Foundation
+### Step 1: Enhance Core Service Foundation
 
-**Objective**: Establish central service and modal behavior constraints
+**Objective**: Establish central logic in existing `ActivityRecorderService` and update modal behavior.
 
-Begin by creating the `ActivityRecordingService` with basic state management. This service will own all recording logic and state transitions.
+Enhance `ActivityRecorderService` with consolidated state management by merging from other services.
 
 ```typescript
-// Recording context to control modal dismissal
+// apps/mobile/src/lib/services/activity-recorder.ts (add to existing)
 const RecordingContext = createContext({
   isRecording: false,
   canDismissModal: true,
@@ -967,11 +315,11 @@ const RecordingContext = createContext({
 })
 ```
 
-Wire up the Record Modal with controlled dismissal behavior to prevent users from accidentally leaving during an active recording:
+Update existing `apps/mobile/src/app/modals/record/index.tsx` with controlled dismissal:
 
 ```typescript
-// RecordModal.tsx
-const { canDismissModal } = useRecording()
+// Enhance existing RecordModal/index.tsx
+const { canDismissModal } = useEnhancedActivityRecording()
 
 return (
   <Modal
@@ -980,38 +328,36 @@ return (
   >
 ```
 
-**Key Files to Create:**
-- `activity-recording-service.ts` (skeleton with state management)
-- `useRecording` hook for state access
-- Updated `RecordModal.tsx` with lock behavior
+**Key Files to Modify:**
+- `apps/mobile/src/lib/services/activity-recorder.ts` (add state/recovery)
+- `apps/mobile/src/lib/hooks/useEnhancedActivityRecording.ts` (simplify wrapper)
+- `apps/mobile/src/app/modals/record/index.tsx` (add lock behavior)
 
-### Step 2: Implement Permissions and Sensor Integration
+### Step 2: Integrate Permissions and Sensor Handling
 
-**Objective**: Create unified permission handling and connect GPS/Bluetooth sensors
+**Objective**: Unify permission and sensor logic in service and hook.
 
-Create a centralized permissions flow that handles all permission requests in one place:
+Enhance centralized permissions in `ActivityRecorderService`:
 
 ```typescript
-// usePermissions.ts
-export const usePermissions = () => {
-  const checkAll = async () => {
-    const location = await Location.getForegroundPermissionsAsync()
-    const bluetooth = await ExpoDevice.isBluetoothAvailableAsync()
-    return { location, bluetooth }
-  }
+// Add to apps/mobile/src/lib/services/activity-recorder.ts
+private async checkAllPermissions() {
+  const location = await Location.getForegroundPermissionsAsync()
+  const bluetooth = await ExpoDevice.isBluetoothAvailableAsync()
+  return { location, bluetooth }
+}
 
-  const requestAll = async () => {
-    // Request all needed permissions
-  }
+private async requestAllPermissions() {
+  // Request all needed permissions
 }
 ```
 
-Integrate Expo Location and BLE modules into the service:
+Integrate Expo modules into service methods (enhance existing):
 
 ```typescript
-// Service methods
+// Enhance existing startLocationTracking in service
 private async startLocationTracking() {
-  await Location.requestForegroundPermissionsAsync()
+  await this.requestAllPermissions()
   this.locationSubscription = await Location.watchPositionAsync(
     { accuracy: Location.Accuracy.BestForNavigation },
     (location) => this.updateMetrics(location)
@@ -1019,29 +365,28 @@ private async startLocationTracking() {
 }
 
 private async connectBluetooth(deviceId: string) {
-  // BLE connection logic
+  // Enhance existing BLE logic
   this.bleSubscription = device.onValueChange((data) => {
     this.updateHeartRate(data)
   })
 }
 ```
 
-**Key Components to Build:**
-- `PermissionsModal.tsx` - Unified permission request UI
-- `BluetoothModal.tsx` - Device scanning and connection
-- `usePermissions.ts` - Permission state management
-- `useBluetooth.ts` - BLE device handling
+**Key Files to Modify:**
+- `apps/mobile/src/lib/services/activity-recorder.ts` (add permissions/sensors)
+- `apps/mobile/src/lib/hooks/useEnhancedActivityRecording.ts` (delegate to service)
+- `apps/mobile/src/app/modals/record/index.tsx` (integrate permission checks)
 
-### Step 3: Build Live Metrics Display
+### Step 3: Enhance Live Metrics Display
 
-**Objective**: Create real-time metrics UI components
+**Objective**: Update existing metrics UI to receive data from service.
 
-Consolidate all metric display logic into unified components that receive data from the recording service:
+Enhance `MetricsGrid.tsx` for service integration:
 
 ```typescript
-// MetricsGrid.tsx
+// apps/mobile/src/components/MetricsGrid.tsx (enhance existing)
 const MetricsGrid = () => {
-  const { metrics } = useRecording()
+  const { metrics } = useEnhancedActivityRecording() // From simplified hook
 
   return (
     <Grid>
@@ -1054,66 +399,46 @@ const MetricsGrid = () => {
 }
 ```
 
-**Components to Create:**
-- `MetricsGrid.tsx` - Unified metrics display container
-- `LiveMetricCard.tsx` - Individual metric rendering
-- `RecordingControls.tsx` - Pause/Resume/Stop buttons
-- `RecordingHeader.tsx` - Activity type and status display
+**Files to Modify:**
+- `apps/mobile/src/components/MetricsGrid.tsx` (add service metrics)
+- `apps/mobile/src/components/RecordingControls.tsx` (wire actions)
+- `apps/mobile/src/components/RecordingHeader.tsx` (add status)
 
-### Step 4: Implement Activity Selection Flow
+### Step 4: Integrate Activity Selection Flow
 
-**Objective**: Handle planned vs unplanned activity selection
+**Objective**: Merge selection logic into existing hook and modal.
 
-Build the selection UI that determines activity type and whether it's planned:
+Enhance `useEnhancedActivityRecording` with selection:
 
 ```typescript
-// ActivitySelector.tsx
-const ActivitySelector = () => {
-  const { selectActivity } = useRecording()
-  const [mode, setMode] = useState<'planned' | 'unplanned'>('unplanned')
-  const [activityType, setActivityType] = useState<ActivityType>('run')
+// apps/mobile/src/lib/hooks/useEnhancedActivityRecording.ts (add to existing)
+const [mode, setMode] = useState<'planned' | 'unplanned'>('unplanned')
+const [activityType, setActivityType] = useState<ActivityType>('run')
 
-  const handleStart = () => {
-    if (mode === 'planned') {
-      // Fetch planned workout details
-      selectActivity(activityType, plannedWorkoutId)
-    } else {
-      selectActivity(activityType)
-    }
+const handleStart = () => {
+  if (mode === 'planned') {
+    ActivityRecorderService.startActivity(activityType, plannedWorkoutId)
+  } else {
+    ActivityRecorderService.startActivity(activityType)
   }
 }
 ```
 
-Create the planned workout overlay that guides users through structured workouts:
+Integrate planned workout overlay into `RecordingBodySection.tsx` or `index.tsx`.
+
+**Files to Modify:**
+- `apps/mobile/src/lib/hooks/useEnhancedActivityRecording.ts` (add selection)
+- `apps/mobile/src/app/modals/record/index.tsx` (integrate selector UI)
+
+### Step 5: Enhance Activity Completion and Storage
+
+**Objective**: Merge completion and persistence into service.
+
+Enhance `finishActivity` in service:
 
 ```typescript
-// PlannedWorkoutOverlay.tsx
-const PlannedWorkoutOverlay = ({ workout }) => {
-  const { currentSegment, nextSegment } = useWorkoutProgress(workout)
-
-  return (
-    <Overlay>
-      <CurrentSegment {...currentSegment} />
-      <NextSegmentPreview {...nextSegment} />
-      <ProgressBar segments={workout.segments} />
-    </Overlay>
-  )
-}
-```
-
-**Components to Build:**
-- `ActivitySelector.tsx` - Initial activity configuration
-- `PlannedWorkoutOverlay.tsx` - Structured workout guidance
-- `WorkoutSegmentDisplay.tsx` - Individual segment UI
-
-### Step 5: Handle Activity Completion and Storage
-
-**Objective**: Implement finish flow and local persistence
-
-Create the activity completion logic that calculates final metrics and saves locally:
-
-```typescript
-finishActivity(): ActivityResult {
+// apps/mobile/src/lib/services/activity-recorder.ts (enhance existing)
+async finishActivity(): Promise<ActivityResult> {
   // Stop all sensors
   this.stopSensors()
 
@@ -1123,7 +448,7 @@ finishActivity(): ActivityResult {
   // Generate JSON
   const activityJSON = this.generateActivityJSON()
 
-  // Save locally
+  // Save locally (merged logic)
   await this.saveToLocalDB(activityJSON)
 
   // Queue for sync
@@ -1133,137 +458,92 @@ finishActivity(): ActivityResult {
 }
 ```
 
-Setup Drizzle schema for local storage:
+Update schema inline:
 
 ```typescript
-// schema/activities.ts
+// apps/mobile/src/lib/db/schemas/activities.ts (add fields)
 export const activities = sqliteTable('activities', {
-  id: text('id').primaryKey(),
-  json: text('json').notNull(),
-  syncStatus: text('sync_status').default('pending'),
-  createdAt: integer('created_at').notNull()
-})
-
-export const activityStreams = sqliteTable('activity_streams', {
-  id: text('id').primaryKey(),
-  activityId: text('activity_id').notNull(),
-  type: text('type').notNull(), // 'gps', 'heartrate', etc.
-  data: text('data').notNull(), // JSON array of points
-  chunk: integer('chunk').notNull()
-})
+  // ... existing
+  recoveryCheckpoint: text('recovery_checkpoint'), // New inline field
+});
 ```
 
-Build the Activity Summary Modal:
+Enhance existing summary display in `RecordingBodySection.tsx` or `index.tsx`.
+
+**Files to Modify:**
+- `apps/mobile/src/lib/services/activity-recorder.ts` (enhance completion)
+- `apps/mobile/src/lib/db/schemas/activities.ts` (add recovery fields)
+- `apps/mobile/src/app/modals/record/index.tsx` (add summary view)
+
+### Step 6: Integrate Background Sync
+
+**Objective**: Enhance sync calls in existing `ActivitySyncService`.
+
+Update queue processing to use enhanced service data:
 
 ```typescript
-// ActivitySummaryModal.tsx
-const ActivitySummaryModal = ({ result, onClose }) => {
-  const { syncStatus } = useActivitySync(result.id)
+// apps/mobile/src/lib/services/activity-sync-service.ts (enhance existing)
+private async processQueue() {
+  const pending = await db.select()
+    .from(activities)
+    .where(eq(activities.syncStatus, 'pending'))
 
-  return (
-    <Modal>
-      <SummaryMetrics {...result} />
-      <SyncStatusIndicator status={syncStatus} />
-      <Actions>
-        <Button onPress={onClose}>Done</Button>
-      </Actions>
-    </Modal>
-  )
-}
-```
+  for (const activity of pending) {
+    try {
+      // Upload using service-generated JSON
+      const jsonUrl = await this.uploadJSON(activity.json)
 
-**Key Implementations:**
-- Activity completion logic in service
-- Local database schema and operations
-- `ActivitySummaryModal.tsx` with results display
-- Stream chunking for large datasets
+      // Sync metadata
+      await trpc.activities.sync.mutate({
+        ...activity,
+        jsonUrl
+      })
 
-### Step 6: Implement Background Sync
-
-**Objective**: Create robust sync mechanism with retry logic
-
-Build the sync queue that handles background uploads:
-
-```typescript
-// Sync service integration
-class SyncQueue {
-  private async processQueue() {
-    const pending = await db.select()
-      .from(activities)
-      .where(eq(activities.syncStatus, 'pending'))
-
-    for (const activity of pending) {
-      try {
-        // Upload activity JSON to storage
-        const jsonUrl = await this.uploadJSON(activity.json)
-
-        // Sync metadata with API
-        await trpc.activities.sync.mutate({
-          ...activity,
-          jsonUrl
-        })
-
-        // Update local status
-        await db.update(activities)
-          .set({ syncStatus: 'synced' })
-          .where(eq(activities.id, activity.id))
-      } catch (error) {
-        // Handle retry logic
-        await this.scheduleRetry(activity.id)
-      }
+      // Update status
+      await db.update(activities)
+        .set({ syncStatus: 'synced' })
+        .where(eq(activities.id, activity.id))
+    } catch (error) {
+      await this.scheduleRetry(activity.id)
     }
   }
-
-  private scheduleRetry(activityId: string) {
-    // Exponential backoff
-  }
 }
 ```
 
-Add network state monitoring:
+Add network monitoring to existing service.
 
-```typescript
-// Network monitor
-NetInfo.addEventListener(state => {
-  if (state.isConnected) {
-    syncQueue.processQueue()
-  }
-})
-```
-
-**Components to Build:**
-- `SyncQueue` class with retry logic
-- Network state monitoring
-- Conflict resolution UI
-- Upload progress indicators
+**Files to Modify:**
+- `apps/mobile/src/lib/services/activity-sync-service.ts` (enhance queue)
+- `apps/mobile/src/lib/services/activity-recorder.ts` (add sync calls)
 
 ### Step 7: Consolidate Recording Screen
 
-**Objective**: Unify all recording UI into single coherent screen
+**Objective**: Unify UI in existing screen and modal files.
 
-Combine all recording elements into the main recording screen:
+Enhance `apps/mobile/src/app/(internal)/(tabs)/record.tsx` and modal index:
 
 ```typescript
+// apps/mobile/src/app/(internal)/(tabs)/record.tsx (enhance existing)
 const RecordingScreen = () => {
   const {
     state,
     metrics,
     isPlanned,
-    plannedWorkout,
     pauseActivity,
     resumeActivity,
     finishActivity,
     discardActivity
-  } = useRecording()
+  } = useEnhancedActivityRecording()
 
   return (
     <Screen>
-      <RecordingHeader />
+      <RecordingHeader /> {/* Existing */}
 
-      <MetricsGrid metrics={metrics} />
+      <MetricsGrid metrics={metrics} /> {/* Existing */}
 
       {isPlanned && (
-        <PlannedWorkoutOverlay workout={plannedWorkout} />
+        // Integrate planned overlay into existing body
+        <PlannedWorkoutOverlay />
       )}
 
       <RecordingControls
@@ -1272,7 +552,7 @@ const RecordingScreen = () => {
         onResume={resumeActivity}
         onFinish={finishActivity}
         onDiscard={discardActivity}
-      />
+      /> {/* Existing */}
 
       {state === 'paused' && (
         <PausedOverlay
@@ -1286,250 +566,210 @@ const RecordingScreen = () => {
 }
 ```
 
-**Final Screen Components:**
-- Unified `RecordingScreen.tsx`
-- `PausedOverlay.tsx` for paused state
-- Responsive layout for different states
+**Files to Modify:**
+- `apps/mobile/src/app/(internal)/(tabs)/record.tsx` (unify interface)
+- `apps/mobile/src/app/modals/record/index.tsx` (add paused overlay)
 
 ### Step 8: Remove Legacy Code and Update Imports
 
-**Objective**: Clean up deprecated files and update all references
+**Objective**: Clean up deprecated files and update references after merging.
 
 **CRITICAL: Data Migration Safety**
-Before removing any files, ensure all active sessions are completed or migrated:
+Before removing, migrate sessions:
 
 ```typescript
-// Migration helper script (run once before cleanup)
+// Add migration helper to existing service (run once)
 const migrateActiveSession = async () => {
   const activeSession = await AsyncStorage.getItem('active_recording_session')
   if (activeSession) {
     console.warn('⚠️ Active recording session detected - migration required')
-    // Migrate to new format or prompt user to complete
+    // Migrate to enhanced format
   }
 }
 ```
 
 **Service Layer Cleanup:**
 ```bash
-# Phase 1: Deprecate (add deprecation warnings)
-# Add @deprecated tags to old services for 1 week
-# Update imports to show warnings
-
-# Phase 2: Remove (after confirming no active usage)
-rm apps/mobile/src/lib/services/activity-recorder.ts           # Ground truth preserved in new service  
-rm apps/mobile/src/lib/services/activity-save.ts               # Logic moved to ActivityRecordingService.saveToLocalDB()
-rm apps/mobile/src/lib/services/activity-completion-service.ts # Logic moved to ActivityRecordingService.finishActivity()
-rm apps/mobile/src/lib/services/activity-service.ts            # Orchestration removed - direct service usage
-rm apps/mobile/src/lib/services/local-activity-database.ts     # Database ops integrated into main service
+# Phase 1: Deprecate (add warnings)
+# Phase 2: Remove after no usage
+rm apps/mobile/src/lib/services/activity-service.ts            # Merged
+rm apps/mobile/src/lib/services/activity-save.ts               # Merged
+rm apps/mobile/src/lib/services/activity-completion-service.ts # Merged
+rm apps/mobile/src/lib/services/local-activity-database.ts     # Merged
 ```
 
 **Hook Layer Cleanup:**
 ```bash
-rm apps/mobile/src/lib/hooks/useEnhancedActivityRecording.ts    # Recovery logic preserved in service
-rm apps/mobile/src/lib/hooks/useActivityManager.ts              # Logic distributed to specific hooks  
-rm apps/mobile/src/lib/hooks/useRecordSelection.ts              # Selection logic moved to ActivitySelector component
+rm apps/mobile/src/lib/hooks/useActivityManager.ts              # Merged
+rm apps/mobile/src/lib/hooks/useRecordSelection.ts              # Merged
 ```
 
-**Import Updates (Automated with codemod):**
+**Import Updates (Manual or codemod):**
 ```typescript
-// Before (deprecated imports)
+// Before
 import { useEnhancedActivityRecording } from '@/lib/hooks/useEnhancedActivityRecording'
 import { ActivityRecorderService } from '@/lib/services/activity-recorder'
 import { ActivityService } from '@/lib/services/activity-service'
 
-// After (consolidated imports)  
-import { useRecording } from '@/lib/hooks/useRecording'
-import { ActivityRecordingService } from '@/lib/services/activity-recording-service'
-// ActivityService removed - direct ActivityRecordingService usage
+// After
+import { useEnhancedActivityRecording } from '@/lib/hooks/useEnhancedActivityRecording' // Simplified
+import { ActivityRecorderService } from '@/lib/services/activity-recorder' // Enhanced primary
+// Remove ActivityService - use service directly
 ```
 
 **Index File Updates:**
 ```typescript
 // apps/mobile/src/lib/services/index.ts
-// Remove all old exports
-// export { ActivityRecorderService } from "./activity-recorder"; // REMOVED
-// export { ActivityService } from "./activity-service"; // REMOVED  
-// export { ActivitySyncService } from "./activity-sync-service"; // KEPT
-// export { LocalActivityDatabaseService } from "./local-activity-database"; // REMOVED
+// Remove merged exports
+// export { ActivityService } from "./activity-service"; // REMOVED
+// export { ActivitySaveService } from "./activity-save"; // REMOVED
+// etc.
 
-// Add new consolidated export
-export { ActivityRecordingService } from "./activity-recording-service"; // NEW SINGLE SOURCE OF TRUTH
-export { ActivitySyncService } from "./activity-sync-service"; // Keep separate (background sync)
+// Keep/enhance
+export { ActivityRecorderService } from "./activity-recorder"; // ENHANCED SINGLE SOURCE
+export { ActivitySyncService } from "./activity-sync-service"; // Keep
 ```
 
 ### Step 9: Add Comprehensive Testing
 
-**Objective**: Ensure reliability through thorough testing
+**Objective**: Enhance existing tests or add to current test files.
 
-Create unit tests for the service:
+Enhance unit tests in existing `__tests__`:
 
 ```typescript
-// activity-recording-service.test.ts
-describe('ActivityRecordingService', () => {
+// apps/mobile/src/lib/services/activity-recorder.test.ts (enhance existing)
+describe('ActivityRecorderService', () => {
   it('transitions states correctly', () => {
-    service.startActivity('run')
-    expect(service.state).toBe('recording')
+    ActivityRecorderService.startActivity('run')
+    expect(ActivityRecorderService.state).toBe('recording')
 
-    service.pauseActivity()
-    expect(service.state).toBe('paused')
+    ActivityRecorderService.pauseActivity()
+    expect(ActivityRecorderService.state).toBe('paused')
   })
 
   it('generates valid JSON', () => {
-    // Test JSON generation
+    // Test enhanced JSON generation
   })
 
   it('calculates metrics correctly', () => {
-    // Test metric calculations
+    // Test merged calculations
   })
 })
 ```
 
-Add integration tests:
+Add integration/E2E to existing test suites:
 
 ```typescript
-// recording-flow.integration.test.ts
+// apps/mobile/src/lib/hooks/useEnhancedActivityRecording.test.ts (enhance)
 it('completes full recording flow', async () => {
-  // Start recording
-  // Simulate GPS data
-  // Pause and resume
-  // Finish activity
-  // Verify database save
-  // Check sync queue
-})
-```
-
-Create E2E tests:
-
-```typescript
-// recording.e2e.test.ts
-it('prevents modal dismissal during recording', async () => {
-  // Open record modal
-  // Start activity
-  // Attempt to close modal
-  // Verify modal remains open
+  // Start -> simulate data -> pause/resume -> finish -> verify DB
 })
 ```
 
 **Testing Coverage:**
-- Unit tests for all service methods
-- Integration tests for data flow
-- E2E tests for user workflows
-- Edge case handling tests
+- Unit tests for enhanced service methods
+- Integration for data flow
+- E2E for workflows
+- Edge cases
 
 ### Step 10: Update Documentation
 
-**Objective**: Document the new architecture and usage
+**Objective**: Document enhancements in existing docs.
 
-Update `README.md` with new architecture:
+Enhance `README.md` in `apps/mobile/src/lib/services/` and hooks:
 
 ```markdown
 ## Activity Recording Architecture
 
-The activity recording system uses a centralized service pattern:
+Enhanced for consolidation:
 
 ### Service Layer
-- `ActivityRecordingService`: Core recording logic and state management
-- `SyncQueue`: Background sync with retry logic
+- `ActivityRecorderService`: Enhanced core with merged logic and state
+- `ActivitySyncService`: Background sync (integrated calls)
 
 ### Hook Layer
-- `useRecording`: Primary hook for recording state
-- `usePermissions`: Unified permission handling
-- `useBluetooth`: BLE device management
-- `useActivitySync`: Sync status monitoring
+- `useEnhancedActivityRecording`: Simplified primary hook delegating to service
+- `useAdvancedBluetooth`: Simplified BLE (if kept)
 
 ### UI Layer
-- `RecordModal`: Container with lock behavior
-- `RecordingScreen`: Main recording UI
-- `ActivitySummaryModal`: Post-activity summary
+- Existing modals/screens: Enhanced with service reactivity and unified flows
 ```
 
-Add usage examples:
+Add usage examples to existing READMEs:
 
 ```markdown
 ## Usage Examples
 
 ### Starting an Activity
 ```typescript
-const { startActivity } = useRecording()
+const { startActivity } = useEnhancedActivityRecording()
 startActivity('run', plannedId?)
 ```
 
 ### Accessing Metrics
 ```typescript
-const { metrics } = useRecording()
-// metrics.distance, metrics.heartRate, etc.
+const { metrics } = useEnhancedActivityRecording()
+// metrics.distance, etc.
 ```
 ```
 
-Update `CHANGELOG.md`:
+Update root `CHANGELOG.md`:
 
 ```markdown
 ## [Version] - Activity Recording Consolidation
 
 ### Added
-- Centralized `ActivityRecordingService`
-- Unified permission handling via `usePermissions`
-- Modal lock behavior during active recording
-- Robust sync queue with retry logic
+- Enhanced state/recovery in ActivityRecorderService
+- Unified permission/sensor handling in service
+- Modal lock behavior in existing modals
 
 ### Changed
-- Consolidated hooks from 8+ to 4 core hooks
-- Merged metric display components
-- Unified Bluetooth and permissions modals
+- Merged hooks (from 4 to 2)
+- Consolidated UI flows in existing components
+- Integrated AsyncStorage/SQLite checkpoints
 
 ### Removed
-- Deprecated service files (40% reduction)
-- Redundant hooks and UI components
-- Legacy AsyncStorage checkpoints (migrated to Drizzle)
+- Deprecated services (merged, ~750 lines reduction)
+- Redundant hooks (~300 lines)
 ```
-
-
 ## Key Recommendations (Production Requirements)
 
 ### 1. **Phase 0: Architecture Analysis (CRITICAL - Do First)**
-Before writing any code, complete comprehensive analysis:
+Before edits, analyze:
 
 ```bash
-# Create detailed inventory
-node scripts/analyze-current-state.js
+# Inventory existing
+node scripts/analyze-current-state.js  # If exists, or manual review
 
-# Output should include:
-# - Line counts for each file to be modified
-# - Current import usage across codebase  
-# - Active AsyncStorage keys and data structures
-# - Current database queries and schemas
-# - All current GPS/sensor integration points
+# Document:
+# - Line counts for files to modify
+# - Import usage
+# - AsyncStorage keys
+# - DB queries
+# - GPS/sensor points
 ```
 
 ### 2. **Mobile-Specific Implementation Requirements**
 
 **Background Processing Constraints:**
 ```typescript
-// iOS Background App Refresh limitations
-// Must maintain TaskManager.defineTask for GPS tracking
-// Preserve foreground service notifications for Android
-
-class ActivityRecordingService {
-  private static setupBackgroundLocationTask(): void {
-    // PRESERVE: This exact pattern is required for mobile background GPS
-    TaskManager.defineTask(LOCATION_TRACKING_TASK, async ({ data, error }) => {
-      // Critical for iOS - maintain exact structure
-    })
-  }
+// Enhance existing in ActivityRecorderService
+private static setupBackgroundLocationTask(): void {
+  // PRESERVE: Maintain TaskManager for iOS/Android
+  TaskManager.defineTask(LOCATION_TRACKING_TASK, async ({ data, error }) => {
+    // Existing structure
+  })
 }
 ```
 
 **Platform Permission Differences:**
 ```typescript
-// iOS vs Android permission handling differences
+// Enhance existing request in service
 const requestPermissions = async () => {
-  // iOS: Location permission + Background App Refresh
-  // Android: Location + Background Location + Foreground Service
-  
   if (Platform.OS === 'ios') {
-    // Preserve iOS-specific logic from current implementation
+    // Preserve iOS logic
   } else {
-    // Preserve Android-specific logic from current implementation  
+    // Preserve Android logic
   }
 }
 ```
@@ -1538,23 +778,20 @@ const requestPermissions = async () => {
 
 **Pre-Migration Backup:**
 ```typescript
-// Must run before any code changes
+// Add to existing service
 const backupCurrentData = async () => {
-  const keys = ['active_recording_session', 'activity_recovery_data', 'activity_checkpoint_data']
+  const keys = ['active_recording_session', 'activity_recovery_data']
   const backup = {}
-  
   for (const key of keys) {
     backup[key] = await AsyncStorage.getItem(key)
   }
-  
   await AsyncStorage.setItem('pre_migration_backup', JSON.stringify(backup))
-  console.log('✅ Backup created - safe to proceed with migration')
 }
 ```
 
 **Rollback Strategy:**
 ```typescript
-// Must be available during migration period
+// Add rollback helper
 const rollbackMigration = async () => {
   const backup = await AsyncStorage.getItem('pre_migration_backup')
   if (backup) {
@@ -1562,108 +799,82 @@ const rollbackMigration = async () => {
     for (const [key, value] of Object.entries(data)) {
       if (value) await AsyncStorage.setItem(key, value)
     }
-    console.log('✅ Rollback completed')
   }
 }
 ```
 
 ### 4. **Performance Validation Requirements**
 
-**Baseline Measurements (Must Capture Before Changes):**
+**Baseline Measurements:**
 ```bash
-# Run these commands to establish baseline:
 npx react-native-performance-monitor --duration=300 --activity=recording
-npx metro-memory-usage --component=ActivityRecording  
-
-# Expected results to maintain:
-# - GPS lock time: <5 seconds
-# - UI response time: <100ms
-# - Memory usage during 1hr recording: <50MB increase
-# - Battery impact: <10% per hour
+# Maintain: GPS <5s, UI <100ms, memory <50MB/hr, battery <10%/hr
 ```
 
-**Regression Prevention:**
+**Enhance Monitoring:**
 ```typescript
-// Add performance monitoring to new service
-class ActivityRecordingService {
-  private static performanceMetrics = {
-    gpsLockTime: 0,
-    uiResponseTimes: [],
-    memoryUsage: 0
-  }
-  
-  private static trackPerformance(operation: string, duration: number) {
-    // Log performance metrics for validation
-    console.log(`📊 ${operation}: ${duration}ms`)
-  }
+// Add to ActivityRecorderService
+private static performanceMetrics = { gpsLockTime: 0, uiResponseTimes: [] }
+
+private static trackPerformance(operation: string, duration: number) {
+  console.log(`📊 ${operation}: ${duration}ms`)
 }
 ```
 
 ### 5. **Testing Strategy (Production Readiness)**
 
-**Critical Test Scenarios:**
+**Critical Test Scenarios (Enhance Existing):**
 ```typescript
-// These scenarios MUST pass before production:
-
 describe('Activity Recording - Critical Paths', () => {
-  it('survives app backgrounding during recording', async () => {
-    // Start recording -> background app -> foreground -> verify continuity
+  it('survives app backgrounding', async () => {
+    // Test continuity
   })
-  
-  it('recovers from unexpected app termination', async () => {
-    // Start recording -> kill app -> restart -> verify recovery prompt
+  it('recovers from termination', async () => {
+    // Verify prompt
   })
-  
-  it('handles GPS signal loss gracefully', async () => {
-    // Mock GPS unavailable -> verify fallback behavior
+  it('handles GPS loss', async () => {
+    // Fallback
   })
-  
-  it('manages storage full scenarios', async () => {
-    // Fill device storage -> verify graceful degradation
+  it('manages storage full', async () => {
+    // Degradation
   })
-  
-  it('maintains accuracy with poor cellular connection', async () => {
-    // Simulate network instability -> verify offline recording works
+  it('works offline', async () => {
+    // Offline recording
   })
 })
 ```
 
 ### 6. **Deployment Safety (Production Checklist)**
 
-**Feature Flag Implementation:**
+**Feature Flag (Add to Existing Config):**
 ```typescript
-// Must implement before deploying
+// In apps/mobile/src/config or service
 const useConsolidatedRecording = () => {
   const isEnabled = FeatureFlags.get('consolidated-recording-service')
-  
   if (isEnabled) {
-    return ActivityRecordingService // New implementation
+    // Use enhanced methods
   } else {
-    return ActivityRecorderService // Fallback to current
+    // Fallback to legacy sections (temporarily keep)
   }
 }
 ```
 
 **Gradual Rollout Plan:**
 ```bash
-# Week 1: Internal testing only (feature flag off)
-# Week 2: 10% of users (feature flag 0.1)  
-# Week 3: 50% of users (feature flag 0.5)
-# Week 4: 100% of users (feature flag 1.0)
-# Week 5: Remove old code (after confirming no issues)
+# Week 1: Internal (flag off)
+# Week 2: 10% (flag 0.1)
+# Week 3: 50% (flag 0.5)
+# Week 4: 100% (flag 1.0)
+# Week 5: Cleanup legacy
 ```
 
-**Monitoring Requirements:**
+**Monitoring:**
 ```typescript
-// Add to new service
-class ActivityRecordingService {
-  private static logCriticalEvent(event: string, data: any) {
-    // Must integrate with existing analytics/crash reporting
-    Analytics.track('activity_recording_event', { event, data })
-    
-    if (event === 'recovery_failed' || event === 'data_loss') {
-      CrashReporting.recordError(new Error(`Critical: ${event}`), data)
-    }
+// Add to service
+private static logCriticalEvent(event: string, data: any) {
+  Analytics.track('activity_recording_event', { event, data })
+  if (event === 'recovery_failed') {
+    CrashReporting.recordError(new Error(`Critical: ${event}`), data)
   }
 }
 ```
@@ -1671,109 +882,32 @@ class ActivityRecordingService {
 ## Migration Checklist
 
 **Phase 0: Pre-Migration (CRITICAL)**
-- [ ] **Backup current AsyncStorage data** (`active_recording_session`, recovery keys)
-- [ ] **Establish performance baselines** (GPS lock time, memory usage)
-- [ ] **Document current GPS/sensor integration points**
-- [ ] **Map all AsyncStorage keys used by current system**
-- [ ] **Identify all components importing old services/hooks**
+- [ ] Backup AsyncStorage (`active_recording_session`, recovery keys)
+- [ ] Establish baselines (GPS, memory)
+- [ ] Document integration points
+- [ ] Map AsyncStorage/DB usage
+- [ ] Identify importing components
 
 **Phase 1: Foundation**
-- [ ] **Create `ActivityRecordingService` with preserved recovery logic**
-- [ ] **Implement enhanced checkpoint system** (AsyncStorage + SQLite)
-- [ ] **Add database recovery table** to schema
-- [ ] **Build consolidated permission handling**
-- [ ] **Preserve GPS timeout and background task logic**
+- [ ] Enhance `ActivityRecorderService` with merged recovery/checkpoints
+- [ ] Add recovery fields to schema
+- [ ] Consolidate permissions in service
+- [ ] Preserve GPS/background logic
 
 **Phase 2: Core Implementation**
-- [ ] **Wire sensor integrations** (preserve BLE device handling)
-- [ ] **Implement modal locking mechanism** (prevent dismissal during recording)
-- [ ] **Build live metrics calculation** (preserve existing algorithms)  
-- [ ] **Create unified activity selection flow**
-- [ ] **Implement robust completion and storage logic**
+- [ ] Merge sensor integrations
+- [ ] Add modal locking to `index.tsx`
+- [ ] Enhance live metrics in service/UI
+- [ ] Merge activity selection into hook/modal
+- [ ] Enhance completion/storage
 
 **Phase 3: UI Consolidation**
-- [ ] **Create simplified `useRecording` hook**
-- [ ] **Build new recording screen** (reference existing MetricsGrid, RecordingControls)
-- [ ] **Implement activity summary modal**
-- [ ] **Create permission and Bluetooth modals**
+- [ ] Simplify `useEnhancedActivityRecording` hook
+- [ ] Update recording screen/modal with existing components
+- [ ] Integrate permissions/BLE into modal
 
 **Phase 4: Migration & Cleanup**
-- [ ] **Implement feature flag** for gradual rollout
-- [ ] **Add migration helper for active sessions**
-- [ ] **Update all imports** with codemod
-- [ ] **Remove legacy services/hooks** (activity-recorder.ts, useEnhancedActivityRecording.ts)
-- [ ] **Update export indices**
-
-**Phase 5: Validation (MANDATORY)**
-- [ ] **Test GPS signal loss recovery**
-- [ ] **Test app backgrounding during recording**
-- [ ] **Test unexpected app termination recovery**
-- [ ] **Validate performance metrics match baseline**
-- [ ] **Test on low-end devices**
-- [ ] **Verify no data loss in migration**
-
-**Phase 6: Production Deployment**
-- [ ] **10% gradual rollout with monitoring**
-- [ ] **Monitor crash rates and recovery success**
-- [ ] **50% rollout after 1 week of stability**
-- [ ] **100% rollout after 2 weeks**
-- [ ] **Remove legacy code after 4 weeks**
-
-## Risk Mitigation
-
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| Breaking existing flows | High | Feature flags for gradual rollout |
-| BLE connection issues | Medium | Robust retry logic and fallback UI |
-| Data loss during migration | High | Backup existing data before changes |
-| Performance regression | Medium | Profile critical paths before/after |
-
-## Success Metrics (Updated with Realistic Targets)
-
-### Code Quality Metrics
-- **Code Consolidation**: ~12% line reduction (from 3,050 to 2,700 lines)
-- **File Reduction**: 65% fewer service files (5 files → 1 file)  
-- **Hook Simplification**: 75% complexity reduction (550 lines → 100 lines in main hook)
-- **Test Coverage**: >85% for new `ActivityRecordingService`
-- **Documentation Coverage**: 100% of public methods documented
-
-### Performance Metrics (Must Match or Exceed Current)
-- **GPS Lock Time**: <5 seconds (maintain current performance)
-- **UI Response Time**: <100ms for all recording controls
-- **Memory Usage**: <50MB increase during 1-hour recording
-- **Battery Impact**: <10% drain per hour of recording
-- **Background Processing**: Maintain 99.9% GPS continuity when backgrounded
-
-### Reliability Metrics (Critical for Production)
-- **Data Loss Rate**: <0.01% of recording sessions
-- **Recovery Success Rate**: >99% for interrupted sessions  
-- **Crash Rate**: <0.1% during recording operations
-- **Checkpoint Success**: >99.9% of checkpoints saved successfully
-- **Migration Success**: 100% of existing active sessions preserved
-
-### User Experience Metrics
-- **Modal Lock Behavior**: 100% prevention of accidental dismissal during recording
-- **Recovery UX**: <3 seconds from app restart to recovery prompt
-- **Sensor Connection**: <10 seconds for Bluetooth device pairing
-- **Permission Flow**: <30 seconds for all permission requests
-- **Activity Completion**: <5 seconds from stop to summary display
-
-### Deployment Safety Metrics
-- **Rollout Success**: Gradual deployment with <0.5% rollback rate
-- **Feature Flag Stability**: 100% uptime during gradual rollout
-- **Monitoring Coverage**: 100% of critical code paths monitored
-- **Rollback Time**: <2 hours to revert if critical issues detected
-
-## Implementation Conclusion
-
-This comprehensive consolidation plan prioritizes **production safety** over aggressive code reduction. The approach:
-
-1. **Preserves all critical functionality** from existing robust systems
-2. **Implements multi-level data protection** with enhanced checkpoint/recovery
-3. **Provides detailed mobile-specific considerations** for iOS/Android
-4. **Includes mandatory testing and validation phases**
-5. **Features gradual deployment with rollback capabilities**
-
-The implementation should proceed **sequentially through each phase**, with mandatory validation at each step. The phased approach allows for early detection of issues and rollback if necessary, while maintaining a clear path toward the consolidated architecture.
-
-**Key Success Factor**: Treat this as a **reliability improvement project** rather than just a code reduction exercise. The primary goal is creating a more maintainable system while preserving all existing robust behaviors.
+- [ ] Update imports (codemod if possible)
+- [ ] Remove legacy services/hooks
+- [ ] Update indices/exports
+- [ ] Run tests, validate performance
