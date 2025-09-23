@@ -63,7 +63,7 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
 
     const formatPace = (mps: number): string => {
       if (mps === 0) return "--:--";
-      // Convert m/s to pace (min/km)
+      // Convert m/s to speed (min/km)
       const paceSeconds = 1000 / mps;
       const minutes = Math.floor(paceSeconds / 60);
       const seconds = Math.floor(paceSeconds % 60);
@@ -99,7 +99,7 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
         sourceIcon: connectionStatus.gps === "connected" ? "📍" : "🔍",
       },
       {
-        id: "pace",
+        id: "speed",
         title: "Pace",
         value: formatPace(serviceMetrics.avgSpeed || 0),
         unit: "min/km",

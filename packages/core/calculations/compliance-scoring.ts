@@ -31,7 +31,7 @@ export interface ActivityMetrics {
   /** Average cadence in rpm/spm (if applicable) */
   avgCadence?: number;
 
-  /** Average pace in seconds per kilometer (if applicable) */
+  /** Average speed in seconds per kilometer (if applicable) */
   avgPace?: number;
 
   /** Average speed in meters per second (if applicable) */

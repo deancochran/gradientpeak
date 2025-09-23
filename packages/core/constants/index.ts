@@ -40,14 +40,14 @@ export const POWER_ZONE_PERCENTAGES = {
 } as const;
 
 /**
- * Pace zone percentages based on threshold pace
+ * Pace zone percentages based on threshold speed
  */
 export const PACE_ZONE_PERCENTAGES = {
-  ZONE_1: 0.85, // Recovery (slower pace = higher percentage)
+  ZONE_1: 0.85, // Recovery (slower speed = higher percentage)
   ZONE_2: 0.9, // Endurance
   ZONE_3: 0.95, // Tempo
   ZONE_4: 1.0, // Lactate Threshold
-  ZONE_5: 1.05, // VO2 Max (faster pace = higher percentage)
+  ZONE_5: 1.05, // VO2 Max (faster speed = higher percentage)
 } as const;
 
 // ================================

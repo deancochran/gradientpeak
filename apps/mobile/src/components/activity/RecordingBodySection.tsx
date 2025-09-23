@@ -97,7 +97,7 @@ export const RecordingBodySection: React.FC<RecordingBodySectionProps> = ({
               <Text style={styles.stepTitle}>Current Step</Text>
               <Text style={styles.stepName}>Warmup</Text>
               <Text style={styles.stepDescription}>
-                Easy pace for 10 minutes
+                Easy speed for 10 minutes
               </Text>
 
               <View style={styles.targetZones}>

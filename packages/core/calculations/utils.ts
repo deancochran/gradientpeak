@@ -258,10 +258,10 @@ export function formatSpeed(
 }
 
 /**
- * Format pace from speed in m/s
+ * Format speed from speed in m/s
  * @param speedMs - Speed in meters per second
  * @param unit - Unit system ('metric' or 'imperial')
- * @returns Formatted pace string (min/km or min/mi)
+ * @returns Formatted speed string (min/km or min/mi)
  */
 export function formatPace(
   speedMs: number,
@@ -420,11 +420,11 @@ export function calculateAverageSpeed(
 }
 
 /**
- * Calculate average pace from total distance and duration
+ * Calculate average speed from total distance and duration
  * @param totalDistanceMeters - Total distance in meters
  * @param durationSeconds - Duration in seconds
  * @param unit - Unit system ('metric' or 'imperial')
- * @returns Formatted pace string
+ * @returns Formatted speed string
  */
 export function calculateAveragePace(
   totalDistanceMeters: number,

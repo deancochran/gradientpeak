@@ -77,7 +77,7 @@ export const plannedActivityStructureSchema = z.object({
     "other", // yoga, mobility, misc
   ]),
   loadType: z
-    .enum(["tss", "hr", "power", "pace", "rpe", "weightRepsSets"])
+    .enum(["tss", "hr", "power", "speed", "rpe", "weightRepsSets"])
     .optional(),
   environment: z.enum(["indoor", "outdoor"]).optional(), // treadmill, trainer, pool
   steps: z.array(z.union([stepSchema, repetitionSchema])),

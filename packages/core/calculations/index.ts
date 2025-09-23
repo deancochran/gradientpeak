@@ -1,8 +1,10 @@
 // Export all calculation modules
+export * from "./activity-summary";
 export * from "./compliance-scoring";
 export * from "./hr";
 export * from "./power";
 export * from "./schema-navigation";
+export * from "./sensor-parsing";
 export * from "./training-load";
 export * from "./training-plan";
 export * from "./trends";
@@ -42,9 +44,9 @@ export {
   adaptWeeklyPlan,
   createNewPlannedActivity,
   createWeeklySchedule,
-  estimateWeeklyTSS,
   estimateActivityDuration,
   estimateActivityTSS,
+  estimateWeeklyTSS,
   requiresFTP,
   requiresThresholdHR,
 } from "./training-plan";

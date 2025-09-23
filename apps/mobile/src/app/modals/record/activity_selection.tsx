@@ -279,7 +279,7 @@ const MockPlannedWorkouts = ({
     {
       id: "workout-2",
       name: `Easy ${ACTIVITY_NAMES[activityType]}`,
-      description: "Steady pace endurance session",
+      description: "Steady speed endurance session",
       duration: "45 minutes",
       type: activityType,
     },

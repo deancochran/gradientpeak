@@ -45,9 +45,9 @@ export function calculateTSS(
 
 /**
  * Calculate Training Stress Score for running (rTSS)
- * Uses pace and heart rate data instead of power
- * @param averagePace - Average pace in seconds per kilometer
- * @param thresholdPace - Threshold pace in seconds per kilometer
+ * Uses speed and heart rate data instead of power
+ * @param averagePace - Average speed in seconds per kilometer
+ * @param thresholdPace - Threshold speed in seconds per kilometer
  * @param movingTime - Moving time in seconds
  * @returns rTSS value
  */

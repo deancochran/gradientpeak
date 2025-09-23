@@ -38,7 +38,7 @@ The TurboFit web dashboard serves as the analytical companion to the mobile app,
 
 ### 📊 Advanced Analytics Dashboard
 - **Training Load Analysis** - CTL/ATL/TSB progression charts
-- **Performance Trends** - Power/pace progression over time
+- **Performance Trends** - Power/speed progression over time
 - **Zone Distribution** - Heart rate and power zone analysis
 - **Activity Comparisons** - Side-by-side performance analysis
 - **Personal Records** - PR tracking and historical analysis

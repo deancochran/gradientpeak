@@ -55,14 +55,10 @@ create table if not exists public.activities (
     avg_heart_rate integer,
     avg_cadence integer,
     avg_power integer,
-    norm_speed numeric(5,2),
-    norm_heart_rate integer,
-    norm_cadence integer,
-    norm_power integer,
-    max_speed numeric(5,2),
-    max_heart_rate integer,
-    max_power integer,
-    max_cadence integer,
+    normalized_power integer,
+    intensity_factor integer,
+    training_stress_score integer,
+    variability_index integer,
     created_at timestamp not null default now()
 );
 

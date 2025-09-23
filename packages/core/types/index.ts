@@ -40,11 +40,11 @@ export interface PowerZones {
  * Pace training zones (in seconds per kilometer)
  */
 export interface PaceZones {
-  zone1: number; // Recovery pace
-  zone2: number; // Endurance pace
-  zone3: number; // Tempo pace
-  zone4: number; // Lactate threshold pace
-  zone5: number; // VO2 max pace
+  zone1: number; // Recovery speed
+  zone2: number; // Endurance speed
+  zone3: number; // Tempo speed
+  zone4: number; // Lactate threshold speed
+  zone5: number; // VO2 max speed
 }
 
 /**
