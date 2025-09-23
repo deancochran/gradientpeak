@@ -1,4 +1,3 @@
-import { MetricsGrid } from "@/components/activity/MetricsGrid";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
@@ -10,7 +9,7 @@ import {
   ChevronDown,
   MapPinIcon,
 } from "lucide-react-native";
-import { Alert, Modal, View } from "react-native";
+import { Alert, View } from "react-native";
 
 // ===== ENHANCED MODAL WITH SERVICE INTEGRATION =====
 export default function RecordIndexModal() {
@@ -110,129 +109,70 @@ export default function RecordIndexModal() {
   };
 
   return (
-    <Modal presentationStyle="pageSheet" onRequestClose={handleClose}>
-      <View className="flex-1 bg-background">
-        {/* HEADER SECTION - Status & Quick Info */}
-        <View className="bg-background border-b border-border px-4 py-3">
-          <View className="flex-row items-center justify-between">
+    <View className="flex-1 bg-background">
+      {/* HEADER SECTION - Status & Quick Info */}
+      <View className="bg-background border-b border-border px-4 py-3">
+        <View className="flex-row items-center justify-between">
+          <Button
+            size="icon"
+            variant="ghost"
+            onPress={handleClose}
+            disabled={!canDismissModal}
+          >
+            <Icon as={ChevronDown} size={24} />
+          </Button>
+          <View className="flex-row items-end">
+            {(state === "idle" || state === "paused") && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onPress={() => router.push("/modals/record/activity_selection")}
+              >
+                <Icon as={Activity} />
+                <Text>{}</Text>
+              </Button>
+            )}
+
             <Button
-              size="icon"
               variant="ghost"
-              onPress={handleClose}
-              disabled={!canDismissModal}
+              size="icon"
+              onPress={() => router.push("/modals/record/bluetooth")}
             >
-              <Icon as={ChevronDown} size={24} />
+              <Icon as={Bluetooth} />
             </Button>
-            <View className="flex-row items-end">
-              {(state === "idle" || state === "paused") && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onPress={() =>
-                    router.push("/modals/record/activity_selection")
-                  }
-                >
-                  <Icon as={Activity} />
-                </Button>
-              )}
 
-              <Button
-                variant="ghost"
-                size="icon"
-                onPress={() => router.push("/modals/record/bluetooth")}
-              >
-                <Icon as={Bluetooth} />
-              </Button>
-
-              <Button
-                variant="ghost"
-                size="icon"
-                onPress={() => router.push("/modals/record/permissions")}
-              >
-                <Icon as={MapPinIcon} />
-              </Button>
-            </View>
+            <Button
+              variant="ghost"
+              size="icon"
+              onPress={() => router.push("/modals/record/permissions")}
+            >
+              <Icon as={MapPinIcon} />
+            </Button>
           </View>
         </View>
-
-        {/* MAIN CONTENT - State-dependent content */}
-        <View className="flex-1">
-          {state === "idle" && (
-            <IdleStateContent onStartRecording={handleStartRecording} />
-          )}
-          {state === "recording" && <RecordingStateContent metrics={metrics} />}
-          {state === "paused" && <PausedStateContent metrics={metrics} />}
-          {state === "finished" && <FinishedStateContent metrics={metrics} />}
-        </View>
-
-        <View className="bg-background border-t border-border px-4 py-4">
-          <RecordingControls
-            state={state}
-            onStart={handleStartRecording}
-            onPause={pauseRecording}
-            onResume={resumeRecording}
-            onStop={handleStopRecording}
-            onDiscard={handleDiscardRecording}
-          />
-        </View>
       </View>
-    </Modal>
+
+      {/* MAIN CONTENT - State-dependent content */}
+      <View className="flex-1">
+        {state === "idle" && <Text>Ready to Start</Text>}
+        {state === "recording" && <Text>Recording</Text>}
+        {state === "paused" && <Text>Paused</Text>}
+        {state === "finished" && <Text>Finished</Text>}
+      </View>
+
+      <View className="bg-background border-t border-border px-4 py-4">
+        <RecordingControls
+          state={state}
+          onStart={handleStartRecording}
+          onPause={pauseRecording}
+          onResume={resumeRecording}
+          onStop={handleStopRecording}
+          onDiscard={handleDiscardRecording}
+        />
+      </View>
+    </View>
   );
 }
-
-// ===== STATE-DEPENDENT CONTENT COMPONENTS =====
-const IdleStateContent = ({
-  onStartRecording,
-}: {
-  onStartRecording: () => void;
-}) => (
-  <View className="flex-1 items-center justify-center px-6">
-    <Text className="text-2xl font-bold mb-2">Ready to Start</Text>
-    <Text className="text-muted-foreground text-center mb-8">
-      Configure your activity and devices, then press start to begin recording
-    </Text>
-    <Button onPress={onStartRecording} className="mt-4">
-      <Text>Start Recording</Text>
-    </Button>
-  </View>
-);
-
-const RecordingStateContent = ({ metrics }: { metrics: any }) => (
-  <View className="flex-1 px-4 py-6">
-    <MetricsGrid useLiveMetrics={true} />
-    <View className="mt-4 p-4 bg-green-50 rounded-lg">
-      <Text className="text-green-800 font-medium">🔴 Recording Active</Text>
-      <Text className="text-green-600 text-sm mt-1">
-        Your activity is being tracked. GPS and sensors are recording data.
-      </Text>
-    </View>
-  </View>
-);
-
-const PausedStateContent = ({ metrics }: { metrics: any }) => (
-  <View className="flex-1 px-4 py-6">
-    <MetricsGrid useLiveMetrics={true} />
-    <View className="mt-4 p-4 bg-yellow-50 rounded-lg">
-      <Text className="text-yellow-800 font-medium">⏸️ Recording Paused</Text>
-      <Text className="text-yellow-600 text-sm mt-1">
-        Recording is paused. Timer is stopped but data is preserved.
-      </Text>
-    </View>
-  </View>
-);
-
-const FinishedStateContent = ({ metrics }: { metrics: any }) => (
-  <View className="flex-1 px-4 py-6">
-    <MetricsGrid useLiveMetrics={true} />
-    <View className="mt-4 p-4 bg-blue-50 rounded-lg">
-      <Text className="text-blue-800 font-medium">✅ Recording Complete</Text>
-      <Text className="text-blue-600 text-sm mt-1">
-        Your activity has been recorded and saved successfully.
-      </Text>
-    </View>
-  </View>
-);
-
 // ===== RECORDING CONTROLS COMPONENT =====
 const RecordingControls = ({
   state,
@@ -272,33 +212,19 @@ const RecordingControls = ({
     case "paused":
       return (
         <View className="flex-row gap-2">
+          <Button onPress={onDiscard} variant="destructive" className="flex-1">
+            <Text>Discard</Text>
+          </Button>
           <Button onPress={onResume} variant="default" className="flex-1">
             <Text>Resume</Text>
           </Button>
           <Button onPress={onStop} variant="secondary" className="flex-1">
-            <Text>Stop</Text>
-          </Button>
-          <Button onPress={onDiscard} variant="destructive" className="flex-1">
-            <Text>Discard</Text>
+            <Text>Finish</Text>
           </Button>
         </View>
-      );
-
-    case "finished":
-      return (
-        <Button
-          onPress={() => {}}
-          variant="secondary"
-          className="w-full"
-          disabled
-        >
-          <Text>Recording Complete</Text>
-        </Button>
       );
 
     default:
       return null;
   }
 };
-
-// MetricsGrid is now imported from the actual component

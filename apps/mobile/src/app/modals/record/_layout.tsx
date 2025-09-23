@@ -6,16 +6,16 @@ export default function RecordLayout() {
       <Stack.Screen
         name="index"
         options={{
-          presentation: "fullScreenModal",
+          presentation: "modal",
           gestureEnabled: false,
         }}
       />
       <Stack.Screen
         name="activity_selection"
-        options={{ presentation: "modal" }}
+        options={{ gestureEnabled: true }}
       />
-      <Stack.Screen name="bluetooth" options={{ presentation: "modal" }} />
-      <Stack.Screen name="permissions" options={{ presentation: "modal" }} />
+      <Stack.Screen name="bluetooth" options={{ gestureEnabled: true }} />
+      <Stack.Screen name="permissions" options={{ gestureEnabled: true }} />
     </Stack>
   );
 }
