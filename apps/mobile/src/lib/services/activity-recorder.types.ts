@@ -25,46 +25,37 @@ export type ConnectionStatus =
   | "disabled";
 
 export interface LiveMetrics {
-  // Existing
+  // Activity metrics
   totalTime?: number;
   movingTime?: number;
   distance?: number;
   total_ascent?: number;
   total_descent?: number;
-
-  speed?: number;
-  heartRate?: number;
-  cadence?: number;
-  power?: number;
-
-  avgChunkSpeed?: number;
-  avgChunkHeartRate?: number;
-  avgChunkCadence?: number;
-  avgChunkPower?: number;
-
   avgSpeed?: number;
   avgHeartRate?: number;
   avgCadence?: number;
   avgPower?: number;
 
-  // Extended metrics
-  normalizedPower?: number;
-  intensityFactor?: number;
-  trainingStressScore?: number;
-  variabilityIndex?: number;
+  // Streamed metrics
+  speed?: number;
+  heartRate?: number;
+  cadence?: number;
+  power?: number;
 
-  grade?: number;
-  vAM?: number;
+  // Possible future metrics
+  // normalizedPower?: number;
+  // intensityFactor?: number;
+  // trainingStressScore?: number;
+  // variabilityIndex?: number;
 
-  hrZoneDistribution?: number[]; // seconds in each HR zone
-  powerZoneDistribution?: number[]; // if using FTP zones
+  // grade?: number;
+  // vAM?: number;
 
-  aerobicDecoupling?: number;
-  efficiencyIndex?: number;
+  // hrZoneDistribution?: number[]; // seconds in each HR zone
+  // powerZoneDistribution?: number[]; // if using FTP zones
 
-  intervalIndex?: number;
-  intervalProgress?: number;
-  targetCompliance?: number;
+  // aerobicDecoupling?: number;
+  // efficiencyIndex?: number;
 }
 
 /** Permission state for UI display */

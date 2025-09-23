@@ -1,10 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import {
-  useEnhancedActivityRecording,
-  type ActivityType,
-} from "@/lib/hooks/useEnhancedActivityRecording";
+import { useEnhancedActivityRecording } from "@/lib/hooks/useEnhancedActivityRecording";
+import { PublicActivityType } from "@repo/core";
 import { useRouter } from "expo-router";
 import { CheckCircle, ChevronLeft } from "lucide-react-native";
 import { useState } from "react";
@@ -13,30 +11,36 @@ import { ScrollView, View } from "react-native";
 // ===== ACTIVITY TYPE DEFINITIONS =====
 type ActivityMode = "planned" | "unplanned";
 
-const ACTIVITY_NAMES: Record<ActivityType, string> = {
-  run: "Running",
+const ACTIVITY_NAMES: Record<PublicActivityType, string> = {
   outdoor_run: "Outdoor Run",
   indoor_run: "Indoor Run",
-  bike: "Cycling",
+  outdoor_bike: "Outdoor Cycling",
+  indoor_bike: "Indoor Cycling",
   walk: "Walking",
   hike: "Hiking",
+  swim: "Swimming",
   other: "Other Activity",
 };
 
-const ACTIVITY_BADGES: Record<ActivityType, { gps: boolean; bt: boolean }> = {
-  run: { gps: true, bt: true },
+const ACTIVITY_BADGES: Record<
+  PublicActivityType,
+  { gps: boolean; bt: boolean }
+> = {
   outdoor_run: { gps: true, bt: true },
   indoor_run: { gps: false, bt: true },
-  bike: { gps: true, bt: true },
+  outdoor_bike: { gps: true, bt: true },
+  indoor_bike: { gps: false, bt: true },
   walk: { gps: true, bt: false },
   hike: { gps: true, bt: false },
+  swim: { gps: true, bt: false },
   other: { gps: false, bt: false },
 };
 
 export default function ActivitySelectionModal() {
   const { startRecording, state } = useEnhancedActivityRecording();
   const [mode, setMode] = useState<ActivityMode>("unplanned");
-  const [selectedType, setSelectedType] = useState<ActivityType>("outdoor_run");
+  const [selectedType, setSelectedType] =
+    useState<PublicActivityType>("outdoor_run");
   const [selectedPlanned, setSelectedPlanned] = useState<string | null>(null);
   const router = useRouter();
 
@@ -45,8 +49,9 @@ export default function ActivitySelectionModal() {
       let success = false;
 
       if (mode === "planned" && selectedPlanned) {
-        // Start with planned activity ID
-        success = await startRecording(selectedType, selectedPlanned);
+        // For now, just start with activity type since we need to fetch planned activity
+        // TODO: Integrate with actual planned activities from backend
+        success = await startRecording(selectedType);
       } else {
         // Start unplanned activity
         success = await startRecording(selectedType);
@@ -134,7 +139,7 @@ export default function ActivitySelectionModal() {
         <Button
           onPress={handleSelectActivity}
           className="w-full"
-          disabled={state !== "idle"}
+          disabled={state !== "pending"}
         >
           <Text className="font-semibold">
             {mode === "planned" && selectedPlanned
@@ -142,7 +147,7 @@ export default function ActivitySelectionModal() {
               : `Start ${ACTIVITY_NAMES[selectedType]}`}
           </Text>
         </Button>
-        {state !== "idle" && (
+        {state !== "pending" && (
           <Text className="text-center text-sm text-muted-foreground mt-2">
             Complete current recording to start a new one
           </Text>
@@ -157,8 +162,8 @@ const UnplannedActivitySelection = ({
   selectedType,
   onSelectType,
 }: {
-  selectedType: ActivityType;
-  onSelectType: (type: ActivityType) => void;
+  selectedType: PublicActivityType;
+  onSelectType: (type: PublicActivityType) => void;
 }) => (
   <View className="py-4">
     <Text className="text-lg font-semibold mb-2">Choose Activity Type</Text>
@@ -170,7 +175,7 @@ const UnplannedActivitySelection = ({
         <Button
           key={type}
           variant="ghost"
-          onPress={() => onSelectType(type as ActivityType)}
+          onPress={() => onSelectType(type as PublicActivityType)}
           className={`p-4 rounded-lg border justify-start ${
             selectedType === type
               ? "border-primary bg-primary/10"
@@ -181,12 +186,12 @@ const UnplannedActivitySelection = ({
             <View className="flex-1">
               <Text className="font-semibold mb-1">{name}</Text>
               <View className="flex-row gap-2">
-                {ACTIVITY_BADGES[type as ActivityType].gps && (
+                {ACTIVITY_BADGES[type as PublicActivityType].gps && (
                   <View className="px-2 py-1 bg-blue-500/10 rounded-full">
                     <Text className="text-xs text-blue-600">GPS</Text>
                   </View>
                 )}
-                {ACTIVITY_BADGES[type as ActivityType].bt && (
+                {ACTIVITY_BADGES[type as PublicActivityType].bt && (
                   <View className="px-2 py-1 bg-purple-500/10 rounded-full">
                     <Text className="text-xs text-purple-600">Sensors</Text>
                   </View>
@@ -210,9 +215,9 @@ const PlannedActivitySelection = ({
   onSelectType,
   onSelectPlanned,
 }: {
-  selectedType: ActivityType;
+  selectedType: PublicActivityType;
   selectedPlanned: string | null;
-  onSelectType: (type: ActivityType) => void;
+  onSelectType: (type: PublicActivityType) => void;
   onSelectPlanned: (id: string | null) => void;
 }) => (
   <View className="py-4">
@@ -230,7 +235,7 @@ const PlannedActivitySelection = ({
             key={type}
             variant={selectedType === type ? "default" : "outline"}
             size="sm"
-            onPress={() => onSelectType(type as ActivityType)}
+            onPress={() => onSelectType(type as PublicActivityType)}
             className="min-w-0"
           >
             <Text
@@ -263,7 +268,7 @@ const MockPlannedWorkouts = ({
   selectedId,
   onSelect,
 }: {
-  activityType: ActivityType;
+  activityType: PublicActivityType;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
 }) => {

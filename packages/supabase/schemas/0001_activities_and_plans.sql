@@ -2,6 +2,7 @@ create type activity_type as enum (
     'outdoor_run',
     'outdoor_bike',
     'indoor_treadmill',
+    'indoor_bike_trainer',
     'indoor_strength',
     'indoor_swim',
     'other'
@@ -37,8 +38,8 @@ create table if not exists public.activities (
     name text not null,
     notes text,
     activity_type activity_type not null default 'other',
-    started_at timestamp not null,
-    finished_at timestamp not null,
+    started_at timestamptz not null,
+    finished_at timestamptz not null,
     planned_activity_id uuid references public.planned_activities(id) on delete set null,
     profile_id uuid not null references public.profiles(id) on delete cascade,
     profile_age integer,
@@ -59,7 +60,7 @@ create table if not exists public.activities (
     intensity_factor integer,
     training_stress_score integer,
     variability_index integer,
-    created_at timestamp not null default now()
+    created_at timestamptz not null default now()
 );
 
 create table if not exists public.activity_streams (
@@ -70,7 +71,7 @@ create table if not exists public.activity_streams (
     data_type activity_metric_data_type not null,
     original_size integer not null,
     compressed_data bytea NOT NULL,
-    created_at timestamp not null default now()
+    created_at timestamptz not null default now()
 );
 
 create table if not exists public.planned_activities (
@@ -86,5 +87,5 @@ create table if not exists public.planned_activities (
     estimated_duration integer,
     estimated_distance integer,
     estimated_tss integer,
-    created_at timestamp not null default now()
+    created_at timestamptz not null default now()
 );
