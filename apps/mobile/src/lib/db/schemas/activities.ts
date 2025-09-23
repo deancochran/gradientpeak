@@ -7,7 +7,7 @@ import {
 import { relations } from "drizzle-orm";
 import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
-// Activities table - matches Supabase schema structure
+// Activities table - enhanced with recovery fields for consolidated system
 export const activities = sqliteTable("activities", {
   // Primary identification
   id: text("id").primaryKey(), // UUID stored as text in SQLite
@@ -28,10 +28,35 @@ export const activities = sqliteTable("activities", {
     .$type<PublicActivityType>()
     .notNull()
     .default("other"),
+
   // Timing information
   startedAt: integer("started_at", { mode: "timestamp" }).notNull(),
   totalTime: integer("total_time").notNull().default(0),
   movingTime: integer("moving_time").notNull().default(0),
+
+  // ===== ENHANCED RECOVERY AND FAULT TOLERANCE FIELDS =====
+  // Recovery checkpoint data (JSON string containing checkpoint history)
+  recoveryCheckpoints: text("recovery_checkpoints"), // JSON string of ActivityCheckpoint[]
+
+  // Last successful checkpoint timestamp
+  lastCheckpointAt: integer("last_checkpoint_at", { mode: "timestamp" }),
+
+  // Error log for debugging and recovery (JSON string)
+  errorLog: text("error_log"), // JSON string of ErrorLogEntry[]
+
+  // Recording session state for recovery
+  sessionState: text("session_state"), // 'idle' | 'recording' | 'paused' | 'finished'
+
+  // Recovery attempt count (for limiting recovery attempts)
+  recoveryAttempts: integer("recovery_attempts").default(0),
+
+  // Planned activity reference (if this was from a planned workout)
+  plannedActivityId: text("planned_activity_id"),
+
+  // Device and app version info for debugging
+  recordingVersion: text("recording_version"), // e.g., "2.0.0-consolidated"
+  devicePlatform: text("device_platform"), // iOS/Android
+  appVersion: text("app_version"),
 
   // Snapshot data (user's fitness profile at time of activity)
   snapshotWeightKg: integer("snapshot_weight_kg").notNull(),
@@ -111,3 +136,64 @@ export const activityStreamsRelations = relations(
     }),
   }),
 );
+
+// ===== MIGRATION HELPERS FOR SAFE SCHEMA UPDATES =====
+
+/**
+ * Migration helper to safely add recovery fields
+ * This would be used in a Drizzle migration script
+ */
+export const addRecoveryFieldsMigration = `
+  -- Add recovery and checkpoint fields with safe defaults
+  ALTER TABLE activities ADD COLUMN recovery_checkpoints TEXT;
+  ALTER TABLE activities ADD COLUMN last_checkpoint_at INTEGER;
+  ALTER TABLE activities ADD COLUMN error_log TEXT;
+  ALTER TABLE activities ADD COLUMN session_state TEXT;
+  ALTER TABLE activities ADD COLUMN recovery_attempts INTEGER DEFAULT 0;
+  ALTER TABLE activities ADD COLUMN planned_activity_id TEXT;
+  ALTER TABLE activities ADD COLUMN recording_version TEXT;
+  ALTER TABLE activities ADD COLUMN device_platform TEXT;
+  ALTER TABLE activities ADD COLUMN app_version TEXT;
+
+  -- Update existing records to have safe defaults
+  UPDATE activities SET session_state = 'finished' WHERE session_state IS NULL;
+  UPDATE activities SET recovery_attempts = 0 WHERE recovery_attempts IS NULL;
+`;
+
+/**
+ * Rollback migration to remove recovery fields if needed
+ */
+export const removeRecoveryFieldsMigration = `
+  -- Remove recovery fields (use with caution in production)
+  ALTER TABLE activities DROP COLUMN recovery_checkpoints;
+  ALTER TABLE activities DROP COLUMN last_checkpoint_at;
+  ALTER TABLE activities DROP COLUMN error_log;
+  ALTER TABLE activities DROP COLUMN session_state;
+  ALTER TABLE activities DROP COLUMN recovery_attempts;
+  ALTER TABLE activities DROP COLUMN planned_activity_id;
+  ALTER TABLE activities DROP COLUMN recording_version;
+  ALTER TABLE activities DROP COLUMN device_platform;
+  ALTER TABLE activities DROP COLUMN app_version;
+`;
+
+// ===== TYPE EXPORTS FOR ENHANCED SCHEMA =====
+
+/**
+ * Enhanced activity type with recovery fields
+ */
+export type EnhancedActivity = typeof activities.$inferSelect;
+
+/**
+ * Enhanced activity insert type with recovery fields
+ */
+export type EnhancedInsertActivity = typeof activities.$inferInsert;
+
+/**
+ * Activity stream type
+ */
+export type ActivityStream = typeof activityStreams.$inferSelect;
+
+/**
+ * Activity stream insert type
+ */
+export type InsertActivityStream = typeof activityStreams.$inferInsert;
