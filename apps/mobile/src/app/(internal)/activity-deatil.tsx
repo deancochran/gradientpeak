@@ -11,7 +11,7 @@ export default function TrendsScreen() {
       testID="trends-screen"
       className="flex-1 bg-background h-full items-center justify-center"
     >
-      <Text className="text-2xl font-bold">Planned Activity Detail Screen</Text>
+      <Text className="text-2xl font-bold">Activity Detail Screen</Text>
       {/* Debug Info */}
       {__DEV__ && (
         <View>

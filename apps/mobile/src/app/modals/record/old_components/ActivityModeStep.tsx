@@ -20,9 +20,7 @@ export function ActivityModeStep({
           variant="outline"
         >
           <View className="flex-1">
-            <Text className="text-lg font-semibold mb-1">
-              Planned Workout
-            </Text>
+            <Text className="text-lg font-semibold mb-1">Planned Workout</Text>
             <Text className="text-sm text-muted-foreground">
               Follow your scheduled training plan
             </Text>
@@ -35,9 +33,7 @@ export function ActivityModeStep({
           variant="outline"
         >
           <View className="flex-1">
-            <Text className="text-lg font-semibold mb-1">
-              Quick Start
-            </Text>
+            <Text className="text-lg font-semibold mb-1">Quick Start</Text>
             <Text className="text-sm text-muted-foreground">
               Start an activity right now
             </Text>

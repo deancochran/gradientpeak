@@ -37,7 +37,7 @@ export default function InternalLayout() {
           }}
         />
         <Tabs.Screen
-          name="record/index"
+          name="record"
           options={{
             title: "Record",
           }}

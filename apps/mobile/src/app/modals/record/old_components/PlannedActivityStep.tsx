@@ -6,18 +6,41 @@ import { ActivityIndicator, ScrollView, View } from "react-native";
 
 // Simple activity type display names
 const ACTIVITY_NAMES: Record<PublicActivityType, string> = {
-  outdoor_run: 'Outdoor Run',
-  outdoor_bike: 'Road Cycling',
-  indoor_treadmill: 'Treadmill Run',
-  indoor_strength: 'Strength Training',
-  indoor_swim: 'Pool Swimming',
-  other: 'Other Activity',
+  outdoor_run: "Outdoor Run",
+  outdoor_bike: "Road Cycling",
+  indoor_treadmill: "Treadmill Run",
+  indoor_strength: "Strength Training",
+  indoor_swim: "Pool Swimming",
+  other: "Other Activity",
 };
+
+// Mock fallback data (remove once DB has planned activities)
+const MOCK_PLANNED_ACTIVITIES = [
+  {
+    id: "mock-1",
+    name: "Morning Recovery Run",
+    activity_type: "outdoor_run" as PublicActivityType,
+    scheduled_date: new Date().toISOString(),
+    description: "Easy 5K recovery run",
+    estimated_duration: 30,
+  },
+  {
+    id: "mock-2",
+    name: "Evening Strength Session",
+    activity_type: "indoor_strength" as PublicActivityType,
+    scheduled_date: new Date().toISOString(),
+    description: "Full body workout",
+    estimated_duration: 45,
+  },
+];
 
 export function PlannedActivityStep({
   onSelectActivity,
 }: {
-  onSelectActivity: (activityId: string, activityType: PublicActivityType) => void;
+  onSelectActivity: (
+    activityId: string,
+    activityType: PublicActivityType,
+  ) => void;
 }) {
   const {
     data: plannedActivities,
@@ -45,6 +68,9 @@ export function PlannedActivityStep({
       : `${hours}h`;
   };
 
+  // Use mock data if no real data (for testing)
+  const activities = plannedActivities?.length ? plannedActivities : MOCK_PLANNED_ACTIVITIES;
+
   if (isLoading) {
     return (
       <View className="flex-1 justify-center items-center px-6">
@@ -56,7 +82,7 @@ export function PlannedActivityStep({
     );
   }
 
-  if (error) {
+  if (error && !plannedActivities?.length) {
     return (
       <View className="flex-1 justify-center items-center px-6">
         <Text className="text-center text-destructive mb-4">
@@ -69,7 +95,7 @@ export function PlannedActivityStep({
     );
   }
 
-  if (!plannedActivities?.length) {
+  if (!activities.length) {
     return (
       <View className="flex-1 justify-center items-center px-6">
         <Text className="text-center text-muted-foreground mb-2">
@@ -78,6 +104,9 @@ export function PlannedActivityStep({
         <Text className="text-center text-sm text-muted-foreground">
           Create some planned activities to see them here
         </Text>
+        <Button onPress={() => refetch()} variant="outline" className="mt-4">
+          <Text>Refresh</Text>
+        </Button>
       </View>
     );
   }
@@ -85,24 +114,25 @@ export function PlannedActivityStep({
   return (
     <ScrollView className="flex-1 px-6">
       <Text className="text-center text-muted-foreground mb-6">
-        Select from your scheduled activities
+        Select from your scheduled activities ({activities.length} found)
       </Text>
 
       <View className="gap-3">
-        {plannedActivities.map((activity) => (
+        {activities.map((activity) => (
           <Button
             key={activity.id}
             onPress={() =>
-              onSelectActivity(activity.id, activity.activity_type as PublicActivityType)
+              onSelectActivity(
+                activity.id,
+                activity.activity_type as PublicActivityType,
+              )
             }
             className="p-4"
             variant="outline"
           >
             <View className="w-full">
               <View className="flex-row justify-between items-center mb-2">
-                <Text className="text-base font-semibold">
-                  {activity.name}
-                </Text>
+                <Text className="text-base font-semibold">{activity.name}</Text>
                 <Text className="text-sm text-muted-foreground">
                   {formatTime(activity.scheduled_date)}
                 </Text>
@@ -114,7 +144,9 @@ export function PlannedActivityStep({
               )}
               <View className="flex-row justify-between items-center">
                 <Text className="text-sm text-muted-foreground">
-                  {ACTIVITY_NAMES[activity.activity_type as PublicActivityType] || activity.activity_type}
+                  {ACTIVITY_NAMES[
+                    activity.activity_type as PublicActivityType
+                  ] || activity.activity_type}
                 </Text>
                 {activity.estimated_duration && (
                   <Text className="text-sm text-muted-foreground">

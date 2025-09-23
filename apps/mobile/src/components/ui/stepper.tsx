@@ -1,7 +1,13 @@
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { cn } from "@/lib/utils";
-import React, { createContext, useContext, useState } from "react";
+import React, {
+  createContext,
+  forwardRef,
+  useContext,
+  useImperativeHandle,
+  useState,
+} from "react";
 import { ScrollView, View } from "react-native";
 
 interface StepperContextType {
@@ -27,6 +33,12 @@ function useStepper() {
   return context;
 }
 
+export interface StepperActions {
+  goToNext: () => void;
+  goToPrev: () => void;
+  goToStep: (step: number) => void;
+}
+
 interface StepperProps {
   children: React.ReactNode;
   initialStep?: number;
@@ -39,96 +51,110 @@ interface StepperProps {
   showScrollIndicator?: boolean;
 }
 
-function Stepper({
-  children,
-  initialStep = 0,
-  onComplete,
-  onStepChange,
-  className,
-  header,
-  footer,
-  scrollable = true,
-  showScrollIndicator = false,
-}: StepperProps) {
-  const [currentStep, setCurrentStep] = useState(initialStep);
+const Stepper = forwardRef<StepperActions, StepperProps>(
+  (
+    {
+      children,
+      initialStep = 0,
+      onComplete,
+      onStepChange,
+      className,
+      header,
+      footer,
+      scrollable = true,
+      showScrollIndicator = false,
+    },
+    ref,
+  ) => {
+    const [currentStep, setCurrentStep] = useState(initialStep);
 
-  const steps = React.Children.toArray(children);
-  const totalSteps = steps.length;
-  const isFirstStep = currentStep === 0;
-  const isLastStep = currentStep >= totalSteps - 1;
-  const canGoPrev = currentStep > 0;
-  const canGoNext = currentStep < totalSteps - 1;
-  const progress = totalSteps > 0 ? ((currentStep + 1) / totalSteps) * 100 : 0;
+    const steps = React.Children.toArray(children);
+    const totalSteps = steps.length;
+    const isFirstStep = currentStep === 0;
+    const isLastStep = currentStep >= totalSteps - 1;
+    const canGoPrev = currentStep > 0;
+    const canGoNext = currentStep < totalSteps - 1;
+    const progress =
+      totalSteps > 0 ? ((currentStep + 1) / totalSteps) * 100 : 0;
 
-  const goToStep = (step: number) => {
-    if (step >= 0 && step < totalSteps) {
-      setCurrentStep(step);
-      onStepChange?.(step);
-    }
-  };
+    const goToStep = (step: number) => {
+      if (step >= 0 && step < totalSteps) {
+        setCurrentStep(step);
+        onStepChange?.(step);
+      }
+    };
 
-  const goToNext = () => {
-    if (canGoNext) {
-      const nextStep = currentStep + 1;
-      setCurrentStep(nextStep);
-      onStepChange?.(nextStep);
-    } else if (isLastStep) {
-      onComplete?.();
-    }
-  };
+    const goToNext = () => {
+      if (canGoNext) {
+        const nextStep = currentStep + 1;
+        setCurrentStep(nextStep);
+        onStepChange?.(nextStep);
+      } else if (isLastStep) {
+        onComplete?.();
+      }
+    };
 
-  const goToPrev = () => {
-    if (canGoPrev) {
-      const prevStep = currentStep - 1;
-      setCurrentStep(prevStep);
-      onStepChange?.(prevStep);
-    }
-  };
+    const goToPrev = () => {
+      if (canGoPrev) {
+        const prevStep = currentStep - 1;
+        setCurrentStep(prevStep);
+        onStepChange?.(prevStep);
+      }
+    };
 
-  const contextValue: StepperContextType = {
-    currentStep,
-    totalSteps,
-    goToNext,
-    goToPrev,
-    goToStep,
-    canGoNext,
-    canGoPrev,
-    isFirstStep,
-    isLastStep,
-    progress,
-  };
+    useImperativeHandle(ref, () => ({
+      goToNext,
+      goToPrev,
+      goToStep,
+    }));
 
-  const StepContent = () => {
-    if (scrollable) {
-      return (
-        <ScrollView
-          className="flex-1"
-          showsVerticalScrollIndicator={showScrollIndicator}
-          contentContainerStyle={{ flexGrow: 1 }}
-        >
-          {steps[currentStep]}
-        </ScrollView>
-      );
-    }
+    const contextValue: StepperContextType = {
+      currentStep,
+      totalSteps,
+      goToNext,
+      goToPrev,
+      goToStep,
+      canGoNext,
+      canGoPrev,
+      isFirstStep,
+      isLastStep,
+      progress,
+    };
 
-    return <View className="flex-1">{steps[currentStep]}</View>;
-  };
+    const StepContent = () => {
+      if (scrollable) {
+        return (
+          <ScrollView
+            className="flex-1"
+            showsVerticalScrollIndicator={showScrollIndicator}
+            contentContainerStyle={{ flexGrow: 1 }}
+          >
+            {steps[currentStep]}
+          </ScrollView>
+        );
+      }
 
-  return (
-    <StepperContext.Provider value={contextValue}>
-      <View className={cn("flex-1", className)}>
-        {/* Dynamic Header */}
-        {header && <View>{header(contextValue)}</View>}
+      return <View className="flex-1">{steps[currentStep]}</View>;
+    };
 
-        {/* Current Step Content - Now Scrollable */}
-        <StepContent />
+    return (
+      <StepperContext.Provider value={contextValue}>
+        <View className={cn("flex-1", className)}>
+          {/* Dynamic Header */}
+          {header && <View>{header(contextValue)}</View>}
 
-        {/* Dynamic Footer */}
-        {footer && <View>{footer(contextValue)}</View>}
-      </View>
-    </StepperContext.Provider>
-  );
-}
+          {/* Current Step Content - Now Scrollable */}
+          <StepContent />
+
+          {/* Dynamic Footer */}
+          {footer && <View>{footer(contextValue)}</View>}
+        </View>
+      </StepperContext.Provider>
+    );
+  },
+);
+
+Stepper.displayName = "Stepper";
 
 interface StepProps {
   children: React.ReactNode;
@@ -197,9 +223,15 @@ function Controls({
 }
 
 // Attach components for compound pattern
-Stepper.Step = Step;
-Stepper.Progress = ProgressIndicator;
-Stepper.Controls = Controls;
+const StepperWithSubComponents = Stepper as typeof Stepper & {
+  Step: typeof Step;
+  Progress: typeof ProgressIndicator;
+  Controls: typeof Controls;
+};
 
-export { Stepper, useStepper };
+StepperWithSubComponents.Step = Step;
+StepperWithSubComponents.Progress = ProgressIndicator;
+StepperWithSubComponents.Controls = Controls;
+
+export { StepperWithSubComponents as Stepper, useStepper };
 export type { StepperProps, StepProps };

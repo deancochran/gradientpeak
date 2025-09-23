@@ -258,6 +258,13 @@
   - Improved error handling with proper type guards
   - Fixed React Hook dependency arrays in record screen
 
+- **Stepper Context Error**: Fixed "useStepper must be used within a Stepper" error
+  - Implemented proper forwardRef pattern for stepper component
+  - Parent component now controls navigation via stepper ref
+  - Removed invalid useStepper calls from parent level
+  - Step components now rely on parent callbacks for navigation
+  - Maintained type safety with StepperActions interface
+
 ## [0.1.0] - 2024-01-XX (Initial Development)
 
 ### Added

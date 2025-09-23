@@ -23,7 +23,9 @@ export function BluetoothStep({
       {connectedDevices.length > 0 && (
         <Card className="border-success bg-success/10 mb-6">
           <CardContent className="p-4">
-            <Text className="text-base font-semibold mb-2">Connected Devices</Text>
+            <Text className="text-base font-semibold mb-2">
+              Connected Devices
+            </Text>
             {connectedDevices.map((device, index) => (
               <Text key={index} className="text-sm text-muted-foreground">
                 • {device}
@@ -36,7 +38,7 @@ export function BluetoothStep({
       <View className="gap-4">
         <Button onPress={onOpenBluetooth} className="w-full">
           <Text className="font-semibold">
-            {connectedDevices.length > 0 ? 'Manage Devices' : 'Connect Devices'}
+            {connectedDevices.length > 0 ? "Manage Devices" : "Connect Devices"}
           </Text>
         </Button>
 
