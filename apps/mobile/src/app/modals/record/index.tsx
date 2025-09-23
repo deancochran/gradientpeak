@@ -1,3 +1,4 @@
+import { MetricsGrid } from "@/components/activity/MetricsGrid";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
@@ -122,15 +123,35 @@ export default function RecordIndexModal() {
             >
               <Icon as={ChevronDown} size={24} />
             </Button>
-            <View className="flex-1 items-center">
-              <Text className="font-semibold">
-                {currentRecording?.activityType || "Activity Recording"}
-              </Text>
-              <Text className="text-xs text-muted-foreground">
-                {getStateDisplay(state)}
-              </Text>
+            <View className="flex-row items-end">
+              {(state === "idle" || state === "paused") && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onPress={() =>
+                    router.push("/modals/record/activity_selection")
+                  }
+                >
+                  <Icon as={Activity} />
+                </Button>
+              )}
+
+              <Button
+                variant="ghost"
+                size="icon"
+                onPress={() => router.push("/modals/record/bluetooth")}
+              >
+                <Icon as={Bluetooth} />
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                onPress={() => router.push("/modals/record/permissions")}
+              >
+                <Icon as={MapPinIcon} />
+              </Button>
             </View>
-            <View className="w-10" /> {/* Spacer for centering */}
           </View>
         </View>
 
@@ -144,68 +165,6 @@ export default function RecordIndexModal() {
           {state === "finished" && <FinishedStateContent metrics={metrics} />}
         </View>
 
-        {/* ICON BAR - Quick Access to Sub-modals (only show when not recording) */}
-        {(state === "idle" || state === "paused") && (
-          <View className="bg-muted/50 px-4 py-3 border-t border-border">
-            <View className="flex-row justify-center gap-8">
-              <Button
-                variant="ghost"
-                onPress={() => router.push("/modals/record/activity_selection")}
-                className="items-center"
-              >
-                <View className="w-12 h-12 bg-background rounded-full items-center justify-center">
-                  <Activity size={20} className="text-foreground" />
-                </View>
-                <Text className="text-xs mt-1">Activity</Text>
-              </Button>
-
-              <Button
-                variant="ghost"
-                onPress={() => router.push("/modals/record/bluetooth")}
-                className="items-center"
-              >
-                <View className="w-12 h-12 bg-background rounded-full items-center justify-center">
-                  <Bluetooth
-                    size={20}
-                    className={
-                      connectionStatus.bluetooth === "connected"
-                        ? "text-blue-500"
-                        : "text-muted-foreground"
-                    }
-                  />
-                </View>
-                <Text className="text-xs mt-1">Devices</Text>
-                {connectionStatus.bluetooth === "connected" && (
-                  <View className="absolute -top-1 -right-1 w-5 h-5 bg-blue-500 rounded-full items-center justify-center">
-                    <Text className="text-white text-xs">1</Text>
-                  </View>
-                )}
-              </Button>
-
-              <Button
-                variant="ghost"
-                onPress={() => router.push("/modals/record/permissions")}
-                className="items-center"
-              >
-                <View className="w-12 h-12 bg-background rounded-full items-center justify-center">
-                  <MapPinIcon
-                    size={20}
-                    className={
-                      connectionStatus.gps === "connected"
-                        ? "text-green-500"
-                        : connectionStatus.gps === "connecting"
-                          ? "text-yellow-500"
-                          : "text-orange-500"
-                    }
-                  />
-                </View>
-                <Text className="text-xs mt-1">GPS</Text>
-              </Button>
-            </View>
-          </View>
-        )}
-
-        {/* FOOTER CONTROLS - Recording Actions */}
         <View className="bg-background border-t border-border px-4 py-4">
           <RecordingControls
             state={state}
@@ -240,7 +199,7 @@ const IdleStateContent = ({
 
 const RecordingStateContent = ({ metrics }: { metrics: any }) => (
   <View className="flex-1 px-4 py-6">
-    <MetricsGrid metrics={metrics} />
+    <MetricsGrid useLiveMetrics={true} />
     <View className="mt-4 p-4 bg-green-50 rounded-lg">
       <Text className="text-green-800 font-medium">🔴 Recording Active</Text>
       <Text className="text-green-600 text-sm mt-1">
@@ -252,7 +211,7 @@ const RecordingStateContent = ({ metrics }: { metrics: any }) => (
 
 const PausedStateContent = ({ metrics }: { metrics: any }) => (
   <View className="flex-1 px-4 py-6">
-    <MetricsGrid metrics={metrics} />
+    <MetricsGrid useLiveMetrics={true} />
     <View className="mt-4 p-4 bg-yellow-50 rounded-lg">
       <Text className="text-yellow-800 font-medium">⏸️ Recording Paused</Text>
       <Text className="text-yellow-600 text-sm mt-1">
@@ -264,7 +223,7 @@ const PausedStateContent = ({ metrics }: { metrics: any }) => (
 
 const FinishedStateContent = ({ metrics }: { metrics: any }) => (
   <View className="flex-1 px-4 py-6">
-    <MetricsGrid metrics={metrics} />
+    <MetricsGrid useLiveMetrics={true} />
     <View className="mt-4 p-4 bg-blue-50 rounded-lg">
       <Text className="text-blue-800 font-medium">✅ Recording Complete</Text>
       <Text className="text-blue-600 text-sm mt-1">
@@ -342,33 +301,4 @@ const RecordingControls = ({
   }
 };
 
-// ===== METRICS GRID PLACEHOLDER =====
-const MetricsGrid = ({ metrics }: { metrics: any }) => (
-  <View className="grid grid-cols-2 gap-4">
-    <View className="bg-card rounded-lg p-4">
-      <Text className="text-sm text-muted-foreground">Duration</Text>
-      <Text className="text-2xl font-bold">
-        {Math.floor(metrics.duration / 60)}:
-        {(metrics.duration % 60).toString().padStart(2, "0")}
-      </Text>
-    </View>
-    <View className="bg-card rounded-lg p-4">
-      <Text className="text-sm text-muted-foreground">Distance</Text>
-      <Text className="text-2xl font-bold">
-        {((metrics.distance || 0) / 1000).toFixed(2)} km
-      </Text>
-    </View>
-    <View className="bg-card rounded-lg p-4">
-      <Text className="text-sm text-muted-foreground">Speed</Text>
-      <Text className="text-2xl font-bold">
-        {(metrics.currentSpeed || 0).toFixed(1)} m/s
-      </Text>
-    </View>
-    <View className="bg-card rounded-lg p-4">
-      <Text className="text-sm text-muted-foreground">Heart Rate</Text>
-      <Text className="text-2xl font-bold">
-        {metrics.heartRate || "--"} bpm
-      </Text>
-    </View>
-  </View>
-);
+// MetricsGrid is now imported from the actual component

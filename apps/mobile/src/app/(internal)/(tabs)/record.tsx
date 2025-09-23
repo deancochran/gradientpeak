@@ -1,7 +1,7 @@
+import { Text } from "@/components/ui/text";
 import { useRouter } from "expo-router";
 import { useEffect } from "react";
 import { View } from "react-native";
-
 export default function RecordPlaceholder() {
   const router = useRouter();
 
@@ -11,5 +11,9 @@ export default function RecordPlaceholder() {
   }, [router]);
 
   // Render nothing (or a loading state)
-  return <View style={{ flex: 1, backgroundColor: "white" }} />;
+  return (
+    <View>
+      <Text>Loading...</Text>
+    </View>
+  );
 }
