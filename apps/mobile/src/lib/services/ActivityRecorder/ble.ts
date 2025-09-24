@@ -1,11 +1,29 @@
+import {
+  KnownCharacteristics,
+  type SensorReading,
+  parseBleData,
+} from "@repo/core";
+import { Buffer } from "buffer";
 import { BleManager, Device } from "react-native-ble-plx";
 
+/** --- Connected sensor interface --- */
+export interface ConnectedSensor {
+  id: string;
+  name: string;
+  services: string[];
+  characteristics: Map<string, string>;
+  device: Device;
+  connectionTime: Date;
+}
+
+/** --- Generic Sports BLE Manager --- */
 export class BleManagerService {
-  private static bleManager: BleManager = new BleManager();
+  private static bleManager = new BleManager();
   private static connectedSensors: Map<string, ConnectedSensor> = new Map();
   private static dataCallbacks: Set<(reading: SensorReading) => void> =
     new Set();
 
+  /** Initialize BLE manager */
   static initialize() {
     this.bleManager.onStateChange((state) => {
       if (state === "PoweredOn") console.log("BLE ready");
@@ -14,21 +32,19 @@ export class BleManagerService {
     }, true);
   }
 
-  /** Scanning */
+  /** Scan for devices */
   static async scan(timeoutMs = 10000): Promise<Device[]> {
-    if (!this.bleManager) throw new Error("BLE not initialized");
     const found: Device[] = [];
-
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        this.bleManager!.stopDeviceScan();
+        this.bleManager.stopDeviceScan();
         resolve(found);
       }, timeoutMs);
 
       this.bleManager.startDeviceScan(null, null, (error, device) => {
         if (error) {
           clearTimeout(timeout);
-          this.bleManager!.stopDeviceScan();
+          this.bleManager.stopDeviceScan();
           reject(error);
           return;
         }
@@ -39,29 +55,30 @@ export class BleManagerService {
     });
   }
 
-  /** Connection */
+  /** Connect to a device */
   static async connect(deviceId: string): Promise<ConnectedSensor | null> {
-    if (!this.bleManager) return null;
     try {
       const device = await this.bleManager.connectToDevice(deviceId, {
         timeout: 5000,
       });
-      const withServices = await device.discoverAllServicesAndCharacteristics();
-      const services = await withServices.services();
+      const discovered = await device.discoverAllServicesAndCharacteristics();
+      const services = await discovered.services();
 
-      const chars = new Map<string, string>();
+      const characteristics = new Map<string, string>();
       for (const service of services) {
-        const serviceChars = await service.characteristics();
-        serviceChars.forEach((c) => chars.set(c.uuid, service.uuid));
+        const chars = await service.characteristics();
+        chars.forEach((c) =>
+          characteristics.set(c.uuid.toLowerCase(), service.uuid),
+        );
       }
 
       const sensor: ConnectedSensor = {
         id: device.id,
         name: device.name || "Unknown Device",
         services: services.map((s) => s.uuid),
-        device: withServices,
+        device: discovered,
         connectionTime: new Date(),
-        characteristics: chars,
+        characteristics,
       };
 
       this.connectedSensors.set(device.id, sensor);
@@ -79,78 +96,25 @@ export class BleManagerService {
     }
   }
 
+  /** Disconnect a device */
   static async disconnect(deviceId: string) {
     const sensor = this.connectedSensors.get(deviceId);
     if (sensor?.device) {
       try {
         await sensor.device.cancelConnection();
-      } catch (err) {
-        console.error("Disconnect error", err);
-      }
+      } catch {}
     }
     this.connectedSensors.delete(deviceId);
   }
 
+  /** Disconnect all devices */
   static async disconnectAll() {
     await Promise.allSettled(
       Array.from(this.connectedSensors.keys()).map((id) => this.disconnect(id)),
     );
   }
 
-  /** Characteristic monitoring */
-  private static async monitorKnownCharacteristics(sensor: ConnectedSensor) {
-    const known = {
-      "00002a37-0000-1000-8000-00805f9b34fb": "heart_rate",
-      "00002a63-0000-1000-8000-00805f9b34fb": "cycling_power",
-      "00002a5b-0000-1000-8000-00805f9b34fb": "csc_measurement",
-    };
-
-    for (const [charUuid, serviceUuid] of sensor.characteristics) {
-      const type = known[charUuid.toLowerCase()];
-      if (!type) continue;
-      const service = (await sensor.device.services()).find(
-        (s) => s.uuid === serviceUuid,
-      );
-      if (!service) continue;
-      const characteristic = (await service.characteristics()).find(
-        (c) => c.uuid === charUuid,
-      );
-      if (characteristic) {
-        characteristic.monitor((error, char) => {
-          if (error || !char?.value) return;
-          this.handleData(
-            type,
-            Buffer.from(char.value, "base64").buffer,
-            sensor.id,
-          );
-        });
-      }
-    }
-  }
-
-  private static handleData(type: string, raw: ArrayBuffer, deviceId: string) {
-    let readings: SensorReading[] = [];
-    switch (type) {
-      case "heart_rate":
-        const hr = parseHeartRate(raw);
-        if (hr) readings = [hr];
-        break;
-      case "cycling_power":
-        readings = parseCyclingPower(raw);
-        break;
-      case "csc_measurement":
-        readings = parseCSCMeasurement(raw);
-        break;
-    }
-    readings.forEach((r) => {
-      r.deviceId = deviceId;
-      if (validateSensorReading(r)) {
-        this.dataCallbacks.forEach((cb) => cb(r));
-      }
-    });
-  }
-
-  /** Allow other services to listen to sensor data */
+  /** Subscribe to sensor readings */
   static subscribe(cb: (reading: SensorReading) => void) {
     this.dataCallbacks.add(cb);
     return () => this.dataCallbacks.delete(cb);
@@ -158,5 +122,34 @@ export class BleManagerService {
 
   static getConnected(): ConnectedSensor[] {
     return Array.from(this.connectedSensors.values());
+  }
+
+  /** Monitor known characteristics */
+  private static async monitorKnownCharacteristics(sensor: ConnectedSensor) {
+    for (const [charUuid, serviceUuid] of sensor.characteristics) {
+      const metricType = KnownCharacteristics[charUuid.toLowerCase()];
+      if (!metricType) continue;
+
+      const service = (await sensor.device.services()).find(
+        (s) => s.uuid === serviceUuid,
+      );
+      if (!service) continue;
+
+      const characteristic = (await service.characteristics()).find(
+        (c) => c.uuid === charUuid,
+      );
+      if (!characteristic) continue;
+
+      characteristic.monitor((error, char) => {
+        if (error || !char?.value) return;
+
+        const reading = parseBleData(
+          metricType,
+          Buffer.from(char.value, "base64").buffer,
+          sensor.id,
+        );
+        if (reading) this.dataCallbacks.forEach((cb) => cb(reading));
+      });
+    }
   }
 }
