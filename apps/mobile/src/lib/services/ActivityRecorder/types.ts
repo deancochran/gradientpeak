@@ -1,11 +1,7 @@
 /**
  * Shared types for activity recording functionality
  */
-import {
-  PublicActivityMetric,
-  PublicActivityType,
-  PublicPlannedActivitiesRow,
-} from "@repo/core";
+import { PublicActivityType, PublicPlannedActivitiesRow } from "@repo/core";
 import { Device } from "react-native-ble-plx";
 
 export type RecordingState =
@@ -15,8 +11,6 @@ export type RecordingState =
   | "paused"
   | "discarded"
   | "finished";
-
-export type PermissionType = "bluetooth" | "location" | "location-background";
 
 export type ConnectionStatus =
   | "connected"
@@ -56,16 +50,6 @@ export interface LiveMetrics {
   efficiencyIndex?: number;
 }
 
-/** Permission state for UI display */
-export interface PermissionState {
-  granted: boolean;
-  canAskAgain: boolean;
-  loading: boolean;
-  name: string;
-  description: string;
-  required?: boolean;
-}
-
 /** Connected BLE sensor information */
 export interface ConnectedSensor {
   id: string;
@@ -76,26 +60,6 @@ export interface ConnectedSensor {
   battery?: number;
   connectionTime: Date;
   characteristics: Map<string, string>;
-}
-
-/** Sensor reading from any source */
-export interface SensorReading {
-  metric: PublicActivityMetric;
-  value: number | boolean | [number, number];
-  timestamp: number;
-  deviceId?: string;
-  quality?: "good" | "poor" | "unknown";
-}
-
-/** GPS reading from location services */
-export interface GPSReading {
-  latitude: number;
-  longitude: number;
-  altitude?: number;
-  speed?: number;
-  heading?: number;
-  accuracy?: number;
-  timestamp: number;
 }
 
 /** Buffered sensor data awaiting chunk processing */

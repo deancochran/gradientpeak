@@ -53,7 +53,7 @@ import type {
 const BACKGROUND_LOCATION_TASK = "background-location-task";
 
 export class ActivityRecorderService {
-  private static sessions: Record<string, RecordingSession> = {};
+  private static _sessions: Record<string, RecordingSession> = {};
   private static permissions: Record<PermissionType, PermissionState> =
     {} as Record<PermissionType, PermissionState>;
   private static bleManager: BleManager | null = null;
@@ -70,6 +70,7 @@ export class ActivityRecorderService {
   static async initialize() {
     this.bleManager = new BleManager();
     this.initializeBleManager();
+    await this.cleanupOldTasks();
     this.defineBackgroundLocationTask();
     await this.checkAllPermissions();
     console.log("ActivityRecorderService initialized");
@@ -85,6 +86,35 @@ export class ActivityRecorderService {
         this.disconnectAllSensors();
       }
     }, true);
+  }
+
+  private static async cleanupOldTasks() {
+    try {
+      // Clean up any old background location tasks that might be running
+      const oldTaskNames = [
+        "ACTIVITY_LOCATION_TRACKING",
+        "background-location-task",
+      ];
+
+      for (const taskName of oldTaskNames) {
+        try {
+          const isStarted =
+            await Location.hasStartedLocationUpdatesAsync(taskName);
+          if (isStarted) {
+            await Location.stopLocationUpdatesAsync(taskName);
+            console.log(`Cleaned up old background task: ${taskName}`);
+          }
+        } catch (error) {
+          // Ignore errors when cleaning up old tasks
+          console.log(`Could not cleanup task ${taskName}:`, error.message);
+        }
+      }
+
+      // Clean up old AsyncStorage entries
+      await AsyncStorage.removeItem("background_location_session_id");
+    } catch (error) {
+      console.warn("Error during task cleanup:", error);
+    }
   }
 
   private static defineBackgroundLocationTask() {
@@ -310,7 +340,7 @@ export class ActivityRecorderService {
       allCoordinates: [],
     };
 
-    this.sessions[id] = session;
+    this._sessions[id] = session;
 
     await db.insert(activityRecordings).values({
       id,
@@ -329,7 +359,7 @@ export class ActivityRecorderService {
 
   /** Starts recording by updating session state and starting sensors */
   static async startActivityRecording(id: string) {
-    const session = this.sessions[id];
+    const session = this._sessions[id];
     if (!session) throw new Error(`Session ${id} not found`);
 
     session.state = "recording";
@@ -344,7 +374,7 @@ export class ActivityRecorderService {
 
   /** Pauses a recording session */
   static async pauseActivityRecording(id: string) {
-    const session = this.sessions[id];
+    const session = this._sessions[id];
     if (!session) return;
 
     if (session.lastResumeTime) {
@@ -361,7 +391,7 @@ export class ActivityRecorderService {
 
   /** Resumes a paused recording session */
   static async resumeActivityRecording(id: string) {
-    const session = this.sessions[id];
+    const session = this._sessions[id];
     if (!session) return;
 
     session.state = "recording";
@@ -375,7 +405,7 @@ export class ActivityRecorderService {
 
   /** Finishes a recording session with summary calculations */
   static async finishActivityRecording(id: string) {
-    const session = this.sessions[id];
+    const session = this._sessions[id];
     if (!session) return;
 
     if (session.lastResumeTime) {
@@ -447,9 +477,9 @@ export class ActivityRecorderService {
 
   /** Get live metrics for a session */
   static getLiveMetrics(sessionId?: string): LiveMetrics | null {
-    if (sessionId) return this.sessions[sessionId]?.currentMetrics || null;
+    if (sessionId) return this._sessions[sessionId]?.currentMetrics || null;
 
-    const activeSession = Object.values(this.sessions).find(
+    const activeSession = Object.values(this._sessions).find(
       (s) => s.state === "recording",
     );
     return activeSession?.currentMetrics || null;
@@ -789,7 +819,7 @@ export class ActivityRecorderService {
   private static handleSensorData(reading: SensorReading) {
     if (!validateSensorReading(reading)) return;
 
-    const activeSessions = Object.values(this.sessions).filter(
+    const activeSessions = Object.values(this._sessions).filter(
       (s) => s.state === "recording",
     );
     activeSessions.forEach((session) =>
@@ -839,19 +869,19 @@ export class ActivityRecorderService {
           // Update current metrics
           switch (metric) {
             case "heartrate":
-              session.currentMetrics.currentHeartRate = value;
+              session.currentMetrics.heartRate = value;
               this.updateAggregateMetrics(session, "heartrate", "HeartRate");
               break;
             case "power":
-              session.currentMetrics.currentPower = value;
+              session.currentMetrics.power = value;
               this.updateAggregateMetrics(session, "power", "Power");
               break;
             case "speed":
-              session.currentMetrics.currentSpeed = value;
+              session.currentMetrics.speed = value;
               this.updateAggregateMetrics(session, "speed", "Speed");
               break;
             case "cadence":
-              session.currentMetrics.currentCadence = value;
+              session.currentMetrics.cadence = value;
               this.updateAggregateMetrics(session, "cadence", "Cadence");
               break;
             case "altitude":
@@ -948,7 +978,7 @@ export class ActivityRecorderService {
 
   /** Process buffered data into chunks for storage */
   private static async processChunkForSession(sessionId: string) {
-    const session = this.sessions[sessionId];
+    const session = this._sessions[sessionId];
     if (!session || session.state !== "recording") return;
 
     const now = Date.now();
@@ -1133,6 +1163,6 @@ export class ActivityRecorderService {
 
   // Export static properties for external access
   static get sessions() {
-    return this.sessions;
+    return this._sessions;
   }
 }
