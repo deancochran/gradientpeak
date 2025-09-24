@@ -17,11 +17,15 @@ export interface ConnectedSensor {
 }
 
 /** --- Generic Sports BLE Manager --- */
-export class BleManagerService {
+export class SensorsManager {
   private static bleManager = new BleManager();
   private static connectedSensors: Map<string, ConnectedSensor> = new Map();
   private static dataCallbacks: Set<(reading: SensorReading) => void> =
     new Set();
+
+  constructor() {
+    SensorsManager.initialize();
+  }
 
   /** Initialize BLE manager */
   static initialize() {
@@ -56,7 +60,9 @@ export class BleManagerService {
   }
 
   /** Connect to a device */
-  static async connect(deviceId: string): Promise<ConnectedSensor | null> {
+  static async connectSensor(
+    deviceId: string,
+  ): Promise<ConnectedSensor | null> {
     try {
       const device = await this.bleManager.connectToDevice(deviceId, {
         timeout: 5000,
@@ -97,7 +103,7 @@ export class BleManagerService {
   }
 
   /** Disconnect a device */
-  static async disconnect(deviceId: string) {
+  static async disconnectSensor(deviceId: string) {
     const sensor = this.connectedSensors.get(deviceId);
     if (sensor?.device) {
       try {
@@ -110,7 +116,9 @@ export class BleManagerService {
   /** Disconnect all devices */
   static async disconnectAll() {
     await Promise.allSettled(
-      Array.from(this.connectedSensors.keys()).map((id) => this.disconnect(id)),
+      Array.from(this.connectedSensors.keys()).map((id) =>
+        this.disconnectSensor(id),
+      ),
     );
   }
 
@@ -120,7 +128,7 @@ export class BleManagerService {
     return () => this.dataCallbacks.delete(cb);
   }
 
-  static getConnected(): ConnectedSensor[] {
+  static getConnectedSensors(): ConnectedSensor[] {
     return Array.from(this.connectedSensors.values());
   }
 
@@ -151,5 +159,15 @@ export class BleManagerService {
         if (reading) this.dataCallbacks.forEach((cb) => cb(reading));
       });
     }
+  }
+  private handleSensorData(reading: SensorReading) {
+    this.updateWithSensorData(reading);
+    this.dataCallbacks.forEach((cb) => {
+      try {
+        cb(reading);
+      } catch (err) {
+        console.warn("Sensor callback error:", err);
+      }
+    });
   }
 }

@@ -3,9 +3,7 @@
  * These functions process raw activity data to compute aggregated metrics
  */
 
-import type {
-    ActivitySummary
-} from "../types";
+import type { ActivitySummary } from "../types";
 
 // ================================
 // Activity Stream Processing Types
@@ -41,7 +39,9 @@ export interface ProfileSnapshot {
 /**
  * Calculate total distance from GPS coordinates
  */
-export function calculateTotalDistance(coordinates: [number, number][]): number {
+export function calculateTotalDistance(
+  coordinates: [number, number][],
+): number {
   if (coordinates.length < 2) return 0;
 
   let totalDistance = 0;
@@ -60,7 +60,7 @@ export function calculateTotalDistance(coordinates: [number, number][]): number 
  */
 export function calculateDistanceFromSpeed(
   speedData: number[],
-  timestamps: number[]
+  timestamps: number[],
 ): number {
   if (speedData.length !== timestamps.length || speedData.length < 2) {
     return 0;
@@ -87,7 +87,7 @@ export function calculateDistanceFromSpeed(
 export function calculateMovingTime(
   speedData: number[],
   timestamps: number[],
-  stopThreshold: number = 0.5 // m/s (1.8 km/h)
+  stopThreshold: number = 0.5, // m/s (1.8 km/h)
 ): number {
   if (speedData.length !== timestamps.length || speedData.length < 2) {
     return 0;
@@ -174,7 +174,7 @@ export function calculateCalories(
   durationSeconds: number,
   avgPower?: number,
   avgHeartRate?: number,
-  activityType: string = "outdoor_bike"
+  activityType: string = "outdoor_bike",
 ): number {
   // Method 1: Power-based calculation (most accurate for cycling)
   if (avgPower && avgPower > 0) {
@@ -187,7 +187,7 @@ export function calculateCalories(
       avgHeartRate,
       durationSeconds,
       profile.weightKg,
-      activityType
+      activityType,
     );
   }
 
@@ -195,14 +195,17 @@ export function calculateCalories(
   return calculateCaloriesFromMETs(
     profile.weightKg || 70,
     durationSeconds,
-    activityType
+    activityType,
   );
 }
 
 /**
  * Calculate calories from power data (cycling)
  */
-function calculateCaloriesFromPower(avgPower: number, durationSeconds: number): number {
+function calculateCaloriesFromPower(
+  avgPower: number,
+  durationSeconds: number,
+): number {
   // Gross mechanical efficiency of ~22% for cycling
   const efficiency = 0.22;
   const kJoules = (avgPower * durationSeconds) / 1000;
@@ -218,7 +221,7 @@ function calculateCaloriesFromHeartRate(
   avgHeartRate: number,
   durationSeconds: number,
   weightKg: number,
-  activityType: string
+  activityType: string,
 ): number {
   const durationMinutes = durationSeconds / 60;
 
@@ -230,7 +233,11 @@ function calculateCaloriesFromHeartRate(
 
   // Keytel formula: Calories/min = (0.6309 × HR + 0.1988 × weight + 0.2017 × age - 55.0969) × time/4.184
   // Simplified without age: focus on HR and weight
-  const caloriesPerMinute = (0.6309 * avgHeartRate + 0.1988 * weightKg - 55.0969) * genderCoeff * activityCoeff / 4.184;
+  const caloriesPerMinute =
+    ((0.6309 * avgHeartRate + 0.1988 * weightKg - 55.0969) *
+      genderCoeff *
+      activityCoeff) /
+    4.184;
 
   return Math.round(Math.max(0, caloriesPerMinute * durationMinutes));
 }
@@ -241,7 +248,7 @@ function calculateCaloriesFromHeartRate(
 function calculateCaloriesFromMETs(
   weightKg: number,
   durationSeconds: number,
-  activityType: string
+  activityType: string,
 ): number {
   const durationHours = durationSeconds / 3600;
   const mets = getMETSForActivity(activityType);
@@ -257,10 +264,13 @@ function calculateCaloriesFromMETs(
 /**
  * Calculate average of non-zero values
  */
-export function calculateAverageMetric(data: number[], excludeZeros: boolean = true): number {
+export function calculateAverageMetric(
+  data: number[],
+  excludeZeros: boolean = true,
+): number {
   if (data.length === 0) return 0;
 
-  const filteredData = excludeZeros ? data.filter(val => val > 0) : data;
+  const filteredData = excludeZeros ? data.filter((val) => val > 0) : data;
 
   if (filteredData.length === 0) return 0;
 
@@ -281,7 +291,7 @@ export function calculateMaxMetric(data: number[]): number {
  */
 export function calculateWeightedAverage(
   values: number[],
-  weights: number[]
+  weights: number[],
 ): number {
   if (values.length !== weights.length || values.length === 0) return 0;
 
@@ -308,15 +318,15 @@ export function calculateWeightedAverage(
 export function computeActivitySummary(
   streamData: ActivityStreamData,
   profile: ProfileSnapshot,
-  activityType: string = "outdoor_bike"
+  activityType: string = "outdoor_bike",
 ): ActivitySummary {
   const { timestamps } = streamData;
 
   // Time calculations
   const totalTime = calculateTotalTime(timestamps);
-  const movingTime = streamData.speed ?
-    calculateMovingTime(streamData.speed, timestamps) :
-    totalTime;
+  const movingTime = streamData.speed
+    ? calculateMovingTime(streamData.speed, timestamps)
+    : totalTime;
 
   // Distance calculations
   let distance = 0;
@@ -327,31 +337,29 @@ export function computeActivitySummary(
   }
 
   // Elevation calculations
-  const elevation = streamData.altitude ?
-    calculateElevationGain(streamData.altitude) :
-    0;
+  const elevation = streamData.altitude
+    ? calculateElevationGain(streamData.altitude)
+    : 0;
 
   // Speed calculations
   const averageSpeed = movingTime > 0 ? distance / movingTime : 0;
-  const maxSpeed = streamData.speed ?
-    calculateMaxMetric(streamData.speed) :
-    0;
+  const maxSpeed = streamData.speed ? calculateMaxMetric(streamData.speed) : 0;
 
   // Heart rate calculations
-  const averageHeartRate = streamData.heartrate ?
-    calculateAverageMetric(streamData.heartrate) :
-    undefined;
-  const maxHeartRate = streamData.heartrate ?
-    calculateMaxMetric(streamData.heartrate) :
-    undefined;
+  const averageHeartRate = streamData.heartrate
+    ? calculateAverageMetric(streamData.heartrate)
+    : undefined;
+  const maxHeartRate = streamData.heartrate
+    ? calculateMaxMetric(streamData.heartrate)
+    : undefined;
 
   // Power calculations
-  const averagePower = streamData.power ?
-    calculateAverageMetric(streamData.power) :
-    undefined;
-  const normalizedPower = streamData.power ?
-    calculateNormalizedPower(streamData.power) :
-    undefined;
+  const averagePower = streamData.power
+    ? calculateAverageMetric(streamData.power)
+    : undefined;
+  const normalizedPower = streamData.power
+    ? calculateNormalizedPower(streamData.power)
+    : undefined;
 
   // Calorie calculations
   const calories = calculateCalories(
@@ -359,13 +367,14 @@ export function computeActivitySummary(
     movingTime,
     averagePower,
     averageHeartRate,
-    activityType
+    activityType,
   );
 
   // TSS calculation (if power data available)
-  const tss = averagePower && normalizedPower && profile.ftp ?
-    calculateTSS(normalizedPower, movingTime, profile.ftp) :
-    undefined;
+  const tss =
+    averagePower && normalizedPower && profile.ftp
+      ? calculateTSS(normalizedPower, movingTime, profile.ftp)
+      : undefined;
 
   return {
     duration: Math.round(totalTime),
@@ -375,7 +384,9 @@ export function computeActivitySummary(
     tss,
     averagePower,
     normalizedPower,
-    averageHeartRate: averageHeartRate ? Math.round(averageHeartRate) : undefined,
+    averageHeartRate: averageHeartRate
+      ? Math.round(averageHeartRate)
+      : undefined,
     maxHeartRate: maxHeartRate ? Math.round(maxHeartRate) : undefined,
     averageSpeed,
     maxSpeed,
@@ -389,9 +400,11 @@ export function computeActivitySummary(
 /**
  * Calculate distance between two GPS points using Haversine formula
  */
-function calculateDistanceBetweenPoints(
-  lat1: number, lon1: number,
-  lat2: number, lon2: number
+export function calculateDistanceBetweenPoints(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
 ): number {
   const R = 6371000; // Earth's radius in meters
   const φ1 = (lat1 * Math.PI) / 180;
@@ -399,19 +412,28 @@ function calculateDistanceBetweenPoints(
   const Δφ = ((lat2 - lat1) * Math.PI) / 180;
   const Δλ = ((lon2 - lon1) * Math.PI) / 180;
 
-  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-           Math.cos(φ1) * Math.cos(φ2) *
-           Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
 
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
   return R * c;
 }
 
+export function calculateAltitudeBetweenPoints(
+  Ωç: number,
+  lat2: number,
+  lon2: number,
+): number {}
+
 /**
  * Smooth altitude data using moving average to reduce GPS noise
  */
-function smoothAltitudeData(altitudeData: number[], windowSize: number = 5): number[] {
+function smoothAltitudeData(
+  altitudeData: number[],
+  windowSize: number = 5,
+): number[] {
   if (altitudeData.length < windowSize) return altitudeData;
 
   const smoothed: number[] = [];
@@ -420,7 +442,9 @@ function smoothAltitudeData(altitudeData: number[], windowSize: number = 5): num
     const start = Math.max(0, i - Math.floor(windowSize / 2));
     const end = Math.min(altitudeData.length, start + windowSize);
 
-    const sum = altitudeData.slice(start, end).reduce((acc, val) => acc + val, 0);
+    const sum = altitudeData
+      .slice(start, end)
+      .reduce((acc, val) => acc + val, 0);
     smoothed.push(sum / (end - start));
   }
 
@@ -451,7 +475,7 @@ function calculateNormalizedPower(powerData: number[]): number {
 function calculateTSS(
   normalizedPower: number,
   durationSeconds: number,
-  ftp: number
+  ftp: number,
 ): number {
   const intensityFactor = normalizedPower / ftp;
   const durationHours = durationSeconds / 3600;
@@ -464,12 +488,12 @@ function calculateTSS(
  */
 function getActivityCoefficient(activityType: string): number {
   const coefficients: Record<string, number> = {
-    'outdoor_run': 1.2,
-    'outdoor_bike': 1.0,
-    'indoor_treadmill': 1.1,
-    'indoor_strength': 0.8,
-    'indoor_swim': 1.3,
-    'other': 1.0,
+    outdoor_run: 1.2,
+    outdoor_bike: 1.0,
+    indoor_treadmill: 1.1,
+    indoor_strength: 0.8,
+    indoor_swim: 1.3,
+    other: 1.0,
   };
 
   return coefficients[activityType] || 1.0;
@@ -480,12 +504,12 @@ function getActivityCoefficient(activityType: string): number {
  */
 function getMETSForActivity(activityType: string): number {
   const metsValues: Record<string, number> = {
-    'outdoor_run': 9.0,
-    'outdoor_bike': 7.5,
-    'indoor_treadmill': 8.0,
-    'indoor_strength': 6.0,
-    'indoor_swim': 8.0,
-    'other': 6.0,
+    outdoor_run: 9.0,
+    outdoor_bike: 7.5,
+    indoor_treadmill: 8.0,
+    indoor_strength: 6.0,
+    indoor_swim: 8.0,
+    other: 6.0,
   };
 
   return metsValues[activityType] || 6.0;

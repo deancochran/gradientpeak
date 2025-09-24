@@ -1,33 +1,24 @@
-/**
- * ActivityRecorderService - Single-session activity recorder
- *
- * Integrates BLE sensors, GPS/location, permissions, and live metrics.
- * Handles chunked data storage, summaries, and backend sync for a single active session.
- */
-
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   computeActivitySummary,
+  PublicActivityMetric,
+  PublicActivityMetricDataType,
   PublicActivityType,
   PublicPlannedActivitiesRow,
   type ActivityStreamData,
   type ActivitySummary,
   type ProfileSnapshot,
+  type SensorReading,
 } from "@repo/core";
 import * as Location from "expo-location";
-import { Device } from "react-native-ble-plx";
 
+import { LocationManager } from "./location";
 import {
-  BleManagerService,
-  type ConnectedSensor,
-  type SensorReading,
-} from "./ble";
-import { LocationManager, type GPSReading } from "./location";
-import {
-  PermissionManager,
+  PermissionsManager,
   type PermissionState,
   type PermissionType,
 } from "./permissions";
+import { SensorsManager } from "./sensors";
 
 export type RecordingState =
   | "pending"
@@ -37,84 +28,71 @@ export type RecordingState =
   | "discarded"
   | "finished";
 
-export interface LiveMetrics {
-  totalTime?: number;
-  movingTime?: number;
-  distance?: number;
-  total_ascent?: number;
-  total_descent?: number;
-  avgSpeed?: number;
-  avgHeartRate?: number;
-  avgCadence?: number;
-  avgPower?: number;
-  speed?: number;
-  heartRate?: number;
-  cadence?: number;
-  power?: number;
-  normalizedPower?: number;
-  intensityFactor?: number;
-  trainingStressScore?: number;
-  variabilityIndex?: number;
-  grade?: number;
-  hrZoneDistribution?: number[];
-  powerZoneDistribution?: number[];
-  aerobicDecoupling?: number;
-  efficiencyIndex?: number;
-  currentLatitude?: number;
-  currentLongitude?: number;
-  currentAltitude?: number;
-  elevation?: number;
-}
-
-export interface RecordingSession {
-  profileId: string;
-  startedAt: Date;
-  finishedAt?: Date;
-  state: RecordingState;
-  activityType: PublicActivityType;
-  plannedActivity?: PublicPlannedActivitiesRow;
-  currentMetrics: LiveMetrics;
-  sensorDataBuffer: Record<string, { value: any; timestamp: number }[]>;
-  chunkIndex: number;
-  totalElapsedTime: number;
-  movingTime: number;
-  lastResumeTime: Date | null;
-  lastCheckpointAt: Date;
-  dataPointsRecorded: number;
-  allValues: Map<string, number[]>;
-  allCoordinates: [number, number][];
-}
-
-const BACKGROUND_LOCATION_TASK = "background-location-task";
-
 export class ActivityRecorderService {
-  private session: RecordingSession | null = null;
-  private locationManager: LocationManager;
-  private permissions: Record<PermissionType, PermissionState> = {};
-  private connectedSensors: Map<string, ConnectedSensor> = new Map();
-  private lastGPSReading: GPSReading | null = null;
-  private chunkInterval = 5000;
+  // --- Session properties as class attributes ---
+  profileId: string;
+  startedAt?: Date;
+  state: RecordingState = "pending";
+  activityType: PublicActivityType = "indoor_treadmill";
+  plannedActivity?: PublicPlannedActivitiesRow;
+  chunkIndex = 0;
+  totalElapsedTime = 0;
+  movingTime = 0;
+  lastResumeTime: Date | null = null;
+  lastCheckpointAt?: Date;
+  dataPointsRecorded = 0;
+  allValues: Map<string, number[]> = new Map();
+  allCoordinates: [number, number][] = [];
+
+  // --- Service Managers ---
+  private permissionsManager = new PermissionsManager();
+  private locationManager = new LocationManager();
+  private sensorsManager = new SensorsManager();
+
+  // --- Other service properties ---
   private chunkTimer: NodeJS.Timeout | null = null;
   private dataCallbacks: Set<(reading: SensorReading) => void> = new Set();
-  private bleInitialized = false;
 
-  constructor() {
-    this.locationManager = new LocationManager(BACKGROUND_LOCATION_TASK);
+  constructor(profileId: string) {
+    this.profileId = profileId;
+
     this.initializeDataHandling();
-  }
-
-  async initialize() {
-    await BleManagerService.initialize();
-    this.bleInitialized = true;
     await this.cleanupOldTasks();
-    this.locationManager.defineBackgroundTask();
-    await this.checkAllPermissions();
+    const types: PermissionType[] = [
+      "bluetooth",
+      "location",
+      "location-background",
+    ];
+    for (const type of types) {
+      try {
+        const granted = await PermissionManager.ensure(type);
+        this.permissions[type] = {
+          granted,
+          canAskAgain: true,
+          name: PermissionManager.permissionNames[type],
+          description: PermissionManager.permissionDescriptions[type],
+          loading: false,
+        };
+      } catch (error) {
+        this.permissions[type] = {
+          granted: false,
+          canAskAgain: true,
+          name: PermissionManager.permissionNames[type],
+          description: PermissionManager.permissionDescriptions[type],
+          loading: false,
+        };
+      }
+    }
     console.log("ActivityRecorderService initialized");
   }
 
   private initializeDataHandling() {
-    BleManagerService.subscribe((reading) => this.handleSensorData(reading));
+    // BLE data
+    this.bluetoothManager.subscribe((reading) =>
+      this.handleSensorData(reading),
+    );
 
+    // GPS data
     this.locationManager.addCallback((locationObj) => {
       const gpsReading: GPSReading = {
         latitude: locationObj.coords.latitude,
@@ -134,48 +112,18 @@ export class ActivityRecorderService {
 
   private async cleanupOldTasks() {
     try {
-      const oldTaskNames = [
-        "ACTIVITY_LOCATION_TRACKING",
-        BACKGROUND_LOCATION_TASK,
-      ];
-      for (const taskName of oldTaskNames) {
-        const isStarted =
-          await Location.hasStartedLocationUpdatesAsync(taskName);
-        if (isStarted) await Location.stopLocationUpdatesAsync(taskName);
+      const tasks = ["ACTIVITY_LOCATION_TRACKING", "background-location-task"];
+      for (const t of tasks) {
+        const started = await Location.hasStartedLocationUpdatesAsync(t);
+        if (started) await Location.stopLocationUpdatesAsync(t);
       }
-      await AsyncStorage.removeItem("background_location_session");
-    } catch (error) {
-      console.warn("Error during task cleanup:", error);
+      await AsyncStorage.removeItem("background_location_session_id");
+    } catch (err) {
+      console.warn("Error during task cleanup:", err);
     }
   }
 
-  private async checkAllPermissions() {
-    const types: PermissionType[] = [
-      "bluetooth",
-      "location",
-      "location-background",
-    ];
-    for (const type of types) {
-      try {
-        const result = await PermissionManager.ensure(type);
-        this.permissions[type] = {
-          granted: result,
-          canAskAgain: true,
-          name: PermissionManager.permissionNames[type],
-          description: PermissionManager.permissionDescriptions[type],
-          loading: false,
-        };
-      } catch {
-        this.permissions[type] = {
-          granted: false,
-          canAskAgain: true,
-          name: PermissionManager.permissionNames[type],
-          description: PermissionManager.permissionDescriptions[type],
-          loading: false,
-        };
-      }
-    }
-  }
+  private async checkAllPermissions() {}
 
   getPermissionState(type: PermissionType): PermissionState | null {
     return this.permissions[type] || null;
@@ -185,41 +133,12 @@ export class ActivityRecorderService {
     return await PermissionManager.ensure(type);
   }
 
-  /** --- Single session management --- */
-  async createActivityRecording(
-    profileId: string,
-    activityType: PublicActivityType,
-    plannedActivity?: PublicPlannedActivitiesRow,
-  ) {
-    if (this.session) throw new Error("A session is already active");
-
-    const startedAt = new Date();
-
-    this.session = {
-      profileId,
-      startedAt,
-      state: "pending",
-      activityType,
-      plannedActivity,
-      currentMetrics: {},
-      sensorDataBuffer: {},
-      chunkIndex: 0,
-      totalElapsedTime: 0,
-      movingTime: 0,
-      lastResumeTime: null,
-      lastCheckpointAt: startedAt,
-      dataPointsRecorded: 0,
-      allValues: new Map(),
-      allCoordinates: [],
-    };
-
-    return this.session;
-  }
-
+  // --- Recording methods ---
   async startRecording() {
-    if (!this.session) throw new Error("No active session");
-    this.session.state = "recording";
-    this.session.lastResumeTime = new Date();
+    if (this.state === "recording") throw new Error("Already recording");
+
+    this.state = "recording";
+    this.lastResumeTime = new Date();
 
     await Promise.all([
       this.ensurePermission("location"),
@@ -233,117 +152,187 @@ export class ActivityRecorderService {
   }
 
   async pauseRecording() {
-    if (!this.session || this.session.state !== "recording") return;
-    if (this.session.lastResumeTime) {
-      this.session.movingTime +=
-        Date.now() - this.session.lastResumeTime.getTime();
+    if (this.lastResumeTime) {
+      this.movingTime += Date.now() - this.lastResumeTime.getTime();
     }
-    this.session.state = "paused";
-    this.session.lastResumeTime = null;
+    this.state = "paused";
+    this.lastResumeTime = null;
   }
 
   async resumeRecording() {
-    if (!this.session || this.session.state !== "paused") return;
-    this.session.state = "recording";
-    this.session.lastResumeTime = new Date();
+    if (this.state !== "paused") throw new Error("Session not paused");
+    this.state = "recording";
+    this.lastResumeTime = new Date();
   }
 
   async finishRecording() {
-    if (!this.session) return;
-
-    if (this.session.lastResumeTime) {
-      this.session.movingTime +=
-        Date.now() - this.session.lastResumeTime.getTime();
+    if (this.lastResumeTime) {
+      this.movingTime += Date.now() - this.lastResumeTime.getTime();
     }
+    this.state = "finished";
+    this.totalElapsedTime = Date.now() - this.startedAt.getTime();
 
-    this.session.state = "finished";
-    this.session.totalElapsedTime =
-      Date.now() - this.session.startedAt.getTime();
-    this.session.finishedAt = new Date();
-
-    await this.stopSensors();
     await this.processChunk();
+
     const summary = await this.computeActivitySummary();
-
-    this.session = null; // clear session
-    return summary;
+    console.log("Activity finished. Summary:", summary);
   }
 
-  getLiveMetrics(): LiveMetrics | null {
-    return this.session?.currentMetrics || null;
+  // --- BLE methods ---
+  async scanForDevices() {
+    return this.bluetoothManager.scan();
   }
 
-  /** --- Sensors --- */
-  async scanForDevices(): Promise<Device[]> {
-    if (!this.bleInitialized || !(await this.ensurePermission("bluetooth")))
-      throw new Error("Bluetooth not available");
-    return await BleManagerService.scan();
-  }
-
-  async connectToDevice(deviceId: string): Promise<ConnectedSensor | null> {
-    if (!this.bleInitialized) throw new Error("BLE not initialized");
-    const sensor = await BleManagerService.connect(deviceId);
-    if (sensor) this.connectedSensors.set(deviceId, sensor);
-    return sensor;
-  }
-
-  async disconnectDevice(deviceId: string) {
-    this.connectedSensors.delete(deviceId);
-    await BleManagerService.disconnect(deviceId);
-  }
-
-  getConnectedSensors(): ConnectedSensor[] {
-    return Array.from(this.connectedSensors.values());
-  }
-
-  private async stopSensors() {
-    await this.locationManager.stopAllTracking();
-    await BleManagerService.disconnectAll();
-    this.stopChunkProcessing();
-  }
-
-  /** --- Sensor data handling --- */
   private handleSensorData(reading: SensorReading) {
-    if (!this.session || this.session.state !== "recording") return;
+    this.updateWithSensorData(reading);
+    this.dataCallbacks.forEach((cb) => {
+      try {
+        cb(reading);
+      } catch (err) {
+        console.warn("Sensor callback error:", err);
+      }
+    });
+  }
 
+  private updateWithSensorData(reading: SensorReading) {
     const { metric, value, timestamp } = reading;
 
-    if (!this.session.sensorDataBuffer[metric])
-      this.session.sensorDataBuffer[metric] = [];
-    if (!this.session.allValues.has(metric))
-      this.session.allValues.set(metric, []);
+    if (!this.sensorDataBuffer[metric]) this.sensorDataBuffer[metric] = [];
+    if (!this.allValues.has(metric)) this.allValues.set(metric, []);
 
-    if (metric === "latlng" && Array.isArray(value) && value.length === 2) {
-      const coords: [number, number] = [value[0], value[1]];
-      this.session.sensorDataBuffer[metric].push({ value: coords, timestamp });
-      this.session.allCoordinates.push(coords);
-      this.session.currentMetrics.currentLatitude = value[0];
-      this.session.currentMetrics.currentLongitude = value[1];
-    } else if (typeof value === "number") {
-      this.session.sensorDataBuffer[metric].push({ value, timestamp });
-      this.session.allValues.get(metric)!.push(value);
+    switch (metric) {
+      case "latlng":
+        if (Array.isArray(value) && value.length === 2) {
+          const coords: [number, number] = [value[0], value[1]];
+          this.sensorDataBuffer[metric].push({ value: coords, timestamp });
+          this.allCoordinates.push(coords);
+          this.currentMetrics.currentLatitude = value[0];
+          this.currentMetrics.currentLongitude = value[1];
+          this.updateDistanceFromGPS();
+        }
+        break;
+      default:
+        if (typeof value === "number") {
+          this.sensorDataBuffer[metric].push({ value, timestamp });
+          this.allValues.get(metric)!.push(value);
 
-      switch (metric) {
-        case "heartrate":
-          this.session.currentMetrics.heartRate = value;
-          break;
-        case "power":
-          this.session.currentMetrics.power = value;
-          break;
-        case "speed":
-          this.session.currentMetrics.speed = value;
-          break;
-        case "cadence":
-          this.session.currentMetrics.cadence = value;
-          break;
-        case "altitude":
-          this.session.currentMetrics.currentAltitude = value;
-          break;
-      }
+          switch (metric) {
+            case "heartrate":
+              this.currentMetrics.heartRate = value;
+              this.updateAggregateMetrics("heartrate", "HeartRate");
+              break;
+            case "power":
+              this.currentMetrics.power = value;
+              this.updateAggregateMetrics("power", "Power");
+              break;
+            case "speed":
+              this.currentMetrics.speed = value;
+              this.updateAggregateMetrics("speed", "Speed");
+              break;
+            case "cadence":
+              this.currentMetrics.cadence = value;
+              this.updateAggregateMetrics("cadence", "Cadence");
+              break;
+            case "altitude":
+              this.currentMetrics.currentAltitude = value;
+              this.updateElevationMetrics();
+              break;
+            case "distance":
+              this.currentMetrics.distance =
+                (this.currentMetrics.distance || 0) + value;
+              break;
+          }
+        }
+        break;
     }
 
-    this.session.dataPointsRecorded++;
-    this.dataCallbacks.forEach((cb) => cb(reading));
+    this.dataPointsRecorded++;
+  }
+
+  private updateAggregateMetrics(metric: string, suffix: string) {
+    const values = this.allValues.get(metric)?.filter((v) => v > 0) || [];
+    if (values.length > 0) {
+      (this.currentMetrics as any)[`avg${suffix}`] =
+        values.reduce((a, b) => a + b, 0) / values.length;
+      (this.currentMetrics as any)[`max${suffix}`] = Math.max(...values);
+    }
+  }
+
+  private updateDistanceFromGPS() {
+    const coords = this.allCoordinates;
+    if (coords.length >= 2) {
+      const [lat1, lon1] = coords[coords.length - 2];
+      const [lat2, lon2] = coords[coords.length - 1];
+      const R = 6371000;
+      const φ1 = (lat1 * Math.PI) / 180;
+      const φ2 = (lat2 * Math.PI) / 180;
+      const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+      const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+      const a =
+        Math.sin(Δφ / 2) ** 2 +
+        Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const d = R * c;
+      this.currentMetrics.distance = (this.currentMetrics.distance || 0) + d;
+    }
+  }
+
+  private updateElevationMetrics() {
+    const altitudes = this.allValues.get("altitude") || [];
+    if (altitudes.length >= 2) {
+      let gain = 0;
+      for (let i = 1; i < altitudes.length; i++) {
+        const change = altitudes[i] - altitudes[i - 1];
+        if (change > 0) gain += change;
+      }
+      this.currentMetrics.elevation = gain;
+    }
+  }
+  private getDataTypeForMetric(
+    metric: PublicActivityMetric,
+  ): PublicActivityMetricDataType {
+    const dataTypes: Record<
+      PublicActivityMetric,
+      PublicActivityMetricDataType
+    > = {
+      heartrate: "integer",
+      power: "integer",
+      speed: "float",
+      cadence: "integer",
+      distance: "float",
+      latlng: "latlng",
+      altitude: "float",
+      temperature: "float",
+      gradient: "float",
+      moving: "boolean",
+    };
+    return dataTypes[metric] || "float";
+  }
+
+  private async computeActivitySummary(): Promise<ActivitySummary> {
+    const streamData: ActivityStreamData = {
+      timestamps: Array.from(
+        { length: Math.max(this.allCoordinates.length, 60) },
+        (_, i) =>
+          this.startedAt.getTime() +
+          (i * this.totalElapsedTime) /
+            Math.max(this.allCoordinates.length, 60),
+      ),
+      heartrate: this.allValues.get("heartrate"),
+      power: this.allValues.get("power"),
+      speed: this.allValues.get("speed"),
+      cadence: this.allValues.get("cadence"),
+      altitude: this.allValues.get("altitude"),
+      latlng: this.allCoordinates.length > 0 ? this.allCoordinates : undefined,
+    };
+
+    const profile: ProfileSnapshot = {
+      weightKg: 70,
+      ftp: 250,
+      thresholdHr: 165,
+    };
+
+    return computeActivitySummary(streamData, profile, this.activityType);
   }
 
   addDataCallback(cb: (reading: SensorReading) => void) {
@@ -354,75 +343,57 @@ export class ActivityRecorderService {
     this.dataCallbacks.delete(cb);
   }
 
-  /** --- Chunk processing --- */
+  // --- Chunking ---
   private startChunkProcessing() {
     if (this.chunkTimer) clearInterval(this.chunkTimer);
-    this.chunkTimer = setInterval(
-      () => this.processChunk(),
-      this.chunkInterval,
-    );
+    this.chunkTimer = setInterval(() => this.processChunk(), 5000);
   }
 
   private stopChunkProcessing() {
-    if (this.chunkTimer) clearInterval(this.chunkTimer);
-    this.chunkTimer = null;
+    if (this.chunkTimer) {
+      clearInterval(this.chunkTimer);
+      this.chunkTimer = null;
+    }
   }
 
   private async processChunk() {
-    if (!this.session || this.session.state !== "recording") return;
+    if (this.state !== "recording") return;
 
     const now = Date.now();
-    const chunkStartTime = this.session.lastCheckpointAt.getTime();
+    const startTime = this.lastCheckpointAt.getTime();
 
-    for (const [metric, buffer] of Object.entries(
-      this.session.sensorDataBuffer,
-    )) {
+    for (const [metric, buffer] of Object.entries(this.sensorDataBuffer)) {
       if (buffer.length === 0) continue;
-      buffer.length = 0; // clear buffer after processing
+
+      const data = buffer.map((item) => item.value);
+      const timestamps = buffer.map((item) => item.timestamp);
+
+      // Insert into DB (pseudo)
+      await db.insert(activityRecordingStreams).values({
+        activityRecordingId: "current", // Single session
+        metric: metric as PublicActivityMetric,
+        dataType: this.getDataTypeForMetric(metric as PublicActivityMetric),
+        chunkIndex: this.chunkIndex,
+        startTime,
+        endTime: now,
+        data,
+        timestamps,
+        sampleCount: buffer.length,
+      });
+
+      buffer.length = 0;
     }
 
-    this.session.lastCheckpointAt = new Date(now);
-    this.session.chunkIndex++;
+    this.lastCheckpointAt = new Date(now);
+    this.chunkIndex++;
   }
 
-  private async computeActivitySummary(): Promise<ActivitySummary> {
-    if (!this.session) throw new Error("No active session");
-
-    const streamData: ActivityStreamData = {
-      timestamps: [],
-      heartrate: this.session.allValues.get("heartrate"),
-      power: this.session.allValues.get("power"),
-      speed: this.session.allValues.get("speed"),
-      cadence: this.session.allValues.get("cadence"),
-      altitude: this.session.allValues.get("altitude"),
-      latlng: this.session.allCoordinates.length
-        ? this.session.allCoordinates
-        : undefined,
-    };
-
-    const profileSnapshot: ProfileSnapshot = {
-      weightKg: 70,
-      ftp: 250,
-      thresholdHr: 165,
-    };
-
-    return computeActivitySummary(
-      streamData,
-      profileSnapshot,
-      this.session.activityType,
-    );
-  }
-
-  /** --- Cleanup --- */
   async cleanup() {
-    await this.stopSensors();
+    await this.locationManager.stopAllTracking();
+    await this.bluetoothManager.disconnectAll();
+    this.stopChunkProcessing();
     this.dataCallbacks.clear();
     this.locationManager.clearAllCallbacks();
-    this.session = null;
     console.log("ActivityRecorderService cleaned up");
-  }
-
-  get activeSession() {
-    return this.session;
   }
 }

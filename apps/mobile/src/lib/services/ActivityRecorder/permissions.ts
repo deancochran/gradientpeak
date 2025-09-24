@@ -15,7 +15,7 @@ export interface PermissionState {
 }
 
 /** Centralized permission manager */
-export class PermissionManager {
+export class PermissionsManager {
   private static permissions: Record<PermissionType, PermissionState> =
     {} as Record<PermissionType, PermissionState>;
 

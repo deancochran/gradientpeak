@@ -10,14 +10,9 @@ export class LocationManager {
   private locationCallbacks = new Set<
     (location: Location.LocationObject) => void
   >();
-  private taskName: string;
+  private taskName = BACKGROUND_LOCATION_TASK;
 
-  constructor(taskName: string = BACKGROUND_LOCATION_TASK) {
-    this.taskName = taskName;
-    this.defineBackgroundTask();
-  }
-
-  private defineBackgroundTask() {
+  constructor() {
     TaskManager.defineTask(this.taskName, async ({ data, error }) => {
       if (error) {
         console.error("Background location task error:", error);
