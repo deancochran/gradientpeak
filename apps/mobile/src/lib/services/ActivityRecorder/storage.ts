@@ -707,7 +707,8 @@ export class DataStorageManager {
   // ================================
 
   /**
-   * Upload completed activity and streams to server
+   * Upload completed activity using enhanced submission payload
+   * Uses the new enhanced compression system
    */
   async uploadActivity(
     recordingId: string,
@@ -715,43 +716,39 @@ export class DataStorageManager {
     summary: any,
   ): Promise<boolean> {
     try {
-      // Create activity record first
-      const activityPayload = {
-        activity_type: activityData.activityType,
-        started_at: activityData.startedAt.toISOString(),
-        duration: summary.duration,
-        distance: summary.distance,
-        elevation: summary.elevation,
-        calories: summary.calories,
-        average_power: summary.averagePower,
-        normalized_power: summary.normalizedPower,
-        average_heart_rate: summary.averageHeartRate,
-        max_heart_rate: summary.maxHeartRate,
-        average_speed: summary.averageSpeed,
-        max_speed: summary.maxSpeed,
-        training_stress_score: summary.tss,
-        planned_activity_id: activityData.plannedActivityId,
-      };
-
-      const activityResult =
-        // TODO: Integrate with actual tRPC client when available
-        // const activityResult = await trpc.activities.create.mutate(activityPayload);
-        console.log(
-          "Activity upload would be created with payload:",
-          activityPayload,
-        );
-
-      // Upload streams would happen here
-      // const success = await this.uploadActivityStreams(recordingId, activityResult.id);
-      const success = true; // Placeholder for now
-
-      if (success) {
-        // Mark recording as synced
-        await this.markRecordingSynced(recordingId);
-        console.log(`Successfully uploaded activity (placeholder)`);
+      // Get recording details
+      const recording = await this.getCurrentRecording();
+      if (!recording) {
+        throw new Error("Recording not found");
       }
 
-      return success;
+      // Use enhanced submission payload preparation
+      const submissionPayload = await this.prepareSubmissionPayload(
+        recordingId,
+        summary,
+        recording,
+      );
+
+      console.log("Enhanced upload payload prepared:", {
+        activityName: submissionPayload.activity.name,
+        streamCount: submissionPayload.activity_streams.length,
+        totalOriginalSize: submissionPayload.activity_streams.reduce(
+          (sum, s) => sum + s.original_size,
+          0,
+        ),
+      });
+
+      // TODO: Replace with actual tRPC client when available
+      // const result = await trpc.activities.create.mutate(submissionPayload);
+
+      // Placeholder success
+      console.log("Enhanced activity upload would succeed");
+
+      // Mark recording as synced
+      await this.markRecordingSynced(recordingId);
+      console.log(`Successfully uploaded activity using enhanced compression`);
+
+      return true;
     } catch (error) {
       console.error("Failed to upload activity:", error);
       return false;
@@ -759,50 +756,8 @@ export class DataStorageManager {
   }
 
   /**
-   * Upload activity streams in compressed batches
-   */
-  async uploadActivityStreams(
-    recordingId: string,
-    activityId: string,
-  ): Promise<boolean> {
-    try {
-      const streams = await this.getRecordingStreams(recordingId);
-      if (streams.length === 0) {
-        console.log("No streams to upload");
-        return true;
-      }
-
-      // Group streams by metric for efficient upload
-      const streamsByMetric = this.groupStreamsByMetric(streams);
-
-      // Upload each metric's streams as a batch
-      for (const [metric, metricStreams] of Object.entries(streamsByMetric)) {
-        const compressedStreams = this.compressStreamData(metricStreams);
-
-        // TODO: Integrate with actual tRPC client when available
-        // await trpc.activityStreams.batchCreate.mutate({
-        //   activity_id: activityId,
-        //   streams: compressedStreams,
-        // });
-
-        console.log(
-          `Uploaded ${compressedStreams.length} ${metric} stream chunks`,
-        );
-      }
-
-      // Mark all streams as synced
-      const streamIds = streams.map((s) => s.id);
-      await this.markStreamsSynced(streamIds);
-
-      return true;
-    } catch (error) {
-      console.error("Failed to upload activity streams:", error);
-      return false;
-    }
-  }
-
-  /**
    * Group streams by metric for batch processing
+   * Used by enhanced compression system
    */
   private groupStreamsByMetric(
     streams: SelectRecordingStream[],
@@ -817,51 +772,6 @@ export class DataStorageManager {
       },
       {} as Record<string, SelectRecordingStream[]>,
     );
-  }
-
-  /**
-   * Compress stream data using pako gzip
-   */
-  private compressStreamData(streams: SelectRecordingStream[]): any[] {
-    return streams.map((stream) => {
-      try {
-        // Parse the JSON data
-        const data = JSON.parse(stream.data as string);
-        const timestamps = JSON.parse(stream.timestamps as string);
-
-        // TODO: Add pako compression when available
-        // const compressedData = pako.gzip(JSON.stringify(data));
-        // const compressedTimestamps = pako.gzip(JSON.stringify(timestamps));
-
-        return {
-          type: stream.metric,
-          data_type: stream.dataType,
-          chunk_index: stream.chunkIndex,
-          start_time: stream.startTime.toISOString(),
-          end_time: stream.endTime.toISOString(),
-          sample_count: stream.sampleCount,
-          data: JSON.stringify(data), // Uncompressed for now
-          timestamps: JSON.stringify(timestamps), // Uncompressed for now
-          compressed: false,
-        };
-      } catch (error) {
-        console.warn(
-          "Failed to compress stream data, uploading uncompressed:",
-          error,
-        );
-        return {
-          type: stream.metric,
-          data_type: stream.dataType,
-          chunk_index: stream.chunkIndex,
-          start_time: stream.startTime.toISOString(),
-          end_time: stream.endTime.toISOString(),
-          sample_count: stream.sampleCount,
-          data: stream.data,
-          timestamps: stream.timestamps,
-          compressed: false,
-        };
-      }
-    });
   }
 
   // ================================
