@@ -108,7 +108,7 @@
       "devDependencies": {
         "@repo/eslint-config": "workspace:*",
         "@repo/typescript-config": "workspace:*",
-        "@types/pako": "^2.0.3",
+        "@types/pako": "^2.0.4",
         "@types/react": "~19.1.0",
         "babel-preset-expo": "~54.0.0",
         "eslint": "^9.25.0",

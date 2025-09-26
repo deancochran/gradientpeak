@@ -82,6 +82,7 @@
     "lucide-react": "^0.544.0",
     "lucide-react-native": "^0.544.0",
     "nativewind": "^4.2.1",
+    "pako": "^2.1.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.4",
@@ -101,20 +102,19 @@
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
     "victory-native": "^41.20.1",
-    "zustand": "^5.0.8",
-    "pako": "^2.1.0"
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
+    "@types/pako": "^2.0.4",
     "@types/react": "~19.1.0",
     "babel-preset-expo": "~54.0.0",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
     "prettier-plugin-tailwindcss": "^0.5.11",
     "tailwindcss": "^3.4.17",
-    "typescript": "~5.9.2",
-    "@types/pako": "^2.0.3"
+    "typescript": "~5.9.2"
   },
   "private": true
 }

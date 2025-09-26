@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { useActivityRecorder } from "@/lib/hooks/useActivityRecorder";
+import { useRequireAuth } from "@/lib/hooks/useAuth";
 import { useRouter } from "expo-router";
 import {
   Activity,
@@ -15,6 +16,29 @@ import {
 } from "lucide-react-native";
 import { useEffect, useRef } from "react";
 import { Alert, ScrollView, View } from "react-native";
+
+// Utility functions for formatting metrics
+const formatDuration = (seconds: number): string => {
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+
+  if (hrs > 0) {
+    return `${hrs}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  }
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+};
+
+const formatDistance = (meters: number): string => {
+  if (meters < 1000) {
+    return `${Math.round(meters)}m`;
+  }
+  return `${(meters / 1000).toFixed(2)}km`;
+};
+
+const formatSpeed = (kmh: number): string => {
+  return `${kmh.toFixed(1)} km/h`;
+};
 
 export default function RecordIndexModal() {
   const { profile } = useRequireAuth();
@@ -46,7 +70,7 @@ export default function RecordIndexModal() {
     if (isRecording || isPaused) {
       Alert.alert(
         "Recording in Progress",
-        "Please stop or pause your recording before closing this screen.",
+        "Please finish your recording before closing this screen.",
         [{ text: "OK" }],
       );
     } else {
@@ -56,7 +80,42 @@ export default function RecordIndexModal() {
 
   /** Handle start recording with activity selection */
   const handleStartRecording = () => {
-    router.push("/modals/record/activity_selection");
+    router.push("/modals/record/activity");
+  };
+
+  /** Handle stop recording with upload attempt */
+  const handleStopRecording = async () => {
+    try {
+      const success = await stopRecording();
+      if (success) {
+        console.log("Recording stopped successfully");
+      }
+    } catch (error) {
+      console.error("Failed to stop recording:", error);
+    }
+  };
+
+  /** Handle discard recording with confirmation */
+  const handleDiscardRecording = () => {
+    Alert.alert(
+      "Discard Recording",
+      "Are you sure you want to discard this recording? This action cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Discard",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await discardRecording();
+              console.log("Recording discarded");
+            } catch (error) {
+              console.error("Failed to discard recording:", error);
+            }
+          },
+        },
+      ],
+    );
   };
 
   /** Show error alerts */
@@ -99,7 +158,7 @@ export default function RecordIndexModal() {
               <Button
                 variant="ghost"
                 size="icon"
-                onPress={() => router.push("/modals/record/activity_selection")}
+                onPress={() => router.push("/modals/record/activity")}
               >
                 <Icon as={Activity} size={20} />
               </Button>
@@ -108,7 +167,7 @@ export default function RecordIndexModal() {
             <Button
               variant="ghost"
               size="icon"
-              onPress={() => router.push("/modals/record/bluetooth")}
+              onPress={() => router.push("/modals/record/sensors")}
             >
               <Icon as={Bluetooth} size={20} />
               {connectedSensors.length > 0 && (
