@@ -4,6 +4,8 @@ import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 
 const BACKGROUND_LOCATION_TASK = "background-location-task";
+const LOCATION_BUFFER_KEY = "location_buffer";
+const MAX_BUFFER_SIZE = 100;
 
 export class LocationManager {
   private locationSubscription: Location.LocationSubscription | null = null;
@@ -11,6 +13,10 @@ export class LocationManager {
     (location: Location.LocationObject) => void
   >();
   private taskName = BACKGROUND_LOCATION_TASK;
+  private locationBuffer: Location.LocationObject[] = [];
+  private lastLocationTime = 0;
+  private healthCheckInterval: NodeJS.Timeout | null = null;
+  private readonly HEALTH_CHECK_INTERVAL = 10000; // 10 seconds
 
   constructor() {
     TaskManager.defineTask(this.taskName, async ({ data, error }) => {
@@ -20,13 +26,32 @@ export class LocationManager {
       }
       if (data) {
         const { locations } = data as { locations: Location.LocationObject[] };
-        locations.forEach(this.handleLocationUpdate.bind(this));
+
+        // Process each location
+        for (const location of locations) {
+          await this.handleLocationUpdate(location);
+        }
+
+        // Buffer management for offline storage
+        await this.bufferLocations(locations);
       }
       return;
     });
+
+    // Load any existing buffered locations on startup
+    this.loadBufferedLocations();
   }
 
-  private handleLocationUpdate(location: Location.LocationObject) {
+  private async handleLocationUpdate(location: Location.LocationObject) {
+    // Update last location time for health monitoring
+    this.lastLocationTime = location.timestamp;
+
+    // Validate location quality
+    if (!this.isLocationValid(location)) {
+      console.warn("Received invalid location, skipping");
+      return;
+    }
+
     this.locationCallbacks.forEach((cb) => {
       try {
         cb(location);
@@ -34,6 +59,70 @@ export class LocationManager {
         console.warn("Error in location callback:", e);
       }
     });
+  }
+
+  private isLocationValid(location: Location.LocationObject): boolean {
+    const { coords } = location;
+
+    // Basic validation
+    if (!coords || coords.accuracy === null || coords.accuracy > 50) {
+      return false;
+    }
+
+    // Check for reasonable lat/lng values
+    if (Math.abs(coords.latitude) > 90 || Math.abs(coords.longitude) > 180) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private async bufferLocations(
+    locations: Location.LocationObject[],
+  ): Promise<void> {
+    try {
+      // Add to current buffer
+      this.locationBuffer.push(...locations);
+
+      // Trim buffer if it gets too large
+      if (this.locationBuffer.length > MAX_BUFFER_SIZE) {
+        this.locationBuffer = this.locationBuffer.slice(-MAX_BUFFER_SIZE);
+      }
+
+      // Persist to storage
+      await AsyncStorage.setItem(
+        LOCATION_BUFFER_KEY,
+        JSON.stringify(this.locationBuffer),
+      );
+    } catch (error) {
+      console.warn("Failed to buffer locations:", error);
+    }
+  }
+
+  private async loadBufferedLocations(): Promise<void> {
+    try {
+      const bufferedStr = await AsyncStorage.getItem(LOCATION_BUFFER_KEY);
+      if (bufferedStr) {
+        this.locationBuffer = JSON.parse(bufferedStr);
+        console.log(`Loaded ${this.locationBuffer.length} buffered locations`);
+      }
+    } catch (error) {
+      console.warn("Failed to load buffered locations:", error);
+      this.locationBuffer = [];
+    }
+  }
+
+  public async getBufferedLocations(): Promise<Location.LocationObject[]> {
+    return [...this.locationBuffer];
+  }
+
+  public async clearLocationBuffer(): Promise<void> {
+    this.locationBuffer = [];
+    try {
+      await AsyncStorage.removeItem(LOCATION_BUFFER_KEY);
+    } catch (error) {
+      console.warn("Failed to clear location buffer:", error);
+    }
   }
 
   // --- Foreground GPS ---
@@ -49,6 +138,10 @@ export class LocationManager {
         },
         this.handleLocationUpdate.bind(this),
       );
+
+      // Start health monitoring
+      this.startHealthCheck();
+
       console.log("Foreground GPS tracking started");
     } catch (error) {
       console.error("Failed to start foreground GPS tracking:", error);
@@ -61,6 +154,11 @@ export class LocationManager {
       this.locationSubscription.remove();
       this.locationSubscription = null;
       console.log("Foreground GPS tracking stopped");
+    }
+
+    // Stop health monitoring if no tracking is active
+    if (!(await this.isTrackingBackground())) {
+      this.stopHealthCheck();
     }
   }
 
@@ -82,6 +180,10 @@ export class LocationManager {
           notificationColor: "#00ff00",
         },
       });
+
+      // Start health monitoring
+      this.startHealthCheck();
+
       console.log("Background location tracking started");
     } catch (error) {
       console.error("Failed to start background location:", error);
@@ -105,8 +207,60 @@ export class LocationManager {
     }
   }
 
+  // --- Health Monitoring ---
+  private startHealthCheck(): void {
+    if (this.healthCheckInterval) return;
+
+    this.healthCheckInterval = setInterval(() => {
+      this.performHealthCheck();
+    }, this.HEALTH_CHECK_INTERVAL);
+
+    console.log("Location health monitoring started");
+  }
+
+  private stopHealthCheck(): void {
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+      console.log("Location health monitoring stopped");
+    }
+  }
+
+  private async performHealthCheck(): Promise<void> {
+    const now = Date.now();
+    const timeSinceLastLocation = now - this.lastLocationTime;
+
+    // If no location received in 30 seconds, try to restart
+    if (timeSinceLastLocation > 30000) {
+      console.warn(
+        `No location updates for ${timeSinceLastLocation / 1000}s, attempting restart`,
+      );
+
+      try {
+        // Try to restart foreground tracking
+        if (this.locationSubscription) {
+          await this.stopForegroundTracking();
+          await this.startForegroundTracking();
+        }
+
+        // Check if background tracking is still active
+        const isBackgroundActive = await this.isTrackingBackground();
+        if (isBackgroundActive) {
+          // Background restart is more complex, log the issue
+          console.warn("Background location tracking may be stalled");
+        }
+      } catch (error) {
+        console.error(
+          "Failed to restart location tracking during health check:",
+          error,
+        );
+      }
+    }
+  }
+
   // --- Convenience Methods ---
   async stopAllTracking(): Promise<void> {
+    this.stopHealthCheck();
     await Promise.all([
       this.stopForegroundTracking(),
       this.stopBackgroundTracking(),

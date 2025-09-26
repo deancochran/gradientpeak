@@ -3,7 +3,7 @@
  * These functions process raw activity data to compute aggregated metrics
  */
 
-import type { ActivitySummary } from "../types";
+import type { ActivitySummary, PublicProfilesRow } from "../types";
 
 // ================================
 // Activity Stream Processing Types
@@ -24,12 +24,6 @@ export interface ActivityStreamData {
   latlng?: [number, number][];
   altitude?: number[];
   timestamps: number[];
-}
-
-export interface ProfileSnapshot {
-  weightKg?: number;
-  ftp?: number;
-  thresholdHr?: number;
 }
 
 // ================================
@@ -170,7 +164,7 @@ export function calculateElevationLoss(altitudeData: number[]): number {
  * Calculate calories burned using multiple methods based on available data
  */
 export function calculateCalories(
-  profile: ProfileSnapshot,
+  profile: PublicProfilesRow,
   durationSeconds: number,
   avgPower?: number,
   avgHeartRate?: number,
@@ -317,7 +311,7 @@ export function calculateWeightedAverage(
  */
 export function computeActivitySummary(
   streamData: ActivityStreamData,
-  profile: ProfileSnapshot,
+  profile: PublicProfilesRow,
   activityType: string = "outdoor_bike",
 ): ActivitySummary {
   const { timestamps } = streamData;

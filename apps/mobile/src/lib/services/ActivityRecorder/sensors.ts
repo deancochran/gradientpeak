@@ -6,6 +6,14 @@ import {
 import { Buffer } from "buffer";
 import { BleManager, Device } from "react-native-ble-plx";
 
+/** --- Connection states --- */
+export type ConnectionState =
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "failed";
+
 /** --- Connected sensor interface --- */
 export interface ConnectedSensor {
   id: string;
@@ -14,21 +22,27 @@ export interface ConnectedSensor {
   characteristics: Map<string, string>;
   device: Device;
   connectionTime: Date;
+  connectionState: ConnectionState;
+  reconnectAttempts: number;
+  lastDisconnectTime?: Date;
+  autoReconnect: boolean;
 }
 
 /** --- Generic Sports BLE Manager --- */
 export class SensorsManager {
-  private static bleManager = new BleManager();
-  private static connectedSensors: Map<string, ConnectedSensor> = new Map();
-  private static dataCallbacks: Set<(reading: SensorReading) => void> =
-    new Set();
+  private bleManager = new BleManager();
+  private connectedSensors: Map<string, ConnectedSensor> = new Map();
+  private dataCallbacks: Set<(reading: SensorReading) => void> = new Set();
+  private reconnectTimers: Map<string, NodeJS.Timeout> = new Map();
+  private readonly MAX_RECONNECT_ATTEMPTS = 3;
+  private readonly RECONNECT_DELAY_MS = 2000;
 
   constructor() {
-    SensorsManager.initialize();
+    this.initialize();
   }
 
   /** Initialize BLE manager */
-  static initialize() {
+  private initialize() {
     this.bleManager.onStateChange((state) => {
       if (state === "PoweredOn") console.log("BLE ready");
       if (state === "PoweredOff" || state === "Unauthorized")
@@ -37,7 +51,7 @@ export class SensorsManager {
   }
 
   /** Scan for devices */
-  static async scan(timeoutMs = 10000): Promise<Device[]> {
+  async scan(timeoutMs = 10000): Promise<Device[]> {
     const found: Device[] = [];
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -59,13 +73,20 @@ export class SensorsManager {
     });
   }
 
-  /** Connect to a device */
-  static async connectSensor(
+  /** Connect to a device with auto-reconnect support */
+  async connectSensor(
     deviceId: string,
+    autoReconnect: boolean = true,
   ): Promise<ConnectedSensor | null> {
     try {
+      // Update state to connecting
+      const existingSensor = this.connectedSensors.get(deviceId);
+      if (existingSensor) {
+        existingSensor.connectionState = "connecting";
+      }
+
       const device = await this.bleManager.connectToDevice(deviceId, {
-        timeout: 5000,
+        timeout: 10000,
       });
       const discovered = await device.discoverAllServicesAndCharacteristics();
       const services = await discovered.services();
@@ -84,40 +105,162 @@ export class SensorsManager {
         services: services.map((s) => s.uuid),
         device: discovered,
         connectionTime: new Date(),
+        connectionState: "connected",
+        reconnectAttempts: 0,
+        autoReconnect,
         characteristics,
       };
 
       this.connectedSensors.set(device.id, sensor);
       await this.monitorKnownCharacteristics(sensor);
 
-      device.onDisconnected(() => {
-        console.log("Disconnected:", device.name);
-        this.connectedSensors.delete(device.id);
+      // Enhanced disconnect handler with reconnection
+      device.onDisconnected((error) => {
+        console.log("Disconnected:", device.name, error?.message || "");
+        sensor.connectionState = "disconnected";
+        sensor.lastDisconnectTime = new Date();
+
+        if (
+          autoReconnect &&
+          sensor.reconnectAttempts < this.MAX_RECONNECT_ATTEMPTS
+        ) {
+          this.scheduleReconnect(sensor);
+        } else if (
+          !autoReconnect ||
+          sensor.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS
+        ) {
+          sensor.connectionState = "failed";
+          console.warn(`Max reconnect attempts reached for ${sensor.name}`);
+        }
       });
 
+      console.log(
+        `Connected to ${sensor.name} with ${services.length} services`,
+      );
       return sensor;
     } catch (err) {
       console.error("Connect error", err);
+
+      // Update existing sensor state to failed
+      const existingSensor = this.connectedSensors.get(deviceId);
+      if (existingSensor) {
+        existingSensor.connectionState = "failed";
+      }
+
       return null;
     }
   }
 
-  /** Disconnect a device */
-  static async disconnectSensor(deviceId: string) {
-    const sensor = this.connectedSensors.get(deviceId);
-    if (sensor?.device) {
+  /** Schedule reconnection attempt */
+  private scheduleReconnect(sensor: ConnectedSensor): void {
+    // Clear existing timer if any
+    const existingTimer = this.reconnectTimers.get(sensor.id);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+
+    const delay =
+      this.RECONNECT_DELAY_MS * Math.pow(2, sensor.reconnectAttempts); // Exponential backoff
+
+    sensor.connectionState = "reconnecting";
+    sensor.reconnectAttempts++;
+
+    console.log(
+      `Scheduling reconnect attempt ${sensor.reconnectAttempts} for ${sensor.name} in ${delay}ms`,
+    );
+
+    const timer = setTimeout(async () => {
       try {
-        await sensor.device.cancelConnection();
-      } catch {}
+        console.log(
+          `Attempting reconnect ${sensor.reconnectAttempts} for ${sensor.name}`,
+        );
+        await this.reconnectSensor(sensor.id);
+      } catch (error) {
+        console.error(
+          `Reconnect attempt ${sensor.reconnectAttempts} failed for ${sensor.name}:`,
+          error,
+        );
+
+        if (sensor.reconnectAttempts < this.MAX_RECONNECT_ATTEMPTS) {
+          this.scheduleReconnect(sensor);
+        } else {
+          sensor.connectionState = "failed";
+          console.warn(`All reconnect attempts failed for ${sensor.name}`);
+        }
+      }
+
+      this.reconnectTimers.delete(sensor.id);
+    }, delay);
+
+    this.reconnectTimers.set(sensor.id, timer);
+  }
+
+  /** Reconnect to a sensor */
+  private static async reconnectSensor(
+    deviceId: string,
+  ): Promise<ConnectedSensor | null> {
+    const sensor = this.connectedSensors.get(deviceId);
+    if (!sensor) return null;
+
+    try {
+      // Attempt to connect to the same device
+      const newSensor = await this.connectSensor(
+        deviceId,
+        sensor.autoReconnect,
+      );
+
+      if (newSensor) {
+        // Reset reconnect attempts on successful connection
+        newSensor.reconnectAttempts = 0;
+        console.log(`Successfully reconnected to ${newSensor.name}`);
+        return newSensor;
+      }
+
+      return null;
+    } catch (error) {
+      console.error(`Reconnection failed for ${sensor.name}:`, error);
+      throw error;
+    }
+  }
+
+  /** Disconnect a device */
+  static async disconnectSensor(
+    deviceId: string,
+    disableAutoReconnect: boolean = true,
+  ) {
+    const sensor = this.connectedSensors.get(deviceId);
+    if (sensor) {
+      // Clear reconnect timer
+      const timer = this.reconnectTimers.get(deviceId);
+      if (timer) {
+        clearTimeout(timer);
+        this.reconnectTimers.delete(deviceId);
+      }
+
+      // Disable auto-reconnect if requested
+      if (disableAutoReconnect) {
+        sensor.autoReconnect = false;
+      }
+
+      // Disconnect device
+      if (sensor.device) {
+        try {
+          await sensor.device.cancelConnection();
+        } catch {}
+      }
     }
     this.connectedSensors.delete(deviceId);
   }
 
   /** Disconnect all devices */
   static async disconnectAll() {
+    // Clear all reconnect timers
+    this.reconnectTimers.forEach((timer) => clearTimeout(timer));
+    this.reconnectTimers.clear();
+
     await Promise.allSettled(
       Array.from(this.connectedSensors.keys()).map((id) =>
-        this.disconnectSensor(id),
+        this.disconnectSensor(id, true),
       ),
     );
   }

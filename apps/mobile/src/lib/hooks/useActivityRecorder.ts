@@ -12,35 +12,19 @@
 import { PublicActivityType, PublicPlannedActivitiesRow } from "@repo/core";
 import { useCallback, useEffect, useState } from "react";
 import { AppState, AppStateStatus } from "react-native";
-import { ActivityRecorderService } from "../services/activity-recorder";
-import type {
-  ConnectedSensor,
-  ConnectionStatus,
-  LiveMetrics,
-  PermissionState,
-  PermissionType,
-  RecordingSession,
-  RecordingState,
-} from "../services/activity-recorder.types";
-
-export interface ActivityMetrics extends LiveMetrics {
-  duration: number;
-  distance: number;
-  currentSpeed: number;
-  avgSpeed: number;
-  heartRate?: number;
-  calories?: number;
-  power?: number;
-  cadence?: number;
-}
+import { ActivityRecorderService } from "../services/ActivityRecorder";
+import { useRequireAuth } from "./useAuth";
 
 /**
  * Enhanced activity recording hook with integrated sensor and permission management
  */
-export const useEnhancedActivityRecording = () => {
+export const useActivityRecorder = () => {
+  const { profile } = useRequireAuth();
+  // Get singleton service instance
+  const service = ActivityRecorderService.getInstance();
+
+  // State management
   const [state, setState] = useState<RecordingState>("pending");
-  const [currentRecording, setCurrentRecording] =
-    useState<RecordingSession | null>(null);
   const [metrics, setMetrics] = useState<ActivityMetrics>({
     duration: 0,
     distance: 0,
@@ -69,6 +53,7 @@ export const useEnhancedActivityRecording = () => {
     "location-background": null,
   });
   const [lastError, setLastError] = useState<string | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   // Computed values
   const isRecording = state === "recording";
@@ -79,45 +64,30 @@ export const useEnhancedActivityRecording = () => {
   /** Update hook state from service */
   const updateFromService = useCallback(() => {
     try {
-      // Find active session
-      const activeSession = Object.values(
-        ActivityRecorderService.sessions,
-      ).find((s) => s.state !== "finished" && s.state !== "discarded");
+      // Update basic state
+      setState(service.state);
 
-      if (activeSession) {
-        setState(activeSession.state);
-        setCurrentRecording(activeSession);
+      // Update metrics from service properties
+      const liveMetrics: LiveMetrics = {
+        totalElapsedTime: service.totalElapsedTime,
+        totalTimerTime: service.movingTime,
+        distance: 0, // Will be calculated from GPS data
+        currentSpeed: 0, // Will come from sensor readings
+        avgSpeed: 0, // Will be calculated
+      };
 
-        // Update metrics
-        const liveMetrics = activeSession.currentMetrics;
-        setMetrics({
-          ...liveMetrics,
-          duration: liveMetrics.totalTimerTime || activeSession.movingTime || 0,
-          distance: liveMetrics.distance || 0,
-          currentSpeed: liveMetrics.currentSpeed || 0,
-          avgSpeed: liveMetrics.avgSpeed || 0,
-          heartRate: liveMetrics.currentHeartRate,
-          calories: liveMetrics.calories,
-          power: liveMetrics.currentPower,
-          cadence: liveMetrics.currentCadence,
-          totalElapsedTime: activeSession.totalElapsedTime,
-          totalTimerTime: activeSession.movingTime,
-        });
-      } else {
-        setState("pending");
-        setCurrentRecording(null);
-        setMetrics({
-          duration: 0,
-          distance: 0,
-          currentSpeed: 0,
-          avgSpeed: 0,
-          totalElapsedTime: 0,
-          totalTimerTime: 0,
-        });
-      }
+      const activityMetrics: ActivityMetrics = {
+        ...liveMetrics,
+        duration: service.movingTime,
+        heartRate: undefined, // Will come from sensor readings
+        power: undefined, // Will come from sensor readings
+        cadence: undefined, // Will come from sensor readings
+      };
 
-      // Update sensors and permissions
-      const sensors = ActivityRecorderService.getConnectedSensors();
+      setMetrics(activityMetrics);
+
+      // Update sensors
+      const sensors = service.getConnectedSensors();
       setConnectedSensors(sensors);
       updateConnectionStatus(sensors);
       updatePermissions();
@@ -125,33 +95,34 @@ export const useEnhancedActivityRecording = () => {
       console.error("Error updating from service:", error);
       setLastError(error instanceof Error ? error.message : String(error));
     }
-  }, []);
+  }, [service]);
 
   /** Update connection status based on sensors and permissions */
-  const updateConnectionStatus = useCallback((sensors: ConnectedSensor[]) => {
-    const hasGPS =
-      ActivityRecorderService.getPermissionState("location")?.granted || false;
-    const hasBluetooth =
-      ActivityRecorderService.getPermissionState("bluetooth")?.granted || false;
+  const updateConnectionStatus = useCallback(
+    (sensors: ConnectedSensor[]) => {
+      const hasGPS = service.getPermissionState("location")?.granted || false;
+      const hasBluetooth =
+        service.getPermissionState("bluetooth")?.granted || false;
 
-    // Dynamic sensor status based on connected devices
-    const sensorStatus: Record<string, ConnectionStatus> = {};
-    sensors.forEach((sensor) => {
-      sensor.services.forEach((service) => {
-        sensorStatus[service] = "connected";
+      // Dynamic sensor status based on connected devices
+      const sensorStatus: Record<string, ConnectionStatus> = {};
+      sensors.forEach((sensor) => {
+        sensorStatus[sensor.id] =
+          sensor.connectionState === "connected" ? "connected" : "disconnected";
       });
-    });
 
-    setConnectionStatus({
-      gps: hasGPS ? "connected" : "disabled",
-      bluetooth: hasBluetooth
-        ? sensors.length > 0
-          ? "connected"
-          : "disconnected"
-        : "disabled",
-      sensors: sensorStatus,
-    });
-  }, []);
+      setConnectionStatus({
+        gps: hasGPS ? "connected" : "disabled",
+        bluetooth: hasBluetooth
+          ? sensors.length > 0
+            ? "connected"
+            : "disconnected"
+          : "disabled",
+        sensors: sensorStatus,
+      });
+    },
+    [service],
+  );
 
   /** Update permissions from service */
   const updatePermissions = useCallback(() => {
@@ -167,11 +138,11 @@ export const useEnhancedActivityRecording = () => {
     };
 
     types.forEach((type) => {
-      newPermissions[type] = ActivityRecorderService.getPermissionState(type);
+      newPermissions[type] = service.getPermissionState(type);
     });
 
     setPermissions(newPermissions);
-  }, []);
+  }, [service]);
 
   /** Start recording session */
   const startRecording = useCallback(
@@ -181,12 +152,23 @@ export const useEnhancedActivityRecording = () => {
     ): Promise<boolean> => {
       try {
         setLastError(null);
-        const session = await ActivityRecorderService.createActivityRecording(
-          "default-profile", // Should come from user context
+
+        if (!profile) {
+          throw new Error("Profile is required to start recording");
+        }
+
+        // Set profile and activity type on service
+        service.setProfile(profile);
+        service.activityType = activityType;
+        service.plannedActivity = plannedActivity;
+
+        // Start recording with activity data
+        await service.startRecording({
+          profileId: profile.id,
           activityType,
-          plannedActivity,
-        );
-        await ActivityRecorderService.startActivityRecording(session.id);
+          plannedActivityId: plannedActivity?.id,
+        });
+
         updateFromService();
         return true;
       } catch (error) {
@@ -195,97 +177,76 @@ export const useEnhancedActivityRecording = () => {
         return false;
       }
     },
-    [updateFromService],
+    [service, profile, updateFromService],
   );
 
   /** Pause active recording */
   const pauseRecording = useCallback((): boolean => {
     try {
-      const activeSession = Object.values(
-        ActivityRecorderService.sessions,
-      ).find((s) => s.state === "recording");
-      if (activeSession) {
-        ActivityRecorderService.pauseActivityRecording(activeSession.id);
-        updateFromService();
-        return true;
-      }
-      return false;
+      service.pauseRecording();
+      updateFromService();
+      return true;
     } catch (error) {
       setLastError(error instanceof Error ? error.message : String(error));
       return false;
     }
-  }, [updateFromService]);
+  }, [service, updateFromService]);
 
   /** Resume paused recording */
   const resumeRecording = useCallback((): boolean => {
     try {
-      const pausedSession = Object.values(
-        ActivityRecorderService.sessions,
-      ).find((s) => s.state === "paused");
-      if (pausedSession) {
-        ActivityRecorderService.resumeActivityRecording(pausedSession.id);
-        updateFromService();
-        return true;
-      }
-      return false;
+      service.resumeRecording();
+      updateFromService();
+      return true;
     } catch (error) {
       setLastError(error instanceof Error ? error.message : String(error));
       return false;
     }
-  }, [updateFromService]);
+  }, [service, updateFromService]);
 
   /** Stop and finish recording */
-  const stopRecording =
-    useCallback(async (): Promise<RecordingSession | null> => {
-      try {
-        const activeSession = Object.values(
-          ActivityRecorderService.sessions,
-        ).find((s) => s.state === "recording" || s.state === "paused");
-        if (activeSession) {
-          await ActivityRecorderService.finishActivityRecording(
-            activeSession.id,
-          );
-          updateFromService();
-          return { ...activeSession, state: "finished" };
-        }
-        return null;
-      } catch (error) {
-        setLastError(error instanceof Error ? error.message : String(error));
-        return currentRecording;
-      }
-    }, [updateFromService, currentRecording]);
+  const stopRecording = useCallback(async (): Promise<boolean> => {
+    try {
+      await service.finishRecording();
+      updateFromService();
+      return true;
+    } catch (error) {
+      setLastError(error instanceof Error ? error.message : String(error));
+      return false;
+    }
+  }, [service, updateFromService]);
 
   /** Discard current recording */
   const discardRecording = useCallback(async (): Promise<void> => {
     try {
-      const activeSession = Object.values(
-        ActivityRecorderService.sessions,
-      ).find((s) => s.state !== "finished" && s.state !== "discarded");
-      if (activeSession) {
-        activeSession.state = "discarded";
-        delete ActivityRecorderService.sessions[activeSession.id];
-        updateFromService();
-      }
+      await service.discardRecording();
+      updateFromService();
     } catch (error) {
       setLastError(error instanceof Error ? error.message : String(error));
     }
-  }, [updateFromService]);
+  }, [service, updateFromService]);
 
   /** Scan for available BLE devices */
   const scanForDevices = useCallback(async () => {
     try {
-      return await ActivityRecorderService.scanForDevices();
+      const devices = await service.scanForDevices();
+      return devices.map((device) => ({
+        id: device.id,
+        name: device.name || "Unknown Device",
+        rssi: device.rssi,
+        device,
+      }));
     } catch (error) {
       setLastError(error instanceof Error ? error.message : String(error));
       return [];
     }
-  }, []);
+  }, [service]);
 
   /** Connect to a BLE device */
   const connectToDevice = useCallback(
     async (deviceId: string) => {
       try {
-        const sensor = await ActivityRecorderService.connectToDevice(deviceId);
+        const sensor = await service.connectToDevice(deviceId);
         updateFromService();
         return sensor;
       } catch (error) {
@@ -293,27 +254,27 @@ export const useEnhancedActivityRecording = () => {
         return null;
       }
     },
-    [updateFromService],
+    [service, updateFromService],
   );
 
   /** Disconnect from a BLE device */
   const disconnectDevice = useCallback(
     async (deviceId: string) => {
       try {
-        await ActivityRecorderService.disconnectDevice(deviceId);
+        await service.disconnectDevice(deviceId);
         updateFromService();
       } catch (error) {
         setLastError(error instanceof Error ? error.message : String(error));
       }
     },
-    [updateFromService],
+    [service, updateFromService],
   );
 
   /** Request specific permission */
   const requestPermission = useCallback(
     async (type: PermissionType): Promise<boolean> => {
       try {
-        const granted = await ActivityRecorderService.ensurePermission(type);
+        const granted = await service.ensurePermission(type);
         updatePermissions();
         return granted;
       } catch (error) {
@@ -321,16 +282,16 @@ export const useEnhancedActivityRecording = () => {
         return false;
       }
     },
-    [updatePermissions],
+    [service, updatePermissions],
   );
 
   /** Request all permissions */
   const requestAllPermissions = useCallback(async (): Promise<boolean> => {
     try {
       const results = await Promise.all([
-        ActivityRecorderService.ensurePermission("bluetooth"),
-        ActivityRecorderService.ensurePermission("location"),
-        ActivityRecorderService.ensurePermission("location-background"),
+        service.ensurePermission("bluetooth"),
+        service.ensurePermission("location"),
+        service.ensurePermission("location-background"),
       ]);
       updatePermissions();
       return results.every(Boolean);
@@ -338,44 +299,68 @@ export const useEnhancedActivityRecording = () => {
       setLastError(error instanceof Error ? error.message : String(error));
       return false;
     }
-  }, [updatePermissions]);
+  }, [service, updatePermissions]);
 
   /** Upload completed activity */
-  const uploadActivity = useCallback(async (activityId: string) => {
-    try {
-      await ActivityRecorderService.uploadCompletedActivity(activityId);
-      return true;
-    } catch (error) {
-      setLastError(error instanceof Error ? error.message : String(error));
-      return false;
-    }
-  }, []);
+  const uploadActivity = useCallback(
+    async (recordingId?: string) => {
+      try {
+        await service.uploadCompletedActivity(recordingId);
+        return true;
+      } catch (error) {
+        setLastError(error instanceof Error ? error.message : String(error));
+        return false;
+      }
+    },
+    [service],
+  );
 
-  // Initialize service and polling
+  // Initialize service and set up real-time updates
   useEffect(() => {
     let mounted = true;
 
     const initialize = async () => {
       try {
-        await ActivityRecorderService.initialize();
-        if (mounted) updateFromService();
+        await service.init();
+        if (profile) {
+          service.setProfile(profile);
+        }
+        if (mounted) {
+          setIsInitialized(true);
+          updateFromService();
+        }
       } catch (error) {
-        if (mounted)
+        if (mounted) {
           setLastError(error instanceof Error ? error.message : String(error));
+        }
       }
     };
 
     initialize();
 
+    // Set up real-time updates
     const updateInterval = setInterval(() => {
-      if (mounted) updateFromService();
+      if (mounted && isInitialized) {
+        updateFromService();
+      }
     }, 1000);
+
+    // Listen to sensor data for real-time metrics
+    const handleSensorData = (reading: any) => {
+      // Update real-time metrics based on sensor readings
+      if (mounted) {
+        updateFromService();
+      }
+    };
+
+    service.addDataCallback(handleSensorData);
 
     return () => {
       mounted = false;
       clearInterval(updateInterval);
+      service.removeDataCallback(handleSensorData);
     };
-  }, [updateFromService]);
+  }, [service, profile, updateFromService, isInitialized]);
 
   // Handle app background/foreground transitions
   useEffect(() => {
@@ -403,11 +388,11 @@ export const useEnhancedActivityRecording = () => {
     isFinished,
     state,
     metrics,
-    currentRecording,
     connectionStatus,
     connectedSensors,
     permissions,
     lastError,
+    isInitialized,
 
     // Actions
     startRecording,
@@ -423,14 +408,3 @@ export const useEnhancedActivityRecording = () => {
     uploadActivity,
   };
 };
-
-// Re-export types for external use
-export type {
-  ConnectedSensor,
-  ConnectionStatus,
-  LiveMetrics,
-  PermissionState,
-  PermissionType,
-  RecordingSession,
-  RecordingState,
-} from "../services/activity-recorder.types";

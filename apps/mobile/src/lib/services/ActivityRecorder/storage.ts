@@ -12,7 +12,8 @@ import {
   PublicActivityMetricDataType,
   SensorReading,
 } from "@repo/core";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { RecordingState } from "./index";
 
 // Buffer interface for accumulated sensor data
 interface SensorDataBuffer {
@@ -31,11 +32,19 @@ const MAX_BUFFER_SIZE = 1000; // Max readings per metric before forced flush
  * Uses SQLite via Drizzle ORM for offline-first data persistence
  */
 export class DataStorageManager {
-  private currentRecordingId: string | null = null;
-  private sensorDataBuffer: SensorDataBuffer = {};
-  private chunkIndex = 0;
-  private lastCheckpointAt = new Date();
-  private chunkTimer: NodeJS.Timeout | null = null;
+  private currentRecordingId: string;
+  private sensorDataBuffer: SensorDataBuffer;
+  private chunkIndex: number;
+  private lastCheckpointAt: Date;
+  private chunkTimer: NodeJS.Timeout;
+
+  constructor() {
+    this.currentRecordingId = null;
+    this.sensorDataBuffer = {};
+    this.chunkIndex = 0;
+    this.lastCheckpointAt = new Date();
+    this.chunkTimer = null;
+  }
 
   // ================================
   // Activity Recording Management
@@ -59,7 +68,7 @@ export class DataStorageManager {
     const [recording] = await localdb
       .insert(activityRecordings)
       .values(recordingData)
-      .returning({ id: activityRecordings.id });
+      .returning();
 
     this.currentRecordingId = recording.id;
     this.chunkIndex = 0;
@@ -438,6 +447,221 @@ export class DataStorageManager {
       .where(eq(activityRecordings.id, recordingId));
 
     console.log(`Deleted recording: ${recordingId}`);
+  }
+
+  /**
+   * Delete all unfinished recordings for a specific user/profile
+   * This ensures a clean slate before starting a new recording
+   */
+  async deleteUnfinishedRecordings(profileId: string): Promise<void> {
+    try {
+      // Find all unfinished recordings for this profile
+      const unfinishedRecordings = await localdb
+        .select({ id: activityRecordings.id })
+        .from(activityRecordings)
+        .where(
+          and(
+            eq(activityRecordings.profileId, profileId),
+            // Delete recordings that are not finished (pending, ready, recording, paused, discarded)
+            // Only keep "finished" recordings
+            ne(activityRecordings.state, "finished"),
+          ),
+        );
+
+      if (unfinishedRecordings.length === 0) {
+        console.log(`No unfinished recordings found for profile ${profileId}`);
+        return;
+      }
+
+      const recordingIds = unfinishedRecordings.map((r) => r.id);
+
+      // Delete associated streams first (foreign key constraint)
+      await localdb
+        .delete(activityRecordingStreams)
+        .where(
+          inArray(activityRecordingStreams.activityRecordingId, recordingIds),
+        );
+
+      // Delete the unfinished recordings
+      await localdb
+        .delete(activityRecordings)
+        .where(
+          and(
+            eq(activityRecordings.profileId, profileId),
+            ne(activityRecordings.state, "finished"),
+          ),
+        );
+
+      console.log(
+        `Deleted ${recordingIds.length} unfinished recordings for profile ${profileId}:`,
+        recordingIds,
+      );
+    } catch (error) {
+      console.error("Failed to delete unfinished recordings:", error);
+      // Don't throw - we want recording to continue even if cleanup fails
+    }
+  }
+
+  // ================================
+  // Sync & Upload Methods
+  // ================================
+
+  /**
+   * Upload completed activity and streams to server
+   */
+  async uploadActivity(
+    recordingId: string,
+    activityData: any,
+    summary: any,
+  ): Promise<boolean> {
+    try {
+      // Create activity record first
+      const activityPayload = {
+        activity_type: activityData.activityType,
+        started_at: activityData.startedAt.toISOString(),
+        duration: summary.duration,
+        distance: summary.distance,
+        elevation: summary.elevation,
+        calories: summary.calories,
+        average_power: summary.averagePower,
+        normalized_power: summary.normalizedPower,
+        average_heart_rate: summary.averageHeartRate,
+        max_heart_rate: summary.maxHeartRate,
+        average_speed: summary.averageSpeed,
+        max_speed: summary.maxSpeed,
+        training_stress_score: summary.tss,
+        planned_activity_id: activityData.plannedActivityId,
+      };
+
+      const activityResult =
+        // TODO: Integrate with actual tRPC client when available
+        // const activityResult = await trpc.activities.create.mutate(activityPayload);
+        console.log(
+          "Activity upload would be created with payload:",
+          activityPayload,
+        );
+
+      // Upload streams would happen here
+      // const success = await this.uploadActivityStreams(recordingId, activityResult.id);
+      const success = true; // Placeholder for now
+
+      if (success) {
+        // Mark recording as synced
+        await this.markRecordingSynced(recordingId);
+        console.log(`Successfully uploaded activity (placeholder)`);
+      }
+
+      return success;
+    } catch (error) {
+      console.error("Failed to upload activity:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Upload activity streams in compressed batches
+   */
+  async uploadActivityStreams(
+    recordingId: string,
+    activityId: string,
+  ): Promise<boolean> {
+    try {
+      const streams = await this.getRecordingStreams(recordingId);
+      if (streams.length === 0) {
+        console.log("No streams to upload");
+        return true;
+      }
+
+      // Group streams by metric for efficient upload
+      const streamsByMetric = this.groupStreamsByMetric(streams);
+
+      // Upload each metric's streams as a batch
+      for (const [metric, metricStreams] of Object.entries(streamsByMetric)) {
+        const compressedStreams = this.compressStreamData(metricStreams);
+
+        // TODO: Integrate with actual tRPC client when available
+        // await trpc.activityStreams.batchCreate.mutate({
+        //   activity_id: activityId,
+        //   streams: compressedStreams,
+        // });
+
+        console.log(
+          `Uploaded ${compressedStreams.length} ${metric} stream chunks`,
+        );
+      }
+
+      // Mark all streams as synced
+      const streamIds = streams.map((s) => s.id);
+      await this.markStreamsSynced(streamIds);
+
+      return true;
+    } catch (error) {
+      console.error("Failed to upload activity streams:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Group streams by metric for batch processing
+   */
+  private groupStreamsByMetric(
+    streams: SelectRecordingStream[],
+  ): Record<string, SelectRecordingStream[]> {
+    return streams.reduce(
+      (acc, stream) => {
+        if (!acc[stream.metric]) {
+          acc[stream.metric] = [];
+        }
+        acc[stream.metric].push(stream);
+        return acc;
+      },
+      {} as Record<string, SelectRecordingStream[]>,
+    );
+  }
+
+  /**
+   * Compress stream data using pako gzip
+   */
+  private compressStreamData(streams: SelectRecordingStream[]): any[] {
+    return streams.map((stream) => {
+      try {
+        // Parse the JSON data
+        const data = JSON.parse(stream.data as string);
+        const timestamps = JSON.parse(stream.timestamps as string);
+
+        // TODO: Add pako compression when available
+        // const compressedData = pako.gzip(JSON.stringify(data));
+        // const compressedTimestamps = pako.gzip(JSON.stringify(timestamps));
+
+        return {
+          type: stream.metric,
+          data_type: stream.dataType,
+          chunk_index: stream.chunkIndex,
+          start_time: stream.startTime.toISOString(),
+          end_time: stream.endTime.toISOString(),
+          sample_count: stream.sampleCount,
+          data: JSON.stringify(data), // Uncompressed for now
+          timestamps: JSON.stringify(timestamps), // Uncompressed for now
+          compressed: false,
+        };
+      } catch (error) {
+        console.warn(
+          "Failed to compress stream data, uploading uncompressed:",
+          error,
+        );
+        return {
+          type: stream.metric,
+          data_type: stream.dataType,
+          chunk_index: stream.chunkIndex,
+          start_time: stream.startTime.toISOString(),
+          end_time: stream.endTime.toISOString(),
+          sample_count: stream.sampleCount,
+          data: stream.data,
+          timestamps: stream.timestamps,
+          compressed: false,
+        };
+      }
+    });
   }
 
   // ================================

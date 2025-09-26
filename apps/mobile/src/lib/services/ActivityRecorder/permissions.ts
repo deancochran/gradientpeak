@@ -16,27 +16,29 @@ export interface PermissionState {
 
 /** Centralized permission manager */
 export class PermissionsManager {
-  private static permissions: Record<PermissionType, PermissionState> =
-    {} as Record<PermissionType, PermissionState>;
+  permissions: Record<PermissionType, PermissionState> = {} as Record<
+    PermissionType,
+    PermissionState
+  >;
 
   /** Ensure a permission is granted (requests if possible) */
-  static async ensure(type: PermissionType): Promise<boolean> {
+  async ensure(type: PermissionType): Promise<boolean> {
     let result: { granted: boolean; canAskAgain: boolean };
 
     switch (type) {
       case "bluetooth":
-        result = await this.checkBluetooth();
+        result = await PermissionsManager.checkBluetooth();
         if (!result.granted && result.canAskAgain) {
-          result = await this.requestBluetooth();
+          result = await PermissionsManager.requestBluetooth();
         }
         break;
 
       case "location":
-        result = await this.ensureLocationForeground();
+        result = await PermissionsManager.ensureLocationForeground();
         break;
 
       case "location-background":
-        result = await this.ensureLocationBackground();
+        result = await PermissionsManager.ensureLocationBackground();
         break;
 
       default:
@@ -44,13 +46,13 @@ export class PermissionsManager {
     }
 
     if (!result.granted && !result.canAskAgain) {
-      this.showPermissionAlert(type);
+      PermissionsManager.showPermissionAlert(type);
     }
 
     this.permissions[type] = {
       ...result,
-      name: this.permissionNames[type],
-      description: this.permissionDescriptions[type],
+      name: PermissionsManager.permissionNames[type],
+      description: PermissionsManager.permissionDescriptions[type],
       loading: false,
     };
 
@@ -150,11 +152,11 @@ export class PermissionsManager {
   }
 
   /** Convenience helpers */
-  static get(type: PermissionType): PermissionState | null {
+  get(type: PermissionType): PermissionState | null {
     return this.permissions[type] || null;
   }
 
-  static async checkAll() {
+  async checkAll() {
     const types: PermissionType[] = [
       "bluetooth",
       "location",

@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { useEnhancedActivityRecording } from "@/lib/hooks/useEnhancedActivityRecording";
+import { useActivityRecorder } from "@/lib/hooks/useActivityRecorder";
 import { useRouter } from "expo-router";
 import {
   Activity,
@@ -17,9 +17,15 @@ import { useEffect, useRef } from "react";
 import { Alert, ScrollView, View } from "react-native";
 
 export default function RecordIndexModal() {
+  // TODO: Get profile from user context or auth
+  const mockProfile = {
+    id: "default-profile",
+    name: "Default User",
+    // Add other required profile fields
+  } as any;
+
   const {
     state,
-    currentRecording,
     metrics,
     connectionStatus,
     connectedSensors,
@@ -28,13 +34,14 @@ export default function RecordIndexModal() {
     isPaused,
     isReady,
     isFinished,
+    isInitialized,
     startRecording,
     pauseRecording,
     resumeRecording,
     stopRecording,
     discardRecording,
     lastError,
-  } = useEnhancedActivityRecording();
+  } = useActivityRecorder(mockProfile);
 
   const router = useRouter();
   const hasShownErrorRef = useRef(false);
@@ -164,11 +171,9 @@ export default function RecordIndexModal() {
 
           <View className="flex-1 items-center">
             <Text className="font-semibold">
-              {currentRecording
-                ? getActivityTypeName(currentRecording.activityType)
-                : "Record Activity"}
+              {state !== "pending" ? "Recording Activity" : "Record Activity"}
             </Text>
-            {currentRecording && (
+            {state !== "pending" && (
               <Text className="text-xs text-muted-foreground capitalize">
                 {state}
               </Text>
@@ -219,7 +224,6 @@ export default function RecordIndexModal() {
           <RecordingView
             metrics={metrics}
             state={state}
-            currentRecording={currentRecording}
             connectionStatus={connectionStatus}
             connectedSensors={connectedSensors}
           />
@@ -264,13 +268,11 @@ const ReadyToStartView = ({ onStart }: { onStart: () => void }) => (
 const RecordingView = ({
   metrics,
   state,
-  currentRecording,
   connectionStatus,
   connectedSensors,
 }: {
   metrics: any;
   state: string;
-  currentRecording: any;
   connectionStatus: any;
   connectedSensors: any[];
 }) => (
@@ -386,13 +388,10 @@ const RecordingView = ({
     </View>
 
     {/* Recording Info */}
-    {currentRecording && (
+    {state !== "pending" && (
       <View className="bg-muted/50 rounded-lg p-3">
         <Text className="text-xs text-muted-foreground">
-          Started: {new Date(currentRecording.startedAt).toLocaleTimeString()}
-        </Text>
-        <Text className="text-xs text-muted-foreground">
-          Data Points: {currentRecording.dataPointsRecorded || 0}
+          Status: {state.charAt(0).toUpperCase() + state.slice(1)}
         </Text>
         {state === "paused" && (
           <Text className="text-xs text-yellow-600 font-medium">

@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { useEnhancedActivityRecording } from "@/lib/hooks/useEnhancedActivityRecording";
+import { useActivityRecorder } from "@/lib/hooks/useActivityRecorder";
 import { useRouter } from "expo-router";
 import { Bluetooth, ChevronLeft, RefreshCw, Zap } from "lucide-react-native";
 import { useState } from "react";
@@ -18,7 +18,7 @@ export default function BluetoothModal() {
     connectToDevice,
     disconnectDevice,
     requestPermission,
-  } = useEnhancedActivityRecording();
+  } = useActivityRecorder();
 
   const router = useRouter();
 

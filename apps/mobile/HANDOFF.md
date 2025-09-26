@@ -1,227 +1,347 @@
-# App Update: Data Flow for Activity Recording
+# Activity Recording Service — Enhanced Implementation Guide v2.1
 
-### **Data Flow** (Current Implementation Status)
+## 1. Overview
 
-1. **Session Creation** ✅ *Implemented*
+This document provides a focused roadmap for evolving the TurboFit MVP into a production-ready Activity Recording Service. Based on the existing implementation in `apps/mobile/src/lib/services/ActivityRecorder/`, this guide prioritizes core gaps: **TRPC submission**, **structured workout execution**, and **enhanced hook API** while building on proven MVP patterns.
 
-   * User initiates an activity in the app.
-   * `ActivityRecorderService.createActivityRecording()` in `apps/mobile/src/lib/services/activity-recorder.ts:95` inserts a new row into the local SQLite `activity_recordings` table.
-   * Session state held in memory using `RecordingSession` type from `apps/mobile/src/lib/services/activity-recorder.ts:14`.
-   * Database schema defined in `apps/mobile/src/lib/db/schemas/activity_recordings.ts:15`.
+**Key Changes in v2.1:**
+- Schema consistency with existing `@repo/core` types
+- Direct integration paths for current service architecture
+- Expo RN-specific implementation details
+- Focused scope excluding out-of-scope features (retry logic, resilience, presets, telemetry)
 
-2. **Live Metrics Collection** ⚠️ *Partial - needs BLE integration*
+## 2. Implementation Status & Priorities
 
-   * Current: Basic in-memory `LiveMetrics` structure exists.
-   * **Missing**: Real BLE sensor integration with `react-native-ble-plx`.
-   * **Missing**: GPS integration with `expo-location` services.
-   * Permissions store implemented in `apps/mobile/src/lib/stores/permissions-store.ts`.
+### Current MVP Foundation ✅
+- Core recording via `ActivityRecorderService` with background `expo-task-manager`
+- GPS tracking through `LocationManager` with chunked persistence
+- BLE sensors via `SensorsManager` using `react-native-ble-plx`
+- SQLite storage with `DataStorageManager` (5s flush intervals)
+- State management following `RecordingState` enum lifecycle
+- Hook API in `useActivityRecorder.ts` with singleton pattern
+- Planned activity support via `plannedActivityStructureSchema`
 
-3. **Chunked Stream Storage** ✅ *Implemented*
+### Priority Implementation Gaps
+1. **TRPC Submission Integration** - Connect `uploadCompletedActivity()` to actual endpoints
+2. **Structured Workout Runtime** - Execute intervals during recording
+3. **Enhanced Hook API** - Add planned activity and submission controls
 
-   * Periodic chunking via `ActivityRecorderService.createActivityRecordingStream()` at `apps/mobile/src/lib/services/activity-recorder.ts:156`.
-   * Data stored in `activity_recording_streams` table (schema: `apps/mobile/src/lib/db/schemas/activity_recordings.ts:41`).
-   * Uses `synced` boolean flag instead of `sync_status` enum.
+## 3. Enhanced Functional Requirements
 
-4. **Activity Completion** ✅ *Core structure implemented*
+### 3.1 TRPC Submission System (Phase 1)
 
-   * `ActivityRecorderService.finishActivityRecording()` at `apps/mobile/src/lib/services/activity-recorder.ts:132`.
-   * **Missing**: Actual aggregate calculations (needs `@repo/core` implementation).
-   * Updates local `activity_recordings` with final state.
+**Current State:** `uploadCompletedActivity()` computes summaries but only logs payloads.
 
-5. **Backend Sync** ✅ *tRPC endpoints ready*
+**Target Implementation:**
+```typescript
+// Reuse existing summary computation from @repo/core
+interface SubmissionPayload {
+  sessionId: string;
+  activityType: string;
+  plannedActivityId?: string;
+  metadata: {
+    startTime: Date;
+    endTime: Date;
+    device: DeviceInfo;
+  };
+  summary: ActivitySummary; // from computeActivitySummary()
+  streams: {
+    gps?: CompressedStream;
+    heartRate?: CompressedStream;
+    power?: CompressedStream;
+    // Use existing getRecordingStreams() query structure
+  };
+}
 
-   * Upload method `ActivityRecorderService.uploadCompletedActivity()` at `apps/mobile/src/lib/services/activity-recorder.ts:184`.
-   * tRPC endpoints implemented:
-     * `packages/trpc/src/routers/activities.ts:44` - `activities.create` mutation
-     * `packages/trpc/src/routers/activity_streams.ts:42` - `activityStreams.batchCreate` mutation
-   * **Missing**: Actual compression implementation.
-   * Post-sync cleanup implemented (deletes local recording data).
+// Integrate with packages/supabase/ TRPC client
+export const recordingsRouter = router({
+  submit: publicProcedure
+    .input(SubmissionPayloadSchema)
+    .mutation(async ({ input }) => {
+      // Store in activity_recordings table per existing schema
+      return { success: true, activityId: string };
+    }),
+});
+```
+
+**Integration Points:**
+- Extend `DataStorageManager.getRecordingStreams()` for payload assembly
+- Use `pako` compression for streams to match Supabase `compressed_data bytea`
+- Leverage existing `InsertActivityRecording` schema from Drizzle
+
+### 3.2 Structured Workout Execution (Phase 2)
+
+**Schema Alignment:**
+```typescript
+// Extend existing plannedActivityStructureSchema from @repo/core
+import { plannedActivityStructureSchema } from '@repo/core/schemas/planned_activity';
+
+export const structuredWorkoutSchema = plannedActivityStructureSchema.extend({
+  runtime: z.object({
+    currentIntervalIndex: z.number(),
+    intervalStartTime: z.date().optional(),
+    autoAdvanceEnabled: z.boolean().default(true),
+  }).optional(),
+});
+
+export type StructuredWorkout = z.infer<typeof structuredWorkoutSchema>;
+```
+
+**Service Integration:**
+```typescript
+// Extend ActivityRecorderService state machine
+export interface RecordingState {
+  // ... existing fields
+  structuredWorkout?: {
+    workout: StructuredWorkout;
+    currentInterval: WorkoutInterval;
+    intervalProgress: number; // 0-1 for UI integration
+    intervalElapsed: number;
+    totalElapsed: number;
+    nextInterval?: WorkoutInterval;
+  };
+}
+
+// Add to ActivityRecorderService methods
+public async startPlannedActivity(plannedActivityId: string): Promise<void> {
+  // Load from existing planned_activities table
+  const workout = await this.loadStructuredWorkout(plannedActivityId);
+  this.state.structuredWorkout = {
+    workout,
+    currentInterval: workout.intervals[0],
+    intervalProgress: 0,
+    // ...
+  };
+  await this.startRecording();
+}
+```
+
+**Runtime Execution:**
+- Integrate with existing timer in `handleSensorData()` for interval progression
+- Auto-advance based on duration when `autoAdvanceEnabled: true`
+- Provide manual controls via hook API
+- Use `computeActivitySummary()` for real-time target adherence feedback
+
+### 3.3 Enhanced Hook API
+
+**Extend Current useActivityRecorder.ts:**
+```typescript
+export function useActivityRecorder() {
+  // ... existing state and methods
+
+  return {
+    // Current MVP methods (keep unchanged)
+    startRecording,
+    pauseRecording,
+    finishRecording,
+    connectToDevice,
+    // ... existing
+
+    // NEW: Planned activity controls
+    startPlanned: async (plannedActivityId: string) => {
+      try {
+        await activityRecorderService.startPlannedActivity(plannedActivityId);
+        return { success: true };
+      } catch (error) {
+        return { success: false, error };
+      }
+    },
+
+    // NEW: Structured workout controls
+    skipInterval: async () => {
+      try {
+        await activityRecorderService.skipCurrentInterval();
+        return { success: true };
+      } catch (error) {
+        return { success: false, error };
+      }
+    },
+
+    // NEW: Submission
+    submit: async (metadata?: SubmissionMetadata) => {
+      try {
+        const result = await activityRecorderService.submitActivity(metadata);
+        return { success: true, data: result };
+      } catch (error) {
+        return { success: false, error };
+      }
+    },
+
+    // Enhanced state (backward compatible)
+    state: {
+      ...currentState,
+      structuredWorkout: activityRecorderService.state.structuredWorkout,
+      submissionStatus: activityRecorderService.state.submissionStatus,
+    },
+  };
+}
+
+// Result type for error handling consistency
+type Result<T> =
+  | { success: true; data: T }
+  | { success: false; error: RecordingError };
+```
+
+## 4. Implementation Phases
+
+### Phase 1: TRPC Submission (Week 1-2)
+**Goal:** Close the loop from recording to server persistence
+
+1. **Setup TRPC Client Integration**
+   ```typescript
+   // In apps/mobile/src/lib/api/trpc.ts (if not exists)
+   import { createTRPCReactQuery } from '@trpc/react-query';
+   import { recordingsRouter } from '@repo/supabase/routers/recordings';
+
+   export const api = createTRPCReactQuery<typeof recordingsRouter>({
+     // ... configuration
+   });
+   ```
+
+2. **Enhance uploadCompletedActivity()**
+   ```typescript
+   // In ActivityRecorderService
+   async uploadCompletedActivity(): Promise<SubmissionResult> {
+     const payload = await this.assembleSubmissionPayload();
+     const result = await api.recordings.submit.mutate(payload);
+
+     // Update local recording with submission status
+     await this.updateRecordingStatus(result.activityId, 'submitted');
+     return result;
+   }
+   ```
+
+3. **Add Submission UI State**
+   - Extend hook to expose submission progress
+   - Add basic retry on failure (single retry, not complex logic)
+   - Update recording screens to handle submission flow
+
+### Phase 2: Structured Workouts (Week 3-4)
+**Goal:** Execute planned activities with interval progression
+
+1. **Phase 2a: Schema & Loading**
+   - Align `StructuredWorkout` with `plannedActivityStructureSchema`
+   - Implement `loadStructuredWorkout()` in service
+   - Add `startPlanned()` method to hook
+
+2. **Phase 2b: Runtime Progression**
+   - Integrate interval timer with existing sensor loop
+   - Add interval state to service and hook
+   - Implement auto-advance logic based on duration
+
+3. **Phase 2c: UI Integration**
+   - Create `intervalProgress` state slice (0-1 float)
+   - Add utility methods: `skipInterval()`, `getCurrentTargets()`
+   - Update recording UI to show interval information
+
+### Phase 2.5: Integration & Testing
+1. **Add Service-Level README**
+   ```
+   apps/mobile/src/lib/services/ActivityRecorder/README.md
+   - Service architecture overview
+   - Entry points and key methods
+   - Integration with @repo/core schemas
+   - Testing and debugging tips
+   ```
+
+2. **Expo-Specific Testing Setup**
+   - Mock GPS with `expo-location` test utils
+   - Mock BLE with `react-native-ble-plx-mock` or custom mocks
+   - App state simulation for background/foreground testing
+
+## 5. Technical Implementation Details
+
+### 5.1 Schema Consistency & Migrations
+
+**Centralize in @repo/core:**
+```typescript
+// In packages/core/schemas/activity_recording.ts
+export const submissionPayloadSchema = z.object({
+  sessionId: z.string(),
+  activityType: z.string(),
+  plannedActivityId: z.string().optional(),
+  metadata: activityMetadataSchema,
+  summary: activitySummarySchema, // existing
+  streams: compressedStreamsSchema,
+});
+
+export const structuredWorkoutRuntimeSchema = z.object({
+  currentIntervalIndex: z.number(),
+  intervalProgress: z.number().min(0).max(1),
+  intervalElapsed: z.number(),
+  totalElapsed: z.number(),
+  canSkip: z.boolean(),
+});
+```
+
+**Database Migrations:**
+```sql
+-- Add to existing activity_recordings schema
+ALTER TABLE activity_recordings
+ADD COLUMN submission_status TEXT DEFAULT 'pending',
+ADD COLUMN submission_timestamp TIMESTAMP,
+ADD COLUMN structured_workout_state JSONB;
+
+-- Index for querying pending submissions
+CREATE INDEX idx_activity_recordings_submission_status
+ON activity_recordings(submission_status);
+```
+
+### 5.2 Compression & Payload Optimization
+
+**Reuse Existing Chunking:**
+```typescript
+// Extend DataStorageManager.getRecordingStreams()
+async assembleSubmissionPayload(): Promise<SubmissionPayload> {
+  const streams = await this.dataStorageManager.getRecordingStreams(this.sessionId);
+
+  // Compress using pako (already used in MVP?)
+  const compressedStreams = {
+    gps: streams.gps ? pako.gzip(JSON.stringify(streams.gps)) : undefined,
+    heartRate: streams.heartRate ? pako.gzip(JSON.stringify(streams.heartRate)) : undefined,
+    // ... other sensors
+  };
+
+  return {
+    sessionId: this.sessionId,
+    summary: computeActivitySummary(streams), // existing @repo/core function
+    streams: compressedStreams,
+    metadata: this.getSessionMetadata(),
+  };
+}
+```
+
+### 5.3 No-GPS Activity Handling
+
+**Conditional Location Manager:**
+```typescript
+// In ActivityRecorderService.startRecording()
+async startRecording(): Promise<void> {
+  // ... existing setup
+
+  // Skip LocationManager for indoor/gym activities
+  if (this.activityType !== 'indoor_cycling' && this.activityType !== 'strength') {
+    await this.locationManager.start();
+  }
+
+  // Always start sensor and storage managers
+  await this.sensorsManager.start();
+  await this.dataStorageManager.start();
+}
+```
+---
+## Out of Scope (Future Phases)
+
+The following features are intentionally excluded from this implementation guide but may be valuable for future iterations:
+
+- **Advanced Retry Logic:** Exponential backoff, offline queues
+- **Session Recovery:** Auto-resume after app crashes
+- **Auto-Pause:** Movement detection and automatic pause/resume
+- **Configuration Presets:** Battery vs. accuracy trade-offs
+- **Telemetry & Analytics:** Usage tracking and performance monitoring
+- **Privacy Controls:** Route anonymization, data retention policies
 
 ---
 
-## 4. tRPC Local → Supabase Sync Workflow ✅ *Architecture ready*
-
-1. **Local Activity Recording**
-
-   * Metrics stored in `activity_recording_streams` table (`apps/mobile/src/lib/db/schemas/activity_recordings.ts:41`).
-   * All metric types (heart rate, power, GPS, altitude) use same unified schema.
-   * Chunks flagged with `synced: boolean` field (default `false`).
-
-2. **Finish Recording**
-
-   * Aggregate calculations planned for `@repo/core/calculations/activity-summary.ts` (**to be created**).
-   * Updates `activity_recordings` table with computed summary metrics.
-
-3. **tRPC Upload**
-
-   * Method: `ActivityRecorderService.uploadCompletedActivity()` at `apps/mobile/src/lib/services/activity-recorder.ts:184`.
-   * Process:
-     1. Fetch chunks via `listActivityRecordingStreams()` (line 179)
-     2. Group by metric using `groupBy()` utility
-     3. Compression implementation needed
-     4. `trpc.activities.create()` - implemented at `packages/trpc/src/routers/activities.ts:44`
-     5. `trpc.activityStreams.batchCreate()` - implemented at `packages/trpc/src/routers/activity_streams.ts:42`
-   * Mark local chunks as `synced: true`
-
-4. **Recovery**
-
-   * **Missing**: Dedicated `SyncManager` service for retry logic
-
----
-
-## 🎯 **Priority Implementation Tasks**
-
-### **High Priority** (Core Recording Functionality)
-1. **BLE Sensor Integration**
-   - Implement real BLE device scanning/connection in sensor service
-   - Integrate with existing permissions store (`apps/mobile/src/lib/stores/permissions-store.ts`)
-   - Parse standard GATT characteristics (HR, power, cadence)
-
-2. **GPS Location Services**
-   - Integrate `expo-location` with recording service
-   - Background location tracking for route recording
-   - Coordinate with existing permissions system
-
-3. **Activity Summary Calculations**
-   - Create `@repo/core/calculations/activity-summary.ts` with pure functions
-   - Implement distance, moving time, elevation, calorie calculations
-   - Unit test in core package (`cd packages/core && bun test`)
-
-### **Medium Priority** (Sync & Recovery)
-4. **Data Compression Implementation**
-   - Add compression library (pako/gzip) to `apps/mobile/package.json`
-   - Implement in `uploadCompletedActivity()` method
-
-5. **Sync Recovery Manager**
-   - Create dedicated `SyncManager` service
-   - Network reconnection retry logic
-   - Unfinished session recovery on app restart
-
-### **Low Priority** (Polish & Background)
-6. **Background Task Management**
-   - `expo-task-manager` integration for GPS continuity
-   - Foreground service for BLE connections
----
-
-# 📋 Implementation Plan
-
-This plan is updated to reflect the current codebase structure and avoids creating unnecessary files. Focus is on enhancing existing implementations rather than duplicating effort.
-
----
-
-## Task 1: Enhance Existing Activity Recorder Service ✅ *Already Exists*
-
-**File**: `apps/mobile/src/lib/services/activity-recorder.ts`
-
-**Current Status**: Core service structure implemented with:
-- `createActivityRecording()` method (line 95)
-- `RecordingSession` type definition (line 14)
-- Database integration with SQLite schemas
-- React hook integration via `useEnhancedActivityRecording` (already exists)
-
-**Required Updates**: None - structure is complete and follows project patterns.
-
----
-
-## Task 2: Enhance Sensor Integration (BLE & GPS) ⚠️ *Needs Implementation*
-
-**Current**: Permissions store exists at `apps/mobile/src/lib/stores/permissions-store.ts` with full BLE/GPS permission handling.
-
-**Required Work**:
-1. **Create new file**: `apps/mobile/src/lib/services/SensorManager.ts`
-2. **Dependencies needed**: Verify `react-native-ble-plx` and `expo-location` are in `apps/mobile/package.json`
-3. **GPS Integration**:
-   - Subscribe to location updates via existing permission system
-   - Calculate speed, distance, elevation from coordinates
-   - Feed data to `ActivityRecorderService.onSensorData()` method (to be added)
-4. **BLE Integration**:
-   - Device scanning/connection using permission store
-   - Standard GATT service parsing (HR: `0x180D`, Power: `0x1818`, CSC: `0x1816`)
-   - **Create pure parsers in**: `@repo/core/calculations/sensor-parsing.ts`
-5. **Service Integration**:
-   - Add `onSensorData(metric, value, timestamp)` to existing `ActivityRecorderService`
-   - Update `LiveMetrics` in-memory state
-   - Proper cleanup on activity stop/discard
-
----
-
-## Task 3: Chunked Stream Storage ✅ *Already Implemented*
-
-**File**: `apps/mobile/src/lib/services/activity-recorder.ts:156`
-
-**Current Status**:
-- `createActivityRecordingStream()` method implemented
-- Proper database schema in `apps/mobile/src/lib/db/schemas/activity_recordings.ts:41`
-- Includes all required fields: `activityRecordingId`, `metric`, `dataType`, `chunkIndex`, `startTime`, `endTime`, `data`, `timestamps`
-- `synced` boolean flag (defaults to `false`)
-
-**Required Updates**:
-- Add periodic timer logic to call chunking method every 5-10 seconds
-- Integrate with sensor data collection (once Task 2 is complete)
-
----
-
-## Task 4: Final Aggregation and Activity Completion ⚠️ *Needs Core Package Implementation*
-
-**Current**: `finishActivityRecording()` method exists at `apps/mobile/src/lib/services/activity-recorder.ts:132` but lacks actual calculations.
-
-**Required Work**:
-1. **Create**: `@repo/core/calculations/activity-summary.ts` with pure functions:
-   - `calculateTotalDistance(gpsPoints)`
-   - `calculateMovingTime(speedData, timestamps)`
-   - `calculateElevationGain(altitudeData)`
-   - `calculateAverageMetrics(heartRateData, powerData, etc.)`
-   - `calculateCalories(profile, duration, avgPower, avgHR)`
-
-2. **Database Schema**: Verify summary columns exist in `apps/mobile/src/lib/db/schemas/activity_recordings.ts`
-
-3. **Update Existing Method**: Enhance `finishActivityRecording()` to:
-   - Fetch all chunks via existing `listActivityRecordingStreams()` (line 179)
-   - Call core calculation functions
-   - Update activity record with computed aggregates
-
-4. **Testing**: Add unit tests to `packages/core/` (`bun test`)
-
----
-
-## Task 5: tRPC Sync and Data Compression ⚠️ *Needs Compression Implementation*
-
-**Current**: Method structure exists at `apps/mobile/src/lib/services/activity-recorder.ts:184` and tRPC endpoints are ready:
-- `packages/trpc/src/routers/activities.ts:44` (`activities.create`)
-- `packages/trpc/src/routers/activity_streams.ts:42` (`activityStreams.batchCreate`)
-
-**Required Work**:
-1. **Add Compression Library**: Add `pako` to `apps/mobile/package.json`
-2. **Implement Compression**: In existing `uploadCompletedActivity()` method:
-   - Use existing `listActivityRecordingStreams()` and `groupBy()` logic
-   - Add gzip compression before tRPC calls
-   - Handle base64 encoding for tRPC transport
-3. **Error Handling**: Robust retry logic for failed uploads
-4. **Cleanup**: Mark local chunks as `synced: true` and delete after successful upload
-
-**No New Files Required**: All infrastructure exists, just needs compression implementation.
-
----
-
-## Task 6: Background Task Management and Sync Recovery ⚠️ *New Implementation Needed*
-
-**Current**: React hook integration exists at `apps/mobile/src/lib/hooks/useEnhancedActivityRecording.ts` with basic recovery methods.
-
-**Required Work**:
-1. **Background GPS**:
-   - Integrate `expo-task-manager` with existing location permission system
-   - Background location task definition and registration
-
-2. **Sync Recovery Manager**:
-   - **Create**: `apps/mobile/src/lib/services/SyncManager.ts`
-   - Network status detection with `@react-native-community/netinfo`
-   - Query for `activityRecordings` where `state = 'finished'` AND `synced = false`
-   - Call existing `uploadCompletedActivity()` for each unsynced activity
-   - Implement sync locking mechanism (prevent duplicates)
-
-3. **Integration**:
-   - Initialize SyncManager on app startup
-   - Hook into network reconnection events
-   - Coordinate with existing recovery methods in hook
-
-**Note**: BLE background handling is complex and platform-specific - recommend implementing GPS background support first.
+**Version 2.1** - Refined based on TurboFit MVP codebase analysis
+*Focused on actionable implementation with concrete integration points*

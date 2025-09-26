@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { Dimensions, StyleSheet, View } from "react-native";
-import { useEnhancedActivityRecording } from "../../lib/hooks/useEnhancedActivityRecording";
+import { useActivityRecorder } from "../../lib/hooks/useActivityRecorder";
 import { MetricCard } from "./MetricCard";
 
 const screenWidth = Dimensions.get("window").width;
@@ -32,7 +32,7 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({
     metrics: serviceMetrics,
     connectionStatus,
     isRecording,
-  } = useEnhancedActivityRecording();
+  } = useActivityRecorder();
 
   // ===== LIVE METRICS TRANSFORMATION =====
   const liveMetrics = useMemo(() => {

@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { useEnhancedActivityRecording } from "@/lib/hooks/useEnhancedActivityRecording";
+import { useActivityRecorder } from "@/lib/hooks/useActivityRecorder";
 import { PublicActivityType } from "@repo/core";
 import { useRouter } from "expo-router";
 import { CheckCircle, ChevronLeft } from "lucide-react-native";
@@ -37,7 +37,7 @@ const ACTIVITY_BADGES: Record<
 };
 
 export default function ActivitySelectionModal() {
-  const { startRecording, state } = useEnhancedActivityRecording();
+  const { startRecording, state } = useActivityRecorder();
   const [mode, setMode] = useState<ActivityMode>("unplanned");
   const [selectedType, setSelectedType] =
     useState<PublicActivityType>("outdoor_run");

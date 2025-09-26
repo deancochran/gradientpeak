@@ -33,9 +33,16 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       bundleIdentifier,
       supportsTablet: true,
       infoPlist: {
-        UIBackgroundModes: ["location", "fetch"],
+        UIBackgroundModes: [
+          "location",
+          "fetch",
+          "background-processing",
+          "bluetooth-central",
+        ],
         NSBluetoothAlwaysUsageDescription:
           "This app needs Bluetooth to connect to your devices.",
+        NSLocationAlwaysAndWhenInUseUsageDescription:
+          "This app needs location access to track activities even when the app is in the background.",
         NSLocationWhenInUseUsageDescription:
           "This app needs your location to track activities.",
         NSMotionUsageDescription:
@@ -53,7 +60,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         "android.permission.BLUETOOTH_SCAN",
         "android.permission.BLUETOOTH_CONNECT",
         "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
         "android.permission.ACTIVITY_RECOGNITION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.WAKE_LOCK",
+        "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
       ],
     },
     updates: {

@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { useEnhancedActivityRecording } from "@/lib/hooks/useEnhancedActivityRecording";
+import { useActivityRecorder } from "@/lib/hooks/useActivityRecorder";
 import { useRouter } from "expo-router";
 import {
   AlertCircle,
@@ -23,7 +23,7 @@ export default function PermissionsModal() {
     permissions,
     requestPermission,
     requestAllPermissions,
-  } = useEnhancedActivityRecording();
+  } = useActivityRecorder();
 
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
