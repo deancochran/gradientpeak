@@ -1,13 +1,9 @@
 // packages/trpc/src/routers/index.ts
 import { createTRPCRouter } from "../trpc";
 import { activitiesRouter } from "./activities";
-import { activityStreamsRouter } from "./activity_streams";
-import { analyticsRouter } from "./analytics";
 import { authRouter } from "./auth";
 import { plannedActivitiesRouter } from "./planned_activities";
 import { profilesRouter } from "./profiles";
-import { storageRouter } from "./storage";
-import { syncRouter } from "./sync";
 
 export const appRouter = createTRPCRouter({
   auth: authRouter,

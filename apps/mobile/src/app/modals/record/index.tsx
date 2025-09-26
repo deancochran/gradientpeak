@@ -17,12 +17,7 @@ import { useEffect, useRef } from "react";
 import { Alert, ScrollView, View } from "react-native";
 
 export default function RecordIndexModal() {
-  // TODO: Get profile from user context or auth
-  const mockProfile = {
-    id: "default-profile",
-    name: "Default User",
-    // Add other required profile fields
-  } as any;
+  const { profile } = useRequireAuth();
 
   const {
     state,
@@ -41,7 +36,7 @@ export default function RecordIndexModal() {
     stopRecording,
     discardRecording,
     lastError,
-  } = useActivityRecorder(mockProfile);
+  } = useActivityRecorder(profile);
 
   const router = useRouter();
   const hasShownErrorRef = useRef(false);
@@ -64,72 +59,6 @@ export default function RecordIndexModal() {
     router.push("/modals/record/activity_selection");
   };
 
-  /** Handle stop recording with confirmation */
-  const handleStopRecording = async () => {
-    Alert.alert(
-      "Stop Recording?",
-      "Are you sure you want to stop recording? This will save your activity.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Stop & Save",
-          style: "destructive",
-          onPress: async () => {
-            const result = await stopRecording();
-            if (result) {
-              Alert.alert("Success", "Activity saved successfully!");
-            }
-          },
-        },
-      ],
-    );
-  };
-
-  /** Handle discard recording with confirmation */
-  const handleDiscardRecording = async () => {
-    Alert.alert(
-      "Discard Recording?",
-      "Are you sure you want to discard this recording? This cannot be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Discard",
-          style: "destructive",
-          onPress: async () => {
-            await discardRecording();
-            Alert.alert("Discarded", "Recording has been discarded.");
-          },
-        },
-      ],
-    );
-  };
-
-  /** Format time duration */
-  const formatDuration = (seconds: number): string => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-
-    if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-    }
-    return `${minutes}:${secs.toString().padStart(2, "0")}`;
-  };
-
-  /** Format distance */
-  const formatDistance = (meters: number): string => {
-    if (meters < 1000) {
-      return `${Math.round(meters)}m`;
-    }
-    return `${(meters / 1000).toFixed(2)}km`;
-  };
-
-  /** Format speed */
-  const formatSpeed = (metersPerSecond: number): string => {
-    const kmh = metersPerSecond * 3.6;
-    return `${kmh.toFixed(1)} km/h`;
-  };
-
   /** Show error alerts */
   useEffect(() => {
     if (lastError && !hasShownErrorRef.current) {
@@ -144,21 +73,6 @@ export default function RecordIndexModal() {
       ]);
     }
   }, [lastError]);
-
-  /** Get activity type display name */
-  const getActivityTypeName = (type: string): string => {
-    const names: Record<string, string> = {
-      outdoor_run: "Outdoor Run",
-      indoor_run: "Indoor Run",
-      outdoor_bike: "Outdoor Cycling",
-      indoor_bike: "Indoor Cycling",
-      walk: "Walking",
-      hike: "Hiking",
-      swim: "Swimming",
-      other: "Other Activity",
-    };
-    return names[type] || type;
-  };
 
   return (
     <View className="flex-1 bg-background">
@@ -478,30 +392,4 @@ const RecordingControls = ({
     default:
       return null;
   }
-};
-
-/** Format duration helper */
-const formatDuration = (seconds: number): string => {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-  }
-  return `${minutes}:${secs.toString().padStart(2, "0")}`;
-};
-
-/** Format distance helper */
-const formatDistance = (meters: number): string => {
-  if (meters < 1000) {
-    return `${Math.round(meters)}m`;
-  }
-  return `${(meters / 1000).toFixed(2)}km`;
-};
-
-/** Format speed helper */
-const formatSpeed = (metersPerSecond: number): string => {
-  const kmh = metersPerSecond * 3.6;
-  return `${kmh.toFixed(1)} km/h`;
 };
