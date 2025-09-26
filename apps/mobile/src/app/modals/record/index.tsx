@@ -3,6 +3,7 @@ import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { useActivityRecorder } from "@/lib/hooks/useActivityRecorder";
 import { useRequireAuth } from "@/lib/hooks/useAuth";
+import { PublicActivityType } from "@repo/core";
 import { useRouter } from "expo-router";
 import {
   Activity,
@@ -11,11 +12,29 @@ import {
   MapPin,
   Pause,
   Play,
-  RotateCcw,
+  Settings,
   Square,
+  RotateCcw,
+  Shield,
 } from "lucide-react-native";
-import { useEffect, useRef } from "react";
-import { Alert, ScrollView, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Alert,
+  Dimensions,
+  FlatList,
+  ScrollView,
+  StatusBar,
+  View,
+  BackHandler,
+} from "react-native";
+
+const SCREEN_WIDTH = Dimensions.get("window").width;
+
+// Carousel card types
+type CarouselCard = "dashboard" | "gps" | "workout";
+
+// Recording states for UI
+type RecordingUIState = "pre-activity" | "active" | "paused" | "finished";
 
 // Utility functions for formatting metrics
 const formatDuration = (seconds: number): string => {
@@ -40,8 +59,9 @@ const formatSpeed = (kmh: number): string => {
   return `${kmh.toFixed(1)} km/h`;
 };
 
-export default function RecordIndexModal() {
+export default function RecordModal() {
   const { profile } = useRequireAuth();
+  const router = useRouter();
 
   const {
     state,
@@ -51,52 +71,133 @@ export default function RecordIndexModal() {
     permissions,
     isRecording,
     isPaused,
-    isReady,
     isFinished,
-    isInitialized,
     startRecording,
     pauseRecording,
     resumeRecording,
     stopRecording,
     discardRecording,
     lastError,
-  } = useActivityRecorder(profile);
+  } = useActivityRecorder();
 
-  const router = useRouter();
+  // UI State
+  const [currentCard, setCurrentCard] = useState<CarouselCard>("dashboard");
+  const [selectedActivityType, setSelectedActivityType] =
+    useState<PublicActivityType>("outdoor_run");
+  const [isOutdoorActivity, setIsOutdoorActivity] = useState(true);
+  const [hasPlannedWorkout, setHasPlannedWorkout] = useState(false);
+
+  // Refs
+  const carouselRef = useRef<FlatList>(null);
   const hasShownErrorRef = useRef(false);
 
-  /** Handle modal dismissal - prevent closing during active recording */
-  const handleClose = () => {
-    if (isRecording || isPaused) {
+  // Derive UI state from recording state
+  const uiState: RecordingUIState = (() => {
+    if (isFinished) return "finished";
+    if (isPaused) return "paused";
+    if (isRecording) return "active";
+    return "pre-activity";
+  })();
+
+  // Build carousel cards based on activity type and state
+  const carouselCards: CarouselCard[] = (() => {
+    const cards: CarouselCard[] = ["dashboard"];
+    if (isOutdoorActivity && uiState !== "pre-activity") {
+      cards.push("gps");
+    }
+    if (hasPlannedWorkout && uiState !== "pre-activity") {
+      cards.push("workout");
+    }
+    return cards;
+  })();
+
+  // Handle hardware back button
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        if (uiState === "pre-activity") {
+          router.back();
+          return true;
+        } else {
+          Alert.alert(
+            "Recording in Progress",
+            "Please finish or discard your recording before leaving.",
+            [{ text: "OK" }],
+          );
+          return true;
+        }
+      },
+    );
+
+    return () => backHandler.remove();
+  }, [uiState, router]);
+
+  // Handle close modal
+  const handleClose = useCallback(() => {
+    if (uiState === "pre-activity") {
+      router.back();
+    } else {
       Alert.alert(
         "Recording in Progress",
-        "Please finish your recording before closing this screen.",
+        "Please ffinishdiscardinish your recording before closing.",
         [{ text: "OK" }],
       );
-    } else {
-      router.back();
     }
-  };
+  }, [uiState, router]);
 
-  /** Handle start recording with activity selection */
-  const handleStartRecording = () => {
-    router.push("/modals/record/activity");
-  };
+  // Handle start recording
+  const handleStartRecording = useCallback(async () => {
+    try {
+      const success = await startRecording(selectedActivityType);
+      if (success) {
+        console.log("Recording started successfully");
+      }
+    } catch (error) {
+      console.error("Failed to start recording:", error);
+    }
+  }, [startRecording, selectedActivityType]);
 
-  /** Handle stop recording with upload attempt */
-  const handleStopRecording = async () => {
+  // Handle pause recording
+  const handlePauseRecording = useCallback(async () => {
+    try {
+      const success = pauseRecording();
+      if (success) {
+        console.log("Recording paused");
+      }
+    } catch (error) {
+      console.error("Failed to pause recording:", error);
+    }
+  }, [pauseRecording]);
+
+  // Handle resume recording
+  const handleResumeRecording = useCallback(async () => {
+    try {
+      const success = resumeRecording();
+      if (success) {
+        console.log("Recording resumed");
+      }
+    } catch (error) {
+      console.error("Failed to resume recording:", error);
+    }
+  }, [resumeRecording]);
+
+  // Handle finish recording
+  const handleFinishRecording = useCallback(async () => {
     try {
       const success = await stopRecording();
       if (success) {
-        console.log("Recording stopped successfully");
+        // Navigate to submit recording modal with activity ID
+        const recordingId = metrics.recordingId || "current"; // Use actual recording ID
+        router.push(`/modals/activity-recording/${recordingId}`);
       }
     } catch (error) {
-      console.error("Failed to stop recording:", error);
+      console.error("Failed to finish recording:", error);
     }
-  };
+  }, [stopRecording, router, metrics.recordingId]);
 
-  /** Handle discard recording with confirmation */
-  const handleDiscardRecording = () => {
+  // Handle discard recording
+  const handleDiscardRecording = useCallback(() => {
     Alert.alert(
       "Discard Recording",
       "Are you sure you want to discard this recording? This action cannot be undone.",
@@ -109,6 +210,7 @@ export default function RecordIndexModal() {
             try {
               await discardRecording();
               console.log("Recording discarded");
+              router.back(); // Return to tabs after discard
             } catch (error) {
               console.error("Failed to discard recording:", error);
             }
@@ -116,9 +218,9 @@ export default function RecordIndexModal() {
         },
       ],
     );
-  };
+  }, [discardRecording, router]);
 
-  /** Show error alerts */
+  // Show error alerts
   useEffect(() => {
     if (lastError && !hasShownErrorRef.current) {
       hasShownErrorRef.current = true;
@@ -133,322 +235,499 @@ export default function RecordIndexModal() {
     }
   }, [lastError]);
 
+  // Handle activity type change
+  const handleActivityTypeChange = useCallback(
+    (activityType: PublicActivityType) => {
+      setSelectedActivityType(activityType);
+      setIsOutdoorActivity(
+        ["outdoor_run", "outdoor_bike", "outdoor_walk"].includes(activityType),
+      );
+    },
+    [],
+  );
+
   return (
     <View className="flex-1 bg-background">
+      <StatusBar
+        barStyle="dark-content"
+        backgroundColor="transparent"
+        translucent
+      />
+
       {/* Header */}
-      <View className="bg-background border-b border-border px-4 py-3">
-        <View className="flex-row items-center justify-between">
-          <Button size="icon" variant="ghost" onPress={handleClose}>
-            <Icon as={ChevronDown} size={24} />
-          </Button>
+      <RecordModalHeader
+        uiState={uiState}
+        onClose={handleClose}
+        connectionStatus={connectionStatus}
+        connectedSensors={connectedSensors}
+        onActivityTypeChange={handleActivityTypeChange}
+        selectedActivityType={selectedActivityType}
+      />
 
-          <View className="flex-1 items-center">
-            <Text className="font-semibold">
-              {state !== "pending" ? "Recording Activity" : "Record Activity"}
-            </Text>
-            {state !== "pending" && (
-              <Text className="text-xs text-muted-foreground capitalize">
-                {state}
-              </Text>
-            )}
-          </View>
-
-          <View className="flex-row">
-            {state === "pending" && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onPress={() => router.push("/modals/record/activity")}
-              >
-                <Icon as={Activity} size={20} />
-              </Button>
-            )}
-
-            <Button
-              variant="ghost"
-              size="icon"
-              onPress={() => router.push("/modals/record/sensors")}
-            >
-              <Icon as={Bluetooth} size={20} />
-              {connectedSensors.length > 0 && (
-                <View className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full" />
-              )}
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              onPress={() => router.push("/modals/record/permissions")}
-            >
-              <Icon as={MapPin} size={20} />
-              {connectionStatus.gps === "connected" && (
-                <View className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full" />
-              )}
-            </Button>
-          </View>
-        </View>
-      </View>
-
-      {/* Main Content */}
-      <ScrollView className="flex-1">
-        {state === "pending" ? (
-          <ReadyToStartView onStart={handleStartRecording} />
-        ) : (
-          <RecordingView
-            metrics={metrics}
-            state={state}
-            connectionStatus={connectionStatus}
-            connectedSensors={connectedSensors}
-          />
-        )}
-      </ScrollView>
-
-      {/* Footer Controls */}
-      <View className="bg-background border-t border-border p-4">
-        <RecordingControls
-          state={state}
-          onStart={handleStartRecording}
-          onPause={pauseRecording}
-          onResume={resumeRecording}
-          onStop={handleStopRecording}
-          onDiscard={handleDiscardRecording}
+      {/* Body - Carousel */}
+      <View className="flex-1">
+        <RecordModalCarousel
+          cards={carouselCards}
+          currentCard={currentCard}
+          onCardChange={setCurrentCard}
+          carouselRef={carouselRef}
+          uiState={uiState}
+          metrics={metrics}
+          connectionStatus={connectionStatus}
+          connectedSensors={connectedSensors}
+          selectedActivityType={selectedActivityType}
         />
       </View>
+
+      {/* Footer - Context-sensitive controls */}
+      <RecordModalFooter
+        uiState={uiState}
+        onStart={handleStartRecording}
+        onPause={handlePauseRecording}
+        onResume={handleResumeRecording}
+        onFinish={handleFinishRecording}
+        onDiscard={handleDiscardRecording}
+      />
     </View>
   );
 }
 
-/** Ready to start recording view */
-const ReadyToStartView = ({ onStart }: { onStart: () => void }) => (
-  <View className="flex-1 items-center justify-center p-8">
-    <View className="w-32 h-32 bg-primary/10 rounded-full items-center justify-center mb-6">
-      <Icon as={Play} size={48} className="text-primary" />
-    </View>
-
-    <Text className="text-2xl font-bold mb-2">Ready to Record</Text>
-    <Text className="text-center text-muted-foreground mb-8">
-      Select an activity type to start recording your workout
-    </Text>
-
-    <Button onPress={onStart} className="w-full max-w-xs">
-      <Icon as={Activity} size={20} />
-      <Text className="ml-2 font-semibold">Choose Activity</Text>
-    </Button>
-  </View>
-);
-
-/** Recording metrics and status view */
-const RecordingView = ({
-  metrics,
-  state,
+/** Header Component */
+const RecordModalHeader = ({
+  uiState,
+  onClose,
   connectionStatus,
   connectedSensors,
+  onActivityTypeChange,
+  selectedActivityType,
 }: {
-  metrics: any;
-  state: string;
+  uiState: RecordingUIState;
+  onClose: () => void;
   connectionStatus: any;
   connectedSensors: any[];
-}) => (
-  <View className="flex-1 p-4">
-    {/* Primary Metrics */}
-    <View className="grid grid-cols-2 gap-4 mb-6">
-      <View className="bg-card rounded-lg p-4 border">
-        <Text className="text-sm text-muted-foreground mb-1">Duration</Text>
-        <Text className="text-3xl font-bold">
-          {formatDuration((metrics.duration || 0) / 1000)}
-        </Text>
-      </View>
+  onActivityTypeChange: (type: PublicActivityType) => void;
+  selectedActivityType: PublicActivityType;
+}) => {
+  const router = useRouter();
 
-      <View className="bg-card rounded-lg p-4 border">
-        <Text className="text-sm text-muted-foreground mb-1">Distance</Text>
-        <Text className="text-3xl font-bold">
-          {formatDistance(metrics.distance || 0)}
-        </Text>
+  return (
+    <View className="bg-background border-b border-border px-4 py-3 pt-12">
+      <View className="flex-row items-center justify-between">
+        {/* Left - Back/Close */}
+        {uiState === "pre-activity" && (
+          <Button size="icon" variant="ghost" onPress={onClose}>
+            <Icon as={ChevronDown} size={24} />
+          </Button>
+        )}
+        {uiState !== "pre-activity" && <View className="w-10" />}
+
+        {/* Center - Title */}
+        <View className="flex-1 items-center">
+          <Text className="font-semibold text-lg">
+            {uiState === "pre-activity" ? "Record Activity" : "Recording"}
+          </Text>
+          {uiState !== "pre-activity" && (
+            <Text className="text-xs text-muted-foreground capitalize">
+              {uiState === "active" ? "Recording..." : uiState}
+            </Text>
+          )}
+        </View>
+
+        {/* Right - Sub-modal icons */}
+        <View className="flex-row space-x-1">
+          {/* Permissions */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onPress={() => router.push("/modals/record/permissions")}
+          >
+            <Icon as={Shield} size={20} />
+            {connectionStatus?.gps === "connected" && (
+              <View className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full" />
+            )}
+          </Button>
+
+          {/* Sensors */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onPress={() => router.push("/modals/record/sensors")}
+          >
+            <Icon as={Bluetooth} size={20} />
+            {connectedSensors?.length > 0 && (
+              <View className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 rounded-full" />
+            )}
+          </Button>
+
+          {/* Activity Selection */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onPress={() => router.push("/modals/record/activity")}
+          >
+            <Icon as={Activity} size={20} />
+          </Button>
+
+          {/* Settings */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onPress={() => router.push("/modals/record/settings")}
+          >
+            <Icon as={Settings} size={20} />
+          </Button>
+        </View>
       </View>
     </View>
+  );
+};
 
-    {/* Secondary Metrics Grid */}
-    <View className="grid grid-cols-2 gap-4 mb-6">
-      {metrics.currentSpeed !== undefined && (
-        <View className="bg-card rounded-lg p-3 border">
-          <Text className="text-xs text-muted-foreground">Current Speed</Text>
-          <Text className="text-xl font-semibold">
-            {formatSpeed(metrics.currentSpeed)}
-          </Text>
-        </View>
-      )}
-
-      {metrics.avgSpeed !== undefined && (
-        <View className="bg-card rounded-lg p-3 border">
-          <Text className="text-xs text-muted-foreground">Avg Speed</Text>
-          <Text className="text-xl font-semibold">
-            {formatSpeed(metrics.avgSpeed)}
-          </Text>
-        </View>
-      )}
-
-      {metrics.heartRate !== undefined && (
-        <View className="bg-card rounded-lg p-3 border">
-          <Text className="text-xs text-muted-foreground">Heart Rate</Text>
-          <Text className="text-xl font-semibold text-red-500">
-            {Math.round(metrics.heartRate)} bpm
-          </Text>
-        </View>
-      )}
-
-      {metrics.power !== undefined && (
-        <View className="bg-card rounded-lg p-3 border">
-          <Text className="text-xs text-muted-foreground">Power</Text>
-          <Text className="text-xl font-semibold text-yellow-500">
-            {Math.round(metrics.power)} W
-          </Text>
-        </View>
-      )}
-
-      {metrics.cadence !== undefined && (
-        <View className="bg-card rounded-lg p-3 border">
-          <Text className="text-xs text-muted-foreground">Cadence</Text>
-          <Text className="text-xl font-semibold text-blue-500">
-            {Math.round(metrics.cadence)} rpm
-          </Text>
-        </View>
-      )}
-
-      {metrics.calories !== undefined && (
-        <View className="bg-card rounded-lg p-3 border">
-          <Text className="text-xs text-muted-foreground">Calories</Text>
-          <Text className="text-xl font-semibold text-orange-500">
-            {Math.round(metrics.calories)}
-          </Text>
-        </View>
-      )}
-    </View>
-
-    {/* Connection Status */}
-    <View className="bg-card rounded-lg p-4 border mb-4">
-      <Text className="font-medium mb-3">Connection Status</Text>
-      <View className="flex-row justify-between">
-        <View className="flex-row items-center">
-          <Icon
-            as={MapPin}
-            size={16}
-            className={
-              connectionStatus.gps === "connected"
-                ? "text-green-500"
-                : "text-muted-foreground"
-            }
+/** Carousel Component */
+const RecordModalCarousel = ({
+  cards,
+  currentCard,
+  onCardChange,
+  carouselRef,
+  uiState,
+  metrics,
+  connectionStatus,
+  connectedSensors,
+  selectedActivityType,
+}: {
+  cards: CarouselCard[];
+  currentCard: CarouselCard;
+  onCardChange: (card: CarouselCard) => void;
+  carouselRef: React.RefObject<FlatList>;
+  uiState: RecordingUIState;
+  metrics: any;
+  connectionStatus: any;
+  connectedSensors: any[];
+  selectedActivityType: PublicActivityType;
+}) => {
+  const renderCard = ({ item }: { item: CarouselCard }) => {
+    switch (item) {
+      case "dashboard":
+        return (
+          <DashboardCard
+            uiState={uiState}
+            metrics={metrics}
+            connectionStatus={connectionStatus}
+            connectedSensors={connectedSensors}
+            selectedActivityType={selectedActivityType}
           />
-          <Text className="ml-2 text-sm">
-            GPS{" "}
-            {connectionStatus.gps === "connected" ? "Connected" : "Disabled"}
+        );
+      case "gps":
+        return <GPSMapCard metrics={metrics} />;
+      case "workout":
+        return <PlannedWorkoutCard metrics={metrics} />;
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <FlatList
+      ref={carouselRef}
+      data={cards}
+      renderItem={renderCard}
+      keyExtractor={(item) => item}
+      horizontal
+      pagingEnabled
+      showsHorizontalScrollIndicator={false}
+      onMomentumScrollEnd={(event) => {
+        const index = Math.round(
+          event.nativeEvent.contentOffset.x / SCREEN_WIDTH,
+        );
+        onCardChange(cards[index]);
+      }}
+      style={{ flex: 1 }}
+    />
+  );
+};
+
+/** Dashboard Card */
+const DashboardCard = ({
+  uiState,
+  metrics,
+  connectionStatus,
+  connectedSensors,
+  selectedActivityType,
+}: {
+  uiState: RecordingUIState;
+  metrics: any;
+  connectionStatus: any;
+  connectedSensors: any[];
+  selectedActivityType: PublicActivityType;
+}) => {
+  if (uiState === "pre-activity") {
+    return (
+      <View
+        style={{ width: SCREEN_WIDTH }}
+        className="flex-1 items-center justify-center p-8"
+      >
+        <View className="w-32 h-32 bg-primary/10 rounded-full items-center justify-center mb-8">
+          <Icon as={Play} size={48} className="text-primary" />
+        </View>
+        <Text className="text-3xl font-bold mb-4">Ready to Record</Text>
+        <Text className="text-center text-muted-foreground text-lg mb-2">
+          Selected: {selectedActivityType.replace("_", " ").toUpperCase()}
+        </Text>
+        <Text className="text-center text-muted-foreground">
+          Tap the start button when ready to begin your activity
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView
+      style={{ width: SCREEN_WIDTH }}
+      className="flex-1 p-6"
+      contentContainerStyle={{ paddingBottom: 20 }}
+    >
+      {/* Primary Metrics */}
+      <View className="flex-row mb-6 space-x-4">
+        <View className="flex-1 bg-card rounded-2xl p-6 border">
+          <Text className="text-sm text-muted-foreground mb-2">Duration</Text>
+          <Text className="text-4xl font-bold text-primary">
+            {formatDuration((metrics?.duration || 0) / 1000)}
           </Text>
         </View>
-        <View className="flex-row items-center">
-          <Icon
-            as={Bluetooth}
-            size={16}
-            className={
-              connectedSensors.length > 0
-                ? "text-blue-500"
-                : "text-muted-foreground"
-            }
-          />
-          <Text className="ml-2 text-sm">
-            {connectedSensors.length} Sensors
+
+        <View className="flex-1 bg-card rounded-2xl p-6 border">
+          <Text className="text-sm text-muted-foreground mb-2">Distance</Text>
+          <Text className="text-4xl font-bold text-blue-600">
+            {formatDistance(metrics?.distance || 0)}
           </Text>
         </View>
       </View>
-    </View>
 
-    {/* Recording Info */}
-    {state !== "pending" && (
-      <View className="bg-muted/50 rounded-lg p-3">
-        <Text className="text-xs text-muted-foreground">
-          Status: {state.charAt(0).toUpperCase() + state.slice(1)}
-        </Text>
-        {state === "paused" && (
-          <Text className="text-xs text-yellow-600 font-medium">
-            Recording paused - GPS tracking continues
-          </Text>
+      {/* Secondary Metrics Grid */}
+      <View className="flex-row flex-wrap justify-between mb-6">
+        {metrics?.currentSpeed !== undefined && (
+          <View className="w-[48%] bg-card rounded-xl p-4 border mb-4">
+            <Text className="text-xs text-muted-foreground">Speed</Text>
+            <Text className="text-2xl font-semibold mt-1">
+              {formatSpeed(metrics.currentSpeed)}
+            </Text>
+          </View>
+        )}
+
+        {metrics?.heartRate !== undefined && (
+          <View className="w-[48%] bg-card rounded-xl p-4 border mb-4">
+            <Text className="text-xs text-muted-foreground">Heart Rate</Text>
+            <Text className="text-2xl font-semibold text-red-500 mt-1">
+              {Math.round(metrics.heartRate)}{" "}
+              <Text className="text-sm">bpm</Text>
+            </Text>
+          </View>
+        )}
+
+        {metrics?.power !== undefined && (
+          <View className="w-[48%] bg-card rounded-xl p-4 border mb-4">
+            <Text className="text-xs text-muted-foreground">Power</Text>
+            <Text className="text-2xl font-semibold text-yellow-500 mt-1">
+              {Math.round(metrics.power)} <Text className="text-sm">W</Text>
+            </Text>
+          </View>
+        )}
+
+        {metrics?.cadence !== undefined && (
+          <View className="w-[48%] bg-card rounded-xl p-4 border mb-4">
+            <Text className="text-xs text-muted-foreground">Cadence</Text>
+            <Text className="text-2xl font-semibold text-blue-500 mt-1">
+              {Math.round(metrics.cadence)} <Text className="text-sm">rpm</Text>
+            </Text>
+          </View>
+        )}
+
+        {metrics?.calories !== undefined && (
+          <View className="w-[48%] bg-card rounded-xl p-4 border mb-4">
+            <Text className="text-xs text-muted-foreground">Calories</Text>
+            <Text className="text-2xl font-semibold text-orange-500 mt-1">
+              {Math.round(metrics.calories)}
+            </Text>
+          </View>
         )}
       </View>
-    )}
-  </View>
-);
 
-/** Recording control buttons */
-const RecordingControls = ({
-  state,
+      {/* Connection Status */}
+      <View className="bg-card rounded-xl p-4 border">
+        <Text className="font-medium mb-3">Connection Status</Text>
+        <View className="flex-row justify-between">
+          <View className="flex-row items-center">
+            <Icon
+              as={MapPin}
+              size={16}
+              className={
+                connectionStatus?.gps === "connected"
+                  ? "text-green-500"
+                  : "text-muted-foreground"
+              }
+            />
+            <Text className="ml-2 text-sm">
+              GPS{" "}
+              {connectionStatus?.gps === "connected" ? "Connected" : "Disabled"}
+            </Text>
+          </View>
+          <View className="flex-row items-center">
+            <Icon
+              as={Bluetooth}
+              size={16}
+              className={
+                connectedSensors?.length > 0
+                  ? "text-blue-500"
+                  : "text-muted-foreground"
+              }
+            />
+            <Text className="ml-2 text-sm">
+              {connectedSensors?.length || 0} Sensors
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Recording Status */}
+      {uiState === "paused" && (
+        <View className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mt-4">
+          <Text className="text-yellow-800 font-medium text-center">
+            ⏸️ Recording Paused
+          </Text>
+          <Text className="text-yellow-700 text-sm text-center mt-1">
+            GPS tracking continues in background
+          </Text>
+        </View>
+      )}
+    </ScrollView>
+  );
+};
+
+/** GPS Map Card */
+const GPSMapCard = ({ metrics }: { metrics: any }) => {
+  return (
+    <View
+      style={{ width: SCREEN_WIDTH }}
+      className="flex-1 items-center justify-center p-8"
+    >
+      <View className="w-24 h-24 bg-green-100 rounded-full items-center justify-center mb-6">
+        <Icon as={MapPin} size={32} className="text-green-600" />
+      </View>
+      <Text className="text-xl font-semibold mb-2">GPS Map View</Text>
+      <Text className="text-center text-muted-foreground mb-4">
+        Live route tracking for outdoor activities
+      </Text>
+      <Text className="text-center text-sm text-muted-foreground">
+        Map integration coming soon...
+      </Text>
+    </View>
+  );
+};
+
+/** Planned Workout Card */
+const PlannedWorkoutCard = ({ metrics }: { metrics: any }) => {
+  return (
+    <View
+      style={{ width: SCREEN_WIDTH }}
+      className="flex-1 items-center justify-center p-8"
+    >
+      <View className="w-24 h-24 bg-purple-100 rounded-full items-center justify-center mb-6">
+        <Icon as={Activity} size={32} className="text-purple-600" />
+      </View>
+      <Text className="text-xl font-semibold mb-2">Planned Workout</Text>
+      <Text className="text-center text-muted-foreground mb-4">
+        Interval structure and target guidance
+      </Text>
+      <Text className="text-center text-sm text-muted-foreground">
+        Workout planning coming soon...
+      </Text>
+    </View>
+  );
+};
+
+/** Footer Controls */
+const RecordModalFooter = ({
+  uiState,
   onStart,
   onPause,
   onResume,
-  onStop,
+  onFinish,
   onDiscard,
 }: {
-  state: string;
+  uiState: RecordingUIState;
   onStart: () => void;
   onPause: () => void;
   onResume: () => void;
-  onStop: () => void;
+  onFinish: () => void;
   onDiscard: () => void;
 }) => {
-  switch (state) {
-    case "pending":
-      return (
-        <Button onPress={onStart} className="w-full">
-          <Icon as={Play} size={20} />
-          <Text className="ml-2 font-semibold">Start Recording</Text>
+  return (
+    <View className="bg-background border-t border-border p-6 pb-8">
+      {uiState === "pre-activity" && (
+        <Button onPress={onStart} className="w-full h-14 rounded-xl">
+          <Icon as={Play} size={24} />
+          <Text className="ml-3 font-semibold text-lg">Begin Activity</Text>
         </Button>
-      );
+      )}
 
-    case "recording":
-      return (
-        <View className="flex-row gap-3">
-          <Button onPress={onPause} variant="secondary" className="flex-1">
-            <Icon as={Pause} size={20} />
-            <Text className="ml-2">Pause</Text>
-          </Button>
-          <Button onPress={onStop} variant="destructive" className="flex-1">
-            <Icon as={Square} size={20} />
-            <Text className="ml-2">Stop</Text>
+      {uiState === "active" && (
+        <View className="flex-row space-x-4">
+          <Button
+            onPress={onPause}
+            variant="secondary"
+            className="flex-1 h-14 rounded-xl"
+          >
+            <Icon as={Pause} size={24} />
+            <Text className="ml-3 font-semibold">Pause</Text>
           </Button>
         </View>
-      );
+      )}
 
-    case "paused":
-      return (
-        <View className="gap-3">
-          <View className="flex-row gap-3">
-            <Button onPress={onResume} variant="default" className="flex-1">
-              <Icon as={Play} size={20} />
-              <Text className="ml-2">Resume</Text>
+      {uiState === "paused" && (
+        <View className="space-y-4">
+          <View className="flex-row space-x-4">
+            <Button
+              onPress={onResume}
+              variant="default"
+              className="flex-1 h-14 rounded-xl"
+            >
+              <Icon as={Play} size={24} />
+              <Text className="ml-3 font-semibold">Resume</Text>
             </Button>
-            <Button onPress={onStop} variant="secondary" className="flex-1">
-              <Icon as={Square} size={20} />
-              <Text className="ml-2">Finish</Text>
+            <Button
+              onPress={onFinish}
+              variant="secondary"
+              className="flex-1 h-14 rounded-xl"
+            >
+              <Icon as={Square} size={24} />
+              <Text className="ml-3 font-semibold">Finish</Text>
             </Button>
           </View>
-          <Button onPress={onDiscard} variant="outline" className="w-full">
-            <Icon as={RotateCcw} size={16} />
+          <Button
+            onPress={onDiscard}
+            variant="outline"
+            className="w-full h-12 rounded-xl"
+          >
+            <Icon as={RotateCcw} size={20} />
             <Text className="ml-2">Discard Recording</Text>
           </Button>
         </View>
-      );
+      )}
 
-    case "finished":
-      return (
-        <View className="items-center">
-          <Text className="text-green-600 font-medium mb-2">
-            ✅ Recording finished and saved
+      {uiState === "finished" && (
+        <View className="items-center space-y-4">
+          <Text className="text-green-600 font-medium text-lg">
+            ✅ Activity completed successfully
           </Text>
-          <Button onPress={onStart} variant="outline" className="w-full">
-            <Icon as={Activity} size={16} />
-            <Text className="ml-2">Start New Recording</Text>
+          <Button
+            onPress={onStart}
+            variant="outline"
+            className="w-full h-12 rounded-xl"
+          >
+            <Icon as={Activity} size={20} />
+            <Text className="ml-2">Start New Activity</Text>
           </Button>
         </View>
-      );
-
-    default:
-      return null;
-  }
+      )}
+    </View>
+  );
 };
