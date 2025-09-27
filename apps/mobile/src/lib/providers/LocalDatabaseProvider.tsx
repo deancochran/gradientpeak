@@ -1,5 +1,5 @@
 // apps/native/app/providers/LocalDatabaseProvider.tsx
-import { db } from "@/lib/db";
+import { localdb as db } from "@/lib/db";
 import migrations from "@/lib/db/migrations/migrations";
 import { useMigrations } from "drizzle-orm/expo-sqlite/migrator";
 import { SQLiteProvider } from "expo-sqlite";
