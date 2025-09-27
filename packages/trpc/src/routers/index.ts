@@ -9,11 +9,7 @@ export const appRouter = createTRPCRouter({
   auth: authRouter,
   profiles: profilesRouter,
   activities: activitiesRouter,
-  activityStreams: activityStreamsRouter,
   plannedActivities: plannedActivitiesRouter,
-  storage: storageRouter,
-  sync: syncRouter,
-  analytics: analyticsRouter,
 });
 
 export type AppRouter = typeof appRouter;

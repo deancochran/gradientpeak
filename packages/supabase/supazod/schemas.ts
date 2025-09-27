@@ -16,12 +16,15 @@ export const publicActivityMetricSchema = z.union([
   z.literal("latlng"),
   z.literal("moving"),
   z.literal("altitude"),
+  z.literal("elevation"),
   z.literal("temperature"),
   z.literal("gradient"),
 ]);
 
 export const publicActivityMetricDataTypeSchema = z.union([
   z.literal("float"),
+  z.literal("real"),
+  z.literal("numeric"),
   z.literal("boolean"),
   z.literal("string"),
   z.literal("integer"),
@@ -32,14 +35,10 @@ export const publicActivityTypeSchema = z.union([
   z.literal("outdoor_run"),
   z.literal("outdoor_bike"),
   z.literal("indoor_treadmill"),
+  z.literal("indoor_bike_trainer"),
   z.literal("indoor_strength"),
   z.literal("indoor_swim"),
   z.literal("other"),
-]);
-
-export const publicSyncStatusSchema = z.union([
-  z.literal("local_only"),
-  z.literal("synced"),
 ]);
 
 export const jsonSchema: z.ZodSchema<Json> = z.lazy(() =>
@@ -60,30 +59,29 @@ export const publicActivitiesRowSchema = z.object({
   avg_heart_rate: z.number().nullable(),
   avg_power: z.number().nullable(),
   avg_speed: z.number().nullable(),
+  calories: z.number().nullable(),
   created_at: z.string(),
   distance: z.number().nullable(),
+  finished_at: z.string(),
   id: z.string(),
   idx: z.number(),
-  if: z.number(),
-  local_file_path: z.string(),
-  max_cadence: z.number().nullable(),
-  max_heart_rate: z.number().nullable(),
-  max_speed: z.number().nullable(),
-  moving_time: z.number(),
+  intensity_factor: z.number().nullable(),
+  moving_time: z.number().nullable(),
   name: z.string(),
   normalized_power: z.number().nullable(),
   notes: z.string().nullable(),
-  peak_power: z.number().nullable(),
+  planned_activity_id: z.string().nullable(),
+  profile_age: z.number().nullable(),
+  profile_ftp: z.number().nullable(),
   profile_id: z.string(),
-  snapshot_ftp: z.number(),
-  snapshot_threshold_hr: z.number(),
-  snapshot_weight_kg: z.number(),
+  profile_threshold_hr: z.number().nullable(),
+  profile_weight_kg: z.number().nullable(),
   started_at: z.string(),
-  sync_status: publicSyncStatusSchema,
   total_ascent: z.number().nullable(),
   total_descent: z.number().nullable(),
-  total_time: z.number(),
-  tss: z.number(),
+  total_time: z.number().nullable(),
+  training_stress_score: z.number().nullable(),
+  variability_index: z.number().nullable(),
 });
 
 export const publicActivitiesInsertSchema = z.object({
@@ -92,30 +90,29 @@ export const publicActivitiesInsertSchema = z.object({
   avg_heart_rate: z.number().optional().nullable(),
   avg_power: z.number().optional().nullable(),
   avg_speed: z.number().optional().nullable(),
+  calories: z.number().optional().nullable(),
   created_at: z.string().optional(),
   distance: z.number().optional().nullable(),
+  finished_at: z.string(),
   id: z.string().optional(),
   idx: z.number().optional(),
-  if: z.number(),
-  local_file_path: z.string(),
-  max_cadence: z.number().optional().nullable(),
-  max_heart_rate: z.number().optional().nullable(),
-  max_speed: z.number().optional().nullable(),
-  moving_time: z.number().optional(),
+  intensity_factor: z.number().optional().nullable(),
+  moving_time: z.number().optional().nullable(),
   name: z.string(),
   normalized_power: z.number().optional().nullable(),
   notes: z.string().optional().nullable(),
-  peak_power: z.number().optional().nullable(),
+  planned_activity_id: z.string().optional().nullable(),
+  profile_age: z.number().optional().nullable(),
+  profile_ftp: z.number().optional().nullable(),
   profile_id: z.string(),
-  snapshot_ftp: z.number(),
-  snapshot_threshold_hr: z.number(),
-  snapshot_weight_kg: z.number(),
+  profile_threshold_hr: z.number().optional().nullable(),
+  profile_weight_kg: z.number().optional().nullable(),
   started_at: z.string(),
-  sync_status: publicSyncStatusSchema.optional(),
   total_ascent: z.number().optional().nullable(),
   total_descent: z.number().optional().nullable(),
-  total_time: z.number().optional(),
-  tss: z.number(),
+  total_time: z.number().optional().nullable(),
+  training_stress_score: z.number().optional().nullable(),
+  variability_index: z.number().optional().nullable(),
 });
 
 export const publicActivitiesUpdateSchema = z.object({
@@ -124,33 +121,39 @@ export const publicActivitiesUpdateSchema = z.object({
   avg_heart_rate: z.number().optional().nullable(),
   avg_power: z.number().optional().nullable(),
   avg_speed: z.number().optional().nullable(),
+  calories: z.number().optional().nullable(),
   created_at: z.string().optional(),
   distance: z.number().optional().nullable(),
+  finished_at: z.string().optional(),
   id: z.string().optional(),
   idx: z.number().optional(),
-  if: z.number().optional(),
-  local_file_path: z.string().optional(),
-  max_cadence: z.number().optional().nullable(),
-  max_heart_rate: z.number().optional().nullable(),
-  max_speed: z.number().optional().nullable(),
-  moving_time: z.number().optional(),
+  intensity_factor: z.number().optional().nullable(),
+  moving_time: z.number().optional().nullable(),
   name: z.string().optional(),
   normalized_power: z.number().optional().nullable(),
   notes: z.string().optional().nullable(),
-  peak_power: z.number().optional().nullable(),
+  planned_activity_id: z.string().optional().nullable(),
+  profile_age: z.number().optional().nullable(),
+  profile_ftp: z.number().optional().nullable(),
   profile_id: z.string().optional(),
-  snapshot_ftp: z.number().optional(),
-  snapshot_threshold_hr: z.number().optional(),
-  snapshot_weight_kg: z.number().optional(),
+  profile_threshold_hr: z.number().optional().nullable(),
+  profile_weight_kg: z.number().optional().nullable(),
   started_at: z.string().optional(),
-  sync_status: publicSyncStatusSchema.optional(),
   total_ascent: z.number().optional().nullable(),
   total_descent: z.number().optional().nullable(),
-  total_time: z.number().optional(),
-  tss: z.number().optional(),
+  total_time: z.number().optional().nullable(),
+  training_stress_score: z.number().optional().nullable(),
+  variability_index: z.number().optional().nullable(),
 });
 
 export const publicActivitiesRelationshipsSchema = z.tuple([
+  z.object({
+    foreignKeyName: z.literal("activities_planned_activity_id_fkey"),
+    columns: z.tuple([z.literal("planned_activity_id")]),
+    isOneToOne: z.literal(false),
+    referencedRelation: z.literal("planned_activities"),
+    referencedColumns: z.tuple([z.literal("id")]),
+  }),
   z.object({
     foreignKeyName: z.literal("activities_profile_id_fkey"),
     columns: z.tuple([z.literal("profile_id")]),
@@ -161,34 +164,34 @@ export const publicActivitiesRelationshipsSchema = z.tuple([
 ]);
 
 export const publicActivityStreamsRowSchema = z.object({
-  activity_id: z.string(),
-  chunk_index: z.number(),
+  activity_id: z.string().nullable(),
+  compressed_data: z.string(),
   created_at: z.string(),
-  data: jsonSchema,
   data_type: publicActivityMetricDataTypeSchema,
   id: z.string(),
+  idx: z.number(),
   original_size: z.number(),
   type: publicActivityMetricSchema,
 });
 
 export const publicActivityStreamsInsertSchema = z.object({
-  activity_id: z.string(),
-  chunk_index: z.number().optional(),
+  activity_id: z.string().optional().nullable(),
+  compressed_data: z.string(),
   created_at: z.string().optional(),
-  data: jsonSchema,
   data_type: publicActivityMetricDataTypeSchema,
   id: z.string().optional(),
+  idx: z.number().optional(),
   original_size: z.number(),
   type: publicActivityMetricSchema,
 });
 
 export const publicActivityStreamsUpdateSchema = z.object({
-  activity_id: z.string().optional(),
-  chunk_index: z.number().optional(),
+  activity_id: z.string().optional().nullable(),
+  compressed_data: z.string().optional(),
   created_at: z.string().optional(),
-  data: jsonSchema.optional(),
   data_type: publicActivityMetricDataTypeSchema.optional(),
   id: z.string().optional(),
+  idx: z.number().optional(),
   original_size: z.number().optional(),
   type: publicActivityMetricSchema.optional(),
 });
@@ -215,7 +218,7 @@ export const publicPlannedActivitiesRowSchema = z.object({
   idx: z.number(),
   name: z.string(),
   profile_id: z.string().nullable(),
-  scheduled_date: z.string(),
+  scheduled_date: z.string().nullable(),
   structure: jsonSchema,
 });
 
@@ -231,7 +234,7 @@ export const publicPlannedActivitiesInsertSchema = z.object({
   idx: z.number().optional(),
   name: z.string(),
   profile_id: z.string().optional().nullable(),
-  scheduled_date: z.string(),
+  scheduled_date: z.string().optional().nullable(),
   structure: jsonSchema,
 });
 
@@ -247,7 +250,7 @@ export const publicPlannedActivitiesUpdateSchema = z.object({
   idx: z.number().optional(),
   name: z.string().optional(),
   profile_id: z.string().optional().nullable(),
-  scheduled_date: z.string().optional(),
+  scheduled_date: z.string().optional().nullable(),
   structure: jsonSchema.optional(),
 });
 
@@ -311,3 +314,10 @@ export const publicProfilesUpdateSchema = z.object({
   username: z.string().optional().nullable(),
   weight_kg: z.number().optional().nullable(),
 });
+
+export const publicCreateActivityArgsSchema = z.object({
+  activity: jsonSchema,
+  activity_streams: jsonSchema,
+});
+
+export const publicCreateActivityReturnsSchema = jsonSchema;

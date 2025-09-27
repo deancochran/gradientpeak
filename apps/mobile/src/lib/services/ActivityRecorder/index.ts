@@ -1,4 +1,5 @@
 import {
+  BLE_SERVICE_UUIDS,
   computeActivitySummary,
   PublicActivityType,
   PublicPlannedActivitiesRow,
@@ -236,7 +237,30 @@ export class ActivityRecorderService {
 
   // --- BLE methods ---
   async scanForDevices() {
-    return this.sensorsManager.scan();
+    const devices = await this.sensorsManager.scan();
+    return devices.map((device) => {
+      let type = "unknown";
+      if (device.serviceUUIDs?.includes(BLE_SERVICE_UUIDS.HEART_RATE)) {
+        type = "heartRate";
+      } else if (
+        device.serviceUUIDs?.includes(BLE_SERVICE_UUIDS.CYCLING_POWER)
+      ) {
+        type = "power";
+      } else if (
+        device.serviceUUIDs?.includes(
+          BLE_SERVICE_UUIDS.CYCLING_SPEED_AND_CADENCE,
+        )
+      ) {
+        type = "cadence";
+      }
+      return {
+        id: device.id,
+        name: device.name || "Unknown Device",
+        rssi: device.rssi,
+        device,
+        type,
+      };
+    });
   }
 
   async connectToDevice(deviceId: string) {
@@ -258,6 +282,14 @@ export class ActivityRecorderService {
 
   private handleSensorData(reading: SensorReading) {
     this.storageManager.addSensorReading(reading);
+
+    if (typeof reading.value === "number") {
+      if (!this.allValues.has(reading.metric)) {
+        this.allValues.set(reading.metric, []);
+      }
+      this.allValues.get(reading.metric)!.push(reading.value);
+    }
+
     this.dataCallbacks.forEach((cb) => {
       try {
         cb(reading);
@@ -265,6 +297,15 @@ export class ActivityRecorderService {
         console.warn("Sensor callback error:", err);
       }
     });
+  }
+
+  getLiveMetrics() {
+    const metrics: Record<string, number> = {};
+    for (const [key, values] of this.allValues.entries()) {
+      metrics[key] = values[values.length - 1]; // last value
+      metrics[`${key}_avg`] = values.reduce((a, b) => a + b, 0) / values.length;
+    }
+    return metrics;
   }
 
   private async computeActivitySummary(): Promise<ActivitySummary> {
@@ -308,6 +349,10 @@ export class ActivityRecorderService {
 
   removeDataCallback(cb: (reading: SensorReading) => void) {
     this.dataCallbacks.delete(cb);
+  }
+
+  subscribeConnection(cb: (sensor: any) => void) {
+    return this.sensorsManager.subscribeConnection(cb);
   }
 
   getCurrentRecordingId() {

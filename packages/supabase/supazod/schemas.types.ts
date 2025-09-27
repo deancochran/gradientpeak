@@ -15,7 +15,6 @@ export type PublicActivityMetricDataType = z.infer<
 export type PublicActivityType = z.infer<
   typeof generated.publicActivityTypeSchema
 >;
-export type PublicSyncStatus = z.infer<typeof generated.publicSyncStatusSchema>;
 export type Json = z.infer<typeof generated.jsonSchema>;
 export type PublicActivitiesRow = z.infer<
   typeof generated.publicActivitiesRowSchema
@@ -61,4 +60,10 @@ export type PublicProfilesInsert = z.infer<
 >;
 export type PublicProfilesUpdate = z.infer<
   typeof generated.publicProfilesUpdateSchema
+>;
+export type PublicCreateActivityArgs = z.infer<
+  typeof generated.publicCreateActivityArgsSchema
+>;
+export type PublicCreateActivityReturns = z.infer<
+  typeof generated.publicCreateActivityReturnsSchema
 >;

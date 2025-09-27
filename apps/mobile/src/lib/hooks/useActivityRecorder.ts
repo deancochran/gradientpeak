@@ -1,14 +1,3 @@
-/**
- * Enhanced hook for activity recording functionality
- *
- * Integrates with ActivityRecorderService to provide:
- * - Recording session management
- * - Real-time metrics updates
- * - Sensor connection management
- * - Permission handling
- * - Background recording support
- */
-
 import { PublicActivityType, PublicPlannedActivitiesRow } from "@repo/core";
 import { useCallback, useEffect, useState } from "react";
 import { AppState, AppStateStatus } from "react-native";
@@ -68,20 +57,21 @@ export const useActivityRecorder = () => {
       setState(service.state);
 
       // Update metrics from service properties
-      const liveMetrics: LiveMetrics = {
-        totalElapsedTime: service.totalElapsedTime,
-        totalTimerTime: service.movingTime,
-        distance: 0, // Will be calculated from GPS data
-        currentSpeed: 0, // Will come from sensor readings
-        avgSpeed: 0, // Will be calculated
-      };
+      const liveMetrics = service.getLiveMetrics();
 
       const activityMetrics: ActivityMetrics = {
-        ...liveMetrics,
         duration: service.movingTime,
-        heartRate: undefined, // Will come from sensor readings
-        power: undefined, // Will come from sensor readings
-        cadence: undefined, // Will come from sensor readings
+        totalElapsedTime: service.totalElapsedTime,
+        totalTimerTime: service.movingTime,
+        distance: liveMetrics.distance || 0,
+        currentSpeed: liveMetrics.speed || 0,
+        avgSpeed: liveMetrics.speed_avg || 0,
+        heartRate: liveMetrics.heartrate,
+        avgHeartRate: liveMetrics.heartrate_avg,
+        power: liveMetrics.power,
+        avgPower: liveMetrics.power_avg,
+        cadence: liveMetrics.cadence,
+        avgCadence: liveMetrics.cadence_avg,
       };
 
       setMetrics(activityMetrics);
@@ -107,8 +97,7 @@ export const useActivityRecorder = () => {
       // Dynamic sensor status based on connected devices
       const sensorStatus: Record<string, ConnectionStatus> = {};
       sensors.forEach((sensor) => {
-        sensorStatus[sensor.id] =
-          sensor.connectionState === "connected" ? "connected" : "disconnected";
+        sensorStatus[sensor.id] = sensor.connectionState;
       });
 
       setConnectionStatus({
@@ -229,13 +218,7 @@ export const useActivityRecorder = () => {
   /** Scan for available BLE devices */
   const scanForDevices = useCallback(async () => {
     try {
-      const devices = await service.scanForDevices();
-      return devices.map((device) => ({
-        id: device.id,
-        name: device.name || "Unknown Device",
-        rssi: device.rssi,
-        device,
-      }));
+      return await service.scanForDevices();
     } catch (error) {
       setLastError(error instanceof Error ? error.message : String(error));
       return [];
@@ -338,27 +321,27 @@ export const useActivityRecorder = () => {
 
     initialize();
 
-    // Set up real-time updates
-    const updateInterval = setInterval(() => {
-      if (mounted && isInitialized) {
-        updateFromService();
-      }
-    }, 1000);
-
-    // Listen to sensor data for real-time metrics
     const handleSensorData = (reading: any) => {
-      // Update real-time metrics based on sensor readings
       if (mounted) {
         updateFromService();
       }
     };
 
-    service.addDataCallback(handleSensorData);
+    const handleConnectionStateChange = (sensor: ConnectedSensor) => {
+      if (mounted) {
+        const sensors = service.getConnectedSensors();
+        updateConnectionStatus(sensors);
+        setConnectedSensors(sensors);
+      }
+    };
+
+    const dataSub = service.addDataCallback(handleSensorData);
+    const connSub = service.subscribeConnection(handleConnectionStateChange);
 
     return () => {
       mounted = false;
-      clearInterval(updateInterval);
-      service.removeDataCallback(handleSensorData);
+      dataSub();
+      connSub();
     };
   }, [service, profile, updateFromService, isInitialized]);
 

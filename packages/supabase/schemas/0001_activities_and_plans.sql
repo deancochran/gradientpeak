@@ -32,6 +32,22 @@ create type activity_metric_data_type as enum (
     'latlng'
 );
 
+create table if not exists public.planned_activities (
+    id uuid primary key default uuid_generate_v4(),
+    idx serial unique,
+    profile_id uuid references public.profiles(id) on delete cascade,
+    completed_activity_id uuid,
+    scheduled_date date,
+    name text not null,
+    activity_type activity_type not null,
+    description text,
+    structure jsonb not null,
+    estimated_duration integer,
+    estimated_distance integer,
+    estimated_tss integer,
+    created_at timestamptz not null default now()
+);
+
 create table if not exists public.activities (
     id uuid primary key default uuid_generate_v4(),
     idx serial unique,
@@ -71,21 +87,5 @@ create table if not exists public.activity_streams (
     data_type activity_metric_data_type not null,
     original_size integer not null,
     compressed_data bytea NOT NULL,
-    created_at timestamptz not null default now()
-);
-
-create table if not exists public.planned_activities (
-    id uuid primary key default uuid_generate_v4(),
-    idx serial unique,
-    profile_id uuid references public.profiles(id) on delete cascade,
-    completed_activity_id uuid,
-    scheduled_date date,
-    name text not null,
-    activity_type activity_type not null,
-    description text,
-    structure jsonb not null,
-    estimated_duration integer,
-    estimated_distance integer,
-    estimated_tss integer,
     created_at timestamptz not null default now()
 );

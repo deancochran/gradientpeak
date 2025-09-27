@@ -255,3 +255,13 @@ export const TIME_CONSTANTS = {
   SECONDS_PER_DAY: 86400,
   MILLISECONDS_PER_SECOND: 1000,
 } as const;
+
+// ================================-
+// BLE Service and Characteristic UUIDs
+// ================================-
+
+export const BLE_SERVICE_UUIDS = {
+  HEART_RATE: "0000180d-0000-1000-8000-00805f9b34fb",
+  CYCLING_POWER: "00001818-0000-1000-8000-00805f9b34fb",
+  CYCLING_SPEED_AND_CADENCE: "00001816-0000-1000-8000-00805f9b34fb",
+} as const;
