@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "def04d43-4cc4-44e9-a820-61ff399ad37f",
+  "id": "81eeddb2-7544-4961-a252-19d4e216dc4d",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "activity_recording_streams": {
@@ -67,21 +67,21 @@
         },
         "data": {
           "name": "data",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
         "timestamps": {
           "name": "timestamps",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
         "synced": {
           "name": "synced",
-          "type": "boolean",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
@@ -89,10 +89,11 @@
         },
         "created_at": {
           "name": "created_at",
-          "type": "integer",
+          "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
+          "notNull": false,
+          "autoincrement": false,
+          "default": "(CURRENT_TIMESTAMP)"
         }
       },
       "indexes": {},
@@ -129,7 +130,7 @@
           "name": "started_at",
           "type": "integer",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "state": {
@@ -141,7 +142,7 @@
         },
         "synced": {
           "name": "synced",
-          "type": "boolean",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
@@ -219,7 +220,7 @@
         },
         "planned_activity_structure": {
           "name": "planned_activity_structure",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
@@ -247,10 +248,11 @@
         },
         "created_at": {
           "name": "created_at",
-          "type": "integer",
+          "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
+          "notNull": false,
+          "autoincrement": false,
+          "default": "(CURRENT_TIMESTAMP)"
         }
       },
       "indexes": {},

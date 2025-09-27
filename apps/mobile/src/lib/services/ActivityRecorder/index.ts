@@ -345,10 +345,7 @@ export class ActivityRecorderService {
 
   addDataCallback(cb: (reading: SensorReading) => void) {
     this.dataCallbacks.add(cb);
-  }
-
-  removeDataCallback(cb: (reading: SensorReading) => void) {
-    this.dataCallbacks.delete(cb);
+    return () => this.dataCallbacks.delete(cb);
   }
 
   subscribeConnection(cb: (sensor: any) => void) {

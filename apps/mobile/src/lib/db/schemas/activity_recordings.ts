@@ -3,8 +3,10 @@ import {
   PublicActivityMetricDataType,
   PublicActivityType,
 } from "@repo/core";
-import { boolean, jsonb, real } from "drizzle-orm/pg-core";
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
+
+import { createId } from "@paralleldrive/cuid2";
+import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 export type RecordingState =
   | "pending"
@@ -18,12 +20,10 @@ export type RecordingState =
 export const activityRecordings = sqliteTable("activity_recordings", {
   id: text("id")
     .primaryKey()
-    .$default(() => crypto.randomUUID()),
-  startedAt: integer("started_at", { mode: "timestamp" })
-    .notNull()
-    .$defaultFn(() => Date.now()),
+    .$default(() => createId()),
+  startedAt: integer("started_at"),
   state: text("state").$type<RecordingState>().notNull(),
-  synced: boolean("synced").notNull().default(false),
+  synced: integer("synced", { mode: "boolean" }).notNull().default(false),
   activityType: text("activity_type").$type<PublicActivityType>().notNull(),
   version: text("version").notNull(),
 
@@ -36,16 +36,15 @@ export const activityRecordings = sqliteTable("activity_recordings", {
   plannedActivityName: text("planned_activity_name"),
   plannedActivityDescription: text("planned_activity_description"),
   plannedActivityStructureVersion: text("planned_activity_structure_version"),
-  plannedActivityStructure: jsonb("planned_activity_structure"),
+  plannedActivityStructure: text("planned_activity_structure", {
+    mode: "json",
+  }),
   plannedActivityEstimatedDuration: integer(
     "planned_activity_estimated_duration",
   ),
   plannedActivityEstimatedDistance: real("planned_activity_estimated_distance"),
   plannedActivityEstimatedTss: real("planned_activity_estimated_tss"),
-
-  createdAt: integer("created_at", { mode: "timestamp" })
-    .notNull()
-    .$defaultFn(() => Date.now()),
+  createdAt: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 });
 
 // Unified Activity Streams Table
@@ -54,7 +53,7 @@ export const activityRecordingStreams = sqliteTable(
   {
     id: text("id")
       .primaryKey()
-      .$default(() => crypto.randomUUID()),
+      .$default(() => createId()),
     activityRecordingId: text("activity_recording_id")
       .notNull()
       .references(() => activityRecordings.id, { onDelete: "cascade" }),
@@ -66,12 +65,10 @@ export const activityRecordingStreams = sqliteTable(
     startTime: integer("start_time", { mode: "timestamp" }).notNull(),
     endTime: integer("end_time", { mode: "timestamp" }).notNull(),
 
-    data: jsonb("data").notNull(),
-    timestamps: jsonb("timestamps").notNull(),
+    data: text("data", { mode: "json" }).notNull(),
+    timestamps: text("timestamps", { mode: "json" }).notNull(),
 
-    synced: boolean("synced").notNull().default(false),
-    createdAt: integer("created_at", { mode: "timestamp" })
-      .notNull()
-      .$defaultFn(() => Date.now()),
+    synced: integer("synced", { mode: "boolean" }).notNull().default(false),
+    createdAt: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
   },
 );
