@@ -7,24 +7,55 @@ import {
   activityRecordingStreams,
   activityRecordings,
 } from "@/lib/db/schemas";
+import { createId } from "@paralleldrive/cuid2";
 import {
+  PublicActivitiesInsert,
   PublicActivityMetric,
   PublicActivityMetricDataType,
-  SensorReading,
-  computeActivitySummary,
-  ActivitySummary,
+  PublicActivityPlansRow,
+  PublicActivityStreamsInsert,
+  PublicPlannedActivitiesRow,
+  PublicProfilesRow,
 } from "@repo/core";
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
-import * as pako from "pako";
-import { RecordingState } from "./index";
+import { and, eq, inArray } from "drizzle-orm";
+import pako from "pako";
+import {
+  AggregatedStream,
+  calculateAge,
+  calculateAverageGrade,
+  calculateCalories,
+  calculateDecoupling,
+  calculateEfficiencyFactor,
+  calculateElapsedTime,
+  calculateElevationChanges,
+  calculateElevationGainPerKm,
+  calculateHRZones,
+  calculateIntensityFactor,
+  calculateMaxHRPercent,
+  calculateMovingTime,
+  calculateNormalizedPower,
+  calculatePowerHeartRateRatio,
+  calculatePowerWeightRatio,
+  calculatePowerZones,
+  calculateTSS,
+  calculateTotalWork,
+  calculateVariabilityIndex,
+} from "./calculations";
+import { SensorReading } from "./calculations/sensor-parsing";
+
+// Type-safe parsed stream data
+interface ParsedStreamData {
+  data: number[];
+  timestamps: number[];
+}
 
 // Buffer interface for accumulated sensor data
 interface SensorDataBuffer {
-  [metric: string]: Array<{
-    value: number | [number, number];
-    timestamp: number;
-  }>;
+  [metric: string]: SensorReading[];
 }
+
+// Recording state type
+type RecordingState = "idle" | "recording" | "paused" | "finished";
 
 // Chunk processing configuration
 const CHUNK_INTERVAL_MS = 5000; // 5 seconds
@@ -35,134 +66,103 @@ const MAX_BUFFER_SIZE = 1000; // Max readings per metric before forced flush
  * Uses SQLite via Drizzle ORM for offline-first data persistence
  */
 export class DataStorageManager {
-  private currentRecordingId: string;
-  private sensorDataBuffer: SensorDataBuffer;
-  private chunkIndex: number;
-  private lastCheckpointAt: Date;
-  private chunkTimer: NodeJS.Timeout;
+  public profile: PublicProfilesRow;
+  private recordingId: string | null = null;
+  private sensorDataBuffer: SensorDataBuffer = {};
+  private chunkIndex: number = 0;
+  private lastCheckpointAt: Date | null = null;
+  private chunkTimer: ReturnType<typeof setInterval> | null = null;
+  private currentState: RecordingState = "idle";
 
-  constructor() {
-    this.currentRecordingId = null;
-    this.sensorDataBuffer = {};
-    this.chunkIndex = 0;
-    this.lastCheckpointAt = new Date();
-    this.chunkTimer = null;
+  constructor(profile: PublicProfilesRow, recording?: SelectActivityRecording) {
+    this.profile = profile;
+    if (recording) {
+      this.recordingId = recording.id;
+      this.chunkIndex = 0;
+      this.currentState = (recording.state as RecordingState) || "idle";
+    }
   }
 
-  // ================================
-  // Activity Recording Management
-  // ================================
-
-  /**
-   * Create a new activity recording session
-   */
   async createRecording(
-    data: Omit<
-      InsertActivityRecording,
-      "id" | "createdAt" | "startedAt" | "synced"
-    >,
-  ): Promise<string> {
-    const recordingData: InsertActivityRecording = {
-      ...data,
-      startedAt: new Date(),
-      synced: false,
-    };
-
+    profile: PublicProfilesRow,
+  ): Promise<SelectActivityRecording> {
     const [recording] = await localdb
       .insert(activityRecordings)
-      .values(recordingData)
+      .values({
+        profileId: profile.id,
+        profileWeightKg: profile.weight_kg,
+        profileFtp: profile.ftp,
+        profileThresholdHr: profile.threshold_hr,
+      })
       .returning();
 
-    this.currentRecordingId = recording.id;
-    this.chunkIndex = 0;
-    this.lastCheckpointAt = new Date();
-    this.clearBuffer();
-
-    console.log(`Created recording: ${recording.id}`);
-    return recording.id;
+    this.recordingId = recording.id;
+    this.currentState = "idle";
+    return recording;
   }
 
-  /**
-   * Update recording state (e.g., recording -> paused -> finished)
-   */
-  async updateRecordingState(
-    recordingId: string,
-    state: RecordingState,
-  ): Promise<void> {
-    await localdb
+  async updateRecording(
+    data: Partial<
+      Omit<
+        InsertActivityRecording,
+        | "id"
+        | "createdAt"
+        | "version"
+        | "profileId"
+        | "profileWeightKg"
+        | "profileFtp"
+        | "profileThresholdHr"
+      >
+    >,
+  ): Promise<SelectActivityRecording> {
+    if (!this.recordingId) throw new Error("No recording ID");
+
+    const [updatedRecording] = await localdb
       .update(activityRecordings)
-      .set({ state })
-      .where(eq(activityRecordings.id, recordingId));
+      .set(data)
+      .where(eq(activityRecordings.id, this.recordingId))
+      .returning();
 
-    console.log(`Updated recording ${recordingId} state to: ${state}`);
+    if (!updatedRecording) throw new Error("Failed to update recording");
+
+    if (data.state) {
+      this.currentState = data.state as RecordingState;
+    }
+
+    return updatedRecording;
   }
 
-  /**
-   * Get current recording details
-   */
   async getCurrentRecording(): Promise<SelectActivityRecording | null> {
-    if (!this.currentRecordingId) return null;
+    if (!this.recordingId) return null;
 
     const [recording] = await localdb
       .select()
       .from(activityRecordings)
-      .where(eq(activityRecordings.id, this.currentRecordingId))
+      .where(eq(activityRecordings.id, this.recordingId))
       .limit(1);
 
     return recording || null;
-  }
-
-  /**
-   * Get unsynced recordings
-   */
-  async getUnsyncedRecordings(): Promise<SelectActivityRecording[]> {
-    return await localdb
-      .select()
-      .from(activityRecordings)
-      .where(eq(activityRecordings.synced, false))
-      .orderBy(desc(activityRecordings.startedAt));
   }
 
   // ================================
   // Sensor Data Buffering
   // ================================
 
-  /**
-   * Add sensor reading to buffer
-   */
   addSensorReading(reading: SensorReading): void {
-    if (!this.currentRecordingId) {
-      console.warn("No active recording - dropping sensor reading");
-      return;
+    if (!this.recordingId)
+      throw new Error("No active recording - dropping sensor reading");
+
+    if (!this.sensorDataBuffer[reading.metric]) {
+      this.sensorDataBuffer[reading.metric] = [];
     }
 
-    const { metric, value, timestamp } = reading;
+    this.sensorDataBuffer[reading.metric].push(reading);
 
-    // Initialize buffer for this metric if needed
-    if (!this.sensorDataBuffer[metric]) {
-      this.sensorDataBuffer[metric] = [];
-    }
-
-    // Add reading to buffer
-    this.sensorDataBuffer[metric].push({ value, timestamp });
-
-    // Check if we need to force flush due to buffer size
-    if (this.sensorDataBuffer[metric].length >= MAX_BUFFER_SIZE) {
-      console.log(`Buffer full for ${metric}, forcing chunk processing`);
+    if (this.sensorDataBuffer[reading.metric].length >= MAX_BUFFER_SIZE) {
       this.processChunk().catch(console.error);
     }
   }
 
-  /**
-   * Clear all sensor data buffers
-   */
-  private clearBuffer(): void {
-    this.sensorDataBuffer = {};
-  }
-
-  /**
-   * Get current buffer status for monitoring
-   */
   getBufferStatus(): Record<string, number> {
     const status: Record<string, number> = {};
     for (const [metric, buffer] of Object.entries(this.sensorDataBuffer)) {
@@ -175,9 +175,6 @@ export class DataStorageManager {
   // Chunk Processing
   // ================================
 
-  /**
-   * Start automatic chunk processing
-   */
   startChunkProcessing(): void {
     if (this.chunkTimer) {
       console.warn("Chunk processing already running");
@@ -187,32 +184,22 @@ export class DataStorageManager {
     this.chunkTimer = setInterval(() => {
       this.processChunk().catch(console.error);
     }, CHUNK_INTERVAL_MS);
-
-    console.log(`Started chunk processing (${CHUNK_INTERVAL_MS}ms interval)`);
   }
 
-  /**
-   * Stop automatic chunk processing
-   */
   stopChunkProcessing(): void {
     if (this.chunkTimer) {
       clearInterval(this.chunkTimer);
       this.chunkTimer = null;
-      console.log("Stopped chunk processing");
     }
   }
 
-  /**
-   * Process current buffer into database chunks
-   */
   async processChunk(): Promise<void> {
-    if (!this.currentRecordingId) return;
+    if (!this.recordingId) throw new Error("No recording ID");
+    if (!this.lastCheckpointAt) throw new Error("No last checkpoint");
 
-    const now = Date.now();
-    const startTime = this.lastCheckpointAt.getTime();
+    const endTime = Date.now();
     const streamsToInsert: InsertRecordingStream[] = [];
 
-    // Process each metric in the buffer
     for (const [metric, buffer] of Object.entries(this.sensorDataBuffer)) {
       if (buffer.length === 0) continue;
 
@@ -220,12 +207,12 @@ export class DataStorageManager {
       const timestamps = buffer.map((item) => item.timestamp);
 
       const streamData: InsertRecordingStream = {
-        activityRecordingId: this.currentRecordingId,
+        activityRecordingId: this.recordingId,
         metric: metric as PublicActivityMetric,
         dataType: this.getDataTypeForMetric(metric as PublicActivityMetric),
         chunkIndex: this.chunkIndex,
-        startTime: new Date(startTime),
-        endTime: new Date(now),
+        startTime: this.lastCheckpointAt,
+        endTime: new Date(endTime),
         data: JSON.stringify(data),
         timestamps: JSON.stringify(timestamps),
         sampleCount: buffer.length,
@@ -233,57 +220,36 @@ export class DataStorageManager {
       };
 
       streamsToInsert.push(streamData);
-
-      // Clear this metric's buffer
       buffer.length = 0;
     }
 
-    // Batch insert all streams
     if (streamsToInsert.length > 0) {
       await localdb.insert(activityRecordingStreams).values(streamsToInsert);
-
-      console.log(
-        `Processed chunk ${this.chunkIndex}: ${streamsToInsert.length} metrics, ` +
-          `${streamsToInsert.reduce((sum, s) => sum + s.sampleCount, 0)} total samples`,
-      );
     }
 
-    // Update checkpoint and increment chunk index
-    this.lastCheckpointAt = new Date(now);
+    this.lastCheckpointAt = new Date(endTime);
     this.chunkIndex++;
-  }
-
-  /**
-   * Force process any remaining buffered data (call on recording finish)
-   */
-  async flushBuffer(): Promise<void> {
-    await this.processChunk();
-    console.log("Buffer flushed");
   }
 
   // ================================
   // Stream Data Queries
   // ================================
 
-  /**
-   * Get all streams for a recording
-   */
-  async getRecordingStreams(
-    recordingId: string,
-  ): Promise<SelectRecordingStream[]> {
+  async getRecordingStreams(): Promise<SelectRecordingStream[]> {
+    if (!this.recordingId) {
+      throw new Error("Recording ID is not set");
+    }
+
     return await localdb
       .select()
       .from(activityRecordingStreams)
-      .where(eq(activityRecordingStreams.activityRecordingId, recordingId))
+      .where(eq(activityRecordingStreams.activityRecordingId, this.recordingId))
       .orderBy(
         activityRecordingStreams.metric,
         activityRecordingStreams.chunkIndex,
       );
   }
 
-  /**
-   * Get streams for a specific metric
-   */
   async getMetricStreams(
     recordingId: string,
     metric: PublicActivityMetric,
@@ -300,9 +266,6 @@ export class DataStorageManager {
       .orderBy(activityRecordingStreams.chunkIndex);
   }
 
-  /**
-   * Get unsynced streams
-   */
   async getUnsyncedStreams(): Promise<SelectRecordingStream[]> {
     return await localdb
       .select()
@@ -314,538 +277,566 @@ export class DataStorageManager {
       );
   }
 
-  /**
-   * Mark streams as synced
-   */
   async markStreamsSynced(streamIds: string[]): Promise<void> {
-    for (const id of streamIds) {
-      await localdb
-        .update(activityRecordingStreams)
-        .set({ synced: true })
-        .where(eq(activityRecordingStreams.id, id));
-    }
+    if (streamIds.length === 0) return;
 
-    console.log(`Marked ${streamIds.length} streams as synced`);
+    await localdb
+      .update(activityRecordingStreams)
+      .set({ synced: true })
+      .where(inArray(activityRecordingStreams.id, streamIds));
   }
 
-  /**
-   * Mark recording as synced
-   */
   async markRecordingSynced(recordingId: string): Promise<void> {
     await localdb
       .update(activityRecordings)
       .set({ synced: true })
       .where(eq(activityRecordings.id, recordingId));
-
-    console.log(`Marked recording ${recordingId} as synced`);
   }
 
   // ================================
-  // Data Aggregation Helpers
+  // Lifecycle Methods
   // ================================
 
-  /**
-   * Reconstruct complete activity data from chunks
-   */
-  async reconstructActivityData(
-    recordingId: string,
-  ): Promise<Record<string, { values: any[]; timestamps: number[] }>> {
-    const streams = await this.getRecordingStreams(recordingId);
-    const reconstructed: Record<
-      string,
-      { values: any[]; timestamps: number[] }
-    > = {};
+  async resetState(): Promise<void> {
+    this.stopChunkProcessing();
+    this.recordingId = null;
+    this.chunkIndex = 0;
+    this.sensorDataBuffer = {};
+    this.lastCheckpointAt = null;
+    this.currentState = "idle";
+  }
 
-    // Group streams by metric
-    const streamsByMetric = streams.reduce(
-      (acc, stream) => {
-        if (!acc[stream.metric]) {
-          acc[stream.metric] = [];
-        }
-        acc[stream.metric].push(stream);
-        return acc;
-      },
-      {} as Record<string, SelectRecordingStream[]>,
-    );
+  async startRecording(): Promise<SelectActivityRecording> {
+    const recording = await this.updateRecording({
+      startedAt: new Date().toISOString(),
+      state: "recording",
+    });
 
-    // Reconstruct each metric's complete data
-    for (const [metric, metricStreams] of Object.entries(streamsByMetric)) {
-      const sortedStreams = metricStreams.sort(
-        (a, b) => a.chunkIndex - b.chunkIndex,
-      );
-      const allValues: any[] = [];
-      const allTimestamps: number[] = [];
+    this.lastCheckpointAt = new Date();
+    this.startChunkProcessing();
 
-      for (const stream of sortedStreams) {
-        const chunkData = JSON.parse(stream.data as string);
-        const chunkTimestamps = JSON.parse(stream.timestamps as string);
+    return recording;
+  }
 
-        allValues.push(...chunkData);
-        allTimestamps.push(...chunkTimestamps);
-      }
-
-      reconstructed[metric] = {
-        values: allValues,
-        timestamps: allTimestamps,
-      };
+  async pauseRecording(): Promise<SelectActivityRecording> {
+    this.stopChunkProcessing();
+    if (this.lastCheckpointAt) {
+      await this.processChunk();
     }
 
-    return reconstructed;
+    const recording = await this.updateRecording({
+      state: "paused",
+    });
+    return recording;
   }
 
-  // ================================
-  // Cleanup & Lifecycle
-  // ================================
+  async resumeRecording(): Promise<SelectActivityRecording> {
+    const recording = await this.updateRecording({
+      state: "recording",
+    });
 
-  /**
-   * Clean up completed recording session
-   */
+    this.lastCheckpointAt = new Date();
+    this.startChunkProcessing();
+
+    return recording;
+  }
+
   async finishRecording(): Promise<void> {
-    // Final flush of any remaining data
-    await this.flushBuffer();
-
-    // Stop chunk processing
-    this.stopChunkProcessing();
-
-    // Update recording state to finished
-    if (this.currentRecordingId) {
-      await this.updateRecordingState(this.currentRecordingId, "finished");
-    }
-
-    // Reset state
-    this.currentRecordingId = null;
-    this.chunkIndex = 0;
-    this.clearBuffer();
-
-    console.log("Recording session finished and cleaned up");
-  }
-
-  /**
-   * Abandon current recording and clean up
-   */
-  async discardRecording(): Promise<void> {
-    if (this.currentRecordingId) {
-      await this.updateRecordingState(this.currentRecordingId, "discarded");
-      console.log(`Discarded recording: ${this.currentRecordingId}`);
-    }
+    if (!this.recordingId) throw new Error("No recording ID provided");
 
     this.stopChunkProcessing();
-    this.currentRecordingId = null;
-    this.chunkIndex = 0;
-    this.clearBuffer();
-  }
 
-  /**
-   * Delete old recordings and their streams
-   */
-  async deleteRecording(recordingId: string): Promise<void> {
-    // Delete streams first (foreign key constraint)
-    await localdb
-      .delete(activityRecordingStreams)
-      .where(eq(activityRecordingStreams.activityRecordingId, recordingId));
-
-    // Delete recording
-    await localdb
-      .delete(activityRecordings)
-      .where(eq(activityRecordings.id, recordingId));
-
-    console.log(`Deleted recording: ${recordingId}`);
-  }
-
-  /**
-   * Delete all unfinished recordings for a specific user/profile
-   * This ensures a clean slate before starting a new recording
-   */
-  async deleteUnfinishedRecordings(profileId: string): Promise<void> {
-    try {
-      // Find all unfinished recordings for this profile
-      const unfinishedRecordings = await localdb
-        .select({ id: activityRecordings.id })
-        .from(activityRecordings)
-        .where(
-          and(
-            eq(activityRecordings.profileId, profileId),
-            // Delete recordings that are not finished (pending, ready, recording, paused, discarded)
-            // Only keep "finished" recordings
-            ne(activityRecordings.state, "finished"),
-          ),
-        );
-
-      if (unfinishedRecordings.length === 0) {
-        console.log(`No unfinished recordings found for profile ${profileId}`);
-        return;
-      }
-
-      const recordingIds = unfinishedRecordings.map((r) => r.id);
-
-      // Delete associated streams first (foreign key constraint)
-      await localdb
-        .delete(activityRecordingStreams)
-        .where(
-          inArray(activityRecordingStreams.activityRecordingId, recordingIds),
-        );
-
-      // Delete the unfinished recordings
-      await localdb
-        .delete(activityRecordings)
-        .where(
-          and(
-            eq(activityRecordings.profileId, profileId),
-            ne(activityRecordings.state, "finished"),
-          ),
-        );
-
-      console.log(
-        `Deleted ${recordingIds.length} unfinished recordings for profile ${profileId}:`,
-        recordingIds,
-      );
-    } catch (error) {
-      console.error("Failed to delete unfinished recordings:", error);
-      // Don't throw - we want recording to continue even if cleanup fails
+    if (
+      this.lastCheckpointAt &&
+      Object.values(this.sensorDataBuffer).some((buffer) => buffer.length > 0)
+    ) {
+      await this.processChunk();
     }
+
+    await this.updateRecording({ state: "finished" });
+  }
+
+  async deleteLocalRecordings(): Promise<void> {
+    await localdb.delete(activityRecordings);
+    this.resetState();
   }
 
   // ================================
-  // Enhanced Stream Aggregation and Compression
+  // State Management Helpers
   // ================================
 
-  /**
-   * Aggregate and compress all streams for a recording into upload-ready format
-   * Creates one compressed stream per metric for backend upload
-   */
-  async prepareStreamsForUpload(recordingId: string): Promise<
-    {
-      type: PublicActivityMetric;
-      data_type: PublicActivityMetricDataType;
-      data: string; // Base64 encoded compressed data
-      original_size: number;
-      sample_count: number;
-      start_time: string;
-      end_time: string;
-    }[]
-  > {
-    const streams = await this.getRecordingStreams(recordingId);
-    if (streams.length === 0) return [];
-
-    // Group streams by metric type
-    const streamsByMetric = this.groupStreamsByMetric(streams);
-    const compressedStreams: any[] = [];
-
-    // Process each metric independently
-    for (const [metric, metricStreams] of Object.entries(streamsByMetric)) {
-      const aggregated = this.aggregateMetricStreams(metricStreams);
-      const compressed = await this.compressStreamData(
-        aggregated,
-        metric as PublicActivityMetric,
-      );
-      compressedStreams.push(compressed);
-    }
-
-    return compressedStreams;
+  isRecording(): boolean {
+    return this.currentState === "recording";
   }
 
-  /**
-   * Aggregate multiple chunks of same metric into single dataset
-   */
-  private aggregateMetricStreams(streams: SelectRecordingStream[]): {
-    values: any[];
-    timestamps: number[];
-    startTime: Date;
-    endTime: Date;
-    totalSamples: number;
-  } {
-    // Sort streams by chunk index to maintain chronological order
-    const sortedStreams = streams.sort((a, b) => a.chunkIndex - b.chunkIndex);
-
-    const allValues: any[] = [];
-    const allTimestamps: number[] = [];
-    let startTime = sortedStreams[0]?.startTime;
-    let endTime = sortedStreams[0]?.endTime;
-    let totalSamples = 0;
-
-    for (const stream of sortedStreams) {
-      try {
-        const chunkValues = JSON.parse(stream.data as string);
-        const chunkTimestamps = JSON.parse(stream.timestamps as string);
-
-        allValues.push(...chunkValues);
-        allTimestamps.push(...chunkTimestamps);
-        totalSamples += stream.sampleCount;
-
-        // Update time bounds
-        if (stream.startTime < startTime) startTime = stream.startTime;
-        if (stream.endTime > endTime) endTime = stream.endTime;
-      } catch (error) {
-        console.warn(`Failed to parse stream chunk ${stream.id}:`, error);
-      }
-    }
-
-    return {
-      values: allValues,
-      timestamps: allTimestamps,
-      startTime,
-      endTime,
-      totalSamples,
-    };
+  isPaused(): boolean {
+    return this.currentState === "paused";
   }
 
-  /**
-   * Compress aggregated stream data using pako gzip
-   */
-  private async compressStreamData(
-    aggregated: any,
+  isFinished(): boolean {
+    return this.currentState === "finished";
+  }
+
+  getState(): RecordingState {
+    return this.currentState;
+  }
+
+  // ================================
+  // Helper Methods
+  // ================================
+
+  private getDataTypeForMetric(
     metric: PublicActivityMetric,
-  ): Promise<{
-    type: PublicActivityMetric;
-    data_type: PublicActivityMetricDataType;
-    data: string;
-    original_size: number;
-    sample_count: number;
-    start_time: string;
-    end_time: string;
-  }> {
+  ): PublicActivityMetricDataType {
+    switch (metric) {
+      case "latlng":
+        return "latlng";
+      case "moving":
+        return "boolean";
+      default:
+        return "float";
+    }
+  }
+
+  private parseStreamData(stream: SelectRecordingStream): ParsedStreamData {
     try {
-      // Create the data structure that will be compressed
-      const streamPayload = {
-        values: aggregated.values,
-        timestamps: aggregated.timestamps,
-        sample_count: aggregated.totalSamples,
-        metric: metric,
-      };
+      const data = JSON.parse(stream.data as string);
+      const timestamps = JSON.parse(stream.timestamps as string);
 
-      // Convert to JSON string
-      const jsonString = JSON.stringify(streamPayload);
-      const originalSize = new TextEncoder().encode(jsonString).length;
-
-      // Compress with pako
-      const compressed = pako.gzip(jsonString);
-
-      // Convert to base64 for JSON transport
-      const base64Compressed = Buffer.from(compressed).toString("base64");
-
-      console.log(
-        `Compressed ${metric}: ${originalSize} bytes → ${base64Compressed.length} chars ` +
-          `(${((1 - base64Compressed.length / originalSize) * 100).toFixed(1)}% reduction)`,
-      );
+      // Type guard
+      if (!Array.isArray(data) || !Array.isArray(timestamps)) {
+        throw new Error("Invalid stream data format");
+      }
 
       return {
-        type: metric,
-        data_type: this.getDataTypeForMetric(metric),
-        data: base64Compressed,
-        original_size: originalSize,
-        sample_count: aggregated.totalSamples,
-        start_time: aggregated.startTime.toISOString(),
-        end_time: aggregated.endTime.toISOString(),
+        data: data as number[],
+        timestamps: timestamps as number[],
       };
     } catch (error) {
-      console.error(`Failed to compress ${metric} stream:`, error);
-      throw new Error(`Stream compression failed for ${metric}`);
+      throw new Error(`Failed to parse stream data: ${error}`);
     }
   }
 
-  /**
-   * Prepare complete submission payload for TRPC create_activity
-   */
-  async prepareSubmissionPayload(
-    recordingId: string,
-    activitySummary: ActivitySummary,
-    recording: SelectActivityRecording,
-  ): Promise<{
-    activity: any; // PublicActivitiesInsertSchema format
-    activity_streams: any[]; // PublicActivityStreamsInsertSchema[] format
-  }> {
-    // Prepare compressed streams
-    const compressedStreams = await this.prepareStreamsForUpload(recordingId);
-
-    // Prepare activity metadata
-    const activityPayload = {
-      // Core required fields
-      name: recording.name || `${recording.activityType} Activity`,
-      activity_type: recording.activityType,
-      profile_id: recording.profileId,
-
-      // Timing
-      started_at: recording.startedAt.toISOString(),
-      moving_time: Math.round(activitySummary.movingTime / 1000), // Convert to seconds
-
-      // Performance metrics
-      distance: activitySummary.distance || null,
-      avg_heart_rate: activitySummary.averageHeartRate || null,
-      max_heart_rate: activitySummary.maxHeartRate || null,
-      avg_speed: activitySummary.averageSpeed || null,
-      max_speed: activitySummary.maxSpeed || null,
-      avg_power: activitySummary.averagePower || null,
-      normalized_power: activitySummary.normalizedPower || null,
-      avg_cadence: activitySummary.averageCadence || null,
-      max_cadence: activitySummary.maxCadence || null,
-
-      // Optional fields
-      notes: recording.notes || null,
-      local_file_path: recordingId, // Reference to local recording
-      planned_activity_id: recording.plannedActivityId || null,
-    };
-
-    // Format streams for backend
-    const activityStreamsPayload = compressedStreams.map((stream) => ({
-      // activity_id will be set by backend after activity creation
-      type: stream.type,
-      data_type: stream.data_type,
-      data: stream.data, // Base64 compressed
-      original_size: stream.original_size,
-      chunk_index: 0, // Always 0 for aggregated streams
-      // created_at will be set by backend
-    }));
-
-    return {
-      activity: activityPayload,
-      activity_streams: activityStreamsPayload,
-    };
-  }
-
-  // ================================
-  // Sync & Upload Methods
-  // ================================
-
-  /**
-   * Upload completed activity using enhanced submission payload
-   * Uses the new enhanced compression system
-   */
-  async uploadActivity(
-    recordingId: string,
-    activityData: any,
-    summary: any,
-  ): Promise<boolean> {
-    try {
-      // Get recording details
-      const recording = await this.getCurrentRecording();
-      if (!recording) {
-        throw new Error("Recording not found");
-      }
-
-      // Use enhanced submission payload preparation
-      const submissionPayload = await this.prepareSubmissionPayload(
-        recordingId,
-        summary,
-        recording,
-      );
-
-      console.log("Enhanced upload payload prepared:", {
-        activityName: submissionPayload.activity.name,
-        streamCount: submissionPayload.activity_streams.length,
-        totalOriginalSize: submissionPayload.activity_streams.reduce(
-          (sum, s) => sum + s.original_size,
-          0,
-        ),
-      });
-
-      // TODO: Replace with actual tRPC client when available
-      // const result = await trpc.activities.create.mutate(submissionPayload);
-
-      // Placeholder success
-      console.log("Enhanced activity upload would succeed");
-
-      // Mark recording as synced
-      await this.markRecordingSynced(recordingId);
-      console.log(`Successfully uploaded activity using enhanced compression`);
-
-      return true;
-    } catch (error) {
-      console.error("Failed to upload activity:", error);
-      return false;
-    }
-  }
-
-  /**
-   * Group streams by metric for batch processing
-   * Used by enhanced compression system
-   */
   private groupStreamsByMetric(
     streams: SelectRecordingStream[],
-  ): Record<string, SelectRecordingStream[]> {
-    return streams.reduce(
-      (acc, stream) => {
-        if (!acc[stream.metric]) {
-          acc[stream.metric] = [];
-        }
-        acc[stream.metric].push(stream);
-        return acc;
-      },
-      {} as Record<string, SelectRecordingStream[]>,
-    );
+  ): Map<string, SelectRecordingStream[]> {
+    const grouped = new Map<string, SelectRecordingStream[]>();
+
+    for (const stream of streams) {
+      const existing = grouped.get(stream.metric);
+      if (existing) {
+        existing.push(stream);
+      } else {
+        grouped.set(stream.metric, [stream]);
+      }
+    }
+
+    return grouped;
   }
 
+  private aggregateMetricStreams(
+    streams: SelectRecordingStream[],
+  ): AggregatedStream {
+    if (streams.length === 0) {
+      throw new Error("Cannot aggregate empty stream array");
+    }
+
+    const firstStream = streams[0];
+    const allValues: number[] = [];
+    const allTimestamps: number[] = [];
+
+    // Pre-allocate arrays if we know the total size
+    let totalSize = 0;
+    for (const stream of streams) {
+      totalSize += stream.sampleCount;
+    }
+
+    allValues.length = totalSize;
+    allTimestamps.length = totalSize;
+
+    let offset = 0;
+    for (const stream of streams) {
+      const parsed = this.parseStreamData(stream);
+
+      // Copy data into pre-allocated arrays
+      for (let i = 0; i < parsed.data.length; i++) {
+        allValues[offset + i] = parsed.data[i];
+        allTimestamps[offset + i] = parsed.timestamps[i];
+      }
+
+      offset += parsed.data.length;
+    }
+
+    // Calculate statistics for numeric metrics in a single pass
+    let minValue: number | undefined;
+    let maxValue: number | undefined;
+    let avgValue: number | undefined;
+
+    if (firstStream.dataType === "float" && allValues.length > 0) {
+      let sum = 0;
+      minValue = allValues[0];
+      maxValue = allValues[0];
+
+      for (let i = 0; i < allValues.length; i++) {
+        const val = allValues[i];
+        sum += val;
+        if (val < minValue) minValue = val;
+        if (val > maxValue) maxValue = val;
+      }
+
+      avgValue = sum / allValues.length;
+    }
+
+    return {
+      metric: firstStream.metric,
+      dataType: firstStream.dataType,
+      values: allValues,
+      timestamps: allTimestamps,
+      sampleCount: allValues.length,
+      minValue,
+      maxValue,
+      avgValue,
+    };
+  }
+
+  private async compressStreamData(
+    activityId: string,
+    aggregated: AggregatedStream,
+    metric: PublicActivityMetric,
+    dataType: PublicActivityMetricDataType,
+  ): Promise<PublicActivityStreamsInsert> {
+    // Convert to Float32Array for efficient compression
+    const valuesArray = new Float32Array(aggregated.values);
+    const timestampsArray = new Float32Array(aggregated.timestamps);
+
+    // Compress using pako (gzip)
+    const compressedValues = pako.gzip(new Uint8Array(valuesArray.buffer));
+    const compressedTimestamps = pako.gzip(
+      new Uint8Array(timestampsArray.buffer),
+    );
+
+    const originalSize = valuesArray.byteLength + timestampsArray.byteLength;
+
+    return {
+      activity_id: activityId,
+      type: metric,
+      data_type: dataType,
+      compressed_values: Buffer.from(compressedValues).toString("base64"),
+      compressed_timestamps:
+        Buffer.from(compressedTimestamps).toString("base64"),
+      sample_count: aggregated.sampleCount,
+      original_size: originalSize,
+      min_value: aggregated.minValue,
+      max_value: aggregated.maxValue,
+      avg_value: aggregated.avgValue,
+    };
+  }
+
+  // ================================
+  // Activity Payload Creation
+  // ================================
+
+  async createActivityPayload(
+    recordingId: string,
+    plannedActivity?: PublicPlannedActivitiesRow & {
+      activity_plan: PublicActivityPlansRow;
+    },
+  ): Promise<{
+    activity: PublicActivitiesInsert;
+    activity_streams: PublicActivityStreamsInsert[];
+  }> {
+    if (!recordingId) throw new Error("Recording ID is required");
+
+    const recording = await localdb
+      .select()
+      .from(activityRecordings)
+      .where(eq(activityRecordings.id, recordingId))
+      .limit(1);
+
+    if (!recording[0]) throw new Error("Recording not found");
+
+    const activity_id = createId();
+    const streams = await localdb
+      .select()
+      .from(activityRecordingStreams)
+      .where(eq(activityRecordingStreams.activityRecordingId, recordingId))
+      .orderBy(
+        activityRecordingStreams.metric,
+        activityRecordingStreams.chunkIndex,
+      );
+
+    if (streams.length === 0) throw new Error("No streams found for recording");
+
+    const activity_streams: PublicActivityStreamsInsert[] = [];
+    const aggregatedStreams = new Map<string, AggregatedStream>();
+    const streamsByMetric = this.groupStreamsByMetric(streams);
+
+    // First pass: aggregate and store uncompressed data
+    for (const [metric, metricStreams] of streamsByMetric.entries()) {
+      const aggregated = this.aggregateMetricStreams(metricStreams);
+      aggregatedStreams.set(metric, aggregated);
+
+      // Then compress for storage
+      const compressed_stream = await this.compressStreamData(
+        activity_id,
+        aggregated,
+        metric as PublicActivityMetric,
+        this.getDataTypeForMetric(metric as PublicActivityMetric),
+      );
+      activity_streams.push(compressed_stream);
+    }
+
+    // Create activity using the uncompressed aggregated streams
+    const activity = this.createActivity(
+      recording[0],
+      aggregatedStreams,
+      plannedActivity,
+    );
+    activity.id = activity_id;
+
+    return {
+      activity,
+      activity_streams,
+    };
+  }
+
+  private createActivity(
+    recording: SelectActivityRecording,
+    aggregatedStreams: Map<string, AggregatedStream>,
+    plannedActivity?: PublicPlannedActivitiesRow & {
+      activity_plan: PublicActivityPlansRow;
+    },
+  ): PublicActivitiesInsert {
+    if (!recording.startedAt || !recording.endedAt) {
+      throw new Error("Recording must have started and ended times");
+    }
+
+    // Calculate metrics from uncompressed streams
+    const metrics = this.calculateActivityMetrics(recording, aggregatedStreams);
+
+    const activity: PublicActivitiesInsert = {
+      profile_id: this.profile.id,
+      started_at: recording.startedAt,
+      finished_at: recording.endedAt,
+      name:
+        plannedActivity?.activity_plan.name ||
+        `Activity ${new Date().toLocaleDateString()}`,
+      activity_type: plannedActivity?.activity_plan.activity_type || "other",
+      ...metrics,
+      planned_activity_id: plannedActivity?.id,
+      profile_age: calculateAge(this.profile.dob),
+      profile_ftp: this.profile.ftp,
+      profile_threshold_hr: this.profile.threshold_hr,
+      profile_weight_kg: this.profile.weight_kg,
+    };
+
+    return activity;
+  }
+
+  calculateActivityMetrics(
+    recording: SelectActivityRecording,
+    aggregatedStreams: Map<string, AggregatedStream>,
+    profileDob?: string,
+  ): Omit<
+    PublicActivitiesInsert,
+    | "name"
+    | "notes"
+    | "activity_type"
+    | "started_at"
+    | "finished_at"
+    | "planned_activity_id"
+    | "profile_id"
+    | "profile_age"
+    | "profile_ftp"
+    | "profile_threshold_hr"
+    | "profile_weight_kg"
+  > {
+    // ============================================
+    // 1. Extract stream references (O(1) lookups)
+    // ============================================
+    const hrStream = aggregatedStreams.get("heartrate");
+    const powerStream = aggregatedStreams.get("power");
+    const distanceStream = aggregatedStreams.get("distance");
+    const speedStream = aggregatedStreams.get("speed");
+    const cadenceStream = aggregatedStreams.get("cadence");
+    const elevationStream = aggregatedStreams.get("elevation");
+    const gradientStream = aggregatedStreams.get("gradient");
+
+    // ============================================
+    // 2. Base calculations (no dependencies)
+    // ============================================
+    const elapsed_time = calculateElapsedTime(recording);
+    const moving_time = calculateMovingTime(recording, aggregatedStreams);
+    const profile_age = calculateAge(profileDob || null);
+
+    // ============================================
+    // 3. Simple aggregated values (already computed)
+    // ============================================
+    const distance = distanceStream?.maxValue || 0;
+    const avg_heart_rate = hrStream?.avgValue
+      ? Math.round(hrStream.avgValue)
+      : undefined;
+    const max_heart_rate = hrStream?.maxValue
+      ? Math.round(hrStream.maxValue)
+      : undefined;
+    const avg_power = powerStream?.avgValue
+      ? Math.round(powerStream.avgValue)
+      : undefined;
+    const max_power = powerStream?.maxValue
+      ? Math.round(powerStream.maxValue)
+      : undefined;
+    const avg_speed = speedStream?.avgValue;
+    const max_speed = speedStream?.maxValue;
+    const avg_cadence = cadenceStream?.avgValue
+      ? Math.round(cadenceStream.avgValue)
+      : undefined;
+    const max_cadence = cadenceStream?.maxValue
+      ? Math.round(cadenceStream.maxValue)
+      : undefined;
+
+    // ============================================
+    // 4. Power-derived metrics (compute NP once, reuse)
+    // ============================================
+    const normalized_power = calculateNormalizedPower(powerStream);
+    const intensity_factor = calculateIntensityFactor(
+      powerStream,
+      recording.profileFtp,
+    );
+    const training_stress_score = calculateTSS(powerStream, recording);
+    const variability_index = calculateVariabilityIndex(
+      powerStream,
+      normalized_power,
+    );
+    const total_work = calculateTotalWork(powerStream, elapsed_time);
+
+    // ============================================
+    // 5. Zone calculations (iterate streams once per zone type)
+    // ============================================
+    const hr_zones = calculateHRZones(hrStream, recording.profileThresholdHr);
+    const power_zones = calculatePowerZones(powerStream, recording.profileFtp);
+    const max_hr_percent = calculateMaxHRPercent(
+      hrStream,
+      recording.profileThresholdHr,
+    );
+
+    // ============================================
+    // 6. Multi-stream advanced metrics
+    // ============================================
+    const efficiency_factor = calculateEfficiencyFactor(powerStream, hrStream);
+    const decoupling = calculateDecoupling(powerStream, hrStream);
+    const power_heart_rate_ratio = calculatePowerHeartRateRatio(
+      powerStream,
+      hrStream,
+    );
+    const power_weight_ratio = calculatePowerWeightRatio(
+      powerStream,
+      recording.profileWeightKg,
+    );
+
+    // ============================================
+    // 7. Elevation calculations (single pass through elevation data)
+    // ============================================
+    const { totalAscent, totalDescent } =
+      calculateElevationChanges(elevationStream);
+    const avg_grade = calculateAverageGrade(gradientStream);
+    const elevation_gain_per_km = calculateElevationGainPerKm(
+      totalAscent,
+      distanceStream,
+    );
+
+    // ============================================
+    // 8. Calories (last since it has multiple fallback paths)
+    // ============================================
+    const calories = calculateCalories(
+      recording,
+      powerStream,
+      hrStream,
+      profileDob,
+    );
+
+    // ============================================
+    // Return complete metrics object
+    // ============================================
+    return {
+      // Time
+      elapsed_time,
+      moving_time,
+
+      // Distance & Speed
+      distance,
+      avg_speed,
+      max_speed,
+
+      // Heart Rate
+      avg_heart_rate,
+      max_heart_rate,
+      hr_zone_1_time: hr_zones.zone1,
+      hr_zone_2_time: hr_zones.zone2,
+      hr_zone_3_time: hr_zones.zone3,
+      hr_zone_4_time: hr_zones.zone4,
+      hr_zone_5_time: hr_zones.zone5,
+
+      // Power
+      avg_power,
+      max_power,
+      normalized_power,
+      intensity_factor,
+      training_stress_score,
+      variability_index,
+      total_work,
+      power_zone_1_time: power_zones.zone1,
+      power_zone_2_time: power_zones.zone2,
+      power_zone_3_time: power_zones.zone3,
+      power_zone_4_time: power_zones.zone4,
+      power_zone_5_time: power_zones.zone5,
+      power_zone_6_time: power_zones.zone6,
+      power_zone_7_time: power_zones.zone7,
+
+      // Cadence
+      avg_cadence,
+      max_cadence,
+
+      // Elevation
+      total_ascent: totalAscent,
+      total_descent: totalDescent,
+      avg_grade,
+      elevation_gain_per_km,
+
+      // Advanced Metrics
+      efficiency_factor,
+      decoupling,
+      power_heart_rate_ratio,
+      power_weight_ratio,
+
+      // Energy
+      calories,
+    };
+  }
   // ================================
   // Utility Methods
   // ================================
 
-  /**
-   * Get data type for metric (required for schema)
-   */
-  private getDataTypeForMetric(
-    metric: PublicActivityMetric,
-  ): PublicActivityMetricDataType {
-    const dataTypes: Record<
-      PublicActivityMetric,
-      PublicActivityMetricDataType
-    > = {
-      heartrate: "integer",
-      power: "integer",
-      speed: "float",
-      cadence: "integer",
-      distance: "float",
-      latlng: "latlng",
-      altitude: "float",
-      temperature: "float",
-      gradient: "float",
-      moving: "boolean",
-    };
-
-    return dataTypes[metric] || "float";
-  }
-
-  /**
-   * Get current recording ID
-   */
-  getCurrentRecordingId(): string | null {
-    return this.currentRecordingId;
-  }
-
-  /**
-   * Check if actively recording
-   */
-  isRecording(): boolean {
-    return this.currentRecordingId !== null && this.chunkTimer !== null;
-  }
-
-  /**
-   * Get recording statistics
-   */
-  async getRecordingStats(recordingId?: string): Promise<{
+  async getRecordingStats(): Promise<{
     totalChunks: number;
-    totalSamples: number;
+    sample_count: number;
     metrics: string[];
-    unsyncedChunks: number;
   }> {
-    const id = recordingId || this.currentRecordingId;
-    if (!id) {
+    if (!this.recordingId) {
       return {
         totalChunks: 0,
-        totalSamples: 0,
+        sample_count: 0,
         metrics: [],
-        unsyncedChunks: 0,
       };
     }
 
-    const streams = await this.getRecordingStreams(id);
+    const streams = await this.getRecordingStreams();
     const uniqueMetrics = [...new Set(streams.map((s) => s.metric))];
-    const totalSamples = streams.reduce((sum, s) => sum + s.sampleCount, 0);
-    const unsyncedChunks = streams.filter((s) => !s.synced).length;
+    const sample_count = streams.reduce((sum, s) => sum + s.sampleCount, 0);
 
     return {
       totalChunks: streams.length,
-      totalSamples,
+      sample_count,
       metrics: uniqueMetrics,
-      unsyncedChunks,
     };
   }
 }

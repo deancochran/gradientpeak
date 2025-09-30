@@ -28,7 +28,7 @@ export interface SensorReading {
   dataType: PublicActivityMetricDataType;
   value: number | [number, number];
   timestamp: number;
-  deviceId?: string;
+  deviceId: string;
 }
 
 /** --- BLE Parsers --- */
@@ -36,7 +36,7 @@ export interface SensorReading {
 /** Parse Heart Rate as a single reading */
 export function parseHeartRate(
   data: ArrayBuffer,
-  deviceId?: string,
+  deviceId: string,
 ): SensorReading | null {
   if (data.byteLength < 2) return null;
   const view = new DataView(data);
@@ -57,7 +57,7 @@ export function parseHeartRate(
 /** Parse Cycling Power as a single reading */
 export function parseCyclingPower(
   data: ArrayBuffer,
-  deviceId?: string,
+  deviceId: string,
 ): SensorReading | null {
   if (data.byteLength < 4) return null;
   const view = new DataView(data);
@@ -75,7 +75,7 @@ export function parseCyclingPower(
 /** Parse CSC Measurement as a single reading (either cadence or speed) */
 export function parseCSCMeasurement(
   data: ArrayBuffer,
-  deviceId?: string,
+  deviceId: string,
 ): SensorReading | null {
   if (data.byteLength < 1) return null;
   const view = new DataView(data);
@@ -112,7 +112,7 @@ export function parseCSCMeasurement(
 export function parseBleData(
   metricType: BleMetricType,
   raw: ArrayBuffer,
-  deviceId?: string,
+  deviceId: string,
 ): SensorReading | null {
   switch (metricType) {
     case BleMetricType.HeartRate:

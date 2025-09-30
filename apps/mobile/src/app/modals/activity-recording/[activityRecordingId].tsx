@@ -14,9 +14,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useActivityRecorder } from "@/lib/hooks/useActivityRecorder";
 import { useRequireAuth } from "@/lib/hooks/useAuth";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import { ActivitySummary } from "@repo/core";
-import { publicActivitiesInsertSchema } from "@repo/supabase";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { ActivitySummary } from "@repo/core";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   ArrowLeft,
@@ -29,12 +28,12 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   View,
-  ActivityIndicator,
 } from "react-native";
 import { z } from "zod";
 
@@ -79,37 +78,6 @@ export default function SubmitRecordingModal() {
       notes: "",
     },
   });
-
-  // Utility functions
-  const formatDuration = (seconds: number): string => {
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-
-    if (hrs > 0) {
-      return `${hrs}h ${mins}m ${secs}s`;
-    }
-    return `${mins}m ${secs}s`;
-  };
-
-  const formatDistance = (meters: number): string => {
-    if (meters < 1000) {
-      return `${Math.round(meters)}m`;
-    }
-    return `${(meters / 1000).toFixed(2)}km`;
-  };
-
-  const formatSpeed = (kmh: number): string => {
-    return `${kmh.toFixed(1)} km/h`;
-  };
-
-  const formatPower = (watts: number): string => {
-    return `${Math.round(watts)}W`;
-  };
-
-  const formatHeartRate = (bpm: number): string => {
-    return `${Math.round(bpm)} bpm`;
-  };
 
   // Process activity data when modal opens
   useEffect(() => {

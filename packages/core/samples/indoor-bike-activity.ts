@@ -1,4 +1,4 @@
-import type { PublicActivityType } from "@repo/supabase";
+import { type PublicActivityType } from "@repo/supabase";
 import type { PlannedActivityStructure } from "../schemas/planned_activity";
 
 /**
@@ -543,7 +543,7 @@ export function getSampleActivitysForActivityType(
   activityType: PublicActivityType,
 ): PlannedActivityStructure[] {
   // For now, all samples are indoor cycling
-  if (activityType === PublicActivityType.INDOOR_CYCLING) {
+  if (activityType === "indoor_bike_trainer") {
     return Object.values(SAMPLE_WORKOUTS);
   }
   return [];

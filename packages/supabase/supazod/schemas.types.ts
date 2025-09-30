@@ -28,6 +28,18 @@ export type PublicActivitiesUpdate = z.infer<
 export type PublicActivitiesRelationships = z.infer<
   typeof generated.publicActivitiesRelationshipsSchema
 >;
+export type PublicActivityPlansRow = z.infer<
+  typeof generated.publicActivityPlansRowSchema
+>;
+export type PublicActivityPlansInsert = z.infer<
+  typeof generated.publicActivityPlansInsertSchema
+>;
+export type PublicActivityPlansUpdate = z.infer<
+  typeof generated.publicActivityPlansUpdateSchema
+>;
+export type PublicActivityPlansRelationships = z.infer<
+  typeof generated.publicActivityPlansRelationshipsSchema
+>;
 export type PublicActivityStreamsRow = z.infer<
   typeof generated.publicActivityStreamsRowSchema
 >;

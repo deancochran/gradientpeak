@@ -3,28 +3,8 @@
  * These functions process raw activity data to compute aggregated metrics
  */
 
-import type { ActivitySummary, PublicProfilesRow } from "../types";
 
-// ================================
-// Activity Stream Processing Types
-// ================================
 
-export interface ActivityStream {
-  metric: string;
-  data: number[] | [number, number][];
-  timestamps: number[];
-}
-
-export interface ActivityStreamData {
-  heartrate?: number[];
-  power?: number[];
-  speed?: number[];
-  cadence?: number[];
-  distance?: number[];
-  latlng?: [number, number][];
-  altitude?: number[];
-  timestamps: number[];
-}
 
 // ================================
 // Distance Calculations
@@ -164,11 +144,9 @@ export function calculateElevationLoss(altitudeData: number[]): number {
  * Calculate calories burned using multiple methods based on available data
  */
 export function calculateCalories(
-  profile: PublicProfilesRow,
-  durationSeconds: number,
-  avgPower?: number,
-  avgHeartRate?: number,
-  activityType: string = "outdoor_bike",
+  profile: PublicProfilesRow
+  recording: ActivityRecordingRow,
+  activity_streams: ActivityStreamsRow,
 ): number {
   // Method 1: Power-based calculation (most accurate for cycling)
   if (avgPower && avgPower > 0) {

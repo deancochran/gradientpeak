@@ -1,5 +1,4 @@
-import { NORMALIZED_POWER, POWER_ZONE_PERCENTAGES } from "../constants";
-import type { ActivityStream, PowerZones } from "../types";
+s;
 
 /**
  * Calculate power zones based on FTP

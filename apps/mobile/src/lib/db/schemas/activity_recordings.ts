@@ -4,29 +4,24 @@ import {
   PublicActivityType,
 } from "@repo/core";
 import { sql } from "drizzle-orm";
-
-import { createId } from "@paralleldrive/cuid2";
 import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
-export type RecordingState =
-  | "pending"
-  | "ready"
-  | "recording"
-  | "paused"
-  | "discarded"
-  | "finished";
+export type RecordingState = "ready" | "recording" | "paused" | "finished";
 
 // Activities table
 export const activityRecordings = sqliteTable("activity_recordings", {
   id: text("id")
     .primaryKey()
-    .$default(() => createId()),
-  startedAt: integer("started_at"),
-  state: text("state").$type<RecordingState>().notNull(),
+    .$defaultFn(() => createId()),
+  startedAt: text("started_at"),
+  endedAt: text("ended_at"),
+  state: text("state").notNull().$type<RecordingState>().default("ready"),
   synced: integer("synced", { mode: "boolean" }).notNull().default(false),
-  activityType: text("activity_type").$type<PublicActivityType>().notNull(),
-  version: text("version").notNull(),
-
+  activityType: text("activity_type")
+    .notNull()
+    .$type<PublicActivityType>()
+    .default("outdoor_run"),
+  version: text("version").notNull().default("1.0"),
   profileId: text("profile_id").notNull(),
   profileWeightKg: real("profile_weight_kg"),
   profileFtp: real("profile_ftp"),
@@ -44,7 +39,10 @@ export const activityRecordings = sqliteTable("activity_recordings", {
   ),
   plannedActivityEstimatedDistance: real("planned_activity_estimated_distance"),
   plannedActivityEstimatedTss: real("planned_activity_estimated_tss"),
-  createdAt: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+
+  createdAt: text("created_at")
+    .default(sql`(CURRENT_TIMESTAMP)`)
+    .notNull(),
 });
 
 // Unified Activity Streams Table
@@ -53,7 +51,7 @@ export const activityRecordingStreams = sqliteTable(
   {
     id: text("id")
       .primaryKey()
-      .$default(() => createId()),
+      .$defaultFn(() => createId()),
     activityRecordingId: text("activity_recording_id")
       .notNull()
       .references(() => activityRecordings.id, { onDelete: "cascade" }),
@@ -69,6 +67,8 @@ export const activityRecordingStreams = sqliteTable(
     timestamps: text("timestamps", { mode: "json" }).notNull(),
 
     synced: integer("synced", { mode: "boolean" }).notNull().default(false),
-    createdAt: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+    createdAt: text("created_at")
+      .default(sql`(CURRENT_TIMESTAMP)`)
+      .notNull(),
   },
 );

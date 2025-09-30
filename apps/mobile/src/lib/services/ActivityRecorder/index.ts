@@ -48,26 +48,19 @@ export class ActivityRecorderService {
   allCoordinates: [number, number][] = [];
 
   // --- Service Managers ---
-  private permissionsManager = new PermissionsManager();
-  private locationManager = new LocationManager();
-  private sensorsManager = new SensorsManager();
-  private storageManager = new DataStorageManager();
+  private permissionsManager: PermissionsManager;
+  private locationManager: LocationManager;
+  private sensorsManager: SensorsManager;
+  private storageManager: DataStorageManager;
 
   // --- Other service properties ---
   private dataCallbacks: Set<(reading: SensorReading) => void> = new Set();
 
-  private constructor() {}
-
-  // --- Singleton pattern ---
-  static getInstance(): ActivityRecorderService {
-    if (!ActivityRecorderService._instance) {
-      ActivityRecorderService._instance = new ActivityRecorderService();
-    }
-    return ActivityRecorderService._instance;
-  }
-
-  setProfile(profile: PublicProfilesRow) {
-    this.profile = profile;
+  private constructor(profile: PublicProfilesRow) {
+    this.permissionsManager = new PermissionsManager();
+    this.locationManager = new LocationManager();
+    this.sensorsManager = new SensorsManager();
+    this.storageManager = new DataStorageManager(profile);
   }
 
   async init() {
@@ -85,6 +78,7 @@ export class ActivityRecorderService {
       const timestamp = locationObj.timestamp || Date.now();
       const latlng: SensorReading = {
         metric: "latlng",
+        dataType: "latlng",
         value: [locationObj.coords.latitude, locationObj.coords.longitude],
         timestamp,
       };
@@ -94,6 +88,7 @@ export class ActivityRecorderService {
       ) {
         const speed: SensorReading = {
           metric: "speed",
+          dataType: "float",
           value: locationObj.coords.speed * 3.6, // Convert m/s to km/h
           timestamp,
         };
@@ -105,6 +100,7 @@ export class ActivityRecorderService {
       ) {
         const altitude: SensorReading = {
           metric: "altitude",
+          dataType: "integer",
           value: locationObj.coords.altitude,
           timestamp,
         };
@@ -165,10 +161,7 @@ export class ActivityRecorderService {
     const recordingId = await this.storageManager.createRecording({
       ...activityData,
       profileId: this.profile.id,
-      activityType: this.activityType,
       plannedActivityId: this.plannedActivity?.id,
-      state: "recording",
-      startedAt: new Date(),
     });
 
     this.startedAt = new Date();
@@ -363,9 +356,8 @@ export class ActivityRecorderService {
   /**
    * Enhanced upload: Upload activity with compressed streams via TRPC create_activity
    */
-  async uploadCompletedActivity(recordingId?: string): Promise<boolean> {
-    const id = recordingId || this.storageManager.getCurrentRecordingId();
-    if (!id) {
+  async uploadCompletedActivity(recordingId: string): Promise<boolean> {
+    if (!recordingId) {
       console.error("No recording ID for upload");
       return false;
     }
@@ -373,8 +365,7 @@ export class ActivityRecorderService {
     try {
       console.log("Starting enhanced activity upload...");
 
-      const recording = await this.storageManager.getCurrentRecording();
-      if (!recording) {
+      if (!recordingId) {
         console.error("Recording not found");
         return false;
       }

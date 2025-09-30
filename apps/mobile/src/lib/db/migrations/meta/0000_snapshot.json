@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "81eeddb2-7544-4961-a252-19d4e216dc4d",
+  "id": "295b4167-5adb-4019-ba73-3317206730ef",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "activity_recording_streams": {
@@ -91,7 +91,7 @@
           "name": "created_at",
           "type": "text",
           "primaryKey": false,
-          "notNull": false,
+          "notNull": true,
           "autoincrement": false,
           "default": "(CURRENT_TIMESTAMP)"
         }
@@ -250,7 +250,7 @@
           "name": "created_at",
           "type": "text",
           "primaryKey": false,
-          "notNull": false,
+          "notNull": true,
           "autoincrement": false,
           "default": "(CURRENT_TIMESTAMP)"
         }

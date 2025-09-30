@@ -1,9 +1,4 @@
-import {
-  BLE_SERVICE_UUIDS,
-  KnownCharacteristics,
-  type SensorReading,
-  parseBleData,
-} from "@repo/core";
+import { BLE_SERVICE_UUIDS } from "@repo/core";
 import { Buffer } from "buffer";
 import { BleManager, Device } from "react-native-ble-plx";
 

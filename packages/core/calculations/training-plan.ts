@@ -1,10 +1,3 @@
-// Note: Schema validation can be added later if needed
-import type {
-  PlannedActivityStructure,
-  Step,
-  WeeklySchedule,
-} from "../schemas";
-
 // ================================
 // TSS Estimation Logic
 // ================================

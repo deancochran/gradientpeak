@@ -1,8 +1,3 @@
-import type {
-  ActivityDataPoint,
-  ActivityStream,
-  TSSHistoryEntry,
-} from "../types";
 import { calculateHrZones, calculateTimeInZones } from "./hr";
 import { calculatePowerZones, calculateTimeInPowerZones } from "./power";
 import { addDays, endOfDay, startOfDay } from "./utils";
@@ -374,58 +369,4 @@ export function calculatePowerCurve(
   return Array.from(bestEfforts.values()).sort(
     (a, b) => a.duration - b.duration,
   );
-}
-
-/**
- * Check if activities have sufficient data for trends analysis
- */
-export function validateTrendsData(activities: TrendsActivity[]): {
-  hasTrainingLoad: boolean;
-  hasPowerZones: boolean;
-  hasHeartRateZones: boolean;
-  hasPowerHeartRate: boolean;
-  hasPowerCurve: boolean;
-  activityCount: number;
-  dateRange: { start: Date | null; end: Date | null };
-} {
-  const activityCount = activities.length;
-  const sortedActivities = activities.sort(
-    (a, b) => a.date.getTime() - b.date.getTime(),
-  );
-
-  const dateRange = {
-    start: sortedActivities.length > 0 ? sortedActivities[0].date : null,
-    end:
-      sortedActivities.length > 0
-        ? sortedActivities[sortedActivities.length - 1].date
-        : null,
-  };
-
-  return {
-    hasTrainingLoad: activities.some((a) => a.tss !== undefined && a.tss > 0),
-    hasPowerZones: activities.some(
-      (a) =>
-        a.activityType === "bike" &&
-        a.dataStreams?.some((s) => s.type === "power"),
-    ),
-    hasHeartRateZones: activities.some(
-      (a) =>
-        a.dataStreams?.some((s) => s.type === "heartrate") ||
-        (a.avgHeartRate !== undefined && a.avgHeartRate > 0),
-    ),
-    hasPowerHeartRate: activities.some(
-      (a) =>
-        a.activityType === "bike" &&
-        a.dataPoints?.some(
-          (p) => p.power !== undefined && p.heartRate !== undefined,
-        ),
-    ),
-    hasPowerCurve: activities.some(
-      (a) =>
-        a.activityType === "bike" &&
-        a.dataStreams?.some((s) => s.type === "power"),
-    ),
-    activityCount,
-    dateRange,
-  };
 }
