@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { AppState, AppStateStatus } from "react-native";
 import { ActivityRecorderService } from "../services/ActivityRecorder";
 import { useRequireAuth } from "./useAuth";
@@ -74,26 +74,50 @@ export const useActivityRecorder = () => {
     () => service, // Return service as snapshot
   );
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      cleanupService().catch(console.error);
-    };
-  }, []);
+  // Track if component is mounted to prevent cleanup on every render
+  const isMounted = useRef(true);
 
-  // Handle app state changes
+  // Cleanup on unmount only
   useEffect(() => {
-    const handleAppStateChange = (nextAppState: AppStateStatus) => {
-      if (service.state === "recording") {
-        if (nextAppState === "background") {
-          console.log("📱 App backgrounded - recording continues");
-          // Ensure background task is running
-          // Keep Bluetooth connections alive
-        } else if (nextAppState === "active") {
-          console.log("📱 App resumed - syncing state");
-          // Verify recording is still active
-          // Refresh UI with latest metrics
-          // Reconnect any dropped sensors
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      // Only cleanup if not recording
+      if (service.state === "pending" || service.state === "finished") {
+        cleanupService().catch(console.error);
+      } else {
+        console.log("⚠️ Service still active - skipping cleanup");
+      }
+    };
+  }, [service.state]);
+
+  // Handle app state changes with enhanced reconnection logic
+  useEffect(() => {
+    const handleAppStateChange = async (nextAppState: AppStateStatus) => {
+      if (nextAppState === "background") {
+        console.log("📱 App backgrounded");
+        if (service.state === "recording") {
+          console.log("  ℹ️ Recording continues in background");
+          // Services continue running
+        }
+      } else if (nextAppState === "active") {
+        console.log("📱 App foregrounded");
+        if (service.state === "recording" || service.state === "paused") {
+          console.log("  🔄 Reconnecting disconnected sensors...");
+          try {
+            // Trigger reconnection for any disconnected sensors
+            const sensors = service.getConnectedSensors();
+            for (const sensor of sensors) {
+              if (sensor.connectionState === "disconnected") {
+                console.log(`  📡 Reconnecting ${sensor.name}`);
+                await service.connectToDevice(sensor.id).catch((err) => {
+                  console.warn(`  ⚠️ Failed to reconnect ${sensor.name}:`, err);
+                });
+              }
+            }
+          } catch (error) {
+            console.error("  ❌ Error during reconnection:", error);
+          }
         }
       }
     };

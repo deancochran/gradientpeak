@@ -4,7 +4,6 @@ import {
   PublicActivityMetricDataType,
 } from "@repo/core";
 import { Buffer } from "buffer";
-import { AppState } from "react-native";
 import {
   BleError,
   BleManager,
@@ -13,7 +12,7 @@ import {
 } from "react-native-ble-plx";
 
 /** --- Connection states --- */
-export type ConnectionState =
+export type SensorConnectionState =
   | "disconnected"
   | "connecting"
   | "connected"
@@ -26,7 +25,9 @@ export interface ConnectedSensor {
   services: string[];
   characteristics: Map<string, string>;
   device: Device;
-  connectionState: ConnectionState;
+  connectionState: SensorConnectionState;
+  lastDataTimestamp?: number;
+  reconnectAttempted?: boolean;
 }
 
 /** --- Metric Types --- */
@@ -60,11 +61,13 @@ export class SensorsManager {
   private dataCallbacks: Set<(reading: SensorReading) => void> = new Set();
   private connectionCallbacks: Set<(sensor: ConnectedSensor) => void> =
     new Set();
-  private reconnectTimers: Map<string, number> = new Map();
-  private readonly RECONNECT_DELAY_MS = 2000;
+  private connectionMonitorTimer?: ReturnType<typeof setInterval>;
+  private readonly DISCONNECT_TIMEOUT_MS = 30000; // 30 seconds
+  private readonly HEALTH_CHECK_INTERVAL_MS = 10000; // 10 seconds
 
   constructor() {
     this.initialize();
+    this.startConnectionMonitoring();
   }
 
   /** Initialize BLE manager */
@@ -74,6 +77,100 @@ export class SensorsManager {
       if (state === "PoweredOff" || state === "Unauthorized")
         this.disconnectAll();
     }, true);
+  }
+
+  /** Start monitoring sensor connection health */
+  private startConnectionMonitoring() {
+    this.connectionMonitorTimer = setInterval(() => {
+      this.checkSensorHealth();
+    }, this.HEALTH_CHECK_INTERVAL_MS);
+  }
+
+  /** Stop monitoring sensor connections */
+  private stopConnectionMonitoring() {
+    if (this.connectionMonitorTimer) {
+      clearInterval(this.connectionMonitorTimer);
+      this.connectionMonitorTimer = undefined;
+    }
+  }
+
+  /** Check health of all connected sensors */
+  private async checkSensorHealth() {
+    const now = Date.now();
+    const sensors = Array.from(this.connectedSensors.values());
+
+    for (const sensor of sensors) {
+      // Skip if not in a state that needs checking
+      if (
+        sensor.connectionState === "connecting" ||
+        sensor.connectionState === "failed"
+      ) {
+        continue;
+      }
+
+      // Check if sensor has gone silent
+      if (sensor.lastDataTimestamp) {
+        const timeSinceLastData = now - sensor.lastDataTimestamp;
+
+        if (
+          timeSinceLastData > this.DISCONNECT_TIMEOUT_MS &&
+          sensor.connectionState === "connected" &&
+          !sensor.reconnectAttempted
+        ) {
+          console.log(
+            `Sensor ${sensor.name} disconnected (no data for ${timeSinceLastData}ms)`,
+          );
+          sensor.connectionState = "disconnected";
+          this.connectionCallbacks.forEach((cb) => cb(sensor));
+
+          // Attempt single reconnection
+          await this.attemptReconnection(sensor.id);
+        }
+      }
+    }
+  }
+
+  /** Attempt reconnection for a sensor (single retry only) */
+  private async attemptReconnection(sensorId: string) {
+    const sensor = this.connectedSensors.get(sensorId);
+    if (!sensor) return;
+
+    // Mark that we've attempted reconnection
+    sensor.reconnectAttempted = true;
+    sensor.connectionState = "connecting";
+    this.connectionCallbacks.forEach((cb) => cb(sensor));
+
+    console.log(`Attempting reconnection for ${sensor.name}...`);
+
+    try {
+      const reconnected = await this.connectSensor(sensorId);
+      if (reconnected) {
+        console.log(`Successfully reconnected to ${sensor.name}`);
+        // Reset reconnect flag on success
+        sensor.reconnectAttempted = false;
+      } else {
+        throw new Error("Reconnection returned null");
+      }
+    } catch (error) {
+      console.error(`Reconnection failed for ${sensor.name}:`, error);
+      sensor.connectionState = "failed";
+      this.connectionCallbacks.forEach((cb) => cb(sensor));
+    }
+  }
+
+  /** Update sensor's last data timestamp */
+  private updateSensorDataTimestamp(deviceId: string) {
+    const sensor = this.connectedSensors.get(deviceId);
+    if (sensor) {
+      sensor.lastDataTimestamp = Date.now();
+
+      // If sensor was marked as disconnected but is sending data, update state
+      if (sensor.connectionState === "disconnected") {
+        sensor.connectionState = "connected";
+        sensor.reconnectAttempted = false;
+        this.connectionCallbacks.forEach((cb) => cb(sensor));
+      }
+    }
   }
 
   /** Scan for devices */
@@ -150,9 +247,9 @@ export class SensorsManager {
       device.onDisconnected((error) => {
         console.log("Disconnected:", device.name, error?.message || "");
         connectedSensor.connectionState = "disconnected";
+        connectedSensor.lastDataTimestamp = undefined;
         this.connectionCallbacks.forEach((cb) => cb(connectedSensor));
-
-        this.scheduleReconnect(connectedSensor);
+        // Health monitoring will handle reconnection attempt
       });
 
       console.log(
@@ -172,65 +269,17 @@ export class SensorsManager {
     }
   }
 
-  /** Schedule reconnection attempt (AppState-aware) */
-  private scheduleReconnect(sensor: ConnectedSensor): void {
-    // If app is backgrounded, defer
-    if (AppState.currentState !== "active") {
-      console.log(`Deferring reconnect for ${sensor.name} until foreground`);
-      return;
-    }
-
-    const existingTimer = this.reconnectTimers.get(sensor.id);
-    if (existingTimer) {
-      clearTimeout(existingTimer);
-    }
-
-    const delay = this.RECONNECT_DELAY_MS;
-
-    sensor.connectionState = "connecting";
-    this.connectionCallbacks.forEach((cb) => cb(sensor));
-
-    const timer = setTimeout(async () => {
-      try {
-        await this.reconnectSensor(sensor.id);
-      } catch {
-        sensor.connectionState = "failed";
-        this.connectionCallbacks.forEach((cb) => cb(sensor));
-        console.warn(`All reconnect attempts failed for ${sensor.name}`);
-      }
-
-      this.reconnectTimers.delete(sensor.id);
-    }, delay);
-
-    this.reconnectTimers.set(sensor.id, timer);
-  }
-
   /** Public method to reconnect all sensors (to be called on AppState "active") */
   public async reconnectAll(): Promise<void> {
     const sensors = Array.from(this.connectedSensors.values());
     for (const sensor of sensors) {
-      if (sensor.connectionState === "disconnected") {
-        await this.reconnectSensor(sensor.id).catch(console.warn);
+      if (
+        sensor.connectionState === "disconnected" &&
+        !sensor.reconnectAttempted
+      ) {
+        console.log(`Reconnecting ${sensor.name} on app foreground`);
+        await this.attemptReconnection(sensor.id);
       }
-    }
-  }
-
-  /** Reconnect to a sensor */
-  private async reconnectSensor(
-    deviceId: string,
-  ): Promise<ConnectedSensor | null> {
-    const sensor = this.connectedSensors.get(deviceId);
-    if (!sensor) return null;
-
-    try {
-      const newSensor = await this.connectSensor(deviceId);
-      if (newSensor) {
-        return newSensor;
-      }
-      return null;
-    } catch (error) {
-      console.error(`Reconnection failed for ${sensor.name}:`, error);
-      throw error;
     }
   }
 
@@ -238,11 +287,6 @@ export class SensorsManager {
   async disconnectSensor(deviceId: string) {
     const sensor = this.connectedSensors.get(deviceId);
     if (sensor) {
-      const timer = this.reconnectTimers.get(deviceId);
-      if (timer) {
-        clearTimeout(timer);
-        this.reconnectTimers.delete(deviceId);
-      }
       if (sensor.device) {
         try {
           await sensor.device.cancelConnection();
@@ -254,8 +298,7 @@ export class SensorsManager {
 
   /** Disconnect all devices */
   async disconnectAll() {
-    this.reconnectTimers.forEach((timer) => clearTimeout(timer));
-    this.reconnectTimers.clear();
+    this.stopConnectionMonitoring();
 
     await Promise.allSettled(
       Array.from(this.connectedSensors.keys()).map((id) =>
@@ -322,7 +365,11 @@ export class SensorsManager {
           Buffer.from(char.value, "base64").buffer,
           sensor.id,
         );
-        if (reading) this.dataCallbacks.forEach((cb) => cb(reading));
+        if (reading) {
+          // Update sensor health timestamp
+          this.updateSensorDataTimestamp(sensor.id);
+          this.dataCallbacks.forEach((cb) => cb(reading));
+        }
       };
 
       characteristic.monitor(monitorCallback);

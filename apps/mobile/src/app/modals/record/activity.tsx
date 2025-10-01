@@ -2,11 +2,12 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { useActivityRecorder } from "@/lib/hooks/useActivityRecorder";
+import { PermissionsManager } from "@/lib/services/ActivityRecorder/permissions";
 import { PublicActivityType } from "@repo/core";
 import { useRouter } from "expo-router";
-import { CheckCircle, ChevronLeft } from "lucide-react-native";
+import { AlertCircle, CheckCircle, ChevronLeft } from "lucide-react-native";
 import { useState } from "react";
-import { ScrollView, View } from "react-native";
+import { Alert, Linking, ScrollView, View } from "react-native";
 
 // ===== ACTIVITY TYPE DEFINITIONS =====
 type ActivityMode = "planned" | "unplanned";
@@ -22,34 +23,92 @@ const ACTIVITY_NAMES: Record<PublicActivityType, string> = {
 };
 
 export default function ActivitySelectionModal() {
-  const { startRecording, state } = useActivityRecorder();
+  const service = useActivityRecorder();
   const [mode, setMode] = useState<ActivityMode>("unplanned");
   const [selectedType, setSelectedType] =
     useState<PublicActivityType>("outdoor_run");
   const [selectedPlanned, setSelectedPlanned] = useState<string | null>(null);
+  const [isCheckingPermissions, setIsCheckingPermissions] = useState(false);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
   const router = useRouter();
 
   const handleSelectActivity = async () => {
-    try {
-      let success = false;
+    setIsCheckingPermissions(true);
+    setPermissionError(null);
 
+    try {
+      // Check permissions for selected activity type
+      const permissionsManager = new PermissionsManager();
+      const permissionCheck =
+        await permissionsManager.checkForActivity(selectedType);
+
+      if (!permissionCheck.allGranted) {
+        // Show which permissions are missing
+        if (permissionCheck.denied.length > 0) {
+          // Some permissions were permanently denied
+          const message = permissionsManager.getDeniedPermissionsMessage(
+            selectedType,
+            permissionCheck.denied,
+          );
+          Alert.alert("Permissions Required", message, [
+            { text: "Cancel", style: "cancel" },
+            { text: "Open Settings", onPress: () => Linking.openSettings() },
+          ]);
+          setPermissionError(message);
+          setIsCheckingPermissions(false);
+          return;
+        }
+
+        // Permissions can be requested
+        const message = permissionsManager.getMissingPermissionsMessage(
+          selectedType,
+          permissionCheck.missing,
+        );
+        Alert.alert("Permissions Required", message, [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Grant Permissions",
+            onPress: async () => {
+              const result =
+                await permissionsManager.requestForActivity(selectedType);
+              if (result.allGranted) {
+                // Retry starting activity
+                await startActivity();
+              } else {
+                setPermissionError("Some permissions were not granted");
+              }
+            },
+          },
+        ]);
+        setIsCheckingPermissions(false);
+        return;
+      }
+
+      // All permissions granted, start recording
+      await startActivity();
+    } catch (error) {
+      console.error("Error checking permissions:", error);
+      Alert.alert("Error", "Failed to check permissions. Please try again.");
+      setIsCheckingPermissions(false);
+    }
+  };
+
+  const startActivity = async () => {
+    try {
       if (mode === "planned" && selectedPlanned) {
         // For now, just start with activity type since we need to fetch planned activity
         // TODO: Integrate with actual planned activities from backend
-        success = await startRecording(selectedType);
+        await service.startRecording();
       } else {
         // Start unplanned activity
-        success = await startRecording(selectedType);
+        await service.startRecording();
       }
 
-      if (success) {
-        router.back(); // Return to main recording screen
-      } else {
-        // Error handling is done in the hook
-        console.error("Failed to start activity");
-      }
+      router.back(); // Return to main recording screen
     } catch (error) {
       console.error("Error starting activity:", error);
+      Alert.alert("Error", "Failed to start recording. Please try again.");
+      setIsCheckingPermissions(false);
     }
   };
 
@@ -121,18 +180,47 @@ export default function ActivitySelectionModal() {
 
       {/* Footer Actions */}
       <View className="border-t border-border p-4">
+        {/* Permission Error Display */}
+        {permissionError && (
+          <View className="mb-3 p-3 bg-destructive/10 border border-destructive/20 rounded-lg flex-row gap-2">
+            <Icon as={AlertCircle} size={20} className="text-destructive" />
+            <Text className="flex-1 text-sm text-destructive">
+              {permissionError}
+            </Text>
+          </View>
+        )}
+
+        {/* Permission Info for Activity Type */}
+        {PermissionsManager.requiresGPS(selectedType) && (
+          <View className="mb-3 p-3 bg-muted/50 rounded-lg flex-row gap-2">
+            <Icon
+              as={AlertCircle}
+              size={16}
+              className="text-muted-foreground"
+            />
+            <Text className="flex-1 text-xs text-muted-foreground">
+              This activity requires GPS and background location permissions
+            </Text>
+          </View>
+        )}
+
         <Button
           onPress={handleSelectActivity}
           className="w-full"
-          disabled={state !== "pending"}
+          disabled={
+            (service.state !== "pending" && service.state !== "ready") ||
+            isCheckingPermissions
+          }
         >
           <Text className="font-semibold">
-            {mode === "planned" && selectedPlanned
-              ? "Start Planned Workout"
-              : `Start ${ACTIVITY_NAMES[selectedType]}`}
+            {isCheckingPermissions
+              ? "Checking Permissions..."
+              : mode === "planned" && selectedPlanned
+                ? "Start Planned Workout"
+                : `Start ${ACTIVITY_NAMES[selectedType]}`}
           </Text>
         </Button>
-        {state !== "pending" && (
+        {(service.state === "recording" || service.state === "paused") && (
           <Text className="text-center text-sm text-muted-foreground mt-2">
             Complete current recording to start a new one
           </Text>
