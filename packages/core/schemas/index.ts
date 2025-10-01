@@ -1,1 +1,1 @@
-export * from "./planned_activity";
+export * from "./activity_plan";

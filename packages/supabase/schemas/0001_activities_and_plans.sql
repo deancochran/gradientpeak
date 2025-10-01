@@ -22,7 +22,8 @@ create type public.activity_metric as enum (
     'altitude',
     'elevation',
     'temperature',
-    'gradient'
+    'gradient',
+    'heading'
 );
 
 create type public.activity_metric_data_type as enum (
@@ -42,8 +43,6 @@ create table if not exists public.activity_plans (
     activity_type activity_type not null,
     description text,
     structure jsonb not null,
-    estimated_duration integer check (estimated_duration >= 0),
-    estimated_distance integer check (estimated_distance >= 0),
     estimated_tss integer check (estimated_tss >= 0),
     created_at timestamptz not null default now()
 );

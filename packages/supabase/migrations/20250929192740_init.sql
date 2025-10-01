@@ -1,4 +1,4 @@
-create type "public"."activity_metric" as enum ('heartrate', 'power', 'speed', 'cadence', 'distance', 'latlng', 'moving', 'altitude', 'elevation', 'temperature', 'gradient');
+create type "public"."activity_metric" as enum ('heartrate', 'power', 'speed', 'cadence', 'distance', 'latlng', 'moving', 'altitude', 'elevation', 'temperature', 'gradient', 'heading');
 
 create type "public"."activity_metric_data_type" as enum ('float', 'latlng', 'boolean');
 
