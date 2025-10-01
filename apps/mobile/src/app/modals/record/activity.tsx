@@ -13,27 +13,12 @@ type ActivityMode = "planned" | "unplanned";
 
 const ACTIVITY_NAMES: Record<PublicActivityType, string> = {
   outdoor_run: "Outdoor Run",
-  indoor_run: "Indoor Run",
   outdoor_bike: "Outdoor Cycling",
-  indoor_bike: "Indoor Cycling",
-  walk: "Walking",
-  hike: "Hiking",
-  swim: "Swimming",
+  indoor_bike_trainer: "Indoor Cycling",
+  indoor_treadmill: "Indoor Treadmill",
+  indoor_strength: "Indoor Strength Training",
+  indoor_swim: "Swimming",
   other: "Other Activity",
-};
-
-const ACTIVITY_BADGES: Record<
-  PublicActivityType,
-  { gps: boolean; bt: boolean }
-> = {
-  outdoor_run: { gps: true, bt: true },
-  indoor_run: { gps: false, bt: true },
-  outdoor_bike: { gps: true, bt: true },
-  indoor_bike: { gps: false, bt: true },
-  walk: { gps: true, bt: false },
-  hike: { gps: true, bt: false },
-  swim: { gps: true, bt: false },
-  other: { gps: false, bt: false },
 };
 
 export default function ActivitySelectionModal() {
@@ -185,18 +170,6 @@ const UnplannedActivitySelection = ({
           <View className="flex-row items-center justify-between w-full">
             <View className="flex-1">
               <Text className="font-semibold mb-1">{name}</Text>
-              <View className="flex-row gap-2">
-                {ACTIVITY_BADGES[type as PublicActivityType].gps && (
-                  <View className="px-2 py-1 bg-blue-500/10 rounded-full">
-                    <Text className="text-xs text-blue-600">GPS</Text>
-                  </View>
-                )}
-                {ACTIVITY_BADGES[type as PublicActivityType].bt && (
-                  <View className="px-2 py-1 bg-purple-500/10 rounded-full">
-                    <Text className="text-xs text-purple-600">Sensors</Text>
-                  </View>
-                )}
-              </View>
             </View>
             {selectedType === type && (
               <Icon as={CheckCircle} size={20} className="text-primary" />
@@ -262,7 +235,7 @@ const PlannedActivitySelection = ({
   </View>
 );
 
-// ===== MOCK PLANNED WORKOUTS (Replace with actual data) =====
+// ===== MOCK PLANNED WORKOUTS (Replace with actual data later) =====
 const MockPlannedWorkouts = ({
   activityType,
   selectedId,

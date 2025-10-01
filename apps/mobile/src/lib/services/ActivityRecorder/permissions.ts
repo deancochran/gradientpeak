@@ -167,7 +167,7 @@ export class PermissionsManager {
     }
   }
 
-  private static showPermissionAlert(type: PermissionType) {
+  static showPermissionAlert(type: PermissionType) {
     Alert.alert(
       `${this.permissionNames[type]} Permission Required`,
       `Please enable ${this.permissionNames[type]} in settings to use this feature.`,
@@ -178,13 +178,13 @@ export class PermissionsManager {
     );
   }
 
-  private static permissionNames: Record<PermissionType, string> = {
+  static permissionNames: Record<PermissionType, string> = {
     bluetooth: "Bluetooth",
     location: "Location",
     "location-background": "Background Location",
   };
 
-  private static permissionDescriptions: Record<PermissionType, string> = {
+  static permissionDescriptions: Record<PermissionType, string> = {
     bluetooth: "Connect to heart rate monitors and cycling sensors",
     location: "Track your route and calculate distance",
     "location-background": "Continue tracking your route in background",

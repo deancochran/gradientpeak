@@ -70,6 +70,7 @@
     "expo-location": "~19.0.7",
     "expo-modules-core": "~3.0.17",
     "expo-network": "~8.0.7",
+    "expo-notifications": "~0.32.12",
     "expo-router": "~6.0.7",
     "expo-secure-store": "~15.0.7",
     "expo-splash-screen": "~31.0.10",

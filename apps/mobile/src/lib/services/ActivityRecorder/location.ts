@@ -15,7 +15,7 @@ export class LocationManager {
   private taskName = BACKGROUND_LOCATION_TASK;
   private locationBuffer: Location.LocationObject[] = [];
   private lastLocationTime = 0;
-  private healthCheckInterval: NodeJS.Timeout | null = null;
+  private healthCheckInterval: number | null = null;
   private readonly HEALTH_CHECK_INTERVAL = 10000; // 10 seconds
 
   constructor() {
@@ -208,12 +208,13 @@ export class LocationManager {
   }
 
   // --- Health Monitoring ---
+
   private startHealthCheck(): void {
-    if (this.healthCheckInterval) return;
+    if (this.healthCheckInterval !== null) return;
 
     this.healthCheckInterval = setInterval(() => {
       this.performHealthCheck();
-    }, this.HEALTH_CHECK_INTERVAL);
+    }, this.HEALTH_CHECK_INTERVAL) as unknown as number;
 
     console.log("Location health monitoring started");
   }

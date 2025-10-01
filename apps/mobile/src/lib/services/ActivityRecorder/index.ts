@@ -1,75 +1,89 @@
 import {
   BLE_SERVICE_UUIDS,
-  computeActivitySummary,
+  PublicActivityPlansRow,
   PublicActivityType,
   PublicPlannedActivitiesRow,
   PublicProfilesRow,
-  type ActivityStreamData,
-  type ActivitySummary,
-  type SensorReading,
+  Step,
 } from "@repo/core";
-import * as Location from "expo-location";
 
-import { InsertActivityRecording } from "@/lib/db/schemas";
+import { activityRecordings, SelectActivityRecording } from "@/lib/db/schemas";
+import { eq } from "drizzle-orm";
 import { LocationManager } from "./location";
 import {
   PermissionsManager,
   type PermissionState,
   type PermissionType,
 } from "./permissions";
-import { SensorsManager } from "./sensors";
-import { DataStorageManager } from "./storage";
+import { SensorReading, SensorsManager } from "./sensors";
+
+import { localdb } from "@/lib/db";
+
+import { AppState, AppStateStatus } from "react-native";
+import { NotificationsManager } from "./notification";
+import { PlanManager } from "./plan";
+import { ChunkProcessor } from "./processor";
+
+// ================================
+// Plan Types
+// ================================
+
+export interface FlattenedStep extends Step {
+  index: number;
+  fromRepetition?: number;
+}
+
+export interface PlannedActivityProgress {
+  state: "not_started" | "in_progress" | "finished";
+  currentStepIndex: number;
+  completedSteps: number;
+  totalSteps: number;
+  elapsedInStep: number;
+  duration?: number;
+  targets?: Step["targets"];
+}
+
+// ================================
+// Recording Types
+// ================================
 
 export type RecordingState =
   | "pending"
   | "ready"
   | "recording"
   | "paused"
-  | "discarded"
   | "finished";
 
 export class ActivityRecorderService {
-  // --- Singleton instance ---
-  private static _instance: ActivityRecorderService | null = null;
+  // --- Recording session state ---
+  public profile: PublicProfilesRow;
+  public selectedActivityType: PublicActivityType = "indoor_bike_trainer";
+  public state: RecordingState = "pending";
+  public liveMetrics: Map<string, number> = new Map();
+  public recording?: SelectActivityRecording;
 
-  // --- Session properties as class attributes ---
-  profile?: PublicProfilesRow;
-  startedAt?: Date;
-  state: RecordingState = "pending";
-  activityType: PublicActivityType = "indoor_treadmill";
-  plannedActivity?: PublicPlannedActivitiesRow;
-  chunkIndex = 0;
-  totalElapsedTime = 0;
-  movingTime = 0;
-  lastResumeTime: Date | null = null;
-  lastCheckpointAt?: Date;
-  dataPointsRecorded = 0;
-  allValues: Map<string, number[]> = new Map();
-  allCoordinates: [number, number][] = [];
+  // AppState management
+  private appState: AppStateStatus = AppState.currentState;
+  private appStateSubscription?: { remove: () => void };
+
+  // --- Private state ---
+  private lastTimestamp?: number;
 
   // --- Service Managers ---
-  private permissionsManager: PermissionsManager;
-  private locationManager: LocationManager;
-  private sensorsManager: SensorsManager;
-  private storageManager: DataStorageManager;
+  private chunkProcessor?: ChunkProcessor;
+  private permissionsManager = new PermissionsManager();
+  private locationManager = new LocationManager();
+  private sensorsManager = new SensorsManager();
+  private notificationsManager?: NotificationsManager;
+  public planManager?: PlanManager;
 
-  // --- Other service properties ---
-  private dataCallbacks: Set<(reading: SensorReading) => void> = new Set();
+  // --- Callbacks ---
+  private changeCallbacks: Set<() => void> = new Set();
 
-  private constructor(profile: PublicProfilesRow) {
-    this.permissionsManager = new PermissionsManager();
-    this.locationManager = new LocationManager();
-    this.sensorsManager = new SensorsManager();
-    this.storageManager = new DataStorageManager(profile);
-  }
+  constructor(profile: PublicProfilesRow) {
+    this.profile = profile;
+    this.permissionsManager.checkAll();
 
-  async init() {
-    await this.permissionsManager.checkAll();
-    this.initializeDataHandling();
-    console.log("ActivityRecorderService initialized");
-  }
-
-  private initializeDataHandling() {
     // BLE data
     this.sensorsManager.subscribe((reading) => this.handleSensorData(reading));
 
@@ -82,10 +96,8 @@ export class ActivityRecorderService {
         value: [locationObj.coords.latitude, locationObj.coords.longitude],
         timestamp,
       };
-      if (
-        locationObj.coords.speed !== undefined &&
-        locationObj.coords.speed !== null
-      ) {
+      this.handleSensorData(latlng);
+      if (locationObj.coords.speed) {
         const speed: SensorReading = {
           metric: "speed",
           dataType: "float",
@@ -94,39 +106,84 @@ export class ActivityRecorderService {
         };
         this.handleSensorData(speed);
       }
-      if (
-        locationObj.coords.altitude !== undefined &&
-        locationObj.coords.altitude !== null
-      ) {
+      if (locationObj.coords.altitude) {
         const altitude: SensorReading = {
           metric: "altitude",
-          dataType: "integer",
+          dataType: "float",
           value: locationObj.coords.altitude,
           timestamp,
         };
         this.handleSensorData(altitude);
       }
-      this.handleSensorData(latlng);
+      if (locationObj.coords.heading) {
+        const heading: SensorReading = {
+          // @ts-expect-error heading is not defined yet (to be added)
+          metric: "heading",
+          dataType: "float",
+          value: locationObj.coords.heading,
+          timestamp,
+        };
+        this.handleSensorData(heading);
+      }
+    });
+    this.appStateSubscription = AppState.addEventListener(
+      "change",
+      (nextState) => {
+        this.handleAppStateChange(nextState);
+      },
+    );
+  }
+  // ================================
+  // App State
+  // ================================
+
+  private handleAppStateChange(nextState: AppStateStatus) {
+    const prevState = this.appState;
+    this.appState = nextState;
+
+    // Entering background
+    if (prevState === "active" && nextState.match(/inactive|background/)) {
+      console.log("App backgrounded - maintaining services");
+      // Services continue but we could reduce update frequency here
+    }
+
+    // Returning to foreground
+    if (prevState.match(/inactive|background/) && nextState === "active") {
+      console.log("App foregrounded - checking sensor states");
+      this.reconnectDisconnectedSensors();
+    }
+  }
+
+  // ================================
+  // Change Notification System
+  // ================================
+
+  /**
+   * Subscribe to ANY change in service state
+   * This is what makes React components reactive
+   */
+  public subscribe(callback: () => void): () => void {
+    this.changeCallbacks.add(callback);
+    return () => this.changeCallbacks.delete(callback);
+  }
+
+  /**
+   * Notify all subscribers that something changed
+   * Call this after ANY state mutation
+   */
+  private notifyChange() {
+    this.changeCallbacks.forEach((cb) => {
+      try {
+        cb();
+      } catch (err) {
+        console.warn("Change callback error:", err);
+      }
     });
   }
 
-  private lastGPSReading?: {
-    latitude: number;
-    longitude: number;
-    timestamp: number;
-  };
-
-  private async cleanupOldTasks() {
-    try {
-      const tasks = ["ACTIVITY_LOCATION_TRACKING", "background-location-task"];
-      for (const t of tasks) {
-        const started = await Location.hasStartedLocationUpdatesAsync(t);
-        if (started) await Location.stopLocationUpdatesAsync(t);
-      }
-    } catch (err) {
-      console.warn("Error during task cleanup:", err);
-    }
-  }
+  // ================================
+  // Permission Management
+  // ================================
 
   getPermissionState(type: PermissionType): PermissionState | null {
     return this.permissionsManager.permissions[type] || null;
@@ -137,38 +194,62 @@ export class ActivityRecorderService {
     this.permissionsManager.permissions[type] = {
       granted,
       canAskAgain: true,
-      name: this.permissionsManager.permissionNames[type],
-      description: this.permissionsManager.permissionDescriptions[type],
+      name: PermissionsManager.permissionNames[type],
+      description: PermissionsManager.permissionDescriptions[type],
       loading: false,
     };
     return granted;
   }
 
-  // --- Recording methods ---
-  async startRecording(
-    activityData: Omit<
-      InsertActivityRecording,
-      "id" | "createdAt" | "startedAt" | "synced" | "state"
-    >,
+  // ================================
+  // Planned Activity Management
+  // ================================
+
+  public selectPlannedActivity(
+    plannedActivity: PublicPlannedActivitiesRow & {
+      activity_plan: PublicActivityPlansRow;
+    },
   ) {
-    if (!this.profile) {
-      throw new Error("Profile must be set before starting recording");
-    }
+    this.planManager = new PlanManager(plannedActivity);
+    this.selectedActivityType = plannedActivity.activity_plan.activity_type;
 
-    // Clean up any unfinished recordings for this profile before starting new one
-    await this.storageManager.deleteUnfinishedRecordings(this.profile.id);
+    this.notifyChange();
+  }
 
-    const recordingId = await this.storageManager.createRecording({
-      ...activityData,
-      profileId: this.profile.id,
-      plannedActivityId: this.plannedActivity?.id,
-    });
+  public clearPlannedActivity(activityType: PublicActivityType) {
+    this.selectedActivityType = activityType;
+    this.notifyChange();
+  }
 
-    this.startedAt = new Date();
+  public advanceStep() {
+    if (!this.planManager) return;
+
+    this.planManager.advanceStep();
+    this.notifyChange();
+  }
+
+  // ================================
+  // Recording Lifecycle
+  // ================================
+
+  async startRecording() {
+    await localdb.delete(activityRecordings);
+
+    const [recording] = await localdb
+      .insert(activityRecordings)
+      .values({
+        profile: this.profile,
+        startedAt: new Date().toISOString(),
+        activityType: this.selectedActivityType,
+        plannedActivity: this.planManager?.selectedPlannedActivity,
+      })
+      .returning();
+    this.chunkProcessor = new ChunkProcessor(recording.id);
+    this.chunkProcessor.start();
+    this.recording = recording;
     this.state = "recording";
-    this.lastResumeTime = new Date();
-    this.totalElapsedTime = 0;
-    this.movingTime = 0;
+
+    this.notifyChange();
 
     await Promise.all([
       this.ensurePermission("location"),
@@ -178,57 +259,128 @@ export class ActivityRecorderService {
 
     await this.locationManager.startForegroundTracking();
     await this.locationManager.startBackgroundTracking();
-    this.storageManager.startChunkProcessing();
+
+    const workoutName =
+      this.planManager?.selectedPlannedActivity.activity_plan.name ||
+      this.selectedActivityType.replace(/_/g, " ");
+
+    this.notificationsManager = new NotificationsManager(workoutName);
+    await this.notificationsManager.startForegroundService();
   }
 
   async pauseRecording() {
     if (this.state !== "recording") throw new Error("Not currently recording");
-    if (this.lastResumeTime) {
-      this.movingTime += Date.now() - this.lastResumeTime.getTime();
-    }
+    if (!this.recording || !this.chunkProcessor)
+      throw new Error("No active recording");
+
     this.state = "paused";
-    this.lastResumeTime = null;
-    if (this.storageManager.getCurrentRecordingId()) {
-      await this.storageManager.updateRecordingState(
-        this.storageManager.getCurrentRecordingId(),
-        "paused",
-      );
-    }
+    this.notifyChange();
+
+    this.chunkProcessor.stop();
+    await this.chunkProcessor.flush();
   }
 
   async resumeRecording() {
     if (this.state !== "paused") throw new Error("Session not paused");
+    if (!this.recording || !this.chunkProcessor)
+      throw new Error("No active recording");
+
     this.state = "recording";
-    this.lastResumeTime = new Date();
-    if (this.storageManager.getCurrentRecordingId()) {
-      await this.storageManager.updateRecordingState(
-        this.storageManager.getCurrentRecordingId(),
-        "recording",
-      );
-    }
+    this.notifyChange();
+    this.chunkProcessor.start();
   }
 
   async finishRecording() {
-    if (this.state !== "recording" && this.state !== "paused")
+    if (
+      (this.state !== "recording" && this.state !== "paused") ||
+      !this.chunkProcessor
+    )
       throw new Error("Cannot finish non-active session");
-    if (this.lastResumeTime) {
-      this.movingTime += Date.now() - this.lastResumeTime.getTime();
+    if (!this.recording) throw new Error("No active recording");
+
+    this.chunkProcessor.stop();
+    await this.chunkProcessor.flush();
+
+    await localdb
+      .update(activityRecordings)
+      .set({ endedAt: new Date().toISOString() })
+      .where(eq(activityRecordings.id, this.recording.id));
+
+    if (this.notificationsManager) {
+      await this.notificationsManager.stopForegroundService();
     }
     this.state = "finished";
-    if (this.startedAt) {
-      this.totalElapsedTime = Date.now() - this.startedAt.getTime();
-    }
-
-    await this.storageManager.finishRecording();
-
-    const summary = await this.computeActivitySummary();
-    console.log("Activity finished. Summary:", summary);
-
-    // Attempt to upload if network available
-    await this.uploadCompletedActivity();
+    this.notifyChange();
   }
 
-  // --- BLE methods ---
+  // ================================
+  // Plan Progress Internal Logic
+  // ================================
+
+  private updatePlanProgress(deltaMs: number) {
+    if (!this.planManager) return;
+    this.planManager.updatePlanProgress(deltaMs);
+
+    this.notifyChange();
+  }
+
+  // ================================
+  // Sensor Data Handling
+  // ================================
+
+  private handleSensorData(reading: SensorReading) {
+    if (!this.recording || this.state !== "recording" || !this.chunkProcessor)
+      return;
+
+    const currentTimestamp = reading.timestamp || Date.now();
+    const deltaMs = this.lastTimestamp
+      ? currentTimestamp - this.lastTimestamp
+      : 0;
+    this.lastTimestamp = currentTimestamp;
+
+    if (deltaMs > 0) {
+      this.updatePlanProgress(deltaMs);
+    }
+
+    // Add to chunk processor
+    this.chunkProcessor.addReading(reading);
+
+    // Update live metrics - create new Map for React reactivity
+    if (typeof reading.value === "number") {
+      this.liveMetrics = new Map(this.liveMetrics);
+      this.liveMetrics.set(reading.metric, reading.value);
+
+      // Update foreground notification with key metrics
+      if (
+        ["heartrate", "power"].includes(reading.metric) &&
+        this.notificationsManager
+      ) {
+        this.notificationsManager
+          .update({
+            elapsedInStep: this.planManager?.planProgress?.elapsedInStep ?? 0,
+            heartRate: this.liveMetrics.get("heartRate"),
+            power: this.liveMetrics.get("power"),
+          })
+          .catch(console.error);
+      }
+
+      this.notifyChange(); // Notify after metrics update
+    }
+  }
+
+  // ================================
+  // Buffer Status
+  // ================================
+
+  getBufferStatus(): Record<string, number> {
+    if (!this.chunkProcessor) return {};
+    return this.chunkProcessor.getBufferStatus();
+  }
+
+  // ================================
+  // BLE Device Management
+  // ================================
+
   async scanForDevices() {
     const devices = await this.sensorsManager.scan();
     return devices.map((device) => {
@@ -257,185 +409,56 @@ export class ActivityRecorderService {
   }
 
   async connectToDevice(deviceId: string) {
-    return this.sensorsManager.connectSensor(deviceId);
+    const result = await this.sensorsManager.connectSensor(deviceId);
+    this.notifyChange();
+    return result;
   }
 
   async disconnectDevice(deviceId: string) {
-    return this.sensorsManager.disconnectSensor(deviceId);
+    const result = await this.sensorsManager.disconnectSensor(deviceId);
+    this.notifyChange();
+    return result;
   }
 
   getConnectedSensors() {
     return this.sensorsManager.getConnectedSensors();
   }
 
-  async discardRecording() {
-    this.state = "discarded";
-    await this.storageManager.discardRecording();
-  }
-
-  private handleSensorData(reading: SensorReading) {
-    this.storageManager.addSensorReading(reading);
-
-    if (typeof reading.value === "number") {
-      if (!this.allValues.has(reading.metric)) {
-        this.allValues.set(reading.metric, []);
-      }
-      this.allValues.get(reading.metric)!.push(reading.value);
-    }
-
-    this.dataCallbacks.forEach((cb) => {
-      try {
-        cb(reading);
-      } catch (err) {
-        console.warn("Sensor callback error:", err);
-      }
+  subscribeConnection(cb: (sensor: any) => void) {
+    return this.sensorsManager.subscribeConnection((sensor) => {
+      cb(sensor);
+      this.notifyChange(); // Notify when connection state changes
     });
   }
 
-  getLiveMetrics() {
-    const metrics: Record<string, number> = {};
-    for (const [key, values] of this.allValues.entries()) {
-      metrics[key] = values[values.length - 1]; // last value
-      metrics[`${key}_avg`] = values.reduce((a, b) => a + b, 0) / values.length;
-    }
-    return metrics;
-  }
-
-  private async computeActivitySummary(): Promise<ActivitySummary> {
-    const recordingId = this.storageManager.getCurrentRecordingId();
-    if (!recordingId) throw new Error("No active recording");
-
-    const reconstructed =
-      await this.storageManager.reconstructActivityData(recordingId);
-
-    // Build timestamps from latlng if available, else use a common set
-    let timestamps: number[] = [];
-    if (reconstructed.latlng) {
-      timestamps = reconstructed.latlng.timestamps;
-    } else if (Object.keys(reconstructed).length > 0) {
-      timestamps = reconstructed[Object.keys(reconstructed)[0]].timestamps;
-    } else {
-      timestamps = Array.from(
-        { length: 60 },
-        (_, i) => Date.now() - (60 - i) * 1000,
-      );
-    }
-
-    const streamData: ActivityStreamData = {
-      timestamps,
-      heartrate: reconstructed.heartrate?.values,
-      power: reconstructed.power?.values,
-      speed: reconstructed.speed?.values,
-      cadence: reconstructed.cadence?.values,
-      altitude: reconstructed.altitude?.values,
-      latlng: reconstructed.latlng
-        ? (reconstructed.latlng.values as [number, number][])
-        : undefined,
-    };
-
-    return computeActivitySummary(streamData, this.profile, this.activityType);
-  }
-
-  addDataCallback(cb: (reading: SensorReading) => void) {
-    this.dataCallbacks.add(cb);
-    return () => this.dataCallbacks.delete(cb);
-  }
-
-  subscribeConnection(cb: (sensor: any) => void) {
-    return this.sensorsManager.subscribeConnection(cb);
-  }
-
-  getCurrentRecordingId() {
-    return this.storageManager.getCurrentRecordingId();
-  }
-
-  async getRecordingStats(recordingId?: string) {
-    return this.storageManager.getRecordingStats(recordingId);
-  }
-
-  /**
-   * Enhanced upload: Upload activity with compressed streams via TRPC create_activity
-   */
-  async uploadCompletedActivity(recordingId: string): Promise<boolean> {
-    if (!recordingId) {
-      console.error("No recording ID for upload");
-      return false;
-    }
-
-    try {
-      console.log("Starting enhanced activity upload...");
-
-      if (!recordingId) {
-        console.error("Recording not found");
-        return false;
+  private async reconnectDisconnectedSensors() {
+    const sensors = this.sensorsManager.getConnectedSensors();
+    for (const sensor of sensors) {
+      if (sensor.connectionState === "disconnected") {
+        console.log(`Reconnecting ${sensor.name} after foreground`);
+        await this.sensorsManager.connectSensor(sensor.id);
       }
-
-      const summary = await this.computeActivitySummary();
-
-      // Prepare complete submission payload (activity + compressed streams)
-      const submissionPayload =
-        await this.storageManager.prepareSubmissionPayload(
-          id,
-          summary,
-          recording,
-        );
-
-      console.log("Submission payload prepared:", {
-        activity: submissionPayload.activity.name,
-        streamCount: submissionPayload.activity_streams.length,
-        metrics: submissionPayload.activity_streams.map((s) => s.type),
-        totalOriginalSize: submissionPayload.activity_streams.reduce(
-          (sum, s) => sum + s.original_size,
-          0,
-        ),
-        totalCompressedSize: submissionPayload.activity_streams.reduce(
-          (sum, s) => sum + s.data.length,
-          0,
-        ),
-      });
-
-      // TODO: Replace with actual TRPC client call when available
-      // const result = await api.activities.create.mutate(submissionPayload);
-
-      // Placeholder success for now
-      console.log("Enhanced upload would succeed with payload:", {
-        activityName: submissionPayload.activity.name,
-        activityType: submissionPayload.activity.activity_type,
-        streamMetrics: submissionPayload.activity_streams.map((s) => s.type),
-        compressionRatio: Math.round(
-          (1 -
-            submissionPayload.activity_streams.reduce(
-              (sum, s) => sum + s.data.length,
-              0,
-            ) /
-              submissionPayload.activity_streams.reduce(
-                (sum, s) => sum + s.original_size,
-                0,
-              )) *
-            100,
-        ),
-      });
-
-      // Mark recording as synced (placeholder until real upload)
-      await this.storageManager.markRecordingSynced(id);
-
-      console.log("Activity upload completed successfully");
-      return true;
-    } catch (error) {
-      console.error("Failed to upload activity:", error);
-      return false;
     }
   }
+
+  // ================================
+  // Cleanup
+  // ================================
 
   async cleanup() {
     if (this.state === "recording" || this.state === "paused") {
       await this.finishRecording();
     }
-
+    this.appStateSubscription?.remove();
+    if (this.chunkProcessor) {
+      this.chunkProcessor.stop();
+    }
+    if (this.notificationsManager) {
+      await this.notificationsManager.stopForegroundService();
+    }
     await this.locationManager.stopAllTracking();
     await this.sensorsManager.disconnectAll();
-    this.storageManager.stopChunkProcessing();
-    this.dataCallbacks.clear();
+    this.changeCallbacks.clear();
     this.locationManager.clearAllCallbacks();
     console.log("ActivityRecorderService cleaned up");
   }

@@ -1,13 +1,22 @@
-import { BLE_SERVICE_UUIDS } from "@repo/core";
+import {
+  BLE_SERVICE_UUIDS,
+  PublicActivityMetric,
+  PublicActivityMetricDataType,
+} from "@repo/core";
 import { Buffer } from "buffer";
-import { BleManager, Device } from "react-native-ble-plx";
+import { AppState } from "react-native";
+import {
+  BleError,
+  BleManager,
+  Characteristic,
+  Device,
+} from "react-native-ble-plx";
 
 /** --- Connection states --- */
 export type ConnectionState =
   | "disconnected"
   | "connecting"
   | "connected"
-  | "reconnecting"
   | "failed";
 
 /** --- Connected sensor interface --- */
@@ -17,11 +26,31 @@ export interface ConnectedSensor {
   services: string[];
   characteristics: Map<string, string>;
   device: Device;
-  connectionTime: Date;
   connectionState: ConnectionState;
-  reconnectAttempts: number;
-  lastDisconnectTime?: Date;
-  autoReconnect: boolean;
+}
+
+/** --- Metric Types --- */
+export enum BleMetricType {
+  HeartRate = "heartrate",
+  Power = "power",
+  Cadence = "cadence",
+  Speed = "speed",
+}
+
+/** --- Standard BLE Characteristics --- */
+export const KnownCharacteristics: Record<string, BleMetricType> = {
+  "00002a37-0000-1000-8000-00805f9b34fb": BleMetricType.HeartRate,
+  "00002a63-0000-1000-8000-00805f9b34fb": BleMetricType.Power,
+  "00002a5b-0000-1000-8000-00805f9b34fb": BleMetricType.Cadence, // Speed can be derived
+};
+
+/** --- Sensor Data Types --- */
+export interface SensorReading {
+  metric: PublicActivityMetric;
+  dataType: PublicActivityMetricDataType;
+  value: number | [number, number];
+  timestamp: number;
+  deviceId?: string;
 }
 
 /** --- Generic Sports BLE Manager --- */
@@ -31,8 +60,7 @@ export class SensorsManager {
   private dataCallbacks: Set<(reading: SensorReading) => void> = new Set();
   private connectionCallbacks: Set<(sensor: ConnectedSensor) => void> =
     new Set();
-  private reconnectTimers: Map<string, NodeJS.Timeout> = new Map();
-  private readonly MAX_RECONNECT_ATTEMPTS = 3;
+  private reconnectTimers: Map<string, number> = new Map();
   private readonly RECONNECT_DELAY_MS = 2000;
 
   constructor() {
@@ -76,20 +104,16 @@ export class SensorsManager {
   }
 
   /** Connect to a device with auto-reconnect support */
-  async connectSensor(
-    deviceId: string,
-    autoReconnect: boolean = true,
-  ): Promise<ConnectedSensor | null> {
+  async connectSensor(deviceId: string): Promise<ConnectedSensor | null> {
     try {
       // Update state to connecting
       let sensor = this.connectedSensors.get(deviceId);
       if (sensor) {
         sensor.connectionState = "connecting";
       } else {
-        // Pre-emptively create a sensor object to track connection state
         sensor = {
           id: deviceId,
-          name: "Unknown", // Will be updated on connect
+          name: "Unknown",
           connectionState: "connecting",
         } as ConnectedSensor;
         this.connectedSensors.set(deviceId, sensor);
@@ -115,10 +139,7 @@ export class SensorsManager {
         name: device.name || "Unknown Device",
         services: services.map((s) => s.uuid),
         device: discovered,
-        connectionTime: new Date(),
         connectionState: "connected",
-        reconnectAttempts: 0,
-        autoReconnect,
         characteristics,
       };
 
@@ -129,24 +150,9 @@ export class SensorsManager {
       device.onDisconnected((error) => {
         console.log("Disconnected:", device.name, error?.message || "");
         connectedSensor.connectionState = "disconnected";
-        connectedSensor.lastDisconnectTime = new Date();
         this.connectionCallbacks.forEach((cb) => cb(connectedSensor));
 
-        if (
-          autoReconnect &&
-          connectedSensor.reconnectAttempts < this.MAX_RECONNECT_ATTEMPTS
-        ) {
-          this.scheduleReconnect(connectedSensor);
-        } else if (
-          !autoReconnect ||
-          connectedSensor.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS
-        ) {
-          connectedSensor.connectionState = "failed";
-          this.connectionCallbacks.forEach((cb) => cb(connectedSensor));
-          console.warn(
-            `Max reconnect attempts reached for ${connectedSensor.name}`,
-          );
-        }
+        this.scheduleReconnect(connectedSensor);
       });
 
       console.log(
@@ -157,61 +163,56 @@ export class SensorsManager {
     } catch (err) {
       console.error("Connect error", err);
 
-      // Update existing sensor state to failed
       const existingSensor = this.connectedSensors.get(deviceId);
       if (existingSensor) {
         existingSensor.connectionState = "failed";
         this.connectionCallbacks.forEach((cb) => cb(existingSensor));
       }
-
       return null;
     }
   }
 
-  /** Schedule reconnection attempt */
+  /** Schedule reconnection attempt (AppState-aware) */
   private scheduleReconnect(sensor: ConnectedSensor): void {
-    // Clear existing timer if any
+    // If app is backgrounded, defer
+    if (AppState.currentState !== "active") {
+      console.log(`Deferring reconnect for ${sensor.name} until foreground`);
+      return;
+    }
+
     const existingTimer = this.reconnectTimers.get(sensor.id);
     if (existingTimer) {
       clearTimeout(existingTimer);
     }
 
-    const delay =
-      this.RECONNECT_DELAY_MS * Math.pow(2, sensor.reconnectAttempts); // Exponential backoff
+    const delay = this.RECONNECT_DELAY_MS;
 
-    sensor.connectionState = "reconnecting";
-    sensor.reconnectAttempts++;
+    sensor.connectionState = "connecting";
     this.connectionCallbacks.forEach((cb) => cb(sensor));
-
-    console.log(
-      `Scheduling reconnect attempt ${sensor.reconnectAttempts} for ${sensor.name} in ${delay}ms`,
-    );
 
     const timer = setTimeout(async () => {
       try {
-        console.log(
-          `Attempting reconnect ${sensor.reconnectAttempts} for ${sensor.name}`,
-        );
         await this.reconnectSensor(sensor.id);
-      } catch (error) {
-        console.error(
-          `Reconnect attempt ${sensor.reconnectAttempts} failed for ${sensor.name}:`,
-          error,
-        );
-
-        if (sensor.reconnectAttempts < this.MAX_RECONNECT_ATTEMPTS) {
-          this.scheduleReconnect(sensor);
-        } else {
-          sensor.connectionState = "failed";
-          this.connectionCallbacks.forEach((cb) => cb(sensor));
-          console.warn(`All reconnect attempts failed for ${sensor.name}`);
-        }
+      } catch {
+        sensor.connectionState = "failed";
+        this.connectionCallbacks.forEach((cb) => cb(sensor));
+        console.warn(`All reconnect attempts failed for ${sensor.name}`);
       }
 
       this.reconnectTimers.delete(sensor.id);
     }, delay);
 
     this.reconnectTimers.set(sensor.id, timer);
+  }
+
+  /** Public method to reconnect all sensors (to be called on AppState "active") */
+  public async reconnectAll(): Promise<void> {
+    const sensors = Array.from(this.connectedSensors.values());
+    for (const sensor of sensors) {
+      if (sensor.connectionState === "disconnected") {
+        await this.reconnectSensor(sensor.id).catch(console.warn);
+      }
+    }
   }
 
   /** Reconnect to a sensor */
@@ -222,19 +223,10 @@ export class SensorsManager {
     if (!sensor) return null;
 
     try {
-      // Attempt to connect to the same device
-      const newSensor = await this.connectSensor(
-        deviceId,
-        sensor.autoReconnect,
-      );
-
+      const newSensor = await this.connectSensor(deviceId);
       if (newSensor) {
-        // Reset reconnect attempts on successful connection
-        newSensor.reconnectAttempts = 0;
-        console.log(`Successfully reconnected to ${newSensor.name}`);
         return newSensor;
       }
-
       return null;
     } catch (error) {
       console.error(`Reconnection failed for ${sensor.name}:`, error);
@@ -243,25 +235,14 @@ export class SensorsManager {
   }
 
   /** Disconnect a device */
-  async disconnectSensor(
-    deviceId: string,
-    disableAutoReconnect: boolean = true,
-  ) {
+  async disconnectSensor(deviceId: string) {
     const sensor = this.connectedSensors.get(deviceId);
     if (sensor) {
-      // Clear reconnect timer
       const timer = this.reconnectTimers.get(deviceId);
       if (timer) {
         clearTimeout(timer);
         this.reconnectTimers.delete(deviceId);
       }
-
-      // Disable auto-reconnect if requested
-      if (disableAutoReconnect) {
-        sensor.autoReconnect = false;
-      }
-
-      // Disconnect device
       if (sensor.device) {
         try {
           await sensor.device.cancelConnection();
@@ -273,13 +254,12 @@ export class SensorsManager {
 
   /** Disconnect all devices */
   async disconnectAll() {
-    // Clear all reconnect timers
     this.reconnectTimers.forEach((timer) => clearTimeout(timer));
     this.reconnectTimers.clear();
 
     await Promise.allSettled(
       Array.from(this.connectedSensors.keys()).map((id) =>
-        this.disconnectSensor(id, true),
+        this.disconnectSensor(id),
       ),
     );
   }
@@ -319,7 +299,10 @@ export class SensorsManager {
       let retries = 0;
       const maxRetries = 2;
 
-      const monitorCallback = (error, char) => {
+      const monitorCallback = (
+        error: BleError | null,
+        char: Characteristic | null,
+      ) => {
         if (error) {
           console.warn(`Error monitoring ${metricType}:`, error);
           if (retries < maxRetries) {
@@ -334,7 +317,7 @@ export class SensorsManager {
 
         if (!char?.value) return;
 
-        const reading = parseBleData(
+        const reading = this.parseBleData(
           metricType,
           Buffer.from(char.value, "base64").buffer,
           sensor.id,
@@ -345,14 +328,134 @@ export class SensorsManager {
       characteristic.monitor(monitorCallback);
     }
   }
-  private handleSensorData(reading: SensorReading) {
-    this.updateWithSensorData(reading);
-    this.dataCallbacks.forEach((cb) => {
-      try {
-        cb(reading);
-      } catch (err) {
-        console.warn("Sensor callback error:", err);
-      }
+
+  /* --- BLE Data Parsing Helpers (unchanged) --- */
+  parseHeartRate(data: ArrayBuffer, deviceId: string): SensorReading | null {
+    if (data.byteLength < 2) return null;
+    const view = new DataView(data);
+    const is16Bit = (view.getUint8(0) & 0x01) !== 0;
+    const value = is16Bit ? view.getUint16(1, true) : view.getUint8(1);
+    if (value < 30 || value > 250) return null;
+
+    return this.validateSensorReading({
+      metric: "heartrate",
+      dataType: "float",
+      value,
+      timestamp: Date.now(),
+      deviceId,
     });
+  }
+
+  parsePower(data: ArrayBuffer, deviceId: string): SensorReading | null {
+    if (data.byteLength < 4) return null;
+    const view = new DataView(data);
+    const power = view.getInt16(2, true);
+    const value = Math.max(0, Math.min(power, 4000));
+    return this.validateSensorReading({
+      metric: "power",
+      dataType: "float",
+      value,
+      timestamp: Date.now(),
+      deviceId,
+    });
+  }
+
+  parseCSCMeasurement(
+    data: ArrayBuffer,
+    deviceId: string,
+  ): SensorReading | null {
+    if (data.byteLength < 1) return null;
+    const view = new DataView(data);
+    const flags = view.getUint8(0);
+    let offset = 1;
+
+    if (flags & 0x01 && data.byteLength >= offset + 6) {
+      const value = view.getUint32(offset, true);
+      return this.validateSensorReading({
+        metric: "speed",
+        dataType: "float",
+        value,
+        timestamp: Date.now(),
+        deviceId,
+      });
+    }
+    if (flags & 0x02 && data.byteLength >= offset + 4) {
+      const value = view.getUint16(offset, true);
+      return this.validateSensorReading({
+        metric: "cadence",
+        dataType: "float",
+        value,
+        timestamp: Date.now(),
+        deviceId,
+      });
+    }
+    return null;
+  }
+
+  parseBleData(
+    metricType: BleMetricType,
+    raw: ArrayBuffer,
+    deviceId: string,
+  ): SensorReading | null {
+    switch (metricType) {
+      case BleMetricType.HeartRate:
+        return this.parseHeartRate(raw, deviceId);
+      case BleMetricType.Power:
+        return this.parsePower(raw, deviceId);
+      case BleMetricType.Cadence:
+      case BleMetricType.Speed:
+        return this.parseCSCMeasurement(raw, deviceId);
+      default:
+        return null;
+    }
+  }
+
+  smoothSensorData(values: number[], window = 3): number[] {
+    if (values.length < window) return values;
+    return values.map((_, i) => {
+      const start = Math.max(0, i - Math.floor(window / 2));
+      const end = Math.min(values.length, start + window);
+      return (
+        values.slice(start, end).reduce((a, b) => a + b, 0) / (end - start)
+      );
+    });
+  }
+
+  validateSensorReading(reading: SensorReading): SensorReading | null {
+    switch (reading.metric) {
+      case "heartrate":
+        if (
+          typeof reading.value === "number" &&
+          reading.value >= 30 &&
+          reading.value <= 250
+        )
+          return reading;
+        break;
+      case "power":
+        if (
+          typeof reading.value === "number" &&
+          reading.value >= 0 &&
+          reading.value <= 4000
+        )
+          return reading;
+        break;
+      case "cadence":
+        if (
+          typeof reading.value === "number" &&
+          reading.value >= 0 &&
+          reading.value <= 300
+        )
+          return reading;
+        break;
+      case "speed":
+        if (
+          typeof reading.value === "number" &&
+          reading.value >= 0 &&
+          reading.value <= 100
+        )
+          return reading;
+        break;
+    }
+    return null;
   }
 }
