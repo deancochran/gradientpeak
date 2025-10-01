@@ -1,8 +1,3 @@
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Icon } from "@/components/ui/icon";
-import { Text } from "@/components/ui/text";
-import { useActivityRecorder } from "@/lib/hooks/useActivityRecorder";
 import { useRouter } from "expo-router";
 import {
   AlertCircle,
@@ -12,28 +7,80 @@ import {
   Info,
   MapPin,
   Navigation,
-  Settings,
+  Shield,
 } from "lucide-react-native";
-import { useState } from "react";
-import { Alert, Linking, ScrollView, View } from "react-native";
+import React, { useCallback, useState } from "react";
+import { Alert, Linking, ScrollView, Text, View } from "react-native";
+
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Icon } from "@/components/ui/icon";
+import { useActivityRecorder } from "@/lib/hooks/useActivityRecorder";
+import { PublicActivityType } from "@repo/core";
+
+type PermissionType = "bluetooth" | "location" | "location-background";
+
+const isOutdoorActivity = (type: PublicActivityType): boolean => {
+  return ["outdoor_run", "outdoor_bike", "outdoor_walk"].includes(type);
+};
 
 export default function PermissionsModal() {
-  const {
-    connectionStatus,
-    permissions,
-    requestPermission,
-    requestAllPermissions,
-  } = useActivityRecorder();
-
-  const [isLoading, setIsLoading] = useState(false);
+  const service = useActivityRecorder();
   const router = useRouter();
+  const [isLoading, setIsLoading] = useState(false);
 
-  /** Request all permissions at once */
-  const handleRequestAllPermissions = async () => {
+  // Get permission states directly from service
+  const bluetoothPermission = service.getPermissionState("bluetooth");
+  const locationPermission = service.getPermissionState("location");
+  const backgroundPermission = service.getPermissionState(
+    "location-background",
+  );
+
+  // Derive connection status
+  const connectedSensors = service.getConnectedSensors();
+  const isRecording = service.state === "recording";
+  const needsGPS = isOutdoorActivity(service.selectedActivityType);
+
+  // Request single permission
+  const handleRequestPermission = useCallback(
+    async (type: PermissionType) => {
+      try {
+        const granted = await service.ensurePermission(type);
+        if (granted) {
+          Alert.alert(
+            "Permission Granted",
+            `${type.replace("-", " ")} permission has been granted successfully!`,
+          );
+        } else {
+          Alert.alert(
+            "Permission Denied",
+            `${type.replace("-", " ")} permission was denied. You can enable it in device settings.`,
+            [
+              { text: "Cancel", style: "cancel" },
+              { text: "Open Settings", onPress: () => Linking.openSettings() },
+            ],
+          );
+        }
+      } catch (error) {
+        console.error(`Error requesting ${type} permission:`, error);
+        Alert.alert("Error", `Failed to request ${type} permission`);
+      }
+    },
+    [service],
+  );
+
+  // Request all permissions
+  const handleRequestAllPermissions = useCallback(async () => {
     setIsLoading(true);
     try {
-      const success = await requestAllPermissions();
-      if (success) {
+      const results = await Promise.all([
+        service.ensurePermission("bluetooth"),
+        service.ensurePermission("location"),
+        service.ensurePermission("location-background"),
+      ]);
+
+      const allGranted = results.every(Boolean);
+      if (allGranted) {
         Alert.alert("Success", "All permissions have been granted!");
       } else {
         Alert.alert(
@@ -47,37 +94,10 @@ export default function PermissionsModal() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [service]);
 
-  /** Request specific permission */
-  const handleRequestPermission = async (
-    type: "bluetooth" | "location" | "location-background",
-  ) => {
-    try {
-      const granted = await requestPermission(type);
-      if (granted) {
-        Alert.alert(
-          "Permission Granted",
-          `${type} permission has been granted successfully!`,
-        );
-      } else {
-        Alert.alert(
-          "Permission Denied",
-          `${type} permission was denied. You can enable it later in device settings.`,
-          [
-            { text: "Cancel", style: "cancel" },
-            { text: "Open Settings", onPress: () => Linking.openSettings() },
-          ],
-        );
-      }
-    } catch (error) {
-      console.error(`Error requesting ${type} permission:`, error);
-      Alert.alert("Error", `Failed to request ${type} permission`);
-    }
-  };
-
-  /** Open device settings */
-  const openDeviceSettings = () => {
+  // Open device settings
+  const openDeviceSettings = useCallback(() => {
     Alert.alert(
       "Open Device Settings",
       "You'll be taken to your device settings where you can manage app permissions.",
@@ -86,13 +106,13 @@ export default function PermissionsModal() {
         { text: "Open Settings", onPress: () => Linking.openSettings() },
       ],
     );
-  };
+  }, []);
 
-  /** Get overall permission status */
+  // Determine overall status
   const getOverallStatus = (): "ready" | "partial" | "denied" => {
-    const hasLocation = permissions.location?.granted || false;
-    const hasBackground = permissions["location-background"]?.granted || false;
-    const hasBluetooth = permissions.bluetooth?.granted || false;
+    const hasBluetooth = bluetoothPermission?.granted || false;
+    const hasLocation = locationPermission?.granted || false;
+    const hasBackground = backgroundPermission?.granted || false;
 
     if (hasLocation && hasBluetooth) {
       return hasBackground ? "ready" : "partial";
@@ -112,16 +132,7 @@ export default function PermissionsModal() {
         <Text className="flex-1 text-center font-semibold">
           App Permissions
         </Text>
-        <Button
-          size="icon"
-          variant="ghost"
-          onPress={() => {
-            /* Permissions are automatically updated by service */
-          }}
-          disabled={isLoading}
-        >
-          <Icon as={Settings} size={20} />
-        </Button>
+        <View className="w-10" />
       </View>
 
       <ScrollView className="flex-1 px-4 py-6">
@@ -184,7 +195,7 @@ export default function PermissionsModal() {
         {/* Bluetooth Permission */}
         <Card
           className={`mb-4 ${
-            permissions.bluetooth?.granted
+            bluetoothPermission?.granted
               ? "border-green-500/20 bg-green-500/5"
               : "border-orange-500/20 bg-orange-500/5"
           }`}
@@ -196,7 +207,7 @@ export default function PermissionsModal() {
                   as={Bluetooth}
                   size={24}
                   className={
-                    permissions.bluetooth?.granted
+                    bluetoothPermission?.granted
                       ? "text-green-500"
                       : "text-orange-500"
                   }
@@ -204,25 +215,25 @@ export default function PermissionsModal() {
                 <View>
                   <Text className="font-semibold">Bluetooth Access</Text>
                   <Text className="text-sm text-muted-foreground">
-                    {permissions.bluetooth?.description ||
+                    {bluetoothPermission?.description ||
                       "Connect to fitness sensors"}
                   </Text>
                 </View>
               </View>
               <View
                 className={`px-3 py-1 rounded-full ${
-                  permissions.bluetooth?.granted
+                  bluetoothPermission?.granted
                     ? "bg-green-500"
                     : "bg-orange-500"
                 }`}
               >
                 <Text className="text-white text-xs font-medium">
-                  {permissions.bluetooth?.granted ? "Granted" : "Required"}
+                  {bluetoothPermission?.granted ? "Granted" : "Required"}
                 </Text>
               </View>
             </View>
 
-            {!permissions.bluetooth?.granted && (
+            {!bluetoothPermission?.granted && (
               <Button
                 onPress={() => handleRequestPermission("bluetooth")}
                 className="w-full"
@@ -233,23 +244,26 @@ export default function PermissionsModal() {
               </Button>
             )}
 
-            {!permissions.bluetooth?.canAskAgain && (
-              <View className="mt-3 p-3 bg-orange-50 rounded-lg">
-                <Text className="text-orange-700 text-sm">
-                  Bluetooth permission was permanently denied. Please enable it
-                  in device settings.
-                </Text>
-              </View>
-            )}
+            {bluetoothPermission?.granted === false &&
+              !bluetoothPermission?.canAskAgain && (
+                <View className="mt-3 p-3 bg-orange-50 rounded-lg">
+                  <Text className="text-orange-700 text-sm">
+                    Bluetooth permission was permanently denied. Please enable
+                    it in device settings.
+                  </Text>
+                </View>
+              )}
           </CardContent>
         </Card>
 
         {/* Location Permission */}
         <Card
           className={`mb-4 ${
-            permissions.location?.granted
+            locationPermission?.granted
               ? "border-green-500/20 bg-green-500/5"
-              : "border-orange-500/20 bg-orange-500/5"
+              : needsGPS
+                ? "border-orange-500/20 bg-orange-500/5"
+                : "border-yellow-500/20 bg-yellow-500/5"
           }`}
         >
           <CardContent className="p-4">
@@ -259,33 +273,41 @@ export default function PermissionsModal() {
                   as={MapPin}
                   size={24}
                   className={
-                    permissions.location?.granted
+                    locationPermission?.granted
                       ? "text-green-500"
-                      : "text-orange-500"
+                      : needsGPS
+                        ? "text-orange-500"
+                        : "text-yellow-500"
                   }
                 />
                 <View>
                   <Text className="font-semibold">Location Access</Text>
                   <Text className="text-sm text-muted-foreground">
-                    {permissions.location?.description ||
+                    {locationPermission?.description ||
                       "GPS tracking and route mapping"}
                   </Text>
                 </View>
               </View>
               <View
                 className={`px-3 py-1 rounded-full ${
-                  permissions.location?.granted
+                  locationPermission?.granted
                     ? "bg-green-500"
-                    : "bg-orange-500"
+                    : needsGPS
+                      ? "bg-orange-500"
+                      : "bg-yellow-500"
                 }`}
               >
                 <Text className="text-white text-xs font-medium">
-                  {permissions.location?.granted ? "Granted" : "Required"}
+                  {locationPermission?.granted
+                    ? "Granted"
+                    : needsGPS
+                      ? "Required"
+                      : "Recommended"}
                 </Text>
               </View>
             </View>
 
-            {!permissions.location?.granted && (
+            {!locationPermission?.granted && (
               <Button
                 onPress={() => handleRequestPermission("location")}
                 className="w-full"
@@ -294,21 +316,22 @@ export default function PermissionsModal() {
               </Button>
             )}
 
-            {!permissions.location?.canAskAgain && (
-              <View className="mt-3 p-3 bg-orange-50 rounded-lg">
-                <Text className="text-orange-700 text-sm">
-                  Location permission was permanently denied. Please enable it
-                  in device settings.
-                </Text>
-              </View>
-            )}
+            {locationPermission?.granted === false &&
+              !locationPermission?.canAskAgain && (
+                <View className="mt-3 p-3 bg-orange-50 rounded-lg">
+                  <Text className="text-orange-700 text-sm">
+                    Location permission was permanently denied. Please enable it
+                    in device settings.
+                  </Text>
+                </View>
+              )}
           </CardContent>
         </Card>
 
         {/* Background Location Permission */}
         <Card
           className={`mb-4 ${
-            permissions["location-background"]?.granted
+            backgroundPermission?.granted
               ? "border-green-500/20 bg-green-500/5"
               : "border-yellow-500/20 bg-yellow-500/5"
           }`}
@@ -320,7 +343,7 @@ export default function PermissionsModal() {
                   as={Navigation}
                   size={24}
                   className={
-                    permissions["location-background"]?.granted
+                    backgroundPermission?.granted
                       ? "text-green-500"
                       : "text-yellow-500"
                   }
@@ -328,53 +351,51 @@ export default function PermissionsModal() {
                 <View>
                   <Text className="font-semibold">Background Location</Text>
                   <Text className="text-sm text-muted-foreground">
-                    {permissions["location-background"]?.description ||
+                    {backgroundPermission?.description ||
                       "Continue tracking in background"}
                   </Text>
                 </View>
               </View>
               <View
                 className={`px-3 py-1 rounded-full ${
-                  permissions["location-background"]?.granted
+                  backgroundPermission?.granted
                     ? "bg-green-500"
                     : "bg-yellow-500"
                 }`}
               >
                 <Text className="text-white text-xs font-medium">
-                  {permissions["location-background"]?.granted
-                    ? "Granted"
-                    : "Recommended"}
+                  {backgroundPermission?.granted ? "Granted" : "Recommended"}
                 </Text>
               </View>
             </View>
 
-            {permissions.location?.granted &&
-              !permissions["location-background"]?.granted && (
-                <Button
-                  onPress={() => handleRequestPermission("location-background")}
-                  className="w-full"
-                  variant="outline"
-                >
-                  <Text className="font-semibold">
-                    Enable Background Tracking
-                  </Text>
-                </Button>
-              )}
+            {locationPermission?.granted && !backgroundPermission?.granted && (
+              <Button
+                onPress={() => handleRequestPermission("location-background")}
+                className="w-full"
+                variant="outline"
+              >
+                <Text className="font-semibold">
+                  Enable Background Tracking
+                </Text>
+              </Button>
+            )}
 
-            {!permissions.location?.granted && (
+            {!locationPermission?.granted && (
               <Text className="text-sm text-muted-foreground italic">
                 Grant location permission first to enable background tracking
               </Text>
             )}
 
-            {!permissions["location-background"]?.canAskAgain && (
-              <View className="mt-3 p-3 bg-yellow-50 rounded-lg">
-                <Text className="text-yellow-700 text-sm">
-                  Background location was denied. Enable it in device settings
-                  for continuous tracking.
-                </Text>
-              </View>
-            )}
+            {backgroundPermission?.granted === false &&
+              !backgroundPermission?.canAskAgain && (
+                <View className="mt-3 p-3 bg-yellow-50 rounded-lg">
+                  <Text className="text-yellow-700 text-sm">
+                    Background location was denied. Enable it in device settings
+                    for continuous tracking.
+                  </Text>
+                </View>
+              )}
           </CardContent>
         </Card>
 
@@ -390,23 +411,19 @@ export default function PermissionsModal() {
                 <View className="gap-1">
                   <Text className="text-sm text-blue-600">
                     GPS:{" "}
-                    {connectionStatus.gps === "connected"
-                      ? "🟢 Connected"
-                      : connectionStatus.gps === "connecting"
-                        ? "🟡 Connecting"
-                        : connectionStatus.gps === "disabled"
-                          ? "⚪ Disabled"
-                          : "🔴 Error"}
+                    {isRecording && needsGPS
+                      ? "🟢 Active"
+                      : locationPermission?.granted
+                        ? "🟡 Ready"
+                        : "🔴 Not Available"}
                   </Text>
                   <Text className="text-sm text-blue-600">
                     Bluetooth:{" "}
-                    {connectionStatus.bluetooth === "connected"
-                      ? "🟢 Connected"
-                      : connectionStatus.bluetooth === "connecting"
-                        ? "🟡 Connecting"
-                        : connectionStatus.bluetooth === "disabled"
-                          ? "⚪ Disabled"
-                          : "🔴 Disconnected"}
+                    {connectedSensors.length > 0
+                      ? `🟢 ${connectedSensors.length} Connected`
+                      : bluetoothPermission?.granted
+                        ? "🟡 Ready"
+                        : "🔴 Not Available"}
                   </Text>
                 </View>
                 <Text className="text-xs text-blue-600 mt-2">
@@ -457,7 +474,7 @@ export default function PermissionsModal() {
           variant="outline"
           className="mt-6 mb-4"
         >
-          <Icon as={Settings} size={16} />
+          <Icon as={Shield} size={16} />
           <Text className="ml-2">Open Device Settings</Text>
         </Button>
       </ScrollView>
