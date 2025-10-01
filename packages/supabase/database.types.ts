@@ -457,6 +457,7 @@ export type Database = {
         | "elevation"
         | "temperature"
         | "gradient"
+        | "heading"
       activity_metric_data_type: "float" | "latlng" | "boolean"
       activity_type:
         | "outdoor_run"
@@ -608,6 +609,7 @@ export const Constants = {
         "elevation",
         "temperature",
         "gradient",
+        "heading",
       ],
       activity_metric_data_type: ["float", "latlng", "boolean"],
       activity_type: [

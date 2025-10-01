@@ -19,6 +19,7 @@ export const publicActivityMetricSchema = z.union([
   z.literal("elevation"),
   z.literal("temperature"),
   z.literal("gradient"),
+  z.literal("heading"),
 ]);
 
 export const publicActivityMetricDataTypeSchema = z.union([
