@@ -4,22 +4,13 @@ import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { useActivityRecorder } from "@/lib/hooks/useActivityRecorder";
 import { useRouter } from "expo-router";
-import { Bluetooth, ChevronLeft, RefreshCw, Zap } from "lucide-react-native";
+import { Bluetooth, ChevronLeft, RefreshCw } from "lucide-react-native";
 import { useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
 import type { Device } from "react-native-ble-plx";
 
 export default function BluetoothModal() {
-  const {
-    connectionStatus,
-    connectedSensors,
-    permissions,
-    scanForDevices,
-    connectToDevice,
-    disconnectDevice,
-    requestPermission,
-  } = useActivityRecorder();
-
+  const recorder = useActivityRecorder();
   const router = useRouter();
 
   // Local state for scanning
@@ -31,30 +22,26 @@ export default function BluetoothModal() {
 
   /** Start scanning for BLE devices */
   const startScan = async () => {
-    // Check Bluetooth permission first
-    if (!permissions.bluetooth?.granted) {
-      const granted = await requestPermission("bluetooth");
-      if (!granted) {
-        Alert.alert(
-          "Bluetooth Permission Required",
-          "Please grant Bluetooth permission to scan for devices.",
-        );
-        return;
-      }
+    if (!recorder.permissionsManager.permissions.bluetooth?.granted) {
+      Alert.alert(
+        "Bluetooth Permission Required",
+        "Please grant Bluetooth permission to scan for devices.",
+      );
+      return;
     }
 
     setIsScanning(true);
     setAvailableDevices([]);
 
     try {
-      const devices = await scanForDevices();
-      setAvailableDevices(
-        devices.filter(
-          (device) =>
-            // Filter out already connected devices
-            !connectedSensors.some((sensor) => sensor.id === device.id),
-        ),
+      const devices = await recorder.scanForDevices();
+      const filteredDevices = devices.filter(
+        (device) =>
+          !recorder
+            .getConnectedSensors()
+            .some((sensor) => sensor.id === device.id),
       );
+      setAvailableDevices(filteredDevices);
     } catch (error) {
       console.error("Scan failed:", error);
       Alert.alert(
@@ -66,11 +53,6 @@ export default function BluetoothModal() {
     }
   };
 
-  /** Stop scanning */
-  const stopScan = () => {
-    setIsScanning(false);
-  };
-
   /** Connect to a device */
   const handleConnectDevice = async (device: Device) => {
     if (connectingDevices.has(device.id)) return;
@@ -78,9 +60,8 @@ export default function BluetoothModal() {
     setConnectingDevices((prev) => new Set(prev).add(device.id));
 
     try {
-      const sensor = await connectToDevice(device.id);
+      const sensor = await recorder.connectToDevice(device.id);
       if (sensor) {
-        // Remove from available devices
         setAvailableDevices((prev) => prev.filter((d) => d.id !== device.id));
         Alert.alert(
           "Connected",
@@ -109,11 +90,13 @@ export default function BluetoothModal() {
 
   /** Disconnect from a device */
   const handleDisconnectDevice = async (deviceId: string) => {
-    const sensor = connectedSensors.find((s) => s.id === deviceId);
+    const sensor = recorder
+      .getConnectedSensors()
+      .find((s) => s.id === deviceId);
     if (!sensor) return;
 
     try {
-      await disconnectDevice(deviceId);
+      await recorder.disconnectDevice(deviceId);
       Alert.alert("Disconnected", `Disconnected from ${sensor.name}`);
     } catch (error) {
       console.error("Disconnection failed:", error);
@@ -124,53 +107,7 @@ export default function BluetoothModal() {
     }
   };
 
-  /** Get device type icon from services */
-  const getDeviceIcon = (services: string[]): string => {
-    // Check for known fitness device services
-    const serviceMap: Record<string, string> = {
-      "0000180d": "💓", // Heart Rate Service
-      "00001818": "⚡", // Cycling Power Service
-      "00001816": "🦵", // Cycling Speed and Cadence Service
-      "0000180a": "🔋", // Device Information Service
-    };
-
-    for (const service of services) {
-      const normalizedService = service.toLowerCase().replace(/-/g, "");
-      if (serviceMap[normalizedService]) {
-        return serviceMap[normalizedService];
-      }
-    }
-    return "📡"; // Generic sensor icon
-  };
-
-  /** Get device type label from services */
-  const getDeviceTypeLabel = (services: string[]): string => {
-    const labels: string[] = [];
-
-    services.forEach((service) => {
-      const normalizedService = service.toLowerCase().replace(/-/g, "");
-      switch (normalizedService) {
-        case "0000180d":
-          labels.push("Heart Rate");
-          break;
-        case "00001818":
-          labels.push("Power Meter");
-          break;
-        case "00001816":
-          labels.push("Speed/Cadence");
-          break;
-      }
-    });
-
-    return labels.length > 0 ? labels.join(", ") : "Unknown Device";
-  };
-
-  /** Check for device data from service */
-  const getDeviceReading = (deviceId: string): string | undefined => {
-    // This would need to be implemented in the service to track live readings
-    // For now, just show connected status
-    return "Connected";
-  };
+  const connectedSensors = recorder.getConnectedSensors();
 
   return (
     <View className="flex-1 bg-background">
@@ -185,7 +122,7 @@ export default function BluetoothModal() {
         <Button
           size="icon"
           variant="ghost"
-          onPress={isScanning ? stopScan : startScan}
+          onPress={isScanning ? () => setIsScanning(false) : startScan}
           disabled={isScanning}
         >
           <Icon
@@ -198,20 +135,13 @@ export default function BluetoothModal() {
 
       <ScrollView className="flex-1">
         {/* Permission Status */}
-        {!permissions.bluetooth?.granted && (
+        {!recorder.permissionsManager.permissions.bluetooth?.granted && (
           <View className="px-4 py-3 bg-orange-500/10 border-b border-orange-500/20">
             <View className="flex-row items-center gap-2">
               <Icon as={Bluetooth} size={16} className="text-orange-500" />
               <Text className="text-sm text-orange-700 flex-1">
                 Bluetooth permission required to scan for devices
               </Text>
-              <Button
-                size="sm"
-                variant="outline"
-                onPress={() => requestPermission("bluetooth")}
-              >
-                <Text className="text-xs">Grant</Text>
-              </Button>
             </View>
           </View>
         )}
@@ -219,26 +149,13 @@ export default function BluetoothModal() {
         {/* Connection Status Banner */}
         <View className="px-4 py-3 bg-muted/50">
           <View className="flex-row items-center gap-2">
-            <Icon
-              as={Bluetooth}
-              size={16}
-              className={
-                connectionStatus.bluetooth === "connected"
-                  ? "text-blue-500"
-                  : "text-muted-foreground"
-              }
-            />
             <Text className="text-sm">
-              {connectionStatus.bluetooth === "connected"
-                ? `${connectedSensors.length} device(s) connected`
-                : connectionStatus.bluetooth === "connecting"
-                  ? "Connecting to devices..."
-                  : "No devices connected"}
+              {`${connectedSensors.length} device(s) connected`}
             </Text>
           </View>
         </View>
 
-        {/* Connected Devices Section */}
+        {/* Connected Devices */}
         {connectedSensors.length > 0 && (
           <View className="px-4 py-4">
             <Text className="text-lg font-semibold mb-3">
@@ -252,33 +169,18 @@ export default function BluetoothModal() {
                 <CardContent className="p-4">
                   <View className="flex-row items-center justify-between">
                     <View className="flex-1">
-                      <View className="flex-row items-center gap-2 mb-1">
-                        <Text className="text-lg">
-                          {getDeviceIcon(sensor.services)}
-                        </Text>
-                        <Text className="font-semibold">{sensor.name}</Text>
-                      </View>
-                      <Text className="text-sm text-muted-foreground mb-1">
-                        {getDeviceTypeLabel(sensor.services)}
-                      </Text>
+                      <Text className="font-semibold">{sensor.name}</Text>
                       <Text className="text-xs text-green-600 font-medium">
-                        {getDeviceReading(sensor.id) || "Connected"}
-                      </Text>
-                      <Text className="text-xs text-muted-foreground mt-1">
-                        Connected:{" "}
-                        {new Date(sensor.connectionTime).toLocaleTimeString()}
+                        Connected
                       </Text>
                     </View>
-                    <View className="flex-row items-center gap-3">
-                      <View className="w-3 h-3 bg-green-500 rounded-full" />
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onPress={() => handleDisconnectDevice(sensor.id)}
-                      >
-                        <Text>Disconnect</Text>
-                      </Button>
-                    </View>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onPress={() => handleDisconnectDevice(sensor.id)}
+                    >
+                      Disconnect
+                    </Button>
                   </View>
                 </CardContent>
               </Card>
@@ -286,7 +188,7 @@ export default function BluetoothModal() {
           </View>
         )}
 
-        {/* Available Devices Section */}
+        {/* Available Devices */}
         <View className="px-4 py-4">
           <View className="flex-row items-center justify-between mb-3">
             <Text className="text-lg font-semibold">Available Devices</Text>
@@ -300,48 +202,23 @@ export default function BluetoothModal() {
             )}
           </View>
 
-          {!permissions.bluetooth?.granted ? (
-            <Card className="border-dashed border-2 border-orange-500/20">
-              <CardContent className="p-8 items-center">
-                <Icon
-                  as={Bluetooth}
-                  size={48}
-                  className="text-orange-500 mb-4"
-                />
-                <Text className="text-center text-orange-700 mb-2 font-medium">
-                  Bluetooth Permission Required
-                </Text>
-                <Text className="text-center text-sm text-orange-600 mb-4">
-                  Grant Bluetooth permission to scan for and connect to fitness
-                  devices
-                </Text>
-                <Button
-                  onPress={() => requestPermission("bluetooth")}
-                  variant="outline"
-                >
-                  <Text>Grant Permission</Text>
-                </Button>
-              </CardContent>
-            </Card>
-          ) : availableDevices.length === 0 && !isScanning ? (
-            <Card className="border-dashed border-2 border-muted-foreground/20">
-              <CardContent className="p-8 items-center">
-                <Icon
-                  as={Bluetooth}
-                  size={48}
-                  className="text-muted-foreground mb-4"
-                />
-                <Text className="text-center text-muted-foreground mb-2 font-medium">
-                  No devices found
-                </Text>
-                <Text className="text-center text-sm text-muted-foreground mb-4">
-                  Make sure your devices are in pairing mode and nearby
-                </Text>
-                <Button onPress={startScan} variant="outline">
-                  <Icon as={RefreshCw} size={16} />
-                  <Text className="ml-2">Start Scan</Text>
-                </Button>
-              </CardContent>
+          {availableDevices.length === 0 && !isScanning ? (
+            <Card className="border-dashed border-2 border-muted-foreground/20 p-8 items-center">
+              <Icon
+                as={Bluetooth}
+                size={48}
+                className="text-muted-foreground mb-4"
+              />
+              <Text className="text-center text-muted-foreground mb-2 font-medium">
+                No devices found
+              </Text>
+              <Text className="text-center text-sm text-muted-foreground mb-4">
+                Make sure your devices are in pairing mode and nearby
+              </Text>
+              <Button onPress={startScan} variant="outline">
+                <Icon as={RefreshCw} size={16} />
+                <Text className="ml-2">Start Scan</Text>
+              </Button>
             </Card>
           ) : (
             availableDevices.map((device) => (
@@ -383,66 +260,6 @@ export default function BluetoothModal() {
               </Card>
             ))
           )}
-
-          {/* Scanning placeholder */}
-          {isScanning && availableDevices.length === 0 && (
-            <Card className="border-dashed border-2 border-blue-500/20">
-              <CardContent className="p-8 items-center">
-                <ActivityIndicator size="large" color="#3b82f6" />
-                <Text className="text-center text-muted-foreground mt-4 font-medium">
-                  Scanning for devices...
-                </Text>
-                <Text className="text-center text-sm text-muted-foreground mt-2">
-                  Make sure your devices are powered on and in pairing mode
-                </Text>
-              </CardContent>
-            </Card>
-          )}
-        </View>
-
-        {/* Device Guide */}
-        <View className="px-4 py-4 bg-muted/50">
-          <Text className="text-sm font-medium mb-3">
-            Supported Device Types
-          </Text>
-          <View className="gap-2">
-            <View className="flex-row items-center gap-2">
-              <Text className="text-base">💓</Text>
-              <Text className="text-xs text-muted-foreground">
-                Heart Rate Monitors (Bluetooth Low Energy)
-              </Text>
-            </View>
-            <View className="flex-row items-center gap-2">
-              <Text className="text-base">⚡</Text>
-              <Text className="text-xs text-muted-foreground">
-                Power Meters (Cycling & Running)
-              </Text>
-            </View>
-            <View className="flex-row items-center gap-2">
-              <Text className="text-base">🦵</Text>
-              <Text className="text-xs text-muted-foreground">
-                Speed & Cadence Sensors
-              </Text>
-            </View>
-            <View className="flex-row items-center gap-2">
-              <Text className="text-base">📡</Text>
-              <Text className="text-xs text-muted-foreground">
-                Any Bluetooth LE fitness device
-              </Text>
-            </View>
-          </View>
-
-          <View className="mt-4 p-3 bg-blue-50 rounded-lg">
-            <View className="flex-row items-start gap-2">
-              <Icon as={Zap} size={16} className="text-blue-600 mt-0.5" />
-              <Text className="text-xs text-blue-700 flex-1">
-                <Text className="font-semibold">Tip:</Text> Put devices in
-                pairing mode before scanning. Most devices enter pairing mode
-                when powered on or by holding the power button for a few
-                seconds.
-              </Text>
-            </View>
-          </View>
         </View>
       </ScrollView>
     </View>

@@ -1,4 +1,4 @@
-import { type PublicActivityType } from "@repo/supabase";
+import { type PublicPlannedActivitiesInsert } from "@repo/supabase";
 import type { ActivityPlanStructure } from "../schemas/activity_plan";
 
 /**
@@ -554,38 +554,26 @@ export const SAMPLE_SPRINT_WORKOUT: ActivityPlanStructure = {
 /**
  * Get all sample activities for testing
  */
-export const SAMPLE_WORKOUTS = {
-  sweetSpot: SAMPLE_SWEET_SPOT_WORKOUT,
-  vo2Max: SAMPLE_VO2_MAX_WORKOUT,
-  recovery: SAMPLE_RECOVERY_WORKOUT,
-  sprint: SAMPLE_SPRINT_WORKOUT,
-} as const;
-
-/**
- * Get activity by name
- */
-export function getSampleActivity(
-  name: keyof typeof SAMPLE_WORKOUTS,
-): ActivityPlanStructure {
-  return SAMPLE_WORKOUTS[name];
-}
-
-/**
- * Get all sample activity names
- */
-export function getSampleActivityNames(): string[] {
-  return Object.keys(SAMPLE_WORKOUTS);
-}
-
-/**
- * Get sample activities for a specific activity type
- */
-export function getSampleActivitiesForActivityType(
-  activityType: PublicActivityType,
-): ActivityPlanStructure[] {
-  // For now, all samples are indoor cycling
-  if (activityType === "indoor_bike_trainer") {
-    return Object.values(SAMPLE_WORKOUTS);
-  }
-  return [];
-}
+export const SAMPLE_ACTIVITIES: Array<
+  Omit<
+    PublicPlannedActivitiesInsert,
+    "profile_id" | "scheduled_date" | "created_at" | "id" | "idx"
+  >
+> = [
+  {
+    activity_plan_id: "fd3d1cda-280e-43c0-b2e5-1fb0109aebe3",
+    ...SAMPLE_SWEET_SPOT_WORKOUT,
+  },
+  {
+    activity_plan_id: "a3b6641d-8b58-4634-badc-753834514824",
+    ...SAMPLE_VO2_MAX_WORKOUT,
+  },
+  {
+    activity_plan_id: "b1d2c77e-9159-4e9c-8d97-a940777a8938",
+    ...SAMPLE_RECOVERY_WORKOUT,
+  },
+  {
+    activity_plan_id: "efad64e7-6471-40fb-91ef-ec097c4084b8",
+    ...SAMPLE_SPRINT_WORKOUT,
+  },
+];

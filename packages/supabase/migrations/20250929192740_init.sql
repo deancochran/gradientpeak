@@ -85,9 +85,7 @@ create table "public"."activity_plans" (
     "activity_type" activity_type not null,
     "description" text,
     "structure" jsonb not null,
-    "estimated_duration" integer,
-    "estimated_distance" integer,
-    "estimated_tss" integer,
+    "estimated_tss" integer not null,
     "created_at" timestamp with time zone not null default now()
 );
 
@@ -374,14 +372,6 @@ alter table "public"."activities" validate constraint "activities_variability_in
 alter table "public"."activities" add constraint "chk_times" CHECK ((finished_at >= started_at)) not valid;
 
 alter table "public"."activities" validate constraint "chk_times";
-
-alter table "public"."activity_plans" add constraint "activity_plans_estimated_distance_check" CHECK ((estimated_distance >= 0)) not valid;
-
-alter table "public"."activity_plans" validate constraint "activity_plans_estimated_distance_check";
-
-alter table "public"."activity_plans" add constraint "activity_plans_estimated_duration_check" CHECK ((estimated_duration >= 0)) not valid;
-
-alter table "public"."activity_plans" validate constraint "activity_plans_estimated_duration_check";
 
 alter table "public"."activity_plans" add constraint "activity_plans_estimated_tss_check" CHECK ((estimated_tss >= 0)) not valid;
 

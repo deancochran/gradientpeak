@@ -445,7 +445,7 @@ export default function PermissionsModal() {
                 <Text className="text-sm flex-1">
                   <Text className="font-medium">Bluetooth Access:</Text> Connect
                   to heart rate monitors, power meters, and other fitness
-                  sensors to capture detailed workout data
+                  sensors to capture detailed activity data
                 </Text>
               </View>
               <View className="flex-row items-start gap-2">

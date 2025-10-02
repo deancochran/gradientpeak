@@ -57,9 +57,13 @@ create table if not exists public.planned_activities (
     id uuid primary key default uuid_generate_v4(),
     idx serial unique not null,
     profile_id uuid not null references public.profiles(id) on delete cascade,
-    activity_plan_id uuid references public.activity_plans(id) on delete cascade,
     scheduled_date date not null check (scheduled_date >= now()),
     created_at timestamptz not null default now()
+    activity_plan_name text not null,
+    activity_plan_activity_type activity_type not null,
+    activity_plan_description text,
+    activity_plan_estimated_tss integer check (estimated_tss >= 0),
+    activity_plan_structure jsonb not null,
 );
 
 create index if not exists idx_planned_activities_profile_id

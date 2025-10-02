@@ -56,7 +56,7 @@ Manages time-series activity data:
 
 #### 📅 Planned Activities Router (`plannedActivities`)
 
-Manages future/scheduled workouts:
+Manages future/scheduled activities:
 
 - `get`: Fetch planned activity details
 - `create`: Create new planned activities

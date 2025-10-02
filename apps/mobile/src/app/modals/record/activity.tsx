@@ -284,7 +284,7 @@ const PlannedActivitySelection = ({
   <View className="py-4">
     <Text className="text-lg font-semibold mb-2">Planned Workouts</Text>
     <Text className="text-muted-foreground mb-4">
-      Choose from your scheduled workouts
+      Choose from your scheduled activities
     </Text>
 
     {/* Activity Type Selection for Planned */}
@@ -313,7 +313,7 @@ const PlannedActivitySelection = ({
     <View className="gap-3">
       <Text className="font-medium">Available Workouts</Text>
 
-      {/* TODO: Replace with actual planned workouts from service */}
+      {/* TODO: Replace with actual planned activities from service */}
       <MockPlannedWorkouts
         activityType={selectedType}
         selectedId={selectedPlanned}
@@ -323,7 +323,7 @@ const PlannedActivitySelection = ({
   </View>
 );
 
-// ===== MOCK PLANNED WORKOUTS (Replace with actual data later) =====
+// ===== MOCK PLANNED ACTIVITIES (Replace with actual data later) =====
 const MockPlannedWorkouts = ({
   activityType,
   selectedId,
@@ -333,24 +333,24 @@ const MockPlannedWorkouts = ({
   selectedId: string | null;
   onSelect: (id: string | null) => void;
 }) => {
-  // Mock planned workouts based on activity type
+  // Mock planned activities based on activity type
   const mockWorkouts = [
     {
-      id: "workout-1",
+      id: "activity-1",
       name: `${ACTIVITY_NAMES[activityType]} Intervals`,
       description: "5 x 3min intervals with 2min rest",
       duration: "35 minutes",
       type: activityType,
     },
     {
-      id: "workout-2",
+      id: "activity-2",
       name: `Easy ${ACTIVITY_NAMES[activityType]}`,
       description: "Steady speed endurance session",
       duration: "45 minutes",
       type: activityType,
     },
     {
-      id: "workout-3",
+      id: "activity-3",
       name: `${ACTIVITY_NAMES[activityType]} Tempo`,
       description: "20min tempo with warm up and cool down",
       duration: "40 minutes",
@@ -360,34 +360,34 @@ const MockPlannedWorkouts = ({
 
   return (
     <View className="gap-3">
-      {mockWorkouts.map((workout) => (
+      {mockWorkouts.map((activity) => (
         <Button
-          key={workout.id}
+          key={activity.id}
           variant="ghost"
           onPress={() =>
-            onSelect(selectedId === workout.id ? null : workout.id)
+            onSelect(selectedId === activity.id ? null : activity.id)
           }
           className={`p-4 rounded-lg border justify-start ${
-            selectedId === workout.id
+            selectedId === activity.id
               ? "border-primary bg-primary/10"
               : "border-border bg-background"
           }`}
         >
           <View className="flex-row items-center justify-between w-full">
             <View className="flex-1">
-              <Text className="font-semibold mb-1">{workout.name}</Text>
+              <Text className="font-semibold mb-1">{activity.name}</Text>
               <Text className="text-sm text-muted-foreground mb-1">
-                {workout.description}
+                {activity.description}
               </Text>
               <View className="flex-row gap-2">
                 <View className="px-2 py-1 bg-muted rounded-full">
                   <Text className="text-xs text-muted-foreground">
-                    {workout.duration}
+                    {activity.duration}
                   </Text>
                 </View>
               </View>
             </View>
-            {selectedId === workout.id && (
+            {selectedId === activity.id && (
               <Icon as={CheckCircle} size={20} className="text-primary" />
             )}
           </View>
@@ -397,10 +397,10 @@ const MockPlannedWorkouts = ({
       {mockWorkouts.length === 0 && (
         <View className="p-8 items-center border-2 border-dashed border-muted-foreground/20 rounded-lg">
           <Text className="text-muted-foreground text-center">
-            No planned workouts found for {ACTIVITY_NAMES[activityType]}
+            No planned activities found for {ACTIVITY_NAMES[activityType]}
           </Text>
           <Text className="text-xs text-muted-foreground text-center mt-2">
-            Create workouts in the training plan section
+            Create activities in the training plan section
           </Text>
         </View>
       )}

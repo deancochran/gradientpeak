@@ -71,7 +71,7 @@ export class ActivityRecorderService {
 
   // --- Service Managers ---
   private chunkProcessor?: ChunkProcessor;
-  private permissionsManager = new PermissionsManager();
+  public permissionsManager = new PermissionsManager();
   private locationManager = new LocationManager();
   private sensorsManager = new SensorsManager();
   private notificationsManager?: NotificationsManager;
@@ -117,7 +117,6 @@ export class ActivityRecorderService {
       }
       if (locationObj.coords.heading) {
         const heading: SensorReading = {
-          // @ts-expect-error heading is not defined yet (to be added)
           metric: "heading",
           dataType: "float",
           value: locationObj.coords.heading,
@@ -260,11 +259,11 @@ export class ActivityRecorderService {
     await this.locationManager.startForegroundTracking();
     await this.locationManager.startBackgroundTracking();
 
-    const workoutName =
+    const activityName =
       this.planManager?.selectedPlannedActivity.activity_plan.name ||
       this.selectedActivityType.replace(/_/g, " ");
 
-    this.notificationsManager = new NotificationsManager(workoutName);
+    this.notificationsManager = new NotificationsManager(activityName);
     await this.notificationsManager.startForegroundService();
   }
 

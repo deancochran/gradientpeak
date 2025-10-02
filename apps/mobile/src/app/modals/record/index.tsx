@@ -15,18 +15,12 @@ import {
   Zap,
 } from "lucide-react-native";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Alert,
-  BackHandler,
-  Dimensions,
-  FlatList,
-  Text,
-  View,
-} from "react-native";
+import { Alert, BackHandler, Dimensions, FlatList, View } from "react-native";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
+import { Text } from "@/components/ui/text";
 import { useActivityRecorder } from "@/lib/hooks/useActivityRecorder";
 import {
   formatDistance,
