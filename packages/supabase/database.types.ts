@@ -240,8 +240,6 @@ export type Database = {
           activity_type: Database["public"]["Enums"]["activity_type"]
           created_at: string
           description: string | null
-          estimated_distance: number | null
-          estimated_duration: number | null
           estimated_tss: number | null
           id: string
           idx: number
@@ -253,8 +251,6 @@ export type Database = {
           activity_type: Database["public"]["Enums"]["activity_type"]
           created_at?: string
           description?: string | null
-          estimated_distance?: number | null
-          estimated_duration?: number | null
           estimated_tss?: number | null
           id?: string
           idx?: number
@@ -266,8 +262,6 @@ export type Database = {
           activity_type?: Database["public"]["Enums"]["activity_type"]
           created_at?: string
           description?: string | null
-          estimated_distance?: number | null
-          estimated_duration?: number | null
           estimated_tss?: number | null
           id?: string
           idx?: number
@@ -343,37 +337,42 @@ export type Database = {
       }
       planned_activities: {
         Row: {
-          activity_plan_id: string | null
+          activity_type: Database["public"]["Enums"]["activity_type"]
           created_at: string
+          description: string | null
+          estimated_tss: number | null
           id: string
           idx: number
+          name: string
           profile_id: string
           scheduled_date: string
+          structure: Json
         }
         Insert: {
-          activity_plan_id?: string | null
+          activity_type: Database["public"]["Enums"]["activity_type"]
           created_at?: string
+          description?: string | null
+          estimated_tss?: number | null
           id?: string
           idx?: number
+          name: string
           profile_id: string
           scheduled_date: string
+          structure: Json
         }
         Update: {
-          activity_plan_id?: string | null
+          activity_type?: Database["public"]["Enums"]["activity_type"]
           created_at?: string
+          description?: string | null
+          estimated_tss?: number | null
           id?: string
           idx?: number
+          name?: string
           profile_id?: string
           scheduled_date?: string
+          structure?: Json
         }
         Relationships: [
-          {
-            foreignKeyName: "planned_activities_activity_plan_id_fkey"
-            columns: ["activity_plan_id"]
-            isOneToOne: false
-            referencedRelation: "activity_plans"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "planned_activities_profile_id_fkey"
             columns: ["profile_id"]

@@ -85,7 +85,7 @@ create table "public"."activity_plans" (
     "activity_type" activity_type not null,
     "description" text,
     "structure" jsonb not null,
-    "estimated_tss" integer not null,
+    "estimated_tss" integer,
     "created_at" timestamp with time zone not null default now()
 );
 
@@ -111,8 +111,12 @@ create table "public"."planned_activities" (
     "id" uuid not null default uuid_generate_v4(),
     "idx" integer not null default nextval('planned_activities_idx_seq'::regclass),
     "profile_id" uuid not null,
-    "activity_plan_id" uuid,
     "scheduled_date" date not null,
+    "name" text not null,
+    "activity_type" activity_type not null,
+    "description" text,
+    "structure" jsonb not null,
+    "estimated_tss" integer,
     "created_at" timestamp with time zone not null default now()
 );
 
@@ -235,6 +239,26 @@ alter table "public"."activities" add constraint "activities_elapsed_time_check"
 
 alter table "public"."activities" validate constraint "activities_elapsed_time_check";
 
+alter table "public"."activities" add constraint "activities_hr_zone_1_time_check" CHECK ((hr_zone_1_time >= 0)) not valid;
+
+alter table "public"."activities" validate constraint "activities_hr_zone_1_time_check";
+
+alter table "public"."activities" add constraint "activities_hr_zone_2_time_check" CHECK ((hr_zone_2_time >= 0)) not valid;
+
+alter table "public"."activities" validate constraint "activities_hr_zone_2_time_check";
+
+alter table "public"."activities" add constraint "activities_hr_zone_3_time_check" CHECK ((hr_zone_3_time >= 0)) not valid;
+
+alter table "public"."activities" validate constraint "activities_hr_zone_3_time_check";
+
+alter table "public"."activities" add constraint "activities_hr_zone_4_time_check" CHECK ((hr_zone_4_time >= 0)) not valid;
+
+alter table "public"."activities" validate constraint "activities_hr_zone_4_time_check";
+
+alter table "public"."activities" add constraint "activities_hr_zone_5_time_check" CHECK ((hr_zone_5_time >= 0)) not valid;
+
+alter table "public"."activities" validate constraint "activities_hr_zone_5_time_check";
+
 alter table "public"."activities" add constraint "activities_idx_key" UNIQUE using index "activities_idx_key";
 
 alter table "public"."activities" add constraint "activities_intensity_factor_check" CHECK (((intensity_factor >= 0) AND (intensity_factor <= 100))) not valid;
@@ -273,54 +297,6 @@ alter table "public"."activities" add constraint "activities_power_weight_ratio_
 
 alter table "public"."activities" validate constraint "activities_power_weight_ratio_check";
 
-alter table "public"."activities" add constraint "activities_profile_age_check" CHECK ((profile_age >= 0)) not valid;
-
-alter table "public"."activities" validate constraint "activities_profile_age_check";
-
-alter table "public"."activities" add constraint "activities_profile_ftp_check" CHECK ((profile_ftp >= 0)) not valid;
-
-alter table "public"."activities" validate constraint "activities_profile_ftp_check";
-
-alter table "public"."activities" add constraint "activities_profile_id_fkey" FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE not valid;
-
-alter table "public"."activities" validate constraint "activities_profile_id_fkey";
-
-alter table "public"."activities" add constraint "activities_profile_recovery_time_check" CHECK ((profile_recovery_time >= 0)) not valid;
-
-alter table "public"."activities" validate constraint "activities_profile_recovery_time_check";
-
-alter table "public"."activities" add constraint "activities_profile_threshold_hr_check" CHECK ((profile_threshold_hr >= 0)) not valid;
-
-alter table "public"."activities" validate constraint "activities_profile_threshold_hr_check";
-
-alter table "public"."activities" add constraint "activities_profile_training_load_check" CHECK ((profile_training_load >= 0)) not valid;
-
-alter table "public"."activities" validate constraint "activities_profile_training_load_check";
-
-alter table "public"."activities" add constraint "activities_profile_weight_kg_check" CHECK ((profile_weight_kg > 0)) not valid;
-
-alter table "public"."activities" validate constraint "activities_profile_weight_kg_check";
-
-alter table "public"."activities" add constraint "activities_hr_zone_1_time_check" CHECK ((hr_zone_1_time >= 0)) not valid;
-
-alter table "public"."activities" validate constraint "activities_hr_zone_1_time_check";
-
-alter table "public"."activities" add constraint "activities_hr_zone_2_time_check" CHECK ((hr_zone_2_time >= 0)) not valid;
-
-alter table "public"."activities" validate constraint "activities_hr_zone_2_time_check";
-
-alter table "public"."activities" add constraint "activities_hr_zone_3_time_check" CHECK ((hr_zone_3_time >= 0)) not valid;
-
-alter table "public"."activities" validate constraint "activities_hr_zone_3_time_check";
-
-alter table "public"."activities" add constraint "activities_hr_zone_4_time_check" CHECK ((hr_zone_4_time >= 0)) not valid;
-
-alter table "public"."activities" validate constraint "activities_hr_zone_4_time_check";
-
-alter table "public"."activities" add constraint "activities_hr_zone_5_time_check" CHECK ((hr_zone_5_time >= 0)) not valid;
-
-alter table "public"."activities" validate constraint "activities_hr_zone_5_time_check";
-
 alter table "public"."activities" add constraint "activities_power_zone_1_time_check" CHECK ((power_zone_1_time >= 0)) not valid;
 
 alter table "public"."activities" validate constraint "activities_power_zone_1_time_check";
@@ -348,6 +324,34 @@ alter table "public"."activities" validate constraint "activities_power_zone_6_t
 alter table "public"."activities" add constraint "activities_power_zone_7_time_check" CHECK ((power_zone_7_time >= 0)) not valid;
 
 alter table "public"."activities" validate constraint "activities_power_zone_7_time_check";
+
+alter table "public"."activities" add constraint "activities_profile_age_check" CHECK ((profile_age >= 0)) not valid;
+
+alter table "public"."activities" validate constraint "activities_profile_age_check";
+
+alter table "public"."activities" add constraint "activities_profile_ftp_check" CHECK ((profile_ftp >= 0)) not valid;
+
+alter table "public"."activities" validate constraint "activities_profile_ftp_check";
+
+alter table "public"."activities" add constraint "activities_profile_id_fkey" FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE not valid;
+
+alter table "public"."activities" validate constraint "activities_profile_id_fkey";
+
+alter table "public"."activities" add constraint "activities_profile_recovery_time_check" CHECK ((profile_recovery_time >= 0)) not valid;
+
+alter table "public"."activities" validate constraint "activities_profile_recovery_time_check";
+
+alter table "public"."activities" add constraint "activities_profile_threshold_hr_check" CHECK ((profile_threshold_hr >= 0)) not valid;
+
+alter table "public"."activities" validate constraint "activities_profile_threshold_hr_check";
+
+alter table "public"."activities" add constraint "activities_profile_training_load_check" CHECK ((profile_training_load >= 0)) not valid;
+
+alter table "public"."activities" validate constraint "activities_profile_training_load_check";
+
+alter table "public"."activities" add constraint "activities_profile_weight_kg_check" CHECK ((profile_weight_kg > 0)) not valid;
+
+alter table "public"."activities" validate constraint "activities_profile_weight_kg_check";
 
 alter table "public"."activities" add constraint "activities_total_ascent_check" CHECK ((total_ascent >= 0)) not valid;
 
@@ -397,9 +401,9 @@ alter table "public"."activity_streams" add constraint "activity_streams_sample_
 
 alter table "public"."activity_streams" validate constraint "activity_streams_sample_count_check";
 
-alter table "public"."planned_activities" add constraint "planned_activities_activity_plan_id_fkey" FOREIGN KEY (activity_plan_id) REFERENCES activity_plans(id) ON DELETE CASCADE not valid;
+alter table "public"."planned_activities" add constraint "planned_activities_estimated_tss_check" CHECK ((estimated_tss >= 0)) not valid;
 
-alter table "public"."planned_activities" validate constraint "planned_activities_activity_plan_id_fkey";
+alter table "public"."planned_activities" validate constraint "planned_activities_estimated_tss_check";
 
 alter table "public"."planned_activities" add constraint "planned_activities_idx_key" UNIQUE using index "planned_activities_idx_key";
 
@@ -661,3 +665,5 @@ grant trigger on table "public"."profiles" to "service_role";
 grant truncate on table "public"."profiles" to "service_role";
 
 grant update on table "public"."profiles" to "service_role";
+
+
