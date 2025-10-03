@@ -1,0 +1,8 @@
+{
+  "android": {
+    "package": "com.deancochran.turbofit"
+  },
+  "ios": {
+    "bundleIdentifier": "com.deancochran.turbofit"
+  }
+}

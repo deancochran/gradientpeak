@@ -39,11 +39,13 @@ create table if not exists public.activity_plans (
     id uuid primary key default uuid_generate_v4(),
     idx serial unique not null,
     profile_id uuid not null references public.profiles(id) on delete cascade,
+    version text not null default '1.0',
     name text not null,
     activity_type activity_type not null,
-    description text,
+    description text not null,
     structure jsonb not null,
-    estimated_tss integer check (estimated_tss >= 0),
+    estimated_tss integer not null check (estimated_tss >= 0),
+    estimated_duration integer not null check (estimated_duration >= 0),
     created_at timestamptz not null default now()
 );
 
@@ -51,26 +53,23 @@ create index if not exists idx_activity_plans_profile_id
     on public.activity_plans(profile_id);
 
 -- ============================================================================
--- PLANNED ACTIVITIES
+-- PLANNED ACTIVITIES (scheduled instantiations of a plan)
 -- ============================================================================
 create table if not exists public.planned_activities (
     id uuid primary key default uuid_generate_v4(),
     idx serial unique not null,
     profile_id uuid not null references public.profiles(id) on delete cascade,
-    scheduled_date date not null check (scheduled_date >= now()),
-    name text not null,
-    activity_type activity_type not null,
-    description text,
-    structure jsonb not null,
-    estimated_tss integer check (estimated_tss >= 0),
-    created_at timestamptz not null default now()
+    activity_plan_id uuid not null references public.activity_plans(id) on delete cascade,
+    scheduled_date date not null,
+    created_at timestamptz not null default now(),
+    constraint chk_planned_activities_date check (scheduled_date >= current_date)
 );
 
 create index if not exists idx_planned_activities_profile_id
     on public.planned_activities(profile_id);
 
-create index if not exists idx_planned_activities_scheduled_date
-    on public.planned_activities(scheduled_date);
+create index if not exists idx_planned_activities_activity_plan_id
+    on public.planned_activities(activity_plan_id);
 
 -- ============================================================================
 -- ACTIVITIES

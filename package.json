@@ -25,10 +25,18 @@
     "test:all": "turbo run test:all",
     "test:watch": "turbo run test:watch",
     "test:coverage": "turbo run test --coverage",
-    "test:ci": "turbo run test:ci"
+    "test:ci": "turbo run test:ci",
+    "android": "expo run:android",
+    "ios": "expo run:ios"
   },
   "workspaces": [
     "apps/*",
     "packages/*"
-  ]
+  ],
+  "version": "1.0.0",
+  "dependencies": {
+    "expo": "~54.0.8",
+    "react": "19.1.0",
+    "react-native": "0.81.4"
+  }
 }

@@ -1,9 +1,8 @@
 import {
   BLE_SERVICE_UUIDS,
-  PublicActivityPlansRow,
   PublicActivityType,
-  PublicPlannedActivitiesRow,
   PublicProfilesRow,
+  RecordingServiceActivityPlan,
   Step,
 } from "@repo/core";
 
@@ -205,18 +204,18 @@ export class ActivityRecorderService {
   // ================================
 
   public selectPlannedActivity(
-    plannedActivity: PublicPlannedActivitiesRow & {
-      activity_plan: PublicActivityPlansRow;
-    },
+    activity_plan: RecordingServiceActivityPlan,
+    planned_activity_id?: string,
   ) {
-    this.planManager = new PlanManager(plannedActivity);
-    this.selectedActivityType = plannedActivity.activity_plan.activity_type;
+    this.planManager = new PlanManager(activity_plan, planned_activity_id);
+    this.selectedActivityType = activity_plan.activity_type;
 
     this.notifyChange();
   }
 
-  public clearPlannedActivity(activityType: PublicActivityType) {
+  public selectUnplannedActivity(activityType: PublicActivityType) {
     this.selectedActivityType = activityType;
+    this.planManager = undefined;
     this.notifyChange();
   }
 
@@ -240,7 +239,7 @@ export class ActivityRecorderService {
         profile: this.profile,
         startedAt: new Date().toISOString(),
         activityType: this.selectedActivityType,
-        plannedActivity: this.planManager?.selectedPlannedActivity,
+        activityPlan: this.planManager?.selectedActivityPlan,
       })
       .returning();
     this.chunkProcessor = new ChunkProcessor(recording.id);
@@ -260,7 +259,7 @@ export class ActivityRecorderService {
     await this.locationManager.startBackgroundTracking();
 
     const activityName =
-      this.planManager?.selectedPlannedActivity.activity_plan.name ||
+      this.planManager?.selectedActivityPlan.name ||
       this.selectedActivityType.replace(/_/g, " ");
 
     this.notificationsManager = new NotificationsManager(activityName);

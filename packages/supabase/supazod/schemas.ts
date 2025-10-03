@@ -256,37 +256,43 @@ export const publicActivitiesRelationshipsSchema = z.tuple([
 export const publicActivityPlansRowSchema = z.object({
   activity_type: publicActivityTypeSchema,
   created_at: z.string(),
-  description: z.string().nullable(),
-  estimated_tss: z.number().nullable(),
+  description: z.string(),
+  estimated_duration: z.number(),
+  estimated_tss: z.number(),
   id: z.string(),
   idx: z.number(),
   name: z.string(),
   profile_id: z.string(),
   structure: jsonSchema,
+  version: z.string(),
 });
 
 export const publicActivityPlansInsertSchema = z.object({
   activity_type: publicActivityTypeSchema,
   created_at: z.string().optional(),
-  description: z.string().optional().nullable(),
-  estimated_tss: z.number().optional().nullable(),
+  description: z.string(),
+  estimated_duration: z.number(),
+  estimated_tss: z.number(),
   id: z.string().optional(),
   idx: z.number().optional(),
   name: z.string(),
   profile_id: z.string(),
   structure: jsonSchema,
+  version: z.string().optional(),
 });
 
 export const publicActivityPlansUpdateSchema = z.object({
   activity_type: publicActivityTypeSchema.optional(),
   created_at: z.string().optional(),
-  description: z.string().optional().nullable(),
-  estimated_tss: z.number().optional().nullable(),
+  description: z.string().optional(),
+  estimated_duration: z.number().optional(),
+  estimated_tss: z.number().optional(),
   id: z.string().optional(),
   idx: z.number().optional(),
   name: z.string().optional(),
   profile_id: z.string().optional(),
   structure: jsonSchema.optional(),
+  version: z.string().optional(),
 });
 
 export const publicActivityPlansRelationshipsSchema = z.tuple([
@@ -358,45 +364,40 @@ export const publicActivityStreamsRelationshipsSchema = z.tuple([
 ]);
 
 export const publicPlannedActivitiesRowSchema = z.object({
-  activity_type: publicActivityTypeSchema,
+  activity_plan_id: z.string(),
   created_at: z.string(),
-  description: z.string().nullable(),
-  estimated_tss: z.number().nullable(),
   id: z.string(),
   idx: z.number(),
-  name: z.string(),
   profile_id: z.string(),
   scheduled_date: z.string(),
-  structure: jsonSchema,
 });
 
 export const publicPlannedActivitiesInsertSchema = z.object({
-  activity_type: publicActivityTypeSchema,
+  activity_plan_id: z.string(),
   created_at: z.string().optional(),
-  description: z.string().optional().nullable(),
-  estimated_tss: z.number().optional().nullable(),
   id: z.string().optional(),
   idx: z.number().optional(),
-  name: z.string(),
   profile_id: z.string(),
   scheduled_date: z.string(),
-  structure: jsonSchema,
 });
 
 export const publicPlannedActivitiesUpdateSchema = z.object({
-  activity_type: publicActivityTypeSchema.optional(),
+  activity_plan_id: z.string().optional(),
   created_at: z.string().optional(),
-  description: z.string().optional().nullable(),
-  estimated_tss: z.number().optional().nullable(),
   id: z.string().optional(),
   idx: z.number().optional(),
-  name: z.string().optional(),
   profile_id: z.string().optional(),
   scheduled_date: z.string().optional(),
-  structure: jsonSchema.optional(),
 });
 
 export const publicPlannedActivitiesRelationshipsSchema = z.tuple([
+  z.object({
+    foreignKeyName: z.literal("planned_activities_activity_plan_id_fkey"),
+    columns: z.tuple([z.literal("activity_plan_id")]),
+    isOneToOne: z.literal(false),
+    referencedRelation: z.literal("activity_plans"),
+    referencedColumns: z.tuple([z.literal("id")]),
+  }),
   z.object({
     foreignKeyName: z.literal("planned_activities_profile_id_fkey"),
     columns: z.tuple([z.literal("profile_id")]),

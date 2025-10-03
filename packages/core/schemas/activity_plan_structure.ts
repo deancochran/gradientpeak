@@ -1,4 +1,3 @@
-import { publicActivityTypeSchema } from "@repo/supabase";
 import { z } from "zod";
 
 // ==============================
@@ -102,11 +101,6 @@ export type StepOrRepetition = z.infer<typeof stepOrRepetitionSchema>;
 // STRUCTURED WORKOUT PLAN
 // ==============================
 export const activityPlanStructureSchema = z.object({
-  version: z.string().default("1.0"),
-  name: z.string(),
-  description: z.string().optional(),
-  activity_type: publicActivityTypeSchema, // aligned with DB
   steps: z.array(stepOrRepetitionSchema),
-  notes: z.string().optional(),
 });
 export type ActivityPlanStructure = z.infer<typeof activityPlanStructureSchema>;

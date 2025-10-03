@@ -2,10 +2,9 @@ import { createId } from "@paralleldrive/cuid2";
 import {
   PublicActivityMetric,
   PublicActivityMetricDataType,
-  PublicActivityPlansRow,
   PublicActivityType,
-  PublicPlannedActivitiesRow,
   PublicProfilesRow,
+  RecordingServiceActivityPlan,
 } from "@repo/core";
 import { sql } from "drizzle-orm";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
@@ -26,9 +25,10 @@ export const activityRecordings = sqliteTable("activity_recordings", {
   profile: text("profile", { mode: "json" })
     .$type<PublicProfilesRow>()
     .notNull(),
-  plannedActivity: text("planned_activity", { mode: "json" }).$type<
-    PublicPlannedActivitiesRow & { activity_plan: PublicActivityPlansRow }
-  >(),
+  plannedActivityId: text("planned_activity_id"),
+  activityPlan: text("activity_plan", {
+    mode: "json",
+  }).$type<RecordingServiceActivityPlan>(),
 });
 
 // Unified Activity Streams Table

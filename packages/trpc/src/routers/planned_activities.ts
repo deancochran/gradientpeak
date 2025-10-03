@@ -1,26 +1,46 @@
-import { SAMPLE_ACTIVITIES } from "@repo/core"; // <-- imported mapping of template IDs to templates
+import { publicPlannedActivitiesInsertSchema } from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
-// Filters for listing planned activities
+// Update your schema to support cursor-based pagination
 const plannedActivityListSchema = z.object({
+  activity_type: z.string().optional(),
+  activity_plan_id: z.string().optional(),
   date_from: z.string().optional(),
   date_to: z.string().optional(),
   limit: z.number().min(1).max(100).default(20),
-  offset: z.number().min(0).default(0),
+  cursor: z.string().optional(), // Changed from offset to cursor
 });
 
 export const plannedActivitiesRouter = createTRPCRouter({
   // ------------------------------
   // Get single planned activity
   // ------------------------------
+  // For single GET
   get: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
       const { data, error } = await ctx.supabase
         .from("planned_activities")
-        .select("*")
+        .select(
+          `
+          id,
+          scheduled_date,
+          profile_id,
+          created_at,
+          activity_plan:activity_plans (
+            id,
+            name,
+            activity_type,
+            description,
+            structure,
+            estimated_tss,
+            estimated_duration,
+            version
+          )
+        `,
+        )
         .eq("id", input.id)
         .eq("profile_id", ctx.session.user.id)
         .single();
@@ -38,58 +58,11 @@ export const plannedActivitiesRouter = createTRPCRouter({
   // Create planned activity (manual)
   // ------------------------------
   create: protectedProcedure
-    .input(
-      z.object({
-        scheduled_date: z.string(),
-        activity_plan_name: z.string(),
-        activity_plan_activity_type: z.string(),
-        activity_plan_description: z.string().optional(),
-        activity_plan_estimated_tss: z.number().optional(),
-        activity_plan_structure: z.any(),
-      }),
-    )
+    .input(publicPlannedActivitiesInsertSchema)
     .mutation(async ({ ctx, input }) => {
       const { data, error } = await ctx.supabase
         .from("planned_activities")
         .insert({ ...input, profile_id: ctx.session.user.id })
-        .select()
-        .single();
-
-      if (error)
-        throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
-
-      return data;
-    }),
-
-  // ------------------------------
-  // Schedule a template
-  // ------------------------------
-  scheduleTemplate: protectedProcedure
-    .input(
-      z.object({
-        templateId: z.string(),
-        scheduledDate: z.string(),
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      const template = SAMPLE_ACTIVITIES[input.templateId];
-      if (!template)
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Template not found",
-        });
-
-      const { data, error } = await ctx.supabase
-        .from("planned_activities")
-        .insert({
-          profile_id: ctx.session.user.id,
-          scheduled_date: input.scheduledDate,
-          activity_plan_name: template.name,
-          activity_plan_activity_type: template.activity_type,
-          activity_plan_description: template.description,
-          activity_plan_estimated_tss: template.estimated_tss,
-          activity_plan_structure: template.structure,
-        })
         .select()
         .single();
 
@@ -172,36 +145,77 @@ export const plannedActivitiesRouter = createTRPCRouter({
   list: protectedProcedure
     .input(plannedActivityListSchema)
     .query(async ({ ctx, input }) => {
+      const limit = input.limit;
+
       let query = ctx.supabase
         .from("planned_activities")
-        .select("*")
+        .select(
+          `
+          id,
+          idx,
+          profile_id,
+          activity_plan_id,
+          scheduled_date,
+          created_at,
+          activity_plan:activity_plans (
+            id,
+            idx,
+            profile_id,
+            name,
+            activity_type,
+            description,
+            structure,
+            estimated_tss,
+            estimated_duration,
+            version,
+            created_at
+          )
+        `,
+        )
         .eq("profile_id", ctx.session.user.id)
         .order("scheduled_date", { ascending: true })
-        .range(input.offset, input.offset + input.limit - 1);
+        .order("id", { ascending: true }) // Secondary sort for stable pagination
+        .limit(limit + 1); // Fetch one extra to check if there's more
 
+      // Apply cursor (if provided, fetch items after this cursor)
+      if (input.cursor) {
+        const [cursorDate, cursorId] = input.cursor.split("_");
+        query = query.or(
+          `scheduled_date.gt.${cursorDate},and(scheduled_date.eq.${cursorDate},id.gt.${cursorId})`,
+        );
+      }
+
+      // Apply date filters
       if (input.date_from) query = query.gte("scheduled_date", input.date_from);
       if (input.date_to) query = query.lte("scheduled_date", input.date_to);
+      if (input.activity_type) {
+        query = query.eq("activity_plan.activity_type", input.activity_type);
+      }
 
       const { data, error } = await query;
-      if (error)
+
+      if (error) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: error.message,
         });
+      }
 
-      // If user has no planned activities, return templates as available plans
-      if (!data || data.length === 0)
-        return Object.entries(SAMPLE_ACTIVITIES).map(([id, t]) => ({
-          id,
-          scheduled_date: null,
-          profile_id: null,
-          activity_plan_name: t.name,
-          activity_plan_activity_type: t.activity_type,
-          activity_plan_description: t.description,
-          activity_plan_estimated_tss: 0,
-          activity_plan_structure: t.structure,
-        }));
+      // Check if there are more items
+      const hasMore = data.length > limit;
+      const items = hasMore ? data.slice(0, limit) : data;
 
-      return data;
+      // Generate next cursor from last item
+      let nextCursor: string | undefined;
+      if (hasMore && items.length > 0) {
+        const lastItem = items[items.length - 1];
+        if (!lastItem) throw new Error("Unexpected error");
+        nextCursor = `${lastItem.scheduled_date}_${lastItem.id}`;
+      }
+
+      return {
+        items,
+        nextCursor,
+      };
     }),
 });

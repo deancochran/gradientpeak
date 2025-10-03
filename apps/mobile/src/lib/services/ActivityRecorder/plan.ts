@@ -1,8 +1,7 @@
 import {
   ActivityPlanStructure,
   Duration,
-  PublicActivityPlansRow,
-  PublicPlannedActivitiesRow,
+  RecordingServiceActivityPlan,
   Step,
   StepOrRepetition,
 } from "@repo/core";
@@ -25,20 +24,18 @@ export interface PlannedActivityProgress {
 export class PlanManager {
   private flattenedSteps: FlattenedStep[] = [];
   public planProgress?: PlannedActivityProgress;
-  public selectedPlannedActivity: PublicPlannedActivitiesRow & {
-    activity_plan: PublicActivityPlansRow;
-  };
+  public selectedActivityPlan: RecordingServiceActivityPlan;
+  public plannedActivityId: string | undefined;
 
   constructor(
-    selectedPlannedActivity: PublicPlannedActivitiesRow & {
-      activity_plan: PublicActivityPlansRow;
-    },
+    selectedPlannedActivity: RecordingServiceActivityPlan,
+    plannedActivityId: string | undefined,
   ) {
-    this.selectedPlannedActivity = selectedPlannedActivity;
+    this.selectedActivityPlan = selectedPlannedActivity;
     this.flattenedSteps = this.flattenSteps(
-      (selectedPlannedActivity.activity_plan.structure as ActivityPlanStructure)
-        .steps,
+      (selectedPlannedActivity.structure as ActivityPlanStructure).steps,
     );
+    this.plannedActivityId = plannedActivityId;
 
     this.planProgress = {
       state: "not_started",

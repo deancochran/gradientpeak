@@ -81,11 +81,13 @@ create table "public"."activity_plans" (
     "id" uuid not null default uuid_generate_v4(),
     "idx" integer not null default nextval('activity_plans_idx_seq'::regclass),
     "profile_id" uuid not null,
+    "version" text not null default '1.0'::text,
     "name" text not null,
     "activity_type" activity_type not null,
-    "description" text,
+    "description" text not null,
     "structure" jsonb not null,
-    "estimated_tss" integer,
+    "estimated_tss" integer not null,
+    "estimated_duration" integer not null,
     "created_at" timestamp with time zone not null default now()
 );
 
@@ -111,12 +113,8 @@ create table "public"."planned_activities" (
     "id" uuid not null default uuid_generate_v4(),
     "idx" integer not null default nextval('planned_activities_idx_seq'::regclass),
     "profile_id" uuid not null,
+    "activity_plan_id" uuid not null,
     "scheduled_date" date not null,
-    "name" text not null,
-    "activity_type" activity_type not null,
-    "description" text,
-    "structure" jsonb not null,
-    "estimated_tss" integer,
     "created_at" timestamp with time zone not null default now()
 );
 
@@ -175,9 +173,9 @@ CREATE INDEX idx_activity_streams_activity_id ON public.activity_streams USING b
 
 CREATE INDEX idx_activity_streams_type ON public.activity_streams USING btree (type);
 
-CREATE INDEX idx_planned_activities_profile_id ON public.planned_activities USING btree (profile_id);
+CREATE INDEX idx_planned_activities_activity_plan_id ON public.planned_activities USING btree (activity_plan_id);
 
-CREATE INDEX idx_planned_activities_scheduled_date ON public.planned_activities USING btree (scheduled_date);
+CREATE INDEX idx_planned_activities_profile_id ON public.planned_activities USING btree (profile_id);
 
 CREATE UNIQUE INDEX planned_activities_idx_key ON public.planned_activities USING btree (idx);
 
@@ -381,6 +379,10 @@ alter table "public"."activity_plans" add constraint "activity_plans_estimated_t
 
 alter table "public"."activity_plans" validate constraint "activity_plans_estimated_tss_check";
 
+alter table "public"."activity_plans" add constraint "activity_plans_estimated_duration_check" CHECK ((estimated_duration >= 0)) not valid;
+
+alter table "public"."activity_plans" validate constraint "activity_plans_estimated_duration_check";
+
 alter table "public"."activity_plans" add constraint "activity_plans_idx_key" UNIQUE using index "activity_plans_idx_key";
 
 alter table "public"."activity_plans" add constraint "activity_plans_profile_id_fkey" FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE not valid;
@@ -401,19 +403,19 @@ alter table "public"."activity_streams" add constraint "activity_streams_sample_
 
 alter table "public"."activity_streams" validate constraint "activity_streams_sample_count_check";
 
-alter table "public"."planned_activities" add constraint "planned_activities_estimated_tss_check" CHECK ((estimated_tss >= 0)) not valid;
+alter table "public"."planned_activities" add constraint "chk_planned_activities_date" CHECK ((scheduled_date >= CURRENT_DATE)) not valid;
 
-alter table "public"."planned_activities" validate constraint "planned_activities_estimated_tss_check";
+alter table "public"."planned_activities" validate constraint "chk_planned_activities_date";
+
+alter table "public"."planned_activities" add constraint "planned_activities_activity_plan_id_fkey" FOREIGN KEY (activity_plan_id) REFERENCES activity_plans(id) ON DELETE CASCADE not valid;
+
+alter table "public"."planned_activities" validate constraint "planned_activities_activity_plan_id_fkey";
 
 alter table "public"."planned_activities" add constraint "planned_activities_idx_key" UNIQUE using index "planned_activities_idx_key";
 
 alter table "public"."planned_activities" add constraint "planned_activities_profile_id_fkey" FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE not valid;
 
 alter table "public"."planned_activities" validate constraint "planned_activities_profile_id_fkey";
-
-alter table "public"."planned_activities" add constraint "planned_activities_scheduled_date_check" CHECK ((scheduled_date >= now())) not valid;
-
-alter table "public"."planned_activities" validate constraint "planned_activities_scheduled_date_check";
 
 alter table "public"."profiles" add constraint "profiles_id_fkey" FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE not valid;
 
@@ -665,5 +667,3 @@ grant trigger on table "public"."profiles" to "service_role";
 grant truncate on table "public"."profiles" to "service_role";
 
 grant update on table "public"."profiles" to "service_role";
-
-
