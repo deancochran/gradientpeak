@@ -2,12 +2,12 @@ import { ConfigContext, ExpoConfig } from "expo/config";
 import { version } from "./package.json";
 
 const EAS_PROJECT_ID = "c891c73b-ec96-4a19-ba21-9574d28ea5db";
-const PROJECT_SLUG = "turbo-fit";
+const PROJECT_SLUG = "gradientpeak";
 const OWNER = "deancochran";
 
-const APP_NAME = "Turbo Fit";
-const BUNDLE_IDENTIFIER = "com.company.turbofit";
-const PACKAGE_NAME = "com.company.turbofit";
+const APP_NAME = "GradientPeak";
+const BUNDLE_IDENTIFIER = "com.company.gradientpeak";
+const PACKAGE_NAME = "com.company.gradientpeak";
 const ICON = "./assets/images/icons/splash-icon-prod.png";
 const ADAPTIVE_ICON = "./assets/images/icons/splash-icon-prod.png";
 const SCHEME = "app-scheme";

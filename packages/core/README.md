@@ -1,6 +1,6 @@
-# @repo/core - TurboFit Core Package
+# @repo/core - GradientPeak Core Package
 
-The database-independent heart of TurboFit, providing shared business logic, calculations, and type definitions across all applications.
+The database-independent heart of GradientPeak, providing shared business logic, calculations, and type definitions across all applications.
 
 ## 🎯 Purpose
 

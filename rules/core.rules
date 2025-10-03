@@ -1,6 +1,6 @@
 # core.rules
 
-You are working on the **core shared logic** (`packages/core/`) in TurboFit.
+You are working on the **core shared logic** (`packages/core/`) in GradientPeak.
 
 - **Contains:** Types, Zod schemas, calculations
 - **Database-agnostic:** No direct DB calls

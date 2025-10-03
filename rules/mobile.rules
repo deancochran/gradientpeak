@@ -1,5 +1,5 @@
 # mobile.rules
-You are working on the **mobile app** (`apps/mobile/`) in TurboFit.
+You are working on the **mobile app** (`apps/mobile/`) in GradientPeak.
 
 - **Stack:** Expo SDK 53 + React Native 0.79.5
 - **Local storage:** Expo-SQLite (local-first)

@@ -35,7 +35,7 @@ export default function VerificationSuccessScreen() {
                 Account Verified!
               </Text>
               <Text variant="muted" className="text-center mb-4">
-                Welcome to TurboFit
+                Welcome to GradientPeak
               </Text>
               <Text variant="muted" className="text-center">
                 Your email has been verified successfully. You can now sign in

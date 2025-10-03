@@ -1,4 +1,4 @@
-# TurboFit Mobile App
+# GradientPeak Mobile App
 
 A cross-platform fitness tracking mobile app built with Expo, React Native, and modern tooling. Features a lightweight, offline-first architecture with robust cloud sync, fault-tolerant activity recording, multi-sensor BLE integration, planned activity guidance, and real-time analytics.
 
@@ -590,7 +590,7 @@ theme: {
 }
 ```
 
-This style guide addresses React Native's unique constraints and ensures consistent, accessible, and high-performance styling across the TurboFit mobile application using React Native Reusables and NativeWind.
+This style guide addresses React Native's unique constraints and ensures consistent, accessible, and high-performance styling across the GradientPeak mobile application using React Native Reusables and NativeWind.
 
 # React Native Reusables — Style Guide
 
@@ -1805,7 +1805,7 @@ function FitnessButton({ className, ...props }: ButtonProps) {
 }
 ```
 
-This style guide provides comprehensive patterns and examples for using React Native Reusables components in your TurboFit mobile application.
+This style guide provides comprehensive patterns and examples for using React Native Reusables components in your GradientPeak mobile application.
 
 ## 🎨 Customization Guide
 

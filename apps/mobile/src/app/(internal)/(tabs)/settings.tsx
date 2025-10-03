@@ -383,7 +383,7 @@ export default function SettingsScreen() {
       {/* App Info */}
       <Card className="bg-card border-border">
         <CardHeader className="pb-4">
-          <CardTitle className="text-card-foreground">About TurboFit</CardTitle>
+          <CardTitle className="text-card-foreground">About GradientPeak</CardTitle>
         </CardHeader>
         <CardContent className="gap-2">
           <Text className="text-muted-foreground">Version 1.0.0</Text>

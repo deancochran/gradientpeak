@@ -175,7 +175,7 @@ export class LocationManager {
         distanceInterval: 1,
         showsBackgroundLocationIndicator: false,
         foregroundService: {
-          notificationTitle: "TurboFit Recording",
+          notificationTitle: "GradientPeak Recording",
           notificationBody: "Recording your activity in the background",
           notificationColor: "#00ff00",
         },

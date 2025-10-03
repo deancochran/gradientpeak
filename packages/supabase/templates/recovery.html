@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Reset Your Password - TurboFit</title>
+  <title>Reset Your Password - GradientPeak</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-    
+
     * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
     }
-    
+
     body {
       background: #000;
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -20,20 +20,20 @@
       line-height: 1.4;
       -webkit-font-smoothing: antialiased;
     }
-    
+
     .container {
       max-width: 600px;
       margin: 0 auto;
       background: #000;
     }
-    
+
     /* Header */
     .header {
       padding: 40px 0;
       text-align: center;
       border-bottom: 1px solid #333;
     }
-    
+
     .logo {
       font-size: 24px;
       font-weight: 700;
@@ -41,20 +41,20 @@
       color: #fff;
       text-transform: uppercase;
     }
-    
+
     /* Hero Section */
     .hero {
       position: relative;
       overflow: hidden;
     }
-    
+
     .hero-image {
       width: 100%;
       height: 300px;
       object-fit: cover;
       filter: grayscale(100%) contrast(1.2) brightness(0.6);
     }
-    
+
     .hero-overlay {
       position: absolute;
       top: 0;
@@ -69,7 +69,7 @@
       text-align: center;
       padding: 60px 40px;
     }
-    
+
     .hero-title {
       font-size: 38px;
       font-weight: 300;
@@ -77,7 +77,7 @@
       margin-bottom: 12px;
       text-transform: uppercase;
     }
-    
+
     .hero-subtitle {
       font-size: 14px;
       font-weight: 500;
@@ -85,13 +85,13 @@
       text-transform: uppercase;
       opacity: 0.8;
     }
-    
+
     /* Main Content */
     .content {
       padding: 60px 40px;
       text-align: center;
     }
-    
+
     .recovery-text {
       font-size: 18px;
       font-weight: 400;
@@ -101,7 +101,7 @@
       margin-left: auto;
       margin-right: auto;
     }
-    
+
     .security-notice {
       background: #111;
       border: 1px solid #333;
@@ -110,7 +110,7 @@
       margin-bottom: 40px;
       text-align: left;
     }
-    
+
     .security-notice h3 {
       font-size: 14px;
       font-weight: 600;
@@ -119,13 +119,13 @@
       margin-bottom: 10px;
       color: #fff;
     }
-    
+
     .security-notice p {
       font-size: 13px;
       color: #999;
       line-height: 1.5;
     }
-    
+
     .cta-button {
       display: inline-block;
       padding: 20px 50px;
@@ -140,25 +140,25 @@
       transition: all 0.3s ease;
       margin-bottom: 30px;
     }
-    
+
     .cta-button:hover {
       background: #f0f0f0;
       transform: translateY(-2px);
     }
-    
+
     .expiry-text {
       font-size: 14px;
       color: #999;
       margin-bottom: 50px;
     }
-    
+
     /* Security Tips Section */
     .security-tips {
       background: #111;
       padding: 50px 40px;
       text-align: left;
     }
-    
+
     .section-title {
       font-size: 20px;
       font-weight: 600;
@@ -168,20 +168,20 @@
       text-align: center;
       color: #fff;
     }
-    
+
     .tips-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 30px;
       margin-top: 30px;
     }
-    
+
     .tip {
       display: flex;
       align-items: flex-start;
       gap: 15px;
     }
-    
+
     .tip-icon {
       width: 30px;
       height: 30px;
@@ -195,7 +195,7 @@
       font-weight: 700;
       flex-shrink: 0;
     }
-    
+
     .tip-content h3 {
       font-size: 14px;
       font-weight: 600;
@@ -204,13 +204,13 @@
       margin-bottom: 8px;
       color: #fff;
     }
-    
+
     .tip-content p {
       font-size: 13px;
       color: #999;
       line-height: 1.5;
     }
-    
+
     /* Warning Section */
     .warning-section {
       background: #000;
@@ -219,7 +219,7 @@
       border-top: 1px solid #333;
       border-bottom: 1px solid #333;
     }
-    
+
     .warning-box {
       border: 1px solid #444;
       padding: 30px;
@@ -227,7 +227,7 @@
       margin: 0 auto;
       text-align: left;
     }
-    
+
     .warning-title {
       font-size: 16px;
       font-weight: 600;
@@ -236,29 +236,29 @@
       text-transform: uppercase;
       letter-spacing: 1px;
     }
-    
+
     .warning-text {
       font-size: 14px;
       color: #ccc;
       line-height: 1.6;
       margin-bottom: 20px;
     }
-    
+
     .warning-link {
       font-size: 13px;
       color: #999;
     }
-    
+
     .warning-link a {
       color: #fff;
       text-decoration: none;
       font-weight: 500;
     }
-    
+
     .warning-link a:hover {
       text-decoration: underline;
     }
-    
+
     /* Footer */
     .footer {
       background: #111;
@@ -266,11 +266,11 @@
       text-align: center;
       border-top: 1px solid #333;
     }
-    
+
     .footer-links {
       margin-bottom: 20px;
     }
-    
+
     .footer-links a {
       color: #999;
       text-decoration: none;
@@ -281,53 +281,53 @@
       margin: 0 20px;
       transition: color 0.3s ease;
     }
-    
+
     .footer-links a:hover {
       color: #fff;
     }
-    
+
     .footer-text {
       font-size: 11px;
       color: #666;
       letter-spacing: 1px;
       text-transform: uppercase;
     }
-    
+
     .divider {
       height: 1px;
       background: #333;
       margin: 40px 0;
     }
-    
+
     /* Mobile Responsive */
     @media (max-width: 600px) {
       .hero-title {
         font-size: 28px;
       }
-      
+
       .tips-grid {
         grid-template-columns: 1fr;
         gap: 25px;
       }
-      
+
       .content, .security-tips, .warning-section {
         padding: 40px 20px;
       }
-      
+
       .footer {
         padding: 30px 20px;
       }
-      
+
       .footer-links a {
         margin: 0 10px;
         display: inline-block;
         margin-bottom: 10px;
       }
-      
+
       .cta-button {
         padding: 18px 40px;
       }
-      
+
       .warning-box {
         padding: 20px;
       }
@@ -336,15 +336,15 @@
 </head>
 <body>
   <div class="container">
-    
+
     <!-- Header -->
     <div class="header">
-      <div class="logo">TurboFit</div>
+      <div class="logo">GradientPeak</div>
     </div>
 
     <!-- Hero -->
     <div class="hero">
-      <img src="https://pub-edcdcf8d1f27477eb6c95cde69e3dd12.r2.dev/marketing/02.jpg" alt="TurboFit Security" class="hero-image">
+      <img src="https://pub-edcdcf8d1f27477eb6c95cde69e3dd12.r2.dev/marketing/02.jpg" alt="GradientPeak Security" class="hero-image">
       <div class="hero-overlay">
         <h1 class="hero-title">Reset</h1>
         <p class="hero-subtitle">Your Password</p>
@@ -354,28 +354,28 @@
     <!-- Main Content -->
     <div class="content">
       <p class="recovery-text">
-        We received a request to reset your password for your TurboFit account. 
+        We received a request to reset your password for your GradientPeak account.
         If you made this request, click the button below to create a new password.
       </p>
-      
+
       <div class="security-notice">
         <h3>Security Notice</h3>
         <p>This password reset was requested for your account. If you didn't request this, please ignore this email and your password will remain unchanged.</p>
       </div>
-      
+
       <a href="{{ .ConfirmationURL }}" class="cta-button">Reset Password</a>
-      
+
       <p class="expiry-text">
         This reset link will expire in 1 hour for your security.
       </p>
-      
+
       <div class="divider"></div>
     </div>
 
     <!-- Security Tips -->
     <div class="security-tips">
       <h2 class="section-title">Password Security</h2>
-      
+
       <div class="tips-grid">
         <div class="tip">
           <div class="tip-icon">🔒</div>
@@ -388,7 +388,7 @@
           <div class="tip-icon">🔑</div>
           <div class="tip-content">
             <h3>Unique Access</h3>
-            <p>Never reuse your TurboFit password on other accounts or services.</p>
+            <p>Never reuse your GradientPeak password on other accounts or services.</p>
           </div>
         </div>
         <div class="tip">
@@ -413,7 +413,7 @@
       <div class="warning-box">
         <div class="warning-title">Didn't Request This?</div>
         <p class="warning-text">
-          If you didn't request a password reset, your account may be at risk. 
+          If you didn't request a password reset, your account may be at risk.
           Someone might be trying to access your account without permission.
         </p>
         <div class="warning-link">
@@ -431,7 +431,7 @@
         <a href="#">Contact Us</a>
       </div>
       <p class="footer-text">
-        © 2025 TurboFit · Performance Without Compromise
+        © 2025 GradientPeak · Performance Without Compromise
       </p>
       <p style="font-size: 10px; color: #666; margin-top: 15px;">
         This email was sent because a password reset was requested for your account.

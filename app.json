@@ -1,8 +1,8 @@
 {
   "android": {
-    "package": "com.deancochran.turbofit"
+    "package": "com.deancochran.gradientpeak"
   },
   "ios": {
-    "bundleIdentifier": "com.deancochran.turbofit"
+    "bundleIdentifier": "com.deancochran.gradientpeak"
   }
 }

@@ -1,10 +1,10 @@
 # @repo/trpc
 
-A unified tRPC API package for the TurboFit monorepo, providing type-safe backend services for both the Next.js web app and Expo mobile app.
+A unified tRPC API package for the GradientPeak monorepo, providing type-safe backend services for both the Next.js web app and Expo mobile app.
 
 ## Overview
 
-This package implements a comprehensive tRPC router architecture that serves as the single source of truth for all API operations in TurboFit. It replaces fragmented backend logic with a centralized, type-safe API built on Supabase.
+This package implements a comprehensive tRPC router architecture that serves as the single source of truth for all API operations in GradientPeak. It replaces fragmented backend logic with a centralized, type-safe API built on Supabase.
 
 ## Architecture
 

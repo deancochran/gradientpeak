@@ -1,6 +1,6 @@
 # drizzle.rules
 
-You are working on the **database package** (`packages/drizzle/`) in TurboFit.
+You are working on the **database package** (`packages/drizzle/`) in GradientPeak.
 
 - **Stack:** Supabase PostgreSQL + Drizzle ORM
 - **Local mobile DB:** SQLite (offline-first)

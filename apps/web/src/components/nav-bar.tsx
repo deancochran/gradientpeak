@@ -42,7 +42,7 @@ const Navbar = () => {
           alt="Logo"
         />
         <span className="text-lg font-semibold tracking-tighter">
-          Turbo Fit
+          GradientPeak
         </span>
       </div>
 

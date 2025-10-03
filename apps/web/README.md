@@ -1,10 +1,10 @@
-# TurboFit Web Dashboard
+# GradientPeak Web Dashboard
 
-A modern fitness analytics dashboard built with Next.js 15, React 19, and Tailwind CSS. Provides comprehensive training analysis, performance tracking, and data visualization for the TurboFit fitness platform.
+A modern fitness analytics dashboard built with Next.js 15, React 19, and Tailwind CSS. Provides comprehensive training analysis, performance tracking, and data visualization for the GradientPeak fitness platform.
 
 ## 🌐 Overview
 
-The TurboFit web dashboard serves as the analytical companion to the mobile app, offering detailed insights into training data, performance trends, and comprehensive activity analysis. Built with server-side rendering and optimized for fast data visualization.
+The GradientPeak web dashboard serves as the analytical companion to the mobile app, offering detailed insights into training data, performance trends, and comprehensive activity analysis. Built with server-side rendering and optimized for fast data visualization.
 
 ## 🚀 Tech Stack
 
@@ -232,7 +232,7 @@ bun build && bun start
 - [Supabase Documentation](https://supabase.com/docs)
 - [Tailwind CSS Documentation](https://tailwindcss.com/docs)
 - [Radix UI Documentation](https://www.radix-ui.com/docs)
-- [TurboFit Core Package](../packages/core/README.md)
+- [GradientPeak Core Package](../packages/core/README.md)
 - [Database Schema](../packages/drizzle/README.md)
 
 ## 🤝 Contributing
@@ -245,8 +245,8 @@ bun build && bun start
 
 ## 📝 License
 
-This project is part of the TurboFit platform and follows the same MIT license as the monorepo.
+This project is part of the GradientPeak platform and follows the same MIT license as the monorepo.
 
 ---
 
-**TurboFit Web Dashboard** - Comprehensive fitness analytics for serious athletes 📊
+**GradientPeak Web Dashboard** - Comprehensive fitness analytics for serious athletes 📊

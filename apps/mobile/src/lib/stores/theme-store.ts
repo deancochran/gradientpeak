@@ -72,7 +72,7 @@ export const useThemeStore = create<ThemeStore>()(
       },
     }),
     {
-      name: "turbofit-theme-store",
+      name: "gradientpeak-theme-store",
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
         userPreference: state.userPreference,

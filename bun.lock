@@ -2,7 +2,7 @@
   "lockfileVersion": 1,
   "workspaces": {
     "": {
-      "name": "turbo-fit",
+      "name": "gradientpeak",
       "dependencies": {
         "expo": "~54.0.8",
         "react": "19.1.0",

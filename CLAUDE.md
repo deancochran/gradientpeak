@@ -34,12 +34,12 @@ cd packages/core && bun test    # Test core package (database-independent)
 
 ## Architecture
 
-**TurboFit** is a Turborepo monorepo with a **local-first, offline-capable** fitness tracking platform.
+**GradientPeak** is a Turborepo monorepo with a **local-first, offline-capable** fitness tracking platform.
 
 ### Package Structure
 
 ```
-turbofit/
+gradientpeak/
 ├── apps/
 │   ├── mobile/          # React Native + Expo app (offline-first)
 │   └── web/             # Next.js dashboard (real-time analytics)

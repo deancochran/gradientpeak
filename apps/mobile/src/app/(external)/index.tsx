@@ -39,7 +39,7 @@ export default function WelcomeScreen() {
 
             {/* App Title */}
             <Text variant="h1" className="text-center mb-2">
-              TurboFit
+              GradientPeak
             </Text>
 
             {/* Tagline */}

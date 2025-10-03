@@ -1,6 +1,6 @@
 supabase.rules
 
-You are working on **Supabase utilities** (`packages/supabase/`) in TurboFit.
+You are working on **Supabase utilities** (`packages/supabase/`) in GradientPeak.
 
 - **Contains:** Shared types, helpers, API utilities
 - **Used by:** Web and mobile apps

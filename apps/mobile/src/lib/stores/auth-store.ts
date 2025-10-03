@@ -106,7 +106,7 @@ export const useAuthStore = create<AuthState>()(
       },
     }),
     {
-      name: "turbofit-auth-store-v1",
+      name: "gradientpeak-auth-store-v1",
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
         session: state.session,

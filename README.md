@@ -1,6 +1,6 @@
-# TurboFit 🏃‍♂️
+# GradientPeak 🏃‍♂️
 
-A sophisticated, enterprise-grade fitness tracking platform built with modern local-first architecture. TurboFit delivers seamless offline-first experiences with intelligent cloud synchronization, real-time analytics, and cross-platform consistency.
+A sophisticated, enterprise-grade fitness tracking platform built with modern local-first architecture. GradientPeak delivers seamless offline-first experiences with intelligent cloud synchronization, real-time analytics, and cross-platform consistency.
 
 ## 🛠️ Developer Experience & Tooling
 
@@ -23,17 +23,17 @@ A sophisticated, enterprise-grade fitness tracking platform built with modern lo
 - **Turborepo Pipelines** - Optimized build and test execution
 - **Environment Management** - Consistent environments across development and production
 
-A sophisticated, enterprise-grade fitness tracking platform built with modern local-first architecture. TurboFit delivers seamless offline-first experiences with intelligent cloud synchronization, real-time analytics, and cross-platform consistency.
+A sophisticated, enterprise-grade fitness tracking platform built with modern local-first architecture. GradientPeak delivers seamless offline-first experiences with intelligent cloud synchronization, real-time analytics, and cross-platform consistency.
 
 ---
 
 ## 🏗️ Architecture Overview
 
-TurboFit is organized as a **Turborepo monorepo** with modular packages:
+GradientPeak is organized as a **Turborepo monorepo** with modular packages:
 
 ### 📦 Core Package (`packages/core`)
 
-The heart of TurboFit, shared across web, mobile, and backend apps. **Completely independent of database or ORM dependencies.**
+The heart of GradientPeak, shared across web, mobile, and backend apps. **Completely independent of database or ORM dependencies.**
 
 **Responsibilities:**
 
@@ -51,7 +51,7 @@ The heart of TurboFit, shared across web, mobile, and backend apps. **Completely
 
 ### 📦 TypeScript Config Package (`packages/typescript-config`)
 
-A shared TypeScript configuration used across all apps and packages in the TurboFit monorepo.
+A shared TypeScript configuration used across all apps and packages in the GradientPeak monorepo.
 
 **Responsibilities:**
 
@@ -66,7 +66,7 @@ A shared TypeScript configuration used across all apps and packages in the Turbo
 
 ### 📦 ESLint Config Package (`packages/eslint-config`)
 
-A shared ESLint configuration used across all apps and packages in the TurboFit monorepo.
+A shared ESLint configuration used across all apps and packages in the GradientPeak monorepo.
 
 **Responsibilities:**
 
@@ -99,7 +99,7 @@ A shared ESLint configuration used across all apps and packages in the TurboFit 
 
 * Expo + React Native
 * Local-first storage with SQLite for offline recording
-* Powered by `@turbofit/core` for validation and calculations (database-independent)
+* Powered by `@gradientpeak/core` for validation and calculations (database-independent)
 * Cloud sync handled via API endpoints
 
 ---
@@ -122,7 +122,7 @@ A shared ESLint configuration used across all apps and packages in the TurboFit 
 
 * Next.js + React
 * Real-time analytics and dashboards
-* Powered by `@turbofit/core` for calculations and validation
+* Powered by `@gradientpeak/core` for calculations and validation
 
 ---
 
@@ -216,7 +216,7 @@ The core package ensures **valid activity structures**, calculates **estimated d
 
 ### JSON-First Activity Architecture
 
-TurboFit uses a **JSON-first approach** where all activity data is stored as the single source of truth:
+GradientPeak uses a **JSON-first approach** where all activity data is stored as the single source of truth:
 
 * **Primary Storage** — Complete activity data stored as JSON in Supabase Storage
 * **Local Recording** — Activities initially captured locally in SQLite as JSON
@@ -317,7 +317,7 @@ Time-series data processed from JSON source through core package utilities:
 ### Project Structure
 
 ```
-turbofit/
+gradientpeak/
 ├── apps/
 │   ├── mobile/          # Mobile app (Expo + React Native)
 │   └── web/             # Web dashboard (Next.js)
@@ -564,4 +564,4 @@ Built with modern tools and technologies:
 
 ---
 
-**TurboFit** — Enterprise-grade fitness tracking with JSON-first, local-first architecture 🚀
+**GradientPeak** — Enterprise-grade fitness tracking with JSON-first, local-first architecture 🚀
