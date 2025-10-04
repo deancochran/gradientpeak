@@ -202,8 +202,22 @@ export class LocationManager {
       await AsyncStorage.removeItem("background_location_session_id");
       console.log("Background location tracking stopped");
     } catch (error) {
-      console.error("Failed to stop background location:", error);
-      throw error;
+      // Ignore "task not found" errors as this happens during cleanup/restart
+      if (
+        error.message &&
+        error.message.includes("Task") &&
+        error.message.includes("not found")
+      ) {
+        console.log("Background location task already cleaned up");
+        try {
+          await AsyncStorage.removeItem("background_location_session_id");
+        } catch (storageError) {
+          console.warn("Failed to clean up session ID:", storageError);
+        }
+      } else {
+        console.error("Failed to stop background location:", error);
+        throw error;
+      }
     }
   }
 
@@ -262,10 +276,42 @@ export class LocationManager {
   // --- Convenience Methods ---
   async stopAllTracking(): Promise<void> {
     this.stopHealthCheck();
-    await Promise.all([
-      this.stopForegroundTracking(),
-      this.stopBackgroundTracking(),
-    ]);
+    // Stop tracking sequentially to avoid race conditions
+    try {
+      await this.stopForegroundTracking();
+    } catch (error) {
+      console.warn("Error stopping foreground tracking:", error);
+    }
+    try {
+      await this.stopBackgroundTracking();
+    } catch (error) {
+      console.warn("Error stopping background tracking:", error);
+    }
+  }
+
+  async cleanup(): Promise<void> {
+    // Stop all tracking first
+    await this.stopAllTracking();
+
+    // Clear all callbacks
+    this.clearAllCallbacks();
+
+    // Unregister the TaskManager task
+    try {
+      await TaskManager.unregisterTaskAsync(this.taskName);
+      console.log("Background location task unregistered");
+    } catch (error) {
+      // Ignore task not found errors during cleanup
+      if (
+        error.message &&
+        error.message.includes("Task") &&
+        error.message.includes("not found")
+      ) {
+        console.log("Background location task already unregistered");
+      } else {
+        console.warn("Error unregistering background location task:", error);
+      }
+    }
   }
 
   isTrackingForeground(): boolean {
@@ -275,7 +321,16 @@ export class LocationManager {
   async isTrackingBackground(): Promise<boolean> {
     try {
       return await Location.hasStartedLocationUpdatesAsync(this.taskName);
-    } catch {
+    } catch (error) {
+      // Task not found errors are expected during cleanup
+      if (
+        error.message &&
+        error.message.includes("Task") &&
+        error.message.includes("not found")
+      ) {
+        return false;
+      }
+      console.warn("Error checking background tracking status:", error);
       return false;
     }
   }

@@ -81,6 +81,54 @@ A cross-platform fitness tracking mobile app built with Expo, React Native, and 
 - **Modular Design** - Clean separation of concerns with shared packages
 - **Fault Tolerance** - Graceful error handling and recovery
 
+### Activity Recording Architecture
+
+The mobile app features an optimized activity recording system designed for realtime sensor data processing:
+
+#### Core Components
+- **ActivityRecorderService** (`src/lib/services/ActivityRecorder/`) - Core service handling sensor management, GPS tracking, and data buffering
+- **Zustand Store** (`src/lib/stores/activity-recorder-store.ts`) - Optimized state management with granular selectors for performance
+- **Recording Modals** (`src/app/modals/record/`) - UI components for activity selection, sensor management, and live recording display
+
+#### Performance Optimizations
+- **Granular Selectors** - Components only re-render when their specific data changes (e.g., heart rate display only updates on heart rate changes)
+- **Surgical Updates** - Optimized for 1-4Hz sensor data updates without UI lag
+- **Selective Subscriptions** - Use `useHeartRate()`, `usePower()`, `useGPSMetrics()` instead of subscribing to all data
+
+#### Key Features
+- **Bluetooth Sensor Integration** - Heart rate monitors, power meters, cadence sensors
+- **GPS Tracking** - Real-time location and route recording for outdoor activities
+- **Interval Training** - Support for structured workout plans and templates
+- **Background Recording** - Continues tracking when app is backgrounded
+- **Offline Data Storage** - Local SQLite storage with cloud sync when available
+
+#### Usage Example
+```typescript
+// ✅ Optimal - only re-renders when heart rate changes
+function HeartRateDisplay() {
+  const heartRate = useHeartRate();
+  return <Text>{heartRate} bpm</Text>;
+}
+
+// ✅ Good - multiple related metrics
+function DashboardMetrics() {
+  const { heartrate, power, cadence } = useDashboardMetrics();
+  return (
+    <View>
+      <Text>HR: {heartrate}</Text>
+      <Text>Power: {power}W</Text>
+      <Text>Cadence: {cadence}</Text>
+    </View>
+  );
+}
+
+// ❌ Avoid - causes re-render on ANY metric change
+function BadComponent() {
+  const allMetrics = useLiveMetrics(); // Don't use this
+  return <Text>{allMetrics.heartrate}</Text>;
+}
+```
+
 ## 🛠️ Development Commands
 
 ```bash

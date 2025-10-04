@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import "@/global.css";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { useActivityRecorderInit } from "@/lib/hooks/useActivityRecorderInit";
 import { LocalDatabaseProvider } from "@/lib/providers/LocalDatabaseProvider";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
 import { useTheme } from "@/lib/stores/theme-store";
@@ -63,6 +64,9 @@ function AppContent() {
   console.log("AppContent loaded");
   const { loading: authLoading } = useAuth();
   const { theme, isLoaded: isThemeLoaded } = useTheme();
+
+  // Initialize ActivityRecorder service
+  useActivityRecorderInit();
 
   if (authLoading || !isThemeLoaded) {
     return (

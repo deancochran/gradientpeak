@@ -23,6 +23,7 @@ import { AppState, AppStateStatus } from "react-native";
 import { Device } from "react-native-ble-plx";
 import { PlanManager } from "./plan";
 import { ChunkProcessor } from "./processor";
+import { EventEmitter } from "events";
 
 // ================================
 // Plan Types
@@ -58,7 +59,7 @@ export type RecordingState =
 // Activity Recorder Service
 // ================================
 
-export class ActivityRecorderService {
+export class ActivityRecorderService extends EventEmitter {
   // State
   public state: RecordingState = "pending";
   public selectedActivityType: PublicActivityType = "indoor_bike_trainer";
@@ -80,6 +81,16 @@ export class ActivityRecorderService {
   // Timing for plan progress
   private lastTimestamp?: number;
 
+  // Activity timing
+  private startTime?: number;
+  private pausedTime: number = 0;
+  private lastPauseTime?: number;
+  private elapsedTimeInterval?: NodeJS.Timeout;
+
+  // Distance tracking
+  private totalDistance: number = 0;
+  private lastLocation?: LocationObject;
+
   // Subscribers
   private subscribers = new Set<() => void>();
 
@@ -87,6 +98,7 @@ export class ActivityRecorderService {
   private profile: PublicProfilesRow;
 
   constructor(profile: PublicProfilesRow) {
+    super();
     this.profile = profile;
 
     // Initialize permissions check
@@ -108,7 +120,7 @@ export class ActivityRecorderService {
   }
 
   // ================================
-  // Subscription (for Context)
+  // Event Emission (EventEmitter Pattern)
   // ================================
 
   public subscribe(callback: () => void): () => void {
@@ -118,6 +130,37 @@ export class ActivityRecorderService {
 
   private notify() {
     this.subscribers.forEach((cb) => cb());
+  }
+
+  private emitStateChange() {
+    this.emit("stateChange", this.state);
+  }
+
+  private emitActivityTypeChange() {
+    this.emit("activityTypeChange", this.selectedActivityType);
+  }
+
+  private emitMetricUpdate(metric: string, value: number) {
+    this.emit("metricUpdate", { metric, value });
+    this.emit(`metric:${metric}`, value);
+  }
+
+  private emitSensorUpdate() {
+    const sensors = this.sensorsManager.getConnectedSensors();
+    this.emit("sensorsUpdate", sensors);
+    this.emit("sensorCountUpdate", sensors.length);
+  }
+
+  private emitPermissionUpdate(type: string) {
+    const permission = this.permissionsManager.permissions[type];
+    this.emit("permissionUpdate", { type, permission });
+    this.emit(`permission:${type}`, permission);
+  }
+
+  private emitPlanProgressUpdate() {
+    if (this.planManager) {
+      this.emit("planProgressUpdate", this.planManager.planProgress);
+    }
   }
 
   // ================================
@@ -137,6 +180,7 @@ export class ActivityRecorderService {
       description: PermissionsManager.permissionDescriptions[type],
       loading: false,
     };
+    this.emitPermissionUpdate(type);
     this.notify();
     return granted;
   }
@@ -197,6 +241,14 @@ export class ActivityRecorderService {
     this.chunkProcessor.start();
     this.state = "recording";
 
+    // Initialize timing
+    this.startTime = Date.now();
+    this.pausedTime = 0;
+    this.lastPauseTime = undefined;
+    this.totalDistance = 0;
+    this.lastLocation = undefined;
+    this.startElapsedTimeUpdates();
+
     // Start location tracking (both foreground and background)
     await this.locationManager.startForegroundTracking();
     await this.locationManager.startBackgroundTracking();
@@ -208,6 +260,7 @@ export class ActivityRecorderService {
     this.notificationsManager = new NotificationsManager(activityName);
     await this.notificationsManager.startForegroundService();
 
+    this.emitStateChange();
     this.notify();
   }
 
@@ -215,9 +268,12 @@ export class ActivityRecorderService {
     if (this.state !== "recording") throw new Error("Not recording");
 
     this.state = "paused";
+    this.lastPauseTime = Date.now();
+    this.stopElapsedTimeUpdates();
     this.chunkProcessor?.stop();
     await this.chunkProcessor?.flush();
 
+    this.emitStateChange();
     this.notify();
   }
 
@@ -225,8 +281,18 @@ export class ActivityRecorderService {
     if (this.state !== "paused") throw new Error("Not paused");
 
     this.state = "recording";
+
+    // Update paused time accumulator
+    if (this.lastPauseTime) {
+      const pauseDuration = Date.now() - this.lastPauseTime;
+      this.pausedTime += pauseDuration;
+      this.lastPauseTime = undefined;
+    }
+
+    this.startElapsedTimeUpdates();
     this.chunkProcessor?.start();
 
+    this.emitStateChange();
     this.notify();
   }
 
@@ -247,6 +313,7 @@ export class ActivityRecorderService {
     }
 
     this.state = "finished";
+    this.emitStateChange();
     this.notify();
   }
 
@@ -257,6 +324,7 @@ export class ActivityRecorderService {
   selectUnplannedActivity(type: PublicActivityType) {
     this.selectedActivityType = type;
     this.planManager = undefined;
+    this.emitActivityTypeChange();
     this.notify();
   }
 
@@ -266,12 +334,15 @@ export class ActivityRecorderService {
   ) {
     this.planManager = new PlanManager(plan, plannedId);
     this.selectedActivityType = plan.activity_type;
+    this.emitActivityTypeChange();
+    this.emitPlanProgressUpdate();
     this.notify();
   }
 
   advanceStep() {
     if (!this.planManager) return;
     this.planManager.advanceStep();
+    this.emitPlanProgressUpdate();
     this.notify();
   }
 
@@ -285,11 +356,13 @@ export class ActivityRecorderService {
 
   async connectToDevice(deviceId: string) {
     await this.sensorsManager.connectSensor(deviceId);
+    this.emitSensorUpdate();
     this.notify();
   }
 
   async disconnectDevice(deviceId: string) {
     await this.sensorsManager.disconnectSensor(deviceId);
+    this.emitSensorUpdate();
     this.notify();
   }
 
@@ -300,6 +373,7 @@ export class ActivityRecorderService {
   subscribeConnection(cb: (sensor: any) => void) {
     return this.sensorsManager.subscribeConnection((sensor) => {
       cb(sensor);
+      this.emitSensorUpdate();
       this.notify();
     });
   }
@@ -330,6 +404,7 @@ export class ActivityRecorderService {
     // Update plan progress
     if (deltaMs > 0 && this.planManager) {
       this.planManager.updatePlanProgress(deltaMs);
+      this.emitPlanProgressUpdate();
     }
 
     // Store in chunk processor
@@ -337,28 +412,63 @@ export class ActivityRecorderService {
 
     // Update live metrics
     if (typeof reading.value === "number") {
-      this.liveMetrics.set(reading.metric, reading.value);
+      // Only update if the value actually changed
+      const currentValue = this.liveMetrics.get(reading.metric);
+      if (currentValue !== reading.value) {
+        this.liveMetrics.set(reading.metric, reading.value);
+        this.emitMetricUpdate(reading.metric, reading.value);
 
-      // Update notification with key metrics
-      if (
-        ["heartrate", "power"].includes(reading.metric) &&
-        this.notificationsManager
-      ) {
-        this.notificationsManager
-          .update({
-            elapsedInStep: this.planManager?.planProgress?.elapsedInStep ?? 0,
-            heartRate: this.liveMetrics.get("heartRate"),
-            power: this.liveMetrics.get("power"),
-          })
-          .catch(console.error);
+        // Update notification with key metrics
+        if (
+          ["heartrate", "power"].includes(reading.metric) &&
+          this.notificationsManager
+        ) {
+          this.notificationsManager
+            .update({
+              elapsedInStep: this.planManager?.planProgress?.elapsedInStep ?? 0,
+              heartRate: this.liveMetrics.get("heartRate"),
+              power: this.liveMetrics.get("power"),
+            })
+            .catch(console.error);
+        }
+
+        this.notify();
       }
-
-      this.notify();
     }
   }
 
   private handleLocationData(location: LocationObject) {
     const timestamp = location.timestamp || Date.now();
+
+    // Calculate distance if we have a previous location and are actively recording
+    if (this.lastLocation && this.state === "recording") {
+      const distance = this.calculateDistance(
+        this.lastLocation.coords,
+        location.coords,
+      );
+      this.totalDistance += distance;
+      this.liveMetrics.set("distance", this.totalDistance);
+    }
+
+    // Update last location only when recording (not when paused)
+    if (this.state === "recording") {
+      this.lastLocation = location;
+    }
+
+    // Update individual lat/lng in live metrics for UI display
+    // Only update if coordinates actually changed to avoid excessive updates
+    const currentLat = this.liveMetrics.get("latitude");
+    const currentLng = this.liveMetrics.get("longitude");
+
+    if (
+      currentLat !== location.coords.latitude ||
+      currentLng !== location.coords.longitude
+    ) {
+      this.liveMetrics.set("latitude", location.coords.latitude);
+      this.liveMetrics.set("longitude", location.coords.longitude);
+      this.emitMetricUpdate("latitude", location.coords.latitude);
+      this.emitMetricUpdate("longitude", location.coords.longitude);
+    }
 
     // Convert location to sensor readings
     const readings: SensorReading[] = [
@@ -372,12 +482,15 @@ export class ActivityRecorderService {
 
     // Add optional GPS metrics
     if (location.coords.speed) {
+      const speedKmh = location.coords.speed * 3.6; // m/s to km/h
       readings.push({
         metric: "speed",
         dataType: "float",
-        value: location.coords.speed * 3.6, // m/s to km/h
+        value: speedKmh,
         timestamp,
       });
+      this.liveMetrics.set("speed", speedKmh);
+      this.emitMetricUpdate("speed", speedKmh);
     }
 
     if (location.coords.altitude) {
@@ -387,6 +500,8 @@ export class ActivityRecorderService {
         value: location.coords.altitude,
         timestamp,
       });
+      this.liveMetrics.set("altitude", location.coords.altitude);
+      this.emitMetricUpdate("altitude", location.coords.altitude);
     }
 
     if (location.coords.heading) {
@@ -396,9 +511,80 @@ export class ActivityRecorderService {
         value: location.coords.heading,
         timestamp,
       });
+      this.liveMetrics.set("heading", location.coords.heading);
+      this.emitMetricUpdate("heading", location.coords.heading);
     }
 
     readings.forEach((r) => this.handleSensorData(r));
+  }
+
+  // ================================
+  // Timing Methods
+  // ================================
+
+  private startElapsedTimeUpdates() {
+    this.stopElapsedTimeUpdates(); // Clear any existing interval
+
+    // Update elapsed time every second
+    this.elapsedTimeInterval = setInterval(() => {
+      this.updateElapsedTime();
+    }, 1000);
+
+    // Initial update
+    this.updateElapsedTime();
+  }
+
+  private stopElapsedTimeUpdates() {
+    if (this.elapsedTimeInterval) {
+      clearInterval(this.elapsedTimeInterval);
+      this.elapsedTimeInterval = undefined;
+    }
+  }
+
+  private updateElapsedTime() {
+    if (!this.startTime) return;
+
+    const now = Date.now();
+    let elapsedMs: number;
+
+    if (this.state === "paused" && this.lastPauseTime) {
+      // When paused, calculate elapsed time up to pause
+      elapsedMs = this.lastPauseTime - this.startTime - this.pausedTime;
+    } else {
+      // When recording, calculate current elapsed time
+      elapsedMs = now - this.startTime - this.pausedTime;
+    }
+
+    // Convert to seconds and ensure positive
+    const elapsedSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+
+    // Only update if the elapsed time changed (avoid unnecessary updates)
+    const currentElapsed = this.liveMetrics.get("elapsedTime");
+    if (currentElapsed !== elapsedSeconds) {
+      this.liveMetrics.set("elapsedTime", elapsedSeconds);
+      this.emitMetricUpdate("elapsedTime", elapsedSeconds);
+      // Notify subscribers only when time actually changes
+      this.notify();
+    }
+  }
+
+  public getElapsedTime(): number {
+    return this.liveMetrics.get("elapsedTime") || 0;
+  }
+
+  // Calculate distance between two GPS coordinates using Haversine formula
+  private calculateDistance(coord1: any, coord2: any): number {
+    const R = 6371; // Earth's radius in km
+    const dLat = ((coord2.latitude - coord1.latitude) * Math.PI) / 180;
+    const dLon = ((coord2.longitude - coord1.longitude) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((coord1.latitude * Math.PI) / 180) *
+        Math.cos((coord2.latitude * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c; // Distance in km
   }
 
   // ================================
@@ -410,11 +596,14 @@ export class ActivityRecorderService {
       await this.finishRecording();
     }
 
+    // Stop timing updates
+    this.stopElapsedTimeUpdates();
+
     // Remove app state listener
     this.appStateSubscription?.remove();
 
     // Stop all services
-    await this.locationManager.stopAllTracking();
+    await this.locationManager.cleanup();
     await this.sensorsManager.disconnectAll();
     this.chunkProcessor?.stop();
 
@@ -422,10 +611,6 @@ export class ActivityRecorderService {
     if (this.notificationsManager) {
       await this.notificationsManager.stopForegroundService();
     }
-
-    // Clear callbacks
-    this.subscribers.clear();
-    this.locationManager.clearAllCallbacks();
 
     console.log("ActivityRecorderService cleaned up");
   }

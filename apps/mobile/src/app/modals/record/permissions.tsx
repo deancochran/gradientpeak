@@ -15,7 +15,11 @@ import { Alert, Linking, ScrollView, View } from "react-native";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { useActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import { useActivityRecorderInit } from "@/lib/hooks/useActivityRecorderInit";
+import {
+  usePermissions,
+  usePermissionActions,
+} from "@/lib/hooks/useActivityRecorderEvents";
 
 type PermissionType = "bluetooth" | "location" | "location-background";
 
@@ -28,51 +32,58 @@ interface PermissionConfig {
   dependencyMessage?: string;
 }
 
+const PERMISSION_CONFIGS: PermissionConfig[] = [
+  {
+    type: "bluetooth",
+    icon: Bluetooth,
+    title: "Bluetooth",
+    description:
+      "Connect to heart rate monitors, power meters, and other fitness sensors",
+    canRequest: true,
+  },
+  {
+    type: "location",
+    icon: MapPin,
+    title: "Location",
+    description:
+      "Track GPS routes, measure distance, and record your activity path",
+    canRequest: true,
+  },
+  {
+    type: "location-background",
+    icon: Navigation,
+    title: "Background Location",
+    description:
+      "Continue tracking your activity when the app is in the background or screen is locked",
+    canRequest: false, // Will be updated dynamically
+    dependencyMessage: "Enable Location permission first",
+  },
+];
+
 export default function PermissionsModal() {
-  const service = useActivityRecorder();
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [requestingPermission, setRequestingPermission] =
     useState<PermissionType | null>(null);
-  const PERMISSION_CONFIGS: PermissionConfig[] = [
-    {
-      type: "bluetooth",
-      icon: Bluetooth,
-      title: "Bluetooth",
-      description:
-        "Connect to heart rate monitors, power meters, and other fitness sensors",
-      canRequest: true,
-    },
-    {
-      type: "location",
-      icon: MapPin,
-      title: "Location",
-      description:
-        "Track GPS routes, measure distance, and record your activity path",
-      canRequest: true,
-    },
-    {
-      type: "location-background",
-      icon: Navigation,
-      title: "Background Location",
-      description:
-        "Continue tracking your activity when the app is in the background or screen is locked",
-      canRequest: service.permissions.location?.granted === true,
-      dependencyMessage: "Enable Location permission first",
-    },
-  ];
+
+  // Get service instance
+  const { service } = useActivityRecorderInit();
+
+  // Use event-based hooks
+  const permissions = usePermissions(service);
+  const { check, ensure } = usePermissionActions(service);
 
   useEffect(() => {
-    service.checkPermissions();
-  }, []);
+    check();
+  }, [check]);
 
   const handleRequestPermission = useCallback(
     async (type: PermissionType) => {
       setRequestingPermission(type);
       try {
-        await service.grantPermissions(type);
+        await ensure(type);
 
-        const permission = service.permissions[type];
+        const permission = permissions[type];
         if (!permission?.granted) {
           Alert.alert(
             "Permission Required",
@@ -94,22 +105,22 @@ export default function PermissionsModal() {
         setRequestingPermission(null);
       }
     },
-    [service, PERMISSION_CONFIGS],
+    [permissions, ensure],
   );
 
   const handleRequestAllPermissions = useCallback(async () => {
     setIsLoading(true);
     try {
-      await service.grantPermissions("bluetooth");
-      await service.grantPermissions("location");
-      if (service.permissions.location?.granted) {
-        await service.grantPermissions("location-background");
+      await ensure("bluetooth");
+      await ensure("location");
+      if (permissions.location?.granted) {
+        await ensure("location-background");
       }
 
       const allGranted =
-        service.permissions.bluetooth?.granted &&
-        service.permissions.location?.granted &&
-        service.permissions["location-background"]?.granted;
+        permissions.bluetooth?.granted &&
+        permissions.location?.granted &&
+        permissions["location-background"]?.granted;
 
       if (!allGranted) {
         Alert.alert(
@@ -127,10 +138,10 @@ export default function PermissionsModal() {
     } finally {
       setIsLoading(false);
     }
-  }, [service]);
+  }, [permissions, ensure]);
 
   const getPermissionStatus = (type: PermissionType) => {
-    const permission = service.permissions[type];
+    const permission = permissions[type];
     if (!permission) return "unknown";
     if (permission.granted) return "granted";
     if (permission.canAskAgain === false) return "denied";
@@ -139,7 +150,10 @@ export default function PermissionsModal() {
 
   const renderPermissionCard = (config: PermissionConfig) => {
     const status = getPermissionStatus(config.type);
-    const canRequest = config.canRequest;
+    const canRequest =
+      config.type === "location-background"
+        ? permissions.location?.granted === true
+        : config.canRequest;
     const isRequesting = requestingPermission === config.type;
 
     const statusColor =

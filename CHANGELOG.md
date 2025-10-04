@@ -1,5 +1,45 @@
 ## [Unreleased]
 
+### ActivityRecorder Performance Optimization
+- **Optimized Recording System**: Replaced Context Provider with efficient Zustand store for realtime sensor data
+  - **Removed ActivityRecorderProvider**: Eliminated React Context that caused unnecessary re-renders on every sensor update
+  - **Granular Selectors**: Added optimized Zustand selectors for specific metrics (heart rate, power, GPS, etc.)
+  - **Better Performance**: Recording dashboard now uses surgical re-renders instead of full component updates
+  - **Realtime Updates**: Optimized for 1-4Hz sensor data updates without UI lag
+  - **Simplified Usage**: Direct hook access to specific metrics and actions without context boilerplate
+  
+- **Key Improvements**:
+  - **Reduced Re-renders**: Components only update when their specific data changes (e.g., heart rate display only re-renders when heart rate changes)
+  - **Better Hook Architecture**: Specific hooks like `useHeartRate()`, `usePower()`, `useGPSMetrics()` for targeted data access
+  - **Maintained Functionality**: All recording, sensor management, and plan features remain unchanged
+  - **Service Integration**: Seamless connection between ActivityRecorder service and optimized store
+  - **Initialization Hook**: New `useActivityRecorderInit()` hook replaces provider pattern
+
+- **Timing & Metrics Improvements**:
+  - **Service-Based Timing**: Moved elapsed time calculation from UI to ActivityRecorder service for background accuracy
+  - **Live Metrics Enhancement**: Added elapsedTime to live metrics with 1-second updates during recording
+  - **Distance Calculation**: Added GPS-based distance tracking using Haversine formula for outdoor activities
+  - **Proper Pause/Resume**: Timing and distance tracking properly pause and resume with recording state
+  - **Background-Safe**: Timing continues accurately when app is backgrounded during recording
+  - **Individual GPS Metrics**: Added separate latitude/longitude metrics for UI display alongside latlng data
+  - **Fixed Elapsed Time Display**: Corrected elapsed time formatting - service provides seconds, formatDuration expects seconds
+  - **Improved Timer Accuracy**: Simplified elapsed time calculation logic for better reliability and performance
+
+- **Bug Fixes & Stability**:
+  - **Fixed Property Reference Errors**: Removed all old `liveMetrics` and `connectedSensors` parameter references
+  - **Fixed React State Update Warnings**: Added async initialization to prevent render-time side effects
+  - **Fixed Background Location Cleanup**: Added proper error handling for TaskManager cleanup during service shutdown
+  - **Added Initialization Guards**: Components now wait for service initialization before rendering to prevent errors
+  - **Improved Error Handling**: Location service now gracefully handles task cleanup errors and background tracking failures
+
+- **Recording Modal Updates**:
+  - Updated all recording modals (`index.tsx`, `activity.tsx`, `permissions.tsx`, `sensors.tsx`) to use optimized selectors
+  - Removed ~200 lines of Context Provider code and local timer logic
+  - Dashboard now shows live metrics from service: elapsed time, heart rate, power, cadence, speed, distance, GPS coordinates
+  - Timing is now service-managed and background-safe, not UI-calculated
+  - Maintained realtime metric display with better performance and accuracy
+  - Preserved all existing functionality while improving efficiency and reliability
+
 ### Mobile Auth Simplification
 - **Simplified Authentication System**: Removed duplication and streamlined auth state management
   - **Removed AuthProvider**: Eliminated React Context provider that duplicated Zustand functionality

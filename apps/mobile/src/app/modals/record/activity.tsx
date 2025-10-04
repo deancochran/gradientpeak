@@ -2,7 +2,12 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Text } from "@/components/ui/text";
-import { useActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import { useActivityRecorderInit } from "@/lib/hooks/useActivityRecorderInit";
+import {
+  useRecordingState,
+  useActivityType,
+  useActivitySelection,
+} from "@/lib/hooks/useActivityRecorderEvents";
 import { trpc } from "@/lib/trpc";
 import {
   ActivityPlanStructure,
@@ -63,12 +68,20 @@ type ListItem =
   | { type: "empty" };
 
 export default function ActivitySelectionModal() {
-  const service = useActivityRecorder();
   const router = useRouter();
   const hasClosed = useRef(false);
   const [tab, setTab] = useState("quick");
 
-  const canSelect = service.state === "pending" || service.state === "ready";
+  // Get service instance
+  const { service } = useActivityRecorderInit();
+
+  // Use event-based hooks
+  const state = useRecordingState(service);
+  const activityType = useActivityType(service);
+  const { selectActivity, selectPlannedActivity } =
+    useActivitySelection(service);
+
+  const canSelect = state === "pending" || state === "ready";
 
   // TRPC infinite query with cursor-based pagination
   const {
@@ -82,7 +95,7 @@ export default function ActivitySelectionModal() {
     refetch,
   } = trpc.plannedActivities.list.useInfiniteQuery(
     {
-      activity_type: service.activityType,
+      activity_type: activityType,
       limit: PAGE_SIZE,
     },
     {
@@ -134,27 +147,30 @@ export default function ActivitySelectionModal() {
 
   // ===== HANDLERS =====
   const handleSelectPlannedActivity = (plan: PlannedActivityItem) => {
-    service.selectPlannedActivity({
-      ...plan.activity_plan,
-      structure: plan.activity_plan.structure as ActivityPlanStructure,
-    });
+    selectPlannedActivity(
+      {
+        ...plan.activity_plan,
+        structure: plan.activity_plan.structure as ActivityPlanStructure,
+      },
+      plan.id,
+    );
     router.back();
   };
 
   const handleSelectTemplate = (plan: RecordingServiceActivityPlan) => {
-    service.selectActivityPlanTemplate(plan);
+    selectPlannedActivity(plan);
     router.back();
   };
 
   const handleSelectQuickStart = (type: PublicActivityType) => {
-    service.selectActivity(type);
+    selectActivity(type);
     router.back();
   };
 
   // ===== RENDER FUNCTIONS =====
   const renderQuickStartItem = (type: PublicActivityType, name: string) => {
     const IconComponent = ACTIVITY_ICONS[type];
-    const isSelected = service.activityType === type;
+    const isSelected = activityType === type;
 
     return (
       <Pressable

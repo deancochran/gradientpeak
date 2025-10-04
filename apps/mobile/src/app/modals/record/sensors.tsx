@@ -2,7 +2,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { useActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import { useActivityRecorderInit } from "@/lib/hooks/useActivityRecorderInit";
+import {
+  usePermissions,
+  useDeviceActions,
+} from "@/lib/hooks/useActivityRecorderEvents";
 import { useRouter } from "expo-router";
 import { Bluetooth, ChevronLeft, RefreshCw } from "lucide-react-native";
 import { useState } from "react";
@@ -10,8 +14,14 @@ import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
 import type { Device } from "react-native-ble-plx";
 
 export default function BluetoothModal() {
-  const recorder = useActivityRecorder();
   const router = useRouter();
+
+  // Get service instance
+  const { service } = useActivityRecorderInit();
+
+  // Use event-based hooks
+  const permissions = usePermissions(service);
+  const { scan, connect, disconnect } = useDeviceActions(service);
 
   // Local state for scanning
   const [isScanning, setIsScanning] = useState(false);
@@ -20,9 +30,12 @@ export default function BluetoothModal() {
     new Set(),
   );
 
+  // Get connected sensors from service
+  const connectedSensors = service?.getConnectedSensors() || [];
+
   /** Start scanning for BLE devices */
   const startScan = async () => {
-    if (!recorder.permissions.bluetooth?.granted) {
+    if (!permissions.bluetooth?.granted) {
       Alert.alert(
         "Bluetooth Permission Required",
         "Please grant Bluetooth permission to scan for devices.",
@@ -34,12 +47,11 @@ export default function BluetoothModal() {
     setAvailableDevices([]);
 
     try {
-      const devices = await recorder.scanForDevices();
+      const devices = await scan();
 
       // Filter out already connected devices
       const filteredDevices = devices.filter(
-        (device) =>
-          !recorder.connectedSensors.some((sensor) => sensor.id === device.id),
+        (device) => !connectedSensors.some((sensor) => sensor.id === device.id),
       );
       setAvailableDevices(filteredDevices);
     } catch (error) {
@@ -60,7 +72,7 @@ export default function BluetoothModal() {
     setConnectingDevices((prev) => new Set(prev).add(device.id));
 
     try {
-      await recorder.connectDevice(device.id);
+      await connect(device.id);
       setAvailableDevices((prev) => prev.filter((d) => d.id !== device.id));
       Alert.alert(
         "Connected",
@@ -83,11 +95,11 @@ export default function BluetoothModal() {
 
   /** Disconnect from a device */
   const handleDisconnectDevice = async (deviceId: string) => {
-    const sensor = recorder.connectedSensors.find((s) => s.id === deviceId);
+    const sensor = connectedSensors.find((s) => s.id === deviceId);
     if (!sensor) return;
 
     try {
-      await recorder.disconnectDevice(deviceId);
+      await disconnect(deviceId);
       Alert.alert("Disconnected", `Disconnected from ${sensor.name}`);
     } catch (error) {
       console.error("Disconnection failed:", error);
@@ -124,7 +136,7 @@ export default function BluetoothModal() {
 
       <ScrollView className="flex-1">
         {/* Permission Status */}
-        {!recorder.permissions.bluetooth?.granted && (
+        {!permissions.bluetooth?.granted && (
           <View className="px-4 py-3 bg-orange-500/10 border-b border-orange-500/20">
             <View className="flex-row items-center gap-2">
               <Icon as={Bluetooth} size={16} className="text-orange-500" />
@@ -139,18 +151,18 @@ export default function BluetoothModal() {
         <View className="px-4 py-3 bg-muted/50">
           <View className="flex-row items-center gap-2">
             <Text className="text-sm">
-              {`${recorder.connectedSensors.length} device(s) connected`}
+              {`${connectedSensors.length} device(s) connected`}
             </Text>
           </View>
         </View>
 
         {/* Connected Devices */}
-        {recorder.connectedSensors.length > 0 && (
+        {connectedSensors.length > 0 && (
           <View className="px-4 py-4">
             <Text className="text-lg font-semibold mb-3">
-              Connected Devices ({recorder.connectedSensors.length})
+              Connected Devices ({connectedSensors.length})
             </Text>
-            {recorder.connectedSensors.map((sensor) => (
+            {connectedSensors.map((sensor) => (
               <Card
                 key={sensor.id}
                 className="mb-3 border-green-500/20 bg-green-500/5"
@@ -211,19 +223,6 @@ export default function BluetoothModal() {
             </Card>
           ) : (
             availableDevices.map((device) => {
-              const sensorTypeEmoji = {
-                heartRate: "❤️",
-                power: "⚡",
-                cadence: "🔄",
-                unknown: "📡",
-              };
-              const sensorTypeLabel = {
-                heartRate: "Heart Rate Monitor",
-                power: "Power Meter",
-                cadence: "Cadence Sensor",
-                unknown: "Bluetooth Device",
-              };
-
               return (
                 <Card key={device.id} className="mb-3">
                   <CardContent className="p-4">
