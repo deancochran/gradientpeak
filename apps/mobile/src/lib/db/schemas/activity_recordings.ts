@@ -52,7 +52,6 @@ export const activityRecordingStreams = sqliteTable(
     data: text("data", { mode: "json" }).notNull(),
     timestamps: text("timestamps", { mode: "json" }).notNull(),
 
-    synced: integer("synced", { mode: "boolean" }).notNull().default(false),
     createdAt: text("created_at")
       .default(sql`(CURRENT_TIMESTAMP)`)
       .notNull(),

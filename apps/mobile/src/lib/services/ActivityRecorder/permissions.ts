@@ -5,6 +5,7 @@ import * as Location from "expo-location";
 import { Alert, Linking, PermissionsAndroid, Platform } from "react-native";
 
 export type PermissionType = "bluetooth" | "location" | "location-background";
+
 /** Permission state for UI display */
 export interface PermissionState {
   granted: boolean;
@@ -12,7 +13,6 @@ export interface PermissionState {
   loading: boolean;
   name: string;
   description: string;
-  required?: boolean;
 }
 
 /** Result of activity-specific permission check */
@@ -29,20 +29,16 @@ export class PermissionsManager {
     PermissionState
   >;
 
-  /** Get required permissions for an activity type */
+  /** Get required permissions - ALL permissions are now required for all activities */
   static getRequiredPermissions(
-    activityType: PublicActivityType,
+    activityType?: PublicActivityType,
   ): PermissionType[] {
-    const base: PermissionType[] = ["bluetooth"];
-    if (this.requiresGPS(activityType)) {
-      base.push("location", "location-background");
-    }
-    return base;
+    return ["bluetooth", "location", "location-background"];
   }
 
-  /** Check if activity type requires GPS */
-  static requiresGPS(activityType: PublicActivityType): boolean {
-    return activityType === "outdoor_run" || activityType === "outdoor_bike";
+  /** Check if activity type requires GPS - all activities now require GPS */
+  static requiresGPS(activityType?: PublicActivityType): boolean {
+    return true;
   }
 
   /** Check permissions for a specific activity type */
@@ -89,7 +85,7 @@ export class PermissionsManager {
     const names = missing
       .map((t) => PermissionsManager.permissionNames[t])
       .join(", ");
-    return `This activity requires ${names}. Please grant permissions to continue.`;
+    return `Recording activities requires ${names}. Please grant permissions to continue.`;
   }
 
   /** Get user-friendly message for denied permissions */
@@ -100,7 +96,7 @@ export class PermissionsManager {
     const names = denied
       .map((t) => PermissionsManager.permissionNames[t])
       .join(", ");
-    return `${names} permission${denied.length > 1 ? "s" : ""} must be enabled in Settings to record this activity.`;
+    return `${names} permission${denied.length > 1 ? "s" : ""} must be enabled in Settings to record activities.`;
   }
 
   /** Check permission status without requesting */
@@ -170,6 +166,7 @@ export class PermissionsManager {
       name: PermissionsManager.permissionNames[type],
       description: PermissionsManager.permissionDescriptions[type],
       loading: false,
+      required: true, // All permissions are now required
     };
 
     return result.granted;
@@ -279,14 +276,21 @@ export class PermissionsManager {
       "location-background",
     ];
     for (const t of types) {
-      await this.ensure(t);
+      const result = await this.check(t);
+      this.permissions[t] = {
+        ...result,
+        name: PermissionsManager.permissionNames[t],
+        description: PermissionsManager.permissionDescriptions[t],
+        loading: false,
+        required: true, // All permissions are required
+      };
     }
   }
 
   static showPermissionAlert(type: PermissionType) {
     Alert.alert(
-      `${this.permissionNames[type]} Permission Required`,
-      `Please enable ${this.permissionNames[type]} in settings to use this feature.`,
+      `${this.permissionNames[type]} Required`,
+      `${this.permissionNames[type]} is required for activity recording. Please enable it in settings.`,
       [
         { text: "Cancel", style: "cancel" },
         { text: "Open Settings", onPress: () => Linking.openSettings() },
@@ -301,8 +305,10 @@ export class PermissionsManager {
   };
 
   static permissionDescriptions: Record<PermissionType, string> = {
-    bluetooth: "Connect to heart rate monitors and cycling sensors",
-    location: "Track your route and calculate distance",
-    "location-background": "Continue tracking your route in background",
+    bluetooth:
+      "Connect to heart rate monitors, power meters, and other fitness sensors",
+    location: "Track your route, measure distance, and record GPS data",
+    "location-background":
+      "Continue tracking your activity when the app is in the background",
   };
 }

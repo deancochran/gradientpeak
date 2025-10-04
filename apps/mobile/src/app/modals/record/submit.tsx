@@ -69,7 +69,6 @@ export default function SubmitRecordingModal() {
     isReady,
     isUploading,
     isSuccess,
-    prepare,
     updateActivityDetails,
     submit,
     retry,
@@ -89,9 +88,8 @@ export default function SubmitRecordingModal() {
   // Auto-prepare on mount
   useEffect(() => {
     if (state === "idle") {
-      prepare();
     }
-  }, [state, prepare]);
+  }, [state]);
 
   // Set default form values when payload is ready
   useEffect(() => {
@@ -176,15 +174,7 @@ export default function SubmitRecordingModal() {
       {/* Header */}
       <View className="bg-background border-b border-border px-4 py-3 pt-12">
         <View className="flex-row items-center">
-          <Button
-            size="icon"
-            variant="ghost"
-            onPress={handleClose}
-            disabled={isPreparing || isUploading}
-          >
-            <Icon as={ArrowLeft} size={24} />
-          </Button>
-          <Text className="flex-1 text-center font-semibold text-lg mr-10">
+          <Text className="flex-1 text-center font-semibold text-lg">
             Review Activity
           </Text>
         </View>

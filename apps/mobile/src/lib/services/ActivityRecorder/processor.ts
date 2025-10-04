@@ -78,7 +78,6 @@ export class ChunkProcessor {
         data: JSON.stringify(data),
         timestamps: JSON.stringify(timestamps),
         sampleCount: buffer.length,
-        synced: false,
       });
 
       buffer.length = 0;

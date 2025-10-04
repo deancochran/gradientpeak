@@ -6,8 +6,8 @@ const PROJECT_SLUG = "gradientpeak";
 const OWNER = "deancochran";
 
 const APP_NAME = "GradientPeak";
-const BUNDLE_IDENTIFIER = "com.company.gradientpeak";
-const PACKAGE_NAME = "com.company.gradientpeak";
+const BUNDLE_IDENTIFIER = "com.deancochran.gradientpeak";
+const PACKAGE_NAME = "com.deancochran.gradientpeak";
 const ICON = "./assets/images/icons/splash-icon-prod.png";
 const ADAPTIVE_ICON = "./assets/images/icons/splash-icon-prod.png";
 const SCHEME = "app-scheme";
@@ -32,12 +32,14 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ios: {
       bundleIdentifier,
       supportsTablet: true,
+      usesNotifications: true,
       infoPlist: {
         UIBackgroundModes: [
           "location",
           "fetch",
           "background-processing",
           "bluetooth-central",
+          "remote-notification", // needed for background notifications
         ],
         NSBluetoothAlwaysUsageDescription:
           "This app needs Bluetooth to connect to your devices.",
@@ -47,6 +49,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           "This app needs your location to track activities.",
         NSMotionUsageDescription:
           "This app needs motion access to track your activity.",
+        UNNotificationAlertStyle: "alert",
       },
     },
     android: {
@@ -106,6 +109,12 @@ export default ({ config }: ConfigContext): ExpoConfig => {
             "Allow $(PRODUCT_NAME) to connect to bluetooth devices",
         },
       ],
+      // [
+      //   "expo-notifications",
+      //   {
+      //     icon: "./assets/images/icons/splash-icon-prod.png",
+      //   },
+      // ],
     ],
     experiments: {
       typedRoutes: true,

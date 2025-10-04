@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "295b4167-5adb-4019-ba73-3317206730ef",
+  "id": "3477772b-9113-45ff-8673-eedd8195b74b",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "activity_recording_streams": {
@@ -79,14 +79,6 @@
           "notNull": true,
           "autoincrement": false
         },
-        "synced": {
-          "name": "synced",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "text",
@@ -128,66 +120,31 @@
         },
         "started_at": {
           "name": "started_at",
-          "type": "integer",
+          "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
         },
-        "state": {
-          "name": "state",
+        "ended_at": {
+          "name": "ended_at",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
-        },
-        "synced": {
-          "name": "synced",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
         },
         "activity_type": {
           "name": "activity_type",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false
+          "autoincrement": false,
+          "default": "'outdoor_run'"
         },
-        "version": {
-          "name": "version",
+        "profile": {
+          "name": "profile",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false
-        },
-        "profile_id": {
-          "name": "profile_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "profile_weight_kg": {
-          "name": "profile_weight_kg",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "profile_ftp": {
-          "name": "profile_ftp",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "profile_threshold_hr": {
-          "name": "profile_threshold_hr",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
           "autoincrement": false
         },
         "planned_activity_id": {
@@ -197,62 +154,12 @@
           "notNull": false,
           "autoincrement": false
         },
-        "planned_activity_name": {
-          "name": "planned_activity_name",
+        "activity_plan": {
+          "name": "activity_plan",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
-        },
-        "planned_activity_description": {
-          "name": "planned_activity_description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "planned_activity_structure_version": {
-          "name": "planned_activity_structure_version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "planned_activity_structure": {
-          "name": "planned_activity_structure",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "planned_activity_estimated_duration": {
-          "name": "planned_activity_estimated_duration",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "planned_activity_estimated_distance": {
-          "name": "planned_activity_estimated_distance",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "planned_activity_estimated_tss": {
-          "name": "planned_activity_estimated_tss",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(CURRENT_TIMESTAMP)"
         }
       },
       "indexes": {},

@@ -37,29 +37,14 @@ Your responsibility is to **design, develop, and maintain code** while ensuring 
 ## 3. Context & Documentation
 
 * Load `context.json` first.
-* Review `TASKS.md` (active work) and `CHANGELOG.md` (recent changes) before editing.
-* Check scoped `README.md` files for purpose, entrypoints, and TODOs.
-* If a README is missing or outdated, create or update it.
-
 ---
 
 ## 4. Development Workflow
 
-### Documentation-First
-
-* Do not create files unless necessary.
-* If replacing a file, update all references and delete the old version.
-* Update documentation with every change:
-
-  * `TASKS.md` → task state
-  * `CHANGELOG.md` → summary, rationale, impacted modules
-  * Scoped `README.md` → purpose, APIs, setup, conventions
-
 ### Code Changes
 
-1. **Plan**: Confirm or add the task in `TASKS.md`.
-2. **Review**: Read the directory’s `README.md`.
-3. **Change**:
+1. **Review**: Read the directory’s `README.md`.
+2. **Change**:
 
    * Modify only relevant files.
    * Keep responsibilities clear:
@@ -67,8 +52,7 @@ Your responsibility is to **design, develop, and maintain code** while ensuring 
      * `core` → business logic, shared types
      * `web/api` → API endpoints, orchestrating DB + core
    * Always use shared types/schemas.
-4. **Document**: Mark task complete in `TASKS.md`, log in `CHANGELOG.md`, update README if needed.
-5. **Clean-Up**: Remove replaced files, fix references.
+5. **Clean-Up**: Remove unused, outdated files, fix references.
 
 ---
 
@@ -84,8 +68,6 @@ Your responsibility is to **design, develop, and maintain code** while ensuring 
 
 ## 6. Agentic Development Loop
 
-1. **Intent** → confirm task in `TASKS.md`.
 2. **Context** → consult `README.md` and shared modules.
 3. **Action** → implement with centralized logic and conventions.
-4. **Traceability** → update `CHANGELOG.md` with reasoning and impacts.
 5. **Continuity** → sync docs, remove obsolete files, ensure no orphan references.

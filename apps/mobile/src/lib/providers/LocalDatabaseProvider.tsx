@@ -1,17 +1,18 @@
 // apps/native/app/providers/LocalDatabaseProvider.tsx
-import { localdb as db } from "@/lib/db";
 import migrations from "@/lib/db/migrations/migrations";
 import { useMigrations } from "drizzle-orm/expo-sqlite/migrator";
-import { SQLiteProvider } from "expo-sqlite";
 import * as React from "react";
 import { ActivityIndicator, View } from "react-native";
+
+import { SQLiteProvider } from "expo-sqlite";
+import { localdb } from "../db";
 
 export function LocalDatabaseProvider({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { success, error } = useMigrations(db, migrations);
+  const { success, error } = useMigrations(localdb, migrations);
 
   if (error) {
     throw new Error(`Database migration failed: ${error.message}`);
