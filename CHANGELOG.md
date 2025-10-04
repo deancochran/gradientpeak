@@ -1,5 +1,33 @@
 ## [Unreleased]
 
+### Service Instance Management Implementation
+- **Fresh Service Instance Lifecycle**: Implemented clean service lifecycle management for activity recording sessions
+  - **Eliminated Complex State Reset**: Replaced `resetForNewActivity()` method with fresh service instance creation
+  - **Service Lifecycle States**: Added `uninitialized`, `active`, `completed`, and `cleanup` states for clear lifecycle tracking
+  - **Enhanced useActivityRecorderInit Hook**: Complete rewrite with service lifecycle management functions
+  - **Memory Management**: Proper service cleanup and deallocation between recording sessions
+  - **Event Listener Cleanup**: Added `removeAllListeners()` call in service cleanup to prevent memory leaks
+
+- **Key Benefits**:
+  - **Guaranteed Clean State**: Each recording session starts with a completely fresh service instance
+  - **Simplified Architecture**: No complex state reset logic - just create new instance and cleanup old one
+  - **Better Performance**: Automatic garbage collection of old instances, faster initialization
+  - **Reliability**: Impossible to have stale state from previous sessions
+  - **Developer Experience**: Clear service lifecycle states, easier debugging and testing
+  - **Enhanced Logging**: Comprehensive service lifecycle logging with performance monitoring
+
+- **Updated Components**:
+  - **RecordModal**: Auto-creates fresh service instance when modal opens, uses service only when ready
+  - **SubmitRecordingModal**: Uses `markServiceCompleted()` and `cleanupService()` for proper navigation
+  - **Service Cleanup**: Enhanced cleanup method with event listener removal and comprehensive logging
+  - **Test Coverage**: Added comprehensive unit and integration tests for service lifecycle
+
+- **Migration Impact**:
+  - **Removed resetForNewActivity**: Eliminated 68-line complex reset method from ActivityRecorderService
+  - **Deprecated Zustand Store**: Added deprecation notice for activity-recorder-store.ts in favor of EventEmitter approach
+  - **Backward Compatibility**: All existing functionality preserved while improving reliability
+  - **Fresh Instance Pattern**: Each recording session now follows create → use → cleanup → deallocate pattern
+
 ### ActivityRecorder Performance Optimization
 - **Optimized Recording System**: Replaced Context Provider with efficient Zustand store for realtime sensor data
   - **Removed ActivityRecorderProvider**: Eliminated React Context that caused unnecessary re-renders on every sensor update
@@ -28,8 +56,9 @@
 - **Bug Fixes & Stability**:
   - **Fixed Property Reference Errors**: Removed all old `liveMetrics` and `connectedSensors` parameter references
   - **Fixed React State Update Warnings**: Added async initialization to prevent render-time side effects
-  - **Fixed Background Location Cleanup**: Added proper error handling for TaskManager cleanup during service shutdown
-  - **Added Initialization Guards**: Components now wait for service initialization before rendering to prevent errors
+  - **Fixed Background Location Task Cleanup**: Added proper error handling for TaskManager cleanup during service shutdown
+  - **Fixed Infinite Loop Error**: Resolved "Maximum update depth exceeded" by moving hook calls outside FlatList renderItem
+  - **Added React.memo Optimization**: MemoizeInitialization Guards**: Components now wait for service initialization before rendering to prevent errors
   - **Improved Error Handling**: Location service now gracefully handles task cleanup errors and background tracking failures
 
 - **Recording Modal Updates**:

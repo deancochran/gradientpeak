@@ -1,4 +1,15 @@
 // stores/activityRecorderStore.ts
+//
+// ⚠️ DEPRECATED: This Zustand store is being phased out in favor of EventEmitter-based
+// service management. New code should use the event-based hooks from
+// `useActivityRecorderEvents.ts` directly with fresh service instances.
+//
+// See: Service Instance Management implementation in useActivityRecorderInit.ts
+// Migration guide: Each recording session now gets a fresh ActivityRecorderService
+// instance instead of complex state reset mechanisms.
+//
+// This file is kept for backward compatibility but should not be used in new code.
+
 import { create } from "zustand";
 import { PublicActivityType, RecordingServiceActivityPlan } from "@repo/core";
 import {
@@ -6,7 +17,6 @@ import {
   RecordingState,
 } from "../services/ActivityRecorder";
 import { PermissionState } from "../services/ActivityRecorder/permissions";
-import { Device } from "react-native-ble-plx";
 
 // ================================
 // Types

@@ -318,6 +318,10 @@ export class ActivityRecorderService extends EventEmitter {
   }
 
   // ================================
+  // Reset Service for New Activity
+  // ================================
+
+  // ================================
   // Activity Selection
   // ================================
 
@@ -592,17 +596,18 @@ export class ActivityRecorderService extends EventEmitter {
   // ================================
 
   async cleanup() {
+    console.log("Cleaning up ActivityRecorderService instance");
+
+    // Stop any active recording
     if (this.state === "recording" || this.state === "paused") {
       await this.finishRecording();
     }
 
-    // Stop timing updates
+    // Stop all background processes
     this.stopElapsedTimeUpdates();
-
-    // Remove app state listener
     this.appStateSubscription?.remove();
 
-    // Stop all services
+    // Cleanup managers
     await this.locationManager.cleanup();
     await this.sensorsManager.disconnectAll();
     this.chunkProcessor?.stop();
@@ -612,6 +617,11 @@ export class ActivityRecorderService extends EventEmitter {
       await this.notificationsManager.stopForegroundService();
     }
 
-    console.log("ActivityRecorderService cleaned up");
+    // Clear all event listeners
+    this.removeAllListeners();
+
+    console.log(
+      "ActivityRecorderService instance cleaned up and ready for deallocation",
+    );
   }
 }

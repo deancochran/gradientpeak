@@ -3,6 +3,7 @@ import {
   Activity,
   Bluetooth,
   ChevronDown,
+  ChevronRight,
   Clock,
   Heart,
   MapPin,
@@ -13,7 +14,14 @@ import {
   Pause,
   Square,
 } from "lucide-react-native";
-import React, { useCallback, useEffect, useRef, useState, memo } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  memo,
+  useMemo,
+} from "react";
 import {
   Alert,
   BackHandler,
@@ -21,6 +29,7 @@ import {
   FlatList,
   View,
   ActivityIndicator,
+  Pressable,
 } from "react-native";
 
 import { Button } from "@/components/ui/button";
@@ -28,6 +37,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { useActivityRecorderInit } from "@/lib/hooks/useActivityRecorderInit";
+import { useRequireAuth } from "@/lib/hooks/useAuth";
 import {
   useRecordingState,
   useActivityType,
@@ -53,34 +63,54 @@ const isOutdoorActivity = (type: PublicActivityType): boolean =>
 
 export default function RecordModal() {
   const router = useRouter();
+  const { profile } = useRequireAuth();
 
-  // Check if service is initialized and get service instance
-  const { isInitialized, service } = useActivityRecorderInit();
+  // Get service lifecycle management
+  const { service, serviceState, createNewService, isReady } =
+    useActivityRecorderInit();
 
-  // Use event-based hooks for better performance
-  const state = useRecordingState(service);
-  const activityType = useActivityType(service);
-  const sensorCount = useSensorCount(service);
-  const planProgress = usePlanProgress(service);
-  const activityPlan = useActivityPlan(service);
-  const { start, pause, resume } = useRecordingActions(service);
-  const { resumePlan } = usePlanActions(service);
+  // Auto-create service when modal opens
+  useEffect(() => {
+    if (!service && profile && serviceState === "uninitialized") {
+      console.log("Creating new service for recording session");
+      createNewService(profile);
+    }
+  }, [service, profile, serviceState, createNewService]);
+
+  // Use event-based hooks for better performance - only when service is ready
+  const state = useRecordingState(isReady ? service : null);
+  const activityType = useActivityType(isReady ? service : null);
+  const sensorCount = useSensorCount(isReady ? service : null);
+  const planProgress = usePlanProgress(isReady ? service : null);
+  const activityPlan = useActivityPlan(isReady ? service : null);
+  const { start, pause, resume } = useRecordingActions(
+    isReady ? service : null,
+  );
+  const { resumePlan } = usePlanActions(isReady ? service : null);
 
   // Get individual GPS metrics to avoid object recreation and infinite loops
-  const latitude = useMetric(service, "latitude");
-  const longitude = useMetric(service, "longitude");
-  const altitude = useMetric(service, "altitude");
+  const latitude = useMetric(isReady ? service : null, "latitude");
+  const longitude = useMetric(isReady ? service : null, "longitude");
+  const altitude = useMetric(isReady ? service : null, "altitude");
 
   const [, setCurrentCard] = useState<CarouselCard>("dashboard");
   const carouselRef = useRef<FlatList>(null);
 
-  const availableCards = (): CarouselCard[] => {
-    const cards: CarouselCard[] = ["dashboard"];
-    if (state !== "pending" && isOutdoorActivity(activityType))
-      cards.push("map");
-    if (activityPlan && state !== "pending") cards.push("plan");
-    return cards;
-  };
+  // Memoize available cards to prevent unnecessary re-renders
+  const cards = useMemo((): CarouselCard[] => {
+    const cardList: CarouselCard[] = ["dashboard"];
+
+    // Show map card for outdoor activities regardless of state
+    if (isOutdoorActivity(activityType)) {
+      cardList.push("map");
+    }
+
+    // Show plan card when activity plan is available, regardless of state
+    if (activityPlan) {
+      cardList.push("plan");
+    }
+    return cardList;
+  }, [activityType, activityPlan]);
 
   // Back handler
   useEffect(() => {
@@ -105,12 +135,18 @@ export default function RecordModal() {
 
   const handleFinishRecording = useCallback(async () => {
     try {
-      router.push("/modals/record/submit");
+      // Get the recording ID from the service
+      const recordingId = service?.recording?.id;
+      if (recordingId) {
+        router.push(`/modals/submit-recording?recording_id=${recordingId}`);
+      } else {
+        throw new Error("No recording ID available");
+      }
     } catch (error) {
       console.error("Failed to finish recording:", error);
       Alert.alert("Error", "Failed to finish recording.");
     }
-  }, [router]);
+  }, [router, service]);
 
   // Auto-finish if plan completes
   useEffect(() => {
@@ -119,10 +155,11 @@ export default function RecordModal() {
     }
   }, [planProgress?.state, state, handleFinishRecording]);
 
-  const cards = availableCards();
+  // Track current card index for carousel indicators
+  const [currentCardIndex, setCurrentCardIndex] = useState(0);
 
   // Don't render until service is initialized to prevent errors
-  if (!isInitialized) {
+  if (!isReady) {
     return (
       <View className="flex-1 bg-background items-center justify-center">
         <ActivityIndicator size="large" />
@@ -178,9 +215,69 @@ export default function RecordModal() {
               event.nativeEvent.contentOffset.x / SCREEN_WIDTH,
             );
             setCurrentCard(cards[index]);
+            setCurrentCardIndex(index);
+          }}
+          onScrollToIndexFailed={(info) => {
+            // Handle scroll failure gracefully
+            console.warn("Scroll to index failed:", info);
           }}
           style={{ flex: 1 }}
         />
+
+        {/* Carousel Navigation */}
+        {cards.length > 1 && (
+          <View className="pb-4">
+            {/* Card Labels */}
+            <View className="flex-row justify-center mb-3 gap-4">
+              {cards.map((card, index) => (
+                <Pressable
+                  key={card}
+                  onPress={() => {
+                    carouselRef.current?.scrollToIndex({
+                      index,
+                      animated: true,
+                    });
+                  }}
+                  className={`px-3 py-1 rounded-full ${
+                    index === currentCardIndex
+                      ? "bg-primary/10 border border-primary/20"
+                      : "bg-muted/30"
+                  }`}
+                >
+                  <Text
+                    className={`text-xs font-medium ${
+                      index === currentCardIndex
+                        ? "text-primary"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {card === "dashboard"
+                      ? "Dashboard"
+                      : card === "map"
+                        ? "Map"
+                        : card === "plan"
+                          ? "Plan"
+                          : card}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {/* Indicators */}
+            <View className="flex-row justify-center gap-2">
+              {cards.map((card, index) => (
+                <View
+                  key={`indicator-${card}`}
+                  className={`w-2 h-2 rounded-full ${
+                    index === currentCardIndex
+                      ? "bg-primary"
+                      : "bg-muted-foreground/30"
+                  }`}
+                />
+              ))}
+            </View>
+          </View>
+        )}
       </View>
 
       {/* Footer */}
@@ -193,6 +290,7 @@ export default function RecordModal() {
         onNextStep={async () => {
           resumePlan();
         }}
+        service={service}
       />
     </View>
   );
@@ -537,7 +635,7 @@ const PlanCard = memo(
     planProgress?: any;
     activityPlan?: any;
   }) => {
-    if (!planProgress || !activityPlan) {
+    if (!activityPlan) {
       return (
         <View style={{ width: SCREEN_WIDTH }} className="flex-1 p-4">
           <Card className="flex-1">
@@ -551,16 +649,155 @@ const PlanCard = memo(
       );
     }
 
+    const progressPercentage = planProgress
+      ? Math.round(
+          (planProgress.completedSteps / planProgress.totalSteps) * 100,
+        )
+      : 0;
+
+    const currentStep = planProgress?.currentStepIndex || 0;
+    const totalSteps = planProgress?.totalSteps || 0;
+    const stepElapsed = planProgress?.elapsedInStep || 0;
+    const stepDuration = planProgress?.duration || 0;
+    const stepTargets = planProgress?.targets;
+
     return (
       <View style={{ width: SCREEN_WIDTH }} className="flex-1 p-4">
         <Card className="flex-1">
           <CardContent className="p-4">
-            <Text className="text-lg font-semibold mb-4">
-              {activityPlan.name}
-            </Text>
+            {/* Plan Header */}
+            <View className="mb-6">
+              <Text className="text-lg font-semibold mb-2">
+                {activityPlan.name}
+              </Text>
+              {activityPlan.description && (
+                <Text className="text-sm text-muted-foreground">
+                  {activityPlan.description}
+                </Text>
+              )}
+            </View>
 
-            {/* Progress bar, current step, targets… (same as your version) */}
-            {/* but use `planProgress` and `currentStep` props instead of service.planManager */}
+            {/* Overall Progress */}
+            <View className="mb-6">
+              <View className="flex-row justify-between items-center mb-2">
+                <Text className="text-sm font-medium">Overall Progress</Text>
+                <Text className="text-sm text-muted-foreground">
+                  {progressPercentage}%
+                </Text>
+              </View>
+              <View className="h-2 bg-muted rounded-full overflow-hidden">
+                <View
+                  className="h-full bg-primary rounded-full"
+                  style={{ width: `${progressPercentage}%` }}
+                />
+              </View>
+              <Text className="text-xs text-muted-foreground mt-1">
+                Step {currentStep + 1} of {totalSteps}
+              </Text>
+            </View>
+
+            {/* Current Step */}
+            {planProgress ? (
+              <View className="mb-6">
+                <Text className="text-sm font-medium mb-3">Current Step</Text>
+
+                {/* Step Duration Progress */}
+                {stepDuration > 0 && (
+                  <View className="mb-4">
+                    <View className="flex-row justify-between items-center mb-2">
+                      <Text className="text-xs text-muted-foreground">
+                        Time in Step
+                      </Text>
+                      <Text className="text-xs text-muted-foreground">
+                        {formatDuration(stepElapsed)} /{" "}
+                        {formatDuration(stepDuration)}
+                      </Text>
+                    </View>
+                    <View className="h-1.5 bg-muted rounded-full overflow-hidden">
+                      <View
+                        className="h-full bg-blue-500 rounded-full"
+                        style={{
+                          width: `${Math.min((stepElapsed / stepDuration) * 100, 100)}%`,
+                        }}
+                      />
+                    </View>
+                  </View>
+                )}
+
+                {/* Step Targets */}
+                {stepTargets && (
+                  <View className="gap-2">
+                    <Text className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Targets
+                    </Text>
+                    <View className="flex-row flex-wrap gap-3">
+                      {stepTargets.heartRateRange && (
+                        <View className="flex-row items-center gap-1.5">
+                          <Icon as={Heart} size={14} className="text-red-500" />
+                          <Text className="text-sm">
+                            {stepTargets.heartRateRange[0]}-
+                            {stepTargets.heartRateRange[1]} bpm
+                          </Text>
+                        </View>
+                      )}
+                      {stepTargets.powerRange && (
+                        <View className="flex-row items-center gap-1.5">
+                          <Icon
+                            as={Zap}
+                            size={14}
+                            className="text-yellow-500"
+                          />
+                          <Text className="text-sm">
+                            {stepTargets.powerRange[0]}-
+                            {stepTargets.powerRange[1]}W
+                          </Text>
+                        </View>
+                      )}
+                      {stepTargets.cadenceRange && (
+                        <View className="flex-row items-center gap-1.5">
+                          <Icon
+                            as={TrendingUp}
+                            size={14}
+                            className="text-blue-500"
+                          />
+                          <Text className="text-sm">
+                            {stepTargets.cadenceRange[0]}-
+                            {stepTargets.cadenceRange[1]} rpm
+                          </Text>
+                        </View>
+                      )}
+                      {stepTargets.speedRange && (
+                        <View className="flex-row items-center gap-1.5">
+                          <Icon
+                            as={Activity}
+                            size={14}
+                            className="text-green-500"
+                          />
+                          <Text className="text-sm">
+                            {formatSpeed(stepTargets.speedRange[0])} -{" "}
+                            {formatSpeed(stepTargets.speedRange[1])}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                )}
+              </View>
+            ) : (
+              <View className="flex-1 items-center justify-center">
+                <Icon
+                  as={Activity}
+                  size={48}
+                  className="text-muted-foreground/50 mb-4"
+                />
+                <Text className="text-center text-muted-foreground mb-2">
+                  Ready to start workout
+                </Text>
+                <Text className="text-center text-sm text-muted-foreground">
+                  Press Start Activity to begin your plan
+                </Text>
+              </View>
+            )}
           </CardContent>
         </Card>
       </View>
@@ -577,6 +814,7 @@ const RecordModalFooter = ({
   onResume,
   onFinish,
   onNextStep,
+  service,
 }: {
   state: string;
   onStart: () => void;
@@ -584,8 +822,9 @@ const RecordModalFooter = ({
   onResume: () => void;
   onFinish: () => void;
   onNextStep?: () => void;
+  service: any;
 }) => {
-  const planProgress = usePlanProgress();
+  const planProgress = usePlanProgress(service);
   const showNextStep = state === "recording" && planProgress && onNextStep;
 
   return (

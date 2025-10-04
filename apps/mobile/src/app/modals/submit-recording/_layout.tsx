@@ -10,9 +10,6 @@ export default function RecordLayout() {
           gestureEnabled: false,
         }}
       />
-      <Stack.Screen name="activity" options={{ gestureEnabled: true }} />
-      <Stack.Screen name="sensors" options={{ gestureEnabled: true }} />
-      <Stack.Screen name="permissions" options={{ gestureEnabled: true }} />
     </Stack>
   );
 }

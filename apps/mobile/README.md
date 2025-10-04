@@ -42,6 +42,63 @@ A cross-platform fitness tracking mobile app built with Expo, React Native, and 
 - **Expo TaskManager** - Background task management for continuous recording
 - **React Native Worklets** - Performance-critical code execution
 
+## 🔄 Service Instance Management
+
+The mobile app uses a **fresh service instance lifecycle** approach for activity recording, ensuring clean state and reliable performance across recording sessions.
+
+### Architecture Overview
+
+Instead of complex state reset mechanisms, each recording session gets a completely fresh `ActivityRecorderService` instance:
+
+```typescript
+// OLD: One global service with complex reset
+globalServiceInstance.resetForNewActivity() // Complex, error-prone
+
+// NEW: Fresh service per session  
+serviceInstance = new ActivityRecorderService(profile)
+// ... record activity ...
+serviceInstance.cleanup() // Simple cleanup
+serviceInstance = null // Deallocate
+// Next session gets brand new instance
+```
+
+### Service Lifecycle States
+
+- **`uninitialized`** - No service instance exists
+- **`active`** - Service instance is ready for recording
+- **`completed`** - Recording finished, ready for cleanup
+- **`cleanup`** - Service is being cleaned up and deallocated
+
+### Benefits
+
+✅ **Simplicity** - No complex state reset logic  
+✅ **Reliability** - Guaranteed clean state for each session  
+✅ **Performance** - Better memory management and garbage collection  
+✅ **Developer Experience** - Clear lifecycle states and easier debugging  
+
+### Usage Example
+
+```typescript
+const { 
+  service, 
+  serviceState, 
+  createNewService, 
+  markServiceCompleted,
+  cleanupService,
+  isReady 
+} = useActivityRecorderInit();
+
+// Create service when needed
+useEffect(() => {
+  if (!service && profile && serviceState === 'uninitialized') {
+    createNewService(profile);
+  }
+}, [service, profile, serviceState, createNewService]);
+
+// Use service only when ready
+const state = useRecordingState(isReady ? service : null);
+```
+
 ### Development Experience & Tooling
 
 #### Build & Development Tools
