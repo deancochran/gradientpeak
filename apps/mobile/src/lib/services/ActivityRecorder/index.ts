@@ -16,7 +16,6 @@ import {
 } from "./permissions";
 import { SensorReading, SensorsManager } from "./sensors";
 import { LiveMetricsManager } from "./LiveMetricsManager";
-import { LocationData } from "./data-structures";
 
 import { localdb } from "@/lib/db";
 
@@ -24,7 +23,7 @@ import { LocationObject } from "expo-location";
 import { AppState, AppStateStatus } from "react-native";
 import { Device } from "react-native-ble-plx";
 import { PlanManager } from "./plan";
-import { ChunkProcessor } from "./processor";
+
 import { EventEmitter } from "events";
 
 // ================================
@@ -72,7 +71,6 @@ export class ActivityRecorderService extends EventEmitter {
   // Managers
   private locationManager = new LocationManager();
   private sensorsManager = new SensorsManager();
-  private chunkProcessor?: ChunkProcessor;
   public planManager?: PlanManager;
   public permissionsManager = new PermissionsManager();
   private notificationsManager?: NotificationsManager;
@@ -132,42 +130,19 @@ export class ActivityRecorderService extends EventEmitter {
     // Forward LiveMetricsManager events to external listeners
     this.liveMetricsManager.on("metricsUpdate", (updateEvent) => {
       this.emit("liveMetricsUpdate", updateEvent);
+
+      // Update live metrics map for backward compatibility
+      const metrics = updateEvent.metrics;
+      this.liveMetrics.set("elapsedTime", metrics.elapsedTime);
+      this.liveMetrics.set("distance", metrics.distance);
+      this.liveMetrics.set("avgPower", metrics.avgPower);
+      this.liveMetrics.set("avgHeartRate", metrics.avgHeartRate);
+      this.liveMetrics.set("calories", metrics.calories);
     });
 
-    this.liveMetricsManager.on("recordingStarted", (event) => {
-      this.emit("liveMetricsRecordingStarted", event);
-    });
-
-    this.liveMetricsManager.on("recordingFinished", (event) => {
-      this.emit("liveMetricsRecordingFinished", event);
-    });
-
-    this.liveMetricsManager.on("error", (error) => {
+    this.liveMetricsManager.on("persistenceError", (error) => {
       this.emit("liveMetricsError", error);
     });
-
-    this.liveMetricsManager.on("batchWriteComplete", (batchEvent) => {
-      // Handle batch writes to database here
-      this.handleBatchWrite(batchEvent);
-    });
-  }
-
-  private async handleBatchWrite(batchEvent: any): Promise<void> {
-    // TODO: Implement database batch writing
-    // This will write sensor readings and location data to local SQLite
-    try {
-      console.log("Processing batch write:", {
-        totalReadings: batchEvent.totalReadings,
-        totalLocations: batchEvent.totalLocations,
-        batches: batchEvent.batches.length,
-      });
-
-      // For now, just log the batch data
-      // In the future, this will write to SQLite database
-    } catch (error) {
-      console.error("Batch write failed:", error);
-      this.liveMetricsManager.emit("batchWriteFailed", { error, batchEvent });
-    }
   }
 
   // ================================
@@ -288,16 +263,13 @@ export class ActivityRecorderService extends EventEmitter {
       .returning();
 
     this.recording = recording;
-    this.chunkProcessor = new ChunkProcessor(recording.id);
-    this.chunkProcessor.start();
     this.state = "recording";
 
-    // Start LiveMetricsManager
-    const startTimestamp = Date.now();
-    this.liveMetricsManager.startRecording(startTimestamp);
+    // Start LiveMetricsManager with recording ID
+    this.liveMetricsManager.startRecording(recording.id);
 
     // Initialize timing
-    this.startTime = startTimestamp;
+    this.startTime = Date.now();
     this.pausedTime = 0;
     this.lastPauseTime = undefined;
     this.totalDistance = 0;
@@ -327,11 +299,9 @@ export class ActivityRecorderService extends EventEmitter {
     this.lastPauseTime = pauseTimestamp;
 
     // Pause LiveMetricsManager
-    this.liveMetricsManager.pauseRecording(pauseTimestamp);
+    this.liveMetricsManager.pauseRecording();
 
     this.stopElapsedTimeUpdates();
-    this.chunkProcessor?.stop();
-    await this.chunkProcessor?.flush();
 
     this.emitStateChange();
     this.notify();
@@ -344,7 +314,7 @@ export class ActivityRecorderService extends EventEmitter {
     this.state = "recording";
 
     // Resume LiveMetricsManager
-    this.liveMetricsManager.resumeRecording(resumeTimestamp);
+    this.liveMetricsManager.resumeRecording();
 
     // Update paused time accumulator
     if (this.lastPauseTime) {
@@ -354,7 +324,6 @@ export class ActivityRecorderService extends EventEmitter {
     }
 
     this.startElapsedTimeUpdates();
-    this.chunkProcessor?.start();
 
     this.emitStateChange();
     this.notify();
@@ -363,13 +332,8 @@ export class ActivityRecorderService extends EventEmitter {
   async finishRecording() {
     if (!this.recording) throw new Error("No active recording");
 
-    const finishTimestamp = Date.now();
-
-    // Finish LiveMetricsManager first to get final metrics
-    this.liveMetricsManager.finishRecording(finishTimestamp);
-
-    this.chunkProcessor?.stop();
-    await this.chunkProcessor?.flush();
+    // Finish LiveMetricsManager first (includes final DB write)
+    await this.liveMetricsManager.finishRecording();
 
     await localdb
       .update(activityRecordings)
@@ -465,7 +429,7 @@ export class ActivityRecorderService extends EventEmitter {
   // ================================
 
   private handleSensorData(reading: SensorReading) {
-    if (this.state !== "recording" || !this.chunkProcessor) return;
+    if (this.state !== "recording") return;
 
     // Track timing for plan progress
     const currentTimestamp = reading.timestamp || Date.now();
@@ -480,15 +444,16 @@ export class ActivityRecorderService extends EventEmitter {
       this.emitPlanProgressUpdate();
     }
 
-    // Store in chunk processor
-    this.chunkProcessor.addReading(reading);
-
-    // Send to LiveMetricsManager for comprehensive processing
-    this.liveMetricsManager.ingestSensorData(reading);
+    // Send to LiveMetricsManager - it handles both buffer and accumulator
+    this.liveMetricsManager.ingestSensorData({
+      metric: reading.metric,
+      value: reading.value,
+      timestamp: reading.timestamp,
+      metadata: reading.metadata,
+    });
 
     // Update legacy live metrics map for compatibility
     if (typeof reading.value === "number") {
-      // Only update if the value actually changed
       const currentValue = this.liveMetrics.get(reading.metric);
       if (currentValue !== reading.value) {
         this.liveMetrics.set(reading.metric, reading.value);
@@ -514,38 +479,20 @@ export class ActivityRecorderService extends EventEmitter {
   }
 
   private handleLocationData(location: LocationObject) {
+    if (this.state !== "recording" && this.state !== "paused") return;
+
     const timestamp = location.timestamp || Date.now();
 
-    // Send to LiveMetricsManager for comprehensive processing
-    const locationData: LocationData = {
+    // Send to LiveMetricsManager - it handles both calculations and persistence
+    this.liveMetricsManager.ingestLocationData({
       latitude: location.coords.latitude,
       longitude: location.coords.longitude,
       altitude: location.coords.altitude || undefined,
       accuracy: location.coords.accuracy || undefined,
-      heading: location.coords.heading || undefined,
-      speed: location.coords.speed || undefined,
       timestamp: timestamp,
-      provider: "gps",
-    };
-    this.liveMetricsManager.ingestLocationData(locationData);
-
-    // Legacy distance calculation for backward compatibility
-    if (this.lastLocation && this.state === "recording") {
-      const distance = this.calculateDistance(
-        this.lastLocation.coords,
-        location.coords,
-      );
-      this.totalDistance += distance;
-      this.liveMetrics.set("distance", this.totalDistance);
-    }
-
-    // Update last location only when recording (not when paused)
-    if (this.state === "recording") {
-      this.lastLocation = location;
-    }
+    });
 
     // Update individual lat/lng in live metrics for UI display
-    // Only update if coordinates actually changed to avoid excessive updates
     const currentLat = this.liveMetrics.get("latitude");
     const currentLng = this.liveMetrics.get("longitude");
 
@@ -700,7 +647,6 @@ export class ActivityRecorderService extends EventEmitter {
     // Cleanup managers
     await this.locationManager.cleanup();
     await this.sensorsManager.disconnectAll();
-    this.chunkProcessor?.stop();
 
     // Stop foreground service
     if (this.notificationsManager) {

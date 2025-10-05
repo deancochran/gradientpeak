@@ -146,7 +146,7 @@ export default function RecordModal() {
       cardList.push("plan");
     }
     return cardList;
-  }, [activityType, activityPlan, state, avgPower, avgHeartRate]);
+  }, [activityType, activityPlan, state]);
 
   // Back handler
   useEffect(() => {
