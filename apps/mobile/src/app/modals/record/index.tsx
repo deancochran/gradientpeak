@@ -109,41 +109,34 @@ export default function RecordModal() {
   const carouselRef = useRef<FlatList>(null);
 
   // Memoize available cards to prevent unnecessary re-renders
+  // Cards display reactively based on activity type and plan selection
   const cards = useMemo((): CarouselCard[] => {
     const cardList: CarouselCard[] = ["dashboard"];
 
-    // Show all cards before recording starts (prepared state) and during recording
-    // Power card - always show when not finished
-    if (state !== "finished") {
-      cardList.push("power");
-    }
+    // Power card - always show (displays regardless of data availability)
+    cardList.push("power");
 
-    // Heart rate card - always show when not finished
-    if (state !== "finished") {
-      cardList.push("heartrate");
-    }
+    // Heart rate card - always show (displays regardless of data availability)
+    cardList.push("heartrate");
 
-    // Analysis card - always show when not finished
-    if (state !== "finished") {
-      cardList.push("analysis");
-    }
+    // Analysis card - always show (displays regardless of data availability)
+    cardList.push("analysis");
 
-    // Elevation card - show for outdoor activities or when not finished
-    if (isOutdoorActivity(activityType) || state !== "finished") {
-      cardList.push("elevation");
-    }
+    // Elevation card - always show (displays regardless of data availability)
+    cardList.push("elevation");
 
-    // Show map card for outdoor activities regardless of state
+    // Map card - show for outdoor activities at all times
     if (isOutdoorActivity(activityType)) {
       cardList.push("map");
     }
 
-    // Show plan card when activity plan is available, regardless of state
+    // Plan card - show when template or user activity plan is selected, visible at all times
     if (activityPlan) {
       cardList.push("plan");
     }
+
     return cardList;
-  }, [activityType, activityPlan, state]);
+  }, [activityType, activityPlan]);
 
   // Back handler
   useEffect(() => {
@@ -482,6 +475,7 @@ const RecordModalCard = memo(
 RecordModalCard.displayName = "RecordModalCard";
 
 // Dashboard Card Component
+// Structured layout: Large elapsed time at top, grid of key metrics below
 const DashboardCard = memo(
   ({
     state,
@@ -505,136 +499,178 @@ const DashboardCard = memo(
       typeof elapsedTime === "number" ? elapsedTime : 0;
     const sensorCount = useSensorCount(service);
 
+    // Determine if we're in prepared state (before recording)
+    const isPrepared = state === "pending" || state === "ready";
+
     return (
       <View style={{ width: SCREEN_WIDTH }} className="flex-1 p-4">
         <Card className="flex-1">
           <CardContent className="p-6">
-            {/* Time Display */}
-            <View className="items-center mb-6">
-              <View className="flex-row items-center gap-2 mb-2">
-                <Icon as={Clock} size={20} className="text-muted-foreground" />
-                <Text className="text-sm text-muted-foreground">Duration</Text>
+            {/* Large Time Display - Most Critical Metric */}
+            <View className="items-center mb-8 pb-6 border-b border-border">
+              <View className="flex-row items-center gap-2 mb-3">
+                <Icon as={Clock} size={24} className="text-primary" />
+                <Text className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+                  Duration
+                </Text>
               </View>
-              <Text className="text-4xl font-bold">
+              <Text className="text-5xl font-bold tabular-nums">
                 {formatDuration(displayElapsedTime)}
               </Text>
+              {isPrepared && (
+                <Text className="text-xs text-muted-foreground mt-2">
+                  Ready to start
+                </Text>
+              )}
             </View>
 
-            {/* Metrics */}
+            {/* Grid of 4-6 Key Metrics Below */}
             <View className="flex-1 justify-center">
-              {state === "pending" || state === "ready" ? (
-                <View className="items-center">
-                  <Text className="text-lg text-muted-foreground mb-4">
-                    Ready to start recording
+              {isPrepared ? (
+                // Prepared State - Show placeholders confirming sensor readiness
+                <View className="gap-6">
+                  <Text className="text-sm text-muted-foreground text-center mb-2">
+                    Sensors prepared and ready
                   </Text>
-                  <Text className="text-sm text-muted-foreground text-center mb-6">
-                    All sensors prepared. Press Start Activity to begin.
-                  </Text>
-                  {/* Show prepared state metrics with placeholder values */}
-                  <View className="gap-4 w-full">
-                    <View className="flex-row justify-around">
-                      <MetricDisplay
-                        icon={Heart}
-                        label="Heart Rate"
-                        value="--"
-                        unit="bpm"
-                        color="text-muted-foreground"
-                      />
-                      <MetricDisplay
-                        icon={Zap}
-                        label="Power"
-                        value="--"
-                        unit="W"
-                        color="text-muted-foreground"
-                      />
-                      <MetricDisplay
-                        icon={TrendingUp}
-                        label="Cadence"
-                        value="--"
-                        unit="rpm"
-                        color="text-muted-foreground"
-                      />
-                    </View>
-                    <View className="flex-row justify-around mt-2">
-                      <MetricDisplay
-                        icon={TrendingUp}
-                        label="Speed"
-                        value="--"
-                        unit="km/h"
-                        color="text-muted-foreground"
-                      />
-                      <MetricDisplay
-                        icon={MapPin}
-                        label="Distance"
-                        value="--"
-                        unit="km"
-                        color="text-muted-foreground"
-                      />
-                    </View>
+
+                  {/* Top Row: Power, Heart Rate, Cadence */}
+                  <View className="flex-row justify-around">
+                    <MetricDisplay
+                      icon={Zap}
+                      label="Power"
+                      value="n/a"
+                      unit="W"
+                      color="text-muted-foreground/50"
+                    />
+                    <MetricDisplay
+                      icon={Heart}
+                      label="Heart Rate"
+                      value="n/a"
+                      unit="bpm"
+                      color="text-muted-foreground/50"
+                    />
+                    <MetricDisplay
+                      icon={TrendingUp}
+                      label="Cadence"
+                      value="n/a"
+                      unit="rpm"
+                      color="text-muted-foreground/50"
+                    />
+                  </View>
+
+                  {/* Bottom Row: Speed, Distance */}
+                  <View className="flex-row justify-around">
+                    <MetricDisplay
+                      icon={TrendingUp}
+                      label="Speed"
+                      value="n/a"
+                      unit="km/h"
+                      color="text-muted-foreground/50"
+                    />
+                    <MetricDisplay
+                      icon={MapPin}
+                      label="Distance"
+                      value="n/a"
+                      unit="km"
+                      color="text-muted-foreground/50"
+                    />
                   </View>
                 </View>
               ) : (
-                <View className="gap-4">
+                // Active Recording State - Show live or placeholder values
+                <View className="gap-6">
+                  {/* Top Row: Power, Heart Rate, Cadence */}
                   <View className="flex-row justify-around">
-                    {heartrate !== undefined && (
-                      <MetricDisplay
-                        icon={Heart}
-                        label="Heart Rate"
-                        value={Math.round(heartrate).toString()}
-                        unit="bpm"
-                        color="text-red-500"
-                      />
-                    )}
-                    {power !== undefined && (
-                      <MetricDisplay
-                        icon={Zap}
-                        label="Power"
-                        value={Math.round(power).toString()}
-                        unit="W"
-                        color="text-yellow-500"
-                      />
-                    )}
-                    {cadence !== undefined && (
-                      <MetricDisplay
-                        icon={TrendingUp}
-                        label="Cadence"
-                        value={Math.round(cadence).toString()}
-                        unit="rpm"
-                        color="text-blue-500"
-                      />
-                    )}
+                    <MetricDisplay
+                      icon={Zap}
+                      label="Power"
+                      value={
+                        power !== undefined
+                          ? Math.round(power).toString()
+                          : "n/a"
+                      }
+                      unit="W"
+                      color={
+                        power !== undefined
+                          ? "text-yellow-500"
+                          : "text-muted-foreground/50"
+                      }
+                    />
+                    <MetricDisplay
+                      icon={Heart}
+                      label="Heart Rate"
+                      value={
+                        heartrate !== undefined
+                          ? Math.round(heartrate).toString()
+                          : "n/a"
+                      }
+                      unit="bpm"
+                      color={
+                        heartrate !== undefined
+                          ? "text-red-500"
+                          : "text-muted-foreground/50"
+                      }
+                    />
+                    <MetricDisplay
+                      icon={TrendingUp}
+                      label="Cadence"
+                      value={
+                        cadence !== undefined
+                          ? Math.round(cadence).toString()
+                          : "n/a"
+                      }
+                      unit="rpm"
+                      color={
+                        cadence !== undefined
+                          ? "text-blue-500"
+                          : "text-muted-foreground/50"
+                      }
+                    />
                   </View>
 
-                  {(speed !== undefined || distance !== undefined) && (
-                    <View className="flex-row justify-around mt-4">
-                      {speed !== undefined && (
-                        <MetricDisplay
-                          icon={TrendingUp}
-                          label="Speed"
-                          value={formatSpeed(speed)}
-                          unit=""
-                          color="text-green-500"
-                        />
-                      )}
-                      {distance !== undefined && (
-                        <MetricDisplay
-                          icon={MapPin}
-                          label="Distance"
-                          value={formatDistance(distance)}
-                          unit=""
-                          color="text-purple-500"
-                        />
-                      )}
-                    </View>
-                  )}
+                  {/* Bottom Row: Speed, Distance */}
+                  <View className="flex-row justify-around">
+                    <MetricDisplay
+                      icon={TrendingUp}
+                      label="Speed"
+                      value={speed !== undefined ? formatSpeed(speed) : "n/a"}
+                      unit={speed !== undefined ? "" : "km/h"}
+                      color={
+                        speed !== undefined
+                          ? "text-green-500"
+                          : "text-muted-foreground/50"
+                      }
+                    />
+                    <MetricDisplay
+                      icon={MapPin}
+                      label="Distance"
+                      value={
+                        distance !== undefined
+                          ? formatDistance(distance)
+                          : "n/a"
+                      }
+                      unit={distance !== undefined ? "" : "km"}
+                      color={
+                        distance !== undefined
+                          ? "text-purple-500"
+                          : "text-muted-foreground/50"
+                      }
+                    />
+                  </View>
 
+                  {/* Connection Status Info */}
                   {sensorCount === 0 && !speed && !distance && (
-                    <View className="items-center mt-8">
-                      <Text className="text-sm text-muted-foreground">
+                    <View className="items-center mt-6 pt-6 border-t border-border">
+                      <Icon
+                        as={Bluetooth}
+                        size={20}
+                        className="text-muted-foreground/50 mb-2"
+                      />
+                      <Text className="text-xs text-muted-foreground">
                         No sensors connected
                       </Text>
-                      <Text className="text-xs text-muted-foreground mt-1">
-                        Connect devices to see live metrics
+                      <Text className="text-xs text-muted-foreground/70 mt-1">
+                        Data will show when available
                       </Text>
                     </View>
                   )}
@@ -649,7 +685,7 @@ const DashboardCard = memo(
 );
 DashboardCard.displayName = "DashboardCard";
 
-// Metric Display Component
+// Metric Display Component - Clean, consistent visual pattern
 const MetricDisplay = ({
   icon: IconComponent,
   label,
@@ -663,13 +699,17 @@ const MetricDisplay = ({
   unit: string;
   color: string;
 }) => (
-  <View className="items-center">
-    <Icon as={IconComponent} size={24} className={`${color} mb-1`} />
-    <Text className="text-xs text-muted-foreground mb-1">{label}</Text>
+  <View className="items-center flex-1">
+    <Icon as={IconComponent} size={20} className={`${color} mb-2`} />
+    <Text className="text-xs text-muted-foreground mb-2 uppercase tracking-wide">
+      {label}
+    </Text>
     <View className="flex-row items-baseline">
-      <Text className="text-2xl font-semibold">{value}</Text>
+      <Text className={`text-2xl font-bold tabular-nums ${color}`}>
+        {value}
+      </Text>
       {unit && (
-        <Text className="text-sm text-muted-foreground ml-1">{unit}</Text>
+        <Text className="text-xs text-muted-foreground ml-1">{unit}</Text>
       )}
     </View>
   </View>
