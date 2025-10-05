@@ -1,6 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import { LiveMetricsState, LiveMetricsError, PerformanceStats } from "@/lib/services/ActivityRecorder/types";
+import {
+  LiveMetricsState,
+  LiveMetricsError,
+  PerformanceStats,
+} from "@/lib/services/ActivityRecorder/types";
 import {
   HeartRateMetrics,
   PowerMetrics,
@@ -11,7 +15,10 @@ import {
   EnvironmentalMetrics,
   MetricsSummary,
 } from "@/lib/services/ActivityRecorder/types";
-import { RECORDING_CONFIG, roundToPrecision } from "@/lib/services/ActivityRecorder/config";
+import {
+  RECORDING_CONFIG,
+  roundToPrecision,
+} from "@/lib/services/ActivityRecorder/config";
 
 // ================================
 // Core Live Metrics Hook
@@ -54,7 +61,7 @@ export function useLiveMetrics(
 
     setMetrics(initialMetrics);
     setPerformance(initialPerf);
-    setIsRecording(initialState === 'active' || initialState === 'paused');
+    setIsRecording(initialState === "active" || initialState === "paused");
     setIsLoading(false);
 
     // Subscribe to metrics updates
@@ -66,7 +73,7 @@ export function useLiveMetrics(
     // Subscribe to recording state changes
     const handleStateChange = () => {
       const state = service.liveMetricsManager!.getState();
-      setIsRecording(state === 'active' || state === 'paused');
+      setIsRecording(state === "active" || state === "paused");
 
       // Update performance stats periodically
       const perf = service.liveMetricsManager!.getPerformanceStats();
@@ -79,21 +86,21 @@ export function useLiveMetrics(
     };
 
     // Event listeners
-    service.liveMetricsManager.on('metricsUpdate', handleMetricsUpdate);
-    service.liveMetricsManager.on('recordingStarted', handleStateChange);
-    service.liveMetricsManager.on('recordingPaused', handleStateChange);
-    service.liveMetricsManager.on('recordingResumed', handleStateChange);
-    service.liveMetricsManager.on('recordingFinished', handleStateChange);
-    service.liveMetricsManager.on('error', handleError);
+    service.liveMetricsManager.on("metricsUpdate", handleMetricsUpdate);
+    service.liveMetricsManager.on("recordingStarted", handleStateChange);
+    service.liveMetricsManager.on("recordingPaused", handleStateChange);
+    service.liveMetricsManager.on("recordingResumed", handleStateChange);
+    service.liveMetricsManager.on("recordingFinished", handleStateChange);
+    service.liveMetricsManager.on("error", handleError);
 
     return () => {
       if (service.liveMetricsManager) {
-        service.liveMetricsManager.off('metricsUpdate', handleMetricsUpdate);
-        service.liveMetricsManager.off('recordingStarted', handleStateChange);
-        service.liveMetricsManager.off('recordingPaused', handleStateChange);
-        service.liveMetricsManager.off('recordingResumed', handleStateChange);
-        service.liveMetricsManager.off('recordingFinished', handleStateChange);
-        service.liveMetricsManager.off('error', handleError);
+        service.liveMetricsManager.off("metricsUpdate", handleMetricsUpdate);
+        service.liveMetricsManager.off("recordingStarted", handleStateChange);
+        service.liveMetricsManager.off("recordingPaused", handleStateChange);
+        service.liveMetricsManager.off("recordingResumed", handleStateChange);
+        service.liveMetricsManager.off("recordingFinished", handleStateChange);
+        service.liveMetricsManager.off("error", handleError);
       }
     };
   }, [service]);
@@ -131,13 +138,16 @@ export function usePowerMetrics(
       if (now - lastUpdateRef.current < 500) return; // 500ms throttle
       lastUpdateRef.current = now;
 
-      const current = service.liveMetricsManager!.getInstantaneousValue('power');
+      const current = service.liveMetrics.get("power");
 
       setPowerMetrics({
         current,
-        avg: roundToPrecision(metrics.avgPower, 'power'),
+        avg: roundToPrecision(metrics.avgPower, "power"),
         max: metrics.maxPower,
-        normalized: roundToPrecision(metrics.normalizedPowerEst, 'normalizedPower'),
+        normalized: roundToPrecision(
+          metrics.normalizedPowerEst,
+          "normalizedPower",
+        ),
         totalWork: Math.round(metrics.totalWork),
         zones: {
           z1: metrics.powerZone1Time,
@@ -151,14 +161,14 @@ export function usePowerMetrics(
       });
     };
 
-    service.liveMetricsManager.on('metricsUpdate', handleUpdate);
+    service.liveMetricsManager.on("metricsUpdate", handleUpdate);
 
     // Initial value
     const initialMetrics = service.liveMetricsManager.getMetrics();
     handleUpdate({ metrics: initialMetrics });
 
     return () => {
-      service.liveMetricsManager?.off('metricsUpdate', handleUpdate);
+      service.liveMetricsManager?.off("metricsUpdate", handleUpdate);
     };
   }, [service]);
 
@@ -185,13 +195,16 @@ export function useHeartRateMetrics(
       if (now - lastUpdateRef.current < 1000) return; // 1s throttle for HR
       lastUpdateRef.current = now;
 
-      const current = service.liveMetricsManager!.getInstantaneousValue('heartrate');
+      const current = service.liveMetrics.get("heartrate");
 
       setHrMetrics({
         current,
-        avg: roundToPrecision(metrics.avgHeartRate, 'heartRate'),
+        avg: roundToPrecision(metrics.avgHeartRate, "heartRate"),
         max: metrics.maxHeartRate,
-        maxPctThreshold: roundToPrecision(metrics.maxHrPctThreshold, 'heartRate'),
+        maxPctThreshold: roundToPrecision(
+          metrics.maxHrPctThreshold,
+          "heartRate",
+        ),
         zones: {
           z1: metrics.hrZone1Time,
           z2: metrics.hrZone2Time,
@@ -202,14 +215,14 @@ export function useHeartRateMetrics(
       });
     };
 
-    service.liveMetricsManager.on('metricsUpdate', handleUpdate);
+    service.liveMetricsManager.on("metricsUpdate", handleUpdate);
 
     // Initial value
     const initialMetrics = service.liveMetricsManager.getMetrics();
     handleUpdate({ metrics: initialMetrics });
 
     return () => {
-      service.liveMetricsManager?.off('metricsUpdate', handleUpdate);
+      service.liveMetricsManager?.off("metricsUpdate", handleUpdate);
     };
   }, [service]);
 
@@ -222,7 +235,8 @@ export function useHeartRateMetrics(
 export function useAnalysisMetrics(
   service: ActivityRecorderService | null,
 ): AnalysisMetrics | null {
-  const [analysisMetrics, setAnalysisMetrics] = useState<AnalysisMetrics | null>(null);
+  const [analysisMetrics, setAnalysisMetrics] =
+    useState<AnalysisMetrics | null>(null);
   const lastUpdateRef = useRef<number>(0);
 
   useEffect(() => {
@@ -237,24 +251,36 @@ export function useAnalysisMetrics(
       lastUpdateRef.current = now;
 
       setAnalysisMetrics({
-        normalizedPower: roundToPrecision(metrics.normalizedPowerEst, 'normalizedPower'),
-        intensityFactor: roundToPrecision(metrics.intensityFactorEst, 'intensityFactor'),
-        tss: roundToPrecision(metrics.trainingStressScoreEst, 'tss'),
-        variabilityIndex: roundToPrecision(metrics.variabilityIndexEst, 'efficiency'),
-        efficiencyFactor: roundToPrecision(metrics.efficiencyFactorEst, 'efficiency'),
-        decoupling: roundToPrecision(metrics.decouplingEst, 'efficiency'),
-        adherence: roundToPrecision(metrics.adherenceCurrentStep, 'efficiency'),
+        normalizedPower: roundToPrecision(
+          metrics.normalizedPowerEst,
+          "normalizedPower",
+        ),
+        intensityFactor: roundToPrecision(
+          metrics.intensityFactorEst,
+          "intensityFactor",
+        ),
+        tss: roundToPrecision(metrics.trainingStressScoreEst, "tss"),
+        variabilityIndex: roundToPrecision(
+          metrics.variabilityIndexEst,
+          "efficiency",
+        ),
+        efficiencyFactor: roundToPrecision(
+          metrics.efficiencyFactorEst,
+          "efficiency",
+        ),
+        decoupling: roundToPrecision(metrics.decouplingEst, "efficiency"),
+        adherence: roundToPrecision(metrics.adherenceCurrentStep, "efficiency"),
       });
     };
 
-    service.liveMetricsManager.on('metricsUpdate', handleUpdate);
+    service.liveMetricsManager.on("metricsUpdate", handleUpdate);
 
     // Initial value
     const initialMetrics = service.liveMetricsManager.getMetrics();
     handleUpdate({ metrics: initialMetrics });
 
     return () => {
-      service.liveMetricsManager?.off('metricsUpdate', handleUpdate);
+      service.liveMetricsManager?.off("metricsUpdate", handleUpdate);
     };
   }, [service]);
 
@@ -267,7 +293,8 @@ export function useAnalysisMetrics(
 export function useDistanceMetrics(
   service: ActivityRecorderService | null,
 ): DistanceMetrics | null {
-  const [distanceMetrics, setDistanceMetrics] = useState<DistanceMetrics | null>(null);
+  const [distanceMetrics, setDistanceMetrics] =
+    useState<DistanceMetrics | null>(null);
 
   useEffect(() => {
     if (!service?.liveMetricsManager) return;
@@ -276,22 +303,22 @@ export function useDistanceMetrics(
       const metrics = updateEvent.metrics;
 
       setDistanceMetrics({
-        distance: roundToPrecision(metrics.distance, 'distance'),
-        avgSpeed: roundToPrecision(metrics.avgSpeed, 'speed'),
-        maxSpeed: roundToPrecision(metrics.maxSpeed, 'speed'),
+        distance: roundToPrecision(metrics.distance, "distance"),
+        avgSpeed: roundToPrecision(metrics.avgSpeed, "speed"),
+        maxSpeed: roundToPrecision(metrics.maxSpeed, "speed"),
         elapsedTime: metrics.elapsedTime,
         movingTime: metrics.movingTime,
       });
     };
 
-    service.liveMetricsManager.on('metricsUpdate', handleUpdate);
+    service.liveMetricsManager.on("metricsUpdate", handleUpdate);
 
     // Initial value
     const initialMetrics = service.liveMetricsManager.getMetrics();
     handleUpdate({ metrics: initialMetrics });
 
     return () => {
-      service.liveMetricsManager?.off('metricsUpdate', handleUpdate);
+      service.liveMetricsManager?.off("metricsUpdate", handleUpdate);
     };
   }, [service]);
 
@@ -304,7 +331,8 @@ export function useDistanceMetrics(
 export function useElevationMetrics(
   service: ActivityRecorderService | null,
 ): ElevationMetrics | null {
-  const [elevationMetrics, setElevationMetrics] = useState<ElevationMetrics | null>(null);
+  const [elevationMetrics, setElevationMetrics] =
+    useState<ElevationMetrics | null>(null);
 
   useEffect(() => {
     if (!service?.liveMetricsManager) return;
@@ -313,22 +341,25 @@ export function useElevationMetrics(
       const metrics = updateEvent.metrics;
 
       setElevationMetrics({
-        totalAscent: roundToPrecision(metrics.totalAscent, 'elevation'),
-        totalDescent: roundToPrecision(metrics.totalDescent, 'elevation'),
-        avgGrade: roundToPrecision(metrics.avgGrade, 'grade'),
-        elevationGainPerKm: roundToPrecision(metrics.elevationGainPerKm, 'elevation'),
-        current: service.liveMetricsManager!.getInstantaneousValue('altitude'),
+        totalAscent: roundToPrecision(metrics.totalAscent, "elevation"),
+        totalDescent: roundToPrecision(metrics.totalDescent, "elevation"),
+        avgGrade: roundToPrecision(metrics.avgGrade, "grade"),
+        elevationGainPerKm: roundToPrecision(
+          metrics.elevationGainPerKm,
+          "elevation",
+        ),
+        current: service.liveMetrics.get("altitude"),
       });
     };
 
-    service.liveMetricsManager.on('metricsUpdate', handleUpdate);
+    service.liveMetricsManager.on("metricsUpdate", handleUpdate);
 
     // Initial value
     const initialMetrics = service.liveMetricsManager.getMetrics();
     handleUpdate({ metrics: initialMetrics });
 
     return () => {
-      service.liveMetricsManager?.off('metricsUpdate', handleUpdate);
+      service.liveMetricsManager?.off("metricsUpdate", handleUpdate);
     };
   }, [service]);
 
@@ -341,7 +372,9 @@ export function useElevationMetrics(
 export function useCadenceMetrics(
   service: ActivityRecorderService | null,
 ): CadenceMetrics | null {
-  const [cadenceMetrics, setCadenceMetrics] = useState<CadenceMetrics | null>(null);
+  const [cadenceMetrics, setCadenceMetrics] = useState<CadenceMetrics | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!service?.liveMetricsManager) return;
@@ -350,20 +383,20 @@ export function useCadenceMetrics(
       const metrics = updateEvent.metrics;
 
       setCadenceMetrics({
-        current: service.liveMetricsManager!.getInstantaneousValue('cadence'),
-        avg: roundToPrecision(metrics.avgCadence, 'cadence'),
+        current: service.liveMetrics.get("cadence"),
+        avg: roundToPrecision(metrics.avgCadence, "cadence"),
         max: metrics.maxCadence,
       });
     };
 
-    service.liveMetricsManager.on('metricsUpdate', handleUpdate);
+    service.liveMetricsManager.on("metricsUpdate", handleUpdate);
 
     // Initial value
     const initialMetrics = service.liveMetricsManager.getMetrics();
     handleUpdate({ metrics: initialMetrics });
 
     return () => {
-      service.liveMetricsManager?.off('metricsUpdate', handleUpdate);
+      service.liveMetricsManager?.off("metricsUpdate", handleUpdate);
     };
   }, [service]);
 
@@ -376,7 +409,9 @@ export function useCadenceMetrics(
 export function useEnvironmentalMetrics(
   service: ActivityRecorderService | null,
 ): EnvironmentalMetrics | null {
-  const [envMetrics, setEnvMetrics] = useState<EnvironmentalMetrics | null>(null);
+  const [envMetrics, setEnvMetrics] = useState<EnvironmentalMetrics | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!service?.liveMetricsManager) return;
@@ -385,22 +420,24 @@ export function useEnvironmentalMetrics(
       const metrics = updateEvent.metrics;
 
       setEnvMetrics({
-        avgTemperature: metrics.avgTemperature ?
-          roundToPrecision(metrics.avgTemperature, 'temperature') : undefined,
-        maxTemperature: metrics.maxTemperature ?
-          roundToPrecision(metrics.maxTemperature, 'temperature') : undefined,
-        currentTemperature: service.liveMetricsManager!.getInstantaneousValue('temperature'),
+        avgTemperature: metrics.avgTemperature
+          ? roundToPrecision(metrics.avgTemperature, "temperature")
+          : undefined,
+        maxTemperature: metrics.maxTemperature
+          ? roundToPrecision(metrics.maxTemperature, "temperature")
+          : undefined,
+        currentTemperature: service.liveMetrics.get("temperature"),
       });
     };
 
-    service.liveMetricsManager.on('metricsUpdate', handleUpdate);
+    service.liveMetricsManager.on("metricsUpdate", handleUpdate);
 
     // Initial value
     const initialMetrics = service.liveMetricsManager.getMetrics();
     handleUpdate({ metrics: initialMetrics });
 
     return () => {
-      service.liveMetricsManager?.off('metricsUpdate', handleUpdate);
+      service.liveMetricsManager?.off("metricsUpdate", handleUpdate);
     };
   }, [service]);
 
@@ -434,33 +471,39 @@ export function useMetricsSummary(
       setSummary({
         primary: {
           elapsedTime: metrics.elapsedTime,
-          distance: roundToPrecision(metrics.distance, 'distance'),
-          avgPower: roundToPrecision(metrics.avgPower, 'power'),
-          avgHeartRate: roundToPrecision(metrics.avgHeartRate, 'heartRate'),
+          distance: roundToPrecision(metrics.distance, "distance"),
+          avgPower: roundToPrecision(metrics.avgPower, "power"),
+          avgHeartRate: roundToPrecision(metrics.avgHeartRate, "heartRate"),
         },
         secondary: {
           calories: Math.round(metrics.calories),
-          avgSpeed: roundToPrecision(metrics.avgSpeed, 'speed'),
+          avgSpeed: roundToPrecision(metrics.avgSpeed, "speed"),
           maxPower: metrics.maxPower,
           maxHeartRate: metrics.maxHeartRate,
         },
         analysis: {
           tss: Math.round(metrics.trainingStressScoreEst),
-          intensityFactor: roundToPrecision(metrics.intensityFactorEst, 'intensityFactor'),
+          intensityFactor: roundToPrecision(
+            metrics.intensityFactorEst,
+            "intensityFactor",
+          ),
           normalizedPower: Math.round(metrics.normalizedPowerEst),
-          adherence: roundToPrecision(metrics.adherenceCurrentStep, 'efficiency'),
+          adherence: roundToPrecision(
+            metrics.adherenceCurrentStep,
+            "efficiency",
+          ),
         },
       });
     };
 
-    service.liveMetricsManager.on('metricsUpdate', handleUpdate);
+    service.liveMetricsManager.on("metricsUpdate", handleUpdate);
 
     // Initial value
     const initialMetrics = service.liveMetricsManager.getMetrics();
     handleUpdate({ metrics: initialMetrics });
 
     return () => {
-      service.liveMetricsManager?.off('metricsUpdate', handleUpdate);
+      service.liveMetricsManager?.off("metricsUpdate", handleUpdate);
     };
   }, [service]);
 
@@ -476,7 +519,9 @@ export function useMetricsBatch(
   metricNames: (keyof LiveMetricsState)[],
   throttleMs: number = 1000,
 ): Record<string, number | undefined> {
-  const [metrics, setMetrics] = useState<Record<string, number | undefined>>({});
+  const [metrics, setMetrics] = useState<Record<string, number | undefined>>(
+    {},
+  );
   const lastUpdateRef = useRef<number>(0);
 
   useEffect(() => {
@@ -493,11 +538,16 @@ export function useMetricsBatch(
       const updates: Record<string, number | undefined> = {};
       let hasChanges = false;
 
-      metricNames.forEach(metricName => {
+      metricNames.forEach((metricName) => {
         const newValue = metricsData[metricName] as number | undefined;
-        const precision = RECORDING_CONFIG.PRECISION[metricName as keyof typeof RECORDING_CONFIG.PRECISION] || 0;
-        const roundedValue = newValue !== undefined ?
-          roundToPrecision(newValue, metricName as string) : undefined;
+        const precision =
+          RECORDING_CONFIG.PRECISION[
+            metricName as keyof typeof RECORDING_CONFIG.PRECISION
+          ] || 0;
+        const roundedValue =
+          newValue !== undefined
+            ? roundToPrecision(newValue, metricName as string)
+            : undefined;
 
         if (metrics[metricName] !== roundedValue) {
           updates[metricName] = roundedValue;
@@ -512,14 +562,14 @@ export function useMetricsBatch(
       }
     };
 
-    service.liveMetricsManager.on('metricsUpdate', handleUpdate);
+    service.liveMetricsManager.on("metricsUpdate", handleUpdate);
 
     // Initial values
     const initialMetrics = service.liveMetricsManager.getMetrics();
     handleUpdate({ metrics: initialMetrics });
 
     return () => {
-      service.liveMetricsManager?.off('metricsUpdate', handleUpdate);
+      service.liveMetricsManager?.off("metricsUpdate", handleUpdate);
     };
   }, [service, metricNames, throttleMs]);
 
@@ -563,9 +613,7 @@ export function usePerformanceStats(
 /**
  * Get buffer status for debugging
  */
-export function useBufferStatus(
-  service: ActivityRecorderService | null,
-) {
+export function useBufferStatus(service: ActivityRecorderService | null) {
   const [bufferStatus, setBufferStatus] = useState<any>(null);
 
   useEffect(() => {
@@ -610,24 +658,27 @@ export function useMetric(
       const metrics = updateEvent.metrics;
       const newValue = metrics[metricName as keyof LiveMetricsState];
 
-      if (typeof newValue === 'number') {
-        const precision = RECORDING_CONFIG.PRECISION[metricName as keyof typeof RECORDING_CONFIG.PRECISION] || 0;
+      if (typeof newValue === "number") {
+        const precision =
+          RECORDING_CONFIG.PRECISION[
+            metricName as keyof typeof RECORDING_CONFIG.PRECISION
+          ] || 0;
         setValue(roundToPrecision(newValue, metricName));
       } else {
         // Check instantaneous values
-        const instantValue = service.liveMetricsManager!.getInstantaneousValue(metricName);
+        const instantValue = service.liveMetrics.get(metricName);
         setValue(instantValue);
       }
     };
 
-    service.liveMetricsManager.on('metricsUpdate', handleUpdate);
+    service.liveMetricsManager.on("metricsUpdate", handleUpdate);
 
     // Initial value
     const initialMetrics = service.liveMetricsManager.getMetrics();
     handleUpdate({ metrics: initialMetrics });
 
     return () => {
-      service.liveMetricsManager?.off('metricsUpdate', handleUpdate);
+      service.liveMetricsManager?.off("metricsUpdate", handleUpdate);
     };
   }, [service, metricName]);
 
@@ -636,19 +687,19 @@ export function useMetric(
 
 // Specific metric shortcuts for legacy compatibility
 export const useHeartRate = (service: ActivityRecorderService | null) =>
-  useMetric(service, 'heartrate');
+  useMetric(service, "heartrate");
 
 export const usePower = (service: ActivityRecorderService | null) =>
-  useMetric(service, 'power');
+  useMetric(service, "power");
 
 export const useCadence = (service: ActivityRecorderService | null) =>
-  useMetric(service, 'cadence');
+  useMetric(service, "cadence");
 
 export const useSpeed = (service: ActivityRecorderService | null) =>
-  useMetric(service, 'speed');
+  useMetric(service, "speed");
 
 export const useDistance = (service: ActivityRecorderService | null) =>
-  useMetric(service, 'distance');
+  useMetric(service, "distance");
 
 export const useElapsedTime = (service: ActivityRecorderService | null) =>
-  useMetric(service, 'elapsedTime');
+  useMetric(service, "elapsedTime");

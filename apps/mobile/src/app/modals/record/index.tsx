@@ -112,13 +112,13 @@ export default function RecordModal() {
   const cards = useMemo((): CarouselCard[] => {
     const cardList: CarouselCard[] = ["dashboard"];
 
-    // Add power card when recording or when power data is available
-    if (state === "recording" || state === "paused" || avgPower > 0) {
+    // Add power card when recording or paused
+    if (state === "recording" || state === "paused") {
       cardList.push("power");
     }
 
-    // Add heart rate card when recording or when HR data is available
-    if (state === "recording" || state === "paused" || avgHeartRate > 0) {
+    // Add heart rate card when recording or paused
+    if (state === "recording" || state === "paused") {
       cardList.push("heartrate");
     }
 
