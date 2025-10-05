@@ -107,6 +107,7 @@ export default function RecordModal() {
 
   const [, setCurrentCard] = useState<CarouselCard>("dashboard");
   const carouselRef = useRef<FlatList>(null);
+  const isScrolling = useRef(false);
 
   // Memoize available cards to prevent unnecessary re-renders
   // Cards display reactively based on activity type and plan selection
@@ -137,6 +138,28 @@ export default function RecordModal() {
 
     return cardList;
   }, [activityType, activityPlan]);
+
+  // Create infinite scrolling by tripling the cards array
+  const infiniteCards = useMemo(() => {
+    return [...cards, ...cards, ...cards];
+  }, [cards]);
+
+  // Track current card index for carousel indicators (relative to original cards)
+  const [currentCardIndex, setCurrentCardIndex] = useState(0);
+
+  // Reset carousel to middle set (second copy) whenever cards array changes
+  useEffect(() => {
+    setCurrentCardIndex(0);
+    // Start at the middle set for infinite scrolling
+    const middleIndex = cards.length;
+    setTimeout(() => {
+      carouselRef.current?.scrollToIndex({
+        index: middleIndex,
+        animated: false,
+        viewPosition: 0,
+      });
+    }, 50);
+  }, [cards.length]);
 
   // Back handler
   useEffect(() => {
@@ -181,9 +204,6 @@ export default function RecordModal() {
     }
   }, [planProgress?.state, state, handleFinishRecording]);
 
-  // Track current card index for carousel indicators
-  const [currentCardIndex, setCurrentCardIndex] = useState(0);
-
   // Don't render until service is initialized to prevent errors
   if (!isReady) {
     return (
@@ -218,7 +238,8 @@ export default function RecordModal() {
       <View className="flex-1">
         <FlatList
           ref={carouselRef}
-          data={cards}
+          data={infiniteCards}
+          extraData={infiniteCards.length}
           renderItem={({ item }) => (
             <RecordModalCard
               type={item}
@@ -234,74 +255,83 @@ export default function RecordModal() {
               isAdvancing={isAdvancing}
             />
           )}
-          keyExtractor={(item) => item}
+          keyExtractor={(item, index) => `${item}-${index}`}
           horizontal
           pagingEnabled
           showsHorizontalScrollIndicator={false}
+          snapToInterval={SCREEN_WIDTH}
+          decelerationRate="fast"
+          scrollEventThrottle={16}
           onMomentumScrollEnd={(event) => {
-            const index = Math.round(
-              event.nativeEvent.contentOffset.x / SCREEN_WIDTH,
-            );
-            setCurrentCard(cards[index]);
-            setCurrentCardIndex(index);
+            if (isScrolling.current) return;
+
+            const offsetX = event.nativeEvent.contentOffset.x;
+            const absoluteIndex = Math.round(offsetX / SCREEN_WIDTH);
+
+            // Calculate which set we're in (0=first, 1=middle, 2=last)
+            const setIndex = Math.floor(absoluteIndex / cards.length);
+            const relativeIndex = absoluteIndex % cards.length;
+
+            // Update indicator to show relative position
+            setCurrentCardIndex(relativeIndex);
+            setCurrentCard(cards[relativeIndex]);
+
+            // If we've scrolled to first or last set, snap back to middle set
+            if (setIndex === 0 || setIndex === 2) {
+              isScrolling.current = true;
+              const middleSetIndex = cards.length + relativeIndex;
+
+              setTimeout(() => {
+                carouselRef.current?.scrollToIndex({
+                  index: middleSetIndex,
+                  animated: false,
+                });
+                isScrolling.current = false;
+              }, 10);
+            }
           }}
           onScrollToIndexFailed={(info) => {
-            // Handle scroll failure gracefully
-            console.warn("Scroll to index failed:", info);
+            // Handle scroll failure by scrolling to offset directly
+            const offset = info.index * SCREEN_WIDTH;
+            carouselRef.current?.scrollToOffset({
+              offset,
+              animated: false,
+            });
           }}
+          getItemLayout={(data, index) => ({
+            length: SCREEN_WIDTH,
+            offset: SCREEN_WIDTH * index,
+            index,
+          })}
           style={{ flex: 1 }}
         />
 
         {/* Carousel Navigation */}
         {cards.length > 1 && (
           <View className="pb-4">
-            {/* Card Labels */}
-            <View className="flex-row justify-center mb-3 gap-4">
-              {cards.map((card, index) => (
-                <Pressable
-                  key={card}
-                  onPress={() => {
-                    carouselRef.current?.scrollToIndex({
-                      index,
-                      animated: true,
-                    });
-                  }}
-                  className={`px-3 py-1 rounded-full ${
-                    index === currentCardIndex
-                      ? "bg-primary/10 border border-primary/20"
-                      : "bg-muted/30"
-                  }`}
-                >
-                  <Text
-                    className={`text-xs font-medium ${
-                      index === currentCardIndex
-                        ? "text-primary"
-                        : "text-muted-foreground"
-                    }`}
-                  >
-                    {card === "dashboard"
-                      ? "Dashboard"
-                      : card === "map"
-                        ? "Map"
-                        : card === "plan"
-                          ? "Plan"
-                          : card}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-
             {/* Indicators */}
             <View className="flex-row justify-center gap-2">
               {cards.map((card, index) => (
-                <View
+                <Pressable
                   key={`indicator-${card}`}
-                  className={`w-2 h-2 rounded-full ${
-                    index === currentCardIndex
-                      ? "bg-primary"
-                      : "bg-muted-foreground/30"
-                  }`}
-                />
+                  onPress={() => {
+                    // Scroll to middle set + index for infinite scroll
+                    const middleSetIndex = cards.length + index;
+                    carouselRef.current?.scrollToIndex({
+                      index: middleSetIndex,
+                      animated: true,
+                    });
+                  }}
+                  className="p-1"
+                >
+                  <View
+                    className={`w-2 h-2 rounded-full ${
+                      index === currentCardIndex
+                        ? "bg-primary"
+                        : "bg-muted-foreground/30"
+                    }`}
+                  />
+                </Pressable>
               ))}
             </View>
           </View>
@@ -802,6 +832,7 @@ const RecordModalFooter = ({
   onResume,
   onFinish,
   onNextStep,
+  isAdvancing,
   service,
 }: {
   state: string;
@@ -810,10 +841,15 @@ const RecordModalFooter = ({
   onResume: () => void;
   onFinish: () => void;
   onNextStep?: () => void;
+  isAdvancing?: boolean;
   service: any;
 }) => {
   const planProgress = usePlanProgress(service);
-  const showNextStep = state === "recording" && planProgress && onNextStep;
+  const showNextStep =
+    state === "recording" &&
+    planProgress &&
+    onNextStep &&
+    (planProgress.duration === 0 || planProgress.duration === undefined);
 
   return (
     <View className="bg-background border-t border-border p-6 pb-8">
@@ -839,9 +875,12 @@ const RecordModalFooter = ({
               onPress={onNextStep}
               variant="outline"
               className="w-full h-12 rounded-xl"
+              disabled={isAdvancing}
             >
               <Icon as={ChevronRight} size={20} />
-              <Text className="ml-2 font-medium">Next Step</Text>
+              <Text className="ml-2 font-medium">
+                {isAdvancing ? "Advancing..." : "Next Step"}
+              </Text>
             </Button>
           )}
         </View>

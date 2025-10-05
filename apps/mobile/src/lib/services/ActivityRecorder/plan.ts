@@ -29,6 +29,7 @@ export class PlanManager extends EventEmitter {
   public plannedActivityId: string | undefined;
   private isAdvancing = false;
   private advanceTimeout?: NodeJS.Timeout;
+  private lastUpdateTime?: number;
 
   constructor(
     selectedPlannedActivity: RecordingServiceActivityPlan,
@@ -54,6 +55,26 @@ export class PlanManager extends EventEmitter {
   public clearPlannedActivity() {
     this.flattenedSteps = [];
     this.planProgress = undefined;
+  }
+
+  /**
+   * Start the plan by moving to the first step
+   */
+  public start() {
+    if (!this.planProgress) {
+      console.warn("Cannot start plan: no plan progress");
+      return;
+    }
+
+    if (this.planProgress.state !== "not_started") {
+      console.warn("Plan already started");
+      return;
+    }
+
+    console.log("Starting plan, moving to first step");
+    this.lastUpdateTime = Date.now();
+    this.moveToStep(0);
+    this.emit("planStarted", this.planProgress);
   }
 
   public async advanceStep(): Promise<boolean> {
@@ -117,6 +138,9 @@ export class PlanManager extends EventEmitter {
       elapsedInStep: this.planProgress.elapsedInStep + deltaMs,
     };
 
+    // Emit progress update so UI can track step time
+    this.emit("planProgressUpdate", this.planProgress);
+
     if (
       this.planProgress.duration &&
       this.planProgress.elapsedInStep >= this.planProgress.duration
@@ -129,6 +153,12 @@ export class PlanManager extends EventEmitter {
     const step = this.flattenedSteps[index];
     if (!step || !this.planProgress) return;
 
+    console.log(`Moving to step ${index}:`, {
+      name: step.name,
+      duration: step.duration,
+      targets: step.targets,
+    });
+
     this.planProgress = {
       ...this.planProgress,
       state: "in_progress",
@@ -140,6 +170,12 @@ export class PlanManager extends EventEmitter {
           ? this.getDurationMs(step.duration)
           : undefined,
     };
+
+    // Reset last update time for accurate delta calculation
+    this.lastUpdateTime = Date.now();
+
+    // Emit plan progress update
+    this.emit("planProgressUpdate", this.planProgress);
   }
 
   private flattenSteps(

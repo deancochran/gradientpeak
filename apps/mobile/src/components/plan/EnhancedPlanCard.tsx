@@ -304,30 +304,36 @@ const CurrentStepDisplay = memo<{
     <View className="mb-6">
       <View className="flex-row justify-between items-center mb-3">
         <Text className="text-sm font-medium">Current Step</Text>
-        {onNextStep && planProgress.duration === 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            onPress={onNextStep}
-            disabled={isAdvancing}
-            className="h-8 px-3"
-          >
-            <View className="flex-row items-center gap-1">
-              {isAdvancing ? (
-                <Icon as={Timer} size={14} className="text-muted-foreground" />
-              ) : (
-                <Icon
-                  as={ChevronRight}
-                  size={14}
-                  className="text-muted-foreground"
-                />
-              )}
-              <Text className="text-xs font-medium">
-                {isAdvancing ? "Advancing..." : "Next Step"}
-              </Text>
-            </View>
-          </Button>
-        )}
+        {onNextStep &&
+          (planProgress.duration === 0 ||
+            planProgress.duration === undefined) && (
+            <Button
+              variant="outline"
+              size="sm"
+              onPress={onNextStep}
+              disabled={isAdvancing}
+              className="h-8 px-3"
+            >
+              <View className="flex-row items-center gap-1">
+                {isAdvancing ? (
+                  <Icon
+                    as={Timer}
+                    size={14}
+                    className="text-muted-foreground"
+                  />
+                ) : (
+                  <Icon
+                    as={ChevronRight}
+                    size={14}
+                    className="text-muted-foreground"
+                  />
+                )}
+                <Text className="text-xs font-medium">
+                  {isAdvancing ? "Advancing..." : "Next Step"}
+                </Text>
+              </View>
+            </Button>
+          )}
       </View>
 
       {/* Current Step Details */}

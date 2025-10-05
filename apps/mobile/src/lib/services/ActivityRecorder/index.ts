@@ -301,6 +301,13 @@ export class ActivityRecorderService extends EventEmitter {
     this.notificationsManager = new NotificationsManager(activityName);
     await this.notificationsManager.startForegroundService();
 
+    // Start the plan if one is selected
+    if (this.planManager) {
+      console.log("Starting plan progression");
+      this.planManager.start();
+      this.emitPlanProgressUpdate();
+    }
+
     this.emitStateChange();
     this.notify();
   }
@@ -384,6 +391,31 @@ export class ActivityRecorderService extends EventEmitter {
     plannedId?: string,
   ) {
     this.planManager = new PlanManager(plan, plannedId);
+
+    // Set up event listeners for plan events
+    this.planManager.on("planProgressUpdate", (progress) => {
+      this.emitPlanProgressUpdate();
+      this.notify();
+    });
+
+    this.planManager.on("stepAdvanced", ({ from, to, progress }) => {
+      console.log(`Plan step advanced from ${from} to ${to}`);
+      this.emitPlanProgressUpdate();
+      this.notify();
+    });
+
+    this.planManager.on("planFinished", (progress) => {
+      console.log("Plan finished!");
+      this.emitPlanProgressUpdate();
+      this.notify();
+    });
+
+    this.planManager.on("planStarted", (progress) => {
+      console.log("Plan started!");
+      this.emitPlanProgressUpdate();
+      this.notify();
+    });
+
     this.selectedActivityType = plan.activity_type;
     this.emitActivityTypeChange();
     this.emitPlanProgressUpdate();
@@ -613,6 +645,14 @@ export class ActivityRecorderService extends EventEmitter {
     if (currentElapsed !== elapsedSeconds) {
       this.liveMetrics.set("elapsedTime", elapsedSeconds);
       this.emitMetricUpdate("elapsedTime", elapsedSeconds);
+
+      // Update plan progress if we have an active plan (only when recording, not paused)
+      if (this.planManager && this.state === "recording") {
+        // Pass 1000ms delta since we update every second
+        this.planManager.updatePlanProgress(1000);
+        // Note: planManager emits its own planProgressUpdate event
+      }
+
       // Notify subscribers only when time actually changes
       this.notify();
     }

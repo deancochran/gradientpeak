@@ -461,15 +461,17 @@ export function useActivityPlan(
     // Update plan when service changes
     setPlan(service.planManager?.selectedActivityPlan);
 
-    // Listen to activity type changes (which might indicate plan changes)
+    // Listen to both activity type changes and plan progress updates
     const handler = () => {
       setPlan(service.planManager?.selectedActivityPlan);
     };
 
     service.on("activityTypeChange", handler);
+    service.on("planProgressUpdate", handler);
 
     return () => {
       service.off("activityTypeChange", handler);
+      service.off("planProgressUpdate", handler);
     };
   }, [service]);
 
