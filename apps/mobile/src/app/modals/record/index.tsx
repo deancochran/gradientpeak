@@ -54,6 +54,7 @@ import {
   formatSpeed,
   PublicActivityType,
 } from "@repo/core";
+import { EnhancedPlanCard } from "@/components/plan/EnhancedPlanCard";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 type CarouselCard = "dashboard" | "map" | "plan";
@@ -86,7 +87,7 @@ export default function RecordModal() {
   const { start, pause, resume } = useRecordingActions(
     isReady ? service : null,
   );
-  const { resumePlan } = usePlanActions(isReady ? service : null);
+  const { resumePlan, isAdvancing } = usePlanActions(isReady ? service : null);
 
   // Get individual GPS metrics to avoid object recreation and infinite loops
   const latitude = useMetric(isReady ? service : null, "latitude");
@@ -204,6 +205,8 @@ export default function RecordModal() {
               longitude={longitude}
               altitude={altitude}
               service={service}
+              onNextStep={resumePlan}
+              isAdvancing={isAdvancing}
             />
           )}
           keyExtractor={(item) => item}
@@ -287,9 +290,8 @@ export default function RecordModal() {
         onPause={pause}
         onResume={resume}
         onFinish={handleFinishRecording}
-        onNextStep={async () => {
-          resumePlan();
-        }}
+        onNextStep={resumePlan}
+        isAdvancing={isAdvancing}
         service={service}
       />
     </View>
@@ -389,6 +391,8 @@ const RecordModalCard = memo(
     longitude,
     altitude,
     service,
+    onNextStep,
+    isAdvancing,
   }: {
     type: CarouselCard;
     state: string;
@@ -399,6 +403,8 @@ const RecordModalCard = memo(
     longitude?: number;
     altitude?: number;
     service: any;
+    onNextStep?: () => void;
+    isAdvancing?: boolean;
   }) => {
     switch (type) {
       case "dashboard":
@@ -419,7 +425,14 @@ const RecordModalCard = memo(
         );
       case "plan":
         return (
-          <PlanCard planProgress={planProgress} activityPlan={activityPlan} />
+          <PlanCard
+            planProgress={planProgress}
+            activityPlan={activityPlan}
+            onNextStep={onNextStep}
+            isAdvancing={isAdvancing}
+            state={state}
+            service={service}
+          />
         );
       default:
         return null;
@@ -631,176 +644,29 @@ const PlanCard = memo(
   ({
     planProgress,
     activityPlan,
+    onNextStep,
+    isAdvancing,
+    state,
+    service,
   }: {
     planProgress?: any;
     activityPlan?: any;
+    onNextStep?: () => void;
+    isAdvancing?: boolean;
+    state?: string;
+    service?: any;
   }) => {
-    if (!activityPlan) {
-      return (
-        <View style={{ width: SCREEN_WIDTH }} className="flex-1 p-4">
-          <Card className="flex-1">
-            <CardContent className="flex-1 items-center justify-center">
-              <Text className="text-lg text-muted-foreground">
-                No plan loaded
-              </Text>
-            </CardContent>
-          </Card>
-        </View>
-      );
-    }
-
-    const progressPercentage = planProgress
-      ? Math.round(
-          (planProgress.completedSteps / planProgress.totalSteps) * 100,
-        )
-      : 0;
-
-    const currentStep = planProgress?.currentStepIndex || 0;
-    const totalSteps = planProgress?.totalSteps || 0;
-    const stepElapsed = planProgress?.elapsedInStep || 0;
-    const stepDuration = planProgress?.duration || 0;
-    const stepTargets = planProgress?.targets;
-
     return (
-      <View style={{ width: SCREEN_WIDTH }} className="flex-1 p-4">
-        <Card className="flex-1">
-          <CardContent className="p-4">
-            {/* Plan Header */}
-            <View className="mb-6">
-              <Text className="text-lg font-semibold mb-2">
-                {activityPlan.name}
-              </Text>
-              {activityPlan.description && (
-                <Text className="text-sm text-muted-foreground">
-                  {activityPlan.description}
-                </Text>
-              )}
-            </View>
-
-            {/* Overall Progress */}
-            <View className="mb-6">
-              <View className="flex-row justify-between items-center mb-2">
-                <Text className="text-sm font-medium">Overall Progress</Text>
-                <Text className="text-sm text-muted-foreground">
-                  {progressPercentage}%
-                </Text>
-              </View>
-              <View className="h-2 bg-muted rounded-full overflow-hidden">
-                <View
-                  className="h-full bg-primary rounded-full"
-                  style={{ width: `${progressPercentage}%` }}
-                />
-              </View>
-              <Text className="text-xs text-muted-foreground mt-1">
-                Step {currentStep + 1} of {totalSteps}
-              </Text>
-            </View>
-
-            {/* Current Step */}
-            {planProgress ? (
-              <View className="mb-6">
-                <Text className="text-sm font-medium mb-3">Current Step</Text>
-
-                {/* Step Duration Progress */}
-                {stepDuration > 0 && (
-                  <View className="mb-4">
-                    <View className="flex-row justify-between items-center mb-2">
-                      <Text className="text-xs text-muted-foreground">
-                        Time in Step
-                      </Text>
-                      <Text className="text-xs text-muted-foreground">
-                        {formatDuration(stepElapsed)} /{" "}
-                        {formatDuration(stepDuration)}
-                      </Text>
-                    </View>
-                    <View className="h-1.5 bg-muted rounded-full overflow-hidden">
-                      <View
-                        className="h-full bg-blue-500 rounded-full"
-                        style={{
-                          width: `${Math.min((stepElapsed / stepDuration) * 100, 100)}%`,
-                        }}
-                      />
-                    </View>
-                  </View>
-                )}
-
-                {/* Step Targets */}
-                {stepTargets && (
-                  <View className="gap-2">
-                    <Text className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                      Targets
-                    </Text>
-                    <View className="flex-row flex-wrap gap-3">
-                      {stepTargets.heartRateRange && (
-                        <View className="flex-row items-center gap-1.5">
-                          <Icon as={Heart} size={14} className="text-red-500" />
-                          <Text className="text-sm">
-                            {stepTargets.heartRateRange[0]}-
-                            {stepTargets.heartRateRange[1]} bpm
-                          </Text>
-                        </View>
-                      )}
-                      {stepTargets.powerRange && (
-                        <View className="flex-row items-center gap-1.5">
-                          <Icon
-                            as={Zap}
-                            size={14}
-                            className="text-yellow-500"
-                          />
-                          <Text className="text-sm">
-                            {stepTargets.powerRange[0]}-
-                            {stepTargets.powerRange[1]}W
-                          </Text>
-                        </View>
-                      )}
-                      {stepTargets.cadenceRange && (
-                        <View className="flex-row items-center gap-1.5">
-                          <Icon
-                            as={TrendingUp}
-                            size={14}
-                            className="text-blue-500"
-                          />
-                          <Text className="text-sm">
-                            {stepTargets.cadenceRange[0]}-
-                            {stepTargets.cadenceRange[1]} rpm
-                          </Text>
-                        </View>
-                      )}
-                      {stepTargets.speedRange && (
-                        <View className="flex-row items-center gap-1.5">
-                          <Icon
-                            as={Activity}
-                            size={14}
-                            className="text-green-500"
-                          />
-                          <Text className="text-sm">
-                            {formatSpeed(stepTargets.speedRange[0])} -{" "}
-                            {formatSpeed(stepTargets.speedRange[1])}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                  </View>
-                )}
-              </View>
-            ) : (
-              <View className="flex-1 items-center justify-center">
-                <Icon
-                  as={Activity}
-                  size={48}
-                  className="text-muted-foreground/50 mb-4"
-                />
-                <Text className="text-center text-muted-foreground mb-2">
-                  Ready to start workout
-                </Text>
-                <Text className="text-center text-sm text-muted-foreground">
-                  Press Start Activity to begin your plan
-                </Text>
-              </View>
-            )}
-          </CardContent>
-        </Card>
-      </View>
+      <EnhancedPlanCard
+        planProgress={planProgress}
+        activityPlan={activityPlan}
+        state={state}
+        onNextStep={onNextStep}
+        isAdvancing={isAdvancing}
+        service={service}
+        style={{ width: SCREEN_WIDTH }}
+        className="flex-1 p-4"
+      />
     );
   },
 );

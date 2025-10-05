@@ -617,6 +617,11 @@ export class ActivityRecorderService extends EventEmitter {
       await this.notificationsManager.stopForegroundService();
     }
 
+    // Cleanup plan manager
+    if (this.planManager) {
+      this.planManager.cleanup();
+    }
+
     // Clear all event listeners
     this.removeAllListeners();
 

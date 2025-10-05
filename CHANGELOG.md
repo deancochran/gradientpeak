@@ -1,5 +1,40 @@
 ## [Unreleased]
 
+### Enhanced Plan Card Implementation
+- **Comprehensive Workout Visualization**: Complete redesign of plan card with rich visual workout experience
+  - **Workout Graph**: Visual intensity profile showing power/HR targets across entire session with color-coded zones
+  - **Target Guidance System**: Real-time comparison of current vs target metrics with visual indicators and guidance text
+  - **Dual Mode Experience**: Preview mode for workout overview, active mode for real-time guidance during recording
+  - **Progress Tracking**: Both big-picture workout progress and fine-grained step progress with visual indicators
+  - **Interactive Elements**: Step navigation, target zone visualization, and upcoming intervals preview
+
+- **Fixed Next Step Navigation Issue**: Resolved button accumulation bug with proper debouncing
+  - **Root Cause**: Multiple rapid clicks queued advancement calls without state management
+  - **Solution**: Enhanced PlanManager with debouncing, advancement state tracking, and event-driven updates
+  - **Improvements**: 500ms cooldown, visual feedback during advancement, prevent concurrent operations
+  - **Event System**: Proper EventEmitter integration for UI state synchronization
+
+- **Rich ActivityPlanStructure Integration**: Leveraged Zod schema for comprehensive workout data extraction
+  - **Workout Statistics**: Total duration, interval count, average power, estimated TSS and calories
+  - **Visual Profile Generation**: Extract intensity data points for workout graph visualization
+  - **Target Analysis**: Parse intensity targets (%FTP, %MaxHR, watts) for real-time guidance
+  - **Smart Formatting**: Context-aware display of targets, durations, and metric values
+
+- **New Components Architecture**:
+  - **EnhancedPlanCard**: Main orchestration component with mode switching and state management
+  - **WorkoutGraph**: Interactive intensity profile with proportional step widths and zone colors
+  - **WorkoutMetricsGrid**: Key workout statistics extracted from plan structure
+  - **TargetMetricsGrid**: Real-time target vs current with adherence tracking and zone indicators
+  - **ProgressTrackingDisplay**: Comprehensive progress visualization (overall + step-level)
+  - **StepBreakdown & UpcomingStepsPreview**: Detailed step information and lookahead functionality
+
+- **Performance & UX Enhancements**:
+  - **Memoized Components**: All components optimized with React.memo and proper display names
+  - **Event-Driven Updates**: Selective re-renders based on specific metric changes
+  - **Intelligent Mode Switching**: Auto-transition from preview to active mode when recording starts
+  - **Visual Feedback**: Loading states, color-coded adherence, progress animations
+  - **Comprehensive Error Handling**: Graceful fallbacks for missing data or service failures
+
 ### Service Instance Management Implementation
 - **Fresh Service Instance Lifecycle**: Implemented clean service lifecycle management for activity recording sessions
   - **Eliminated Complex State Reset**: Replaced `resetForNewActivity()` method with fresh service instance creation

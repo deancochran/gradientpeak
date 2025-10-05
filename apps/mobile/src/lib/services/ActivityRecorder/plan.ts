@@ -5,6 +5,7 @@ import {
   Step,
   StepOrRepetition,
 } from "@repo/core";
+import { EventEmitter } from "events";
 
 export interface FlattenedStep extends Step {
   index: number;
@@ -21,16 +22,19 @@ export interface PlannedActivityProgress {
   targets?: Step["targets"];
 }
 
-export class PlanManager {
+export class PlanManager extends EventEmitter {
   private flattenedSteps: FlattenedStep[] = [];
   public planProgress?: PlannedActivityProgress;
   public selectedActivityPlan: RecordingServiceActivityPlan;
   public plannedActivityId: string | undefined;
+  private isAdvancing = false;
+  private advanceTimeout?: NodeJS.Timeout;
 
   constructor(
     selectedPlannedActivity: RecordingServiceActivityPlan,
     plannedActivityId: string | undefined,
   ) {
+    super();
     this.selectedActivityPlan = selectedPlannedActivity;
     this.flattenedSteps = this.flattenSteps(
       (selectedPlannedActivity.structure as ActivityPlanStructure).steps,
@@ -52,25 +56,53 @@ export class PlanManager {
     this.planProgress = undefined;
   }
 
-  public advanceStep() {
-    if (!this.planProgress) return;
-
-    this.planProgress = {
-      ...this.planProgress,
-      completedSteps: this.planProgress.completedSteps + 1,
-      currentStepIndex: this.planProgress.currentStepIndex + 1,
-    };
-
-    const nextStep = this.flattenedSteps[this.planProgress.currentStepIndex];
-    if (!nextStep) {
-      this.planProgress = {
-        ...this.planProgress,
-        state: "finished",
-      };
-      return;
+  public async advanceStep(): Promise<boolean> {
+    if (this.isAdvancing || !this.planProgress) {
+      console.log("Step advancement already in progress or no plan progress");
+      return false;
     }
 
-    this.moveToStep(this.planProgress.currentStepIndex);
+    this.isAdvancing = true;
+
+    try {
+      // Clear any pending advance operations
+      if (this.advanceTimeout) {
+        clearTimeout(this.advanceTimeout);
+      }
+
+      const oldIndex = this.planProgress.currentStepIndex;
+
+      this.planProgress = {
+        ...this.planProgress,
+        completedSteps: this.planProgress.completedSteps + 1,
+        currentStepIndex: this.planProgress.currentStepIndex + 1,
+      };
+
+      const nextStep = this.flattenedSteps[this.planProgress.currentStepIndex];
+      if (!nextStep) {
+        this.planProgress = { ...this.planProgress, state: "finished" };
+        this.emit("planFinished", this.planProgress);
+        return true;
+      }
+
+      this.moveToStep(this.planProgress.currentStepIndex);
+      this.emit("stepAdvanced", {
+        from: oldIndex,
+        to: this.planProgress.currentStepIndex,
+        progress: this.planProgress,
+      });
+
+      return true;
+    } finally {
+      // Reset advancing state after a delay to prevent rapid clicking
+      this.advanceTimeout = setTimeout(() => {
+        this.isAdvancing = false;
+      }, 500);
+    }
+  }
+
+  public isCurrentlyAdvancing(): boolean {
+    return this.isAdvancing;
   }
 
   public updatePlanProgress(deltaMs: number) {
@@ -150,5 +182,12 @@ export class PlanManager {
 
   public getProgress(): PlannedActivityProgress | undefined {
     return this.planProgress;
+  }
+
+  public cleanup() {
+    if (this.advanceTimeout) {
+      clearTimeout(this.advanceTimeout);
+    }
+    this.removeAllListeners();
   }
 }

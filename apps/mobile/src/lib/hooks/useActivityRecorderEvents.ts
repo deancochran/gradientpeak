@@ -546,16 +546,43 @@ export function usePermissionActions(service: ActivityRecorderService | null) {
  * Get plan management actions
  */
 export function usePlanActions(service: ActivityRecorderService | null) {
+  const [isAdvancing, setIsAdvancing] = useState(false);
+
+  const resumePlan = useCallback(async () => {
+    if (!service?.planManager || isAdvancing) {
+      console.log("Cannot advance step: no service or already advancing");
+      return false;
+    }
+
+    setIsAdvancing(true);
+    try {
+      const success = await service.planManager.advanceStep();
+      if (!success) {
+        console.warn("Failed to advance step");
+      }
+      return success;
+    } catch (error) {
+      console.error("Error advancing step:", error);
+      return false;
+    } finally {
+      // Add delay to prevent rapid clicking
+      setTimeout(() => setIsAdvancing(false), 500);
+    }
+  }, [service, isAdvancing]);
+
+  const resetPlan = useCallback(() => {
+    service?.planManager?.reset?.();
+  }, [service]);
+
+  const skipStep = useCallback(() => {
+    service?.planManager?.skipCurrentStep?.();
+  }, [service]);
+
   return {
-    resumePlan: useCallback(
-      () => service?.planManager?.advanceStep(),
-      [service],
-    ),
-    resetPlan: useCallback(() => service?.planManager?.reset(), [service]),
-    skipStep: useCallback(
-      () => service?.planManager?.skipCurrentStep(),
-      [service],
-    ),
+    resumePlan,
+    resetPlan,
+    skipStep,
+    isAdvancing,
   };
 }
 
