@@ -9,14 +9,12 @@ import {
   Target,
   Activity,
   Timer,
-  CheckCircle,
 } from "lucide-react-native";
 import {
   useAnalysisMetrics,
   useDistanceMetrics,
 } from "@/lib/hooks/useLiveMetrics";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import { useRecordingState } from "@/lib/hooks/useActivityRecorderEvents";
 import { formatDuration } from "@repo/core";
 
 interface AnalysisCardProps {
@@ -30,110 +28,22 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({
 }) => {
   const analysisMetrics = useAnalysisMetrics(service);
   const distanceMetrics = useDistanceMetrics(service);
-  const recordingState = useRecordingState(service);
-  const isPrepared = recordingState === "pending" || recordingState === "ready";
 
-  // Show prepared state before recording starts
-  if (isPrepared) {
-    return (
-      <View style={{ width: screenWidth }} className="flex-1 p-4">
-        <Card className="flex-1">
-          <CardContent className="p-6">
-            {/* Header */}
-            <View className="flex-row items-center justify-between mb-6">
-              <View className="flex-row items-center">
-                <Icon as={BarChart3} size={24} className="text-blue-500 mr-2" />
-                <Text className="text-lg font-semibold">Analysis</Text>
-              </View>
-              <View className="flex-row items-center">
-                <Icon
-                  as={CheckCircle}
-                  size={16}
-                  className="text-green-500 mr-1"
-                />
-                <Text className="text-xs text-muted-foreground">READY</Text>
-              </View>
-            </View>
-
-            {/* TSS - Large Display with Placeholder */}
-            <View className="items-center mb-8">
-              <Text className="text-4xl font-bold text-muted-foreground/30">
-                ---
-              </Text>
-              <Text className="text-sm text-muted-foreground">
-                Training Stress Score
-              </Text>
-              <Text className="text-xs text-muted-foreground mt-2">
-                Waiting to start
-              </Text>
-            </View>
-
-            {/* Placeholder Metrics */}
-            <View className="gap-3 mb-6">
-              <View className="flex-row gap-3">
-                <View className="flex-1 p-3 bg-muted/10 rounded-lg">
-                  <Text className="text-xs text-muted-foreground mb-1">
-                    Intensity Factor
-                  </Text>
-                  <Text className="text-xl font-semibold text-muted-foreground/30">
-                    --
-                  </Text>
-                </View>
-                <View className="flex-1 p-3 bg-muted/10 rounded-lg">
-                  <Text className="text-xs text-muted-foreground mb-1">
-                    Variability Index
-                  </Text>
-                  <Text className="text-xl font-semibold text-muted-foreground/30">
-                    --
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Ready State Message */}
-            <View className="p-4 bg-muted/10 rounded-lg items-center">
-              <Icon
-                as={BarChart3}
-                size={32}
-                className="text-blue-500/50 mb-2"
-              />
-              <Text className="text-sm font-medium text-center mb-1">
-                Analysis Engine Ready
-              </Text>
-              <Text className="text-xs text-muted-foreground text-center">
-                Advanced metrics will be calculated once you start recording
-              </Text>
-            </View>
-          </CardContent>
-        </Card>
-      </View>
-    );
-  }
-
-  if (!analysisMetrics) {
-    return (
-      <View style={{ width: screenWidth }} className="flex-1 p-4">
-        <Card className="flex-1">
-          <CardContent className="p-6 flex-1 items-center justify-center">
-            <Icon
-              as={BarChart3}
-              size={48}
-              className="text-muted-foreground/20 mb-4"
-            />
-            <Text className="text-muted-foreground text-center">
-              Building analysis...
-            </Text>
-            <Text className="text-sm text-muted-foreground/70 text-center mt-2">
-              Need more data to calculate advanced metrics
-            </Text>
-          </CardContent>
-        </Card>
-      </View>
-    );
-  }
-
-  const hasPowerData = analysisMetrics.normalizedPower > 0;
-  const hasValidTSS = analysisMetrics.tss > 0;
+  // Default to zero values when no metrics available
+  const hasPowerData = analysisMetrics
+    ? analysisMetrics.normalizedPower > 0
+    : false;
+  const hasValidTSS = analysisMetrics ? analysisMetrics.tss > 0 : false;
+  const tss = analysisMetrics ? Math.round(analysisMetrics.tss) : 0;
+  const intensityFactor = analysisMetrics ? analysisMetrics.intensityFactor : 0;
+  const variabilityIndex = analysisMetrics
+    ? analysisMetrics.variabilityIndex
+    : 0;
+  const efficiencyFactor = analysisMetrics
+    ? analysisMetrics.efficiencyFactor
+    : 0;
+  const adherence = analysisMetrics ? analysisMetrics.adherence : 0;
+  const decoupling = analysisMetrics ? analysisMetrics.decoupling : 0;
 
   return (
     <View style={{ width: screenWidth }} className="flex-1 p-4">
@@ -153,36 +63,40 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({
 
           {/* TSS - Large Display */}
           <View className="items-center mb-8">
-            <Text className="text-4xl font-bold text-blue-500">
-              {hasValidTSS ? Math.round(analysisMetrics.tss).toString() : "---"}
+            <Text
+              className={`text-4xl font-bold ${hasValidTSS ? "text-blue-500" : "text-blue-500/30"}`}
+            >
+              {tss}
             </Text>
             <Text className="text-sm text-muted-foreground">
               Training Stress Score
             </Text>
-            {hasValidTSS && (
-              <View className="flex-row items-center mt-2">
-                <View
-                  className={`w-2 h-2 rounded-full mr-2 ${
-                    analysisMetrics.tss < 50
+            <View className="flex-row items-center mt-2">
+              <View
+                className={`w-2 h-2 rounded-full mr-2 ${
+                  hasValidTSS
+                    ? tss < 50
                       ? "bg-green-500"
-                      : analysisMetrics.tss < 100
+                      : tss < 100
                         ? "bg-yellow-500"
-                        : analysisMetrics.tss < 150
+                        : tss < 150
                           ? "bg-orange-500"
                           : "bg-red-500"
-                  }`}
-                />
-                <Text className="text-xs text-muted-foreground">
-                  {analysisMetrics.tss < 50
+                    : "bg-gray-500/30"
+                }`}
+              />
+              <Text className="text-xs text-muted-foreground">
+                {hasValidTSS
+                  ? tss < 50
                     ? "Light"
-                    : analysisMetrics.tss < 100
+                    : tss < 100
                       ? "Moderate"
-                      : analysisMetrics.tss < 150
+                      : tss < 150
                         ? "Hard"
-                        : "Very Hard"}
-                </Text>
-              </View>
-            )}
+                        : "Very Hard"
+                  : "No data"}
+              </Text>
+            </View>
           </View>
 
           {/* Power Analysis Section */}
@@ -198,24 +112,29 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({
                     <Text className="text-xs text-muted-foreground mb-1">
                       Intensity Factor
                     </Text>
-                    <Text className="text-xl font-semibold">
-                      {analysisMetrics.intensityFactor.toFixed(2)}
+                    <Text
+                      className={`text-xl font-semibold ${hasPowerData ? "" : "text-muted-foreground/30"}`}
+                    >
+                      {intensityFactor.toFixed(2)}
                     </Text>
                     <View className="flex-row items-center mt-1">
                       <View
                         className={`w-1.5 h-1.5 rounded-full mr-1 ${
-                          analysisMetrics.intensityFactor < 0.6
-                            ? "bg-green-500"
-                            : analysisMetrics.intensityFactor < 0.8
-                              ? "bg-yellow-500"
-                              : analysisMetrics.intensityFactor < 1.0
-                                ? "bg-orange-500"
-                                : "bg-red-500"
+                          hasPowerData
+                            ? intensityFactor < 0.6
+                              ? "bg-green-500"
+                              : intensityFactor < 0.8
+                                ? "bg-yellow-500"
+                                : intensityFactor < 1.0
+                                  ? "bg-orange-500"
+                                  : "bg-red-500"
+                            : "bg-gray-500/30"
                         }`}
                       />
-                      <Text className="text-xs text-muted-foreground">
-                        {(analysisMetrics.intensityFactor * 100).toFixed(0)}%
-                        FTP
+                      <Text
+                        className={`text-xs ${hasPowerData ? "text-muted-foreground" : "text-muted-foreground/30"}`}
+                      >
+                        {(intensityFactor * 100).toFixed(0)}% FTP
                       </Text>
                     </View>
                   </View>
@@ -224,15 +143,21 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({
                     <Text className="text-xs text-muted-foreground mb-1">
                       Variability
                     </Text>
-                    <Text className="text-xl font-semibold">
-                      {analysisMetrics.variabilityIndex.toFixed(2)}
+                    <Text
+                      className={`text-xl font-semibold ${hasPowerData ? "" : "text-muted-foreground/30"}`}
+                    >
+                      {variabilityIndex.toFixed(2)}
                     </Text>
-                    <Text className="text-xs text-muted-foreground mt-1">
-                      {analysisMetrics.variabilityIndex < 1.05
-                        ? "Steady"
-                        : analysisMetrics.variabilityIndex < 1.15
-                          ? "Variable"
-                          : "Highly Variable"}
+                    <Text
+                      className={`text-xs mt-1 ${hasPowerData ? "text-muted-foreground" : "text-muted-foreground/30"}`}
+                    >
+                      {hasPowerData
+                        ? variabilityIndex < 1.05
+                          ? "Steady"
+                          : variabilityIndex < 1.15
+                            ? "Variable"
+                            : "Highly Variable"
+                        : "No data"}
                     </Text>
                   </View>
                 </View>
@@ -244,10 +169,14 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({
                       <Text className="text-xs text-muted-foreground mb-1">
                         Efficiency Factor
                       </Text>
-                      <Text className="text-xl font-semibold">
-                        {analysisMetrics.efficiencyFactor.toFixed(1)}
+                      <Text
+                        className={`text-xl font-semibold ${hasPowerData ? "" : "text-muted-foreground/30"}`}
+                      >
+                        {efficiencyFactor.toFixed(1)}
                       </Text>
-                      <Text className="text-xs text-muted-foreground">
+                      <Text
+                        className={`text-xs ${hasPowerData ? "text-muted-foreground" : "text-muted-foreground/30"}`}
+                      >
                         watts/bpm
                       </Text>
                     </View>
@@ -307,7 +236,7 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({
             </View>
 
             {/* Plan Adherence */}
-            {analysisMetrics.adherence > 0 && (
+            {adherence > 0 && (
               <View className="p-4 bg-green-500/10 rounded-lg">
                 <View className="flex-row items-center justify-between mb-3">
                   <View className="flex-row items-center">
@@ -325,7 +254,7 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({
 
                 <View className="flex-row items-center justify-between">
                   <Text className="text-3xl font-bold text-green-500">
-                    {Math.round(analysisMetrics.adherence * 100)}%
+                    {Math.round(adherence * 100)}%
                   </Text>
 
                   {/* Progress bar */}
@@ -334,7 +263,7 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({
                       <View
                         className="h-full bg-green-500 rounded-full"
                         style={{
-                          width: `${Math.min(100, analysisMetrics.adherence * 100)}%`,
+                          width: `${Math.min(100, adherence * 100)}%`,
                         }}
                       />
                     </View>
@@ -342,11 +271,11 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({
                 </View>
 
                 <Text className="text-xs text-muted-foreground mt-2">
-                  {analysisMetrics.adherence >= 0.9
+                  {adherence >= 0.9
                     ? "Excellent adherence"
-                    : analysisMetrics.adherence >= 0.8
+                    : adherence >= 0.8
                       ? "Good adherence"
-                      : analysisMetrics.adherence >= 0.7
+                      : adherence >= 0.7
                         ? "Fair adherence"
                         : "Work on staying in target"}
                 </Text>
@@ -354,7 +283,7 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({
             )}
 
             {/* Decoupling (if available) */}
-            {analysisMetrics.decoupling > 0 && (
+            {decoupling > 0 && (
               <View className="p-3 bg-orange-500/10 rounded-lg">
                 <View className="flex-row items-center justify-between">
                   <View>
@@ -362,13 +291,13 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({
                       Decoupling
                     </Text>
                     <Text className="text-xl font-semibold text-orange-600">
-                      {analysisMetrics.decoupling.toFixed(1)}%
+                      {decoupling.toFixed(1)}%
                     </Text>
                   </View>
                   <Text className="text-xs text-muted-foreground">
-                    {analysisMetrics.decoupling < 5
+                    {decoupling < 5
                       ? "Excellent"
-                      : analysisMetrics.decoupling < 10
+                      : decoupling < 10
                         ? "Good"
                         : "High drift"}
                   </Text>

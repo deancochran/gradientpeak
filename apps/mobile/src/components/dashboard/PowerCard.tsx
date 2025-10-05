@@ -3,10 +3,9 @@ import { View } from "react-native";
 import { Card, CardContent } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
 import { Icon } from "@/components/ui/icon";
-import { Zap, Target, CheckCircle } from "lucide-react-native";
+import { Zap, Target } from "lucide-react-native";
 import { usePowerMetrics } from "@/lib/hooks/useLiveMetrics";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import { useRecordingState } from "@/lib/hooks/useActivityRecorderEvents";
 
 interface PowerCardProps {
   service: ActivityRecorderService | null;
@@ -18,104 +17,25 @@ export const PowerCard: React.FC<PowerCardProps> = ({
   screenWidth,
 }) => {
   const powerMetrics = usePowerMetrics(service);
-  const recordingState = useRecordingState(service);
-  const isPrepared = recordingState === "pending" || recordingState === "ready";
 
-  // Show prepared state before recording starts
-  if (isPrepared) {
-    return (
-      <View style={{ width: screenWidth }} className="flex-1 p-4">
-        <Card className="flex-1">
-          <CardContent className="p-6">
-            {/* Header */}
-            <View className="flex-row items-center justify-between mb-6">
-              <View className="flex-row items-center">
-                <Icon as={Zap} size={24} className="text-yellow-500 mr-2" />
-                <Text className="text-lg font-semibold">Power</Text>
-              </View>
-              <View className="flex-row items-center">
-                <Icon
-                  as={CheckCircle}
-                  size={16}
-                  className="text-green-500 mr-1"
-                />
-                <Text className="text-xs text-muted-foreground">READY</Text>
-              </View>
-            </View>
-
-            {/* Current Power - Large Display with Placeholder */}
-            <View className="items-center mb-8">
-              <Text className="text-5xl font-bold text-muted-foreground/30">
-                ---
-              </Text>
-              <Text className="text-sm text-muted-foreground">watts</Text>
-              <Text className="text-xs text-muted-foreground mt-2">
-                Waiting to start
-              </Text>
-            </View>
-
-            {/* Power Metrics Grid - Placeholders */}
-            <View className="flex-row justify-around mb-6">
-              <View className="items-center">
-                <Text className="text-2xl font-semibold text-muted-foreground/30">
-                  --
-                </Text>
-                <Text className="text-xs text-muted-foreground">Avg</Text>
-              </View>
-              <View className="items-center">
-                <Text className="text-2xl font-semibold text-muted-foreground/30">
-                  --
-                </Text>
-                <Text className="text-xs text-muted-foreground">Max</Text>
-              </View>
-              <View className="items-center">
-                <Text className="text-2xl font-semibold text-muted-foreground/30">
-                  --
-                </Text>
-                <Text className="text-xs text-muted-foreground">NP</Text>
-              </View>
-            </View>
-
-            {/* Ready State Message */}
-            <View className="p-4 bg-muted/10 rounded-lg items-center">
-              <Icon as={Zap} size={32} className="text-yellow-500/50 mb-2" />
-              <Text className="text-sm font-medium text-center mb-1">
-                Power Metrics Ready
-              </Text>
-              <Text className="text-xs text-muted-foreground text-center">
-                Connect a power meter or start recording to see live data
-              </Text>
-            </View>
-          </CardContent>
-        </Card>
-      </View>
-    );
-  }
-
-  if (!powerMetrics) {
-    return (
-      <View style={{ width: screenWidth }} className="flex-1 p-4">
-        <Card className="flex-1">
-          <CardContent className="p-6 flex-1 items-center justify-center">
-            <Icon
-              as={Zap}
-              size={48}
-              className="text-muted-foreground/20 mb-4"
-            />
-            <Text className="text-muted-foreground text-center">
-              No power data available
-            </Text>
-            <Text className="text-sm text-muted-foreground/70 text-center mt-2">
-              Connect a power meter to see live metrics
-            </Text>
-          </CardContent>
-        </Card>
-      </View>
-    );
-  }
-
-  const hasCurrentPower = powerMetrics.current !== undefined;
-  const totalWorkKJ = Math.round(powerMetrics.totalWork / 1000);
+  // Default to zero values when no metrics available
+  const hasCurrentPower = powerMetrics?.current !== undefined;
+  const current = hasCurrentPower ? Math.round(powerMetrics!.current!) : 0;
+  const avg = powerMetrics ? Math.round(powerMetrics.avg) : 0;
+  const max = powerMetrics ? Math.round(powerMetrics.max) : 0;
+  const normalized = powerMetrics ? Math.round(powerMetrics.normalized) : 0;
+  const totalWorkKJ = powerMetrics
+    ? Math.round(powerMetrics.totalWork / 1000)
+    : 0;
+  const zones = powerMetrics?.zones || {
+    z1: 0,
+    z2: 0,
+    z3: 0,
+    z4: 0,
+    z5: 0,
+    z6: 0,
+    z7: 0,
+  };
 
   return (
     <View style={{ width: screenWidth }} className="flex-1 p-4">
@@ -137,10 +57,10 @@ export const PowerCard: React.FC<PowerCardProps> = ({
 
           {/* Current Power - Large Display */}
           <View className="items-center mb-8">
-            <Text className="text-5xl font-bold text-yellow-500">
-              {hasCurrentPower
-                ? Math.round(powerMetrics.current!).toString()
-                : "---"}
+            <Text
+              className={`text-5xl font-bold ${hasCurrentPower ? "text-yellow-500" : "text-yellow-500/30"}`}
+            >
+              {current}
             </Text>
             <Text className="text-sm text-muted-foreground">watts</Text>
           </View>
@@ -148,20 +68,26 @@ export const PowerCard: React.FC<PowerCardProps> = ({
           {/* Power Metrics Grid */}
           <View className="flex-row justify-around mb-6">
             <View className="items-center">
-              <Text className="text-2xl font-semibold">
-                {Math.round(powerMetrics.avg)}
+              <Text
+                className={`text-2xl font-semibold ${avg > 0 ? "" : "text-muted-foreground/30"}`}
+              >
+                {avg}
               </Text>
               <Text className="text-xs text-muted-foreground">Avg</Text>
             </View>
             <View className="items-center">
-              <Text className="text-2xl font-semibold">
-                {Math.round(powerMetrics.max)}
+              <Text
+                className={`text-2xl font-semibold ${max > 0 ? "" : "text-muted-foreground/30"}`}
+              >
+                {max}
               </Text>
               <Text className="text-xs text-muted-foreground">Max</Text>
             </View>
             <View className="items-center">
-              <Text className="text-2xl font-semibold text-orange-500">
-                {Math.round(powerMetrics.normalized)}
+              <Text
+                className={`text-2xl font-semibold ${normalized > 0 ? "text-orange-500" : "text-orange-500/30"}`}
+              >
+                {normalized}
               </Text>
               <Text className="text-xs text-muted-foreground">NP</Text>
             </View>
@@ -180,39 +106,50 @@ export const PowerCard: React.FC<PowerCardProps> = ({
                 Zone Distribution
               </Text>
               <View className="flex-row gap-2">
-                {Object.entries(powerMetrics.zones).map(
-                  ([zone, timeSeconds], index) => {
-                    const minutes = Math.floor(timeSeconds / 60);
-                    const zoneColors = [
-                      "bg-gray-400", // Z1
-                      "bg-blue-400", // Z2
-                      "bg-green-400", // Z3
-                      "bg-yellow-400", // Z4
-                      "bg-orange-400", // Z5
-                      "bg-red-400", // Z6
-                      "bg-purple-400", // Z7
-                    ];
+                {Object.entries(zones).map(([zone, timeSeconds], index) => {
+                  const minutes = Math.floor(timeSeconds / 60);
+                  const zoneColors = [
+                    "bg-gray-400", // Z1
+                    "bg-blue-400", // Z2
+                    "bg-green-400", // Z3
+                    "bg-yellow-400", // Z4
+                    "bg-orange-400", // Z5
+                    "bg-red-400", // Z6
+                    "bg-purple-400", // Z7
+                  ];
+                  const zoneColorsInactive = [
+                    "bg-gray-400/20",
+                    "bg-blue-400/20",
+                    "bg-green-400/20",
+                    "bg-yellow-400/20",
+                    "bg-orange-400/20",
+                    "bg-red-400/20",
+                    "bg-purple-400/20",
+                  ];
 
-                    return (
-                      <View key={zone} className="flex-1 items-center">
-                        <View
-                          className={`w-full h-3 rounded mb-1 ${zoneColors[index]}`}
-                        />
-                        <Text className="text-xs font-medium">
-                          Z{index + 1}
-                        </Text>
-                        <Text className="text-xs text-muted-foreground">
-                          {minutes}&apos;
-                        </Text>
-                      </View>
-                    );
-                  },
-                )}
+                  return (
+                    <View key={zone} className="flex-1 items-center">
+                      <View
+                        className={`w-full h-3 rounded mb-1 ${timeSeconds > 0 ? zoneColors[index] : zoneColorsInactive[index]}`}
+                      />
+                      <Text
+                        className={`text-xs font-medium ${timeSeconds > 0 ? "" : "text-muted-foreground/50"}`}
+                      >
+                        Z{index + 1}
+                      </Text>
+                      <Text
+                        className={`text-xs ${timeSeconds > 0 ? "text-muted-foreground" : "text-muted-foreground/30"}`}
+                      >
+                        {minutes}&apos;
+                      </Text>
+                    </View>
+                  );
+                })}
               </View>
             </View>
 
             {/* Additional Metrics */}
-            {powerMetrics.normalized > 0 && (
+            {normalized > 0 && (
               <View className="flex-row justify-between items-center p-3 bg-orange-500/10 rounded-lg">
                 <View className="flex-row items-center">
                   <Icon
@@ -223,7 +160,7 @@ export const PowerCard: React.FC<PowerCardProps> = ({
                   <Text className="text-sm font-medium">Normalized Power</Text>
                 </View>
                 <Text className="font-semibold text-orange-600">
-                  {Math.round(powerMetrics.normalized)}W
+                  {normalized}W
                 </Text>
               </View>
             )}

@@ -346,7 +346,7 @@ const cards = useMemo((): CarouselCard[] => {
 
 ---
 
-## Prepared State Behavior
+## Unified State Behavior (Prepared State Removed)
 
 ### Purpose
 Before recording starts, all cards show a "prepared state" that:
@@ -479,6 +479,21 @@ Prepared  Ready    Active     Paused    Active    Complete
 ---
 
 ## Implementation Notes
+
+### State Management Simplification
+
+**Removed Prepared State Logic:**
+- Eliminated separate `isPrepared` checks in all card components
+- Cards no longer conditionally render different layouts based on recording state
+- Single, unified render path for all states (pending, recording, paused)
+- Placeholder values (0 or n/a) automatically shown when metrics are undefined
+- Visual differentiation achieved through opacity and color variants
+
+**Benefits:**
+- Reduced code complexity and maintenance burden
+- Faster rendering (no conditional branching)
+- Consistent user experience across all states
+- Easier to reason about component behavior
 
 ### Performance Optimizations
 - `useMemo` for card list to prevent unnecessary re-renders

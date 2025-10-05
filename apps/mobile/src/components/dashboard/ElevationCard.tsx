@@ -9,14 +9,12 @@ import {
   TrendingDown,
   Activity,
   Navigation,
-  CheckCircle,
 } from "lucide-react-native";
 import {
   useElevationMetrics,
   useDistanceMetrics,
 } from "@/lib/hooks/useLiveMetrics";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import { useRecordingState } from "@/lib/hooks/useActivityRecorderEvents";
 
 interface ElevationCardProps {
   service: ActivityRecorderService | null;
@@ -29,120 +27,20 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
 }) => {
   const elevationMetrics = useElevationMetrics(service);
   const distanceMetrics = useDistanceMetrics(service);
-  const recordingState = useRecordingState(service);
-  const isPrepared = recordingState === "pending" || recordingState === "ready";
 
-  // Show prepared state before recording starts
-  if (isPrepared) {
-    return (
-      <View style={{ width: screenWidth }} className="flex-1 p-4">
-        <Card className="flex-1">
-          <CardContent className="p-6">
-            {/* Header */}
-            <View className="flex-row items-center justify-between mb-6">
-              <View className="flex-row items-center">
-                <Icon as={Mountain} size={24} className="text-green-600 mr-2" />
-                <Text className="text-lg font-semibold">Elevation</Text>
-              </View>
-              <View className="flex-row items-center">
-                <Icon
-                  as={CheckCircle}
-                  size={16}
-                  className="text-green-500 mr-1"
-                />
-                <Text className="text-xs text-muted-foreground">READY</Text>
-              </View>
-            </View>
-
-            {/* Current Elevation - Large Display with Placeholder */}
-            <View className="items-center mb-8">
-              <Text className="text-4xl font-bold text-muted-foreground/30">
-                ---
-              </Text>
-              <Text className="text-sm text-muted-foreground">
-                current elevation
-              </Text>
-              <Text className="text-xs text-muted-foreground mt-2">
-                Waiting to start
-              </Text>
-            </View>
-
-            {/* Elevation Statistics - Placeholders */}
-            <View className="flex-row justify-around mb-6">
-              <View className="items-center">
-                <View className="flex-row items-center mb-1">
-                  <Icon
-                    as={TrendingUp}
-                    size={16}
-                    className="text-green-500 mr-1"
-                  />
-                </View>
-                <Text className="text-xl font-semibold text-muted-foreground/30">
-                  --
-                </Text>
-                <Text className="text-xs text-muted-foreground">Ascent</Text>
-              </View>
-              <View className="items-center">
-                <View className="flex-row items-center mb-1">
-                  <Icon
-                    as={TrendingDown}
-                    size={16}
-                    className="text-orange-500 mr-1"
-                  />
-                </View>
-                <Text className="text-xl font-semibold text-muted-foreground/30">
-                  --
-                </Text>
-                <Text className="text-xs text-muted-foreground">Descent</Text>
-              </View>
-            </View>
-
-            {/* Ready State Message */}
-            <View className="p-4 bg-muted/10 rounded-lg items-center">
-              <Icon
-                as={Mountain}
-                size={32}
-                className="text-green-600/50 mb-2"
-              />
-              <Text className="text-sm font-medium text-center mb-1">
-                Elevation Tracking Ready
-              </Text>
-              <Text className="text-xs text-muted-foreground text-center">
-                GPS elevation data will be tracked once you start recording
-              </Text>
-            </View>
-          </CardContent>
-        </Card>
-      </View>
-    );
-  }
-
-  if (!elevationMetrics) {
-    return (
-      <View style={{ width: screenWidth }} className="flex-1 p-4">
-        <Card className="flex-1">
-          <CardContent className="p-6 flex-1 items-center justify-center">
-            <Icon
-              as={Mountain}
-              size={48}
-              className="text-muted-foreground/20 mb-4"
-            />
-            <Text className="text-muted-foreground text-center">
-              No elevation data
-            </Text>
-            <Text className="text-sm text-muted-foreground/70 text-center mt-2">
-              GPS data required for elevation tracking
-            </Text>
-          </CardContent>
-        </Card>
-      </View>
-    );
-  }
-
+  // Default to zero values when no metrics available
   const hasDistance = distanceMetrics && distanceMetrics.distance > 0;
-  const hasElevationData =
-    elevationMetrics.totalAscent > 0 || elevationMetrics.totalDescent > 0;
-  const hasCurrentElevation = elevationMetrics.current !== undefined;
+  const hasElevationData = elevationMetrics
+    ? elevationMetrics.totalAscent > 0 || elevationMetrics.totalDescent > 0
+    : false;
+  const hasCurrentElevation = elevationMetrics?.current !== undefined;
+  const current = hasCurrentElevation ? elevationMetrics!.current! : 0;
+  const totalAscent = elevationMetrics ? elevationMetrics.totalAscent : 0;
+  const totalDescent = elevationMetrics ? elevationMetrics.totalDescent : 0;
+  const avgGrade = elevationMetrics ? elevationMetrics.avgGrade : 0;
+  const elevationGainPerKm = elevationMetrics
+    ? elevationMetrics.elevationGainPerKm
+    : 0;
 
   // Format elevation values
   const formatElevation = (meters: number) => {
@@ -194,10 +92,10 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
 
           {/* Current Elevation - Large Display */}
           <View className="items-center mb-8">
-            <Text className="text-4xl font-bold text-green-600">
-              {hasCurrentElevation
-                ? formatElevation(elevationMetrics.current!)
-                : "---"}
+            <Text
+              className={`text-4xl font-bold ${hasCurrentElevation ? "text-green-600" : "text-green-600/30"}`}
+            >
+              {hasCurrentElevation ? formatElevation(current) : "0m"}
             </Text>
             <Text className="text-sm text-muted-foreground">
               current elevation
@@ -214,8 +112,10 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                   className="text-green-500 mr-1"
                 />
               </View>
-              <Text className="text-xl font-semibold text-green-500">
-                {Math.round(elevationMetrics.totalAscent)}m
+              <Text
+                className={`text-xl font-semibold ${totalAscent > 0 ? "text-green-500" : "text-green-500/30"}`}
+              >
+                {Math.round(totalAscent)}m
               </Text>
               <Text className="text-xs text-muted-foreground">Ascent</Text>
             </View>
@@ -228,18 +128,20 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                   className="text-blue-500 mr-1"
                 />
               </View>
-              <Text className="text-xl font-semibold text-blue-500">
-                {Math.round(elevationMetrics.totalDescent)}m
+              <Text
+                className={`text-xl font-semibold ${totalDescent > 0 ? "text-blue-500" : "text-blue-500/30"}`}
+              >
+                {Math.round(totalDescent)}m
               </Text>
               <Text className="text-xs text-muted-foreground">Descent</Text>
             </View>
 
             <View className="items-center">
               <Text
-                className={`text-xl font-semibold ${getGradeColor(elevationMetrics.avgGrade)}`}
+                className={`text-xl font-semibold ${hasElevationData ? getGradeColor(avgGrade) : "text-muted-foreground/30"}`}
               >
-                {elevationMetrics.avgGrade > 0 ? "+" : ""}
-                {elevationMetrics.avgGrade.toFixed(1)}%
+                {avgGrade > 0 ? "+" : ""}
+                {avgGrade.toFixed(1)}%
               </Text>
               <Text className="text-xs text-muted-foreground">Avg Grade</Text>
             </View>
@@ -251,14 +153,16 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
               <View className="flex-row items-center justify-between mb-2">
                 <Text className="text-sm font-medium">Current Grade</Text>
                 <Text
-                  className={`text-lg font-semibold ${getGradeColor(elevationMetrics.avgGrade)}`}
+                  className={`text-lg font-semibold ${hasElevationData ? getGradeColor(avgGrade) : "text-muted-foreground/30"}`}
                 >
-                  {elevationMetrics.avgGrade > 0 ? "+" : ""}
-                  {elevationMetrics.avgGrade.toFixed(1)}%
+                  {avgGrade > 0 ? "+" : ""}
+                  {avgGrade.toFixed(1)}%
                 </Text>
               </View>
-              <Text className="text-xs text-muted-foreground">
-                {getGradeDescription(elevationMetrics.avgGrade)}
+              <Text
+                className={`text-xs ${hasElevationData ? "text-muted-foreground" : "text-muted-foreground/30"}`}
+              >
+                {hasElevationData ? getGradeDescription(avgGrade) : "No data"}
               </Text>
 
               {/* Grade visual indicator */}
@@ -266,12 +170,10 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                 <View className="h-2 bg-muted rounded-full overflow-hidden">
                   <View
                     className={`h-full rounded-full ${
-                      elevationMetrics.avgGrade > 0
-                        ? "bg-green-500"
-                        : "bg-blue-500"
+                      avgGrade > 0 ? "bg-green-500" : "bg-blue-500"
                     }`}
                     style={{
-                      width: `${Math.min(100, Math.abs(elevationMetrics.avgGrade) * 10)}%`,
+                      width: `${Math.min(100, Math.abs(avgGrade) * 10)}%`,
                     }}
                   />
                 </View>
@@ -286,7 +188,7 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
 
           {/* Additional Metrics */}
           <View className="gap-3">
-            {hasDistance && elevationMetrics.elevationGainPerKm > 0 && (
+            {hasDistance && elevationGainPerKm > 0 && (
               <View className="flex-row justify-between items-center p-3 bg-green-500/10 rounded-lg">
                 <View className="flex-row items-center">
                   <Icon
@@ -297,7 +199,7 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                   <Text className="text-sm font-medium">Climb Rate</Text>
                 </View>
                 <Text className="font-semibold text-green-600">
-                  {Math.round(elevationMetrics.elevationGainPerKm)}m/km
+                  {Math.round(elevationGainPerKm)}m/km
                 </Text>
               </View>
             )}
@@ -314,20 +216,15 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
               </View>
               <Text
                 className={`font-semibold ${
-                  elevationMetrics.totalAscent - elevationMetrics.totalDescent >
-                  0
-                    ? "text-green-600"
-                    : "text-blue-600"
+                  hasElevationData
+                    ? totalAscent - totalDescent > 0
+                      ? "text-green-600"
+                      : "text-blue-600"
+                    : "text-muted-foreground/30"
                 }`}
               >
-                {elevationMetrics.totalAscent - elevationMetrics.totalDescent >
-                0
-                  ? "+"
-                  : ""}
-                {Math.round(
-                  elevationMetrics.totalAscent - elevationMetrics.totalDescent,
-                )}
-                m
+                {totalAscent - totalDescent > 0 ? "+" : ""}
+                {Math.round(totalAscent - totalDescent)}m
               </Text>
             </View>
 
@@ -359,7 +256,7 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
             )}
 
             {/* VAM (if climbing) */}
-            {elevationMetrics.totalAscent > 50 &&
+            {totalAscent > 50 &&
               distanceMetrics &&
               distanceMetrics.movingTime > 0 && (
                 <View className="p-3 bg-orange-500/10 rounded-lg">
@@ -370,9 +267,7 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                       </Text>
                       <Text className="text-lg font-semibold text-orange-600">
                         {Math.round(
-                          (elevationMetrics.totalAscent /
-                            distanceMetrics.movingTime) *
-                            3600,
+                          (totalAscent / distanceMetrics.movingTime) * 3600,
                         )}
                       </Text>
                       <Text className="text-xs text-muted-foreground">m/h</Text>
@@ -390,9 +285,7 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
           {/* Footer */}
           <View className="mt-6 pt-4 border-t border-muted/20">
             <Text className="text-xs text-muted-foreground text-center">
-              {hasCurrentElevation
-                ? "Elevation data from GPS with smoothing applied"
-                : "GPS signal required for elevation tracking"}
+              Elevation data from GPS with smoothing applied
             </Text>
           </View>
         </CardContent>
