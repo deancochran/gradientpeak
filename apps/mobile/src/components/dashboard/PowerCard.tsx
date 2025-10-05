@@ -3,9 +3,10 @@ import { View } from "react-native";
 import { Card, CardContent } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
 import { Icon } from "@/components/ui/icon";
-import { Zap, Target } from "lucide-react-native";
+import { Zap, Target, CheckCircle } from "lucide-react-native";
 import { usePowerMetrics } from "@/lib/hooks/useLiveMetrics";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
+import { useRecordingState } from "@/lib/hooks/useActivityRecorderEvents";
 
 interface PowerCardProps {
   service: ActivityRecorderService | null;
@@ -17,6 +18,79 @@ export const PowerCard: React.FC<PowerCardProps> = ({
   screenWidth,
 }) => {
   const powerMetrics = usePowerMetrics(service);
+  const recordingState = useRecordingState(service);
+  const isPrepared = recordingState === "pending" || recordingState === "ready";
+
+  // Show prepared state before recording starts
+  if (isPrepared) {
+    return (
+      <View style={{ width: screenWidth }} className="flex-1 p-4">
+        <Card className="flex-1">
+          <CardContent className="p-6">
+            {/* Header */}
+            <View className="flex-row items-center justify-between mb-6">
+              <View className="flex-row items-center">
+                <Icon as={Zap} size={24} className="text-yellow-500 mr-2" />
+                <Text className="text-lg font-semibold">Power</Text>
+              </View>
+              <View className="flex-row items-center">
+                <Icon
+                  as={CheckCircle}
+                  size={16}
+                  className="text-green-500 mr-1"
+                />
+                <Text className="text-xs text-muted-foreground">READY</Text>
+              </View>
+            </View>
+
+            {/* Current Power - Large Display with Placeholder */}
+            <View className="items-center mb-8">
+              <Text className="text-5xl font-bold text-muted-foreground/30">
+                ---
+              </Text>
+              <Text className="text-sm text-muted-foreground">watts</Text>
+              <Text className="text-xs text-muted-foreground mt-2">
+                Waiting to start
+              </Text>
+            </View>
+
+            {/* Power Metrics Grid - Placeholders */}
+            <View className="flex-row justify-around mb-6">
+              <View className="items-center">
+                <Text className="text-2xl font-semibold text-muted-foreground/30">
+                  --
+                </Text>
+                <Text className="text-xs text-muted-foreground">Avg</Text>
+              </View>
+              <View className="items-center">
+                <Text className="text-2xl font-semibold text-muted-foreground/30">
+                  --
+                </Text>
+                <Text className="text-xs text-muted-foreground">Max</Text>
+              </View>
+              <View className="items-center">
+                <Text className="text-2xl font-semibold text-muted-foreground/30">
+                  --
+                </Text>
+                <Text className="text-xs text-muted-foreground">NP</Text>
+              </View>
+            </View>
+
+            {/* Ready State Message */}
+            <View className="p-4 bg-muted/10 rounded-lg items-center">
+              <Icon as={Zap} size={32} className="text-yellow-500/50 mb-2" />
+              <Text className="text-sm font-medium text-center mb-1">
+                Power Metrics Ready
+              </Text>
+              <Text className="text-xs text-muted-foreground text-center">
+                Connect a power meter or start recording to see live data
+              </Text>
+            </View>
+          </CardContent>
+        </Card>
+      </View>
+    );
+  }
 
   if (!powerMetrics) {
     return (

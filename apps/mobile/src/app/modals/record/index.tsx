@@ -112,27 +112,24 @@ export default function RecordModal() {
   const cards = useMemo((): CarouselCard[] => {
     const cardList: CarouselCard[] = ["dashboard"];
 
-    // Add power card when recording or paused
-    if (state === "recording" || state === "paused") {
+    // Show all cards before recording starts (prepared state) and during recording
+    // Power card - always show when not finished
+    if (state !== "finished") {
       cardList.push("power");
     }
 
-    // Add heart rate card when recording or paused
-    if (state === "recording" || state === "paused") {
+    // Heart rate card - always show when not finished
+    if (state !== "finished") {
       cardList.push("heartrate");
     }
 
-    // Add analysis card when recording (for live metrics)
-    if (state === "recording" || state === "paused") {
+    // Analysis card - always show when not finished
+    if (state !== "finished") {
       cardList.push("analysis");
     }
 
-    // Add elevation card for outdoor activities or when elevation data is available
-    if (
-      isOutdoorActivity(activityType) ||
-      state === "recording" ||
-      state === "paused"
-    ) {
+    // Elevation card - show for outdoor activities or when not finished
+    if (isOutdoorActivity(activityType) || state !== "finished") {
       cardList.push("elevation");
     }
 
@@ -525,14 +522,56 @@ const DashboardCard = memo(
 
             {/* Metrics */}
             <View className="flex-1 justify-center">
-              {state === "pending" ? (
+              {state === "pending" || state === "ready" ? (
                 <View className="items-center">
-                  <Text className="text-lg text-muted-foreground mb-2">
+                  <Text className="text-lg text-muted-foreground mb-4">
                     Ready to start recording
                   </Text>
-                  <Text className="text-sm text-muted-foreground text-center">
-                    Select your activity type and press Start Activity
+                  <Text className="text-sm text-muted-foreground text-center mb-6">
+                    All sensors prepared. Press Start Activity to begin.
                   </Text>
+                  {/* Show prepared state metrics with placeholder values */}
+                  <View className="gap-4 w-full">
+                    <View className="flex-row justify-around">
+                      <MetricDisplay
+                        icon={Heart}
+                        label="Heart Rate"
+                        value="--"
+                        unit="bpm"
+                        color="text-muted-foreground"
+                      />
+                      <MetricDisplay
+                        icon={Zap}
+                        label="Power"
+                        value="--"
+                        unit="W"
+                        color="text-muted-foreground"
+                      />
+                      <MetricDisplay
+                        icon={TrendingUp}
+                        label="Cadence"
+                        value="--"
+                        unit="rpm"
+                        color="text-muted-foreground"
+                      />
+                    </View>
+                    <View className="flex-row justify-around mt-2">
+                      <MetricDisplay
+                        icon={TrendingUp}
+                        label="Speed"
+                        value="--"
+                        unit="km/h"
+                        color="text-muted-foreground"
+                      />
+                      <MetricDisplay
+                        icon={MapPin}
+                        label="Distance"
+                        value="--"
+                        unit="km"
+                        color="text-muted-foreground"
+                      />
+                    </View>
+                  </View>
                 </View>
               ) : (
                 <View className="gap-4">

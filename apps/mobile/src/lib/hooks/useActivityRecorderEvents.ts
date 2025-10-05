@@ -534,7 +534,7 @@ export function useDeviceActions(service: ActivityRecorderService | null) {
  */
 export function usePermissionActions(service: ActivityRecorderService | null) {
   return {
-    check: useCallback(() => service?.permissionsManager.checkAll(), [service]),
+    check: useCallback(() => service?.checkPermissions(), [service]),
     ensure: useCallback(
       (type: any) => service?.ensurePermission(type),
       [service],

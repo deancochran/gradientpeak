@@ -73,9 +73,23 @@ export default function PermissionsModal() {
   const permissions = usePermissions(service);
   const { check, ensure } = usePermissionActions(service);
 
+  // Proactively check permissions when modal mounts
   useEffect(() => {
-    check();
-  }, [check]);
+    if (service) {
+      check();
+    }
+  }, [service, check]);
+
+  // Subscribe to permission changes - poll every 2 seconds when modal is visible
+  useEffect(() => {
+    if (!service) return;
+
+    const intervalId = setInterval(() => {
+      check();
+    }, 2000);
+
+    return () => clearInterval(intervalId);
+  }, [service, check]);
 
   const handleRequestPermission = useCallback(
     async (type: PermissionType) => {

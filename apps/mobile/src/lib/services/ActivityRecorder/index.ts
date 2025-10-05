@@ -197,6 +197,20 @@ export class ActivityRecorderService extends EventEmitter {
     return this.permissionsManager.permissions[type] || null;
   }
 
+  async checkPermissions(): Promise<void> {
+    await this.permissionsManager.checkAll();
+    // Emit updates for all permissions
+    const types: PermissionType[] = [
+      "bluetooth",
+      "location",
+      "location-background",
+    ];
+    types.forEach((type) => {
+      this.emitPermissionUpdate(type);
+    });
+    this.notify();
+  }
+
   async ensurePermission(type: PermissionType): Promise<boolean> {
     const granted = await this.permissionsManager.ensure(type);
     this.permissionsManager.permissions[type] = {
