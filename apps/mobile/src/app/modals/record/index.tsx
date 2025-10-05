@@ -55,9 +55,20 @@ import {
   PublicActivityType,
 } from "@repo/core";
 import { EnhancedPlanCard } from "@/components/plan/EnhancedPlanCard";
+import { PowerCard } from "@/components/dashboard/PowerCard";
+import { HeartRateCard } from "@/components/dashboard/HeartRateCard";
+import { AnalysisCard } from "@/components/dashboard/AnalysisCard";
+import { ElevationCard } from "@/components/dashboard/ElevationCard";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
-type CarouselCard = "dashboard" | "map" | "plan";
+type CarouselCard =
+  | "dashboard"
+  | "power"
+  | "heartrate"
+  | "analysis"
+  | "elevation"
+  | "map"
+  | "plan";
 
 const isOutdoorActivity = (type: PublicActivityType): boolean =>
   ["outdoor_run", "outdoor_bike", "outdoor_walk"].includes(type);
@@ -101,6 +112,30 @@ export default function RecordModal() {
   const cards = useMemo((): CarouselCard[] => {
     const cardList: CarouselCard[] = ["dashboard"];
 
+    // Add power card when recording or when power data is available
+    if (state === "recording" || state === "paused" || avgPower > 0) {
+      cardList.push("power");
+    }
+
+    // Add heart rate card when recording or when HR data is available
+    if (state === "recording" || state === "paused" || avgHeartRate > 0) {
+      cardList.push("heartrate");
+    }
+
+    // Add analysis card when recording (for live metrics)
+    if (state === "recording" || state === "paused") {
+      cardList.push("analysis");
+    }
+
+    // Add elevation card for outdoor activities or when elevation data is available
+    if (
+      isOutdoorActivity(activityType) ||
+      state === "recording" ||
+      state === "paused"
+    ) {
+      cardList.push("elevation");
+    }
+
     // Show map card for outdoor activities regardless of state
     if (isOutdoorActivity(activityType)) {
       cardList.push("map");
@@ -111,7 +146,7 @@ export default function RecordModal() {
       cardList.push("plan");
     }
     return cardList;
-  }, [activityType, activityPlan]);
+  }, [activityType, activityPlan, state, avgPower, avgHeartRate]);
 
   // Back handler
   useEffect(() => {
@@ -415,6 +450,14 @@ const RecordModalCard = memo(
             service={service}
           />
         );
+      case "power":
+        return <PowerCard service={service} screenWidth={SCREEN_WIDTH} />;
+      case "heartrate":
+        return <HeartRateCard service={service} screenWidth={SCREEN_WIDTH} />;
+      case "analysis":
+        return <AnalysisCard service={service} screenWidth={SCREEN_WIDTH} />;
+      case "elevation":
+        return <ElevationCard service={service} screenWidth={SCREEN_WIDTH} />;
       case "map":
         return (
           <MapCard

@@ -1,0 +1,362 @@
+import { Tier1Metric, Tier2Metric } from './config';
+
+/**
+ * Complete live metrics state matching SQL schema
+ */
+export interface LiveMetricsState {
+  // === Timing ===
+  startedAt?: number;           // Unix timestamp
+  finishedAt?: number;          // Unix timestamp
+  elapsedTime: number;          // seconds
+  movingTime: number;           // seconds (excludes pauses)
+
+  // === Distance & Speed ===
+  distance: number;             // meters
+  avgSpeed: number;             // m/s
+  maxSpeed: number;             // m/s
+
+  // === Elevation ===
+  totalAscent: number;          // meters
+  totalDescent: number;         // meters
+  avgGrade: number;             // percentage (-100 to 100)
+  elevationGainPerKm: number;   // meters per km
+
+  // === Heart Rate ===
+  avgHeartRate: number;         // bpm
+  maxHeartRate: number;         // bpm
+  maxHrPctThreshold: number;    // percentage of threshold HR
+  hrZone1Time: number;          // seconds in zone 1
+  hrZone2Time: number;          // seconds in zone 2
+  hrZone3Time: number;          // seconds in zone 3
+  hrZone4Time: number;          // seconds in zone 4
+  hrZone5Time: number;          // seconds in zone 5
+
+  // === Power ===
+  avgPower: number;             // watts
+  maxPower: number;             // watts
+  totalWork: number;            // joules
+  powerZone1Time: number;       // seconds in zone 1
+  powerZone2Time: number;       // seconds in zone 2
+  powerZone3Time: number;       // seconds in zone 3
+  powerZone4Time: number;       // seconds in zone 4
+  powerZone5Time: number;       // seconds in zone 5
+  powerZone6Time: number;       // seconds in zone 6
+  powerZone7Time: number;       // seconds in zone 7
+  powerHeartRateRatio: number;  // watts per bpm
+
+  // === Cadence ===
+  avgCadence: number;           // rpm
+  maxCadence: number;           // rpm
+
+  // === Environmental ===
+  avgTemperature?: number;      // celsius
+  maxTemperature?: number;      // celsius
+
+  // === Calories ===
+  calories: number;             // kcal
+
+  // === Tier 2 - Live Approximations ===
+  normalizedPowerEst: number;      // watts (estimated)
+  intensityFactorEst: number;      // decimal (0.85)
+  trainingStressScoreEst: number;  // points
+  variabilityIndexEst: number;     // ratio
+  efficiencyFactorEst: number;     // watts per bpm
+  decouplingEst: number;           // percentage
+
+  // === Plan Adherence ===
+  adherenceCurrentStep: number;    // decimal (0.95)
+}
+
+// === Zone Configuration ===
+export interface ZoneConfig {
+  hrZones: number[];      // 5 thresholds for HR zones
+  powerZones: number[];   // 7 thresholds for power zones
+}
+
+// === Profile Information ===
+export interface ProfileMetrics {
+  ftp?: number;           // Functional Threshold Power
+  thresholdHr?: number;   // Lactate Threshold Heart Rate
+  weight?: number;        // kg
+  age?: number;           // years
+}
+
+// === Update Events ===
+export interface MetricUpdateEvent {
+  metric: string;
+  value: number;
+  timestamp: number;
+}
+
+export interface MetricsUpdateEvent {
+  metrics: LiveMetricsState;
+  timestamp: number;
+  changedMetrics: string[];
+}
+
+// === Calculation Results ===
+export interface CalculationResult<T = number> {
+  value: T;
+  confidence: 'high' | 'medium' | 'low';
+  sampleSize: number;
+  lastUpdated: number;
+}
+
+// === Performance Metrics ===
+export interface PerformanceStats {
+  uiUpdateRate: number;        // actual Hz
+  calculationTime: number;     // ms
+  memoryUsage: number;         // bytes
+  bufferUtilization: Record<string, number>; // 0-1
+}
+
+// === Recording States ===
+export type LiveMetricsState_Recording = 'inactive' | 'starting' | 'active' | 'paused' | 'finishing' | 'error';
+
+// === Batch Processing ===
+export interface BatchProcessingStats {
+  pendingWrites: number;
+  lastBatchSize: number;
+  lastBatchTime: number;
+  totalBatches: number;
+  failedBatches: number;
+}
+
+// === Memory Usage ===
+export interface MemoryUsageStats {
+  totalBufferSize: number;     // bytes
+  powerBufferSize: number;
+  hrBufferSize: number;
+  locationBufferSize: number;
+  utilizationPercent: number;
+}
+
+// === Heart Rate Metrics ===
+export interface HeartRateMetrics {
+  current?: number;
+  avg: number;
+  max: number;
+  maxPctThreshold: number;
+  zones: {
+    z1: number;
+    z2: number;
+    z3: number;
+    z4: number;
+    z5: number;
+  };
+}
+
+// === Power Metrics ===
+export interface PowerMetrics {
+  current?: number;
+  avg: number;
+  max: number;
+  normalized: number;
+  totalWork: number;
+  zones: {
+    z1: number;
+    z2: number;
+    z3: number;
+    z4: number;
+    z5: number;
+    z6: number;
+    z7: number;
+  };
+}
+
+// === Analysis Metrics ===
+export interface AnalysisMetrics {
+  normalizedPower: number;
+  intensityFactor: number;
+  tss: number;
+  variabilityIndex: number;
+  efficiencyFactor: number;
+  decoupling: number;
+  adherence: number;
+}
+
+// === Distance Metrics ===
+export interface DistanceMetrics {
+  distance: number;
+  avgSpeed: number;
+  maxSpeed: number;
+  elapsedTime: number;
+  movingTime: number;
+}
+
+// === Elevation Metrics ===
+export interface ElevationMetrics {
+  totalAscent: number;
+  totalDescent: number;
+  avgGrade: number;
+  elevationGainPerKm: number;
+  current?: number;
+}
+
+// === Cadence & Environmental Metrics ===
+export interface CadenceMetrics {
+  current?: number;
+  avg: number;
+  max: number;
+}
+
+export interface EnvironmentalMetrics {
+  avgTemperature?: number;
+  maxTemperature?: number;
+  currentTemperature?: number;
+}
+
+// === Live Recording Status ===
+export interface LiveRecordingStatus {
+  state: LiveMetricsState_Recording;
+  startedAt?: number;
+  elapsedTime: number;
+  movingTime: number;
+  isPaused: boolean;
+  sensorCount: number;
+  gpsAccuracy?: number;
+  batteryOptimized: boolean;
+}
+
+// === Metrics Summary for UI Cards ===
+export interface MetricsSummary {
+  primary: {
+    elapsedTime: number;
+    distance: number;
+    avgPower: number;
+    avgHeartRate: number;
+  };
+  secondary: {
+    calories: number;
+    avgSpeed: number;
+    maxPower: number;
+    maxHeartRate: number;
+  };
+  analysis: {
+    tss: number;
+    intensityFactor: number;
+    normalizedPower: number;
+    adherence: number;
+  };
+}
+
+// === Metric Formatting Options ===
+export interface MetricDisplayOptions {
+  precision: number;
+  showUnit: boolean;
+  abbreviated: boolean;
+  colorCode: boolean;
+  showZone?: boolean;
+}
+
+// === Tier Classifications ===
+export interface TierMetrics {
+  tier1: Partial<LiveMetricsState>;  // Real-time metrics
+  tier2: Partial<LiveMetricsState>;  // Approximated metrics
+}
+
+// === Event Payload Types ===
+export interface RecordingStartedPayload {
+  timestamp: number;
+  activityType: string;
+  profile: ProfileMetrics;
+}
+
+export interface RecordingPausedPayload {
+  timestamp: number;
+  elapsedTime: number;
+  reason?: 'manual' | 'automatic' | 'system';
+}
+
+export interface RecordingResumedPayload {
+  timestamp: number;
+  pauseDuration: number;
+}
+
+export interface RecordingFinishedPayload {
+  timestamp: number;
+  finalMetrics: LiveMetricsState;
+  totalDuration: number;
+  summary: MetricsSummary;
+}
+
+// === Error Types ===
+export interface LiveMetricsError {
+  type: 'calculation' | 'buffer_overflow' | 'sensor_timeout' | 'memory_limit' | 'invalid_data';
+  message: string;
+  timestamp: number;
+  metric?: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+}
+
+// === Configuration Overrides ===
+export interface LiveMetricsConfig {
+  enableTier2Calculations: boolean;
+  bufferSizes: Record<string, number>;
+  updateFrequencies: Record<string, number>;
+  precisionSettings: Record<string, number>;
+  memoryLimits: {
+    maxBufferSizeMB: number;
+    cleanupThreshold: number;
+  };
+}
+
+// === Hooks Return Types ===
+export interface UseLiveMetricsReturn {
+  metrics: LiveMetricsState | null;
+  isLoading: boolean;
+  error: LiveMetricsError | null;
+  performance: PerformanceStats;
+}
+
+export interface UseMetricsBatchReturn {
+  metrics: Record<string, number | undefined>;
+  isStale: boolean;
+  lastUpdate: number;
+}
+
+// === Database Persistence Types ===
+export interface MetricsPersistenceState {
+  lastSaved: number;
+  pendingUpdates: number;
+  compressionEnabled: boolean;
+  storageUsed: number;
+}
+
+// === Activity Plan Integration ===
+export interface PlanAdherenceMetrics {
+  currentStep: number;
+  totalSteps: number;
+  stepProgress: number;
+  stepAdherence: number;
+  overallAdherence: number;
+  targetMetric: string;
+  targetValue: number;
+  currentValue: number;
+  timeInTarget: number;
+  timeOutOfTarget: number;
+}
+
+// === Type Guards ===
+export function isLiveMetricsState(obj: any): obj is LiveMetricsState {
+  return typeof obj === 'object' &&
+         typeof obj.elapsedTime === 'number' &&
+         typeof obj.distance === 'number';
+}
+
+export function isMetricUpdateEvent(obj: any): obj is MetricUpdateEvent {
+  return typeof obj === 'object' &&
+         typeof obj.metric === 'string' &&
+         typeof obj.value === 'number' &&
+         typeof obj.timestamp === 'number';
+}
+
+// === Utility Types ===
+export type MetricKey = keyof LiveMetricsState;
+export type NumericMetricKey = {
+  [K in MetricKey]: LiveMetricsState[K] extends number ? K : never;
+}[MetricKey];
+
+export type OptionalMetricKey = {
+  [K in MetricKey]: LiveMetricsState[K] extends (number | undefined) ? K : never;
+}[MetricKey];
