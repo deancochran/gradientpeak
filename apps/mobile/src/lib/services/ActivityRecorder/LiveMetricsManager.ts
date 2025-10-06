@@ -12,21 +12,19 @@
  * - Simple data flow: Buffer -> Calculate -> Emit
  */
 
+import { PublicProfilesRow } from "@repo/core";
 import { EventEmitter } from "events";
-import { RECORDING_CONFIG, MOVEMENT_THRESHOLDS } from "./config";
+import { MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
+import { DataAccumulator } from "./DataAccumulator";
 import { DataBuffer } from "./DataBuffer";
 import {
-  DataAccumulator,
-  SensorReading,
-  LocationReading,
-} from "./DataAccumulator";
-import {
   LiveMetricsState,
-  ZoneConfig,
-  ProfileMetrics,
+  LocationReading,
   MetricsUpdateEvent,
+  ProfileMetrics,
+  SensorReading,
+  ZoneConfig,
 } from "./types";
-import { PublicProfilesRow } from "@repo/core";
 
 export class LiveMetricsManager extends EventEmitter {
   private recordingId!: string;
@@ -40,8 +38,8 @@ export class LiveMetricsManager extends EventEmitter {
   private accumulator: DataAccumulator; // Accumulates data for periodic DB writes
 
   // === Timers ===
-  private updateTimer?: NodeJS.Timeout; // 1s: Calculate metrics + emit UI updates
-  private persistenceTimer?: NodeJS.Timeout; // 60s: Write to DB + cleanup memory
+  private updateTimer?: number; // 1s: Calculate metrics + emit UI updates
+  private persistenceTimer?: number; // 60s: Write to DB + cleanup memory
 
   // === State Tracking ===
   private startTime?: number;
@@ -156,17 +154,27 @@ export class LiveMetricsManager extends EventEmitter {
     const timestamp = reading.timestamp || Date.now();
 
     // Add to buffer for real-time calculations
-    this.buffer.add({
-      metric: reading.metric,
-      value: reading.value,
-      timestamp,
-    });
+    // Type narrowing: check if numeric or tuple
+    if (typeof reading.value === "number") {
+      // Numeric reading (power, HR, cadence, etc.)
+      this.buffer.add({
+        metric: reading.metric,
+        value: reading.value,
+        timestamp,
+      });
+      // Update max values immediately
+      this.updateMaxValues(reading.metric, reading.value);
+    } else {
+      // Tuple reading (latlng)
+      this.buffer.add({
+        metric: reading.metric,
+        value: reading.value as [number, number],
+        timestamp,
+      });
+    }
 
     // Add to accumulator for eventual persistence
     this.accumulator.add(reading);
-
-    // Update max values immediately
-    this.updateMaxValues(reading.metric, reading.value);
   }
 
   /**
@@ -177,6 +185,13 @@ export class LiveMetricsManager extends EventEmitter {
 
     // Add to accumulator for persistence
     this.accumulator.addLocation(location);
+
+    // Add lat/lng to buffer for route tracking
+    this.buffer.add({
+      metric: "latlng",
+      value: [location.latitude, location.longitude],
+      timestamp: location.timestamp,
+    });
 
     // Calculate distance if we have a previous location
     if (this.lastLocation) {
@@ -585,10 +600,13 @@ export class LiveMetricsManager extends EventEmitter {
   }
 
   /**
-   * Update max values
+   * Update max values for metrics
    */
   private updateMaxValues(metric: string, value: number): void {
     switch (metric) {
+      case "speed":
+        this.maxSpeed = Math.max(this.maxSpeed, value);
+        break;
       case "power":
         this.maxPower = Math.max(this.maxPower, value);
         break;
@@ -652,10 +670,10 @@ export class LiveMetricsManager extends EventEmitter {
    */
   private extractProfileMetrics(profile: PublicProfilesRow): ProfileMetrics {
     return {
-      ftp: profile.ftp || undefined,
-      thresholdHr: profile.threshold_hr || undefined,
-      weight: profile.weight_kg || undefined,
-      age: profile.age || undefined,
+      ftp: profile.ftp ?? undefined,
+      thresholdHr: profile.threshold_hr ?? undefined,
+      weight: profile.weight_kg ?? undefined,
+      age: undefined, // Age calculation from DOB would go here if needed
     };
   }
 

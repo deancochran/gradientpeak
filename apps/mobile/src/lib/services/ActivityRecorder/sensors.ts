@@ -1,8 +1,4 @@
-import {
-  BLE_SERVICE_UUIDS,
-  PublicActivityMetric,
-  PublicActivityMetricDataType,
-} from "@repo/core";
+import { BLE_SERVICE_UUIDS } from "@repo/core";
 import { Buffer } from "buffer";
 import {
   BleError,
@@ -10,6 +6,7 @@ import {
   Characteristic,
   Device,
 } from "react-native-ble-plx";
+import { SensorReading } from "./types";
 
 /** --- Connection states --- */
 export type SensorConnectionState =
@@ -45,14 +42,8 @@ export const KnownCharacteristics: Record<string, BleMetricType> = {
   "00002a5b-0000-1000-8000-00805f9b34fb": BleMetricType.Cadence, // Speed can be derived
 };
 
-/** --- Sensor Data Types --- */
-export interface SensorReading {
-  metric: PublicActivityMetric;
-  dataType: PublicActivityMetricDataType;
-  value: number | [number, number];
-  timestamp: number;
-  deviceId?: string;
-}
+/** --- Sensor Data Types (imported from types.ts) --- */
+// SensorReading is now imported from types.ts for consistency
 
 /** --- Generic Sports BLE Manager --- */
 export class SensorsManager {
@@ -389,7 +380,7 @@ export class SensorsManager {
       dataType: "float",
       value,
       timestamp: Date.now(),
-      deviceId,
+      metadata: { deviceId },
     });
   }
 
@@ -403,7 +394,7 @@ export class SensorsManager {
       dataType: "float",
       value,
       timestamp: Date.now(),
-      deviceId,
+      metadata: { deviceId },
     });
   }
 
@@ -423,7 +414,7 @@ export class SensorsManager {
         dataType: "float",
         value,
         timestamp: Date.now(),
-        deviceId,
+        metadata: { deviceId },
       });
     }
     if (flags & 0x02 && data.byteLength >= offset + 4) {
@@ -433,7 +424,7 @@ export class SensorsManager {
         dataType: "float",
         value,
         timestamp: Date.now(),
-        deviceId,
+        metadata: { deviceId },
       });
     }
     return null;

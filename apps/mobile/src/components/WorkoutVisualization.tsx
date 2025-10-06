@@ -9,21 +9,8 @@ import {
   Zap,
   TrendingUp,
   Target,
-  Timer,
 } from "lucide-react-native";
 import { ActivityPlanStructure, IntensityTarget } from "@repo/core";
-import {
-  extractWorkoutProfile,
-  calculateWorkoutStats,
-  formatDurationCompact,
-  formatTargetRange,
-  formatMetricValue,
-  getMetricDisplayName,
-  isValueInTargetRange,
-  getTargetGuidanceText,
-  calculateAdherence,
-  WorkoutProfilePoint,
-} from "./utils";
 
 // ================================
 // Workout Graph Component

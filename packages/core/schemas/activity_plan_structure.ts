@@ -81,6 +81,12 @@ export const stepSchema = z.object({
 });
 export type Step = z.infer<typeof stepSchema>;
 
+export interface FlattenedStep extends Step {
+  index: number;
+  fromRepetition?: number;
+  originalRepetitionIndex?: number;
+}
+
 // ==============================
 // REPETITION
 // ==============================
@@ -104,3 +110,269 @@ export const activityPlanStructureSchema = z.object({
   steps: z.array(stepOrRepetitionSchema),
 });
 export type ActivityPlanStructure = z.infer<typeof activityPlanStructureSchema>;
+
+/**
+ * Flatten a nested plan structure into a sequential array of steps
+ */
+export function flattenPlanSteps(
+  steps: StepOrRepetition[],
+  acc: FlattenedStep[] = [],
+  parentRep?: number,
+): FlattenedStep[] {
+  for (const step of steps) {
+    if (step.type === "step") {
+      acc.push({
+        ...step,
+        index: acc.length,
+        fromRepetition: parentRep ?? undefined,
+        originalRepetitionIndex: parentRep,
+      });
+    } else if (step.type === "repetition") {
+      for (let i = 0; i < step.repeat; i++) {
+        flattenPlanSteps(step.steps, i, acc);
+      }
+    }
+  }
+  return acc;
+}
+
+/**
+ * Convert duration to milliseconds
+ */
+export function getDurationMs(duration: Duration): number {
+  if (duration === "untilFinished") return 0;
+
+  switch (duration.unit) {
+    case "seconds":
+      return duration.value * 1000;
+    case "minutes":
+      return duration.value * 60 * 1000;
+    case "meters":
+    case "km":
+      // For distance-based, estimate based on activity type
+      // This is a rough estimate - could be enhanced with user's typical pace
+      return duration.value * 60 * 1000; // Assume 1 unit = 1 minute
+    case "reps":
+      // For rep-based, estimate time per rep
+      return duration.value * 30 * 1000; // Assume 30 seconds per rep
+    default:
+      return 0;
+  }
+}
+
+/**
+ * Extract intensity value from a target for visualization
+ */
+export function getIntensityValue(target: IntensityTarget): number {
+  // Return the primary value for visualization purposes
+  if (target.target !== undefined) return target.target;
+  if (target.min !== undefined && target.max !== undefined) {
+    return (target.min + target.max) / 2;
+  }
+  if (target.min !== undefined) return target.min;
+  if (target.max !== undefined) return target.max;
+  return 0;
+}
+
+/**
+ * Get color for intensity visualization based on type and value
+ */
+export function getIntensityColor(intensity: number, type?: string): string {
+  if (!intensity || intensity === 0) return "#94a3b8"; // gray for rest/unknown
+
+  switch (type) {
+    case "%FTP":
+      if (intensity >= 106) return "#dc2626"; // Z5 - Red
+      if (intensity >= 91) return "#ea580c"; // Z4 - Orange
+      if (intensity >= 76) return "#ca8a04"; // Z3 - Yellow
+      if (intensity >= 56) return "#16a34a"; // Z2 - Green
+      return "#06b6d4"; // Z1 - Light Blue
+
+    case "watts":
+      // Assuming 250W FTP for color coding - could be personalized
+      const ftpPercent = (intensity / 250) * 100;
+      return getIntensityColor(ftpPercent, "%FTP");
+
+    case "%MaxHR":
+    case "%ThresholdHR":
+      if (intensity >= 95) return "#dc2626"; // Very High
+      if (intensity >= 85) return "#ea580c"; // High
+      if (intensity >= 75) return "#ca8a04"; // Moderate
+      if (intensity >= 65) return "#16a34a"; // Light
+      return "#06b6d4"; // Very Light
+
+    default:
+      // Generic intensity color coding
+      if (intensity >= 90) return "#dc2626";
+      if (intensity >= 70) return "#ea580c";
+      if (intensity >= 50) return "#ca8a04";
+      if (intensity >= 30) return "#16a34a";
+      return "#06b6d4";
+  }
+}
+
+// ================================
+// Target Analysis Functions
+// ================================
+
+/**
+ * Check if current value is within target range
+ */
+export function isValueInTargetRange(
+  current: number,
+  target: IntensityTarget,
+): boolean {
+  if (target.min !== undefined && current < target.min) return false;
+  if (target.max !== undefined && current > target.max) return false;
+
+  // If only target is specified, use ±5% tolerance
+  if (
+    target.target !== undefined &&
+    target.min === undefined &&
+    target.max === undefined
+  ) {
+    const tolerance = target.target * 0.05;
+    return (
+      current >= target.target - tolerance &&
+      current <= target.target + tolerance
+    );
+  }
+
+  return true;
+}
+
+/**
+ * Calculate adherence percentage to target
+ */
+export function calculateAdherence(
+  current: number,
+  target: IntensityTarget,
+): number {
+  const targetValue =
+    target.target || ((target.min || 0) + (target.max || 0)) / 2;
+  if (targetValue === 0) return 0;
+
+  const difference = Math.abs(current - targetValue);
+  const tolerance = targetValue * 0.1; // 10% tolerance
+
+  return Math.max(0, Math.min(100, (1 - difference / tolerance) * 100));
+}
+
+/**
+ * Format target range for display
+ */
+export function formatTargetRange(target: IntensityTarget): string {
+  const unit = getTargetUnit(target.type);
+
+  if (target.target !== undefined) {
+    return `${target.target}${unit}`;
+  }
+
+  if (target.min !== undefined && target.max !== undefined) {
+    return `${target.min}-${target.max}${unit}`;
+  }
+
+  if (target.min !== undefined) {
+    return `>${target.min}${unit}`;
+  }
+
+  if (target.max !== undefined) {
+    return `<${target.max}${unit}`;
+  }
+
+  return "No target";
+}
+
+/**
+ * Get unit for target type
+ */
+export function getTargetUnit(type: string): string {
+  switch (type) {
+    case "%FTP":
+    case "%MaxHR":
+    case "%ThresholdHR":
+      return "%";
+    case "watts":
+      return "W";
+    case "bpm":
+      return " bpm";
+    case "speed":
+      return " km/h";
+    case "cadence":
+      return " rpm";
+    case "RPE":
+      return "/10";
+    default:
+      return "";
+  }
+}
+
+/**
+ * Get display name for metric type
+ */
+export function getMetricDisplayName(type: string): string {
+  switch (type) {
+    case "%FTP":
+      return "Power (FTP)";
+    case "%MaxHR":
+      return "Heart Rate (Max)";
+    case "%ThresholdHR":
+      return "Heart Rate (LT)";
+    case "watts":
+      return "Power";
+    case "bpm":
+      return "Heart Rate";
+    case "speed":
+      return "Speed";
+    case "cadence":
+      return "Cadence";
+    case "RPE":
+      return "Effort (RPE)";
+    default:
+      return type;
+  }
+}
+
+/**
+ * Format metric value for display
+ */
+export function formatMetricValue(value: number, type: string): string {
+  const unit = getTargetUnit(type);
+
+  switch (type) {
+    case "speed":
+      return `${value.toFixed(1)}${unit}`;
+    case "%FTP":
+    case "%MaxHR":
+    case "%ThresholdHR":
+      return `${Math.round(value)}${unit}`;
+    default:
+      return `${Math.round(value)}${unit}`;
+  }
+}
+
+/**
+ * Get guidance text based on current vs target
+ */
+export function getTargetGuidanceText(
+  target: IntensityTarget,
+  current?: number,
+): string {
+  if (!current) return "Waiting for data...";
+
+  const inRange = isValueInTargetRange(current, target);
+  const targetValue =
+    target.target || ((target.min || 0) + (target.max || 0)) / 2;
+
+  if (inRange) {
+    return "Perfect! Stay in this zone.";
+  }
+
+  if (current < targetValue) {
+    const difference = targetValue - current;
+    return `Increase by ${Math.round(difference)}${getTargetUnit(target.type)}`;
+  } else {
+    const difference = current - targetValue;
+    return `Decrease by ${Math.round(difference)}${getTargetUnit(target.type)}`;
+  }
+}

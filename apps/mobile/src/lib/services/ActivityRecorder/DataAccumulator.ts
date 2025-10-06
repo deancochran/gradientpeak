@@ -14,25 +14,7 @@ import {
   activityRecordingStreams,
 } from "@/lib/db/schemas";
 import { PublicActivityMetric, PublicActivityMetricDataType } from "@repo/core";
-
-export interface SensorReading {
-  metric: PublicActivityMetric;
-  value: number;
-  timestamp: number;
-  metadata?: {
-    deviceId?: string;
-    accuracy?: number;
-    source?: string;
-  };
-}
-
-export interface LocationReading {
-  latitude: number;
-  longitude: number;
-  altitude?: number;
-  accuracy?: number;
-  timestamp: number;
-}
+import { LocationReading, SensorReading } from "./types";
 
 export class DataAccumulator {
   private readings: SensorReading[] = [];
@@ -138,7 +120,7 @@ export class DataAccumulator {
             timestamps: JSON.stringify(
               this.locations
                 .filter((loc) => loc.altitude !== undefined)
-                .map((loc) => loc.timestamp)
+                .map((loc) => loc.timestamp),
             ),
             sampleCount: altitudes.length,
           });
@@ -150,7 +132,7 @@ export class DataAccumulator {
         await localdb.insert(activityRecordingStreams).values(streamsToInsert);
 
         console.log(
-          `[DataAccumulator] Flushed ${this.readings.length} readings and ${this.locations.length} locations in ${Date.now() - flushStartTime}ms`
+          `[DataAccumulator] Flushed ${this.readings.length} readings and ${this.locations.length} locations in ${Date.now() - flushStartTime}ms`,
         );
       }
 
@@ -186,7 +168,7 @@ export class DataAccumulator {
    * Determine data type for a metric
    */
   private getDataTypeForMetric(
-    metric: PublicActivityMetric
+    metric: PublicActivityMetric,
   ): PublicActivityMetricDataType {
     switch (metric) {
       case "latlng":

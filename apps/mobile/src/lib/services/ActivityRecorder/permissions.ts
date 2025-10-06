@@ -166,7 +166,6 @@ export class PermissionsManager {
       name: PermissionsManager.permissionNames[type],
       description: PermissionsManager.permissionDescriptions[type],
       loading: false,
-      required: true, // All permissions are now required
     };
 
     return result.granted;
@@ -282,7 +281,6 @@ export class PermissionsManager {
         name: PermissionsManager.permissionNames[t],
         description: PermissionsManager.permissionDescriptions[t],
         loading: false,
-        required: true, // All permissions are required
       };
     }
   }

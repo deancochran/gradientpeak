@@ -1,84 +1,121 @@
-import { Tier1Metric, Tier2Metric } from './config';
+import { PublicActivityMetric, PublicActivityMetricDataType } from "@repo/core";
+
+// ================================
+// Sensor Reading Types
+// ================================
+
+/**
+ * Canonical SensorReading interface
+ * Used across all sensor-related code (BLE, GPS, manual input)
+ */
+export interface SensorReading {
+  metric: PublicActivityMetric;
+  dataType: PublicActivityMetricDataType;
+  value: number | [number, number];
+  timestamp: number;
+  metadata?: {
+    deviceId?: string;
+    accuracy?: number;
+    source?: string;
+    batteryLevel?: number;
+    signalStrength?: number;
+  };
+}
+
+/**
+ * Location reading from GPS
+ */
+export interface LocationReading {
+  latitude: number;
+  longitude: number;
+  altitude?: number;
+  accuracy?: number;
+  timestamp: number;
+}
+
+// ================================
+// Live Metrics State
+// ================================
 
 /**
  * Complete live metrics state matching SQL schema
  */
 export interface LiveMetricsState {
   // === Timing ===
-  startedAt?: number;           // Unix timestamp
-  finishedAt?: number;          // Unix timestamp
-  elapsedTime: number;          // seconds
-  movingTime: number;           // seconds (excludes pauses)
+  startedAt?: number; // Unix timestamp
+  finishedAt?: number; // Unix timestamp
+  elapsedTime: number; // seconds
+  movingTime: number; // seconds (excludes pauses)
 
   // === Distance & Speed ===
-  distance: number;             // meters
-  avgSpeed: number;             // m/s
-  maxSpeed: number;             // m/s
+  distance: number; // meters
+  avgSpeed: number; // m/s
+  maxSpeed: number; // m/s
 
   // === Elevation ===
-  totalAscent: number;          // meters
-  totalDescent: number;         // meters
-  avgGrade: number;             // percentage (-100 to 100)
-  elevationGainPerKm: number;   // meters per km
+  totalAscent: number; // meters
+  totalDescent: number; // meters
+  avgGrade: number; // percentage (-100 to 100)
+  elevationGainPerKm: number; // meters per km
 
   // === Heart Rate ===
-  avgHeartRate: number;         // bpm
-  maxHeartRate: number;         // bpm
-  maxHrPctThreshold: number;    // percentage of threshold HR
-  hrZone1Time: number;          // seconds in zone 1
-  hrZone2Time: number;          // seconds in zone 2
-  hrZone3Time: number;          // seconds in zone 3
-  hrZone4Time: number;          // seconds in zone 4
-  hrZone5Time: number;          // seconds in zone 5
+  avgHeartRate: number; // bpm
+  maxHeartRate: number; // bpm
+  maxHrPctThreshold: number; // percentage of threshold HR
+  hrZone1Time: number; // seconds in zone 1
+  hrZone2Time: number; // seconds in zone 2
+  hrZone3Time: number; // seconds in zone 3
+  hrZone4Time: number; // seconds in zone 4
+  hrZone5Time: number; // seconds in zone 5
 
   // === Power ===
-  avgPower: number;             // watts
-  maxPower: number;             // watts
-  totalWork: number;            // joules
-  powerZone1Time: number;       // seconds in zone 1
-  powerZone2Time: number;       // seconds in zone 2
-  powerZone3Time: number;       // seconds in zone 3
-  powerZone4Time: number;       // seconds in zone 4
-  powerZone5Time: number;       // seconds in zone 5
-  powerZone6Time: number;       // seconds in zone 6
-  powerZone7Time: number;       // seconds in zone 7
-  powerHeartRateRatio: number;  // watts per bpm
+  avgPower: number; // watts
+  maxPower: number; // watts
+  totalWork: number; // joules
+  powerZone1Time: number; // seconds in zone 1
+  powerZone2Time: number; // seconds in zone 2
+  powerZone3Time: number; // seconds in zone 3
+  powerZone4Time: number; // seconds in zone 4
+  powerZone5Time: number; // seconds in zone 5
+  powerZone6Time: number; // seconds in zone 6
+  powerZone7Time: number; // seconds in zone 7
+  powerHeartRateRatio: number; // watts per bpm
 
   // === Cadence ===
-  avgCadence: number;           // rpm
-  maxCadence: number;           // rpm
+  avgCadence: number; // rpm
+  maxCadence: number; // rpm
 
   // === Environmental ===
-  avgTemperature?: number;      // celsius
-  maxTemperature?: number;      // celsius
+  avgTemperature?: number; // celsius
+  maxTemperature?: number; // celsius
 
   // === Calories ===
-  calories: number;             // kcal
+  calories: number; // kcal
 
   // === Tier 2 - Live Approximations ===
-  normalizedPowerEst: number;      // watts (estimated)
-  intensityFactorEst: number;      // decimal (0.85)
-  trainingStressScoreEst: number;  // points
-  variabilityIndexEst: number;     // ratio
-  efficiencyFactorEst: number;     // watts per bpm
-  decouplingEst: number;           // percentage
+  normalizedPowerEst: number; // watts (estimated)
+  intensityFactorEst: number; // decimal (0.85)
+  trainingStressScoreEst: number; // points
+  variabilityIndexEst: number; // ratio
+  efficiencyFactorEst: number; // watts per bpm
+  decouplingEst: number; // percentage
 
   // === Plan Adherence ===
-  adherenceCurrentStep: number;    // decimal (0.95)
+  adherenceCurrentStep: number; // decimal (0.95)
 }
 
 // === Zone Configuration ===
 export interface ZoneConfig {
-  hrZones: number[];      // 5 thresholds for HR zones
-  powerZones: number[];   // 7 thresholds for power zones
+  hrZones: number[]; // 5 thresholds for HR zones
+  powerZones: number[]; // 7 thresholds for power zones
 }
 
 // === Profile Information ===
 export interface ProfileMetrics {
-  ftp?: number;           // Functional Threshold Power
-  thresholdHr?: number;   // Lactate Threshold Heart Rate
-  weight?: number;        // kg
-  age?: number;           // years
+  ftp?: number; // Functional Threshold Power
+  thresholdHr?: number; // Lactate Threshold Heart Rate
+  weight?: number; // kg
+  age?: number; // years
 }
 
 // === Update Events ===
@@ -97,21 +134,27 @@ export interface MetricsUpdateEvent {
 // === Calculation Results ===
 export interface CalculationResult<T = number> {
   value: T;
-  confidence: 'high' | 'medium' | 'low';
+  confidence: "high" | "medium" | "low";
   sampleSize: number;
   lastUpdated: number;
 }
 
 // === Performance Metrics ===
 export interface PerformanceStats {
-  uiUpdateRate: number;        // actual Hz
-  calculationTime: number;     // ms
-  memoryUsage: number;         // bytes
+  uiUpdateRate: number; // actual Hz
+  calculationTime: number; // ms
+  memoryUsage: number; // bytes
   bufferUtilization: Record<string, number>; // 0-1
 }
 
 // === Recording States ===
-export type LiveMetricsState_Recording = 'inactive' | 'starting' | 'active' | 'paused' | 'finishing' | 'error';
+export type LiveMetricsState_Recording =
+  | "inactive"
+  | "starting"
+  | "active"
+  | "paused"
+  | "finishing"
+  | "error";
 
 // === Batch Processing ===
 export interface BatchProcessingStats {
@@ -124,7 +167,7 @@ export interface BatchProcessingStats {
 
 // === Memory Usage ===
 export interface MemoryUsageStats {
-  totalBufferSize: number;     // bytes
+  totalBufferSize: number; // bytes
   powerBufferSize: number;
   hrBufferSize: number;
   locationBufferSize: number;
@@ -251,8 +294,8 @@ export interface MetricDisplayOptions {
 
 // === Tier Classifications ===
 export interface TierMetrics {
-  tier1: Partial<LiveMetricsState>;  // Real-time metrics
-  tier2: Partial<LiveMetricsState>;  // Approximated metrics
+  tier1: Partial<LiveMetricsState>; // Real-time metrics
+  tier2: Partial<LiveMetricsState>; // Approximated metrics
 }
 
 // === Event Payload Types ===
@@ -265,7 +308,7 @@ export interface RecordingStartedPayload {
 export interface RecordingPausedPayload {
   timestamp: number;
   elapsedTime: number;
-  reason?: 'manual' | 'automatic' | 'system';
+  reason?: "manual" | "automatic" | "system";
 }
 
 export interface RecordingResumedPayload {
@@ -282,11 +325,16 @@ export interface RecordingFinishedPayload {
 
 // === Error Types ===
 export interface LiveMetricsError {
-  type: 'calculation' | 'buffer_overflow' | 'sensor_timeout' | 'memory_limit' | 'invalid_data';
+  type:
+    | "calculation"
+    | "buffer_overflow"
+    | "sensor_timeout"
+    | "memory_limit"
+    | "invalid_data";
   message: string;
   timestamp: number;
   metric?: string;
-  severity: 'low' | 'medium' | 'high' | 'critical';
+  severity: "low" | "medium" | "high" | "critical";
 }
 
 // === Configuration Overrides ===
@@ -339,16 +387,20 @@ export interface PlanAdherenceMetrics {
 
 // === Type Guards ===
 export function isLiveMetricsState(obj: any): obj is LiveMetricsState {
-  return typeof obj === 'object' &&
-         typeof obj.elapsedTime === 'number' &&
-         typeof obj.distance === 'number';
+  return (
+    typeof obj === "object" &&
+    typeof obj.elapsedTime === "number" &&
+    typeof obj.distance === "number"
+  );
 }
 
 export function isMetricUpdateEvent(obj: any): obj is MetricUpdateEvent {
-  return typeof obj === 'object' &&
-         typeof obj.metric === 'string' &&
-         typeof obj.value === 'number' &&
-         typeof obj.timestamp === 'number';
+  return (
+    typeof obj === "object" &&
+    typeof obj.metric === "string" &&
+    typeof obj.value === "number" &&
+    typeof obj.timestamp === "number"
+  );
 }
 
 // === Utility Types ===
@@ -358,5 +410,5 @@ export type NumericMetricKey = {
 }[MetricKey];
 
 export type OptionalMetricKey = {
-  [K in MetricKey]: LiveMetricsState[K] extends (number | undefined) ? K : never;
+  [K in MetricKey]: LiveMetricsState[K] extends number | undefined ? K : never;
 }[MetricKey];

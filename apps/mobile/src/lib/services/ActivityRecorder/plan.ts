@@ -1,16 +1,12 @@
 import {
   ActivityPlanStructure,
-  Duration,
+  FlattenedStep,
+  flattenPlanSteps,
+  getDurationMs,
   RecordingServiceActivityPlan,
   Step,
-  StepOrRepetition,
 } from "@repo/core";
 import { EventEmitter } from "events";
-
-export interface FlattenedStep extends Step {
-  index: number;
-  fromRepetition?: number;
-}
 
 export interface PlannedActivityProgress {
   state: "not_started" | "in_progress" | "finished";
@@ -28,8 +24,8 @@ export class PlanManager extends EventEmitter {
   public selectedActivityPlan: RecordingServiceActivityPlan;
   public plannedActivityId: string | undefined;
   private isAdvancing = false;
-  private advanceTimeout?: NodeJS.Timeout;
-  private lastUpdateTime?: number;
+  private advanceTimeout?: number;
+  public lastUpdateTime?: number;
 
   constructor(
     selectedPlannedActivity: RecordingServiceActivityPlan,
@@ -37,7 +33,7 @@ export class PlanManager extends EventEmitter {
   ) {
     super();
     this.selectedActivityPlan = selectedPlannedActivity;
-    this.flattenedSteps = this.flattenSteps(
+    this.flattenedSteps = flattenPlanSteps(
       (selectedPlannedActivity.structure as ActivityPlanStructure).steps,
     );
     this.plannedActivityId = plannedActivityId;
@@ -167,7 +163,7 @@ export class PlanManager extends EventEmitter {
       targets: step.targets,
       duration:
         step.duration && step.duration !== "untilFinished"
-          ? this.getDurationMs(step.duration)
+          ? getDurationMs(step.duration)
           : undefined,
     };
 
@@ -176,39 +172,6 @@ export class PlanManager extends EventEmitter {
 
     // Emit plan progress update
     this.emit("planProgressUpdate", this.planProgress);
-  }
-
-  private flattenSteps(
-    steps: StepOrRepetition[],
-    parentRep: number | null = null,
-    acc: FlattenedStep[] = [],
-  ): FlattenedStep[] {
-    for (const step of steps) {
-      if (step.type === "step") {
-        acc.push({
-          ...step,
-          index: acc.length,
-          fromRepetition: parentRep ?? undefined,
-        });
-      } else if (step.type === "repetition") {
-        for (let i = 0; i < step.repeat; i++) {
-          this.flattenSteps(step.steps, i, acc);
-        }
-      }
-    }
-    return acc;
-  }
-
-  private getDurationMs(duration: Duration): number | undefined {
-    if (duration === "untilFinished") return undefined;
-    switch (duration.unit) {
-      case "seconds":
-        return duration.value * 1000;
-      case "minutes":
-        return duration.value * 60 * 1000;
-      default:
-        return undefined;
-    }
   }
 
   public getCurrentStep(): FlattenedStep | undefined {

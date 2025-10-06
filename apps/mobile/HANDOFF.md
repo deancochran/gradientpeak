@@ -63,8 +63,8 @@ class DataAccumulator {
 class LiveMetricsManager {
   private buffer = new DataBuffer(60); // 60-second window
   private accumulator = new DataAccumulator();
-  private updateTimer: NodeJS.Timeout;
-  private persistenceTimer: NodeJS.Timeout;
+  private updateTimer: number;
+  private persistenceTimer: number;
 
   startRecording(): void {
     // Start update timer (1s)

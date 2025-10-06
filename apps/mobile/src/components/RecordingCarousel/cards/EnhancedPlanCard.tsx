@@ -15,21 +15,6 @@ import {
 } from "lucide-react-native";
 import { ActivityPlanStructure } from "@repo/core";
 import { useMetric } from "@/lib/hooks/useActivityRecorderEvents";
-import {
-  WorkoutGraph,
-  WorkoutProgressGraph,
-  WorkoutMetricsGrid,
-  TargetMetricsGrid,
-  StepBreakdown,
-  UpcomingStepsPreview,
-} from "./WorkoutVisualization";
-import {
-  extractWorkoutProfile,
-  calculateWorkoutStats,
-  formatDuration,
-  formatDurationCompact,
-  flattenPlanSteps,
-} from "./utils";
 
 // ================================
 // Types

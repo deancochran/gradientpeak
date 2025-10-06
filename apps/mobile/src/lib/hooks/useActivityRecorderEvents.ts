@@ -1,11 +1,11 @@
-import { useEffect, useState, useCallback } from "react";
-import { PublicActivityType, RecordingServiceActivityPlan } from "@repo/core";
 import {
   ActivityRecorderService,
-  RecordingState,
   PlannedActivityProgress,
+  RecordingState,
 } from "@/lib/services/ActivityRecorder";
 import { PermissionState } from "@/lib/services/ActivityRecorder/permissions";
+import { PublicActivityType, RecordingServiceActivityPlan } from "@repo/core";
+import { useCallback, useEffect, useState } from "react";
 
 // ================================
 // Core Event Hooks

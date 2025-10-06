@@ -1,12 +1,27 @@
+/**
+ * ActivityRecorderService - Simplified
+ *
+ * Core responsibilities:
+ * 1. Coordinate recording lifecycle (start/pause/resume/finish)
+ * 2. Manage sub-systems (sensors, location, metrics, plan)
+ * 3. Emit 4 core events for UI updates
+ *
+ * Key simplifications:
+ * - Single event system (EventEmitter only)
+ * - No redundant state (removed liveMetrics Map)
+ * - Public managers (no method forwarding)
+ * - 4 core events instead of 12+
+ */
+
 import {
   PublicActivityType,
   PublicProfilesRow,
   RecordingServiceActivityPlan,
-  Step,
 } from "@repo/core";
 
 import { activityRecordings, SelectActivityRecording } from "@/lib/db/schemas";
 import { eq } from "drizzle-orm";
+import { LiveMetricsManager } from "./LiveMetricsManager";
 import { LocationManager } from "./location";
 import { NotificationsManager } from "./notification";
 import {
@@ -14,26 +29,20 @@ import {
   type PermissionState,
   type PermissionType,
 } from "./permissions";
-import { SensorReading, SensorsManager } from "./sensors";
-import { LiveMetricsManager } from "./LiveMetricsManager";
+import { SensorsManager } from "./sensors";
+import { SensorReading } from "./types";
 
 import { localdb } from "@/lib/db";
 
 import { LocationObject } from "expo-location";
 import { AppState, AppStateStatus } from "react-native";
-import { Device } from "react-native-ble-plx";
 import { PlanManager } from "./plan";
 
 import { EventEmitter } from "events";
 
 // ================================
-// Plan Types
+// Types
 // ================================
-
-export interface FlattenedStep extends Step {
-  index: number;
-  fromRepetition?: number;
-}
 
 export interface PlannedActivityProgress {
   state: "not_started" | "in_progress" | "finished";
@@ -42,12 +51,8 @@ export interface PlannedActivityProgress {
   totalSteps: number;
   elapsedInStep: number;
   duration?: number;
-  targets?: Step["targets"];
+  targets?: any;
 }
-
-// ================================
-// Recording Types
-// ================================
 
 export type RecordingState =
   | "pending"
@@ -57,59 +62,80 @@ export type RecordingState =
   | "finished";
 
 // ================================
+// Core Events (reduced from 12+ to 4)
+// ================================
+export interface ServiceEvents {
+  // Recording state changed (pending/ready/recording/paused/finished)
+  stateChanged: (state: RecordingState) => void;
+
+  // Activity type or plan was selected/changed
+  activitySelected: (type: PublicActivityType, planName?: string) => void;
+
+  // Sensors connected/disconnected
+  sensorsChanged: (sensors: any[]) => void;
+
+  // Plan progress updated (step changes, completion)
+  planProgressChanged: (progress: PlannedActivityProgress | null) => void;
+}
+
+// ================================
 // Activity Recorder Service
 // ================================
 
 export class ActivityRecorderService extends EventEmitter {
-  // State
+  // === Public State ===
   public state: RecordingState = "pending";
   public selectedActivityType: PublicActivityType = "indoor_bike_trainer";
-  public liveMetrics: Map<string, number> = new Map();
-  public liveMetricsManager: LiveMetricsManager;
   public recording?: SelectActivityRecording;
 
-  // Managers
-  private locationManager = new LocationManager();
-  private sensorsManager = new SensorsManager();
+  // === Public Managers (direct access - no forwarding) ===
+  public readonly liveMetricsManager: LiveMetricsManager;
+  public readonly locationManager: LocationManager;
+  public readonly sensorsManager: SensorsManager;
+  public readonly permissionsManager: PermissionsManager;
   public planManager?: PlanManager;
-  public permissionsManager = new PermissionsManager();
+
+  // === Private Managers ===
   private notificationsManager?: NotificationsManager;
 
-  // App state management
+  // === App State Management ===
   private appState: AppStateStatus = AppState.currentState;
   private appStateSubscription?: { remove: () => void };
 
-  // Timing for plan progress
-  private lastTimestamp?: number;
-
-  // Activity timing
+  // === Timing ===
   private startTime?: number;
   private pausedTime: number = 0;
   private lastPauseTime?: number;
-  private elapsedTimeInterval?: NodeJS.Timeout;
+  private elapsedTimeInterval?: number;
 
-  // Distance tracking
-  private totalDistance: number = 0;
-  private lastLocation?: LocationObject;
-
-  // Subscribers
-  private subscribers = new Set<() => void>();
-
-  // Profile
+  // === Profile ===
   private profile: PublicProfilesRow;
 
   constructor(profile: PublicProfilesRow) {
     super();
     this.profile = profile;
 
-    // Initialize LiveMetricsManager
+    // Initialize managers
     this.liveMetricsManager = new LiveMetricsManager(profile);
+    this.locationManager = new LocationManager();
+    this.sensorsManager = new SensorsManager();
+    this.permissionsManager = new PermissionsManager();
 
-    // Initialize permissions check
+    // Check permissions on initialization
     this.permissionsManager.checkAll();
 
-    // Setup sensor listeners
+    // Setup sensor data listeners
     this.sensorsManager.subscribe((reading) => this.handleSensorData(reading));
+
+    // Setup sensor connection listeners
+    this.sensorsManager.subscribeConnection((sensor) => {
+      console.log(
+        "[Service] Sensor connection changed:",
+        sensor.name,
+        sensor.connectionState,
+      );
+      this.emit("sensorsChanged", this.sensorsManager.getConnectedSensors());
+    });
 
     // Setup location listeners
     this.locationManager.addCallback((location) =>
@@ -122,71 +148,9 @@ export class ActivityRecorderService extends EventEmitter {
       (nextState) => this.handleAppStateChange(nextState),
     );
 
-    // Setup LiveMetricsManager event forwarding
-    this.setupLiveMetricsEventForwarding();
-  }
-
-  private setupLiveMetricsEventForwarding(): void {
-    // Forward LiveMetricsManager events to external listeners
-    this.liveMetricsManager.on("metricsUpdate", (updateEvent) => {
-      this.emit("liveMetricsUpdate", updateEvent);
-
-      // Update live metrics map for backward compatibility
-      const metrics = updateEvent.metrics;
-      this.liveMetrics.set("elapsedTime", metrics.elapsedTime);
-      this.liveMetrics.set("distance", metrics.distance);
-      this.liveMetrics.set("avgPower", metrics.avgPower);
-      this.liveMetrics.set("avgHeartRate", metrics.avgHeartRate);
-      this.liveMetrics.set("calories", metrics.calories);
+    console.log("[ActivityRecorderService] Initialized", {
+      profileId: profile.id,
     });
-
-    this.liveMetricsManager.on("persistenceError", (error) => {
-      this.emit("liveMetricsError", error);
-    });
-  }
-
-  // ================================
-  // Event Emission (EventEmitter Pattern)
-  // ================================
-
-  public subscribe(callback: () => void): () => void {
-    this.subscribers.add(callback);
-    return () => this.subscribers.delete(callback);
-  }
-
-  private notify() {
-    this.subscribers.forEach((cb) => cb());
-  }
-
-  private emitStateChange() {
-    this.emit("stateChange", this.state);
-  }
-
-  private emitActivityTypeChange() {
-    this.emit("activityTypeChange", this.selectedActivityType);
-  }
-
-  private emitMetricUpdate(metric: string, value: number) {
-    this.emit("metricUpdate", { metric, value });
-    this.emit(`metric:${metric}`, value);
-  }
-
-  private emitSensorUpdate() {
-    const sensors = this.sensorsManager.getConnectedSensors();
-    this.emit("sensorsUpdate", sensors);
-    this.emit("sensorCountUpdate", sensors.length);
-  }
-
-  private emitPermissionUpdate(type: string) {
-    const permission = this.permissionsManager.permissions[type];
-    this.emit("permissionUpdate", { type, permission });
-    this.emit(`permission:${type}`, permission);
-  }
-
-  private emitPlanProgressUpdate() {
-    if (this.planManager) {
-      this.emit("planProgressUpdate", this.planManager.planProgress);
-    }
   }
 
   // ================================
@@ -199,16 +163,6 @@ export class ActivityRecorderService extends EventEmitter {
 
   async checkPermissions(): Promise<void> {
     await this.permissionsManager.checkAll();
-    // Emit updates for all permissions
-    const types: PermissionType[] = [
-      "bluetooth",
-      "location",
-      "location-background",
-    ];
-    types.forEach((type) => {
-      this.emitPermissionUpdate(type);
-    });
-    this.notify();
   }
 
   async ensurePermission(type: PermissionType): Promise<boolean> {
@@ -220,8 +174,6 @@ export class ActivityRecorderService extends EventEmitter {
       description: PermissionsManager.permissionDescriptions[type],
       loading: false,
     };
-    this.emitPermissionUpdate(type);
-    this.notify();
     return granted;
   }
 
@@ -235,7 +187,7 @@ export class ActivityRecorderService extends EventEmitter {
 
     // Returning to foreground - reconnect sensors
     if (prevState.match(/inactive|background/) && nextState === "active") {
-      console.log("App foregrounded - reconnecting sensors");
+      console.log("[Service] App foregrounded - reconnecting sensors");
       this.reconnectDisconnectedSensors();
     }
   }
@@ -244,7 +196,7 @@ export class ActivityRecorderService extends EventEmitter {
     const sensors = this.sensorsManager.getConnectedSensors();
     for (const sensor of sensors) {
       if (sensor.connectionState === "disconnected") {
-        console.log(`Reconnecting ${sensor.name}`);
+        console.log(`[Service] Reconnecting ${sensor.name}`);
         await this.sensorsManager.connectSensor(sensor.id);
       }
     }
@@ -255,6 +207,8 @@ export class ActivityRecorderService extends EventEmitter {
   // ================================
 
   async startRecording() {
+    console.log("[Service] Starting recording");
+
     // Clean up any stale recordings
     await localdb.delete(activityRecordings);
 
@@ -286,11 +240,9 @@ export class ActivityRecorderService extends EventEmitter {
     this.startTime = Date.now();
     this.pausedTime = 0;
     this.lastPauseTime = undefined;
-    this.totalDistance = 0;
-    this.lastLocation = undefined;
     this.startElapsedTimeUpdates();
 
-    // Start location tracking (both foreground and background)
+    // Start location tracking
     await this.locationManager.startForegroundTracking();
     await this.locationManager.startBackgroundTracking();
 
@@ -301,19 +253,25 @@ export class ActivityRecorderService extends EventEmitter {
     this.notificationsManager = new NotificationsManager(activityName);
     await this.notificationsManager.startForegroundService();
 
-    // Start the plan if one is selected
+    // Start plan if selected
     if (this.planManager) {
-      console.log("Starting plan progression");
+      console.log("[Service] Starting plan progression");
       this.planManager.start();
-      this.emitPlanProgressUpdate();
+      this.setupPlanEventListeners();
     }
 
-    this.emitStateChange();
-    this.notify();
+    // Emit initial sensor state
+    this.emit("sensorsChanged", this.sensorsManager.getConnectedSensors());
+    this.emit("stateChanged", this.state);
+    console.log("[Service] Recording started successfully");
   }
 
   async pauseRecording() {
-    if (this.state !== "recording") throw new Error("Not recording");
+    if (this.state !== "recording") {
+      throw new Error("Cannot pause - not recording");
+    }
+
+    console.log("[Service] Pausing recording");
 
     const pauseTimestamp = Date.now();
     this.state = "paused";
@@ -324,12 +282,15 @@ export class ActivityRecorderService extends EventEmitter {
 
     this.stopElapsedTimeUpdates();
 
-    this.emitStateChange();
-    this.notify();
+    this.emit("stateChanged", this.state);
   }
 
   async resumeRecording() {
-    if (this.state !== "paused") throw new Error("Not paused");
+    if (this.state !== "paused") {
+      throw new Error("Cannot resume - not paused");
+    }
+
+    console.log("[Service] Resuming recording");
 
     const resumeTimestamp = Date.now();
     this.state = "recording";
@@ -346,16 +307,20 @@ export class ActivityRecorderService extends EventEmitter {
 
     this.startElapsedTimeUpdates();
 
-    this.emitStateChange();
-    this.notify();
+    this.emit("stateChanged", this.state);
   }
 
   async finishRecording() {
-    if (!this.recording) throw new Error("No active recording");
+    if (!this.recording) {
+      throw new Error("No active recording to finish");
+    }
+
+    console.log("[Service] Finishing recording");
 
     // Finish LiveMetricsManager first (includes final DB write)
     await this.liveMetricsManager.finishRecording();
 
+    // Update recording end time
     await localdb
       .update(activityRecordings)
       .set({ endedAt: new Date().toISOString() })
@@ -367,160 +332,95 @@ export class ActivityRecorderService extends EventEmitter {
     }
 
     this.state = "finished";
-    this.emitStateChange();
-    this.notify();
+    this.emit("stateChanged", this.state);
+    console.log("[Service] Recording finished successfully");
   }
-
-  // ================================
-  // Reset Service for New Activity
-  // ================================
 
   // ================================
   // Activity Selection
   // ================================
 
   selectUnplannedActivity(type: PublicActivityType) {
+    console.log("[Service] Selected unplanned activity:", type);
     this.selectedActivityType = type;
     this.planManager = undefined;
-    this.emitActivityTypeChange();
-    this.notify();
+    this.emit("activitySelected", type);
+    this.emit("planProgressChanged", null);
   }
 
   selectPlannedActivity(
     plan: RecordingServiceActivityPlan,
     plannedId?: string,
   ) {
+    console.log("[Service] Selected planned activity:", plan.name);
     this.planManager = new PlanManager(plan, plannedId);
-
-    // Set up event listeners for plan events
-    this.planManager.on("planProgressUpdate", (progress) => {
-      this.emitPlanProgressUpdate();
-      this.notify();
-    });
-
-    this.planManager.on("stepAdvanced", ({ from, to, progress }) => {
-      console.log(`Plan step advanced from ${from} to ${to}`);
-      this.emitPlanProgressUpdate();
-      this.notify();
-    });
-
-    this.planManager.on("planFinished", (progress) => {
-      console.log("Plan finished!");
-      this.emitPlanProgressUpdate();
-      this.notify();
-    });
-
-    this.planManager.on("planStarted", (progress) => {
-      console.log("Plan started!");
-      this.emitPlanProgressUpdate();
-      this.notify();
-    });
-
     this.selectedActivityType = plan.activity_type;
-    this.emitActivityTypeChange();
-    this.emitPlanProgressUpdate();
-    this.notify();
+    this.emit("activitySelected", plan.activity_type, plan.name);
+    this.emit("planProgressChanged", this.planManager.planProgress);
+  }
+
+  // ================================
+  // Plan Management
+  // ================================
+
+  private setupPlanEventListeners() {
+    if (!this.planManager) return;
+
+    this.planManager.on("planProgressUpdate", () => {
+      this.emit("planProgressChanged", this.planManager!.planProgress);
+    });
+
+    this.planManager.on("stepAdvanced", ({ from, to }) => {
+      console.log(`[Service] Plan step advanced: ${from} → ${to}`);
+      this.emit("planProgressChanged", this.planManager!.planProgress);
+    });
+
+    this.planManager.on("planFinished", () => {
+      console.log("[Service] Plan finished!");
+      this.emit("planProgressChanged", this.planManager!.planProgress);
+    });
   }
 
   advanceStep() {
     if (!this.planManager) return;
     this.planManager.advanceStep();
-    this.emitPlanProgressUpdate();
-    this.notify();
   }
 
   // ================================
-  // Device Management
-  // ================================
-
-  async scanForDevices(): Promise<Device[]> {
-    return await this.sensorsManager.scan();
-  }
-
-  async connectToDevice(deviceId: string) {
-    await this.sensorsManager.connectSensor(deviceId);
-    this.emitSensorUpdate();
-    this.notify();
-  }
-
-  async disconnectDevice(deviceId: string) {
-    await this.sensorsManager.disconnectSensor(deviceId);
-    this.emitSensorUpdate();
-    this.notify();
-  }
-
-  getConnectedSensors() {
-    return this.sensorsManager.getConnectedSensors();
-  }
-
-  subscribeConnection(cb: (sensor: any) => void) {
-    return this.sensorsManager.subscribeConnection((sensor) => {
-      cb(sensor);
-      this.emitSensorUpdate();
-      this.notify();
-    });
-  }
-
-  // ================================
-  // Buffer Status
-  // ================================
-
-  getBufferStatus(): Record<string, number> {
-    if (!this.chunkProcessor) return {};
-    return this.chunkProcessor.getBufferStatus();
-  }
-
-  // ================================
-  // Data Handling (Private)
+  // Data Handling
   // ================================
 
   private handleSensorData(reading: SensorReading) {
     if (this.state !== "recording") return;
 
-    // Track timing for plan progress
-    const currentTimestamp = reading.timestamp || Date.now();
-    const deltaMs = this.lastTimestamp
-      ? currentTimestamp - this.lastTimestamp
-      : 0;
-    this.lastTimestamp = currentTimestamp;
+    // Send to LiveMetricsManager for processing
+    this.liveMetricsManager.ingestSensorData(reading);
 
-    // Update plan progress
-    if (deltaMs > 0 && this.planManager) {
-      this.planManager.updatePlanProgress(deltaMs);
-      this.emitPlanProgressUpdate();
+    // Update plan progress based on sensor data timing
+    if (this.planManager && reading.timestamp) {
+      const now = reading.timestamp;
+      const deltaMs = this.planManager.lastUpdateTime
+        ? now - this.planManager.lastUpdateTime
+        : 0;
+      if (deltaMs > 0) {
+        this.planManager.updatePlanProgress(deltaMs);
+      }
     }
 
-    // Send to LiveMetricsManager - it handles both buffer and accumulator
-    this.liveMetricsManager.ingestSensorData({
-      metric: reading.metric,
-      value: reading.value,
-      timestamp: reading.timestamp,
-      metadata: reading.metadata,
-    });
-
-    // Update legacy live metrics map for compatibility
-    if (typeof reading.value === "number") {
-      const currentValue = this.liveMetrics.get(reading.metric);
-      if (currentValue !== reading.value) {
-        this.liveMetrics.set(reading.metric, reading.value);
-        this.emitMetricUpdate(reading.metric, reading.value);
-
-        // Update notification with key metrics
-        if (
-          ["heartrate", "power"].includes(reading.metric) &&
-          this.notificationsManager
-        ) {
-          this.notificationsManager
-            .update({
-              elapsedInStep: this.planManager?.planProgress?.elapsedInStep ?? 0,
-              heartRate: this.liveMetrics.get("heartRate"),
-              power: this.liveMetrics.get("power"),
-            })
-            .catch(console.error);
-        }
-
-        this.notify();
-      }
+    // Update notification with key metrics
+    if (
+      ["heartrate", "power"].includes(reading.metric) &&
+      this.notificationsManager &&
+      typeof reading.value === "number"
+    ) {
+      const metrics = this.liveMetricsManager.getMetrics();
+      this.notificationsManager
+        .update({
+          elapsedInStep: this.planManager?.planProgress?.elapsedInStep ?? 0,
+          heartRate: metrics.avgHeartRate || undefined,
+          power: metrics.avgPower || undefined,
+        })
+        .catch(console.error);
     }
   }
 
@@ -529,7 +429,7 @@ export class ActivityRecorderService extends EventEmitter {
 
     const timestamp = location.timestamp || Date.now();
 
-    // Send to LiveMetricsManager - it handles both calculations and persistence
+    // Send to LiveMetricsManager for processing
     this.liveMetricsManager.ingestLocationData({
       latitude: location.coords.latitude,
       longitude: location.coords.longitude,
@@ -537,67 +437,6 @@ export class ActivityRecorderService extends EventEmitter {
       accuracy: location.coords.accuracy || undefined,
       timestamp: timestamp,
     });
-
-    // Update individual lat/lng in live metrics for UI display
-    const currentLat = this.liveMetrics.get("latitude");
-    const currentLng = this.liveMetrics.get("longitude");
-
-    if (
-      currentLat !== location.coords.latitude ||
-      currentLng !== location.coords.longitude
-    ) {
-      this.liveMetrics.set("latitude", location.coords.latitude);
-      this.liveMetrics.set("longitude", location.coords.longitude);
-      this.emitMetricUpdate("latitude", location.coords.latitude);
-      this.emitMetricUpdate("longitude", location.coords.longitude);
-    }
-
-    // Convert location to sensor readings
-    const readings: SensorReading[] = [
-      {
-        metric: "latlng",
-        dataType: "latlng",
-        value: [location.coords.latitude, location.coords.longitude],
-        timestamp,
-      },
-    ];
-
-    // Add optional GPS metrics
-    if (location.coords.speed) {
-      const speedKmh = location.coords.speed * 3.6; // m/s to km/h
-      readings.push({
-        metric: "speed",
-        dataType: "float",
-        value: speedKmh,
-        timestamp,
-      });
-      this.liveMetrics.set("speed", speedKmh);
-      this.emitMetricUpdate("speed", speedKmh);
-    }
-
-    if (location.coords.altitude) {
-      readings.push({
-        metric: "altitude",
-        dataType: "float",
-        value: location.coords.altitude,
-        timestamp,
-      });
-      this.liveMetrics.set("altitude", location.coords.altitude);
-      this.emitMetricUpdate("altitude", location.coords.altitude);
-    }
-
-    if (location.coords.heading) {
-      readings.push({
-        metric: "heading",
-        dataType: "float",
-        value: location.coords.heading,
-        timestamp,
-      });
-      this.liveMetrics.set("heading", location.coords.heading);
-      this.emitMetricUpdate("heading", location.coords.heading);
-    }
-
-    readings.forEach((r) => this.handleSensorData(r));
   }
 
   // ================================
@@ -605,12 +444,12 @@ export class ActivityRecorderService extends EventEmitter {
   // ================================
 
   private startElapsedTimeUpdates() {
-    this.stopElapsedTimeUpdates(); // Clear any existing interval
+    this.stopElapsedTimeUpdates();
 
     // Update elapsed time every second
     this.elapsedTimeInterval = setInterval(() => {
       this.updateElapsedTime();
-    }, 1000);
+    }, 1000) as unknown as number;
 
     // Initial update
     this.updateElapsedTime();
@@ -626,55 +465,15 @@ export class ActivityRecorderService extends EventEmitter {
   private updateElapsedTime() {
     if (!this.startTime) return;
 
-    const now = Date.now();
-    let elapsedMs: number;
-
-    if (this.state === "paused" && this.lastPauseTime) {
-      // When paused, calculate elapsed time up to pause
-      elapsedMs = this.lastPauseTime - this.startTime - this.pausedTime;
-    } else {
-      // When recording, calculate current elapsed time
-      elapsedMs = now - this.startTime - this.pausedTime;
-    }
-
-    // Convert to seconds and ensure positive
-    const elapsedSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
-
-    // Only update if the elapsed time changed (avoid unnecessary updates)
-    const currentElapsed = this.liveMetrics.get("elapsedTime");
-    if (currentElapsed !== elapsedSeconds) {
-      this.liveMetrics.set("elapsedTime", elapsedSeconds);
-      this.emitMetricUpdate("elapsedTime", elapsedSeconds);
-
-      // Update plan progress if we have an active plan (only when recording, not paused)
-      if (this.planManager && this.state === "recording") {
-        // Pass 1000ms delta since we update every second
-        this.planManager.updatePlanProgress(1000);
-        // Note: planManager emits its own planProgressUpdate event
-      }
-
-      // Notify subscribers only when time actually changes
-      this.notify();
+    // Update plan progress (only when recording, not paused)
+    if (this.planManager && this.state === "recording") {
+      this.planManager.updatePlanProgress(1000);
     }
   }
 
   public getElapsedTime(): number {
-    return this.liveMetrics.get("elapsedTime") || 0;
-  }
-
-  // Calculate distance between two GPS coordinates using Haversine formula
-  private calculateDistance(coord1: any, coord2: any): number {
-    const R = 6371; // Earth's radius in km
-    const dLat = ((coord2.latitude - coord1.latitude) * Math.PI) / 180;
-    const dLon = ((coord2.longitude - coord1.longitude) * Math.PI) / 180;
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos((coord1.latitude * Math.PI) / 180) *
-        Math.cos((coord2.latitude * Math.PI) / 180) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c; // Distance in km
+    const metrics = this.liveMetricsManager.getMetrics();
+    return metrics.elapsedTime;
   }
 
   // ================================
@@ -682,7 +481,7 @@ export class ActivityRecorderService extends EventEmitter {
   // ================================
 
   async cleanup() {
-    console.log("Cleaning up ActivityRecorderService instance");
+    console.log("[Service] Cleaning up");
 
     // Stop any active recording
     if (this.state === "recording" || this.state === "paused") {
@@ -715,8 +514,6 @@ export class ActivityRecorderService extends EventEmitter {
     // Clear all event listeners
     this.removeAllListeners();
 
-    console.log(
-      "ActivityRecorderService instance cleaned up and ready for deallocation",
-    );
+    console.log("[Service] Cleanup complete");
   }
 }
