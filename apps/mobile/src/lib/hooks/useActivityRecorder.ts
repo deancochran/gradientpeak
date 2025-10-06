@@ -168,9 +168,9 @@ export function useActivityRecorderData(
     stats,
 
     // Recording state
-    isActive: recordingState.isActive,
-    isPaused: recordingState.isPaused,
-    recordingId: recordingState.recordingId,
+    isActive: recordingState === "recording",
+    isPaused: recordingState === "paused",
+    recordingId: service?.recording?.id,
 
     // Service reference for advanced use
     service,
@@ -362,6 +362,7 @@ export function usePermissions(
  * const { plan, progress, activityType } = usePlan(service);
  * ```
  */
+
 export function usePlan(service: ActivityRecorderService | null): PlanState {
   const [planState, setPlanState] = useState<PlanState>(() => ({
     plan: service?.planManager?.selectedActivityPlan,
@@ -386,20 +387,29 @@ export function usePlan(service: ActivityRecorderService | null): PlanState {
       activityType: service.selectedActivityType,
     });
 
-    // Subscribe to plan progress updates
-    const handlePlanProgress = (newProgress: PlannedActivityProgress) => {
+    // Subscribe to plan progress updates (including null for removal)
+    const handlePlanProgress = (
+      newProgress: PlannedActivityProgress | null,
+    ) => {
+      console.log("[usePlan] Plan progress changed:", newProgress);
       setPlanState((prev) => ({
         ...prev,
-        progress: newProgress,
+        progress: newProgress || undefined,
+        plan: newProgress ? prev.plan : undefined, // Clear plan when progress is null
       }));
     };
 
     // Subscribe to activity type changes
-    const handleActivityTypeChange = (newType: PublicActivityType) => {
+    const handleActivityTypeChange = (
+      newType: PublicActivityType,
+      planName?: string,
+    ) => {
+      console.log("[usePlan] Activity type changed:", newType, planName);
       setPlanState((prev) => ({
         ...prev,
         activityType: newType,
         plan: service.planManager?.selectedActivityPlan,
+        progress: service.planManager?.planProgress,
       }));
     };
 
@@ -416,7 +426,99 @@ export function usePlan(service: ActivityRecorderService | null): PlanState {
 }
 
 // ================================
-// 7. useRecorderActions - All Actions Consolidated
+// 7. useActivityStatus - Card Visibility Flags
+// ================================
+
+/**
+ * Provides boolean flags for determining which cards should be visible in the UI.
+ * This hook reactively tracks activity type and plan status to control card rendering.
+ *
+ * @param service - ActivityRecorderService instance
+ * @returns Object with boolean flags for card visibility
+ *
+ * @example
+ * ```tsx
+ * const { isOutdoorActivity, hasPlan } = useActivityStatus(service);
+ *
+ * // Use in card list determination
+ * if (isOutdoorActivity) cardList.push('map');
+ * if (hasPlan) cardList.push('plan');
+ * ```
+ */
+export function useActivityStatus(service: ActivityRecorderService | null): {
+  isOutdoorActivity: boolean;
+  hasPlan: boolean;
+  activityType: PublicActivityType;
+} {
+  const [status, setStatus] = useState(() => ({
+    isOutdoorActivity: false,
+    hasPlan: false,
+    activityType: (service?.selectedActivityType ||
+      "indoor_bike_trainer") as PublicActivityType,
+  }));
+
+  useEffect(() => {
+    if (!service) {
+      setStatus({
+        isOutdoorActivity: false,
+        hasPlan: false,
+        activityType: "indoor_bike_trainer",
+      });
+      return;
+    }
+
+    // Helper function to check if activity is outdoor
+    const checkIsOutdoor = (type: PublicActivityType): boolean => {
+      return ["outdoor_run", "outdoor_bike"].includes(type);
+    };
+
+    // Initialize state
+    setStatus({
+      isOutdoorActivity: checkIsOutdoor(service.selectedActivityType),
+      hasPlan: !!service.planManager?.selectedActivityPlan,
+      activityType: service.selectedActivityType,
+    });
+
+    // Handle activity type changes
+    const handleActivitySelected = (
+      newType: PublicActivityType,
+      planName?: string,
+    ) => {
+      console.log("[useActivityStatus] Activity selected:", newType, planName);
+      setStatus({
+        isOutdoorActivity: checkIsOutdoor(newType),
+        hasPlan: !!planName || !!service.planManager?.selectedActivityPlan,
+        activityType: newType,
+      });
+    };
+
+    // Handle plan status changes
+    const handlePlanProgressChanged = (
+      progress: PlannedActivityProgress | null,
+    ) => {
+      console.log("[useActivityStatus] Plan progress changed:", !!progress);
+      setStatus((prev) => ({
+        ...prev,
+        hasPlan:
+          progress !== null && !!service.planManager?.selectedActivityPlan,
+      }));
+    };
+
+    // Subscribe to events
+    service.on("activitySelected", handleActivitySelected);
+    service.on("planProgressChanged", handlePlanProgressChanged);
+
+    return () => {
+      service.off("activitySelected", handleActivitySelected);
+      service.off("planProgressChanged", handlePlanProgressChanged);
+    };
+  }, [service]);
+
+  return status;
+}
+
+// ================================
+// 8. useRecorderActions - All Actions Consolidated
 // ================================
 
 /**

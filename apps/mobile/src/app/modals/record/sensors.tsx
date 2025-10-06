@@ -3,12 +3,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import {
-  useActivityRecorder,
   usePermissions,
   useRecorderActions,
   useSensors,
 } from "@/lib/hooks/useActivityRecorder";
-import { useRequireAuth } from "@/lib/hooks/useAuth";
+import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { useRouter } from "expo-router";
 import { Bluetooth, ChevronLeft, RefreshCw } from "lucide-react-native";
 import { useState } from "react";
@@ -17,10 +16,9 @@ import type { Device } from "react-native-ble-plx";
 
 export default function BluetoothModal() {
   const router = useRouter();
-  const { profile } = useRequireAuth();
 
-  // Service and state
-  const service = useActivityRecorder(profile || null);
+  // Use shared service from context (provided by _layout.tsx)
+  const service = useSharedActivityRecorder();
   const permissions = usePermissions(service);
   const { sensors: connectedSensors } = useSensors(service);
   const { scanDevices, connectDevice, disconnectDevice } =

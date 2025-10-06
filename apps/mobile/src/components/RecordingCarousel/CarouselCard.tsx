@@ -46,13 +46,7 @@ export const CarouselCard = memo(({ type, service }: CarouselCardProps) => {
       return <MapCard service={service} screenWidth={SCREEN_WIDTH} />;
 
     case "plan":
-      return (
-        <EnhancedPlanCard
-          service={service}
-          style={{ width: SCREEN_WIDTH }}
-          className="flex-1 p-4"
-        />
-      );
+      return <EnhancedPlanCard service={service} screenWidth={SCREEN_WIDTH} />;
 
     default:
       return null;

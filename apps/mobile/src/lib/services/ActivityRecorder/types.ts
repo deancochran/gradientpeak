@@ -1,5 +1,35 @@
-import { PublicActivityMetric, PublicActivityMetricDataType } from "@repo/core";
+import {
+  PublicActivityMetric,
+  PublicActivityMetricDataType,
+  PublicActivityType,
+} from "@repo/core";
+import {
+  Activity,
+  Bike,
+  Dumbbell,
+  Footprints,
+  Waves,
+} from "lucide-react-native";
 
+export const ACTIVITY_NAMES: Record<PublicActivityType, string> = {
+  outdoor_run: "Run",
+  outdoor_bike: "Bike",
+  indoor_bike_trainer: "Trainer",
+  indoor_treadmill: "Treadmill",
+  indoor_strength: "Strength",
+  indoor_swim: "Swim",
+  other: "Other",
+};
+
+export const ACTIVITY_ICONS: Record<PublicActivityType, any> = {
+  outdoor_run: Footprints,
+  outdoor_bike: Bike,
+  indoor_bike_trainer: Bike,
+  indoor_treadmill: Footprints,
+  indoor_strength: Dumbbell,
+  indoor_swim: Waves,
+  other: Activity,
+};
 // ================================
 // Sensor Reading Types
 // ================================
@@ -30,6 +60,7 @@ export interface LocationReading {
   longitude: number;
   altitude?: number;
   accuracy?: number;
+  heading?: number;
   timestamp: number;
 }
 

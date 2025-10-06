@@ -17,11 +17,10 @@ import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import {
   PermissionsState,
-  useActivityRecorder,
   usePermissions,
   useRecorderActions,
 } from "@/lib/hooks/useActivityRecorder";
-import { useRequireAuth } from "@/lib/hooks/useAuth";
+import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 
 type PermissionType = "bluetooth" | "location" | "location-background";
 
@@ -64,13 +63,12 @@ const PERMISSION_CONFIGS: PermissionConfig[] = [
 
 export default function PermissionsModal() {
   const router = useRouter();
-  const { profile } = useRequireAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [requestingPermission, setRequestingPermission] =
     useState<PermissionType | null>(null);
 
-  // Service and permissions
-  const service = useActivityRecorder(profile || null);
+  // Use shared service from context (provided by _layout.tsx)
+  const service = useSharedActivityRecorder();
   const permissions = usePermissions(service);
   const { checkPermissions, ensurePermission } = useRecorderActions(service);
 

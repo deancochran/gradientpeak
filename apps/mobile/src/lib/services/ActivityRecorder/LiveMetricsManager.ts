@@ -43,7 +43,7 @@ export class LiveMetricsManager extends EventEmitter {
 
   // === Performance Optimization ===
   private pendingSensorUpdates = new Map<string, number>();
-  private sensorUpdateTimer?: NodeJS.Timeout;
+  private sensorUpdateTimer?: number;
   private lastStatsEmit = 0;
   private cachedStats?: SessionStats;
 

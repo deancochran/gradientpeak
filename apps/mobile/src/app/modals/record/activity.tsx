@@ -3,11 +3,14 @@ import { Icon } from "@/components/ui/icon";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Text } from "@/components/ui/text";
 import {
-  useActivityRecorder,
   useRecorderActions,
   useRecordingState,
 } from "@/lib/hooks/useActivityRecorder";
-import { useRequireAuth } from "@/lib/hooks/useAuth";
+import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import {
+  ACTIVITY_ICONS,
+  ACTIVITY_NAMES,
+} from "@/lib/services/ActivityRecorder/types";
 import { trpc } from "@/lib/trpc";
 import {
   ActivityPlanStructure,
@@ -21,13 +24,9 @@ import { useRouter } from "expo-router";
 import {
   Activity,
   AlertCircle,
-  Bike,
   Calendar,
   ChevronLeft,
   Clock,
-  Dumbbell,
-  Footprints,
-  Waves,
   Zap,
 } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
@@ -35,26 +34,6 @@ import { ActivityIndicator, FlatList, Pressable, View } from "react-native";
 
 // ===== CONSTANTS =====
 const PAGE_SIZE = 20;
-
-const ACTIVITY_NAMES: Record<PublicActivityType, string> = {
-  outdoor_run: "Run",
-  outdoor_bike: "Bike",
-  indoor_bike_trainer: "Trainer",
-  indoor_treadmill: "Treadmill",
-  indoor_strength: "Strength",
-  indoor_swim: "Swim",
-  other: "Other",
-};
-
-const ACTIVITY_ICONS: Record<PublicActivityType, any> = {
-  outdoor_run: Footprints,
-  outdoor_bike: Bike,
-  indoor_bike_trainer: Bike,
-  indoor_treadmill: Footprints,
-  indoor_strength: Dumbbell,
-  indoor_swim: Waves,
-  other: Activity,
-};
 
 // ===== TYPES =====
 type PlannedActivityItem = PublicPlannedActivitiesRow & {
@@ -69,12 +48,11 @@ type ListItem =
 
 export default function ActivitySelectionModal() {
   const router = useRouter();
-  const { profile } = useRequireAuth();
   const hasClosed = useRef(false);
   const [tab, setTab] = useState("quick");
 
-  // Service and state
-  const service = useActivityRecorder(profile || null);
+  // Use shared service from context (provided by _layout.tsx)
+  const service = useSharedActivityRecorder();
   const state = useRecordingState(service);
   const { selectActivity, selectPlannedActivity } = useRecorderActions(service);
 

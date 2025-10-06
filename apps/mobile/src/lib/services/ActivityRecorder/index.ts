@@ -356,6 +356,9 @@ export class ActivityRecorderService extends EventEmitter {
     this.planManager = undefined;
     this.emit("activitySelected", type);
     this.emit("planProgressChanged", null);
+    console.log(
+      "[Service] Emitted planProgressChanged(null) - plan card should be removed",
+    );
   }
 
   selectPlannedActivity(

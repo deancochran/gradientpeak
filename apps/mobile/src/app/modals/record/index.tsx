@@ -1,6 +1,5 @@
 import { useRouter } from "expo-router";
 import {
-  Activity,
   Bluetooth,
   ChevronDown,
   ChevronRight,
@@ -10,24 +9,24 @@ import {
   Square,
 } from "lucide-react-native";
 import React, { useEffect, useMemo } from "react";
-import { Alert, BackHandler, View } from "react-native";
+import { View } from "react-native";
 
 import { RecordingCarousel } from "@/components/RecordingCarousel";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import {
-  useActivityRecorder,
+  useActivityStatus,
   usePlan,
   useRecorderActions,
   useRecordingState,
   useSensors,
 } from "@/lib/hooks/useActivityRecorder";
-import { useRequireAuth } from "@/lib/hooks/useAuth";
-import { PublicActivityType } from "@repo/core";
-
-const isOutdoorActivity = (type: PublicActivityType): boolean =>
-  ["outdoor_run", "outdoor_bike"].includes(type);
+import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import {
+  ACTIVITY_ICONS,
+  ACTIVITY_NAMES,
+} from "@/lib/services/ActivityRecorder/types";
 
 type CarouselCard =
   | "dashboard"
@@ -40,28 +39,29 @@ type CarouselCard =
 
 export default function RecordModal() {
   const router = useRouter();
-  const { profile } = useRequireAuth();
 
-  // Service - auto-creates when profile is available
-  const service = useActivityRecorder(profile || null);
+  // Use shared service from context (provided by _layout.tsx)
+  const service = useSharedActivityRecorder();
 
   // State and actions
   const state = useRecordingState(service);
   const { count: sensorCount } = useSensors(service);
-  const { plan: activityPlan, activityType } = usePlan(service);
+  const { plan: activityPlan } = usePlan(service);
+  const { isOutdoorActivity, hasPlan, activityType } =
+    useActivityStatus(service);
   const { start, pause, resume, finish, advanceStep, isAdvancing } =
     useRecorderActions(service);
 
-  // Debug: Track activity plan changes
+  // Debug: Track activity status changes
   useEffect(() => {
-    console.log("[RecordModal] Activity plan changed:", {
-      hasPlan: !!activityPlan,
+    console.log("[RecordModal] Activity status changed:", {
+      isOutdoorActivity,
+      hasPlan,
       planName: activityPlan?.name,
-      activityType,
     });
-  }, [activityPlan, activityType]);
+  }, [isOutdoorActivity, hasPlan, activityPlan]);
 
-  // Determine which cards to show
+  // Determine which cards to show - reactively updates based on activity status
   const cards = useMemo((): CarouselCard[] => {
     const cardList: CarouselCard[] = [
       "dashboard",
@@ -71,85 +71,48 @@ export default function RecordModal() {
       "elevation",
     ];
 
-    if (isOutdoorActivity(activityType)) {
+    if (isOutdoorActivity) {
       cardList.push("map");
-      console.log(
-        "[RecordModal] Adding map card for outdoor activity:",
-        activityType,
-      );
+      console.log("[RecordModal] Adding map card for outdoor activity");
     }
 
-    if (activityPlan) {
+    if (hasPlan) {
       cardList.push("plan");
-      console.log("[RecordModal] Adding plan card:", activityPlan.name);
+      console.log("[RecordModal] Adding plan card:", activityPlan?.name);
     }
 
     console.log("[RecordModal] Cards updated:", cardList);
     return cardList;
-  }, [activityType, activityPlan]);
-
-  // Determine if modal can be closed
-  const canClose = state === "pending" || state === "finished";
-
-  // Back handler
-  useEffect(() => {
-    const backHandler = BackHandler.addEventListener(
-      "hardwareBackPress",
-      () => {
-        if (canClose) {
-          router.back();
-          return true;
-        } else {
-          Alert.alert(
-            "Recording in Progress",
-            "Please pause and finish your recording before leaving.",
-            [{ text: "OK" }],
-          );
-          return true;
-        }
-      },
-    );
-    return () => backHandler.remove();
-  }, [router, canClose]);
+  }, [isOutdoorActivity, hasPlan, activityPlan]);
 
   return (
     <View className="flex-1 bg-background">
       {/* Header */}
       <View className="bg-background border-b border-border p-4">
-        <View className="flex-row items-center justify-between">
-          {/* Left - Back/Close */}
-          {canClose ? (
-            <Button size="icon" variant="ghost" onPress={() => router.back()}>
-              <Icon as={ChevronDown} size={24} />
-            </Button>
-          ) : (
-            <View className="w-10" />
-          )}
-
-          {/* Center - Title */}
-          <View className="flex-1 items-center">
-            <Text className="font-semibold text-lg">
-              {state === "pending" ? "Record Activity" : "Recording"}
-            </Text>
-            {state !== "pending" && (
-              <Text className="text-xs text-muted-foreground capitalize">
-                {state === "recording" ? "Active" : state}
-              </Text>
+        <View className="flex-row items-center gap-2 justify-between">
+          <View className="flex-row w-1/2">
+            {/* Left - Back/Close */}
+            {(state === "pending" || state === "finished") && (
+              <Button size="icon" variant="ghost" onPress={() => router.back()}>
+                <Icon as={ChevronDown} size={24} />
+              </Button>
             )}
-          </View>
-
-          {/* Right - Icons */}
-          <View className="flex-row gap-1">
             {/* Activity Selection */}
             <Button
               variant="ghost"
-              size="icon"
               onPress={() => router.push("/modals/record/activity")}
               disabled={state !== "pending"}
+              className="w-full text-left justify-start"
             >
-              <Icon as={Activity} size={20} />
+              <Icon as={ACTIVITY_ICONS[activityType]} size={20} />
+              <Text className="font-semibold text-lg text-left">
+                {activityPlan?.name || ACTIVITY_NAMES[activityType]}
+              </Text>
             </Button>
+          </View>
 
+          {/* Right - Icons */}
+          <View className="flex-row w-1/2 items-end justify-end">
             {/* Permissions */}
             <Button
               variant="ghost"
