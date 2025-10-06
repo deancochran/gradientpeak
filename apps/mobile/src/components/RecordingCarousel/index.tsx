@@ -1,4 +1,4 @@
-import { PublicActivityType } from "@repo/core";
+import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Dimensions, FlatList, View } from "react-native";
 import { CarouselCard } from "./CarouselCard";
@@ -16,28 +16,11 @@ type CarouselCardType =
 
 interface RecordingCarouselProps {
   cards: CarouselCardType[];
-  service: any;
-  state: string;
-  activityType: PublicActivityType;
-  planProgress?: any;
-  activityPlan?: any;
-  latitude?: number;
-  longitude?: number;
-  altitude?: number;
+  service: ActivityRecorderService | null;
 }
 
 export const RecordingCarousel = memo(
-  ({
-    cards,
-    service,
-    state,
-    activityType,
-    planProgress,
-    activityPlan,
-    latitude,
-    longitude,
-    altitude,
-  }: RecordingCarouselProps) => {
+  ({ cards, service }: RecordingCarouselProps) => {
     const carouselRef = useRef<FlatList>(null);
     const isScrolling = useRef(false);
     const [currentCardIndex, setCurrentCardIndex] = useState(0);
@@ -109,17 +92,7 @@ export const RecordingCarousel = memo(
           data={infiniteCards}
           extraData={infiniteCards.length}
           renderItem={({ item }) => (
-            <CarouselCard
-              type={item}
-              state={state}
-              activityType={activityType}
-              planProgress={planProgress}
-              activityPlan={activityPlan}
-              latitude={latitude}
-              longitude={longitude}
-              altitude={altitude}
-              service={service}
-            />
+            <CarouselCard type={item} service={service} />
           )}
           keyExtractor={(item, index) => `${item}-${index}`}
           horizontal

@@ -3,7 +3,7 @@ import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { useLiveMetrics } from "@/lib/hooks/useActivityRecorder";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import { Activity, Heart, Target, TrendingUp } from "lucide-react-native";
+import { Heart, Target } from "lucide-react-native";
 import React from "react";
 import { View } from "react-native";
 
@@ -27,41 +27,10 @@ export const HeartRateCard: React.FC<HeartRateCardProps> = ({
   const maxPctThreshold = Math.round(metrics.maxPctThreshold);
   const zones = metrics.hrZones;
 
-  // Heart rate zone colors
-  const getHRZoneColor = (zone: number) => {
-    const colors = [
-      "bg-gray-400", // Z1 - Recovery
-      "bg-blue-400", // Z2 - Aerobic
-      "bg-green-400", // Z3 - Tempo
-      "bg-yellow-400", // Z4 - Lactate Threshold
-      "bg-red-400", // Z5 - VO2 Max
-    ];
-    return colors[zone] || "bg-gray-400";
-  };
-
-  const getHRZoneLabel = (zone: number) => {
-    const labels = ["Recovery", "Aerobic", "Tempo", "Threshold", "VO2 Max"];
-    return labels[zone] || "Unknown";
-  };
-
-  // Get current HR zone
-  const getCurrentZone = () => {
-    if (!hasCurrentHR || !metrics.heartrate) return null;
-
-    // Simple zone calculation - would use actual thresholds in real implementation
-    if (metrics.heartrate < 120) return 0;
-    if (metrics.heartrate < 140) return 1;
-    if (metrics.heartrate < 160) return 2;
-    if (metrics.heartrate < 180) return 3;
-    return 4;
-  };
-
-  const currentZone = getCurrentZone();
-
   return (
     <View style={{ width: screenWidth }} className="flex-1 p-4">
       <Card className="flex-1">
-        <CardContent className="p-6">
+        <CardContent>
           {/* Header */}
           <View className="flex-row items-center justify-between mb-6">
             <View className="flex-row items-center">
@@ -70,33 +39,23 @@ export const HeartRateCard: React.FC<HeartRateCardProps> = ({
             </View>
             {hasCurrentHR && (
               <View className="flex-row items-center">
-                <View className="w-2 h-2 bg-red-500 rounded-full mr-2 animate-pulse" />
+                <View className="w-2 h-2 bg-green-500 rounded-full mr-2" />
                 <Text className="text-xs text-muted-foreground">LIVE</Text>
               </View>
             )}
           </View>
 
           {/* Current HR - Large Display */}
-          <View className="items-center mb-6">
+          <View className="items-center mb-8">
             <Text
               className={`text-5xl font-bold ${hasCurrentHR ? "text-red-500" : "text-red-500/30"}`}
             >
               {current}
             </Text>
             <Text className="text-sm text-muted-foreground">bpm</Text>
-            {currentZone !== null && (
-              <View className="flex-row items-center mt-2">
-                <View
-                  className={`w-3 h-3 rounded-full mr-2 ${getHRZoneColor(currentZone)}`}
-                />
-                <Text className="text-xs text-muted-foreground">
-                  Zone {currentZone + 1} - {getHRZoneLabel(currentZone)}
-                </Text>
-              </View>
-            )}
           </View>
 
-          {/* HR Statistics */}
+          {/* HR Metrics Grid */}
           <View className="flex-row justify-around mb-6">
             <View className="items-center">
               <Text
@@ -124,52 +83,52 @@ export const HeartRateCard: React.FC<HeartRateCardProps> = ({
             </View>
           </View>
 
-          {/* HR Zone Distribution */}
-          <View className="mb-6">
-            <Text className="text-sm font-medium text-muted-foreground mb-3">
-              Zone Distribution
-            </Text>
-            <View className="gap-2">
-              {Object.entries(zones).map(([zoneKey, timeSeconds], index) => {
-                const minutes = Math.floor(timeSeconds / 60);
-                const totalZoneTime = Object.values(zones).reduce(
-                  (sum, t) => sum + t,
-                  0,
-                );
-                const percentage =
-                  totalZoneTime > 0 ? (timeSeconds / totalZoneTime) * 100 : 0;
+          {/* Zone Distribution */}
+          <View className="gap-4">
+            <View>
+              <Text className="text-sm font-medium text-muted-foreground mb-3">
+                Zone Distribution
+              </Text>
+              <View className="flex-row gap-2">
+                {Object.entries(zones).map(([zone, timeSeconds], index) => {
+                  const minutes = Math.floor(timeSeconds / 60);
+                  const zoneColors = [
+                    "bg-gray-400", // Z1
+                    "bg-blue-400", // Z2
+                    "bg-green-400", // Z3
+                    "bg-yellow-400", // Z4
+                    "bg-red-400", // Z5
+                  ];
+                  const zoneColorsInactive = [
+                    "bg-gray-400/20",
+                    "bg-blue-400/20",
+                    "bg-green-400/20",
+                    "bg-yellow-400/20",
+                    "bg-red-400/20",
+                  ];
 
-                return (
-                  <View key={zoneKey} className="flex-row items-center">
-                    <View
-                      className={`w-4 h-4 rounded mr-3 ${timeSeconds > 0 ? getHRZoneColor(index) : `${getHRZoneColor(index)}/20`}`}
-                    />
-                    <Text
-                      className={`text-xs font-medium w-16 ${timeSeconds > 0 ? "" : "text-muted-foreground/50"}`}
-                    >
-                      Z{index + 1}
-                    </Text>
-                    <View className="flex-1 mx-3">
-                      <View className="h-2 bg-muted rounded-full overflow-hidden">
-                        <View
-                          className={`h-full rounded-full ${getHRZoneColor(index)}`}
-                          style={{ width: `${Math.min(100, percentage)}%` }}
-                        />
-                      </View>
+                  return (
+                    <View key={zone} className="flex-1 items-center">
+                      <View
+                        className={`w-full h-3 rounded mb-1 ${timeSeconds > 0 ? zoneColors[index] : zoneColorsInactive[index]}`}
+                      />
+                      <Text
+                        className={`text-xs font-medium ${timeSeconds > 0 ? "" : "text-muted-foreground/50"}`}
+                      >
+                        Z{index + 1}
+                      </Text>
+                      <Text
+                        className={`text-xs ${timeSeconds > 0 ? "text-muted-foreground" : "text-muted-foreground/30"}`}
+                      >
+                        {minutes}&apos;
+                      </Text>
                     </View>
-                    <Text
-                      className={`text-xs w-12 text-right ${timeSeconds > 0 ? "text-muted-foreground" : "text-muted-foreground/30"}`}
-                    >
-                      {minutes > 0 ? `${minutes}m` : "<1m"}
-                    </Text>
-                  </View>
-                );
-              })}
+                  );
+                })}
+              </View>
             </View>
-          </View>
 
-          {/* Additional Metrics */}
-          <View className="gap-3">
+            {/* Threshold Metric */}
             {hasThresholdData && (
               <View className="flex-row justify-between items-center p-3 bg-orange-500/10 rounded-lg">
                 <View className="flex-row items-center">
@@ -178,76 +137,13 @@ export const HeartRateCard: React.FC<HeartRateCardProps> = ({
                     size={16}
                     className="text-orange-500 mr-2"
                   />
-                  <Text className="text-sm font-medium">Threshold %</Text>
+                  <Text className="text-sm font-medium">Max Threshold</Text>
                 </View>
                 <Text className="font-semibold text-orange-600">
                   {maxPctThreshold}%
                 </Text>
               </View>
             )}
-
-            {avg > 0 && (
-              <View className="flex-row justify-between items-center p-3 bg-red-500/10 rounded-lg">
-                <View className="flex-row items-center">
-                  <Icon as={Activity} size={16} className="text-red-500 mr-2" />
-                  <Text className="text-sm font-medium">HR Reserve</Text>
-                </View>
-                <Text className="font-semibold text-red-600">
-                  {Math.round(
-                    (((metrics.heartrate || metrics.hrAvg) - 60) /
-                      (metrics.hrMax - 60)) *
-                      100,
-                  )}
-                  %
-                </Text>
-              </View>
-            )}
-
-            {current === 0 && avg === 0 && (
-              <View className="p-3 bg-muted/10 rounded-lg items-center">
-                <Text className="text-xs text-muted-foreground text-center">
-                  Connect a heart rate monitor to see live data
-                </Text>
-              </View>
-            )}
-
-            {/* HR Trend Indicator */}
-            <View className="p-3 bg-muted/10 rounded-lg">
-              <View className="flex-row items-center justify-between">
-                <View>
-                  <Text className="text-xs text-muted-foreground mb-1">
-                    Current Effort
-                  </Text>
-                  <Text className="text-lg font-semibold">
-                    {current === 0
-                      ? "Unknown"
-                      : current < 100
-                        ? "Very Light"
-                        : current < 120
-                          ? "Light"
-                          : current < 140
-                            ? "Moderate"
-                            : current < 160
-                              ? "Hard"
-                              : current < 180
-                                ? "Very Hard"
-                                : "Maximum"}
-                  </Text>
-                </View>
-                <Icon
-                  as={TrendingUp}
-                  size={20}
-                  className="text-muted-foreground"
-                />
-              </View>
-            </View>
-          </View>
-
-          {/* Footer */}
-          <View className="mt-6 pt-4 border-t border-muted/20">
-            <Text className="text-xs text-muted-foreground text-center">
-              Heart rate zones based on threshold and age estimates
-            </Text>
           </View>
         </CardContent>
       </Card>

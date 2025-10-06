@@ -129,7 +129,7 @@ export function flattenPlanSteps(
       });
     } else if (step.type === "repetition") {
       for (let i = 0; i < step.repeat; i++) {
-        flattenPlanSteps(step.steps, i, acc);
+        flattenPlanSteps(step.steps, acc, i);
       }
     }
   }

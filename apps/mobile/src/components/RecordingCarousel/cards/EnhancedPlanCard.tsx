@@ -1,32 +1,22 @@
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { useLiveMetrics } from "@/lib/hooks/useActivityRecorder";
-import { ActivityPlanStructure } from "@repo/core";
 import {
-  Activity,
-  ChevronRight,
-  Clock,
-  Play,
-  Target,
-  Timer,
-  Zap,
-} from "lucide-react-native";
-import React, { memo, useEffect, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+  useLiveMetrics,
+  usePlan,
+  useRecordingState,
+} from "@/lib/hooks/useActivityRecorder";
+import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
+import { Activity, Calendar } from "lucide-react-native";
+import React, { memo } from "react";
+import { View } from "react-native";
 
 // ================================
 // Types
 // ================================
 
 interface EnhancedPlanCardProps {
-  planProgress?: any;
-  activityPlan?: any;
-  state?: string;
-  onNextStep?: () => void;
-  isAdvancing?: boolean;
-  service?: any;
+  service: ActivityRecorderService | null;
   style?: { width: number };
   className?: string;
 }
@@ -39,423 +29,200 @@ interface CurrentMetrics {
 }
 
 // ================================
-// Plan Card Header
+// Empty State Component
 // ================================
 
-const PlanCardHeader = memo<{
-  activityPlan: any;
-  viewMode: "preview" | "active";
-  onModeChange: (mode: "preview" | "active") => void;
-  canToggle: boolean;
-}>(function PlanCardHeader({
-  activityPlan,
-  viewMode,
-  onModeChange,
-  canToggle,
-}) {
-  const activityStats = calculateActivityStats(activityPlan.structure);
-
-  return (
-    <View className="mb-4">
-      <View className="flex-row justify-between items-start">
-        <View className="flex-1 mr-4">
-          <Text className="text-lg font-semibold">{activityPlan.name}</Text>
-          {activityPlan.description && (
-            <Text className="text-sm text-muted-foreground mt-1">
-              {activityPlan.description}
-            </Text>
-          )}
-        </View>
-
-        {/* Mode Toggle */}
-        {canToggle && (
-          <View className="flex-row bg-muted rounded-md p-1">
-            <Pressable
-              onPress={() => onModeChange("preview")}
-              className={`px-3 py-1.5 rounded-sm ${
-                viewMode === "preview" ? "bg-background shadow-sm" : ""
-              }`}
-            >
-              <Text
-                className={`text-xs font-medium ${
-                  viewMode === "preview"
-                    ? "text-foreground"
-                    : "text-muted-foreground"
-                }`}
-              >
-                Preview
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => onModeChange("active")}
-              className={`px-3 py-1.5 rounded-sm ${
-                viewMode === "active" ? "bg-background shadow-sm" : ""
-              }`}
-            >
-              <Text
-                className={`text-xs font-medium ${
-                  viewMode === "active"
-                    ? "text-foreground"
-                    : "text-muted-foreground"
-                }`}
-              >
-                Active
-              </Text>
-            </Pressable>
-          </View>
-        )}
+const EmptyPlanState = memo(() => (
+  <View className="flex-1 items-center justify-center py-16">
+    <View className="items-center">
+      <View className="w-16 h-16 bg-muted/20 rounded-full items-center justify-center mb-4">
+        <Icon as={Calendar} size={32} className="text-muted-foreground" />
       </View>
-
-      {/* Activity Stats Summary */}
-      <View className="flex-row gap-4 mt-3">
-        <View className="flex-row items-center gap-1">
-          <Icon as={Clock} size={14} className="text-muted-foreground" />
-          <Text className="text-sm text-muted-foreground">
-            {formatDurationCompact(activityStats.totalDuration)}
-          </Text>
-        </View>
-        <View className="flex-row items-center gap-1">
-          <Icon as={Activity} size={14} className="text-muted-foreground" />
-          <Text className="text-sm text-muted-foreground">
-            {activityStats.totalSteps} steps
-          </Text>
-        </View>
-        {activityStats.avgPower > 0 && (
-          <View className="flex-row items-center gap-1">
-            <Icon as={Zap} size={14} className="text-muted-foreground" />
-            <Text className="text-sm text-muted-foreground">
-              {Math.round(activityStats.avgPower)}% avg
-            </Text>
-          </View>
-        )}
-        {activityStats.intervalCount > 0 && (
-          <View className="flex-row items-center gap-1">
-            <Icon as={Target} size={14} className="text-muted-foreground" />
-            <Text className="text-sm text-muted-foreground">
-              {activityStats.intervalCount} intervals
-            </Text>
-          </View>
-        )}
-      </View>
+      <Text className="text-lg font-medium text-center mb-2">
+        No Active Plan
+      </Text>
+      <Text className="text-center text-sm text-muted-foreground px-8">
+        Select a training plan to see workout details and track your progress
+      </Text>
     </View>
-  );
-});
+  </View>
+));
 
-PlanCardHeader.displayName = "PlanCardHeader";
+EmptyPlanState.displayName = "EmptyPlanState";
 
 // ================================
-// Activity Preview Mode
+// Pending State Component
 // ================================
 
-const ActivityPreviewMode = memo<{ structure: ActivityPlanStructure }>(
-  function ActivityPreviewMode({ structure }) {
-    const profileData = extractActivityProfile(structure);
+const PendingPlanState = memo(() => (
+  <View className="flex-1 items-center justify-center py-16">
+    <View className="items-center">
+      <View className="w-16 h-16 bg-muted/20 rounded-full items-center justify-center mb-4">
+        <Icon as={Activity} size={32} className="text-muted-foreground" />
+      </View>
+      <Text className="text-lg font-medium text-center mb-2">
+        Ready to Start
+      </Text>
+      <Text className="text-center text-sm text-muted-foreground px-8">
+        Press Start Activity to begin your workout
+      </Text>
+    </View>
+  </View>
+));
 
-    return (
-      <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        {/* Activity Graph */}
-        <View className="mb-6">
-          <ActivityGraph structure={structure} />
+PendingPlanState.displayName = "PendingPlanState";
+
+// ================================
+// Plan Overview Component
+// ================================
+
+interface PlanOverviewProps {
+  planName: string;
+  planDescription?: string;
+  currentStepIndex: number;
+  totalSteps: number;
+}
+
+const PlanOverview = memo<PlanOverviewProps>(
+  ({ planName, planDescription, currentStepIndex, totalSteps }) => (
+    <View className="mb-6">
+      <View className="flex-row items-center justify-between mb-2">
+        <Text className="text-lg font-semibold">{planName}</Text>
+        <View className="bg-primary/10 px-3 py-1 rounded-full">
+          <Text className="text-xs font-medium text-primary">
+            Step {currentStepIndex + 1} of {totalSteps}
+          </Text>
         </View>
-
-        {/* Key Activity Metrics */}
-        <ActivityMetricsGrid structure={structure} />
-
-        {/* Step Breakdown Preview */}
-        <StepBreakdown
-          steps={profileData.slice(0, 6)}
-          maxSteps={6}
-          showAll={false}
-          title="Activity Steps"
-        />
-
-        {/* Ready to Start */}
-        <View className="flex-1 items-center justify-center py-8 min-h-32">
-          <View className="items-center">
-            <View className="w-16 h-16 bg-primary/10 rounded-full items-center justify-center mb-4">
-              <Icon as={Play} size={32} className="text-primary ml-1" />
-            </View>
-            <Text className="text-lg font-medium text-center mb-2">
-              Ready to start activity
-            </Text>
-            <Text className="text-center text-sm text-muted-foreground max-w-64">
-              Press Start Activity to begin your planned training session
-            </Text>
-          </View>
-        </View>
-      </ScrollView>
-    );
-  },
+      </View>
+      {planDescription && (
+        <Text className="text-sm text-muted-foreground">{planDescription}</Text>
+      )}
+    </View>
+  ),
 );
 
-ActivityPreviewMode.displayName = "ActivityPreviewMode";
+PlanOverview.displayName = "PlanOverview";
 
 // ================================
-// Progress Tracking Display
+// Current Metrics Display
 // ================================
 
-const ProgressTrackingDisplay = memo<{
-  planProgress: any;
-  structure: ActivityPlanStructure;
+interface MetricsDisplayProps {
   currentMetrics: CurrentMetrics;
-}>(function ProgressTrackingDisplay({
-  planProgress,
-  structure,
-  currentMetrics,
-}) {
-  const overallProgress =
-    (planProgress.completedSteps / planProgress.totalSteps) * 100;
-  const stepProgress =
-    planProgress.duration > 0
-      ? (planProgress.elapsedInStep / planProgress.duration) * 100
-      : 0;
+}
 
-  return (
-    <View className="mb-6">
-      {/* Big Picture Progress */}
-      <View className="mb-4">
-        <View className="flex-row justify-between items-center mb-2">
-          <Text className="text-sm font-medium">Activity Progress</Text>
-          <Text className="text-sm text-muted-foreground">
-            {Math.round(overallProgress)}%
-          </Text>
-        </View>
+const MetricsDisplay = memo<MetricsDisplayProps>(({ currentMetrics }) => {
+  const hasMetrics =
+    currentMetrics.heartRate ||
+    currentMetrics.power ||
+    currentMetrics.cadence ||
+    currentMetrics.speed;
 
-        {/* Overall progress bar */}
-        <View className="h-3 bg-muted rounded-full overflow-hidden mb-3">
-          <View
-            className="h-full bg-primary rounded-full transition-all duration-300"
-            style={{ width: `${overallProgress}%` }}
-          />
-        </View>
-
-        {/* Mini activity graph with current position indicator */}
-        <ActivityProgressGraph
-          structure={structure}
-          currentStep={planProgress.currentStepIndex}
-          className="h-8 mb-2"
-        />
-
-        <Text className="text-xs text-muted-foreground">
-          Step {planProgress.currentStepIndex + 1} of {planProgress.totalSteps}
-        </Text>
-      </View>
-
-      {/* Fine-grained Step Progress */}
-      <View>
-        <View className="flex-row justify-between items-center mb-2">
-          <Text className="text-sm font-medium">Current Step Progress</Text>
-          <Text className="text-sm text-muted-foreground">
-            {formatDuration(planProgress.elapsedInStep / 1000)} /{" "}
-            {formatDuration(planProgress.duration / 1000)}
-          </Text>
-        </View>
-
-        <View className="h-2 bg-muted rounded-full overflow-hidden">
-          <View
-            className="h-full bg-blue-500 rounded-full transition-all duration-300"
-            style={{ width: `${Math.min(stepProgress, 100)}%` }}
-          />
-        </View>
-      </View>
-    </View>
-  );
-});
-
-ProgressTrackingDisplay.displayName = "ProgressTrackingDisplay";
-
-// ================================
-// Current Step Display
-// ================================
-
-const CurrentStepDisplay = memo<{
-  planProgress: any;
-  currentMetrics: CurrentMetrics;
-  onNextStep?: () => void;
-  isAdvancing: boolean;
-  structure: ActivityPlanStructure;
-}>(function CurrentStepDisplay({
-  planProgress,
-  currentMetrics,
-  onNextStep,
-  isAdvancing,
-  structure,
-}) {
-  const flattenedSteps = flattenPlanSteps(structure.steps);
-  const currentStep = flattenedSteps[planProgress.currentStepIndex];
-  const stepTargets = planProgress.targets;
-
-  return (
-    <View className="mb-6">
-      <View className="flex-row justify-between items-center mb-3">
-        <Text className="text-sm font-medium">Current Step</Text>
-        {onNextStep &&
-          (planProgress.duration === 0 ||
-            planProgress.duration === undefined) && (
-            <Button
-              variant="outline"
-              size="sm"
-              onPress={onNextStep}
-              disabled={isAdvancing}
-              className="h-8 px-3"
-            >
-              <View className="flex-row items-center gap-1">
-                {isAdvancing ? (
-                  <Icon
-                    as={Timer}
-                    size={14}
-                    className="text-muted-foreground"
-                  />
-                ) : (
-                  <Icon
-                    as={ChevronRight}
-                    size={14}
-                    className="text-muted-foreground"
-                  />
-                )}
-                <Text className="text-xs font-medium">
-                  {isAdvancing ? "Advancing..." : "Next Step"}
-                </Text>
-              </View>
-            </Button>
-          )}
-      </View>
-
-      {/* Current Step Details */}
-      {currentStep && (
-        <View className="p-4 bg-muted/20 rounded-lg mb-4">
-          <View className="mb-3">
-            <Text className="text-base font-semibold">
-              {currentStep.name || `Step ${planProgress.currentStepIndex + 1}`}
-            </Text>
-            {currentStep.description && (
-              <Text className="text-sm text-muted-foreground mt-1">
-                {currentStep.description}
-              </Text>
-            )}
-            {currentStep.notes && (
-              <Text className="text-xs text-muted-foreground mt-2 italic">
-                Note: {currentStep.notes}
-              </Text>
-            )}
-          </View>
-
-          {/* Step Duration Info */}
-          <View className="flex-row items-center gap-2">
-            <Icon as={Clock} size={16} className="text-muted-foreground" />
-            <Text className="text-sm text-muted-foreground">
-              {planProgress.duration > 0
-                ? `${formatDuration(planProgress.duration / 1000)} duration`
-                : "Manual advancement"}
-            </Text>
-          </View>
-        </View>
-      )}
-
-      {/* Target vs Current Metrics */}
-      {stepTargets && (
-        <TargetMetricsGrid
-          targets={stepTargets}
-          currentMetrics={currentMetrics}
-        />
-      )}
-    </View>
-  );
-});
-
-CurrentStepDisplay.displayName = "CurrentStepDisplay";
-
-// ================================
-// Active Activity Mode
-// ================================
-
-const ActiveActivityMode = memo<{
-  planProgress?: any;
-  activityPlan?: any;
-  currentMetrics: CurrentMetrics;
-  onNextStep?: () => void;
-  isAdvancing: boolean;
-  structure: ActivityPlanStructure;
-}>(function ActiveActivityMode({
-  planProgress,
-  activityPlan,
-  currentMetrics,
-  onNextStep,
-  isAdvancing,
-  structure,
-}) {
-  if (!planProgress) {
+  if (!hasMetrics) {
     return (
-      <View className="flex-1 items-center justify-center py-16">
-        <View className="items-center">
-          <View className="w-16 h-16 bg-muted/20 rounded-full items-center justify-center mb-4">
-            <Icon as={Activity} size={32} className="text-muted-foreground" />
-          </View>
-          <Text className="text-lg font-medium text-center mb-2">
-            Start recording to begin
-          </Text>
-          <Text className="text-center text-sm text-muted-foreground">
-            Press Start Activity to activate your plan
-          </Text>
-        </View>
+      <View className="p-4 bg-muted/10 rounded-lg mb-6">
+        <Text className="text-sm text-muted-foreground text-center">
+          Waiting for sensor data...
+        </Text>
       </View>
     );
   }
 
-  const profileData = extractActivityProfile(structure);
-  const upcomingSteps = profileData.slice(
-    planProgress.currentStepIndex + 1,
-    planProgress.currentStepIndex + 4,
-  );
-
   return (
-    <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      {/* Progress Overview */}
-      <ProgressTrackingDisplay
-        planProgress={planProgress}
-        structure={structure}
-        currentMetrics={currentMetrics}
-      />
-
-      {/* Current Step Details */}
-      <CurrentStepDisplay
-        planProgress={planProgress}
-        currentMetrics={currentMetrics}
-        onNextStep={onNextStep}
-        isAdvancing={isAdvancing}
-        structure={structure}
-      />
-
-      {/* Upcoming Steps Preview */}
-      {upcomingSteps.length > 0 && (
-        <UpcomingStepsPreview steps={upcomingSteps} title="Coming Up Next" />
-      )}
-    </ScrollView>
+    <View className="mb-6">
+      <Text className="text-sm font-medium text-muted-foreground mb-3">
+        Current Metrics
+      </Text>
+      <View className="flex-row flex-wrap gap-3">
+        {currentMetrics.heartRate && (
+          <View className="flex-1 min-w-[45%] p-3 bg-red-500/10 rounded-lg">
+            <Text className="text-xs text-muted-foreground mb-1">
+              Heart Rate
+            </Text>
+            <Text className="text-xl font-semibold text-red-600">
+              {Math.round(currentMetrics.heartRate)}
+            </Text>
+            <Text className="text-xs text-muted-foreground">bpm</Text>
+          </View>
+        )}
+        {currentMetrics.power && (
+          <View className="flex-1 min-w-[45%] p-3 bg-yellow-500/10 rounded-lg">
+            <Text className="text-xs text-muted-foreground mb-1">Power</Text>
+            <Text className="text-xl font-semibold text-yellow-600">
+              {Math.round(currentMetrics.power)}
+            </Text>
+            <Text className="text-xs text-muted-foreground">watts</Text>
+          </View>
+        )}
+        {currentMetrics.cadence && (
+          <View className="flex-1 min-w-[45%] p-3 bg-blue-500/10 rounded-lg">
+            <Text className="text-xs text-muted-foreground mb-1">Cadence</Text>
+            <Text className="text-xl font-semibold text-blue-600">
+              {Math.round(currentMetrics.cadence)}
+            </Text>
+            <Text className="text-xs text-muted-foreground">rpm</Text>
+          </View>
+        )}
+        {currentMetrics.speed && (
+          <View className="flex-1 min-w-[45%] p-3 bg-green-500/10 rounded-lg">
+            <Text className="text-xs text-muted-foreground mb-1">Speed</Text>
+            <Text className="text-xl font-semibold text-green-600">
+              {(currentMetrics.speed * 3.6).toFixed(1)}
+            </Text>
+            <Text className="text-xs text-muted-foreground">km/h</Text>
+          </View>
+        )}
+      </View>
+    </View>
   );
 });
 
-ActiveActivityMode.displayName = "ActiveActivityMode";
+MetricsDisplay.displayName = "MetricsDisplay";
+
+// ================================
+// Progress Bar Component
+// ================================
+
+interface ProgressBarProps {
+  current: number;
+  total: number;
+}
+
+const ProgressBar = memo<ProgressBarProps>(({ current, total }) => {
+  const percentage = total > 0 ? (current / total) * 100 : 0;
+
+  return (
+    <View className="mb-6">
+      <View className="flex-row items-center justify-between mb-2">
+        <Text className="text-sm font-medium text-muted-foreground">
+          Overall Progress
+        </Text>
+        <Text className="text-sm font-medium">{Math.round(percentage)}%</Text>
+      </View>
+      <View className="h-3 bg-muted rounded-full overflow-hidden">
+        <View
+          className="h-full bg-primary rounded-full"
+          style={{ width: `${Math.min(100, percentage)}%` }}
+        />
+      </View>
+    </View>
+  );
+});
+
+ProgressBar.displayName = "ProgressBar";
 
 // ================================
 // Main Enhanced Plan Card
 // ================================
 
 export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
-  ({
-    planProgress,
-    activityPlan,
-    state,
-    onNextStep,
-    isAdvancing = false,
-    service,
-    style,
-    className = "flex-1 p-4",
-  }) => {
-    const [viewMode, setViewMode] = useState<"preview" | "active">("preview");
-
-    // Get current metrics for target comparison
+  ({ service, style, className = "flex-1 p-4" }) => {
+    // Get all data from hooks
     const metrics = useLiveMetrics(service);
+    const { plan, progress } = usePlan(service);
+    const state = useRecordingState(service);
 
+    // Derive current metrics
     const currentMetrics: CurrentMetrics = {
       heartRate: metrics.heartrate,
       power: metrics.power,
@@ -463,65 +230,82 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
       speed: metrics.speed,
     };
 
-    // Auto-switch to active mode when recording starts
-    useEffect(() => {
-      if (state === "recording" || state === "paused") {
-        setViewMode("active");
-      }
-    }, [state]);
-
-    const isActive = state === "recording" || state === "paused";
-    const canToggle = !isActive;
-
-    if (!activityPlan) {
+    // Handle no plan selected
+    if (!plan) {
       return (
         <View style={style} className={className}>
           <Card className="flex-1">
-            <CardContent className="flex-1 items-center justify-center">
-              <View className="items-center">
-                <Icon
-                  as={Activity}
-                  size={48}
-                  className="text-muted-foreground/50 mb-4"
-                />
-                <Text className="text-lg text-muted-foreground">
-                  No plan loaded
-                </Text>
-                <Text className="text-sm text-muted-foreground mt-2">
-                  Select a activity plan to get started
-                </Text>
-              </View>
+            <CardContent className="p-4 flex-1">
+              <EmptyPlanState />
             </CardContent>
           </Card>
         </View>
       );
     }
 
+    // Handle pending state (plan selected but not started)
+    if (!progress || state === "pending") {
+      return (
+        <View style={style} className={className}>
+          <Card className="flex-1">
+            <CardContent className="p-4 flex-1">
+              <PendingPlanState />
+            </CardContent>
+          </Card>
+        </View>
+      );
+    }
+
+    // Calculate total steps from plan structure
+    // For now, use a simple approach - can be enhanced later
+    const totalSteps = progress.completedSteps + 1;
+
     return (
       <View style={style} className={className}>
         <Card className="flex-1">
           <CardContent className="p-4 flex-1">
-            {/* Header with mode toggle */}
-            <PlanCardHeader
-              activityPlan={activityPlan}
-              viewMode={viewMode}
-              onModeChange={setViewMode}
-              canToggle={canToggle}
+            {/* Plan Overview */}
+            <PlanOverview
+              planName={plan.name}
+              planDescription={plan.description}
+              currentStepIndex={progress.currentStepIndex}
+              totalSteps={totalSteps}
             />
 
-            {/* Content based on mode */}
-            {viewMode === "preview" ? (
-              <ActivityPreviewMode structure={activityPlan.structure} />
-            ) : (
-              <ActiveActivityMode
-                planProgress={planProgress}
-                activityPlan={activityPlan}
-                currentMetrics={currentMetrics}
-                onNextStep={onNextStep}
-                isAdvancing={isAdvancing}
-                structure={activityPlan.structure}
-              />
-            )}
+            {/* Progress Bar */}
+            <ProgressBar current={progress.completedSteps} total={totalSteps} />
+
+            {/* Current Metrics */}
+            <MetricsDisplay currentMetrics={currentMetrics} />
+
+            {/* Plan State Info */}
+            <View className="p-4 bg-muted/10 rounded-lg">
+              <View className="flex-row items-center justify-between">
+                <View>
+                  <Text className="text-xs text-muted-foreground mb-1">
+                    Plan Status
+                  </Text>
+                  <Text className="text-base font-semibold capitalize">
+                    {progress.state.replace("_", " ")}
+                  </Text>
+                </View>
+                <View className="items-end">
+                  <Text className="text-xs text-muted-foreground mb-1">
+                    Recording State
+                  </Text>
+                  <Text className="text-base font-semibold capitalize">
+                    {state}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Footer Info */}
+            <View className="mt-6 pt-4 border-t border-muted/20">
+              <Text className="text-xs text-muted-foreground text-center">
+                Follow your plan to maximize training effectiveness
+              </Text>
+            </View>
           </CardContent>
         </Card>
       </View>

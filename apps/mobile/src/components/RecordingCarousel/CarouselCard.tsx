@@ -1,4 +1,4 @@
-import { PublicActivityType } from "@repo/core";
+import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import React, { memo } from "react";
 import { Dimensions } from "react-native";
 import { AnalysisCard } from "./cards/AnalysisCard";
@@ -22,70 +22,41 @@ type CarouselCardType =
 
 interface CarouselCardProps {
   type: CarouselCardType;
-  state: string;
-  activityType: PublicActivityType;
-  planProgress?: any;
-  activityPlan?: any;
-  latitude?: number;
-  longitude?: number;
-  altitude?: number;
-  service: any;
+  service: ActivityRecorderService | null;
 }
 
-export const CarouselCard = memo(
-  ({
-    type,
-    state,
-    activityType,
-    planProgress,
-    activityPlan,
-    latitude,
-    longitude,
-    altitude,
-    service,
-  }: CarouselCardProps) => {
-    switch (type) {
-      case "dashboard":
-        return <DashboardCard service={service} screenWidth={SCREEN_WIDTH} />;
+export const CarouselCard = memo(({ type, service }: CarouselCardProps) => {
+  switch (type) {
+    case "dashboard":
+      return <DashboardCard service={service} screenWidth={SCREEN_WIDTH} />;
 
-      case "power":
-        return <PowerCard service={service} screenWidth={SCREEN_WIDTH} />;
+    case "power":
+      return <PowerCard service={service} screenWidth={SCREEN_WIDTH} />;
 
-      case "heartrate":
-        return <HeartRateCard service={service} screenWidth={SCREEN_WIDTH} />;
+    case "heartrate":
+      return <HeartRateCard service={service} screenWidth={SCREEN_WIDTH} />;
 
-      case "analysis":
-        return <AnalysisCard service={service} screenWidth={SCREEN_WIDTH} />;
+    case "analysis":
+      return <AnalysisCard service={service} screenWidth={SCREEN_WIDTH} />;
 
-      case "elevation":
-        return <ElevationCard service={service} screenWidth={SCREEN_WIDTH} />;
+    case "elevation":
+      return <ElevationCard service={service} screenWidth={SCREEN_WIDTH} />;
 
-      case "map":
-        return (
-          <MapCard
-            screenWidth={SCREEN_WIDTH}
-            latitude={latitude}
-            longitude={longitude}
-            altitude={altitude}
-          />
-        );
+    case "map":
+      return <MapCard service={service} screenWidth={SCREEN_WIDTH} />;
 
-      case "plan":
-        return (
-          <EnhancedPlanCard
-            planProgress={planProgress}
-            activityPlan={activityPlan}
-            state={state}
-            service={service}
-            style={{ width: SCREEN_WIDTH }}
-            className="flex-1 p-4"
-          />
-        );
+    case "plan":
+      return (
+        <EnhancedPlanCard
+          service={service}
+          style={{ width: SCREEN_WIDTH }}
+          className="flex-1 p-4"
+        />
+      );
 
-      default:
-        return null;
-    }
-  },
-);
+    default:
+      return null;
+  }
+});
 
 CarouselCard.displayName = "CarouselCard";

@@ -4,7 +4,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Text } from "@/components/ui/text";
 import {
   useActivityRecorder,
-  usePlan,
   useRecorderActions,
   useRecordingState,
 } from "@/lib/hooks/useActivityRecorder";
@@ -77,7 +76,6 @@ export default function ActivitySelectionModal() {
   // Service and state
   const service = useActivityRecorder(profile || null);
   const state = useRecordingState(service);
-  const { activityType } = usePlan(service);
   const { selectActivity, selectPlannedActivity } = useRecorderActions(service);
 
   const canSelect = state === "pending" || state === "ready";
@@ -94,7 +92,6 @@ export default function ActivitySelectionModal() {
     refetch,
   } = trpc.plannedActivities.list.useInfiniteQuery(
     {
-      activity_type: activityType,
       limit: PAGE_SIZE,
     },
     {
@@ -169,31 +166,19 @@ export default function ActivitySelectionModal() {
   // ===== RENDER FUNCTIONS =====
   const renderQuickStartItem = (type: PublicActivityType, name: string) => {
     const IconComponent = ACTIVITY_ICONS[type];
-    const isSelected = activityType === type;
 
     return (
       <Pressable
         key={type}
         onPress={() => handleSelectQuickStart(type)}
-        className={`flex-row items-center py-4 px-4 ${
-          isSelected ? "bg-muted/50" : ""
-        }`}
+        className={`flex-row items-center py-4 px-4 `}
       >
         <View
-          className={`w-10 h-10 rounded-full items-center justify-center mr-3 ${
-            isSelected ? "bg-primary" : "bg-muted"
-          }`}
+          className={`w-10 h-10 rounded-full items-center justify-center mr-3 `}
         >
-          <Icon
-            as={IconComponent}
-            size={18}
-            className={isSelected ? "text-primary-foreground" : ""}
-          />
+          <Icon as={IconComponent} size={18} />
         </View>
-        <Text className={`flex-1 text-base ${isSelected ? "font-medium" : ""}`}>
-          {name}
-        </Text>
-        {isSelected && <Icon as={Zap} size={16} className="text-primary" />}
+        <Text className={`flex-1 text-base `}>{name}</Text>
       </Pressable>
     );
   };

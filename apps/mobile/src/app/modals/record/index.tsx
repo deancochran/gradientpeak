@@ -18,7 +18,6 @@ import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import {
   useActivityRecorder,
-  useLiveMetrics,
   usePlan,
   useRecorderActions,
   useRecordingState,
@@ -46,21 +45,12 @@ export default function RecordModal() {
   // Service - auto-creates when profile is available
   const service = useActivityRecorder(profile || null);
 
-  // State and metrics
+  // State and actions
   const state = useRecordingState(service);
-  const metrics = useLiveMetrics(service);
   const { count: sensorCount } = useSensors(service);
-  const {
-    plan: activityPlan,
-    progress: planProgress,
-    activityType,
-  } = usePlan(service);
+  const { plan: activityPlan, activityType } = usePlan(service);
   const { start, pause, resume, finish, advanceStep, isAdvancing } =
     useRecorderActions(service);
-
-  // GPS metrics
-  const { latitude, longitude, altitude } = metrics;
-  const hasGPS = latitude !== undefined && longitude !== undefined;
 
   // Determine which cards to show
   const cards = useMemo((): CarouselCard[] => {
@@ -152,9 +142,6 @@ export default function RecordModal() {
               onPress={() => router.push("/modals/record/permissions")}
             >
               <Icon as={Shield} size={20} />
-              {hasGPS && (
-                <View className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full" />
-              )}
             </Button>
 
             {/* Sensors */}
@@ -173,17 +160,7 @@ export default function RecordModal() {
       </View>
 
       {/* Carousel */}
-      <RecordingCarousel
-        cards={cards}
-        service={service}
-        state={state}
-        activityType={activityType}
-        planProgress={planProgress}
-        activityPlan={activityPlan}
-        latitude={latitude}
-        longitude={longitude}
-        altitude={altitude}
-      />
+      <RecordingCarousel cards={cards} service={service} />
 
       {/* Footer */}
       <View className="bg-background border-t border-border p-6 pb-8">

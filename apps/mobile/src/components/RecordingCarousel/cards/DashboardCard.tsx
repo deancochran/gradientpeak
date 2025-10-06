@@ -1,93 +1,114 @@
 import { Card, CardContent } from "@/components/ui/card";
+import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { useLiveMetrics } from "@/lib/hooks/useActivityRecorder";
+import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { formatDuration } from "@repo/core";
-import React, { memo } from "react";
+import { Clock } from "lucide-react-native";
+import React from "react";
 import { View } from "react-native";
 
 interface DashboardCardProps {
-  service: any;
+  service: ActivityRecorderService | null;
   screenWidth: number;
 }
 
-interface MetricDisplayProps {
-  label: string;
-  value: number | undefined;
-  unit: string;
-  className?: string;
-}
+export const DashboardCard: React.FC<DashboardCardProps> = ({
+  service,
+  screenWidth,
+}) => {
+  const metrics = useLiveMetrics(service);
 
-const MetricDisplay = memo(
-  ({ label, value, unit, className = "" }: MetricDisplayProps) => (
-    <View className={`items-center flex-1 ${className}`}>
-      <Text className="text-xs text-muted-foreground mb-2 uppercase tracking-wide">
-        {label}
-      </Text>
-      <View className="flex-row items-baseline">
-        <Text className="text-2xl font-bold tabular-nums">{value ?? "--"}</Text>
-        <Text className="text-xs text-muted-foreground ml-1">{unit}</Text>
-      </View>
-    </View>
-  ),
-);
+  return (
+    <View style={{ width: screenWidth }} className="flex-1 p-4">
+      <Card className="flex-1">
+        <CardContent>
+          {/* Header */}
+          <View className="flex-row items-center justify-between mb-6">
+            <View className="flex-row items-center">
+              <Icon as={Clock} size={24} className="text-blue-500 mr-2" />
+              <Text className="text-lg font-semibold">Dashboard</Text>
+            </View>
+          </View>
 
-MetricDisplay.displayName = "MetricDisplay";
+          {/* Live Metrics Section */}
+          <View className="mb-6">
+            <Text className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
+              Live Metrics
+            </Text>
+            <View className="gap-3">
+              {/* Row 1: Duration & Power */}
+              <View className="flex-row gap-3">
+                <View className="flex-1 p-3 bg-muted/10 rounded-lg">
+                  <Text className="text-xs text-muted-foreground mb-1">
+                    Duration
+                  </Text>
+                  <Text className="text-xl font-semibold tabular-nums">
+                    {formatDuration(metrics.elapsedTime || 0)}
+                  </Text>
+                </View>
 
-const DurationDisplay = memo(
-  ({ elapsedTime }: { elapsedTime: number | undefined }) => (
-    <View className="items-center mb-8 pb-6 border-b border-border">
-      <View className="flex-row items-center gap-2 mb-3">
-        <Text className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-          Duration
-        </Text>
-      </View>
-      <Text className="text-5xl font-bold tabular-nums">
-        {formatDuration(elapsedTime || 0)}
-      </Text>
-    </View>
-  ),
-);
-
-DurationDisplay.displayName = "DurationDisplay";
-
-export const DashboardCard = memo(
-  ({ service, screenWidth }: DashboardCardProps) => {
-    // Fetch all metrics
-    const { elapsedTime, power, heartrate, cadence, distance } =
-      useLiveMetrics(service);
-
-    return (
-      <View style={{ width: screenWidth }} className="flex-1 p-4">
-        <Card className="flex-1">
-          <CardContent className="p-6">
-            {/* Large Time Display - Most Critical Metric */}
-            <DurationDisplay elapsedTime={elapsedTime} />
-
-            {/* Grid of Key Metrics */}
-            <View className="flex-1 justify-center gap-6">
-              {/* Top Row: Power, Heart Rate, Cadence */}
-              <View className="flex-row justify-around">
-                <MetricDisplay label="Power" value={power} unit="W" />
-                <MetricDisplay
-                  label="Heart Rate"
-                  value={heartrate}
-                  unit="bpm"
-                />
-                <MetricDisplay label="Cadence" value={cadence} unit="rpm" />
+                <View className="flex-1 p-3 bg-muted/10 rounded-lg">
+                  <Text className="text-xs text-muted-foreground mb-1">
+                    Power
+                  </Text>
+                  <Text className="text-xl font-semibold">
+                    {metrics.power ?? "--"}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">watts</Text>
+                </View>
               </View>
 
-              {/* Bottom Row: Distance (centered) */}
-              <View className="flex-row justify-around">
-                <View className="flex-1" /> {/* Left spacer */}
-                <MetricDisplay label="Distance" value={distance} unit="km" />
-                <View className="flex-1" /> {/* Right spacer */}
+              {/* Row 2: Heart Rate & Cadence */}
+              <View className="flex-row gap-3">
+                <View className="flex-1 p-3 bg-muted/10 rounded-lg">
+                  <Text className="text-xs text-muted-foreground mb-1">
+                    Heart Rate
+                  </Text>
+                  <Text className="text-xl font-semibold">
+                    {metrics.heartrate ?? "--"}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">bpm</Text>
+                </View>
+
+                <View className="flex-1 p-3 bg-muted/10 rounded-lg">
+                  <Text className="text-xs text-muted-foreground mb-1">
+                    Cadence
+                  </Text>
+                  <Text className="text-xl font-semibold">
+                    {metrics.cadence ?? "--"}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">rpm</Text>
+                </View>
+              </View>
+
+              {/* Row 3: Distance (single item) */}
+              <View className="flex-row gap-3">
+                <View className="flex-1 p-3 bg-muted/10 rounded-lg">
+                  <Text className="text-xs text-muted-foreground mb-1">
+                    Distance
+                  </Text>
+                  <Text className="text-xl font-semibold">
+                    {metrics.distance?.toFixed(2) ?? "--"}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">km</Text>
+                </View>
+
+                {/* Empty space to maintain grid alignment */}
+                <View className="flex-1 p-3 bg-muted/10 rounded-lg">
+                  <Text className="text-xs text-muted-foreground mb-1">
+                    Calories
+                  </Text>
+                  <Text className="text-xl font-semibold">
+                    {metrics.calories ?? "--"}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">cal</Text>
+                </View>
               </View>
             </View>
-          </CardContent>
-        </Card>
-      </View>
-    );
-  },
-);
-
-DashboardCard.displayName = "DashboardCard";
+          </View>
+        </CardContent>
+      </Card>
+    </View>
+  );
+};

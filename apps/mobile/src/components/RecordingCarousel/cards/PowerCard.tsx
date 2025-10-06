@@ -30,7 +30,7 @@ export const PowerCard: React.FC<PowerCardProps> = ({
   return (
     <View style={{ width: screenWidth }} className="flex-1 p-4">
       <Card className="flex-1">
-        <CardContent className="p-6">
+        <CardContent>
           {/* Header */}
           <View className="flex-row items-center justify-between mb-6">
             <View className="flex-row items-center">

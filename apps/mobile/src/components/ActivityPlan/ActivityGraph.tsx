@@ -2,6 +2,15 @@
 // Activity Graph Component
 // ================================
 
+import {
+  ActivityPlanStructure,
+  extractActivityProfile,
+  formatDurationCompact,
+} from "@repo/core";
+import { memo } from "react";
+import { Pressable, View } from "react-native";
+import { Text } from "../ui/text";
+
 interface ActivityGraphProps {
   structure: ActivityPlanStructure;
   currentStep?: number;

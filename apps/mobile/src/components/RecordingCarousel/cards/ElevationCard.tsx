@@ -24,7 +24,6 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
 }) => {
   const metrics = useLiveMetrics(service);
 
-  // Default to zero values when no metrics available
   const hasDistance = metrics.distance && metrics.distance > 0;
   const hasElevationData = metrics.totalAscent > 0 || metrics.totalDescent > 0;
   const hasCurrentElevation = metrics.current !== undefined;
@@ -34,7 +33,6 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
   const avgGrade = metrics.avgGrade;
   const elevationGainPerKm = metrics.elevationGainPerKm;
 
-  // Format elevation values
   const formatElevation = (meters: number) => {
     if (meters < 1000) {
       return `${Math.round(meters)}m`;
@@ -42,7 +40,6 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
     return `${(meters / 1000).toFixed(1)}km`;
   };
 
-  // Get grade color based on steepness
   const getGradeColor = (grade: number) => {
     const absGrade = Math.abs(grade);
     if (absGrade < 2) return "text-green-500";
@@ -63,7 +60,7 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
   return (
     <View style={{ width: screenWidth }} className="flex-1 p-4">
       <Card className="flex-1">
-        <CardContent className="p-6">
+        <CardContent>
           {/* Header */}
           <View className="flex-row items-center justify-between mb-6">
             <View className="flex-row items-center">
@@ -82,7 +79,7 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
             )}
           </View>
 
-          {/* Current Elevation - Large Display */}
+          {/* Current Elevation */}
           <View className="items-center mb-8">
             <Text
               className={`text-4xl font-bold ${hasCurrentElevation ? "text-green-600" : "text-green-600/30"}`}
@@ -94,58 +91,45 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
             </Text>
           </View>
 
-          {/* Elevation Statistics */}
-          <View className="flex-row justify-around mb-6">
-            <View className="items-center">
-              <View className="flex-row items-center mb-1">
+          {/* Main Metrics Grid */}
+          <View className="gap-3">
+            {/* Ascent & Descent Row */}
+            <View className="flex-row gap-3">
+              <View className="flex-1 items-center p-3 bg-green-500/10 rounded-lg">
                 <Icon
                   as={TrendingUp}
                   size={16}
-                  className="text-green-500 mr-1"
+                  className="text-green-500 mb-1"
                 />
+                <Text
+                  className={`text-xl font-semibold ${totalAscent > 0 ? "text-green-500" : "text-green-500/30"}`}
+                >
+                  {Math.round(totalAscent)}m
+                </Text>
+                <Text className="text-xs text-muted-foreground">Ascent</Text>
               </View>
-              <Text
-                className={`text-xl font-semibold ${totalAscent > 0 ? "text-green-500" : "text-green-500/30"}`}
-              >
-                {Math.round(totalAscent)}m
-              </Text>
-              <Text className="text-xs text-muted-foreground">Ascent</Text>
-            </View>
 
-            <View className="items-center">
-              <View className="flex-row items-center mb-1">
+              <View className="flex-1 items-center p-3 bg-blue-500/10 rounded-lg">
                 <Icon
                   as={TrendingDown}
                   size={16}
-                  className="text-blue-500 mr-1"
+                  className="text-blue-500 mb-1"
                 />
+                <Text
+                  className={`text-xl font-semibold ${totalDescent > 0 ? "text-blue-500" : "text-blue-500/30"}`}
+                >
+                  {Math.round(totalDescent)}m
+                </Text>
+                <Text className="text-xs text-muted-foreground">Descent</Text>
               </View>
-              <Text
-                className={`text-xl font-semibold ${totalDescent > 0 ? "text-blue-500" : "text-blue-500/30"}`}
-              >
-                {Math.round(totalDescent)}m
-              </Text>
-              <Text className="text-xs text-muted-foreground">Descent</Text>
             </View>
 
-            <View className="items-center">
-              <Text
-                className={`text-xl font-semibold ${hasElevationData ? getGradeColor(avgGrade) : "text-muted-foreground/30"}`}
-              >
-                {avgGrade > 0 ? "+" : ""}
-                {avgGrade.toFixed(1)}%
-              </Text>
-              <Text className="text-xs text-muted-foreground">Avg Grade</Text>
-            </View>
-          </View>
-
-          {/* Grade Information */}
-          <View className="mb-6">
+            {/* Grade Card */}
             <View className="p-4 bg-muted/10 rounded-lg">
               <View className="flex-row items-center justify-between mb-2">
-                <Text className="text-sm font-medium">Current Grade</Text>
+                <Text className="text-sm font-medium">Average Grade</Text>
                 <Text
-                  className={`text-lg font-semibold ${hasElevationData ? getGradeColor(avgGrade) : "text-muted-foreground/30"}`}
+                  className={`text-2xl font-semibold ${hasElevationData ? getGradeColor(avgGrade) : "text-muted-foreground/30"}`}
                 >
                   {avgGrade > 0 ? "+" : ""}
                   {avgGrade.toFixed(1)}%
@@ -157,7 +141,7 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                 {hasElevationData ? getGradeDescription(avgGrade) : "No data"}
               </Text>
 
-              {/* Grade visual indicator */}
+              {/* Grade Visual Indicator */}
               <View className="mt-3">
                 <View className="h-2 bg-muted rounded-full overflow-hidden">
                   <View
@@ -176,10 +160,8 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                 </View>
               </View>
             </View>
-          </View>
 
-          {/* Additional Metrics */}
-          <View className="gap-3">
+            {/* Climb Rate */}
             {hasDistance && elevationGainPerKm > 0 && (
               <View className="flex-row justify-between items-center p-3 bg-green-500/10 rounded-lg">
                 <View className="flex-row items-center">
@@ -196,7 +178,7 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
               </View>
             )}
 
-            {/* Net elevation change */}
+            {/* Net Change */}
             <View className="flex-row justify-between items-center p-3 bg-muted/10 rounded-lg">
               <View className="flex-row items-center">
                 <Icon
@@ -220,61 +202,23 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
               </Text>
             </View>
 
-            {/* Elevation profile visualization */}
-            {hasElevationData && (
-              <View className="p-3 bg-muted/10 rounded-lg">
-                <Text className="text-xs text-muted-foreground mb-3">
-                  Elevation Profile
-                </Text>
-                <View className="flex-row items-end justify-between h-20">
-                  {/* Simple elevation bars visualization */}
-                  {Array.from({ length: 10 }, (_, i) => {
-                    // Mock elevation data for visualization
-                    const height = 20 + Math.random() * 60;
-                    return (
-                      <View
-                        key={i}
-                        className="bg-green-400 rounded-t flex-1 mx-0.5"
-                        style={{ height: `${height}%` }}
-                      />
-                    );
-                  })}
-                </View>
-                <View className="flex-row justify-between mt-2">
-                  <Text className="text-xs text-muted-foreground">Start</Text>
-                  <Text className="text-xs text-muted-foreground">Current</Text>
-                </View>
-              </View>
-            )}
-
-            {/* VAM (if climbing) */}
+            {/* VAM */}
             {totalAscent > 50 && metrics.movingTime > 0 && (
-              <View className="p-3 bg-orange-500/10 rounded-lg">
-                <View className="flex-row items-center justify-between">
-                  <View>
-                    <Text className="text-xs text-muted-foreground mb-1">
-                      VAM
-                    </Text>
-                    <Text className="text-lg font-semibold text-orange-600">
-                      {Math.round((totalAscent / metrics.movingTime) * 3600)}
-                    </Text>
-                    <Text className="text-xs text-muted-foreground">m/h</Text>
-                  </View>
-                  <View>
-                    <Text className="text-xs text-muted-foreground text-right">
-                      Vertical Ascent Rate
-                    </Text>
-                  </View>
+              <View className="flex-row justify-between items-center p-3 bg-orange-500/10 rounded-lg">
+                <View className="flex-row items-center">
+                  <Text className="text-sm font-medium mr-2">VAM</Text>
+                  <Text className="text-xs text-muted-foreground">
+                    (Vertical Ascent Rate)
+                  </Text>
+                </View>
+                <View className="items-end">
+                  <Text className="text-lg font-semibold text-orange-600">
+                    {Math.round((totalAscent / metrics.movingTime) * 3600)}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">m/h</Text>
                 </View>
               </View>
             )}
-          </View>
-
-          {/* Footer */}
-          <View className="mt-6 pt-4 border-t border-muted/20">
-            <Text className="text-xs text-muted-foreground text-center">
-              Elevation data from GPS with smoothing applied
-            </Text>
           </View>
         </CardContent>
       </Card>

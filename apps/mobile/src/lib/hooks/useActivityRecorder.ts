@@ -65,6 +65,9 @@ export interface LiveMetrics {
   normalizedPower: number;
   totalWork: number;
 
+  // Calories
+  calories: number;
+
   // Distance & speed
   avgSpeed: number;
   maxSpeed: number;
@@ -338,6 +341,9 @@ function getMetricsFromService(
     normalizedPower: metricsState.normalizedPowerEst,
     totalWork: metricsState.totalWork,
 
+    // Calories
+    calories: metricsState.calories,
+
     // Distance & speed
     avgSpeed: metricsState.avgSpeed,
     maxSpeed: metricsState.maxSpeed,
@@ -388,6 +394,8 @@ function getEmptyMetrics(): LiveMetrics {
     powerMax: 0,
     normalizedPower: 0,
     totalWork: 0,
+
+    calories: 0,
 
     avgSpeed: 0,
     maxSpeed: 0,

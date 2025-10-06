@@ -1,23 +1,22 @@
-import React from 'react';
-import { View, ScrollView } from 'react-native';
-import { Card, CardContent } from '@/components/ui/card';
-import { Text } from '@/components/ui/text';
-import { Icon } from '@/components/ui/icon';
+import { Card, CardContent } from "@/components/ui/card";
+import { Icon } from "@/components/ui/icon";
+import { Text } from "@/components/ui/text";
+import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
+import { formatDuration } from "@repo/core";
 import {
-  Clock,
-  MapPin,
-  Heart,
-  Zap,
   Activity,
-  TrendingUp,
-  Target,
+  Clock,
   Flame,
+  Heart,
+  MapPin,
+  Navigation,
+  Target,
   Timer,
-  Navigation
-} from 'lucide-react-native';
-import { useMetricsSummary } from '@/lib/hooks/useLiveMetrics';
-import { ActivityRecorderService } from '@/lib/services/ActivityRecorder';
-import { formatDuration } from '@repo/core';
+  TrendingUp,
+  Zap,
+} from "lucide-react-native";
+import React from "react";
+import { ScrollView, View } from "react-native";
 
 interface MetricsSummaryCardProps {
   service: ActivityRecorderService | null;
@@ -28,7 +27,7 @@ interface MetricsSummaryCardProps {
 export const MetricsSummaryCard: React.FC<MetricsSummaryCardProps> = ({
   service,
   screenWidth,
-  isRecording
+  isRecording,
 }) => {
   const summary = useMetricsSummary(service);
 
@@ -37,12 +36,18 @@ export const MetricsSummaryCard: React.FC<MetricsSummaryCardProps> = ({
       <View style={{ width: screenWidth }} className="flex-1 p-4">
         <Card className="flex-1">
           <CardContent className="p-6 flex-1 items-center justify-center">
-            <Icon as={Activity} size={48} className="text-muted-foreground/20 mb-4" />
+            <Icon
+              as={Activity}
+              size={48}
+              className="text-muted-foreground/20 mb-4"
+            />
             <Text className="text-muted-foreground text-center">
-              {isRecording ? 'Building metrics...' : 'Ready to start recording'}
+              {isRecording ? "Building metrics..." : "Ready to start recording"}
             </Text>
             <Text className="text-sm text-muted-foreground/70 text-center mt-2">
-              {isRecording ? 'Data will appear as sensors connect' : 'Select your activity type and press Start'}
+              {isRecording
+                ? "Data will appear as sensors connect"
+                : "Select your activity type and press Start"}
             </Text>
           </CardContent>
         </Card>
@@ -57,7 +62,7 @@ export const MetricsSummaryCard: React.FC<MetricsSummaryCardProps> = ({
     unit,
     color = "text-foreground",
     bgColor = "bg-muted/10",
-    iconColor = "text-muted-foreground"
+    iconColor = "text-muted-foreground",
   }: {
     icon: any;
     label: string;
@@ -86,7 +91,7 @@ export const MetricsSummaryCard: React.FC<MetricsSummaryCardProps> = ({
   return (
     <View style={{ width: screenWidth }} className="flex-1 p-4">
       <Card className="flex-1">
-        <CardContent className="p-6">
+        <CardContent>
           {/* Header */}
           <View className="flex-row items-center justify-between mb-6">
             <View className="flex-row items-center">
@@ -122,7 +127,11 @@ export const MetricsSummaryCard: React.FC<MetricsSummaryCardProps> = ({
                 <MetricTile
                   icon={MapPin}
                   label="Distance"
-                  value={summary.primary.distance > 0 ? (summary.primary.distance / 1000).toFixed(1) : '0'}
+                  value={
+                    summary.primary.distance > 0
+                      ? (summary.primary.distance / 1000).toFixed(1)
+                      : "0"
+                  }
                   unit="km"
                   color="text-green-600"
                   bgColor="bg-green-500/10"
@@ -131,7 +140,11 @@ export const MetricsSummaryCard: React.FC<MetricsSummaryCardProps> = ({
                 <MetricTile
                   icon={Heart}
                   label="Avg HR"
-                  value={summary.primary.avgHeartRate > 0 ? Math.round(summary.primary.avgHeartRate) : '--'}
+                  value={
+                    summary.primary.avgHeartRate > 0
+                      ? Math.round(summary.primary.avgHeartRate)
+                      : "--"
+                  }
                   unit={summary.primary.avgHeartRate > 0 ? "bpm" : undefined}
                   color="text-red-600"
                   bgColor="bg-red-500/10"
@@ -143,7 +156,11 @@ export const MetricsSummaryCard: React.FC<MetricsSummaryCardProps> = ({
                 <MetricTile
                   icon={Zap}
                   label="Avg Power"
-                  value={summary.primary.avgPower > 0 ? Math.round(summary.primary.avgPower) : '--'}
+                  value={
+                    summary.primary.avgPower > 0
+                      ? Math.round(summary.primary.avgPower)
+                      : "--"
+                  }
                   unit={summary.primary.avgPower > 0 ? "W" : undefined}
                   color="text-yellow-600"
                   bgColor="bg-yellow-500/10"
@@ -171,14 +188,22 @@ export const MetricsSummaryCard: React.FC<MetricsSummaryCardProps> = ({
                 <MetricTile
                   icon={TrendingUp}
                   label="Max HR"
-                  value={summary.secondary.maxHeartRate > 0 ? summary.secondary.maxHeartRate : '--'}
+                  value={
+                    summary.secondary.maxHeartRate > 0
+                      ? summary.secondary.maxHeartRate
+                      : "--"
+                  }
                   unit={summary.secondary.maxHeartRate > 0 ? "bpm" : undefined}
                   color="text-red-500"
                 />
                 <MetricTile
                   icon={Zap}
                   label="Max Power"
-                  value={summary.secondary.maxPower > 0 ? summary.secondary.maxPower : '--'}
+                  value={
+                    summary.secondary.maxPower > 0
+                      ? summary.secondary.maxPower
+                      : "--"
+                  }
                   unit={summary.secondary.maxPower > 0 ? "W" : undefined}
                   color="text-yellow-500"
                 />
@@ -188,17 +213,25 @@ export const MetricsSummaryCard: React.FC<MetricsSummaryCardProps> = ({
                 <MetricTile
                   icon={Navigation}
                   label="Avg Speed"
-                  value={summary.secondary.avgSpeed > 0 ? (summary.secondary.avgSpeed * 3.6).toFixed(1) : '--'}
+                  value={
+                    summary.secondary.avgSpeed > 0
+                      ? (summary.secondary.avgSpeed * 3.6).toFixed(1)
+                      : "--"
+                  }
                   unit={summary.secondary.avgSpeed > 0 ? "km/h" : undefined}
                   color="text-blue-500"
                 />
                 <MetricTile
                   icon={Timer}
                   label="Pace"
-                  value={summary.secondary.avgSpeed > 0 ?
-                    `${Math.floor(1000 / (summary.secondary.avgSpeed * 60))}:${
-                      Math.round((1000 / (summary.secondary.avgSpeed * 60) % 1) * 60).toString().padStart(2, '0')
-                    }` : '--:--'
+                  value={
+                    summary.secondary.avgSpeed > 0
+                      ? `${Math.floor(1000 / (summary.secondary.avgSpeed * 60))}:${Math.round(
+                          ((1000 / (summary.secondary.avgSpeed * 60)) % 1) * 60,
+                        )
+                          .toString()
+                          .padStart(2, "0")}`
+                      : "--:--"
                   }
                   unit={summary.secondary.avgSpeed > 0 ? "/km" : undefined}
                   color="text-purple-500"
@@ -207,7 +240,8 @@ export const MetricsSummaryCard: React.FC<MetricsSummaryCardProps> = ({
             </View>
 
             {/* Training Analysis */}
-            {(summary.analysis.tss > 0 || summary.analysis.normalizedPower > 0) && (
+            {(summary.analysis.tss > 0 ||
+              summary.analysis.normalizedPower > 0) && (
               <View className="mb-6">
                 <Text className="text-sm font-semibold text-muted-foreground mb-4 uppercase tracking-wide">
                   Training Analysis
@@ -218,14 +252,20 @@ export const MetricsSummaryCard: React.FC<MetricsSummaryCardProps> = ({
                   <View className="p-4 bg-blue-500/10 rounded-lg mb-4">
                     <View className="flex-row items-center justify-between">
                       <View>
-                        <Text className="text-xs text-muted-foreground mb-1">Training Stress Score</Text>
+                        <Text className="text-xs text-muted-foreground mb-1">
+                          Training Stress Score
+                        </Text>
                         <Text className="text-3xl font-bold text-blue-600">
                           {Math.round(summary.analysis.tss)}
                         </Text>
                         <Text className="text-xs text-muted-foreground">
-                          {summary.analysis.tss < 50 ? 'Light session' :
-                           summary.analysis.tss < 100 ? 'Moderate session' :
-                           summary.analysis.tss < 150 ? 'Hard session' : 'Very hard session'}
+                          {summary.analysis.tss < 50
+                            ? "Light session"
+                            : summary.analysis.tss < 100
+                              ? "Moderate session"
+                              : summary.analysis.tss < 150
+                                ? "Hard session"
+                                : "Very hard session"}
                         </Text>
                       </View>
                       <Icon as={Target} size={32} className="text-blue-500" />
@@ -264,10 +304,16 @@ export const MetricsSummaryCard: React.FC<MetricsSummaryCardProps> = ({
               <View className="p-4 bg-green-500/10 rounded-lg">
                 <View className="flex-row items-center justify-between mb-3">
                   <View className="flex-row items-center">
-                    <Icon as={Target} size={20} className="text-green-500 mr-2" />
+                    <Icon
+                      as={Target}
+                      size={20}
+                      className="text-green-500 mr-2"
+                    />
                     <Text className="text-sm font-medium">Plan Adherence</Text>
                   </View>
-                  <Text className="text-xs text-muted-foreground">Current Step</Text>
+                  <Text className="text-xs text-muted-foreground">
+                    Current Step
+                  </Text>
                 </View>
 
                 <View className="flex-row items-center justify-between">
@@ -280,16 +326,22 @@ export const MetricsSummaryCard: React.FC<MetricsSummaryCardProps> = ({
                     <View className="h-3 bg-muted rounded-full overflow-hidden">
                       <View
                         className="h-full bg-green-500 rounded-full"
-                        style={{ width: `${Math.min(100, summary.analysis.adherence * 100)}%` }}
+                        style={{
+                          width: `${Math.min(100, summary.analysis.adherence * 100)}%`,
+                        }}
                       />
                     </View>
                   </View>
                 </View>
 
                 <Text className="text-xs text-muted-foreground mt-2">
-                  {summary.analysis.adherence >= 0.9 ? 'Excellent execution' :
-                   summary.analysis.adherence >= 0.8 ? 'Good execution' :
-                   summary.analysis.adherence >= 0.7 ? 'Fair execution' : 'Focus on targets'}
+                  {summary.analysis.adherence >= 0.9
+                    ? "Excellent execution"
+                    : summary.analysis.adherence >= 0.8
+                      ? "Good execution"
+                      : summary.analysis.adherence >= 0.7
+                        ? "Fair execution"
+                        : "Focus on targets"}
                 </Text>
               </View>
             )}
@@ -297,10 +349,9 @@ export const MetricsSummaryCard: React.FC<MetricsSummaryCardProps> = ({
             {/* Footer info */}
             <View className="mt-6 pt-4 border-t border-muted/20">
               <Text className="text-xs text-muted-foreground text-center">
-                {isRecording ?
-                  'Metrics update every second during recording' :
-                  'Start recording to see live metrics'
-                }
+                {isRecording
+                  ? "Metrics update every second during recording"
+                  : "Start recording to see live metrics"}
               </Text>
             </View>
           </ScrollView>
