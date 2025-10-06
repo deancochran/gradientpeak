@@ -1,11 +1,41 @@
 ## [Unreleased]
 
+### Service Lifecycle Architecture Cleanup (2025-01-06)
+- **Removed Global Service Initialization**: Service no longer initialized in root layout (`_layout.tsx`)
+  - **Correct Lifecycle**: Service now only exists when user navigates to recording screen (`/modals/record`)
+  - **Automatic Cleanup**: Service automatically cleaned up when user navigates away (React useEffect cleanup)
+  - **Navigation-Scoped**: Service lifecycle strictly follows: navigate-in → create → use → navigate-out → cleanup
+  - **Memory Efficiency**: No persistent service consuming resources when not recording
+
+- **Removed Legacy Hook References**: Eliminated all uses of deprecated `useActivityRecorderInit` hook
+  - **Root Layout**: Removed incorrect service initialization from app root
+  - **Submit Recording Modal**: Removed unnecessary service lifecycle management (service already cleaned up on navigation)
+  - **Simplified Architecture**: Single service creation point in recording modal only
+
+- **Deleted Deprecated Code**:
+  - **Zustand Store**: Removed `activity-recorder-store.ts` (400+ lines) - replaced by event-driven hooks
+  - **Archived Docs**: Moved legacy migration docs to `docs/archive/` folder
+  - **Clean Codebase**: Zero references to old hook patterns remaining
+
+- **Updated Documentation**:
+  - **README.md**: Updated service lifecycle examples to reflect navigation-scoped architecture
+  - **Hook Examples**: Replaced deprecated patterns with `useActivityRecorder()` and consolidated hooks
+  - **Architecture Diagrams**: Clarified service creation happens only in recording screen
+
+- **Key Benefits**:
+  - **✅ Correct Lifecycle**: Service exists ONLY during recording session, not globally
+  - **✅ Better Performance**: No unnecessary service running in background
+  - **✅ Cleaner Architecture**: Single source of truth for service creation
+  - **✅ Type Safety**: Service always available within recording screen context
+  - **✅ Developer Experience**: Automatic lifecycle management via React hooks
+  - **✅ Reliability**: Guaranteed cleanup prevents memory leaks and stale state
+
 ### Enhanced Plan Card Implementation
-- **Comprehensive Workout Visualization**: Complete redesign of plan card with rich visual workout experience
-  - **Workout Graph**: Visual intensity profile showing power/HR targets across entire session with color-coded zones
+- **Comprehensive Activity Visualization**: Complete redesign of plan card with rich visual activity experience
+  - **Activity Graph**: Visual intensity profile showing power/HR targets across entire session with color-coded zones
   - **Target Guidance System**: Real-time comparison of current vs target metrics with visual indicators and guidance text
-  - **Dual Mode Experience**: Preview mode for workout overview, active mode for real-time guidance during recording
-  - **Progress Tracking**: Both big-picture workout progress and fine-grained step progress with visual indicators
+  - **Dual Mode Experience**: Preview mode for activity overview, active mode for real-time guidance during recording
+  - **Progress Tracking**: Both big-picture activity progress and fine-grained step progress with visual indicators
   - **Interactive Elements**: Step navigation, target zone visualization, and upcoming intervals preview
 
 - **Fixed Next Step Navigation Issue**: Resolved button accumulation bug with proper debouncing
@@ -14,16 +44,16 @@
   - **Improvements**: 500ms cooldown, visual feedback during advancement, prevent concurrent operations
   - **Event System**: Proper EventEmitter integration for UI state synchronization
 
-- **Rich ActivityPlanStructure Integration**: Leveraged Zod schema for comprehensive workout data extraction
-  - **Workout Statistics**: Total duration, interval count, average power, estimated TSS and calories
-  - **Visual Profile Generation**: Extract intensity data points for workout graph visualization
+- **Rich ActivityPlanStructure Integration**: Leveraged Zod schema for comprehensive activity data extraction
+  - **Activity Statistics**: Total duration, interval count, average power, estimated TSS and calories
+  - **Visual Profile Generation**: Extract intensity data points for activity graph visualization
   - **Target Analysis**: Parse intensity targets (%FTP, %MaxHR, watts) for real-time guidance
   - **Smart Formatting**: Context-aware display of targets, durations, and metric values
 
 - **New Components Architecture**:
   - **EnhancedPlanCard**: Main orchestration component with mode switching and state management
-  - **WorkoutGraph**: Interactive intensity profile with proportional step widths and zone colors
-  - **WorkoutMetricsGrid**: Key workout statistics extracted from plan structure
+  - **ActivityGraph**: Interactive intensity profile with proportional step widths and zone colors
+  - **ActivityMetricsGrid**: Key activity statistics extracted from plan structure
   - **TargetMetricsGrid**: Real-time target vs current with adherence tracking and zone indicators
   - **ProgressTrackingDisplay**: Comprehensive progress visualization (overall + step-level)
   - **StepBreakdown & UpcomingStepsPreview**: Detailed step information and lookahead functionality
@@ -70,7 +100,7 @@
   - **Better Performance**: Recording dashboard now uses surgical re-renders instead of full component updates
   - **Realtime Updates**: Optimized for 1-4Hz sensor data updates without UI lag
   - **Simplified Usage**: Direct hook access to specific metrics and actions without context boilerplate
-  
+
 - **Key Improvements**:
   - **Reduced Re-renders**: Components only update when their specific data changes (e.g., heart rate display only re-renders when heart rate changes)
   - **Better Hook Architecture**: Specific hooks like `useHeartRate()`, `usePower()`, `useGPSMetrics()` for targeted data access
@@ -174,9 +204,9 @@
   - **Sync**: `status`, `conflicts`, `resolveConflict` for offline-first mobile sync
   - **Analytics**: `trainingLoad`, `performanceTrends` with configurable time periods
 
-- **Mobile App tRPC Integration**: 
+- **Mobile App tRPC Integration**:
   - Created `apps/mobile/src/lib/trpc.ts` with authenticated header injection
-  - Created `apps/mobile/src/lib/api/trpc-hooks.ts` with React Query integration  
+  - Created `apps/mobile/src/lib/api/trpc-hooks.ts` with React Query integration
   - Updated all route components (`index.tsx`, `settings.tsx`, `trends.tsx`, `plan.tsx`, `record.tsx`)
   - Migrated auth store, avatar component, and service classes to tRPC calls
   - Deprecated legacy API client with re-exports for compatibility
@@ -190,7 +220,7 @@
 ### Impact
 - **Type Safety**: End-to-end type safety from client to server with shared schemas
 - **Performance**: Reduced bundle size by eliminating duplicate API client code
-- **Maintainability**: Single source of truth for API definitions and schemas  
+- **Maintainability**: Single source of truth for API definitions and schemas
 - **Developer Experience**: IntelliSense and compile-time error catching for all API calls
 - **Security**: Consistent authentication and authorization through tRPC middleware
 

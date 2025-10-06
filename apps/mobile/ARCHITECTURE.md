@@ -150,7 +150,7 @@ LiveMetricsManager.ingestLocationData()
 interface DataBuffer {
   data: BufferedReading[];  // Simple array
   windowMs: number;         // 60,000 (60 seconds)
-  
+
   // API
   add(reading): void;                    // Add sensor reading
   getRecent(metric, seconds): number[];  // Get last N seconds
@@ -164,7 +164,7 @@ interface DataBuffer {
 **Memory Management**:
 - Stores ~60 seconds of data at 1Hz = ~60 readings per metric
 - Multiple metrics: power, heartrate, cadence, altitude, temperature
-- Estimated memory: ~100KB for typical workout
+- Estimated memory: ~100KB for typical activity
 - Cleaned every 60 seconds
 
 ### DataAccumulator (Batch Persistence)
@@ -177,7 +177,7 @@ interface DataAccumulator {
   locations: LocationReading[];   // All location data since last flush
   chunkIndex: number;             // Sequential chunk number
   lastFlushTime: Date;            // When we last wrote to DB
-  
+
   // API
   add(reading): void;                     // Collect sensor data
   addLocation(location): void;            // Collect location data
@@ -332,15 +332,15 @@ describe('LiveMetricsManager', () => {
 describe('Recording Flow', () => {
   it('completes full recording with persistence', async () => {
     await service.startRecording();
-    
+
     // Simulate 90 seconds of data
     for (let i = 0; i < 90; i++) {
       await service.handleSensorData(mockReading());
       await delay(1000);
     }
-    
+
     await service.finishRecording();
-    
+
     // Verify DB has at least 1 chunk (60s mark)
     const streams = await db.query.activityRecordingStreams.findMany();
     expect(streams.length).toBeGreaterThan(0);

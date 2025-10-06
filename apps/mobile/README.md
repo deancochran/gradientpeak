@@ -44,59 +44,74 @@ A cross-platform fitness tracking mobile app built with Expo, React Native, and 
 
 ## 🔄 Service Instance Management
 
-The mobile app uses a **fresh service instance lifecycle** approach for activity recording, ensuring clean state and reliable performance across recording sessions.
+The mobile app uses a **lifecycle-scoped service architecture** for activity recording, ensuring clean state and reliable performance across recording sessions.
 
 ### Architecture Overview
 
-Instead of complex state reset mechanisms, each recording session gets a completely fresh `ActivityRecorderService` instance:
+The `ActivityRecorderService` is created **only when the user navigates to the recording screen** and is automatically cleaned up when they navigate away. This ensures:
 
 ```typescript
-// OLD: One global service with complex reset
-globalServiceInstance.resetForNewActivity() // Complex, error-prone
+// Service lifecycle is tied to screen navigation
+// Navigate to /modals/record → service created
+// Navigate away → service cleaned up and deallocated
 
-// NEW: Fresh service per session  
-serviceInstance = new ActivityRecorderService(profile)
-// ... record activity ...
-serviceInstance.cleanup() // Simple cleanup
-serviceInstance = null // Deallocate
-// Next session gets brand new instance
+function RecordModal() {
+  const { profile } = useRequireAuth();
+
+  // Service created here, cleaned up on unmount
+  const service = useActivityRecorder(profile);
+
+  const state = useRecordingState(service);
+  const metrics = useLiveMetrics(service);
+  // ... use service
+}
 ```
 
 ### Service Lifecycle States
 
-- **`uninitialized`** - No service instance exists
-- **`active`** - Service instance is ready for recording
-- **`completed`** - Recording finished, ready for cleanup
-- **`cleanup`** - Service is being cleaned up and deallocated
+- **`pending`** - Service created, waiting to start recording
+- **`ready`** - All permissions and sensors ready, can start recording
+- **`recording`** - Active recording in progress
+- **`paused`** - Recording paused, can resume or finish
+- **`finished`** - Recording complete, final calculations done
 
 ### Benefits
 
-✅ **Simplicity** - No complex state reset logic  
-✅ **Reliability** - Guaranteed clean state for each session  
-✅ **Performance** - Better memory management and garbage collection  
-✅ **Developer Experience** - Clear lifecycle states and easier debugging  
+✅ **Simplicity** - Service lifecycle follows screen lifecycle
+✅ **Reliability** - Guaranteed clean state for each recording session
+✅ **Performance** - No global services, better memory management
+✅ **Developer Experience** - Automatic cleanup via React hooks, no manual management needed
+✅ **Type Safety** - Service is always available within recording screen (profile guaranteed)
 
 ### Usage Example
 
 ```typescript
-const { 
-  service, 
-  serviceState, 
-  createNewService, 
-  markServiceCompleted,
-  cleanupService,
-  isReady 
-} = useActivityRecorderInit();
+// In /modals/record/index.tsx
+function RecordModal() {
+  const { profile } = useRequireAuth();
 
-// Create service when needed
-useEffect(() => {
-  if (!service && profile && serviceState === 'uninitialized') {
-    createNewService(profile);
-  }
-}, [service, profile, serviceState, createNewService]);
+  // 1. Service Creation (automatic)
+  const service = useActivityRecorder(profile);
 
-// Use service only when ready
-const state = useRecordingState(isReady ? service : null);
+  // 2. Subscribe to state
+  const state = useRecordingState(service);
+  const metrics = useLiveMetrics(service);
+  const { sensors, count } = useSensors(service);
+  const { plan, progress, activityType } = usePlan(service);
+
+  // 3. Get actions
+  const { start, pause, resume, finish } = useRecorderActions(service);
+
+  // 4. Use in UI
+  return (
+    <View>
+      <Text>State: {state}</Text>
+      <Text>HR: {metrics.heartrate} bpm</Text>
+      <Button onPress={start}>Start</Button>
+    </View>
+  );
+  // Service automatically cleaned up when modal unmounts
+}
 ```
 
 ### Development Experience & Tooling
@@ -144,45 +159,59 @@ The mobile app features an optimized activity recording system designed for real
 
 #### Core Components
 - **ActivityRecorderService** (`src/lib/services/ActivityRecorder/`) - Core service handling sensor management, GPS tracking, and data buffering
-- **Zustand Store** (`src/lib/stores/activity-recorder-store.ts`) - Optimized state management with granular selectors for performance
+- **Consolidated Hooks** (`src/lib/hooks/useActivityRecorder.ts`) - 7 core hooks for service interaction with event-driven reactivity
 - **Recording Modals** (`src/app/modals/record/`) - UI components for activity selection, sensor management, and live recording display
 
 #### Performance Optimizations
-- **Granular Selectors** - Components only re-render when their specific data changes (e.g., heart rate display only updates on heart rate changes)
-- **Surgical Updates** - Optimized for 1-4Hz sensor data updates without UI lag
-- **Selective Subscriptions** - Use `useHeartRate()`, `usePower()`, `useGPSMetrics()` instead of subscribing to all data
+- **Event-Driven Updates** - Components only re-render when their subscribed events fire
+- **Surgical Re-renders** - Optimized for 1-4Hz sensor data updates without UI lag
+- **Granular Hooks** - Use specific hooks (`useLiveMetrics`, `useSensors`, `usePlan`) instead of subscribing to everything
 
 #### Key Features
 - **Bluetooth Sensor Integration** - Heart rate monitors, power meters, cadence sensors
 - **GPS Tracking** - Real-time location and route recording for outdoor activities
-- **Interval Training** - Support for structured workout plans and templates
+- **Interval Training** - Support for structured activity plans and templates
 - **Background Recording** - Continues tracking when app is backgrounded
 - **Offline Data Storage** - Local SQLite storage with cloud sync when available
 
 #### Usage Example
 ```typescript
-// ✅ Optimal - only re-renders when heart rate changes
-function HeartRateDisplay() {
-  const heartRate = useHeartRate();
-  return <Text>{heartRate} bpm</Text>;
+// ✅ Optimal - only re-renders when metrics update
+function HeartRateCard({ service }: { service: ActivityRecorderService | null }) {
+  const metrics = useLiveMetrics(service);
+  return <Text>{metrics.heartrate} bpm</Text>;
 }
 
-// ✅ Good - multiple related metrics
-function DashboardMetrics() {
-  const { heartrate, power, cadence } = useDashboardMetrics();
+// ✅ Good - multiple hooks for different concerns
+function RecordingDashboard({ service }: { service: ActivityRecorderService | null }) {
+  const state = useRecordingState(service);
+  const metrics = useLiveMetrics(service);
+  const { count: sensorCount } = useSensors(service);
+  const { start, pause, finish } = useRecorderActions(service);
+
   return (
     <View>
-      <Text>HR: {heartrate}</Text>
-      <Text>Power: {power}W</Text>
-      <Text>Cadence: {cadence}</Text>
+      <Text>State: {state}</Text>
+      <Text>HR: {metrics.heartrate} bpm</Text>
+      <Text>Sensors: {sensorCount}</Text>
+      <Button onPress={start}>Start</Button>
     </View>
   );
 }
 
-// ❌ Avoid - causes re-render on ANY metric change
-function BadComponent() {
-  const allMetrics = useLiveMetrics(); // Don't use this
-  return <Text>{allMetrics.heartrate}</Text>;
+// ✅ Excellent - separation of concerns
+function PlanProgressCard({ service }: { service: ActivityRecorderService | null }) {
+  const { plan, progress } = usePlan(service);
+  const { advanceStep } = useRecorderActions(service);
+
+  if (!plan) return null;
+
+  return (
+    <View>
+      <Text>{progress?.currentStepIndex}/{progress?.totalSteps}</Text>
+      <Button onPress={advanceStep}>Next Step</Button>
+    </View>
+  );
 }
 ```
 
@@ -1249,9 +1278,9 @@ export function ProfileForm() {
           <FormItem>
             <FormLabel>Email</FormLabel>
             <FormControl>
-              <Input 
-                placeholder="email@example.com" 
-                {...field} 
+              <Input
+                placeholder="email@example.com"
+                {...field}
                 autoCapitalize="none"
                 keyboardType="email-address"
               />
@@ -1298,9 +1327,9 @@ export function ProfileForm() {
     <FormItem>
       <FormLabel>Email</FormLabel>
       <FormControl>
-        <Input 
-          placeholder="email@example.com" 
-          {...field} 
+        <Input
+          placeholder="email@example.com"
+          {...field}
           keyboardType="email-address"
           autoCapitalize="none"
         />
@@ -1318,9 +1347,9 @@ export function ProfileForm() {
     <FormItem>
       <FormLabel>Password</FormLabel>
       <FormControl>
-        <Input 
-          placeholder="Password" 
-          {...field} 
+        <Input
+          placeholder="Password"
+          {...field}
           secureTextEntry
         />
       </FormControl>
@@ -1337,9 +1366,9 @@ export function ProfileForm() {
     <FormItem>
       <FormLabel>Bio</FormLabel>
       <FormControl>
-        <Textarea 
-          placeholder="Tell us about yourself..." 
-          {...field} 
+        <Textarea
+          placeholder="Tell us about yourself..."
+          {...field}
           numberOfLines={4}
         />
       </FormControl>
@@ -1410,9 +1439,9 @@ import {
           <FormItem>
             <FormLabel>Email</FormLabel>
             <FormControl>
-              <Input 
-                placeholder="email@example.com" 
-                {...field} 
+              <Input
+                placeholder="email@example.com"
+                {...field}
                 keyboardType="email-address"
               />
             </FormControl>
@@ -1496,8 +1525,8 @@ const form = useForm();
 
 #### Form with Loading State
 ```tsx
-<Button 
-  onPress={form.handleSubmit(onSubmit)} 
+<Button
+  onPress={form.handleSubmit(onSubmit)}
   disabled={form.formState.isSubmitting}
 >
   <Text>

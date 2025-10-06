@@ -2,12 +2,13 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Text } from "@/components/ui/text";
-import { useActivityRecorderInit } from "@/lib/hooks/useActivityRecorderInit";
 import {
+  useActivityRecorder,
+  usePlan,
+  useRecorderActions,
   useRecordingState,
-  useActivityType,
-  useActivitySelection,
-} from "@/lib/hooks/useActivityRecorderEvents";
+} from "@/lib/hooks/useActivityRecorder";
+import { useRequireAuth } from "@/lib/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import {
   ActivityPlanStructure,
@@ -69,17 +70,15 @@ type ListItem =
 
 export default function ActivitySelectionModal() {
   const router = useRouter();
+  const { profile } = useRequireAuth();
   const hasClosed = useRef(false);
   const [tab, setTab] = useState("quick");
 
-  // Get service instance
-  const { service } = useActivityRecorderInit();
-
-  // Use event-based hooks
+  // Service and state
+  const service = useActivityRecorder(profile || null);
   const state = useRecordingState(service);
-  const activityType = useActivityType(service);
-  const { selectActivity, selectPlannedActivity } =
-    useActivitySelection(service);
+  const { activityType } = usePlan(service);
+  const { selectActivity, selectPlannedActivity } = useRecorderActions(service);
 
   const canSelect = state === "pending" || state === "ready";
 

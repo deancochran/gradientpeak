@@ -17,16 +17,13 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import {
-  useActivityPlan,
-  useActivityType,
-  useMetric,
-  usePlanActions,
-  usePlanProgress,
-  useRecordingActions,
+  useActivityRecorder,
+  useLiveMetrics,
+  usePlan,
+  useRecorderActions,
   useRecordingState,
-  useSensorCount,
-} from "@/lib/hooks/useActivityRecorderEvents";
-import { useActivityRecorderInit } from "@/lib/hooks/useActivityRecorderInit";
+  useSensors,
+} from "@/lib/hooks/useActivityRecorder";
 import { useRequireAuth } from "@/lib/hooks/useAuth";
 import { PublicActivityType } from "@repo/core";
 
@@ -46,30 +43,23 @@ export default function RecordModal() {
   const router = useRouter();
   const { profile } = useRequireAuth();
 
-  // Service initialization
-  const { service, serviceState, createNewService } = useActivityRecorderInit();
+  // Service - auto-creates when profile is available
+  const service = useActivityRecorder(profile || null);
 
-  // Auto-create service when modal opens
-  useEffect(() => {
-    if (!service && profile && serviceState === "uninitialized") {
-      console.log("Creating new service for recording session");
-      createNewService(profile);
-    }
-  }, [service, profile, serviceState, createNewService]);
-
-  // Recording state hooks
+  // State and metrics
   const state = useRecordingState(service);
-  const activityType = useActivityType(service);
-  const sensorCount = useSensorCount(service);
-  const planProgress = usePlanProgress(service);
-  const activityPlan = useActivityPlan(service);
-  const { start, pause, resume, finish } = useRecordingActions(service);
-  const { resumePlan, isAdvancing } = usePlanActions(service);
+  const metrics = useLiveMetrics(service);
+  const { count: sensorCount } = useSensors(service);
+  const {
+    plan: activityPlan,
+    progress: planProgress,
+    activityType,
+  } = usePlan(service);
+  const { start, pause, resume, finish, advanceStep, isAdvancing } =
+    useRecorderActions(service);
 
   // GPS metrics
-  const latitude = useMetric(service, "latitude");
-  const longitude = useMetric(service, "longitude");
-  const altitude = useMetric(service, "altitude");
+  const { latitude, longitude, altitude } = metrics;
   const hasGPS = latitude !== undefined && longitude !== undefined;
 
   // Determine which cards to show
@@ -213,9 +203,9 @@ export default function RecordModal() {
               <Icon as={Pause} size={24} />
               <Text className="ml-3 font-semibold">Pause Activity</Text>
             </Button>
-            {showNextStep && resumePlan && (
+            {activityPlan && advanceStep && (
               <Button
-                onPress={resumePlan}
+                onPress={advanceStep}
                 variant="outline"
                 className="w-full h-12 rounded-xl"
                 disabled={isAdvancing}

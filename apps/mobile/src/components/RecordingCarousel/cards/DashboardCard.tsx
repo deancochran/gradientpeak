@@ -1,9 +1,9 @@
-import React, { memo } from "react";
-import { View } from "react-native";
 import { Card, CardContent } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
-import { useMetric } from "@/lib/hooks/useActivityRecorderEvents";
+import { useLiveMetrics } from "@/lib/hooks/useActivityRecorder";
 import { formatDuration } from "@repo/core";
+import React, { memo } from "react";
+import { View } from "react-native";
 
 interface DashboardCardProps {
   service: any;
@@ -42,7 +42,7 @@ const DurationDisplay = memo(
         </Text>
       </View>
       <Text className="text-5xl font-bold tabular-nums">
-        {formatDuration(elapsedTime)}
+        {formatDuration(elapsedTime || 0)}
       </Text>
     </View>
   ),
@@ -53,11 +53,8 @@ DurationDisplay.displayName = "DurationDisplay";
 export const DashboardCard = memo(
   ({ service, screenWidth }: DashboardCardProps) => {
     // Fetch all metrics
-    const elapsedTime = useMetric(service, "elapsedTime");
-    const power = useMetric(service, "power");
-    const heartrate = useMetric(service, "heartrate");
-    const cadence = useMetric(service, "cadence");
-    const distance = useMetric(service, "distance");
+    const { elapsedTime, power, heartrate, cadence, distance } =
+      useLiveMetrics(service);
 
     return (
       <View style={{ width: screenWidth }} className="flex-1 p-4">

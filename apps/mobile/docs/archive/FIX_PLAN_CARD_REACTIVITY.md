@@ -18,13 +18,13 @@ The real issue was that **each component calling `useActivityRecorderInit()` was
 export function useActivityRecorderInit() {
   const [currentService, setCurrentService] = useState<ActivityRecorderService | null>(null);
   // ❌ Each hook call creates its own local state!
-  
+
   const createNewService = useCallback(async (profile) => {
     const newService = new ActivityRecorderService(profile);
     setCurrentService(newService); // Only this component knows about it
     return newService;
   }, []);
-  
+
   return { service: currentService, ... };
 }
 ```
@@ -226,7 +226,7 @@ export function useActivityPlan(service: ActivityRecorderService | null) {
 
 ## Related Issues Fixed
 
-- Plan card not showing when selecting trainer template workouts ✅
+- Plan card not showing when selecting trainer template activities ✅
 - Map card not showing when selecting outdoor activity types (already working, unrelated)
 - Carousel not reactive to activity plan changes ✅
 

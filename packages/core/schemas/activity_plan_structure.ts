@@ -116,7 +116,7 @@ export type ActivityPlanStructure = z.infer<typeof activityPlanStructureSchema>;
  */
 export function flattenPlanSteps(
   steps: StepOrRepetition[],
-  acc: FlattenedStep[] = [],
+  acc: FlattenedStep[] = new Array<FlattenedStep>(),
   parentRep?: number,
 ): FlattenedStep[] {
   for (const step of steps) {

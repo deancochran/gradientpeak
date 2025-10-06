@@ -13,7 +13,6 @@ import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
 import { useActivitySubmission } from "@/lib/hooks/useActivitySubmission";
 import { useRequireAuth } from "@/lib/hooks/useAuth";
-import { useActivityRecorderInit } from "@/lib/hooks/useActivityRecorderInit";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   formatDistance,
@@ -35,7 +34,7 @@ import {
   Trash2,
   Zap,
 } from "lucide-react-native";
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import {
   ActivityIndicator,
@@ -60,8 +59,8 @@ export default function SubmitRecordingModal() {
   const router = useRouter();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Get service lifecycle management
-  const { markServiceCompleted, cleanupService } = useActivityRecorderInit();
+  // Note: Service is already cleaned up when user navigated away from /modals/record
+  // No need to manage service lifecycle here
 
   // Validate recording_id parameter
   useEffect(() => {
@@ -122,23 +121,15 @@ export default function SubmitRecordingModal() {
   }, [error]);
 
   // Helper function to navigate to home screen
-  const navigateToHome = useCallback(async () => {
-    try {
-      // Mark service as completed and cleanup
-      markServiceCompleted();
-      await cleanupService();
-    } catch (error) {
-      console.error("Error cleaning up service:", error);
-    } finally {
-      router.push("/(internal)/(tabs)/");
-    }
-  }, [markServiceCompleted, cleanupService, router]);
+  const navigateToHome = useCallback(() => {
+    router.push("/(internal)/(tabs)/");
+  }, [router]);
 
   // Auto-close after successful submission and navigate to home
   useEffect(() => {
     if (isSuccess) {
-      const timer = setTimeout(async () => {
-        await navigateToHome();
+      const timer = setTimeout(() => {
+        navigateToHome();
       }, 2000);
       return () => clearTimeout(timer);
     }

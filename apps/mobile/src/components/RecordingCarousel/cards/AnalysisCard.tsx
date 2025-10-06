@@ -1,21 +1,18 @@
-import React from "react";
-import { View } from "react-native";
 import { Card, CardContent } from "@/components/ui/card";
-import { Text } from "@/components/ui/text";
 import { Icon } from "@/components/ui/icon";
-import {
-  BarChart3,
-  TrendingUp,
-  Target,
-  Activity,
-  Timer,
-} from "lucide-react-native";
-import {
-  useAnalysisMetrics,
-  useDistanceMetrics,
-} from "@/lib/hooks/useLiveMetrics";
+import { Text } from "@/components/ui/text";
+import { useLiveMetrics } from "@/lib/hooks/useActivityRecorder";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { formatDuration } from "@repo/core";
+import {
+  Activity,
+  BarChart3,
+  Target,
+  Timer,
+  TrendingUp,
+} from "lucide-react-native";
+import React from "react";
+import { View } from "react-native";
 
 interface AnalysisCardProps {
   service: ActivityRecorderService | null;
@@ -26,24 +23,17 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({
   service,
   screenWidth,
 }) => {
-  const analysisMetrics = useAnalysisMetrics(service);
-  const distanceMetrics = useDistanceMetrics(service);
+  const metrics = useLiveMetrics(service);
 
   // Default to zero values when no metrics available
-  const hasPowerData = analysisMetrics
-    ? analysisMetrics.normalizedPower > 0
-    : false;
-  const hasValidTSS = analysisMetrics ? analysisMetrics.tss > 0 : false;
-  const tss = analysisMetrics ? Math.round(analysisMetrics.tss) : 0;
-  const intensityFactor = analysisMetrics ? analysisMetrics.intensityFactor : 0;
-  const variabilityIndex = analysisMetrics
-    ? analysisMetrics.variabilityIndex
-    : 0;
-  const efficiencyFactor = analysisMetrics
-    ? analysisMetrics.efficiencyFactor
-    : 0;
-  const adherence = analysisMetrics ? analysisMetrics.adherence : 0;
-  const decoupling = analysisMetrics ? analysisMetrics.decoupling : 0;
+  const hasPowerData = metrics.normalizedPower > 0;
+  const hasValidTSS = metrics.tss > 0;
+  const tss = Math.round(metrics.tss);
+  const intensityFactor = metrics.intensityFactor;
+  const variabilityIndex = metrics.variabilityIndex;
+  const efficiencyFactor = metrics.efficiencyFactor;
+  const adherence = metrics.adherence;
+  const decoupling = metrics.decoupling;
 
   return (
     <View style={{ width: screenWidth }} className="flex-1 p-4">
@@ -191,10 +181,10 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({
             </View>
           )}
 
-          {/* Workout Progress Section */}
+          {/* Activity Progress Section */}
           <View className="gap-3">
             <Text className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-              Workout Progress
+              Activity Progress
             </Text>
 
             {/* Time & Distance */}
@@ -207,29 +197,25 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({
                   </Text>
                 </View>
                 <Text className="text-lg font-semibold">
-                  {distanceMetrics
-                    ? formatDuration(distanceMetrics.elapsedTime)
-                    : "00:00:00"}
+                  {formatDuration(metrics.elapsedTime || 0)}
                 </Text>
-                {distanceMetrics &&
-                  distanceMetrics.movingTime !==
-                    distanceMetrics.elapsedTime && (
-                    <Text className="text-xs text-muted-foreground">
-                      {formatDuration(distanceMetrics.movingTime)} moving
-                    </Text>
-                  )}
+                {metrics.movingTime !== metrics.elapsedTime && (
+                  <Text className="text-xs text-muted-foreground">
+                    {formatDuration(metrics.movingTime || 0)} moving
+                  </Text>
+                )}
               </View>
 
-              {distanceMetrics && distanceMetrics.distance > 0 && (
+              {metrics.distance && metrics.distance > 0 && (
                 <View className="flex-1 p-3 bg-green-500/10 rounded-lg">
                   <Text className="text-xs text-muted-foreground mb-2">
                     Distance
                   </Text>
                   <Text className="text-lg font-semibold">
-                    {(distanceMetrics.distance / 1000).toFixed(1)} km
+                    {(metrics.distance / 1000).toFixed(1)} km
                   </Text>
                   <Text className="text-xs text-muted-foreground">
-                    {(distanceMetrics.avgSpeed * 3.6).toFixed(1)} km/h avg
+                    {(metrics.avgSpeed * 3.6).toFixed(1)} km/h avg
                   </Text>
                 </View>
               )}

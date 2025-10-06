@@ -1,17 +1,17 @@
+import { PublicActivityType } from "@repo/core";
 import React, { memo } from "react";
 import { Dimensions } from "react-native";
-import { PublicActivityType } from "@repo/core";
-import { PowerCard } from "./cards/PowerCard";
-import { HeartRateCard } from "./cards/HeartRateCard";
 import { AnalysisCard } from "./cards/AnalysisCard";
+import { DashboardCard } from "./cards/DashboardCard";
 import { ElevationCard } from "./cards/ElevationCard";
 import { EnhancedPlanCard } from "./cards/EnhancedPlanCard";
-import { DashboardCard } from "./cards/DashboardCard";
+import { HeartRateCard } from "./cards/HeartRateCard";
 import { MapCard } from "./cards/MapCard";
+import { PowerCard } from "./cards/PowerCard";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
-type CarouselCard =
+type CarouselCardType =
   | "dashboard"
   | "power"
   | "heartrate"
@@ -20,8 +20,8 @@ type CarouselCard =
   | "map"
   | "plan";
 
-interface RecordModalCardProps {
-  type: CarouselCard;
+interface CarouselCardProps {
+  type: CarouselCardType;
   state: string;
   activityType: PublicActivityType;
   planProgress?: any;
@@ -32,7 +32,7 @@ interface RecordModalCardProps {
   service: any;
 }
 
-export const RecordModalCard = memo(
+export const CarouselCard = memo(
   ({
     type,
     state,
@@ -43,7 +43,7 @@ export const RecordModalCard = memo(
     longitude,
     altitude,
     service,
-  }: RecordModalCardProps) => {
+  }: CarouselCardProps) => {
     switch (type) {
       case "dashboard":
         return <DashboardCard service={service} screenWidth={SCREEN_WIDTH} />;
@@ -88,4 +88,4 @@ export const RecordModalCard = memo(
   },
 );
 
-RecordModalCard.displayName = "RecordModalCard";
+CarouselCard.displayName = "CarouselCard";

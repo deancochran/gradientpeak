@@ -1,6 +1,6 @@
-import React, { useRef, useState, useEffect, useMemo, memo } from "react";
-import { Dimensions, FlatList, View } from "react-native";
 import { PublicActivityType } from "@repo/core";
+import React, { memo, useEffect, useMemo, useRef, useState } from "react";
+import { Dimensions, FlatList, View } from "react-native";
 import { CarouselCard } from "./CarouselCard";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;

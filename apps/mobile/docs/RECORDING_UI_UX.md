@@ -129,7 +129,7 @@ const cards = useMemo((): CarouselCard[] => {
 
 **Metrics**:
 1. **Current Power** (top, largest) - Live watts
-2. **Average Power** - Workout average
+2. **Average Power** - Activity average
 3. **Max Power** - Peak power reached
 4. **Normalized Power (NP)** - Physiologically adjusted power
 5. **Total Work** - Cumulative kilojoules
@@ -173,7 +173,7 @@ const cards = useMemo((): CarouselCard[] => {
 
 **Metrics**:
 1. **Current Heart Rate** (top, largest) - Live bpm with current zone
-2. **Average HR** - Workout average
+2. **Average HR** - Activity average
 3. **Max HR** - Peak heart rate
 4. **Threshold %** - Percentage of max HR
 5. **Zone Distribution** - Time in each HR zone with progress bars
@@ -216,11 +216,11 @@ const cards = useMemo((): CarouselCard[] => {
 ```
 
 **Metrics**:
-1. **Training Stress Score (TSS)** (top, largest) - Overall workout difficulty
+1. **Training Stress Score (TSS)** (top, largest) - Overall activity difficulty
 2. **Intensity Factor (IF)** - Relative to FTP
 3. **Variability Index (VI)** - Power consistency
 4. **Efficiency Factor** - Watts per bpm
-5. **Duration & Distance** - Workout progress
+5. **Duration & Distance** - Activity progress
 6. **Plan Adherence** - If following a plan
 
 **Prepared State**:
@@ -309,7 +309,7 @@ const cards = useMemo((): CarouselCard[] => {
 
 ### 7. Plan Card
 
-**Purpose**: Structured workout guidance and progress tracking.
+**Purpose**: Structured activity guidance and progress tracking.
 
 **Display Condition**: Only shown when:
 - User selects a template activity plan, OR
@@ -318,7 +318,7 @@ const cards = useMemo((): CarouselCard[] => {
 **Layout Structure**:
 ```
 ┌─────────────────────────────────┐
-│ 📋 Workout Plan                 │
+│ 📋 Activity Plan                 │
 │ "Tempo Intervals"               │
 ├─────────────────────────────────┤
 │  Current Step: 3 of 5           │
@@ -369,9 +369,9 @@ Power Card:
   ---    (large, muted)
   watts
   Waiting to start
-  
+
   Avg: --  Max: --  NP: --
-  
+
   ✅ Power Metrics Ready
 ```
 
@@ -381,9 +381,9 @@ Power Card:
   250    (large, bright yellow)
   watts
   🟢 LIVE
-  
+
   Avg: 180  Max: 320  NP: 195
-  
+
   [Zone distribution chart]
 ```
 

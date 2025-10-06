@@ -1,11 +1,11 @@
+import { Card, CardContent } from "@/components/ui/card";
+import { Icon } from "@/components/ui/icon";
+import { Text } from "@/components/ui/text";
+import { useLiveMetrics } from "@/lib/hooks/useActivityRecorder";
+import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
+import { Target, Zap } from "lucide-react-native";
 import React from "react";
 import { View } from "react-native";
-import { Card, CardContent } from "@/components/ui/card";
-import { Text } from "@/components/ui/text";
-import { Icon } from "@/components/ui/icon";
-import { Zap, Target } from "lucide-react-native";
-import { usePowerMetrics } from "@/lib/hooks/useLiveMetrics";
-import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 
 interface PowerCardProps {
   service: ActivityRecorderService | null;
@@ -16,26 +16,16 @@ export const PowerCard: React.FC<PowerCardProps> = ({
   service,
   screenWidth,
 }) => {
-  const powerMetrics = usePowerMetrics(service);
+  const metrics = useLiveMetrics(service);
 
   // Default to zero values when no metrics available
-  const hasCurrentPower = powerMetrics?.current !== undefined;
-  const current = hasCurrentPower ? Math.round(powerMetrics!.current!) : 0;
-  const avg = powerMetrics ? Math.round(powerMetrics.avg) : 0;
-  const max = powerMetrics ? Math.round(powerMetrics.max) : 0;
-  const normalized = powerMetrics ? Math.round(powerMetrics.normalized) : 0;
-  const totalWorkKJ = powerMetrics
-    ? Math.round(powerMetrics.totalWork / 1000)
-    : 0;
-  const zones = powerMetrics?.zones || {
-    z1: 0,
-    z2: 0,
-    z3: 0,
-    z4: 0,
-    z5: 0,
-    z6: 0,
-    z7: 0,
-  };
+  const hasCurrentPower = metrics.power !== undefined;
+  const current = hasCurrentPower ? Math.round(metrics.power!) : 0;
+  const avg = Math.round(metrics.powerAvg);
+  const max = Math.round(metrics.powerMax);
+  const normalized = Math.round(metrics.normalizedPower);
+  const totalWorkKJ = Math.round(metrics.totalWork / 1000);
+  const zones = metrics.powerZones;
 
   return (
     <View style={{ width: screenWidth }} className="flex-1 p-4">

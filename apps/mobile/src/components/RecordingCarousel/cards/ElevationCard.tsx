@@ -1,20 +1,17 @@
+import { Card, CardContent } from "@/components/ui/card";
+import { Icon } from "@/components/ui/icon";
+import { Text } from "@/components/ui/text";
+import { useLiveMetrics } from "@/lib/hooks/useActivityRecorder";
+import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
+import {
+  Activity,
+  Mountain,
+  Navigation,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react-native";
 import React from "react";
 import { View } from "react-native";
-import { Card, CardContent } from "@/components/ui/card";
-import { Text } from "@/components/ui/text";
-import { Icon } from "@/components/ui/icon";
-import {
-  Mountain,
-  TrendingUp,
-  TrendingDown,
-  Activity,
-  Navigation,
-} from "lucide-react-native";
-import {
-  useElevationMetrics,
-  useDistanceMetrics,
-} from "@/lib/hooks/useLiveMetrics";
-import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 
 interface ElevationCardProps {
   service: ActivityRecorderService | null;
@@ -25,22 +22,17 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
   service,
   screenWidth,
 }) => {
-  const elevationMetrics = useElevationMetrics(service);
-  const distanceMetrics = useDistanceMetrics(service);
+  const metrics = useLiveMetrics(service);
 
   // Default to zero values when no metrics available
-  const hasDistance = distanceMetrics && distanceMetrics.distance > 0;
-  const hasElevationData = elevationMetrics
-    ? elevationMetrics.totalAscent > 0 || elevationMetrics.totalDescent > 0
-    : false;
-  const hasCurrentElevation = elevationMetrics?.current !== undefined;
-  const current = hasCurrentElevation ? elevationMetrics!.current! : 0;
-  const totalAscent = elevationMetrics ? elevationMetrics.totalAscent : 0;
-  const totalDescent = elevationMetrics ? elevationMetrics.totalDescent : 0;
-  const avgGrade = elevationMetrics ? elevationMetrics.avgGrade : 0;
-  const elevationGainPerKm = elevationMetrics
-    ? elevationMetrics.elevationGainPerKm
-    : 0;
+  const hasDistance = metrics.distance && metrics.distance > 0;
+  const hasElevationData = metrics.totalAscent > 0 || metrics.totalDescent > 0;
+  const hasCurrentElevation = metrics.current !== undefined;
+  const current = hasCurrentElevation ? metrics.current! : 0;
+  const totalAscent = metrics.totalAscent;
+  const totalDescent = metrics.totalDescent;
+  const avgGrade = metrics.avgGrade;
+  const elevationGainPerKm = metrics.elevationGainPerKm;
 
   // Format elevation values
   const formatElevation = (meters: number) => {
@@ -256,30 +248,26 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
             )}
 
             {/* VAM (if climbing) */}
-            {totalAscent > 50 &&
-              distanceMetrics &&
-              distanceMetrics.movingTime > 0 && (
-                <View className="p-3 bg-orange-500/10 rounded-lg">
-                  <View className="flex-row items-center justify-between">
-                    <View>
-                      <Text className="text-xs text-muted-foreground mb-1">
-                        VAM
-                      </Text>
-                      <Text className="text-lg font-semibold text-orange-600">
-                        {Math.round(
-                          (totalAscent / distanceMetrics.movingTime) * 3600,
-                        )}
-                      </Text>
-                      <Text className="text-xs text-muted-foreground">m/h</Text>
-                    </View>
-                    <View>
-                      <Text className="text-xs text-muted-foreground text-right">
-                        Vertical Ascent Rate
-                      </Text>
-                    </View>
+            {totalAscent > 50 && metrics.movingTime > 0 && (
+              <View className="p-3 bg-orange-500/10 rounded-lg">
+                <View className="flex-row items-center justify-between">
+                  <View>
+                    <Text className="text-xs text-muted-foreground mb-1">
+                      VAM
+                    </Text>
+                    <Text className="text-lg font-semibold text-orange-600">
+                      {Math.round((totalAscent / metrics.movingTime) * 3600)}
+                    </Text>
+                    <Text className="text-xs text-muted-foreground">m/h</Text>
+                  </View>
+                  <View>
+                    <Text className="text-xs text-muted-foreground text-right">
+                      Vertical Ascent Rate
+                    </Text>
                   </View>
                 </View>
-              )}
+              </View>
+            )}
           </View>
 
           {/* Footer */}

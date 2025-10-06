@@ -1,20 +1,20 @@
-import React, { memo, useState, useEffect } from "react";
-import { View, Pressable, ScrollView } from "react-native";
-import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
+import { Text } from "@/components/ui/text";
+import { useLiveMetrics } from "@/lib/hooks/useActivityRecorder";
+import { ActivityPlanStructure } from "@repo/core";
 import {
   Activity,
-  Clock,
-  Zap,
-  Play,
-  Timer,
   ChevronRight,
+  Clock,
+  Play,
   Target,
+  Timer,
+  Zap,
 } from "lucide-react-native";
-import { ActivityPlanStructure } from "@repo/core";
-import { useMetric } from "@/lib/hooks/useActivityRecorderEvents";
+import React, { memo, useEffect, useState } from "react";
+import { Pressable, ScrollView, View } from "react-native";
 
 // ================================
 // Types
@@ -53,7 +53,7 @@ const PlanCardHeader = memo<{
   onModeChange,
   canToggle,
 }) {
-  const workoutStats = calculateWorkoutStats(activityPlan.structure);
+  const activityStats = calculateActivityStats(activityPlan.structure);
 
   return (
     <View className="mb-4">
@@ -106,33 +106,33 @@ const PlanCardHeader = memo<{
         )}
       </View>
 
-      {/* Workout Stats Summary */}
+      {/* Activity Stats Summary */}
       <View className="flex-row gap-4 mt-3">
         <View className="flex-row items-center gap-1">
           <Icon as={Clock} size={14} className="text-muted-foreground" />
           <Text className="text-sm text-muted-foreground">
-            {formatDurationCompact(workoutStats.totalDuration)}
+            {formatDurationCompact(activityStats.totalDuration)}
           </Text>
         </View>
         <View className="flex-row items-center gap-1">
           <Icon as={Activity} size={14} className="text-muted-foreground" />
           <Text className="text-sm text-muted-foreground">
-            {workoutStats.totalSteps} steps
+            {activityStats.totalSteps} steps
           </Text>
         </View>
-        {workoutStats.avgPower > 0 && (
+        {activityStats.avgPower > 0 && (
           <View className="flex-row items-center gap-1">
             <Icon as={Zap} size={14} className="text-muted-foreground" />
             <Text className="text-sm text-muted-foreground">
-              {Math.round(workoutStats.avgPower)}% avg
+              {Math.round(activityStats.avgPower)}% avg
             </Text>
           </View>
         )}
-        {workoutStats.intervalCount > 0 && (
+        {activityStats.intervalCount > 0 && (
           <View className="flex-row items-center gap-1">
             <Icon as={Target} size={14} className="text-muted-foreground" />
             <Text className="text-sm text-muted-foreground">
-              {workoutStats.intervalCount} intervals
+              {activityStats.intervalCount} intervals
             </Text>
           </View>
         )}
@@ -144,29 +144,29 @@ const PlanCardHeader = memo<{
 PlanCardHeader.displayName = "PlanCardHeader";
 
 // ================================
-// Workout Preview Mode
+// Activity Preview Mode
 // ================================
 
-const WorkoutPreviewMode = memo<{ structure: ActivityPlanStructure }>(
-  function WorkoutPreviewMode({ structure }) {
-    const profileData = extractWorkoutProfile(structure);
+const ActivityPreviewMode = memo<{ structure: ActivityPlanStructure }>(
+  function ActivityPreviewMode({ structure }) {
+    const profileData = extractActivityProfile(structure);
 
     return (
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        {/* Workout Graph */}
+        {/* Activity Graph */}
         <View className="mb-6">
-          <WorkoutGraph structure={structure} />
+          <ActivityGraph structure={structure} />
         </View>
 
-        {/* Key Workout Metrics */}
-        <WorkoutMetricsGrid structure={structure} />
+        {/* Key Activity Metrics */}
+        <ActivityMetricsGrid structure={structure} />
 
         {/* Step Breakdown Preview */}
         <StepBreakdown
           steps={profileData.slice(0, 6)}
           maxSteps={6}
           showAll={false}
-          title="Workout Steps"
+          title="Activity Steps"
         />
 
         {/* Ready to Start */}
@@ -176,7 +176,7 @@ const WorkoutPreviewMode = memo<{ structure: ActivityPlanStructure }>(
               <Icon as={Play} size={32} className="text-primary ml-1" />
             </View>
             <Text className="text-lg font-medium text-center mb-2">
-              Ready to start workout
+              Ready to start activity
             </Text>
             <Text className="text-center text-sm text-muted-foreground max-w-64">
               Press Start Activity to begin your planned training session
@@ -188,7 +188,7 @@ const WorkoutPreviewMode = memo<{ structure: ActivityPlanStructure }>(
   },
 );
 
-WorkoutPreviewMode.displayName = "WorkoutPreviewMode";
+ActivityPreviewMode.displayName = "ActivityPreviewMode";
 
 // ================================
 // Progress Tracking Display
@@ -215,7 +215,7 @@ const ProgressTrackingDisplay = memo<{
       {/* Big Picture Progress */}
       <View className="mb-4">
         <View className="flex-row justify-between items-center mb-2">
-          <Text className="text-sm font-medium">Workout Progress</Text>
+          <Text className="text-sm font-medium">Activity Progress</Text>
           <Text className="text-sm text-muted-foreground">
             {Math.round(overallProgress)}%
           </Text>
@@ -229,8 +229,8 @@ const ProgressTrackingDisplay = memo<{
           />
         </View>
 
-        {/* Mini workout graph with current position indicator */}
-        <WorkoutProgressGraph
+        {/* Mini activity graph with current position indicator */}
+        <ActivityProgressGraph
           structure={structure}
           currentStep={planProgress.currentStepIndex}
           className="h-8 mb-2"
@@ -366,17 +366,17 @@ const CurrentStepDisplay = memo<{
 CurrentStepDisplay.displayName = "CurrentStepDisplay";
 
 // ================================
-// Active Workout Mode
+// Active Activity Mode
 // ================================
 
-const ActiveWorkoutMode = memo<{
+const ActiveActivityMode = memo<{
   planProgress?: any;
   activityPlan?: any;
   currentMetrics: CurrentMetrics;
   onNextStep?: () => void;
   isAdvancing: boolean;
   structure: ActivityPlanStructure;
-}>(function ActiveWorkoutMode({
+}>(function ActiveActivityMode({
   planProgress,
   activityPlan,
   currentMetrics,
@@ -402,7 +402,7 @@ const ActiveWorkoutMode = memo<{
     );
   }
 
-  const profileData = extractWorkoutProfile(structure);
+  const profileData = extractActivityProfile(structure);
   const upcomingSteps = profileData.slice(
     planProgress.currentStepIndex + 1,
     planProgress.currentStepIndex + 4,
@@ -434,7 +434,7 @@ const ActiveWorkoutMode = memo<{
   );
 });
 
-ActiveWorkoutMode.displayName = "ActiveWorkoutMode";
+ActiveActivityMode.displayName = "ActiveActivityMode";
 
 // ================================
 // Main Enhanced Plan Card
@@ -454,16 +454,13 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
     const [viewMode, setViewMode] = useState<"preview" | "active">("preview");
 
     // Get current metrics for target comparison
-    const heartRate = useMetric(service, "heartrate");
-    const power = useMetric(service, "power");
-    const cadence = useMetric(service, "cadence");
-    const speed = useMetric(service, "speed");
+    const metrics = useLiveMetrics(service);
 
     const currentMetrics: CurrentMetrics = {
-      heartRate,
-      power,
-      cadence,
-      speed,
+      heartRate: metrics.heartrate,
+      power: metrics.power,
+      cadence: metrics.cadence,
+      speed: metrics.speed,
     };
 
     // Auto-switch to active mode when recording starts
@@ -491,7 +488,7 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
                   No plan loaded
                 </Text>
                 <Text className="text-sm text-muted-foreground mt-2">
-                  Select a workout plan to get started
+                  Select a activity plan to get started
                 </Text>
               </View>
             </CardContent>
@@ -514,9 +511,9 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
 
             {/* Content based on mode */}
             {viewMode === "preview" ? (
-              <WorkoutPreviewMode structure={activityPlan.structure} />
+              <ActivityPreviewMode structure={activityPlan.structure} />
             ) : (
-              <ActiveWorkoutMode
+              <ActiveActivityMode
                 planProgress={planProgress}
                 activityPlan={activityPlan}
                 currentMetrics={currentMetrics}

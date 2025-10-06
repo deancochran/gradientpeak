@@ -2,11 +2,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { useActivityRecorderInit } from "@/lib/hooks/useActivityRecorderInit";
 import {
+  useActivityRecorder,
   usePermissions,
-  useDeviceActions,
-} from "@/lib/hooks/useActivityRecorderEvents";
+  useRecorderActions,
+  useSensors,
+} from "@/lib/hooks/useActivityRecorder";
+import { useRequireAuth } from "@/lib/hooks/useAuth";
 import { useRouter } from "expo-router";
 import { Bluetooth, ChevronLeft, RefreshCw } from "lucide-react-native";
 import { useState } from "react";
@@ -15,13 +17,14 @@ import type { Device } from "react-native-ble-plx";
 
 export default function BluetoothModal() {
   const router = useRouter();
+  const { profile } = useRequireAuth();
 
-  // Get service instance
-  const { service } = useActivityRecorderInit();
-
-  // Use event-based hooks
+  // Service and state
+  const service = useActivityRecorder(profile || null);
   const permissions = usePermissions(service);
-  const { scan, connect, disconnect } = useDeviceActions(service);
+  const { sensors: connectedSensors } = useSensors(service);
+  const { scanDevices, connectDevice, disconnectDevice } =
+    useRecorderActions(service);
 
   // Local state for scanning
   const [isScanning, setIsScanning] = useState(false);
@@ -29,9 +32,6 @@ export default function BluetoothModal() {
   const [connectingDevices, setConnectingDevices] = useState<Set<string>>(
     new Set(),
   );
-
-  // Get connected sensors from service
-  const connectedSensors = service?.getConnectedSensors() || [];
 
   /** Start scanning for BLE devices */
   const startScan = async () => {
@@ -47,7 +47,7 @@ export default function BluetoothModal() {
     setAvailableDevices([]);
 
     try {
-      const devices = await scan();
+      const devices = await scanDevices();
 
       // Filter out already connected devices
       const filteredDevices = devices.filter(
@@ -72,7 +72,7 @@ export default function BluetoothModal() {
     setConnectingDevices((prev) => new Set(prev).add(device.id));
 
     try {
-      await connect(device.id);
+      await connectDevice(device.id);
       setAvailableDevices((prev) => prev.filter((d) => d.id !== device.id));
       Alert.alert(
         "Connected",
@@ -99,7 +99,7 @@ export default function BluetoothModal() {
     if (!sensor) return;
 
     try {
-      await disconnect(deviceId);
+      await disconnectDevice(deviceId);
       Alert.alert("Disconnected", `Disconnected from ${sensor.name}`);
     } catch (error) {
       console.error("Disconnection failed:", error);

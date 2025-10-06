@@ -1,6 +1,6 @@
 # 📋 Live Metrics & Storage Refactor Summary
 
-**Date**: Implementation Complete  
+**Date**: Implementation Complete
 **Goal**: Drastically simplify the recording service by separating real-time updates from database persistence
 
 ---
@@ -55,7 +55,7 @@ export const RECORDING_CONFIG = {
 } as const;
 ```
 
-**Impact**: 
+**Impact**:
 - Only 2 intervals to understand and tune
 - Clear separation of concerns
 - No complex buffer size calculations
@@ -127,7 +127,7 @@ await accumulator.flushToDatabase(id);    // Write everything to DB
 
 **After**:
 - ~740 lines (38% reduction)
-- **Only 2 timers**: 
+- **Only 2 timers**:
   - `updateTimer`: Calculate metrics + emit UI updates (1s)
   - `persistenceTimer`: Write to DB + cleanup memory (60s)
 - Simple component composition:
@@ -217,7 +217,7 @@ this.liveMetricsManager.ingestSensorData(reading);
 ### 6. **processor.ts** - DELETED
 **Status**: ✅ Removed entirely
 
-**Reason**: 
+**Reason**:
 - Replaced by simpler `DataAccumulator`
 - Timer-based chunking was unnecessary complexity
 - Accumulation pattern is more predictable
@@ -427,7 +427,7 @@ liveMetricsManager.on('metricsUpdate', ...);
 ### Long-term:
 - [ ] Make intervals configurable per user
 - [ ] Add compression for old data
-- [ ] Implement smart persistence (more frequent at workout start/end)
+- [ ] Implement smart persistence (more frequent at activity start/end)
 
 ---
 

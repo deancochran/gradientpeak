@@ -1040,7 +1040,7 @@ export const formatAccuracy = (accuracy: number | null | undefined): string => {
 // Types
 // ================================
 
-export interface WorkoutProfilePoint {
+export interface ActivityProfilePoint {
   index: number;
   name: string;
   description?: string;
@@ -1052,7 +1052,7 @@ export interface WorkoutProfilePoint {
   cumulativeTime: number;
 }
 
-export interface WorkoutStats {
+export interface ActivityStats {
   totalSteps: number;
   totalDuration: number; // in seconds
   avgPower: number;
@@ -1078,7 +1078,7 @@ export interface WorkoutStats {
  */
 export function getIntensityZone(
   ftpPercent: number,
-): keyof WorkoutStats["intensityZones"] {
+): keyof ActivityStats["intensityZones"] {
   if (ftpPercent >= 106) return "z5";
   if (ftpPercent >= 91) return "z4";
   if (ftpPercent >= 76) return "z3";
@@ -1087,11 +1087,11 @@ export function getIntensityZone(
 }
 
 /**
- * Extract workout profile data for visualization
+ * Extract activity profile data for visualization
  */
-export function extractWorkoutProfile(
+export function extractActivityProfile(
   structure: ActivityPlanStructure,
-): WorkoutProfilePoint[] {
+): ActivityProfilePoint[] {
   const flattenedSteps = flattenPlanSteps(structure.steps);
   let cumulativeTime = 0;
 
@@ -1103,7 +1103,7 @@ export function extractWorkoutProfile(
         ? getDurationMs(step.duration) / 1000
         : 300; // Default 5 minutes for untilFinished
 
-    const point: WorkoutProfilePoint = {
+    const point: ActivityProfilePoint = {
       index,
       name: step.name || `Step ${index + 1}`,
       description: step.description,
@@ -1121,14 +1121,14 @@ export function extractWorkoutProfile(
 }
 
 /**
- * Calculate comprehensive workout statistics
+ * Calculate comprehensive activity statistics
  */
-export function calculateWorkoutStats(
+export function calculateActivityStats(
   structure: ActivityPlanStructure,
-): WorkoutStats {
+): ActivityStats {
   const flattenedSteps = flattenPlanSteps(structure.steps);
 
-  const stats: WorkoutStats = {
+  const stats: ActivityStats = {
     totalSteps: flattenedSteps.length,
     totalDuration: 0,
     avgPower: 0,

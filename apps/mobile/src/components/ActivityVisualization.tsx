@@ -1,135 +1,47 @@
-import React, { memo } from "react";
-import { View, Pressable, ScrollView } from "react-native";
-import { Text } from "@/components/ui/text";
 import { Icon } from "@/components/ui/icon";
+import { Text } from "@/components/ui/text";
+import {
+  ActivityPlanStructure,
+  ActivityProfilePoint,
+  calculateActivityStats,
+  calculateAdherence,
+  extractActivityProfile,
+  formatDurationCompact,
+  formatMetricValue,
+  formatTargetRange,
+  getMetricDisplayName,
+  getTargetGuidanceText,
+  IntensityTarget,
+  isValueInTargetRange,
+} from "@repo/core";
 import {
   Activity,
   Clock,
   Heart,
-  Zap,
-  TrendingUp,
   Target,
+  TrendingUp,
+  Zap,
 } from "lucide-react-native";
-import { ActivityPlanStructure, IntensityTarget } from "@repo/core";
+import React, { memo } from "react";
+import { ScrollView, View } from "react-native";
 
 // ================================
-// Workout Graph Component
+// Activity Progress Graph (Mini version)
 // ================================
 
-interface WorkoutGraphProps {
-  structure: ActivityPlanStructure;
-  currentStep?: number;
-  onStepPress?: (stepIndex: number) => void;
-  className?: string;
-}
-export const WorkoutGraph = memo<WorkoutGraphProps>(function WorkoutGraph({
-  structure,
-  currentStep,
-  onStepPress,
-  className = "h-24",
-}: WorkoutGraphProps) {
-  const profileData = extractWorkoutProfile(structure);
-  const totalDuration = profileData.reduce(
-    (sum, step) => sum + step.duration,
-    0,
-  );
-
-  if (profileData.length === 0) {
-    return (
-      <View className={`bg-muted/30 rounded-lg p-4 ${className}`}>
-        <Text className="text-center text-muted-foreground">
-          No workout data
-        </Text>
-      </View>
-    );
-  }
-
-  return (
-    <View className={`bg-muted/30 rounded-lg p-2 ${className}`}>
-      <View className="flex-row justify-between items-center mb-2">
-        <Text className="text-xs font-medium">Workout Profile</Text>
-        <Text className="text-xs text-muted-foreground">
-          {formatDurationCompact(totalDuration)}
-        </Text>
-      </View>
-
-      <View className="flex-1 flex-row items-end overflow-hidden rounded">
-        {profileData.map((step, index) => {
-          const width = Math.max(2, (step.duration / totalDuration) * 100);
-          const height = Math.max(
-            20,
-            Math.min(100, (step.intensity / 120) * 100),
-          ); // Scale to 120% FTP max
-          const isCurrentStep = currentStep === index;
-
-          return (
-            <Pressable
-              key={index}
-              style={{
-                width: `${width}%`,
-                height: `${height}%`,
-                marginRight: 1,
-                opacity: isCurrentStep ? 1 : 0.8,
-              }}
-              className={`rounded-sm ${isCurrentStep ? "ring-2 ring-blue-500" : ""}`}
-              onPress={() => onStepPress?.(index)}
-            >
-              <View
-                className="flex-1 rounded-sm"
-                style={{ backgroundColor: step.color }}
-              >
-                {/* Step indicator for current step */}
-                {isCurrentStep && (
-                  <View className="absolute -top-1 left-1/2 transform -translate-x-1/2">
-                    <View className="w-2 h-2 bg-blue-500 rounded-full" />
-                  </View>
-                )}
-
-                {/* Step name for wider steps */}
-                {width > 8 && step.name && (
-                  <Text
-                    className="text-xs text-white text-center px-1"
-                    numberOfLines={1}
-                    style={{ fontSize: Math.max(8, Math.min(10, width / 2)) }}
-                  >
-                    {step.name}
-                  </Text>
-                )}
-              </View>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <View className="flex-row justify-between mt-1">
-        <Text className="text-xs text-muted-foreground">0:00</Text>
-        <Text className="text-xs text-muted-foreground">
-          {formatDurationCompact(totalDuration)}
-        </Text>
-      </View>
-    </View>
-  );
-});
-
-WorkoutGraph.displayName = "WorkoutGraph";
-
-// ================================
-// Workout Progress Graph (Mini version)
-// ================================
-
-interface WorkoutProgressGraphProps {
+interface ActivityProgressGraphProps {
   structure: ActivityPlanStructure;
   currentStep: number;
   className?: string;
 }
 
-export const WorkoutProgressGraph = memo<WorkoutProgressGraphProps>(
-  function WorkoutProgressGraph({
+export const ActivityProgressGraph = memo<ActivityProgressGraphProps>(
+  function ActivityProgressGraph({
     structure,
     currentStep,
     className = "h-12",
-  }: WorkoutProgressGraphProps) {
-    const profileData = extractWorkoutProfile(structure);
+  }: ActivityProgressGraphProps) {
+    const profileData = extractActivityProfile(structure);
 
     return (
       <View className={`bg-muted/20 rounded-md p-1 ${className}`}>
@@ -160,10 +72,10 @@ export const WorkoutProgressGraph = memo<WorkoutProgressGraphProps>(
   },
 );
 
-WorkoutProgressGraph.displayName = "WorkoutProgressGraph";
+ActivityProgressGraph.displayName = "ActivityProgressGraph";
 
 // ================================
-// Workout Metrics Grid
+// Activity Metrics Grid
 // ================================
 
 interface MetricCardProps {
@@ -199,17 +111,17 @@ const MetricCard = memo<MetricCardProps>(function MetricCard({
 
 MetricCard.displayName = "MetricCard";
 
-interface WorkoutMetricsGridProps {
+interface ActivityMetricsGridProps {
   structure: ActivityPlanStructure;
 }
 
-export const WorkoutMetricsGrid = memo<WorkoutMetricsGridProps>(
-  function WorkoutMetricsGrid({ structure }) {
-    const stats = calculateWorkoutStats(structure);
+export const ActivityMetricsGrid = memo<ActivityMetricsGridProps>(
+  function ActivityMetricsGrid({ structure }) {
+    const stats = calculateActivityStats(structure);
 
     return (
       <View className="gap-3 mb-4">
-        <Text className="text-sm font-medium mb-2">Workout Overview</Text>
+        <Text className="text-sm font-medium mb-2">Activity Overview</Text>
         <View className="flex-row gap-3 mb-3">
           <View className="flex-1">
             <MetricCard
@@ -255,7 +167,7 @@ export const WorkoutMetricsGrid = memo<WorkoutMetricsGridProps>(
   },
 );
 
-WorkoutMetricsGrid.displayName = "WorkoutMetricsGrid";
+ActivityMetricsGrid.displayName = "ActivityMetricsGrid";
 
 // ================================
 // Target Metrics Display
@@ -486,7 +398,7 @@ TargetMetricsGrid.displayName = "TargetMetricsGrid";
 // ================================
 
 interface StepPreviewCardProps {
-  step: WorkoutProfilePoint;
+  step: ActivityProfilePoint;
   isUpcoming?: boolean;
   showDuration?: boolean;
 }
@@ -559,7 +471,7 @@ const StepPreviewCard = memo<StepPreviewCardProps>(function StepPreviewCard({
 StepPreviewCard.displayName = "StepPreviewCard";
 
 interface StepBreakdownProps {
-  steps: WorkoutProfilePoint[];
+  steps: ActivityProfilePoint[];
   maxSteps?: number;
   showAll?: boolean;
   title?: string;
@@ -597,7 +509,7 @@ export const StepBreakdown = memo<StepBreakdownProps>(function StepBreakdown({
 StepBreakdown.displayName = "StepBreakdown";
 
 interface UpcomingStepsPreviewProps {
-  steps: WorkoutProfilePoint[];
+  steps: ActivityProfilePoint[];
   title?: string;
 }
 

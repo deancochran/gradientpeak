@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import "@/global.css";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { useActivityRecorderInit } from "@/lib/hooks/useActivityRecorderInit";
 import { LocalDatabaseProvider } from "@/lib/providers/LocalDatabaseProvider";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
 import { useTheme } from "@/lib/stores/theme-store";
@@ -65,8 +64,8 @@ function AppContent() {
   const { loading: authLoading } = useAuth();
   const { theme, isLoaded: isThemeLoaded } = useTheme();
 
-  // Initialize ActivityRecorder service
-  useActivityRecorderInit();
+  // Service is NOT initialized here - it will be created only when user navigates to /modals/record
+  // This ensures proper lifecycle: navigate-in → create → use → navigate-out → cleanup
 
   if (authLoading || !isThemeLoaded) {
     return (

@@ -1,11 +1,11 @@
+import { Card, CardContent } from "@/components/ui/card";
+import { Icon } from "@/components/ui/icon";
+import { Text } from "@/components/ui/text";
+import { useLiveMetrics } from "@/lib/hooks/useActivityRecorder";
+import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
+import { Activity, Heart, Target, TrendingUp } from "lucide-react-native";
 import React from "react";
 import { View } from "react-native";
-import { Card, CardContent } from "@/components/ui/card";
-import { Text } from "@/components/ui/text";
-import { Icon } from "@/components/ui/icon";
-import { Heart, Activity, Target, TrendingUp } from "lucide-react-native";
-import { useHeartRateMetrics } from "@/lib/hooks/useLiveMetrics";
-import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 
 interface HeartRateCardProps {
   service: ActivityRecorderService | null;
@@ -16,16 +16,16 @@ export const HeartRateCard: React.FC<HeartRateCardProps> = ({
   service,
   screenWidth,
 }) => {
-  const hrMetrics = useHeartRateMetrics(service);
+  const metrics = useLiveMetrics(service);
 
   // Default to zero values when no metrics available
-  const hasCurrentHR = hrMetrics?.current !== undefined;
-  const current = hasCurrentHR ? Math.round(hrMetrics!.current!) : 0;
-  const avg = hrMetrics ? Math.round(hrMetrics.avg) : 0;
-  const max = hrMetrics ? Math.round(hrMetrics.max) : 0;
-  const hasThresholdData = hrMetrics ? hrMetrics.maxPctThreshold > 0 : false;
-  const maxPctThreshold = hrMetrics ? Math.round(hrMetrics.maxPctThreshold) : 0;
-  const zones = hrMetrics?.zones || { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 };
+  const hasCurrentHR = metrics.heartrate !== undefined;
+  const current = hasCurrentHR ? Math.round(metrics.heartrate!) : 0;
+  const avg = Math.round(metrics.hrAvg);
+  const max = Math.round(metrics.hrMax);
+  const hasThresholdData = metrics.maxPctThreshold > 0;
+  const maxPctThreshold = Math.round(metrics.maxPctThreshold);
+  const zones = metrics.hrZones;
 
   // Heart rate zone colors
   const getHRZoneColor = (zone: number) => {
@@ -46,13 +46,13 @@ export const HeartRateCard: React.FC<HeartRateCardProps> = ({
 
   // Get current HR zone
   const getCurrentZone = () => {
-    if (!hasCurrentHR || !hrMetrics.current) return null;
+    if (!hasCurrentHR || !metrics.heartrate) return null;
 
     // Simple zone calculation - would use actual thresholds in real implementation
-    if (hrMetrics.current < 120) return 0;
-    if (hrMetrics.current < 140) return 1;
-    if (hrMetrics.current < 160) return 2;
-    if (hrMetrics.current < 180) return 3;
+    if (metrics.heartrate < 120) return 0;
+    if (metrics.heartrate < 140) return 1;
+    if (metrics.heartrate < 160) return 2;
+    if (metrics.heartrate < 180) return 3;
     return 4;
   };
 
@@ -194,8 +194,8 @@ export const HeartRateCard: React.FC<HeartRateCardProps> = ({
                 </View>
                 <Text className="font-semibold text-red-600">
                   {Math.round(
-                    (((hrMetrics.current || hrMetrics.avg) - 60) /
-                      (hrMetrics.max - 60)) *
+                    (((metrics.heartrate || metrics.hrAvg) - 60) /
+                      (metrics.hrMax - 60)) *
                       100,
                   )}
                   %
