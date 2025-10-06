@@ -1,7 +1,10 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { useLiveMetrics } from "@/lib/hooks/useActivityRecorder";
+import {
+  useCurrentReadings,
+  useSessionStats,
+} from "@/lib/hooks/useActivityRecorder";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { formatDuration } from "@repo/core";
 import { Clock } from "lucide-react-native";
@@ -17,7 +20,8 @@ export const DashboardCard: React.FC<DashboardCardProps> = ({
   service,
   screenWidth,
 }) => {
-  const metrics = useLiveMetrics(service);
+  const current = useCurrentReadings(service);
+  const stats = useSessionStats(service);
 
   return (
     <View style={{ width: screenWidth }} className="flex-1 p-4">
@@ -44,7 +48,7 @@ export const DashboardCard: React.FC<DashboardCardProps> = ({
                     Duration
                   </Text>
                   <Text className="text-xl font-semibold tabular-nums">
-                    {formatDuration(metrics.elapsedTime || 0)}
+                    {formatDuration(stats.duration || 0)}
                   </Text>
                 </View>
 
@@ -53,7 +57,7 @@ export const DashboardCard: React.FC<DashboardCardProps> = ({
                     Power
                   </Text>
                   <Text className="text-xl font-semibold">
-                    {metrics.power ?? "--"}
+                    {current.power ?? "--"}
                   </Text>
                   <Text className="text-xs text-muted-foreground">watts</Text>
                 </View>
@@ -66,7 +70,7 @@ export const DashboardCard: React.FC<DashboardCardProps> = ({
                     Heart Rate
                   </Text>
                   <Text className="text-xl font-semibold">
-                    {metrics.heartrate ?? "--"}
+                    {current.heartRate ?? "--"}
                   </Text>
                   <Text className="text-xs text-muted-foreground">bpm</Text>
                 </View>
@@ -76,7 +80,7 @@ export const DashboardCard: React.FC<DashboardCardProps> = ({
                     Cadence
                   </Text>
                   <Text className="text-xl font-semibold">
-                    {metrics.cadence ?? "--"}
+                    {current.cadence ?? "--"}
                   </Text>
                   <Text className="text-xs text-muted-foreground">rpm</Text>
                 </View>
@@ -89,7 +93,7 @@ export const DashboardCard: React.FC<DashboardCardProps> = ({
                     Distance
                   </Text>
                   <Text className="text-xl font-semibold">
-                    {metrics.distance?.toFixed(2) ?? "--"}
+                    {((stats.distance || 0) / 1000).toFixed(2)}
                   </Text>
                   <Text className="text-xs text-muted-foreground">km</Text>
                 </View>
@@ -100,7 +104,7 @@ export const DashboardCard: React.FC<DashboardCardProps> = ({
                     Calories
                   </Text>
                   <Text className="text-xl font-semibold">
-                    {metrics.calories ?? "--"}
+                    {stats.calories || "--"}
                   </Text>
                   <Text className="text-xs text-muted-foreground">cal</Text>
                 </View>

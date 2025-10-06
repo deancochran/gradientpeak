@@ -1,7 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { useLiveMetrics } from "@/lib/hooks/useActivityRecorder";
+import { useSessionStats } from "@/lib/hooks/useActivityRecorder";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { BarChart3, Target, TrendingUp } from "lucide-react-native";
 import React from "react";
@@ -16,16 +16,16 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({
   service,
   screenWidth,
 }) => {
-  const metrics = useLiveMetrics(service);
+  const stats = useSessionStats(service);
 
-  const hasPowerData = metrics.normalizedPower > 0;
-  const hasValidTSS = metrics.tss > 0;
-  const tss = Math.round(metrics.tss);
-  const intensityFactor = metrics.intensityFactor;
-  const variabilityIndex = metrics.variabilityIndex;
-  const efficiencyFactor = metrics.efficiencyFactor;
-  const adherence = metrics.adherence;
-  const decoupling = metrics.decoupling;
+  const hasPowerData = (stats.normalizedPower || 0) > 0;
+  const hasValidTSS = (stats.trainingStressScore || 0) > 0;
+  const tss = Math.round(stats.trainingStressScore || 0);
+  const intensityFactor = stats.intensityFactor || 0;
+  const variabilityIndex = stats.variabilityIndex || 0;
+  const efficiencyFactor = stats.efficiencyFactor || 0;
+  const adherence = stats.planAdherence || 0;
+  const decoupling = stats.aerobicDecoupling || 0;
 
   return (
     <View style={{ width: screenWidth }} className="flex-1 p-4">

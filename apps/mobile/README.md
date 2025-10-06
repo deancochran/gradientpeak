@@ -62,7 +62,8 @@ function RecordModal() {
   const service = useActivityRecorder(profile);
 
   const state = useRecordingState(service);
-  const metrics = useLiveMetrics(service);
+  const current = useCurrentReadings(service);
+  const stats = useSessionStats(service);
   // ... use service
 }
 ```
@@ -95,7 +96,8 @@ function RecordModal() {
 
   // 2. Subscribe to state
   const state = useRecordingState(service);
-  const metrics = useLiveMetrics(service);
+  const current = useCurrentReadings(service);
+  const stats = useSessionStats(service);
   const { sensors, count } = useSensors(service);
   const { plan, progress, activityType } = usePlan(service);
 
@@ -106,7 +108,7 @@ function RecordModal() {
   return (
     <View>
       <Text>State: {state}</Text>
-      <Text>HR: {metrics.heartrate} bpm</Text>
+      <Text>HR: {current.heartRate} bpm</Text>
       <Button onPress={start}>Start</Button>
     </View>
   );
@@ -165,7 +167,7 @@ The mobile app features an optimized activity recording system designed for real
 #### Performance Optimizations
 - **Event-Driven Updates** - Components only re-render when their subscribed events fire
 - **Surgical Re-renders** - Optimized for 1-4Hz sensor data updates without UI lag
-- **Granular Hooks** - Use specific hooks (`useLiveMetrics`, `useSensors`, `usePlan`) instead of subscribing to everything
+- **Granular Hooks** - Use specific hooks (`useCurrentReadings`, `useSessionStats`, `useSensors`, `usePlan`) instead of subscribing to everything
 
 #### Key Features
 - **Bluetooth Sensor Integration** - Heart rate monitors, power meters, cadence sensors
@@ -178,21 +180,22 @@ The mobile app features an optimized activity recording system designed for real
 ```typescript
 // ✅ Optimal - only re-renders when metrics update
 function HeartRateCard({ service }: { service: ActivityRecorderService | null }) {
-  const metrics = useLiveMetrics(service);
-  return <Text>{metrics.heartrate} bpm</Text>;
+  const current = useCurrentReadings(service);
+  return <Text>{current.heartRate} bpm</Text>;
 }
 
 // ✅ Good - multiple hooks for different concerns
 function RecordingDashboard({ service }: { service: ActivityRecorderService | null }) {
   const state = useRecordingState(service);
-  const metrics = useLiveMetrics(service);
+  const current = useCurrentReadings(service);
+  const stats = useSessionStats(service);
   const { count: sensorCount } = useSensors(service);
   const { start, pause, finish } = useRecorderActions(service);
 
   return (
     <View>
       <Text>State: {state}</Text>
-      <Text>HR: {metrics.heartrate} bpm</Text>
+      <Text>HR: {current.heartRate} bpm</Text>
       <Text>Sensors: {sensorCount}</Text>
       <Button onPress={start}>Start</Button>
     </View>

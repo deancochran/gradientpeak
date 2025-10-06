@@ -1,6 +1,7 @@
 // services/permissions.ts
 
 import { PublicActivityType } from "@repo/core";
+import { EventEmitter } from "events";
 import * as Location from "expo-location";
 import { Alert, Linking, PermissionsAndroid, Platform } from "react-native";
 
@@ -23,7 +24,7 @@ export interface ActivityPermissionCheckResult {
 }
 
 /** Centralized permission manager */
-export class PermissionsManager {
+export class PermissionsManager extends EventEmitter {
   permissions: Record<PermissionType, PermissionState> = {} as Record<
     PermissionType,
     PermissionState
@@ -168,6 +169,12 @@ export class PermissionsManager {
       loading: false,
     };
 
+    // Emit event so UI updates
+    this.emit("permissionUpdate", {
+      type: type,
+      permission: this.permissions[type],
+    });
+
     return result.granted;
   }
 
@@ -282,6 +289,11 @@ export class PermissionsManager {
         description: PermissionsManager.permissionDescriptions[t],
         loading: false,
       };
+      // Emit event so UI updates
+      this.emit("permissionUpdate", {
+        type: t,
+        permission: this.permissions[t],
+      });
     }
   }
 

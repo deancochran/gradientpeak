@@ -2,7 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import {
-  useLiveMetrics,
+  useCurrentReadings,
   usePlan,
   useRecordingState,
 } from "@/lib/hooks/useActivityRecorder";
@@ -218,16 +218,16 @@ ProgressBar.displayName = "ProgressBar";
 export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
   ({ service, style, className = "flex-1 p-4" }) => {
     // Get all data from hooks
-    const metrics = useLiveMetrics(service);
+    const current = useCurrentReadings(service);
     const { plan, progress } = usePlan(service);
     const state = useRecordingState(service);
 
     // Derive current metrics
     const currentMetrics: CurrentMetrics = {
-      heartRate: metrics.heartrate,
-      power: metrics.power,
-      cadence: metrics.cadence,
-      speed: metrics.speed,
+      heartRate: current.heartRate,
+      power: current.power,
+      cadence: current.cadence,
+      speed: current.speed,
     };
 
     // Handle no plan selected

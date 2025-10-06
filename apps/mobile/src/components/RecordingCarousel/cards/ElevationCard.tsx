@@ -1,7 +1,10 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { useLiveMetrics } from "@/lib/hooks/useActivityRecorder";
+import {
+  useCurrentReadings,
+  useSessionStats,
+} from "@/lib/hooks/useActivityRecorder";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import {
   Activity,
@@ -22,16 +25,17 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
   service,
   screenWidth,
 }) => {
-  const metrics = useLiveMetrics(service);
+  const current = useCurrentReadings(service);
+  const stats = useSessionStats(service);
 
-  const hasDistance = metrics.distance && metrics.distance > 0;
-  const hasElevationData = metrics.totalAscent > 0 || metrics.totalDescent > 0;
-  const hasCurrentElevation = metrics.current !== undefined;
-  const current = hasCurrentElevation ? metrics.current! : 0;
-  const totalAscent = metrics.totalAscent;
-  const totalDescent = metrics.totalDescent;
-  const avgGrade = metrics.avgGrade;
-  const elevationGainPerKm = metrics.elevationGainPerKm;
+  const hasDistance = stats.distance && stats.distance > 0;
+  const hasElevationData = stats.ascent > 0 || stats.descent > 0;
+  const hasCurrentElevation = current.position?.altitude !== undefined;
+  const currentAltitude = hasCurrentElevation ? current.position!.altitude! : 0;
+  const totalAscent = stats.ascent;
+  const totalDescent = stats.descent;
+  const avgGrade = stats.avgGrade || 0;
+  const elevationGainPerKm = stats.elevationGainPerKm || 0;
 
   const formatElevation = (meters: number) => {
     if (meters < 1000) {
@@ -82,9 +86,9 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
           {/* Current Elevation */}
           <View className="items-center mb-8">
             <Text
-              className={`text-4xl font-bold ${hasCurrentElevation ? "text-green-600" : "text-green-600/30"}`}
+              className={`text-5xl font-bold ${hasCurrentElevation ? "text-blue-500" : "text-blue-500/30"}`}
             >
-              {hasCurrentElevation ? formatElevation(current) : "0m"}
+              {formatElevation(currentAltitude)}
             </Text>
             <Text className="text-sm text-muted-foreground">
               current elevation
@@ -203,7 +207,7 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
             </View>
 
             {/* VAM */}
-            {totalAscent > 50 && metrics.movingTime > 0 && (
+            {totalAscent > 50 && stats.movingTime > 0 && (
               <View className="flex-row justify-between items-center p-3 bg-orange-500/10 rounded-lg">
                 <View className="flex-row items-center">
                   <Text className="text-sm font-medium mr-2">VAM</Text>
@@ -213,7 +217,7 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                 </View>
                 <View className="items-end">
                   <Text className="text-lg font-semibold text-orange-600">
-                    {Math.round((totalAscent / metrics.movingTime) * 3600)}
+                    {Math.round((totalAscent / stats.movingTime) * 3600)}
                   </Text>
                   <Text className="text-xs text-muted-foreground">m/h</Text>
                 </View>

@@ -142,6 +142,16 @@ export class ActivityRecorderService extends EventEmitter {
       this.handleLocationData(location),
     );
 
+    // Setup permission update listeners
+    this.permissionsManager.on("permissionUpdate", (data) => {
+      console.log(
+        "[Service] Permission updated:",
+        data.type,
+        data.permission.granted,
+      );
+      this.emit("permissionUpdate", data);
+    });
+
     // Setup app state listener
     this.appStateSubscription = AppState.addEventListener(
       "change",

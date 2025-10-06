@@ -1,7 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { useLiveMetrics } from "@/lib/hooks/useActivityRecorder";
+import { useCurrentReadings } from "@/lib/hooks/useActivityRecorder";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { MapPin } from "lucide-react-native";
 import React, { memo } from "react";
@@ -36,9 +36,11 @@ const LocationInfo = memo(
 LocationInfo.displayName = "LocationInfo";
 
 export const MapCard = memo(({ service, screenWidth }: MapCardProps) => {
-  // Get GPS coordinates from live metrics
-  const metrics = useLiveMetrics(service);
-  const { latitude, longitude, altitude } = metrics;
+  // Get GPS coordinates from current readings
+  const current = useCurrentReadings(service);
+  const latitude = current.position?.lat;
+  const longitude = current.position?.lng;
+  const altitude = current.position?.altitude;
 
   const hasLocation = latitude !== undefined && longitude !== undefined;
 

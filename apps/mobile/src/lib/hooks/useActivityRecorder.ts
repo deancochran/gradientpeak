@@ -7,7 +7,8 @@
  * ```tsx
  * const service = useActivityRecorder(profile);
  * const state = useRecordingState(service);
- * const metrics = useLiveMetrics(service);
+ * const current = useCurrentReadings(service);
+ * const stats = useSessionStats(service);
  * const { sensors, count } = useSensors(service);
  * const actions = useRecorderActions(service);
  * ```
@@ -21,6 +22,12 @@ import {
 import type { PermissionState } from "@/lib/services/ActivityRecorder/permissions";
 import type { ConnectedSensor } from "@/lib/services/ActivityRecorder/sensors";
 import type {
+  CurrentReadings,
+  SensorUpdateEvent,
+  SessionStats,
+  StatsUpdateEvent,
+} from "@/lib/services/ActivityRecorder/types";
+import type {
   PublicActivityType,
   PublicProfilesRow,
   RecordingServiceActivityPlan,
@@ -31,69 +38,6 @@ import type { Device } from "react-native-ble-plx";
 // ================================
 // Types
 // ================================
-
-/**
- * Consolidated live metrics returned by useLiveMetrics
- */
-export interface LiveMetrics {
-  // Core metrics
-  heartrate?: number;
-  power?: number;
-  cadence?: number;
-  speed?: number;
-  distance?: number;
-  elapsedTime?: number;
-
-  // Heart rate analysis
-  hrZones: { z1: number; z2: number; z3: number; z4: number; z5: number };
-  hrAvg: number;
-  hrMax: number;
-  maxPctThreshold: number;
-
-  // Power analysis
-  powerZones: {
-    z1: number;
-    z2: number;
-    z3: number;
-    z4: number;
-    z5: number;
-    z6: number;
-    z7: number;
-  };
-  powerAvg: number;
-  powerMax: number;
-  normalizedPower: number;
-  totalWork: number;
-
-  // Calories
-  calories: number;
-
-  // Distance & speed
-  avgSpeed: number;
-  maxSpeed: number;
-  movingTime: number;
-
-  // Elevation
-  totalAscent: number;
-  totalDescent: number;
-  avgGrade: number;
-  elevationGainPerKm: number;
-  current?: number; // Current elevation
-
-  // Advanced analysis
-  tss: number;
-  intensityFactor: number;
-  variabilityIndex: number;
-  efficiencyFactor: number;
-  adherence: number;
-  decoupling: number;
-
-  // GPS
-  latitude?: number;
-  longitude?: number;
-  altitude?: number;
-  heading?: number;
-}
 
 /**
  * Sensors state with utility accessors
@@ -163,7 +107,6 @@ export interface RecorderActions {
 // ================================
 
 /**
- * Creates and manages an ActivityRecorderService instance.
  * Automatically creates service when profile is available and cleans up on unmount.
  *
  * @param profile - User profile (service created when available)
@@ -197,6 +140,41 @@ export function useActivityRecorder(
   }, [service]);
 
   return service;
+}
+
+/**
+ * Comprehensive hook that returns current readings, session stats, and state
+ * This is the recommended hook for most use cases
+ *
+ * @example
+ * ```tsx
+ * const { current, stats, isActive, isPaused } = useActivityRecorderData(service);
+ * console.log(current.heartRate); // Current HR
+ * console.log(stats.avgHeartRate); // Average HR
+ * ```
+ */
+export function useActivityRecorderData(
+  service: ActivityRecorderService | null,
+) {
+  const current = useCurrentReadings(service);
+  const stats = useSessionStats(service);
+  const recordingState = useRecordingState(service);
+
+  return {
+    // Real-time sensor data
+    current,
+
+    // Computed session statistics
+    stats,
+
+    // Recording state
+    isActive: recordingState.isActive,
+    isPaused: recordingState.isPaused,
+    recordingId: recordingState.recordingId,
+
+    // Service reference for advanced use
+    service,
+  };
 }
 
 // ================================
@@ -244,182 +222,8 @@ export function useRecordingState(
 }
 
 // ================================
-// 3. useLiveMetrics - Consolidated Metrics
+// Hooks: Metrics
 // ================================
-
-/**
- * Subscribe to all live metrics updates.
- * Returns comprehensive metrics object with all available data.
- *
- * @param service - ActivityRecorderService instance
- * @returns Consolidated live metrics
- *
- * @example
- * ```tsx
- * const metrics = useLiveMetrics(service);
- * const { heartrate, power, cadence, distance, elapsedTime } = metrics;
- * ```
- */
-export function useLiveMetrics(
-  service: ActivityRecorderService | null,
-): LiveMetrics {
-  const [metrics, setMetrics] = useState<LiveMetrics>(() =>
-    getMetricsFromService(service),
-  );
-
-  useEffect(() => {
-    if (!service?.liveMetricsManager) {
-      setMetrics(getMetricsFromService(null));
-      return;
-    }
-
-    // Initial metrics
-    setMetrics(getMetricsFromService(service));
-
-    // Subscribe to metrics updates
-    const handleMetricsUpdate = () => {
-      setMetrics(getMetricsFromService(service));
-    };
-
-    service.liveMetricsManager.on("metricsUpdate", handleMetricsUpdate);
-
-    return () => {
-      if (service.liveMetricsManager) {
-        service.liveMetricsManager.off("metricsUpdate", handleMetricsUpdate);
-      }
-    };
-  }, [service]);
-
-  return metrics;
-}
-
-/**
- * Extract all metrics from service into consolidated object
- */
-function getMetricsFromService(
-  service: ActivityRecorderService | null,
-): LiveMetrics {
-  if (!service?.liveMetricsManager) {
-    return getEmptyMetrics();
-  }
-
-  const metricsState = service.liveMetricsManager.getMetrics();
-
-  return {
-    // Core metrics - these need to come from buffer or sensor readings
-    heartrate: undefined, // Will be set from live sensor data
-    power: undefined,
-    cadence: undefined,
-    speed: metricsState.avgSpeed,
-    distance: metricsState.distance,
-    elapsedTime: metricsState.elapsedTime,
-
-    // Heart rate analysis
-    hrZones: {
-      z1: metricsState.hrZone1Time,
-      z2: metricsState.hrZone2Time,
-      z3: metricsState.hrZone3Time,
-      z4: metricsState.hrZone4Time,
-      z5: metricsState.hrZone5Time,
-    },
-    hrAvg: metricsState.avgHeartRate,
-    hrMax: metricsState.maxHeartRate,
-    maxPctThreshold: metricsState.maxHrPctThreshold,
-
-    // Power analysis
-    powerZones: {
-      z1: metricsState.powerZone1Time,
-      z2: metricsState.powerZone2Time,
-      z3: metricsState.powerZone3Time,
-      z4: metricsState.powerZone4Time,
-      z5: metricsState.powerZone5Time,
-      z6: metricsState.powerZone6Time,
-      z7: metricsState.powerZone7Time,
-    },
-    powerAvg: metricsState.avgPower,
-    powerMax: metricsState.maxPower,
-    normalizedPower: metricsState.normalizedPowerEst,
-    totalWork: metricsState.totalWork,
-
-    // Calories
-    calories: metricsState.calories,
-
-    // Distance & speed
-    avgSpeed: metricsState.avgSpeed,
-    maxSpeed: metricsState.maxSpeed,
-    movingTime: metricsState.movingTime,
-
-    // Elevation
-    totalAscent: metricsState.totalAscent,
-    totalDescent: metricsState.totalDescent,
-    avgGrade: metricsState.avgGrade,
-    elevationGainPerKm: metricsState.elevationGainPerKm,
-    current: undefined, // Current elevation not in LiveMetricsState
-
-    // Advanced analysis
-    tss: metricsState.trainingStressScoreEst,
-    intensityFactor: metricsState.intensityFactorEst,
-    variabilityIndex: metricsState.variabilityIndexEst,
-    efficiencyFactor: metricsState.efficiencyFactorEst,
-    adherence: 0, // Not in LiveMetricsState
-    decoupling: 0, // Not in LiveMetricsState
-
-    // GPS - not in LiveMetricsState, will be undefined
-    latitude: undefined,
-    longitude: undefined,
-    altitude: undefined,
-    heading: undefined,
-  };
-}
-
-/**
- * Returns empty metrics object
- */
-function getEmptyMetrics(): LiveMetrics {
-  return {
-    heartrate: undefined,
-    power: undefined,
-    cadence: undefined,
-    speed: undefined,
-    distance: undefined,
-    elapsedTime: undefined,
-
-    hrZones: { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 },
-    hrAvg: 0,
-    hrMax: 0,
-    maxPctThreshold: 0,
-
-    powerZones: { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0, z6: 0, z7: 0 },
-    powerAvg: 0,
-    powerMax: 0,
-    normalizedPower: 0,
-    totalWork: 0,
-
-    calories: 0,
-
-    avgSpeed: 0,
-    maxSpeed: 0,
-    movingTime: 0,
-
-    totalAscent: 0,
-    totalDescent: 0,
-    avgGrade: 0,
-    elevationGainPerKm: 0,
-    current: undefined,
-
-    tss: 0,
-    intensityFactor: 0,
-    variabilityIndex: 0,
-    efficiencyFactor: 0,
-    adherence: 0,
-    decoupling: 0,
-
-    latitude: undefined,
-    longitude: undefined,
-    altitude: undefined,
-    heading: undefined,
-  };
-}
 
 // ================================
 // 4. useSensors - Sensor Management
@@ -795,4 +599,133 @@ export function useIsRecordingActive(
 ): boolean {
   const state = useRecordingState(service);
   return state === "recording" || state === "paused";
+}
+
+// ==================== NEW OPTIMIZED HOOKS ====================
+
+/**
+ * Hook for current sensor readings - updates on sensor changes only
+ */
+export function useCurrentReadings(
+  service: ActivityRecorderService | null,
+): CurrentReadings {
+  const [readings, setReadings] = useState<CurrentReadings>({});
+
+  useEffect(() => {
+    if (!service?.liveMetricsManager) {
+      setReadings({});
+      return;
+    }
+
+    // Get initial readings
+    setReadings(service.liveMetricsManager.getCurrentReadings());
+
+    // Subscribe to sensor updates
+    const handleSensorUpdate = (event: SensorUpdateEvent) => {
+      setReadings(event.readings);
+    };
+
+    service.liveMetricsManager.on("sensorUpdate", handleSensorUpdate);
+
+    return () => {
+      service.liveMetricsManager.off("sensorUpdate", handleSensorUpdate);
+    };
+  }, [service]);
+
+  return readings;
+}
+
+/**
+ * Hook for session statistics - updates every second
+ */
+export function useSessionStats(
+  service: ActivityRecorderService | null,
+): SessionStats {
+  const [stats, setStats] = useState<SessionStats>(getEmptySessionStats());
+
+  useEffect(() => {
+    if (!service?.liveMetricsManager) {
+      setStats(getEmptySessionStats());
+      return;
+    }
+
+    // Get initial stats
+    setStats(service.liveMetricsManager.getSessionStats());
+
+    // Subscribe to stats updates
+    const handleStatsUpdate = (event: StatsUpdateEvent) => {
+      setStats(event.stats);
+    };
+
+    service.liveMetricsManager.on("statsUpdate", handleStatsUpdate);
+
+    return () => {
+      service.liveMetricsManager.off("statsUpdate", handleStatsUpdate);
+    };
+  }, [service]);
+
+  return stats;
+}
+
+/**
+ * Hook for specific sensor value - minimizes re-renders
+ */
+export function useSensorValue(
+  service: ActivityRecorderService | null,
+  sensor: keyof CurrentReadings,
+): number | undefined {
+  const readings = useCurrentReadings(service);
+  return readings[sensor] as number | undefined;
+}
+
+/**
+ * Hook for data freshness tracking
+ */
+export function useSensorFreshness(
+  service: ActivityRecorderService | null,
+  sensor: string,
+): { value?: number; age: number; isStale: boolean } {
+  const readings = useCurrentReadings(service);
+  const [age, setAge] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const lastUpdated = readings.lastUpdated?.[sensor];
+      if (lastUpdated) {
+        setAge(Date.now() - lastUpdated);
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [readings.lastUpdated, sensor]);
+
+  return {
+    value: readings[sensor] as number | undefined,
+    age,
+    isStale: age > 5000, // More than 5 seconds old
+  };
+}
+
+// Helper function
+function getEmptySessionStats(): SessionStats {
+  return {
+    duration: 0,
+    movingTime: 0,
+    pausedTime: 0,
+    distance: 0,
+    calories: 0,
+    work: 0,
+    ascent: 0,
+    descent: 0,
+    avgHeartRate: 0,
+    avgPower: 0,
+    avgSpeed: 0,
+    avgCadence: 0,
+    maxHeartRate: 0,
+    maxPower: 0,
+    maxSpeed: 0,
+    maxCadence: 0,
+    hrZones: [0, 0, 0, 0, 0],
+    powerZones: [0, 0, 0, 0, 0, 0, 0],
+  };
 }

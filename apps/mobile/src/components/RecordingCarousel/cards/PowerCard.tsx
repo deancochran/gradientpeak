@@ -1,7 +1,10 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { useLiveMetrics } from "@/lib/hooks/useActivityRecorder";
+import {
+  useCurrentReadings,
+  useSessionStats,
+} from "@/lib/hooks/useActivityRecorder";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { Target, Zap } from "lucide-react-native";
 import React from "react";
@@ -16,16 +19,30 @@ export const PowerCard: React.FC<PowerCardProps> = ({
   service,
   screenWidth,
 }) => {
-  const metrics = useLiveMetrics(service);
+  const current = useCurrentReadings(service);
+  const stats = useSessionStats(service);
 
-  // Default to zero values when no metrics available
-  const hasCurrentPower = metrics.power !== undefined;
-  const current = hasCurrentPower ? Math.round(metrics.power!) : 0;
-  const avg = Math.round(metrics.powerAvg);
-  const max = Math.round(metrics.powerMax);
-  const normalized = Math.round(metrics.normalizedPower);
-  const totalWorkKJ = Math.round(metrics.totalWork / 1000);
-  const zones = metrics.powerZones;
+  // Current power
+  const hasCurrentPower = current.power !== undefined;
+  const currentPower = hasCurrentPower ? Math.round(current.power!) : 0;
+
+  // Stats
+  const avg = Math.round(stats.avgPower);
+  const max = Math.round(stats.maxPower);
+  const normalized = stats.normalizedPower
+    ? Math.round(stats.normalizedPower)
+    : 0;
+  const totalWorkKJ = Math.round(stats.work / 1000);
+
+  const zones = {
+    z1: stats.powerZones[0],
+    z2: stats.powerZones[1],
+    z3: stats.powerZones[2],
+    z4: stats.powerZones[3],
+    z5: stats.powerZones[4],
+    z6: stats.powerZones[5],
+    z7: stats.powerZones[6],
+  };
 
   return (
     <View style={{ width: screenWidth }} className="flex-1 p-4">
@@ -50,7 +67,7 @@ export const PowerCard: React.FC<PowerCardProps> = ({
             <Text
               className={`text-5xl font-bold ${hasCurrentPower ? "text-yellow-500" : "text-yellow-500/30"}`}
             >
-              {current}
+              {currentPower}
             </Text>
             <Text className="text-sm text-muted-foreground">watts</Text>
           </View>

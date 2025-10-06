@@ -27,7 +27,7 @@ import { useRequireAuth } from "@/lib/hooks/useAuth";
 import { PublicActivityType } from "@repo/core";
 
 const isOutdoorActivity = (type: PublicActivityType): boolean =>
-  ["outdoor_run", "outdoor_bike", "outdoor_walk"].includes(type);
+  ["outdoor_run", "outdoor_bike"].includes(type);
 
 type CarouselCard =
   | "dashboard"
@@ -52,6 +52,15 @@ export default function RecordModal() {
   const { start, pause, resume, finish, advanceStep, isAdvancing } =
     useRecorderActions(service);
 
+  // Debug: Track activity plan changes
+  useEffect(() => {
+    console.log("[RecordModal] Activity plan changed:", {
+      hasPlan: !!activityPlan,
+      planName: activityPlan?.name,
+      activityType,
+    });
+  }, [activityPlan, activityType]);
+
   // Determine which cards to show
   const cards = useMemo((): CarouselCard[] => {
     const cardList: CarouselCard[] = [
@@ -64,12 +73,18 @@ export default function RecordModal() {
 
     if (isOutdoorActivity(activityType)) {
       cardList.push("map");
+      console.log(
+        "[RecordModal] Adding map card for outdoor activity:",
+        activityType,
+      );
     }
 
     if (activityPlan) {
       cardList.push("plan");
+      console.log("[RecordModal] Adding plan card:", activityPlan.name);
     }
 
+    console.log("[RecordModal] Cards updated:", cardList);
     return cardList;
   }, [activityType, activityPlan]);
 

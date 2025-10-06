@@ -20,9 +20,9 @@ import { DataBuffer } from "./DataBuffer";
 import {
   LiveMetricsState,
   LocationReading,
-  MetricsUpdateEvent,
   ProfileMetrics,
   SensorReading,
+  SessionStats,
   ZoneConfig,
 } from "./types";
 
@@ -40,6 +40,12 @@ export class LiveMetricsManager extends EventEmitter {
   // === Timers ===
   private updateTimer?: number; // 1s: Calculate metrics + emit UI updates
   private persistenceTimer?: number; // 60s: Write to DB + cleanup memory
+
+  // === Performance Optimization ===
+  private pendingSensorUpdates = new Map<string, number>();
+  private sensorUpdateTimer?: NodeJS.Timeout;
+  private lastStatsEmit = 0;
+  private cachedStats?: SessionStats;
 
   // === State Tracking ===
   private startTime?: number;
@@ -146,7 +152,7 @@ export class LiveMetricsManager extends EventEmitter {
   }
 
   /**
-   * Ingest sensor data - add to both buffer and accumulator
+   * Ingest sensor data with batched updates
    */
   public ingestSensorData(reading: SensorReading): void {
     if (!this.isActive) return;
@@ -164,6 +170,16 @@ export class LiveMetricsManager extends EventEmitter {
       });
       // Update max values immediately
       this.updateMaxValues(reading.metric, reading.value);
+
+      // Batch sensor updates for UI (max 10Hz)
+      this.pendingSensorUpdates.set(reading.metric, reading.value);
+
+      if (!this.sensorUpdateTimer) {
+        this.sensorUpdateTimer = setTimeout(() => {
+          this.flushSensorUpdates();
+          this.sensorUpdateTimer = undefined;
+        }, 100); // 100ms = 10Hz max update rate
+      }
     } else {
       // Tuple reading (latlng)
       this.buffer.add({
@@ -250,6 +266,116 @@ export class LiveMetricsManager extends EventEmitter {
   }
 
   /**
+   * Get current sensor readings with freshness tracking
+   */
+  public getCurrentReadings() {
+    const readings: any = {
+      heartRate: this.buffer.getLatest("heartrate"),
+      power: this.buffer.getLatest("power"),
+      cadence: this.buffer.getLatest("cadence"),
+      speed: this.calculateCurrentSpeed(),
+      temperature: this.buffer.getLatest("temperature"),
+    };
+
+    // Add position if available
+    if (this.lastLocation) {
+      readings.position = {
+        lat: this.lastLocation.latitude,
+        lng: this.lastLocation.longitude,
+        altitude: this.lastLocation.altitude,
+        heading: this.lastLocation.heading,
+      };
+    }
+
+    // Track freshness
+    readings.lastUpdated = {};
+    const metrics = ["heartrate", "power", "cadence", "speed", "temperature"];
+    for (const metric of metrics) {
+      const reading = this.buffer.getLatestReading(metric);
+      if (reading) {
+        const key = metric === "heartrate" ? "heartRate" : metric;
+        readings.lastUpdated[key] = reading.timestamp;
+      }
+    }
+
+    if (this.lastLocation) {
+      readings.lastUpdated.position = this.lastLocation.timestamp;
+    }
+
+    return readings;
+  }
+
+  /**
+   * Get computed session statistics
+   */
+  public getSessionStats(): SessionStats {
+    const elapsed = this.getElapsedTime();
+    const moving = this.getMovingTime();
+
+    return {
+      // Timing
+      duration: elapsed,
+      movingTime: moving,
+      pausedTime: this.totalPauseTime / 1000,
+
+      // Totals
+      distance: this.totalDistance,
+      calories: this.metrics.calories,
+      work: this.totalWork,
+      ascent: this.totalAscent,
+      descent: this.totalDescent,
+
+      // Averages
+      avgHeartRate: this.metrics.avgHeartRate,
+      avgPower: this.metrics.avgPower,
+      avgSpeed: this.metrics.avgSpeed,
+      avgCadence: this.metrics.avgCadence,
+      avgTemperature: this.metrics.avgTemperature,
+
+      // Maximums
+      maxHeartRate: this.maxHeartRate,
+      maxPower: this.maxPower,
+      maxSpeed: this.maxSpeed,
+      maxCadence: this.maxCadence,
+
+      // Zones
+      hrZones: [...this.hrZoneTimes] as [
+        number,
+        number,
+        number,
+        number,
+        number,
+      ],
+      powerZones: [...this.powerZoneTimes] as [
+        number,
+        number,
+        number,
+        number,
+        number,
+        number,
+        number,
+      ],
+
+      // Elevation metrics
+      avgGrade: this.metrics.avgGrade,
+      elevationGainPerKm: this.metrics.elevationGainPerKm,
+
+      // Advanced metrics (only if enough data)
+      ...(this.hasEnoughDataForAdvancedMetrics() && {
+        normalizedPower: this.metrics.normalizedPowerEst,
+        trainingStressScore: this.metrics.trainingStressScoreEst,
+        intensityFactor: this.metrics.intensityFactorEst,
+        variabilityIndex: this.metrics.variabilityIndexEst,
+        efficiencyFactor: this.metrics.efficiencyFactorEst,
+        aerobicDecoupling: this.metrics.decouplingEst,
+      }),
+
+      // Plan adherence
+      planAdherence: this.metrics.adherenceCurrentStep,
+    };
+  }
+
+  /**
    * Cleanup and stop
    */
   public async cleanup(): Promise<void> {
@@ -264,34 +390,86 @@ export class LiveMetricsManager extends EventEmitter {
 
   /**
    * Calculate all metrics and emit update event
-   * Called every 1 second
+   * Called every 1 second with optimizations
    */
   private calculateAndEmitMetrics(): void {
     const startTime = Date.now();
 
-    // Update timing
+    // Always update core metrics
     this.updateTiming();
-
-    // Update all metric categories
     this.updateDistanceMetrics();
-    this.updatePowerMetrics();
-    this.updateHeartRateMetrics();
-    this.updateCadenceMetrics();
-    this.updateTemperatureMetrics();
     this.updateZoneMetrics();
-    this.updateCalories();
-    this.updateTier2Metrics();
 
-    // Emit update event
-    this.emit("metricsUpdate", {
-      metrics: this.metrics,
-      timestamp: Date.now(),
-    } as MetricsUpdateEvent);
+    // Update expensive calculations less frequently
+    const shouldUpdateExpensive = startTime - this.lastStatsEmit >= 1000;
+
+    if (shouldUpdateExpensive) {
+      this.updatePowerMetrics();
+      this.updateHeartRateMetrics();
+      this.updateCadenceMetrics();
+      this.updateTemperatureMetrics();
+      this.updateCalories();
+      this.updateTier2Metrics();
+
+      // Cache stats
+      this.cachedStats = this.getSessionStats();
+      this.lastStatsEmit = startTime;
+
+      // Emit stats update
+      this.emit("statsUpdate", {
+        stats: this.cachedStats,
+        timestamp: startTime,
+      });
+    }
 
     const duration = Date.now() - startTime;
-    if (duration > 100) {
+    if (duration > 50) {
       console.warn(`[LiveMetricsManager] Slow calculation: ${duration}ms`);
     }
+  }
+
+  /**
+   * Flush batched sensor updates
+   */
+  private flushSensorUpdates(): void {
+    if (this.pendingSensorUpdates.size === 0) return;
+
+    this.emit("sensorUpdate", {
+      readings: this.getCurrentReadings(),
+      timestamp: Date.now(),
+    });
+
+    this.pendingSensorUpdates.clear();
+  }
+
+  /**
+   * Calculate current speed from buffer
+   */
+  private calculateCurrentSpeed(): number | undefined {
+    return this.buffer.getLatest("speed");
+  }
+
+  /**
+   * Get elapsed time in seconds
+   */
+  private getElapsedTime(): number {
+    if (!this.startTime) return 0;
+    return Math.floor((Date.now() - this.startTime) / 1000);
+  }
+
+  /**
+   * Get moving time in seconds
+   */
+  private getMovingTime(): number {
+    return this.metrics.movingTime;
+  }
+
+  /**
+   * Check if we have enough data for advanced metrics
+   */
+  private hasEnoughDataForAdvancedMetrics(): boolean {
+    // Need at least 5 minutes of power data
+    return this.metrics.elapsedTime > 300 && this.metrics.avgPower > 0;
   }
 
   /**
@@ -329,6 +507,10 @@ export class LiveMetricsManager extends EventEmitter {
     if (this.persistenceTimer) {
       clearInterval(this.persistenceTimer);
       this.persistenceTimer = undefined;
+    }
+    if (this.sensorUpdateTimer) {
+      clearTimeout(this.sensorUpdateTimer);
+      this.sensorUpdateTimer = undefined;
     }
   }
 

@@ -125,12 +125,6 @@ export interface MetricUpdateEvent {
   timestamp: number;
 }
 
-export interface MetricsUpdateEvent {
-  metrics: LiveMetricsState;
-  timestamp: number;
-  changedMetrics: string[];
-}
-
 // === Calculation Results ===
 export interface CalculationResult<T = number> {
   value: T;
@@ -349,12 +343,100 @@ export interface LiveMetricsConfig {
   };
 }
 
-// === Hooks Return Types ===
-export interface UseLiveMetricsReturn {
-  metrics: LiveMetricsState | null;
-  isLoading: boolean;
-  error: LiveMetricsError | null;
-  performance: PerformanceStats;
+// ================================
+// NEW: Separated Data Models
+// ================================
+
+/**
+ * Real-time sensor readings (truly "live" data)
+ */
+export interface CurrentReadings {
+  heartRate?: number; // bpm
+  power?: number; // watts
+  cadence?: number; // rpm
+  speed?: number; // m/s
+  temperature?: number; // celsius
+  position?: {
+    lat: number;
+    lng: number;
+    altitude?: number; // meters
+    heading?: number; // degrees
+  };
+
+  // Track freshness of each reading
+  lastUpdated?: {
+    heartRate?: number;
+    power?: number;
+    cadence?: number;
+    speed?: number;
+    temperature?: number;
+    position?: number;
+  };
+}
+
+/**
+ * Computed session statistics (derived from sensor data)
+ */
+export interface SessionStats {
+  // Timing
+  duration: number; // seconds
+  movingTime: number; // seconds
+  pausedTime: number; // seconds
+
+  // Totals
+  distance: number; // meters
+  calories: number; // kcal
+  work: number; // joules
+  ascent: number; // meters
+  descent: number; // meters
+
+  // Averages
+  avgHeartRate: number; // bpm
+  avgPower: number; // watts
+  avgSpeed: number; // m/s
+  avgCadence: number; // rpm
+  avgTemperature?: number; // celsius
+
+  // Maximums
+  maxHeartRate: number; // bpm
+  maxPower: number; // watts
+  maxSpeed: number; // m/s
+  maxCadence: number; // rpm
+
+  // Zone distributions (seconds in each zone)
+  hrZones: [number, number, number, number, number];
+  powerZones: [number, number, number, number, number, number, number];
+
+  // Advanced metrics (optional based on data availability)
+  normalizedPower?: number;
+  trainingStressScore?: number;
+  intensityFactor?: number;
+  variabilityIndex?: number;
+  efficiencyFactor?: number;
+  aerobicDecoupling?: number;
+
+  // Elevation metrics
+  avgGrade?: number; // percentage
+  elevationGainPerKm?: number; // meters per km
+
+  // Plan execution
+  planAdherence?: number; // 0-1
+}
+
+/**
+ * Event for sensor updates
+ */
+export interface SensorUpdateEvent {
+  readings: CurrentReadings;
+  timestamp: number;
+}
+
+/**
+ * Event for stats updates
+ */
+export interface StatsUpdateEvent {
+  stats: SessionStats;
+  timestamp: number;
 }
 
 export interface UseMetricsBatchReturn {

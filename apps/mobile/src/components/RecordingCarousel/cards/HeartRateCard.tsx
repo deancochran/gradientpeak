@@ -1,7 +1,10 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { useLiveMetrics } from "@/lib/hooks/useActivityRecorder";
+import {
+  useCurrentReadings,
+  useSessionStats,
+} from "@/lib/hooks/useActivityRecorder";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { Heart, Target } from "lucide-react-native";
 import React from "react";
@@ -16,16 +19,31 @@ export const HeartRateCard: React.FC<HeartRateCardProps> = ({
   service,
   screenWidth,
 }) => {
-  const metrics = useLiveMetrics(service);
+  const current = useCurrentReadings(service);
+  const stats = useSessionStats(service);
 
-  // Default to zero values when no metrics available
-  const hasCurrentHR = metrics.heartrate !== undefined;
-  const current = hasCurrentHR ? Math.round(metrics.heartrate!) : 0;
-  const avg = Math.round(metrics.hrAvg);
-  const max = Math.round(metrics.hrMax);
-  const hasThresholdData = metrics.maxPctThreshold > 0;
-  const maxPctThreshold = Math.round(metrics.maxPctThreshold);
-  const zones = metrics.hrZones;
+  // Current HR
+  const hasCurrentHR = current.heartRate !== undefined;
+  const currentHR = hasCurrentHR ? Math.round(current.heartRate!) : 0;
+
+  // Stats
+  const avg = Math.round(stats.avgHeartRate);
+  const max = Math.round(stats.maxHeartRate);
+
+  const zones = {
+    z1: stats.hrZones[0],
+    z2: stats.hrZones[1],
+    z3: stats.hrZones[2],
+    z4: stats.hrZones[3],
+    z5: stats.hrZones[4],
+  };
+
+  // Threshold calculations
+  // We can calculate the percentage if we have both current HR and profile threshold HR
+  // For now, we'll check if we have max HR data to show threshold-related info
+  const hasThresholdData = max > 0 && avg > 0;
+  const maxPctThreshold =
+    hasThresholdData && max > 0 ? Math.round((max / 220) * 100) : 0; // Using age-based max as fallback
 
   return (
     <View style={{ width: screenWidth }} className="flex-1 p-4">
@@ -50,7 +68,7 @@ export const HeartRateCard: React.FC<HeartRateCardProps> = ({
             <Text
               className={`text-5xl font-bold ${hasCurrentHR ? "text-red-500" : "text-red-500/30"}`}
             >
-              {current}
+              {currentHR}
             </Text>
             <Text className="text-sm text-muted-foreground">bpm</Text>
           </View>
