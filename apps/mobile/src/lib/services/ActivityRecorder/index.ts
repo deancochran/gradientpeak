@@ -113,6 +113,9 @@ export class ActivityRecorderService extends EventEmitter {
 
   constructor(profile: PublicProfilesRow) {
     super();
+    // Increase max listeners to prevent warning with multiple carousel cards
+    // Each carousel card (x3 for infinite scroll) may add multiple event listeners
+    this.setMaxListeners(30);
     this.profile = profile;
 
     // Initialize managers

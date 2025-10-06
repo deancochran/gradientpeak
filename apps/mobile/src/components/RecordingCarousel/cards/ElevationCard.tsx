@@ -28,14 +28,15 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
   const current = useCurrentReadings(service);
   const stats = useSessionStats(service);
 
-  const hasDistance = stats.distance && stats.distance > 0;
-  const hasElevationData = stats.ascent > 0 || stats.descent > 0;
-  const hasCurrentElevation = current.position?.altitude !== undefined;
+  const hasDistance = stats?.distance && stats.distance > 0;
+  const hasElevationData =
+    (stats?.ascent ?? 0) > 0 || (stats?.descent ?? 0) > 0;
+  const hasCurrentElevation = current?.position?.altitude !== undefined;
   const currentAltitude = hasCurrentElevation ? current.position!.altitude! : 0;
-  const totalAscent = stats.ascent;
-  const totalDescent = stats.descent;
-  const avgGrade = stats.avgGrade || 0;
-  const elevationGainPerKm = stats.elevationGainPerKm || 0;
+  const totalAscent = stats?.ascent ?? 0;
+  const totalDescent = stats?.descent ?? 0;
+  const avgGrade = stats?.avgGrade ?? 0;
+  const elevationGainPerKm = stats?.elevationGainPerKm ?? 0;
 
   const formatElevation = (meters: number) => {
     if (meters < 1000) {
@@ -108,7 +109,7 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                 <Text
                   className={`text-xl font-semibold ${totalAscent > 0 ? "text-green-500" : "text-green-500/30"}`}
                 >
-                  {Math.round(totalAscent)}m
+                  {Math.round(totalAscent ?? 0)}m
                 </Text>
                 <Text className="text-xs text-muted-foreground">Ascent</Text>
               </View>
@@ -122,7 +123,7 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                 <Text
                   className={`text-xl font-semibold ${totalDescent > 0 ? "text-blue-500" : "text-blue-500/30"}`}
                 >
-                  {Math.round(totalDescent)}m
+                  {Math.round(totalDescent ?? 0)}m
                 </Text>
                 <Text className="text-xs text-muted-foreground">Descent</Text>
               </View>
@@ -136,7 +137,7 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                   className={`text-2xl font-semibold ${hasElevationData ? getGradeColor(avgGrade) : "text-muted-foreground/30"}`}
                 >
                   {avgGrade > 0 ? "+" : ""}
-                  {avgGrade.toFixed(1)}%
+                  {(avgGrade ?? 0).toFixed(1)}%
                 </Text>
               </View>
               <Text
@@ -177,7 +178,7 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                   <Text className="text-sm font-medium">Climb Rate</Text>
                 </View>
                 <Text className="font-semibold text-green-600">
-                  {Math.round(elevationGainPerKm)}m/km
+                  {Math.round(elevationGainPerKm ?? 0)}m/km
                 </Text>
               </View>
             )}
@@ -202,12 +203,12 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                 }`}
               >
                 {totalAscent - totalDescent > 0 ? "+" : ""}
-                {Math.round(totalAscent - totalDescent)}m
+                {Math.round((totalAscent ?? 0) - (totalDescent ?? 0))}m
               </Text>
             </View>
 
             {/* VAM */}
-            {totalAscent > 50 && stats.movingTime > 0 && (
+            {(totalAscent ?? 0) > 50 && (stats?.movingTime ?? 0) > 0 && (
               <View className="flex-row justify-between items-center p-3 bg-orange-500/10 rounded-lg">
                 <View className="flex-row items-center">
                   <Text className="text-sm font-medium mr-2">VAM</Text>
@@ -217,7 +218,9 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                 </View>
                 <View className="items-end">
                   <Text className="text-lg font-semibold text-orange-600">
-                    {Math.round((totalAscent / stats.movingTime) * 3600)}
+                    {Math.round(
+                      ((totalAscent ?? 0) / (stats?.movingTime ?? 1)) * 3600,
+                    )}
                   </Text>
                   <Text className="text-xs text-muted-foreground">m/h</Text>
                 </View>

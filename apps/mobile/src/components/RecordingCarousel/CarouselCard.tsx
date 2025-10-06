@@ -25,32 +25,41 @@ interface CarouselCardProps {
   service: ActivityRecorderService | null;
 }
 
-export const CarouselCard = memo(({ type, service }: CarouselCardProps) => {
-  switch (type) {
-    case "dashboard":
-      return <DashboardCard service={service} screenWidth={SCREEN_WIDTH} />;
+export const CarouselCard = memo(
+  ({ type, service }: CarouselCardProps) => {
+    switch (type) {
+      case "dashboard":
+        return <DashboardCard service={service} screenWidth={SCREEN_WIDTH} />;
 
-    case "power":
-      return <PowerCard service={service} screenWidth={SCREEN_WIDTH} />;
+      case "power":
+        return <PowerCard service={service} screenWidth={SCREEN_WIDTH} />;
 
-    case "heartrate":
-      return <HeartRateCard service={service} screenWidth={SCREEN_WIDTH} />;
+      case "heartrate":
+        return <HeartRateCard service={service} screenWidth={SCREEN_WIDTH} />;
 
-    case "analysis":
-      return <AnalysisCard service={service} screenWidth={SCREEN_WIDTH} />;
+      case "analysis":
+        return <AnalysisCard service={service} screenWidth={SCREEN_WIDTH} />;
 
-    case "elevation":
-      return <ElevationCard service={service} screenWidth={SCREEN_WIDTH} />;
+      case "elevation":
+        return <ElevationCard service={service} screenWidth={SCREEN_WIDTH} />;
 
-    case "map":
-      return <MapCard service={service} screenWidth={SCREEN_WIDTH} />;
+      case "map":
+        return <MapCard service={service} screenWidth={SCREEN_WIDTH} />;
 
-    case "plan":
-      return <EnhancedPlanCard service={service} screenWidth={SCREEN_WIDTH} />;
+      case "plan":
+        return (
+          <EnhancedPlanCard service={service} screenWidth={SCREEN_WIDTH} />
+        );
 
-    default:
-      return null;
-  }
-});
+      default:
+        return null;
+    }
+  },
+  (prevProps, nextProps) => {
+    // Only re-render if card type changes
+    // Service instance stays the same throughout the session
+    return prevProps.type === nextProps.type;
+  },
+);
 
 CarouselCard.displayName = "CarouselCard";

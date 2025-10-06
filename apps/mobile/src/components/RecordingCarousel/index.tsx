@@ -104,6 +104,7 @@ export const RecordingCarousel = memo(
           onMomentumScrollEnd={handleMomentumScrollEnd}
           onScrollToIndexFailed={handleScrollToIndexFailed}
           getItemLayout={getItemLayout}
+          removeClippedSubviews={true}
           style={{ flex: 1 }}
         />
 
