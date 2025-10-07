@@ -108,7 +108,7 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                 <Text
                   className={`text-xl font-semibold ${totalAscent > 0 ? "text-green-500" : "text-green-500/30"}`}
                 >
-                  {Math.round(totalAscent ?? 0)}m
+                  {`${Math.round(totalAscent ?? 0)}m`}
                 </Text>
                 <Text className="text-xs text-muted-foreground">Ascent</Text>
               </View>
@@ -122,7 +122,7 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                 <Text
                   className={`text-xl font-semibold ${totalDescent > 0 ? "text-blue-500" : "text-blue-500/30"}`}
                 >
-                  {Math.round(totalDescent ?? 0)}m
+                  {`${Math.round(totalDescent ?? 0)}m`}
                 </Text>
                 <Text className="text-xs text-muted-foreground">Descent</Text>
               </View>
@@ -177,7 +177,7 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                   <Text className="text-sm font-medium">Climb Rate</Text>
                 </View>
                 <Text className="font-semibold text-green-600">
-                  {Math.round(elevationGainPerKm ?? 0)}m/km
+                  {`${Math.round(elevationGainPerKm ?? 0)}m/km`}
                 </Text>
               </View>
             )}
@@ -202,7 +202,7 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                 }`}
               >
                 {totalAscent - totalDescent > 0 ? "+" : ""}
-                {Math.round((totalAscent ?? 0) - (totalDescent ?? 0))}m
+                {`${Math.round((totalAscent ?? 0) - (totalDescent ?? 0))}m`}
               </Text>
             </View>
 
