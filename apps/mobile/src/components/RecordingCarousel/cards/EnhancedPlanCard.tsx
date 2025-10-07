@@ -3,12 +3,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import {
+  useCurrentPlanStep,
   useCurrentReadings,
-  usePlan,
-  useRecordingState,
+  useHasPlan,
+  usePlanStepProgress,
+  useStepTimer,
 } from "@/lib/hooks/useActivityRecorder";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import { FlattenedStep } from "@repo/core";
 import {
   Calendar,
   CheckCircle2,
@@ -16,7 +17,7 @@ import {
   Clock,
   Target,
 } from "lucide-react-native";
-import React, { memo, useEffect, useState } from "react";
+import React, { memo } from "react";
 import { View } from "react-native";
 
 // ================================
@@ -26,134 +27,6 @@ import { View } from "react-native";
 interface EnhancedPlanCardProps {
   service: ActivityRecorderService | null;
   screenWidth: number;
-}
-
-// ================================
-// Helper Functions
-// ================================
-
-function formatTime(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
-
-// ================================
-// Custom Hooks
-// ================================
-
-/**
- * Get current step details from plan manager
- */
-function useCurrentStep(
-  service: ActivityRecorderService | null,
-): FlattenedStep | undefined {
-  const [currentStep, setCurrentStep] = useState<FlattenedStep | undefined>(
-    () => service?.planManager?.getCurrentStep(),
-  );
-
-  useEffect(() => {
-    if (!service) {
-      setCurrentStep(undefined);
-      return;
-    }
-
-    const updateStep = () => {
-      setCurrentStep(service.planManager?.getCurrentStep());
-    };
-
-    service.on("planProgressUpdate", updateStep);
-    service.on("stepAdvanced", updateStep);
-    service.on("planStarted", updateStep);
-    updateStep();
-
-    return () => {
-      service.off("planProgressUpdate", updateStep);
-      service.off("stepAdvanced", updateStep);
-      service.off("planStarted", updateStep);
-    };
-  }, [service]);
-
-  return currentStep;
-}
-
-/**
- * Get next step preview
- */
-function useNextStep(
-  service: ActivityRecorderService | null,
-): FlattenedStep | undefined {
-  const { progress } = usePlan(service);
-  const [nextStep, setNextStep] = useState<FlattenedStep | undefined>();
-
-  useEffect(() => {
-    if (!service?.planManager || !progress) {
-      setNextStep(undefined);
-      return;
-    }
-
-    const nextIndex = progress.currentStepIndex + 1;
-    const allSteps = (service.planManager as any).flattenedSteps || [];
-    setNextStep(allSteps[nextIndex]);
-  }, [service, progress]);
-
-  return nextStep;
-}
-
-/**
- * Get first step for preview when pending
- */
-function useFirstStep(
-  service: ActivityRecorderService | null,
-): FlattenedStep | undefined {
-  const [firstStep, setFirstStep] = useState<FlattenedStep | undefined>();
-
-  useEffect(() => {
-    if (!service?.planManager) {
-      setFirstStep(undefined);
-      return;
-    }
-
-    const allSteps = (service.planManager as any).flattenedSteps || [];
-    setFirstStep(allSteps[0]);
-  }, [service]);
-
-  return firstStep;
-}
-
-/**
- * Real-time countdown for current step
- */
-function useStepTimeRemaining(
-  service: ActivityRecorderService | null,
-): number | null {
-  const { progress } = usePlan(service);
-  const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (!service || !progress || !progress.duration) {
-      setTimeRemaining(null);
-      return;
-    }
-
-    const updateRemaining = () => {
-      if (progress.duration && progress.elapsedInStep !== undefined) {
-        const remaining = Math.max(
-          0,
-          progress.duration - progress.elapsedInStep,
-        );
-        setTimeRemaining(remaining);
-      }
-    };
-
-    updateRemaining();
-    const interval = setInterval(updateRemaining, 100);
-
-    return () => clearInterval(interval);
-  }, [service, progress]);
-
-  return timeRemaining;
 }
 
 // ================================
@@ -211,14 +84,15 @@ FinishedPlanState.displayName = "FinishedPlanState";
 
 export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
   ({ service, screenWidth }) => {
-    // Hooks
+    // Direct service access hooks
+    const hasPlan = useHasPlan(service);
+    const currentStep = useCurrentPlanStep(service);
+    const { index, total } = usePlanStepProgress(service);
+    const timer = useStepTimer(service);
     const current = useCurrentReadings(service);
-    const { plan, progress } = usePlan(service);
-    const state = useRecordingState(service);
-    const currentStep = useCurrentStep(service);
-    const nextStep = useNextStep(service);
-    const firstStep = useFirstStep(service);
-    const timeRemaining = useStepTimeRemaining(service);
+
+    // Derive next step
+    const nextStep = service?.getPlanStep(index + 1);
 
     // Derive current metrics
     const currentMetrics = {
@@ -229,7 +103,7 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
     };
 
     // Handle no plan selected
-    if (!plan) {
+    if (!hasPlan) {
       return (
         <View style={{ width: screenWidth }} className="flex-1 p-4">
           <Card className="flex-1">
@@ -242,14 +116,14 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
     }
 
     // Handle finished state
-    if (progress?.state === "finished") {
+    if (service?.isPlanFinished) {
       return (
         <View style={{ width: screenWidth }} className="flex-1 p-4">
           <Card className="flex-1">
             <CardContent className="p-4 flex-1">
               <FinishedPlanState
-                planName={plan.name}
-                totalSteps={progress.totalSteps}
+                planName={currentStep?.name || "Workout"}
+                totalSteps={total}
               />
             </CardContent>
           </Card>
@@ -257,50 +131,15 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
       );
     }
 
-    // Determine which step to display
-    // If pending/not_started, show the first step as preview
-    // Otherwise show current step
-    const isPending = state === "pending" || progress?.state === "not_started";
-    const isRecording = state === "recording";
-    const isPaused = state === "paused";
-
-    const displayStep = isPending ? firstStep : currentStep;
-    const displayNextStep = isPending
-      ? (service?.planManager as any)?.flattenedSteps?.[1] // Second step when pending
-      : nextStep;
-
     // Progress calculations
-    const totalDuration = progress?.duration || 0;
-    const elapsed = isPending ? 0 : progress?.elapsedInStep || 0;
-    const percentage = totalDuration > 0 ? (elapsed / totalDuration) * 100 : 0;
+    const totalDuration = timer?.remaining
+      ? timer.elapsed + timer.remaining
+      : 0;
+    const elapsed = timer?.elapsed || 0;
+    const percentage = timer?.progress ? timer.progress * 100 : 0;
 
-    // Status indicator
-    const getStatusInfo = () => {
-      if (isRecording) {
-        return {
-          color: "bg-green-500",
-          text: "LIVE",
-          show: true,
-        };
-      }
-      if (isPaused) {
-        return {
-          color: "bg-orange-500",
-          text: "PAUSED",
-          show: true,
-        };
-      }
-      if (isPending) {
-        return {
-          color: "bg-blue-500",
-          text: "PREVIEW",
-          show: true,
-        };
-      }
-      return { show: false };
-    };
-
-    const statusInfo = getStatusInfo();
+    // Check if recording hasn't started yet
+    const isPending = service?.state !== "recording";
 
     return (
       <View style={{ width: screenWidth }} className="flex-1 p-4">
@@ -310,37 +149,26 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
             <View className="flex-row items-center justify-between mb-6">
               <View className="flex-row items-center">
                 <Icon as={Target} size={24} className="text-primary mr-2" />
-                <Text className="text-lg font-semibold">{plan.name}</Text>
+                <Text className="text-lg font-semibold">
+                  Step {index + 1} of {total}
+                </Text>
               </View>
-              {statusInfo.show && (
-                <View className="flex-row items-center">
-                  <View
-                    className={`w-2 h-2 ${statusInfo.color} rounded-full mr-2`}
-                  />
-                  <Text className="text-xs text-muted-foreground">
-                    {statusInfo.text}
-                  </Text>
-                </View>
+            </View>
+
+            {/* Current/Preview Step Name  */}
+            <View className="items-start mb-6">
+              <Text className="text-sm font-bold text-center mb-1">
+                {currentStep?.name || `Step ${index + 1}`}
+              </Text>
+              {currentStep?.description && (
+                <Text className="text-sm text-muted-foreground text-center">
+                  {currentStep.description}
+                </Text>
               )}
             </View>
 
-            {/* Current/Preview Step Name - Large Display */}
-            {displayStep && (
-              <View className="items-center mb-6">
-                <Text className="text-3xl font-bold text-center mb-1">
-                  {displayStep.name ||
-                    `Step ${(progress?.currentStepIndex ?? 0) + 1}`}
-                </Text>
-                {displayStep.description && (
-                  <Text className="text-sm text-muted-foreground text-center">
-                    {displayStep.description}
-                  </Text>
-                )}
-              </View>
-            )}
-
             {/* Time Remaining & Progress */}
-            {totalDuration > 0 && (
+            {timer && (
               <View className="mb-6">
                 <View className="flex-row items-center justify-between mb-2">
                   <View className="flex-row items-center">
@@ -350,79 +178,72 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
                       className="text-muted-foreground mr-2"
                     />
                     <Text className="text-sm font-medium text-muted-foreground">
-                      {isPending ? "Duration" : "Time Remaining"}
+                      Time Remaining
                     </Text>
                   </View>
                   <Text className="text-2xl font-bold">
                     {isPending
                       ? formatTime(totalDuration)
-                      : timeRemaining !== null
-                        ? formatTime(timeRemaining)
-                        : "--:--"}
+                      : formatTime(timer.remaining)}
                   </Text>
                 </View>
-                {!isPending && (
-                  <View className="h-2 bg-muted rounded-full overflow-hidden">
-                    <View
-                      className="h-full bg-primary rounded-full"
-                      style={{ width: `${Math.min(100, percentage)}%` }}
-                    />
-                  </View>
-                )}
+                <View className="h-2 bg-muted rounded-full overflow-hidden">
+                  <View
+                    className="h-full bg-primary rounded-full"
+                    style={{ width: `${Math.min(100, percentage)}%` }}
+                  />
+                </View>
               </View>
             )}
 
             {/* Target Metrics vs Current */}
-            {displayStep?.targets && displayStep.targets.length > 0 && (
+            {currentStep?.targets && currentStep.targets.length > 0 && (
               <View className="mb-6">
                 <TargetMetricsGrid
-                  targets={displayStep.targets}
+                  targets={currentStep.targets}
                   currentMetrics={currentMetrics}
                 />
               </View>
             )}
 
-            {/* Next Interval Preview */}
-            {displayNextStep && (
+            {/* Next Step Preview */}
+            {nextStep && !service?.isLastPlanStep && (
               <View>
                 <Text className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
-                  {isPending ? "Second Interval" : "Next Interval"}
+                  Next Interval
                 </Text>
                 <View className="p-3 bg-muted/10 rounded-lg border border-muted/20">
                   <View className="flex-row items-center justify-between">
                     <View className="flex-1">
                       <Text className="text-base font-semibold mb-1">
-                        {displayNextStep.name || "Next Step"}
+                        {nextStep.name || "Next Step"}
                       </Text>
-                      {displayNextStep.description && (
+                      {nextStep.description && (
                         <Text className="text-xs text-muted-foreground">
-                          {displayNextStep.description}
+                          {nextStep.description}
                         </Text>
                       )}
-                      {displayNextStep.targets &&
-                        displayNextStep.targets.length > 0 && (
-                          <View className="flex-row flex-wrap gap-2 mt-2">
-                            {displayNextStep.targets.map(
-                              (target: any, idx: number) => {
-                                const targetDisplay = target.target
-                                  ? `${Math.round(target.target)}`
-                                  : target.min && target.max
-                                    ? `${Math.round(target.min)}-${Math.round(target.max)}`
-                                    : "";
-                                return (
-                                  <View
-                                    key={idx}
-                                    className="px-2 py-1 bg-muted/30 rounded-md"
-                                  >
-                                    <Text className="text-xs text-muted-foreground">
-                                      {target.type}: {targetDisplay}
-                                    </Text>
-                                  </View>
-                                );
-                              },
-                            )}
-                          </View>
-                        )}
+                      {nextStep.targets && nextStep.targets.length > 0 && (
+                        <View className="flex-row flex-wrap gap-2 mt-2">
+                          {nextStep.targets.map((target: any, idx: number) => {
+                            const targetDisplay = target.target
+                              ? `${Math.round(target.target)}`
+                              : target.min && target.max
+                                ? `${Math.round(target.min)}-${Math.round(target.max)}`
+                                : "";
+                            return (
+                              <View
+                                key={idx}
+                                className="px-2 py-1 bg-muted/30 rounded-md"
+                              >
+                                <Text className="text-xs text-muted-foreground">
+                                  {target.type}: {targetDisplay}
+                                </Text>
+                              </View>
+                            );
+                          })}
+                        </View>
+                      )}
                     </View>
                     <Icon
                       as={ChevronRight}
@@ -438,12 +259,10 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
             <View className="mt-6 pt-4 border-t border-muted/20">
               <View className="flex-row items-center justify-between">
                 <Text className="text-xs text-muted-foreground">
-                  {isPending ? "Total Plan" : "Overall Progress"}
+                  Overall Progress
                 </Text>
                 <Text className="text-xs font-semibold">
-                  {isPending
-                    ? `${progress?.totalSteps ?? 0} intervals`
-                    : `${progress?.completedSteps ?? 0} / ${progress?.totalSteps ?? 0} steps`}
+                  {index} / {total} steps
                 </Text>
               </View>
             </View>

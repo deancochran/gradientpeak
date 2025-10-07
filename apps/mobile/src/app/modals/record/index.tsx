@@ -17,7 +17,7 @@ import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import {
   useActivityStatus,
-  usePlan,
+  useHasPlan,
   useRecorderActions,
   useRecordingState,
   useSensors,
@@ -46,9 +46,8 @@ export default function RecordModal() {
   // State and actions
   const state = useRecordingState(service);
   const { count: sensorCount } = useSensors(service);
-  const { plan: activityPlan } = usePlan(service);
-  const { isOutdoorActivity, hasPlan, activityType } =
-    useActivityStatus(service);
+  const hasPlan = useHasPlan(service);
+  const { isOutdoorActivity, activityType } = useActivityStatus(service);
   const { start, pause, resume, finish, advanceStep, isAdvancing } =
     useRecorderActions(service);
 
@@ -57,9 +56,8 @@ export default function RecordModal() {
     console.log("[RecordModal] Activity status changed:", {
       isOutdoorActivity,
       hasPlan,
-      planName: activityPlan?.name,
     });
-  }, [isOutdoorActivity, hasPlan, activityPlan]);
+  }, [isOutdoorActivity, hasPlan]);
 
   // Determine which cards to show - reactively updates based on activity status
   const cards = useMemo((): CarouselCard[] => {
@@ -78,12 +76,12 @@ export default function RecordModal() {
 
     if (hasPlan) {
       cardList.push("plan");
-      console.log("[RecordModal] Adding plan card:", activityPlan?.name);
+      console.log("[RecordModal] Adding plan card");
     }
 
     console.log("[RecordModal] Cards updated:", cardList);
     return cardList;
-  }, [isOutdoorActivity, hasPlan, activityPlan]);
+  }, [isOutdoorActivity, hasPlan]);
 
   return (
     <View className="flex-1 bg-background">

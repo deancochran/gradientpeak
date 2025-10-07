@@ -14,7 +14,6 @@
  * ```
  */
 
-import type { PlannedActivityProgress } from "@/lib/services/ActivityRecorder";
 import {
   ActivityRecorderService,
   RecordingState,
@@ -28,11 +27,12 @@ import type {
   StatsUpdateEvent,
 } from "@/lib/services/ActivityRecorder/types";
 import type {
+  FlattenedStep,
   PublicActivityType,
   PublicProfilesRow,
   RecordingServiceActivityPlan,
 } from "@repo/core";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import type { Device } from "react-native-ble-plx";
 
 // ================================
@@ -54,15 +54,6 @@ export interface PermissionsState {
   bluetooth: PermissionState | null;
   location: PermissionState | null;
   locationBackground: PermissionState | null;
-}
-
-/**
- * Plan state with progress and activity type
- */
-export interface PlanState {
-  plan?: RecordingServiceActivityPlan;
-  progress?: PlannedActivityProgress;
-  activityType: PublicActivityType;
 }
 
 /**
@@ -208,13 +199,14 @@ export function useRecordingState(
 
     // Subscribe to state changes
     const handleStateChange = (newState: RecordingState) => {
+      console.log("[useRecordingState] State changed:", newState);
       setState(newState);
     };
 
-    service.on("stateChange", handleStateChange);
+    service.on("stateChanged", handleStateChange);
 
     return () => {
-      service.off("stateChange", handleStateChange);
+      service.off("stateChanged", handleStateChange);
     };
   }, [service]);
 
@@ -348,83 +340,184 @@ export function usePermissions(
 }
 
 // ================================
-// 6. usePlan - Plan & Activity Type
+// Plan Hooks (Direct Service Access)
 // ================================
 
 /**
- * Subscribe to activity plan, progress, and activity type.
- *
- * @param service - ActivityRecorderService instance
- * @returns Plan state
+ * Helper hook to subscribe to service events and trigger re-renders
+ */
+function useServiceEvent(
+  service: ActivityRecorderService | null,
+  event: string,
+): void {
+  const [, forceUpdate] = useReducer((x) => x + 1, 0);
+
+  useEffect(() => {
+    if (!service) return undefined;
+    service.on(event, forceUpdate);
+    return () => service.off(event, forceUpdate);
+  }, [service, event]);
+}
+
+/**
+ * Returns whether a plan is currently selected
+ * Zero overhead - just returns a boolean
  *
  * @example
  * ```tsx
- * const { plan, progress, activityType } = usePlan(service);
+ * const hasPlan = useHasPlan(service);
+ * if (hasPlan) {
+ *   return <PlanCard />;
+ * }
  * ```
  */
-
-export function usePlan(service: ActivityRecorderService | null): PlanState {
-  const [planState, setPlanState] = useState<PlanState>(() => ({
-    plan: service?.planManager?.selectedActivityPlan,
-    progress: service?.planManager?.planProgress,
-    activityType: service?.selectedActivityType || "indoor_bike_trainer",
-  }));
-
-  useEffect(() => {
-    if (!service) {
-      setPlanState({
-        plan: undefined,
-        progress: undefined,
-        activityType: "indoor_bike_trainer",
-      });
-      return;
-    }
-
-    // Initial values
-    setPlanState({
-      plan: service.planManager?.selectedActivityPlan,
-      progress: service.planManager?.planProgress,
-      activityType: service.selectedActivityType,
-    });
-
-    // Subscribe to plan progress updates (including null for removal)
-    const handlePlanProgress = (
-      newProgress: PlannedActivityProgress | null,
-    ) => {
-      console.log("[usePlan] Plan progress changed:", newProgress);
-      setPlanState((prev) => ({
-        ...prev,
-        progress: newProgress || undefined,
-        plan: newProgress ? prev.plan : undefined, // Clear plan when progress is null
-      }));
-    };
-
-    // Subscribe to activity type changes
-    const handleActivityTypeChange = (
-      newType: PublicActivityType,
-      planName?: string,
-    ) => {
-      console.log("[usePlan] Activity type changed:", newType, planName);
-      setPlanState((prev) => ({
-        ...prev,
-        activityType: newType,
-        plan: service.planManager?.selectedActivityPlan,
-        progress: service.planManager?.planProgress,
-      }));
-    };
-
-    service.on("planProgressChanged", handlePlanProgress);
-    service.on("activitySelected", handleActivityTypeChange);
-
-    return () => {
-      service.off("planProgressChanged", handlePlanProgress);
-      service.off("activitySelected", handleActivityTypeChange);
-    };
-  }, [service]);
-
-  return planState;
+export function useHasPlan(service: ActivityRecorderService | null): boolean {
+  useServiceEvent(service, "stepChanged");
+  useServiceEvent(service, "planCleared");
+  return service?.hasPlan ?? false;
 }
 
+/**
+ * Returns the current step details
+ * Updates only when step changes
+ *
+ * @example
+ * ```tsx
+ * const step = useCurrentPlanStep(service);
+ * if (step) {
+ *   return <Text>{step.name}</Text>;
+ * }
+ * ```
+ */
+export function useCurrentPlanStep(
+  service: ActivityRecorderService | null,
+): FlattenedStep | undefined {
+  useServiceEvent(service, "stepChanged");
+  return service?.currentPlanStep;
+}
+
+/**
+ * Returns the current step index and total count
+ * Updates only when step changes
+ *
+ * @example
+ * ```tsx
+ * const { index, total } = usePlanStepProgress(service);
+ * return <Text>Step {index + 1} of {total}</Text>;
+ * ```
+ */
+export function usePlanStepProgress(service: ActivityRecorderService | null): {
+  index: number;
+  total: number;
+} {
+  useServiceEvent(service, "stepChanged");
+  return {
+    index: service?.planStepIndex ?? 0,
+    total: service?.planStepCount ?? 0,
+  };
+}
+
+/**
+ * Returns timer info for the current step
+ * Returns null if step is not timed
+ * Updates on state changes
+ *
+ * @example
+ * ```tsx
+ * const timer = useStepTimer(service);
+ * if (timer) {
+ *   return <ProgressBar value={timer.progress} />;
+ * }
+ * ```
+ */
+export function useStepTimer(
+  service: ActivityRecorderService | null,
+): { elapsed: number; remaining: number; progress: number } | null {
+  useServiceEvent(service, "stateChanged");
+
+  if (!service?.hasPlan) return null;
+
+  const duration = service.currentStepDurationMs;
+  if (duration === 0) return null; // Untimed step
+
+  const elapsed = service.planStepElapsed;
+  const remaining = Math.max(0, duration - elapsed);
+  const progress = Math.min(1, elapsed / duration);
+
+  return { elapsed, remaining, progress };
+}
+
+/**
+ * Returns whether the current step can be manually advanced
+ * and the advance function
+ *
+ * @example
+ * ```tsx
+ * const { canAdvance, advance } = useStepAdvance(service);
+ * if (canAdvance) {
+ *   return <Button onPress={advance}>Next Step</Button>;
+ * }
+ * ```
+ */
+export function useStepAdvance(service: ActivityRecorderService | null): {
+  canAdvance: boolean;
+  advance: () => void;
+  isLastStep: boolean;
+} {
+  useServiceEvent(service, "stepChanged");
+
+  return {
+    canAdvance: service?.canManuallyAdvanceStep ?? false,
+    advance: () => service?.advanceStep(),
+    isLastStep: service?.isLastPlanStep ?? false,
+  };
+}
+
+/**
+ * Comprehensive plan hook that combines all plan data
+ * Use specific hooks above for better performance
+ *
+ * @example
+ * ```tsx
+ * const plan = usePlan(service);
+ * if (!plan.hasPlan) return null;
+ * return <Text>{plan.currentStep?.name}</Text>;
+ * ```
+ */
+export function usePlan(service: ActivityRecorderService | null) {
+  useServiceEvent(service, "stepChanged");
+  useServiceEvent(service, "stateChanged");
+  useServiceEvent(service, "planCleared");
+
+  if (!service?.hasPlan) {
+    return { hasPlan: false as const };
+  }
+
+  const currentStep = service.currentPlanStep;
+  const duration = service.currentStepDurationMs;
+  const elapsed = service.planStepElapsed;
+
+  return {
+    hasPlan: true as const,
+    isActive: service.isPlanActive,
+    isFinished: service.isPlanFinished,
+    stepIndex: service.planStepIndex,
+    stepCount: service.planStepCount,
+    currentStep,
+    nextStep: service.getPlanStep(service.planStepIndex + 1),
+    timer:
+      duration > 0
+        ? {
+            elapsed,
+            remaining: Math.max(0, duration - elapsed),
+            progress: Math.min(1, elapsed / duration),
+          }
+        : null,
+    canAdvance: service.canManuallyAdvanceStep,
+    advance: () => service.advanceStep(),
+    isLastStep: service.isLastPlanStep,
+  };
+}
 // ================================
 // 7. useActivityStatus - Card Visibility Flags
 // ================================
@@ -447,74 +540,21 @@ export function usePlan(service: ActivityRecorderService | null): PlanState {
  */
 export function useActivityStatus(service: ActivityRecorderService | null): {
   isOutdoorActivity: boolean;
-  hasPlan: boolean;
   activityType: PublicActivityType;
 } {
-  const [status, setStatus] = useState(() => ({
-    isOutdoorActivity: false,
-    hasPlan: false,
-    activityType: (service?.selectedActivityType ||
-      "indoor_bike_trainer") as PublicActivityType,
-  }));
+  useServiceEvent(service, "activitySelected");
 
-  useEffect(() => {
-    if (!service) {
-      setStatus({
-        isOutdoorActivity: false,
-        hasPlan: false,
-        activityType: "indoor_bike_trainer",
-      });
-      return;
-    }
+  // Helper function to check if activity is outdoor
+  const checkIsOutdoor = (type: PublicActivityType): boolean => {
+    return ["outdoor_run", "outdoor_bike"].includes(type);
+  };
 
-    // Helper function to check if activity is outdoor
-    const checkIsOutdoor = (type: PublicActivityType): boolean => {
-      return ["outdoor_run", "outdoor_bike"].includes(type);
-    };
+  const activityType = service?.selectedActivityType || "indoor_bike_trainer";
 
-    // Initialize state
-    setStatus({
-      isOutdoorActivity: checkIsOutdoor(service.selectedActivityType),
-      hasPlan: !!service.planManager?.selectedActivityPlan,
-      activityType: service.selectedActivityType,
-    });
-
-    // Handle activity type changes
-    const handleActivitySelected = (
-      newType: PublicActivityType,
-      planName?: string,
-    ) => {
-      console.log("[useActivityStatus] Activity selected:", newType, planName);
-      setStatus({
-        isOutdoorActivity: checkIsOutdoor(newType),
-        hasPlan: !!planName || !!service.planManager?.selectedActivityPlan,
-        activityType: newType,
-      });
-    };
-
-    // Handle plan status changes
-    const handlePlanProgressChanged = (
-      progress: PlannedActivityProgress | null,
-    ) => {
-      console.log("[useActivityStatus] Plan progress changed:", !!progress);
-      setStatus((prev) => ({
-        ...prev,
-        hasPlan:
-          progress !== null && !!service.planManager?.selectedActivityPlan,
-      }));
-    };
-
-    // Subscribe to events
-    service.on("activitySelected", handleActivitySelected);
-    service.on("planProgressChanged", handlePlanProgressChanged);
-
-    return () => {
-      service.off("activitySelected", handleActivitySelected);
-      service.off("planProgressChanged", handlePlanProgressChanged);
-    };
-  }, [service]);
-
-  return status;
+  return {
+    isOutdoorActivity: checkIsOutdoor(activityType),
+    activityType,
+  };
 }
 
 // ================================
@@ -571,7 +611,7 @@ export function useRecorderActions(
   const selectPlannedActivity = useCallback(
     (plan: RecordingServiceActivityPlan, plannedId?: string) => {
       if (!service) return;
-      service.selectPlannedActivity(plan, plannedId);
+      service.selectPlan(plan, plannedId);
     },
     [service],
   );
@@ -616,18 +656,15 @@ export function useRecorderActions(
 
   // Plan management
   const advanceStep = useCallback(async (): Promise<boolean> => {
-    if (!service?.planManager || isAdvancing) {
+    if (!service?.hasPlan || isAdvancing) {
       console.log("Cannot advance step: no service or already advancing");
       return false;
     }
 
     setIsAdvancing(true);
     try {
-      const success = await service.planManager.advanceStep();
-      if (!success) {
-        console.warn("Failed to advance step");
-      }
-      return success;
+      service.advanceStep();
+      return true;
     } catch (error) {
       console.error("Error advancing step:", error);
       return false;
@@ -638,15 +675,15 @@ export function useRecorderActions(
   }, [service, isAdvancing]);
 
   const skipStep = useCallback(() => {
-    if (!service?.planManager) return;
+    if (!service?.hasPlan) return;
     // Skip step - advance to next step
-    service.planManager.advanceStep();
+    service.advanceStep();
   }, [service]);
 
   const resetPlan = useCallback(() => {
-    if (!service?.planManager) return;
-    // Reset not implemented in PlanManager yet
-    console.warn("Reset plan not yet implemented");
+    if (!service?.hasPlan) return;
+    // Reset plan - clear and reselect if needed
+    service.clearPlan();
   }, [service]);
 
   return {
@@ -777,7 +814,7 @@ export function useSensorValue(
   sensor: keyof CurrentReadings,
 ): number | undefined {
   const readings = useCurrentReadings(service);
-  return readings[sensor] as number | undefined;
+  return readings[sensor];
 }
 
 /**
@@ -785,7 +822,7 @@ export function useSensorValue(
  */
 export function useSensorFreshness(
   service: ActivityRecorderService | null,
-  sensor: string,
+  sensor: keyof CurrentReadings,
 ): { value?: number; age: number; isStale: boolean } {
   const readings = useCurrentReadings(service);
   const [age, setAge] = useState(0);
@@ -802,7 +839,7 @@ export function useSensorFreshness(
   }, [readings.lastUpdated, sensor]);
 
   return {
-    value: readings[sensor] as number | undefined,
+    value: readings[sensor],
     age,
     isStale: age > 5000, // More than 5 seconds old
   };

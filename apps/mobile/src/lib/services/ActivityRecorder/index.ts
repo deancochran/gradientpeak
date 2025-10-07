@@ -14,6 +14,9 @@
  */
 
 import {
+  FlattenedStep,
+  flattenPlanSteps,
+  getDurationMs,
   PublicActivityType,
   PublicProfilesRow,
   RecordingServiceActivityPlan,
@@ -34,25 +37,13 @@ import { SensorReading } from "./types";
 
 import { localdb } from "@/lib/db";
 
+import { EventEmitter } from "events";
 import { LocationObject } from "expo-location";
 import { AppState, AppStateStatus } from "react-native";
-import { PlanManager } from "./plan";
-
-import { EventEmitter } from "events";
 
 // ================================
 // Types
 // ================================
-
-export interface PlannedActivityProgress {
-  state: "not_started" | "in_progress" | "finished";
-  currentStepIndex: number;
-  completedSteps: number;
-  totalSteps: number;
-  elapsedInStep: number;
-  duration?: number;
-  targets?: any;
-}
 
 export type RecordingState =
   | "pending"
@@ -62,7 +53,7 @@ export type RecordingState =
   | "finished";
 
 // ================================
-// Core Events (reduced from 12+ to 4)
+// Core Events (minimal, focused)
 // ================================
 export interface ServiceEvents {
   // Recording state changed (pending/ready/recording/paused/finished)
@@ -74,8 +65,11 @@ export interface ServiceEvents {
   // Sensors connected/disconnected
   sensorsChanged: (sensors: any[]) => void;
 
-  // Plan progress updated (step changes, completion)
-  planProgressChanged: (progress: PlannedActivityProgress | null) => void;
+  // Plan step changed (emits new step index)
+  stepChanged: (stepIndex: number) => void;
+
+  // Plan cleared
+  planCleared: () => void;
 }
 
 // ================================
@@ -93,7 +87,14 @@ export class ActivityRecorderService extends EventEmitter {
   public readonly locationManager: LocationManager;
   public readonly sensorsManager: SensorsManager;
   public readonly permissionsManager: PermissionsManager;
-  public planManager?: PlanManager;
+
+  // === Plan State (minimal tracking) ===
+  private _plan?: RecordingServiceActivityPlan;
+  private _plannedActivityId?: string;
+  private _steps: FlattenedStep[] = [];
+  private _stepIndex: number = 0;
+  private _stepElapsed: number = 0;
+  private _lastStepUpdate: number = 0;
 
   // === Private Managers ===
   private notificationsManager?: NotificationsManager;
@@ -216,6 +217,129 @@ export class ActivityRecorderService extends EventEmitter {
   }
 
   // ================================
+  // Plan Getters (computed on-demand)
+  // ================================
+
+  get hasPlan(): boolean {
+    return this._plan !== undefined;
+  }
+
+  get planStepIndex(): number {
+    return this._stepIndex;
+  }
+
+  get planStepElapsed(): number {
+    return this._stepElapsed;
+  }
+
+  get planStepCount(): number {
+    return this._steps.length;
+  }
+
+  get isPlanActive(): boolean {
+    return this.hasPlan && this.state === "recording" && !this.isPlanFinished;
+  }
+
+  get isPlanFinished(): boolean {
+    return this.hasPlan && this._stepIndex >= this._steps.length;
+  }
+
+  get isLastPlanStep(): boolean {
+    return this._stepIndex >= this._steps.length - 1;
+  }
+
+  getPlanStep(index: number): FlattenedStep | undefined {
+    return this._steps[index];
+  }
+
+  get currentPlanStep(): FlattenedStep | undefined {
+    return this._steps[this._stepIndex];
+  }
+
+  get currentStepDurationMs(): number {
+    const step = this.currentPlanStep;
+    if (!step || !step.duration || step.duration === "untilFinished") return 0;
+    return getDurationMs(step.duration);
+  }
+
+  get canManuallyAdvanceStep(): boolean {
+    const step = this.currentPlanStep;
+    return step?.duration === "untilFinished" || false;
+  }
+
+  // ================================
+  // Plan Actions
+  // ================================
+
+  selectPlan(plan: RecordingServiceActivityPlan, plannedId?: string): void {
+    console.log("[Service] Selected planned activity:", plan.name);
+
+    this._plan = plan;
+    this._plannedActivityId = plannedId;
+    this._steps = flattenPlanSteps(plan.structure.steps);
+    this._stepIndex = 0;
+    this._stepElapsed = 0;
+    this._lastStepUpdate = 0;
+    this.selectedActivityType = plan.activity_type;
+
+    this.emit("activitySelected", plan.activity_type, plan.name);
+    this.emit("stepChanged", 0);
+  }
+
+  clearPlan(): void {
+    console.log("[Service] Clearing plan");
+
+    this._plan = undefined;
+    this._plannedActivityId = undefined;
+    this._steps = [];
+    this._stepIndex = 0;
+    this._stepElapsed = 0;
+    this._lastStepUpdate = 0;
+
+    this.emit("planCleared");
+  }
+
+  advanceStep(): void {
+    if (!this.hasPlan || this.isLastPlanStep) {
+      console.log("[Service] Cannot advance step");
+      return;
+    }
+
+    console.log(
+      `[Service] Advancing from step ${this._stepIndex} to ${this._stepIndex + 1}`,
+    );
+
+    this._stepIndex++;
+    this._stepElapsed = 0;
+    this._lastStepUpdate = Date.now();
+
+    this.emit("stepChanged", this._stepIndex);
+
+    // Check if plan is now finished
+    if (this.isPlanFinished) {
+      console.log("[Service] Plan finished!");
+    }
+  }
+
+  private updatePlanProgress(deltaMs: number): void {
+    if (!this.isPlanActive) return;
+
+    const step = this.currentPlanStep;
+    if (!step) return;
+
+    // Only update elapsed for timed steps
+    if (step.duration === "untilFinished") return;
+
+    this._stepElapsed += deltaMs;
+
+    // Auto-advance if duration exceeded
+    const duration = this.currentStepDurationMs;
+    if (duration > 0 && this._stepElapsed >= duration) {
+      this.advanceStep();
+    }
+  }
+
+  // ================================
   // Recording Lifecycle
   // ================================
 
@@ -239,7 +363,7 @@ export class ActivityRecorderService extends EventEmitter {
         profile: this.profile,
         startedAt: new Date().toISOString(),
         activityType: this.selectedActivityType,
-        activityPlan: this.planManager?.selectedActivityPlan,
+        activityPlan: this._plan,
       })
       .returning();
 
@@ -253,6 +377,7 @@ export class ActivityRecorderService extends EventEmitter {
     this.startTime = Date.now();
     this.pausedTime = 0;
     this.lastPauseTime = undefined;
+    this._lastStepUpdate = Date.now();
     this.startElapsedTimeUpdates();
 
     // Start location tracking
@@ -261,17 +386,9 @@ export class ActivityRecorderService extends EventEmitter {
 
     // Start foreground service notification
     const activityName =
-      this.planManager?.selectedActivityPlan.name ||
-      this.selectedActivityType.replace(/_/g, " ");
+      this._plan?.name || this.selectedActivityType.replace(/_/g, " ");
     this.notificationsManager = new NotificationsManager(activityName);
     await this.notificationsManager.startForegroundService();
-
-    // Start plan if selected
-    if (this.planManager) {
-      console.log("[Service] Starting plan progression");
-      this.planManager.start();
-      this.setupPlanEventListeners();
-    }
 
     // Emit initial sensor state
     this.emit("sensorsChanged", this.sensorsManager.getConnectedSensors());
@@ -356,50 +473,8 @@ export class ActivityRecorderService extends EventEmitter {
   selectUnplannedActivity(type: PublicActivityType) {
     console.log("[Service] Selected unplanned activity:", type);
     this.selectedActivityType = type;
-    this.planManager = undefined;
+    this.clearPlan();
     this.emit("activitySelected", type);
-    this.emit("planProgressChanged", null);
-    console.log(
-      "[Service] Emitted planProgressChanged(null) - plan card should be removed",
-    );
-  }
-
-  selectPlannedActivity(
-    plan: RecordingServiceActivityPlan,
-    plannedId?: string,
-  ) {
-    console.log("[Service] Selected planned activity:", plan.name);
-    this.planManager = new PlanManager(plan, plannedId);
-    this.selectedActivityType = plan.activity_type;
-    this.emit("activitySelected", plan.activity_type, plan.name);
-    this.emit("planProgressChanged", this.planManager.planProgress);
-  }
-
-  // ================================
-  // Plan Management
-  // ================================
-
-  private setupPlanEventListeners() {
-    if (!this.planManager) return;
-
-    this.planManager.on("planProgressUpdate", () => {
-      this.emit("planProgressChanged", this.planManager!.planProgress);
-    });
-
-    this.planManager.on("stepAdvanced", ({ from, to }) => {
-      console.log(`[Service] Plan step advanced: ${from} → ${to}`);
-      this.emit("planProgressChanged", this.planManager!.planProgress);
-    });
-
-    this.planManager.on("planFinished", () => {
-      console.log("[Service] Plan finished!");
-      this.emit("planProgressChanged", this.planManager!.planProgress);
-    });
-  }
-
-  advanceStep() {
-    if (!this.planManager) return;
-    this.planManager.advanceStep();
   }
 
   // ================================
@@ -413,13 +488,12 @@ export class ActivityRecorderService extends EventEmitter {
     this.liveMetricsManager.ingestSensorData(reading);
 
     // Update plan progress based on sensor data timing
-    if (this.planManager && reading.timestamp) {
+    if (this.hasPlan && reading.timestamp) {
       const now = reading.timestamp;
-      const deltaMs = this.planManager.lastUpdateTime
-        ? now - this.planManager.lastUpdateTime
-        : 0;
+      const deltaMs = this._lastStepUpdate ? now - this._lastStepUpdate : 0;
       if (deltaMs > 0) {
-        this.planManager.updatePlanProgress(deltaMs);
+        this.updatePlanProgress(deltaMs);
+        this._lastStepUpdate = now;
       }
     }
 
@@ -432,7 +506,7 @@ export class ActivityRecorderService extends EventEmitter {
       const metrics = this.liveMetricsManager.getMetrics();
       this.notificationsManager
         .update({
-          elapsedInStep: this.planManager?.planProgress?.elapsedInStep ?? 0,
+          elapsedInStep: this._stepElapsed,
           heartRate: metrics.avgHeartRate || undefined,
           power: metrics.avgPower || undefined,
         })
@@ -482,8 +556,8 @@ export class ActivityRecorderService extends EventEmitter {
     if (!this.startTime) return;
 
     // Update plan progress (only when recording, not paused)
-    if (this.planManager && this.state === "recording") {
-      this.planManager.updatePlanProgress(1000);
+    if (this.hasPlan && this.state === "recording") {
+      this.updatePlanProgress(1000);
     }
   }
 
@@ -522,10 +596,8 @@ export class ActivityRecorderService extends EventEmitter {
       await this.notificationsManager.stopForegroundService();
     }
 
-    // Cleanup plan manager
-    if (this.planManager) {
-      this.planManager.cleanup();
-    }
+    // Clear plan state
+    this.clearPlan();
 
     // Clear all event listeners
     this.removeAllListeners();
