@@ -408,9 +408,13 @@ export function usePlan(service: ActivityRecorderService | null) {
   }
 
   const info = service.getStepInfo();
+  const planDetails = service.plan;
 
   return {
     hasPlan: true as const,
+    name: planDetails?.name,
+    description: planDetails?.description,
+    activityType: planDetails?.activity_type,
     stepIndex: info.index,
     stepCount: info.total,
     currentStep: info.current,

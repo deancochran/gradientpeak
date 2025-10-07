@@ -17,7 +17,7 @@ import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import {
   useActivityStatus,
-  useHasPlan,
+  usePlan,
   useRecorderActions,
   useRecordingState,
   useSensors,
@@ -46,18 +46,17 @@ export default function RecordModal() {
   // State and actions
   const state = useRecordingState(service);
   const { count: sensorCount } = useSensors(service);
-  const hasPlan = useHasPlan(service);
+  const plan = usePlan(service);
   const { isOutdoorActivity, activityType } = useActivityStatus(service);
-  const { start, pause, resume, finish, advanceStep, isAdvancing } =
-    useRecorderActions(service);
+  const { start, pause, resume, finish } = useRecorderActions(service);
 
   // Debug: Track activity status changes
   useEffect(() => {
     console.log("[RecordModal] Activity status changed:", {
       isOutdoorActivity,
-      hasPlan,
+      hasPlan: plan.hasPlan,
     });
-  }, [isOutdoorActivity, hasPlan]);
+  }, [isOutdoorActivity, plan.hasPlan]);
 
   // Determine which cards to show - reactively updates based on activity status
   const cards = useMemo((): CarouselCard[] => {
@@ -74,14 +73,14 @@ export default function RecordModal() {
       console.log("[RecordModal] Adding map card for outdoor activity");
     }
 
-    if (hasPlan) {
+    if (plan.hasPlan) {
       cardList.push("plan");
       console.log("[RecordModal] Adding plan card");
     }
 
     console.log("[RecordModal] Cards updated:", cardList);
     return cardList;
-  }, [isOutdoorActivity, hasPlan]);
+  }, [isOutdoorActivity, plan.hasPlan]);
 
   return (
     <View className="flex-1 bg-background">
@@ -104,7 +103,7 @@ export default function RecordModal() {
             >
               <Icon as={ACTIVITY_ICONS[activityType]} size={20} />
               <Text className="font-semibold text-lg text-left">
-                {activityPlan?.name || ACTIVITY_NAMES[activityType]}
+                {plan.hasPlan ? plan.name : ACTIVITY_NAMES[activityType]}
               </Text>
             </Button>
           </View>
@@ -156,17 +155,14 @@ export default function RecordModal() {
               <Icon as={Pause} size={24} />
               <Text className="ml-3 font-semibold">Pause Activity</Text>
             </Button>
-            {activityPlan && advanceStep && (
+            {plan.hasPlan && plan.canAdvance && (
               <Button
-                onPress={advanceStep}
+                onPress={plan.advance}
                 variant="outline"
                 className="w-full h-12 rounded-xl"
-                disabled={isAdvancing}
               >
                 <Icon as={ChevronRight} size={20} />
-                <Text className="ml-2 font-medium">
-                  {isAdvancing ? "Advancing..." : "Next Step"}
-                </Text>
+                <Text className="ml-2 font-medium">Next Step</Text>
               </Button>
             )}
           </View>

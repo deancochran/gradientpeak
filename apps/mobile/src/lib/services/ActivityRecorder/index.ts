@@ -251,6 +251,10 @@ export class ActivityRecorderService extends EventEmitter {
     return this._plan !== undefined;
   }
 
+  get plan(): RecordingServiceActivityPlan | undefined {
+    return this._plan;
+  }
+
   get stepIndex(): number {
     return this._stepIndex;
   }

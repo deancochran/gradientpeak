@@ -3,6 +3,7 @@ import { Icon } from "@/components/ui/icon";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Text } from "@/components/ui/text";
 import {
+  usePlan,
   useRecorderActions,
   useRecordingState,
 } from "@/lib/hooks/useActivityRecorder";
@@ -54,7 +55,8 @@ export default function ActivitySelectionModal() {
   // Use shared service from context (provided by _layout.tsx)
   const service = useSharedActivityRecorder();
   const state = useRecordingState(service);
-  const { selectActivity, selectPlannedActivity } = useRecorderActions(service);
+  const { select: selectPlannedActivity } = usePlan(service);
+  const { selectActivity } = useRecorderActions(service);
 
   const canSelect = state === "pending" || state === "ready";
 
