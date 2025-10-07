@@ -12,6 +12,7 @@ import {
   IntensityTarget,
 } from "@repo/core";
 import {
+  AlertTriangle,
   Calendar,
   CheckCircle2,
   Clock,
@@ -19,7 +20,7 @@ import {
   Target,
   Zap,
 } from "lucide-react-native";
-import React, { memo } from "react";
+import React, { memo, useMemo } from "react";
 import { View } from "react-native";
 
 // ================================
@@ -31,13 +32,163 @@ interface EnhancedPlanCardProps {
   screenWidth: number;
 }
 
+interface ProfileMetrics {
+  ftp?: number;
+  thresholdHr?: number;
+}
+
+interface ConvertedTarget {
+  min?: number;
+  max?: number;
+  target?: number;
+  unit: string;
+  label: string;
+}
+
 // ================================
 // Helper Functions
 // ================================
 
+/**
+ * Extract profile metrics from the service
+ */
+function getProfileMetrics(
+  service: ActivityRecorderService | null,
+): ProfileMetrics {
+  if (!service?.liveMetricsManager) {
+    return {};
+  }
+
+  // Access the private profile through the manager's internal state
+  const manager = service.liveMetricsManager as any;
+  const profile = manager.profile;
+
+  return {
+    ftp: profile?.ftp,
+    thresholdHr: profile?.thresholdHr,
+  };
+}
+
+/**
+ * Convert a percentage-based target to actual units if profile data exists
+ */
+function convertTarget(
+  target: IntensityTarget,
+  profile: ProfileMetrics,
+): ConvertedTarget {
+  switch (target.type) {
+    case "%FTP":
+      if (profile.ftp) {
+        return {
+          min: target.min
+            ? Math.round((target.min / 100) * profile.ftp)
+            : undefined,
+          max: target.max
+            ? Math.round((target.max / 100) * profile.ftp)
+            : undefined,
+          target: target.target
+            ? Math.round((target.target / 100) * profile.ftp)
+            : undefined,
+          unit: "W",
+          label: "Power",
+        };
+      }
+      return {
+        min: target.min,
+        max: target.max,
+        target: target.target,
+        unit: "% FTP",
+        label: "Power",
+      };
+
+    case "%ThresholdHR":
+      if (profile.thresholdHr) {
+        return {
+          min: target.min
+            ? Math.round((target.min / 100) * profile.thresholdHr)
+            : undefined,
+          max: target.max
+            ? Math.round((target.max / 100) * profile.thresholdHr)
+            : undefined,
+          target: target.target
+            ? Math.round((target.target / 100) * profile.thresholdHr)
+            : undefined,
+          unit: "bpm",
+          label: "Heart Rate",
+        };
+      }
+      return {
+        min: target.min,
+        max: target.max,
+        target: target.target,
+        unit: "% Threshold",
+        label: "Heart Rate",
+      };
+
+    case "%MaxHR":
+      // We don't have max HR in profile, so keep as percentage
+      return {
+        min: target.min,
+        max: target.max,
+        target: target.target,
+        unit: "% Max HR",
+        label: "Heart Rate",
+      };
+
+    case "watts":
+      return {
+        min: target.min,
+        max: target.max,
+        target: target.target,
+        unit: "W",
+        label: "Power",
+      };
+
+    case "bpm":
+      return {
+        min: target.min,
+        max: target.max,
+        target: target.target,
+        unit: "bpm",
+        label: "Heart Rate",
+      };
+
+    case "cadence":
+      return {
+        min: target.min,
+        max: target.max,
+        target: target.target,
+        unit: "rpm",
+        label: "Cadence",
+      };
+
+    case "speed":
+      return {
+        min: target.min,
+        max: target.max,
+        target: target.target,
+        unit: "km/h",
+        label: "Speed",
+      };
+
+    default:
+      return {
+        min: target.min,
+        max: target.max,
+        target: target.target,
+        unit: target.type,
+        label: target.type,
+      };
+  }
+}
+
+/**
+ * Format interval description with converted units
+ */
 function formatIntervalDescription(
   duration: number,
   targets?: IntensityTarget[],
+  profile?: ProfileMetrics,
 ): string {
   const parts: string[] = [];
 
@@ -45,41 +196,47 @@ function formatIntervalDescription(
     parts.push(formatDurationCompact(duration / 1000));
   }
 
-  if (targets && targets.length > 0) {
+  if (targets && targets.length > 0 && profile) {
     const primaryTarget = targets[0];
-    let targetStr = "";
+    const converted = convertTarget(primaryTarget, profile);
 
-    if (primaryTarget.target) {
-      targetStr = `${Math.round(primaryTarget.target)}`;
-    } else if (primaryTarget.min && primaryTarget.max) {
-      targetStr = `${Math.round(primaryTarget.min)}-${Math.round(primaryTarget.max)}`;
-    } else if (primaryTarget.min) {
-      targetStr = `>${Math.round(primaryTarget.min)}`;
-    } else if (primaryTarget.max) {
-      targetStr = `<${Math.round(primaryTarget.max)}`;
+    let targetStr = "";
+    if (converted.target) {
+      targetStr = `${converted.target}`;
+    } else if (converted.min && converted.max) {
+      targetStr = `${converted.min}-${converted.max}`;
+    } else if (converted.min) {
+      targetStr = `>${converted.min}`;
+    } else if (converted.max) {
+      targetStr = `<${converted.max}`;
     }
 
-    const unit =
-      primaryTarget.type === "watts"
-        ? "W"
-        : primaryTarget.type === "%FTP"
-          ? "% FTP"
-          : primaryTarget.type === "bpm"
-            ? "bpm"
-            : primaryTarget.type === "%MaxHR"
-              ? "% Max HR"
-              : primaryTarget.type === "%ThresholdHR"
-                ? "% Threshold"
-                : primaryTarget.type === "cadence"
-                  ? "rpm"
-                  : primaryTarget.type;
-
     if (targetStr) {
-      parts.push(`@ ${targetStr} ${unit}`);
+      parts.push(`@ ${targetStr} ${converted.unit}`);
     }
   }
 
   return parts.join(" ") || "No details";
+}
+
+/**
+ * Determine if current value is within target range
+ */
+function isInTargetRange(
+  current: number,
+  target: ConvertedTarget,
+): "within" | "below" | "above" {
+  if (target.target) {
+    // Single target value - use ±5% tolerance
+    const tolerance = target.target * 0.05;
+    if (current < target.target - tolerance) return "below";
+    if (current > target.target + tolerance) return "above";
+    return "within";
+  }
+
+  if (target.min && current < target.min) return "below";
+  if (target.max && current > target.max) return "above";
+  return "within";
 }
 
 // ================================
@@ -104,11 +261,11 @@ const CardHeaderView = memo<CardHeaderViewProps>(
     }
 
     const displayScore =
-      adherenceScore && adherenceScore > 0 ? adherenceScore : "--";
+      adherenceScore && adherenceScore > 0 ? Math.round(adherenceScore) : "--";
 
     return (
       <View className="flex-row items-center justify-between mb-3 w-full">
-        <Text className="text-lg font-bold">{planName || "Comp Plan"}</Text>
+        <Text className="text-lg font-bold">{planName || "Workout Plan"}</Text>
         <View className="w-10 h-10 rounded-full bg-primary/20 items-center justify-center border-2 border-primary">
           <Text className="text-sm font-bold text-primary">{displayScore}</Text>
         </View>
@@ -131,77 +288,129 @@ interface CurrentSensorReadingsProps {
     cadence?: number;
     speed?: number;
   };
+  profile: ProfileMetrics;
   hasPlan: boolean;
   isFinished: boolean;
 }
 
 const CurrentSensorReadings = memo<CurrentSensorReadingsProps>(
-  ({ targets, currentMetrics, hasPlan, isFinished }) => {
+  ({ targets, currentMetrics, profile, hasPlan, isFinished }) => {
     if (!hasPlan || isFinished || !targets || targets.length === 0) {
       return null;
     }
 
     const getMetricDisplay = (target: IntensityTarget) => {
+      const converted = convertTarget(target, profile);
       let icon = Target;
-      let label = "";
       let value: number | undefined;
-      let unit = "";
       let color = "text-muted-foreground";
+      let status: "within" | "below" | "above" = "within";
 
       switch (target.type) {
         case "%FTP":
         case "watts":
           icon = Zap;
-          label = "PWR";
           value = currentMetrics.power;
-          unit = target.type === "watts" ? "W" : "%";
           color = "text-yellow-500";
+          if (value !== undefined) {
+            status = isInTargetRange(value, converted);
+          }
           break;
         case "%MaxHR":
         case "%ThresholdHR":
         case "bpm":
           icon = Heart;
-          label = "HR";
           value = currentMetrics.heartRate;
-          unit = target.type === "bpm" ? "bpm" : "%";
           color = "text-red-500";
+          if (value !== undefined) {
+            status = isInTargetRange(value, converted);
+          }
           break;
         case "cadence":
           icon = Target;
-          label = "CAD";
           value = currentMetrics.cadence;
-          unit = "rpm";
           color = "text-blue-500";
+          if (value !== undefined) {
+            status = isInTargetRange(value, converted);
+          }
           break;
       }
 
-      return { icon, label, value, unit, color };
+      return { icon, value, color, status, converted };
     };
 
     return (
       <View className="flex-col gap-2 w-full">
+        <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+          Current Metrics
+        </Text>
         <View className="flex-row gap-2">
           {targets.map((target, index) => {
             const display = getMetricDisplay(target);
+            const hasValue = display.value !== undefined;
+            const isOffTarget = hasValue && display.status !== "within";
+
+            // Determine border color based on status
+            const borderClass = isOffTarget
+              ? display.status === "below"
+                ? "border-orange-500"
+                : "border-red-500"
+              : "border-transparent";
+
             return (
               <View
                 key={`${target.type}-${index}`}
-                className="flex-1 p-2 bg-muted/20 rounded-lg"
+                className={`flex-1 p-2 bg-muted/20 rounded-lg border-2 ${borderClass}`}
               >
-                <View className="flex-row items-center gap-1">
-                  <Icon as={display.icon} size={12} className={display.color} />
-                  <Text className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                    {display.label}
+                <View className="flex-row items-center justify-between gap-1">
+                  <View className="flex-row items-center gap-1">
+                    <Icon
+                      as={display.icon}
+                      size={12}
+                      className={display.color}
+                    />
+                    <Text className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      {display.converted.label}
+                    </Text>
+                  </View>
+                  {isOffTarget && (
+                    <Icon
+                      as={AlertTriangle}
+                      size={12}
+                      className={
+                        display.status === "below"
+                          ? "text-orange-500"
+                          : "text-red-500"
+                      }
+                    />
+                  )}
+                </View>
+
+                {/* Current Value */}
+                <Text className={`text-2xl font-bold ${display.color} mt-1`}>
+                  {hasValue ? Math.round(display.value!) : "--"}
+                </Text>
+
+                {/* Target Range */}
+                <View className="flex-row items-baseline gap-1">
+                  <Text className="text-xs text-muted-foreground">
+                    Target:{" "}
+                  </Text>
+                  <Text className="text-xs font-semibold text-muted-foreground">
+                    {display.converted.target
+                      ? `${display.converted.target}`
+                      : display.converted.min && display.converted.max
+                        ? `${display.converted.min}-${display.converted.max}`
+                        : display.converted.min
+                          ? `>${display.converted.min}`
+                          : display.converted.max
+                            ? `<${display.converted.max}`
+                            : "N/A"}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">
+                    {display.converted.unit}
                   </Text>
                 </View>
-                <Text className={`text-xl font-bold ${display.color}`}>
-                  {display.value !== undefined
-                    ? Math.round(display.value)
-                    : "--"}
-                </Text>
-                <Text className="text-xs text-muted-foreground">
-                  {display.unit}
-                </Text>
               </View>
             );
           })}
@@ -233,6 +442,7 @@ interface CurrentIntervalViewProps {
   nextDuration?: number;
   nextTargets?: IntensityTarget[];
   nextName?: string;
+  profile: ProfileMetrics;
 }
 
 const CurrentIntervalView = memo<CurrentIntervalViewProps>(
@@ -252,6 +462,7 @@ const CurrentIntervalView = memo<CurrentIntervalViewProps>(
     nextDuration,
     nextTargets,
     nextName,
+    profile,
   }) => {
     if (!hasPlan) {
       return (
@@ -285,23 +496,25 @@ const CurrentIntervalView = memo<CurrentIntervalViewProps>(
       );
     }
 
-    const description = formatIntervalDescription(duration, targets);
+    const description = formatIntervalDescription(duration, targets, profile);
 
     return (
       <View className="flex-col gap-2 w-full">
         <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-          Current Interval
+          Current Interval ({stepIndex + 1}/{stepCount})
         </Text>
 
-        <View className="p-2 bg-muted/20 rounded-lg border border-muted/20 flex-col gap-4">
+        <View className="p-3 bg-muted/20 rounded-lg border border-muted/20 flex-col gap-3">
           <View className="flex-row items-center justify-between w-full">
-            <Text className="text-base font-bold">{name}:</Text>
-            <Text className="text-base font-bold">{description}</Text>
+            <Text className="text-base font-bold">{name}</Text>
+            <Text className="text-sm font-semibold text-muted-foreground">
+              {description}
+            </Text>
           </View>
 
           <View className="flex-row items-center justify-between gap-2 w-full">
             {/* Progress Bar */}
-            <View className="h-1.5 bg-muted/20 rounded-full flex-1">
+            <View className="h-2 bg-muted/40 rounded-full flex-1">
               <View
                 className="h-full bg-primary rounded-full"
                 style={{ width: `${Math.min(100, progress * 100)}%` }}
@@ -312,10 +525,10 @@ const CurrentIntervalView = memo<CurrentIntervalViewProps>(
             <View className="flex-row items-center justify-end">
               <Icon
                 as={Clock}
-                size={16}
+                size={14}
                 className="text-muted-foreground mr-1"
               />
-              <Text className="text-base font-bold">
+              <Text className="text-sm font-bold">
                 {isPending
                   ? formatDuration(duration / 1000)
                   : formatDuration(timeRemaining / 1000)}
@@ -333,13 +546,19 @@ const CurrentIntervalView = memo<CurrentIntervalViewProps>(
           )}
 
           {hasNextStep && nextName && nextDuration && nextTargets && (
-            <View className="flex-row items-center justify-between w-full">
-              <Text className="text-xs font-semibold text-primary">
-                Coming Up Next...
-              </Text>
-              <Text className="text-xs font-semibold text-primary">
-                {formatIntervalDescription(nextDuration, nextTargets)}
-              </Text>
+            <View className="pt-2 border-t border-muted/20">
+              <View className="flex-row items-center justify-between w-full">
+                <Text className="text-xs font-semibold text-primary">
+                  Up Next: {nextName}
+                </Text>
+                <Text className="text-xs font-semibold text-primary">
+                  {formatIntervalDescription(
+                    nextDuration,
+                    nextTargets,
+                    profile,
+                  )}
+                </Text>
+              </View>
             </View>
           )}
         </View>
@@ -372,7 +591,7 @@ const WorkoutGraphView = memo<WorkoutGraphViewProps>(
     return (
       <View className="flex-col gap-2 w-full">
         <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-          Activity Graph
+          Workout Profile
         </Text>
         <View className="bg-muted/20 rounded-lg border border-muted/20 p-2">
           <View style={{ height: 48 }} className="flex-row items-end w-full">
@@ -418,6 +637,9 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
     const plan = usePlan(service);
     const current = useCurrentReadings(service);
 
+    // Extract profile metrics from service
+    const profile = useMemo(() => getProfileMetrics(service), [service]);
+
     const currentMetrics = {
       power: current.power,
       heartRate: current.heartRate,
@@ -442,7 +664,7 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
     const isPending = service?.state !== "recording";
     const structure = service?.plan?.structure as ActivityPlanStructure;
 
-    const adherenceScore = hasPlan && !isFinished ? 99 : undefined;
+    const adherenceScore = hasPlan && !isFinished ? 95 : undefined;
 
     const nextStepIndex = stepIndex + 1;
     const hasNextStep = hasPlan && nextStepIndex < stepCount;
@@ -466,25 +688,29 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
     return (
       <View style={{ width: screenWidth }} className="flex-1 p-4">
         <Card className="flex-1 p-0">
-          <CardContent className="h-full p-4 flex-col items-end justify-between">
+          <CardContent className="h-full p-4 flex-col items-end justify-between gap-3">
             <CardHeaderView
               adherenceScore={adherenceScore}
               hasPlan={hasPlan}
               isFinished={isFinished}
               planName={planName}
             />
+
             <CurrentSensorReadings
               targets={currentStep?.targets}
               currentMetrics={currentMetrics}
+              profile={profile}
               hasPlan={hasPlan}
               isFinished={isFinished}
             />
+
             {hasPlan && (
               <WorkoutGraphView
                 structure={structure}
                 currentStepIndex={stepIndex}
               />
             )}
+
             <CurrentIntervalView
               duration={totalDuration}
               targets={currentStep?.targets}
@@ -501,6 +727,7 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
               nextTargets={nextStepTargets}
               nextName={nextStepName}
               hasNextStep={hasNextStep}
+              profile={profile}
             />
           </CardContent>
         </Card>
