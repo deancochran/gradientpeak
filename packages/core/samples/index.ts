@@ -1,11 +1,9 @@
+import { SAMPLE_INDOOR_TRAINER_ACTIVITIES } from "./indoor-bike-activity";
+import { SAMPLE_TREADMILL_ACTIVITIES } from "./indoor-treadmill";
 // Export sample data modules
 export * from "./indoor-bike-activity";
 
-// Re-export commonly used samples
-export {
-  SAMPLE_ACTIVITIES,
-  SAMPLE_RECOVERY_WORKOUT,
-  SAMPLE_SPRINT_WORKOUT,
-  SAMPLE_SWEET_SPOT_WORKOUT,
-  SAMPLE_VO2_MAX_WORKOUT,
-} from "./indoor-bike-activity";
+export const SAMPLE_ACTIVITIES = [
+  ...SAMPLE_INDOOR_TRAINER_ACTIVITIES,
+  ...SAMPLE_TREADMILL_ACTIVITIES,
+];

@@ -1,6 +1,3 @@
-import { type PublicActivityPlansInsert } from "@repo/supabase";
-import type { ActivityPlanStructure } from "../schemas/activity_plan_structure";
-
 /**
  * Sample Indoor Bike Trainer Activities for Development Testing
  *
@@ -8,12 +5,7 @@ import type { ActivityPlanStructure } from "../schemas/activity_plan_structure";
  * compliance scoring, and UI components during development.
  */
 
-export type RecordingServiceActivityPlan = Omit<
-  PublicActivityPlansInsert,
-  "id" | "idx" | "profile_id" | "created_at"
-> & {
-  structure: ActivityPlanStructure;
-};
+import type { RecordingServiceActivityPlan } from "../schemas";
 
 /**
  * Beginner Indoor Bike Activity - Sweet Spot Intervals
@@ -41,9 +33,7 @@ export const SAMPLE_SWEET_SPOT_WORKOUT: RecordingServiceActivityPlan = {
         targets: [
           {
             type: "%FTP",
-            min: 50,
-            max: 65,
-            target: 55,
+            intensity: 55,
           },
         ],
         notes: "Focus on smooth pedaling and getting the legs moving",
@@ -62,9 +52,7 @@ export const SAMPLE_SWEET_SPOT_WORKOUT: RecordingServiceActivityPlan = {
         targets: [
           {
             type: "%FTP",
-            min: 75,
-            max: 90,
-            target: 85,
+            intensity: 85,
           },
         ],
         notes: "Steady progressive increase in effort",
@@ -83,9 +71,7 @@ export const SAMPLE_SWEET_SPOT_WORKOUT: RecordingServiceActivityPlan = {
         targets: [
           {
             type: "%FTP",
-            min: 50,
-            max: 60,
-            target: 55,
+            intensity: 55,
           },
         ],
         notes: "Keep legs moving, prepare for main set",
@@ -108,9 +94,7 @@ export const SAMPLE_SWEET_SPOT_WORKOUT: RecordingServiceActivityPlan = {
             targets: [
               {
                 type: "%FTP",
-                min: 84,
-                max: 97,
-                target: 90,
+                intensity: 90,
               },
             ],
             notes: "Hold steady power in sweet spot zone (88-94% FTP)",
@@ -127,9 +111,7 @@ export const SAMPLE_SWEET_SPOT_WORKOUT: RecordingServiceActivityPlan = {
             targets: [
               {
                 type: "%FTP",
-                min: 50,
-                max: 65,
-                target: 55,
+                intensity: 55,
               },
             ],
             notes: "Active recovery, keep pedaling easy",
@@ -150,9 +132,7 @@ export const SAMPLE_SWEET_SPOT_WORKOUT: RecordingServiceActivityPlan = {
         targets: [
           {
             type: "%FTP",
-            min: 45,
-            max: 60,
-            target: 50,
+            intensity: 50,
           },
         ],
         notes: "Easy spinning to flush the legs",
@@ -189,9 +169,7 @@ export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
         targets: [
           {
             type: "%FTP",
-            min: 50,
-            max: 70,
-            target: 60,
+            intensity: 60,
           },
         ],
         notes: "Start easy and build gradually. Include some leg openers.",
@@ -214,9 +192,7 @@ export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
             targets: [
               {
                 type: "%FTP",
-                min: 110,
-                max: 130,
-                target: 120,
+                intensity: 120,
               },
             ],
             notes: "Hard but controlled effort",
@@ -233,9 +209,7 @@ export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
             targets: [
               {
                 type: "%FTP",
-                min: 50,
-                max: 60,
-                target: 55,
+                intensity: 55,
               },
             ],
             notes: "Complete recovery before next effort",
@@ -256,9 +230,7 @@ export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
         targets: [
           {
             type: "%FTP",
-            min: 50,
-            max: 60,
-            target: 55,
+            intensity: 55,
           },
         ],
         notes: "Mental preparation for the main set",
@@ -281,9 +253,7 @@ export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
             targets: [
               {
                 type: "%FTP",
-                min: 105,
-                max: 115,
-                target: 110,
+                intensity: 110,
               },
             ],
             notes:
@@ -301,9 +271,7 @@ export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
             targets: [
               {
                 type: "%FTP",
-                min: 50,
-                max: 65,
-                target: 55,
+                intensity: 55,
               },
             ],
             notes:
@@ -325,9 +293,7 @@ export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
         targets: [
           {
             type: "%FTP",
-            min: 45,
-            max: 55,
-            target: 50,
+            intensity: 50,
           },
         ],
         notes: "Take time to cool down properly after intense efforts",
@@ -362,9 +328,7 @@ export const SAMPLE_RECOVERY_WORKOUT: RecordingServiceActivityPlan = {
         targets: [
           {
             type: "%FTP",
-            min: 40,
-            max: 50,
-            target: 45,
+            intensity: 45,
           },
         ],
         notes: "Start very easy, just getting the legs moving",
@@ -382,9 +346,7 @@ export const SAMPLE_RECOVERY_WORKOUT: RecordingServiceActivityPlan = {
         targets: [
           {
             type: "%MaxHR",
-            min: 60,
-            max: 70,
-            target: 65,
+            intensity: 65,
           },
         ],
         notes:
@@ -403,9 +365,7 @@ export const SAMPLE_RECOVERY_WORKOUT: RecordingServiceActivityPlan = {
         targets: [
           {
             type: "%FTP",
-            min: 40,
-            max: 50,
-            target: 45,
+            intensity: 45,
           },
         ],
         notes: "End as easy as you started",
@@ -442,9 +402,7 @@ export const SAMPLE_SPRINT_WORKOUT: RecordingServiceActivityPlan = {
         targets: [
           {
             type: "%FTP",
-            min: 50,
-            max: 75,
-            target: 60,
+            intensity: 60,
           },
         ],
         notes: "Include some higher cadence work to prepare for sprints",
@@ -467,9 +425,7 @@ export const SAMPLE_SPRINT_WORKOUT: RecordingServiceActivityPlan = {
             targets: [
               {
                 type: "watts",
-                min: 400,
-                max: 800,
-                target: 600,
+                intensity: 600,
               },
             ],
             notes: "All-out sprint from moderate speed",
@@ -486,9 +442,7 @@ export const SAMPLE_SPRINT_WORKOUT: RecordingServiceActivityPlan = {
             targets: [
               {
                 type: "%FTP",
-                min: 50,
-                max: 60,
-                target: 55,
+                intensity: 55,
               },
             ],
             notes: "Complete recovery",
@@ -513,9 +467,7 @@ export const SAMPLE_SPRINT_WORKOUT: RecordingServiceActivityPlan = {
             targets: [
               {
                 type: "watts",
-                min: 500,
-                max: 1000,
-                target: 750,
+                intensity: 750,
               },
             ],
             notes: "All-out sprint - maximum power output",
@@ -532,9 +484,7 @@ export const SAMPLE_SPRINT_WORKOUT: RecordingServiceActivityPlan = {
             targets: [
               {
                 type: "%FTP",
-                min: 45,
-                max: 60,
-                target: 50,
+                intensity: 50,
               },
             ],
             notes: "Complete recovery is essential for quality",
@@ -555,9 +505,7 @@ export const SAMPLE_SPRINT_WORKOUT: RecordingServiceActivityPlan = {
         targets: [
           {
             type: "%FTP",
-            min: 45,
-            max: 55,
-            target: 50,
+            intensity: 50,
           },
         ],
         notes: "Easy spinning to flush lactate",
@@ -566,9 +514,10 @@ export const SAMPLE_SPRINT_WORKOUT: RecordingServiceActivityPlan = {
   },
 };
 
-export const SAMPLE_ACTIVITIES: Array<RecordingServiceActivityPlan> = [
-  SAMPLE_SWEET_SPOT_WORKOUT,
-  SAMPLE_VO2_MAX_WORKOUT,
-  SAMPLE_RECOVERY_WORKOUT,
-  SAMPLE_SPRINT_WORKOUT,
-];
+export const SAMPLE_INDOOR_TRAINER_ACTIVITIES: Array<RecordingServiceActivityPlan> =
+  [
+    SAMPLE_SWEET_SPOT_WORKOUT,
+    SAMPLE_VO2_MAX_WORKOUT,
+    SAMPLE_RECOVERY_WORKOUT,
+    SAMPLE_SPRINT_WORKOUT,
+  ];

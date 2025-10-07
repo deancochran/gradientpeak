@@ -79,8 +79,8 @@ const TargetMetricsCard = memo<TargetMetricsCardProps>(
 
     // Format target display
     const getTargetDisplay = () => {
-      if (target.target) {
-        return `${Math.round(target.target)}`;
+      if (target.intensity) {
+        return `${Math.round(target.intensity)}`;
       }
       if (target.min && target.max) {
         return `${Math.round(target.min)}-${Math.round(target.max)}`;
@@ -95,7 +95,7 @@ const TargetMetricsCard = memo<TargetMetricsCardProps>(
       if (current === undefined) return null;
       const min = target.min || 0;
       const max = target.max || Infinity;
-      const targetVal = target.target;
+      const targetVal = target.intensity;
 
       if (targetVal) {
         // Within 5% of target

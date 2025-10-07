@@ -98,7 +98,6 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
 
           {/* Main Metrics Grid */}
           <View className="gap-3">
-            {/* Ascent & Descent Row */}
             <View className="flex-row gap-3">
               <View className="flex-1 items-center p-3 bg-green-500/10 rounded-lg">
                 <Icon

@@ -8,7 +8,6 @@ import {
   flattenPlanSteps,
   getDurationMs,
   getIntensityColor,
-  getIntensityValue,
   type ActivityPlanStructure,
   type IntensityTarget,
 } from "./schemas";
@@ -1097,7 +1096,7 @@ export function extractActivityProfile(
 
   return flattenedSteps.map((step, index) => {
     const primaryTarget = step.targets?.[0]; // Get main intensity target
-    const intensity = primaryTarget ? getIntensityValue(primaryTarget) : 0;
+    const intensity = primaryTarget ? primaryTarget.intensity : 0;
     const duration =
       step.duration && step.duration !== "untilFinished"
         ? getDurationMs(step.duration) / 1000
@@ -1153,7 +1152,7 @@ export function calculateActivityStats(
     // Analyze targets
     step.targets?.forEach((target) => {
       if (target.type === "%FTP" || target.type === "watts") {
-        const intensity = getIntensityValue(target);
+        const intensity = target.intensity;
 
         // Convert watts to FTP% for consistent analysis (assuming 250W FTP)
         const ftpPercent =

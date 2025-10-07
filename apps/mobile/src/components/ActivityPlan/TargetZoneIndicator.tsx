@@ -9,9 +9,11 @@ interface TargetZoneIndicatorProps {
 
 const TargetZoneIndicator = memo<TargetZoneIndicatorProps>(
   function TargetZoneIndicator({ target, current }) {
-    const minVal = target.min || (target.target ? target.target * 0.95 : 0);
-    const maxVal = target.max || (target.target ? target.target * 1.05 : 100);
-    const targetVal = target.target || (minVal + maxVal) / 2;
+    const minVal =
+      target.min || (target.intensity ? target.intensity * 0.95 : 0);
+    const maxVal =
+      target.max || (target.intensity ? target.intensity * 1.05 : 100);
+    const targetVal = target.intensity || (minVal + maxVal) / 2;
 
     const range = maxVal - minVal;
     const currentPercent = current

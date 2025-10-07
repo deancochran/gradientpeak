@@ -40,7 +40,7 @@ interface ProfileMetrics {
 interface ConvertedTarget {
   min?: number;
   max?: number;
-  target?: number;
+  intensity?: number;
   unit: string;
   label: string;
 }
@@ -80,23 +80,15 @@ function convertTarget(
     case "%FTP":
       if (profile.ftp) {
         return {
-          min: target.min
-            ? Math.round((target.min / 100) * profile.ftp)
-            : undefined,
-          max: target.max
-            ? Math.round((target.max / 100) * profile.ftp)
-            : undefined,
-          target: target.target
-            ? Math.round((target.target / 100) * profile.ftp)
+          intensity: target.intensity
+            ? Math.round((target.intensity / 100) * profile.ftp)
             : undefined,
           unit: "W",
           label: "Power",
         };
       }
       return {
-        min: target.min,
-        max: target.max,
-        target: target.target,
+        intensity: target.intensity,
         unit: "% FTP",
         label: "Power",
       };
@@ -104,23 +96,15 @@ function convertTarget(
     case "%ThresholdHR":
       if (profile.thresholdHr) {
         return {
-          min: target.min
-            ? Math.round((target.min / 100) * profile.thresholdHr)
-            : undefined,
-          max: target.max
-            ? Math.round((target.max / 100) * profile.thresholdHr)
-            : undefined,
-          target: target.target
-            ? Math.round((target.target / 100) * profile.thresholdHr)
+          intensity: target.intensity
+            ? Math.round((target.intensity / 100) * profile.thresholdHr)
             : undefined,
           unit: "bpm",
           label: "Heart Rate",
         };
       }
       return {
-        min: target.min,
-        max: target.max,
-        target: target.target,
+        intensity: target.intensity,
         unit: "% Threshold",
         label: "Heart Rate",
       };
@@ -128,54 +112,42 @@ function convertTarget(
     case "%MaxHR":
       // We don't have max HR in profile, so keep as percentage
       return {
-        min: target.min,
-        max: target.max,
-        target: target.target,
+        intensity: target.intensity,
         unit: "% Max HR",
         label: "Heart Rate",
       };
 
     case "watts":
       return {
-        min: target.min,
-        max: target.max,
-        target: target.target,
+        intensity: target.intensity,
         unit: "W",
         label: "Power",
       };
 
     case "bpm":
       return {
-        min: target.min,
-        max: target.max,
-        target: target.target,
+        intensity: target.intensity,
         unit: "bpm",
         label: "Heart Rate",
       };
 
     case "cadence":
       return {
-        min: target.min,
-        max: target.max,
-        target: target.target,
+        intensity: target.intensity,
         unit: "rpm",
         label: "Cadence",
       };
 
     case "speed":
       return {
-        min: target.min,
-        max: target.max,
-        target: target.target,
+        intensity: target.intensity,
         unit: "km/h",
         label: "Speed",
       };
 
     default:
       return {
-        min: target.min,
-        max: target.max,
-        target: target.target,
+        intensity: target.intensity,
         unit: target.type,
         label: target.type,
       };
@@ -201,8 +173,8 @@ function formatIntervalDescription(
     const converted = convertTarget(primaryTarget, profile);
 
     let targetStr = "";
-    if (converted.target) {
-      targetStr = `${converted.target}`;
+    if (converted.intensity) {
+      targetStr = `${converted.intensity}`;
     } else if (converted.min && converted.max) {
       targetStr = `${converted.min}-${converted.max}`;
     } else if (converted.min) {
@@ -226,11 +198,11 @@ function isInTargetRange(
   current: number,
   target: ConvertedTarget,
 ): "within" | "below" | "above" {
-  if (target.target) {
+  if (target.intensity) {
     // Single target value - use ±5% tolerance
-    const tolerance = target.target * 0.05;
-    if (current < target.target - tolerance) return "below";
-    if (current > target.target + tolerance) return "above";
+    const tolerance = target.intensity * 0.05;
+    if (current < target.intensity - tolerance) return "below";
+    if (current > target.intensity + tolerance) return "above";
     return "within";
   }
 
@@ -397,8 +369,8 @@ const CurrentSensorReadings = memo<CurrentSensorReadingsProps>(
                     Target:{" "}
                   </Text>
                   <Text className="text-xs font-semibold text-muted-foreground">
-                    {display.converted.target
-                      ? `${display.converted.target}`
+                    {display.converted.intensity
+                      ? `${display.converted.intensity}`
                       : display.converted.min && display.converted.max
                         ? `${display.converted.min}-${display.converted.max}`
                         : display.converted.min

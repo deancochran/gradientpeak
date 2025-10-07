@@ -51,20 +51,10 @@ export type Duration = z.infer<typeof durationSchema>;
 // ==============================
 // INTENSITY TARGET
 // ==============================
-export const intensityTargetSchema = z
-  .object({
-    type: intensityTypeEnum,
-    min: z.number().optional(),
-    max: z.number().optional(),
-    target: z.number().optional(),
-  })
-  .refine(
-    (data) =>
-      data.min !== undefined ||
-      data.max !== undefined ||
-      data.target !== undefined,
-    { message: "At least one of min, max, or target must be defined." },
-  );
+export const intensityTargetSchema = z.object({
+  type: intensityTypeEnum,
+  intensity: z.number(),
+});
 export type IntensityTarget = z.infer<typeof intensityTargetSchema>;
 
 // ==============================
@@ -161,20 +151,6 @@ export function getDurationMs(duration: Duration): number {
 }
 
 /**
- * Extract intensity value from a target for visualization
- */
-export function getIntensityValue(target: IntensityTarget): number {
-  // Return the primary value for visualization purposes
-  if (target.target !== undefined) return target.target;
-  if (target.min !== undefined && target.max !== undefined) {
-    return (target.min + target.max) / 2;
-  }
-  if (target.min !== undefined) return target.min;
-  if (target.max !== undefined) return target.max;
-  return 0;
-}
-
-/**
  * Get color for intensity visualization based on type and value
  */
 export function getIntensityColor(intensity: number, type?: string): string {
@@ -222,19 +198,12 @@ export function isValueInTargetRange(
   current: number,
   target: IntensityTarget,
 ): boolean {
-  if (target.min !== undefined && current < target.min) return false;
-  if (target.max !== undefined && current > target.max) return false;
-
   // If only target is specified, use ±5% tolerance
-  if (
-    target.target !== undefined &&
-    target.min === undefined &&
-    target.max === undefined
-  ) {
-    const tolerance = target.target * 0.05;
+  if (target.intensity !== undefined) {
+    const tolerance = target.intensity * 0.05;
     return (
-      current >= target.target - tolerance &&
-      current <= target.target + tolerance
+      current >= target.intensity - tolerance &&
+      current <= target.intensity + tolerance
     );
   }
 
@@ -248,8 +217,7 @@ export function calculateAdherence(
   current: number,
   target: IntensityTarget,
 ): number {
-  const targetValue =
-    target.target || ((target.min || 0) + (target.max || 0)) / 2;
+  const targetValue = target.intensity;
   if (targetValue === 0) return 0;
 
   const difference = Math.abs(current - targetValue);
@@ -264,20 +232,8 @@ export function calculateAdherence(
 export function formatTargetRange(target: IntensityTarget): string {
   const unit = getTargetUnit(target.type);
 
-  if (target.target !== undefined) {
-    return `${target.target}${unit}`;
-  }
-
-  if (target.min !== undefined && target.max !== undefined) {
-    return `${target.min}-${target.max}${unit}`;
-  }
-
-  if (target.min !== undefined) {
-    return `>${target.min}${unit}`;
-  }
-
-  if (target.max !== undefined) {
-    return `<${target.max}${unit}`;
+  if (target.intensity !== undefined) {
+    return `${target.intensity}${unit}`;
   }
 
   return "No target";
@@ -361,8 +317,7 @@ export function getTargetGuidanceText(
   if (!current) return "Waiting for data...";
 
   const inRange = isValueInTargetRange(current, target);
-  const targetValue =
-    target.target || ((target.min || 0) + (target.max || 0)) / 2;
+  const targetValue = target.intensity;
 
   if (inRange) {
     return "Perfect! Stay in this zone.";
