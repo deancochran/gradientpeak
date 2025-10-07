@@ -8,7 +8,7 @@ import {
   Shield,
   Square,
 } from "lucide-react-native";
-import React, { useEffect, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo } from "react";
 import { View } from "react-native";
 
 import { RecordingCarousel } from "@/components/RecordingCarousel";
@@ -49,6 +49,19 @@ export default function RecordModal() {
   const plan = usePlan(service);
   const { isOutdoorActivity, activityType } = useActivityStatus(service);
   const { start, pause, resume, finish } = useRecorderActions(service);
+
+  // Handle finish action - navigate immediately
+  const handleFinish = useCallback(async () => {
+    console.log(
+      "[RecordModal] Finish clicked, navigating to submit page immediately",
+    );
+
+    // Start the finish process but don't wait for it
+    finish();
+
+    // Navigate immediately to submit page
+    router.push("/modals/record/submit");
+  }, [finish, router]);
 
   // Debug: Track activity status changes
   useEffect(() => {
@@ -176,19 +189,13 @@ export default function RecordModal() {
             </Button>
 
             <Button
-              onPress={finish}
+              onPress={handleFinish}
               variant="secondary"
               className="flex-1 h-14 rounded-xl"
             >
               <Icon as={Square} size={24} />
               <Text className="ml-3 font-semibold">Finish</Text>
             </Button>
-          </View>
-        )}
-
-        {state === "finished" && (
-          <View className="items-center">
-            <Text className="text-sm text-muted-foreground">finishing...</Text>
           </View>
         )}
       </View>
