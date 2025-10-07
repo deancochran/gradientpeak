@@ -81,6 +81,9 @@ export interface ServiceEvents {
   // Recording state changed (pending/ready/recording/paused/finished)
   stateChanged: (state: RecordingState) => void;
 
+  // Recording fully persisted and ready for processing
+  recordingComplete: (recordingId: string) => void;
+
   // Unplanned activity was selected
   activitySelected: (type: PublicActivityType) => void;
 
@@ -482,24 +485,41 @@ export class ActivityRecorderService extends EventEmitter {
     }
 
     console.log("[Service] Finishing recording");
+    const recordingId = this.recording.id;
 
-    // Finish LiveMetricsManager first (includes final DB write)
-    await this.liveMetricsManager.finishRecording();
+    try {
+      // Start the database transaction
+      await localdb.transaction(async (tx) => {
+        // 1. Finish LiveMetricsManager, passing the transaction object.
+        //    This ensures stream data is flushed within this transaction.
+        await this.liveMetricsManager.finishRecording(tx);
 
-    // Update recording end time
-    await localdb
-      .update(activityRecordings)
-      .set({ endedAt: new Date().toISOString() })
-      .where(eq(activityRecordings.id, this.recording.id));
+        // 2. Update the recording's endedAt timestamp using the same transaction.
+        await tx
+          .update(activityRecordings)
+          .set({ endedAt: new Date().toISOString() })
+          .where(eq(activityRecordings.id, recordingId));
+      });
 
-    // Stop foreground service
-    if (this.notificationsManager) {
-      await this.notificationsManager.stopForegroundService();
+      // Transaction succeeded - update state
+      this.state = "finished";
+      this.emit("stateChanged", this.state);
+
+      // Emit completion event to signal data is ready for processing
+      this.emit("recordingComplete", recordingId);
+
+      // Clean up non-database resources
+      if (this.notificationsManager) {
+        await this.notificationsManager.stopForegroundService();
+      }
+
+      console.log("[Service] Recording finished successfully");
+    } catch (err) {
+      // If the transaction fails, it will automatically roll back.
+      console.error("[Service] Failed to finish recording transaction:", err);
+      this.emit("error", "Failed to save recording data.");
+      throw err;
     }
-
-    this.state = "finished";
-    this.emit("stateChanged", this.state);
-    console.log("[Service] Recording finished successfully");
   }
 
   // ================================

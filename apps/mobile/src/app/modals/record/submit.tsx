@@ -86,7 +86,7 @@ export default function SubmitRecordingModal() {
     },
   });
 
-  // Check if recording exists
+  // Check if recording exists and finish it if needed
   useEffect(() => {
     if (!service?.recording) {
       Alert.alert(
@@ -102,13 +102,29 @@ export default function SubmitRecordingModal() {
       return;
     }
 
-    // If not finished yet, set finishing state
-    if (recordingState !== "finished") {
+    // If not finished yet, finish the recording now
+    if (recordingState !== "finished" && !isFinishing) {
       setIsFinishing(true);
-    } else {
+      console.log("[SubmitRecordingModal] Finishing recording...");
+
+      service
+        .finishRecording()
+        .then(() => {
+          console.log("[SubmitRecordingModal] Recording finished successfully");
+          setIsFinishing(false);
+        })
+        .catch((error) => {
+          console.error(
+            "[SubmitRecordingModal] Failed to finish recording:",
+            error,
+          );
+          setErrorMessage("Failed to finish recording. Please try again.");
+          setIsFinishing(false);
+        });
+    } else if (recordingState === "finished") {
       setIsFinishing(false);
     }
-  }, [recordingState, service, router]);
+  }, [recordingState, service, router, isFinishing]);
 
   // Set form values when activity is ready
   useEffect(() => {
@@ -201,6 +217,7 @@ export default function SubmitRecordingModal() {
   const canDelete =
     !submission.isLoading &&
     !submission.isUploading &&
+    !submission.isSuccess &&
     !isFinishing &&
     recordingState === "finished";
 
@@ -209,6 +226,29 @@ export default function SubmitRecordingModal() {
       className="flex-1 bg-background"
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
+      {/* Loading overlay while finishing or processing */}
+      {(isFinishing || submission.isLoading) && (
+        <View className="absolute inset-0 z-50 flex items-center justify-center bg-background/80">
+          <View className="items-center space-y-4">
+            <Icon
+              as={Loader2}
+              size={48}
+              className="animate-spin text-primary"
+            />
+            <Text className="text-lg font-medium text-foreground">
+              {isFinishing
+                ? "Finishing recording..."
+                : "Processing activity data..."}
+            </Text>
+            {submission.error && (
+              <Text className="text-sm text-destructive px-4 text-center">
+                {submission.error}
+              </Text>
+            )}
+          </View>
+        </View>
+      )}
+
       {/* Header */}
       <View className="bg-background border-b border-border px-4 py-3 pt-12">
         <View className="flex-row items-center justify-between">

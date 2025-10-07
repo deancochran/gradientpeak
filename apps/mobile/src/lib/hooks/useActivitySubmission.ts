@@ -247,7 +247,9 @@ function calculateActivityMetrics(
   | "profile_weight_kg"
 > {
   if (!recording.startedAt || !recording.endedAt) {
-    throw new Error("Invalid recording");
+    throw new Error(
+      `Invalid recording: startedAt=${recording.startedAt}, endedAt=${recording.endedAt}`,
+    );
   }
 
   // Extract stream references
@@ -448,7 +450,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
   const createActivityMutation = trpc.activities.create.useMutation();
 
   // ================================
-  // Auto-process recording on mount
+  // Auto-process recording on recordingComplete event
   // ================================
 
   const processRecording = useCallback(async () => {
@@ -457,8 +459,17 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
       return;
     }
 
+    // Wait for recording to be in finished state
+    if (service.state !== "finished") {
+      console.log(
+        "[useActivitySubmission] Recording not finished yet, waiting...",
+      );
+      return;
+    }
+
     try {
       const recordingId = service.recording.id;
+      console.log("[useActivitySubmission] Processing recording:", recordingId);
 
       // 1. Fetch recording and streams from local DB
       const [recording] = await localdb
@@ -467,14 +478,29 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         .where(eq(activityRecordings.id, recordingId))
         .limit(1);
 
-      if (!recording) throw new Error("Recording not found");
+      if (!recording) {
+        throw new Error("Recording not found in database");
+      }
+
+      // Verify recording has been properly finished
+      if (!recording.startedAt || !recording.endedAt) {
+        throw new Error(
+          "Recording is not properly finished. Missing start or end time.",
+        );
+      }
 
       const streams = await localdb
         .select()
         .from(activityRecordingStreams)
         .where(eq(activityRecordingStreams.activityRecordingId, recordingId));
 
-      if (streams.length === 0) throw new Error("No streams found");
+      if (streams.length === 0) {
+        throw new Error("No streams found for recording");
+      }
+
+      console.log(
+        `[useActivitySubmission] Found ${streams.length} streams for recording`,
+      );
 
       // 2. Aggregate streams by metric
       const streamsByMetric = groupStreamsByMetric(streams);
@@ -507,9 +533,9 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
       const activity: PublicActivitiesInsert = {
         id: activityId,
         profile_id: recording.profile.id,
-        started_at: recording.startedAt!,
-        finished_at: recording.endedAt!,
-        name: `${recording.activityType.replace(/_/g, " ")} - ${new Date().toLocaleDateString()}`,
+        started_at: recording.startedAt,
+        finished_at: recording.endedAt,
+        name: `${recording.activityType.replace(/_/g, " ")} - ${new Date(recording.startedAt).toLocaleDateString()}`,
         activity_type: recording.activityType,
         profile_age: profileAge,
         profile_ftp: recording.profile.ftp,
@@ -518,6 +544,10 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         ...metrics,
       };
 
+      console.log(
+        "[useActivitySubmission] Activity processed successfully:",
+        activityId,
+      );
       dispatch({ type: "READY", activity, streams: compressedStreams });
     } catch (err) {
       console.error("[useActivitySubmission] Processing failed:", err);
@@ -526,11 +556,36 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         error: err instanceof Error ? err.message : "Processing failed",
       });
     }
-  }, [service?.recording?.id]);
+  }, [service?.recording?.id, service?.state]);
 
+  // Listen for recording completion event
   useEffect(() => {
-    processRecording();
-  }, [processRecording]);
+    if (!service) return;
+
+    const handleRecordingComplete = (recordingId: string) => {
+      console.log(
+        "[useActivitySubmission] Recording complete event received:",
+        recordingId,
+      );
+      if (recordingId === service.recording?.id) {
+        processRecording();
+      }
+    };
+
+    service.on("recordingComplete", handleRecordingComplete);
+
+    // Also check if already finished (in case event was missed)
+    if (service.state === "finished" && service.recording?.id) {
+      console.log(
+        "[useActivitySubmission] Recording already finished, processing...",
+      );
+      processRecording();
+    }
+
+    return () => {
+      service.off("recordingComplete", handleRecordingComplete);
+    };
+  }, [service, processRecording]);
 
   // ================================
   // Actions
@@ -558,6 +613,9 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         .delete(activityRecordings)
         .where(eq(activityRecordings.id, service.recording.id));
 
+      console.log(
+        "[useActivitySubmission] Activity uploaded and local data deleted",
+      );
       dispatch({ type: "SUCCESS" });
     } catch (err) {
       console.error("[useActivitySubmission] Upload failed:", err);
