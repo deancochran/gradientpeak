@@ -73,6 +73,8 @@ export class LiveMetricsManager extends EventEmitter {
 
   constructor(profile: PublicProfilesRow) {
     super();
+    // Increase max listeners to prevent warnings when multiple components subscribe
+    this.setMaxListeners(50);
     this.profile = this.extractProfileMetrics(profile);
     this.zones = this.calculateZones(this.profile);
     this.metrics = this.createInitialMetrics();

@@ -39,7 +39,8 @@ export enum BleMetricType {
 export const KnownCharacteristics: Record<string, BleMetricType> = {
   "00002a37-0000-1000-8000-00805f9b34fb": BleMetricType.HeartRate,
   "00002a63-0000-1000-8000-00805f9b34fb": BleMetricType.Power,
-  "00002a5b-0000-1000-8000-00805f9b34fb": BleMetricType.Cadence, // Speed can be derived
+  "00002a5b-0000-1000-8000-00805f9b34fb": BleMetricType.Cadence, // CSC: Cycling Speed and Cadence
+  "00002a53-0000-1000-8000-00805f9b34fb": BleMetricType.Speed, // RSC: Running Speed and Cadence
 };
 
 /** --- Sensor Data Types (imported from types.ts) --- */
@@ -174,7 +175,12 @@ export class SensorsManager {
       }, timeoutMs);
 
       this.bleManager.startDeviceScan(
-        [BLE_SERVICE_UUIDS.HEART_RATE],
+        [
+          BLE_SERVICE_UUIDS.HEART_RATE,
+          BLE_SERVICE_UUIDS.CYCLING_SPEED_AND_CADENCE,
+          BLE_SERVICE_UUIDS.CYCLING_POWER,
+          BLE_SERVICE_UUIDS.RUNNING_SPEED_AND_CADENCE,
+        ],
         null,
         (error, device) => {
           if (error) {
@@ -430,6 +436,46 @@ export class SensorsManager {
     return null;
   }
 
+  parseRSCMeasurement(
+    data: ArrayBuffer,
+    deviceId: string,
+  ): SensorReading | null {
+    if (data.byteLength < 1) return null;
+    const view = new DataView(data);
+    const flags = view.getUint8(0);
+    let offset = 1;
+
+    // Instantaneous Speed is always present (uint16, 1/256 m/s)
+    if (data.byteLength >= offset + 2) {
+      const rawSpeed = view.getUint16(offset, true);
+      const speedMs = rawSpeed / 256; // Convert to m/s
+      offset += 2;
+
+      // Instantaneous Cadence (uint8, steps/min) - only if bit 0 is set
+      if (flags & 0x01 && data.byteLength >= offset + 1) {
+        const cadence = view.getUint8(offset);
+        // Return cadence reading (prioritize cadence over speed for this characteristic)
+        return this.validateSensorReading({
+          metric: "cadence",
+          dataType: "float",
+          value: cadence,
+          timestamp: Date.now(),
+          metadata: { deviceId },
+        });
+      }
+
+      // If no cadence, return speed
+      return this.validateSensorReading({
+        metric: "speed",
+        dataType: "float",
+        value: speedMs,
+        timestamp: Date.now(),
+        metadata: { deviceId },
+      });
+    }
+    return null;
+  }
+
   parseBleData(
     metricType: BleMetricType,
     raw: ArrayBuffer,
@@ -441,8 +487,10 @@ export class SensorsManager {
       case BleMetricType.Power:
         return this.parsePower(raw, deviceId);
       case BleMetricType.Cadence:
-      case BleMetricType.Speed:
         return this.parseCSCMeasurement(raw, deviceId);
+      case BleMetricType.Speed:
+        // RSC characteristic (0x2A53) uses different format than CSC
+        return this.parseRSCMeasurement(raw, deviceId);
       default:
         return null;
     }

@@ -96,7 +96,6 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
             </Text>
           </View>
 
-          {/* Main Metrics Grid */}
           <View className="gap-3">
             <View className="flex-row gap-3">
               <View className="flex-1 items-center p-3 bg-green-500/10 rounded-lg">
@@ -135,8 +134,7 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                 <Text
                   className={`text-2xl font-semibold ${hasElevationData ? getGradeColor(avgGrade) : "text-muted-foreground/30"}`}
                 >
-                  {avgGrade > 0 ? "+" : ""}
-                  {(avgGrade ?? 0).toFixed(1)}%
+                  {`${avgGrade > 0 ? "+" : ""}${(avgGrade ?? 0).toFixed(1)}%`}
                 </Text>
               </View>
               <Text
@@ -201,8 +199,7 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                     : "text-muted-foreground/30"
                 }`}
               >
-                {totalAscent - totalDescent > 0 ? "+" : ""}
-                {`${Math.round((totalAscent ?? 0) - (totalDescent ?? 0))}m`}
+                {`${totalAscent - totalDescent > 0 ? "+" : ""}${Math.round((totalAscent ?? 0) - (totalDescent ?? 0))}m`}
               </Text>
             </View>
 
@@ -217,9 +214,9 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                 </View>
                 <View className="items-end">
                   <Text className="text-lg font-semibold text-orange-600">
-                    {Math.round(
+                    {`${Math.round(
                       ((totalAscent ?? 0) / (stats?.movingTime ?? 1)) * 3600,
-                    )}
+                    )}`}
                   </Text>
                   <Text className="text-xs text-muted-foreground">m/h</Text>
                 </View>
