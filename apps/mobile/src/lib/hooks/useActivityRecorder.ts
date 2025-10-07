@@ -17,6 +17,7 @@
 import {
   ActivityRecorderService,
   RecordingState,
+  TimeUpdate,
 } from "@/lib/services/ActivityRecorder";
 import type { PermissionState } from "@/lib/services/ActivityRecorder/permissions";
 import type { ConnectedSensor } from "@/lib/services/ActivityRecorder/sensors";
@@ -27,7 +28,6 @@ import type {
   StatsUpdateEvent,
 } from "@/lib/services/ActivityRecorder/types";
 import type {
-  FlattenedStep,
   PublicActivityType,
   PublicProfilesRow,
   RecordingServiceActivityPlan,
@@ -62,16 +62,12 @@ export interface PermissionsState {
 export interface RecorderActions {
   // Recording controls
   start: () => Promise<void>;
-  pause: () => void;
-  resume: () => void;
-  finish: () => void;
+  pause: () => Promise<void>;
+  resume: () => Promise<void>;
+  finish: () => Promise<void>;
 
   // Activity selection
   selectActivity: (type: PublicActivityType) => void;
-  selectPlannedActivity: (
-    plan: RecordingServiceActivityPlan,
-    plannedId?: string,
-  ) => void;
 
   // Device management
   scanDevices: () => Promise<Device[]>;
@@ -83,14 +79,6 @@ export interface RecorderActions {
   ensurePermission: (
     type: "bluetooth" | "location" | "location-background",
   ) => Promise<boolean>;
-
-  // Plan management
-  advanceStep: () => Promise<boolean>;
-  skipStep: () => void;
-  resetPlan: () => void;
-
-  // State flags
-  isAdvancing: boolean;
 }
 
 // ================================
@@ -360,163 +348,132 @@ function useServiceEvent(
 }
 
 /**
- * Returns whether a plan is currently selected
- * Zero overhead - just returns a boolean
+ * Unified plan hook - provides all plan-related data and actions
+ * Replaces: useHasPlan, useCurrentPlanStep, usePlanStepProgress, useStepTimer, useStepAdvance
  *
- * @example
- * ```tsx
- * const hasPlan = useHasPlan(service);
- * if (hasPlan) {
- *   return <PlanCard />;
- * }
- * ```
- */
-export function useHasPlan(service: ActivityRecorderService | null): boolean {
-  useServiceEvent(service, "stepChanged");
-  useServiceEvent(service, "planCleared");
-  return service?.hasPlan ?? false;
-}
-
-/**
- * Returns the current step details
- * Updates only when step changes
- *
- * @example
- * ```tsx
- * const step = useCurrentPlanStep(service);
- * if (step) {
- *   return <Text>{step.name}</Text>;
- * }
- * ```
- */
-export function useCurrentPlanStep(
-  service: ActivityRecorderService | null,
-): FlattenedStep | undefined {
-  useServiceEvent(service, "stepChanged");
-  return service?.currentPlanStep;
-}
-
-/**
- * Returns the current step index and total count
- * Updates only when step changes
- *
- * @example
- * ```tsx
- * const { index, total } = usePlanStepProgress(service);
- * return <Text>Step {index + 1} of {total}</Text>;
- * ```
- */
-export function usePlanStepProgress(service: ActivityRecorderService | null): {
-  index: number;
-  total: number;
-} {
-  useServiceEvent(service, "stepChanged");
-  return {
-    index: service?.planStepIndex ?? 0,
-    total: service?.planStepCount ?? 0,
-  };
-}
-
-/**
- * Returns timer info for the current step
- * Returns null if step is not timed
- * Updates on state changes
- *
- * @example
- * ```tsx
- * const timer = useStepTimer(service);
- * if (timer) {
- *   return <ProgressBar value={timer.progress} />;
- * }
- * ```
- */
-export function useStepTimer(
-  service: ActivityRecorderService | null,
-): { elapsed: number; remaining: number; progress: number } | null {
-  useServiceEvent(service, "stateChanged");
-
-  if (!service?.hasPlan) return null;
-
-  const duration = service.currentStepDurationMs;
-  if (duration === 0) return null; // Untimed step
-
-  const elapsed = service.planStepElapsed;
-  const remaining = Math.max(0, duration - elapsed);
-  const progress = Math.min(1, elapsed / duration);
-
-  return { elapsed, remaining, progress };
-}
-
-/**
- * Returns whether the current step can be manually advanced
- * and the advance function
- *
- * @example
- * ```tsx
- * const { canAdvance, advance } = useStepAdvance(service);
- * if (canAdvance) {
- *   return <Button onPress={advance}>Next Step</Button>;
- * }
- * ```
- */
-export function useStepAdvance(service: ActivityRecorderService | null): {
-  canAdvance: boolean;
-  advance: () => void;
-  isLastStep: boolean;
-} {
-  useServiceEvent(service, "stepChanged");
-
-  return {
-    canAdvance: service?.canManuallyAdvanceStep ?? false,
-    advance: () => service?.advanceStep(),
-    isLastStep: service?.isLastPlanStep ?? false,
-  };
-}
-
-/**
- * Comprehensive plan hook that combines all plan data
- * Use specific hooks above for better performance
+ * Exposed Actions:
+ * - `advance()` - User action to manually advance to the next step (when canAdvance is true)
+ * - `select()` - Select a new plan
+ * - `clear()` - Clear the current plan
  *
  * @example
  * ```tsx
  * const plan = usePlan(service);
  * if (!plan.hasPlan) return null;
- * return <Text>{plan.currentStep?.name}</Text>;
+ *
+ * return (
+ *   <View>
+ *     <Text>{plan.currentStep?.name}</Text>
+ *     <Text>Step {plan.stepIndex + 1} of {plan.stepCount}</Text>
+ *     {plan.progress && (
+ *       <>
+ *         <ProgressBar value={plan.progress.progress} />
+ *         <Text>Moving Time: {formatTime(plan.progress.movingTime)}</Text>
+ *       </>
+ *     )}
+ *     {plan.canAdvance && (
+ *       <Button onPress={plan.advance}>
+ *         Advance to Next Step
+ *       </Button>
+ *     )}
+ *   </View>
+ * );
  * ```
  */
 export function usePlan(service: ActivityRecorderService | null) {
-  useServiceEvent(service, "stepChanged");
-  useServiceEvent(service, "stateChanged");
-  useServiceEvent(service, "planCleared");
+  const [, forceUpdate] = useReducer((x) => x + 1, 0);
+
+  useEffect(() => {
+    if (!service) return;
+
+    const handleUpdate = () => forceUpdate();
+    service.on("stepChanged", handleUpdate);
+    service.on("planCleared", handleUpdate);
+    service.on("timeUpdated", handleUpdate);
+
+    return () => {
+      service.off("stepChanged", handleUpdate);
+      service.off("planCleared", handleUpdate);
+      service.off("timeUpdated", handleUpdate);
+    };
+  }, [service]);
 
   if (!service?.hasPlan) {
-    return { hasPlan: false as const };
+    return {
+      hasPlan: false as const,
+      select: (plan: RecordingServiceActivityPlan, id?: string) =>
+        service?.selectPlan(plan, id),
+      clear: () => service?.clearPlan(),
+    };
   }
 
-  const currentStep = service.currentPlanStep;
-  const duration = service.currentStepDurationMs;
-  const elapsed = service.planStepElapsed;
+  const info = service.getStepInfo();
 
   return {
     hasPlan: true as const,
-    isActive: service.isPlanActive,
-    isFinished: service.isPlanFinished,
-    stepIndex: service.planStepIndex,
-    stepCount: service.planStepCount,
-    currentStep,
-    nextStep: service.getPlanStep(service.planStepIndex + 1),
-    timer:
-      duration > 0
-        ? {
-            elapsed,
-            remaining: Math.max(0, duration - elapsed),
-            progress: Math.min(1, elapsed / duration),
-          }
-        : null,
-    canAdvance: service.canManuallyAdvanceStep,
+    stepIndex: info.index,
+    stepCount: info.total,
+    currentStep: info.current,
+    progress: info.progress,
+    isLast: info.isLast,
+    isFinished: info.isFinished,
+    canAdvance: info.progress?.canAdvance ?? false,
     advance: () => service.advanceStep(),
-    isLastStep: service.isLastPlanStep,
+    select: (plan: RecordingServiceActivityPlan, id?: string) =>
+      service.selectPlan(plan, id),
+    clear: () => service.clearPlan(),
   };
+}
+
+/**
+ * Hook for elapsed time (total time since start, including pauses)
+ *
+ * @example
+ * ```tsx
+ * const elapsed = useElapsedTime(service);
+ * return <Text>{formatTime(elapsed)}</Text>;
+ * ```
+ */
+export function useElapsedTime(
+  service: ActivityRecorderService | null,
+): number {
+  const [time, setTime] = useState(0);
+
+  useEffect(() => {
+    if (!service) return;
+
+    const handleUpdate = ({ elapsed }: TimeUpdate) => setTime(elapsed);
+    service.on("timeUpdated", handleUpdate);
+
+    return () => service.off("timeUpdated", handleUpdate);
+  }, [service]);
+
+  return time;
+}
+
+/**
+ * Hook for moving time (active recording time, excluding pauses)
+ * This is the time used for plan progression
+ *
+ * @example
+ * ```tsx
+ * const movingTime = useMovingTime(service);
+ * return <Text>Moving: {formatTime(movingTime)}</Text>;
+ * ```
+ */
+export function useMovingTime(service: ActivityRecorderService | null): number {
+  const [time, setTime] = useState(0);
+
+  useEffect(() => {
+    if (!service) return;
+
+    const handleUpdate = ({ moving }: TimeUpdate) => setTime(moving);
+    service.on("timeUpdated", handleUpdate);
+
+    return () => service.off("timeUpdated", handleUpdate);
+  }, [service]);
+
+  return time;
 }
 // ================================
 // 7. useActivityStatus - Card Visibility Flags
@@ -563,40 +520,43 @@ export function useActivityStatus(service: ActivityRecorderService | null): {
 
 /**
  * Get all recorder actions in a single object.
- * Includes recording controls, device management, permissions, and plan management.
+ * Includes recording controls, device management, and permissions.
+ * Plan actions are available via the usePlan() hook.
  *
  * @param service - ActivityRecorderService instance
  * @returns All available actions
  *
  * @example
  * ```tsx
- * const { start, pause, resume, finish, scanDevices, advanceStep } = useRecorderActions(service);
+ * const { start, pause, resume, finish, scanDevices } = useRecorderActions(service);
+ * const plan = usePlan(service);
+ * if (plan.hasPlan) {
+ *   plan.advance(); // Plan actions
+ * }
  * ```
  */
 export function useRecorderActions(
   service: ActivityRecorderService | null,
 ): RecorderActions {
-  const [isAdvancing, setIsAdvancing] = useState(false);
-
   // Recording controls
   const start = useCallback(async () => {
     if (!service) return;
     await service.startRecording();
   }, [service]);
 
-  const pause = useCallback(() => {
+  const pause = useCallback(async () => {
     if (!service) return;
-    service.pauseRecording();
+    await service.pauseRecording();
   }, [service]);
 
-  const resume = useCallback(() => {
+  const resume = useCallback(async () => {
     if (!service) return;
-    service.resumeRecording();
+    await service.resumeRecording();
   }, [service]);
 
-  const finish = useCallback(() => {
+  const finish = useCallback(async () => {
     if (!service) return;
-    service.finishRecording();
+    await service.finishRecording();
   }, [service]);
 
   // Activity selection
@@ -604,14 +564,6 @@ export function useRecorderActions(
     (type: PublicActivityType) => {
       if (!service) return;
       service.selectUnplannedActivity(type);
-    },
-    [service],
-  );
-
-  const selectPlannedActivity = useCallback(
-    (plan: RecordingServiceActivityPlan, plannedId?: string) => {
-      if (!service) return;
-      service.selectPlan(plan, plannedId);
     },
     [service],
   );
@@ -654,38 +606,6 @@ export function useRecorderActions(
     [service],
   );
 
-  // Plan management
-  const advanceStep = useCallback(async (): Promise<boolean> => {
-    if (!service?.hasPlan || isAdvancing) {
-      console.log("Cannot advance step: no service or already advancing");
-      return false;
-    }
-
-    setIsAdvancing(true);
-    try {
-      service.advanceStep();
-      return true;
-    } catch (error) {
-      console.error("Error advancing step:", error);
-      return false;
-    } finally {
-      // Add delay to prevent rapid clicking
-      setTimeout(() => setIsAdvancing(false), 500);
-    }
-  }, [service, isAdvancing]);
-
-  const skipStep = useCallback(() => {
-    if (!service?.hasPlan) return;
-    // Skip step - advance to next step
-    service.advanceStep();
-  }, [service]);
-
-  const resetPlan = useCallback(() => {
-    if (!service?.hasPlan) return;
-    // Reset plan - clear and reselect if needed
-    service.clearPlan();
-  }, [service]);
-
   return {
     // Recording controls
     start,
@@ -695,7 +615,6 @@ export function useRecorderActions(
 
     // Activity selection
     selectActivity,
-    selectPlannedActivity,
 
     // Device management
     scanDevices,
@@ -705,14 +624,6 @@ export function useRecorderActions(
     // Permission management
     checkPermissions,
     ensurePermission,
-
-    // Plan management
-    advanceStep,
-    skipStep,
-    resetPlan,
-
-    // State flags
-    isAdvancing,
   };
 }
 
