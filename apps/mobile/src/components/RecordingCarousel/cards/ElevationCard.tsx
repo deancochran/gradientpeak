@@ -164,7 +164,7 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
             </View>
 
             {/* Climb Rate */}
-            {hasDistance && elevationGainPerKm > 0 && (
+            {!!hasDistance && elevationGainPerKm > 0 && (
               <View className="flex-row justify-between items-center p-3 bg-green-500/10 rounded-lg">
                 <View className="flex-row items-center">
                   <Icon

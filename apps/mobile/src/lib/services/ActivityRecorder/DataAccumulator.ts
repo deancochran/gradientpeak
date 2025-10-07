@@ -16,6 +16,11 @@ import {
 import { PublicActivityMetric, PublicActivityMetricDataType } from "@repo/core";
 import { LocationReading, SensorReading } from "./types";
 
+// Type for database or transaction - accepts any drizzle database-like object
+type DatabaseLike =
+  | typeof localdb
+  | Parameters<Parameters<typeof localdb.transaction>[0]>[0];
+
 export class DataAccumulator {
   private readings: SensorReading[] = [];
   private locations: LocationReading[] = [];
@@ -49,8 +54,14 @@ export class DataAccumulator {
   /**
    * Flush accumulated data to the database
    * Called every 60 seconds by LiveMetricsManager
+   *
+   * @param recordingId - The ID of the activity recording
+   * @param db - Optional transaction or database instance to use (defaults to localdb)
    */
-  async flushToDatabase(recordingId: string): Promise<void> {
+  async flushToDatabase(
+    recordingId: string,
+    db: DatabaseLike = localdb,
+  ): Promise<void> {
     if (this.readings.length === 0 && this.locations.length === 0) {
       return;
     }
@@ -128,8 +139,9 @@ export class DataAccumulator {
       }
 
       // Write to database in a single batch
+      // Use the passed 'db' object instead of 'localdb' directly
       if (streamsToInsert.length > 0) {
-        await localdb.insert(activityRecordingStreams).values(streamsToInsert);
+        await db.insert(activityRecordingStreams).values(streamsToInsert);
 
         console.log(
           `[DataAccumulator] Flushed ${this.readings.length} readings and ${this.locations.length} locations in ${Date.now() - flushStartTime}ms`,

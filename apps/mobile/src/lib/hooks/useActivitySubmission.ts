@@ -386,7 +386,6 @@ function calculateActivityMetrics(
     decoupling,
     power_heart_rate_ratio,
     power_weight_ratio,
-    max_hr_percent,
     calories,
   };
 }

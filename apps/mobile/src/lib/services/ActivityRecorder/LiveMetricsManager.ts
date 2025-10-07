@@ -12,19 +12,23 @@
  * - Simple data flow: Buffer -> Calculate -> Emit
  */
 
+import { localdb } from "@/lib/db";
 import { PublicProfilesRow } from "@repo/core";
 import { EventEmitter } from "events";
 import { MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
 import { DataAccumulator } from "./DataAccumulator";
 import { DataBuffer } from "./DataBuffer";
 import {
-  LiveMetricsState,
-  LocationReading,
-  ProfileMetrics,
-  SensorReading,
-  SessionStats,
-  ZoneConfig,
+    LiveMetricsState,
+    LocationReading,
+    ProfileMetrics,
+    SensorReading,
+    SessionStats,
+    ZoneConfig,
 } from "./types";
+type DatabaseLike =
+  | typeof localdb
+  | Parameters<Parameters<typeof localdb.transaction>[0]>[0];
 
 export class LiveMetricsManager extends EventEmitter {
   private recordingId!: string;
@@ -138,16 +142,17 @@ export class LiveMetricsManager extends EventEmitter {
   /**
    * Finish recording - final flush and cleanup
    */
-  public async finishRecording(): Promise<LiveMetricsState> {
+  public async finishRecording(
+    // Add this db parameter
+    db?: DatabaseLike,
+  ): Promise<LiveMetricsState> {
     this.stopTimers();
     this.isActive = false;
     this.metrics.finishedAt = Date.now();
-
-    // Final calculation
     this.calculateAndEmitMetrics();
 
-    // Final database write
-    await this.persistAndCleanup();
+    // Pass the transaction object down
+    await this.persistAndCleanup(db);
 
     console.log("[LiveMetricsManager] Finished recording");
     return this.metrics;
@@ -478,10 +483,10 @@ export class LiveMetricsManager extends EventEmitter {
    * Persist data to database and cleanup old data
    * Called every 60 seconds
    */
-  private async persistAndCleanup(): Promise<void> {
+  private async persistAndCleanup(db?: DatabaseLike): Promise<void> {
     try {
       // Write accumulated data to database
-      await this.accumulator.flushToDatabase(this.recordingId);
+      await this.accumulator.flushToDatabase(this.recordingId, db);
 
       // Remove old data from buffer
       this.buffer.cleanup();
