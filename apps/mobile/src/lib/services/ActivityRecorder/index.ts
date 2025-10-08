@@ -302,7 +302,7 @@ export class ActivityRecorderService extends EventEmitter {
       duration,
       progress,
       requiresManualAdvance: false,
-      canAdvance: false,
+      canAdvance: progress >= 1 && this._stepIndex < this._steps.length - 1, // MODIFIED LINE
     };
   }
 

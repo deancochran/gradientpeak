@@ -18,7 +18,7 @@ export default function InternalLayout() {
   }
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background p-0">
       <Slot />
     </View>
   );

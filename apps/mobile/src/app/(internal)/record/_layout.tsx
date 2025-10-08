@@ -23,11 +23,14 @@ export default function RecordLayout() {
         <Stack.Screen
           name="index"
           options={{
+            // 🔑 This is the key: set the entry screen to present as a modal
             presentation: "modal",
+            // headerShown: true, // Show the header to allow users to close the modal
+            // title: "Start New Activity",
             gestureEnabled: false,
           }}
         />
-        <Stack.Screen name="activity" options={{ gestureEnabled: true }} />
+        {/*<Stack.Screen name="activity" options={{ gestureEnabled: true }} />*/}
         <Stack.Screen name="sensors" options={{ gestureEnabled: true }} />
         <Stack.Screen name="permissions" options={{ gestureEnabled: true }} />
         <Stack.Screen name="submit" options={{ gestureEnabled: false }} />

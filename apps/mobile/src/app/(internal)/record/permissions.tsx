@@ -3,7 +3,7 @@ import {
   AlertCircle,
   Bluetooth,
   CheckCircle,
-  ChevronLeft,
+  ChevronDown,
   MapPin,
   Navigation,
   Shield,
@@ -264,7 +264,7 @@ export default function PermissionsModal() {
     <View className="flex-1 bg-background">
       <View className="border-b border-border px-2 py-2 flex-row items-center bg-background">
         <Button size="icon" variant="ghost" onPress={() => router.back()}>
-          <Icon as={ChevronLeft} size={24} />
+          <Icon as={ChevronDown} size={24} />
         </Button>
         <Text className="flex-1 text-center text-lg font-semibold">
           Permissions

@@ -52,7 +52,7 @@ The `ActivityRecorderService` is created **only when the user navigates to the r
 
 ```typescript
 // Service lifecycle is tied to screen navigation
-// Navigate to /modals/record → service created
+// Navigate to /record → service created
 // Navigate away → service cleaned up and deallocated
 
 function RecordModal() {
@@ -87,7 +87,7 @@ function RecordModal() {
 ### Usage Example
 
 ```typescript
-// In /modals/record/index.tsx
+// In /record/index.tsx
 function RecordModal() {
   const { profile } = useRequireAuth();
 
@@ -162,7 +162,7 @@ The mobile app features an optimized activity recording system designed for real
 #### Core Components
 - **ActivityRecorderService** (`src/lib/services/ActivityRecorder/`) - Core service handling sensor management, GPS tracking, and data buffering
 - **Consolidated Hooks** (`src/lib/hooks/useActivityRecorder.ts`) - 7 core hooks for service interaction with event-driven reactivity
-- **Recording Modals** (`src/app/modals/record/`) - UI components for activity selection, sensor management, and live recording display
+- **Recording Modals** (`src/app/record/`) - UI components for activity selection, sensor management, and live recording display
 
 #### Performance Optimizations
 - **Event-Driven Updates** - Components only re-render when their subscribed events fire

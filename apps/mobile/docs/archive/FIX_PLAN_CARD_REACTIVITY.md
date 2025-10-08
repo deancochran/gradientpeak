@@ -6,8 +6,8 @@ When selecting a template in the activity selection modal, the plan card was not
 ## Root Cause
 The real issue was that **each component calling `useActivityRecorderInit()` was getting its own separate service instance**. This meant:
 
-1. The recording modal (`apps/mobile/src/app/modals/record/index.tsx`) had one service instance
-2. The activity selection modal (`apps/mobile/src/app/modals/record/activity.tsx`) had a different service instance
+1. The recording modal (`apps/mobile/src/app/record/index.tsx`) had one service instance
+2. The activity selection modal (`apps/mobile/src/app/record/activity.tsx`) had a different service instance
 3. When selecting a template, the selection was applied to the activity modal's service
 4. The recording modal's service never received the update
 5. Therefore, the plan card never appeared in the carousel

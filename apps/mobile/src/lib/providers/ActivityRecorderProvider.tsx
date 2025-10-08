@@ -31,7 +31,7 @@ const ActivityRecorderContext = createContext<
 /**
  * Provider that maintains a single, stable ActivityRecorderService instance
  * shared across components. This ensures activity selections, sensor connections,
- * and service state are consistent across all screens/modals.
+ * and service state are consistent across all screens.
  *
  * Key features:
  * - Single service instance per profile

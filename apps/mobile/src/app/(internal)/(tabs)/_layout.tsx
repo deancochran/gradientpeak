@@ -1,8 +1,9 @@
+import { Icon } from "@/components/ui/icon";
 import { useTheme } from "@/lib/stores/theme-store";
 import { NAV_THEME, THEME } from "@/lib/theme";
 import { Tabs } from "expo-router";
+import { Circle, Home } from "lucide-react-native";
 import React from "react";
-import { View } from "react-native";
 
 export default function InternalLayout() {
   const { theme } = useTheme();
@@ -13,48 +14,55 @@ export default function InternalLayout() {
   const currentTheme = isDark ? THEME.dark : THEME.light;
 
   return (
-    <View style={{ flex: 1 }}>
-      <Tabs
-        screenOptions={{
-          headerShown: false,
-          tabBarActiveTintColor: navTheme.colors.primary,
-          tabBarInactiveTintColor: currentTheme.mutedForeground,
-          tabBarLabelStyle: {
-            fontSize: 11,
-          },
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: navTheme.colors.primary,
+        tabBarInactiveTintColor: currentTheme.mutedForeground,
+        tabBarLabelStyle: {
+          fontSize: 11,
+          overflow: "visible",
+        },
+        tabBarStyle: {
+          height: 60,
+        },
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: "Home",
+          tabBarIcon: ({ color }) => <Icon as={Home} size={24} />,
         }}
-      >
-        <Tabs.Screen
-          name="index"
-          options={{
-            title: "Home",
-          }}
-        />
-        <Tabs.Screen
-          name="plan"
-          options={{
-            title: "Plan",
-          }}
-        />
-        <Tabs.Screen
-          name="record"
-          options={{
-            title: "Record",
-          }}
-        />
-        <Tabs.Screen
-          name="trends"
-          options={{
-            title: "Trends",
-          }}
-        />
-        <Tabs.Screen
-          name="settings"
-          options={{
-            title: "Settings",
-          }}
-        />
-      </Tabs>
-    </View>
+      />
+      <Tabs.Screen
+        name="plan"
+        options={{
+          tabBarIcon: ({ color }) => <Icon as={Home} size={24} />,
+          title: "Plan",
+        }}
+      />
+      <Tabs.Screen
+        name="record-launcher"
+        options={{
+          title: "Record",
+          tabBarIcon: ({ color }) => <Icon as={Circle} size={24} />,
+        }}
+      />
+      <Tabs.Screen
+        name="trends"
+        options={{
+          tabBarIcon: ({ color }) => <Icon as={Home} size={24} />,
+          title: "Trends",
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          tabBarIcon: ({ color }) => <Icon as={Home} size={24} />,
+          title: "Settings",
+        }}
+      />
+    </Tabs>
   );
 }

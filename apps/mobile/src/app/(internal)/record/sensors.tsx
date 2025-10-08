@@ -9,7 +9,7 @@ import {
 } from "@/lib/hooks/useActivityRecorder";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { useRouter } from "expo-router";
-import { Bluetooth, ChevronLeft, RefreshCw } from "lucide-react-native";
+import { Bluetooth, ChevronDown, RefreshCw } from "lucide-react-native";
 import { useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
 import type { Device } from "react-native-ble-plx";
@@ -113,7 +113,7 @@ export default function BluetoothModal() {
       {/* Header */}
       <View className="bg-background border-b border-border px-4 py-3 flex-row items-center">
         <Button size="icon" variant="ghost" onPress={() => router.back()}>
-          <Icon as={ChevronLeft} size={24} />
+          <Icon as={ChevronDown} size={24} />
         </Button>
         <Text className="flex-1 text-center font-semibold">
           Bluetooth Devices

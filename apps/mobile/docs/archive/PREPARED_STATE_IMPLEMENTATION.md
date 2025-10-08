@@ -14,7 +14,7 @@ This document outlines the implementation of proactive permission checking and "
 
 ### 1. Proactive Permission Management
 
-#### File: `apps/mobile/src/app/modals/record/permissions.tsx`
+#### File: `apps/mobile/src/app/record/permissions.tsx`
 
 **Changes:**
 - Added proactive permission check on modal mount
@@ -87,7 +87,7 @@ async checkPermissions(): Promise<void> {
 
 ### 4. Card Visibility Logic
 
-#### File: `apps/mobile/src/app/modals/record/index.tsx`
+#### File: `apps/mobile/src/app/record/index.tsx`
 
 **Before:**
 - Cards only shown during `recording` or `paused` states
@@ -125,7 +125,7 @@ if (isOutdoorActivity(activityType) || state !== "finished") {
 
 ### 5. Dashboard Card Prepared State
 
-#### File: `apps/mobile/src/app/modals/record/index.tsx`
+#### File: `apps/mobile/src/app/record/index.tsx`
 
 **Changes:**
 - Added prepared state UI for pending/ready states

@@ -92,7 +92,7 @@ Refactored the ActivityRecorder service and hooks to use a **moving-time-based**
 
 ### Key Difference
 
-**Before:** `Plan Time = separate tracking ≠ Recording Time`  
+**Before:** `Plan Time = separate tracking ≠ Recording Time`
 **After:** `Plan Progress = f(Moving Time)` ← Direct calculation
 
 ---
@@ -124,12 +124,12 @@ private _stepStartMovingTime: number = 0; // ✅ Moving time when step started
 ```typescript
 public getMovingTime(): number {
   if (!this.startTime) return 0;
-  
+
   const elapsed = Date.now() - this.startTime;
-  const totalPaused = this.state === "paused" 
+  const totalPaused = this.state === "paused"
     ? this.pausedTime + (Date.now() - (this.lastPauseTime || 0))
     : this.pausedTime;
-    
+
   return Math.max(0, elapsed - totalPaused);
 }
 ```
@@ -185,7 +185,7 @@ selectPlan(plan: RecordingServiceActivityPlan, plannedId?: string): void {
   this._stepIndex = 0;
   this._stepStartMovingTime = this.getMovingTime(); // ✅ Use moving time
   this.selectedActivityType = plan.activity_type;
-  
+
   this.emit("planSelected", { plan, plannedId });
   this.emit("stepChanged", this.getStepInfo());
 }
@@ -199,12 +199,12 @@ advanceStep(): void {
     console.warn("[Service] Cannot advance step");
     return;
   }
-  
+
   this._stepIndex++;
   this._stepStartMovingTime = this.getMovingTime(); // ✅ Mark step start
-  
+
   this.emit("stepChanged", this.getStepInfo());
-  
+
   if (this.isFinished) {
     this.emit("planCompleted");
   }
@@ -241,13 +241,13 @@ private updateElapsedTime() {
 ```typescript
 private updateElapsedTime() {
   if (!this.startTime) return;
-  
+
   // Emit time update for UI
   this.emit("timeUpdated", {
     elapsed: this.getElapsedTime(),
     moving: this.getMovingTime(),
   });
-  
+
   // Auto-advance plan steps when recording
   if (this.state === "recording" && this.hasPlan) {
     const progress = this.stepProgress;
@@ -302,13 +302,13 @@ interface ServiceEvents {
   stateChanged: (state: RecordingState) => void;
   activitySelected: (type: PublicActivityType) => void; // ✅ Simplified - no planName
   sensorsChanged: (sensors: any[]) => void;
-  
+
   // Plan events
   planSelected: (data: { plan: RecordingServiceActivityPlan; plannedId?: string }) => void;
   stepChanged: (info: StepInfo) => void;
   planCleared: () => void;
   planCompleted: () => void; // ✅ NEW
-  
+
   // Time events
   timeUpdated: (time: TimeUpdate) => void; // ✅ NEW
 }
@@ -321,7 +321,7 @@ interface ServiceEvents {
 #### 3.1 Removed Redundant Hooks (5 hooks → 1 hook)
 
 **Deleted:**
-- `useHasPlan(service)` 
+- `useHasPlan(service)`
 - `useCurrentPlanStep(service)`
 - `usePlanStepProgress(service)`
 - `useStepTimer(service)`
@@ -336,22 +336,22 @@ interface ServiceEvents {
 ```typescript
 export function usePlan(service: ActivityRecorderService | null) {
   const [, forceUpdate] = useReducer((x) => x + 1, 0);
-  
+
   useEffect(() => {
     if (!service) return;
-    
+
     const handleUpdate = () => forceUpdate();
     service.on("stepChanged", handleUpdate);
     service.on("planCleared", handleUpdate);
     service.on("timeUpdated", handleUpdate);
-    
+
     return () => {
       service.off("stepChanged", handleUpdate);
       service.off("planCleared", handleUpdate);
       service.off("timeUpdated", handleUpdate);
     };
   }, [service]);
-  
+
   if (!service?.hasPlan) {
     return {
       hasPlan: false as const,
@@ -359,10 +359,10 @@ export function usePlan(service: ActivityRecorderService | null) {
       clear: () => service?.clearPlan(),
     };
   }
-  
+
   const info = service.getStepInfo();
   const planDetails = service.plan;
-  
+
   return {
     hasPlan: true as const,
     name: planDetails?.name,
@@ -395,27 +395,27 @@ export function usePlan(service: ActivityRecorderService | null) {
 ```typescript
 export function useElapsedTime(service: ActivityRecorderService | null): number {
   const [time, setTime] = useState(0);
-  
+
   useEffect(() => {
     if (!service) return;
     const handleUpdate = ({ elapsed }: TimeUpdate) => setTime(elapsed);
     service.on("timeUpdated", handleUpdate);
     return () => service.off("timeUpdated", handleUpdate);
   }, [service]);
-  
+
   return time;
 }
 
 export function useMovingTime(service: ActivityRecorderService | null): number {
   const [time, setTime] = useState(0);
-  
+
   useEffect(() => {
     if (!service) return;
     const handleUpdate = ({ moving }: TimeUpdate) => setTime(moving);
     service.on("timeUpdated", handleUpdate);
     return () => service.off("timeUpdated", handleUpdate);
   }, [service]);
-  
+
   return time;
 }
 ```
@@ -617,7 +617,7 @@ const plan = usePlan(service);
    - Added time-specific hooks
    - Updated `useRecorderActions` interface
 
-3. **gradientpeak/apps/mobile/src/app/modals/record/index.tsx**
+3. **gradientpeak/apps/mobile/src/app/record/index.tsx**
    - Updated to use `usePlan()`
    - Fixed activity name display
    - Fixed advance step button

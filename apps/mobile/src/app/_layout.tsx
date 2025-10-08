@@ -64,7 +64,7 @@ function AppContent() {
   const { loading: authLoading } = useAuth();
   const { theme, isLoaded: isThemeLoaded } = useTheme();
 
-  // Service is NOT initialized here - it will be created only when user navigates to /modals/record
+  // Service is NOT initialized here - it will be created only when user navigates to /record
   // This ensures proper lifecycle: navigate-in → create → use → navigate-out → cleanup
 
   if (authLoading || !isThemeLoaded) {
@@ -81,7 +81,7 @@ function AppContent() {
   return (
     <ThemeProvider value={navTheme}>
       <StatusBar style={isDark ? "light" : "dark"} />
-      <SafeAreaView className="flex-1 bg-background">
+      <SafeAreaView className="flex-1 bg-background p-0">
         <Slot />
         <PortalHost />
       </SafeAreaView>

@@ -514,10 +514,212 @@ export const SAMPLE_SPRINT_WORKOUT: RecordingServiceActivityPlan = {
   },
 };
 
+export const SAMPLE_THRESHOLD_HR_WORKOUT: RecordingServiceActivityPlan = {
+  version: "1.0",
+  name: "Threshold Heart Rate Intervals",
+  activity_type: "indoor_bike_trainer",
+  description:
+    "45-minute indoor trainer workout focused on threshold heart rate intervals. Maintain steady cadence of 85-95 RPM and target threshold HR zones during main intervals.",
+  estimated_tss: 60,
+  estimated_duration: 2700, // 45 minutes
+  structure: {
+    steps: [
+      // Warm-up phase
+      {
+        name: "Easy Warm-up",
+        description: "Start easy and gradually raise heart rate",
+        type: "step",
+        duration: {
+          type: "time",
+          value: 600, // 10 minutes
+          unit: "seconds",
+        },
+        targets: [
+          {
+            type: "%ThresholdHR",
+            intensity: 60,
+          },
+        ],
+        notes: "Spin easy, focus on smooth pedaling and preparing the legs",
+      },
+
+      // Build phase
+      {
+        name: "Gradual Build",
+        description: "Increase effort towards threshold",
+        type: "step",
+        duration: {
+          type: "time",
+          value: 300, // 5 minutes
+          unit: "seconds",
+        },
+        targets: [
+          {
+            type: "%ThresholdHR",
+            intensity: 75,
+          },
+        ],
+        notes: "Steadily increase intensity to get near threshold",
+      },
+
+      // Main threshold intervals - 4x5min
+      {
+        type: "repetition",
+        repeat: 4,
+        steps: [
+          {
+            name: "Threshold Interval",
+            description: "Sustain near-threshold heart rate effort",
+            type: "step",
+            duration: {
+              type: "time",
+              value: 300, // 5 minutes
+              unit: "seconds",
+            },
+            targets: [
+              {
+                type: "%ThresholdHR",
+                intensity: 100,
+              },
+            ],
+            notes:
+              "Maintain steady cadence, focus on consistent threshold effort",
+          },
+          {
+            name: "Recovery",
+            description: "Active recovery between threshold intervals",
+            type: "step",
+            duration: {
+              type: "time",
+              value: 150, // 2.5 minutes
+              unit: "seconds",
+            },
+            targets: [
+              {
+                type: "%ThresholdHR",
+                intensity: 65,
+              },
+            ],
+            notes: "Spin easy to recover, prepare for next interval",
+          },
+        ],
+      },
+
+      // Cool-down phase
+      {
+        name: "Cool-down",
+        description: "Gradually reduce heart rate and flush the legs",
+        type: "step",
+        duration: {
+          type: "time",
+          value: 600, // 10 minutes
+          unit: "seconds",
+        },
+        targets: [
+          {
+            type: "%ThresholdHR",
+            intensity: 55,
+          },
+        ],
+        notes: "Spin easy, focus on relaxed breathing and form",
+      },
+    ],
+  },
+};
+
+export const SAMPLE_TESTING_WORKOUT: RecordingServiceActivityPlan = {
+  version: "1.0",
+  name: "Comprehensive 1-Minute Schema Test",
+  activity_type: "indoor_bike_trainer",
+  description:
+    "A short test workout containing every major step type and target style to validate parsing, UI rendering, and compliance scoring.",
+  estimated_tss: 1,
+  estimated_duration: 60,
+  structure: {
+    steps: [
+      // Simple %FTP step
+      {
+        type: "step",
+        name: "Warm-up Spin",
+        description: "Easy spin to start the timer",
+        duration: { type: "time", value: 10, unit: "seconds" },
+        targets: [{ type: "%FTP", intensity: 60 }],
+        notes: "Smooth cadence around 90 RPM",
+      },
+
+      // ThresholdHR step
+      {
+        type: "step",
+        name: "Threshold Effort",
+        description: "Brief threshold heart-rate ramp",
+        duration: { type: "time", value: 10, unit: "seconds" },
+        targets: [{ type: "%ThresholdHR", intensity: 100 }],
+        notes: "Simulate sustained threshold effort",
+      },
+
+      // MaxHR target
+      {
+        type: "step",
+        name: "High-HR Surge",
+        description: "Push HR towards VO2 territory",
+        duration: { type: "time", value: 10, unit: "seconds" },
+        targets: [{ type: "%MaxHR", intensity: 95 }],
+        notes: "Short high-intensity test for HR mapping",
+      },
+
+      // Direct wattage target
+      {
+        type: "step",
+        name: "Fixed Watt Step",
+        description: "Hold exact watt target",
+        duration: { type: "time", value: 10, unit: "seconds" },
+        targets: [{ type: "watts", intensity: 250 }],
+        notes: "Test absolute watt targeting logic",
+      },
+
+      // Repetition test (nested structure)
+      {
+        type: "repetition",
+        repeat: 2,
+        steps: [
+          {
+            type: "step",
+            name: "Cadence Drill",
+            description: "Spin-up to high cadence",
+            duration: { type: "time", value: 5, unit: "seconds" },
+            targets: [{ type: "cadence", intensity: 110 }],
+            notes: "Check non-power/HR target parsing",
+          },
+          {
+            type: "step",
+            name: "Micro-Recovery",
+            description: "Short recovery between spin-ups",
+            duration: { type: "time", value: 2, unit: "seconds" },
+            targets: [{ type: "%FTP", intensity: 50 }],
+            notes: "Verify short-duration handling",
+          },
+        ],
+      },
+
+      // Cool-down
+      {
+        type: "step",
+        name: "Cool-down",
+        description: "Wrap-up and finish",
+        duration: { type: "time", value: 11, unit: "seconds" },
+        targets: [{ type: "%ThresholdHR", intensity: 60 }],
+        notes: "End of test sequence",
+      },
+    ],
+  },
+};
+
 export const SAMPLE_INDOOR_TRAINER_ACTIVITIES: Array<RecordingServiceActivityPlan> =
   [
     SAMPLE_SWEET_SPOT_WORKOUT,
     SAMPLE_VO2_MAX_WORKOUT,
     SAMPLE_RECOVERY_WORKOUT,
     SAMPLE_SPRINT_WORKOUT,
+    SAMPLE_THRESHOLD_HR_WORKOUT,
+    SAMPLE_TESTING_WORKOUT,
   ];

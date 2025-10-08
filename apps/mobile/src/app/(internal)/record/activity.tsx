@@ -26,7 +26,7 @@ import {
   Activity,
   AlertCircle,
   Calendar,
-  ChevronLeft,
+  ChevronDown,
   Clock,
   Zap,
 } from "lucide-react-native";
@@ -287,7 +287,7 @@ export default function ActivitySelectionModal() {
       {/* Header */}
       <View className="border-b border-border px-2 py-2 flex-row items-center bg-background">
         <Button size="icon" variant="ghost" onPress={() => router.back()}>
-          <Icon as={ChevronLeft} size={24} />
+          <Icon as={ChevronDown} size={24} />
         </Button>
         <Text className="flex-1 text-center text-lg font-semibold">
           Select Activity

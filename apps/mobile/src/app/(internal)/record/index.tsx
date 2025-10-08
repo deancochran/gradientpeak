@@ -1,18 +1,11 @@
-import { useRouter } from "expo-router";
-import {
-  Bluetooth,
-  ChevronDown,
-  ChevronRight,
-  Pause,
-  Play,
-  Shield,
-  Square,
-} from "lucide-react-native";
-import React, { useCallback, useEffect, useMemo } from "react";
-import { View } from "react-native";
-
 import { RecordingCarousel } from "@/components/RecordingCarousel";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import {
@@ -23,10 +16,20 @@ import {
   useSensors,
 } from "@/lib/hooks/useActivityRecorder";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import { useRouter } from "expo-router";
 import {
-  ACTIVITY_ICONS,
-  ACTIVITY_NAMES,
-} from "@/lib/services/ActivityRecorder/types";
+  Activity,
+  Bluetooth,
+  ChevronDown,
+  ChevronRight,
+  MoreVertical,
+  Pause,
+  Play,
+  Shield,
+  Square,
+} from "lucide-react-native";
+import React, { useCallback, useEffect, useMemo } from "react";
+import { View } from "react-native";
 
 type CarouselCard =
   | "dashboard"
@@ -60,7 +63,7 @@ export default function RecordModal() {
     finish();
 
     // Navigate immediately to submit page
-    router.push("/modals/record/submit");
+    router.push("/record/submit");
   }, [finish, router]);
 
   // Debug: Track activity status changes
@@ -97,66 +100,65 @@ export default function RecordModal() {
 
   return (
     <View className="flex-1 bg-background">
-      {/* Header */}
-      <View className="bg-background border-b border-border p-4">
-        <View className="flex-row items-center gap-2 justify-between">
-          <View className="flex-row w-1/2">
-            {/* Left - Back/Close */}
-            {(state === "pending" || state === "finished") && (
-              <Button size="icon" variant="ghost" onPress={() => router.back()}>
-                <Icon as={ChevronDown} size={24} />
-              </Button>
-            )}
-            {/* Activity Selection */}
-            <Button
-              variant="ghost"
-              onPress={() => router.push("/modals/record/activity")}
-              disabled={state !== "pending"}
-              className="w-full text-left justify-start"
-            >
-              <Icon as={ACTIVITY_ICONS[activityType]} size={20} />
-              <Text className="font-semibold text-lg text-left">
-                {plan.hasPlan ? plan.name : ACTIVITY_NAMES[activityType]}
-              </Text>
-            </Button>
-          </View>
-
-          {/* Right - Icons */}
-          <View className="flex-row w-1/2 items-end justify-end">
-            {/* Permissions */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onPress={() => router.push("/modals/record/permissions")}
-            >
-              <Icon as={Shield} size={20} />
-            </Button>
-
-            {/* Sensors */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onPress={() => router.push("/modals/record/sensors")}
-            >
-              <Icon as={Bluetooth} size={20} />
-              {sensorCount > 0 && (
-                <View className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full" />
-              )}
-            </Button>
-          </View>
-        </View>
-      </View>
-
-      {/* Carousel */}
-      <RecordingCarousel cards={cards} service={service} />
-
-      {/* Footer */}
-      <View className="bg-background border-t border-border p-6 pb-8">
-        {state === "pending" && (
-          <Button onPress={start} className="w-full h-14 rounded-xl">
-            <Icon as={Play} size={24} className="color-background" />
-            <Text className="ml-3 font-semibold text-lg">Start Activity</Text>
+      {/* Floating Close Button - Only shown when pending */}
+      {state === "pending" && (
+        <View className="absolute top-2 left-2 z-50">
+          <Button
+            size="icon"
+            variant="ghost"
+            onPress={() => router.back()}
+            className="bg-muted text-muted-foreground/80 "
+          >
+            <Icon as={ChevronDown} size={24} />
           </Button>
+        </View>
+      )}
+      {/* Carousel - Now takes full height */}
+      <RecordingCarousel cards={cards} service={service} />
+      {/* Footer */}
+      <View className="bg-background px-4">
+        {state === "pending" && (
+          <View className="flex-row gap-3">
+            <Button onPress={start} className="flex-1 h-14 rounded-xl">
+              <Icon as={Play} size={24} className="color-background" />
+              <Text className="ml-3 font-semibold text-lg">Start Activity</Text>
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="h-14 w-14 rounded-xl"
+                >
+                  <Icon as={MoreVertical} size={24} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                insets={{ top: 0, bottom: 100, left: 0, right: 15 }}
+                className="w-2/5"
+                align="start"
+              >
+                <DropdownMenuItem
+                  onPress={() => router.push("/record/activity")}
+                >
+                  <Icon as={Activity} size={20} className="mr-2" />
+                  <Text>Select Activity</Text>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onPress={() => router.push("/record/sensors")}
+                >
+                  <Icon as={Bluetooth} size={20} className="mr-2" />
+                  <Text>Sensors {sensorCount > 0 && `(${sensorCount})`}</Text>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onPress={() => router.push("/record/permissions")}
+                >
+                  <Icon as={Shield} size={20} className="mr-2" />
+                  <Text>Permissions</Text>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </View>
         )}
         {state === "recording" && (
           <View className="gap-3">
@@ -180,14 +182,12 @@ export default function RecordModal() {
             )}
           </View>
         )}
-
         {state === "paused" && (
           <View className="flex-row gap-3">
             <Button onPress={resume} className="flex-1 h-14 rounded-xl">
               <Icon as={Play} size={24} />
               <Text className="ml-3 font-semibold">Resume</Text>
             </Button>
-
             <Button
               onPress={handleFinish}
               variant="secondary"

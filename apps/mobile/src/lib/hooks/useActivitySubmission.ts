@@ -405,6 +405,38 @@ function getDataTypeForMetric(
   }
 }
 
+/**
+ * Convert Uint8Array to base64 string (React Native compatible)
+ * Uses manual base64 encoding without external dependencies
+ */
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  const base64abc =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let result = "";
+  let i;
+  const l = bytes.length;
+  for (i = 2; i < l; i += 3) {
+    result += base64abc[bytes[i - 2] >> 2];
+    result += base64abc[((bytes[i - 2] & 0x03) << 4) | (bytes[i - 1] >> 4)];
+    result += base64abc[((bytes[i - 1] & 0x0f) << 2) | (bytes[i] >> 6)];
+    result += base64abc[bytes[i] & 0x3f];
+  }
+  if (i === l + 1) {
+    // 1 octet yet to write
+    result += base64abc[bytes[i - 2] >> 2];
+    result += base64abc[(bytes[i - 2] & 0x03) << 4];
+    result += "==";
+  }
+  if (i === l) {
+    // 2 octets yet to write
+    result += base64abc[bytes[i - 2] >> 2];
+    result += base64abc[((bytes[i - 2] & 0x03) << 4) | (bytes[i - 1] >> 4)];
+    result += base64abc[(bytes[i - 1] & 0x0f) << 2];
+    result += "=";
+  }
+  return result;
+}
+
 async function compressStreamData(
   activityId: string,
   aggregated: AggregatedStream,
@@ -425,8 +457,8 @@ async function compressStreamData(
     activity_id: activityId,
     type: metric,
     data_type: dataType,
-    compressed_values: Buffer.from(compressedValues).toString("base64"),
-    compressed_timestamps: Buffer.from(compressedTimestamps).toString("base64"),
+    compressed_values: uint8ArrayToBase64(compressedValues),
+    compressed_timestamps: uint8ArrayToBase64(compressedTimestamps),
     sample_count: aggregated.sampleCount,
     original_size: originalSize,
     min_value: aggregated.minValue,

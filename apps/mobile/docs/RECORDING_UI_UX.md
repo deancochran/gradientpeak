@@ -509,7 +509,7 @@ Prepared  Ready    Active     Paused    Active    Complete
 
 ### Code Organization
 ```
-/app/modals/record/
+/app/record/
   index.tsx              ← Main modal with card carousel
   activity.tsx           ← Activity selection modal
   permissions.tsx        ← Permissions management

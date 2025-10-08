@@ -2,7 +2,7 @@
 
 ### Service Lifecycle Architecture Cleanup (2025-01-06)
 - **Removed Global Service Initialization**: Service no longer initialized in root layout (`_layout.tsx`)
-  - **Correct Lifecycle**: Service now only exists when user navigates to recording screen (`/modals/record`)
+  - **Correct Lifecycle**: Service now only exists when user navigates to recording screen (`/record`)
   - **Automatic Cleanup**: Service automatically cleaned up when user navigates away (React useEffect cleanup)
   - **Navigation-Scoped**: Service lifecycle strictly follows: navigate-in → create → use → navigate-out → cleanup
   - **Memory Efficiency**: No persistent service consuming resources when not recording

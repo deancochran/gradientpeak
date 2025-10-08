@@ -20,7 +20,7 @@ This document summarizes the fixes implemented in response to app testing findin
 - Permissions now automatically refresh when modal is visible
 
 **Files Changed:**
-- `apps/mobile/src/app/modals/record/permissions.tsx`
+- `apps/mobile/src/app/record/permissions.tsx`
 - `apps/mobile/src/lib/services/ActivityRecorder/index.ts`
 - `apps/mobile/src/lib/hooks/useActivityRecorderEvents.ts`
 
@@ -51,7 +51,7 @@ This document summarizes the fixes implemented in response to app testing findin
 - Users can now see all metrics before recording begins
 
 **Files Changed:**
-- `apps/mobile/src/app/modals/record/index.tsx`
+- `apps/mobile/src/app/record/index.tsx`
 
 #### 4. ✅ Sensors: Stream Values Only After Activity Starts
 **Issue:** Sensors should only stream values to the UI after the user starts an activity.
@@ -101,7 +101,7 @@ this.liveMetricsManager.startRecording(recording.id);
 5. **Elevation Card** - "Elevation Tracking Ready" with placeholder elevation
 
 **Files Changed:**
-- `apps/mobile/src/app/modals/record/index.tsx`
+- `apps/mobile/src/app/record/index.tsx`
 - `apps/mobile/src/components/dashboard/PowerCard.tsx`
 - `apps/mobile/src/components/dashboard/HeartRateCard.tsx`
 - `apps/mobile/src/components/dashboard/AnalysisCard.tsx`
@@ -156,11 +156,11 @@ useEffect(() => {
 // Poll every 2 seconds while modal is open
 useEffect(() => {
   if (!service) return;
-  
+
   const intervalId = setInterval(() => {
     check();
   }, 2000);
-  
+
   return () => clearInterval(intervalId);
 }, [service, check]);
 ```
