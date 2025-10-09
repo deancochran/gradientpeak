@@ -16,6 +16,11 @@ import {
   useSensors,
 } from "@/lib/hooks/useActivityRecorder";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import {
+  type CarouselCardConfig,
+  type CarouselCardType,
+  createDefaultCardsConfig,
+} from "@/types/carousel";
 import { useRouter } from "expo-router";
 import {
   Activity,
@@ -30,15 +35,6 @@ import {
 } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo } from "react";
 import { View } from "react-native";
-
-type CarouselCard =
-  | "dashboard"
-  | "power"
-  | "heartrate"
-  | "analysis"
-  | "elevation"
-  | "map"
-  | "plan";
 
 export default function RecordModal() {
   const router = useRouter();
@@ -75,27 +71,32 @@ export default function RecordModal() {
   }, [isOutdoorActivity, plan.hasPlan]);
 
   // Determine which cards to show - reactively updates based on activity status
-  const cards = useMemo((): CarouselCard[] => {
-    const cardList: CarouselCard[] = [
-      "dashboard",
-      "power",
-      "heartrate",
-      "analysis",
-      "elevation",
-    ];
+  // Using configuration object instead of array to prevent ordering issues
+  const cardsConfig = useMemo((): Record<
+    CarouselCardType,
+    CarouselCardConfig
+  > => {
+    const config = createDefaultCardsConfig();
 
+    // Enable map card for outdoor activities
+    config.map.enabled = isOutdoorActivity;
     if (isOutdoorActivity) {
-      cardList.push("map");
-      console.log("[RecordModal] Adding map card for outdoor activity");
+      console.log("[RecordModal] Enabling map card for outdoor activity");
     }
 
+    // Enable plan card when a plan is active
+    config.plan.enabled = plan.hasPlan;
     if (plan.hasPlan) {
-      cardList.push("plan");
-      console.log("[RecordModal] Adding plan card");
+      console.log("[RecordModal] Enabling plan card");
     }
 
-    console.log("[RecordModal] Cards updated:", cardList);
-    return cardList;
+    console.log(
+      "[RecordModal] Cards config updated:",
+      Object.values(config)
+        .filter((c) => c.enabled)
+        .map((c) => c.id),
+    );
+    return config;
   }, [isOutdoorActivity, plan.hasPlan]);
 
   return (
@@ -114,7 +115,13 @@ export default function RecordModal() {
         </View>
       )}
       {/* Carousel - Now takes full height */}
-      <RecordingCarousel cards={cards} service={service} />
+      <RecordingCarousel
+        cardsConfig={cardsConfig}
+        service={service}
+        onCardChange={(cardId) => {
+          console.log("[RecordModal] User switched to card:", cardId);
+        }}
+      />
       {/* Footer */}
       <View className="bg-background px-4">
         {state === "pending" && (

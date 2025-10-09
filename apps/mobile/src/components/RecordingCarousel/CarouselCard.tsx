@@ -1,4 +1,5 @@
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
+import type { CarouselCardType } from "@/types/carousel";
 import React, { memo } from "react";
 import { Dimensions } from "react-native";
 import { AnalysisCard } from "./cards/AnalysisCard";
@@ -10,15 +11,6 @@ import { MapCard } from "./cards/MapCard";
 import { PowerCard } from "./cards/PowerCard";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
-
-type CarouselCardType =
-  | "dashboard"
-  | "power"
-  | "heartrate"
-  | "analysis"
-  | "elevation"
-  | "map"
-  | "plan";
 
 interface CarouselCardProps {
   type: CarouselCardType;

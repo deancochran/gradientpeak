@@ -1,47 +1,109 @@
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import React, { memo, useEffect, useMemo, useRef, useState } from "react";
+import type { CarouselCardConfig, CarouselCardType } from "@/types/carousel";
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Dimensions, FlatList, View } from "react-native";
 import { CarouselCard } from "./CarouselCard";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
-type CarouselCardType =
-  | "dashboard"
-  | "power"
-  | "heartrate"
-  | "analysis"
-  | "elevation"
-  | "map"
-  | "plan";
-
 interface RecordingCarouselProps {
-  cards: CarouselCardType[];
+  cardsConfig: Record<CarouselCardType, CarouselCardConfig>;
   service: ActivityRecorderService | null;
+  onCardChange?: (cardId: CarouselCardType) => void;
 }
 
 export const RecordingCarousel = memo(
-  ({ cards, service }: RecordingCarouselProps) => {
+  ({ cardsConfig, service, onCardChange }: RecordingCarouselProps) => {
     const carouselRef = useRef<FlatList>(null);
     const isScrolling = useRef(false);
+    const isInitialized = useRef(false);
+
+    // Derive enabled cards in order from config
+    const enabledCards = useMemo(() => {
+      return Object.values(cardsConfig)
+        .filter((card) => card.enabled)
+        .sort((a, b) => a.order - b.order)
+        .map((card) => card.id);
+    }, [cardsConfig]);
+
     const [currentCardIndex, setCurrentCardIndex] = useState(0);
+    const [currentCardId, setCurrentCardId] = useState<CarouselCardType>(
+      enabledCards[0] || "dashboard",
+    );
 
     // Create infinite scrolling by tripling the cards array
     const infiniteCards = useMemo(() => {
-      return [...cards, ...cards, ...cards];
-    }, [cards]);
+      return [...enabledCards, ...enabledCards, ...enabledCards];
+    }, [enabledCards]);
 
-    // Reset carousel to middle set whenever cards array changes
+    // Initialize carousel on mount
     useEffect(() => {
-      setCurrentCardIndex(0);
-      const middleIndex = cards.length;
+      // Scroll to middle set on mount (maintains current card state)
+      const middleIndex = enabledCards.length;
       setTimeout(() => {
         carouselRef.current?.scrollToIndex({
           index: middleIndex,
           animated: false,
           viewPosition: 0,
         });
+        isInitialized.current = true;
       }, 50);
-    }, [cards.length]);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Only run on mount
+
+    // Handle config changes (cards enabled/disabled, reordered)
+    useEffect(() => {
+      if (!isInitialized.current) return;
+
+      // Find current card in new enabled cards list
+      const cardIndex = enabledCards.indexOf(currentCardId);
+
+      if (cardIndex !== -1) {
+        // Current card still enabled, update position
+        console.log(
+          "[RecordingCarousel] Current card still enabled, maintaining position:",
+          currentCardId,
+        );
+        setCurrentCardIndex(cardIndex);
+        const middleSetIndex = enabledCards.length + cardIndex;
+        setTimeout(() => {
+          carouselRef.current?.scrollToIndex({
+            index: middleSetIndex,
+            animated: false,
+            viewPosition: 0,
+          });
+        }, 50);
+      } else {
+        // Current card disabled/removed, fallback to first
+        console.log(
+          "[RecordingCarousel] Current card no longer enabled, switching to first:",
+          enabledCards[0],
+        );
+        const firstCard = enabledCards[0] || "dashboard";
+        setCurrentCardIndex(0);
+        setCurrentCardId(firstCard);
+        const middleIndex = enabledCards.length;
+        setTimeout(() => {
+          carouselRef.current?.scrollToIndex({
+            index: middleIndex,
+            animated: false,
+            viewPosition: 0,
+          });
+        }, 50);
+      }
+    }, [enabledCards, currentCardId]);
+
+    // Update active card callback
+    const updateActiveCard = useCallback((cardId: CarouselCardType) => {
+      console.log("[RecordingCarousel] User swiped to card:", cardId);
+    }, []);
 
     const handleMomentumScrollEnd = (event: any) => {
       if (isScrolling.current) return;
@@ -49,17 +111,22 @@ export const RecordingCarousel = memo(
       const offsetX = event.nativeEvent.contentOffset.x;
       const absoluteIndex = Math.round(offsetX / SCREEN_WIDTH);
 
-      // Calculate which set we're in (0=first, 1=middle, 2=last)
-      const setIndex = Math.floor(absoluteIndex / cards.length);
-      const relativeIndex = absoluteIndex % cards.length;
+      const setIndex = Math.floor(absoluteIndex / enabledCards.length);
+      const relativeIndex = absoluteIndex % enabledCards.length;
 
-      // Update indicator to show relative position
       setCurrentCardIndex(relativeIndex);
+      const newCardId = enabledCards[relativeIndex];
 
-      // If we've scrolled to first or last set, snap back to middle set
+      if (newCardId && newCardId !== currentCardId) {
+        setCurrentCardId(newCardId);
+        updateActiveCard(newCardId);
+        onCardChange?.(newCardId);
+      }
+
+      // Infinite scroll snap back
       if (setIndex === 0 || setIndex === 2) {
         isScrolling.current = true;
-        const middleSetIndex = cards.length + relativeIndex;
+        const middleSetIndex = enabledCards.length + relativeIndex;
 
         setTimeout(() => {
           carouselRef.current?.scrollToIndex({
@@ -72,6 +139,7 @@ export const RecordingCarousel = memo(
     };
 
     const handleScrollToIndexFailed = (info: any) => {
+      console.warn("[RecordingCarousel] ScrollToIndex failed:", info);
       const offset = info.index * SCREEN_WIDTH;
       carouselRef.current?.scrollToOffset({
         offset,
@@ -79,7 +147,7 @@ export const RecordingCarousel = memo(
       });
     };
 
-    const getItemLayout = (data: any, index: number) => ({
+    const getItemLayout = (_data: any, index: number) => ({
       length: SCREEN_WIDTH,
       offset: SCREEN_WIDTH * index,
       index,
@@ -109,12 +177,12 @@ export const RecordingCarousel = memo(
         />
 
         {/* Carousel Indicators */}
-        {cards.length > 1 && (
+        {enabledCards.length > 1 && (
           <View className="pb-4">
             <View className="flex-row justify-center gap-2">
-              {cards.map((card, index) => (
+              {enabledCards.map((cardId, index) => (
                 <View
-                  key={`indicator-${card}`}
+                  key={`indicator-${cardId}`}
                   className={`w-2 h-2 rounded-full ${
                     index === currentCardIndex
                       ? "bg-primary"
