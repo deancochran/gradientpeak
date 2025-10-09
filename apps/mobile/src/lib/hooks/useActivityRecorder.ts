@@ -426,6 +426,7 @@ export function usePlan(service: ActivityRecorderService | null) {
     select: (plan: RecordingServiceActivityPlan, id?: string) =>
       service.selectPlan(plan, id),
     clear: () => service.clearPlan(),
+    planTimeRemaining: service.planTimeRemaining,
   };
 }
 

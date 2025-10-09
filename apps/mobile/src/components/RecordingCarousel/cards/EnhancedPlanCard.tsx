@@ -4,21 +4,21 @@ import { Text } from "@/components/ui/text";
 import { useCurrentReadings, usePlan } from "@/lib/hooks/useActivityRecorder";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import {
-  ActivityPlanStructure,
-  extractActivityProfile,
-  formatDuration,
-  formatDurationCompact,
-  getDurationMs,
-  IntensityTarget,
+    ActivityPlanStructure,
+    extractActivityProfile,
+    formatDuration,
+    formatDurationCompact,
+    getDurationMs,
+    IntensityTarget,
 } from "@repo/core";
 import {
-  AlertTriangle,
-  Calendar,
-  CheckCircle2,
-  Clock,
-  Heart,
-  Target,
-  Zap,
+    AlertTriangle,
+    Calendar,
+    CheckCircle2,
+    Clock,
+    Heart,
+    Target,
+    Zap,
 } from "lucide-react-native";
 import React, { memo, useMemo } from "react";
 import { View } from "react-native";
@@ -546,12 +546,13 @@ CurrentIntervalView.displayName = "CurrentIntervalView";
 // ================================
 
 interface WorkoutGraphViewProps {
+  planTimeRemaining: number;
   structure: ActivityPlanStructure;
   currentStepIndex: number;
 }
 
 const WorkoutGraphView = memo<WorkoutGraphViewProps>(
-  ({ structure, currentStepIndex }) => {
+  ({ planTimeRemaining, structure, currentStepIndex }) => {
     const profileData = extractActivityProfile(structure);
     const totalDuration = profileData.reduce(
       (sum, step) => sum + step.duration,
@@ -562,9 +563,14 @@ const WorkoutGraphView = memo<WorkoutGraphViewProps>(
 
     return (
       <View className="flex-col gap-2 w-full">
-        <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-          Workout Profile
-        </Text>
+        <View className="flex-row w-full items-start justify-between">
+          <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            Workout Profile
+          </Text>
+          <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            Time Remaining: {formatDurationCompact(planTimeRemaining)}
+          </Text>
+        </View>
         <View className="bg-muted/20 rounded-lg border border-muted/20 p-2">
           <View style={{ height: 48 }} className="flex-row items-end w-full">
             {profileData.map((step, index) => {
@@ -625,6 +631,7 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
     const stepCount = hasPlan ? plan.stepCount : 0;
     const currentStep = hasPlan ? plan.currentStep : undefined;
     const planName = hasPlan ? plan.name : undefined;
+    const planTimeRemaining = hasPlan ? plan.planTimeRemaining : 0;
 
     const progress = hasPlan ? plan.progress : null;
     const totalDuration = progress?.duration || 0;
@@ -678,6 +685,7 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
 
             {hasPlan && (
               <WorkoutGraphView
+                planTimeRemaining={planTimeRemaining}
                 structure={structure}
                 currentStepIndex={stepIndex}
               />

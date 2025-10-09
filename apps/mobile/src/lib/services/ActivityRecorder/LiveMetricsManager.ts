@@ -19,12 +19,12 @@ import { MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
 import { DataAccumulator } from "./DataAccumulator";
 import { DataBuffer } from "./DataBuffer";
 import {
-    LiveMetricsState,
-    LocationReading,
-    ProfileMetrics,
-    SensorReading,
-    SessionStats,
-    ZoneConfig,
+  LiveMetricsState,
+  LocationReading,
+  ProfileMetrics,
+  SensorReading,
+  SessionStats,
+  ZoneConfig,
 } from "./types";
 type DatabaseLike =
   | typeof localdb
@@ -162,11 +162,9 @@ export class LiveMetricsManager extends EventEmitter {
    * Ingest sensor data with batched updates
    */
   public ingestSensorData(reading: SensorReading): void {
-    if (!this.isActive) return;
-
     const timestamp = reading.timestamp || Date.now();
 
-    // Add to buffer for real-time calculations
+    // Add to buffer for real-time calculations (always, for display)
     // Type narrowing: check if numeric or tuple
     if (typeof reading.value === "number") {
       // Numeric reading (power, HR, cadence, etc.)
@@ -175,8 +173,11 @@ export class LiveMetricsManager extends EventEmitter {
         value: reading.value,
         timestamp,
       });
-      // Update max values immediately
-      this.updateMaxValues(reading.metric, reading.value);
+
+      // Update max values only when recording is active
+      if (this.isActive) {
+        this.updateMaxValues(reading.metric, reading.value);
+      }
 
       // Batch sensor updates for UI (max 10Hz)
       this.pendingSensorUpdates.set(reading.metric, reading.value);
@@ -196,28 +197,30 @@ export class LiveMetricsManager extends EventEmitter {
       });
     }
 
-    // Add to accumulator for eventual persistence
-    this.accumulator.add(reading);
+    // Add to accumulator for eventual persistence (only when active)
+    if (this.isActive) {
+      this.accumulator.add(reading);
+    }
   }
 
   /**
    * Ingest location data
    */
   public ingestLocationData(location: LocationReading): void {
-    if (!this.isActive) return;
+    // Add to accumulator for persistence (only when active)
+    if (this.isActive) {
+      this.accumulator.addLocation(location);
+    }
 
-    // Add to accumulator for persistence
-    this.accumulator.addLocation(location);
-
-    // Add lat/lng to buffer for route tracking
+    // Add lat/lng to buffer for route tracking (always, for display)
     this.buffer.add({
       metric: "latlng",
       value: [location.latitude, location.longitude],
       timestamp: location.timestamp,
     });
 
-    // Calculate distance if we have a previous location
-    if (this.lastLocation) {
+    // Calculate distance if we have a previous location (only when active)
+    if (this.isActive && this.lastLocation) {
       const distance = this.calculateDistance(this.lastLocation, location);
 
       // Filter GPS noise
@@ -237,7 +240,7 @@ export class LiveMetricsManager extends EventEmitter {
       }
     }
 
-    // Track elevation
+    // Track elevation (always, for display)
     if (location.altitude !== undefined) {
       this.buffer.add({
         metric: "altitude",
@@ -245,7 +248,10 @@ export class LiveMetricsManager extends EventEmitter {
         timestamp: location.timestamp,
       });
 
-      this.updateElevation(location.altitude);
+      // Update elevation metrics only when active
+      if (this.isActive) {
+        this.updateElevation(location.altitude);
+      }
     }
 
     this.lastLocation = location;

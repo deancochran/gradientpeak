@@ -278,31 +278,50 @@ export class ActivityRecorderService extends EventEmitter {
     return this.hasPlan && this._stepIndex >= this._steps.length;
   }
 
-  get stepProgress(): StepProgress | null {
-    if (!this.hasPlan || !this.currentStep) return null;
+  get stepProgress(): StepProgress {
+    if (!this.hasPlan || !this.currentStep)
+      throw new Error("No plan or current step");
 
     const step = this.currentStep;
     const movingTime = this.getMovingTime() - this._stepStartMovingTime;
 
-    if (!step.duration || step.duration === "untilFinished") {
+    let durationMs = 0;
+    let requiresManualAdvance = false;
+
+    if (step.duration === "untilFinished") {
+      requiresManualAdvance = true;
+    } else if (step.duration) {
+      if (step.duration.unit === "meters") {
+        // Placeholder: Assuming 5 m/s (18 km/h) average speed for distance-based steps
+        // This should ideally come from user profile or activity type for better accuracy
+        const estimatedSpeedMPS = 5; // meters per second
+        durationMs = (step.duration.value / estimatedSpeedMPS) * 1000;
+      } else if (step.duration.unit === "km") {
+        const estimatedSpeedMPS = 5; // meters per second
+        durationMs = ((step.duration.value * 1000) / estimatedSpeedMPS) * 1000;
+      } else {
+        durationMs = getDurationMs(step.duration);
+      }
+    }
+
+    if (requiresManualAdvance) {
       return {
         movingTime,
-        duration: 0,
+        duration: 0, // Duration is not applicable for untilFinished
         progress: 0,
         requiresManualAdvance: true,
         canAdvance: this._stepIndex < this._steps.length - 1,
       };
     }
 
-    const duration = getDurationMs(step.duration);
-    const progress = Math.min(1, movingTime / duration);
+    const progress = Math.min(1, movingTime / durationMs);
 
     return {
       movingTime,
-      duration,
+      duration: durationMs,
       progress,
       requiresManualAdvance: false,
-      canAdvance: progress >= 1 && this._stepIndex < this._steps.length - 1, // MODIFIED LINE
+      canAdvance: progress >= 1 && this._stepIndex < this._steps.length - 1,
     };
   }
 
@@ -315,6 +334,44 @@ export class ActivityRecorderService extends EventEmitter {
       isLast: this._stepIndex >= this._steps.length - 1,
       isFinished: this.isFinished,
     };
+  }
+  get planTimeRemaining(): number {
+    if (!this.hasPlan || this.isFinished) return 0;
+
+    let totalRemainingMs = 0;
+
+    // Add time remaining for the current step
+    const currentStepProgress = this.stepProgress;
+    if (currentStepProgress && !currentStepProgress.requiresManualAdvance) {
+      totalRemainingMs += Math.max(
+        0,
+        currentStepProgress.duration - currentStepProgress.movingTime,
+      );
+    }
+
+    // Add durations for all subsequent steps
+    for (let i = this._stepIndex + 1; i < this._steps.length; i++) {
+      const step = this._steps[i];
+      if (step.duration === "untilFinished") {
+        // If a step is "untilFinished", we cannot determine total remaining time
+        // For simplicity, we'll return a large number or 0.
+        // A more robust solution might involve user input or a different way to handle "untilFinished" in plan totals.
+        return 0; // Or some other indicator like -1 to signify indefinite
+      } else if (step.duration) {
+        if (step.duration.unit === "meters") {
+          const estimatedSpeedMPS = 5; // meters per second (placeholder)
+          totalRemainingMs += (step.duration.value / estimatedSpeedMPS) * 1000;
+        } else if (step.duration.unit === "km") {
+          const estimatedSpeedMPS = 5; // meters per second (placeholder)
+          totalRemainingMs +=
+            ((step.duration.value * 1000) / estimatedSpeedMPS) * 1000;
+        } else {
+          totalRemainingMs += getDurationMs(step.duration);
+        }
+      }
+    }
+
+    return totalRemainingMs;
   }
 
   // ================================
