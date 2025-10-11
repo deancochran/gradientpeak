@@ -191,7 +191,11 @@ export default function RecordModal() {
         )}
         {state === "paused" && (
           <View className="flex-row gap-3">
-            <Button onPress={resume} className="flex-1 h-14 rounded-xl">
+            <Button
+              variant="secondary"
+              onPress={resume}
+              className="flex-1 h-14 rounded-xl"
+            >
               <Icon as={Play} size={24} />
               <Text className="ml-3 font-semibold">Resume</Text>
             </Button>

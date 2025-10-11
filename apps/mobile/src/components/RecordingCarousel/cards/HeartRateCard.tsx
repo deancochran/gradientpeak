@@ -6,7 +6,8 @@ import {
   useSessionStats,
 } from "@/lib/hooks/useActivityRecorder";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import { Heart, Target } from "lucide-react-native";
+import { formatDurationCompactMs } from "@repo/core";
+import { Heart } from "lucide-react-native";
 import React from "react";
 import { View } from "react-native";
 
@@ -38,6 +39,10 @@ export const HeartRateCard: React.FC<HeartRateCardProps> = ({
     z5: stats.hrZones[4],
   };
 
+  // Calculate max time for proportional heights
+  const maxZoneTime = Math.max(...Object.values(zones));
+  const MAX_BAR_HEIGHT = 80; // Maximum height in pixels
+
   // Threshold calculations
   // We can calculate the percentage if we have both current HR and profile threshold HR
   // For now, we'll check if we have max HR data to show threshold-related info
@@ -47,24 +52,18 @@ export const HeartRateCard: React.FC<HeartRateCardProps> = ({
 
   return (
     <View style={{ width: screenWidth }} className="flex-1 p-4">
-      <Card className="flex-1">
-        <CardContent>
+      <Card className="flex-1  w-full h-full p-0 m-0">
+        <CardContent className="flex-col items-center w-full h-full  p-4 justify-between">
           {/* Header */}
-          <View className="flex-row items-center justify-between mb-6">
+          <View className="flex-row w-full items-center justify-between mb-6">
             <View className="flex-row items-center">
               <Icon as={Heart} size={24} className="text-red-500 mr-2" />
               <Text className="text-lg font-semibold">Heart Rate</Text>
             </View>
-            {hasCurrentHR && (
-              <View className="flex-row items-center">
-                <View className="w-2 h-2 bg-green-500 rounded-full mr-2" />
-                <Text className="text-xs text-muted-foreground">LIVE</Text>
-              </View>
-            )}
           </View>
 
           {/* Current HR - Large Display */}
-          <View className="items-center mb-8">
+          <View className="w-full items-center mb-8">
             <Text
               className={`text-5xl font-bold ${hasCurrentHR ? "text-red-500" : "text-red-500/30"}`}
             >
@@ -74,7 +73,7 @@ export const HeartRateCard: React.FC<HeartRateCardProps> = ({
           </View>
 
           {/* HR Metrics Grid */}
-          <View className="flex-row justify-around mb-6">
+          <View className="w-full flex-row justify-around mb-6">
             <View className="items-center">
               <Text
                 className={`text-2xl font-semibold ${avg > 0 ? "" : "text-muted-foreground/30"}`}
@@ -102,14 +101,17 @@ export const HeartRateCard: React.FC<HeartRateCardProps> = ({
           </View>
 
           {/* Zone Distribution */}
-          <View className="gap-4">
+          <View className="w-full gap-4">
             <View>
               <Text className="text-sm font-medium text-muted-foreground mb-3">
                 Zone Distribution
               </Text>
-              <View className="flex-row gap-2">
+              <View
+                className="flex-row gap-2 items-end"
+                style={{ height: MAX_BAR_HEIGHT + 50 }}
+              >
                 {Object.entries(zones).map(([zone, timeSeconds], index) => {
-                  const minutes = Math.floor(timeSeconds / 60);
+                  const minutes = formatDurationCompactMs(timeSeconds);
                   const zoneColors = [
                     "bg-gray-400", // Z1
                     "bg-blue-400", // Z2
@@ -125,10 +127,23 @@ export const HeartRateCard: React.FC<HeartRateCardProps> = ({
                     "bg-red-400/20",
                   ];
 
+                  // Calculate proportional height
+                  const barHeight =
+                    maxZoneTime > 0
+                      ? Math.max(
+                          (timeSeconds / maxZoneTime) * MAX_BAR_HEIGHT,
+                          timeSeconds > 0 ? 12 : 12,
+                        )
+                      : 12;
+
                   return (
-                    <View key={zone} className="flex-1 items-center">
+                    <View
+                      key={zone}
+                      className="flex-1 items-center justify-end"
+                    >
                       <View
-                        className={`w-full h-3 rounded mb-1 ${timeSeconds > 0 ? zoneColors[index] : zoneColorsInactive[index]}`}
+                        style={{ height: barHeight }}
+                        className={`w-full rounded mb-1 ${timeSeconds > 0 ? zoneColors[index] : zoneColorsInactive[index]}`}
                       />
                       <Text
                         className={`text-xs font-medium ${timeSeconds > 0 ? "" : "text-muted-foreground/50"}`}
@@ -145,23 +160,6 @@ export const HeartRateCard: React.FC<HeartRateCardProps> = ({
                 })}
               </View>
             </View>
-
-            {/* Threshold Metric */}
-            {hasThresholdData && (
-              <View className="flex-row justify-between items-center p-3 bg-orange-500/10 rounded-lg">
-                <View className="flex-row items-center">
-                  <Icon
-                    as={Target}
-                    size={16}
-                    className="text-orange-500 mr-2"
-                  />
-                  <Text className="text-sm font-medium">Max Threshold</Text>
-                </View>
-                <Text className="font-semibold text-orange-600">
-                  {maxPctThreshold}%
-                </Text>
-              </View>
-            )}
           </View>
         </CardContent>
       </Card>

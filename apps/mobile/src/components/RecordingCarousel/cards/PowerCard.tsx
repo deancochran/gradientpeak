@@ -6,6 +6,7 @@ import {
   useSessionStats,
 } from "@/lib/hooks/useActivityRecorder";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
+import { formatDurationCompactMs } from "@repo/core";
 import { Target, Zap } from "lucide-react-native";
 import React from "react";
 import { View } from "react-native";
@@ -44,12 +45,16 @@ export const PowerCard: React.FC<PowerCardProps> = ({
     z7: stats.powerZones[6],
   };
 
+  // Calculate max time for proportional heights
+  const maxZoneTime = Math.max(...Object.values(zones));
+  const MAX_BAR_HEIGHT = 80; // Maximum height in pixels
+
   return (
     <View style={{ width: screenWidth }} className="flex-1 p-4">
-      <Card className="flex-1">
-        <CardContent>
+      <Card className="flex-1  w-full h-full p-0 m-0">
+        <CardContent className="flex-col items-center w-full h-full  p-4 justify-between">
           {/* Header */}
-          <View className="flex-row items-center justify-between mb-6">
+          <View className="flex-row w-full items-center justify-between mb-6">
             <View className="flex-row items-center">
               <Icon as={Zap} size={24} className="text-yellow-500 mr-2" />
               <Text className="text-lg font-semibold">Power</Text>
@@ -63,7 +68,7 @@ export const PowerCard: React.FC<PowerCardProps> = ({
           </View>
 
           {/* Current Power - Large Display */}
-          <View className="items-center mb-8">
+          <View className="w-full items-center mb-8">
             <Text
               className={`text-5xl font-bold ${hasCurrentPower ? "text-yellow-500" : "text-yellow-500/30"}`}
             >
@@ -73,7 +78,7 @@ export const PowerCard: React.FC<PowerCardProps> = ({
           </View>
 
           {/* Power Metrics Grid */}
-          <View className="flex-row justify-around mb-6">
+          <View className="w-full flex-row justify-around mb-6">
             <View className="items-center">
               <Text
                 className={`text-2xl font-semibold ${avg > 0 ? "" : "text-muted-foreground/30"}`}
@@ -101,7 +106,7 @@ export const PowerCard: React.FC<PowerCardProps> = ({
           </View>
 
           {/* Work & Power Zones */}
-          <View className="gap-4">
+          <View className="w-full gap-4">
             <View className="flex-row items-center justify-between p-3 bg-muted/10 rounded-lg">
               <Text className="text-sm font-medium">Total Work</Text>
               <Text className="font-semibold">{totalWorkKJ} kJ</Text>
@@ -112,9 +117,12 @@ export const PowerCard: React.FC<PowerCardProps> = ({
               <Text className="text-sm font-medium text-muted-foreground mb-3">
                 Zone Distribution
               </Text>
-              <View className="flex-row gap-2">
+              <View
+                className="flex-row gap-2 items-end"
+                style={{ height: MAX_BAR_HEIGHT + 50 }}
+              >
                 {Object.entries(zones).map(([zone, timeSeconds], index) => {
-                  const minutes = Math.floor(timeSeconds / 60);
+                  const minutes = formatDurationCompactMs(timeSeconds);
                   const zoneColors = [
                     "bg-gray-400", // Z1
                     "bg-blue-400", // Z2
@@ -134,10 +142,23 @@ export const PowerCard: React.FC<PowerCardProps> = ({
                     "bg-purple-400/20",
                   ];
 
+                  // Calculate proportional height
+                  const barHeight =
+                    maxZoneTime > 0
+                      ? Math.max(
+                          (timeSeconds / maxZoneTime) * MAX_BAR_HEIGHT,
+                          timeSeconds > 0 ? 12 : 12,
+                        )
+                      : 12;
+
                   return (
-                    <View key={zone} className="flex-1 items-center">
+                    <View
+                      key={zone}
+                      className="flex-1 items-center justify-end"
+                    >
                       <View
-                        className={`w-full h-3 rounded mb-1 ${timeSeconds > 0 ? zoneColors[index] : zoneColorsInactive[index]}`}
+                        style={{ height: barHeight }}
+                        className={`w-full rounded mb-1 ${timeSeconds > 0 ? zoneColors[index] : zoneColorsInactive[index]}`}
                       />
                       <Text
                         className={`text-xs font-medium ${timeSeconds > 0 ? "" : "text-muted-foreground/50"}`}

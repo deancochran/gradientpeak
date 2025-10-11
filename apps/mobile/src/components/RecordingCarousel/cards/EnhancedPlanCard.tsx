@@ -4,21 +4,21 @@ import { Text } from "@/components/ui/text";
 import { useCurrentReadings, usePlan } from "@/lib/hooks/useActivityRecorder";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import {
-    ActivityPlanStructure,
-    extractActivityProfile,
-    formatDuration,
-    formatDurationCompact,
-    getDurationMs,
-    IntensityTarget,
+  ActivityPlanStructure,
+  extractActivityProfile,
+  formatDuration,
+  formatDurationCompactMs,
+  getDurationMs,
+  IntensityTarget,
 } from "@repo/core";
 import {
-    AlertTriangle,
-    Calendar,
-    CheckCircle2,
-    Clock,
-    Heart,
-    Target,
-    Zap,
+  AlertTriangle,
+  Calendar,
+  CheckCircle2,
+  Clock,
+  Heart,
+  Target,
+  Zap,
 } from "lucide-react-native";
 import React, { memo, useMemo } from "react";
 import { View } from "react-native";
@@ -165,7 +165,7 @@ function formatIntervalDescription(
   const parts: string[] = [];
 
   if (duration > 0) {
-    parts.push(formatDurationCompact(duration / 1000));
+    parts.push(formatDurationCompactMs(duration));
   }
 
   if (targets && targets.length > 0 && profile) {
@@ -568,7 +568,7 @@ const WorkoutGraphView = memo<WorkoutGraphViewProps>(
             Workout Profile
           </Text>
           <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-            Time Remaining: {formatDurationCompact(planTimeRemaining)}
+            Time Remaining: {formatDurationCompactMs(planTimeRemaining)}
           </Text>
         </View>
         <View className="bg-muted/20 rounded-lg border border-muted/20 p-2">
