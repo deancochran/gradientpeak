@@ -136,8 +136,8 @@ The core package (`@gradientpeak/core/samples`) provides 36 comprehensive workou
 
 #### Import Methods
 ```typescript
-// Import all samples
-import { SAMPLE_ACTIVITIES } from "@gradientpeak/core/samples";
+// Import all samples (36 total workouts)
+import { SAMPLE_ACTIVITIES, TOTAL_SAMPLE_ACTIVITIES } from "@gradientpeak/core/samples";
 
 // Import by activity type
 import { 
@@ -151,8 +151,12 @@ import {
 } from "@gradientpeak/core/samples";
 
 // Get activities by type dynamically
-import { getSampleActivitiesByType } from "@gradientpeak/core/samples";
-const runWorkouts = getSampleActivitiesByType('outdoor_run');
+import { getSampleActivitiesByType, SAMPLE_ACTIVITIES_BY_TYPE } from "@gradientpeak/core/samples";
+const runWorkouts = getSampleActivitiesByType('outdoor_run'); // 5 workouts
+const strengthWorkouts = SAMPLE_ACTIVITIES_BY_TYPE.indoor_strength; // 5 workouts
+
+// Verify total count
+console.log(TOTAL_SAMPLE_ACTIVITIES); // 36
 ```
 
 #### Available Workouts by Type:
@@ -170,6 +174,190 @@ Each workout includes:
 - Detailed notes and guidance for each step
 - Estimated TSS and total duration
 - Support for repetition blocks and nested structures
+
+### Available Utility Functions
+
+The core package provides several utility functions for working with structured activity plans:
+
+#### Import Utility Functions
+```typescript
+import { 
+  flattenPlanSteps,
+  getDurationMs,
+  getIntensityColor,
+  formatTargetRange,
+  getMetricDisplayName,
+  type FlattenedStep,
+  type ActivityPlanStructure,
+  type IntensityTarget 
+} from "@gradientpeak/core/schemas";
+```
+
+#### Core Utilities
+
+**`flattenPlanSteps(steps: StepOrRepetition[]): FlattenedStep[]`**
+- Flattens nested workout structure (with repetition blocks) into sequential steps
+- Adds index and repetition tracking to each step
+- Essential for UI rendering of workout progression
+
+```typescript
+const workout = getSampleActivitiesByType('outdoor_run')[0];
+const flatSteps = flattenPlanSteps(workout.structure.steps);
+// Returns array of steps with index, fromRepetition, originalRepetitionIndex
+```
+
+**`getDurationMs(duration: Duration): number`**
+- Converts Duration objects to milliseconds
+- Handles time, distance, and repetition-based durations
+- Returns 0 for "untilFinished" durations
+
+```typescript
+const step = flatSteps[0];
+const durationMs = getDurationMs(step.duration); // e.g., 900000 for 15 minutes
+```
+
+**`getIntensityColor(intensity: number, type?: string): string`**
+- Returns color hex codes based on training zones
+- Supports %FTP, %ThresholdHR, and other intensity types
+- Used for visual intensity indicators in UI
+
+```typescript
+const color = getIntensityColor(85, '%ThresholdHR'); // Returns zone-appropriate color
+```
+
+**`formatTargetRange(target: IntensityTarget): string`**
+- Formats intensity targets for display
+- Includes appropriate units and formatting
+- Handles min/max ranges and single values
+
+```typescript
+const target = step.targets[0];
+const displayText = formatTargetRange(target); // e.g., "85%FTP"
+```
+
+**`getMetricDisplayName(type: string): string`**
+- Returns human-readable names for target types
+- Maps technical names to user-friendly labels
+
+```typescript
+const displayName = getMetricDisplayName('%FTP'); // Returns "Power (FTP)"
+```
+
+#### Usage Examples
+
+**Follow-Along Screen Step Processing:**
+```typescript
+// Process workout for step-by-step guidance
+const workout = payload.plan;
+const steps = flattenPlanSteps(workout.structure.steps);
+
+steps.map((step, index) => ({
+  id: `step-${step.index}`,
+  name: step.name,
+  duration: getDurationMs(step.duration),
+  color: getIntensityColor(step.targets[0]?.intensity, step.targets[0]?.type),
+  targetDisplay: step.targets?.map(formatTargetRange).join(', ') || 'No target'
+}));
+```
+
+**Activity Summary Generation:**
+```typescript
+// Calculate workout totals
+const totalDuration = steps.reduce((sum, step) => 
+  sum + getDurationMs(step.duration), 0
+);
+
+const intensityDistribution = steps.reduce((acc, step) => {
+  const target = step.targets[0];
+  if (target) {
+    const zone = getIntensityZone(target.intensity, target.type);
+    acc[zone] = (acc[zone] || 0) + getDurationMs(step.duration);
+  }
+  return acc;
+}, {});
+```
+
+### Data Validation and Type Safety
+
+The core package provides comprehensive type safety for activity plans:
+
+#### Type Definitions
+```typescript
+import type {
+  RecordingServiceActivityPlan,
+  ActivityPlanStructure,
+  StepOrRepetition,
+  Step,
+  RepetitionBlock,
+  FlattenedStep,
+  IntensityTarget,
+  Duration
+} from "@gradientpeak/core/schemas";
+```
+
+#### Runtime Validation
+```typescript
+import { 
+  activityPlanStructureSchema,
+  stepSchema,
+  repetitionSchema,
+  durationSchema,
+  intensityTargetSchema
+} from "@gradientpeak/core/schemas";
+
+// Validate activity plan structure
+const validateActivityPlan = (plan: unknown): RecordingServiceActivityPlan => {
+  return activityPlanStructureSchema.parse(plan);
+};
+
+// Validate individual steps
+const validateStep = (step: unknown): Step => {
+  return stepSchema.parse(step);
+};
+```
+
+#### Type Guards
+```typescript
+// Check if step is a repetition block
+const isRepetitionBlock = (step: StepOrRepetition): step is RepetitionBlock => {
+  return step.type === 'repetition';
+};
+
+// Check if duration is time-based
+const isTimeBased = (duration: Duration): duration is { type: 'time'; value: number; unit?: string } => {
+  return duration !== 'untilFinished' && duration.type === 'time';
+};
+
+// Safely access nested properties
+const getStepDuration = (step: FlattenedStep): number => {
+  if (step.duration === 'untilFinished') return 0;
+  return getDurationMs(step.duration);
+};
+```
+
+#### Error Handling
+```typescript
+// Safe activity plan processing
+const processSampleActivity = (activityType: string) => {
+  try {
+    const activities = getSampleActivitiesByType(activityType as keyof typeof SAMPLE_ACTIVITIES_BY_TYPE);
+    
+    if (!activities || activities.length === 0) {
+      throw new Error(`No activities found for type: ${activityType}`);
+    }
+    
+    return activities.map(activity => ({
+      ...activity,
+      flattenedSteps: flattenPlanSteps(activity.structure.steps),
+      totalDuration: flattenPlanSteps(activity.structure.steps)
+        .reduce((sum, step) => sum + getStepDuration(step), 0)
+    }));
+  } catch (error) {
+    console.error('Failed to process activity:', error);
+    return [];
+  }
+};
+```
 
 ### 2. Updated Record Launcher (`record-launcher.tsx`)
 
@@ -445,7 +633,8 @@ import { ChevronLeft, Footprints, Bike, Dumbbell, Waves, Activity } from 'lucide
 import { PublicActivityType } from '@repo/supabase';
 import { 
   getSampleActivitiesByType,
-  SAMPLE_ACTIVITIES_BY_TYPE 
+  SAMPLE_ACTIVITIES_BY_TYPE,
+  type RecordingServiceActivityPlan 
 } from '@gradientpeak/core/samples';
 
 const CATEGORIES = [
@@ -458,7 +647,13 @@ const CATEGORIES = [
   { id: 'other', name: 'Other Activities', icon: Activity },
 ];
 
-const getTemplatesByCategory = (category: string) => {
+const getTemplatesByCategory = (category: string): Array<{
+  id: string;
+  type: PublicActivityType;
+  title: string;
+  duration: number;
+  plan: RecordingServiceActivityPlan;
+}> => {
   // Get real sample activities from core package
   const activities = getSampleActivitiesByType(category as keyof typeof SAMPLE_ACTIVITIES_BY_TYPE);
   
@@ -468,12 +663,7 @@ const getTemplatesByCategory = (category: string) => {
     type: activity.activity_type as PublicActivityType,
     title: activity.name,
     duration: activity.estimated_duration || 3600,
-    plan: {
-      name: activity.name,
-      description: activity.description,
-      structure: activity.structure,
-      estimated_tss: activity.estimated_tss
-    }
+    plan: activity // Already in correct RecordingServiceActivityPlan format
   }));
 };
 
@@ -722,8 +912,9 @@ import {
   flattenPlanSteps, 
   formatTargetRange, 
   getMetricDisplayName,
+  getIntensityColor,
   type FlattenedStep 
-} from "@repo/core/schemas/activity_plan_structure";
+} from "@gradientpeak/core/schemas";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH - 48; // Account for padding
@@ -1185,7 +1376,7 @@ These examples show the actual payload structure using real workout plans from `
 - [x] Identify existing UI components to leverage
 - [ ] Create `@gradientpeak/core/types/activity.ts`
 - [ ] Add helper functions for activity categorization
-- [ ] Update `@gradientpeak/core/index.ts` exports
+- [ ] Verify `@gradientpeak/core/index.ts` exports (✅ Already includes samples and schemas)
 
 ### Phase 2: UI Components (3 days)
 - [ ] Update `record-launcher.tsx` with Tabs implementation
@@ -1208,10 +1399,10 @@ These examples show the actual payload structure using real workout plans from `
 
 ### Phase 5: API Integration (2 days)
 - [ ] Implement planned activities API endpoint
-- [ ] Create templates API with category filtering (leverage `@gradientpeak/core/samples` for initial data)
 - [ ] Add PDF generation endpoint
-- [ ] Replace sample data from `@gradientpeak/core/samples` with real API calls
-- [ ] Note: Currently using 36 comprehensive workout plans from core package as templates
+- [ ] Replace sample data from `@gradientpeak/core/samples` with real API calls (optional)
+- [ ] Note: Templates API NOT NEEDED - 36 comprehensive workout plans available from `@gradientpeak/core/samples`
+- [ ] Note: Sample data can serve as permanent templates or be replaced later with dynamic API
 
 ---
 
@@ -1219,6 +1410,9 @@ These examples show the actual payload structure using real workout plans from `
 
 ### Required Endpoints
 
+**Core endpoints needed for the Record Launcher flow:**
+
+**Note:** Template/workout data is provided by `@gradientpeak/core/samples` (36 workouts) - no templates API needed initially.
 ```typescript
 // Get user's planned activities
 GET /api/mobile/planned-activities
@@ -1237,20 +1431,9 @@ Response: {
   }>
 }
 
-// Get activity templates by category
-GET /api/mobile/templates?category=running
-Response: {
-  data: Array<{
-    id: string;
-    name: string;
-    activity_type: PublicActivityType;
-    structure: ActivityPlanStructure;
-    difficulty: 'beginner' | 'intermediate' | 'advanced';
-    duration_estimate: number;
-  }>
-}
+// Get activity templates by category (NOT NEEDED - USE @gradientpeak/core/samples)
 
-// Generate PDF for activity plan
+// Generate PDF for activity plan 
 POST /api/mobile/activities/pdf
 Body: { 
   activityPayload: ActivityPayload 
@@ -1260,6 +1443,110 @@ Response: {
   expiresAt: string;
 }
 ```
+
+---
+
+## ✅ Core Package Integration Verification
+
+Before implementing the mobile components, verify the core package integration is working correctly:
+
+### Verification Checklist
+
+#### 1. Sample Data Exports ✅
+```bash
+# Test in packages/core directory
+cd packages/core
+node -e "
+const { 
+  SAMPLE_ACTIVITIES, 
+  TOTAL_SAMPLE_ACTIVITIES, 
+  getSampleActivitiesByType, 
+  SAMPLE_ACTIVITIES_BY_TYPE 
+} = require('./samples');
+console.log('✅ Sample exports working');
+console.log('Total activities:', TOTAL_SAMPLE_ACTIVITIES);
+console.log('Activity types:', Object.keys(SAMPLE_ACTIVITIES_BY_TYPE));
+console.log('Outdoor run activities:', getSampleActivitiesByType('outdoor_run').length);
+"
+```
+
+#### 2. Utility Functions ✅
+```bash
+# Test utility functions
+node -e "
+const { 
+  flattenPlanSteps, 
+  getDurationMs, 
+  getIntensityColor, 
+  formatTargetRange 
+} = require('./schemas');
+const { getSampleActivitiesByType } = require('./samples');
+
+const activity = getSampleActivitiesByType('outdoor_run')[0];
+const steps = flattenPlanSteps(activity.structure.steps);
+console.log('✅ Utility functions working');
+console.log('Flattened steps:', steps.length);
+console.log('First step duration:', getDurationMs(steps[0].duration));
+"
+```
+
+#### 3. TypeScript Types ✅
+```typescript
+// Verify imports work in mobile app
+import type {
+  RecordingServiceActivityPlan,
+  ActivityPlanStructure,
+  FlattenedStep,
+  IntensityTarget
+} from '@gradientpeak/core/schemas';
+
+import { 
+  SAMPLE_ACTIVITIES,
+  getSampleActivitiesByType,
+  type RecordingServiceActivityPlan as SamplePlan
+} from '@gradientpeak/core/samples';
+```
+
+#### 4. Mobile Integration Test
+```typescript
+// Test in mobile app component
+const testCoreIntegration = () => {
+  try {
+    // Test sample data access
+    const allActivities = SAMPLE_ACTIVITIES;
+    const runActivities = getSampleActivitiesByType('outdoor_run');
+    
+    // Test utility functions
+    const firstActivity = runActivities[0];
+    const flatSteps = flattenPlanSteps(firstActivity.structure.steps);
+    
+    console.log('✅ Core integration successful:', {
+      totalActivities: allActivities.length,
+      runActivities: runActivities.length,
+      firstActivitySteps: flatSteps.length
+    });
+    
+    return true;
+  } catch (error) {
+    console.error('❌ Core integration failed:', error);
+    return false;
+  }
+};
+```
+
+### Expected Results
+- ✅ 36 total sample activities across 7 activity types
+- ✅ Each activity type has 5+ workout variations
+- ✅ Utility functions process workout structures correctly
+- ✅ TypeScript types provide proper type safety
+- ✅ Mobile app can import and use all exports
+
+### Troubleshooting
+If verification fails:
+1. Ensure `@gradientpeak/core` is properly built
+2. Check TypeScript paths in `tsconfig.json`
+3. Verify all exports in `packages/core/index.ts`
+4. Check for circular dependency issues
 
 ---
 
