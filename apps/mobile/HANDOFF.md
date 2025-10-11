@@ -1,5 +1,38 @@
 # 🚀 Record Launcher Flow - Implementation Handoff
 
+## 🔴 CRITICAL IMPLEMENTATION REQUIREMENTS
+
+### Must Create (Does Not Exist Yet)
+1. **ActivityPayload Type & Schema** - Create `@repo/core/schemas/activity_payload.ts`
+   - Define `ActivityPayloadSchema` using Zod
+   - Export `ActivityPayload` type
+   - Add helper functions: `isContinuousActivity`, `isStepBasedActivity`, `isOutdoorActivity`
+
+2. **Service Method** - Add to `ActivityRecorderService` class
+   - Create `selectActivityFromPayload(payload: ActivityPayload): void` method
+   - Method should use existing `selectPlan()` and `clearPlan()` methods
+
+3. **Core Package Export** - Update `@repo/core/schemas/index.ts`
+   - Add `export * from "./activity_payload"`
+
+### Verified Existing APIs
+- ✅ **Service Methods Available**: `selectPlan()`, `clearPlan()`, `selectUnplannedActivity()`
+- ✅ **Types Available**: `PublicActivityType`, `RecordingServiceActivityPlan`
+- ✅ **36 Sample Workouts**: Available in `@repo/core/samples`
+- ✅ **Utility Functions**: `flattenPlanSteps()`, `getDurationMs()`, `getIntensityColor()`
+
+### Payload Passing Strategy
+- **Use JSON.stringify() in URL params** for MVP (handles up to 10KB fine)
+- **Parse with validation** in receiving screens using `ActivityPayloadSchema.parse()`
+- **Error handling required** with Alert.alert and router.back() on failure
+
+### Implementation Order
+1. Create ActivityPayload type/schema in core package
+2. Add selectActivityFromPayload method to service
+3. Update record/index.tsx to parse and validate payload
+4. Update follow-along/index.tsx to parse and validate payload
+5. Test all three flows: quick-start, templates, planned activities
+
 ## Overview
 
 This document outlines the refactoring of the GradientPeak mobile app's activity recording system to implement a modern, tab-based launcher flow with smart routing and enhanced user experience.
@@ -86,48 +119,62 @@ gradientpeak/
 
 ### Existing Files to Update
 - `apps/mobile/src/app/(internal)/record/index.tsx` - Parse ActivityPayload from params
-- `apps/mobile/src/lib/services/ActivityRecorder/index.ts` - Add payload handler method
+- `apps/mobile/src/lib/services/ActivityRecorder/index.ts` - Add selectActivityFromPayload method (DOES NOT EXIST YET)
 - `packages/core/schemas/index.ts` - Export new schemas if needed
 
 ---
 
 ## 🔧 Core Components
 
-### 1. Core Types (`@gradientpeak/core/types/activity.ts`)
+### 1. Core Types (TO BE CREATED: `@gradientpeak/core/schemas/activity_payload.ts`)
+
+**IMPORTANT**: The ActivityPayload type and schema DO NOT EXIST YET in the core package. They need to be created.
+
+Create a new file `activity_payload.ts` in the schemas directory with the following:
 
 ```typescript
 import { z } from "zod";
-import { publicActivityTypeSchema } from "@repo/supabase/supazod/schemas";
-import { activityPlanStructureSchema } from "../schemas/activity_plan_structure";
+import { publicActivityTypeSchema } from "@repo/supabase";
+import { activityPlanStructureSchema } from "./activity_plan_structure";
+import type { RecordingServiceActivityPlan } from "./index";
 
 // Re-export the activity type from Supabase
-export const ActivityType = publicActivityTypeSchema;
-export type ActivityType = z.infer<typeof ActivityType>;
+export const ActivityTypeSchema = publicActivityTypeSchema;
+export type ActivityType = z.infer<typeof ActivityTypeSchema>;
 
-// Define ActivityPayload without intent field
+// Define ActivityPayload for navigation
 export const ActivityPayloadSchema = z.object({
-  type: ActivityType,
+  type: ActivityTypeSchema,
   plannedActivityId: z.string().optional(), // Links to planned_activities table
   plan: z.object({
     name: z.string().optional(),
-    structure: activityPlanStructureSchema.optional(),
-  }).nullable(),
+    description: z.string().optional(),
+    estimated_duration: z.number().optional(),
+    estimated_tss: z.number().optional(),
+    structure: activityPlanStructureSchema,
+  }).optional().nullable(),
 });
 
 export type ActivityPayload = z.infer<typeof ActivityPayloadSchema>;
 
 // Helper functions using actual activity types from Supabase
 export const isContinuousActivity = (type: ActivityType): boolean => {
-  return ['outdoor_run', 'outdoor_bike', 'indoor_bike_trainer', 'indoor_treadmill'].includes(type);
+  return ['outdoor_run', 'outdoor_bike', 'indoor_treadmill', 'indoor_bike_trainer', 'indoor_swim'].includes(type);
 };
 
 export const isStepBasedActivity = (type: ActivityType): boolean => {
-  return ['indoor_strength', 'indoor_swim'].includes(type);
+  return ['indoor_strength', 'other'].includes(type);
 };
 
 export const isOutdoorActivity = (type: ActivityType): boolean => {
-  return ['outdoor_run', 'outdoor_bike'].includes(type);
+  return type.startsWith('outdoor_');
 };
+```
+
+Then update `@gradientpeak/core/schemas/index.ts` to export the new file:
+```typescript
+export * from "./activity_plan_structure";
+export * from "./activity_payload"; // ADD THIS LINE
 ```
 
 ### Available Sample Workouts
@@ -140,7 +187,7 @@ The core package (`@gradientpeak/core/samples`) provides 36 comprehensive workou
 import { SAMPLE_ACTIVITIES, TOTAL_SAMPLE_ACTIVITIES } from "@gradientpeak/core/samples";
 
 // Import by activity type
-import { 
+import {
   SAMPLE_OUTDOOR_RUN_ACTIVITIES,
   SAMPLE_OUTDOOR_BIKE_ACTIVITIES,
   SAMPLE_INDOOR_TRAINER_ACTIVITIES,
@@ -181,7 +228,7 @@ The core package provides several utility functions for working with structured 
 
 #### Import Utility Functions
 ```typescript
-import { 
+import {
   flattenPlanSteps,
   getDurationMs,
   getIntensityColor,
@@ -189,7 +236,7 @@ import {
   getMetricDisplayName,
   type FlattenedStep,
   type ActivityPlanStructure,
-  type IntensityTarget 
+  type IntensityTarget
 } from "@gradientpeak/core/schemas";
 ```
 
@@ -263,7 +310,7 @@ steps.map((step, index) => ({
 **Activity Summary Generation:**
 ```typescript
 // Calculate workout totals
-const totalDuration = steps.reduce((sum, step) => 
+const totalDuration = steps.reduce((sum, step) =>
   sum + getDurationMs(step.duration), 0
 );
 
@@ -297,7 +344,7 @@ import type {
 
 #### Runtime Validation
 ```typescript
-import { 
+import {
   activityPlanStructureSchema,
   stepSchema,
   repetitionSchema,
@@ -341,11 +388,11 @@ const getStepDuration = (step: FlattenedStep): number => {
 const processSampleActivity = (activityType: string) => {
   try {
     const activities = getSampleActivitiesByType(activityType as keyof typeof SAMPLE_ACTIVITIES_BY_TYPE);
-    
+
     if (!activities || activities.length === 0) {
       throw new Error(`No activities found for type: ${activityType}`);
     }
-    
+
     return activities.map(activity => ({
       ...activity,
       flattenedSteps: flattenPlanSteps(activity.structure.steps),
@@ -368,9 +415,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { QuickStartList } from "@/components/record/QuickStartList";
 import { PlannedActivitiesList } from "@/components/record/PlannedActivitiesList";
 import { TemplatesList } from "@/components/record/TemplatesList";
-import { isContinuousActivity, type ActivityPayload } from "@repo/core/types/activity";
+import { isContinuousActivity, type ActivityPayload } from "@repo/core/schemas";
 import { useRouter } from "expo-router";
-import { View, Alert, Share } from "react-native";
+import { View, Alert } from "react-native";
 import { useState } from "react";
 
 export default function RecordLauncher() {
@@ -382,7 +429,7 @@ export default function RecordLauncher() {
     const isContinuous = isContinuousActivity(payload.type);
     const hasStructure = !!payload.plan?.structure;
 
-    // Serialize payload for URL params
+    // Serialize payload for URL params (modern devices handle this fine)
     const params = { payload: JSON.stringify(payload) };
 
     if (!hasStructure || isContinuous) {
@@ -405,10 +452,6 @@ export default function RecordLauncher() {
       "Options",
       "Choose an action",
       [
-        {
-          text: "Generate PDF",
-          onPress: () => console.log("Generate PDF", activity),
-        },
         {
           text: "Share",
           onPress: () => {
@@ -631,10 +674,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ActivityCard } from './ActivityCard';
 import { ChevronLeft, Footprints, Bike, Dumbbell, Waves, Activity } from 'lucide-react-native';
 import { PublicActivityType } from '@repo/supabase';
-import { 
+import {
   getSampleActivitiesByType,
   SAMPLE_ACTIVITIES_BY_TYPE,
-  type RecordingServiceActivityPlan 
+  type RecordingServiceActivityPlan
 } from '@gradientpeak/core/samples';
 
 const CATEGORIES = [
@@ -656,7 +699,7 @@ const getTemplatesByCategory = (category: string): Array<{
 }> => {
   // Get real sample activities from core package
   const activities = getSampleActivitiesByType(category as keyof typeof SAMPLE_ACTIVITIES_BY_TYPE);
-  
+
   // Transform to match expected format
   return activities.map((activity, index) => ({
     id: `${category}-${index}`,
@@ -675,14 +718,14 @@ interface TemplatesListProps {
 export function TemplatesList({ onTemplateSelect, onTemplateMenuPress }: TemplatesListProps) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [templates, setTemplates] = useState<any[]>([]);
-  
+
   React.useEffect(() => {
     if (selectedCategory) {
       const categoryTemplates = getTemplatesByCategory(selectedCategory);
       setTemplates(categoryTemplates);
     }
   }, [selectedCategory]);
-  
+
   if (!selectedCategory) {
     // Show categories grid
     return (
@@ -707,7 +750,7 @@ export function TemplatesList({ onTemplateSelect, onTemplateMenuPress }: Templat
       </ScrollView>
     );
   }
-  
+
   // Show templates for selected category
   return (
     <View className="flex-1">
@@ -720,12 +763,12 @@ export function TemplatesList({ onTemplateSelect, onTemplateMenuPress }: Templat
           <Icon as={ChevronLeft} size={20} className="mr-1" />
           <Text>Back to Categories</Text>
         </Button>
-        
+
         <Text variant="h3" className="mt-2">
           {CATEGORIES.find(c => c.id === selectedCategory)?.name}
         </Text>
       </View>
-      
+
       <FlatList
         data={templates}
         contentContainerStyle={{ padding: 16 }}
@@ -752,8 +795,8 @@ import { Text } from "@/components/ui/text";
 import { ActivityCard } from './ActivityCard';
 import { useQuery } from '@tanstack/react-query';
 
-import { 
-  SAMPLE_ACTIVITIES 
+import {
+  SAMPLE_ACTIVITIES
 } from '@gradientpeak/core/samples';
 
 interface PlannedActivitiesListProps {
@@ -768,7 +811,7 @@ export function PlannedActivitiesList({ onActivitySelect, onActivityMenuPress }:
     queryFn: async () => {
       // Use sample activities from core package - replace with actual API call
       const sampleActivities = SAMPLE_ACTIVITIES.slice(0, 3); // Get first 3 samples
-      
+
       return sampleActivities.map((activity, index) => ({
         id: `planned-${index}`,
         type: activity.activity_type,
@@ -825,73 +868,92 @@ export function PlannedActivitiesList({ onActivitySelect, onActivityMenuPress }:
 
 ```typescript
 // apps/mobile/src/app/(internal)/record/index.tsx
-import { ActivityPayload } from "@repo/core/types/activity";
+import { ActivityPayload, ActivityPayloadSchema } from "@repo/core/schemas";
 import { useLocalSearchParams } from "expo-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { Alert } from "react-native";
+import { useRouter } from "expo-router";
 
 export default function RecordModal() {
   const params = useLocalSearchParams();
+  const router = useRouter();
   const service = useSharedActivityRecorder();
-  
+  const [error, setError] = useState<string | null>(null);
+
   // Parse payload from navigation params
   useEffect(() => {
-    if (params.payload) {
-      try {
-        const payload: ActivityPayload = JSON.parse(params.payload as string);
-        
-        // Set activity type
-        service?.selectUnplannedActivity(payload.type);
-        
-        // Set plan if available
-        if (payload.plan?.structure && payload.plannedActivityId) {
-          service?.selectPlan(
-            {
-              name: payload.plan.name || `${payload.type} workout`,
-              activity_type: payload.type,
-              structure: payload.plan.structure,
-              // ... other plan fields
-            },
-            payload.plannedActivityId
-          );
-        }
-      } catch (error) {
-        console.error("Failed to parse activity payload:", error);
-      }
+    if (!params.payload || !service) return;
+
+    try {
+      const rawPayload = JSON.parse(params.payload as string);
+      const payload = ActivityPayloadSchema.parse(rawPayload);
+
+      // Use the new method that will be added to the service
+      service.selectActivityFromPayload(payload);
+    } catch (err) {
+      console.error("[Record] Payload error:", err);
+      setError("Invalid activity data");
+      Alert.alert(
+        "Unable to Start Activity",
+        "Please try selecting the activity again.",
+        [{ text: "Go Back", onPress: () => router.back() }]
+      );
     }
   }, [params.payload, service]);
-  
+
+  // Handle error state
+  if (error) {
+    return (
+      <View className="flex-1 justify-center items-center p-8">
+        <Text className="text-destructive">{error}</Text>
+      </View>
+    );
+  }
+
   // ... rest of component
 }
 ```
 
 ### 8. Service Enhancement
 
+**IMPORTANT**: The selectActivityFromPayload method DOES NOT EXIST in the service yet. Add this method to handle the ActivityPayload:
+
 ```typescript
 // apps/mobile/src/lib/services/ActivityRecorder/index.ts
-// Add new method to handle ActivityPayload
+// Add this NEW method to the ActivityRecorderService class
 
 selectActivityFromPayload(payload: ActivityPayload): void {
   console.log("[Service] Selecting activity from payload:", payload);
-  
-  // Set activity type
+
+  // Set activity type (uses existing property)
   this.selectedActivityType = payload.type;
-  
-  // Handle plan if present
+  this.emit("activityTypeChanged", payload.type);
+
+  // Handle structured activities with plans
   if (payload.plan?.structure) {
     const plan: RecordingServiceActivityPlan = {
-      name: payload.plan.name || `${payload.type} workout`,
+      name: payload.plan.name || `${payload.type.replace(/_/g, ' ')} workout`,
+      description: payload.plan.description || '',
       activity_type: payload.type,
       structure: payload.plan.structure,
-      // Map other fields as needed
+      estimated_duration: payload.plan.estimated_duration || 0,
+      estimated_tss: payload.plan.estimated_tss || 0,
     };
-    
+
+    // Use existing selectPlan method
     this.selectPlan(plan, payload.plannedActivityId);
   } else {
+    // Use existing clearPlan method for quick-start activities
     this.clearPlan();
+    // Emit event for UI updates
+    this.emit("activitySelected", payload.type);
   }
-  
-  this.emit("activitySelected", payload.type);
 }
+
+// Note: The service already has these methods that we're using:
+// - selectPlan(plan: RecordingServiceActivityPlan, plannedId?: string): void
+// - clearPlan(): void
+// - selectUnplannedActivity(type: PublicActivityType): void (alternative approach)
 ```
 
 ### 9. Follow-Along Screen (`/follow-along/index.tsx`)
@@ -908,12 +970,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { X, Clock, Target, ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ActivityPayload } from "@repo/core/types/activity";
-import { 
-  flattenPlanSteps, 
-  formatTargetRange, 
+import {
+  flattenPlanSteps,
+  formatTargetRange,
   getMetricDisplayName,
   getIntensityColor,
-  type FlattenedStep 
+  type FlattenedStep
 } from "@gradientpeak/core/schemas";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -929,7 +991,7 @@ function StepCard({ step, index, isActive }: StepCardProps) {
   const formatDuration = (duration: any) => {
     if (duration === "untilFinished") return "Until finished";
     if (!duration) return "No duration";
-    
+
     const { value, unit } = duration;
     return `${value} ${unit}`;
   };
@@ -1005,14 +1067,14 @@ function ActivityGraph({ steps, currentIndex }: { steps: FlattenedStep[], curren
       <View className="bg-muted/20 rounded-lg border border-muted/20 p-3">
         <View className="flex-row items-end" style={{ height: 60 }}>
           {steps.map((step, index) => {
-            const duration = step.duration === "untilFinished" || !step.duration 
-              ? 300 
+            const duration = step.duration === "untilFinished" || !step.duration
+              ? 300
               : step.duration.value || 0;
             const width = Math.max(8, (duration / totalDuration) * 100);
             const maxIntensity = step.targets?.[0]?.intensity || 50;
             const height = Math.max(20, Math.min(100, (maxIntensity / 100) * 100));
             const isActive = index === currentIndex;
-            
+
             return (
               <View
                 key={index}
@@ -1044,20 +1106,30 @@ export default function FollowAlongScreen() {
   const params = useLocalSearchParams();
   const scrollViewRef = useRef<ScrollView>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
-  
-  // Parse activity payload
-  const payload: ActivityPayload = params.payload 
-    ? JSON.parse(params.payload as string) 
+
+  // Parse activity payload with validation
+  const payload: ActivityPayload | null = params.payload
+    ? (() => {
+        try {
+          const raw = JSON.parse(params.payload as string);
+          return ActivityPayloadSchema.parse(raw);
+        } catch (err) {
+          console.error("[FollowAlong] Invalid payload:", err);
+          Alert.alert("Invalid Activity", "Unable to load workout data");
+          router.back();
+          return null;
+        }
+      })()
     : null;
-  
+
   if (!payload?.plan?.structure) {
     return (
       <View className="flex-1 justify-center items-center p-8">
         <Text className="text-center text-muted-foreground">
           No workout plan available
         </Text>
-        <Button 
-          onPress={() => router.back()} 
+        <Button
+          onPress={() => router.back()}
           className="mt-4"
         >
           Go Back
@@ -1113,16 +1185,16 @@ export default function FollowAlongScreen() {
           onMomentumScrollEnd={handleScroll}
           snapToInterval={CARD_WIDTH + 16}
           decelerationRate="fast"
-          contentContainerStyle={{ 
+          contentContainerStyle={{
             paddingHorizontal: 8,
             alignItems: 'center'
           }}
           className="flex-1"
         >
           {steps.map((step, index) => (
-            <StepCard 
-              key={index} 
-              step={step} 
+            <StepCard
+              key={index}
+              step={step}
               index={index}
               isActive={index === currentIndex}
             />
@@ -1277,9 +1349,9 @@ These examples show the actual payload structure using real workout plans from `
     "estimated_tss": 85,
     "structure": {
       "steps": [
-        { 
-          "type": "step", 
-          "name": "Easy Warm-up", 
+        {
+          "type": "step",
+          "name": "Easy Warm-up",
           "duration": { "type": "time", "value": 900, "unit": "seconds" },
           "targets": [{ "type": "%FTP", "intensity": 55 }],
           "notes": "Start easy and gradually build intensity"
@@ -1348,24 +1420,6 @@ These examples show the actual payload structure using real workout plans from `
    - Standard sizes: 24 for primary, 20 for secondary, 32 for categories
    - Use `className="text-primary"` for colored icons
 
-### Styling Patterns
-
-```typescript
-// Container styles
-"flex-1 bg-background"           // Main container
-"p-4"                            // Standard padding
-"mb-3"                           // Card spacing
-
-// Typography
-"text-lg font-medium"            // Card titles
-"text-sm text-muted-foreground"  // Secondary text
-"text-center"                    // Centered text
-
-// Interactive elements
-"bg-primary/10 p-3 rounded-lg"  // Icon containers
-"active:opacity-70"              // Touch feedback
-"hitSlop={{ top: 10, ... }}"    // Expanded touch area
-```
 
 ---
 
@@ -1399,14 +1453,116 @@ These examples show the actual payload structure using real workout plans from `
 
 ### Phase 5: API Integration (2 days)
 - [ ] Implement planned activities API endpoint
-- [ ] Add PDF generation endpoint
 - [ ] Replace sample data from `@gradientpeak/core/samples` with real API calls (optional)
 - [ ] Note: Templates API NOT NEEDED - 36 comprehensive workout plans available from `@gradientpeak/core/samples`
 - [ ] Note: Sample data can serve as permanent templates or be replaced later with dynamic API
 
 ---
 
+## 💾 Payload Passing Strategy
+
+### URL Parameter Approach (Recommended for MVP)
+
+For MVP, use JSON.stringify directly in URL parameters. This is simple and works well for the expected payload sizes:
+
+```typescript
+// Navigation with payload
+const handleActivitySelected = (payload: ActivityPayload) => {
+  const targetRoute = getTargetRoute(payload);
+
+  router.push({
+    pathname: targetRoute,
+    params: { payload: JSON.stringify(payload) }
+  });
+};
+```
+
+**Expected Payload Sizes:**
+- **Quick Start**: ~50 characters (just type and null plan)
+- **Templates**: 500-4000 characters (includes full structure)
+- **Complex Workouts**: Up to 10,000 characters (50+ step workouts)
+
+**Why this works:**
+- React Navigation handles these sizes without issues
+- Modern devices have no problem with these URL lengths
+- Simplest implementation with no caching layer needed
+- If limits are hit later, can optimize then
+
+---
+
+## 🚨 Error Handling
+
+### Required Error States
+
+All screens that receive payloads must handle these error cases:
+
+```typescript
+// Standard error handling pattern
+useEffect(() => {
+  if (!params.payload || !service) return;
+
+  try {
+    const rawPayload = JSON.parse(params.payload as string);
+    const payload = ActivityPayloadSchema.parse(rawPayload);
+
+    service.selectActivityFromPayload(payload);
+  } catch (err) {
+    console.error("[Screen] Payload error:", err);
+
+    // User-friendly error handling
+    Alert.alert(
+      "Unable to Start Activity",
+      "Please try selecting the activity again.",
+      [{ text: "Go Back", onPress: () => router.back() }]
+    );
+  }
+}, [params.payload, service]);
+```
+
+### Error Types to Handle
+
+1. **Invalid JSON**: Malformed payload string
+2. **Schema Validation**: Payload doesn't match ActivityPayloadSchema
+3. **Missing Service**: ActivityRecorder not initialized
+4. **Empty Payload**: No payload provided in params
+5. **Invalid Activity Type**: Unknown activity type
+6. **Network Failures**: API calls fail (for planned activities)
+
+### Recovery Actions
+
+- **Always provide user feedback**: Use Alert.alert for critical errors
+- **Offer recovery path**: "Go Back" or "Try Again" options
+- **Log for debugging**: Console.error with context
+- **Graceful degradation**: Fall back to quick-start if structure fails
+
+---
+
 ## 📝 API Requirements
+
+### VERIFICATION NOTES
+
+#### ✅ VERIFIED - Existing APIs
+- **Core package exports**: calculations, constants, database-types, samples, schemas
+- **PublicActivityType**: Imported from `@repo/supabase`
+- **RecordingServiceActivityPlan**: Exists in `core/schemas/index.ts`
+- **Service methods available**:
+  - `selectPlan(plan: RecordingServiceActivityPlan, plannedId?: string): void`
+  - `clearPlan(): void`
+  - `selectUnplannedActivity(type: PublicActivityType): void`
+  - Event emitters: `activityTypeChanged`, `planSelected`, `activitySelected`
+
+#### ⚠️ MUST CREATE - Missing Components
+1. **ActivityPayload type/schema**: Create in `@repo/core/schemas/activity_payload.ts`
+2. **selectActivityFromPayload method**: Add to `ActivityRecorderService` class
+3. **Export ActivityPayload**: Update `@repo/core/schemas/index.ts` exports
+
+#### 🔍 Implementation Checklist
+- [ ] Create `packages/core/schemas/activity_payload.ts` with ActivityPayload type
+- [ ] Export from `packages/core/schemas/index.ts`
+- [ ] Add `selectActivityFromPayload` method to ActivityRecorderService
+- [ ] Update `/record/index.tsx` to parse and validate payload
+- [ ] Update `/follow-along/index.tsx` to parse and validate payload
+- [ ] Test with all three flows: quick-start, templates, planned activities
 
 ### Required Endpoints
 
@@ -1431,180 +1587,7 @@ Response: {
   }>
 }
 
-// Get activity templates by category (NOT NEEDED - USE @gradientpeak/core/samples)
-
-// Generate PDF for activity plan 
-POST /api/mobile/activities/pdf
-Body: { 
-  activityPayload: ActivityPayload 
-}
-Response: { 
-  url: string;
-  expiresAt: string;
-}
 ```
-
----
-
-## ✅ Core Package Integration Verification
-
-Before implementing the mobile components, verify the core package integration is working correctly:
-
-### Verification Checklist
-
-#### 1. Sample Data Exports ✅
-```bash
-# Test in packages/core directory
-cd packages/core
-node -e "
-const { 
-  SAMPLE_ACTIVITIES, 
-  TOTAL_SAMPLE_ACTIVITIES, 
-  getSampleActivitiesByType, 
-  SAMPLE_ACTIVITIES_BY_TYPE 
-} = require('./samples');
-console.log('✅ Sample exports working');
-console.log('Total activities:', TOTAL_SAMPLE_ACTIVITIES);
-console.log('Activity types:', Object.keys(SAMPLE_ACTIVITIES_BY_TYPE));
-console.log('Outdoor run activities:', getSampleActivitiesByType('outdoor_run').length);
-"
-```
-
-#### 2. Utility Functions ✅
-```bash
-# Test utility functions
-node -e "
-const { 
-  flattenPlanSteps, 
-  getDurationMs, 
-  getIntensityColor, 
-  formatTargetRange 
-} = require('./schemas');
-const { getSampleActivitiesByType } = require('./samples');
-
-const activity = getSampleActivitiesByType('outdoor_run')[0];
-const steps = flattenPlanSteps(activity.structure.steps);
-console.log('✅ Utility functions working');
-console.log('Flattened steps:', steps.length);
-console.log('First step duration:', getDurationMs(steps[0].duration));
-"
-```
-
-#### 3. TypeScript Types ✅
-```typescript
-// Verify imports work in mobile app
-import type {
-  RecordingServiceActivityPlan,
-  ActivityPlanStructure,
-  FlattenedStep,
-  IntensityTarget
-} from '@gradientpeak/core/schemas';
-
-import { 
-  SAMPLE_ACTIVITIES,
-  getSampleActivitiesByType,
-  type RecordingServiceActivityPlan as SamplePlan
-} from '@gradientpeak/core/samples';
-```
-
-#### 4. Mobile Integration Test
-```typescript
-// Test in mobile app component
-const testCoreIntegration = () => {
-  try {
-    // Test sample data access
-    const allActivities = SAMPLE_ACTIVITIES;
-    const runActivities = getSampleActivitiesByType('outdoor_run');
-    
-    // Test utility functions
-    const firstActivity = runActivities[0];
-    const flatSteps = flattenPlanSteps(firstActivity.structure.steps);
-    
-    console.log('✅ Core integration successful:', {
-      totalActivities: allActivities.length,
-      runActivities: runActivities.length,
-      firstActivitySteps: flatSteps.length
-    });
-    
-    return true;
-  } catch (error) {
-    console.error('❌ Core integration failed:', error);
-    return false;
-  }
-};
-```
-
-### Expected Results
-- ✅ 36 total sample activities across 7 activity types
-- ✅ Each activity type has 5+ workout variations
-- ✅ Utility functions process workout structures correctly
-- ✅ TypeScript types provide proper type safety
-- ✅ Mobile app can import and use all exports
-
-### Troubleshooting
-If verification fails:
-1. Ensure `@gradientpeak/core` is properly built
-2. Check TypeScript paths in `tsconfig.json`
-3. Verify all exports in `packages/core/index.ts`
-4. Check for circular dependency issues
-
----
-
-## 🧪 Testing Requirements
-
-### Component Testing
-```typescript
-// Test ActivityCard interactions
-describe('ActivityCard', () => {
-  test('card body tap triggers onCardPress', () => {
-    const onCardPress = jest.fn();
-    const { getByTestId } = render(
-      <ActivityCard activity={mockActivity} onCardPress={onCardPress} />
-    );
-    fireEvent.press(getByTestId('card-body'));
-    expect(onCardPress).toHaveBeenCalled();
-  });
-  
-  test('menu button tap triggers onMenuPress', () => {
-    const onMenuPress = jest.fn();
-    const { getByTestId } = render(
-      <ActivityCard activity={mockActivity} onMenuPress={onMenuPress} />
-    );
-    fireEvent.press(getByTestId('menu-button'));
-    expect(onMenuPress).toHaveBeenCalled();
-  });
-});
-```
-
-### Navigation Testing
-```typescript
-// Test smart routing logic
-describe('RecordLauncher Navigation', () => {
-  test('Quick Start navigates to record screen', () => {
-    const { getByText } = render(<RecordLauncher />);
-    fireEvent.press(getByText('Run'));
-    expect(mockRouter.push).toHaveBeenCalledWith({
-      pathname: '/record',
-      params: expect.objectContaining({
-        payload: expect.stringContaining('"plan":null')
-      })
-    });
-  });
-});
-```
-
----
-
-## 📊 Success Metrics
-
-| Metric | Current | Target | Measurement |
-|--------|---------|--------|-------------|
-| Time to start activity | 4-5 taps | 2-3 taps | Analytics events |
-| User completion rate | 65% | 85% | Funnel analysis |
-| Step visibility | Low | High | User can see all steps |
-| Progress clarity | Medium | High | Graph shows completion |
-
----
 
 ## 🎯 Follow-Along Screen Features
 
@@ -1621,5 +1604,3 @@ describe('RecordLauncher Navigation', () => {
 4. **Responsive Layout**: Cards sized appropriately for mobile screens
 
 ---
-
-*Last Updated: Added follow-along screen specification with horizontal carousel and activity graph*
