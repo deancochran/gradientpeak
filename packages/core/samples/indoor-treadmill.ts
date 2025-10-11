@@ -134,5 +134,160 @@ export const THRESHOLD_RUN_WORKOUT_2: RecordingServiceActivityPlan = {
   },
 };
 
+/**
+ * Speed Intervals - Indoor Treadmill
+ * Total time: 40 minutes
+ * Estimated TSS: ~65
+ */
+export const SPEED_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
+  version: "1.0",
+  name: "Speed Intervals",
+  description: "High-intensity speed intervals for VO2 max development",
+  activity_type: "indoor_treadmill",
+  estimated_tss: 65,
+  estimated_duration: 2400, // 40 minutes
+  structure: {
+    steps: [
+      // Warm-up
+      {
+        name: "Progressive Warm-up",
+        description: "Build intensity gradually",
+        type: "step",
+        duration: { type: "time", value: 900, unit: "seconds" }, // 15 min
+        targets: [{ type: "%ThresholdHR", intensity: 65 }],
+        notes: "Include some strides in final 5 minutes to prepare for speed",
+      },
+
+      // Speed intervals
+      {
+        type: "repetition",
+        repeat: 6,
+        steps: [
+          {
+            name: "Speed Interval",
+            description: "High-intensity running",
+            type: "step",
+            duration: { type: "time", value: 180, unit: "seconds" }, // 3 min
+            targets: [{ type: "%ThresholdHR", intensity: 92 }],
+            notes: "Fast pace - should feel hard but controlled",
+          },
+          {
+            name: "Recovery Jog",
+            description: "Easy recovery between intervals",
+            type: "step",
+            duration: { type: "time", value: 120, unit: "seconds" }, // 2 min
+            targets: [{ type: "%ThresholdHR", intensity: 65 }],
+            notes: "Light jog to recover",
+          },
+        ],
+      },
+
+      // Cool-down
+      {
+        name: "Cool-down",
+        description: "Easy jog to finish",
+        type: "step",
+        duration: { type: "time", value: 600, unit: "seconds" }, // 10 min
+        targets: [{ type: "%ThresholdHR", intensity: 60 }],
+        notes: "Easy pace to bring heart rate down",
+      },
+    ],
+  },
+};
+
+/**
+ * Easy Recovery Run - Indoor Treadmill
+ * Total time: 30 minutes
+ * Estimated TSS: ~25
+ */
+export const EASY_RECOVERY_RUN: RecordingServiceActivityPlan = {
+  version: "1.0",
+  name: "Easy Recovery Run",
+  description: "Low-intensity recovery run for active recovery",
+  activity_type: "indoor_treadmill",
+  estimated_tss: 25,
+  estimated_duration: 1800, // 30 minutes
+  structure: {
+    steps: [
+      // Easy continuous run
+      {
+        name: "Easy Recovery Run",
+        description: "Maintain very comfortable pace throughout",
+        type: "step",
+        duration: { type: "time", value: 1800, unit: "seconds" }, // 30 min
+        targets: [{ type: "%ThresholdHR", intensity: 60 }],
+        notes: "Very easy pace - should feel relaxed and restorative",
+      },
+    ],
+  },
+};
+
+/**
+ * Hill Intervals - Indoor Treadmill
+ * Total time: 45 minutes
+ * Estimated TSS: ~70
+ */
+export const HILL_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
+  version: "1.0",
+  name: "Hill Intervals",
+  description: "Incline-based intervals for strength and power development",
+  activity_type: "indoor_treadmill",
+  estimated_tss: 70,
+  estimated_duration: 2700, // 45 minutes
+  structure: {
+    steps: [
+      // Warm-up
+      {
+        name: "Flat Warm-up",
+        description: "Easy warm-up on flat grade",
+        type: "step",
+        duration: { type: "time", value: 600, unit: "seconds" }, // 10 min
+        targets: [{ type: "%ThresholdHR", intensity: 65 }],
+        notes: "Start on 0% grade, gradually increase pace",
+      },
+
+      // Hill intervals
+      {
+        type: "repetition",
+        repeat: 8,
+        steps: [
+          {
+            name: "Hill Climb",
+            description: "Hard effort up hill",
+            type: "step",
+            duration: { type: "time", value: 120, unit: "seconds" }, // 2 min
+            targets: [{ type: "%ThresholdHR", intensity: 88 }],
+            notes: "Increase incline to 6-8%, maintain strong effort uphill",
+          },
+          {
+            name: "Recovery Descent",
+            description: "Easy recovery on flat",
+            type: "step",
+            duration: { type: "time", value: 90, unit: "seconds" }, // 1.5 min
+            targets: [{ type: "%ThresholdHR", intensity: 65 }],
+            notes: "Return to 0% grade, easy jog to recover",
+          },
+        ],
+      },
+
+      // Cool-down
+      {
+        name: "Cool-down",
+        description: "Easy jog on flat to finish",
+        type: "step",
+        duration: { type: "time", value: 600, unit: "seconds" }, // 10 min
+        targets: [{ type: "%ThresholdHR", intensity: 60 }],
+        notes: "Flat grade, easy pace to cool down",
+      },
+    ],
+  },
+};
+
 export const SAMPLE_TREADMILL_ACTIVITIES: Array<RecordingServiceActivityPlan> =
-  [THRESHOLD_RUN_WORKOUT_1, THRESHOLD_RUN_WORKOUT_2];
+  [
+    THRESHOLD_RUN_WORKOUT_1,
+    THRESHOLD_RUN_WORKOUT_2,
+    SPEED_INTERVALS_WORKOUT,
+    EASY_RECOVERY_RUN,
+    HILL_INTERVALS_WORKOUT,
+  ];

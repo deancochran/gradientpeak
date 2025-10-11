@@ -130,6 +130,47 @@ export const isOutdoorActivity = (type: ActivityType): boolean => {
 };
 ```
 
+### Available Sample Workouts
+
+The core package (`@gradientpeak/core/samples`) provides 36 comprehensive workout plans across all activity types:
+
+#### Import Methods
+```typescript
+// Import all samples
+import { SAMPLE_ACTIVITIES } from "@gradientpeak/core/samples";
+
+// Import by activity type
+import { 
+  SAMPLE_OUTDOOR_RUN_ACTIVITIES,
+  SAMPLE_OUTDOOR_BIKE_ACTIVITIES,
+  SAMPLE_INDOOR_TRAINER_ACTIVITIES,
+  SAMPLE_TREADMILL_ACTIVITIES,
+  SAMPLE_INDOOR_STRENGTH_ACTIVITIES,
+  SAMPLE_INDOOR_SWIM_ACTIVITIES,
+  SAMPLE_OTHER_ACTIVITIES
+} from "@gradientpeak/core/samples";
+
+// Get activities by type dynamically
+import { getSampleActivitiesByType } from "@gradientpeak/core/samples";
+const runWorkouts = getSampleActivitiesByType('outdoor_run');
+```
+
+#### Available Workouts by Type:
+- **🚴 Indoor Bike Trainer** (6 workouts): Sweet Spot, VO2 Max, Recovery, Sprint, Threshold HR, Test Workout
+- **🏃 Indoor Treadmill** (5 workouts): Threshold runs, Speed intervals, Recovery, Hill intervals
+- **🏃‍♂️ Outdoor Run** (5 workouts): Easy aerobic, Tempo, Intervals, Long run, Fartlek
+- **🚵 Outdoor Bike** (5 workouts): Endurance, Sweet spot, Tempo, Climbing, Group ride
+- **💪 Indoor Strength** (5 workouts): Upper body, Lower body, Full body circuit, Core, Functional
+- **🏊 Indoor Swim** (5 workouts): Easy swim, Sprint intervals, Threshold, Technique, Endurance
+- **🎯 Other Activities** (5 workouts): Yoga, Rock climbing, Hiking, CrossFit, Recovery walk
+
+Each workout includes:
+- Complete step-by-step structure with durations
+- Target intensities (%FTP for cycling, %ThresholdHR for running/general)
+- Detailed notes and guidance for each step
+- Estimated TSS and total duration
+- Support for repetition blocks and nested structures
+
 ### 2. Updated Record Launcher (`record-launcher.tsx`)
 
 **Build tabs directly in the page using existing UI components:**
@@ -400,41 +441,40 @@ import { Icon } from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ActivityCard } from './ActivityCard';
-import { ChevronLeft, Footprints, Bike, Dumbbell, Zap } from 'lucide-react-native';
+import { ChevronLeft, Footprints, Bike, Dumbbell, Waves, Activity } from 'lucide-react-native';
 import { PublicActivityType } from '@repo/supabase';
+import { 
+  getSampleActivitiesByType,
+  SAMPLE_ACTIVITIES_BY_TYPE 
+} from '@gradientpeak/core/samples';
 
 const CATEGORIES = [
-  { id: 'running', name: 'Running Plans', icon: Footprints },
-  { id: 'cycling', name: 'Cycling Workouts', icon: Bike },
-  { id: 'strength', name: 'Strength
- Routines', icon: Dumbbell },
-  { id: 'hiit', name: 'HIIT Sessions', icon: Zap },
+  { id: 'outdoor_run', name: 'Outdoor Running', icon: Footprints },
+  { id: 'outdoor_bike', name: 'Outdoor Cycling', icon: Bike },
+  { id: 'indoor_treadmill', name: 'Treadmill Workouts', icon: Footprints },
+  { id: 'indoor_bike_trainer', name: 'Indoor Bike Trainer', icon: Bike },
+  { id: 'indoor_strength', name: 'Strength Training', icon: Dumbbell },
+  { id: 'indoor_swim', name: 'Swimming', icon: Waves },
+  { id: 'other', name: 'Other Activities', icon: Activity },
 ];
 
-// Mock data - will be replaced with API call
 const getTemplatesByCategory = (category: string) => {
-  return [
-    { 
-      id: '1', 
-      type: 'outdoor_run' as PublicActivityType, 
-      title: '5K Training Run',
-      duration: 1800,
-      plan: { 
-        name: '5K Training Run',
-        structure: { /* structured plan data */ }
-      }
-    },
-    { 
-      id: '2', 
-      type: 'indoor_bike_trainer' as PublicActivityType, 
-      title: 'Sweet Spot Intervals',
-      duration: 2400,
-      plan: { 
-        name: 'Sweet Spot Intervals',
-        structure: { /* structured plan data */ }
-      }
-    },
-  ];
+  // Get real sample activities from core package
+  const activities = getSampleActivitiesByType(category as keyof typeof SAMPLE_ACTIVITIES_BY_TYPE);
+  
+  // Transform to match expected format
+  return activities.map((activity, index) => ({
+    id: `${category}-${index}`,
+    type: activity.activity_type as PublicActivityType,
+    title: activity.name,
+    duration: activity.estimated_duration || 3600,
+    plan: {
+      name: activity.name,
+      description: activity.description,
+      structure: activity.structure,
+      estimated_tss: activity.estimated_tss
+    }
+  }));
 };
 
 interface TemplatesListProps {
@@ -522,43 +562,37 @@ import { Text } from "@/components/ui/text";
 import { ActivityCard } from './ActivityCard';
 import { useQuery } from '@tanstack/react-query';
 
+import { 
+  SAMPLE_ACTIVITIES 
+} from '@gradientpeak/core/samples';
+
 interface PlannedActivitiesListProps {
-  onSelect: (activity: any) => void;
-  onMenuPress: (activity: any) => void;
+  onActivitySelect: (activity: any) => void;
+  onActivityMenuPress: (activity: any) => void;
 }
 
-export function PlannedActivitiesList({ onSelect, onMenuPress }: PlannedActivitiesListProps) {
+export function PlannedActivitiesList({ onActivitySelect, onActivityMenuPress }: PlannedActivitiesListProps) {
   // TODO: Replace with actual API call
   const { data: activities, isLoading } = useQuery({
     queryKey: ['planned-activities'],
     queryFn: async () => {
-      // Mock data - replace with actual API call
-      return [
-        {
-          id: '1',
-          type: 'outdoor_run',
-          title: 'Morning Run',
-          plannedDate: new Date(),
-          duration: 1800,
-          distance: 5,
-          plan: {
-            name: 'Easy Run',
-            structure: { /* plan structure */ }
-          }
-        },
-        {
-          id: '2',
-          type: 'indoor_bike_trainer',
-          title: 'Evening Intervals',
-          plannedDate: new Date(),
-          duration: 3600,
-          tss: 85,
-          plan: {
-            name: 'Sweet Spot Intervals',
-            structure: { /* plan structure */ }
-          }
+      // Use sample activities from core package - replace with actual API call
+      const sampleActivities = SAMPLE_ACTIVITIES.slice(0, 3); // Get first 3 samples
+      
+      return sampleActivities.map((activity, index) => ({
+        id: `planned-${index}`,
+        type: activity.activity_type,
+        title: activity.name,
+        plannedDate: new Date(),
+        duration: activity.estimated_duration || 3600,
+        tss: activity.estimated_tss,
+        plan: {
+          name: activity.name,
+          description: activity.description,
+          structure: activity.structure,
+          estimated_tss: activity.estimated_tss
         }
-      ];
+      }));
     }
   });
 
@@ -588,8 +622,8 @@ export function PlannedActivitiesList({ onSelect, onMenuPress }: PlannedActiviti
       renderItem={({ item }) => (
         <ActivityCard
           activity={item}
-          onCardPress={() => onSelect(item)}
-          onMenuPress={() => onMenuPress(item)}
+          onCardPress={() => onActivitySelect(item)}
+          onMenuPress={() => onActivityMenuPress(item)}
         />
       )}
     />
@@ -670,6 +704,281 @@ selectActivityFromPayload(payload: ActivityPayload): void {
 }
 ```
 
+### 9. Follow-Along Screen (`/follow-along/index.tsx`)
+
+**Simple horizontal carousel for step-based activities with activity graph footer:**
+
+```typescript
+import React, { useState, useRef } from 'react';
+import { View, ScrollView, Dimensions, TouchableOpacity } from 'react-native';
+import { Text } from "@/components/ui/text";
+import { Icon } from "@/components/ui/icon";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { X, Clock, Target, ChevronLeft, ChevronRight } from 'lucide-react-native';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { ActivityPayload } from "@repo/core/types/activity";
+import { 
+  flattenPlanSteps, 
+  formatTargetRange, 
+  getMetricDisplayName,
+  type FlattenedStep 
+} from "@repo/core/schemas/activity_plan_structure";
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CARD_WIDTH = SCREEN_WIDTH - 48; // Account for padding
+
+interface StepCardProps {
+  step: FlattenedStep;
+  index: number;
+  isActive: boolean;
+}
+
+function StepCard({ step, index, isActive }: StepCardProps) {
+  const formatDuration = (duration: any) => {
+    if (duration === "untilFinished") return "Until finished";
+    if (!duration) return "No duration";
+    
+    const { value, unit } = duration;
+    return `${value} ${unit}`;
+  };
+
+  return (
+    <Card className={`mx-2 ${isActive ? 'border-primary' : ''}`} style={{ width: CARD_WIDTH }}>
+      <CardContent className="p-6">
+        {/* Step Header */}
+        <View className="mb-4">
+          <Text className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
+            Step {index + 1}
+          </Text>
+          <Text className="text-2xl font-bold">{step.name || `Step ${index + 1}`}</Text>
+        </View>
+
+        {/* Duration */}
+        <View className="flex-row items-center mb-4">
+          <Icon as={Clock} size={20} className="text-muted-foreground mr-2" />
+          <Text className="text-lg">{formatDuration(step.duration)}</Text>
+        </View>
+
+        {/* Targets */}
+        {step.targets && step.targets.length > 0 && (
+          <View className="mb-4">
+            <Text className="text-sm font-semibold text-muted-foreground mb-2">TARGETS</Text>
+            <View className="bg-muted/20 rounded-lg p-3 gap-2">
+              {step.targets.map((target, idx) => (
+                <View key={idx} className="flex-row items-center justify-between">
+                  <Text className="text-sm font-medium">
+                    {getMetricDisplayName(target.type)}
+                  </Text>
+                  <Text className="text-sm font-bold text-primary">
+                    {formatTargetRange(target)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* Description */}
+        {step.description && (
+          <View className="mb-4">
+            <Text className="text-sm text-muted-foreground">{step.description}</Text>
+          </View>
+        )}
+
+        {/* Notes */}
+        {step.notes && (
+          <View className="bg-blue-500/10 rounded-lg p-3">
+            <Text className="text-xs italic text-blue-600 dark:text-blue-400">
+              💡 {step.notes}
+            </Text>
+          </View>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ActivityGraph({ steps, currentIndex }: { steps: FlattenedStep[], currentIndex: number }) {
+  // Calculate total duration for width proportions
+  const totalDuration = steps.reduce((sum, step) => {
+    if (step.duration === "untilFinished" || !step.duration) return sum + 300; // Default 5 min
+    return sum + (step.duration.value || 0);
+  }, 0);
+
+  return (
+    <View className="px-4 pb-4">
+      <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+        Workout Progress
+      </Text>
+      <View className="bg-muted/20 rounded-lg border border-muted/20 p-3">
+        <View className="flex-row items-end" style={{ height: 60 }}>
+          {steps.map((step, index) => {
+            const duration = step.duration === "untilFinished" || !step.duration 
+              ? 300 
+              : step.duration.value || 0;
+            const width = Math.max(8, (duration / totalDuration) * 100);
+            const maxIntensity = step.targets?.[0]?.intensity || 50;
+            const height = Math.max(20, Math.min(100, (maxIntensity / 100) * 100));
+            const isActive = index === currentIndex;
+            
+            return (
+              <View
+                key={index}
+                style={{
+                  width: `${width}%`,
+                  height: `${height}%`,
+                  backgroundColor: isActive ? '#3b82f6' : '#94a3b8',
+                  opacity: isActive ? 1 : 0.3,
+                }}
+                className="rounded-sm mx-[1px]"
+              />
+            );
+          })}
+        </View>
+        <View className="flex-row justify-between mt-2">
+          <Text className="text-xs text-muted-foreground">Start</Text>
+          <Text className="text-xs font-semibold">
+            {currentIndex + 1} / {steps.length} steps
+          </Text>
+          <Text className="text-xs text-muted-foreground">Finish</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+export default function FollowAlongScreen() {
+  const router = useRouter();
+  const params = useLocalSearchParams();
+  const scrollViewRef = useRef<ScrollView>(null);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  
+  // Parse activity payload
+  const payload: ActivityPayload = params.payload 
+    ? JSON.parse(params.payload as string) 
+    : null;
+  
+  if (!payload?.plan?.structure) {
+    return (
+      <View className="flex-1 justify-center items-center p-8">
+        <Text className="text-center text-muted-foreground">
+          No workout plan available
+        </Text>
+        <Button 
+          onPress={() => router.back()} 
+          className="mt-4"
+        >
+          Go Back
+        </Button>
+      </View>
+    );
+  }
+
+  // Flatten the workout steps
+  const steps = flattenPlanSteps(payload.plan.structure.steps);
+
+  const handleScroll = (event: any) => {
+    const contentOffset = event.nativeEvent.contentOffset;
+    const index = Math.round(contentOffset.x / (CARD_WIDTH + 16));
+    setCurrentIndex(Math.max(0, Math.min(steps.length - 1, index)));
+  };
+
+  const scrollToIndex = (index: number) => {
+    scrollViewRef.current?.scrollTo({
+      x: index * (CARD_WIDTH + 16),
+      animated: true
+    });
+    setCurrentIndex(index);
+  };
+
+  return (
+    <View className="flex-1 bg-background">
+      {/* Header */}
+      <View className="flex-row items-center justify-between p-4 border-b border-border">
+        <View className="flex-1">
+          <Text className="text-lg font-bold">
+            {payload.plan.name || 'Workout Steps'}
+          </Text>
+          <Text className="text-sm text-muted-foreground">
+            Swipe to view each step
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          className="p-2"
+        >
+          <Icon as={X} size={24} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Step Carousel */}
+      <View className="flex-1">
+        <ScrollView
+          ref={scrollViewRef}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={handleScroll}
+          snapToInterval={CARD_WIDTH + 16}
+          decelerationRate="fast"
+          contentContainerStyle={{ 
+            paddingHorizontal: 8,
+            alignItems: 'center'
+          }}
+          className="flex-1"
+        >
+          {steps.map((step, index) => (
+            <StepCard 
+              key={index} 
+              step={step} 
+              index={index}
+              isActive={index === currentIndex}
+            />
+          ))}
+        </ScrollView>
+
+        {/* Navigation Buttons */}
+        <View className="flex-row justify-between items-center px-4 py-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onPress={() => scrollToIndex(Math.max(0, currentIndex - 1))}
+            disabled={currentIndex === 0}
+          >
+            <Icon as={ChevronLeft} size={20} />
+          </Button>
+
+          <View className="flex-row gap-1">
+            {steps.map((_, index) => (
+              <TouchableOpacity
+                key={index}
+                onPress={() => scrollToIndex(index)}
+                className={`w-2 h-2 rounded-full ${
+                  index === currentIndex ? 'bg-primary' : 'bg-muted-foreground/30'
+                }`}
+              />
+            ))}
+          </View>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            onPress={() => scrollToIndex(Math.min(steps.length - 1, currentIndex + 1))}
+            disabled={currentIndex === steps.length - 1}
+          >
+            <Icon as={ChevronRight} size={20} />
+          </Button>
+        </View>
+      </View>
+
+      {/* Activity Graph Footer */}
+      <ActivityGraph steps={steps} currentIndex={currentIndex} />
+    </View>
+  );
+}
+```
+
 ---
 
 ## 🏛️ UI Structure & Navigation
@@ -717,12 +1026,52 @@ graph TD
 
 ### Payload Examples
 
+These examples show the actual payload structure using real workout plans from `@gradientpeak/core/samples`.
+
 #### Quick Start (No Plan)
 ```json
 {
   "type": "outdoor_run",
   "plannedActivityId": null,
   "plan": null
+}
+```
+
+#### Template Activity (From Core Samples)
+```json
+{
+  "type": "outdoor_run",
+  "plannedActivityId": null,
+  "plan": {
+    "name": "Tempo Run",
+    "description": "Sustained tempo effort with warm-up and cool-down",
+    "estimated_tss": 75,
+    "structure": {
+      "steps": [
+        {
+          "type": "step",
+          "name": "Warm-up Jog",
+          "duration": { "type": "time", "value": 900, "unit": "seconds" },
+          "targets": [{ "type": "%ThresholdHR", "intensity": 65 }],
+          "notes": "Gradually increase pace to prepare for tempo"
+        },
+        {
+          "type": "step",
+          "name": "Tempo Block",
+          "duration": { "type": "time", "value": 1800, "unit": "seconds" },
+          "targets": [{ "type": "%ThresholdHR", "intensity": 85 }],
+          "notes": "Steady, controlled effort - should feel comfortably hard"
+        },
+        {
+          "type": "step",
+          "name": "Cool-down Jog",
+          "duration": { "type": "time", "value": 900, "unit": "seconds" },
+          "targets": [{ "type": "%ThresholdHR", "intensity": 65 }],
+          "notes": "Relax and gradually bring heart rate down"
+        }
+      ]
+    }
+  }
 }
 ```
 
@@ -733,10 +1082,44 @@ graph TD
   "plannedActivityId": "uuid-123",
   "plan": {
     "name": "Sweet Spot Intervals",
+    "description": "60-minute indoor trainer activity focusing on sweet spot power development",
+    "estimated_tss": 85,
     "structure": {
       "steps": [
-        { "type": "step", "name": "Warm Up", "duration": { "type": "time", "value": 10, "unit": "minutes" } },
-        { "type": "step", "name": "Main Set", "duration": { "type": "time", "value": 20, "unit": "minutes" } }
+        { 
+          "type": "step", 
+          "name": "Easy Warm-up", 
+          "duration": { "type": "time", "value": 900, "unit": "seconds" },
+          "targets": [{ "type": "%FTP", "intensity": 55 }],
+          "notes": "Start easy and gradually build intensity"
+        },
+        {
+          "type": "repetition",
+          "repeat": 3,
+          "steps": [
+            {
+              "type": "step",
+              "name": "Sweet Spot Interval",
+              "duration": { "type": "time", "value": 900, "unit": "seconds" },
+              "targets": [{ "type": "%FTP", "intensity": 88 }],
+              "notes": "Maintain steady power in the sweet spot zone"
+            },
+            {
+              "type": "step",
+              "name": "Easy Recovery",
+              "duration": { "type": "time", "value": 300, "unit": "seconds" },
+              "targets": [{ "type": "%FTP", "intensity": 50 }],
+              "notes": "Easy spinning to recover between intervals"
+            }
+          ]
+        },
+        {
+          "type": "step",
+          "name": "Cool-down",
+          "duration": { "type": "time", "value": 600, "unit": "seconds" },
+          "targets": [{ "type": "%FTP", "intensity": 50 }],
+          "notes": "Easy spinning to bring heart rate down"
+        }
       ]
     }
   }
@@ -810,6 +1193,7 @@ graph TD
 - [ ] Implement `QuickStartList` using Button and FlatList
 - [ ] Implement `PlannedActivitiesList` with React Query
 - [ ] Implement `TemplatesList` with nested navigation
+- [ ] Create `/follow-along/index.tsx` with horizontal carousel
 
 ### Phase 3: Navigation Updates (2 days)
 - [ ] Update `record-launcher.tsx` to show tabs (no redirect)
@@ -824,9 +1208,10 @@ graph TD
 
 ### Phase 5: API Integration (2 days)
 - [ ] Implement planned activities API endpoint
-- [ ] Create templates API with category filtering
+- [ ] Create templates API with category filtering (leverage `@gradientpeak/core/samples` for initial data)
 - [ ] Add PDF generation endpoint
-- [ ] Replace mock data with real API calls
+- [ ] Replace sample data from `@gradientpeak/core/samples` with real API calls
+- [ ] Note: Currently using 36 comprehensive workout plans from core package as templates
 
 ---
 
@@ -928,4 +1313,26 @@ describe('RecordLauncher Navigation', () => {
 | Metric | Current | Target | Measurement |
 |--------|---------|--------|-------------|
 | Time to start activity | 4-5 taps | 2-3 taps | Analytics events |
-| User completion rate | 65%
+| User completion rate | 65% | 85% | Funnel analysis |
+| Step visibility | Low | High | User can see all steps |
+| Progress clarity | Medium | High | Graph shows completion |
+
+---
+
+## 🎯 Follow-Along Screen Features
+
+### Design Principles
+- **Simple Navigation**: Horizontal swipe between steps
+- **Clear Progress**: Activity graph shows current position
+- **Focus on Content**: Each step displayed with all relevant information
+- **Easy Exit**: Close button always accessible
+
+### Key Components
+1. **Step Cards**: Display duration, targets, notes for each step
+2. **Activity Graph**: Visual progress indicator with highlighted current step
+3. **Navigation Controls**: Previous/Next buttons and dot indicators
+4. **Responsive Layout**: Cards sized appropriately for mobile screens
+
+---
+
+*Last Updated: Added follow-along screen specification with horizontal carousel and activity graph*
