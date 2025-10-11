@@ -18,9 +18,9 @@ This document outlines the refactoring of the GradientPeak mobile app's activity
 
 ### Activity Types (from Supabase)
 ```typescript
-PublicActivityType = 
+PublicActivityType =
   | "outdoor_run"
-  | "outdoor_bike" 
+  | "outdoor_bike"
   | "indoor_treadmill"
   | "indoor_bike_trainer"
   | "indoor_strength"
@@ -55,7 +55,7 @@ gradientpeak/
 │       ├── types/
 │       │   └── activity.ts          # NEW: Core activity types and validation
 │       └── utils/
-│           ├── targets.ts           # NEW: Target conversion utilities  
+│           ├── targets.ts           # NEW: Target conversion utilities
 │           └── metrics.ts           # NEW: Metrics calculation utilities
 │
 └── apps/mobile/
@@ -128,22 +128,42 @@ import { View } from "react-native";
 
 export default function RecordLauncher() {
   const router = useRouter();
-  
+
   const handleActivitySelected = (payload: ActivityPayload) => {
     // Smart routing based on activity type and plan
     const isContinuous = isContinuousActivity(payload.type);
     const hasStructure = !!payload.plan?.structure;
-    
+
     // Serialize payload for URL params
     const params = { payload: JSON.stringify(payload) };
-    
+
     if (!hasStructure || isContinuous) {
       // Quick start or continuous structured → Record screen
       router.push({
-        pathname: "/
+        pathname: "/record",
+        params
+      });
+    } else {
+      // Step-based structured → Follow-along screen
+      router.push({
+        pathname: "/follow-along",
+        params
+      });
+    }
+  };
+
+  return (
     <View style={{ flex: 1 }}>
       <ActivityTabs onActivitySelected={handleActivitySelected} />
-    </View>supabase";
+    </View>
+  );
+}
+```
+
+### 3. Activity Card Component (`ActivityCard.tsx`)
+
+```typescript
+import { PublicActivityType } from "@repo/supabase";
 import React from "react";
 import { TouchableOpacity, View } from "react-native";
 import { Text } from "@/components/ui/text";
@@ -171,11 +191,11 @@ interface ActivityCardProps {
 
 export function ActivityCard({ activity, onCardPress, onMenuPress }: ActivityCardProps) {
   const IconComponent = ACTIVITY_ICONS[activity.type];
-  const displayName = activity.title || activity.plan?.name || 
+  const displayName = activity.title || activity.plan?.name ||
     activity.type.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
 
   return (
-    <TouchableOpacity 
+    <TouchableOpacity
       onPress={onCardPress}
       className="bg-card rounded-xl mb-3 overflow-hidden"
     >
@@ -205,9 +225,9 @@ export function ActivityCard({ activity, onCardPress, onMenuPress }: ActivityCar
             </View>
           </View>
         </View>
-        
+
         {onMenuPress && (
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={(e) => {
               e.stopPropagation();
               onMenuPress();
@@ -219,7 +239,7 @@ export function ActivityCard({ activity, onCardPress, onMenuPress }: ActivityCar
           </TouchableOpacity>
         )}
       </View>
-      
+
       {/* Mini activity graph placeholder */}
       {activity.plan?.structure && (
         <View className="h-12 bg-muted/30 px-4 pb-2">
@@ -242,16 +262,16 @@ import { useEffect } from "react";
 export default function RecordModal() {
   const params = useLocalSearchParams();
   const service = useSharedActivityRecorder();
-  
+
   // Parse payload from navigation params
   useEffect(() => {
     if (params.payload) {
       try {
         const payload: ActivityPayload = JSON.parse(params.payload as string);
-        
+
         // Set activity type
         service?.selectUnplannedActivity(payload.type);
-        
+
         // Set plan if available
         if (payload.plan?.structure && payload.plannedActivityId) {
           service?.selectPlan(
@@ -269,7 +289,7 @@ export default function RecordModal() {
       }
     }
   }, [params.payload, service]);
-  
+
   // ... rest of component
 }
 ```
@@ -282,10 +302,10 @@ export default function RecordModal() {
 
 selectActivityFromPayload(payload: ActivityPayload): void {
   console.log("[Service] Selecting activity from payload:", payload);
-  
+
   // Set activity type
   this.selectedActivityType = payload.type;
-  
+
   // Handle plan if present
   if (payload.plan?.structure) {
     const plan: RecordingServiceActivityPlan = {
@@ -294,12 +314,12 @@ selectActivityFromPayload(payload: ActivityPayload): void {
       structure: payload.plan.structure,
       // Map other fields as needed
     };
-    
+
     this.selectPlan(plan, payload.plannedActivityId);
   } else {
     this.clearPlan();
   }
-  
+
   this.emit("activitySelected", payload.type);
 }
 ```
@@ -395,7 +415,7 @@ graph TD
 
 1. **Tab Bar**: Primary navigation (Quick Start | Planned | Templates)
 2. **Content Area**: Scrollable list of activities/categories
-3. **Activity Cards**: 
+3. **Activity Cards**:
    - Primary tap target (85% of card area)
    - Secondary menu button (15% of card area)
    - Visual separation via subtle border/shadow
@@ -492,10 +512,10 @@ Response: {
 
 // Generate PDF for activity plan
 POST /api/mobile/activities/pdf
-Body: { 
-  activityPayload: ActivityPayload 
+Body: {
+  activityPayload: ActivityPayload
 }
-Response: { 
+Response: {
   url: string;
   expiresAt: string;
 }
@@ -513,7 +533,7 @@ describe('Activity Helpers', () => {
     expect(isContinuousActivity('outdoor_run')).toBe(true);
     expect(isContinuousActivity('indoor_strength')).toBe(false);
   });
-  
+
   test('correctly identifies outdoor activities', () => {
     expect(isOutdoorActivity('outdoor_bike')).toBe(true);
     expect(isOutdoorActivity('indoor_bike_trainer')).toBe(false);
@@ -565,7 +585,7 @@ describe('ActivityPayload', () => {
 - [ ] Helper functions tested
 - [ ] Schema validation working
 
-### Phase 2 Complete  
+### Phase 2 Complete
 - [ ] All UI components built
 - [ ] Dual tap targets working
 - [ ] Nested navigation functional
