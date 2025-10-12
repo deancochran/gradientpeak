@@ -1,14 +1,13 @@
 import { PlannedActivitiesList } from "@/components/PlannedActivitiesList";
 import { QuickStartList } from "@/components/QuickStartList";
 import { TemplatesList } from "@/components/TemplatesList";
-import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Text } from "@/components/ui/text";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import { ActivityPayload, ActivityType } from "@repo/core";
 import { useRouter } from "expo-router";
-import { Calendar, ChevronLeft, FileText, Zap } from "lucide-react-native";
+import { Calendar, FileText, Zap } from "lucide-react-native";
 import React, { useEffect, useState } from "react";
 import { Alert, ScrollView, View } from "react-native";
 
@@ -75,20 +74,6 @@ export default function RecordLauncher() {
 
   return (
     <View className="flex-1 bg-background">
-      {/* Header */}
-      <View className="flex-row items-center justify-between px-4 py-3 border-b border-border">
-        <Button
-          variant="ghost"
-          size="icon"
-          onPress={() => router.back()}
-          className="mr-2"
-        >
-          <Icon as={ChevronLeft} size={24} />
-        </Button>
-        <Text className="text-lg font-semibold">Start Activity</Text>
-        <View className="w-10" /> {/* Spacer for centering */}
-      </View>
-
       {/* Main Content */}
       <Tabs
         value={selectedTab}
@@ -127,13 +112,6 @@ export default function RecordLauncher() {
           {/* Quick Start Tab */}
           <TabsContent value="quick-start" className="flex-1 mt-0">
             <View className="p-4">
-              <View className="mb-4">
-                <Text className="text-xl font-bold mb-2">Quick Start</Text>
-                <Text className="text-muted-foreground">
-                  Select an activity type to start recording immediately
-                </Text>
-              </View>
-
               <QuickStartList onActivitySelect={handleQuickStart} />
             </View>
           </TabsContent>
@@ -141,13 +119,6 @@ export default function RecordLauncher() {
           {/* Templates Tab */}
           <TabsContent value="templates" className="flex-1 mt-0">
             <View className="p-4">
-              <View className="mb-4">
-                <Text className="text-xl font-bold mb-2">Templates</Text>
-                <Text className="text-muted-foreground">
-                  Choose from pre-built workout templates
-                </Text>
-              </View>
-
               <TemplatesList onTemplateSelect={handleTemplateSelected} />
             </View>
           </TabsContent>
@@ -155,15 +126,6 @@ export default function RecordLauncher() {
           {/* Planned Activities Tab */}
           <TabsContent value="planned" className="flex-1 mt-0">
             <View className="p-4">
-              <View className="mb-4">
-                <Text className="text-xl font-bold mb-2">
-                  Planned Activities
-                </Text>
-                <Text className="text-muted-foreground">
-                  Start a scheduled workout from your plan
-                </Text>
-              </View>
-
               <PlannedActivitiesList
                 onActivitySelect={handlePlannedActivitySelected}
               />

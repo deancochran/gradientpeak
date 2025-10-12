@@ -244,8 +244,7 @@ export const DEV_SAMPLE_STRENGTH: RecordingServiceActivityPlan = {
             type: "step",
             name: "Squat Hold",
             duration: { type: "time", value: 6, unit: "seconds" },
-            targets: [{ type: "resistance", intensity: 60 }],
-            controls: [{ type: "weight", value: 20, unit: "kg" }],
+            targets: [{ type: "RPE", intensity: 10 }],
             notes: "Resistance + control example",
           },
         ],
@@ -263,11 +262,10 @@ export const DEV_SAMPLE_STRENGTH: RecordingServiceActivityPlan = {
 /**
  * Combined developer test exports
  */
-export const SAMPLE_DEV_SCHEMA_ACTIVITIES: Array<RecordingServiceActivityPlan> =
-  [
-    DEV_SAMPLE_BIKE,
-    DEV_SAMPLE_RUN,
-    DEV_SAMPLE_TREADMILL,
-    DEV_SAMPLE_SWIM,
-    DEV_SAMPLE_STRENGTH,
-  ];
+export const SAMPLE_DEV_ACTIVITIES: Array<RecordingServiceActivityPlan> = [
+  DEV_SAMPLE_BIKE,
+  DEV_SAMPLE_RUN,
+  DEV_SAMPLE_TREADMILL,
+  DEV_SAMPLE_SWIM,
+  DEV_SAMPLE_STRENGTH,
+];

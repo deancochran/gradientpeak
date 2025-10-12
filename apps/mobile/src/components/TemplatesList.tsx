@@ -98,10 +98,6 @@ export function TemplatesList({ onTemplateSelect }: TemplatesListProps) {
   if (!selectedCategory) {
     return (
       <View className="gap-3">
-        <Text className="text-sm text-muted-foreground mb-2">
-          Choose an activity type to see available templates
-        </Text>
-
         {CATEGORIES.map((category) => {
           const templates = getSampleActivitiesByType(category.activityType);
 

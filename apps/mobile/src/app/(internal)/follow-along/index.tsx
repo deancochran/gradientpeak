@@ -10,43 +10,74 @@ import {
   getIntensityColor,
 } from "@repo/core";
 import { useRouter } from "expo-router";
-import {
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  Play,
-  Target,
-} from "lucide-react-native";
-import { useEffect, useState } from "react";
-import { Alert, ScrollView, View } from "react-native";
+import { ChevronLeft, Target, TrendingUp } from "lucide-react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alert, FlatList, View, ViewToken } from "react-native";
 
-export default function FollowAlongScreen() {
-  const router = useRouter();
+// ============================================================================
+// TYPES
+// ============================================================================
+
+interface WorkoutStep {
+  type: string;
+  name?: string;
+  description?: string;
+  duration?: any;
+  targets?: TargetZone[];
+  notes?: string;
+}
+
+interface TargetZone {
+  type: string;
+  intensity: number;
+}
+
+interface WorkoutCard {
+  id: string;
+  type: "overview" | "step" | "completion";
+  workout?: any;
+  step?: WorkoutStep;
+  stepNumber?: number;
+}
+
+// ============================================================================
+// TARGET CONFIGURATION
+// ============================================================================
+
+const TARGET_CONFIG: Record<string, { label: string; unit: string }> = {
+  "%FTP": { label: "Power (FTP)", unit: "%" },
+  "%MaxHR": { label: "Heart Rate (Max)", unit: "%" },
+  "%ThresholdHR": { label: "Heart Rate (LT)", unit: "%" },
+  watts: { label: "Power", unit: "W" },
+  bpm: { label: "Heart Rate", unit: " bpm" },
+  speed: { label: "Speed", unit: " km/h" },
+  cadence: { label: "Cadence", unit: " rpm" },
+  RPE: { label: "Effort (RPE)", unit: "/10" },
+};
+
+// ============================================================================
+// CUSTOM HOOKS
+// ============================================================================
+
+function useWorkoutInitialization(router: any) {
   const [workout, setWorkout] = useState<any>(null);
   const [activityPayload, setActivityPayload] =
     useState<ActivityPayload | null>(null);
-  const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load from store on mount
   useEffect(() => {
-    const initializeFromStore = () => {
+    const initializeFromStore = async () => {
       try {
         console.log("[FollowAlong] Loading selection from store");
 
         const selection = activitySelectionStore.consumeSelection();
+
         if (!selection) {
           console.error("[FollowAlong] No selection found in store");
           Alert.alert("Error", "No workout selected");
           router.back();
           return;
         }
-
-        console.log("[FollowAlong] Selection loaded:", {
-          type: selection.type,
-          hasPlan: !!selection.plan,
-          plannedActivityId: selection.plannedActivityId,
-        });
 
         if (!selection.plan) {
           console.error("[FollowAlong] No workout plan found in selection");
@@ -55,14 +86,11 @@ export default function FollowAlongScreen() {
           return;
         }
 
-        console.log("[FollowAlong] Setting workout and payload data");
+        console.log("[FollowAlong] Workout loaded successfully");
         setActivityPayload(selection);
         setWorkout(selection.plan);
       } catch (error) {
-        console.error(
-          "[FollowAlong] Unexpected error during initialization:",
-          error,
-        );
+        console.error("[FollowAlong] Initialization error:", error);
         Alert.alert("Error", "Failed to load workout. Please try again.", [
           { text: "OK", onPress: () => router.back() },
         ]);
@@ -74,306 +102,40 @@ export default function FollowAlongScreen() {
     initializeFromStore();
   }, [router]);
 
-  // Get flattened steps
-  const steps = workout?.structure?.steps
-    ? flattenSteps(workout.structure.steps)
-    : [];
-  const currentStep = steps[currentStepIndex];
-  const progress =
-    steps.length > 0 ? ((currentStepIndex + 1) / steps.length) * 100 : 0;
+  return { workout, activityPayload, isLoading };
+}
 
-  // Start recording with the same payload
-  const handleStartRecording = () => {
-    if (activityPayload) {
-      try {
-        console.log("[FollowAlong] Re-storing selection for record screen");
-        // Re-store for record screen
-        activitySelectionStore.setSelection(activityPayload);
-        router.push("/record"); // No parameters!
-      } catch (error) {
-        console.error("[FollowAlong] Error storing payload for record:", error);
-        Alert.alert("Error", "Failed to start recording. Please try again.", [
-          { text: "OK", onPress: () => router.back() },
-        ]);
+function useActiveCardTracking() {
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  const onViewableItemsChanged = useCallback(
+    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      if (viewableItems.length > 0 && viewableItems[0].index !== null) {
+        setActiveIndex(viewableItems[0].index);
       }
-    }
+    },
+    [],
+  );
+
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 50,
+    minimumViewTime: 100,
+  }).current;
+
+  return {
+    activeIndex,
+    onViewableItemsChanged,
+    viewabilityConfig,
   };
-
-  // Navigation
-  const goToNextStep = () => {
-    if (currentStepIndex < steps.length - 1) {
-      setCurrentStepIndex(currentStepIndex + 1);
-    }
-  };
-
-  const goToPreviousStep = () => {
-    if (currentStepIndex > 0) {
-      setCurrentStepIndex(currentStepIndex - 1);
-    }
-  };
-
-  // Show loading state
-  if (isLoading) {
-    return (
-      <View className="flex-1 bg-background items-center justify-center">
-        <Text className="text-muted-foreground">Loading workout...</Text>
-      </View>
-    );
-  }
-
-  // Show error if no workout
-  if (!workout) {
-    return (
-      <View className="flex-1 bg-background items-center justify-center p-6">
-        <Icon as={Target} size={48} className="text-muted-foreground mb-4" />
-        <Text className="text-lg font-semibold mb-2">Workout Not Found</Text>
-        <Text className="text-muted-foreground text-center mb-6">
-          Unable to load the workout plan.
-        </Text>
-        <Button onPress={() => router.back()}>
-          <Text>Go Back</Text>
-        </Button>
-      </View>
-    );
-  }
-
-  return (
-    <View className="flex-1 bg-background">
-      {/* Header */}
-      <View className="flex-row items-center justify-between px-4 py-3 border-b border-border bg-card">
-        <Button
-          variant="ghost"
-          size="icon"
-          onPress={() => router.back()}
-          className="mr-2"
-        >
-          <Icon as={ChevronLeft} size={24} />
-        </Button>
-        <View className="flex-1 items-center">
-          <Text className="text-lg font-semibold">{workout.name}</Text>
-          <Text className="text-sm text-muted-foreground">
-            Step {currentStepIndex + 1} of {steps.length}
-          </Text>
-        </View>
-        <View className="w-10" />
-      </View>
-
-      <ScrollView className="flex-1">
-        {/* Workout Progress */}
-        <View className="p-4 bg-card border-b border-border">
-          <View className="flex-row items-center justify-between mb-2">
-            <Text className="text-sm font-medium">Workout Progress</Text>
-            <Text className="text-sm text-muted-foreground">
-              {Math.round(progress)}%
-            </Text>
-          </View>
-          <Progress value={progress} className="h-2" />
-        </View>
-
-        {/* Workout Description */}
-        {workout.description && (
-          <View className="p-4 border-b border-border">
-            <Text className="text-muted-foreground">{workout.description}</Text>
-          </View>
-        )}
-
-        {/* Current Step */}
-        {currentStep && (
-          <View className="p-4">
-            <StepCard step={currentStep} stepNumber={currentStepIndex + 1} />
-          </View>
-        )}
-
-        {/* Step Navigation */}
-        <View className="p-4 border-t border-border">
-          <View className="flex-row justify-between">
-            <Button
-              variant="outline"
-              onPress={goToPreviousStep}
-              disabled={currentStepIndex === 0}
-              className="flex-1 mr-2"
-            >
-              <Icon as={ChevronLeft} size={16} className="mr-1" />
-              <Text>Previous</Text>
-            </Button>
-            <Button
-              variant="outline"
-              onPress={goToNextStep}
-              disabled={currentStepIndex === steps.length - 1}
-              className="flex-1 ml-2"
-            >
-              <Text>Next</Text>
-              <Icon as={ChevronRight} size={16} className="ml-1" />
-            </Button>
-          </View>
-        </View>
-
-        {/* Workout Overview */}
-        <View className="p-4 border-t border-border">
-          <Text className="text-lg font-semibold mb-3">Workout Overview</Text>
-          <View className="gap-2">
-            {steps.map((step, index) => (
-              <StepSummary
-                key={index}
-                step={step}
-                stepNumber={index + 1}
-                isActive={index === currentStepIndex}
-                onPress={() => setCurrentStepIndex(index)}
-              />
-            ))}
-          </View>
-        </View>
-      </ScrollView>
-
-      {/* Footer - Start Recording */}
-      <View className="p-4 border-t border-border bg-card">
-        <Button
-          onPress={handleStartRecording}
-          className="w-full h-14 rounded-xl"
-        >
-          <Icon as={Play} size={24} className="color-background mr-3" />
-          <Text className="font-semibold text-lg">Start Recording</Text>
-        </Button>
-      </View>
-    </View>
-  );
 }
 
-// Step Card Component
-interface StepCardProps {
-  step: any;
-  stepNumber: number;
-}
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
 
-function StepCard({ step, stepNumber }: StepCardProps) {
-  const stepDurationMs = step.duration ? getDurationMs(step.duration) : 0;
+function flattenSteps(steps: any[]): WorkoutStep[] {
+  const result: WorkoutStep[] = [];
 
-  return (
-    <View className="bg-card border border-border rounded-xl p-4">
-      {/* Step Header */}
-      <View className="flex-row items-center justify-between mb-3">
-        <View className="flex-1">
-          <Text className="text-xl font-bold">
-            Step {stepNumber}: {step.name || "Exercise"}
-          </Text>
-          {step.description && (
-            <Text className="text-muted-foreground mt-1">
-              {step.description}
-            </Text>
-          )}
-        </View>
-        {stepDurationMs > 0 && (
-          <View className="items-end">
-            <Icon as={Clock} size={16} className="text-muted-foreground mb-1" />
-            <Text className="text-sm font-medium">
-              {formatDurationCompact(stepDurationMs / 1000)}
-            </Text>
-          </View>
-        )}
-      </View>
-
-      {/* Duration Info */}
-      {step.duration && step.duration !== "untilFinished" && (
-        <View className="mb-3 p-3 bg-muted rounded-lg">
-          <Text className="text-sm font-medium mb-1">Duration</Text>
-          <Text className="text-lg">
-            {step.duration.value} {step.duration.unit}
-          </Text>
-        </View>
-      )}
-
-      {/* Targets */}
-      {step.targets && step.targets.length > 0 && (
-        <View className="mb-3">
-          <Text className="text-sm font-semibold mb-2">Target Zones</Text>
-          <View className="gap-2">
-            {step.targets.map((target: any, index: number) => (
-              <TargetCard key={index} target={target} />
-            ))}
-          </View>
-        </View>
-      )}
-
-      {/* Notes */}
-      {step.notes && (
-        <View className="mt-3 p-3 bg-muted rounded-lg">
-          <Text className="text-sm font-medium mb-1">Notes</Text>
-          <Text className="text-sm">{step.notes}</Text>
-        </View>
-      )}
-    </View>
-  );
-}
-
-// Target Card Component
-interface TargetCardProps {
-  target: any;
-}
-
-function TargetCard({ target }: TargetCardProps) {
-  const intensity = target.intensity || 0;
-  const color = getIntensityColor(intensity, target.type);
-
-  return (
-    <View className="flex-row items-center justify-between p-3 border border-border rounded-lg">
-      <View className="flex-1">
-        <Text className="font-medium">{getTargetDisplayName(target.type)}</Text>
-        <Text className="text-sm text-muted-foreground">
-          Target: {intensity}
-          {getTargetUnit(target.type)}
-        </Text>
-      </View>
-      <View
-        className="w-4 h-4 rounded-full"
-        style={{ backgroundColor: color }}
-      />
-    </View>
-  );
-}
-
-// Step Summary Component
-interface StepSummaryProps {
-  step: any;
-  stepNumber: number;
-  isActive: boolean;
-  onPress: () => void;
-}
-
-function StepSummary({
-  step,
-  stepNumber,
-  isActive,
-  onPress,
-}: StepSummaryProps) {
-  const stepDurationMs = step.duration ? getDurationMs(step.duration) : 0;
-
-  return (
-    <Button
-      variant={isActive ? "secondary" : "ghost"}
-      onPress={onPress}
-      className="h-auto p-3 justify-start"
-    >
-      <View className="flex-row items-center w-full">
-        <View className="flex-1">
-          <Text
-            className={`font-medium ${isActive ? "text-foreground" : "text-muted-foreground"}`}
-          >
-            {stepNumber}. {step.name || "Exercise"}
-          </Text>
-          {stepDurationMs > 0 && (
-            <Text className="text-xs text-muted-foreground">
-              {formatDurationCompact(stepDurationMs / 1000)}
-            </Text>
-          )}
-        </View>
-        {isActive && <Icon as={Play} size={16} className="text-primary" />}
-      </View>
-    </Button>
-  );
-}
-
-// Helper Functions
-function flattenSteps(steps: any[], result: any[] = []): any[] {
   for (const step of steps) {
     if (step.type === "step") {
       result.push(step);
@@ -388,49 +150,448 @@ function flattenSteps(steps: any[], result: any[] = []): any[] {
       }
     }
   }
+
   return result;
 }
 
+function calculateTotalDuration(steps: WorkoutStep[]): number {
+  return steps.reduce((total, step) => {
+    return total + (step.duration ? getDurationMs(step.duration) : 0);
+  }, 0);
+}
+
+function buildWorkoutCards(
+  workout: any,
+  baseSteps: WorkoutStep[],
+): WorkoutCard[] {
+  return [
+    { id: "overview", type: "overview", workout },
+    ...baseSteps.map((step, index) => ({
+      id: `step-${index}`,
+      type: "step" as const,
+      step,
+      stepNumber: index + 1,
+    })),
+    { id: "completion", type: "completion" },
+  ];
+}
+
 function getTargetDisplayName(type: string): string {
-  switch (type) {
-    case "%FTP":
-      return "Power (FTP)";
-    case "%MaxHR":
-      return "Heart Rate (Max)";
-    case "%ThresholdHR":
-      return "Heart Rate (LT)";
-    case "watts":
-      return "Power";
-    case "bpm":
-      return "Heart Rate";
-    case "speed":
-      return "Speed";
-    case "cadence":
-      return "Cadence";
-    case "RPE":
-      return "Effort (RPE)";
-    default:
-      return type;
-  }
+  return TARGET_CONFIG[type]?.label || type;
 }
 
 function getTargetUnit(type: string): string {
-  switch (type) {
-    case "%FTP":
-    case "%MaxHR":
-    case "%ThresholdHR":
-      return "%";
-    case "watts":
-      return "W";
-    case "bpm":
-      return " bpm";
-    case "speed":
-      return " km/h";
-    case "cadence":
-      return " rpm";
-    case "RPE":
-      return "/10";
-    default:
-      return "";
+  return TARGET_CONFIG[type]?.unit || "";
+}
+
+function calculateProgress(currentIndex: number, totalCards: number): number {
+  if (totalCards <= 1) return 0;
+  return (currentIndex / (totalCards - 1)) * 100;
+}
+
+function formatWorkoutSummary(step: WorkoutStep): string {
+  const parts: string[] = [];
+
+  // Add duration
+  if (step.duration && step.duration !== "untilFinished") {
+    const { value, unit } = step.duration;
+
+    // Format duration naturally
+    if (unit === "time") {
+      parts.push(`${value}s`);
+    } else if (unit === "distance") {
+      parts.push(`${value}m`);
+    } else if (unit === "calories") {
+      parts.push(`${value} cal`);
+    } else {
+      parts.push(`${value} ${unit}`);
+    }
   }
+
+  // Add primary target (usually the first one)
+  if (step.targets && step.targets.length > 0) {
+    const primaryTarget = step.targets[0];
+    const targetStr = formatTargetSummary(primaryTarget);
+    if (targetStr) {
+      parts.push(targetStr);
+    }
+  }
+
+  // If we have both parts, join with @
+  if (parts.length === 2) {
+    return `${parts[0]} @ ${parts[1]}`;
+  }
+
+  // If only one part, return it
+  if (parts.length === 1) {
+    return parts[0];
+  }
+
+  // Fallback to step name or generic text
+  return step.name || "Exercise";
+}
+
+function formatTargetSummary(target: TargetZone): string {
+  const intensity = target.intensity || 0;
+  const unit = getTargetUnit(target.type);
+
+  // Simplified display for common targets
+  if (target.type === "%FTP") {
+    return `${intensity}% FTP`;
+  } else if (target.type === "%MaxHR") {
+    return `${intensity}% Max HR`;
+  } else if (target.type === "%ThresholdHR") {
+    return `${intensity}% LT HR`;
+  } else if (target.type === "watts") {
+    return `${intensity}W`;
+  } else if (target.type === "bpm") {
+    return `${intensity} bpm`;
+  } else if (target.type === "RPE") {
+    return `RPE ${intensity}/10`;
+  }
+
+  return `${intensity}${unit}`;
+}
+
+// ============================================================================
+// COMPONENTS
+// ============================================================================
+
+function WorkoutHeader({
+  workout,
+  currentStep,
+  totalSteps,
+  onBack,
+}: {
+  workout: any;
+  currentStep: number;
+  totalSteps: number;
+  onBack: () => void;
+}) {
+  return (
+    <View className="flex-row items-center justify-between px-4 py-3 border-b border-border bg-card">
+      <Button variant="ghost" size="icon" onPress={onBack} className="mr-2">
+        <Icon as={ChevronLeft} size={24} />
+      </Button>
+      <View className="flex-1 items-center">
+        <Text className="text-lg font-semibold" numberOfLines={1}>
+          {workout.name}
+        </Text>
+        <Text className="text-xs text-muted-foreground">
+          Step {currentStep} of {totalSteps}
+        </Text>
+      </View>
+      <View className="w-10" />
+    </View>
+  );
+}
+
+function OverviewCard({
+  workout,
+  totalSteps,
+  totalDuration,
+}: {
+  workout: any;
+  totalSteps: number;
+  totalDuration: number;
+}) {
+  return (
+    <View className="bg-card border-2 border-primary rounded-xl p-6 shadow-lg">
+      <View className="items-center mb-6">
+        <Icon as={TrendingUp} size={48} className="text-primary mb-3" />
+        <Text className="text-2xl font-bold text-center">{workout.name}</Text>
+      </View>
+
+      {workout.description && (
+        <View className="mb-6">
+          <Text className="text-muted-foreground text-center leading-6">
+            {workout.description}
+          </Text>
+        </View>
+      )}
+
+      <View className="gap-3">
+        <InfoRow label="Total Steps" value={totalSteps.toString()} />
+        {totalDuration > 0 && (
+          <InfoRow
+            label="Estimated Duration"
+            value={formatDurationCompact(totalDuration / 1000)}
+          />
+        )}
+      </View>
+
+      <View className="mt-6 p-4 bg-primary/10 rounded-lg">
+        <Text className="text-sm text-center font-medium">
+          Swipe up to begin your workout
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View className="flex-row items-center justify-between p-3 bg-muted rounded-lg">
+      <Text className="font-medium">{label}</Text>
+      <Text className="text-lg font-semibold">{value}</Text>
+    </View>
+  );
+}
+
+function StepCard({
+  step,
+  stepNumber,
+  isActive,
+}: {
+  step: WorkoutStep;
+  stepNumber: number;
+  isActive: boolean;
+}) {
+  const workoutSummary = useMemo(() => {
+    return formatWorkoutSummary(step);
+  }, [step]);
+
+  return (
+    <View
+      className={`bg-card border-2 rounded-xl p-6 shadow-lg ${
+        isActive ? "border-primary" : "border-border"
+      }`}
+    >
+      <View className="mb-4">
+        <Text className="text-sm text-muted-foreground mb-2">
+          Step {stepNumber}
+        </Text>
+        <Text className="text-3xl font-bold leading-tight">
+          {workoutSummary}
+        </Text>
+      </View>
+
+      {step.name && step.name !== "Exercise" && (
+        <View className="mb-4 p-3 bg-primary/10 rounded-lg">
+          <Text className="text-base font-medium">{step.name}</Text>
+        </View>
+      )}
+
+      {step.description && (
+        <View className="mb-4">
+          <Text className="text-muted-foreground leading-6">
+            {step.description}
+          </Text>
+        </View>
+      )}
+
+      {step.targets && step.targets.length > 0 && (
+        <View className="mb-4">
+          <View className="gap-2">
+            {step.targets.map((target, index) => (
+              <TargetChip key={`target-${index}`} target={target} />
+            ))}
+          </View>
+        </View>
+      )}
+
+      {step.notes && (
+        <View className="mt-4 p-4 bg-muted rounded-lg">
+          <Text className="text-sm font-medium text-muted-foreground mb-2">
+            Notes
+          </Text>
+          <Text className="text-sm leading-5">{step.notes}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function TargetChip({ target }: { target: TargetZone }) {
+  const intensity = target.intensity || 0;
+  const color = useMemo(
+    () => getIntensityColor(intensity, target.type),
+    [intensity, target.type],
+  );
+
+  return (
+    <View className="flex-row items-center p-3 border border-border rounded-lg bg-background">
+      <View
+        className="w-4 h-4 rounded-full mr-3"
+        style={{ backgroundColor: color }}
+      />
+      <Text className="font-medium text-base flex-1">
+        {getTargetDisplayName(target.type)}: {intensity}
+        {getTargetUnit(target.type)}
+      </Text>
+    </View>
+  );
+}
+
+function CompletionCard() {
+  return (
+    <View className="bg-card border-2 border-primary rounded-xl p-6 shadow-lg items-center justify-center min-h-[400px]">
+      <View className="items-center">
+        <View className="w-20 h-20 bg-primary rounded-full items-center justify-center mb-6">
+          <Text className="text-4xl">✓</Text>
+        </View>
+        <Text className="text-3xl font-bold mb-3">Workout Complete!</Text>
+        <Text className="text-muted-foreground text-center text-lg">
+          Great job finishing your workout.
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function LoadingState() {
+  return (
+    <View className="flex-1 bg-background items-center justify-center">
+      <Text className="text-muted-foreground">Loading workout...</Text>
+    </View>
+  );
+}
+
+function ErrorState({ onBack }: { onBack: () => void }) {
+  return (
+    <View className="flex-1 bg-background items-center justify-center p-6">
+      <Icon as={Target} size={48} className="text-muted-foreground mb-4" />
+      <Text className="text-lg font-semibold mb-2">Workout Not Found</Text>
+      <Text className="text-muted-foreground text-center mb-6">
+        Unable to load the workout plan.
+      </Text>
+      <Button onPress={onBack}>
+        <Text>Go Back</Text>
+      </Button>
+    </View>
+  );
+}
+
+function CardWrapper({
+  isActive,
+  children,
+}: {
+  isActive: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <View
+      className="px-4 justify-center"
+      style={{
+        opacity: isActive ? 1 : 0.4,
+        minHeight: 500,
+      }}
+    >
+      {children}
+    </View>
+  );
+}
+
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
+
+export default function FollowAlongScreen() {
+  const router = useRouter();
+  const flatListRef = useRef<FlatList>(null);
+
+  const { workout, isLoading } = useWorkoutInitialization(router);
+  const { activeIndex, onViewableItemsChanged, viewabilityConfig } =
+    useActiveCardTracking();
+
+  const baseSteps = useMemo(
+    () =>
+      workout?.structure?.steps ? flattenSteps(workout.structure.steps) : [],
+    [workout],
+  );
+
+  const totalDuration = useMemo(
+    () => calculateTotalDuration(baseSteps),
+    [baseSteps],
+  );
+
+  const allCards = useMemo(
+    () => buildWorkoutCards(workout, baseSteps),
+    [workout, baseSteps],
+  );
+
+  const progress = useMemo(
+    () => calculateProgress(activeIndex, allCards.length),
+    [activeIndex, allCards.length],
+  );
+
+  const renderCard = useCallback(
+    ({ item, index }: { item: WorkoutCard; index: number }) => {
+      const isActive = index === activeIndex;
+
+      return (
+        <CardWrapper isActive={isActive}>
+          {item.type === "overview" && (
+            <OverviewCard
+              workout={workout}
+              totalSteps={baseSteps.length}
+              totalDuration={totalDuration}
+            />
+          )}
+          {item.type === "step" && item.step && item.stepNumber && (
+            <StepCard
+              step={item.step}
+              stepNumber={item.stepNumber}
+              isActive={isActive}
+            />
+          )}
+          {item.type === "completion" && <CompletionCard />}
+        </CardWrapper>
+      );
+    },
+    [activeIndex, workout, baseSteps.length, totalDuration],
+  );
+
+  const keyExtractor = useCallback((item: WorkoutCard) => item.id, []);
+
+  const snapToOffsets = useMemo(() => {
+    return allCards.map((_, index) => index * 500);
+  }, [allCards]);
+
+  const getItemLayout = useCallback(
+    (_: any, index: number) => ({
+      length: 500,
+      offset: 500 * index,
+      index,
+    }),
+    [],
+  );
+
+  if (isLoading) return <LoadingState />;
+  if (!workout) return <ErrorState onBack={() => router.back()} />;
+
+  return (
+    <View className="flex-1 bg-background">
+      <WorkoutHeader
+        workout={workout}
+        currentStep={activeIndex}
+        totalSteps={allCards.length - 1}
+        onBack={() => router.back()}
+      />
+
+      <View className="px-4 pt-3 pb-2 bg-card border-b border-border">
+        <Progress value={progress} className="h-2" />
+      </View>
+
+      <FlatList
+        ref={flatListRef}
+        data={allCards}
+        renderItem={renderCard}
+        keyExtractor={keyExtractor}
+        getItemLayout={getItemLayout}
+        showsVerticalScrollIndicator={false}
+        snapToOffsets={snapToOffsets}
+        snapToAlignment="center"
+        decelerationRate="fast"
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={viewabilityConfig}
+        scrollEventThrottle={16}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={3}
+        windowSize={5}
+        initialNumToRender={2}
+        contentContainerStyle={{ paddingVertical: 20 }}
+      />
+    </View>
+  );
 }
