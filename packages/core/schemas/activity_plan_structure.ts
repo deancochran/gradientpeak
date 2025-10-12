@@ -331,3 +331,102 @@ export function getTargetGuidanceText(
     return `Decrease by ${Math.round(difference)}${getTargetUnit(target.type)}`;
   }
 }
+
+// ================================
+// Workout Utilities
+// ================================
+
+/**
+ * Workout card interface for UI display
+ */
+export interface WorkoutCard {
+  id: string;
+  type: "overview" | "step" | "completion";
+  workout?: any;
+  step?: FlattenedStep;
+  stepNumber?: number;
+}
+
+/**
+ * Convert percentage-based targets to absolute values using profile
+ */
+export function convertTargetToAbsolute(
+  target: IntensityTarget,
+  profile: { ftp?: number; thresholdHr?: number },
+): { intensity?: number; unit: string; label: string } {
+  switch (target.type) {
+    case "%FTP":
+      if (profile.ftp && target.intensity) {
+        return {
+          intensity: Math.round((target.intensity / 100) * profile.ftp),
+          unit: "W",
+          label: "Power",
+        };
+      }
+      return {
+        intensity: target.intensity,
+        unit: "% FTP",
+        label: "Power",
+      };
+
+    case "%ThresholdHR":
+      if (profile.thresholdHr && target.intensity) {
+        return {
+          intensity: Math.round((target.intensity / 100) * profile.thresholdHr),
+          unit: "bpm",
+          label: "Heart Rate",
+        };
+      }
+      return {
+        intensity: target.intensity,
+        unit: "% Threshold",
+        label: "Heart Rate",
+      };
+
+    default:
+      return {
+        intensity: target.intensity,
+        unit: getTargetUnit(target.type),
+        label: getMetricDisplayName(target.type),
+      };
+  }
+}
+
+/**
+ * Calculate total duration from flattened steps
+ */
+export function calculateTotalDuration(steps: FlattenedStep[]): number {
+  return steps.reduce((total, step) => {
+    return total + (step.duration ? getDurationMs(step.duration) : 0);
+  }, 0);
+}
+
+/**
+ * Build workout cards for carousel display
+ */
+export function buildWorkoutCards(
+  workout: any,
+  steps: FlattenedStep[],
+): WorkoutCard[] {
+  return [
+    { id: "overview", type: "overview", workout },
+    ...steps.map((step, index) => ({
+      id: `step-${index}`,
+      type: "step" as const,
+      step,
+      stepNumber: index + 1,
+    })),
+    { id: "completion", type: "completion" },
+  ];
+}
+
+/**
+ * Calculate progress percentage
+ */
+export function calculateProgress(
+  currentIndex: number,
+  totalCards: number,
+): number {
+  if (totalCards <= 1) return 0;
+  return (currentIndex / (totalCards - 1)) * 100;
+}

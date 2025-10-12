@@ -5,11 +5,13 @@ import { useCurrentReadings, usePlan } from "@/lib/hooks/useActivityRecorder";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import {
   ActivityPlanStructure,
+  convertTargetToAbsolute,
   extractActivityProfile,
   formatDuration,
   formatDurationCompactMs,
   getDurationMs,
   IntensityTarget,
+  isValueInTargetRange,
 } from "@repo/core";
 import {
   AlertTriangle,
@@ -35,14 +37,6 @@ interface EnhancedPlanCardProps {
 interface ProfileMetrics {
   ftp?: number;
   thresholdHr?: number;
-}
-
-interface ConvertedTarget {
-  min?: number;
-  max?: number;
-  intensity?: number;
-  unit: string;
-  label: string;
 }
 
 // ================================
@@ -72,87 +66,6 @@ function getProfileMetrics(
 /**
  * Convert a percentage-based target to actual units if profile data exists
  */
-function convertTarget(
-  target: IntensityTarget,
-  profile: ProfileMetrics,
-): ConvertedTarget {
-  switch (target.type) {
-    case "%FTP":
-      if (profile.ftp) {
-        return {
-          intensity: target.intensity
-            ? Math.round((target.intensity / 100) * profile.ftp)
-            : undefined,
-          unit: "W",
-          label: "Power",
-        };
-      }
-      return {
-        intensity: target.intensity,
-        unit: "% FTP",
-        label: "Power",
-      };
-
-    case "%ThresholdHR":
-      if (profile.thresholdHr) {
-        return {
-          intensity: target.intensity
-            ? Math.round((target.intensity / 100) * profile.thresholdHr)
-            : undefined,
-          unit: "bpm",
-          label: "Heart Rate",
-        };
-      }
-      return {
-        intensity: target.intensity,
-        unit: "% Threshold",
-        label: "Heart Rate",
-      };
-
-    case "%MaxHR":
-      // We don't have max HR in profile, so keep as percentage
-      return {
-        intensity: target.intensity,
-        unit: "% Max HR",
-        label: "Heart Rate",
-      };
-
-    case "watts":
-      return {
-        intensity: target.intensity,
-        unit: "W",
-        label: "Power",
-      };
-
-    case "bpm":
-      return {
-        intensity: target.intensity,
-        unit: "bpm",
-        label: "Heart Rate",
-      };
-
-    case "cadence":
-      return {
-        intensity: target.intensity,
-        unit: "rpm",
-        label: "Cadence",
-      };
-
-    case "speed":
-      return {
-        intensity: target.intensity,
-        unit: "km/h",
-        label: "Speed",
-      };
-
-    default:
-      return {
-        intensity: target.intensity,
-        unit: target.type,
-        label: target.type,
-      };
-  }
-}
 
 /**
  * Format interval description with converted units
@@ -160,7 +73,7 @@ function convertTarget(
 function formatIntervalDescription(
   duration: number,
   targets?: IntensityTarget[],
-  profile?: ProfileMetrics,
+  profile?: { ftp?: number; thresholdHr?: number },
 ): string {
   const parts: string[] = [];
 
@@ -170,17 +83,11 @@ function formatIntervalDescription(
 
   if (targets && targets.length > 0 && profile) {
     const primaryTarget = targets[0];
-    const converted = convertTarget(primaryTarget, profile);
+    const converted = convertTargetToAbsolute(primaryTarget, profile);
 
     let targetStr = "";
     if (converted.intensity) {
       targetStr = `${converted.intensity}`;
-    } else if (converted.min && converted.max) {
-      targetStr = `${converted.min}-${converted.max}`;
-    } else if (converted.min) {
-      targetStr = `>${converted.min}`;
-    } else if (converted.max) {
-      targetStr = `<${converted.max}`;
     }
 
     if (targetStr) {
@@ -192,23 +99,19 @@ function formatIntervalDescription(
 }
 
 /**
- * Determine if current value is within target range
+ * Adapter function to convert core function result to local format
  */
-function isInTargetRange(
+function getTargetStatus(
   current: number,
-  target: ConvertedTarget,
+  target: IntensityTarget,
+  converted: { intensity?: number; unit: string; label: string },
 ): "within" | "below" | "above" {
-  if (target.intensity) {
-    // Single target value - use ±5% tolerance
-    const tolerance = target.intensity * 0.05;
-    if (current < target.intensity - tolerance) return "below";
-    if (current > target.intensity + tolerance) return "above";
-    return "within";
-  }
+  if (!target.intensity) return "within";
 
-  if (target.min && current < target.min) return "below";
-  if (target.max && current > target.max) return "above";
-  return "within";
+  const inRange = isValueInTargetRange(current, target);
+  if (inRange) return "within";
+
+  return current < target.intensity ? "below" : "above";
 }
 
 // ================================
@@ -272,7 +175,7 @@ const CurrentSensorReadings = memo<CurrentSensorReadingsProps>(
     }
 
     const getMetricDisplay = (target: IntensityTarget) => {
-      const converted = convertTarget(target, profile);
+      const converted = convertTargetToAbsolute(target, profile);
       let icon = Target;
       let value: number | undefined;
       let color = "text-muted-foreground";
@@ -284,8 +187,8 @@ const CurrentSensorReadings = memo<CurrentSensorReadingsProps>(
           icon = Zap;
           value = currentMetrics.power;
           color = "text-yellow-500";
-          if (value !== undefined) {
-            status = isInTargetRange(value, converted);
+          if (value !== undefined && target) {
+            status = getTargetStatus(value, target, converted);
           }
           break;
         case "%MaxHR":
@@ -294,16 +197,16 @@ const CurrentSensorReadings = memo<CurrentSensorReadingsProps>(
           icon = Heart;
           value = currentMetrics.heartRate;
           color = "text-red-500";
-          if (value !== undefined) {
-            status = isInTargetRange(value, converted);
+          if (value !== undefined && target) {
+            status = getTargetStatus(value, target, converted);
           }
           break;
         case "cadence":
           icon = Target;
           value = currentMetrics.cadence;
           color = "text-blue-500";
-          if (value !== undefined) {
-            status = isInTargetRange(value, converted);
+          if (value !== undefined && target) {
+            status = getTargetStatus(value, target, converted);
           }
           break;
       }
@@ -371,15 +274,7 @@ const CurrentSensorReadings = memo<CurrentSensorReadingsProps>(
                   <Text className="text-xs font-semibold text-muted-foreground">
                     {display.converted.intensity
                       ? `${display.converted.intensity}`
-                      : display.converted.min && display.converted.max
-                        ? `${display.converted.min}-${display.converted.max}`
-                        : display.converted.min
-                          ? `>${display.converted.min}`
-                          : display.converted.max
-                            ? `<${display.converted.max}`
-                            : "N/A"}
-                  </Text>
-                  <Text className="text-xs text-muted-foreground">
+                      : "No target"}
                     {display.converted.unit}
                   </Text>
                 </View>

@@ -5,9 +5,17 @@ import { Text } from "@/components/ui/text";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import {
   ActivityPayload,
+  buildWorkoutCards,
+  calculateProgress,
+  calculateTotalDuration,
+  flattenPlanSteps,
   formatDurationCompact,
+  formatMetricValue,
   getDurationMs,
   getIntensityColor,
+  getMetricDisplayName,
+  getTargetUnit,
+  type WorkoutCard,
 } from "@repo/core";
 import { useRouter } from "expo-router";
 import { ChevronLeft, Target, TrendingUp } from "lucide-react-native";
@@ -32,28 +40,9 @@ interface TargetZone {
   intensity: number;
 }
 
-interface WorkoutCard {
-  id: string;
-  type: "overview" | "step" | "completion";
-  workout?: any;
-  step?: WorkoutStep;
-  stepNumber?: number;
-}
-
 // ============================================================================
 // TARGET CONFIGURATION
 // ============================================================================
-
-const TARGET_CONFIG: Record<string, { label: string; unit: string }> = {
-  "%FTP": { label: "Power (FTP)", unit: "%" },
-  "%MaxHR": { label: "Heart Rate (Max)", unit: "%" },
-  "%ThresholdHR": { label: "Heart Rate (LT)", unit: "%" },
-  watts: { label: "Power", unit: "W" },
-  bpm: { label: "Heart Rate", unit: " bpm" },
-  speed: { label: "Speed", unit: " km/h" },
-  cadence: { label: "Cadence", unit: " rpm" },
-  RPE: { label: "Effort (RPE)", unit: "/10" },
-};
 
 // ============================================================================
 // CUSTOM HOOKS
@@ -133,78 +122,20 @@ function useActiveCardTracking() {
 // HELPER FUNCTIONS
 // ============================================================================
 
-function flattenSteps(steps: any[]): WorkoutStep[] {
-  const result: WorkoutStep[] = [];
-
-  for (const step of steps) {
-    if (step.type === "step") {
-      result.push(step);
-    } else if (step.type === "repetition") {
-      for (let i = 0; i < step.repeat; i++) {
-        for (const subStep of step.steps) {
-          result.push({
-            ...subStep,
-            name: `${subStep.name || "Exercise"} (${i + 1}/${step.repeat})`,
-          });
-        }
-      }
-    }
-  }
-
-  return result;
-}
-
-function calculateTotalDuration(steps: WorkoutStep[]): number {
-  return steps.reduce((total, step) => {
-    return total + (step.duration ? getDurationMs(step.duration) : 0);
-  }, 0);
-}
-
-function buildWorkoutCards(
-  workout: any,
-  baseSteps: WorkoutStep[],
-): WorkoutCard[] {
-  return [
-    { id: "overview", type: "overview", workout },
-    ...baseSteps.map((step, index) => ({
-      id: `step-${index}`,
-      type: "step" as const,
-      step,
-      stepNumber: index + 1,
-    })),
-    { id: "completion", type: "completion" },
-  ];
-}
-
-function getTargetDisplayName(type: string): string {
-  return TARGET_CONFIG[type]?.label || type;
-}
-
-function getTargetUnit(type: string): string {
-  return TARGET_CONFIG[type]?.unit || "";
-}
-
-function calculateProgress(currentIndex: number, totalCards: number): number {
-  if (totalCards <= 1) return 0;
-  return (currentIndex / (totalCards - 1)) * 100;
-}
-
 function formatWorkoutSummary(step: WorkoutStep): string {
   const parts: string[] = [];
 
   // Add duration
   if (step.duration && step.duration !== "untilFinished") {
-    const { value, unit } = step.duration;
+    const ms = getDurationMs(step.duration);
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
 
-    // Format duration naturally
-    if (unit === "time") {
-      parts.push(`${value}s`);
-    } else if (unit === "distance") {
-      parts.push(`${value}m`);
-    } else if (unit === "calories") {
-      parts.push(`${value} cal`);
+    if (minutes > 0) {
+      parts.push(`${minutes}m`);
     } else {
-      parts.push(`${value} ${unit}`);
+      parts.push(`${seconds}s`);
     }
   }
 
@@ -232,25 +163,7 @@ function formatWorkoutSummary(step: WorkoutStep): string {
 }
 
 function formatTargetSummary(target: TargetZone): string {
-  const intensity = target.intensity || 0;
-  const unit = getTargetUnit(target.type);
-
-  // Simplified display for common targets
-  if (target.type === "%FTP") {
-    return `${intensity}% FTP`;
-  } else if (target.type === "%MaxHR") {
-    return `${intensity}% Max HR`;
-  } else if (target.type === "%ThresholdHR") {
-    return `${intensity}% LT HR`;
-  } else if (target.type === "watts") {
-    return `${intensity}W`;
-  } else if (target.type === "bpm") {
-    return `${intensity} bpm`;
-  } else if (target.type === "RPE") {
-    return `RPE ${intensity}/10`;
-  }
-
-  return `${intensity}${unit}`;
+  return formatMetricValue(target.intensity || 0, target.type);
 }
 
 // ============================================================================
@@ -416,7 +329,7 @@ function TargetChip({ target }: { target: TargetZone }) {
         style={{ backgroundColor: color }}
       />
       <Text className="font-medium text-base flex-1">
-        {getTargetDisplayName(target.type)}: {intensity}
+        {getMetricDisplayName(target.type)}: {intensity}
         {getTargetUnit(target.type)}
       </Text>
     </View>
@@ -496,7 +409,9 @@ export default function FollowAlongScreen() {
 
   const baseSteps = useMemo(
     () =>
-      workout?.structure?.steps ? flattenSteps(workout.structure.steps) : [],
+      workout?.structure?.steps
+        ? flattenPlanSteps(workout.structure.steps)
+        : [],
     [workout],
   );
 
