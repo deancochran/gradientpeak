@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
+import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import {
   ActivityType,
   getSampleActivitiesByType,
@@ -13,6 +14,7 @@ import {
   Bike,
   ChevronRight,
   Clock,
+  Code,
   Dumbbell,
   Footprints,
   Waves,
@@ -71,8 +73,19 @@ const CATEGORIES = [
     color: "text-gray-600",
     activityType: "other" as ActivityType,
   },
+  // Conditionally spread the dev object into the array
+  ...(__DEV__
+    ? [
+        {
+          id: "dev",
+          name: "Dev",
+          icon: Code,
+          color: "text-blue-600",
+          activityType: "dev" as ActivityType,
+        },
+      ]
+    : []),
 ];
-
 interface TemplatesListProps {
   onTemplateSelect: (template: any) => void;
 }
@@ -169,13 +182,13 @@ export function TemplatesList({ onTemplateSelect }: TemplatesListProps) {
   function handleTemplateSelect(template: any) {
     // Route based on activity type - swim, strength, and other must use follow-along
     if (shouldUseFollowAlong(template.activity_type)) {
-      // Route to follow-along for swim, strength, and other activities
+      // Store selection for follow-along
       const payload = {
         type: template.activity_type,
         plan: template, // template is already a RecordingServiceActivityPlan
       };
-      const payloadString = encodeURIComponent(JSON.stringify(payload));
-      router.push(`/follow-along?payload=${payloadString}` as any);
+      activitySelectionStore.setSelection(payload);
+      router.push("/follow-along"); // No parameters!
     } else {
       // Use callback for other activity types (cardio activities)
       onTemplateSelect(template);
@@ -227,7 +240,6 @@ function TemplateCard({ template, category, onSelect }: TemplateCardProps) {
   };
 
   const duration = getTotalDurationEstimate(template.structure);
-  const stepCount = template.structure?.steps?.length || 0;
 
   return (
     <Button

@@ -1,3 +1,4 @@
+import { SAMPLE_DEV_ACTIVITIES } from "./dev";
 import { SAMPLE_INDOOR_TRAINER_ACTIVITIES } from "./indoor-bike-activity";
 import { SAMPLE_INDOOR_STRENGTH_ACTIVITIES } from "./indoor-strength";
 import { SAMPLE_INDOOR_SWIM_ACTIVITIES } from "./indoor-swim";
@@ -7,6 +8,7 @@ import { SAMPLE_OUTDOOR_BIKE_ACTIVITIES } from "./outdoor-bike";
 import { SAMPLE_OUTDOOR_RUN_ACTIVITIES } from "./outdoor-run";
 
 // Export individual activity type modules
+export * from "./dev";
 export * from "./indoor-bike-activity";
 export * from "./indoor-strength";
 export * from "./indoor-swim";
@@ -48,6 +50,7 @@ export const SAMPLE_ACTIVITIES_BY_TYPE = {
   indoor_strength: SAMPLE_INDOOR_STRENGTH_ACTIVITIES,
   indoor_swim: SAMPLE_INDOOR_SWIM_ACTIVITIES,
   other: SAMPLE_OTHER_ACTIVITIES,
+  dev: SAMPLE_DEV_ACTIVITIES,
 } as const;
 
 // Helper function to get sample activities by type

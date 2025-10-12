@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
+import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import { shouldUseFollowAlong } from "@repo/core";
 import { useRouter } from "expo-router";
 import {
@@ -11,7 +12,6 @@ import {
   Clock,
   Dumbbell,
   Footprints,
-  Target,
   Waves,
 } from "lucide-react-native";
 import { View } from "react-native";
@@ -182,14 +182,14 @@ export function PlannedActivitiesList({
   function handlePlannedActivitySelect(activity: any) {
     // Route based on activity type - swim, strength, and other must use follow-along
     if (shouldUseFollowAlong(activity.activity_type)) {
-      // Route to follow-along for swim, strength, and other activities
+      // Store selection for follow-along
       const payload = {
         type: activity.activity_type,
         plannedActivityId: activity.id,
         plan: activity.plan, // activity.plan is already a RecordingServiceActivityPlan
       };
-      const payloadString = encodeURIComponent(JSON.stringify(payload));
-      router.push(`/follow-along?payload=${payloadString}` as any);
+      activitySelectionStore.setSelection(payload);
+      router.push("/follow-along"); // No parameters!
     } else {
       // Use callback for other activity types (cardio activities)
       onActivitySelect(activity);
@@ -286,7 +286,6 @@ function PlannedActivityCard({ activity, onSelect }: PlannedActivityCardProps) {
                 </Text>
               </View>
             )}
-
 
             {activity.estimated_tss && (
               <View className="flex-row items-center">

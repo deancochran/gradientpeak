@@ -5,39 +5,33 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Text } from "@/components/ui/text";
-import {
-  ActivityPayload,
-  ActivityPayloadSchema,
-  ActivityType,
-} from "@repo/core";
+import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
+import { ActivityPayload, ActivityType } from "@repo/core";
 import { useRouter } from "expo-router";
 import { Calendar, ChevronLeft, FileText, Zap } from "lucide-react-native";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Alert, ScrollView, View } from "react-native";
 
 export default function RecordLauncher() {
   const router = useRouter();
   const [selectedTab, setSelectedTab] = useState("quick-start");
 
+  // Clear store on mount to ensure fresh state
+  useEffect(() => {
+    console.log("[RecordLauncher] Clearing activity selection store");
+    activitySelectionStore.clear();
+  }, []);
+
   // Handle activity selection and navigation
   const handleActivitySelected = (payload: ActivityPayload) => {
     try {
       console.log("[RecordLauncher] Activity selected:", payload);
 
-      // Validate payload
-      const validatedPayload = ActivityPayloadSchema.safeParse(payload);
-      if (!validatedPayload.success) {
-        console.error(
-          "[RecordLauncher] Invalid payload:",
-          validatedPayload.error,
-        );
-        Alert.alert("Error", "Invalid activity selection. Please try again.");
-        return;
-      }
+      // Store the selection
+      activitySelectionStore.setSelection(payload);
 
-      // Navigate to record screen with payload
-      const payloadString = encodeURIComponent(JSON.stringify(payload));
-      router.push(`/record?payload=${payloadString}`);
+      // Navigate to record screen (no parameters!)
+      router.push("/record");
     } catch (error) {
       console.error(
         "[RecordLauncher] Error handling activity selection:",

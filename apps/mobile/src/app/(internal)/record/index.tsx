@@ -16,13 +16,13 @@ import {
   useSensors,
 } from "@/lib/hooks/useActivityRecorder";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import {
   type CarouselCardConfig,
   type CarouselCardType,
   createDefaultCardsConfig,
 } from "@/types/carousel";
-import { ActivityPayload, ActivityPayloadSchema } from "@repo/core";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import {
   Activity,
   Bluetooth,
@@ -39,7 +39,6 @@ import { Alert, View } from "react-native";
 
 export default function RecordModal() {
   const router = useRouter();
-  const params = useLocalSearchParams();
   const [isInitialized, setIsInitialized] = useState(false);
 
   // Use shared service from context (provided by _layout.tsx)
@@ -52,49 +51,36 @@ export default function RecordModal() {
   const { isOutdoorActivity } = useActivityStatus(service);
   const { start, pause, resume, finish } = useRecorderActions(service);
 
-  // Handle payload initialization
+  // Initialize from store selection
   useEffect(() => {
     if (!service || isInitialized) return;
 
-    const initializeFromPayload = async () => {
+    const initializeFromStore = () => {
       try {
-        // Check if we have a payload parameter
-        if (params.payload && typeof params.payload === "string") {
-          console.log(
-            "[RecordModal] Initializing from payload:",
-            params.payload,
-          );
+        console.log("[RecordModal] Loading selection from store");
 
-          // Parse the payload
-          const payloadData = JSON.parse(decodeURIComponent(params.payload));
-
-          // Validate the payload
-          const validatedPayload = ActivityPayloadSchema.safeParse(payloadData);
-          if (!validatedPayload.success) {
-            console.error(
-              "[RecordModal] Invalid payload:",
-              validatedPayload.error,
-            );
-            Alert.alert("Error", "Invalid activity data. Please try again.");
-            router.back();
-            return;
-          }
-
-          const payload: ActivityPayload = validatedPayload.data;
-          console.log("[RecordModal] Validated payload:", payload);
-
-          // Initialize the service based on the payload
-          console.log("[RecordModal] Processing payload with service method");
-          service.selectActivityFromPayload(payload);
-        } else {
-          // No payload - default to indoor bike trainer for backward compatibility
-          console.log("[RecordModal] No payload, using default activity");
-          service.selectUnplannedActivity("indoor_bike_trainer");
+        // Get selection from store
+        const selection = activitySelectionStore.consumeSelection();
+        if (!selection) {
+          console.error("[RecordModal] No selection found in store");
+          Alert.alert("Error", "No activity selected");
+          router.back();
+          return;
         }
+
+        console.log("[RecordModal] Selection loaded:", {
+          type: selection.type,
+          hasPlan: !!selection.plan,
+          plannedActivityId: selection.plannedActivityId,
+        });
+
+        // Initialize the service based on the selection
+        console.log("[RecordModal] Processing selection with service method");
+        service.selectActivityFromPayload(selection);
 
         setIsInitialized(true);
       } catch (error) {
-        console.error("[RecordModal] Error initializing from payload:", error);
+        console.error("[RecordModal] Error initializing from store:", error);
         Alert.alert(
           "Error",
           "Failed to initialize activity. Please try again.",
@@ -103,8 +89,8 @@ export default function RecordModal() {
       }
     };
 
-    initializeFromPayload();
-  }, [service, params.payload, isInitialized, router]);
+    initializeFromStore();
+  }, [service, isInitialized, router]);
 
   // Handle finish action - navigate immediately
   const handleFinish = useCallback(async () => {

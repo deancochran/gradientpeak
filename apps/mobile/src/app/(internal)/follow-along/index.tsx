@@ -2,14 +2,14 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Progress } from "@/components/ui/progress";
 import { Text } from "@/components/ui/text";
+import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import {
   ActivityPayload,
-  ActivityPayloadSchema,
   formatDurationCompact,
   getDurationMs,
   getIntensityColor,
 } from "@repo/core";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import {
   ChevronLeft,
   ChevronRight,
@@ -22,42 +22,48 @@ import { Alert, ScrollView, View } from "react-native";
 
 export default function FollowAlongScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams();
   const [workout, setWorkout] = useState<any>(null);
+  const [activityPayload, setActivityPayload] =
+    useState<ActivityPayload | null>(null);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Initialize from payload
+  // Load from store on mount
   useEffect(() => {
-    const initializeFromPayload = async () => {
+    const initializeFromStore = () => {
       try {
-        if (params.payload && typeof params.payload === "string") {
-          const payloadData = JSON.parse(decodeURIComponent(params.payload));
-          const validatedPayload = ActivityPayloadSchema.safeParse(payloadData);
+        console.log("[FollowAlong] Loading selection from store");
 
-          if (!validatedPayload.success) {
-            Alert.alert("Error", "Invalid workout data. Please try again.");
-            router.back();
-            return;
-          }
-
-          const payload: ActivityPayload = validatedPayload.data;
-
-          if (!payload.plan) {
-            Alert.alert("Error", "No workout plan found.");
-            router.back();
-            return;
-          }
-
-          setWorkout(payload.plan);
-        } else {
-          Alert.alert("Error", "No workout data provided.");
+        const selection = activitySelectionStore.consumeSelection();
+        if (!selection) {
+          console.error("[FollowAlong] No selection found in store");
+          Alert.alert("Error", "No workout selected");
           router.back();
           return;
         }
+
+        console.log("[FollowAlong] Selection loaded:", {
+          type: selection.type,
+          hasPlan: !!selection.plan,
+          plannedActivityId: selection.plannedActivityId,
+        });
+
+        if (!selection.plan) {
+          console.error("[FollowAlong] No workout plan found in selection");
+          Alert.alert("Error", "No workout plan found");
+          router.back();
+          return;
+        }
+
+        console.log("[FollowAlong] Setting workout and payload data");
+        setActivityPayload(selection);
+        setWorkout(selection.plan);
       } catch (error) {
-        console.error("[FollowAlong] Error initializing:", error);
-        Alert.alert("Error", "Failed to load workout.", [
+        console.error(
+          "[FollowAlong] Unexpected error during initialization:",
+          error,
+        );
+        Alert.alert("Error", "Failed to load workout. Please try again.", [
           { text: "OK", onPress: () => router.back() },
         ]);
       } finally {
@@ -65,8 +71,8 @@ export default function FollowAlongScreen() {
       }
     };
 
-    initializeFromPayload();
-  }, [params.payload, router]);
+    initializeFromStore();
+  }, [router]);
 
   // Get flattened steps
   const steps = workout?.structure?.steps
@@ -78,8 +84,18 @@ export default function FollowAlongScreen() {
 
   // Start recording with the same payload
   const handleStartRecording = () => {
-    if (params.payload) {
-      router.push(`/record?payload=${params.payload}` as any);
+    if (activityPayload) {
+      try {
+        console.log("[FollowAlong] Re-storing selection for record screen");
+        // Re-store for record screen
+        activitySelectionStore.setSelection(activityPayload);
+        router.push("/record"); // No parameters!
+      } catch (error) {
+        console.error("[FollowAlong] Error storing payload for record:", error);
+        Alert.alert("Error", "Failed to start recording. Please try again.", [
+          { text: "OK", onPress: () => router.back() },
+        ]);
+      }
     }
   };
 
