@@ -87,6 +87,9 @@ export interface ServiceEvents {
   // Unplanned activity was selected
   activitySelected: (type: PublicActivityType) => void;
 
+  // Activity payload was processed
+  payloadProcessed: (payload: import("@repo/core").ActivityPayload) => void;
+
   // Sensors connected/disconnected
   sensorsChanged: (sensors: any[]) => void;
 
@@ -592,6 +595,46 @@ export class ActivityRecorderService extends EventEmitter {
     this.selectedActivityType = type;
     this.clearPlan();
     this.emit("activitySelected", type);
+  }
+
+  /**
+   * Initialize activity recording from an ActivityPayload.
+   * Handles both planned activities (with structure) and quick-start activities.
+   *
+   * @param payload - ActivityPayload containing activity type and optional plan
+   */
+  selectActivityFromPayload(
+    payload: import("@repo/core").ActivityPayload,
+  ): void {
+    console.log("[Service] Initializing from payload:", payload);
+
+    try {
+      if (payload.plan) {
+        // Template or planned activity with structure
+        const plan: RecordingServiceActivityPlan = {
+          name: payload.plan.name,
+          description: payload.plan.description || "",
+          activity_type: payload.plan.activity_type,
+          estimated_tss: payload.plan.estimated_tss,
+          structure: payload.plan.structure,
+        };
+
+        console.log("[Service] Selecting plan from payload:", plan.name);
+        this.selectPlan(plan, payload.plannedActivityId);
+      } else {
+        // Quick start activity
+        console.log(
+          "[Service] Selecting unplanned activity from payload:",
+          payload.type,
+        );
+        this.selectUnplannedActivity(payload.type);
+      }
+
+      this.emit("payloadProcessed", payload);
+    } catch (error) {
+      console.error("[Service] Error processing payload:", error);
+      throw new Error(`Failed to process activity payload: ${error}`);
+    }
   }
 
   // ================================

@@ -21,7 +21,8 @@ import {
   type CarouselCardType,
   createDefaultCardsConfig,
 } from "@/types/carousel";
-import { useRouter } from "expo-router";
+import { ActivityPayload, ActivityPayloadSchema } from "@repo/core";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   Activity,
   Bluetooth,
@@ -33,11 +34,13 @@ import {
   Shield,
   Square,
 } from "lucide-react-native";
-import React, { useCallback, useEffect, useMemo } from "react";
-import { View } from "react-native";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Alert, View } from "react-native";
 
 export default function RecordModal() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const [isInitialized, setIsInitialized] = useState(false);
 
   // Use shared service from context (provided by _layout.tsx)
   const service = useSharedActivityRecorder();
@@ -46,8 +49,62 @@ export default function RecordModal() {
   const state = useRecordingState(service);
   const { count: sensorCount } = useSensors(service);
   const plan = usePlan(service);
-  const { isOutdoorActivity, activityType } = useActivityStatus(service);
+  const { isOutdoorActivity } = useActivityStatus(service);
   const { start, pause, resume, finish } = useRecorderActions(service);
+
+  // Handle payload initialization
+  useEffect(() => {
+    if (!service || isInitialized) return;
+
+    const initializeFromPayload = async () => {
+      try {
+        // Check if we have a payload parameter
+        if (params.payload && typeof params.payload === "string") {
+          console.log(
+            "[RecordModal] Initializing from payload:",
+            params.payload,
+          );
+
+          // Parse the payload
+          const payloadData = JSON.parse(decodeURIComponent(params.payload));
+
+          // Validate the payload
+          const validatedPayload = ActivityPayloadSchema.safeParse(payloadData);
+          if (!validatedPayload.success) {
+            console.error(
+              "[RecordModal] Invalid payload:",
+              validatedPayload.error,
+            );
+            Alert.alert("Error", "Invalid activity data. Please try again.");
+            router.back();
+            return;
+          }
+
+          const payload: ActivityPayload = validatedPayload.data;
+          console.log("[RecordModal] Validated payload:", payload);
+
+          // Initialize the service based on the payload
+          console.log("[RecordModal] Processing payload with service method");
+          service.selectActivityFromPayload(payload);
+        } else {
+          // No payload - default to indoor bike trainer for backward compatibility
+          console.log("[RecordModal] No payload, using default activity");
+          service.selectUnplannedActivity("indoor_bike_trainer");
+        }
+
+        setIsInitialized(true);
+      } catch (error) {
+        console.error("[RecordModal] Error initializing from payload:", error);
+        Alert.alert(
+          "Error",
+          "Failed to initialize activity. Please try again.",
+          [{ text: "OK", onPress: () => router.back() }],
+        );
+      }
+    };
+
+    initializeFromPayload();
+  }, [service, params.payload, isInitialized, router]);
 
   // Handle finish action - navigate immediately
   const handleFinish = useCallback(async () => {
@@ -98,6 +155,15 @@ export default function RecordModal() {
     );
     return config;
   }, [isOutdoorActivity, plan.hasPlan]);
+
+  // Show loading state while initializing
+  if (!isInitialized) {
+    return (
+      <View className="flex-1 bg-background items-center justify-center">
+        <Text className="text-muted-foreground">Initializing activity...</Text>
+      </View>
+    );
+  }
 
   return (
     <View className="flex-1 bg-background">

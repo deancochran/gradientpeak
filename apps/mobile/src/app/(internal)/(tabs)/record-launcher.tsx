@@ -1,23 +1,182 @@
-// app/(tabs)/record-launcher.tsx
-
+import { PlannedActivitiesList } from "@/components/PlannedActivitiesList";
+import { QuickStartList } from "@/components/QuickStartList";
+import { TemplatesList } from "@/components/TemplatesList";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Text } from "@/components/ui/text";
+import {
+  ActivityPayload,
+  ActivityPayloadSchema,
+  ActivityType,
+} from "@repo/core";
 import { useRouter } from "expo-router";
-import { useEffect } from "react";
-import { View } from "react-native";
+import { Calendar, ChevronLeft, FileText, Zap } from "lucide-react-native";
+import React, { useState } from "react";
+import { Alert, ScrollView, View } from "react-native";
 
 export default function RecordLauncher() {
   const router = useRouter();
+  const [selectedTab, setSelectedTab] = useState("quick-start");
 
-  useEffect(() => {
-    // 🚀 Immediately push to the actual modal route
-    // This route is defined by the record/_layout.tsx file below
-    router.push("/record");
-  }, [router]);
+  // Handle activity selection and navigation
+  const handleActivitySelected = (payload: ActivityPayload) => {
+    try {
+      console.log("[RecordLauncher] Activity selected:", payload);
 
-  // Render a brief loading state while the redirection occurs
+      // Validate payload
+      const validatedPayload = ActivityPayloadSchema.safeParse(payload);
+      if (!validatedPayload.success) {
+        console.error(
+          "[RecordLauncher] Invalid payload:",
+          validatedPayload.error,
+        );
+        Alert.alert("Error", "Invalid activity selection. Please try again.");
+        return;
+      }
+
+      // Navigate to record screen with payload
+      const payloadString = encodeURIComponent(JSON.stringify(payload));
+      router.push(`/record?payload=${payloadString}`);
+    } catch (error) {
+      console.error(
+        "[RecordLauncher] Error handling activity selection:",
+        error,
+      );
+      Alert.alert("Error", "Failed to start activity. Please try again.");
+    }
+  };
+
+  // Quick start activity selection
+  const handleQuickStart = (activityType: ActivityType) => {
+    const payload: ActivityPayload = {
+      type: activityType,
+      // No plannedActivityId or plan for quick start
+    };
+    handleActivitySelected(payload);
+  };
+
+  // Template activity selection
+  // Note: Templates always have structure, but routing depends on activity type
+  // Swim, strength, and other activities go to follow-along screen automatically
+  const handleTemplateSelected = (template: any) => {
+    const payload: ActivityPayload = {
+      type: template.activity_type,
+      plan: template, // template is already a RecordingServiceActivityPlan
+    };
+    handleActivitySelected(payload);
+  };
+
+  // Planned activity selection
+  // Note: Planned activities always have structure, but routing depends on activity type
+  // Swim, strength, and other activities go to follow-along screen automatically
+  const handlePlannedActivitySelected = (plannedActivity: any) => {
+    const payload: ActivityPayload = {
+      type: plannedActivity.activity_type,
+      plannedActivityId: plannedActivity.id,
+      plan: plannedActivity.plan, // plannedActivity.plan is already a RecordingServiceActivityPlan
+    };
+    handleActivitySelected(payload);
+  };
+
   return (
-    <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-      <Text>Launching Recorder...</Text>
+    <View className="flex-1 bg-background">
+      {/* Header */}
+      <View className="flex-row items-center justify-between px-4 py-3 border-b border-border">
+        <Button
+          variant="ghost"
+          size="icon"
+          onPress={() => router.back()}
+          className="mr-2"
+        >
+          <Icon as={ChevronLeft} size={24} />
+        </Button>
+        <Text className="text-lg font-semibold">Start Activity</Text>
+        <View className="w-10" /> {/* Spacer for centering */}
+      </View>
+
+      {/* Main Content */}
+      <Tabs
+        value={selectedTab}
+        onValueChange={setSelectedTab}
+        className="flex-1"
+      >
+        {/* Tab Navigation */}
+        <View className="px-4 py-3 border-b border-border">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger
+              value="quick-start"
+              className="flex-row items-center gap-2"
+            >
+              <Icon as={Zap} size={16} />
+              <Text className="text-sm font-medium">Quick Start</Text>
+            </TabsTrigger>
+            <TabsTrigger
+              value="templates"
+              className="flex-row items-center gap-2"
+            >
+              <Icon as={FileText} size={16} />
+              <Text className="text-sm font-medium">Templates</Text>
+            </TabsTrigger>
+            <TabsTrigger
+              value="planned"
+              className="flex-row items-center gap-2"
+            >
+              <Icon as={Calendar} size={16} />
+              <Text className="text-sm font-medium">Planned</Text>
+            </TabsTrigger>
+          </TabsList>
+        </View>
+
+        {/* Tab Content */}
+        <ScrollView className="flex-1">
+          {/* Quick Start Tab */}
+          <TabsContent value="quick-start" className="flex-1 mt-0">
+            <View className="p-4">
+              <View className="mb-4">
+                <Text className="text-xl font-bold mb-2">Quick Start</Text>
+                <Text className="text-muted-foreground">
+                  Select an activity type to start recording immediately
+                </Text>
+              </View>
+
+              <QuickStartList onActivitySelect={handleQuickStart} />
+            </View>
+          </TabsContent>
+
+          {/* Templates Tab */}
+          <TabsContent value="templates" className="flex-1 mt-0">
+            <View className="p-4">
+              <View className="mb-4">
+                <Text className="text-xl font-bold mb-2">Templates</Text>
+                <Text className="text-muted-foreground">
+                  Choose from pre-built workout templates
+                </Text>
+              </View>
+
+              <TemplatesList onTemplateSelect={handleTemplateSelected} />
+            </View>
+          </TabsContent>
+
+          {/* Planned Activities Tab */}
+          <TabsContent value="planned" className="flex-1 mt-0">
+            <View className="p-4">
+              <View className="mb-4">
+                <Text className="text-xl font-bold mb-2">
+                  Planned Activities
+                </Text>
+                <Text className="text-muted-foreground">
+                  Start a scheduled workout from your plan
+                </Text>
+              </View>
+
+              <PlannedActivitiesList
+                onActivitySelect={handlePlannedActivitySelected}
+              />
+            </View>
+          </TabsContent>
+        </ScrollView>
+      </Tabs>
     </View>
   );
 }
