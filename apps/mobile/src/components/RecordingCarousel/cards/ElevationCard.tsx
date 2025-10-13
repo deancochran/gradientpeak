@@ -1,3 +1,7 @@
+import {
+  ANIMATIONS,
+  CARD_STYLES,
+} from "@/components/RecordingCarousel/constants";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
@@ -9,7 +13,6 @@ import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import {
   Activity,
   Mountain,
-  Navigation,
   TrendingDown,
   TrendingUp,
 } from "lucide-react-native";
@@ -64,30 +67,24 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
 
   return (
     <View style={{ width: screenWidth }} className="flex-1 p-4">
-      <Card className="flex-1">
-        <CardContent>
+      <Card className={CARD_STYLES.wrapper}>
+        <CardContent className={CARD_STYLES.content}>
           {/* Header */}
-          <View className="flex-row items-center justify-between mb-6">
+          <View className={CARD_STYLES.header}>
             <View className="flex-row items-center">
-              <Icon as={Mountain} size={24} className="text-green-600 mr-2" />
+              <Icon
+                as={Mountain}
+                size={CARD_STYLES.iconSize}
+                className="text-green-600 mr-2"
+              />
               <Text className="text-lg font-semibold">Elevation</Text>
             </View>
-            {hasCurrentElevation && (
-              <View className="flex-row items-center">
-                <Icon
-                  as={Navigation}
-                  size={16}
-                  className="text-green-600 mr-1"
-                />
-                <Text className="text-xs text-muted-foreground">GPS</Text>
-              </View>
-            )}
           </View>
 
           {/* Current Elevation */}
           <View className="items-center mb-8">
             <Text
-              className={`text-5xl font-bold ${hasCurrentElevation ? "text-blue-500" : "text-blue-500/30"}`}
+              className={`text-5xl font-bold ${hasCurrentElevation ? "text-blue-500" : "text-blue-500/30"} ${ANIMATIONS.valueChange}`}
             >
               {formatElevation(currentAltitude)}
             </Text>
@@ -97,44 +94,55 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
           </View>
 
           <View className="gap-3">
+            <Text className={CARD_STYLES.sectionHeader}>Elevation Metrics</Text>
             <View className="flex-row gap-3">
-              <View className="flex-1 items-center p-3 bg-green-500/10 rounded-lg">
+              <View
+                className={`flex-1 items-center ${CARD_STYLES.metricCardColored("green")} ${ANIMATIONS.transition}`}
+              >
                 <Icon
                   as={TrendingUp}
                   size={16}
                   className="text-green-500 mb-1"
                 />
                 <Text
-                  className={`text-xl font-semibold ${totalAscent > 0 ? "text-green-500" : "text-green-500/30"}`}
+                  className={`text-xl font-semibold ${totalAscent > 0 ? "text-green-500" : "text-green-500/30"} ${ANIMATIONS.valueChange}`}
                 >
-                  {`${Math.round(totalAscent ?? 0)}m`}
+                  {Math.round(totalAscent)}m
                 </Text>
                 <Text className="text-xs text-muted-foreground">Ascent</Text>
               </View>
 
-              <View className="flex-1 items-center p-3 bg-blue-500/10 rounded-lg">
+              <View
+                className={`flex-1 items-center ${CARD_STYLES.metricCardColored("blue")} ${ANIMATIONS.transition}`}
+              >
                 <Icon
                   as={TrendingDown}
                   size={16}
                   className="text-blue-500 mb-1"
                 />
                 <Text
-                  className={`text-xl font-semibold ${totalDescent > 0 ? "text-blue-500" : "text-blue-500/30"}`}
+                  className={`text-xl font-semibold ${totalDescent > 0 ? "text-blue-500" : "text-blue-500/30"} ${ANIMATIONS.valueChange}`}
                 >
-                  {`${Math.round(totalDescent ?? 0)}m`}
+                  {Math.round(totalDescent)}m
                 </Text>
                 <Text className="text-xs text-muted-foreground">Descent</Text>
               </View>
             </View>
 
+            {/* Grade Section */}
+            <Text className={CARD_STYLES.sectionHeader}>Grade Analysis</Text>
+
             {/* Grade Card */}
-            <View className="p-4 bg-muted/10 rounded-lg">
+            <View
+              className={`${CARD_STYLES.metricCard} ${ANIMATIONS.transition}`}
+            >
               <View className="flex-row items-center justify-between mb-2">
                 <Text className="text-sm font-medium">Average Grade</Text>
                 <Text
-                  className={`text-2xl font-semibold ${hasElevationData ? getGradeColor(avgGrade) : "text-muted-foreground/30"}`}
+                  className={`text-2xl font-semibold ${hasElevationData ? getGradeColor(avgGrade) : "text-muted-foreground/30"} ${ANIMATIONS.valueChange}`}
                 >
-                  {`${avgGrade > 0 ? "+" : ""}${(avgGrade ?? 0).toFixed(1)}%`}
+                  {avgGrade > 0 ? "+" : ""}
+                  {avgGrade.toFixed(1)}%
                 </Text>
               </View>
               <Text
@@ -149,9 +157,9 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                   <View
                     className={`h-full rounded-full ${
                       avgGrade > 0 ? "bg-green-500" : "bg-blue-500"
-                    }`}
+                    } ${ANIMATIONS.barGrowth}`}
                     style={{
-                      width: `${Math.min(100, Math.abs(avgGrade) * 10)}%`,
+                      width: `${Math.min(100, Math.abs(avgGrade) * 5)}%`,
                     }}
                   />
                 </View>
@@ -163,9 +171,16 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
               </View>
             </View>
 
+            {/* Additional Metrics */}
+            <Text className={CARD_STYLES.sectionHeader}>
+              Additional Metrics
+            </Text>
+
             {/* Climb Rate */}
             {!!hasDistance && elevationGainPerKm > 0 && (
-              <View className="flex-row justify-between items-center p-3 bg-green-500/10 rounded-lg">
+              <View
+                className={`flex-row justify-between items-center ${CARD_STYLES.metricCardColored("green")} ${ANIMATIONS.transition}`}
+              >
                 <View className="flex-row items-center">
                   <Icon
                     as={TrendingUp}
@@ -181,7 +196,9 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
             )}
 
             {/* Net Change */}
-            <View className="flex-row justify-between items-center p-3 bg-muted/10 rounded-lg">
+            <View
+              className={`flex-row justify-between items-center ${CARD_STYLES.metricCard} ${ANIMATIONS.transition}`}
+            >
               <View className="flex-row items-center">
                 <Icon
                   as={Activity}
@@ -197,15 +214,18 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                       ? "text-green-600"
                       : "text-blue-600"
                     : "text-muted-foreground/30"
-                }`}
+                } ${ANIMATIONS.valueChange}`}
               >
-                {`${totalAscent - totalDescent > 0 ? "+" : ""}${Math.round((totalAscent ?? 0) - (totalDescent ?? 0))}m`}
+                {totalAscent - totalDescent > 0 ? "+" : ""}
+                {Math.round(totalAscent - totalDescent)}m
               </Text>
             </View>
 
             {/* VAM */}
             {(totalAscent ?? 0) > 50 && (stats?.movingTime ?? 0) > 0 && (
-              <View className="flex-row justify-between items-center p-3 bg-orange-500/10 rounded-lg">
+              <View
+                className={`flex-row justify-between items-center ${CARD_STYLES.metricCardColored("orange")} ${ANIMATIONS.transition}`}
+              >
                 <View className="flex-row items-center">
                   <Text className="text-sm font-medium mr-2">VAM</Text>
                   <Text className="text-xs text-muted-foreground">
@@ -213,10 +233,12 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
                   </Text>
                 </View>
                 <View className="items-end">
-                  <Text className="text-lg font-semibold text-orange-600">
-                    {`${Math.round(
+                  <Text
+                    className={`text-lg font-semibold text-orange-600 ${ANIMATIONS.valueChange}`}
+                  >
+                    {Math.round(
                       ((totalAscent ?? 0) / (stats?.movingTime ?? 1)) * 3600,
-                    )}`}
+                    )}
                   </Text>
                   <Text className="text-xs text-muted-foreground">m/h</Text>
                 </View>

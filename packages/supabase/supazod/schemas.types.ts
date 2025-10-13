@@ -67,6 +67,18 @@ export type PublicIntegrationsUpdate = z.infer<
 export type PublicIntegrationsRelationships = z.infer<
   typeof generated.publicIntegrationsRelationshipsSchema
 >;
+export type PublicOauthStatesRow = z.infer<
+  typeof generated.publicOauthStatesRowSchema
+>;
+export type PublicOauthStatesInsert = z.infer<
+  typeof generated.publicOauthStatesInsertSchema
+>;
+export type PublicOauthStatesUpdate = z.infer<
+  typeof generated.publicOauthStatesUpdateSchema
+>;
+export type PublicOauthStatesRelationships = z.infer<
+  typeof generated.publicOauthStatesRelationshipsSchema
+>;
 export type PublicPlannedActivitiesRow = z.infer<
   typeof generated.publicPlannedActivitiesRowSchema
 >;

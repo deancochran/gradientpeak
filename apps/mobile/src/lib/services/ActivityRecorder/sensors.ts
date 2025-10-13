@@ -166,12 +166,30 @@ export class SensorsManager {
   }
 
   /** Scan for devices */
-  async scan(timeoutMs = 10000): Promise<Device[]> {
-    const found: Device[] = [];
+  private scanCallbacks: ((device: Device) => void)[] = [];
+  private currentScanTimeout: number | null = null;
+
+  subscribeScan(callback: (device: Device) => void): () => void {
+    this.scanCallbacks.push(callback);
+    return () => {
+      const index = this.scanCallbacks.indexOf(callback);
+      if (index > -1) {
+        this.scanCallbacks.splice(index, 1);
+      }
+    };
+  }
+
+  async startScan(timeoutMs = 10000): Promise<void> {
+    // Stop any existing scan
+    this.stopScan();
+
+    const discoveredIds = new Set<string>();
+
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
+      this.currentScanTimeout = setTimeout(() => {
         this.bleManager.stopDeviceScan();
-        resolve(found);
+        this.currentScanTimeout = null;
+        resolve();
       }, timeoutMs);
 
       this.bleManager.startDeviceScan(
@@ -184,17 +202,31 @@ export class SensorsManager {
         null,
         (error, device) => {
           if (error) {
-            clearTimeout(timeout);
+            if (this.currentScanTimeout) {
+              clearTimeout(this.currentScanTimeout);
+              this.currentScanTimeout = null;
+            }
             this.bleManager.stopDeviceScan();
             reject(error);
             return;
           }
-          if (device && device.name && !found.find((d) => d.id === device.id)) {
-            found.push(device);
+
+          if (device && device.name && !discoveredIds.has(device.id)) {
+            discoveredIds.add(device.id);
+            // Emit device to all scan subscribers
+            this.scanCallbacks.forEach((callback) => callback(device));
           }
         },
       );
     });
+  }
+
+  stopScan(): void {
+    if (this.currentScanTimeout) {
+      clearTimeout(this.currentScanTimeout);
+      this.currentScanTimeout = null;
+    }
+    this.bleManager.stopDeviceScan();
   }
 
   /** Connect to a device with auto-reconnect support */
@@ -283,13 +315,28 @@ export class SensorsManager {
   /** Disconnect a device */
   async disconnectSensor(deviceId: string) {
     const sensor = this.connectedSensors.get(deviceId);
-    if (sensor) {
-      if (sensor.device) {
-        try {
-          await sensor.device.cancelConnection();
-        } catch {}
+    if (!sensor) {
+      console.log(`Sensor ${deviceId} not found for disconnection`);
+      return;
+    }
+
+    console.log(`Disconnecting sensor: ${sensor.name}`);
+
+    // Update connection state and notify callbacks first
+    sensor.connectionState = "disconnected";
+    this.connectionCallbacks.forEach((cb) => cb(sensor));
+
+    // Cancel BLE connection if device exists
+    if (sensor.device) {
+      try {
+        await sensor.device.cancelConnection();
+        console.log(`Successfully disconnected from ${sensor.name}`);
+      } catch (error) {
+        console.error(`Error disconnecting from ${sensor.name}:`, error);
       }
     }
+
+    // Remove from connected sensors map
     this.connectedSensors.delete(deviceId);
   }
 

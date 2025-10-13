@@ -61,9 +61,11 @@ export interface RecorderActions {
   selectActivity: (type: PublicActivityType) => void;
 
   // Device management
-  scanDevices: () => Promise<Device[]>;
+  startScan: () => Promise<void>; // Event-based scanning
+  stopScan: () => void;
+  subscribeScan: (callback: (device: Device) => void) => () => void;
   connectDevice: (deviceId: string) => Promise<void>;
-  disconnectDevice: (deviceId: string) => void;
+  disconnectDevice: (deviceId: string) => Promise<void>;
 }
 
 // ================================
@@ -488,10 +490,23 @@ export function useRecorderActions(
   );
 
   // Device management
-  const scanDevices = useCallback(async (): Promise<Device[]> => {
-    if (!service) return [];
-    return await service.sensorsManager.scan();
+  const startScan = useCallback(async (): Promise<void> => {
+    if (!service) return;
+    return await service.sensorsManager.startScan();
   }, [service]);
+
+  const stopScan = useCallback((): void => {
+    if (!service) return;
+    service.sensorsManager.stopScan();
+  }, [service]);
+
+  const subscribeScan = useCallback(
+    (callback: (device: Device) => void): (() => void) => {
+      if (!service) return () => {};
+      return service.sensorsManager.subscribeScan(callback);
+    },
+    [service],
+  );
 
   const connectDevice = useCallback(
     async (deviceId: string) => {
@@ -502,9 +517,9 @@ export function useRecorderActions(
   );
 
   const disconnectDevice = useCallback(
-    (deviceId: string) => {
+    async (deviceId: string) => {
       if (!service) return;
-      service.sensorsManager.disconnectSensor(deviceId);
+      await service.sensorsManager.disconnectSensor(deviceId);
     },
     [service],
   );
@@ -520,37 +535,13 @@ export function useRecorderActions(
     selectActivity,
 
     // Device management
-    scanDevices,
+    startScan,
+    stopScan,
+    subscribeScan,
     connectDevice,
     disconnectDevice,
   };
 }
-
-// ================================
-// Utility Hooks (Convenience)
-// ================================
-
-/**
- * Check if recording can be started
- */
-export function useCanStartRecording(
-  service: ActivityRecorderService | null,
-): boolean {
-  const state = useRecordingState(service);
-  return state === "ready" || state === "pending";
-}
-
-/**
- * Check if recording is currently active
- */
-export function useIsRecordingActive(
-  service: ActivityRecorderService | null,
-): boolean {
-  const state = useRecordingState(service);
-  return state === "recording" || state === "paused";
-}
-
-// ==================== NEW OPTIMIZED HOOKS ====================
 
 /**
  * Hook for current sensor readings - updates on sensor changes only
@@ -614,45 +605,6 @@ export function useSessionStats(
   }, [service]);
 
   return stats;
-}
-
-/**
- * Hook for specific sensor value - minimizes re-renders
- */
-export function useSensorValue(
-  service: ActivityRecorderService | null,
-  sensor: keyof CurrentReadings,
-): number | undefined {
-  const readings = useCurrentReadings(service);
-  return readings[sensor];
-}
-
-/**
- * Hook for data freshness tracking
- */
-export function useSensorFreshness(
-  service: ActivityRecorderService | null,
-  sensor: keyof CurrentReadings,
-): { value?: number; age: number; isStale: boolean } {
-  const readings = useCurrentReadings(service);
-  const [age, setAge] = useState(0);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      const lastUpdated = readings.lastUpdated?.[sensor];
-      if (lastUpdated) {
-        setAge(Date.now() - lastUpdated);
-      }
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [readings.lastUpdated, sensor]);
-
-  return {
-    value: readings[sensor],
-    age,
-    isStale: age > 5000, // More than 5 seconds old
-  };
 }
 
 // Helper function

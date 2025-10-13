@@ -1,3 +1,4 @@
+import { CARD_STYLES } from "@/components/RecordingCarousel/constants";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
@@ -524,46 +525,58 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
 
     return (
       <View style={{ width: screenWidth }} className="flex-1 p-4">
-        <Card className="flex-1 p-0">
-          <CardContent className="p-4 flex-col items-stretch gap-10 w-full h-full">
-            <Text className="text-lg font-bold line-clamp-1">
-              {planName || "Workout Plan"}
-            </Text>
+        <Card className={CARD_STYLES.wrapper}>
+          <CardContent className={CARD_STYLES.content}>
+            {/* Header */}
+            <View className={CARD_STYLES.header}>
+              <View className="flex-row items-center">
+                <Icon
+                  as={Target}
+                  size={CARD_STYLES.iconSize}
+                  className="text-blue-500 mr-2"
+                />
+                <Text className="text-lg font-semibold line-clamp-1">
+                  {planName || "Workout Plan"}
+                </Text>
+              </View>
+            </View>
 
-            {hasPlan && (
-              <WorkoutGraphView
-                planTimeRemaining={planTimeRemaining}
-                structure={structure}
-                currentStepIndex={stepIndex}
+            <View className="gap-6">
+              {hasPlan && (
+                <WorkoutGraphView
+                  planTimeRemaining={planTimeRemaining}
+                  structure={structure}
+                  currentStepIndex={stepIndex}
+                />
+              )}
+
+              <CurrentSensorReadings
+                targets={currentStep?.targets}
+                currentMetrics={currentMetrics}
+                profile={profile}
+                hasPlan={hasPlan}
+                isFinished={isFinished}
               />
-            )}
 
-            <CurrentSensorReadings
-              targets={currentStep?.targets}
-              currentMetrics={currentMetrics}
-              profile={profile}
-              hasPlan={hasPlan}
-              isFinished={isFinished}
-            />
-
-            <CurrentIntervalView
-              duration={totalDuration}
-              targets={currentStep?.targets}
-              name={currentStep?.name}
-              notes={currentStep?.notes}
-              progress={progressPercent}
-              timeRemaining={remaining}
-              isPending={isPending}
-              hasPlan={hasPlan}
-              isFinished={isFinished}
-              stepIndex={stepIndex}
-              stepCount={stepCount}
-              nextDuration={nextStepDuration}
-              nextTargets={nextStepTargets}
-              nextName={nextStepName}
-              hasNextStep={hasNextStep}
-              profile={profile}
-            />
+              <CurrentIntervalView
+                duration={totalDuration}
+                targets={currentStep?.targets}
+                name={currentStep?.name}
+                notes={currentStep?.notes}
+                progress={progressPercent}
+                timeRemaining={remaining}
+                isPending={isPending}
+                hasPlan={hasPlan}
+                isFinished={isFinished}
+                stepIndex={stepIndex}
+                stepCount={stepCount}
+                nextDuration={nextStepDuration}
+                nextTargets={nextStepTargets}
+                nextName={nextStepName}
+                hasNextStep={hasNextStep}
+                profile={profile}
+              />
+            </View>
           </CardContent>
         </Card>
       </View>

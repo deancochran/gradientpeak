@@ -3,11 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "concurrently \"bun run dev:next\" \"bun run ngrok\"",
+    "dev:next": "next dev --turbopack",
+    "ngrok": "ngrok http 3000 --domain=outgoing-ape-repeatedly.ngrok-free.app",
     "build": "next build --turbopack",
     "start": "next start",
-    "lint": "eslint",
-    "ngrok": "ngrok http 3000 --domain=outgoing-ape-repeatedly.ngrok-free.app"
+    "lint": "eslint"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",
@@ -46,14 +47,15 @@
     "zod": "^4.1.9"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@repo/eslint-config": "workspace:*",
     "@repo/supabase": "workspace:*",
     "@repo/typescript-config": "workspace:*",
-    "@repo/eslint-config": "workspace:*",
-    "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^9.2.1",
     "eslint": "^9",
     "eslint-config-next": "15.5.0",
     "tailwindcss": "^4",

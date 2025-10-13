@@ -1,69 +1,142 @@
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import {
-  usePermissions,
   useRecorderActions,
   useSensors,
 } from "@/lib/hooks/useActivityRecorder";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import {
+  checkAllPermissions,
+  requestPermission,
+  type AllPermissionsStatus,
+} from "@/lib/services/permissions-check";
 import { useRouter } from "expo-router";
-import { Bluetooth, ChevronDown, RefreshCw } from "lucide-react-native";
-import { useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
+import { Bluetooth, RefreshCw, X } from "lucide-react-native";
+import { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, ScrollView, View } from "react-native";
 import type { Device } from "react-native-ble-plx";
 
 export default function BluetoothModal() {
   const router = useRouter();
 
-  // Use shared service from context (provided by _layout.tsx)
   const service = useSharedActivityRecorder();
-  const permissions = usePermissions(service);
   const { sensors: connectedSensors } = useSensors(service);
-  const { scanDevices, connectDevice, disconnectDevice } =
-    useRecorderActions(service);
+  const {
+    startScan,
+    stopScan,
+    subscribeScan,
+    connectDevice,
+    disconnectDevice,
+  } = useRecorderActions(service);
 
-  // Local state for scanning
+  const [permissions, setPermissions] = useState<AllPermissionsStatus | null>(
+    null,
+  );
   const [isScanning, setIsScanning] = useState(false);
   const [availableDevices, setAvailableDevices] = useState<Device[]>([]);
   const [connectingDevices, setConnectingDevices] = useState<Set<string>>(
     new Set(),
   );
+  const [isRequestingPermission, setIsRequestingPermission] = useState(false);
 
-  /** Start scanning for BLE devices */
-  const startScan = async () => {
-    if (!permissions.bluetooth?.granted) {
-      Alert.alert(
-        "Bluetooth Permission Required",
-        "Please grant Bluetooth permission to scan for devices.",
-      );
+  // Setup scan subscription to receive devices as they're discovered
+  useEffect(() => {
+    if (!service) return;
+
+    const unsubscribe = subscribeScan((device) => {
+      setAvailableDevices((prev) => {
+        // Only add if not already in list and not connected
+        const isAlreadyAdded = prev.some((d) => d.id === device.id);
+        const isConnected = connectedSensors.some(
+          (sensor) => sensor.id === device.id,
+        );
+
+        if (!isAlreadyAdded && !isConnected) {
+          return [...prev, device];
+        }
+        return prev;
+      });
+    });
+
+    return unsubscribe;
+  }, [service, subscribeScan, connectedSensors]);
+
+  // Cleanup: stop scan when component unmounts
+  useEffect(() => {
+    return () => {
+      if (isScanning) {
+        stopScan();
+      }
+    };
+  }, [isScanning, stopScan]);
+
+  useEffect(() => {
+    const loadPermissions = async () => {
+      try {
+        const permissionStatus = await checkAllPermissions();
+        setPermissions(permissionStatus);
+      } catch (error) {
+        console.error("Failed to check permissions:", error);
+      }
+    };
+
+    loadPermissions();
+  }, []);
+
+  const refreshPermissions = useCallback(async () => {
+    try {
+      const permissionStatus = await checkAllPermissions();
+      setPermissions(permissionStatus);
+    } catch (error) {
+      console.error("Failed to refresh permissions:", error);
+    }
+  }, []);
+
+  const requestBluetoothPermission = useCallback(async () => {
+    if (isRequestingPermission) return;
+
+    setIsRequestingPermission(true);
+    try {
+      const granted = await requestPermission("bluetooth");
+      if (granted) {
+        await refreshPermissions();
+      }
+    } catch (error) {
+      console.error("Failed to request bluetooth permission:", error);
+    } finally {
+      setIsRequestingPermission(false);
+    }
+  }, [isRequestingPermission, refreshPermissions]);
+
+  const handleStartScan = async () => {
+    const bluetoothGranted = permissions?.bluetooth?.granted;
+
+    if (!bluetoothGranted) {
+      if (permissions?.bluetooth?.canAskAgain) {
+        await requestBluetoothPermission();
+      }
       return;
     }
 
     setIsScanning(true);
+    // Clear available devices when starting a new scan
     setAvailableDevices([]);
 
     try {
-      const devices = await scanDevices();
-
-      // Filter out already connected devices
-      const filteredDevices = devices.filter(
-        (device) => !connectedSensors.some((sensor) => sensor.id === device.id),
-      );
-      setAvailableDevices(filteredDevices);
+      await startScan();
     } catch (error) {
       console.error("Scan failed:", error);
-      Alert.alert(
-        "Scan Failed",
-        "Could not scan for devices. Please try again.",
-      );
     } finally {
       setIsScanning(false);
     }
   };
 
-  /** Connect to a device */
+  const handleStopScan = () => {
+    stopScan();
+    setIsScanning(false);
+  };
+
   const handleConnectDevice = async (device: Device) => {
     if (connectingDevices.has(device.id)) return;
 
@@ -72,16 +145,8 @@ export default function BluetoothModal() {
     try {
       await connectDevice(device.id);
       setAvailableDevices((prev) => prev.filter((d) => d.id !== device.id));
-      Alert.alert(
-        "Connected",
-        `Successfully connected to ${device.name || "Unknown Device"}`,
-      );
     } catch (error) {
       console.error("Connection failed:", error);
-      Alert.alert(
-        "Connection Failed",
-        `Could not connect to ${device.name || "Unknown Device"}`,
-      );
     } finally {
       setConnectingDevices((prev) => {
         const newSet = new Set(prev);
@@ -91,164 +156,172 @@ export default function BluetoothModal() {
     }
   };
 
-  /** Disconnect from a device */
   const handleDisconnectDevice = async (deviceId: string) => {
-    const sensor = connectedSensors.find((s) => s.id === deviceId);
-    if (!sensor) return;
-
     try {
       await disconnectDevice(deviceId);
-      Alert.alert("Disconnected", `Disconnected from ${sensor.name}`);
     } catch (error) {
       console.error("Disconnection failed:", error);
-      Alert.alert(
-        "Disconnection Failed",
-        `Could not disconnect from ${sensor.name}`,
-      );
     }
   };
+
+  if (!permissions) {
+    return (
+      <View className="flex-1 bg-background items-center justify-center">
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  const bluetoothGranted = permissions.bluetooth?.granted;
+  const bluetoothCanAsk = permissions.bluetooth?.canAskAgain;
 
   return (
     <View className="flex-1 bg-background">
       {/* Header */}
-      <View className="bg-background border-b border-border px-4 py-3 flex-row items-center">
+      <View className="bg-background border-b border-border px-4 py-3 flex-row items-center justify-between">
         <Button size="icon" variant="ghost" onPress={() => router.back()}>
-          <Icon as={ChevronDown} size={24} />
+          <Icon as={X} size={24} />
         </Button>
-        <Text className="flex-1 text-center font-semibold">
-          Bluetooth Devices
-        </Text>
+        <Text className="text-lg font-semibold">Sensors</Text>
         <Button
           size="icon"
           variant="ghost"
-          onPress={isScanning ? () => setIsScanning(false) : startScan}
-          disabled={isScanning}
+          onPress={isScanning ? handleStopScan : handleStartScan}
+          disabled={!bluetoothGranted}
         >
-          <Icon
-            as={RefreshCw}
-            size={20}
-            className={isScanning ? "animate-spin" : ""}
-          />
+          {isScanning ? (
+            <ActivityIndicator size="small" />
+          ) : (
+            <Icon as={RefreshCw} size={20} />
+          )}
         </Button>
       </View>
 
       <ScrollView className="flex-1">
-        {/* Permission Status */}
-        {!permissions.bluetooth?.granted && (
-          <View className="px-4 py-3 bg-orange-500/10 border-b border-orange-500/20">
-            <View className="flex-row items-center gap-2">
-              <Icon as={Bluetooth} size={16} className="text-orange-500" />
-              <Text className="text-sm text-orange-700 flex-1">
-                Bluetooth permission required to scan for devices
-              </Text>
+        {/* Permission Banner */}
+        {!bluetoothGranted && (
+          <View className="px-4 py-4 bg-orange-500/10 border-b border-orange-500/20">
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center gap-3 flex-1">
+                <Icon as={Bluetooth} size={20} className="text-orange-600" />
+                <Text className="text-sm text-orange-700">
+                  {bluetoothCanAsk
+                    ? "Bluetooth permission needed"
+                    : "Enable Bluetooth in settings"}
+                </Text>
+              </View>
+              {bluetoothCanAsk && (
+                <Button
+                  size="sm"
+                  onPress={requestBluetoothPermission}
+                  disabled={isRequestingPermission}
+                  className="bg-orange-600"
+                >
+                  <Text className="text-white text-xs">
+                    {isRequestingPermission ? "..." : "Grant"}
+                  </Text>
+                </Button>
+              )}
             </View>
           </View>
         )}
 
-        {/* Connection Status Banner */}
-        <View className="px-4 py-3 bg-muted/50">
-          <View className="flex-row items-center gap-2">
-            <Text className="text-sm">
-              {`${connectedSensors.length} device(s) connected`}
-            </Text>
-          </View>
-        </View>
-
         {/* Connected Devices */}
         {connectedSensors.length > 0 && (
           <View className="px-4 py-4">
-            <Text className="text-lg font-semibold mb-3">
-              Connected Devices ({connectedSensors.length})
+            <Text className="text-xs font-medium text-muted-foreground mb-3 uppercase tracking-wide">
+              Connected ({connectedSensors.length})
             </Text>
             {connectedSensors.map((sensor) => (
-              <Card
+              <View
                 key={sensor.id}
-                className="mb-3 border-green-500/20 bg-green-500/5"
+                className="flex-row items-center justify-between py-3 border-b border-border"
               >
-                <CardContent className="p-4">
-                  <View className="flex-row items-center justify-between">
-                    <View className="flex-1">
-                      <Text className="font-semibold">{sensor.name}</Text>
-                      <Text className="text-xs text-green-600 font-medium">
-                        Connected
-                      </Text>
-                    </View>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onPress={() => handleDisconnectDevice(sensor.id)}
-                    >
-                      Disconnect
-                    </Button>
-                  </View>
-                </CardContent>
-              </Card>
+                <View className="flex-row items-center gap-3 flex-1">
+                  <View className="w-2 h-2 rounded-full bg-green-500" />
+                  <Text className="font-medium">{sensor.name}</Text>
+                </View>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onPress={() => handleDisconnectDevice(sensor.id)}
+                  className="h-8"
+                >
+                  <Text className="text-xs text-muted-foreground">
+                    Disconnect
+                  </Text>
+                </Button>
+              </View>
             ))}
           </View>
         )}
 
         {/* Available Devices */}
         <View className="px-4 py-4">
-          <View className="flex-row items-center justify-between mb-3">
-            <Text className="text-lg font-semibold">Available Devices</Text>
-            {isScanning && (
-              <View className="flex-row items-center gap-2">
-                <ActivityIndicator size="small" />
-                <Text className="text-sm text-muted-foreground">
-                  Scanning...
-                </Text>
-              </View>
-            )}
-          </View>
+          <Text className="text-xs font-medium text-muted-foreground mb-3 uppercase tracking-wide">
+            Available
+          </Text>
 
-          {availableDevices.length === 0 && !isScanning ? (
-            <Card className="border-dashed border-2 border-muted-foreground/20 p-8 items-center">
+          {!bluetoothGranted ? (
+            <View className="py-12 items-center">
               <Icon
                 as={Bluetooth}
-                size={48}
-                className="text-muted-foreground mb-4"
+                size={40}
+                className="text-muted-foreground/40 mb-3"
               />
-              <Text className="text-center text-muted-foreground mb-2 font-medium">
+              <Text className="text-sm text-muted-foreground">
+                Grant permission to scan
+              </Text>
+            </View>
+          ) : availableDevices.length === 0 && !isScanning ? (
+            <View className="py-12 items-center">
+              <Icon
+                as={Bluetooth}
+                size={40}
+                className="text-muted-foreground/40 mb-3"
+              />
+              <Text className="text-sm text-muted-foreground mb-1">
                 No devices found
               </Text>
-              <Text className="text-center text-sm text-muted-foreground mb-4">
-                Make sure your devices are in pairing mode and nearby
+              <Text className="text-xs text-muted-foreground/60">
+                {isScanning ? "Searching..." : "Tap scan to search"}
               </Text>
-              <Button onPress={startScan} variant="outline">
-                <Icon as={RefreshCw} size={16} />
-                <Text className="ml-2">Start Scan</Text>
-              </Button>
-            </Card>
+            </View>
           ) : (
             availableDevices.map((device) => {
+              const isConnecting = connectingDevices.has(device.id);
               return (
-                <Card key={device.id} className="mb-3">
-                  <CardContent className="p-4">
-                    <View className="flex-row items-center justify-between">
-                      <View className="flex-1">
-                        <View className="flex-row items-center gap-2 mb-1">
-                          <Text className="font-semibold">
-                            {device.name || "Unknown Device"}
-                          </Text>
-                        </View>
-                      </View>
-                      <Button
-                        size="sm"
-                        onPress={() => handleConnectDevice(device)}
-                        disabled={connectingDevices.has(device.id)}
+                <View
+                  key={device.id}
+                  className="flex-row items-center justify-between py-3 border-b border-border"
+                >
+                  <View className="flex-1">
+                    <Text className="font-medium">
+                      {device.name || "Unknown Device"}
+                    </Text>
+                    {device.id && (
+                      <Text
+                        className="text-xs text-muted-foreground mt-0.5"
+                        numberOfLines={1}
                       >
-                        {connectingDevices.has(device.id) ? (
-                          <View className="flex-row items-center gap-2">
-                            <ActivityIndicator size="small" />
-                            <Text>Connecting...</Text>
-                          </View>
-                        ) : (
-                          <Text>Connect</Text>
-                        )}
-                      </Button>
-                    </View>
-                  </CardContent>
-                </Card>
+                        {device.id}
+                      </Text>
+                    )}
+                  </View>
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onPress={() => handleConnectDevice(device)}
+                    disabled={isConnecting}
+                    className="h-8"
+                  >
+                    {isConnecting ? (
+                      <ActivityIndicator size="small" color="white" />
+                    ) : (
+                      <Text className="text-xs">Connect</Text>
+                    )}
+                  </Button>
+                </View>
               );
             })
           )}

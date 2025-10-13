@@ -1,3 +1,7 @@
+import {
+  ANIMATIONS,
+  CARD_STYLES,
+} from "@/components/RecordingCarousel/constants";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
@@ -5,6 +9,7 @@ import {
   useCurrentReadings,
   useSessionStats,
 } from "@/lib/hooks/useActivityRecorder";
+
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { formatDuration } from "@repo/core";
 import { Clock } from "lucide-react-native";
@@ -25,86 +30,122 @@ export const DashboardCard: React.FC<DashboardCardProps> = ({
 
   return (
     <View style={{ width: screenWidth }} className="flex-1 p-4">
-      <Card className="flex-1">
-        <CardContent>
+      <Card className={CARD_STYLES.wrapper}>
+        <CardContent className={CARD_STYLES.content}>
           {/* Header */}
-          <View className="flex-row items-center justify-between mb-6">
+          <View className={CARD_STYLES.header}>
             <View className="flex-row items-center">
-              <Icon as={Clock} size={24} className="text-blue-500 mr-2" />
+              <Icon
+                as={Clock}
+                size={CARD_STYLES.iconSize}
+                className="text-blue-500 mr-2"
+              />
               <Text className="text-lg font-semibold">Dashboard</Text>
             </View>
           </View>
 
+          {/* Primary Metric - Elapsed Time */}
+          <View className="items-center mb-8">
+            <Text
+              className={`text-5xl font-bold text-blue-500 ${ANIMATIONS.valueChange}`}
+            >
+              {formatDuration(stats.duration || 0)}
+            </Text>
+            <Text className="text-sm text-muted-foreground">elapsed time</Text>
+          </View>
+
           {/* Live Metrics Section */}
           <View className="mb-6">
-            <Text className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
-              Live Metrics
-            </Text>
+            <Text className={CARD_STYLES.sectionHeader}>Live Metrics</Text>
             <View className="gap-3">
-              {/* Row 1: Duration & Power */}
+              {/* Row 1: Power & Heart Rate */}
               <View className="flex-row gap-3">
-                <View className="flex-1 p-3 bg-muted/10 rounded-lg">
-                  <Text className="text-xs text-muted-foreground mb-1">
-                    Duration
-                  </Text>
-                  <Text className="text-xl font-semibold tabular-nums">
-                    {formatDuration(stats.duration || 0)}
-                  </Text>
-                </View>
-
-                <View className="flex-1 p-3 bg-muted/10 rounded-lg">
+                <View
+                  className={`flex-1 ${CARD_STYLES.metricCard} ${ANIMATIONS.transition}`}
+                >
                   <Text className="text-xs text-muted-foreground mb-1">
                     Power
                   </Text>
-                  <Text className="text-xl font-semibold">
+                  <Text
+                    className={`text-xl font-semibold ${ANIMATIONS.valueChange}`}
+                  >
                     {current.power ?? "--"}
                   </Text>
                   <Text className="text-xs text-muted-foreground">watts</Text>
                 </View>
-              </View>
 
-              {/* Row 2: Heart Rate & Cadence */}
-              <View className="flex-row gap-3">
-                <View className="flex-1 p-3 bg-muted/10 rounded-lg">
+                <View
+                  className={`flex-1 ${CARD_STYLES.metricCard} ${ANIMATIONS.transition}`}
+                >
                   <Text className="text-xs text-muted-foreground mb-1">
                     Heart Rate
                   </Text>
-                  <Text className="text-xl font-semibold">
+                  <Text
+                    className={`text-xl font-semibold ${ANIMATIONS.valueChange}`}
+                  >
                     {current.heartRate ?? "--"}
                   </Text>
                   <Text className="text-xs text-muted-foreground">bpm</Text>
                 </View>
+              </View>
 
-                <View className="flex-1 p-3 bg-muted/10 rounded-lg">
+              {/* Row 2: Cadence & Speed */}
+              <View className="flex-row gap-3">
+                <View
+                  className={`flex-1 ${CARD_STYLES.metricCard} ${ANIMATIONS.transition}`}
+                >
                   <Text className="text-xs text-muted-foreground mb-1">
                     Cadence
                   </Text>
-                  <Text className="text-xl font-semibold">
+                  <Text
+                    className={`text-xl font-semibold ${ANIMATIONS.valueChange}`}
+                  >
                     {current.cadence ?? "--"}
                   </Text>
                   <Text className="text-xs text-muted-foreground">rpm</Text>
                 </View>
+
+                <View
+                  className={`flex-1 ${CARD_STYLES.metricCard} ${ANIMATIONS.transition}`}
+                >
+                  <Text className="text-xs text-muted-foreground mb-1">
+                    Speed
+                  </Text>
+                  <Text
+                    className={`text-xl font-semibold ${ANIMATIONS.valueChange}`}
+                  >
+                    {current.speed?.toFixed(1) ?? "--"}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">km/h</Text>
+                </View>
               </View>
 
-              {/* Row 3: Distance (single item) */}
+              {/* Row 3: Distance & Calories */}
               <View className="flex-row gap-3">
-                <View className="flex-1 p-3 bg-muted/10 rounded-lg">
+                <View
+                  className={`flex-1 ${CARD_STYLES.metricCard} ${ANIMATIONS.transition}`}
+                >
                   <Text className="text-xs text-muted-foreground mb-1">
                     Distance
                   </Text>
-                  <Text className="text-xl font-semibold">
+                  <Text
+                    className={`text-xl font-semibold ${ANIMATIONS.valueChange}`}
+                  >
                     {((stats.distance || 0) / 1000).toFixed(2)}
                   </Text>
                   <Text className="text-xs text-muted-foreground">km</Text>
                 </View>
 
-                {/* Empty space to maintain grid alignment */}
-                <View className="flex-1 p-3 bg-muted/10 rounded-lg">
+                <View
+                  className={`flex-1 ${CARD_STYLES.metricCard} ${ANIMATIONS.transition}`}
+                >
                   <Text className="text-xs text-muted-foreground mb-1">
                     Calories
                   </Text>
-                  <Text className="text-xl font-semibold">
-                    {stats.calories || "--"}
+                  <Text
+                    className={`text-xl font-semibold ${ANIMATIONS.valueChange}`}
+                  >
+                    {stats.calories || 0}
                   </Text>
                   <Text className="text-xs text-muted-foreground">cal</Text>
                 </View>

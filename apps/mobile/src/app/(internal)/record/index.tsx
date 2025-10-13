@@ -20,7 +20,7 @@ import {
 import { useRouter } from "expo-router";
 import {
   Bluetooth,
-  ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Pause,
   Play,
@@ -169,19 +169,6 @@ export default function RecordModal() {
 
   return (
     <View className="flex-1 bg-background">
-      {/* Floating Close Button - Only shown when pending */}
-      {state === "pending" && (
-        <View className="absolute top-2 left-2 z-50">
-          <Button
-            size="icon"
-            variant="ghost"
-            onPress={() => router.back()}
-            className="bg-muted text-muted-foreground/80 "
-          >
-            <Icon as={ChevronDown} size={24} />
-          </Button>
-        </View>
-      )}
       {/* Carousel - Now takes full height */}
       <RecordingCarousel
         cardsConfig={cardsConfig}
@@ -194,20 +181,26 @@ export default function RecordModal() {
       <View className="bg-background px-4">
         <View className="flex-row gap-3">
           {state === "pending" && (
+            <Button
+              size="icon"
+              variant="outline"
+              className="h-14 w-14 rounded-xl"
+              onPress={() => router.back()}
+            >
+              <Icon as={ChevronLeft} size={24} />
+            </Button>
+          )}
+          {state === "pending" && (
             <Button onPress={handleStart} className="flex-1 h-14 rounded-xl">
               <Icon as={Play} size={24} className="color-background" />
-              <Text className="ml-3 font-semibold text-lg">Start Activity</Text>
+              <Text className=" font-semibold text-lg">Start </Text>
             </Button>
           )}
 
           {state === "recording" && (
-            <Button
-              onPress={pause}
-              variant="secondary"
-              className="w-full h-14 rounded-xl"
-            >
-              <Icon as={Pause} size={24} />
-              <Text className="ml-3 font-semibold">Pause Activity</Text>
+            <Button onPress={pause} className="flex-1 h-14 rounded-xl">
+              <Icon as={Pause} size={24} className="color-background" />
+              <Text className="ml-3 font-semibold text-lg">Pause</Text>
             </Button>
           )}
 

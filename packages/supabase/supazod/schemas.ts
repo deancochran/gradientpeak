@@ -414,6 +414,49 @@ export const publicIntegrationsRelationshipsSchema = z.tuple([
   }),
 ]);
 
+export const publicOauthStatesRowSchema = z.object({
+  created_at: z.string(),
+  expires_at: z.string(),
+  id: z.string(),
+  idx: z.number(),
+  mobile_redirect_uri: z.string(),
+  profile_id: z.string(),
+  provider: publicIntegrationProviderSchema,
+  state: z.string(),
+});
+
+export const publicOauthStatesInsertSchema = z.object({
+  created_at: z.string().optional(),
+  expires_at: z.string(),
+  id: z.string().optional(),
+  idx: z.number().optional(),
+  mobile_redirect_uri: z.string(),
+  profile_id: z.string(),
+  provider: publicIntegrationProviderSchema,
+  state: z.string(),
+});
+
+export const publicOauthStatesUpdateSchema = z.object({
+  created_at: z.string().optional(),
+  expires_at: z.string().optional(),
+  id: z.string().optional(),
+  idx: z.number().optional(),
+  mobile_redirect_uri: z.string().optional(),
+  profile_id: z.string().optional(),
+  provider: publicIntegrationProviderSchema.optional(),
+  state: z.string().optional(),
+});
+
+export const publicOauthStatesRelationshipsSchema = z.tuple([
+  z.object({
+    foreignKeyName: z.literal("oauth_states_profile_id_fkey"),
+    columns: z.tuple([z.literal("profile_id")]),
+    isOneToOne: z.literal(false),
+    referencedRelation: z.literal("profiles"),
+    referencedColumns: z.tuple([z.literal("id")]),
+  }),
+]);
+
 export const publicPlannedActivitiesRowSchema = z.object({
   activity_plan_id: z.string(),
   created_at: z.string(),

@@ -382,6 +382,47 @@ export type Database = {
           },
         ]
       }
+      oauth_states: {
+        Row: {
+          created_at: string
+          expires_at: string
+          id: string
+          idx: number
+          mobile_redirect_uri: string
+          profile_id: string
+          provider: Database["public"]["Enums"]["integration_provider"]
+          state: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at: string
+          id?: string
+          idx?: number
+          mobile_redirect_uri: string
+          profile_id: string
+          provider: Database["public"]["Enums"]["integration_provider"]
+          state: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          idx?: number
+          mobile_redirect_uri?: string
+          profile_id?: string
+          provider?: Database["public"]["Enums"]["integration_provider"]
+          state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "oauth_states_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       planned_activities: {
         Row: {
           activity_plan_id: string

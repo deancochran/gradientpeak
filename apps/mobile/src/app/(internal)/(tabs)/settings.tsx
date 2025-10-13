@@ -281,6 +281,36 @@ export default function SettingsScreen() {
         </CardContent>
       </Card>
 
+      {/* Integrations Card */}
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-card-foreground">Integrations</CardTitle>
+          <CardDescription className="text-muted-foreground">
+            Connect your fitness tracking platforms
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="gap-4">
+          <View className="flex-row items-center justify-between">
+            <View className="flex-1">
+              <Text className="text-foreground font-medium">
+                Third-Party Services
+              </Text>
+              <Text className="text-muted-foreground text-sm">
+                Sync activities from Strava, Garmin, and more
+              </Text>
+            </View>
+            <Button
+              variant="outline"
+              size="sm"
+              onPress={() => router.push("/(internal)/integrations")}
+              testID="integrations-button"
+            >
+              <Text>Manage</Text>
+            </Button>
+          </View>
+        </CardContent>
+      </Card>
+
       {/* App Settings Card */}
       <Card className="bg-card border-border">
         <CardHeader className="pb-4">
@@ -379,11 +409,11 @@ export default function SettingsScreen() {
           </Button>
         </CardContent>
       </Card>
-      {/* App Info */}
+      {/* App Information */}
       <Card className="bg-card border-border">
         <CardHeader className="pb-4">
           <CardTitle className="text-card-foreground">
-            Manage Permissions
+            App Information
           </CardTitle>
         </CardHeader>
         <CardContent className="gap-2">
@@ -400,7 +430,7 @@ export default function SettingsScreen() {
         </CardContent>
       </Card>
 
-      {/* App Info */}
+      {/* Permissions Management */}
       <Card className="bg-card border-border">
         <CardHeader className="pb-4">
           <CardTitle className="text-card-foreground">
