@@ -38,13 +38,21 @@ export const publicActivityTypeSchema = z.union([
   z.literal("other"),
 ]);
 
-export const jsonSchema: z.ZodType<Json> = z.lazy(() =>
+export const publicIntegrationProviderSchema = z.union([
+  z.literal("strava"),
+  z.literal("wahoo"),
+  z.literal("trainingpeaks"),
+  z.literal("garmin"),
+  z.literal("zwift"),
+]);
+
+export const jsonSchema: z.ZodSchema<Json> = z.lazy(() =>
   z
     .union([
       z.string(),
       z.number(),
       z.boolean(),
-      z.record(z.string(), z.union([jsonSchema, z.undefined()])),
+      z.record(z.union([jsonSchema, z.undefined()])),
       z.array(jsonSchema),
     ])
     .nullable(),
@@ -52,7 +60,6 @@ export const jsonSchema: z.ZodType<Json> = z.lazy(() =>
 
 export const publicActivitiesRowSchema = z.object({
   activity_type: publicActivityTypeSchema,
-  adherence_score: z.number().nullable(),
   avg_cadence: z.number().nullable(),
   avg_grade: z.number().nullable(),
   avg_heart_rate: z.number().nullable(),
@@ -114,7 +121,6 @@ export const publicActivitiesRowSchema = z.object({
 
 export const publicActivitiesInsertSchema = z.object({
   activity_type: publicActivityTypeSchema.optional(),
-  adherence_score: z.number().optional().nullable(),
   avg_cadence: z.number().optional().nullable(),
   avg_grade: z.number().optional().nullable(),
   avg_heart_rate: z.number().optional().nullable(),
@@ -176,7 +182,6 @@ export const publicActivitiesInsertSchema = z.object({
 
 export const publicActivitiesUpdateSchema = z.object({
   activity_type: publicActivityTypeSchema.optional(),
-  adherence_score: z.number().optional().nullable(),
   avg_cadence: z.number().optional().nullable(),
   avg_grade: z.number().optional().nullable(),
   avg_heart_rate: z.number().optional().nullable(),
@@ -363,6 +368,52 @@ export const publicActivityStreamsRelationshipsSchema = z.tuple([
   }),
 ]);
 
+export const publicIntegrationsRowSchema = z.object({
+  access_token: z.string(),
+  created_at: z.string(),
+  expires_at: z.string().nullable(),
+  id: z.string(),
+  idx: z.number(),
+  profile_id: z.string(),
+  provider: publicIntegrationProviderSchema,
+  refresh_token: z.string().nullable(),
+  scope: z.string().nullable(),
+});
+
+export const publicIntegrationsInsertSchema = z.object({
+  access_token: z.string(),
+  created_at: z.string().optional(),
+  expires_at: z.string().optional().nullable(),
+  id: z.string().optional(),
+  idx: z.number().optional(),
+  profile_id: z.string(),
+  provider: publicIntegrationProviderSchema,
+  refresh_token: z.string().optional().nullable(),
+  scope: z.string().optional().nullable(),
+});
+
+export const publicIntegrationsUpdateSchema = z.object({
+  access_token: z.string().optional(),
+  created_at: z.string().optional(),
+  expires_at: z.string().optional().nullable(),
+  id: z.string().optional(),
+  idx: z.number().optional(),
+  profile_id: z.string().optional(),
+  provider: publicIntegrationProviderSchema.optional(),
+  refresh_token: z.string().optional().nullable(),
+  scope: z.string().optional().nullable(),
+});
+
+export const publicIntegrationsRelationshipsSchema = z.tuple([
+  z.object({
+    foreignKeyName: z.literal("integrations_profile_id_fkey"),
+    columns: z.tuple([z.literal("profile_id")]),
+    isOneToOne: z.literal(false),
+    referencedRelation: z.literal("profiles"),
+    referencedColumns: z.tuple([z.literal("id")]),
+  }),
+]);
+
 export const publicPlannedActivitiesRowSchema = z.object({
   activity_plan_id: z.string(),
   created_at: z.string(),
@@ -457,10 +508,3 @@ export const publicProfilesUpdateSchema = z.object({
   username: z.string().optional().nullable(),
   weight_kg: z.number().optional().nullable(),
 });
-
-export const publicCreateActivityArgsSchema = z.object({
-  activity: jsonSchema,
-  activity_streams: jsonSchema,
-});
-
-export const publicCreateActivityReturnsSchema = jsonSchema;

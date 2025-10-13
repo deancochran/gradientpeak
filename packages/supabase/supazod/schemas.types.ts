@@ -15,6 +15,9 @@ export type PublicActivityMetricDataType = z.infer<
 export type PublicActivityType = z.infer<
   typeof generated.publicActivityTypeSchema
 >;
+export type PublicIntegrationProvider = z.infer<
+  typeof generated.publicIntegrationProviderSchema
+>;
 export type Json = z.infer<typeof generated.jsonSchema>;
 export type PublicActivitiesRow = z.infer<
   typeof generated.publicActivitiesRowSchema
@@ -52,6 +55,18 @@ export type PublicActivityStreamsUpdate = z.infer<
 export type PublicActivityStreamsRelationships = z.infer<
   typeof generated.publicActivityStreamsRelationshipsSchema
 >;
+export type PublicIntegrationsRow = z.infer<
+  typeof generated.publicIntegrationsRowSchema
+>;
+export type PublicIntegrationsInsert = z.infer<
+  typeof generated.publicIntegrationsInsertSchema
+>;
+export type PublicIntegrationsUpdate = z.infer<
+  typeof generated.publicIntegrationsUpdateSchema
+>;
+export type PublicIntegrationsRelationships = z.infer<
+  typeof generated.publicIntegrationsRelationshipsSchema
+>;
 export type PublicPlannedActivitiesRow = z.infer<
   typeof generated.publicPlannedActivitiesRowSchema
 >;
@@ -72,10 +87,4 @@ export type PublicProfilesInsert = z.infer<
 >;
 export type PublicProfilesUpdate = z.infer<
   typeof generated.publicProfilesUpdateSchema
->;
-export type PublicCreateActivityArgs = z.infer<
-  typeof generated.publicCreateActivityArgsSchema
->;
-export type PublicCreateActivityReturns = z.infer<
-  typeof generated.publicCreateActivityReturnsSchema
 >;

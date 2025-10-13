@@ -37,7 +37,6 @@ export type Database = {
       activities: {
         Row: {
           activity_type: Database["public"]["Enums"]["activity_type"]
-          adherence_score: number | null
           avg_cadence: number | null
           avg_grade: number | null
           avg_heart_rate: number | null
@@ -98,7 +97,6 @@ export type Database = {
         }
         Insert: {
           activity_type?: Database["public"]["Enums"]["activity_type"]
-          adherence_score?: number | null
           avg_cadence?: number | null
           avg_grade?: number | null
           avg_heart_rate?: number | null
@@ -159,7 +157,6 @@ export type Database = {
         }
         Update: {
           activity_type?: Database["public"]["Enums"]["activity_type"]
-          adherence_score?: number | null
           avg_cadence?: number | null
           avg_grade?: number | null
           avg_heart_rate?: number | null
@@ -341,6 +338,50 @@ export type Database = {
           },
         ]
       }
+      integrations: {
+        Row: {
+          access_token: string
+          created_at: string
+          expires_at: string | null
+          id: string
+          idx: number
+          profile_id: string
+          provider: Database["public"]["Enums"]["integration_provider"]
+          refresh_token: string | null
+          scope: string | null
+        }
+        Insert: {
+          access_token: string
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          idx?: number
+          profile_id: string
+          provider: Database["public"]["Enums"]["integration_provider"]
+          refresh_token?: string | null
+          scope?: string | null
+        }
+        Update: {
+          access_token?: string
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          idx?: number
+          profile_id?: string
+          provider?: Database["public"]["Enums"]["integration_provider"]
+          refresh_token?: string | null
+          scope?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "integrations_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       planned_activities: {
         Row: {
           activity_plan_id: string
@@ -439,10 +480,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      create_activity: {
-        Args: { activity: Json; activity_streams: Json }
-        Returns: Json
-      }
+      [_ in never]: never
     }
     Enums: {
       activity_metric:
@@ -467,6 +505,12 @@ export type Database = {
         | "indoor_strength"
         | "indoor_swim"
         | "other"
+      integration_provider:
+        | "strava"
+        | "wahoo"
+        | "trainingpeaks"
+        | "garmin"
+        | "zwift"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -620,6 +664,13 @@ export const Constants = {
         "indoor_strength",
         "indoor_swim",
         "other",
+      ],
+      integration_provider: [
+        "strava",
+        "wahoo",
+        "trainingpeaks",
+        "garmin",
+        "zwift",
       ],
     },
   },
