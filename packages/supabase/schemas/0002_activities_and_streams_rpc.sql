@@ -9,12 +9,12 @@ begin
     -- insert activity
     insert into activities
     select *
-    from jsonb_populate_record(null::activities, activity_payload)
+    from jsonb_populate_record(null::activities, activity)
     returning * into new_activity;
 
     -- insert streams (no need to store/return them)
     for stream_item in
-        select * from jsonb_array_elements(streams_payload)
+        select * from jsonb_array_elements(activity_streams)
     loop
         insert into activity_streams
         select

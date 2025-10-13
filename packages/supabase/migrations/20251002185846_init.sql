@@ -26,7 +26,6 @@ create table "public"."activities" (
     "elapsed_time" integer not null,
     "moving_time" integer not null,
     "planned_activity_id" uuid,
-    "adherence_score" integer,
     "profile_id" uuid not null,
     "profile_age" integer,
     "profile_weight_kg" integer,
@@ -196,10 +195,6 @@ alter table "public"."activity_streams" add constraint "activity_streams_pkey" P
 alter table "public"."planned_activities" add constraint "planned_activities_pkey" PRIMARY KEY using index "planned_activities_pkey";
 
 alter table "public"."profiles" add constraint "profiles_pkey" PRIMARY KEY using index "profiles_pkey";
-
-alter table "public"."activities" add constraint "activities_adherence_score_check" CHECK (((adherence_score >= 0) AND (adherence_score <= 100))) not valid;
-
-alter table "public"."activities" validate constraint "activities_adherence_score_check";
 
 alter table "public"."activities" add constraint "activities_avg_cadence_check" CHECK ((avg_cadence >= 0)) not valid;
 
@@ -426,37 +421,6 @@ alter table "public"."profiles" add constraint "profiles_idx_key" UNIQUE using i
 alter table "public"."profiles" add constraint "profiles_username_key" UNIQUE using index "profiles_username_key";
 
 set check_function_bodies = off;
-
-CREATE OR REPLACE FUNCTION public.create_activity(activity jsonb, activity_streams jsonb)
- RETURNS jsonb
- LANGUAGE plpgsql
-AS $function$
-declare
-    new_activity activities%rowtype;
-    stream_item jsonb;
-begin
-    -- insert activity
-    insert into activities
-    select *
-    from jsonb_populate_record(null::activities, activity_payload)
-    returning * into new_activity;
-
-    -- insert streams (no need to store/return them)
-    for stream_item in
-        select * from jsonb_array_elements(streams_payload)
-    loop
-        insert into activity_streams
-        select
-            new_activity.id as activity_id,
-            *
-        from jsonb_populate_record(null::activity_streams, stream_item);
-    end loop;
-
-    -- return only the inserted activity
-    return to_jsonb(new_activity);
-end;
-$function$
-;
 
 grant delete on table "public"."activities" to "anon";
 

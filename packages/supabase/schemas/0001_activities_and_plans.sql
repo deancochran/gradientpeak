@@ -97,7 +97,6 @@ create table if not exists public.activities (
     -- Structured Plan
     -- ============================================================================
     planned_activity_id uuid references public.planned_activities(id) on delete set null,
-    adherence_score integer check (adherence_score between 0 and 100),
 
     -- ============================================================================
     -- profile Info

@@ -38,13 +38,13 @@ export const publicActivityTypeSchema = z.union([
   z.literal("other"),
 ]);
 
-export const jsonSchema: z.ZodSchema<Json> = z.lazy(() =>
+export const jsonSchema: z.ZodType<Json> = z.lazy(() =>
   z
     .union([
       z.string(),
       z.number(),
       z.boolean(),
-      z.record(z.union([jsonSchema, z.undefined()])),
+      z.record(z.string(), z.union([jsonSchema, z.undefined()])),
       z.array(jsonSchema),
     ])
     .nullable(),
