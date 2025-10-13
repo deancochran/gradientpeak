@@ -2,107 +2,60 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
-import { shouldUseFollowAlong } from "@repo/core";
+import { ActivityPayload } from "@repo/core";
 import { useRouter } from "expo-router";
 import {
   Activity,
   Bike,
   Calendar,
-  ChevronRight,
   Clock,
   Dumbbell,
   Footprints,
+  Play,
+  Smartphone,
   Waves,
 } from "lucide-react-native";
-import { View } from "react-native";
+import React, { useEffect, useState } from "react";
+import { ActivityIndicator, Alert, View } from "react-native";
 
 interface PlannedActivitiesListProps {
   onActivitySelect: (plannedActivity: any) => void;
 }
 
-// Mock data for planned activities - will be replaced with real API data
-const MOCK_PLANNED_ACTIVITIES = [
+// Sample data - replace with actual API call
+const mockPlannedActivities = [
   {
-    id: "planned-1",
-    name: "Morning Easy Run",
+    id: "1",
+    name: "Morning Run",
+    description: "Easy 5K run to start the day",
     activity_type: "outdoor_run",
-    scheduled_date: "2024-01-15T07:00:00Z",
-    estimated_duration: 45,
-    estimated_tss: 65,
-    description: "Easy aerobic run to start the week",
+    scheduled_date: new Date().toISOString(),
+    estimated_duration: 30,
+    estimated_tss: 35,
     plan: {
-      name: "Morning Easy Run",
-      description: "Easy aerobic run to start the week",
+      id: "plan-1",
+      name: "Morning Run",
       activity_type: "outdoor_run",
-      estimated_tss: 65,
       structure: {
+        version: "1.0",
         steps: [
           {
             type: "step",
             name: "Warm-up",
-            duration: { type: "time", value: 10, unit: "minutes" },
-            targets: [{ type: "%MaxHR", intensity: 65 }],
+            duration: { type: "time", value: 5, unit: "minutes" },
+            targets: [{ type: "zone", zone: 1 }],
           },
           {
             type: "step",
-            name: "Main Set",
-            duration: { type: "time", value: 30, unit: "minutes" },
-            targets: [{ type: "%MaxHR", intensity: 75 }],
+            name: "Main Run",
+            duration: { type: "time", value: 20, unit: "minutes" },
+            targets: [{ type: "zone", zone: 2 }],
           },
           {
             type: "step",
             name: "Cool-down",
             duration: { type: "time", value: 5, unit: "minutes" },
-            targets: [{ type: "%MaxHR", intensity: 60 }],
-          },
-        ],
-      },
-    },
-  },
-  {
-    id: "planned-2",
-    name: "Interval Training",
-    activity_type: "indoor_bike_trainer",
-    scheduled_date: "2024-01-16T18:00:00Z",
-    estimated_duration: 60,
-    estimated_tss: 85,
-    description: "4x8min intervals at threshold power",
-    plan: {
-      name: "Interval Training",
-      description: "4x8min intervals at threshold power",
-      activity_type: "indoor_bike_trainer",
-      estimated_tss: 85,
-      structure: {
-        steps: [
-          {
-            type: "step",
-            name: "Warm-up",
-            duration: { type: "time", value: 15, unit: "minutes" },
-            targets: [{ type: "%FTP", intensity: 65 }],
-          },
-          {
-            type: "repetition",
-            repeat: 4,
-            steps: [
-              {
-                type: "step",
-                name: "Interval",
-                duration: { type: "time", value: 8, unit: "minutes" },
-                targets: [{ type: "%FTP", intensity: 95 }],
-              },
-              {
-                type: "step",
-                name: "Recovery",
-                duration: { type: "time", value: 2, unit: "minutes" },
-                targets: [{ type: "%FTP", intensity: 50 }],
-              },
-            ],
-          },
-          {
-            type: "step",
-            name: "Cool-down",
-            duration: { type: "time", value: 10, unit: "minutes" },
-            targets: [{ type: "%FTP", intensity: 55 }],
+            targets: [{ type: "zone", zone: 1 }],
           },
         ],
       },
@@ -110,30 +63,100 @@ const MOCK_PLANNED_ACTIVITIES = [
   },
 ];
 
-// Activity type configurations
-const ACTIVITY_CONFIGS: Record<string, { icon: any; color: string }> = {
-  outdoor_run: { icon: Footprints, color: "text-emerald-600" },
-  outdoor_bike: { icon: Bike, color: "text-blue-600" },
-  indoor_bike_trainer: { icon: Bike, color: "text-orange-600" },
-  indoor_treadmill: { icon: Footprints, color: "text-purple-600" },
-  indoor_strength: { icon: Dumbbell, color: "text-red-600" },
-  indoor_swim: { icon: Waves, color: "text-cyan-600" },
-  other: { icon: Activity, color: "text-gray-600" },
+const ACTIVITY_CONFIGS: Record<
+  string,
+  { name: string; icon: any; color: string }
+> = {
+  outdoor_run: {
+    name: "Outdoor Run",
+    icon: Footprints,
+    color: "text-blue-600",
+  },
+  outdoor_bike: {
+    name: "Outdoor Bike",
+    icon: Bike,
+    color: "text-green-600",
+  },
+  indoor_treadmill: {
+    name: "Treadmill",
+    icon: Footprints,
+    color: "text-purple-600",
+  },
+  indoor_bike_trainer: {
+    name: "Bike Trainer",
+    icon: Bike,
+    color: "text-orange-600",
+  },
+  indoor_strength: {
+    name: "Strength Training",
+    icon: Dumbbell,
+    color: "text-red-600",
+  },
+  indoor_swim: {
+    name: "Swimming",
+    icon: Waves,
+    color: "text-cyan-600",
+  },
+  other: {
+    name: "Other Activity",
+    icon: Activity,
+    color: "text-gray-600",
+  },
 };
 
 export function PlannedActivitiesList({
   onActivitySelect,
 }: PlannedActivitiesListProps) {
   const router = useRouter();
+  const [plannedActivities, setPlannedActivities] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // TODO: Replace with real API call
-  const plannedActivities = MOCK_PLANNED_ACTIVITIES;
-  const isLoading = false;
+  useEffect(() => {
+    // Simulate API call
+    const loadPlannedActivities = async () => {
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        setPlannedActivities(mockPlannedActivities);
+      } catch (error) {
+        console.error("Failed to load planned activities:", error);
+        Alert.alert(
+          "Error",
+          "Failed to load planned activities. Please try again.",
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  if (isLoading) {
+    loadPlannedActivities();
+  }, []);
+
+  // Handle planned activity selection for follow along mode
+  const handleFollowAlong = (activity: any) => {
+    const payload: ActivityPayload = {
+      type: activity.activity_type,
+      plannedActivityId: activity.id,
+      plan: activity.plan,
+    };
+    activitySelectionStore.setSelection(payload);
+    router.push("/follow-along");
+  };
+
+  // Handle planned activity selection for record mode
+  const handleRecord = (activity: any) => {
+    const payload: ActivityPayload = {
+      type: activity.activity_type,
+      plannedActivityId: activity.id,
+      plan: activity.plan,
+    };
+    onActivitySelect(payload);
+  };
+
+  if (loading) {
     return (
-      <View className="flex-1 items-center justify-center py-12">
-        <Text className="text-muted-foreground">
+      <View className="flex-1 items-center justify-center py-8">
+        <ActivityIndicator size="large" />
+        <Text className="mt-2 text-sm text-muted-foreground">
           Loading planned activities...
         </Text>
       </View>
@@ -142,8 +165,8 @@ export function PlannedActivitiesList({
 
   if (plannedActivities.length === 0) {
     return (
-      <View className="flex-1 items-center justify-center py-12">
-        <View className="items-center mb-6">
+      <View className="bg-muted/30 rounded-lg p-8">
+        <View className="items-center">
           <Icon
             as={Calendar}
             size={48}
@@ -172,37 +195,25 @@ export function PlannedActivitiesList({
         <PlannedActivityCard
           key={activity.id}
           activity={activity}
-          onSelect={() => handlePlannedActivitySelect(activity)}
+          onFollowAlong={() => handleFollowAlong(activity)}
+          onRecord={() => handleRecord(activity)}
         />
       ))}
     </View>
   );
-
-  // Handle planned activity selection with routing logic
-  function handlePlannedActivitySelect(activity: any) {
-    // Route based on activity type - swim, strength, and other must use follow-along
-    if (shouldUseFollowAlong(activity.activity_type)) {
-      // Store selection for follow-along
-      const payload = {
-        type: activity.activity_type,
-        plannedActivityId: activity.id,
-        plan: activity.plan, // activity.plan is already a RecordingServiceActivityPlan
-      };
-      activitySelectionStore.setSelection(payload);
-      router.push("/follow-along"); // No parameters!
-    } else {
-      // Use callback for other activity types (cardio activities)
-      onActivitySelect(activity);
-    }
-  }
 }
 
 interface PlannedActivityCardProps {
   activity: any;
-  onSelect: () => void;
+  onFollowAlong: () => void;
+  onRecord: () => void;
 }
 
-function PlannedActivityCard({ activity, onSelect }: PlannedActivityCardProps) {
+function PlannedActivityCard({
+  activity,
+  onFollowAlong,
+  onRecord,
+}: PlannedActivityCardProps) {
   const config =
     ACTIVITY_CONFIGS[activity.activity_type] || ACTIVITY_CONFIGS.other;
 
@@ -235,12 +246,8 @@ function PlannedActivityCard({ activity, onSelect }: PlannedActivityCardProps) {
   };
 
   return (
-    <Button
-      variant="outline"
-      onPress={onSelect}
-      className="h-auto p-4 bg-card border border-border rounded-xl"
-    >
-      <View className="flex-row items-start w-full">
+    <View className="bg-card border border-border rounded-xl p-4">
+      <View className="flex-row items-start">
         {/* Icon */}
         <View className="mr-3 mt-1">
           <View className="w-10 h-10 rounded-full bg-muted items-center justify-center">
@@ -296,12 +303,30 @@ function PlannedActivityCard({ activity, onSelect }: PlannedActivityCardProps) {
             )}
           </View>
         </View>
-
-        {/* Arrow */}
-        <View className="ml-2 mt-1">
-          <Icon as={ChevronRight} size={16} className="text-muted-foreground" />
-        </View>
       </View>
-    </Button>
+
+      {/* Action Buttons */}
+      <View className="flex-row gap-2 mt-3">
+        <Button
+          variant="outline"
+          size="sm"
+          onPress={onFollowAlong}
+          className="flex-1 flex-row items-center justify-center gap-2"
+        >
+          <Icon as={Play} size={16} className="text-foreground" />
+          <Text className="text-sm font-medium">Follow Along</Text>
+        </Button>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onPress={onRecord}
+          className="flex-1 flex-row items-center justify-center gap-2"
+        >
+          <Icon as={Smartphone} size={16} className="text-foreground" />
+          <Text className="text-sm font-medium">Record</Text>
+        </Button>
+      </View>
+    </View>
   );
 }

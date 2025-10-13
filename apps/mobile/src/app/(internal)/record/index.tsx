@@ -1,11 +1,5 @@
 import { RecordingCarousel } from "@/components/RecordingCarousel";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import {
@@ -15,6 +9,7 @@ import {
   useRecordingState,
   useSensors,
 } from "@/lib/hooks/useActivityRecorder";
+import { useAllPermissionsGranted } from "@/lib/hooks/useStandalonePermissions";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import {
@@ -24,14 +19,11 @@ import {
 } from "@/types/carousel";
 import { useRouter } from "expo-router";
 import {
-  Activity,
   Bluetooth,
   ChevronDown,
   ChevronRight,
-  MoreVertical,
   Pause,
   Play,
-  Shield,
   Square,
 } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -50,6 +42,7 @@ export default function RecordModal() {
   const plan = usePlan(service);
   const { isOutdoorActivity } = useActivityStatus(service);
   const { start, pause, resume, finish } = useRecorderActions(service);
+  const { allGranted: allPermissionsGranted } = useAllPermissionsGranted();
 
   // Initialize from store selection
   useEffect(() => {
@@ -91,6 +84,29 @@ export default function RecordModal() {
 
     initializeFromStore();
   }, [service, isInitialized, router]);
+
+  // Handle start action - check permissions first
+  const handleStart = useCallback(async () => {
+    console.log("[RecordModal] Start clicked, checking permissions");
+
+    if (!allPermissionsGranted) {
+      Alert.alert(
+        "Permissions Required",
+        "All permissions (Bluetooth, Location, and Background Location) are required to start recording activities. Please grant all permissions before starting.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Manage Permissions",
+            onPress: () => router.push("/(internal)/permissions"),
+          },
+        ],
+      );
+      return;
+    }
+
+    // All permissions granted, start recording
+    await start();
+  }, [allPermissionsGranted, start, router]);
 
   // Handle finish action - navigate immediately
   const handleFinish = useCallback(async () => {
@@ -176,51 +192,15 @@ export default function RecordModal() {
       />
       {/* Footer */}
       <View className="bg-background px-4">
-        {state === "pending" && (
-          <View className="flex-row gap-3">
-            <Button onPress={start} className="flex-1 h-14 rounded-xl">
+        <View className="flex-row gap-3">
+          {state === "pending" && (
+            <Button onPress={handleStart} className="flex-1 h-14 rounded-xl">
               <Icon as={Play} size={24} className="color-background" />
               <Text className="ml-3 font-semibold text-lg">Start Activity</Text>
             </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="outline"
-                  className="h-14 w-14 rounded-xl"
-                >
-                  <Icon as={MoreVertical} size={24} />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                insets={{ top: 0, bottom: 100, left: 0, right: 15 }}
-                className="w-2/5"
-                align="start"
-              >
-                <DropdownMenuItem
-                  onPress={() => router.push("/record/activity")}
-                >
-                  <Icon as={Activity} size={20} className="mr-2" />
-                  <Text>Select Activity</Text>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onPress={() => router.push("/record/sensors")}
-                >
-                  <Icon as={Bluetooth} size={20} className="mr-2" />
-                  <Text>Sensors {sensorCount > 0 && `(${sensorCount})`}</Text>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onPress={() => router.push("/record/permissions")}
-                >
-                  <Icon as={Shield} size={20} className="mr-2" />
-                  <Text>Permissions</Text>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </View>
-        )}
-        {state === "recording" && (
-          <View className="gap-3">
+          )}
+
+          {state === "recording" && (
             <Button
               onPress={pause}
               variant="secondary"
@@ -229,20 +209,19 @@ export default function RecordModal() {
               <Icon as={Pause} size={24} />
               <Text className="ml-3 font-semibold">Pause Activity</Text>
             </Button>
-            {plan.hasPlan && plan.canAdvance && (
-              <Button
-                onPress={plan.advance}
-                variant="outline"
-                className="w-full h-12 rounded-xl"
-              >
-                <Icon as={ChevronRight} size={20} />
-                <Text className="ml-2 font-medium">Next Step</Text>
-              </Button>
-            )}
-          </View>
-        )}
-        {state === "paused" && (
-          <View className="flex-row gap-3">
+          )}
+
+          {state === "recording" && plan.hasPlan && plan.canAdvance && (
+            <Button
+              onPress={plan.advance}
+              variant="outline"
+              className="w-full h-12 rounded-xl"
+            >
+              <Icon as={ChevronRight} size={20} />
+              <Text className="ml-2 font-medium">Next Step</Text>
+            </Button>
+          )}
+          {state === "paused" && (
             <Button
               variant="secondary"
               onPress={resume}
@@ -251,6 +230,8 @@ export default function RecordModal() {
               <Icon as={Play} size={24} />
               <Text className="ml-3 font-semibold">Resume</Text>
             </Button>
+          )}
+          {state === "paused" && (
             <Button
               onPress={handleFinish}
               variant="secondary"
@@ -259,8 +240,17 @@ export default function RecordModal() {
               <Icon as={Square} size={24} />
               <Text className="ml-3 font-semibold">Finish</Text>
             </Button>
-          </View>
-        )}
+          )}
+
+          <Button
+            size="icon"
+            variant="outline"
+            className="h-14 w-14 rounded-xl"
+            onPress={() => router.push("/record/sensors")}
+          >
+            <Icon as={Bluetooth} size={24} />
+          </Button>
+        </View>
       </View>
     </View>
   );

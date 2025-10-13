@@ -211,22 +211,6 @@ export function isValueInTargetRange(
 }
 
 /**
- * Calculate adherence percentage to target
- */
-export function calculateAdherence(
-  current: number,
-  target: IntensityTarget,
-): number {
-  const targetValue = target.intensity;
-  if (targetValue === 0) return 0;
-
-  const difference = Math.abs(current - targetValue);
-  const tolerance = targetValue * 0.1; // 10% tolerance
-
-  return Math.max(0, Math.min(100, (1 - difference / tolerance) * 100));
-}
-
-/**
  * Format target range for display
  */
 export function formatTargetRange(target: IntensityTarget): string {

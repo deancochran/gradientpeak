@@ -52,24 +52,17 @@ export default function RecordLauncher() {
   // Template activity selection
   // Note: Templates always have structure, but routing depends on activity type
   // Swim, strength, and other activities go to follow-along screen automatically
-  const handleTemplateSelected = (template: any) => {
-    const payload: ActivityPayload = {
-      type: template.activity_type,
-      plan: template, // template is already a RecordingServiceActivityPlan
-    };
-    handleActivitySelected(payload);
+  const handleTemplateSelected = (templatePayload: ActivityPayload) => {
+    handleActivitySelected(templatePayload);
   };
 
   // Planned activity selection
   // Note: Planned activities always have structure, but routing depends on activity type
   // Swim, strength, and other activities go to follow-along screen automatically
-  const handlePlannedActivitySelected = (plannedActivity: any) => {
-    const payload: ActivityPayload = {
-      type: plannedActivity.activity_type,
-      plannedActivityId: plannedActivity.id,
-      plan: plannedActivity.plan, // plannedActivity.plan is already a RecordingServiceActivityPlan
-    };
-    handleActivitySelected(payload);
+  const handlePlannedActivitySelected = (
+    plannedActivityPayload: ActivityPayload,
+  ) => {
+    handleActivitySelected(plannedActivityPayload);
   };
 
   return (

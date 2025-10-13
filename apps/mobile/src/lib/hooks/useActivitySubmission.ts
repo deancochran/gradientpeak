@@ -36,7 +36,7 @@ import {
 } from "@/lib/db/schemas";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { trpc } from "@/lib/trpc";
-import { createId } from "@paralleldrive/cuid2";
+
 import {
   AggregatedStream,
   calculateAge,
@@ -49,7 +49,6 @@ import {
   calculateElevationGainPerKm,
   calculateHRZones,
   calculateIntensityFactor,
-  calculateMaxHRPercent,
   calculateMovingTime,
   calculateNormalizedPower,
   calculatePowerHeartRateRatio,
@@ -76,7 +75,7 @@ type SubmissionPhase = "loading" | "ready" | "uploading" | "success" | "error";
 interface SubmissionState {
   phase: SubmissionPhase;
   activity: PublicActivitiesInsert | null;
-  streams: PublicActivityStreamsInsert[] | null;
+  streams: Omit<PublicActivityStreamsInsert, "activity_id">[] | null;
   error: string | null;
 }
 
@@ -84,7 +83,7 @@ type Action =
   | {
       type: "READY";
       activity: PublicActivitiesInsert;
-      streams: PublicActivityStreamsInsert[];
+      streams: Omit<PublicActivityStreamsInsert, "activity_id">[];
     }
   | { type: "UPDATE"; updates: { name?: string; notes?: string } }
   | { type: "UPLOADING" }
@@ -134,7 +133,7 @@ function submissionReducer(
 // ================================
 
 function parseStreamData(stream: SelectRecordingStream): {
-  data: number[];
+  data: number[] | number[][];
   timestamps: number[];
 } {
   const data = JSON.parse(stream.data as string);
@@ -172,8 +171,35 @@ function aggregateMetricStreams(
   }
 
   const firstStream = streams[0];
-  const allValues: number[] = [];
   const allTimestamps: number[] = [];
+
+  // Handle lat/lng data differently
+  if (firstStream.dataType === "latlng") {
+    const allLatLngPairs: number[][] = [];
+
+    for (const stream of streams) {
+      const parsed = parseStreamData(stream);
+      if (Array.isArray(parsed.data[0])) {
+        // It's an array of [lat, lng] pairs
+        allLatLngPairs.push(...(parsed.data as number[][]));
+        allTimestamps.push(...parsed.timestamps);
+      }
+    }
+
+    return {
+      metric: firstStream.metric,
+      dataType: firstStream.dataType,
+      values: allLatLngPairs as any, // Keep as nested array
+      timestamps: allTimestamps,
+      sampleCount: allLatLngPairs.length, // Count pairs, not individual values
+      minValue: undefined,
+      maxValue: undefined,
+      avgValue: undefined,
+    };
+  }
+
+  // Handle regular numeric data
+  const allValues: number[] = [];
 
   // Pre-allocate arrays
   let totalSize = 0;
@@ -189,7 +215,7 @@ function aggregateMetricStreams(
     const parsed = parseStreamData(stream);
 
     for (let i = 0; i < parsed.data.length; i++) {
-      allValues[offset + i] = parsed.data[i];
+      allValues[offset + i] = parsed.data[i] as number;
       allTimestamps[offset + i] = parsed.timestamps[i];
     }
 
@@ -273,7 +299,7 @@ function calculateActivityMetrics(
   );
 
   // Simple aggregated values
-  const distance = distanceStream?.maxValue || 0;
+  const distance = Math.round(distanceStream?.maxValue || 0);
   const avg_heart_rate = hrStream?.avgValue
     ? Math.round(hrStream.avgValue)
     : undefined;
@@ -301,29 +327,32 @@ function calculateActivityMetrics(
     powerStream,
     recording.profile.ftp,
   );
-  const training_stress_score = calculateTSS(
-    recording.startedAt,
-    recording.endedAt,
-    powerStream,
-    recording.profile,
+  const training_stress_score = Math.round(
+    calculateTSS(
+      recording.startedAt,
+      recording.endedAt,
+      powerStream,
+      recording.profile,
+    ) || 0,
   );
-  const variability_index = calculateVariabilityIndex(
-    powerStream,
-    normalized_power,
+  const variability_index = Math.round(
+    calculateVariabilityIndex(powerStream, normalized_power) || 0,
   );
-  const total_work = calculateTotalWork(powerStream, elapsed_time);
+  const total_work = Math.round(
+    calculateTotalWork(powerStream, elapsed_time) || 0,
+  );
 
   // Zone calculations
   const hr_zones = calculateHRZones(hrStream, recording.profile.threshold_hr);
   const power_zones = calculatePowerZones(powerStream, recording.profile.ftp);
-  const max_hr_percent = calculateMaxHRPercent(
-    hrStream,
-    recording.profile.threshold_hr,
-  );
 
   // Multi-stream advanced metrics
-  const efficiency_factor = calculateEfficiencyFactor(powerStream, hrStream);
-  const decoupling = calculateDecoupling(powerStream, hrStream);
+  const efficiency_factor = Math.round(
+    calculateEfficiencyFactor(powerStream, hrStream) || 0,
+  );
+  const decoupling = Math.round(
+    calculateDecoupling(powerStream, hrStream) || 0,
+  );
   const power_heart_rate_ratio = calculatePowerHeartRateRatio(
     powerStream,
     hrStream,
@@ -336,19 +365,23 @@ function calculateActivityMetrics(
   // Elevation calculations
   const { totalAscent, totalDescent } =
     calculateElevationChanges(elevationStream);
+  const total_ascent = Math.round(totalAscent || 0);
+  const total_descent = Math.round(totalDescent || 0);
   const avg_grade = calculateAverageGrade(gradientStream);
   const elevation_gain_per_km = calculateElevationGainPerKm(
-    totalAscent,
+    total_ascent,
     distanceStream,
   );
 
   // Calories
-  const calories = calculateCalories(
-    recording.startedAt,
-    recording.endedAt,
-    recording.profile,
-    powerStream,
-    hrStream,
+  const calories = Math.round(
+    calculateCalories(
+      recording.startedAt,
+      recording.endedAt,
+      recording.profile,
+      powerStream,
+      hrStream,
+    ) || 0,
   );
 
   return {
@@ -380,8 +413,9 @@ function calculateActivityMetrics(
     power_zone_7_time: power_zones.zone7,
     avg_cadence,
     max_cadence,
-    total_ascent: totalAscent,
-    total_descent: totalDescent,
+
+    total_ascent,
+    total_descent,
     avg_grade,
     elevation_gain_per_km,
     efficiency_factor,
@@ -438,23 +472,31 @@ function uint8ArrayToBase64(bytes: Uint8Array): string {
 }
 
 async function compressStreamData(
-  activityId: string,
   aggregated: AggregatedStream,
   metric: PublicActivityMetric,
   dataType: PublicActivityMetricDataType,
-): Promise<PublicActivityStreamsInsert> {
-  const valuesArray = new Float32Array(aggregated.values);
-  const timestampsArray = new Float32Array(aggregated.timestamps);
+): Promise<Omit<PublicActivityStreamsInsert, "activity_id">> {
+  let compressedValues: Uint8Array;
+  let originalSize: number;
 
-  const compressedValues = pako.gzip(new Uint8Array(valuesArray.buffer));
+  if (dataType === "latlng") {
+    // Store nested array directly as JSON
+    const jsonStr = JSON.stringify(aggregated.values);
+    compressedValues = pako.gzip(new TextEncoder().encode(jsonStr));
+    originalSize = jsonStr.length + aggregated.timestamps.length * 4;
+  } else {
+    // For numeric data, use Float32Array
+    const valuesArray = new Float32Array(aggregated.values as number[]);
+    compressedValues = pako.gzip(new Uint8Array(valuesArray.buffer));
+    originalSize = valuesArray.byteLength + aggregated.timestamps.length * 4;
+  }
+
+  const timestampsArray = new Float32Array(aggregated.timestamps);
   const compressedTimestamps = pako.gzip(
     new Uint8Array(timestampsArray.buffer),
   );
 
-  const originalSize = valuesArray.byteLength + timestampsArray.byteLength;
-
   return {
-    activity_id: activityId,
     type: metric,
     data_type: dataType,
     compressed_values: uint8ArrayToBase64(compressedValues),
@@ -479,7 +521,8 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     error: null,
   });
 
-  const createActivityMutation = trpc.activities.create.useMutation();
+  const createActivityWithStreamsMutation =
+    trpc.activities.createWithStreams.useMutation();
 
   // ================================
   // Auto-process recording on recordingComplete event
@@ -547,12 +590,13 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
       const metrics = calculateActivityMetrics(recording, aggregatedStreams);
 
       // 4. Compress streams
-      const activityId = createId();
-      const compressedStreams: PublicActivityStreamsInsert[] = [];
+      const compressedStreams: Omit<
+        PublicActivityStreamsInsert,
+        "activity_id"
+      >[] = [];
 
       for (const [metric, aggregated] of aggregatedStreams.entries()) {
         const compressed = await compressStreamData(
-          activityId,
           aggregated,
           metric as PublicActivityMetric,
           getDataTypeForMetric(metric as PublicActivityMetric),
@@ -563,7 +607,6 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
       // 5. Build final activity object
       const profileAge = calculateAge(recording.profile.dob);
       const activity: PublicActivitiesInsert = {
-        id: activityId,
         profile_id: recording.profile.id,
         started_at: recording.startedAt,
         finished_at: recording.endedAt,
@@ -573,13 +616,11 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         profile_ftp: recording.profile.ftp,
         profile_threshold_hr: recording.profile.threshold_hr,
         profile_weight_kg: recording.profile.weight_kg,
+        planned_activity_id: recording.plannedActivityId || null,
         ...metrics,
       };
 
-      console.log(
-        "[useActivitySubmission] Activity processed successfully:",
-        activityId,
-      );
+      console.log("[useActivitySubmission] Activity processed successfully");
       dispatch({ type: "READY", activity, streams: compressedStreams });
     } catch (err) {
       console.error("[useActivitySubmission] Processing failed:", err);
@@ -635,7 +676,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     dispatch({ type: "UPLOADING" });
 
     try {
-      await createActivityMutation.mutateAsync({
+      await createActivityWithStreamsMutation.mutateAsync({
         activity: state.activity,
         activity_streams: state.streams,
       });
@@ -661,7 +702,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     state.activity,
     state.streams,
     service?.recording?.id,
-    createActivityMutation,
+    createActivityWithStreamsMutation,
   ]);
 
   // ================================

@@ -64,9 +64,6 @@ function AppContent() {
   const { loading: authLoading } = useAuth();
   const { theme, isLoaded: isThemeLoaded } = useTheme();
 
-  // Service is NOT initialized here - it will be created only when user navigates to /record
-  // This ensures proper lifecycle: navigate-in → create → use → navigate-out → cleanup
-
   if (authLoading || !isThemeLoaded) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
@@ -74,6 +71,7 @@ function AppContent() {
       </View>
     );
   }
+
   // Determine if we're in dark mode - NativeWind handles 'system' automatically for CSS classes
   const isDark = theme === "dark";
   const navTheme = isDark ? NAV_THEME.dark : NAV_THEME.light;

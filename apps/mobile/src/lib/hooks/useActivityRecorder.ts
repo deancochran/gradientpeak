@@ -19,7 +19,7 @@ import {
   RecordingState,
   TimeUpdate,
 } from "@/lib/services/ActivityRecorder";
-import type { PermissionState } from "@/lib/services/ActivityRecorder/permissions";
+
 import type { ConnectedSensor } from "@/lib/services/ActivityRecorder/sensors";
 import type {
   CurrentReadings,
@@ -48,15 +48,6 @@ export interface SensorsState {
 }
 
 /**
- * Permission states for all required permissions
- */
-export interface PermissionsState {
-  bluetooth: PermissionState | null;
-  location: PermissionState | null;
-  locationBackground: PermissionState | null;
-}
-
-/**
  * All recorder actions consolidated
  */
 export interface RecorderActions {
@@ -73,12 +64,6 @@ export interface RecorderActions {
   scanDevices: () => Promise<Device[]>;
   connectDevice: (deviceId: string) => Promise<void>;
   disconnectDevice: (deviceId: string) => void;
-
-  // Permission management
-  checkPermissions: () => Promise<void>;
-  ensurePermission: (
-    type: "bluetooth" | "location" | "location-background",
-  ) => Promise<boolean>;
 }
 
 // ================================
@@ -254,77 +239,6 @@ export function useSensors(
     sensors,
     count: sensors.length,
   };
-}
-
-// ================================
-// 5. usePermissions - Permission States
-// ================================
-
-/**
- * Subscribe to permission state updates.
- *
- * @param service - ActivityRecorderService instance
- * @returns Current permission states
- *
- * @example
- * ```tsx
- * const permissions = usePermissions(service);
- * if (permissions.bluetooth?.granted) {
- *   // Can use bluetooth
- * }
- * ```
- */
-export function usePermissions(
-  service: ActivityRecorderService | null,
-): PermissionsState {
-  const [permissions, setPermissions] = useState<PermissionsState>(() => ({
-    bluetooth: service?.permissionsManager.permissions.bluetooth || null,
-    location: service?.permissionsManager.permissions.location || null,
-    locationBackground:
-      service?.permissionsManager.permissions["location-background"] || null,
-  }));
-
-  useEffect(() => {
-    if (!service) {
-      setPermissions({
-        bluetooth: null,
-        location: null,
-        locationBackground: null,
-      });
-      return;
-    }
-
-    // Initial values
-    setPermissions({
-      bluetooth: service.permissionsManager.permissions.bluetooth || null,
-      location: service.permissionsManager.permissions.location || null,
-      locationBackground:
-        service.permissionsManager.permissions["location-background"] || null,
-    });
-
-    // Subscribe to permission updates
-    const handlePermissionUpdate = ({
-      type,
-      permission,
-    }: {
-      type: string;
-      permission: PermissionState;
-    }) => {
-      setPermissions((prev) => ({
-        ...prev,
-        [type === "location-background" ? "locationBackground" : type]:
-          permission,
-      }));
-    };
-
-    service.on("permissionUpdate", handlePermissionUpdate);
-
-    return () => {
-      service.off("permissionUpdate", handlePermissionUpdate);
-    };
-  }, [service]);
-
-  return permissions;
 }
 
 // ================================
@@ -595,22 +509,6 @@ export function useRecorderActions(
     [service],
   );
 
-  // Permission management
-  const checkPermissions = useCallback(async () => {
-    if (!service) return;
-    await service.permissionsManager.checkAll();
-  }, [service]);
-
-  const ensurePermission = useCallback(
-    async (
-      type: "bluetooth" | "location" | "location-background",
-    ): Promise<boolean> => {
-      if (!service) return false;
-      return await service.permissionsManager.ensure(type);
-    },
-    [service],
-  );
-
   return {
     // Recording controls
     start,
@@ -625,10 +523,6 @@ export function useRecorderActions(
     scanDevices,
     connectDevice,
     disconnectDevice,
-
-    // Permission management
-    checkPermissions,
-    ensurePermission,
   };
 }
 

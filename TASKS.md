@@ -20,6 +20,22 @@
 
 ### Recently Completed
 
+- ✅ **Activity Database Schema Adherence Cleanup**: Successfully removed premature adherence implementation and fixed core database issues
+  - ✅ **Database Function Parameter Fix**: Corrected SQL function `create_activity` parameter naming mismatch (`activity_payload` → `activity`, `streams_payload` → `activity_streams`)
+  - ✅ **Adherence Implementation Removal**: Removed incomplete adherence scoring system due to complexity with mixed intensity types (RPE, etc.)
+    - ✅ Removed `adherence_score` column from activities table schema
+    - ✅ Removed `calculateAdherenceScore` function from core package
+    - ✅ Removed adherence calculation from activity submission process
+    - ✅ Cleaned up adherence-related imports and type references
+  - ✅ **TypeScript Compilation Fixes**: Resolved all null safety and type assertion issues
+    - ✅ Fixed undefined object access errors in calculations functions
+    - ✅ Fixed Zod schema type issues in Supabase package
+    - ✅ Added proper null assertions for array access in zone calculations
+  - ✅ **Activity Plan Type Consistency**: Fixed missing `estimated_duration` property in ActivityRecorder service
+  - ✅ All compilation errors resolved - core package and mobile app now build cleanly
+  - ✅ Maintained existing activity recording functionality while removing incomplete features
+  - ✅ Database schema cleaned up and ready for future adherence implementation when requirements are clearer
+
 - ✅ **ActivityRecorder Performance Optimization**: Successfully refactored recording modals to use optimized Zustand store
   - ✅ Removed ActivityRecorderProvider entirely (~200 lines deleted)
   - ✅ Added granular Zustand selectors for specific metrics (useHeartRate, usePower, useGPSMetrics, etc.)

@@ -1,7 +1,6 @@
 import type {
   PublicActivityMetric,
   PublicActivityMetricDataType,
-  PublicActivityPlansRow,
   PublicProfilesRow,
 } from "@repo/supabase";
 import {
@@ -16,7 +15,7 @@ import {
 export interface AggregatedStream {
   metric: PublicActivityMetric;
   dataType: PublicActivityMetricDataType;
-  values: number[];
+  values: number[] | number[][];
   timestamps: number[];
   sampleCount: number;
   minValue?: number;
@@ -151,10 +150,10 @@ export function calculateHRZones(
   const zones = { zone1: 0, zone2: 0, zone3: 0, zone4: 0, zone5: 0 };
 
   for (let i = 0; i < hrs.length; i++) {
-    const pct = hrs[i] / thresholdHR;
+    const pct = hrs[i]! / thresholdHR!;
     const timeInZone =
       i < timestamps.length - 1
-        ? (timestamps[i + 1] - timestamps[i]) / 1000
+        ? (timestamps[i + 1]! - timestamps[i]!) / 1000
         : 1; // Default 1 second
 
     if (pct < 0.81) zones.zone1 += timeInZone;
@@ -217,10 +216,10 @@ export function calculatePowerZones(
   };
 
   for (let i = 0; i < powers.length; i++) {
-    const pct = powers[i] / ftp;
+    const pct = powers[i]! / ftp!;
     const timeInZone =
       i < timestamps.length - 1
-        ? (timestamps[i + 1] - timestamps[i]) / 1000
+        ? (timestamps[i + 1]! - timestamps[i]!) / 1000
         : 1;
 
     if (pct < 0.55) zones.zone1 += timeInZone;
@@ -323,7 +322,7 @@ export function calculateElevationChanges(elevationStream?: AggregatedStream): {
   let totalDescent = 0;
 
   for (let i = 1; i < elevations.length; i++) {
-    const change = elevations[i] - elevations[i - 1];
+    const change = elevations[i]! - elevations[i - 1]!;
     if (change > 0) totalAscent += change;
     else if (change < 0) totalDescent += Math.abs(change);
   }
@@ -401,70 +400,6 @@ export function calculateAge(dob: string | null): number | undefined {
 // ================================
 // Activity Plan Comparison Calculations
 // ================================
-/**
- * Calculate adherence score based on how well the user followed intensity targets.
- * Duration is not considered - the user must follow the plan duration.
- *
- * @param recording - Activity recording data
- * @param aggregatedStreams - Map of stream type to aggregated stream data
- * @param plannedAvgPower - Planned average power in watts (optional)
- * @param plannedAvgHR - Planned average heart rate in bpm (optional)
- * @param userFTP - User's FTP for power calculations (optional)
- * @param userThresholdHR - User's threshold HR (optional)
- * @returns Adherence score (0-100)
- */
-export function calculateAdherenceScore(
-  activity_plan: PublicActivityPlansRow,
-  aggregatedStreams: Map<string, AggregatedStream>,
-): number | null {
-  const scores: number[] = [];
-
-  // TODO Compare the activity structure to the raw recorded streams to ideniftiy how compliant the profiled user was to the prescribed plan
-
-  // Get actual power data
-  // const powerStream = aggregatedStreams.get("watts");
-  // // Get actual heart rate data
-  // const hrStream = aggregatedStreams.get("heartrate");
-  //
-
-  // If no intensity metrics available, return neutral score
-  if (scores.length === 0) {
-    return 100;
-  }
-
-  // Average all available intensity scores
-  const overallScore = Math.round(
-    scores.reduce((sum, s) => sum + s, 0) / scores.length,
-  );
-
-  return overallScore;
-}
-
-/**
- * Calculate intensity adherence score for a single metric.
- * Measures how close actual was to target.
- */
-function calculateIntensityScore(actual: number, target: number): number {
-  if (target <= 0) return 100;
-
-  const ratio = actual / target;
-  const deviation = Math.abs(ratio - 1.0);
-
-  // Scoring based on deviation from target
-  if (deviation <= 0.03) {
-    return 100; // Within 3%: perfect
-  } else if (deviation <= 0.05) {
-    return 100 - ((deviation - 0.03) / 0.02) * 5; // 95-100%
-  } else if (deviation <= 0.1) {
-    return 95 - ((deviation - 0.05) / 0.05) * 15; // 80-95%
-  } else if (deviation <= 0.15) {
-    return 80 - ((deviation - 0.1) / 0.05) * 20; // 60-80%
-  } else if (deviation <= 0.25) {
-    return 60 - ((deviation - 0.15) / 0.1) * 30; // 30-60%
-  } else {
-    return Math.max(0, 30 - (deviation - 0.25) * 50);
-  }
-}
 
 /**
  * Calculate distance between two GPS coordinates using Haversine formula

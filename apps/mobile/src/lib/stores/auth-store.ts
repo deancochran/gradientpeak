@@ -20,6 +20,7 @@ export interface AuthState {
   setError: (error: Error | null) => void;
 
   initialize: () => Promise<void>;
+  clearSession: () => Promise<void>;
 }
 
 // Track if auth listener has been set up to prevent duplicates
@@ -102,6 +103,33 @@ export const useAuthStore = create<AuthState>()(
           );
           set({ loading: false, initialized: true });
           console.log("✅ Auth store initialization complete");
+        }
+      },
+
+      clearSession: async () => {
+        console.log("🔄 Clearing session due to critical error...");
+        try {
+          // Sign out from Supabase
+          await supabase.auth.signOut();
+
+          // Clear local state
+          set({
+            session: null,
+            user: null,
+            error: null,
+            loading: false,
+          });
+
+          console.log("✅ Session cleared successfully");
+        } catch (error) {
+          console.error("❌ Error clearing session:", error);
+          // Force clear local state even if Supabase signOut fails
+          set({
+            session: null,
+            user: null,
+            error: null,
+            loading: false,
+          });
         }
       },
     }),

@@ -15,14 +15,11 @@ import { Alert, Linking, ScrollView, View } from "react-native";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import {
-  PermissionsState,
-  usePermissions,
-  useRecorderActions,
-} from "@/lib/hooks/useActivityRecorder";
-import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
-
-type PermissionType = "bluetooth" | "location" | "location-background";
+import { useStandalonePermissions } from "@/lib/hooks/useStandalonePermissions";
+import type {
+  AllPermissionsStatus,
+  PermissionType,
+} from "@/lib/services/permissions-check";
 
 interface PermissionConfig {
   type: PermissionType;
@@ -67,28 +64,22 @@ export default function PermissionsModal() {
   const [requestingPermission, setRequestingPermission] =
     useState<PermissionType | null>(null);
 
-  // Use shared service from context (provided by _layout.tsx)
-  const service = useSharedActivityRecorder();
-  const permissions = usePermissions(service);
-  const { checkPermissions, ensurePermission } = useRecorderActions(service);
-
-  // Proactively check permissions when modal mounts
-  useEffect(() => {
-    if (service) {
-      checkPermissions();
-    }
-  }, [service, checkPermissions]);
+  // Use standalone permissions hook
+  const {
+    permissions,
+    checkPermissions,
+    ensurePermission,
+    requestAllPermissions,
+  } = useStandalonePermissions();
 
   // Subscribe to permission changes - poll every 2 seconds when modal is visible
   useEffect(() => {
-    if (!service) return;
-
     const intervalId = setInterval(() => {
       checkPermissions();
     }, 2000);
 
     return () => clearInterval(intervalId);
-  }, [service, checkPermissions]);
+  }, [checkPermissions]);
 
   const handleRequestPermission = useCallback(
     async (type: PermissionType) => {
@@ -98,7 +89,7 @@ export default function PermissionsModal() {
 
         const permType =
           type === "location-background" ? "locationBackground" : type;
-        const permission = permissions[permType as keyof PermissionsState];
+        const permission = permissions[permType as keyof AllPermissionsStatus];
         if (!permission?.granted) {
           Alert.alert(
             "Permission Required",
@@ -126,16 +117,7 @@ export default function PermissionsModal() {
   const handleRequestAllPermissions = useCallback(async () => {
     setIsLoading(true);
     try {
-      await ensurePermission("bluetooth");
-      await ensurePermission("location");
-      if (permissions.location?.granted) {
-        await ensurePermission("location-background");
-      }
-
-      const allGranted =
-        permissions.bluetooth?.granted &&
-        permissions.location?.granted &&
-        permissions.locationBackground?.granted;
+      const allGranted = await requestAllPermissions();
 
       if (!allGranted) {
         Alert.alert(
@@ -153,12 +135,12 @@ export default function PermissionsModal() {
     } finally {
       setIsLoading(false);
     }
-  }, [permissions, ensurePermission]);
+  }, [requestAllPermissions]);
 
   const getPermissionStatus = (type: PermissionType) => {
     const permType =
       type === "location-background" ? "locationBackground" : type;
-    const permission = permissions[permType as keyof PermissionsState];
+    const permission = permissions[permType as keyof AllPermissionsStatus];
     if (!permission) return "unknown";
     if (permission.granted) return "granted";
     if (permission.canAskAgain === false) return "denied";

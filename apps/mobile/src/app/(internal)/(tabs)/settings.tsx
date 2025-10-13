@@ -379,11 +379,12 @@ export default function SettingsScreen() {
           </Button>
         </CardContent>
       </Card>
-
       {/* App Info */}
       <Card className="bg-card border-border">
         <CardHeader className="pb-4">
-          <CardTitle className="text-card-foreground">About GradientPeak</CardTitle>
+          <CardTitle className="text-card-foreground">
+            Manage Permissions
+          </CardTitle>
         </CardHeader>
         <CardContent className="gap-2">
           <Text className="text-muted-foreground">Version 1.0.0</Text>
@@ -395,6 +396,25 @@ export default function SettingsScreen() {
             testID="licenses-button"
           >
             <Text className="text-primary">View Licenses</Text>
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* App Info */}
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-card-foreground">
+            Permissions Management
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="gap-2">
+          <Button
+            variant="link"
+            onPress={() => router.push("/(internal)/permissions")}
+            className="self-start"
+            testID="permissions-button"
+          >
+            <Text className="text-primary">Manage Permissions</Text>
           </Button>
         </CardContent>
       </Card>

@@ -3,9 +3,9 @@ import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import {
+  ActivityPayload,
   ActivityType,
   getSampleActivitiesByType,
-  shouldUseFollowAlong,
 } from "@repo/core";
 import { useRouter } from "expo-router";
 import {
@@ -17,6 +17,8 @@ import {
   Code,
   Dumbbell,
   Footprints,
+  Play,
+  Smartphone,
   Waves,
 } from "lucide-react-native";
 import { useState } from "react";
@@ -167,39 +169,49 @@ export function TemplatesList({ onTemplateSelect }: TemplatesListProps) {
           key={index}
           template={template}
           category={category}
-          onSelect={() => handleTemplateSelect(template)}
-          router={router}
+          onFollowAlong={() => handleFollowAlong(template)}
+          onRecord={() => handleRecord(template)}
         />
       ))}
     </View>
   );
 
-  // Handle template selection with routing logic
-  function handleTemplateSelect(template: any) {
-    // Route based on activity type - swim, strength, and other must use follow-along
-    if (shouldUseFollowAlong(template.activity_type)) {
-      // Store selection for follow-along
-      const payload = {
-        type: template.activity_type,
-        plan: template, // template is already a RecordingServiceActivityPlan
-      };
-      activitySelectionStore.setSelection(payload);
-      router.push("/follow-along"); // No parameters!
-    } else {
-      // Use callback for other activity types (cardio activities)
-      onTemplateSelect(template);
-    }
+  // Handle template selection for follow along mode
+  function handleFollowAlong(template: any) {
+    const payload: ActivityPayload = {
+      type: template.activity_type,
+      plan: template,
+    };
+    activitySelectionStore.setSelection(payload);
+    router.push("/follow-along");
+  }
+
+  // Handle template selection for record mode
+  function handleRecord(template: any) {
+    const payload: ActivityPayload = {
+      type: template.activity_type,
+      plan: template,
+    };
+    onTemplateSelect(payload);
   }
 }
 
+// Define the category type
+type CategoryWithTemplates = (typeof CATEGORIES)[0];
+
 interface TemplateCardProps {
   template: any;
-  category: (typeof CATEGORIES)[0];
-  onSelect: () => void;
-  router: any;
+  category: CategoryWithTemplates;
+  onFollowAlong: () => void;
+  onRecord: () => void;
 }
 
-function TemplateCard({ template, category, onSelect }: TemplateCardProps) {
+function TemplateCard({
+  template,
+  category,
+  onFollowAlong,
+  onRecord,
+}: TemplateCardProps) {
   // Calculate total duration estimate
   const getTotalDurationEstimate = (structure: any): number => {
     if (!structure?.steps) return 0;
@@ -238,12 +250,8 @@ function TemplateCard({ template, category, onSelect }: TemplateCardProps) {
   const duration = getTotalDurationEstimate(template.structure);
 
   return (
-    <Button
-      variant="outline"
-      onPress={onSelect}
-      className="h-auto p-4 bg-card border border-border rounded-xl"
-    >
-      <View className="flex-row items-start w-full">
+    <View className="bg-card border border-border rounded-xl p-4">
+      <View className="flex-row items-start">
         {/* Icon */}
         <View className="mr-3 mt-1">
           <View className="w-10 h-10 rounded-full bg-muted items-center justify-center">
@@ -285,12 +293,30 @@ function TemplateCard({ template, category, onSelect }: TemplateCardProps) {
             )}
           </View>
         </View>
-
-        {/* Arrow */}
-        <View className="ml-2 mt-1">
-          <Icon as={ChevronRight} size={16} className="text-muted-foreground" />
-        </View>
       </View>
-    </Button>
+
+      {/* Action Buttons */}
+      <View className="flex-row gap-2 mt-3">
+        <Button
+          variant="outline"
+          size="sm"
+          onPress={onFollowAlong}
+          className="flex-1 flex-row items-center justify-center gap-2"
+        >
+          <Icon as={Play} size={16} className="text-foreground" />
+          <Text className="text-sm font-medium">Follow Along</Text>
+        </Button>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onPress={onRecord}
+          className="flex-1 flex-row items-center justify-center gap-2"
+        >
+          <Icon as={Smartphone} size={16} className="text-foreground" />
+          <Text className="text-sm font-medium">Record</Text>
+        </Button>
+      </View>
+    </View>
   );
 }

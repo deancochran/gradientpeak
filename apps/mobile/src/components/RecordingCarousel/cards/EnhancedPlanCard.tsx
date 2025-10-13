@@ -115,43 +115,6 @@ function getTargetStatus(
 }
 
 // ================================
-// Card Header Component
-// ================================
-
-interface CardHeaderViewProps {
-  adherenceScore?: number;
-  hasPlan: boolean;
-  isFinished: boolean;
-  planName?: string;
-}
-
-const CardHeaderView = memo<CardHeaderViewProps>(
-  ({ adherenceScore, hasPlan, isFinished, planName }) => {
-    if (!hasPlan) {
-      return (
-        <View className="flex-row items-center justify-between mb-3 w-full">
-          <Text className="text-lg font-bold">No Plan Selected</Text>
-        </View>
-      );
-    }
-
-    const displayScore =
-      adherenceScore && adherenceScore > 0 ? Math.round(adherenceScore) : "--";
-
-    return (
-      <View className="flex-row items-center justify-between mb-3 w-full">
-        <Text className="text-lg font-bold">{planName || "Workout Plan"}</Text>
-        <View className="w-10 h-10 rounded-full bg-primary/20 items-center justify-center border-2 border-primary">
-          <Text className="text-sm font-bold text-primary">{displayScore}</Text>
-        </View>
-      </View>
-    );
-  },
-);
-
-CardHeaderView.displayName = "CardHeaderView";
-
-// ================================
 // Current Sensor Readings Component
 // ================================
 
@@ -383,7 +346,7 @@ const CurrentIntervalView = memo<CurrentIntervalViewProps>(
             {/* Progress Bar */}
             <View className="h-2 bg-muted/40 rounded-full flex-1">
               <View
-                className="h-full bg-primary rounded-full"
+                className=" bg-primary rounded-full"
                 style={{ width: `${Math.min(100, progress * 100)}%` }}
               />
             </View>
@@ -562,21 +525,10 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
     return (
       <View style={{ width: screenWidth }} className="flex-1 p-4">
         <Card className="flex-1 p-0">
-          <CardContent className="h-full p-4 flex-col items-end justify-between gap-3">
-            <CardHeaderView
-              adherenceScore={adherenceScore}
-              hasPlan={hasPlan}
-              isFinished={isFinished}
-              planName={planName}
-            />
-
-            <CurrentSensorReadings
-              targets={currentStep?.targets}
-              currentMetrics={currentMetrics}
-              profile={profile}
-              hasPlan={hasPlan}
-              isFinished={isFinished}
-            />
+          <CardContent className="p-4 flex-col items-stretch gap-10 w-full h-full">
+            <Text className="text-lg font-bold line-clamp-1">
+              {planName || "Workout Plan"}
+            </Text>
 
             {hasPlan && (
               <WorkoutGraphView
@@ -585,6 +537,14 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
                 currentStepIndex={stepIndex}
               />
             )}
+
+            <CurrentSensorReadings
+              targets={currentStep?.targets}
+              currentMetrics={currentMetrics}
+              profile={profile}
+              hasPlan={hasPlan}
+              isFinished={isFinished}
+            />
 
             <CurrentIntervalView
               duration={totalDuration}

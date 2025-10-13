@@ -106,7 +106,6 @@
     "superjson": "^2.2.2",
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
-    "uuid": "^13.0.0",
     "victory-native": "^41.20.1",
     "zustand": "^5.0.8"
   },
@@ -115,7 +114,6 @@
     "@repo/typescript-config": "workspace:*",
     "@types/pako": "^2.0.4",
     "@types/react": "~19.1.17",
-    "@types/uuid": "^11.0.0",
     "babel-preset-expo": "~54.0.3",
     "drizzle-kit": "^0.31.5",
     "eas-build-cache-provider": "^16.4.2",

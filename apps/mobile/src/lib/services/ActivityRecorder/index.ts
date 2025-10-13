@@ -24,14 +24,14 @@ import {
 
 import { activityRecordings, SelectActivityRecording } from "@/lib/db/schemas";
 import { eq } from "drizzle-orm";
+import {
+  type AllPermissionsStatus,
+  areAllPermissionsGranted,
+  checkAllPermissions,
+} from "../permissions-check";
 import { LiveMetricsManager } from "./LiveMetricsManager";
 import { LocationManager } from "./location";
 import { NotificationsManager } from "./notification";
-import {
-  PermissionsManager,
-  type PermissionState,
-  type PermissionType,
-} from "./permissions";
 import { SensorsManager } from "./sensors";
 import { SensorReading } from "./types";
 
@@ -120,7 +120,11 @@ export class ActivityRecorderService extends EventEmitter {
   public readonly liveMetricsManager: LiveMetricsManager;
   public readonly locationManager: LocationManager;
   public readonly sensorsManager: SensorsManager;
-  public readonly permissionsManager: PermissionsManager;
+  private _permissionsStatus: AllPermissionsStatus = {
+    bluetooth: null,
+    location: null,
+    locationBackground: null,
+  };
 
   // === Plan State (minimal tracking) ===
   private _plan?: RecordingServiceActivityPlan;
@@ -156,10 +160,9 @@ export class ActivityRecorderService extends EventEmitter {
     this.liveMetricsManager = new LiveMetricsManager(profile);
     this.locationManager = new LocationManager();
     this.sensorsManager = new SensorsManager();
-    this.permissionsManager = new PermissionsManager();
 
     // Check permissions on initialization
-    this.permissionsManager.checkAll();
+    this.checkPermissions();
 
     // Setup sensor data listeners
     this.sensorsManager.subscribe((reading) => this.handleSensorData(reading));
@@ -179,15 +182,7 @@ export class ActivityRecorderService extends EventEmitter {
       this.handleLocationData(location),
     );
 
-    // Setup permission update listeners
-    this.permissionsManager.on("permissionUpdate", (data) => {
-      console.log(
-        "[Service] Permission updated:",
-        data.type,
-        data.permission.granted,
-      );
-      this.emit("permissionUpdate", data);
-    });
+    // No permission listeners needed - permissions are checked independently
 
     // Setup app state listener
     this.appStateSubscription = AppState.addEventListener(
@@ -204,24 +199,12 @@ export class ActivityRecorderService extends EventEmitter {
   // Permissions
   // ================================
 
-  getPermissionState(type: PermissionType): PermissionState | null {
-    return this.permissionsManager.permissions[type] || null;
-  }
-
   async checkPermissions(): Promise<void> {
-    await this.permissionsManager.checkAll();
+    this._permissionsStatus = await checkAllPermissions();
   }
 
-  async ensurePermission(type: PermissionType): Promise<boolean> {
-    const granted = await this.permissionsManager.ensure(type);
-    this.permissionsManager.permissions[type] = {
-      granted,
-      canAskAgain: true,
-      name: PermissionsManager.permissionNames[type],
-      description: PermissionsManager.permissionDescriptions[type],
-      loading: false,
-    };
-    return granted;
+  getPermissionsStatus(): AllPermissionsStatus {
+    return this._permissionsStatus;
   }
 
   // ================================
@@ -448,12 +431,14 @@ export class ActivityRecorderService extends EventEmitter {
     // Clean up any stale recordings
     await localdb.delete(activityRecordings);
 
-    // Request all necessary permissions
-    await Promise.all([
-      this.ensurePermission("location"),
-      this.ensurePermission("location-background"),
-      this.ensurePermission("bluetooth"),
-    ]);
+    // Check all necessary permissions
+    const allGranted = await areAllPermissionsGranted();
+    if (!allGranted) {
+      console.error("[Service] Cannot start recording - missing permissions");
+      throw new Error(
+        "All permissions (Bluetooth, Location, and Background Location) are required to start recording",
+      );
+    }
 
     // Create recording
     const [recording] = await localdb
@@ -615,6 +600,7 @@ export class ActivityRecorderService extends EventEmitter {
           name: payload.plan.name,
           description: payload.plan.description || "",
           activity_type: payload.plan.activity_type,
+          estimated_duration: payload.plan.estimated_duration,
           estimated_tss: payload.plan.estimated_tss,
           structure: payload.plan.structure,
         };

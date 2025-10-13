@@ -143,8 +143,22 @@ export const usesPaceData = (type: ActivityType): boolean => {
 
 /**
  * Check if activity type should use follow-along screen
- * Swim, strength, and other activities are mandatory to use follow-along
+ * Swim and other activities are mandatory to use follow-along
  */
 export const shouldUseFollowAlong = (type: ActivityType): boolean => {
-  return ["indoor_swim", "indoor_strength", "other"].includes(type);
+  return ["indoor_swim", "other"].includes(type);
+};
+
+/**
+ * Check if activity type can be recorded on the phone
+ * These activities support live metric tracking during recording
+ */
+export const canRecordActivity = (type: ActivityType): boolean => {
+  return [
+    "indoor_treadmill",
+    "indoor_bike_trainer",
+    "outdoor_run",
+    "outdoor_bike",
+    "indoor_strength",
+  ].includes(type);
 };
