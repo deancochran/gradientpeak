@@ -398,6 +398,8 @@ alter table "public"."activity_streams" add constraint "activity_streams_sample_
 
 alter table "public"."activity_streams" validate constraint "activity_streams_sample_count_check";
 
+alter table "public"."activity_streams" add constraint "unique_activity_type" UNIQUE (activity_id, type);
+
 alter table "public"."planned_activities" add constraint "chk_planned_activities_date" CHECK ((scheduled_date >= CURRENT_DATE)) not valid;
 
 alter table "public"."planned_activities" validate constraint "chk_planned_activities_date";

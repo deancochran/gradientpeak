@@ -219,7 +219,9 @@ create table if not exists public.activity_streams (
     max_value numeric(10,4),
     avg_value numeric(10,4),
     -- audit
-    created_at timestamptz not null default now()
+    created_at timestamptz not null default now(),
+    -- constraints
+    constraint unique_activity_type unique (activity_id, type)
 );
 create index if not exists idx_activity_streams_activity_id
     on public.activity_streams(activity_id);
