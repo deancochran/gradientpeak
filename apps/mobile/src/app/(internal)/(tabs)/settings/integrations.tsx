@@ -1,13 +1,18 @@
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Text } from "@/components/ui/text";
-import { trpc } from "@/lib/trpc";
+import { useRouter } from "expo-router";
+import { useCallback, useEffect } from "react";
+import { Alert, BackHandler, Platform, ScrollView, View } from "react-native";
+
 import type { PublicIntegrationProvider } from "@repo/core";
 import Constants from "expo-constants";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
-import React, { useCallback, useEffect } from "react";
-import { Alert, Platform, ScrollView, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ChevronLeft } from "lucide-react-native";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Icon } from "@/components/ui/icon";
+import { Text } from "@/components/ui/text";
+import { trpc } from "@/lib/trpc";
 
 type IntegrationConfig = {
   provider: PublicIntegrationProvider;
@@ -51,6 +56,9 @@ function getMobileRedirectUri(): string {
 }
 
 export default function IntegrationsScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+
   // tRPC queries
   const { data: integrations, refetch } = trpc.integrations.list.useQuery();
   const getAuthUrlMutation = trpc.integrations.getAuthUrl.useMutation();
@@ -102,6 +110,11 @@ export default function IntegrationsScreen() {
     [refetch],
   );
 
+  // Handle close action
+  const handleClose = useCallback(() => {
+    router.back();
+  }, [router]);
+
   // Handle deep link return from OAuth
   useEffect(() => {
     const subscription = Linking.addEventListener("url", handleDeepLink);
@@ -110,6 +123,19 @@ export default function IntegrationsScreen() {
     return () => subscription.remove();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Handle Android back button
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        handleClose();
+        return true; // Prevent default behavior
+      },
+    );
+
+    return () => backHandler.remove();
+  }, [handleClose]);
 
   const handleConnect = async (provider: PublicIntegrationProvider) => {
     // Show "coming soon" alert for integrations not yet implemented
@@ -190,50 +216,73 @@ export default function IntegrationsScreen() {
     getAuthUrlMutation.isPending || disconnectMutation.isPending;
 
   return (
-    <ScrollView className="flex-1 bg-background p-4">
-      <View className="mb-6">
-        <Text className="text-3xl font-bold mb-2">Integrations</Text>
-        <Text className="text-muted-foreground">
-          Connect your fitness tracking platforms to sync activities and
-          workouts.
+    <View className="flex-1 bg-background">
+      {/* Header */}
+      <View className="flex-row items-center px-6 py-4 border-b border-border/50">
+        <Button
+          onPress={handleClose}
+          variant="ghost"
+          className="p-2 -ml-2 "
+          testID="back-button"
+        >
+          <Icon as={ChevronLeft} size={24} />
+        </Button>
+        <Text className="text-xl font-semibold text-foreground ml-4">
+          Integrations
         </Text>
       </View>
 
-      {INTEGRATIONS.map((integration) => {
-        const connected = isConnected(integration.provider);
+      {/* Content */}
+      <ScrollView
+        className="flex-1"
+        contentContainerClassName="p-6 gap-4"
+        showsVerticalScrollIndicator={false}
+      >
+        <View className="mb-2">
+          <Text className="text-muted-foreground text-base">
+            Connect your fitness tracking platforms to sync activities and
+            workouts.
+          </Text>
+        </View>
 
-        return (
-          <Card key={integration.provider} className="mb-4 p-4">
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center gap-3 flex-1">
-                <Text className="text-lg font-semibold">
-                  {integration.name}
-                </Text>
-                {connected && (
-                  <View className="bg-green-100 px-2 py-1 rounded">
-                    <Text className="text-xs text-green-700 font-medium">
-                      Connected
+        {INTEGRATIONS.map((integration) => {
+          const connected = isConnected(integration.provider);
+
+          return (
+            <Card key={integration.provider} className="bg-card border-border">
+              <CardContent className="p-4">
+                <View className="flex-row items-center justify-between">
+                  <View className="flex-row items-center gap-3 flex-1">
+                    <Text className="text-lg font-semibold text-card-foreground">
+                      {integration.name}
                     </Text>
+                    {connected && (
+                      <View className="bg-green-100 dark:bg-green-900 px-2 py-1 rounded-full">
+                        <Text className="text-xs text-green-700 dark:text-green-300 font-medium">
+                          Connected
+                        </Text>
+                      </View>
+                    )}
                   </View>
-                )}
-              </View>
 
-              <Button
-                onPress={() =>
-                  connected
-                    ? handleDisconnect(integration.provider)
-                    : handleConnect(integration.provider)
-                }
-                variant={connected ? "destructive" : "default"}
-                disabled={isLoading}
-                size="sm"
-              >
-                <Text>{connected ? "Disconnect" : "Connect"}</Text>
-              </Button>
-            </View>
-          </Card>
-        );
-      })}
-    </ScrollView>
+                  <Button
+                    onPress={() =>
+                      connected
+                        ? handleDisconnect(integration.provider)
+                        : handleConnect(integration.provider)
+                    }
+                    variant={connected ? "destructive" : "default"}
+                    disabled={isLoading}
+                    size="sm"
+                  >
+                    <Text>{connected ? "Disconnect" : "Connect"}</Text>
+                  </Button>
+                </View>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </ScrollView>
+    </View>
   );
 }

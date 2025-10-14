@@ -1,4 +1,7 @@
-import { publicPlannedActivitiesInsertSchema } from "@repo/core";
+import {
+  plannedActivityCreateSchema,
+  plannedActivityUpdateSchema,
+} from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
@@ -13,12 +16,13 @@ const plannedActivityListSchema = z.object({
   cursor: z.string().optional(), // Changed from offset to cursor
 });
 
+// Input schemas are now imported from core
+
 export const plannedActivitiesRouter = createTRPCRouter({
   // ------------------------------
-  // Get single planned activity
+  // Get single planned activity with plan details
   // ------------------------------
-  // For single GET
-  get: protectedProcedure
+  getById: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
       const { data, error } = await ctx.supabase
@@ -55,15 +59,108 @@ export const plannedActivitiesRouter = createTRPCRouter({
     }),
 
   // ------------------------------
-  // Create planned activity (manual)
+  // Get today's planned activities
+  // ------------------------------
+  getToday: protectedProcedure.query(async ({ ctx }) => {
+    const today = new Date().toISOString().split("T")[0]; // Get YYYY-MM-DD format
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split("T")[0];
+
+    const { data, error } = await ctx.supabase
+      .from("planned_activities")
+      .select(
+        `
+        id,
+        scheduled_date,
+        activity_plan:activity_plans (
+          id,
+          name,
+          activity_type,
+          estimated_duration,
+          estimated_tss
+        )
+      `,
+      )
+      .eq("profile_id", ctx.session.user.id)
+      .gte("scheduled_date", today)
+      .lt("scheduled_date", tomorrow)
+      .order("scheduled_date", { ascending: true });
+
+    if (error) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: error.message,
+      });
+    }
+
+    return data || [];
+  }),
+
+  // ------------------------------
+  // Get this week's planned activities count
+  // ------------------------------
+  getWeekCount: protectedProcedure.query(async ({ ctx }) => {
+    const now = new Date();
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay()); // Sunday
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 7); // Next Sunday
+
+    const { count, error } = await ctx.supabase
+      .from("planned_activities")
+      .select("id", { count: "exact", head: true })
+      .eq("profile_id", ctx.session.user.id)
+      .gte("scheduled_date", startOfWeek.toISOString())
+      .lt("scheduled_date", endOfWeek.toISOString());
+
+    if (error) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: error.message,
+      });
+    }
+
+    return count || 0;
+  }),
+
+  // ------------------------------
+  // Create planned activity
   // ------------------------------
   create: protectedProcedure
-    .input(publicPlannedActivitiesInsertSchema)
+    .input(plannedActivityCreateSchema)
     .mutation(async ({ ctx, input }) => {
+      // Verify the activity plan exists and user has access to it
+      const { data: activityPlan, error: planError } = await ctx.supabase
+        .from("activity_plans")
+        .select("id, profile_id")
+        .eq("id", input.activity_plan_id)
+        .or(`profile_id.eq.${ctx.session.user.id},profile_id.is.null`) // Allow user's plans or sample plans
+        .single();
+
+      if (planError || !activityPlan) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Activity plan not found or not accessible",
+        });
+      }
+
       const { data, error } = await ctx.supabase
         .from("planned_activities")
-        .insert({ ...input, profile_id: ctx.session.user.id })
-        .select()
+        .insert({
+          ...input,
+          profile_id: ctx.session.user.id,
+        })
+        .select(
+          `
+          id,
+          scheduled_date,
+          activity_plan_id,
+          created_at
+        `,
+        )
         .single();
 
       if (error)
@@ -77,16 +174,20 @@ export const plannedActivitiesRouter = createTRPCRouter({
   // ------------------------------
   update: protectedProcedure
     .input(
-      z.object({
-        id: z.string().uuid(),
-        scheduled_date: z.string().optional(),
-      }),
+      z
+        .object({
+          id: z.string().uuid(),
+        })
+        .merge(plannedActivityUpdateSchema),
     )
     .mutation(async ({ ctx, input }) => {
+      const { id, ...updates } = input;
+
+      // Check ownership
       const { data: existing } = await ctx.supabase
         .from("planned_activities")
         .select("id")
-        .eq("id", input.id)
+        .eq("id", id)
         .eq("profile_id", ctx.session.user.id)
         .single();
 
@@ -96,11 +197,37 @@ export const plannedActivitiesRouter = createTRPCRouter({
           message: "Planned activity not found",
         });
 
+      // If updating activity plan, verify it exists and is accessible
+      if (updates.activity_plan_id) {
+        const { data: activityPlan, error: planError } = await ctx.supabase
+          .from("activity_plans")
+          .select("id, profile_id")
+          .eq("id", updates.activity_plan_id)
+          .or(`profile_id.eq.${ctx.session.user.id},profile_id.is.null`)
+          .single();
+
+        if (planError || !activityPlan) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Activity plan not found or not accessible",
+          });
+        }
+      }
+
       const { data, error } = await ctx.supabase
         .from("planned_activities")
-        .update({ scheduled_date: input.scheduled_date })
-        .eq("id", input.id)
-        .select()
+        .update({
+          ...updates,
+        })
+        .eq("id", id)
+        .select(
+          `
+          id,
+          scheduled_date,
+          activity_plan_id,
+          created_at
+        `,
+        )
         .single();
 
       if (error)

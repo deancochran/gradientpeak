@@ -16,7 +16,9 @@ export const intensityTypeEnum = z.enum([
 ]);
 
 export const controlTypeEnum = z.enum(["grade", "resistance", "powerTarget"]);
+
 export const controlUnitEnum = z.enum(["%", "watts", "rpm", "kg", "reps"]);
+
 export const durationUnitEnum = z.enum([
   "seconds",
   "minutes",
@@ -25,50 +27,189 @@ export const durationUnitEnum = z.enum([
   "reps",
 ]);
 
+export const durationTypeEnum = z.enum(["time", "distance", "repetitions"]);
+
+export const activityTypeEnum = z.enum([
+  "outdoor_run",
+  "outdoor_bike",
+  "indoor_treadmill",
+  "indoor_bike_trainer",
+  "indoor_strength",
+  "indoor_swim",
+]);
+
 // ==============================
 // CONTROL
 // ==============================
 export const controlSchema = z.object({
   type: controlTypeEnum.optional(),
-  value: z.number(),
+  value: z
+    .number()
+    .nonnegative({ message: "Control value must be non-negative" })
+    .finite({ message: "Control value must be finite" }),
   unit: controlUnitEnum.optional(),
 });
+
 export type Control = z.infer<typeof controlSchema>;
 
 // ==============================
 // FLEXIBLE DURATION
 // ==============================
+export const timeDurationSchema = z.object({
+  type: z.literal("time"),
+  value: z
+    .number()
+    .positive({ message: "Duration must be positive" })
+    .max(240, { message: "Time duration cannot exceed 240 minutes" })
+    .finite(),
+  unit: z.enum(["seconds", "minutes"]),
+});
+
+export const distanceDurationSchema = z.object({
+  type: z.literal("distance"),
+  value: z.number().positive({ message: "Distance must be positive" }).finite(),
+  unit: z.enum(["meters", "km"]),
+});
+
+export const repetitionDurationSchema = z.object({
+  type: z.literal("repetitions"),
+  value: z
+    .number()
+    .int({ message: "Repetitions must be a whole number" })
+    .positive({ message: "Repetitions must be positive" }),
+  unit: z.literal("reps"),
+});
+
 export const durationSchema = z.union([
-  z.object({
-    type: z.enum(["time", "distance", "repetitions"]),
-    value: z.number().nonnegative(),
-    unit: durationUnitEnum.optional(),
-  }),
-  z.literal("untilFinished"), // user manually ends this step (warm-up, cool-down, rest)
+  timeDurationSchema,
+  distanceDurationSchema,
+  repetitionDurationSchema,
+  z.literal("untilFinished"),
 ]);
+
 export type Duration = z.infer<typeof durationSchema>;
+export type TimeDuration = z.infer<typeof timeDurationSchema>;
+export type DistanceDuration = z.infer<typeof distanceDurationSchema>;
+export type RepetitionDuration = z.infer<typeof repetitionDurationSchema>;
 
 // ==============================
 // INTENSITY TARGET
 // ==============================
-export const intensityTargetSchema = z.object({
-  type: intensityTypeEnum,
-  intensity: z.number(),
+export const percentageFTPTargetSchema = z.object({
+  type: z.literal("%FTP"),
+  intensity: z
+    .number()
+    .positive({ message: "Intensity must be positive" })
+    .max(500, { message: "FTP percentage cannot exceed 500%" })
+    .finite(),
 });
+
+export const percentageMaxHRTargetSchema = z.object({
+  type: z.literal("%MaxHR"),
+  intensity: z
+    .number()
+    .positive({ message: "Intensity must be positive" })
+    .max(200, { message: "Max HR percentage cannot exceed 200%" })
+    .finite(),
+});
+
+export const percentageThresholdHRTargetSchema = z.object({
+  type: z.literal("%ThresholdHR"),
+  intensity: z
+    .number()
+    .positive({ message: "Intensity must be positive" })
+    .max(200, { message: "Threshold HR percentage cannot exceed 200%" })
+    .finite(),
+});
+
+export const wattsTargetSchema = z.object({
+  type: z.literal("watts"),
+  intensity: z
+    .number()
+    .nonnegative({ message: "Watts must be non-negative" })
+    .max(5000, { message: "Watts cannot exceed 5000" })
+    .finite(),
+});
+
+export const bpmTargetSchema = z.object({
+  type: z.literal("bpm"),
+  intensity: z
+    .number()
+    .positive({ message: "BPM must be positive" })
+    .min(30, { message: "BPM must be at least 30" })
+    .max(250, { message: "BPM cannot exceed 250" })
+    .finite(),
+});
+
+export const speedTargetSchema = z.object({
+  type: z.literal("speed"),
+  intensity: z
+    .number()
+    .nonnegative({ message: "Speed must be non-negative" })
+    .max(100, { message: "Speed cannot exceed 100 km/h" })
+    .finite(),
+});
+
+export const cadenceTargetSchema = z.object({
+  type: z.literal("cadence"),
+  intensity: z
+    .number()
+    .nonnegative({ message: "Cadence must be non-negative" })
+    .max(300, { message: "Cadence cannot exceed 300 rpm" })
+    .finite(),
+});
+
+export const rpeTargetSchema = z.object({
+  type: z.literal("RPE"),
+  intensity: z
+    .number()
+    .min(1, { message: "RPE must be at least 1" })
+    .max(10, { message: "RPE cannot exceed 10" })
+    .finite(),
+});
+
+export const intensityTargetSchema = z.discriminatedUnion("type", [
+  percentageFTPTargetSchema,
+  percentageMaxHRTargetSchema,
+  percentageThresholdHRTargetSchema,
+  wattsTargetSchema,
+  bpmTargetSchema,
+  speedTargetSchema,
+  cadenceTargetSchema,
+  rpeTargetSchema,
+]);
+
 export type IntensityTarget = z.infer<typeof intensityTargetSchema>;
 
 // ==============================
 // STEP
 // ==============================
 export const stepSchema = z.object({
-  type: z.literal("step"), // constant
-  name: z.string().optional(),
-  description: z.string().optional(),
-  duration: durationSchema.optional(), // supports "untilFinished"
-  targets: z.array(intensityTargetSchema).optional(),
-  controls: z.array(controlSchema).optional(),
-  notes: z.string().optional(),
+  type: z.literal("step"),
+  name: z
+    .string()
+    .min(1, { message: "Step name must be at least 1 character" })
+    .max(100, { message: "Step name cannot exceed 100 characters" })
+    .optional(),
+  description: z
+    .string()
+    .max(500, { message: "Description cannot exceed 500 characters" })
+    .optional(),
+  duration: durationSchema.optional(),
+  targets: z
+    .array(intensityTargetSchema)
+    .max(5, { message: "Cannot have more than 5 targets per step" })
+    .optional(),
+  controls: z
+    .array(controlSchema)
+    .max(5, { message: "Cannot have more than 5 controls per step" })
+    .optional(),
+  notes: z
+    .string()
+    .max(1000, { message: "Notes cannot exceed 1000 characters" })
+    .optional(),
 });
+
 export type Step = z.infer<typeof stepSchema>;
 
 export interface FlattenedStep extends Step {
@@ -81,32 +222,113 @@ export interface FlattenedStep extends Step {
 // REPETITION
 // ==============================
 export const repetitionSchema = z.object({
-  type: z.literal("repetition"), // constant
-  repeat: z.number().min(1),
-  steps: z.array(stepSchema),
+  type: z.literal("repetition"),
+  repeat: z
+    .number()
+    .int({ message: "Repeat count must be a whole number" })
+    .min(1, { message: "Must repeat at least once" })
+    .max(50, { message: "Cannot repeat more than 50 times" }),
+  steps: z
+    .array(stepSchema)
+    .min(1, { message: "Repetition must have at least one step" })
+    .max(20, { message: "Repetition cannot have more than 20 steps" }),
 });
+
 export type Repetition = z.infer<typeof repetitionSchema>;
 
 // ==============================
 // STEP OR REPETITION UNION
 // ==============================
-export const stepOrRepetitionSchema = z.union([stepSchema, repetitionSchema]);
+export const stepOrRepetitionSchema = z.discriminatedUnion("type", [
+  stepSchema,
+  repetitionSchema,
+]);
+
 export type StepOrRepetition = z.infer<typeof stepOrRepetitionSchema>;
 
 // ==============================
 // STRUCTURED WORKOUT PLAN
 // ==============================
 export const activityPlanStructureSchema = z.object({
-  steps: z.array(stepOrRepetitionSchema),
+  steps: z
+    .array(stepOrRepetitionSchema)
+    .min(1, { message: "Plan must have at least one step or repetition" })
+    .max(50, { message: "Plan cannot have more than 50 items" })
+    .refine(
+      (steps) => {
+        // Count total flattened steps to ensure workout isn't too long
+        const totalSteps = steps.reduce((count, item) => {
+          if (item.type === "step") return count + 1;
+          return count + item.repeat * item.steps.length;
+        }, 0);
+        return totalSteps <= 200;
+      },
+      {
+        message:
+          "Total expanded steps cannot exceed 200 (including repetitions)",
+      },
+    ),
 });
+
 export type ActivityPlanStructure = z.infer<typeof activityPlanStructureSchema>;
+
+// ==============================
+// COMPLETE ACTIVITY PLAN
+// ==============================
+export const activityPlanSchema = z.object({
+  name: z
+    .string()
+    .min(3, { message: "Name must be at least 3 characters" })
+    .max(100, { message: "Name cannot exceed 100 characters" })
+    .trim(),
+  description: z
+    .string()
+    .max(1000, { message: "Description cannot exceed 1000 characters" })
+    .optional()
+    .default(""),
+  activity_type: activityTypeEnum,
+  estimated_duration: z
+    .number()
+    .int({ message: "Duration must be a whole number" })
+    .min(5, { message: "Duration must be at least 5 minutes" })
+    .max(480, { message: "Duration cannot exceed 480 minutes (8 hours)" }),
+  estimated_tss: z
+    .number()
+    .int({ message: "TSS must be a whole number" })
+    .nonnegative({ message: "TSS must be non-negative" })
+    .max(500, { message: "TSS cannot exceed 500" })
+    .nullable()
+    .optional(),
+  structure: activityPlanStructureSchema,
+});
+
+export type ActivityPlan = z.infer<typeof activityPlanSchema>;
+
+// ==============================
+// CREATE/UPDATE SCHEMAS
+// ==============================
+
+// For creating a new plan (no ID required)
+export const createActivityPlanSchema = activityPlanSchema;
+
+// For updating an existing plan (partial updates allowed)
+export const updateActivityPlanSchema = activityPlanSchema.partial().extend({
+  id: z.string().uuid({ message: "Invalid plan ID format" }),
+});
+
+export type CreateActivityPlan = z.infer<typeof createActivityPlanSchema>;
+export type UpdateActivityPlan = z.infer<typeof updateActivityPlanSchema>;
+
+// ==============================
+// UTILITY FUNCTIONS
+// ==============================
 
 /**
  * Flatten a nested plan structure into a sequential array of steps
  */
 export function flattenPlanSteps(
   steps: StepOrRepetition[],
-  acc: FlattenedStep[] = new Array<FlattenedStep>(),
+  acc: FlattenedStep[] = [],
   parentRep?: number,
 ): FlattenedStep[] {
   for (const step of steps) {
@@ -132,22 +354,29 @@ export function flattenPlanSteps(
 export function getDurationMs(duration: Duration): number {
   if (duration === "untilFinished") return 0;
 
-  switch (duration.unit) {
-    case "seconds":
-      return duration.value * 1000;
-    case "minutes":
-      return duration.value * 60 * 1000;
-    case "meters":
-    case "km":
-      // For distance-based, estimate based on activity type
-      // This is a rough estimate - could be enhanced with user's typical pace
-      return duration.value * 60 * 1000; // Assume 1 unit = 1 minute
-    case "reps":
-      // For rep-based, estimate time per rep
+  switch (duration.type) {
+    case "time":
+      switch (duration.unit) {
+        case "seconds":
+          return duration.value * 1000;
+        case "minutes":
+          return duration.value * 60 * 1000;
+      }
+      break;
+    case "distance":
+      // Estimate based on average pace (rough approximation)
+      switch (duration.unit) {
+        case "meters":
+          return (duration.value / 1000) * 5 * 60 * 1000; // Assume 5 min/km
+        case "km":
+          return duration.value * 5 * 60 * 1000; // Assume 5 min/km
+      }
+      break;
+    case "repetitions":
       return duration.value * 30 * 1000; // Assume 30 seconds per rep
-    default:
-      return 0;
   }
+
+  return 0;
 }
 
 /**
@@ -165,7 +394,7 @@ export function getIntensityColor(intensity: number, type?: string): string {
       return "#06b6d4"; // Z1 - Light Blue
 
     case "watts":
-      // Assuming 250W FTP for color coding - could be personalized
+      // Assuming 250W FTP for color coding
       const ftpPercent = (intensity / 250) * 100;
       return getIntensityColor(ftpPercent, "%FTP");
 
@@ -177,8 +406,14 @@ export function getIntensityColor(intensity: number, type?: string): string {
       if (intensity >= 65) return "#16a34a"; // Light
       return "#06b6d4"; // Very Light
 
+    case "RPE":
+      if (intensity >= 9) return "#dc2626";
+      if (intensity >= 7) return "#ea580c";
+      if (intensity >= 5) return "#ca8a04";
+      if (intensity >= 3) return "#16a34a";
+      return "#06b6d4";
+
     default:
-      // Generic intensity color coding
       if (intensity >= 90) return "#dc2626";
       if (intensity >= 70) return "#ea580c";
       if (intensity >= 50) return "#ca8a04";
@@ -187,10 +422,6 @@ export function getIntensityColor(intensity: number, type?: string): string {
   }
 }
 
-// ================================
-// Target Analysis Functions
-// ================================
-
 /**
  * Check if current value is within target range
  */
@@ -198,16 +429,11 @@ export function isValueInTargetRange(
   current: number,
   target: IntensityTarget,
 ): boolean {
-  // If only target is specified, use ±5% tolerance
-  if (target.intensity !== undefined) {
-    const tolerance = target.intensity * 0.05;
-    return (
-      current >= target.intensity - tolerance &&
-      current <= target.intensity + tolerance
-    );
-  }
-
-  return true;
+  const tolerance = target.intensity * 0.05;
+  return (
+    current >= target.intensity - tolerance &&
+    current <= target.intensity + tolerance
+  );
 }
 
 /**
@@ -215,12 +441,7 @@ export function isValueInTargetRange(
  */
 export function formatTargetRange(target: IntensityTarget): string {
   const unit = getTargetUnit(target.type);
-
-  if (target.intensity !== undefined) {
-    return `${target.intensity}${unit}`;
-  }
-
-  return "No target";
+  return `${target.intensity}${unit}`;
 }
 
 /**
@@ -316,17 +537,13 @@ export function getTargetGuidanceText(
   }
 }
 
-// ================================
-// Workout Utilities
-// ================================
-
 /**
  * Workout card interface for UI display
  */
 export interface WorkoutCard {
   id: string;
   type: "overview" | "step" | "completion";
-  workout?: any;
+  workout?: ActivityPlan;
   step?: FlattenedStep;
   stepNumber?: number;
 }
@@ -389,7 +606,7 @@ export function calculateTotalDuration(steps: FlattenedStep[]): number {
  * Build workout cards for carousel display
  */
 export function buildWorkoutCards(
-  workout: any,
+  workout: ActivityPlan,
   steps: FlattenedStep[],
 ): WorkoutCard[] {
   return [
@@ -413,4 +630,54 @@ export function calculateProgress(
 ): number {
   if (totalCards <= 1) return 0;
   return (currentIndex / (totalCards - 1)) * 100;
+}
+
+/**
+ * Validate activity plan and return detailed errors
+ */
+export function validateActivityPlan(data: unknown): {
+  success: boolean;
+  data?: ActivityPlan;
+  errors?: z.ZodError;
+} {
+  const result = activityPlanSchema.safeParse(data);
+
+  if (result.success) {
+    return { success: true, data: result.data };
+  } else {
+    return { success: false, errors: result.error };
+  }
+}
+
+/**
+ * Validate activity plan structure only
+ */
+export function validateActivityPlanStructure(data: unknown): {
+  success: boolean;
+  data?: ActivityPlanStructure;
+  errors?: z.ZodError;
+} {
+  const result = activityPlanStructureSchema.safeParse(data);
+
+  if (result.success) {
+    return { success: true, data: result.data };
+  } else {
+    return { success: false, errors: result.error };
+  }
+}
+
+/**
+ * Get user-friendly error messages from Zod errors
+ */
+export function formatValidationErrors(
+  error: z.ZodError,
+): Record<string, string> {
+  const formatted: Record<string, string> = {};
+
+  error.errors.forEach((err) => {
+    const path = err.path.join(".");
+    formatted[path] = err.message;
+  });
+
+  return formatted;
 }

@@ -71,12 +71,12 @@ export default function InternalLayout() {
         options={{
           tabBarIcon: ({ color }) => (
             <>
-              {profile.avatar_url ? (
+              {profile?.avatar_url ? (
                 <Avatar
                   alt="profile"
                   className="border-background web:border-0 web:ring-2 web:ring-background border-2"
                 >
-                  <AvatarImage source={{ uri: profile.avatar_url }} />
+                  <AvatarImage source={{ uri: profile?.avatar_url }} />
                   <AvatarFallback>
                     <Text>ZN</Text>
                   </AvatarFallback>
@@ -87,6 +87,7 @@ export default function InternalLayout() {
             </>
           ),
           title: "Settings",
+          headerShown: false,
         }}
       />
     </Tabs>

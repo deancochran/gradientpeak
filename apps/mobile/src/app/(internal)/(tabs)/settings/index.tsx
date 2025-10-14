@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import { useState } from "react";
 import { ScrollView, View } from "react-native";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -302,7 +302,9 @@ export default function SettingsScreen() {
             <Button
               variant="outline"
               size="sm"
-              onPress={() => router.push("/(internal)/integrations")}
+              onPress={() =>
+                router.push("/(internal)/(tabs)/settings/integrations")
+              }
               testID="integrations-button"
             >
               <Text>Manage</Text>
@@ -384,7 +386,7 @@ export default function SettingsScreen() {
         <CardContent className="gap-4">
           <Button
             variant="outline"
-            onPress={() => router.push("/(external)/forgot-password")}
+            onPress={() => console.log("Change password - not implemented yet")}
             testID="change-password-button"
           >
             <Text>Change Password</Text>
@@ -409,6 +411,7 @@ export default function SettingsScreen() {
           </Button>
         </CardContent>
       </Card>
+
       {/* App Information */}
       <Card className="bg-card border-border">
         <CardHeader className="pb-4">
@@ -440,7 +443,9 @@ export default function SettingsScreen() {
         <CardContent className="gap-2">
           <Button
             variant="link"
-            onPress={() => router.push("/(internal)/permissions")}
+            onPress={() =>
+              router.push("/(internal)/(tabs)/settings/permissions")
+            }
             className="self-start"
             testID="permissions-button"
           >
