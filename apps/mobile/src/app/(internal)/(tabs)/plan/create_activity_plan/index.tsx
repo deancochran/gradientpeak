@@ -1,127 +1,143 @@
-import React, { useState, useCallback, memo } from 'react';
-import { View, ScrollView, TouchableOpacity, TextInput, Modal, Alert } from 'react-native';
-import { Plus, Trash2, GripVertical, Save, X, Play, Repeat, ChevronDown, ChevronUp } from 'lucide-react-native';
-import { Button } from '@/components/ui/button';
-import { Text } from '@/components/ui/text';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Card, CardContent } from '@/components/ui/card';
-import { Icon } from '@/components/ui/icon';
-import DraggableFlatList, { RenderItemParams } from 'react-native-draggable-flatlist';
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Icon } from "@/components/ui/icon";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Text } from "@/components/ui/text";
+import {
+  ChevronDown,
+  ChevronUp,
+  GripVertical,
+  Play,
+  Plus,
+  Repeat,
+  Save,
+  Trash2,
+  X,
+} from "lucide-react-native";
+import React, { memo, useCallback, useState } from "react";
+import {
+  Alert,
+  Modal,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import DraggableFlatList, {
+  RenderItemParams,
+} from "react-native-draggable-flatlist";
+
+import {
+  createActivityPlanSchema,
+  intensityTypeEnum,
+  repetitionSchema,
+  stepSchema,
+  type Duration,
+  type Repetition,
+  type Step,
+  type StepOrRepetition as StructureItem,
+  type IntensityTarget as Target,
+} from "@repo/core";
+import { z } from "zod";
 
 // Types
-type DurationType = 'time' | 'distance' | 'repetitions' | 'untilFinished';
-type IntensityType = '%FTP' | '%MaxHR' | 'watts' | 'bpm' | 'RPE';
-
-interface Duration {
-  type: DurationType;
-  value: number;
-  unit: string;
-}
-
-interface Target {
-  type: IntensityType;
-  intensity: number;
-}
-
-interface Step {
-  id: string;
-  type: 'step';
-  name: string;
-  duration: Duration | 'untilFinished';
-  targets: Target[];
-}
-
-interface Repetition {
-  id: string;
-  type: 'repetition';
-  repeat: number;
-  steps: Step[];
-}
-
-type StructureItem = Step | Repetition;
+type IntensityType = z.infer<typeof intensityTypeEnum>;
 
 // Utilities
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
 const DURATION_UNITS: Record<DurationType, string[]> = {
-  time: ['seconds', 'minutes'],
-  distance: ['meters', 'km'],
-  repetitions: ['reps'],
-  untilFinished: []
+  time: ["seconds", "minutes"],
+  distance: ["meters", "km"],
+  repetitions: ["reps"],
+  untilFinished: [],
 };
 
 // Step Dialog Component
 const StepDialog = memo(({ visible, onSave, onClose, editItem }: any) => {
   const [stepData, setStepData] = useState<Partial<Step>>(
     editItem || {
-      name: '',
-      duration: { type: 'time', value: 5, unit: 'minutes' },
-      targets: [{ type: '%FTP', intensity: 65 }]
-    }
+      name: "",
+      duration: { type: "time", value: 5, unit: "minutes" },
+      targets: [{ type: "%FTP", intensity: 65 }],
+    },
   );
 
   const handleSave = () => {
-    if (!stepData.name?.trim()) {
-      Alert.alert('Error', 'Step name is required');
-      return;
-    }
-    onSave({
+    const dataToSave = {
       ...stepData,
       id: stepData.id || generateId(),
-      type: 'step'
-    });
+      type: "step",
+    };
+
+    const result = stepSchema.safeParse(dataToSave);
+
+    if (!result.success) {
+      console.error("Validation errors:", result.error.flatten());
+      return;
+    }
+    onSave(result.data);
   };
 
   const updateDuration = (field: string, value: any) => {
-    if (value === 'untilFinished') {
-      setStepData(prev => ({ ...prev, duration: 'untilFinished' }));
-    } else if (field === 'type') {
+    if (value === "untilFinished") {
+      setStepData((prev) => ({ ...prev, duration: "untilFinished" }));
+    } else if (field === "type") {
       const units = DURATION_UNITS[value as DurationType];
-      setStepData(prev => ({
+      setStepData((prev) => ({
         ...prev,
-        duration: { type: value, value: 5, unit: units[0] }
+        duration: { type: value, value: 5, unit: units[0] },
       }));
     } else {
-      setStepData(prev => ({
+      setStepData((prev) => ({
         ...prev,
-        duration: { ...(prev.duration as Duration), [field]: value }
+        duration: { ...(prev.duration as Duration), [field]: value },
       }));
     }
   };
 
   const addTarget = () => {
-    setStepData(prev => ({
+    setStepData((prev) => ({
       ...prev,
-      targets: [...(prev.targets || []), { type: '%FTP', intensity: 65 }]
+      targets: [...(prev.targets || []), { type: "%FTP", intensity: 65 }],
     }));
   };
 
   const updateTarget = (index: number, field: string, value: any) => {
-    setStepData(prev => ({
+    setStepData((prev) => ({
       ...prev,
       targets: prev.targets?.map((t, i) =>
-        i === index ? { ...t, [field]: value } : t
-      )
+        i === index ? { ...t, [field]: value } : t,
+      ),
     }));
   };
 
   const removeTarget = (index: number) => {
-    setStepData(prev => ({
+    setStepData((prev) => ({
       ...prev,
-      targets: prev.targets?.filter((_, i) => i !== index)
+      targets: prev.targets?.filter((_, i) => i !== index),
     }));
   };
 
-  const duration = stepData.duration !== 'untilFinished' ? stepData.duration : null;
+  const duration =
+    stepData.duration !== "untilFinished" ? stepData.duration : null;
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View className="flex-1 bg-black/50 justify-end">
         <View className="bg-background rounded-t-3xl max-h-[90%]">
           <View className="border-b border-border px-4 py-4 flex-row items-center justify-between">
-            <Text className="font-semibold text-lg">{editItem ? 'Edit Step' : 'Add Step'}</Text>
+            <Text className="font-semibold text-lg">
+              {editItem ? "Edit Step" : "Add Step"}
+            </Text>
             <TouchableOpacity onPress={onClose} className="p-1">
               <Icon as={X} size={20} />
             </TouchableOpacity>
@@ -132,8 +148,10 @@ const StepDialog = memo(({ visible, onSave, onClose, editItem }: any) => {
               <View>
                 <Label>Step Name</Label>
                 <Input
-                  value={stepData.name || ''}
-                  onChangeText={(text) => setStepData(prev => ({ ...prev, name: text }))}
+                  value={stepData.name || ""}
+                  onChangeText={(text) =>
+                    setStepData((prev) => ({ ...prev, name: text }))
+                  }
                   placeholder="e.g., Warm-up"
                 />
               </View>
@@ -141,15 +159,29 @@ const StepDialog = memo(({ visible, onSave, onClose, editItem }: any) => {
               <View>
                 <Label>Duration Type</Label>
                 <Select
-                  value={stepData.duration === 'untilFinished' ? 'untilFinished' : duration?.type}
-                  onValueChange={(value) => updateDuration('type', value)}
+                  value={
+                    stepData.duration === "untilFinished"
+                      ? "untilFinished"
+                      : duration?.type
+                  }
+                  onValueChange={(value) => updateDuration("type", value)}
                 >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="time" label="Time-based"><Text>Time-based</Text></SelectItem>
-                    <SelectItem value="distance" label="Distance-based"><Text>Distance-based</Text></SelectItem>
-                    <SelectItem value="repetitions" label="Rep-based"><Text>Rep-based</Text></SelectItem>
-                    <SelectItem value="untilFinished" label="Until Finished"><Text>Until Finished</Text></SelectItem>
+                    <SelectItem value="time" label="Time-based">
+                      <Text>Time-based</Text>
+                    </SelectItem>
+                    <SelectItem value="distance" label="Distance-based">
+                      <Text>Distance-based</Text>
+                    </SelectItem>
+                    <SelectItem value="repetitions" label="Rep-based">
+                      <Text>Rep-based</Text>
+                    </SelectItem>
+                    <SelectItem value="untilFinished" label="Until Finished">
+                      <Text>Until Finished</Text>
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </View>
@@ -160,7 +192,9 @@ const StepDialog = memo(({ visible, onSave, onClose, editItem }: any) => {
                     <Label>Value</Label>
                     <Input
                       value={duration.value.toString()}
-                      onChangeText={(text) => updateDuration('value', parseFloat(text) || 0)}
+                      onChangeText={(text) =>
+                        updateDuration("value", parseFloat(text) || 0)
+                      }
                       keyboardType="numeric"
                     />
                   </View>
@@ -168,12 +202,16 @@ const StepDialog = memo(({ visible, onSave, onClose, editItem }: any) => {
                     <Label>Unit</Label>
                     <Select
                       value={duration.unit}
-                      onValueChange={(value) => updateDuration('unit', value)}
+                      onValueChange={(value) => updateDuration("unit", value)}
                     >
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
                       <SelectContent>
-                        {DURATION_UNITS[duration.type].map(u => (
-                          <SelectItem key={u} value={u} label={u}><Text>{u}</Text></SelectItem>
+                        {DURATION_UNITS[duration.type].map((u) => (
+                          <SelectItem key={u} value={u} label={u}>
+                            <Text>{u}</Text>
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -189,7 +227,15 @@ const StepDialog = memo(({ visible, onSave, onClose, editItem }: any) => {
                     disabled={(stepData.targets?.length || 0) >= 5}
                     className="p-1"
                   >
-                    <Icon as={Plus} size={16} className={(stepData.targets?.length || 0) >= 5 ? "text-muted" : "text-primary"} />
+                    <Icon
+                      as={Plus}
+                      size={16}
+                      className={
+                        (stepData.targets?.length || 0) >= 5
+                          ? "text-muted"
+                          : "text-primary"
+                      }
+                    />
                   </TouchableOpacity>
                 </View>
                 {stepData.targets?.map((target, i) => (
@@ -197,26 +243,47 @@ const StepDialog = memo(({ visible, onSave, onClose, editItem }: any) => {
                     <View className="flex-1">
                       <Select
                         value={target.type}
-                        onValueChange={(type) => updateTarget(i, 'type', type)}
+                        onValueChange={(type) => updateTarget(i, "type", type)}
                       >
-                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="%FTP" label="% FTP"><Text>% FTP</Text></SelectItem>
-                          <SelectItem value="%MaxHR" label="% Max HR"><Text>% Max HR</Text></SelectItem>
-                          <SelectItem value="watts" label="Watts"><Text>Watts</Text></SelectItem>
-                          <SelectItem value="bpm" label="BPM"><Text>BPM</Text></SelectItem>
-                          <SelectItem value="RPE" label="RPE"><Text>RPE</Text></SelectItem>
+                          <SelectItem value="%FTP" label="% FTP">
+                            <Text>% FTP</Text>
+                          </SelectItem>
+                          <SelectItem value="%MaxHR" label="% Max HR">
+                            <Text>% Max HR</Text>
+                          </SelectItem>
+                          <SelectItem value="watts" label="Watts">
+                            <Text>Watts</Text>
+                          </SelectItem>
+                          <SelectItem value="bpm" label="BPM">
+                            <Text>BPM</Text>
+                          </SelectItem>
+                          <SelectItem value="RPE" label="RPE">
+                            <Text>RPE</Text>
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     </View>
                     <Input
                       value={target.intensity.toString()}
-                      onChangeText={(text) => updateTarget(i, 'intensity', parseFloat(text) || 0)}
+                      onChangeText={(text) =>
+                        updateTarget(i, "intensity", parseFloat(text) || 0)
+                      }
                       keyboardType="numeric"
                       className="w-20"
                     />
-                    <TouchableOpacity onPress={() => removeTarget(i)} className="p-1">
-                      <Icon as={Trash2} size={16} className="text-destructive" />
+                    <TouchableOpacity
+                      onPress={() => removeTarget(i)}
+                      className="p-1"
+                    >
+                      <Icon
+                        as={Trash2}
+                        size={16}
+                        className="text-destructive"
+                      />
                     </TouchableOpacity>
                   </View>
                 ))}
@@ -229,7 +296,9 @@ const StepDialog = memo(({ visible, onSave, onClose, editItem }: any) => {
               <Text>Cancel</Text>
             </Button>
             <Button onPress={handleSave} className="flex-1">
-              <Text className="text-primary-foreground">{editItem ? 'Update' : 'Add'}</Text>
+              <Text className="text-primary-foreground">
+                {editItem ? "Update" : "Add"}
+              </Text>
             </Button>
           </View>
         </View>
@@ -243,44 +312,51 @@ const RepetitionDialog = memo(({ visible, onSave, onClose, editItem }: any) => {
   const [repData, setRepData] = useState<Partial<Repetition>>(
     editItem || {
       repeat: 3,
-      steps: []
-    }
+      steps: [],
+    },
   );
   const [showStepDialog, setShowStepDialog] = useState(false);
-  const [editingStep, setEditingStep] = useState<{ step: Step; index: number } | null>(null);
+  const [editingStep, setEditingStep] = useState<{
+    step: Step;
+    index: number;
+  } | null>(null);
 
   const handleSave = () => {
-    if (!repData.steps?.length) {
-      Alert.alert('Error', 'At least one step is required');
-      return;
-    }
-    onSave({
+    const dataToSave = {
       ...repData,
       id: repData.id || generateId(),
-      type: 'repetition'
-    });
+      type: "repetition",
+    };
+
+    const result = repetitionSchema.safeParse(dataToSave);
+
+    if (!result.success) {
+      console.error("Validation errors:", result.error.flatten());
+      return;
+    }
+    onSave(result.data);
   };
 
   const handleStepSave = (step: Step) => {
     if (editingStep) {
-      setRepData(prev => ({
+      setRepData((prev) => ({
         ...prev,
-        steps: prev.steps?.map((s, i) => i === editingStep.index ? step : s)
+        steps: prev.steps?.map((s, i) => (i === editingStep.index ? step : s)),
       }));
       setEditingStep(null);
     } else {
-      setRepData(prev => ({
+      setRepData((prev) => ({
         ...prev,
-        steps: [...(prev.steps || []), step]
+        steps: [...(prev.steps || []), step],
       }));
     }
     setShowStepDialog(false);
   };
 
   const removeStep = (index: number) => {
-    setRepData(prev => ({
+    setRepData((prev) => ({
       ...prev,
-      steps: prev.steps?.filter((_, i) => i !== index)
+      steps: prev.steps?.filter((_, i) => i !== index),
     }));
   };
 
@@ -295,7 +371,9 @@ const RepetitionDialog = memo(({ visible, onSave, onClose, editItem }: any) => {
         <View className="flex-1 bg-black/50 justify-end">
           <View className="bg-background rounded-t-3xl max-h-[90%]">
             <View className="border-b border-border px-4 py-4 flex-row items-center justify-between">
-              <Text className="font-semibold text-lg">{editItem ? 'Edit Repetition' : 'Add Repetition'}</Text>
+              <Text className="font-semibold text-lg">
+                {editItem ? "Edit Repetition" : "Add Repetition"}
+              </Text>
               <TouchableOpacity onPress={onClose} className="p-1">
                 <Icon as={X} size={20} />
               </TouchableOpacity>
@@ -307,7 +385,12 @@ const RepetitionDialog = memo(({ visible, onSave, onClose, editItem }: any) => {
                   <Label>Repeat Count</Label>
                   <Input
                     value={repData.repeat?.toString()}
-                    onChangeText={(text) => setRepData(prev => ({ ...prev, repeat: parseInt(text) || 1 }))}
+                    onChangeText={(text) =>
+                      setRepData((prev) => ({
+                        ...prev,
+                        repeat: parseInt(text) || 1,
+                      }))
+                    }
                     keyboardType="numeric"
                   />
                 </View>
@@ -326,19 +409,40 @@ const RepetitionDialog = memo(({ visible, onSave, onClose, editItem }: any) => {
                     </TouchableOpacity>
                   </View>
                   {repData.steps?.map((step, i) => (
-                    <View key={step.id} className="flex-row items-center gap-2 p-3 border border-border rounded-lg mb-2 bg-muted/30">
-                      <Icon as={Play} size={14} className="text-muted-foreground" />
-                      <Text className="flex-1 font-medium text-sm">{step.name}</Text>
-                      <TouchableOpacity onPress={() => editStep(step, i)} className="px-2 py-1">
+                    <View
+                      key={step.id}
+                      className="flex-row items-center gap-2 p-3 border border-border rounded-lg mb-2 bg-muted/30"
+                    >
+                      <Icon
+                        as={Play}
+                        size={14}
+                        className="text-muted-foreground"
+                      />
+                      <Text className="flex-1 font-medium text-sm">
+                        {step.name}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => editStep(step, i)}
+                        className="px-2 py-1"
+                      >
                         <Text className="text-xs">Edit</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={() => removeStep(i)} className="p-1">
-                        <Icon as={Trash2} size={14} className="text-destructive" />
+                      <TouchableOpacity
+                        onPress={() => removeStep(i)}
+                        className="p-1"
+                      >
+                        <Icon
+                          as={Trash2}
+                          size={14}
+                          className="text-destructive"
+                        />
                       </TouchableOpacity>
                     </View>
                   ))}
                   {!repData.steps?.length && (
-                    <Text className="text-muted-foreground text-center py-4">No steps added yet</Text>
+                    <Text className="text-muted-foreground text-center py-4">
+                      No steps added yet
+                    </Text>
                   )}
                 </View>
               </View>
@@ -349,7 +453,9 @@ const RepetitionDialog = memo(({ visible, onSave, onClose, editItem }: any) => {
                 <Text>Cancel</Text>
               </Button>
               <Button onPress={handleSave} className="flex-1">
-                <Text className="text-primary-foreground">{editItem ? 'Update' : 'Add'}</Text>
+                <Text className="text-primary-foreground">
+                  {editItem ? "Update" : "Add"}
+                </Text>
               </Button>
             </View>
           </View>
@@ -370,37 +476,120 @@ const RepetitionDialog = memo(({ visible, onSave, onClose, editItem }: any) => {
 });
 
 // Structure Item Component
-const StructureItem = memo(({ item, onEdit, onDelete, drag, isActive }: any) => {
-  const [isExpanded, setIsExpanded] = useState(true);
+const StructureItem = memo(
+  ({ item, onEdit, onDelete, drag, isActive }: any) => {
+    const [isExpanded, setIsExpanded] = useState(true);
 
-  if (item.type === 'step') {
-    const duration = item.duration !== 'untilFinished' ? item.duration : null;
-    const durationText = duration ? `${duration.value} ${duration.unit}` : 'Until Finished';
+    if (item.type === "step") {
+      const duration = item.duration !== "untilFinished" ? item.duration : null;
+      const durationText = duration
+        ? `${duration.value} ${duration.unit}`
+        : "Until Finished";
 
+      return (
+        <Card className={`mb-2 ${isActive ? "opacity-70" : ""}`}>
+          <CardContent className="p-3">
+            <View className="flex-row items-start gap-3">
+              <TouchableOpacity onLongPress={drag} className="pt-1">
+                <Icon
+                  as={GripVertical}
+                  size={16}
+                  className="text-muted-foreground"
+                />
+              </TouchableOpacity>
+              <Icon as={Play} size={16} className="text-primary pt-1" />
+              <View className="flex-1 min-w-0">
+                <Text className="font-medium text-sm">{item.name}</Text>
+                <Text className="text-xs text-muted-foreground mt-1">
+                  {durationText}
+                </Text>
+                {item.targets?.length > 0 && (
+                  <View className="flex-row flex-wrap gap-1 mt-2">
+                    {item.targets.map((t: Target, i: number) => (
+                      <View
+                        key={i}
+                        className="px-2 py-0.5 bg-primary/10 rounded"
+                      >
+                        <Text className="text-primary text-xs">
+                          {t.type}: {t.intensity}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+              <View className="flex-row gap-1">
+                <TouchableOpacity onPress={onEdit} className="p-1.5">
+                  <Icon
+                    as={Play}
+                    size={14}
+                    className="text-foreground"
+                    style={{ transform: [{ rotate: "90deg" }] }}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={onDelete} className="p-1.5">
+                  <Icon as={Trash2} size={14} className="text-destructive" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    // Repetition
     return (
-      <Card className={`mb-2 ${isActive ? 'opacity-70' : ''}`}>
+      <Card
+        className={`mb-2 bg-primary/5 border-primary/30 ${isActive ? "opacity-70" : ""}`}
+      >
         <CardContent className="p-3">
           <View className="flex-row items-start gap-3">
             <TouchableOpacity onLongPress={drag} className="pt-1">
-              <Icon as={GripVertical} size={16} className="text-muted-foreground" />
+              <Icon
+                as={GripVertical}
+                size={16}
+                className="text-muted-foreground"
+              />
             </TouchableOpacity>
-            <Icon as={Play} size={16} className="text-primary pt-1" />
+            <Icon as={Repeat} size={16} className="text-primary pt-1" />
             <View className="flex-1 min-w-0">
-              <Text className="font-medium text-sm">{item.name}</Text>
-              <Text className="text-xs text-muted-foreground mt-1">{durationText}</Text>
-              {item.targets?.length > 0 && (
-                <View className="flex-row flex-wrap gap-1 mt-2">
-                  {item.targets.map((t: Target, i: number) => (
-                    <View key={i} className="px-2 py-0.5 bg-primary/10 rounded">
-                      <Text className="text-primary text-xs">{t.type}: {t.intensity}</Text>
-                    </View>
-                  ))}
+              <View className="flex-row items-center gap-2">
+                <Text className="font-medium text-sm">
+                  Repeat {item.repeat}x
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setIsExpanded(!isExpanded)}
+                  className="p-0.5"
+                >
+                  <Icon as={isExpanded ? ChevronUp : ChevronDown} size={14} />
+                </TouchableOpacity>
+              </View>
+              {isExpanded && (
+                <View className="mt-2 pl-3 border-l-2 border-primary/30 gap-1.5">
+                  {item.steps.map((step: Step) => {
+                    const duration =
+                      step.duration !== "untilFinished" ? step.duration : null;
+                    return (
+                      <View key={step.id}>
+                        <Text className="font-medium text-xs">{step.name}</Text>
+                        <Text className="text-muted-foreground text-xs">
+                          {duration
+                            ? `${duration.value} ${duration.unit}`
+                            : "Until Finished"}
+                        </Text>
+                      </View>
+                    );
+                  })}
                 </View>
               )}
             </View>
             <View className="flex-row gap-1">
               <TouchableOpacity onPress={onEdit} className="p-1.5">
-                <Icon as={Play} size={14} className="text-foreground" style={{ transform: [{ rotate: '90deg' }] }} />
+                <Icon
+                  as={Play}
+                  size={14}
+                  style={{ transform: [{ rotate: "90deg" }] }}
+                />
               </TouchableOpacity>
               <TouchableOpacity onPress={onDelete} className="p-1.5">
                 <Icon as={Trash2} size={14} className="text-destructive" />
@@ -410,107 +599,78 @@ const StructureItem = memo(({ item, onEdit, onDelete, drag, isActive }: any) => 
         </CardContent>
       </Card>
     );
-  }
-
-  // Repetition
-  return (
-    <Card className={`mb-2 bg-primary/5 border-primary/30 ${isActive ? 'opacity-70' : ''}`}>
-      <CardContent className="p-3">
-        <View className="flex-row items-start gap-3">
-          <TouchableOpacity onLongPress={drag} className="pt-1">
-            <Icon as={GripVertical} size={16} className="text-muted-foreground" />
-          </TouchableOpacity>
-          <Icon as={Repeat} size={16} className="text-primary pt-1" />
-          <View className="flex-1 min-w-0">
-            <View className="flex-row items-center gap-2">
-              <Text className="font-medium text-sm">Repeat {item.repeat}x</Text>
-              <TouchableOpacity onPress={() => setIsExpanded(!isExpanded)} className="p-0.5">
-                <Icon as={isExpanded ? ChevronUp : ChevronDown} size={14} />
-              </TouchableOpacity>
-            </View>
-            {isExpanded && (
-              <View className="mt-2 pl-3 border-l-2 border-primary/30 gap-1.5">
-                {item.steps.map((step: Step) => {
-                  const duration = step.duration !== 'untilFinished' ? step.duration : null;
-                  return (
-                    <View key={step.id}>
-                      <Text className="font-medium text-xs">{step.name}</Text>
-                      <Text className="text-muted-foreground text-xs">
-                        {duration ? `${duration.value} ${duration.unit}` : 'Until Finished'}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-          </View>
-          <View className="flex-row gap-1">
-            <TouchableOpacity onPress={onEdit} className="p-1.5">
-              <Icon as={Play} size={14} style={{ transform: [{ rotate: '90deg' }] }} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={onDelete} className="p-1.5">
-              <Icon as={Trash2} size={14} className="text-destructive" />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </CardContent>
-    </Card>
-  );
-});
+  },
+);
 
 // Main Component
 export default function WorkoutPlanCreator() {
-  const [name, setName] = useState('New Workout Plan');
-  const [activityType, setActivityType] = useState('outdoor_run');
+  const [name, setName] = useState("New Workout Plan");
+  const [activityType, setActivityType] = useState("outdoor_run");
   const [estimatedDuration, setEstimatedDuration] = useState(30);
   const [structure, setStructure] = useState<StructureItem[]>([]);
 
   const [showStepDialog, setShowStepDialog] = useState(false);
   const [showRepDialog, setShowRepDialog] = useState(false);
-  const [editingItem, setEditingItem] = useState<{ item: StructureItem; index: number } | null>(null);
+  const [editingItem, setEditingItem] = useState<{
+    item: StructureItem;
+    index: number;
+  } | null>(null);
 
   const handleSave = useCallback(() => {
     const data = {
       name,
       activity_type: activityType,
       estimated_duration: estimatedDuration,
-      structure: { steps: structure }
+      structure: { steps: structure },
     };
-    Alert.alert('Success', 'Workout plan saved!');
-    console.log('Saving:', data);
+
+    const result = createActivityPlanSchema.safeParse(data);
+    if (!result.success) {
+      console.error("Validation errors:", result.error.flatten());
+      return;
+    }
+
+    Alert.alert("Success", "Workout plan saved!");
+    console.log("Saving:", result.data);
   }, [name, activityType, estimatedDuration, structure]);
 
-  const handleStepSave = useCallback((step: Step) => {
-    if (editingItem) {
-      setStructure(prev => prev.map((item, i) =>
-        i === editingItem.index ? step : item
-      ));
-      setEditingItem(null);
-    } else {
-      setStructure(prev => [...prev, step]);
-    }
-    setShowStepDialog(false);
-  }, [editingItem]);
+  const handleStepSave = useCallback(
+    (step: Step) => {
+      if (editingItem) {
+        setStructure((prev) =>
+          prev.map((item, i) => (i === editingItem.index ? step : item)),
+        );
+        setEditingItem(null);
+      } else {
+        setStructure((prev) => [...prev, step]);
+      }
+      setShowStepDialog(false);
+    },
+    [editingItem],
+  );
 
-  const handleRepSave = useCallback((rep: Repetition) => {
-    if (editingItem) {
-      setStructure(prev => prev.map((item, i) =>
-        i === editingItem.index ? rep : item
-      ));
-      setEditingItem(null);
-    } else {
-      setStructure(prev => [...prev, rep]);
-    }
-    setShowRepDialog(false);
-  }, [editingItem]);
+  const handleRepSave = useCallback(
+    (rep: Repetition) => {
+      if (editingItem) {
+        setStructure((prev) =>
+          prev.map((item, i) => (i === editingItem.index ? rep : item)),
+        );
+        setEditingItem(null);
+      } else {
+        setStructure((prev) => [...prev, rep]);
+      }
+      setShowRepDialog(false);
+    },
+    [editingItem],
+  );
 
   const handleDelete = useCallback((index: number) => {
-    setStructure(prev => prev.filter((_, i) => i !== index));
+    setStructure((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
   const handleEdit = useCallback((item: StructureItem, index: number) => {
     setEditingItem({ item, index });
-    if (item.type === 'step') {
+    if (item.type === "step") {
       setShowStepDialog(true);
     } else {
       setShowRepDialog(true);
@@ -523,18 +683,21 @@ export default function WorkoutPlanCreator() {
     setEditingItem(null);
   }, []);
 
-  const renderItem = useCallback(({ item, drag, isActive, getIndex }: RenderItemParams<StructureItem>) => {
-    const index = getIndex();
-    return (
-      <StructureItem
-        item={item}
-        onEdit={() => handleEdit(item, index!)}
-        onDelete={() => handleDelete(index!)}
-        drag={drag}
-        isActive={isActive}
-      />
-    );
-  }, [handleEdit, handleDelete]);
+  const renderItem = useCallback(
+    ({ item, drag, isActive, getIndex }: RenderItemParams<StructureItem>) => {
+      const index = getIndex();
+      return (
+        <StructureItem
+          item={item}
+          onEdit={() => handleEdit(item, index!)}
+          onDelete={() => handleDelete(index!)}
+          drag={drag}
+          isActive={isActive}
+        />
+      );
+    },
+    [handleEdit, handleDelete],
+  );
 
   return (
     <View className="flex-1 bg-background">
@@ -565,13 +728,28 @@ export default function WorkoutPlanCreator() {
                 <View className="flex-1">
                   <Label className="text-xs mb-1">Activity Type</Label>
                   <Select value={activityType} onValueChange={setActivityType}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="outdoor_run" label="Outdoor Run"><Text>Outdoor Run</Text></SelectItem>
-                      <SelectItem value="outdoor_bike" label="Outdoor Bike"><Text>Outdoor Bike</Text></SelectItem>
-                      <SelectItem value="indoor_treadmill" label="Treadmill"><Text>Treadmill</Text></SelectItem>
-                      <SelectItem value="indoor_bike_trainer" label="Bike Trainer"><Text>Bike Trainer</Text></SelectItem>
-                      <SelectItem value="indoor_strength" label="Strength"><Text>Strength</Text></SelectItem>
+                      <SelectItem value="outdoor_run" label="Outdoor Run">
+                        <Text>Outdoor Run</Text>
+                      </SelectItem>
+                      <SelectItem value="outdoor_bike" label="Outdoor Bike">
+                        <Text>Outdoor Bike</Text>
+                      </SelectItem>
+                      <SelectItem value="indoor_treadmill" label="Treadmill">
+                        <Text>Treadmill</Text>
+                      </SelectItem>
+                      <SelectItem
+                        value="indoor_bike_trainer"
+                        label="Bike Trainer"
+                      >
+                        <Text>Bike Trainer</Text>
+                      </SelectItem>
+                      <SelectItem value="indoor_strength" label="Strength">
+                        <Text>Strength</Text>
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </View>
@@ -579,7 +757,9 @@ export default function WorkoutPlanCreator() {
                   <Label className="text-xs mb-1">Duration (min)</Label>
                   <Input
                     value={estimatedDuration.toString()}
-                    onChangeText={(text) => setEstimatedDuration(parseInt(text) || 0)}
+                    onChangeText={(text) =>
+                      setEstimatedDuration(parseInt(text) || 0)
+                    }
                     keyboardType="numeric"
                   />
                 </View>
@@ -618,8 +798,12 @@ export default function WorkoutPlanCreator() {
 
               {structure.length === 0 ? (
                 <View className="py-12 items-center">
-                  <Text className="text-muted-foreground mb-2">No steps added yet</Text>
-                  <Text className="text-muted-foreground text-sm">Tap Step or Rep to begin</Text>
+                  <Text className="text-muted-foreground mb-2">
+                    No steps added yet
+                  </Text>
+                  <Text className="text-muted-foreground text-sm">
+                    Tap Step or Rep to begin
+                  </Text>
                 </View>
               ) : (
                 <DraggableFlatList

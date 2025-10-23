@@ -429,6 +429,7 @@ export type Database = {
           created_at: string
           id: string
           idx: number
+          notes: string | null
           profile_id: string
           scheduled_date: string
         }
@@ -437,6 +438,7 @@ export type Database = {
           created_at?: string
           id?: string
           idx?: number
+          notes?: string | null
           profile_id: string
           scheduled_date: string
         }
@@ -445,6 +447,7 @@ export type Database = {
           created_at?: string
           id?: string
           idx?: number
+          notes?: string | null
           profile_id?: string
           scheduled_date?: string
         }
@@ -515,6 +518,50 @@ export type Database = {
           weight_kg?: number | null
         }
         Relationships: []
+      }
+      training_plans: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          idx: number
+          is_active: boolean
+          name: string
+          profile_id: string
+          structure: Json
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          idx?: number
+          is_active?: boolean
+          name: string
+          profile_id: string
+          structure: Json
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          idx?: number
+          is_active?: boolean
+          name?: string
+          profile_id?: string
+          structure?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "training_plans_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

@@ -33,6 +33,27 @@ create type public.activity_metric_data_type as enum (
 );
 
 -- ============================================================================
+-- TRAINING PLANS
+-- ============================================================================
+create table if not exists public.training_plans (
+    id uuid primary key default uuid_generate_v4(),
+    idx serial unique not null,
+    profile_id uuid not null references public.profiles(id) on delete cascade,
+    name text not null,
+    description text,
+    is_active boolean not null default true,
+    structure jsonb not null,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+
+    -- Constraint: Only one training plan per user
+    constraint unique_training_plan_per_user unique (profile_id)
+);
+
+create index if not exists idx_training_plans_profile_id
+    on public.training_plans(profile_id);
+
+-- ============================================================================
 -- ACTIVITY PLANS
 -- ============================================================================
 create table if not exists public.activity_plans (
@@ -61,6 +82,7 @@ create table if not exists public.planned_activities (
     profile_id uuid not null references public.profiles(id) on delete cascade,
     activity_plan_id uuid not null references public.activity_plans(id) on delete cascade,
     scheduled_date date not null,
+    notes text,
     created_at timestamptz not null default now(),
     constraint chk_planned_activities_date check (scheduled_date >= current_date)
 );
@@ -75,9 +97,6 @@ create index if not exists idx_planned_activities_activity_plan_id
 -- ACTIVITIES
 -- ============================================================================
 create table if not exists public.activities (
-    -- ============================================================================
-    -- identity & metadata
-    -- ============================================================================
     id uuid primary key default uuid_generate_v4(),
     idx serial unique not null,
     name text not null,
@@ -170,7 +189,7 @@ create table if not exists public.activities (
     -- ============================================================================
     -- analysis metrics
     -- ============================================================================
-    intensity_factor integer check (intensity_factor >= 0 and intensity_factor <= 100),
+    intensity_factor integer check (intensity_factor >= 0 and intensity_factor <= 200),
     efficiency_factor integer check (efficiency_factor >= 0 and efficiency_factor <= 100),
     power_weight_ratio numeric(5,2) check (power_weight_ratio >= 0),
     decoupling integer check (decoupling >= 0 and decoupling <= 100),

@@ -4,6 +4,8 @@ import type { ActivityPlanStructure } from "./activity_plan_structure";
 
 export * from "./activity_payload";
 export * from "./activity_plan_structure";
+export * from "./planned_activity";
+export * from "./training_plan_structure";
 
 // tRPC-specific Activity Plans Schemas - use different names to avoid conflicts with supabase exports
 export const activityPlanCreateSchema = z.object({
@@ -25,16 +27,7 @@ export const activityPlanCreateSchema = z.object({
 
 export const activityPlanUpdateSchema = activityPlanCreateSchema.partial();
 
-// tRPC-specific Planned Activities Schemas - use different names to avoid conflicts
-export const plannedActivityCreateSchema = z.object({
-  activity_plan_id: z.string().uuid("Invalid activity plan ID"),
-  scheduled_date: z
-    .string()
-    .refine((val) => !isNaN(Date.parse(val)), "Invalid date format"),
-});
-
-export const plannedActivityUpdateSchema =
-  plannedActivityCreateSchema.partial();
+// Note: plannedActivityCreateSchema and plannedActivityUpdateSchema are now exported from ./planned_activity
 
 // Legacy type for ActivityRecorder service
 export type RecordingServiceActivityPlan = Omit<
@@ -43,3 +36,20 @@ export type RecordingServiceActivityPlan = Omit<
 > & {
   structure: ActivityPlanStructure;
 };
+
+// tRPC-specific Training Plans Schemas
+export const trainingPlanCreateInputSchema = z.object({
+  name: z
+    .string()
+    .min(1, "Plan name is required")
+    .max(255, "Plan name is too long"),
+  description: z
+    .string()
+    .max(1000, "Description is too long")
+    .optional()
+    .nullable(),
+  structure: z.any(), // Will be validated by trainingPlanStructureSchema
+});
+
+export const trainingPlanUpdateInputSchema =
+  trainingPlanCreateInputSchema.partial();

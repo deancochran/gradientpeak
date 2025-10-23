@@ -3,6 +3,87 @@
  */
 
 // ================================
+// Activity Type Configuration
+// ================================
+
+/**
+ * Activity type configuration for UI display and categorization
+ * Consolidates icon names, colors, and metadata for all activity types
+ */
+export const ACTIVITY_TYPE_CONFIG = {
+  outdoor_run: {
+    name: "Outdoor Run",
+    shortName: "Run",
+    icon: "footprints",
+    color: "#2563eb", // blue-600
+    category: "cardio",
+    description: "Running outdoors",
+  },
+  outdoor_bike: {
+    name: "Outdoor Bike",
+    shortName: "Bike",
+    icon: "bike",
+    color: "#16a34a", // green-600
+    category: "cardio",
+    description: "Cycling outdoors",
+  },
+  indoor_treadmill: {
+    name: "Treadmill",
+    shortName: "Treadmill",
+    icon: "footprints",
+    color: "#9333ea", // purple-600
+    category: "cardio",
+    description: "Running on treadmill",
+  },
+  indoor_bike_trainer: {
+    name: "Bike Trainer",
+    shortName: "Trainer",
+    icon: "bike",
+    color: "#ea580c", // orange-600
+    category: "cardio",
+    description: "Cycling on indoor trainer",
+  },
+  indoor_strength: {
+    name: "Strength Training",
+    shortName: "Strength",
+    icon: "dumbbell",
+    color: "#dc2626", // red-600
+    category: "strength",
+    description: "Resistance training",
+  },
+  indoor_swim: {
+    name: "Swimming",
+    shortName: "Swim",
+    icon: "waves",
+    color: "#0891b2", // cyan-600
+    category: "cardio",
+    description: "Swimming workout",
+  },
+  other: {
+    name: "Other Activity",
+    shortName: "Other",
+    icon: "activity",
+    color: "#6b7280", // gray-600
+    category: "other",
+    description: "Other physical activity",
+  },
+} as const;
+
+/**
+ * Type helper for activity types
+ */
+export type ActivityType = keyof typeof ACTIVITY_TYPE_CONFIG;
+
+/**
+ * Activity categories for grouping
+ */
+export const ACTIVITY_CATEGORIES = {
+  cardio: "Cardio",
+  strength: "Strength",
+  other: "Other",
+} as const;
+
+// ================================
 // Training Zone Constants
 // ================================
 
@@ -266,3 +347,79 @@ export const BLE_SERVICE_UUIDS = {
   CYCLING_SPEED_AND_CADENCE: "00001816-0000-1000-8000-00805f9b34fb",
   RUNNING_SPEED_AND_CADENCE: "00001814-0000-1000-8000-00805f9b34fb",
 } as const;
+
+// ================================
+// Intensity Factor Zones
+// ================================
+
+/**
+ * 7-zone intensity classification based on Intensity Factor (IF)
+ * IF is calculated as: Normalized Power ÷ FTP
+ * Stored as percentage (0-400) for values like 0.85 IF = 85%
+ */
+export const INTENSITY_ZONES = {
+  RECOVERY: {
+    name: "Recovery",
+    min: 0,
+    max: 55,
+    description: "Active recovery and rest",
+    color: "#10b981", // green-500
+  },
+  ENDURANCE: {
+    name: "Endurance",
+    min: 55,
+    max: 74,
+    description: "Aerobic base building",
+    color: "#3b82f6", // blue-500
+  },
+  TEMPO: {
+    name: "Tempo",
+    min: 75,
+    max: 84,
+    description: "Aerobic threshold",
+    color: "#8b5cf6", // violet-500
+  },
+  THRESHOLD: {
+    name: "Threshold",
+    min: 85,
+    max: 94,
+    description: "Lactate threshold",
+    color: "#f59e0b", // amber-500
+  },
+  VO2MAX: {
+    name: "VO2max",
+    min: 95,
+    max: 104,
+    description: "VO2 max intervals",
+    color: "#f97316", // orange-500
+  },
+  ANAEROBIC: {
+    name: "Anaerobic",
+    min: 105,
+    max: 114,
+    description: "Anaerobic capacity",
+    color: "#ef4444", // red-500
+  },
+  NEUROMUSCULAR: {
+    name: "Neuromuscular",
+    min: 115,
+    max: 400,
+    description: "Sprint power",
+    color: "#dc2626", // red-600
+  },
+} as const;
+
+/**
+ * Helper function to get intensity zone from IF percentage (0-400)
+ */
+export function getIntensityZone(
+  intensityFactor: number,
+): keyof typeof INTENSITY_ZONES {
+  if (intensityFactor < 55) return "RECOVERY";
+  if (intensityFactor < 75) return "ENDURANCE";
+  if (intensityFactor < 85) return "TEMPO";
+  if (intensityFactor < 95) return "THRESHOLD";
+  if (intensityFactor < 105) return "VO2MAX";
+  if (intensityFactor < 115) return "ANAEROBIC";
+  return "NEUROMUSCULAR";
+}

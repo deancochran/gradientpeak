@@ -4,15 +4,23 @@ create type "public"."activity_metric_data_type" as enum ('float', 'latlng', 'bo
 
 create type "public"."activity_type" as enum ('outdoor_run', 'outdoor_bike', 'indoor_treadmill', 'indoor_bike_trainer', 'indoor_strength', 'indoor_swim', 'other');
 
+create type "public"."integration_provider" as enum ('strava', 'wahoo', 'trainingpeaks', 'garmin', 'zwift');
+
 create sequence "public"."activities_idx_seq";
 
 create sequence "public"."activity_plans_idx_seq";
 
 create sequence "public"."activity_streams_idx_seq";
 
+create sequence "public"."integrations_idx_seq";
+
+create sequence "public"."oauth_states_idx_seq";
+
 create sequence "public"."planned_activities_idx_seq";
 
 create sequence "public"."profiles_idx_seq";
+
+create sequence "public"."training_plans_idx_seq";
 
 create table "public"."activities" (
     "id" uuid not null default uuid_generate_v4(),
@@ -108,12 +116,38 @@ create table "public"."activity_streams" (
 );
 
 
+create table "public"."integrations" (
+    "id" uuid not null default uuid_generate_v4(),
+    "idx" integer not null default nextval('integrations_idx_seq'::regclass),
+    "profile_id" uuid not null,
+    "provider" integration_provider not null,
+    "access_token" text not null,
+    "refresh_token" text,
+    "expires_at" timestamp with time zone,
+    "scope" text,
+    "created_at" timestamp with time zone not null default now()
+);
+
+
+create table "public"."oauth_states" (
+    "id" uuid not null default uuid_generate_v4(),
+    "idx" integer not null default nextval('oauth_states_idx_seq'::regclass),
+    "state" text not null,
+    "profile_id" uuid not null,
+    "provider" integration_provider not null,
+    "mobile_redirect_uri" text not null,
+    "created_at" timestamp with time zone not null default now(),
+    "expires_at" timestamp with time zone not null
+);
+
+
 create table "public"."planned_activities" (
     "id" uuid not null default uuid_generate_v4(),
     "idx" integer not null default nextval('planned_activities_idx_seq'::regclass),
     "profile_id" uuid not null,
     "activity_plan_id" uuid not null,
     "scheduled_date" date not null,
+    "notes" text,
     "created_at" timestamp with time zone not null default now()
 );
 
@@ -136,15 +170,34 @@ create table "public"."profiles" (
 );
 
 
+create table "public"."training_plans" (
+    "id" uuid not null default uuid_generate_v4(),
+    "idx" integer not null default nextval('training_plans_idx_seq'::regclass),
+    "profile_id" uuid not null,
+    "name" text not null,
+    "description" text,
+    "is_active" boolean not null default true,
+    "structure" jsonb not null,
+    "created_at" timestamp with time zone not null default now(),
+    "updated_at" timestamp with time zone not null default now()
+);
+
+
 alter sequence "public"."activities_idx_seq" owned by "public"."activities"."idx";
 
 alter sequence "public"."activity_plans_idx_seq" owned by "public"."activity_plans"."idx";
 
 alter sequence "public"."activity_streams_idx_seq" owned by "public"."activity_streams"."idx";
 
+alter sequence "public"."integrations_idx_seq" owned by "public"."integrations"."idx";
+
+alter sequence "public"."oauth_states_idx_seq" owned by "public"."oauth_states"."idx";
+
 alter sequence "public"."planned_activities_idx_seq" owned by "public"."planned_activities"."idx";
 
 alter sequence "public"."profiles_idx_seq" owned by "public"."profiles"."idx";
+
+alter sequence "public"."training_plans_idx_seq" owned by "public"."training_plans"."idx";
 
 CREATE UNIQUE INDEX activities_idx_key ON public.activities USING btree (idx);
 
@@ -172,9 +225,27 @@ CREATE INDEX idx_activity_streams_activity_id ON public.activity_streams USING b
 
 CREATE INDEX idx_activity_streams_type ON public.activity_streams USING btree (type);
 
+CREATE INDEX idx_integrations_expires_at ON public.integrations USING btree (expires_at);
+
+CREATE INDEX idx_integrations_provider ON public.integrations USING btree (provider);
+
+CREATE INDEX idx_oauth_states_expires_at ON public.oauth_states USING btree (expires_at);
+
+CREATE INDEX idx_oauth_states_profile_id ON public.oauth_states USING btree (profile_id);
+
 CREATE INDEX idx_planned_activities_activity_plan_id ON public.planned_activities USING btree (activity_plan_id);
 
 CREATE INDEX idx_planned_activities_profile_id ON public.planned_activities USING btree (profile_id);
+
+CREATE INDEX idx_training_plans_profile_id ON public.training_plans USING btree (profile_id);
+
+CREATE UNIQUE INDEX integrations_idx_key ON public.integrations USING btree (idx);
+
+CREATE UNIQUE INDEX integrations_pkey ON public.integrations USING btree (id);
+
+CREATE UNIQUE INDEX oauth_states_idx_key ON public.oauth_states USING btree (idx);
+
+CREATE UNIQUE INDEX oauth_states_pkey ON public.oauth_states USING btree (id);
 
 CREATE UNIQUE INDEX planned_activities_idx_key ON public.planned_activities USING btree (idx);
 
@@ -186,15 +257,31 @@ CREATE UNIQUE INDEX profiles_pkey ON public.profiles USING btree (id);
 
 CREATE UNIQUE INDEX profiles_username_key ON public.profiles USING btree (username);
 
+CREATE UNIQUE INDEX training_plans_idx_key ON public.training_plans USING btree (idx);
+
+CREATE UNIQUE INDEX training_plans_pkey ON public.training_plans USING btree (id);
+
+CREATE UNIQUE INDEX unique_activity_type ON public.activity_streams USING btree (activity_id, type);
+
+CREATE UNIQUE INDEX unique_integration_type ON public.integrations USING btree (profile_id, provider);
+
+CREATE UNIQUE INDEX unique_training_plan_per_user ON public.training_plans USING btree (profile_id);
+
 alter table "public"."activities" add constraint "activities_pkey" PRIMARY KEY using index "activities_pkey";
 
 alter table "public"."activity_plans" add constraint "activity_plans_pkey" PRIMARY KEY using index "activity_plans_pkey";
 
 alter table "public"."activity_streams" add constraint "activity_streams_pkey" PRIMARY KEY using index "activity_streams_pkey";
 
+alter table "public"."integrations" add constraint "integrations_pkey" PRIMARY KEY using index "integrations_pkey";
+
+alter table "public"."oauth_states" add constraint "oauth_states_pkey" PRIMARY KEY using index "oauth_states_pkey";
+
 alter table "public"."planned_activities" add constraint "planned_activities_pkey" PRIMARY KEY using index "planned_activities_pkey";
 
 alter table "public"."profiles" add constraint "profiles_pkey" PRIMARY KEY using index "profiles_pkey";
+
+alter table "public"."training_plans" add constraint "training_plans_pkey" PRIMARY KEY using index "training_plans_pkey";
 
 alter table "public"."activities" add constraint "activities_avg_cadence_check" CHECK ((avg_cadence >= 0)) not valid;
 
@@ -370,13 +457,13 @@ alter table "public"."activities" add constraint "chk_times" CHECK ((finished_at
 
 alter table "public"."activities" validate constraint "chk_times";
 
-alter table "public"."activity_plans" add constraint "activity_plans_estimated_tss_check" CHECK ((estimated_tss >= 0)) not valid;
-
-alter table "public"."activity_plans" validate constraint "activity_plans_estimated_tss_check";
-
 alter table "public"."activity_plans" add constraint "activity_plans_estimated_duration_check" CHECK ((estimated_duration >= 0)) not valid;
 
 alter table "public"."activity_plans" validate constraint "activity_plans_estimated_duration_check";
+
+alter table "public"."activity_plans" add constraint "activity_plans_estimated_tss_check" CHECK ((estimated_tss >= 0)) not valid;
+
+alter table "public"."activity_plans" validate constraint "activity_plans_estimated_tss_check";
 
 alter table "public"."activity_plans" add constraint "activity_plans_idx_key" UNIQUE using index "activity_plans_idx_key";
 
@@ -398,7 +485,21 @@ alter table "public"."activity_streams" add constraint "activity_streams_sample_
 
 alter table "public"."activity_streams" validate constraint "activity_streams_sample_count_check";
 
-alter table "public"."activity_streams" add constraint "unique_activity_type" UNIQUE (activity_id, type);
+alter table "public"."activity_streams" add constraint "unique_activity_type" UNIQUE using index "unique_activity_type";
+
+alter table "public"."integrations" add constraint "integrations_idx_key" UNIQUE using index "integrations_idx_key";
+
+alter table "public"."integrations" add constraint "integrations_profile_id_fkey" FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE not valid;
+
+alter table "public"."integrations" validate constraint "integrations_profile_id_fkey";
+
+alter table "public"."integrations" add constraint "unique_integration_type" UNIQUE using index "unique_integration_type";
+
+alter table "public"."oauth_states" add constraint "oauth_states_idx_key" UNIQUE using index "oauth_states_idx_key";
+
+alter table "public"."oauth_states" add constraint "oauth_states_profile_id_fkey" FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE not valid;
+
+alter table "public"."oauth_states" validate constraint "oauth_states_profile_id_fkey";
 
 alter table "public"."planned_activities" add constraint "chk_planned_activities_date" CHECK ((scheduled_date >= CURRENT_DATE)) not valid;
 
@@ -422,7 +523,13 @@ alter table "public"."profiles" add constraint "profiles_idx_key" UNIQUE using i
 
 alter table "public"."profiles" add constraint "profiles_username_key" UNIQUE using index "profiles_username_key";
 
-set check_function_bodies = off;
+alter table "public"."training_plans" add constraint "training_plans_idx_key" UNIQUE using index "training_plans_idx_key";
+
+alter table "public"."training_plans" add constraint "training_plans_profile_id_fkey" FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE not valid;
+
+alter table "public"."training_plans" validate constraint "training_plans_profile_id_fkey";
+
+alter table "public"."training_plans" add constraint "unique_training_plan_per_user" UNIQUE using index "unique_training_plan_per_user";
 
 grant delete on table "public"."activities" to "anon";
 
@@ -550,6 +657,90 @@ grant truncate on table "public"."activity_streams" to "service_role";
 
 grant update on table "public"."activity_streams" to "service_role";
 
+grant delete on table "public"."integrations" to "anon";
+
+grant insert on table "public"."integrations" to "anon";
+
+grant references on table "public"."integrations" to "anon";
+
+grant select on table "public"."integrations" to "anon";
+
+grant trigger on table "public"."integrations" to "anon";
+
+grant truncate on table "public"."integrations" to "anon";
+
+grant update on table "public"."integrations" to "anon";
+
+grant delete on table "public"."integrations" to "authenticated";
+
+grant insert on table "public"."integrations" to "authenticated";
+
+grant references on table "public"."integrations" to "authenticated";
+
+grant select on table "public"."integrations" to "authenticated";
+
+grant trigger on table "public"."integrations" to "authenticated";
+
+grant truncate on table "public"."integrations" to "authenticated";
+
+grant update on table "public"."integrations" to "authenticated";
+
+grant delete on table "public"."integrations" to "service_role";
+
+grant insert on table "public"."integrations" to "service_role";
+
+grant references on table "public"."integrations" to "service_role";
+
+grant select on table "public"."integrations" to "service_role";
+
+grant trigger on table "public"."integrations" to "service_role";
+
+grant truncate on table "public"."integrations" to "service_role";
+
+grant update on table "public"."integrations" to "service_role";
+
+grant delete on table "public"."oauth_states" to "anon";
+
+grant insert on table "public"."oauth_states" to "anon";
+
+grant references on table "public"."oauth_states" to "anon";
+
+grant select on table "public"."oauth_states" to "anon";
+
+grant trigger on table "public"."oauth_states" to "anon";
+
+grant truncate on table "public"."oauth_states" to "anon";
+
+grant update on table "public"."oauth_states" to "anon";
+
+grant delete on table "public"."oauth_states" to "authenticated";
+
+grant insert on table "public"."oauth_states" to "authenticated";
+
+grant references on table "public"."oauth_states" to "authenticated";
+
+grant select on table "public"."oauth_states" to "authenticated";
+
+grant trigger on table "public"."oauth_states" to "authenticated";
+
+grant truncate on table "public"."oauth_states" to "authenticated";
+
+grant update on table "public"."oauth_states" to "authenticated";
+
+grant delete on table "public"."oauth_states" to "service_role";
+
+grant insert on table "public"."oauth_states" to "service_role";
+
+grant references on table "public"."oauth_states" to "service_role";
+
+grant select on table "public"."oauth_states" to "service_role";
+
+grant trigger on table "public"."oauth_states" to "service_role";
+
+grant truncate on table "public"."oauth_states" to "service_role";
+
+grant update on table "public"."oauth_states" to "service_role";
+
 grant delete on table "public"."planned_activities" to "anon";
 
 grant insert on table "public"."planned_activities" to "anon";
@@ -633,3 +824,47 @@ grant trigger on table "public"."profiles" to "service_role";
 grant truncate on table "public"."profiles" to "service_role";
 
 grant update on table "public"."profiles" to "service_role";
+
+grant delete on table "public"."training_plans" to "anon";
+
+grant insert on table "public"."training_plans" to "anon";
+
+grant references on table "public"."training_plans" to "anon";
+
+grant select on table "public"."training_plans" to "anon";
+
+grant trigger on table "public"."training_plans" to "anon";
+
+grant truncate on table "public"."training_plans" to "anon";
+
+grant update on table "public"."training_plans" to "anon";
+
+grant delete on table "public"."training_plans" to "authenticated";
+
+grant insert on table "public"."training_plans" to "authenticated";
+
+grant references on table "public"."training_plans" to "authenticated";
+
+grant select on table "public"."training_plans" to "authenticated";
+
+grant trigger on table "public"."training_plans" to "authenticated";
+
+grant truncate on table "public"."training_plans" to "authenticated";
+
+grant update on table "public"."training_plans" to "authenticated";
+
+grant delete on table "public"."training_plans" to "service_role";
+
+grant insert on table "public"."training_plans" to "service_role";
+
+grant references on table "public"."training_plans" to "service_role";
+
+grant select on table "public"."training_plans" to "service_role";
+
+grant trigger on table "public"."training_plans" to "service_role";
+
+grant truncate on table "public"."training_plans" to "service_role";
+
+grant update on table "public"."training_plans" to "service_role";
+
+

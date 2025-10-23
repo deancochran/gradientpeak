@@ -6,6 +6,27 @@ import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 export const activitiesRouter = createTRPCRouter({
+  // List activities by date range
+  list: protectedProcedure
+    .input(
+      z.object({
+        date_from: z.string(),
+        date_to: z.string(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const { data, error } = await ctx.supabase
+        .from("activities")
+        .select("*")
+        .eq("profile_id", ctx.session.user.id)
+        .gte("started_at", input.date_from)
+        .lte("started_at", input.date_to)
+        .order("started_at", { ascending: false });
+
+      if (error) throw new Error(error.message);
+      return data || [];
+    }),
+
   // Simplified: Just create the activity first
   create: protectedProcedure
     .input(
@@ -147,6 +168,31 @@ export const activitiesRouter = createTRPCRouter({
       if (error) throw new Error(error.message);
       if (!data) throw new Error("Activity not found");
 
+      return data;
+    }),
+
+  // Update activity (e.g., to set intensity_factor and TSS after calculation)
+  update: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        intensity_factor: z.number().int().min(0).max(200).optional(),
+        training_stress_score: z.number().int().min(0).optional(),
+        normalized_power: z.number().int().min(0).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...updates } = input;
+
+      const { data, error } = await ctx.supabase
+        .from("activities")
+        .update(updates)
+        .eq("id", id)
+        .eq("profile_id", ctx.session.user.id)
+        .select()
+        .single();
+
+      if (error) throw new Error(error.message);
       return data;
     }),
 });

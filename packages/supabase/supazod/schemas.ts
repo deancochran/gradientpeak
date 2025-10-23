@@ -462,6 +462,7 @@ export const publicPlannedActivitiesRowSchema = z.object({
   created_at: z.string(),
   id: z.string(),
   idx: z.number(),
+  notes: z.string().nullable(),
   profile_id: z.string(),
   scheduled_date: z.string(),
 });
@@ -471,6 +472,7 @@ export const publicPlannedActivitiesInsertSchema = z.object({
   created_at: z.string().optional(),
   id: z.string().optional(),
   idx: z.number().optional(),
+  notes: z.string().optional().nullable(),
   profile_id: z.string(),
   scheduled_date: z.string(),
 });
@@ -480,6 +482,7 @@ export const publicPlannedActivitiesUpdateSchema = z.object({
   created_at: z.string().optional(),
   id: z.string().optional(),
   idx: z.number().optional(),
+  notes: z.string().optional().nullable(),
   profile_id: z.string().optional(),
   scheduled_date: z.string().optional(),
 });
@@ -551,3 +554,49 @@ export const publicProfilesUpdateSchema = z.object({
   username: z.string().optional().nullable(),
   weight_kg: z.number().optional().nullable(),
 });
+
+export const publicTrainingPlansRowSchema = z.object({
+  created_at: z.string(),
+  description: z.string().nullable(),
+  id: z.string(),
+  idx: z.number(),
+  is_active: z.boolean(),
+  name: z.string(),
+  profile_id: z.string(),
+  structure: jsonSchema,
+  updated_at: z.string(),
+});
+
+export const publicTrainingPlansInsertSchema = z.object({
+  created_at: z.string().optional(),
+  description: z.string().optional().nullable(),
+  id: z.string().optional(),
+  idx: z.number().optional(),
+  is_active: z.boolean().optional(),
+  name: z.string(),
+  profile_id: z.string(),
+  structure: jsonSchema,
+  updated_at: z.string().optional(),
+});
+
+export const publicTrainingPlansUpdateSchema = z.object({
+  created_at: z.string().optional(),
+  description: z.string().optional().nullable(),
+  id: z.string().optional(),
+  idx: z.number().optional(),
+  is_active: z.boolean().optional(),
+  name: z.string().optional(),
+  profile_id: z.string().optional(),
+  structure: jsonSchema.optional(),
+  updated_at: z.string().optional(),
+});
+
+export const publicTrainingPlansRelationshipsSchema = z.tuple([
+  z.object({
+    foreignKeyName: z.literal("training_plans_profile_id_fkey"),
+    columns: z.tuple([z.literal("profile_id")]),
+    isOneToOne: z.literal(true),
+    referencedRelation: z.literal("profiles"),
+    referencedColumns: z.tuple([z.literal("id")]),
+  }),
+]);

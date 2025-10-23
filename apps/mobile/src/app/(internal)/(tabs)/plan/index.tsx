@@ -12,6 +12,7 @@ import {
   Clock,
   Library,
   Plus,
+  TrendingUp,
 } from "lucide-react-native";
 import React, { useState } from "react";
 import {
@@ -61,6 +62,10 @@ export default function PlanScreen() {
       pathname: "/(internal)/(tabs)/plan/library",
       params: { scheduleIntent: "true" },
     });
+  };
+
+  const handleViewTrainingPlan = () => {
+    router.push("/(internal)/(tabs)/plan/training-plan");
   };
 
   const handleSelectPlannedActivity = (id: string) => {
@@ -234,12 +239,28 @@ export default function PlanScreen() {
         {/* Primary Actions */}
         <View className="flex flex-col gap-3">
           <Button
-            onPress={handleCreatePlan}
+            onPress={handleViewTrainingPlan}
             size="lg"
             className="flex flex-row items-center justify-center gap-2"
           >
-            <Icon as={Plus} size={20} className="text-primary-foreground" />
+            <Icon
+              as={TrendingUp}
+              size={20}
+              className="text-primary-foreground"
+            />
             <Text className="text-primary-foreground font-semibold">
+              Training Plan
+            </Text>
+          </Button>
+
+          <Button
+            onPress={handleCreatePlan}
+            variant="outline"
+            size="lg"
+            className="flex flex-row items-center justify-center gap-2"
+          >
+            <Icon as={Plus} size={20} className="text-foreground" />
+            <Text className="text-foreground font-semibold">
               Create Workout Plan
             </Text>
           </Button>

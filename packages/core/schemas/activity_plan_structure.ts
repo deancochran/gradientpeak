@@ -665,19 +665,3 @@ export function validateActivityPlanStructure(data: unknown): {
     return { success: false, errors: result.error };
   }
 }
-
-/**
- * Get user-friendly error messages from Zod errors
- */
-export function formatValidationErrors(
-  error: z.ZodError,
-): Record<string, string> {
-  const formatted: Record<string, string> = {};
-
-  error.errors.forEach((err) => {
-    const path = err.path.join(".");
-    formatted[path] = err.message;
-  });
-
-  return formatted;
-}

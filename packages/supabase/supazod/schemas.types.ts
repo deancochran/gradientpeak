@@ -100,3 +100,15 @@ export type PublicProfilesInsert = z.infer<
 export type PublicProfilesUpdate = z.infer<
   typeof generated.publicProfilesUpdateSchema
 >;
+export type PublicTrainingPlansRow = z.infer<
+  typeof generated.publicTrainingPlansRowSchema
+>;
+export type PublicTrainingPlansInsert = z.infer<
+  typeof generated.publicTrainingPlansInsertSchema
+>;
+export type PublicTrainingPlansUpdate = z.infer<
+  typeof generated.publicTrainingPlansUpdateSchema
+>;
+export type PublicTrainingPlansRelationships = z.infer<
+  typeof generated.publicTrainingPlansRelationshipsSchema
+>;

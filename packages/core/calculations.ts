@@ -1156,3 +1156,291 @@ export function formatDurationCompactMs(milliseconds: number): string {
     return `${seconds}s`;
   }
 }
+
+// =======================
+// Training Load Calculations (CTL, ATL, TSB)
+// =======================
+
+/**
+ * Time constants for training load calculations
+ * CTL (Chronic Training Load / Fitness) - 42 day time constant
+ * ATL (Acute Training Load / Fatigue) - 7 day time constant
+ */
+const CTL_TIME_CONSTANT = 42;
+const ATL_TIME_CONSTANT = 7;
+
+/**
+ * Calculate Chronic Training Load (CTL) - Long-term fitness
+ * Uses exponential weighted moving average with 42-day time constant
+ *
+ * @param previousCTL - Previous day's CTL value
+ * @param todayTSS - Today's Training Stress Score
+ * @returns New CTL value
+ */
+export function calculateCTL(previousCTL: number, todayTSS: number): number {
+  const alpha = 2 / (CTL_TIME_CONSTANT + 1);
+  return previousCTL + alpha * (todayTSS - previousCTL);
+}
+
+/**
+ * Calculate Acute Training Load (ATL) - Short-term fatigue
+ * Uses exponential weighted moving average with 7-day time constant
+ *
+ * @param previousATL - Previous day's ATL value
+ * @param todayTSS - Today's Training Stress Score
+ * @returns New ATL value
+ */
+export function calculateATL(previousATL: number, todayTSS: number): number {
+  const alpha = 2 / (ATL_TIME_CONSTANT + 1);
+  return previousATL + alpha * (todayTSS - previousATL);
+}
+
+/**
+ * Calculate Training Stress Balance (TSB) - Freshness/Form
+ * TSB = CTL - ATL
+ *
+ * Positive TSB = Fresh/Rested
+ * Negative TSB = Fatigued
+ *
+ * @param ctl - Chronic Training Load
+ * @param atl - Acute Training Load
+ * @returns TSB value
+ */
+export function calculateTSB(ctl: number, atl: number): number {
+  return ctl - atl;
+}
+
+/**
+ * Calculate training load metrics for multiple days
+ *
+ * @param dailyTSS - Array of daily TSS values (chronological order)
+ * @param initialCTL - Starting CTL value (default: 0)
+ * @param initialATL - Starting ATL value (default: 0)
+ * @returns Array of daily training load values
+ */
+export function calculateTrainingLoadSeries(
+  dailyTSS: number[],
+  initialCTL = 0,
+  initialATL = 0,
+): Array<{ date: number; tss: number; ctl: number; atl: number; tsb: number }> {
+  const results: Array<{
+    date: number;
+    tss: number;
+    ctl: number;
+    atl: number;
+    tsb: number;
+  }> = [];
+
+  let currentCTL = initialCTL;
+  let currentATL = initialATL;
+
+  dailyTSS.forEach((tss, index) => {
+    currentCTL = calculateCTL(currentCTL, tss);
+    currentATL = calculateATL(currentATL, tss);
+    const tsb = calculateTSB(currentCTL, currentATL);
+
+    results.push({
+      date: index,
+      tss,
+      ctl: currentCTL,
+      atl: currentATL,
+      tsb,
+    });
+  });
+
+  return results;
+}
+
+/**
+ * Get form assessment based on TSB value
+ *
+ * @param tsb - Training Stress Balance
+ * @returns Form status string
+ */
+export function getFormStatus(
+  tsb: number,
+): "fresh" | "optimal" | "neutral" | "tired" | "overreaching" {
+  if (tsb > 25) return "fresh";
+  if (tsb > 5) return "optimal";
+  if (tsb >= -10) return "neutral";
+  if (tsb >= -30) return "tired";
+  return "overreaching";
+}
+
+/**
+ * Get color indicator for form status
+ *
+ * @param tsb - Training Stress Balance
+ * @returns Color string for UI
+ */
+export function getFormStatusColor(tsb: number): string {
+  const status = getFormStatus(tsb);
+  switch (status) {
+    case "fresh":
+      return "#22c55e"; // green-500
+    case "optimal":
+      return "#10b981"; // emerald-500
+    case "neutral":
+      return "#eab308"; // yellow-500
+    case "tired":
+      return "#f97316"; // orange-500
+    case "overreaching":
+      return "#ef4444"; // red-500
+  }
+}
+
+/**
+ * Calculate Intensity Factor (IF) from normalized power/pace and threshold
+ * IF = NP / FTP (for cycling) or similar for running
+ *
+ * @param normalizedPower - Normalized power or pace for the activity
+ * @param functionalThreshold - Functional threshold power or pace
+ * @returns Intensity Factor (0.0 - 2.0+ range)
+ */
+export function calculateTrainingIntensityFactor(
+  normalizedPower: number,
+  functionalThreshold: number,
+): number {
+  if (functionalThreshold === 0) return 0;
+  return normalizedPower / functionalThreshold;
+}
+
+/**
+ * Derive training intensity zone from Intensity Factor
+ * This is calculated AFTER the workout, not prescribed before
+ *
+ * Based on standard endurance training zones:
+ * - Recovery: < 0.55 (Active recovery)
+ * - Endurance: 0.55-0.75 (Long aerobic base)
+ * - Tempo: 0.75-0.85 (Sweet spot, steady efforts)
+ * - Threshold: 0.85-0.95 (Sustained efforts near FTP)
+ * - VO2max: 0.95-1.05 (Race pace, FTP-level)
+ * - Anaerobic: 1.05-1.15 (Supra-threshold intervals)
+ * - Neuromuscular: > 1.15 (Sprint, max effort)
+ *
+ * @param intensityFactor - IF score from completed activity (0.00 - 1.50+)
+ * @returns Intensity zone classification (7 zones)
+ */
+export function getTrainingIntensityZone(
+  intensityFactor: number,
+):
+  | "recovery"
+  | "endurance"
+  | "tempo"
+  | "threshold"
+  | "vo2max"
+  | "anaerobic"
+  | "neuromuscular" {
+  if (intensityFactor < 0.55) return "recovery";
+  if (intensityFactor < 0.75) return "endurance";
+  if (intensityFactor < 0.85) return "tempo";
+  if (intensityFactor < 0.95) return "threshold";
+  if (intensityFactor < 1.05) return "vo2max";
+  if (intensityFactor < 1.15) return "anaerobic";
+  return "neuromuscular";
+}
+
+/**
+ * Calculate Training Stress Score (TSS) from duration and intensity factor
+ * TSS = (duration_in_seconds * IF^2 * 100) / 3600
+ *
+ * @param durationSeconds - Activity duration in seconds
+ * @param intensityFactor - IF score
+ * @returns Training Stress Score
+ */
+export function calculateTrainingTSS(
+  durationSeconds: number,
+  intensityFactor: number,
+): number {
+  return (durationSeconds * Math.pow(intensityFactor, 2) * 100) / 3600;
+}
+
+/**
+ * Estimate TSS for planning purposes (before workout is completed)
+ * Uses average IF for different effort levels
+ *
+ * @param durationMinutes - Planned duration in minutes
+ * @param effortLevel - Planned effort level
+ * @returns Estimated TSS for planning
+ */
+export function estimateTSS(
+  durationMinutes: number,
+  effortLevel: "easy" | "moderate" | "hard",
+): number {
+  // Average IF values for planning
+  const estimatedIF = {
+    easy: 0.65,
+    moderate: 0.8,
+    hard: 0.95,
+  };
+
+  const durationSeconds = durationMinutes * 60;
+  return calculateTrainingTSS(durationSeconds, estimatedIF[effortLevel]);
+}
+
+/**
+ * Calculate ramp rate - rate of CTL increase
+ *
+ * @param currentCTL - Current CTL value
+ * @param previousCTL - CTL from one week ago
+ * @returns Weekly CTL change
+ */
+export function calculateRampRate(
+  currentCTL: number,
+  previousCTL: number,
+): number {
+  return currentCTL - previousCTL;
+}
+
+/**
+ * Validate if ramp rate is safe (typically should be < 5-8 TSS/week)
+ *
+ * @param rampRate - Weekly CTL change
+ * @param threshold - Maximum safe ramp rate (default: 5)
+ * @returns true if safe, false if too aggressive
+ */
+export function isRampRateSafe(rampRate: number, threshold = 5): boolean {
+  return rampRate <= threshold;
+}
+
+/**
+ * Project future CTL based on planned TSS
+ *
+ * @param currentCTL - Current CTL value
+ * @param plannedDailyTSS - Array of planned TSS values
+ * @returns Projected CTL at end of period
+ */
+export function projectCTL(
+  currentCTL: number,
+  plannedDailyTSS: number[],
+): number {
+  let projectedCTL = currentCTL;
+
+  for (const tss of plannedDailyTSS) {
+    projectedCTL = calculateCTL(projectedCTL, tss);
+  }
+
+  return projectedCTL;
+}
+
+/**
+ * Calculate target daily TSS to reach a CTL goal
+ *
+ * @param currentCTL - Current CTL value
+ * @param targetCTL - Desired CTL value
+ * @param daysToTarget - Number of days to reach target
+ * @returns Estimated daily TSS needed
+ */
+export function calculateTargetDailyTSS(
+  currentCTL: number,
+  targetCTL: number,
+  daysToTarget: number,
+): number {
+  // Simplified approximation - actual calculation is iterative
+  // This gives a reasonable estimate for planning
+  const ctlGap = targetCTL - currentCTL;
+  const dailyIncrease = ctlGap / daysToTarget;
+  const alpha = 2 / (CTL_TIME_CONSTANT + 1);
+
+  return currentCTL + dailyIncrease / alpha;
+}

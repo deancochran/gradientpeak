@@ -6,6 +6,15 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
+// Validation constraint schema
+const validateConstraintsSchema = z.object({
+  training_plan_id: z.string().uuid(),
+  scheduled_date: z
+    .string()
+    .refine((val) => !isNaN(Date.parse(val)), "Invalid date format"),
+  activity_plan_id: z.string().uuid(),
+});
+
 // Update your schema to support cursor-based pagination
 const plannedActivityListSchema = z.object({
   activity_type: z.string().optional(),
@@ -343,6 +352,207 @@ export const plannedActivitiesRouter = createTRPCRouter({
       return {
         items,
         nextCursor,
+      };
+    }),
+
+  // ------------------------------
+  // Validate constraints before scheduling
+  // ------------------------------
+  validateConstraints: protectedProcedure
+    .input(validateConstraintsSchema)
+    .query(async ({ ctx, input }) => {
+      // Get the training plan
+      const { data: plan, error: planError } = await ctx.supabase
+        .from("training_plans")
+        .select("id, structure")
+        .eq("id", input.training_plan_id)
+        .eq("profile_id", ctx.session.user.id)
+        .single();
+
+      if (planError || !plan) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Training plan not found",
+        });
+      }
+
+      // Get the activity plan to get estimated_tss
+      const { data: activityPlan, error: activityPlanError } =
+        await ctx.supabase
+          .from("activity_plans")
+          .select("id, estimated_tss")
+          .eq("id", input.activity_plan_id)
+          .single();
+
+      if (activityPlanError || !activityPlan) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Activity plan not found",
+        });
+      }
+
+      const structure = plan.structure as any;
+      const scheduledDate = new Date(input.scheduled_date);
+
+      // Get the week boundaries (Sunday to Saturday)
+      const startOfWeek = new Date(scheduledDate);
+      startOfWeek.setDate(scheduledDate.getDate() - scheduledDate.getDay());
+      startOfWeek.setHours(0, 0, 0, 0);
+
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(startOfWeek.getDate() + 7);
+
+      // Get this week's planned activities
+      const { data: plannedThisWeek } = await ctx.supabase
+        .from("planned_activities")
+        .select(
+          `
+          id,
+          scheduled_date,
+          activity_plan:activity_plans (
+            estimated_tss
+          )
+        `,
+        )
+        .eq("profile_id", ctx.session.user.id)
+        .gte("scheduled_date", startOfWeek.toISOString().split("T")[0])
+        .lt("scheduled_date", endOfWeek.toISOString().split("T")[0]);
+
+      // Calculate current weekly TSS
+      const currentWeeklyTSS = (plannedThisWeek || []).reduce(
+        (sum, pa) => sum + (pa.activity_plan?.estimated_tss || 0),
+        0,
+      );
+
+      // Calculate new weekly TSS
+      const newWeeklyTSS = currentWeeklyTSS + (activityPlan.estimated_tss || 0);
+
+      // Check 1: Weekly TSS constraint
+      const maxWeeklyTSS = structure.target_weekly_tss_max || Infinity;
+      const weeklyTSSStatus =
+        newWeeklyTSS <= maxWeeklyTSS
+          ? "satisfied"
+          : newWeeklyTSS <= maxWeeklyTSS * 1.1
+            ? "warning"
+            : "violated";
+
+      // Check 2: Workouts per week
+      const currentWorkoutsCount = (plannedThisWeek || []).length;
+      const newWorkoutsCount = currentWorkoutsCount + 1;
+      const targetWorkoutsPerWeek = structure.target_activities_per_week || 7;
+      const workoutsPerWeekStatus =
+        newWorkoutsCount <= targetWorkoutsPerWeek
+          ? "satisfied"
+          : newWorkoutsCount <= targetWorkoutsPerWeek + 1
+            ? "warning"
+            : "violated";
+
+      // Check 3: Consecutive training days
+      // Get activities around the scheduled date
+      const threeDaysBefore = new Date(scheduledDate);
+      threeDaysBefore.setDate(scheduledDate.getDate() - 3);
+      const threeDaysAfter = new Date(scheduledDate);
+      threeDaysAfter.setDate(scheduledDate.getDate() + 3);
+
+      const { data: nearbyActivities } = await ctx.supabase
+        .from("planned_activities")
+        .select("scheduled_date")
+        .eq("profile_id", ctx.session.user.id)
+        .gte("scheduled_date", threeDaysBefore.toISOString().split("T")[0])
+        .lte("scheduled_date", threeDaysAfter.toISOString().split("T")[0])
+        .order("scheduled_date", { ascending: true });
+
+      // Calculate consecutive days including the new activity
+      const allDates = [
+        ...(nearbyActivities || []).map((a) => a.scheduled_date),
+        input.scheduled_date,
+      ].sort();
+
+      let maxConsecutive = 1;
+      let currentConsecutive = 1;
+      for (let i = 1; i < allDates.length; i++) {
+        const prevDateStr = allDates[i - 1];
+        const currDateStr = allDates[i];
+        if (!prevDateStr || !currDateStr) continue;
+        const prevDate = new Date(prevDateStr);
+        const currDate = new Date(currDateStr);
+        const diffDays = Math.round(
+          (currDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24),
+        );
+
+        if (diffDays === 1) {
+          currentConsecutive++;
+          maxConsecutive = Math.max(maxConsecutive, currentConsecutive);
+        } else if (diffDays > 1) {
+          currentConsecutive = 1;
+        }
+      }
+
+      const maxConsecutiveDays = structure.max_consecutive_days || 7;
+      const consecutiveDaysStatus =
+        maxConsecutive <= maxConsecutiveDays
+          ? "satisfied"
+          : maxConsecutive <= maxConsecutiveDays + 1
+            ? "warning"
+            : "violated";
+
+      // Check 4: Rest days per week
+      const restDaysThisWeek = 7 - newWorkoutsCount;
+      const minRestDays = structure.min_rest_days_per_week || 0;
+      const restDaysStatus =
+        restDaysThisWeek >= minRestDays
+          ? "satisfied"
+          : restDaysThisWeek >= minRestDays - 1
+            ? "warning"
+            : "violated";
+
+      // Note: Hard workout spacing validation is NOT included because intensity
+      // is calculated after workout completion from IF, not pre-assigned.
+      // This constraint can be analyzed retrospectively but not enforced prospectively.
+
+      return {
+        constraints: {
+          weeklyTSS: {
+            status: weeklyTSSStatus as "satisfied" | "warning" | "violated",
+            current: currentWeeklyTSS,
+            withNew: newWeeklyTSS,
+            limit: maxWeeklyTSS,
+          },
+          workoutsPerWeek: {
+            status: workoutsPerWeekStatus as
+              | "satisfied"
+              | "warning"
+              | "violated",
+            current: currentWorkoutsCount,
+            withNew: newWorkoutsCount,
+            limit: targetWorkoutsPerWeek,
+          },
+          consecutiveDays: {
+            status: consecutiveDaysStatus as
+              | "satisfied"
+              | "warning"
+              | "violated",
+            current: maxConsecutive - 1, // Subtract 1 to show current without new activity
+            withNew: maxConsecutive,
+            limit: maxConsecutiveDays,
+          },
+          restDays: {
+            status: restDaysStatus as "satisfied" | "warning" | "violated",
+            current: 7 - currentWorkoutsCount,
+            withNew: restDaysThisWeek,
+            minimum: minRestDays,
+          },
+        },
+        canSchedule:
+          weeklyTSSStatus !== "violated" &&
+          workoutsPerWeekStatus !== "violated" &&
+          consecutiveDaysStatus !== "violated" &&
+          restDaysStatus !== "violated",
+        hasWarnings:
+          weeklyTSSStatus === "warning" ||
+          workoutsPerWeekStatus === "warning" ||
+          consecutiveDaysStatus === "warning" ||
+          restDaysStatus === "warning",
       };
     }),
 });
