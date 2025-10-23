@@ -83,3 +83,8 @@ packages/*/lib/
 .idea/
 *.log
 .aider*
+.claude
+*.claude
+CLAUDE.md
+.rules
+*.rules
