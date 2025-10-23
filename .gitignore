@@ -88,3 +88,4 @@ packages/*/lib/
 CLAUDE.md
 .rules
 *.rules
+context.json
