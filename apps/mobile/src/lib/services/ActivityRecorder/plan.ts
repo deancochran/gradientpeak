@@ -6,7 +6,7 @@ import {
   RecordingServiceActivityPlan,
   Step,
 } from "@repo/core";
-import { EventEmitter } from "expo-modules-core";
+import { EventEmitter } from "expo";
 
 export interface PlannedActivityProgress {
   state: "not_started" | "in_progress" | "finished";

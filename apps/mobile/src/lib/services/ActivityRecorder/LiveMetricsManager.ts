@@ -13,7 +13,7 @@
  */
 
 import { PublicProfilesRow } from "@repo/core";
-import { EventEmitter } from "expo-modules-core";
+import { EventEmitter } from "expo";
 import { MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
 import { StreamBuffer } from "./StreamBuffer";
 import { DataBuffer } from "./DataBuffer";

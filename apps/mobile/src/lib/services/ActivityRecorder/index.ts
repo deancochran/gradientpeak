@@ -33,7 +33,7 @@ import { NotificationsManager } from "./notification";
 import { SensorsManager } from "./sensors";
 import { RecordingMetadata, SensorReading } from "./types";
 
-import { EventEmitter } from "expo-modules-core";
+import { EventEmitter } from "expo";
 import { LocationObject } from "expo-location";
 import { AppState, AppStateStatus } from "react-native";
 
