@@ -14,7 +14,7 @@
 
 import { localdb } from "@/lib/db";
 import { PublicProfilesRow } from "@repo/core";
-import { EventEmitter } from "events";
+import { EventEmitter } from "expo-modules-core";
 import { MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
 import { DataAccumulator } from "./DataAccumulator";
 import { DataBuffer } from "./DataBuffer";
