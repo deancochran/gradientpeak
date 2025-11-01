@@ -1,7 +1,7 @@
 // apps/native/app/_layout.tsx
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
-import "@/global.css";
+import "../global.css";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
 import { StreamBuffer } from "@/lib/services/ActivityRecorder/StreamBuffer";
