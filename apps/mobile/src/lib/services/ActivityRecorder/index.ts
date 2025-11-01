@@ -37,7 +37,7 @@ import { SensorReading } from "./types";
 
 import { localdb } from "@/lib/db";
 
-import { EventEmitter } from "events";
+import { EventEmitter } from "expo-modules-core";
 import { LocationObject } from "expo-location";
 import { AppState, AppStateStatus } from "react-native";
 
