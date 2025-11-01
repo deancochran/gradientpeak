@@ -11,14 +11,11 @@ import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
-import { localdb } from "@/lib/db";
-import { activityRecordings } from "@/lib/db/schemas";
 import { useActivityRecorderData } from "@/lib/hooks/useActivityRecorder";
 import { useActivitySubmission } from "@/lib/hooks/useActivitySubmission";
 import { useRequireAuth } from "@/lib/hooks/useAuth";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { eq } from "drizzle-orm";
 import { useRouter } from "expo-router";
 import { CheckCircle, Loader2, Send, Trash2 } from "lucide-react-native";
 import { useForm } from "react-hook-form";
@@ -73,12 +70,9 @@ export default function SubmitRecordingModal() {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
-            if (recordingId) {
-              await localdb
-                .delete(activityRecordings)
-                .where(eq(activityRecordings.id, recordingId));
-            }
+            // Clean up stream files
             if (service) {
+              await service.liveMetricsManager.streamBuffer.cleanup();
               await service.cleanup();
             }
             router.push("/(internal)/(tabs)/" as any);

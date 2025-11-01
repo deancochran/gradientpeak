@@ -3,8 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import "@/global.css";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { LocalDatabaseProvider } from "@/lib/providers/LocalDatabaseProvider";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
+import { StreamBuffer } from "@/lib/services/ActivityRecorder/StreamBuffer";
 import { useTheme } from "@/lib/stores/theme-store";
 import { NAV_THEME } from "@/lib/theme";
 import { ThemeProvider } from "@react-navigation/native";
@@ -89,11 +89,17 @@ function AppContent() {
 
 export default function RootLayout() {
   console.log("RootLayout loaded");
+
+  // Clean up any orphaned recording files on app startup
+  React.useEffect(() => {
+    StreamBuffer.cleanupOrphanedRecordings().catch((error) => {
+      console.warn("Failed to cleanup orphaned recordings:", error);
+    });
+  }, []);
+
   return (
     <QueryProvider>
-      <LocalDatabaseProvider>
-        <AppContent />
-      </LocalDatabaseProvider>
+      <AppContent />
     </QueryProvider>
   );
 }

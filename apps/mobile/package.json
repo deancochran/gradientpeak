@@ -14,7 +14,6 @@
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@hookform/resolvers": "^5.2.2",
-    "@paralleldrive/cuid2": "^2.3.1",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-community/netinfo": "^11.4.1",
     "@react-navigation/bottom-tabs": "^7.7.3",
@@ -61,7 +60,6 @@
     "expo-constants": "~18.0.10",
     "expo-crypto": "~15.0.7",
     "expo-dev-client": "~6.0.16",
-    "expo-drizzle-studio-plugin": "^0.2.1",
     "expo-file-system": "~19.0.17",
     "expo-font": "~14.0.9",
     "expo-haptics": "~15.0.7",
@@ -116,7 +114,6 @@
     "@types/pako": "^2.0.4",
     "@types/react": "~19.1.17",
     "babel-preset-expo": "~54.0.6",
-    "drizzle-kit": "^0.31.6",
     "eas-build-cache-provider": "^16.4.2",
     "eas-cli": "^16.26.0",
     "eslint": "^9.39.0",
@@ -124,12 +121,6 @@
     "prettier-plugin-tailwindcss": "^0.5.14",
     "tailwindcss": "^3.4.18",
     "typescript": "~5.9.3"
-  },
-  "overrides": {
-    "expo-drizzle-studio-plugin": {
-      "expo": "~54.0.2",
-      "expo-sqlite": "~16.0.8"
-    }
   },
   "private": true
 }

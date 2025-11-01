@@ -12,11 +12,10 @@
  * - Simple data flow: Buffer -> Calculate -> Emit
  */
 
-import { localdb } from "@/lib/db";
 import { PublicProfilesRow } from "@repo/core";
 import { EventEmitter } from "expo-modules-core";
 import { MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
-import { DataAccumulator } from "./DataAccumulator";
+import { StreamBuffer } from "./StreamBuffer";
 import { DataBuffer } from "./DataBuffer";
 import {
   LiveMetricsState,
@@ -26,12 +25,8 @@ import {
   SessionStats,
   ZoneConfig,
 } from "./types";
-type DatabaseLike =
-  | typeof localdb
-  | Parameters<Parameters<typeof localdb.transaction>[0]>[0];
 
 export class LiveMetricsManager extends EventEmitter {
-  private recordingId!: string;
   private profile: ProfileMetrics;
   private zones: ZoneConfig;
   private metrics: LiveMetricsState;
@@ -39,7 +34,7 @@ export class LiveMetricsManager extends EventEmitter {
 
   // === Core Components ===
   private buffer: DataBuffer; // 60-second rolling window for calculations
-  private accumulator: DataAccumulator; // Accumulates data for periodic DB writes
+  public streamBuffer: StreamBuffer; // Accumulates data for periodic file writes
 
   // === Timers ===
   private updateTimer?: number; // 1s: Calculate metrics + emit UI updates
@@ -83,7 +78,7 @@ export class LiveMetricsManager extends EventEmitter {
     this.zones = this.calculateZones(this.profile);
     this.metrics = this.createInitialMetrics();
     this.buffer = new DataBuffer(RECORDING_CONFIG.BUFFER_WINDOW_SECONDS);
-    this.accumulator = new DataAccumulator();
+    this.streamBuffer = new StreamBuffer();
 
     console.log("[LiveMetricsManager] Initialized with profile:", {
       ftp: this.profile.ftp,
@@ -97,8 +92,10 @@ export class LiveMetricsManager extends EventEmitter {
   /**
    * Start recording - initialize timers and state
    */
-  public startRecording(recordingId: string): void {
-    this.recordingId = recordingId;
+  public async startRecording(): Promise<void> {
+    // Initialize StreamBuffer storage directory
+    await this.streamBuffer.initialize();
+
     this.isActive = true;
     this.startTime = Date.now();
     this.metrics.startedAt = this.startTime;
@@ -114,7 +111,7 @@ export class LiveMetricsManager extends EventEmitter {
       this.persistAndCleanup();
     }, RECORDING_CONFIG.PERSISTENCE_INTERVAL);
 
-    console.log("[LiveMetricsManager] Started recording:", recordingId);
+    console.log("[LiveMetricsManager] Started recording");
   }
 
   /**
@@ -142,17 +139,14 @@ export class LiveMetricsManager extends EventEmitter {
   /**
    * Finish recording - final flush and cleanup
    */
-  public async finishRecording(
-    // Add this db parameter
-    db?: DatabaseLike,
-  ): Promise<LiveMetricsState> {
+  public async finishRecording(): Promise<LiveMetricsState> {
     this.stopTimers();
     this.isActive = false;
     this.metrics.finishedAt = Date.now();
     this.calculateAndEmitMetrics();
 
-    // Pass the transaction object down
-    await this.persistAndCleanup(db);
+    // Final flush to files
+    await this.persistAndCleanup();
 
     console.log("[LiveMetricsManager] Finished recording");
     return this.metrics;
@@ -197,9 +191,9 @@ export class LiveMetricsManager extends EventEmitter {
       });
     }
 
-    // Add to accumulator for eventual persistence (only when active)
+    // Add to streamBuffer for eventual persistence (only when active)
     if (this.isActive) {
-      this.accumulator.add(reading);
+      this.streamBuffer.add(reading);
     }
   }
 
@@ -207,9 +201,9 @@ export class LiveMetricsManager extends EventEmitter {
    * Ingest location data
    */
   public ingestLocationData(location: LocationReading): void {
-    // Add to accumulator for persistence (only when active)
+    // Add to streamBuffer for persistence (only when active)
     if (this.isActive) {
-      this.accumulator.addLocation(location);
+      this.streamBuffer.addLocation(location);
     }
 
     // Add lat/lng to buffer for route tracking (always, for display)
@@ -394,7 +388,7 @@ export class LiveMetricsManager extends EventEmitter {
   public async cleanup(): Promise<void> {
     this.stopTimers();
     this.buffer.clear();
-    this.accumulator.clear();
+    this.streamBuffer.clear();
     this.removeAllListeners();
     console.log("[LiveMetricsManager] Cleaned up");
   }
@@ -486,18 +480,18 @@ export class LiveMetricsManager extends EventEmitter {
   }
 
   /**
-   * Persist data to database and cleanup old data
+   * Persist data to files and cleanup old data
    * Called every 60 seconds
    */
-  private async persistAndCleanup(db?: DatabaseLike): Promise<void> {
+  private async persistAndCleanup(): Promise<void> {
     try {
-      // Write accumulated data to database
-      await this.accumulator.flushToDatabase(this.recordingId, db);
+      // Write accumulated data to files
+      await this.streamBuffer.flushToFiles();
 
       // Remove old data from buffer
       this.buffer.cleanup();
 
-      const status = this.accumulator.getBufferStatus();
+      const status = this.streamBuffer.getBufferStatus();
       console.log("[LiveMetricsManager] Persisted and cleaned up:", {
         readingsWritten: status.readingCount,
         locationsWritten: status.locationCount,

@@ -22,8 +22,6 @@ import {
   RecordingServiceActivityPlan,
 } from "@repo/core";
 
-import { activityRecordings, SelectActivityRecording } from "@/lib/db/schemas";
-import { eq } from "drizzle-orm";
 import {
   type AllPermissionsStatus,
   areAllPermissionsGranted,
@@ -33,9 +31,7 @@ import { LiveMetricsManager } from "./LiveMetricsManager";
 import { LocationManager } from "./location";
 import { NotificationsManager } from "./notification";
 import { SensorsManager } from "./sensors";
-import { SensorReading } from "./types";
-
-import { localdb } from "@/lib/db";
+import { RecordingMetadata, SensorReading } from "./types";
 
 import { EventEmitter } from "expo-modules-core";
 import { LocationObject } from "expo-location";
@@ -114,7 +110,7 @@ export class ActivityRecorderService extends EventEmitter {
   // === Public State ===
   public state: RecordingState = "pending";
   public selectedActivityType: PublicActivityType = "indoor_bike_trainer";
-  public recording?: SelectActivityRecording;
+  public recordingMetadata?: RecordingMetadata;
 
   // === Public Managers (direct access - no forwarding) ===
   public readonly liveMetricsManager: LiveMetricsManager;
@@ -428,9 +424,6 @@ export class ActivityRecorderService extends EventEmitter {
   async startRecording() {
     console.log("[Service] Starting recording");
 
-    // Clean up any stale recordings
-    await localdb.delete(activityRecordings);
-
     // Check all necessary permissions
     const allGranted = await areAllPermissionsGranted();
     if (!allGranted) {
@@ -440,22 +433,20 @@ export class ActivityRecorderService extends EventEmitter {
       );
     }
 
-    // Create recording
-    const [recording] = await localdb
-      .insert(activityRecordings)
-      .values({
-        profile: this.profile,
-        startedAt: new Date().toISOString(),
-        activityType: this.selectedActivityType,
-        activityPlan: this._plan,
-      })
-      .returning();
+    // Create recording metadata (in-memory)
+    this.recordingMetadata = {
+      startedAt: new Date().toISOString(),
+      activityType: this.selectedActivityType,
+      profileId: this.profile.id,
+      profile: this.profile,
+      plannedActivityId: this._plannedActivityId,
+      activityPlan: this._plan,
+    };
 
-    this.recording = recording;
     this.state = "recording";
 
-    // Start LiveMetricsManager with recording ID
-    this.liveMetricsManager.startRecording(recording.id);
+    // Start LiveMetricsManager (initializes StreamBuffer)
+    await this.liveMetricsManager.startRecording();
 
     // Initialize timing
     this.startTime = Date.now();
@@ -525,43 +516,34 @@ export class ActivityRecorderService extends EventEmitter {
   }
 
   async finishRecording() {
-    if (!this.recording) {
+    if (!this.recordingMetadata) {
       throw new Error("No active recording to finish");
     }
 
     console.log("[Service] Finishing recording");
-    const recordingId = this.recording.id;
 
     try {
-      // Start the database transaction
-      await localdb.transaction(async (tx) => {
-        // 1. Finish LiveMetricsManager, passing the transaction object.
-        //    This ensures stream data is flushed within this transaction.
-        await this.liveMetricsManager.finishRecording(tx);
+      // Finish LiveMetricsManager (flushes final data to files)
+      await this.liveMetricsManager.finishRecording();
 
-        // 2. Update the recording's endedAt timestamp using the same transaction.
-        await tx
-          .update(activityRecordings)
-          .set({ endedAt: new Date().toISOString() })
-          .where(eq(activityRecordings.id, recordingId));
-      });
+      // Update recording metadata with end time
+      this.recordingMetadata.endedAt = new Date().toISOString();
 
-      // Transaction succeeded - update state
+      // Update state
       this.state = "finished";
       this.emit("stateChanged", this.state);
 
       // Emit completion event to signal data is ready for processing
-      this.emit("recordingComplete", recordingId);
+      this.emit("recordingComplete");
 
-      // Clean up non-database resources
+      // Clean up resources
       if (this.notificationsManager) {
         await this.notificationsManager.stopForegroundService();
       }
 
       console.log("[Service] Recording finished successfully");
     } catch (err) {
-      // If the transaction fails, it will automatically roll back.
-      console.error("[Service] Failed to finish recording transaction:", err);
+      console.error("[Service] Failed to finish recording:", err);
       this.emit("error", "Failed to save recording data.");
       throw err;
     }
@@ -732,6 +714,13 @@ export class ActivityRecorderService extends EventEmitter {
     return Math.max(0, elapsed - totalPaused);
   }
 
+  /**
+   * Get recording metadata for processing
+   */
+  getRecordingMetadata(): RecordingMetadata | undefined {
+    return this.recordingMetadata;
+  }
+
   // ================================
   // Cleanup
   // ================================
@@ -764,6 +753,9 @@ export class ActivityRecorderService extends EventEmitter {
 
     // Clear plan state
     this.clearPlan();
+
+    // Clear recording metadata
+    this.recordingMetadata = undefined;
 
     // Clear all event listeners
     this.removeAllListeners();

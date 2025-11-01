@@ -375,6 +375,30 @@ export interface LiveMetricsConfig {
 }
 
 // ================================
+// Recording Metadata (replaces database recording)
+// ================================
+
+/**
+ * Recording metadata stored in-memory during recording
+ * Replaces the SQLite activityRecordings table
+ */
+export interface RecordingMetadata {
+  startedAt: string; // ISO timestamp
+  endedAt?: string; // ISO timestamp (set on finish)
+  activityType: PublicActivityType;
+  profileId: string;
+  profile: ProfileMetrics & {
+    id: string;
+    dob: string | null;
+    ftp: number | null;
+    threshold_hr: number | null;
+    weight_kg: number | null;
+  };
+  plannedActivityId?: string;
+  activityPlan?: import("@repo/core").RecordingServiceActivityPlan;
+}
+
+// ================================
 // NEW: Separated Data Models
 // ================================
 

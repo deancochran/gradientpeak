@@ -27,13 +27,6 @@
  * ```
  */
 
-import { localdb } from "@/lib/db";
-import {
-  activityRecordings,
-  activityRecordingStreams,
-  SelectActivityRecording,
-  SelectRecordingStream,
-} from "@/lib/db/schemas";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { trpc } from "@/lib/trpc";
 
@@ -58,11 +51,8 @@ import {
   calculateTSS,
   calculateVariabilityIndex,
   PublicActivitiesInsert,
-  PublicActivityMetric,
-  PublicActivityMetricDataType,
   PublicActivityStreamsInsert,
 } from "@repo/core";
-import { eq } from "drizzle-orm";
 import pako from "pako";
 import { useCallback, useEffect, useReducer } from "react";
 
@@ -132,130 +122,8 @@ function submissionReducer(
 // Utility Functions (Internal)
 // ================================
 
-function parseStreamData(stream: SelectRecordingStream): {
-  data: number[] | number[][];
-  timestamps: number[];
-} {
-  const data = JSON.parse(stream.data as string);
-  const timestamps = JSON.parse(stream.timestamps as string);
-
-  if (!Array.isArray(data) || !Array.isArray(timestamps)) {
-    throw new Error("Invalid stream data format");
-  }
-
-  return { data, timestamps };
-}
-
-function groupStreamsByMetric(
-  streams: SelectRecordingStream[],
-): Map<string, SelectRecordingStream[]> {
-  const grouped = new Map<string, SelectRecordingStream[]>();
-
-  for (const stream of streams) {
-    const existing = grouped.get(stream.metric);
-    if (existing) {
-      existing.push(stream);
-    } else {
-      grouped.set(stream.metric, [stream]);
-    }
-  }
-
-  return grouped;
-}
-
-function aggregateMetricStreams(
-  streams: SelectRecordingStream[],
-): AggregatedStream {
-  if (streams.length === 0) {
-    throw new Error("Cannot aggregate empty stream array");
-  }
-
-  const firstStream = streams[0];
-  const allTimestamps: number[] = [];
-
-  // Handle lat/lng data differently
-  if (firstStream.dataType === "latlng") {
-    const allLatLngPairs: number[][] = [];
-
-    for (const stream of streams) {
-      const parsed = parseStreamData(stream);
-      if (Array.isArray(parsed.data[0])) {
-        // It's an array of [lat, lng] pairs
-        allLatLngPairs.push(...(parsed.data as number[][]));
-        allTimestamps.push(...parsed.timestamps);
-      }
-    }
-
-    return {
-      metric: firstStream.metric,
-      dataType: firstStream.dataType,
-      values: allLatLngPairs as any, // Keep as nested array
-      timestamps: allTimestamps,
-      sampleCount: allLatLngPairs.length, // Count pairs, not individual values
-      minValue: undefined,
-      maxValue: undefined,
-      avgValue: undefined,
-    };
-  }
-
-  // Handle regular numeric data
-  const allValues: number[] = [];
-
-  // Pre-allocate arrays
-  let totalSize = 0;
-  for (const stream of streams) {
-    totalSize += stream.sampleCount;
-  }
-
-  allValues.length = totalSize;
-  allTimestamps.length = totalSize;
-
-  let offset = 0;
-  for (const stream of streams) {
-    const parsed = parseStreamData(stream);
-
-    for (let i = 0; i < parsed.data.length; i++) {
-      allValues[offset + i] = parsed.data[i] as number;
-      allTimestamps[offset + i] = parsed.timestamps[i];
-    }
-
-    offset += parsed.data.length;
-  }
-
-  // Calculate statistics
-  let minValue: number | undefined;
-  let maxValue: number | undefined;
-  let avgValue: number | undefined;
-
-  if (firstStream.dataType === "float" && allValues.length > 0) {
-    let sum = 0;
-    minValue = allValues[0];
-    maxValue = allValues[0];
-
-    for (let i = 0; i < allValues.length; i++) {
-      const val = allValues[i];
-      sum += val;
-      if (val < minValue) minValue = val;
-      if (val > maxValue) maxValue = val;
-    }
-
-    avgValue = sum / allValues.length;
-  }
-
-  return {
-    metric: firstStream.metric,
-    dataType: firstStream.dataType,
-    values: allValues,
-    timestamps: allTimestamps,
-    sampleCount: allValues.length,
-    minValue,
-    maxValue,
-    avgValue,
-  };
-}
-
 function calculateActivityMetrics(
-  recording: SelectActivityRecording,
+  metadata: import("@/lib/services/ActivityRecorder/types").RecordingMetadata,
   aggregatedStreams: Map<string, AggregatedStream>,
 ): Omit<
   PublicActivitiesInsert,
@@ -272,9 +140,9 @@ function calculateActivityMetrics(
   | "profile_threshold_hr"
   | "profile_weight_kg"
 > {
-  if (!recording.startedAt || !recording.endedAt) {
+  if (!metadata.startedAt || !metadata.endedAt) {
     throw new Error(
-      `Invalid recording: startedAt=${recording.startedAt}, endedAt=${recording.endedAt}`,
+      `Invalid recording: startedAt=${metadata.startedAt}, endedAt=${metadata.endedAt}`,
     );
   }
 
@@ -289,12 +157,12 @@ function calculateActivityMetrics(
 
   // Base calculations
   const elapsed_time = calculateElapsedTime(
-    recording.startedAt,
-    recording.endedAt,
+    metadata.startedAt,
+    metadata.endedAt,
   );
   const moving_time = calculateMovingTime(
-    recording.startedAt,
-    recording.endedAt,
+    metadata.startedAt,
+    metadata.endedAt,
     aggregatedStreams,
   );
 
@@ -325,14 +193,14 @@ function calculateActivityMetrics(
   const normalized_power = calculateNormalizedPower(powerStream);
   const intensity_factor = calculateIntensityFactor(
     powerStream,
-    recording.profile.ftp,
+    metadata.profile.ftp,
   );
   const training_stress_score = Math.round(
     calculateTSS(
-      recording.startedAt,
-      recording.endedAt,
+      metadata.startedAt,
+      metadata.endedAt,
       powerStream,
-      recording.profile,
+      metadata.profile,
     ) || 0,
   );
   const variability_index = Math.round(
@@ -343,8 +211,8 @@ function calculateActivityMetrics(
   );
 
   // Zone calculations
-  const hr_zones = calculateHRZones(hrStream, recording.profile.threshold_hr);
-  const power_zones = calculatePowerZones(powerStream, recording.profile.ftp);
+  const hr_zones = calculateHRZones(hrStream, metadata.profile.threshold_hr);
+  const power_zones = calculatePowerZones(powerStream, metadata.profile.ftp);
 
   // Multi-stream advanced metrics
   const efficiency_factor = Math.round(
@@ -359,7 +227,7 @@ function calculateActivityMetrics(
   );
   const power_weight_ratio = calculatePowerWeightRatio(
     powerStream,
-    recording.profile.weight_kg,
+    metadata.profile.weight_kg,
   );
 
   // Elevation calculations
@@ -376,9 +244,9 @@ function calculateActivityMetrics(
   // Calories
   const calories = Math.round(
     calculateCalories(
-      recording.startedAt,
-      recording.endedAt,
-      recording.profile,
+      metadata.startedAt,
+      metadata.endedAt,
+      metadata.profile,
       powerStream,
       hrStream,
     ) || 0,
@@ -426,19 +294,6 @@ function calculateActivityMetrics(
   };
 }
 
-function getDataTypeForMetric(
-  metric: PublicActivityMetric,
-): PublicActivityMetricDataType {
-  switch (metric) {
-    case "latlng":
-      return "latlng";
-    case "moving":
-      return "boolean";
-    default:
-      return "float";
-  }
-}
-
 /**
  * Convert Uint8Array to base64 string (React Native compatible)
  * Uses manual base64 encoding without external dependencies
@@ -473,13 +328,11 @@ function uint8ArrayToBase64(bytes: Uint8Array): string {
 
 async function compressStreamData(
   aggregated: AggregatedStream,
-  metric: PublicActivityMetric,
-  dataType: PublicActivityMetricDataType,
 ): Promise<Omit<PublicActivityStreamsInsert, "activity_id">> {
   let compressedValues: Uint8Array;
   let originalSize: number;
 
-  if (dataType === "latlng") {
+  if (aggregated.dataType === "latlng") {
     // Store nested array directly as JSON
     const jsonStr = JSON.stringify(aggregated.values);
     compressedValues = pako.gzip(new TextEncoder().encode(jsonStr));
@@ -497,8 +350,8 @@ async function compressStreamData(
   );
 
   return {
-    type: metric,
-    data_type: dataType,
+    type: aggregated.metric,
+    data_type: aggregated.dataType,
     compressed_values: uint8ArrayToBase64(compressedValues),
     compressed_timestamps: uint8ArrayToBase64(compressedTimestamps),
     sample_count: aggregated.sampleCount,
@@ -529,8 +382,8 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
   // ================================
 
   const processRecording = useCallback(async () => {
-    if (!service?.recording?.id) {
-      dispatch({ type: "ERROR", error: "No recording found" });
+    if (!service) {
+      dispatch({ type: "ERROR", error: "No service found" });
       return;
     }
 
@@ -542,81 +395,64 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
       return;
     }
 
+    const metadata = service.getRecordingMetadata();
+    if (!metadata) {
+      dispatch({ type: "ERROR", error: "No recording metadata found" });
+      return;
+    }
+
     try {
-      const recordingId = service.recording.id;
-      console.log("[useActivitySubmission] Processing recording:", recordingId);
-
-      // 1. Fetch recording and streams from local DB
-      const [recording] = await localdb
-        .select()
-        .from(activityRecordings)
-        .where(eq(activityRecordings.id, recordingId))
-        .limit(1);
-
-      if (!recording) {
-        throw new Error("Recording not found in database");
-      }
+      console.log("[useActivitySubmission] Processing recording");
 
       // Verify recording has been properly finished
-      if (!recording.startedAt || !recording.endedAt) {
+      if (!metadata.startedAt || !metadata.endedAt) {
         throw new Error(
           "Recording is not properly finished. Missing start or end time.",
         );
       }
 
-      const streams = await localdb
-        .select()
-        .from(activityRecordingStreams)
-        .where(eq(activityRecordingStreams.activityRecordingId, recordingId));
+      // 1. Aggregate all chunks from StreamBuffer
+      console.log(
+        "[useActivitySubmission] Aggregating stream data from files...",
+      );
+      const aggregatedStreams =
+        await service.liveMetricsManager.streamBuffer.aggregateAllChunks();
 
-      if (streams.length === 0) {
-        throw new Error("No streams found for recording");
+      if (aggregatedStreams.size === 0) {
+        throw new Error("No stream data found for recording");
       }
 
       console.log(
-        `[useActivitySubmission] Found ${streams.length} streams for recording`,
+        `[useActivitySubmission] Aggregated ${aggregatedStreams.size} metrics`,
       );
 
-      // 2. Aggregate streams by metric
-      const streamsByMetric = groupStreamsByMetric(streams);
-      const aggregatedStreams = new Map<string, AggregatedStream>();
+      // 2. Calculate activity metrics
+      const metrics = calculateActivityMetrics(metadata, aggregatedStreams);
 
-      for (const [metric, metricStreams] of streamsByMetric.entries()) {
-        const aggregated = aggregateMetricStreams(metricStreams);
-        aggregatedStreams.set(metric, aggregated);
-      }
-
-      // 3. Calculate activity metrics
-      const metrics = calculateActivityMetrics(recording, aggregatedStreams);
-
-      // 4. Compress streams
+      // 3. Compress streams
       const compressedStreams: Omit<
         PublicActivityStreamsInsert,
         "activity_id"
       >[] = [];
 
-      for (const [metric, aggregated] of aggregatedStreams.entries()) {
-        const compressed = await compressStreamData(
-          aggregated,
-          metric as PublicActivityMetric,
-          getDataTypeForMetric(metric as PublicActivityMetric),
-        );
+      for (const aggregated of aggregatedStreams.values()) {
+        const compressed = await compressStreamData(aggregated);
         compressedStreams.push(compressed);
       }
 
-      // 5. Build final activity object
-      const profileAge = calculateAge(recording.profile.dob);
+      // 4. Build final activity object
+      const profileAge = calculateAge(metadata.profile.dob);
       const activity: PublicActivitiesInsert = {
-        profile_id: recording.profile.id,
-        started_at: recording.startedAt,
-        finished_at: recording.endedAt,
-        name: `${recording.activityType.replace(/_/g, " ")} - ${new Date(recording.startedAt).toLocaleDateString()}`,
-        activity_type: recording.activityType,
+        profile_id: metadata.profileId,
+        started_at: metadata.startedAt,
+        finished_at: metadata.endedAt,
+        name: `${metadata.activityType.replace(/_/g, " ")} - ${new Date(metadata.startedAt).toLocaleDateString()}`,
+        activity_type: metadata.activityType,
         profile_age: profileAge,
-        profile_ftp: recording.profile.ftp,
-        profile_threshold_hr: recording.profile.threshold_hr,
-        profile_weight_kg: recording.profile.weight_kg,
-        planned_activity_id: recording.plannedActivityId || null,
+        profile_ftp: metadata.profile.ftp,
+        profile_threshold_hr: metadata.profile.threshold_hr,
+        profile_weight_kg: metadata.profile.weight_kg,
+        planned_activity_id: metadata.plannedActivityId || null,
         ...metrics,
       };
 
@@ -635,20 +471,15 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
   useEffect(() => {
     if (!service) return;
 
-    const handleRecordingComplete = (recordingId: string) => {
-      console.log(
-        "[useActivitySubmission] Recording complete event received:",
-        recordingId,
-      );
-      if (recordingId === service.recording?.id) {
-        processRecording();
-      }
+    const handleRecordingComplete = () => {
+      console.log("[useActivitySubmission] Recording complete event received");
+      processRecording();
     };
 
     service.on("recordingComplete", handleRecordingComplete);
 
     // Also check if already finished (in case event was missed)
-    if (service.state === "finished" && service.recording?.id) {
+    if (service.state === "finished" && service.getRecordingMetadata()) {
       console.log(
         "[useActivitySubmission] Recording already finished, processing...",
       );
@@ -669,7 +500,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
   }, []);
 
   const submit = useCallback(async () => {
-    if (!state.activity || !state.streams || !service?.recording?.id) {
+    if (!state.activity || !state.streams || !service) {
       throw new Error("No data to submit");
     }
 
@@ -681,13 +512,11 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         activity_streams: state.streams,
       });
 
-      // Delete local recording after successful upload
-      await localdb
-        .delete(activityRecordings)
-        .where(eq(activityRecordings.id, service.recording.id));
+      // Clean up stream files after successful upload
+      await service.liveMetricsManager.streamBuffer.cleanup();
 
       console.log(
-        "[useActivitySubmission] Activity uploaded and local data deleted",
+        "[useActivitySubmission] Activity uploaded and local files deleted",
       );
       dispatch({ type: "SUCCESS" });
     } catch (err) {
@@ -701,7 +530,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
   }, [
     state.activity,
     state.streams,
-    service?.recording?.id,
+    service,
     createActivityWithStreamsMutation,
   ]);
 
