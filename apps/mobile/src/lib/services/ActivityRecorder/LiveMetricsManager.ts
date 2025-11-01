@@ -26,7 +26,15 @@ import {
   ZoneConfig,
 } from "./types";
 
-export class LiveMetricsManager extends EventEmitter {
+// Define event types for LiveMetricsManager
+interface LiveMetricsEvents {
+  statsUpdate: (data: { stats: SessionStats; timestamp: number }) => void;
+  sensorUpdate: (data: { readings: any; timestamp: number }) => void;
+  persistenceError: (error: unknown) => void;
+  [key: string]: (...args: any[]) => void; // Index signature for EventsMap
+}
+
+export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private profile: ProfileMetrics;
   private zones: ZoneConfig;
   private metrics: LiveMetricsState;
@@ -72,8 +80,8 @@ export class LiveMetricsManager extends EventEmitter {
 
   constructor(profile: PublicProfilesRow) {
     super();
-    // Increase max listeners to prevent warnings when multiple components subscribe
-    this.setMaxListeners(50);
+    // Note: expo-modules-core EventEmitter doesn't have setMaxListeners
+    // If you need more listeners, consider using Node.js EventEmitter instead
     this.profile = this.extractProfileMetrics(profile);
     this.zones = this.calculateZones(this.profile);
     this.metrics = this.createInitialMetrics();
@@ -389,7 +397,12 @@ export class LiveMetricsManager extends EventEmitter {
     this.stopTimers();
     this.buffer.clear();
     this.streamBuffer.clear();
-    this.removeAllListeners();
+
+    // Remove all listeners for each event type
+    this.removeAllListeners("statsUpdate");
+    this.removeAllListeners("sensorUpdate");
+    this.removeAllListeners("persistenceError");
+
     console.log("[LiveMetricsManager] Cleaned up");
   }
 

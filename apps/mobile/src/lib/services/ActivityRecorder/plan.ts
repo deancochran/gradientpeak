@@ -18,7 +18,20 @@ export interface PlannedActivityProgress {
   targets?: Step["targets"];
 }
 
-export class PlanManager extends EventEmitter {
+// Define event types for PlanManager
+interface PlanManagerEvents {
+  planStarted: (progress: PlannedActivityProgress) => void;
+  planFinished: (progress: PlannedActivityProgress) => void;
+  stepAdvanced: (data: {
+    from: number;
+    to: number;
+    progress: PlannedActivityProgress;
+  }) => void;
+  planProgressUpdate: (progress: PlannedActivityProgress) => void;
+  [key: string]: (...args: any[]) => void; // Index signature for EventsMap
+}
+
+export class PlanManager extends EventEmitter<PlanManagerEvents> {
   private flattenedSteps: FlattenedStep[] = [];
   public planProgress?: PlannedActivityProgress;
   public selectedActivityPlan: RecordingServiceActivityPlan;
@@ -187,6 +200,11 @@ export class PlanManager extends EventEmitter {
     if (this.advanceTimeout) {
       clearTimeout(this.advanceTimeout);
     }
-    this.removeAllListeners();
+
+    // Remove all listeners for each event type
+    this.removeAllListeners("planStarted");
+    this.removeAllListeners("planFinished");
+    this.removeAllListeners("stepAdvanced");
+    this.removeAllListeners("planProgressUpdate");
   }
 }

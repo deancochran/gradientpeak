@@ -78,7 +78,7 @@ export interface ServiceEvents {
   stateChanged: (state: RecordingState) => void;
 
   // Recording fully persisted and ready for processing
-  recordingComplete: (recordingId: string) => void;
+  recordingComplete: () => void;
 
   // Unplanned activity was selected
   activitySelected: (type: PublicActivityType) => void;
@@ -100,13 +100,19 @@ export interface ServiceEvents {
 
   // Time events
   timeUpdated: (time: TimeUpdate) => void;
+
+  // Error events
+  error: (message: string) => void;
+
+  // Index signature for EventsMap
+  [key: string]: (...args: any[]) => void;
 }
 
 // ================================
 // Activity Recorder Service
 // ================================
 
-export class ActivityRecorderService extends EventEmitter {
+export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // === Public State ===
   public state: RecordingState = "pending";
   public selectedActivityType: PublicActivityType = "indoor_bike_trainer";
@@ -147,9 +153,8 @@ export class ActivityRecorderService extends EventEmitter {
 
   constructor(profile: PublicProfilesRow) {
     super();
-    // Increase max listeners to prevent warning with multiple carousel cards
-    // Each carousel card (x3 for infinite scroll) may add multiple event listeners
-    this.setMaxListeners(30);
+    // Note: expo-modules-core EventEmitter doesn't have setMaxListeners
+    // If you need more listeners, consider using Node.js EventEmitter instead
     this.profile = profile;
 
     // Initialize managers
@@ -757,8 +762,18 @@ export class ActivityRecorderService extends EventEmitter {
     // Clear recording metadata
     this.recordingMetadata = undefined;
 
-    // Clear all event listeners
-    this.removeAllListeners();
+    // Remove all listeners for each event type
+    this.removeAllListeners("stateChanged");
+    this.removeAllListeners("recordingComplete");
+    this.removeAllListeners("activitySelected");
+    this.removeAllListeners("payloadProcessed");
+    this.removeAllListeners("sensorsChanged");
+    this.removeAllListeners("planSelected");
+    this.removeAllListeners("stepChanged");
+    this.removeAllListeners("planCleared");
+    this.removeAllListeners("planCompleted");
+    this.removeAllListeners("timeUpdated");
+    this.removeAllListeners("error");
 
     console.log("[Service] Cleanup complete");
   }
