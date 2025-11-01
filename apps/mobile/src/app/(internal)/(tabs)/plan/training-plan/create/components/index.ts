@@ -10,10 +10,11 @@ export { WizardProgress } from "./WizardProgress";
 export { Step1BasicInfo } from "./steps/Step1BasicInfo";
 export { Step2WeeklyTargets } from "./steps/Step2WeeklyTargets";
 export { Step3RecoveryRules } from "./steps/Step3RecoveryRules";
-export { Step4IntensityDistribution } from "./steps/Step4IntensityDistribution";
-export { Step5Periodization } from "./steps/Step5Periodization";
+export { Step4Periodization } from "./steps/Step4Periodization";
 
 // Hooks
 export { useWizardForm } from "./hooks/useWizardForm";
-export type { TrainingPlanFormData, ValidationErrors } from "./hooks/useWizardForm";
-
+export type {
+  TrainingPlanFormData,
+  ValidationErrors,
+} from "./hooks/useWizardForm";
