@@ -12,7 +12,6 @@
     "lint": "expo lint"
   },
   "dependencies": {
-    "@expo/vector-icons": "^15.0.3",
     "@hookform/resolvers": "^5.2.2",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-community/netinfo": "^11.4.1",
@@ -114,7 +113,6 @@
     "@types/react": "~19.1.17",
     "babel-preset-expo": "~54.0.6",
     "eas-build-cache-provider": "^16.4.2",
-    "eas-cli": "^16.26.0",
     "eslint": "^9.39.0",
     "eslint-config-expo": "~10.0.0",
     "prettier-plugin-tailwindcss": "^0.5.14",
