@@ -18,6 +18,7 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "supabase": "^2.53.6",
     "supazod": "^2.0.0"
   }
 }
