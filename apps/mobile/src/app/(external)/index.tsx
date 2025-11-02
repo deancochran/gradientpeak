@@ -25,11 +25,6 @@ export default function WelcomeScreen() {
 
   return (
     <View className="flex-1 bg-background p-6" testID="welcome-screen">
-      {/* Debug test - should show red text */}
-      <Text style={{ color: "red", fontSize: 20 }}>
-        TEST - Red inline style
-      </Text>
-      <Text className="text-red-500 text-xl">TEST - Red Tailwind class</Text>
       {/* Main Content */}
       <View className="flex-1 justify-center items-center">
         {/* Hero Card */}
