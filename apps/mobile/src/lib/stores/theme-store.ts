@@ -22,7 +22,7 @@ export const useThemeStore = create<ThemeStore>()(
   persist(
     (set, get) => ({
       // State
-      userPreference: "system" as ThemePreference,
+      userPreference: "light" as ThemePreference,
       isLoaded: false as boolean,
       hydrated: false as boolean,
 
@@ -43,12 +43,15 @@ export const useThemeStore = create<ThemeStore>()(
             set({ userPreference: preference });
             colorScheme.set(preference);
           } else {
-            // Default to system preference
-            colorScheme.set("system");
+            // Default to light mode
+            const defaultTheme = "light";
+            set({ userPreference: defaultTheme });
+            colorScheme.set(defaultTheme);
+            await AsyncStorage.setItem(THEME_STORAGE_KEY, defaultTheme);
           }
         } catch (error) {
           console.warn("Failed to load theme preference:", error);
-          colorScheme.set("system");
+          colorScheme.set("light");
         } finally {
           set({ isLoaded: true });
         }

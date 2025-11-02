@@ -1,7 +1,7 @@
 // apps/native/app/_layout.tsx
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
-import "../global.css";
+import "@/global.css";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
 import { StreamBuffer } from "@/lib/services/ActivityRecorder/StreamBuffer";
@@ -11,9 +11,10 @@ import { ThemeProvider } from "@react-navigation/native";
 import { PortalHost } from "@rn-primitives/portal";
 import { router, Slot } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { useColorScheme } from "nativewind";
 import * as React from "react";
 import { ActivityIndicator, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
 // Export ErrorBoundary for the layout
 export function ErrorBoundary({
@@ -63,6 +64,7 @@ function AppContent() {
   console.log("AppContent loaded");
   const { loading: authLoading } = useAuth();
   const { theme, isLoaded: isThemeLoaded } = useTheme();
+  const { colorScheme } = useColorScheme();
 
   if (authLoading || !isThemeLoaded) {
     return (
@@ -72,18 +74,27 @@ function AppContent() {
     );
   }
 
-  // Determine if we're in dark mode - NativeWind handles 'system' automatically for CSS classes
-  const isDark = theme === "dark";
+  // Use NativeWind's colorScheme instead of theme store
+  const isDark = colorScheme === "dark";
   const navTheme = isDark ? NAV_THEME.dark : NAV_THEME.light;
+
+  console.log(
+    "Rendering with theme:",
+    theme,
+    "NativeWind colorScheme:",
+    colorScheme,
+    "isDark:",
+    isDark,
+  );
 
   return (
     <ThemeProvider value={navTheme}>
       <StatusBar style={isDark ? "light" : "dark"} />
-      <SafeAreaView className="flex-1 bg-background p-0">
-        <Slot />
-        <PortalHost />
-      </SafeAreaView>
+      <Slot />
+      <PortalHost />
     </ThemeProvider>
+    // <SafeAreaProvider>
+    // </SafeAreaProvider>
   );
 }
 

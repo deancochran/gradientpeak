@@ -15,19 +15,11 @@
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "check-types": "turbo run check-types",
-    "android": "expo run:android",
-    "ios": "expo run:ios"
+    "check-types": "turbo run check-types"
   },
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
-  "version": "1.0.0",
-  "dependencies": {
-    "@react-native-community/datetimepicker": "8.4.4",
-    "expo": "~54.0.21",
-    "react": "19.1.0",
-    "react-native": "0.81.4"
-  }
+  "version": "1.0.0"
 }

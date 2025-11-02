@@ -25,10 +25,8 @@ A cross-platform fitness tracking mobile app built with Expo, React Native, and 
 - **React Native Skia** - High-performance 2D graphics for charts and visualizations
 
 ### Offline-First Architecture
-- **Expo SQLite** - Local database for offline data persistence
-- **Expo FileSystem** - Fault-tolerant local storage for activity recordings
+- **Expo FileSystem** - Fault-tolerant local storage for activity recordings and JSON-based data persistence
 - **Async Storage** - Persistent storage for auth state and user preferences
-- **Drizzle ORM** - Type-safe database queries with SQLite support
 
 ### Authentication & Cloud Services
 - **Supabase** - PostgreSQL backend with real-time capabilities
@@ -174,7 +172,7 @@ The mobile app features an optimized activity recording system designed for real
 - **GPS Tracking** - Real-time location and route recording for outdoor activities
 - **Interval Training** - Support for structured activity plans and templates
 - **Background Recording** - Continues tracking when app is backgrounded
-- **Offline Data Storage** - Local SQLite storage with cloud sync when available
+- **Offline Data Storage** - FileSystem-based JSON storage with cloud sync when available
 
 #### Usage Example
 ```typescript
@@ -256,9 +254,8 @@ bun run format
 - `expo-router` - File-based routing
 - `@react-navigation/*` - Navigation components
 
-### Database & Storage
-- `expo-sqlite` - Local database
-- `expo-file-system` - File storage
+### Storage
+- `expo-file-system` - File storage and JSON-based data persistence
 - `@react-native-async-storage/async-storage` - Key-value storage
 
 ### Utilities
