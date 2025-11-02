@@ -88,13 +88,15 @@ function AppContent() {
   );
 
   return (
-    <ThemeProvider value={navTheme}>
-      <StatusBar style={isDark ? "light" : "dark"} />
-      <Slot />
-      <PortalHost />
-    </ThemeProvider>
-    // <SafeAreaProvider>
-    // </SafeAreaProvider>
+    <SafeAreaProvider>
+      <ThemeProvider value={navTheme}>
+        <StatusBar style={isDark ? "light" : "dark"} />
+        <View className="flex-1 bg-background">
+          <Slot />
+          <PortalHost />
+        </View>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }
 
