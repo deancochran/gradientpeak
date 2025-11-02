@@ -101,7 +101,7 @@ function AppContent() {
         <View className="flex-1 bg-background">
           <Slot />
           <PortalHost />
-          n
+        </View>
       </ThemeProvider>
     </SafeAreaProvider>
   );
