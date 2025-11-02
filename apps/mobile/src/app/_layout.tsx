@@ -62,6 +62,13 @@ export function ErrorBoundary({
 // Main app content
 function AppContent() {
   console.log("AppContent loaded");
+
+  // Debug NativeWind installation
+  if (__DEV__) {
+    const { verifyInstallation } = require("nativewind");
+    verifyInstallation();
+  }
+
   const { loading: authLoading } = useAuth();
   const { theme, isLoaded: isThemeLoaded } = useTheme();
   const { colorScheme } = useColorScheme();
@@ -94,7 +101,7 @@ function AppContent() {
         <View className="flex-1 bg-background">
           <Slot />
           <PortalHost />
-        </View>
+          n
       </ThemeProvider>
     </SafeAreaProvider>
   );
