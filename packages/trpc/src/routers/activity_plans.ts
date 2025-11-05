@@ -11,7 +11,18 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 const listActivityPlansSchema = z.object({
   includeOwnOnly: z.boolean().default(true),
   includeSamples: z.boolean().default(false),
-  activityType: z.string().optional(),
+  activityType: z
+    .enum([
+      "outdoor_run",
+      "outdoor_bike",
+      "indoor_treadmill",
+      "indoor_bike_trainer",
+      "indoor_strength",
+      "indoor_swim",
+      "other",
+      "all",
+    ])
+    .optional(),
   limit: z.number().min(1).max(100).default(20),
   cursor: z.string().optional(),
 });
@@ -207,7 +218,7 @@ export const activityPlansRouter = createTRPCRouter({
           profile_id: ctx.session.user.id,
           version: "1.0", // Default version
           // Convert estimated_tss to null if undefined
-          estimated_tss: input.estimated_tss ?? null,
+          estimated_tss: input.estimated_tss,
         })
         .select(
           `

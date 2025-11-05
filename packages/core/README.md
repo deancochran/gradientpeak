@@ -106,16 +106,16 @@ const zones = calculateHeartRateZones({
 ### Building
 ```bash
 cd packages/core
-bun build    # Build TypeScript
-bun test     # Run unit tests (no database required)
+npm build    # Build TypeScript
+npm test     # Run unit tests (no database required)
 ```
 
 ### Testing
 The core package includes comprehensive unit tests that run without any database or external dependencies:
 
 ```bash
-bun test     # All core tests
-bun coverage # Test coverage report
+npm test     # All core tests
+npm coverage # Test coverage report
 ```
 
 ## 🏗️ Architecture Benefits

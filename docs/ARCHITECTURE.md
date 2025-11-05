@@ -139,7 +139,7 @@ packages/supabase/
 **Type Generation:**
 ```bash
 cd packages/supabase
-bun run update-types  # Generates types + Zod schemas
+npm run update-types  # Generates types + Zod schemas
 ```
 
 ## Training Load System
@@ -308,7 +308,7 @@ interface IntensityTarget {
 ### Directory Structure
 
 ```
-apps/mobile/src/
+apps/mobile/
 ├── app/                    # Expo Router file-based routing
 │   ├── (tabs)/            # Tab navigation
 │   │   ├── index.tsx      # Home/Dashboard
@@ -450,16 +450,16 @@ interface Profile extends User {
 
 ```sql
 -- Activity date range queries
-CREATE INDEX idx_activities_profile_started 
+CREATE INDEX idx_activities_profile_started
   ON activities(profile_id, started_at);
 
 -- Intensity filtering
-CREATE INDEX idx_activities_intensity 
-  ON activities(profile_id, intensity_factor) 
+CREATE INDEX idx_activities_intensity
+  ON activities(profile_id, intensity_factor)
   WHERE intensity_factor IS NOT NULL;
 
 -- Stream lookups
-CREATE INDEX idx_streams_activity 
+CREATE INDEX idx_streams_activity
   ON activity_streams(activity_id, type);
 ```
 
@@ -482,7 +482,7 @@ CREATE INDEX idx_streams_activity
 ### Core Package Tests
 
 ```bash
-cd packages/core && bun test
+cd packages/core && npm test
 ```
 
 - Pure function testing (no mocks required)

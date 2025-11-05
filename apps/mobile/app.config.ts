@@ -1,7 +1,7 @@
 import { ConfigContext, ExpoConfig } from "expo/config";
 import { version } from "./package.json";
 
-const EAS_PROJECT_ID = "c891c73b-ec96-4a19-ba21-9574d28ea5db";
+const EAS_PROJECT_ID = "6d9b541c-ffca-46c3-b323-af579ff46b68";
 const PROJECT_SLUG = "gradientpeak";
 const OWNER = "deancochran";
 
@@ -85,12 +85,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       apiUrl: process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000",
     },
     plugins: [
-      [
-        "expo-router",
-        {
-          root: "./src/app",
-        },
-      ],
+      "expo-router",
+      "expo-web-browser",
       "expo-build-properties",
       "expo-secure-store",
       [

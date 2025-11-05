@@ -5,7 +5,7 @@ A sophisticated, enterprise-grade fitness tracking platform built with modern lo
 ## 🛠️ Developer Experience & Tooling
 
 ### Modern Development Stack
-- **Turborepo + Bun** - High-performance monorepo build system with fast package manager
+- **Turborepo + npm** - High-performance monorepo build system with fast package manager
 - **TypeScript 5.9** - Full type safety with strict mode and modern features
 - **ESLint + Prettier** - Consistent code formatting and linting across all packages
 - **tRPC v11** - End-to-end type-safe API layer with React Query integration
@@ -307,7 +307,7 @@ Time-series data processed from JSON source through core package utilities:
 | **Cloud Services**  | Supabase Auth + Storage         | Supabase Auth + PostgreSQL    | Real-time capabilities        |
 | **Styling**         | NativeWind v4 + Reusables       | Tailwind CSS + Shadcn/ui      | Design system consistency     |
 | **Navigation**      | Expo Router v6                  | Next.js App Router            | Type-safe routing             |
-| **Development**     | Turborepo + Bun                 | Turborepo + Bun               | Monorepo tooling              |
+| **Development**     | Turborepo + npm                 | Turborepo + npm               | Monorepo tooling              |
 | **Type Safety**     | TypeScript 5.9 + `@repo/config` | TypeScript 5.9 + `@repo/config` | Shared configurations        |
 
 ---
@@ -363,19 +363,19 @@ packages/core/
 **Root level:**
 
 ```bash
-bun dev      # Start all development servers
-bun build    # Build all applications including core package
-bun lint     # Lint all code
-bun test     # Run all tests including core package tests
+npm dev      # Start all development servers
+npm build    # Build all applications including core package
+npm lint     # Lint all code
+npm test     # Run all tests including core package tests
 ```
 
 **Core package development:**
 
 ```bash
 cd packages/core
-bun build    # Build core package
-bun test     # Test core package (no database dependencies)
-bun dev      # Watch mode for core package development
+npm build    # Build core package
+npm test     # Test core package (no database dependencies)
+npm dev      # Watch mode for core package development
 ```
 
 ---
@@ -413,19 +413,19 @@ bun dev      # Watch mode for core package development
 **Development Workflow:**
 ```bash
 # Start all development servers
-bun dev
+npm dev
 
 # Run core package tests in watch mode
-bun test --filter=core
+npm test --filter=core
 
 # Lint all code with shared configuration
-bun lint
+npm lint
 
 # Build all packages with Turborepo caching
-bun build
+npm build
 
 # Type check entire monorepo
-bun check-types
+npm check-types
 ```
 
 **Quality Assurance:**
@@ -534,7 +534,7 @@ vercel --prod
 
 * Fork the repository and create a feature branch
 * Make your changes with tests and documentation
-* Run quality checks: `bun lint && bun test`
+* Run quality checks: `npm lint && npm test`
 * Submit a pull request with clear description
 
 ---

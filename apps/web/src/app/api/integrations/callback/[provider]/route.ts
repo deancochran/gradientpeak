@@ -1,4 +1,4 @@
-import type { Database, PublicIntegrationProvider } from "@repo/core";
+import type { Database, PublicIntegrationProvider } from "@repo/supabase";
 import { appRouter, createTRPCContext } from "@repo/trpc/server";
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";

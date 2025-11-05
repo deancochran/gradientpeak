@@ -181,7 +181,7 @@ const trpc = createTRPCClient<AppRouter>({
 Run tests to validate the implementation:
 
 ```bash
-bun test
+npm test
 ```
 
 ## Dependencies

@@ -9,7 +9,7 @@ A cross-platform fitness tracking mobile app built with Expo, React Native, and 
 - **React Native 0.81.4** - Cross-platform mobile framework with React 19
 - **Expo Router v6** - File-based routing with fully typed routes
 - **TypeScript 5.9** - Full type safety and enhanced developer experience
-- **Bun Runtime** - Fast JavaScript runtime for development and tooling
+- **npm Runtime** - Fast JavaScript runtime for development and tooling
 
 ### State Management & Data Flow
 - **Zustand 5.0.8** - Lightweight state management with middleware support
@@ -158,9 +158,9 @@ function RecordModal() {
 The mobile app features an optimized activity recording system designed for realtime sensor data processing:
 
 #### Core Components
-- **ActivityRecorderService** (`src/lib/services/ActivityRecorder/`) - Core service handling sensor management, GPS tracking, and data buffering
-- **Consolidated Hooks** (`src/lib/hooks/useActivityRecorder.ts`) - 7 core hooks for service interaction with event-driven reactivity
-- **Recording Modals** (`src/app/record/`) - UI components for activity selection, sensor management, and live recording display
+- **ActivityRecorderService** (`lib/services/ActivityRecorder/`) - Core service handling sensor management, GPS tracking, and data buffering
+- **Consolidated Hooks** (`lib/hooks/useActivityRecorder.ts`) - 7 core hooks for service interaction with event-driven reactivity
+- **Recording Modals** (`app/record/`) - UI components for activity selection, sensor management, and live recording display
 
 #### Performance Optimizations
 - **Event-Driven Updates** - Components only re-render when their subscribed events fire
@@ -220,22 +220,22 @@ function PlanProgressCard({ service }: { service: ActivityRecorderService | null
 
 ```bash
 # Start development server
-bun run dev
+npm run dev
 
 # Build for production
-bun run build
+npm run build
 
 # Run linting
-bun run lint
+npm run lint
 
 # Run tests
-bun run test
+npm run test
 
 # Type checking
-bun run check-types
+npm run check-types
 
 # Format code
-bun run format
+npm run format
 ```
 
 ## 📦 Core Packages & Dependencies
@@ -1956,7 +1956,7 @@ React Native Reusables uses a theme system based on Tailwind CSS v3 and shadcn/u
   "tsx": true,
   "tailwind": {
     "config": "tailwind.config.js",
-    "css": "src/global.css",
+    "css": "global.css",
     "baseColor": "neutral",
     "cssVariables": true,
     "prefix": ""
@@ -1974,7 +1974,7 @@ React Native Reusables uses a theme system based on Tailwind CSS v3 and shadcn/u
 
 **Purpose**: Tells the CLI where to place files and how to scaffold components. You can modify this if you need to change paths or switch styling approaches.
 
-#### 2. `src/global.css` - CSS Variables & Theme Definition
+#### 2. `global.css` - CSS Variables & Theme Definition
 ```css
 @layer base {
   :root {
@@ -2006,7 +2006,7 @@ React Native Reusables uses a theme system based on Tailwind CSS v3 and shadcn/u
 ```js
 module.exports = {
   darkMode: "class",
-  content: ["./src/**/*.{ts,tsx}"],
+  content: ["./**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
@@ -2028,7 +2028,7 @@ module.exports = {
 
 **Purpose**: Connects Tailwind utility classes to the CSS variables defined in `global.css`, configuring dark mode, plugins, and animations.
 
-#### 4. `src/lib/theme.ts` - TypeScript Theme Mirror
+#### 4. `lib/theme.ts` - TypeScript Theme Mirror
 ```typescript
 export const THEME = {
   light: {
@@ -2056,7 +2056,7 @@ export const THEME = {
 3. Copy the CSS variables from the theme
 
 #### Step 2: Update CSS Variables
-Replace the contents of `:root` and `.dark:root` in `src/global.css` with your new theme:
+Replace the contents of `:root` and `.dark:root` in `global.css` with your new theme:
 
 ```css
 @layer base {
@@ -2071,7 +2071,7 @@ Replace the contents of `:root` and `.dark:root` in `src/global.css` with your n
 ```
 
 #### Step 3: Sync TypeScript Theme
-After updating CSS variables, sync the `THEME` object in `src/lib/theme.ts`:
+After updating CSS variables, sync the `THEME` object in `lib/theme.ts`:
 
 ```bash
 # Use this prompt to keep theme.ts in sync:
@@ -2091,7 +2091,7 @@ After updating CSS variables, sync the `THEME` object in `src/lib/theme.ts`:
 ### Adding Custom Colors
 
 #### 1. Add CSS Variables
-In `src/global.css`:
+In `global.css`:
 ```css
 :root {
   --custom-color: 120 60% 50%;
@@ -2120,7 +2120,7 @@ theme: {
 ```
 
 #### 3. Update TypeScript Theme
-In `src/lib/theme.ts`:
+In `lib/theme.ts`:
 ```typescript
 light: {
   custom: "hsl(120 60% 50%)",
@@ -2187,8 +2187,8 @@ theme: {
 
 When updating your theme:
 
-1. ✅ Update `src/global.css` with new CSS variables
-2. ✅ Sync `src/lib/theme.ts` to match CSS variables
+1. ✅ Update `global.css` with new CSS variables
+2. ✅ Sync `lib/theme.ts` to match CSS variables
 3. ✅ Verify `tailwind.config.js` color mappings
 4. ✅ Test both light and dark modes
 5. ✅ Check all components render correctly
@@ -2198,7 +2198,7 @@ When updating your theme:
 ### Troubleshooting
 
 #### Common Issues:
-1. **Colors not updating**: Clear NativeWind cache with `bun run dev --reset-cache`
+1. **Colors not updating**: Clear NativeWind cache with `npm run dev --reset-cache`
 2. **Type errors**: Ensure `theme.ts` uses proper HSL format
 3. **Dark mode not working**: Verify `.dark:root` selector in CSS
 4. **Platform styles not applying**: Check platform-specific utility configuration

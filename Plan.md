@@ -104,7 +104,7 @@ The backend already calculates recommendations but they're not shown.
 
 **Files to modify:**
 - `packages/trpc/src/routers/planned_activities.ts` (add endpoint)
-- `apps/mobile/src/app/(internal)/(tabs)/plan/training-plan/calendar.tsx` (wire up data)
+- `apps/mobile/app/(internal)/(tabs)/plan/training-plan/calendar.tsx` (wire up data)
 
 ---
 
@@ -120,8 +120,8 @@ The backend already calculates recommendations but they're not shown.
 4. Add legends, tooltips, and interaction
 
 **Files to create/modify:**
-- `apps/mobile/src/components/charts/` (new components)
-- `apps/mobile/src/app/(internal)/(tabs)/trends.tsx` (integrate charts)
+- `apps/mobile/components/charts/` (new components)
+- `apps/mobile/app/(internal)/(tabs)/trends.tsx` (integrate charts)
 
 ---
 
@@ -134,8 +134,8 @@ The backend already calculates recommendations but they're not shown.
 4. Add "View Activities" links throughout trends
 
 **Files to modify:**
-- `apps/mobile/src/app/(internal)/(tabs)/trends.tsx` (add navigation)
-- Create new modal: `apps/mobile/src/components/modals/WeeklyActivitiesModal.tsx`
+- `apps/mobile/app/(internal)/(tabs)/trends.tsx` (add navigation)
+- Create new modal: `apps/mobile/components/modals/WeeklyActivitiesModal.tsx`
 
 ---
 
@@ -149,7 +149,7 @@ The backend already calculates recommendations but they're not shown.
 5. Improve visual design (color coding, badges)
 
 **Files to modify:**
-- `apps/mobile/src/app/(internal)/(tabs)/plan/training-plan/calendar.tsx`
+- `apps/mobile/app/(internal)/(tabs)/plan/training-plan/calendar.tsx`
 
 ---
 
@@ -162,7 +162,7 @@ The backend already calculates recommendations but they're not shown.
 4. Create actionable suggestion cards
 
 **Files to modify:**
-- `apps/mobile/src/app/(internal)/(tabs)/trends.tsx` (show recommendations)
+- `apps/mobile/app/(internal)/(tabs)/trends.tsx` (show recommendations)
 
 ---
 

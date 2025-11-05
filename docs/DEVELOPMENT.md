@@ -9,24 +9,24 @@ Complete guide for developing in the GradientPeak codebase.
 git clone https://github.com/your-org/gradientpeak.git
 cd gradientpeak
 
-# Install dependencies (uses Bun)
-bun install
+# Install dependencies (uses npm)
+npm install
 
 # Start all development servers
-bun dev
+npm dev
 
 # Start specific apps
-cd apps/mobile && bun dev
-cd apps/web && bun dev:next
+cd apps/mobile && npm dev
+cd apps/web && npm dev:next
 ```
 
 ## Environment Setup
 
 ### Prerequisites
 
-- **Bun:** v1.2.20+ (package manager)
+- **npm:** v1.2.20+ (package manager)
 - **Node.js:** v18+ (required by some dependencies)
-- **Expo CLI:** Installed globally (`bun add -g expo-cli`)
+- **Expo CLI:** Installed globally (`npm add -g expo-cli`)
 - **Docker:** For local Supabase (optional)
 - **iOS Development:** Xcode 15+ and CocoaPods (Mac only)
 - **Android Development:** Android Studio with SDK 34+
@@ -57,7 +57,7 @@ supabase start
 supabase db reset
 
 # Generate types
-bun run update-types
+npm run update-types
 ```
 
 ## Development Workflow
@@ -66,7 +66,7 @@ bun run update-types
 
 ```bash
 # Root level - starts all services
-bun dev
+npm dev
 
 # This runs:
 # - Mobile: expo start (port 8081)
@@ -82,13 +82,13 @@ bun dev
 cd packages/core
 
 # Run tests in watch mode
-bun test --watch
+npm test --watch
 
 # Build package
-bun build
+npm build
 
 # Lint
-bun lint
+npm lint
 ```
 
 #### Mobile App Development
@@ -97,11 +97,11 @@ bun lint
 cd apps/mobile
 
 # Start with clear cache
-bun dev
+npm dev
 
 # Run on specific platform
-bun android
-bun ios
+npm android
+npm ios
 
 # Generate native projects
 npx expo prebuild
@@ -117,16 +117,16 @@ npx expo run:ios
 cd apps/web
 
 # Start Next.js dev server
-bun dev:next
+npm dev:next
 
 # Start with ngrok tunnel (for mobile testing)
-bun dev
+npm dev
 
 # Build for production
-bun build
+npm build
 
 # Type check
-bun check-types
+npm check-types
 ```
 
 #### tRPC Development
@@ -135,7 +135,7 @@ bun check-types
 cd packages/trpc
 
 # After changing routers, rebuild
-bun build
+npm build
 
 # Restart dependent apps (mobile/web)
 ```
@@ -154,7 +154,7 @@ supabase migration new add_new_feature
 supabase db reset
 
 # Generate TypeScript types
-bun run update-types
+npm run update-types
 ```
 
 ## Common Commands
@@ -162,21 +162,21 @@ bun run update-types
 ### Monorepo Commands (Root)
 
 ```bash
-bun dev                 # Start all dev servers
-bun build              # Build all packages/apps
-bun lint               # Lint entire codebase
-bun test               # Run all tests
-bun check-types        # Type check all packages
-bun format             # Format code with Prettier
+npm dev                 # Start all dev servers
+npm build              # Build all packages/apps
+npm lint               # Lint entire codebase
+npm test               # Run all tests
+npm check-types        # Type check all packages
+npm format             # Format code with Prettier
 ```
 
 ### Mobile Commands
 
 ```bash
-bun dev                # Start Expo with cache clear
-bun android            # Run on Android
-bun ios                # Run on iOS
-bun lint               # Lint mobile app
+npm dev                # Start Expo with cache clear
+npm android            # Run on Android
+npm ios                # Run on iOS
+npm lint               # Lint mobile app
 
 # Production builds (requires EAS)
 eas build --platform android --profile production
@@ -187,16 +187,16 @@ eas submit --platform ios
 ### Web Commands
 
 ```bash
-bun dev:next           # Next.js dev server
-bun build              # Production build
-bun start              # Start production server
-bun lint               # Lint web app
+npm dev:next           # Next.js dev server
+npm build              # Production build
+npm start              # Start production server
+npm lint               # Lint web app
 ```
 
 ### Database Commands
 
 ```bash
-bun run update-types   # Regenerate types from schema
+npm run update-types   # Regenerate types from schema
 supabase db reset      # Reset to latest migration
 supabase db diff       # Generate migration from changes
 supabase migration new <name>  # Create new migration
@@ -253,17 +253,17 @@ export function ActivityDetail({ activityId }: Props) {
   // 3a. Hooks
   const { data, isLoading } = trpc.activities.getById.useQuery({ id: activityId });
   const [expanded, setExpanded] = useState(false);
-  
+
   // 3b. Derived state
   const hasData = !!data;
-  
+
   // 3c. Handlers
   const handleExpand = () => setExpanded(!expanded);
-  
+
   // 3d. Early returns
   if (isLoading) return <LoadingSpinner />;
   if (!hasData) return <EmptyState />;
-  
+
   // 3e. Render
   return (
     <View>
@@ -334,10 +334,10 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 
 ```typescript
 // Import from core package
-import type { 
-  ActivityPayload, 
+import type {
+  ActivityPayload,
   ActivityPlanStructure,
-  TrainingPlanStructure 
+  TrainingPlanStructure
 } from '@repo/core';
 
 // Use in components
@@ -400,18 +400,18 @@ const handleActivity = (activity: unknown) => {
 
 ```bash
 cd packages/core
-bun test
+npm test
 
 # Watch mode
-bun test --watch
+npm test --watch
 
 # Coverage
-bun test --coverage
+npm test --coverage
 ```
 
 **Example Test:**
 ```typescript
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect } from 'npm:test';
 import { calculateTSS, calculateIntensityFactor } from './calculations';
 
 describe('calculateIntensityFactor', () => {
@@ -432,19 +432,19 @@ describe('calculateIntensityFactor', () => {
 ### Integration Tests (tRPC)
 
 ```typescript
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect } from 'npm:test';
 import { createCaller } from '@repo/trpc';
 
 describe('activities router', () => {
   it('lists activities by date range', async () => {
     const ctx = { user: { id: 'test-user' } };
     const caller = createCaller(ctx);
-    
+
     const result = await caller.activities.list({
       start_date: '2024-01-01',
       end_date: '2024-01-31',
     });
-    
+
     expect(Array.isArray(result)).toBe(true);
   });
 });
@@ -540,10 +540,10 @@ const client = trpc.createClient({
 rm -rf node_modules
 rm -rf apps/*/node_modules
 rm -rf packages/*/node_modules
-bun install
+npm install
 
 # Restart dev servers
-bun dev
+npm dev
 ```
 
 ### Issue: Mobile app not reflecting code changes
@@ -552,12 +552,12 @@ bun dev
 ```bash
 # Clear Metro bundler cache
 cd apps/mobile
-bun dev  # Uses -c flag to clear cache
+npm dev  # Uses -c flag to clear cache
 
 # If that doesn't work
 rm -rf .expo
 rm -rf node_modules
-bun install
+npm install
 ```
 
 ### Issue: Type errors after database schema changes
@@ -566,14 +566,14 @@ bun install
 ```bash
 # Regenerate types from database
 cd packages/supabase
-bun run update-types
+npm run update-types
 
 # Rebuild core package
 cd packages/core
-bun build
+npm build
 
 # Restart apps
-bun dev
+npm dev
 ```
 
 ### Issue: tRPC procedures returning wrong types
@@ -582,14 +582,14 @@ bun dev
 ```bash
 # Rebuild tRPC package
 cd packages/trpc
-bun build
+npm build
 
 # Ensure core and supabase packages are built
-cd packages/core && bun build
-cd packages/supabase && bun run update-types
+cd packages/core && npm build
+cd packages/supabase && npm run update-types
 
 # Restart apps
-bun dev
+npm dev
 ```
 
 ### Issue: "Cannot connect to Supabase" in local development

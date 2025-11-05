@@ -326,17 +326,17 @@ recorder.on('error', (error) => { ... });
 
 ```typescript
 // Use in components for reactive updates
-import { 
-  useRecorderState, 
+import {
+  useRecorderState,
   useMetric,
-  useActivityTime 
+  useActivityTime
 } from '@/lib/services/ActivityRecorder/hooks';
 
 function PowerCard() {
   const currentPower = useMetric('power');
   const avgPower = useMetric('avgPower');
   const maxPower = useMetric('maxPower');
-  
+
   return (
     <View>
       <Text>{currentPower ?? 'n/a'} W</Text>
@@ -349,7 +349,7 @@ function PowerCard() {
 function DashboardCard() {
   const elapsedTime = useActivityTime();
   const state = useRecorderState();
-  
+
   return (
     <View>
       <Text>{formatDuration(elapsedTime)}</Text>
@@ -450,10 +450,10 @@ Local SQLite → Extract JSON Payload → Upload to Storage Bucket
 **After activity completion with power data:**
 
 ```typescript
-import { 
+import {
   calculateNormalizedPower,
   calculateTrainingIntensityFactor,
-  calculateTrainingTSS 
+  calculateTrainingTSS
 } from '@repo/core';
 
 // 1. Get power stream from activity
@@ -500,7 +500,7 @@ await updateActivity({
 import { getTrainingIntensityZone } from '@repo/core';
 
 const zone = getTrainingIntensityZone(if_);
-// Returns: 'recovery' | 'endurance' | 'tempo' | 'threshold' | 
+// Returns: 'recovery' | 'endurance' | 'tempo' | 'threshold' |
 //          'vo2max' | 'anaerobic' | 'neuromuscular'
 ```
 
@@ -631,7 +631,7 @@ const unsubscribe = NetInfo.addEventListener(state => {
 
 async function syncQueuedActivities() {
   const queued = await getQueuedActivities();
-  
+
   for (const activity of queued) {
     try {
       await uploadActivity(activity);
@@ -649,7 +649,7 @@ async function syncQueuedActivities() {
 ### Unit Tests
 
 ```typescript
-import { describe, it, expect, beforeEach } from 'bun:test';
+import { describe, it, expect, beforeEach } from 'npm:test';
 import { ActivityRecorderService } from './ActivityRecorderService';
 
 describe('ActivityRecorderService', () => {
@@ -666,10 +666,10 @@ describe('ActivityRecorderService', () => {
 
   it('tracks metrics during recording', async () => {
     await recorder.start();
-    
+
     // Simulate sensor data
     recorder.addMetric('power', 250);
-    
+
     const metrics = recorder.getCurrentMetrics();
     expect(metrics.power).toBe(250);
   });
@@ -683,21 +683,21 @@ describe('Activity Recording Flow', () => {
   it('completes full recording workflow', async () => {
     // 1. Initialize
     await recorder.initialize({ activityType: 'outdoor_bike' });
-    
+
     // 2. Start recording
     await recorder.start();
     expect(recorder.getState()).toBe('recording');
-    
+
     // 3. Record metrics
     for (let i = 0; i < 100; i++) {
       recorder.addMetric('power', 200 + Math.random() * 50);
       await wait(100);
     }
-    
+
     // 4. Stop recording
     await recorder.stop();
     const activityId = await recorder.finalize();
-    
+
     // 5. Verify saved to SQLite
     const activity = await getActivityFromDb(activityId);
     expect(activity).toBeDefined();

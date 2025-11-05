@@ -7,7 +7,7 @@
     ".": "./index.ts"
   },
   "scripts": {
-    "update-types": "bun run generate-types && bun run generate-schemas",
+    "update-types": "npm run generate-types && npm run generate-schemas",
     "generate-types": "supabase gen types typescript --local > database.types.ts",
     "generate-schemas": "supazod -i database.types.ts -o supazod/schemas.ts -t supazod/schemas.types.ts -s public,schema_a,schema_b"
   },

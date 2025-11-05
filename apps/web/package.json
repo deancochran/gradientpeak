@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"bun run dev:next\" \"bun run ngrok\"",
+    "dev": "concurrently \"npm run dev:next\" \"npm run ngrok\"",
     "dev:next": "next dev --turbopack",
     "ngrok": "ngrok http 3000 --domain=outgoing-ape-repeatedly.ngrok-free.app",
     "build": "next build --turbopack",
@@ -53,7 +53,7 @@
     "@repo/typescript-config": "workspace:*",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
-    "@types/react": "^19",
+    "@types/react": "^19.2.2",
     "@types/react-dom": "^19",
     "concurrently": "^9.2.1",
     "eslint": "^9",

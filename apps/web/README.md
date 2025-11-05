@@ -64,8 +64,8 @@ The GradientPeak web dashboard serves as the analytical companion to the mobile 
 ## 🔧 Development
 
 ### Prerequisites
-- **Node.js 18+** (recommended: use with Bun)
-- **Bun** package manager
+- **Node.js 18+** (recommended: use with npm)
+- **npm** package manager
 - **Supabase** account and project
 - **PostgreSQL** database (via Supabase)
 
@@ -91,19 +91,19 @@ NEXT_PUBLIC_GA_ID=your_google_analytics_id
 
 ```bash
 # Start development server with Turbopack
-bun dev
+npm dev
 
 # Build for production with Turbopack
-bun build
+npm build
 
 # Start production server
-bun start
+npm start
 
 # Lint code
-bun lint
+npm lint
 
 # Type checking
-bun run check-types
+npm run check-types
 ```
 
 ### Database Integration
@@ -179,13 +179,13 @@ Components are built for reusability across dashboard sections:
 ### Component Testing
 ```bash
 # Unit tests for components
-bun test:unit
+npm test:unit
 
 # Integration tests for API routes
-bun test:integration
+npm test:integration
 
 # E2E tests (future: Playwright)
-bun test:e2e
+npm test:e2e
 ```
 
 ### Performance Testing
@@ -211,7 +211,7 @@ The app can be deployed to any Node.js hosting provider:
 
 ```bash
 # Build and start
-bun build && bun start
+npm build && npm start
 ```
 
 ## 🔄 Integration with Mobile App
@@ -240,7 +240,7 @@ bun build && bun start
 1. Fork the repository
 2. Create a feature branch
 3. Make changes with appropriate tests
-4. Run quality checks: `bun lint && bun test`
+4. Run quality checks: `npm lint && npm test`
 5. Submit a pull request
 
 ## 📝 License
