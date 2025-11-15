@@ -76,7 +76,7 @@ export function PlanDetailModal({
       : `${hours}h`;
   };
 
-  const renderWorkoutStructure = () => {
+  const renderActivityStructure = () => {
     if (
       !plan?.structure ||
       typeof plan.structure !== "object" ||
@@ -86,7 +86,7 @@ export function PlanDetailModal({
     ) {
       return (
         <Text className="text-sm text-muted-foreground italic">
-          No workout structure available
+          No activity structure available
         </Text>
       );
     }
@@ -189,7 +189,7 @@ export function PlanDetailModal({
           <DialogHeader>
             <DialogTitle>Plan Not Found</DialogTitle>
             <DialogDescription>
-              This workout plan could not be found.
+              This activity plan could not be found.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -208,7 +208,7 @@ export function PlanDetailModal({
         <DialogHeader>
           <DialogTitle>{plan?.name || "Loading..."}</DialogTitle>
           <DialogDescription>
-            {plan?.description || "Workout plan details"}
+            {plan?.description || "Activity plan details"}
           </DialogDescription>
         </DialogHeader>
 
@@ -281,10 +281,10 @@ export function PlanDetailModal({
                 </View>
               </View>
 
-              {/* Workout Structure */}
+              {/* Activity Structure */}
               <View className="bg-muted/30 rounded-lg p-4">
-                <Text className="font-semibold mb-3">Workout Structure</Text>
-                {renderWorkoutStructure()}
+                <Text className="font-semibold mb-3">Activity Structure</Text>
+                {renderActivityStructure()}
               </View>
             </View>
           </ScrollView>
@@ -320,7 +320,7 @@ export function PlanDetailModal({
           >
             <Icon as={Calendar} size={16} className="text-primary-foreground" />
             <Text className="text-primary-foreground">
-              {scheduleIntent ? "Schedule This Workout" : "Schedule"}
+              {scheduleIntent ? "Schedule This Activity" : "Schedule"}
             </Text>
           </Button>
         </DialogFooter>

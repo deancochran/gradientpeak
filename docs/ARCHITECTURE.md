@@ -112,7 +112,7 @@ packages/trpc/src/
 - `activities.update` - Set IF/TSS post-completion
 - `trainingPlans.getIntensityDistribution` - 7-zone TSS-weighted analysis
 - `trainingPlans.getCurrentStatus` - CTL/ATL/TSB calculation
-- `plannedActivities.create` - Schedule workout
+- `plannedActivities.create` - Schedule activity
 
 ### @repo/supabase - Database Layer
 
@@ -131,8 +131,8 @@ packages/supabase/
 - `profiles` - Extended user profiles (threshold_hr, ftp, weight_kg)
 - `activities` - Activity metadata + IF/TSS
 - `activity_streams` - Time-series metrics (compressed)
-- `activity_plans` - Reusable workout templates
-- `planned_activities` - Scheduled workouts
+- `activity_plans` - Reusable activity templates
+- `planned_activities` - Scheduled activities
 - `training_plans` - Long-term training structures
 - `profile_plans` - User-specific training plans
 
@@ -222,7 +222,7 @@ const zone = getTrainingIntensityZone(if_);
 
 ## Activity Plan Structure
 
-Activities use flexible JSON structures for structured workouts:
+Activities use flexible JSON structures for structured activities:
 
 ```typescript
 interface ActivityPlanStructure {
@@ -249,7 +249,7 @@ interface IntensityTarget {
 }
 ```
 
-**Example - Interval Workout:**
+**Example - Interval Activity:**
 ```json
 {
   "steps": [

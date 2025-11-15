@@ -2,8 +2,8 @@
 
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
-import { router } from "expo-router";
 import { trpc } from "@/lib/trpc";
+import { router } from "expo-router";
 import { Activity, BarChart3, TrendingUp } from "lucide-react-native";
 import React, { useState } from "react";
 import {
@@ -18,6 +18,12 @@ import {
   TimeRangeSelector,
   type TimeRange,
 } from "./trends/components/TimeRangeSelector";
+import {
+  IntensityDistributionChart,
+  TrainingLoadChart,
+  WeeklyProgressChart,
+  type TrainingLoadData,
+} from "./trends/components/charts";
 
 type TabView = "overview" | "weekly" | "intensity";
 
@@ -265,6 +271,23 @@ export default function TrendsScreen() {
           </Text>
         </View>
 
+        {/* Training Load Chart */}
+        {actualCurve &&
+          actualCurve.dataPoints &&
+          actualCurve.dataPoints.length > 0 && (
+            <TrainingLoadChart
+              data={actualCurve.dataPoints.map(
+                (point): TrainingLoadData => ({
+                  date: point.date,
+                  ctl: point.ctl || 0,
+                  atl: point.atl || 0,
+                  tsb: point.tsb || 0,
+                }),
+              )}
+              height={250}
+            />
+          )}
+
         {/* Training Metrics */}
         <View className="bg-white rounded-lg border border-gray-200 p-4">
           <Text className="text-base font-semibold text-gray-900 mb-3">
@@ -344,17 +367,17 @@ export default function TrendsScreen() {
 
             <View>
               <View className="flex-row items-center justify-between mb-1">
-                <Text className="text-sm text-gray-600">Workouts</Text>
+                <Text className="text-sm text-gray-600">Activities</Text>
                 <Text className="text-sm font-medium text-gray-900">
-                  {status.weekProgress.completedWorkouts} /{" "}
-                  {status.weekProgress.totalPlannedWorkouts}
+                  {status.weekProgress.completedActivities} /{" "}
+                  {status.weekProgress.totalPlannedActivities}
                 </Text>
               </View>
               <View className="h-2 bg-gray-200 rounded-full overflow-hidden">
                 <View
                   className="h-full bg-green-500"
                   style={{
-                    width: `${Math.min((status.weekProgress.completedWorkouts / status.weekProgress.totalPlannedWorkouts) * 100, 100)}%`,
+                    width: `${Math.min((status.weekProgress.completedActivities / status.weekProgress.totalPlannedActivities) * 100, 100)}%`,
                   }}
                 />
               </View>
@@ -408,60 +431,76 @@ export default function TrendsScreen() {
     }
 
     return (
-      <View className="space-y-3">
-        {weeklySummary.map((week, index) => {
-          const statusColor =
-            week.status === "good"
-              ? "border-green-200 bg-green-50"
-              : week.status === "warning"
-                ? "border-yellow-200 bg-yellow-50"
-                : "border-red-200 bg-red-50";
+      <View className="space-y-4">
+        {/* Weekly Progress Chart */}
+        <WeeklyProgressChart
+          data={weeklySummary.map((week) => ({
+            weekStart: week.weekStart,
+            weekEnd: week.weekEnd,
+            plannedTSS: week.plannedTSS,
+            completedTSS: week.completedTSS,
+            tssPercentage: week.tssPercentage,
+            status: week.status,
+          }))}
+          height={280}
+        />
 
-          const statusIcon =
-            week.status === "good"
-              ? "✓"
-              : week.status === "warning"
-                ? "⚠️"
-                : "❌";
+        {/* Weekly Summary Cards */}
+        <View className="space-y-3">
+          {weeklySummary.map((week, index) => {
+            const statusColor =
+              week.status === "good"
+                ? "border-green-200 bg-green-50"
+                : week.status === "warning"
+                  ? "border-yellow-200 bg-yellow-50"
+                  : "border-red-200 bg-red-50";
 
-          return (
-            <View
-              key={index}
-              className={`p-4 rounded-lg border ${statusColor}`}
-            >
-              <View className="flex-row items-center justify-between mb-3">
-                <View>
-                  <Text className="text-sm font-semibold text-gray-900">
-                    Week {weeklySummary.length - index}
-                  </Text>
-                  <Text className="text-xs text-gray-600">
-                    {new Date(week.weekStart).toLocaleDateString()} -{" "}
-                    {new Date(week.weekEnd).toLocaleDateString()}
-                  </Text>
+            const statusIcon =
+              week.status === "good"
+                ? "✓"
+                : week.status === "warning"
+                  ? "⚠️"
+                  : "❌";
+
+            return (
+              <View
+                key={index}
+                className={`p-4 rounded-lg border ${statusColor}`}
+              >
+                <View className="flex-row items-center justify-between mb-3">
+                  <View>
+                    <Text className="text-sm font-semibold text-gray-900">
+                      Week {weeklySummary.length - index}
+                    </Text>
+                    <Text className="text-xs text-gray-600">
+                      {new Date(week.weekStart).toLocaleDateString()} -{" "}
+                      {new Date(week.weekEnd).toLocaleDateString()}
+                    </Text>
+                  </View>
+                  <Text className="text-2xl">{statusIcon}</Text>
                 </View>
-                <Text className="text-2xl">{statusIcon}</Text>
+
+                <View className="space-y-2">
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-sm text-gray-600">TSS</Text>
+                    <Text className="text-sm font-medium text-gray-900">
+                      {week.completedTSS} / {week.plannedTSS} (
+                      {week.tssPercentage}%)
+                    </Text>
+                  </View>
+
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-sm text-gray-600">Activities</Text>
+                    <Text className="text-sm font-medium text-gray-900">
+                      {week.completedActivities} / {week.plannedActivities} (
+                      {week.activityPercentage}%)
+                    </Text>
+                  </View>
+                </View>
               </View>
-
-              <View className="space-y-2">
-                <View className="flex-row items-center justify-between">
-                  <Text className="text-sm text-gray-600">TSS</Text>
-                  <Text className="text-sm font-medium text-gray-900">
-                    {week.completedTSS} / {week.plannedTSS} (
-                    {week.tssPercentage}%)
-                  </Text>
-                </View>
-
-                <View className="flex-row items-center justify-between">
-                  <Text className="text-sm text-gray-600">Workouts</Text>
-                  <Text className="text-sm font-medium text-gray-900">
-                    {week.completedWorkouts} / {week.plannedWorkouts} (
-                    {week.workoutPercentage}%)
-                  </Text>
-                </View>
-              </View>
-            </View>
-          );
-        })}
+            );
+          })}
+        </View>
       </View>
     );
   };
@@ -483,7 +522,7 @@ export default function TrendsScreen() {
             No intensity data available
           </Text>
           <Text className="text-sm text-gray-500 text-center px-6">
-            Complete some workouts to see your intensity distribution
+            Complete some activities to see your intensity distribution
           </Text>
         </View>
       );
@@ -559,6 +598,17 @@ export default function TrendsScreen() {
 
     return (
       <View className="space-y-4">
+        {/* Intensity Distribution Chart */}
+        <IntensityDistributionChart
+          data={distributionPercent}
+          totalTSS={totalTSS}
+          onZonePress={(zoneKey) => {
+            // TODO: Navigate to activities filtered by zone
+            console.log("Pressed zone:", zoneKey);
+          }}
+          height={320}
+        />
+
         {/* Info Banner */}
         <View className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <Text className="text-sm font-semibold text-blue-900 mb-1">
@@ -566,14 +616,14 @@ export default function TrendsScreen() {
           </Text>
           <Text className="text-xs text-blue-700">
             Zones are calculated from your actual Intensity Factor (IF) after
-            each workout. This shows your real training distribution.
+            each activity. This shows your real training distribution.
           </Text>
         </View>
 
         {/* Summary */}
         <View className="bg-white rounded-lg border border-gray-200 p-4">
           <Text className="text-base font-semibold text-gray-900 mb-2">
-            Intensity Distribution
+            Intensity Distribution Details
           </Text>
           <Text className="text-sm text-gray-600">
             {totalActivities} total activities • {activitiesWithIntensity} with

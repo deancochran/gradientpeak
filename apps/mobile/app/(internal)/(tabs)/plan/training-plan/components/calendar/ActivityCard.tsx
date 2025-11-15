@@ -1,14 +1,9 @@
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import {
-    AlertTriangle,
-    CheckCircle2,
-    Clock,
-    X,
-} from "lucide-react-native";
+import { AlertTriangle, CheckCircle2, Clock, X } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
 
-interface WorkoutCardProps {
+interface ActivityCardProps {
   id: string;
   name: string;
   activityType: string;
@@ -47,10 +42,10 @@ const statusConfig = {
 };
 
 /**
- * Workout card component for displaying a workout in the calendar
- * Shows workout details with status indicator
+ * Activity card component for displaying a activity in the calendar
+ * Shows activity details with status indicator
  */
-export function WorkoutCard({
+export function ActivityCard({
   id,
   name,
   activityType,
@@ -59,7 +54,7 @@ export function WorkoutCard({
   status,
   onPress,
   onLongPress,
-}: WorkoutCardProps) {
+}: ActivityCardProps) {
   const statusInfo = statusConfig[status];
 
   const formatActivityType = (type: string) => {
@@ -86,7 +81,11 @@ export function WorkoutCard({
               {name}
             </Text>
           </View>
-          <Icon as={statusInfo.icon} size={18} className={statusInfo.iconColor} />
+          <Icon
+            as={statusInfo.icon}
+            size={18}
+            className={statusInfo.iconColor}
+          />
         </View>
 
         {/* Activity Type */}

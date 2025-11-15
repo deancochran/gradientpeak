@@ -99,9 +99,9 @@ export const getActivityCategory = (
 };
 
 /**
- * Check if activity type supports structured workouts
+ * Check if activity type supports structured activities
  */
-export const supportsStructuredWorkouts = (type: ActivityType): boolean => {
+export const supportsStructuredActivities = (type: ActivityType): boolean => {
   return [
     "outdoor_run",
     "outdoor_bike",

@@ -476,7 +476,10 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
       processRecording();
     };
 
-    service.on("recordingComplete", handleRecordingComplete);
+    const subscription = service.addListener(
+      "recordingComplete",
+      handleRecordingComplete,
+    );
 
     // Also check if already finished (in case event was missed)
     if (service.state === "finished" && service.getRecordingMetadata()) {
@@ -487,7 +490,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     }
 
     return () => {
-      service.off("recordingComplete", handleRecordingComplete);
+      subscription.remove();
     };
   }, [service, processRecording]);
 

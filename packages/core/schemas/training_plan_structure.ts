@@ -55,9 +55,9 @@ export const trainingPlanStructureSchema = z
       .max(7)
       .describe("Minimum rest days per week"),
 
-    // Note: Intensity is derived from IF (Intensity Factor) after workout completion
+    // Note: Intensity is derived from IF (Intensity Factor) after activity completion
     // No need to prescribe intensity distribution - it's analyzed from actual data
-    // Hard workout spacing cannot be validated proactively since intensity is calculated post-workout
+    // Hard activity spacing cannot be validated proactively since intensity is calculated post-activity
 
     // Periodization
     periodization_template: periodizationTemplateSchema.optional(),

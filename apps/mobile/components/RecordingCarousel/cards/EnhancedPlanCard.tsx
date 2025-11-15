@@ -305,7 +305,7 @@ const CurrentIntervalView = memo<CurrentIntervalViewProps>(
             No Active Plan
           </Text>
           <Text className="text-center text-xs text-muted-foreground px-4">
-            Select a training plan to see workout details
+            Select a training plan to see activity details
           </Text>
         </View>
       );
@@ -318,7 +318,7 @@ const CurrentIntervalView = memo<CurrentIntervalViewProps>(
             <Icon as={CheckCircle2} size={24} className="text-green-500" />
           </View>
           <Text className="text-base font-medium text-center">
-            Workout Complete!
+            Activity Complete!
           </Text>
           <Text className="text-center text-xs text-muted-foreground px-4">
             You&apos;ve completed all {stepCount} intervals
@@ -401,16 +401,16 @@ const CurrentIntervalView = memo<CurrentIntervalViewProps>(
 CurrentIntervalView.displayName = "CurrentIntervalView";
 
 // ================================
-// Workout Graph Component
+// Activity Graph Component
 // ================================
 
-interface WorkoutGraphViewProps {
+interface ActivityGraphViewProps {
   planTimeRemaining: number;
   structure: ActivityPlanStructure;
   currentStepIndex: number;
 }
 
-const WorkoutGraphView = memo<WorkoutGraphViewProps>(
+const ActivityGraphView = memo<ActivityGraphViewProps>(
   ({ planTimeRemaining, structure, currentStepIndex }) => {
     const profileData = extractActivityProfile(structure);
     const totalDuration = profileData.reduce(
@@ -424,7 +424,7 @@ const WorkoutGraphView = memo<WorkoutGraphViewProps>(
       <View className="flex-col gap-2 w-full">
         <View className="flex-row w-full items-start justify-between">
           <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-            Workout Profile
+            Activity Profile
           </Text>
           <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
             Time Remaining: {formatDurationCompactMs(planTimeRemaining)}
@@ -463,7 +463,7 @@ const WorkoutGraphView = memo<WorkoutGraphViewProps>(
   },
 );
 
-WorkoutGraphView.displayName = "WorkoutGraphView";
+ActivityGraphView.displayName = "ActivityGraphView";
 
 // ================================
 // Main Enhanced Plan Card
@@ -536,14 +536,14 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
                   className="text-blue-500 mr-2"
                 />
                 <Text className="text-lg font-semibold line-clamp-1">
-                  {planName || "Workout Plan"}
+                  {planName || "Activity Plan"}
                 </Text>
               </View>
             </View>
 
             <View className="gap-6">
               {hasPlan && (
-                <WorkoutGraphView
+                <ActivityGraphView
                   planTimeRemaining={planTimeRemaining}
                   structure={structure}
                   currentStepIndex={stepIndex}

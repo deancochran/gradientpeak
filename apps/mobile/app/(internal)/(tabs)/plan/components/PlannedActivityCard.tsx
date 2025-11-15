@@ -2,12 +2,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import {
-    Activity,
-    Bike,
-    Clock,
-    Dumbbell,
-    Footprints,
-    Waves,
+  Activity,
+  Bike,
+  Clock,
+  Dumbbell,
+  Footprints,
+  Waves,
 } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
 
@@ -110,7 +110,7 @@ export function PlannedActivityCard({
               {/* Header */}
               <View className="flex-row items-start justify-between mb-1">
                 <Text className="text-lg font-semibold flex-1">
-                  {activity.activity_plan?.name || "Unnamed Workout"}
+                  {activity.activity_plan?.name || "Unnamed Activity"}
                 </Text>
                 <Text className="text-sm font-medium text-primary">
                   {formatDate(activity.scheduled_date)}

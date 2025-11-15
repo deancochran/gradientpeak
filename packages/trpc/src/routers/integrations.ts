@@ -352,7 +352,7 @@ function buildOAuthUrl(
     trainingpeaks: {
       authUrl: "https://oauth.trainingpeaks.com/oauth/authorize",
       clientId: process.env.TRAININGPEAKS_CLIENT_ID!,
-      scopes: ["workouts:read", "metrics:read"],
+      scopes: ["activities:read", "metrics:read"],
     },
     garmin: {
       authUrl: "https://connect.garmin.com/oauthConfirm",

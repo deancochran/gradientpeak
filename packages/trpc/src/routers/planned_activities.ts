@@ -436,14 +436,14 @@ export const plannedActivitiesRouter = createTRPCRouter({
             ? "warning"
             : "violated";
 
-      // Check 2: Workouts per week
-      const currentWorkoutsCount = (plannedThisWeek || []).length;
-      const newWorkoutsCount = currentWorkoutsCount + 1;
-      const targetWorkoutsPerWeek = structure.target_activities_per_week || 7;
-      const workoutsPerWeekStatus =
-        newWorkoutsCount <= targetWorkoutsPerWeek
+      // Check 2: Activities per week
+      const currentActivitiesCount = (plannedThisWeek || []).length;
+      const newActivitiesCount = currentActivitiesCount + 1;
+      const targetActivitiesPerWeek = structure.target_activities_per_week || 7;
+      const activitiesPerWeekStatus =
+        newActivitiesCount <= targetActivitiesPerWeek
           ? "satisfied"
-          : newWorkoutsCount <= targetWorkoutsPerWeek + 1
+          : newActivitiesCount <= targetActivitiesPerWeek + 1
             ? "warning"
             : "violated";
 
@@ -497,7 +497,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
             : "violated";
 
       // Check 4: Rest days per week
-      const restDaysThisWeek = 7 - newWorkoutsCount;
+      const restDaysThisWeek = 7 - newActivitiesCount;
       const minRestDays = structure.min_rest_days_per_week || 0;
       const restDaysStatus =
         restDaysThisWeek >= minRestDays
@@ -506,8 +506,8 @@ export const plannedActivitiesRouter = createTRPCRouter({
             ? "warning"
             : "violated";
 
-      // Note: Hard workout spacing validation is NOT included because intensity
-      // is calculated after workout completion from IF, not pre-assigned.
+      // Note: Hard activity spacing validation is NOT included because intensity
+      // is calculated after activity completion from IF, not pre-assigned.
       // This constraint can be analyzed retrospectively but not enforced prospectively.
 
       return {
@@ -518,14 +518,14 @@ export const plannedActivitiesRouter = createTRPCRouter({
             withNew: newWeeklyTSS,
             limit: maxWeeklyTSS,
           },
-          workoutsPerWeek: {
-            status: workoutsPerWeekStatus as
+          activitiesPerWeek: {
+            status: activitiesPerWeekStatus as
               | "satisfied"
               | "warning"
               | "violated",
-            current: currentWorkoutsCount,
-            withNew: newWorkoutsCount,
-            limit: targetWorkoutsPerWeek,
+            current: currentActivitiesCount,
+            withNew: newActivitiesCount,
+            limit: targetActivitiesPerWeek,
           },
           consecutiveDays: {
             status: consecutiveDaysStatus as
@@ -538,19 +538,19 @@ export const plannedActivitiesRouter = createTRPCRouter({
           },
           restDays: {
             status: restDaysStatus as "satisfied" | "warning" | "violated",
-            current: 7 - currentWorkoutsCount,
+            current: 7 - currentActivitiesCount,
             withNew: restDaysThisWeek,
             minimum: minRestDays,
           },
         },
         canSchedule:
           weeklyTSSStatus !== "violated" &&
-          workoutsPerWeekStatus !== "violated" &&
+          activitiesPerWeekStatus !== "violated" &&
           consecutiveDaysStatus !== "violated" &&
           restDaysStatus !== "violated",
         hasWarnings:
           weeklyTSSStatus === "warning" ||
-          workoutsPerWeekStatus === "warning" ||
+          activitiesPerWeekStatus === "warning" ||
           consecutiveDaysStatus === "warning" ||
           restDaysStatus === "warning",
       };

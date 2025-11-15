@@ -119,7 +119,7 @@ export default function CreateTrainingPlan() {
           target_activities_per_week: formData.activitiesPerWeek,
           max_consecutive_training_days: formData.maxConsecutiveDays,
           min_rest_days_per_week: formData.minRestDays,
-          min_hours_between_hard_workouts: formData.minHoursBetweenHard,
+          min_hours_between_hard_activities: formData.minHoursBetweenHard,
           periodization: formData.periodization,
         },
       });

@@ -1307,7 +1307,7 @@ export function calculateTrainingIntensityFactor(
 
 /**
  * Derive training intensity zone from Intensity Factor
- * This is calculated AFTER the workout, not prescribed before
+ * This is calculated AFTER the activity, not prescribed before
  *
  * Based on standard endurance training zones:
  * - Recovery: < 0.55 (Active recovery)
@@ -1356,7 +1356,7 @@ export function calculateTrainingTSS(
 }
 
 /**
- * Estimate TSS for planning purposes (before workout is completed)
+ * Estimate TSS for planning purposes (before activity is completed)
  * Uses average IF for different effort levels
  *
  * @param durationMinutes - Planned duration in minutes

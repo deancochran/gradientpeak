@@ -519,7 +519,7 @@ export const SAMPLE_THRESHOLD_HR_WORKOUT: RecordingServiceActivityPlan = {
   name: "Threshold Heart Rate Intervals",
   activity_type: "indoor_bike_trainer",
   description:
-    "45-minute indoor trainer workout focused on threshold heart rate intervals. Maintain steady cadence of 85-95 RPM and target threshold HR zones during main intervals.",
+    "45-minute indoor trainer activity focused on threshold heart rate intervals. Maintain steady cadence of 85-95 RPM and target threshold HR zones during main intervals.",
   estimated_tss: 60,
   estimated_duration: 2700, // 45 minutes
   structure: {
@@ -632,7 +632,7 @@ export const SAMPLE_TESTING_WORKOUT: RecordingServiceActivityPlan = {
   name: "Comprehensive 1-Minute Schema Test",
   activity_type: "indoor_bike_trainer",
   description:
-    "A short test workout containing every major step type and target style to validate parsing, UI rendering, and compliance scoring.",
+    "A short test activity containing every major step type and target style to validate parsing, UI rendering, and compliance scoring.",
   estimated_tss: 1,
   estimated_duration: 60,
   structure: {

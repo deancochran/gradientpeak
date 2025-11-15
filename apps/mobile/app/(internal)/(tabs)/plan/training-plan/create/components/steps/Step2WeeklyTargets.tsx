@@ -62,7 +62,7 @@ export function Step2WeeklyTargets({
       <View className="bg-muted/30 rounded-lg p-4">
         <Text className="text-sm text-muted-foreground leading-6">
           Set your weekly training stress score (TSS) targets and how many
-          workouts you plan to do each week.
+          activities you plan to do each week.
         </Text>
       </View>
 
@@ -165,7 +165,7 @@ export function Step2WeeklyTargets({
       {activitiesPerWeek > 0 && (
         <View className="bg-muted/30 rounded-lg p-4">
           <Text className="text-sm font-semibold mb-2">
-            Estimated Per-Workout TSS
+            Estimated Per-Activity TSS
           </Text>
           <Text className="text-2xl font-bold text-primary mb-1">
             ~{Math.round(averageTSS / activitiesPerWeek)} TSS

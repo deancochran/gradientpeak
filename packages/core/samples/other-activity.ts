@@ -213,7 +213,7 @@ export const HIKING_ADVENTURE: RecordingServiceActivityPlan = {
 export const CROSSFIT_WOD: RecordingServiceActivityPlan = {
   version: "1.0",
   name: "CrossFit WOD",
-  description: "High-intensity CrossFit workout of the day",
+  description: "High-intensity CrossFit activity of the day",
   activity_type: "other",
   estimated_tss: 80,
   estimated_duration: 2700, // 45 minutes
@@ -242,11 +242,11 @@ export const CROSSFIT_WOD: RecordingServiceActivityPlan = {
       // Main WOD
       {
         name: "Main WOD",
-        description: "High-intensity workout",
+        description: "High-intensity activity",
         type: "step",
         duration: { type: "time", value: 900, unit: "seconds" }, // 15 min
         targets: [{ type: "%ThresholdHR", intensity: 88 }],
-        notes: "AMRAP, EMOM, or time-based workout - push hard but maintain form",
+        notes: "AMRAP, EMOM, or time-based activity - push hard but maintain form",
       },
 
       // Cool-down

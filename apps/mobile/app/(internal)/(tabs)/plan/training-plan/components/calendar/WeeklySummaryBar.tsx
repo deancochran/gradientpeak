@@ -1,15 +1,20 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { AlertCircle, CheckCircle2, Target, TrendingUp } from "lucide-react-native";
+import {
+  AlertCircle,
+  CheckCircle2,
+  Target,
+  TrendingUp,
+} from "lucide-react-native";
 import { View } from "react-native";
 
 interface WeeklySummaryBarProps {
   completedTSS: number;
   plannedTSS: number;
   targetTSS: number;
-  completedWorkouts: number;
-  totalPlannedWorkouts: number;
+  completedActivities: number;
+  totalPlannedActivities: number;
   status: "on_track" | "behind" | "ahead" | "warning";
 }
 
@@ -42,22 +47,24 @@ const statusConfig = {
 
 /**
  * Weekly summary bar showing aggregate metrics for the current week
- * Displays TSS progress, workout completion, and overall status
+ * Displays TSS progress, activity completion, and overall status
  */
 export function WeeklySummaryBar({
   completedTSS,
   plannedTSS,
   targetTSS,
-  completedWorkouts,
-  totalPlannedWorkouts,
+  completedActivities,
+  totalPlannedActivities,
   status,
 }: WeeklySummaryBarProps) {
   const statusInfo = statusConfig[status];
 
   // Calculate progress percentages
   const tssProgress = targetTSS > 0 ? (completedTSS / targetTSS) * 100 : 0;
-  const workoutProgress =
-    totalPlannedWorkouts > 0 ? (completedWorkouts / totalPlannedWorkouts) * 100 : 0;
+  const activityProgress =
+    totalPlannedActivities > 0
+      ? (completedActivities / totalPlannedActivities) * 100
+      : 0;
 
   return (
     <Card className="mb-4">
@@ -108,12 +115,16 @@ export function WeeklySummaryBar({
           {/* Divider */}
           <View className="w-px bg-border" />
 
-          {/* Workout Completion */}
+          {/* Activity Completion */}
           <View className="flex-1">
             <View className="flex-row items-center gap-2 mb-2">
-              <Icon as={CheckCircle2} size={14} className="text-muted-foreground" />
+              <Icon
+                as={CheckCircle2}
+                size={14}
+                className="text-muted-foreground"
+              />
               <Text className="text-xs text-muted-foreground font-medium">
-                Workouts
+                Activities
               </Text>
             </View>
 
@@ -121,21 +132,20 @@ export function WeeklySummaryBar({
             <View className="bg-muted rounded-full h-2 overflow-hidden mb-2">
               <View
                 className="bg-primary h-full rounded-full"
-                style={{ width: `${Math.min(workoutProgress, 100)}%` }}
+                style={{ width: `${Math.min(activityProgress, 100)}%` }}
               />
             </View>
 
             {/* Numbers */}
             <View className="flex-row items-baseline gap-1">
-              <Text className="text-lg font-bold">
-                {completedWorkouts}
-              </Text>
+              <Text className="text-lg font-bold">{completedActivities}</Text>
               <Text className="text-xs text-muted-foreground">
-                / {totalPlannedWorkouts}
+                / {totalPlannedActivities}
               </Text>
             </View>
             <Text className="text-xs text-muted-foreground mt-0.5">
-              {totalPlannedWorkouts > 0 ? Math.round(workoutProgress) : 0}% complete
+              {totalPlannedActivities > 0 ? Math.round(activityProgress) : 0}%
+              complete
             </Text>
           </View>
         </View>

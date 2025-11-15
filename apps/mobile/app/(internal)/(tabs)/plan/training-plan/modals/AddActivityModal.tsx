@@ -1,4 +1,4 @@
-// apps/mobile/app/(internal)/(tabs)/plan/training-plan/modals/AddWorkoutModal.tsx
+// apps/mobile/app/(internal)/(tabs)/plan/training-plan/modals/AddActivityModal.tsx
 
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
@@ -12,13 +12,13 @@ import {
   ScrollView,
   View,
 } from "react-native";
-import { ConstraintValidator } from "./components/ConstraintValidator";
 import {
-  WorkoutSelector,
-  type WorkoutOption,
-} from "./components/WorkoutSelector";
+  ActivitySelector,
+  type ActivityOption,
+} from "./components/ActivitySelector";
+import { ConstraintValidator } from "./components/ConstraintValidator";
 
-interface AddWorkoutModalProps {
+interface AddActivityModalProps {
   visible: boolean;
   onClose: () => void;
   selectedDate: string; // ISO format date (YYYY-MM-DD)
@@ -27,16 +27,16 @@ interface AddWorkoutModalProps {
 }
 
 /**
- * AddWorkoutModal Component
+ * AddActivityModal Component
  *
- * Modal for scheduling a workout with real-time constraint validation.
+ * Modal for scheduling a activity with real-time constraint validation.
  * Allows users to:
- * 1. Select a workout from their activity plans
+ * 1. Select a activity from their activity plans
  * 2. See real-time validation against training plan constraints
- * 3. Schedule the workout
+ * 3. Schedule the activity
  *
  * Features:
- * - Searchable workout list
+ * - Searchable activity list
  * - Real-time constraint validation
  * - Visual feedback on constraint status
  * - Warning/error messages for violations
@@ -44,7 +44,7 @@ interface AddWorkoutModalProps {
  * Usage:
  * ```tsx
  * const [showModal, setShowModal] = useState(false);
- * <AddWorkoutModal
+ * <AddActivityModal
  *   visible={showModal}
  *   onClose={() => setShowModal(false)}
  *   selectedDate="2024-03-15"
@@ -56,29 +56,28 @@ interface AddWorkoutModalProps {
  * />
  * ```
  */
-export function AddWorkoutModal({
+export function AddActivityModal({
   visible,
   onClose,
   selectedDate,
   trainingPlanId,
   onSuccess,
-}: AddWorkoutModalProps) {
-  const [selectedWorkout, setSelectedWorkout] = useState<WorkoutOption | null>(
-    null,
-  );
+}: AddActivityModalProps) {
+  const [selectedActivity, setSelectedActivity] =
+    useState<ActivityOption | null>(null);
 
   // Reset state when modal closes
   useEffect(() => {
     if (!visible) {
-      setSelectedWorkout(null);
+      setSelectedActivity(null);
     }
   }, [visible]);
 
-  // Fetch available workouts
+  // Fetch available activities
   const {
-    data: workoutsData,
-    isLoading: workoutsLoading,
-    error: workoutsError,
+    data: activitiesData,
+    isLoading: activitiesLoading,
+    error: activitiesError,
   } = trpc.activityPlans.list.useQuery(
     {
       limit: 100,
@@ -97,14 +96,14 @@ export function AddWorkoutModal({
     {
       training_plan_id: trainingPlanId,
       scheduled_date: selectedDate,
-      activity_plan_id: selectedWorkout?.id ?? "",
+      activity_plan_id: selectedActivity?.id ?? "",
     },
     {
-      enabled: visible && !!selectedWorkout,
+      enabled: visible && !!selectedActivity,
     },
   );
 
-  // Schedule workout mutation
+  // Schedule activity mutation
   const scheduleMutation = trpc.plannedActivities.create.useMutation({
     onSuccess: () => {
       onSuccess?.();
@@ -113,15 +112,15 @@ export function AddWorkoutModal({
   });
 
   const handleSchedule = async () => {
-    if (!selectedWorkout) return;
+    if (!selectedActivity) return;
 
     try {
       await scheduleMutation.mutateAsync({
-        activity_plan_id: selectedWorkout.id,
+        activity_plan_id: selectedActivity.id,
         scheduled_date: selectedDate,
       });
     } catch (error) {
-      console.error("Failed to schedule workout:", error);
+      console.error("Failed to schedule activity:", error);
     }
   };
 
@@ -136,11 +135,11 @@ export function AddWorkoutModal({
   };
 
   const canSchedule =
-    selectedWorkout &&
+    selectedActivity &&
     (validation?.canSchedule ?? false) &&
     !scheduleMutation.isPending;
 
-  const workouts = workoutsData?.items || [];
+  const activities = activitiesData?.items || [];
 
   return (
     <Modal
@@ -154,7 +153,7 @@ export function AddWorkoutModal({
         <View className="flex-row items-center justify-between px-4 py-4 border-b border-gray-200">
           <View className="flex-1">
             <Text className="text-xl font-bold text-gray-900">
-              Schedule Workout
+              Schedule Activity
             </Text>
             <Text className="text-sm text-gray-600 mt-0.5">
               {formatDate(selectedDate)}
@@ -175,29 +174,31 @@ export function AddWorkoutModal({
           contentContainerClassName="p-4"
           showsVerticalScrollIndicator={true}
         >
-          {/* Workout Selection Section */}
+          {/* Activity Selection Section */}
           <View className="mb-6">
-            {workoutsLoading && (
+            {activitiesLoading && (
               <View className="py-8 items-center">
                 <ActivityIndicator size="large" />
-                <Text className="text-gray-600 mt-2">Loading workouts...</Text>
-              </View>
-            )}
-
-            {workoutsError && (
-              <View className="p-4 bg-red-50 rounded-lg">
-                <Text className="text-red-700">
-                  Failed to load workouts. Please try again.
+                <Text className="text-gray-600 mt-2">
+                  Loading activities...
                 </Text>
               </View>
             )}
 
-            {!workoutsLoading && !workoutsError && (
+            {activitiesError && (
+              <View className="p-4 bg-red-50 rounded-lg">
+                <Text className="text-red-700">
+                  Failed to load activities. Please try again.
+                </Text>
+              </View>
+            )}
+
+            {!activitiesLoading && !activitiesError && (
               <View style={{ height: 300 }}>
-                <WorkoutSelector
-                  workouts={workouts}
-                  selectedWorkoutId={selectedWorkout?.id ?? null}
-                  onSelect={setSelectedWorkout}
+                <ActivitySelector
+                  activities={activities}
+                  selectedActivityId={selectedActivity?.id ?? null}
+                  onSelect={setSelectedActivity}
                   disabled={scheduleMutation.isPending}
                 />
               </View>
@@ -205,7 +206,7 @@ export function AddWorkoutModal({
           </View>
 
           {/* Constraint Validation Section */}
-          {selectedWorkout && (
+          {selectedActivity && (
             <View className="mb-6">
               {validationError && (
                 <View className="p-4 bg-red-50 rounded-lg mb-4">
@@ -226,7 +227,7 @@ export function AddWorkoutModal({
           {scheduleMutation.error && (
             <View className="p-4 bg-red-50 border border-red-200 rounded-lg mb-4">
               <Text className="text-red-700 font-medium">
-                Failed to schedule workout
+                Failed to schedule activity
               </Text>
               <Text className="text-red-600 text-sm mt-1">
                 {scheduleMutation.error.message || "Please try again"}
@@ -257,14 +258,14 @@ export function AddWorkoutModal({
                 <Text className="text-white">
                   {validation && !validation.canSchedule
                     ? "Schedule Anyway"
-                    : "Schedule Workout"}
+                    : "Schedule Activity"}
                 </Text>
               )}
             </Button>
           </View>
 
           {/* Helper text */}
-          {selectedWorkout && (
+          {selectedActivity && (
             <Text className="text-xs text-gray-500 text-center mt-2">
               {validation && !validation.canSchedule
                 ? "⚠️ This will override constraint violations"

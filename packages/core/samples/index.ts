@@ -19,25 +19,25 @@ export * from "./outdoor-run";
 
 // Combined sample activities array with all activity types
 export const SAMPLE_ACTIVITIES = [
-  // Indoor bike trainer (6 workouts)
+  // Indoor bike trainer (6 activities)
   ...SAMPLE_INDOOR_TRAINER_ACTIVITIES,
 
-  // Indoor treadmill (5 workouts)
+  // Indoor treadmill (5 activities)
   ...SAMPLE_TREADMILL_ACTIVITIES,
 
-  // Outdoor running (5 workouts)
+  // Outdoor running (5 activities)
   ...SAMPLE_OUTDOOR_RUN_ACTIVITIES,
 
-  // Outdoor cycling (5 workouts)
+  // Outdoor cycling (5 activities)
   ...SAMPLE_OUTDOOR_BIKE_ACTIVITIES,
 
-  // Indoor strength training (5 workouts)
+  // Indoor strength training (5 activities)
   ...SAMPLE_INDOOR_STRENGTH_ACTIVITIES,
 
-  // Indoor swimming (5 workouts)
+  // Indoor swimming (5 activities)
   ...SAMPLE_INDOOR_SWIM_ACTIVITIES,
 
-  // Other activities (5 workouts)
+  // Other activities (5 activities)
   ...SAMPLE_OTHER_ACTIVITIES,
 ];
 
@@ -60,5 +60,5 @@ export function getSampleActivitiesByType(
   return SAMPLE_ACTIVITIES_BY_TYPE[activityType] || [];
 }
 
-// Total count of sample activities: 36 workouts across 7 activity types
+// Total count of sample activities: 36 activities across 7 activity types
 export const TOTAL_SAMPLE_ACTIVITIES = SAMPLE_ACTIVITIES.length;

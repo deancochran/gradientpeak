@@ -19,7 +19,7 @@ import {
   View,
 } from "react-native";
 import { CurrentStatusCard } from "./components/CurrentStatusCard";
-import { UpcomingWorkoutsCard } from "./components/UpcomingWorkoutsCard";
+import { UpcomingActivitiesCard } from "./components/UpcomingActivitiesCard";
 import { WeeklyProgressCard } from "./components/WeeklyProgressCard";
 
 export default function TrainingPlanOverview() {
@@ -102,7 +102,7 @@ export default function TrainingPlanOverview() {
                 <Text className="text-base text-muted-foreground text-center mb-6">
                   A training plan helps you build fitness systematically, track
                   your progress, and prevent overtraining through structured
-                  workouts and recovery.
+                  activities and recovery.
                 </Text>
 
                 <View className="w-full gap-3">
@@ -221,14 +221,14 @@ export default function TrainingPlanOverview() {
             completedTSS={status.weekProgress.completedTSS}
             plannedTSS={status.weekProgress.plannedTSS}
             targetTSS={status.weekProgress.targetTSS}
-            completedWorkouts={status.weekProgress.completedWorkouts}
-            totalPlannedWorkouts={status.weekProgress.totalPlannedWorkouts}
+            completedActivities={status.weekProgress.completedActivities}
+            totalPlannedActivities={status.weekProgress.totalPlannedActivities}
           />
         )}
 
-        {/* Upcoming Workouts */}
-        {status?.upcomingWorkouts && status.upcomingWorkouts.length > 0 && (
-          <UpcomingWorkoutsCard workouts={status.upcomingWorkouts} />
+        {/* Upcoming Activities */}
+        {status?.upcomingActivities && status.upcomingActivities.length > 0 && (
+          <UpcomingActivitiesCard activities={status.upcomingActivities} />
         )}
 
         {/* Action Buttons */}

@@ -13,7 +13,6 @@ import {
   Dumbbell,
   Footprints,
   Plus,
-  User,
   Waves,
 } from "lucide-react-native";
 import { useCallback, useMemo, useState } from "react";
@@ -85,7 +84,7 @@ export default function LibraryScreen() {
       activityType: selectedType === "all" ? undefined : selectedType,
       limit: 10,
     }),
-    [activeTab, selectedType]
+    [activeTab, selectedType],
   );
 
   // tRPC queries - unified approach
@@ -103,7 +102,7 @@ export default function LibraryScreen() {
 
   const plans = useMemo(
     () => data?.pages.flatMap((page) => page.items) ?? [],
-    [data]
+    [data],
   );
 
   // Memoized callbacks
@@ -132,7 +131,7 @@ export default function LibraryScreen() {
         params: { activityPlanId: planId },
       });
     },
-    [router]
+    [router],
   );
 
   const handleCloseModal = useCallback(() => {
@@ -143,9 +142,8 @@ export default function LibraryScreen() {
   const renderPlanCard = useCallback(
     (plan: any) => {
       const config =
-        ACTIVITY_CONFIGS[
-          plan.activity_type as keyof typeof ACTIVITY_CONFIGS
-        ] || ACTIVITY_CONFIGS.other;
+        ACTIVITY_CONFIGS[plan.activity_type as keyof typeof ACTIVITY_CONFIGS] ||
+        ACTIVITY_CONFIGS.other;
       const isUserPlan = !!plan.profile_id;
 
       return (
@@ -166,7 +164,10 @@ export default function LibraryScreen() {
                 <View className="flex-1 min-w-0">
                   {/* Title Row */}
                   <View className="flex flex-row items-start justify-between gap-2 mb-1">
-                    <Text className="text-base font-semibold flex-1" numberOfLines={2}>
+                    <Text
+                      className="text-base font-semibold flex-1"
+                      numberOfLines={2}
+                    >
                       {plan.name}
                     </Text>
                     {isUserPlan && (
@@ -238,12 +239,14 @@ export default function LibraryScreen() {
         </TouchableOpacity>
       );
     },
-    [scheduleIntent, handlePlanTap, handleSchedulePlan]
+    [scheduleIntent, handlePlanTap, handleSchedulePlan],
   );
 
   const renderEmptyState = useCallback(() => {
     const isMyPlans = activeTab === "my";
-    const filterLabel = FILTER_OPTIONS.find((f) => f.value === selectedType)?.label.toLowerCase();
+    const filterLabel = FILTER_OPTIONS.find(
+      (f) => f.value === selectedType,
+    )?.label.toLowerCase();
 
     return (
       <View className="flex-1 flex items-center justify-center px-6 py-12">
@@ -258,7 +261,7 @@ export default function LibraryScreen() {
         <Text className="text-muted-foreground text-center mb-6 max-w-sm">
           {isMyPlans
             ? selectedType === "all"
-              ? "Create your first workout plan to get started."
+              ? "Create your first activity plan to get started."
               : `No ${filterLabel} plans found. Create one or view all types.`
             : selectedType === "all"
               ? "Sample plans will appear here when available."
@@ -266,7 +269,11 @@ export default function LibraryScreen() {
         </Text>
         {isMyPlans && (
           <Button onPress={handleCreatePlan} size="lg">
-            <Icon as={Plus} size={18} className="text-primary-foreground mr-2" />
+            <Icon
+              as={Plus}
+              size={18}
+              className="text-primary-foreground mr-2"
+            />
             <Text className="text-primary-foreground font-medium">
               Create Plan
             </Text>
@@ -276,20 +283,23 @@ export default function LibraryScreen() {
     );
   }, [activeTab, selectedType, handleCreatePlan]);
 
-  const renderErrorState = useCallback(() => (
-    <View className="flex-1 flex items-center justify-center px-6 py-12">
-      <Icon as={AlertCircle} size={56} className="text-destructive/70 mb-4" />
-      <Text className="text-xl font-semibold mb-2 text-center">
-        Failed to Load
-      </Text>
-      <Text className="text-muted-foreground text-center mb-6 max-w-sm">
-        {error?.message || "Something went wrong. Please try again."}
-      </Text>
-      <Button onPress={handleRefresh} variant="outline" size="lg">
-        <Text>Try Again</Text>
-      </Button>
-    </View>
-  ), [error, handleRefresh]);
+  const renderErrorState = useCallback(
+    () => (
+      <View className="flex-1 flex items-center justify-center px-6 py-12">
+        <Icon as={AlertCircle} size={56} className="text-destructive/70 mb-4" />
+        <Text className="text-xl font-semibold mb-2 text-center">
+          Failed to Load
+        </Text>
+        <Text className="text-muted-foreground text-center mb-6 max-w-sm">
+          {error?.message || "Something went wrong. Please try again."}
+        </Text>
+        <Button onPress={handleRefresh} variant="outline" size="lg">
+          <Text>Try Again</Text>
+        </Button>
+      </View>
+    ),
+    [error, handleRefresh],
+  );
 
   const renderLoadingFooter = useCallback(() => {
     if (!hasNextPage) return null;
@@ -316,7 +326,7 @@ export default function LibraryScreen() {
     <View className="flex-1 bg-background">
       {/* Header */}
       <View className="px-4 pt-4 pb-3">
-        <Text className="text-2xl font-bold mb-1">Workout Library</Text>
+        <Text className="text-2xl font-bold mb-1">Activity Library</Text>
         <Text className="text-sm text-muted-foreground">
           {scheduleIntent
             ? "Select a plan to schedule"
@@ -392,7 +402,10 @@ export default function LibraryScreen() {
               className="flex-1 px-4"
               contentContainerStyle={{ gap: 12, paddingBottom: 80 }}
               refreshControl={
-                <RefreshControl refreshing={isLoading} onRefresh={handleRefresh} />
+                <RefreshControl
+                  refreshing={isLoading}
+                  onRefresh={handleRefresh}
+                />
               }
             >
               <Text className="text-xs text-muted-foreground uppercase tracking-wide">

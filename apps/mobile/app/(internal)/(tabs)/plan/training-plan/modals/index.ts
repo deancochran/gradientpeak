@@ -1,5 +1,5 @@
 // apps/mobile/app/(internal)/(tabs)/plan/training-plan/modals/index.ts
 
-export { AddWorkoutModal } from "./AddWorkoutModal";
+export { AddActivityModal } from "./AddActivityModal";
 export * from "./components";
 

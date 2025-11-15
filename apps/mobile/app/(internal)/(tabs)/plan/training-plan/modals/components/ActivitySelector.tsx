@@ -1,11 +1,11 @@
-// apps/mobile/app/(internal)/(tabs)/plan/training-plan/modals/components/WorkoutSelector.tsx
+// apps/mobile/app/(internal)/(tabs)/plan/training-plan/modals/components/ActivitySelector.tsx
 
 import { Text } from "@/components/ui/text";
 import { Search } from "lucide-react-native";
 import { useState } from "react";
 import { FlatList, Pressable, TextInput, View } from "react-native";
 
-export interface WorkoutOption {
+export interface ActivityOption {
   id: string;
   name: string;
   activity_type: string;
@@ -14,46 +14,46 @@ export interface WorkoutOption {
   description?: string | null;
 }
 
-interface WorkoutSelectorProps {
-  workouts: WorkoutOption[];
-  selectedWorkoutId: string | null;
-  onSelect: (workout: WorkoutOption) => void;
+interface ActivitySelectorProps {
+  activities: ActivityOption[];
+  selectedActivityId: string | null;
+  onSelect: (activity: ActivityOption) => void;
   disabled?: boolean;
 }
 
 /**
- * WorkoutSelector Component
+ * ActivitySelector Component
  *
- * Displays a searchable list of workout plans that can be scheduled.
- * Includes search filtering, activity type icons, and workout details.
+ * Displays a searchable list of activity plans that can be scheduled.
+ * Includes search filtering, activity type icons, and activity details.
  *
  * Features:
- * - Search by workout name
+ * - Search by activity name
  * - Filter by activity type
  * - Display duration and TSS estimates
  * - Visual selection indicator
  *
  * Usage:
  * ```tsx
- * const [selected, setSelected] = useState<WorkoutOption | null>(null);
- * <WorkoutSelector
- *   workouts={workoutsList}
- *   selectedWorkoutId={selected?.id ?? null}
+ * const [selected, setSelected] = useState<ActivityOption | null>(null);
+ * <ActivitySelector
+ *   activities={activitiesList}
+ *   selectedActivityId={selected?.id ?? null}
  *   onSelect={setSelected}
  * />
  * ```
  */
-export function WorkoutSelector({
-  workouts,
-  selectedWorkoutId,
+export function ActivitySelector({
+  activities,
+  selectedActivityId,
   onSelect,
   disabled = false,
-}: WorkoutSelectorProps) {
+}: ActivitySelectorProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Filter workouts based on search query
-  const filteredWorkouts = workouts.filter((workout) => {
-    const matchesSearch = workout.name
+  // Filter activities based on search query
+  const filteredActivities = activities.filter((activity) => {
+    const matchesSearch = activity.name
       .toLowerCase()
       .includes(searchQuery.toLowerCase());
     return matchesSearch;
@@ -92,8 +92,8 @@ export function WorkoutSelector({
     return iconMap[type] || "🏋️";
   };
 
-  const renderWorkoutItem = ({ item }: { item: WorkoutOption }) => {
-    const isSelected = selectedWorkoutId === item.id;
+  const renderActivityItem = ({ item }: { item: ActivityOption }) => {
+    const isSelected = selectedActivityId === item.id;
 
     return (
       <Pressable
@@ -113,7 +113,7 @@ export function WorkoutSelector({
             </Text>
           </View>
 
-          {/* Workout Details */}
+          {/* Activity Details */}
           <View className="flex-1">
             <Text
               className={`font-semibold text-base ${isSelected ? "text-blue-700" : "text-gray-900"}`}
@@ -155,7 +155,7 @@ export function WorkoutSelector({
     <View className="flex-1">
       {/* Header */}
       <Text className="text-sm font-semibold text-gray-700 mb-2">
-        Select a Workout
+        Select a Activity
       </Text>
 
       {/* Search Input */}
@@ -166,33 +166,33 @@ export function WorkoutSelector({
         <TextInput
           value={searchQuery}
           onChangeText={setSearchQuery}
-          placeholder="Search workouts..."
+          placeholder="Search activities..."
           className="pl-10 pr-4 py-3 border border-gray-300 rounded-lg bg-white text-base"
           editable={!disabled}
         />
       </View>
 
-      {/* Workout Count */}
+      {/* Activity Count */}
       {searchQuery && (
         <Text className="text-sm text-gray-600 mb-2">
-          {filteredWorkouts.length} workout
-          {filteredWorkouts.length !== 1 ? "s" : ""} found
+          {filteredActivities.length} activity
+          {filteredActivities.length !== 1 ? "s" : ""} found
         </Text>
       )}
 
-      {/* Workout List */}
-      {filteredWorkouts.length === 0 ? (
+      {/* Activity List */}
+      {filteredActivities.length === 0 ? (
         <View className="flex-1 items-center justify-center py-8">
           <Text className="text-gray-500 text-center">
             {searchQuery
-              ? "No workouts match your search"
-              : "No workouts available"}
+              ? "No activities match your search"
+              : "No activities available"}
           </Text>
         </View>
       ) : (
         <FlatList
-          data={filteredWorkouts}
-          renderItem={renderWorkoutItem}
+          data={filteredActivities}
+          renderItem={renderActivityItem}
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={true}
           contentContainerClassName="pb-4"

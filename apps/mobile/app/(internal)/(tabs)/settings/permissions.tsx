@@ -163,7 +163,7 @@ export default function PermissionsScreen() {
               Notifications
             </CardTitle>
             <CardDescription className="text-muted-foreground">
-              Receive alerts for workouts, achievements, and app updates
+              Receive alerts for activities, achievements, and app updates
             </CardDescription>
           </CardHeader>
           <CardContent className="gap-4">

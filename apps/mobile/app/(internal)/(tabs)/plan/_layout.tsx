@@ -13,28 +13,37 @@ export default function PlanLayout() {
       <Stack.Screen
         name="library/index"
         options={{
-          title: "Workout Library",
+          title: "Activity Library",
           presentation: "modal",
         }}
       />
       <Stack.Screen
         name="planned_activities/index"
         options={{
-          title: "Scheduled Workouts",
+          title: "Scheduled Activities",
           presentation: "modal",
         }}
       />
       <Stack.Screen
         name="create_activity_plan/index"
         options={{
-          title: "Create Plan",
-          presentation: "modal",
+          title: "Create Activity Plan",
+          headerShown: true,
+          headerBackTitle: "Back",
+        }}
+      />
+      <Stack.Screen
+        name="create_activity_plan/structure"
+        options={{
+          title: "Edit Structure",
+          headerShown: true,
+          headerBackTitle: "Back",
         }}
       />
       <Stack.Screen
         name="create_planned_activity/index"
         options={{
-          title: "Schedule Workout",
+          title: "Schedule Activity",
           presentation: "modal",
         }}
       />

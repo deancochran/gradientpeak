@@ -95,7 +95,7 @@ export default function PlanScreen() {
           <View className="mb-2">
             <Text className="text-3xl font-bold">Training Plan</Text>
             <Text className="text-muted-foreground mt-1">
-              Manage your workouts and training schedule
+              Manage your activities and training schedule
             </Text>
           </View>
 
@@ -128,18 +128,18 @@ export default function PlanScreen() {
         <View className="mb-4">
           <Text className="text-3xl font-bold">Training Plan</Text>
           <Text className="text-muted-foreground mt-2">
-            Manage your workouts and training schedule
+            Manage your activities and training schedule
           </Text>
         </View>
 
-        {/* Today's Workouts Section */}
+        {/* Today's Activities Section */}
         {loadingToday ? (
           <Card>
             <CardContent className="p-6">
               <View className="flex items-center justify-center">
                 <ActivityIndicator size="small" />
                 <Text className="text-sm text-muted-foreground mt-2">
-                  Loading today&apos;s workouts...
+                  Loading today&apos;s activities...
                 </Text>
               </View>
             </CardContent>
@@ -147,7 +147,7 @@ export default function PlanScreen() {
         ) : todaysActivities && todaysActivities.length > 0 ? (
           <Card>
             <CardHeader>
-              <CardTitle>Today&apos;s Workouts</CardTitle>
+              <CardTitle>Today&apos;s Activities</CardTitle>
             </CardHeader>
             <CardContent>
               <View className="flex flex-col gap-3">
@@ -161,7 +161,7 @@ export default function PlanScreen() {
                       <View className="flex flex-row items-center justify-between p-4 bg-muted/30 rounded-lg">
                         <View className="flex-1">
                           <Text className="font-semibold">
-                            {activity.activity_plan?.name || "Unnamed Workout"}
+                            {activity.activity_plan?.name || "Unnamed Activity"}
                           </Text>
                           <View className="flex flex-row items-center gap-2 mt-1">
                             <Icon
@@ -219,17 +219,17 @@ export default function PlanScreen() {
                   className="text-muted-foreground mb-2"
                 />
                 <Text className="text-lg font-semibold mb-2">
-                  No Workouts Today
+                  No Activities Today
                 </Text>
                 <Text className="text-sm text-muted-foreground text-center mb-4">
-                  Schedule a workout from your library to get started
+                  Schedule a activity from your library to get started
                 </Text>
                 <Button
                   variant="outline"
                   size="sm"
                   onPress={handleScheduleFromLibrary}
                 >
-                  <Text className="text-foreground">Schedule Workout</Text>
+                  <Text className="text-foreground">Schedule Activity</Text>
                 </Button>
               </View>
             </CardContent>
@@ -261,7 +261,7 @@ export default function PlanScreen() {
           >
             <Icon as={Plus} size={20} className="text-foreground" />
             <Text className="text-foreground font-semibold">
-              Create Workout Plan
+              Create Activity Plan
             </Text>
           </Button>
 
@@ -273,7 +273,7 @@ export default function PlanScreen() {
           >
             <Icon as={Library} size={20} className="text-foreground" />
             <Text className="text-foreground font-semibold">
-              Browse Workout Library
+              Browse Activity Library
             </Text>
           </Button>
         </View>

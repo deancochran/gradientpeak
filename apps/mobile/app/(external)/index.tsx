@@ -16,11 +16,11 @@ export default function WelcomeScreen() {
   }, [isAuthenticated]);
 
   const handleLoginPress = () => {
-    router.replace("/(external)/sign-in");
+    router.replace({ pathname: "/(external)/sign-in" });
   };
 
   const handleSignupPress = () => {
-    router.replace("/(external)/sign-up");
+    router.replace({ pathname: "/(external)/sign-up" });
   };
 
   return (

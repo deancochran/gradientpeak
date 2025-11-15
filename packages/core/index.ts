@@ -36,3 +36,6 @@ export * from "./samples";
 
 // Export everything from schemas (includes ActivityType and getIntensityZone)
 export * from "./schemas";
+
+// Export everything from utils
+export * from "./utils/activity-defaults";

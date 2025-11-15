@@ -7,31 +7,31 @@ import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
-    Activity,
-    Bike,
-    Calendar,
-    Check,
-    Clock,
-    Dumbbell,
-    Footprints,
-    Plus,
-    Search,
-    Waves,
-    X,
+  Activity,
+  Bike,
+  Calendar,
+  Check,
+  Clock,
+  Dumbbell,
+  Footprints,
+  Plus,
+  Search,
+  Waves,
+  X,
 } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Modal,
-    ScrollView,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Modal,
+  ScrollView,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { z } from "zod";
 
 const scheduleSchema = z.object({
-  activityPlanId: z.string().uuid().min(1, "Select a workout plan"),
+  activityPlanId: z.string().uuid().min(1, "Select a activity plan"),
   scheduledDate: z.string(),
   notes: z.string().max(500).optional(),
 });
@@ -87,12 +87,12 @@ export default function SchedulePlannedActivityScreen() {
   // Queries
   const { data: existingActivity } = trpc.plannedActivities.getById.useQuery(
     { id: activityId as string },
-    { enabled: isEditMode }
+    { enabled: isEditMode },
   );
 
   const { data: preSelectedPlan } = trpc.activityPlans.getById.useQuery(
     { id: planId as string },
-    { enabled: !!planId && !isEditMode }
+    { enabled: !!planId && !isEditMode },
   );
 
   const { data: availablePlans, isLoading: isLoadingPlans } =
@@ -104,21 +104,21 @@ export default function SchedulePlannedActivityScreen() {
   // Mutations
   const createMutation = trpc.plannedActivities.create.useMutation({
     onSuccess: () => {
-      Alert.alert("Success", "Workout scheduled!");
+      Alert.alert("Success", "Activity scheduled!");
       router.back();
     },
     onError: (error) => {
-      Alert.alert("Error", error.message || "Failed to schedule workout");
+      Alert.alert("Error", error.message || "Failed to schedule activity");
     },
   });
 
   const updateMutation = trpc.plannedActivities.update.useMutation({
     onSuccess: () => {
-      Alert.alert("Success", "Workout rescheduled!");
+      Alert.alert("Success", "Activity rescheduled!");
       router.back();
     },
     onError: (error) => {
-      Alert.alert("Error", error.message || "Failed to reschedule workout");
+      Alert.alert("Error", error.message || "Failed to reschedule activity");
     },
   });
 
@@ -250,62 +250,59 @@ export default function SchedulePlannedActivityScreen() {
         .toISOString()
         .slice(0, 16)
         .replace("T", " "),
-    [formData.scheduledDate]
+    [formData.scheduledDate],
   );
 
-  const pageTitle = isEditMode ? "Reschedule Workout" : "Schedule Workout";
+  const pageTitle = isEditMode ? "Reschedule Activity" : "Schedule Activity";
   const submitLabel = isEditMode ? "Reschedule" : "Schedule";
 
-  const renderPlanCard = useCallback(
-    (plan: any, isCompact = false) => {
-      const config =
-        ACTIVITY_CONFIGS[plan.activity_type as keyof typeof ACTIVITY_CONFIGS] ||
-        ACTIVITY_CONFIGS.other;
+  const renderPlanCard = useCallback((plan: any, isCompact = false) => {
+    const config =
+      ACTIVITY_CONFIGS[plan.activity_type as keyof typeof ACTIVITY_CONFIGS] ||
+      ACTIVITY_CONFIGS.other;
 
-      return (
-        <View className="flex flex-row items-start">
-          <View className={`${isCompact ? "mr-2" : "mr-3"} mt-1`}>
-            <View
-              className={`${isCompact ? "w-9 h-9" : "w-10 h-10"} rounded-full bg-muted flex items-center justify-center`}
-            >
-              <Icon
-                as={config.icon}
-                size={isCompact ? 18 : 20}
-                className={config.color}
-              />
-            </View>
-          </View>
-          <View className="flex-1 min-w-0">
-            <Text
-              className={`font-semibold ${isCompact ? "text-sm" : ""}`}
-              numberOfLines={1}
-            >
-              {plan.name}
-            </Text>
-            <Text className="text-sm text-muted-foreground mb-1">
-              {config.name}
-            </Text>
-            <View className="flex flex-row gap-3">
-              {plan.estimated_duration && (
-                <View className="flex flex-row items-center">
-                  <Icon as={Clock} size={14} className="text-muted-foreground" />
-                  <Text className="text-xs text-muted-foreground ml-1">
-                    {plan.estimated_duration}m
-                  </Text>
-                </View>
-              )}
-              {plan.estimated_tss && (
-                <Text className="text-xs text-muted-foreground">
-                  TSS {plan.estimated_tss}
-                </Text>
-              )}
-            </View>
+    return (
+      <View className="flex flex-row items-start">
+        <View className={`${isCompact ? "mr-2" : "mr-3"} mt-1`}>
+          <View
+            className={`${isCompact ? "w-9 h-9" : "w-10 h-10"} rounded-full bg-muted flex items-center justify-center`}
+          >
+            <Icon
+              as={config.icon}
+              size={isCompact ? 18 : 20}
+              className={config.color}
+            />
           </View>
         </View>
-      );
-    },
-    []
-  );
+        <View className="flex-1 min-w-0">
+          <Text
+            className={`font-semibold ${isCompact ? "text-sm" : ""}`}
+            numberOfLines={1}
+          >
+            {plan.name}
+          </Text>
+          <Text className="text-sm text-muted-foreground mb-1">
+            {config.name}
+          </Text>
+          <View className="flex flex-row gap-3">
+            {plan.estimated_duration && (
+              <View className="flex flex-row items-center">
+                <Icon as={Clock} size={14} className="text-muted-foreground" />
+                <Text className="text-xs text-muted-foreground ml-1">
+                  {plan.estimated_duration}m
+                </Text>
+              </View>
+            )}
+            {plan.estimated_tss && (
+              <Text className="text-xs text-muted-foreground">
+                TSS {plan.estimated_tss}
+              </Text>
+            )}
+          </View>
+        </View>
+      </View>
+    );
+  }, []);
 
   const renderPlanPickerItem = useCallback(
     (plan: any) => {
@@ -358,7 +355,7 @@ export default function SchedulePlannedActivityScreen() {
         </TouchableOpacity>
       );
     },
-    [selectedPlan, handlePlanSelect]
+    [selectedPlan, handlePlanSelect],
   );
 
   return (
@@ -368,20 +365,20 @@ export default function SchedulePlannedActivityScreen() {
         <View>
           <Text className="text-2xl font-bold">{pageTitle}</Text>
           <Text className="text-sm text-muted-foreground mt-1">
-            {isEditMode ? "Update your workout" : "Plan your training session"}
+            {isEditMode ? "Update your activity" : "Plan your training session"}
           </Text>
         </View>
 
         {/* Plan Selection */}
         <Card>
           <CardHeader>
-            <CardTitle>Workout Plan *</CardTitle>
+            <CardTitle>Activity Plan *</CardTitle>
           </CardHeader>
           <CardContent>
             {!selectedPlan ? (
               <View className="gap-3">
                 <Text className="text-sm text-muted-foreground">
-                  Select a workout plan to schedule
+                  Select a activity plan to schedule
                 </Text>
                 <Button onPress={togglePlanPicker} variant="outline">
                   <Icon as={Search} size={16} className="text-foreground" />
@@ -403,7 +400,11 @@ export default function SchedulePlannedActivityScreen() {
                   {renderPlanCard(selectedPlan)}
                 </View>
                 {!isEditMode && (
-                  <Button onPress={togglePlanPicker} variant="outline" size="sm">
+                  <Button
+                    onPress={togglePlanPicker}
+                    variant="outline"
+                    size="sm"
+                  >
                     <Text>Change Plan</Text>
                   </Button>
                 )}
@@ -420,7 +421,11 @@ export default function SchedulePlannedActivityScreen() {
           <CardContent className="gap-3">
             <View className="bg-muted/30 rounded-lg p-3">
               <View className="flex flex-row items-center gap-2 mb-1">
-                <Icon as={Calendar} size={18} className="text-muted-foreground" />
+                <Icon
+                  as={Calendar}
+                  size={18}
+                  className="text-muted-foreground"
+                />
                 <Text className="font-medium text-sm">Current Schedule</Text>
               </View>
               <Text className="text-sm text-muted-foreground">
@@ -536,10 +541,14 @@ export default function SchedulePlannedActivityScreen() {
               <View className="flex-1 flex items-center justify-center p-8">
                 <Text className="text-lg font-semibold mb-2">No Plans</Text>
                 <Text className="text-sm text-muted-foreground text-center mb-4">
-                  Create your first workout plan to get started
+                  Create your first activity plan to get started
                 </Text>
                 <Button onPress={handleCreateNewPlan}>
-                  <Icon as={Plus} size={16} className="text-primary-foreground" />
+                  <Icon
+                    as={Plus}
+                    size={16}
+                    className="text-primary-foreground"
+                  />
                   <Text className="text-primary-foreground">Create Plan</Text>
                 </Button>
               </View>

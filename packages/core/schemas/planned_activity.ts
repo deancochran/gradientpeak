@@ -5,7 +5,7 @@ import { z } from "zod";
  * Planned Activity Create Schema
  * Used when scheduling a new activity
  *
- * Note: Intensity is NOT stored - it's calculated from IF after workout completion.
+ * Note: Intensity is NOT stored - it's calculated from IF after activity completion.
  * TSS estimation happens in the application layer, not stored in the database.
  */
 export const plannedActivityCreateSchema = z.object({

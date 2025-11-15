@@ -116,7 +116,7 @@ await updateActivity.mutateAsync({
 
 ## Activity Plans
 
-Activity plans are reusable workout templates.
+Activity plans are reusable activity templates.
 
 ### `activityPlans.list`
 
@@ -258,7 +258,7 @@ Delete activity plan.
 
 ## Planned Activities
 
-Planned activities are scheduled workouts.
+Planned activities are scheduled activities.
 
 ### `plannedActivities.list`
 
@@ -298,7 +298,7 @@ PlannedActivity[]
 
 **Example:**
 ```typescript
-const { data: todaysWorkouts } = trpc.plannedActivities.getToday.useQuery();
+const { data: todaysActivities } = trpc.plannedActivities.getToday.useQuery();
 ```
 
 ### `plannedActivities.create`
@@ -437,7 +437,7 @@ Create new training plan (only one per user).
   target_activities_per_week: number;  // 1-7
   max_consecutive_days: number;        // 1-7
   min_rest_days_per_week: number;      // 0-7
-  min_hours_between_hard: number;      // Hours between hard workouts
+  min_hours_between_hard: number;      // Hours between hard activities
   max_hard_activities_per_week: number;  // 0-7
   periodization_template?: {
     starting_ctl: number;
@@ -529,7 +529,7 @@ Get current training status (CTL/ATL/TSB).
   tsb: number;         // Training Stress Balance (form)
   form: 'fresh' | 'optimal' | 'neutral' | 'tired' | 'overreaching';
   weeklyTSS: number;   // Current week's TSS
-  upcomingWorkouts: {
+  upcomingActivities: {
     id: string;
     name: string;
     scheduled_date: string;
@@ -616,16 +616,16 @@ const { data: trends } = trpc.trainingPlans.getIntensityTrends.useQuery({
 });
 ```
 
-### `trainingPlans.checkHardWorkoutSpacing`
+### `trainingPlans.checkHardActivitySpacing`
 
-Analyze recovery between hard workouts.
+Analyze recovery between hard activities.
 
 **Input:**
 ```typescript
 {
   start_date: string;
   end_date: string;
-  min_hours: number;  // Minimum hours between hard workouts
+  min_hours: number;  // Minimum hours between hard activities
 }
 ```
 
@@ -644,7 +644,7 @@ Analyze recovery between hard workouts.
 
 **Example:**
 ```typescript
-const { data } = trpc.trainingPlans.checkHardWorkoutSpacing.useQuery({
+const { data } = trpc.trainingPlans.checkHardActivitySpacing.useQuery({
   start_date: thirtyDaysAgo.toISOString(),
   end_date: today.toISOString(),
   min_hours: 48,

@@ -425,21 +425,21 @@ export const trainingPlansRouter = createTRPCRouter({
         0,
       ) || 0;
 
-    const totalPlannedWorkouts = plannedActivities?.length || 0;
+    const totalPlannedActivities = plannedActivities?.length || 0;
 
-    // Count completed workouts this week
-    const { count: completedWorkoutsCount } = await ctx.supabase
+    // Count completed activities this week
+    const { count: completedActivitiesCount } = await ctx.supabase
       .from("activities")
       .select("id", { count: "exact", head: true })
       .eq("profile_id", ctx.session.user.id)
       .gte("started_at", startOfWeek.toISOString())
       .lt("started_at", endOfWeek.toISOString());
 
-    // Get upcoming workouts (next 5 days)
+    // Get upcoming activities (next 5 days)
     const fiveDaysFromNow = new Date(today);
     fiveDaysFromNow.setDate(today.getDate() + 5);
 
-    const { data: upcomingWorkouts } = await ctx.supabase
+    const { data: upcomingActivities } = await ctx.supabase
       .from("planned_activities")
       .select(
         `
@@ -473,10 +473,10 @@ export const trainingPlansRouter = createTRPCRouter({
         completedTSS: Math.round(completedWeeklyTSS * 10) / 10,
         plannedTSS: Math.round(plannedWeeklyTSS * 10) / 10,
         targetTSS: Math.round(targetTSS * 10) / 10,
-        completedWorkouts: completedWorkoutsCount || 0,
-        totalPlannedWorkouts,
+        completedActivities: completedActivitiesCount || 0,
+        totalPlannedActivities,
       },
-      upcomingWorkouts: upcomingWorkouts || [],
+      upcomingActivities: upcomingActivities || [],
     };
   }),
 
@@ -690,7 +690,7 @@ export const trainingPlansRouter = createTRPCRouter({
 
       const structure = plan.structure as any;
       const targetWeeklyTSS = structure.target_weekly_tss_max || 0;
-      const targetWorkouts = structure.target_activities_per_week || 0;
+      const targetActivities = structure.target_activities_per_week || 0;
 
       // Calculate date range
       const today = new Date();
@@ -732,7 +732,7 @@ export const trainingPlansRouter = createTRPCRouter({
         const weekEnd = new Date(weekStart);
         weekEnd.setDate(weekStart.getDate() + 7);
 
-        // Count planned workouts and TSS for this week
+        // Count planned activities and TSS for this week
         const weekPlanned =
           plannedActivities?.filter((pa) => {
             const date = new Date(pa.scheduled_date);
@@ -744,7 +744,7 @@ export const trainingPlansRouter = createTRPCRouter({
           0,
         );
 
-        // Count completed workouts and TSS for this week
+        // Count completed activities and TSS for this week
         const weekCompleted =
           completedActivities?.filter((act) => {
             const date = new Date(act.started_at);
@@ -759,16 +759,16 @@ export const trainingPlansRouter = createTRPCRouter({
         // Calculate completion percentage
         const tssPercentage =
           plannedTSS > 0 ? (completedTSS / plannedTSS) * 100 : 0;
-        const workoutPercentage =
+        const activityPercentage =
           weekPlanned.length > 0
             ? (weekCompleted.length / weekPlanned.length) * 100
             : 0;
 
         // Determine status
         let status: "good" | "warning" | "poor" = "good";
-        if (tssPercentage < 70 || workoutPercentage < 70) {
+        if (tssPercentage < 70 || activityPercentage < 70) {
           status = "poor";
-        } else if (tssPercentage < 90 || workoutPercentage < 90) {
+        } else if (tssPercentage < 90 || activityPercentage < 90) {
           status = "warning";
         }
 
@@ -778,11 +778,11 @@ export const trainingPlansRouter = createTRPCRouter({
           plannedTSS: Math.round(plannedTSS),
           completedTSS: Math.round(completedTSS),
           tssPercentage: Math.round(tssPercentage),
-          plannedWorkouts: weekPlanned.length,
-          completedWorkouts: weekCompleted.length,
-          workoutPercentage: Math.round(workoutPercentage),
+          plannedActivities: weekPlanned.length,
+          completedActivities: weekCompleted.length,
+          activityPercentage: Math.round(activityPercentage),
           targetTSS: Math.round(targetWeeklyTSS),
-          targetWorkouts,
+          targetActivities,
           status,
         });
       }
@@ -891,7 +891,7 @@ export const trainingPlansRouter = createTRPCRouter({
         // Only provide recommendations if we have enough data
         if (easyPct < 70) {
           recommendations.push(
-            "Consider adding more easy/recovery workouts. Aim for ~80% of training at low intensity.",
+            "Consider adding more easy/recovery activities. Aim for ~80% of training at low intensity.",
           );
         } else if (easyPct > 90) {
           recommendations.push(
@@ -912,7 +912,7 @@ export const trainingPlansRouter = createTRPCRouter({
         }
       } else if (totalActivities > 0) {
         recommendations.push(
-          "Complete more workouts to see meaningful intensity distribution analysis.",
+          "Complete more activities to see meaningful intensity distribution analysis.",
         );
       } else {
         recommendations.push(
@@ -1055,9 +1055,9 @@ export const trainingPlansRouter = createTRPCRouter({
       };
     }),
 
-  // Check hard workout spacing (retrospective analysis)
+  // Check hard activity spacing (retrospective analysis)
   // ------------------------------
-  checkHardWorkoutSpacing: protectedProcedure
+  checkHardActivitySpacing: protectedProcedure
     .input(
       z.object({
         start_date: z.string(),
@@ -1084,13 +1084,13 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       const violations: Array<{
-        workout1: {
+        activity1: {
           id: string;
           name: string;
           started_at: string;
           intensity_factor: number;
         };
-        workout2: {
+        activity2: {
           id: string;
           name: string;
           started_at: string;
@@ -1113,15 +1113,15 @@ export const trainingPlansRouter = createTRPCRouter({
 
           if (hoursBetween < input.min_hours) {
             violations.push({
-              workout1: {
+              activity1: {
                 id: prev.id,
-                name: prev.name || "Unnamed workout",
+                name: prev.name || "Unnamed activity",
                 started_at: prev.started_at,
                 intensity_factor: prev.intensity_factor ?? 0,
               },
-              workout2: {
+              activity2: {
                 id: curr.id,
-                name: curr.name || "Unnamed workout",
+                name: curr.name || "Unnamed activity",
                 started_at: curr.started_at,
                 intensity_factor: curr.intensity_factor ?? 0,
               },
@@ -1133,7 +1133,7 @@ export const trainingPlansRouter = createTRPCRouter({
 
       return {
         violations,
-        hardWorkoutCount: activities?.length || 0,
+        hardActivityCount: activities?.length || 0,
         hasViolations: violations.length > 0,
       };
     }),

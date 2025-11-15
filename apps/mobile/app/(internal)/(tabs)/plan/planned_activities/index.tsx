@@ -325,7 +325,7 @@ export default function ScheduledScreen() {
                 {/* Header */}
                 <View style={styles.activityHeader}>
                   <Text style={styles.activityName}>
-                    {activity.activity_plan?.name || "Unnamed Workout"}
+                    {activity.activity_plan?.name || "Unnamed Activity"}
                   </Text>
                   <Text style={styles.activityTime}>
                     {formatTime(activity.scheduled_date)}
@@ -396,7 +396,7 @@ export default function ScheduledScreen() {
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Scheduled Workouts</Text>
+          <Text style={styles.headerTitle}>Scheduled Activities</Text>
           <Text style={styles.headerSubtitle}>
             Your planned activities will appear here
           </Text>
@@ -406,7 +406,7 @@ export default function ScheduledScreen() {
         <View style={styles.emptyContainer}>
           <View style={styles.emptyCard}>
             <Icon as={Calendar} size={64} className="text-muted-foreground" />
-            <Text style={styles.emptyTitle}>No Workouts Scheduled</Text>
+            <Text style={styles.emptyTitle}>No Activities Scheduled</Text>
             <Text style={styles.emptyDescription}>
               Browse the library to get started with your training plan
             </Text>
@@ -432,9 +432,9 @@ export default function ScheduledScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Scheduled Workouts</Text>
+        <Text style={styles.headerTitle}>Scheduled Activities</Text>
         <Text style={styles.headerSubtitle}>
-          {scheduledActivities.length} workout
+          {scheduledActivities.length} activity
           {scheduledActivities.length !== 1 ? "s" : ""} scheduled
         </Text>
       </View>

@@ -178,10 +178,10 @@ export function useRecordingState(
       setState(newState);
     };
 
-    service.on("stateChanged", handleStateChange);
+    const subscription = service.addListener("stateChanged", handleStateChange);
 
     return () => {
-      service.off("stateChanged", handleStateChange);
+      subscription.remove();
     };
   }, [service]);
 
@@ -230,10 +230,13 @@ export function useSensors(
       setSensors(updatedSensors);
     };
 
-    service.on("sensorsChanged", handleSensorsChange);
+    const subscription = service.addListener(
+      "sensorsChanged",
+      handleSensorsChange,
+    );
 
     return () => {
-      service.off("sensorsChanged", handleSensorsChange);
+      subscription.remove();
     };
   }, [service]);
 
@@ -258,8 +261,8 @@ function useServiceEvent(
 
   useEffect(() => {
     if (!service) return undefined;
-    service.on(event, forceUpdate);
-    return () => service.off(event, forceUpdate);
+    const subscription = service.addListener(event, forceUpdate);
+    return () => subscription.remove();
   }, [service, event]);
 }
 
@@ -303,14 +306,14 @@ export function usePlan(service: ActivityRecorderService | null) {
     if (!service) return;
 
     const handleUpdate = () => forceUpdate();
-    service.on("stepChanged", handleUpdate);
-    service.on("planCleared", handleUpdate);
-    service.on("timeUpdated", handleUpdate);
+    const sub1 = service.addListener("stepChanged", handleUpdate);
+    const sub2 = service.addListener("planCleared", handleUpdate);
+    const sub3 = service.addListener("timeUpdated", handleUpdate);
 
     return () => {
-      service.off("stepChanged", handleUpdate);
-      service.off("planCleared", handleUpdate);
-      service.off("timeUpdated", handleUpdate);
+      sub1.remove();
+      sub2.remove();
+      sub3.remove();
     };
   }, [service]);
 
@@ -364,9 +367,9 @@ export function useElapsedTime(
     if (!service) return;
 
     const handleUpdate = ({ elapsed }: TimeUpdate) => setTime(elapsed);
-    service.on("timeUpdated", handleUpdate);
+    const subscription = service.addListener("timeUpdated", handleUpdate);
 
-    return () => service.off("timeUpdated", handleUpdate);
+    return () => subscription.remove();
   }, [service]);
 
   return time;
@@ -389,9 +392,9 @@ export function useMovingTime(service: ActivityRecorderService | null): number {
     if (!service) return;
 
     const handleUpdate = ({ moving }: TimeUpdate) => setTime(moving);
-    service.on("timeUpdated", handleUpdate);
+    const subscription = service.addListener("timeUpdated", handleUpdate);
 
-    return () => service.off("timeUpdated", handleUpdate);
+    return () => subscription.remove();
   }, [service]);
 
   return time;
@@ -565,10 +568,13 @@ export function useCurrentReadings(
       setReadings(event.readings);
     };
 
-    service.liveMetricsManager.on("sensorUpdate", handleSensorUpdate);
+    const subscription = service.liveMetricsManager.addListener(
+      "sensorUpdate",
+      handleSensorUpdate,
+    );
 
     return () => {
-      service.liveMetricsManager.off("sensorUpdate", handleSensorUpdate);
+      subscription.remove();
     };
   }, [service]);
 
@@ -597,10 +603,13 @@ export function useSessionStats(
       setStats(event.stats);
     };
 
-    service.liveMetricsManager.on("statsUpdate", handleStatsUpdate);
+    const subscription = service.liveMetricsManager.addListener(
+      "statsUpdate",
+      handleStatsUpdate,
+    );
 
     return () => {
-      service.liveMetricsManager.off("statsUpdate", handleStatsUpdate);
+      subscription.remove();
     };
   }, [service]);
 

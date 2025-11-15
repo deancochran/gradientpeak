@@ -3,19 +3,19 @@ import { Text } from "@/components/ui/text";
 import { Plus } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
 
-interface AddWorkoutButtonProps {
+interface AddActivityButtonProps {
   onPress: () => void;
   disabled?: boolean;
 }
 
 /**
- * Floating action button for adding workouts to the calendar
+ * Floating action button for adding activities to the calendar
  * Positioned at the bottom-right of the screen
  */
-export function AddWorkoutButton({
+export function AddActivityButton({
   onPress,
   disabled = false,
-}: AddWorkoutButtonProps) {
+}: AddActivityButtonProps) {
   return (
     <View className="absolute bottom-6 right-6 z-10">
       <TouchableOpacity
@@ -38,14 +38,16 @@ export function AddWorkoutButton({
           <Icon
             as={Plus}
             size={24}
-            className={disabled ? "text-muted-foreground" : "text-primary-foreground"}
+            className={
+              disabled ? "text-muted-foreground" : "text-primary-foreground"
+            }
           />
           <Text
             className={`font-semibold ${
               disabled ? "text-muted-foreground" : "text-primary-foreground"
             }`}
           >
-            Add Workout
+            Add Activity
           </Text>
         </View>
       </TouchableOpacity>

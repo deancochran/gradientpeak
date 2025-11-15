@@ -1,207 +1,491 @@
-📊 Plans & Trends Page Analysis Summary
+# 🎨 Activity Plan Creation UX Redesign - Mobile First
 
-Based on my thorough analysis, here's what I found:
-
-### **Current State:**
-
-**Plans Page (70% Complete)**
-- ✅ Core functionality works: browse library, create workouts, schedule activities
-- ✅ Training plan wizard (4 steps) fully functional
-- ✅ Real-time validation and constraint checking
-- ❌ **Calendar view is completely non-functional** (no data loading)
-- ❌ Missing key tRPC endpoints for weekly views
-
-**Trends Page (80% Complete)**
-- ✅ All calculations work (CTL/ATL/TSB, form status, intensity zones)
-- ✅ Three tabs: Overview, Weekly Summary, Intensity Analysis
-- ✅ All backend data queries functional
-- ❌ **No visual charts** - everything is text/cards only
-- ❌ Missing visual representation of training curves
-- ❌ No drill-down into specific workouts from trends
+**Platform**: React Native (Expo) Mobile Application
+**Location**: `apps/mobile/app/(internal)/(tabs)/plan/create_activity_plan/index.tsx`
+**Key Tech**: Expo Router, Reanimated, Victory Native, React Hook Form, Zod
 
 ---
 
-## 🎯 Recommended Action Plan (Prioritized)
+## 📊 Current State Analysis
 
-### **Priority 1: Fix Critical Calendar Issues** (HIGH IMPACT, MEDIUM EFFORT)
+### Existing Implementation
+**File**: `apps/mobile/app/(internal)/(tabs)/plan/create_activity_plan/index.tsx` (837 lines)
 
-The calendar is the most broken feature. Users need this to visualize their training week.
+**Problems**:
+- ❌ Modal-heavy: `StepDialog` (Lines 65-308), `RepetitionDialog` (Lines 311-476)
+- ❌ No visual timeline: `ActivityGraph.tsx` exists but is empty shell
+- ❌ Manual state: Direct `useState`, manual Zod validation (Lines 619-631)
+- ❌ Poor mobile UX: Requires two-handed operation, many taps
 
-**What's needed:**
-1. ✅ Backend already has `activities.list` endpoint with date filtering
-2. ❌ Need to add `plannedActivities.listByWeek` endpoint
-3. ❌ Wire up data loading in calendar.tsx
-4. ❌ Implement reschedule and delete workflows
+### Already Implemented in @repo/core ✅
 
-**Benefits:** Makes the calendar actually useful for planning your week
+**Schema** (`packages/core/schemas/activity_plan_structure.ts`):
+- ✅ `stepSchema` - Already has max 2 targets
+- ✅ `repetitionSchema` - Already validated (1-50 repeats, 1-20 steps)
+- ✅ `durationSchema` - Time/distance/reps/untilFinished
+- ✅ All intensity target types (8 types)
 
----
+**Utilities Already Available**:
+- ✅ `flattenPlanSteps()` - Expands repetitions into flat list
+- ✅ `getDurationMs()` - Converts duration to milliseconds
+- ✅ `getIntensityColor()` - Returns color based on intensity/type
+- ✅ `calculateTotalDuration()` - Sums all step durations
 
-### **Priority 2: Add Visual Charts to Trends** (HIGH IMPACT, HIGH EFFORT)
+**Constants** (`packages/core/constants.ts`):
+- ✅ `ACTIVITY_TYPE_CONFIG` - All activity types with icons, colors
+- ✅ `INTENSITY_ZONES` - 7 zones with colors (#10b981 to #dc2626)
+- ✅ `ZONE_COLORS` - Already defined with proper hex codes
 
-Trends page has all the data but no visual representation. This is the biggest UX gap.
-
-**What's needed:**
-1. Install charting library (`victory-native` recommended for React Native)
-2. Create line chart for CTL/ATL/TSB curves (actual vs ideal)
-3. Create bar chart for 7-zone intensity distribution
-4. Add weekly TSS progression chart
-
-**Benefits:** Transform data-heavy page into engaging visual analytics dashboard
-
----
-
-### **Priority 3: Connect Trends to Activities** (MEDIUM IMPACT, LOW EFFORT)
-
-Currently trends show aggregated data but you can't drill down to see which activities contributed.
-
-**What's needed:**
-1. Make weekly summary cards tappable → show activities for that week
-2. Make intensity zones tappable → show activities in that zone
-3. Add activity detail modal from trends context
-
-**Benefits:** Provides context and helps you understand your training patterns
+**What's Missing** (Need to Create):
+- ❌ Smart defaults generator (activity-aware step creation)
+- ❌ Quick start templates (Easy 30min, Intervals, etc.)
+- ❌ Timeline chart component (Victory Native implementation)
+- ❌ Mobile-optimized editing experience
 
 ---
 
-### **Priority 4: Enhance Calendar UX** (MEDIUM IMPACT, MEDIUM EFFORT)
+## 🎯 New Design Vision
 
-Once calendar has data, improve the interaction patterns.
+### Core Principles
+1. **Visual First**: Horizontal timeline chart shows complete structure
+2. **Mobile Gestures**: Tap, long-press, swipe (no complex interactions)
+3. **Smart Defaults**: Auto-populate based on activity type and position
+4. **Progressive Disclosure**: Essential fields first, advanced collapsed
 
-**What's needed:**
-1. Drag-and-drop rescheduling
-2. Quick actions (mark complete, skip, reschedule)
-3. Visual indicators for constraint violations
-4. Color-coded intensity zones on calendar
-5. TSS totals per day
+### Interaction Model
 
-**Benefits:** Makes weekly planning faster and more intuitive
+| Action | Gesture | Feedback |
+|--------|---------|----------|
+| Select step | Tap card | Haptic Light, highlight |
+| Edit step | Double-tap | Bottom sheet opens |
+| Reorder | Long-press 300ms | Haptic Medium, drag mode |
+| Delete | Swipe left | Haptic Heavy, confirm dialog |
+| Add step | Tap FAB | Sheet with smart defaults |
 
----
+### Screen Layout
 
-### **Priority 5: Add Data Insights & Recommendations** (LOW IMPACT, LOW EFFORT)
-
-The backend already calculates recommendations but they're not shown.
-
-**What's needed:**
-1. Display intensity distribution recommendations
-2. Add "trend direction" indicators (improving/declining)
-3. Show comparison to previous periods
-4. Add actionable suggestions ("Consider adding recovery", etc.)
-
-**Benefits:** Makes the app more coaching-like and actionable
-
----
-
-## 🚀 Implementation Roadmap
-
-### **Phase 1: Make Calendar Functional** (2-3 hours)**Tasks:**
-1. Add `listByWeek` endpoint to `planned_activities` router
-2. Wire up data queries in `calendar.tsx` (remove TODOs)
-3. Implement reschedule modal workflow
-4. Implement delete confirmation workflow
-5. Test with real data
-
-**Files to modify:**
-- `packages/trpc/src/routers/planned_activities.ts` (add endpoint)
-- `apps/mobile/app/(internal)/(tabs)/plan/training-plan/calendar.tsx` (wire up data)
-
----
-
-### **Phase 2: Add Visual Charts** (4-5 hours)
-
-**Tasks:**
-1. Install `victory-native` charting library
-2. Create reusable chart components:
-   - `TrainingLoadChart` (CTL/ATL/TSB line chart)
-   - `IntensityDistributionChart` (7-zone bar chart)
-   - `WeeklyProgressChart` (TSS bar chart)
-3. Integrate charts into trends page tabs
-4. Add legends, tooltips, and interaction
-
-**Files to create/modify:**
-- `apps/mobile/components/charts/` (new components)
-- `apps/mobile/app/(internal)/(tabs)/trends.tsx` (integrate charts)
+```
+┌────────────────────────────────────────┐
+│ [< Back]  Activity Name  [Save ✓]      │
+├────────────────────────────────────────┤
+│ [🏃 Run] [🚴 Bike] [🏊 Swim]          │
+├────────────────────────────────────────┤
+│ [⏱ 45:00] [💪 TSS: 67] [🎯 IF: 0.82] │
+├────────────────────────────────────────┤
+│ Timeline Chart (Victory Native)        │
+│ [████▓▓██████████▓▓]                   │
+├────────────────────────────────────────┤
+│ Structure List (Draggable)             │
+│ ┌────────────────────────────────────┐ │
+│ │ 🌅 Warm-up   10:00   Zone 2       │ │
+│ └────────────────────────────────────┘ │
+│ ┌────────────────────────────────────┐ │
+│ │ ▼ Repeat 5x        [4 steps]      │ │
+│ │   ├ Work    2:00   Zone 5         │ │
+│ │   └ Rest    1:00   Zone 1         │ │
+│ └────────────────────────────────────┘ │
+│                                        │
+│                   [🔁 Interval] [+]   │
+└────────────────────────────────────────┘
+```
 
 ---
 
-### **Phase 3: Connect Data Points** (2-3 hours)
+## 🔧 Implementation Plan
 
-**Tasks:**
-1. Create activity list modal for weekly drilldown
-2. Add navigation from trends → activity details
-3. Filter activities by zone when tapping intensity zones
-4. Add "View Activities" links throughout trends
+### Phase 1: Smart Defaults (Days 1-2)
 
-**Files to modify:**
-- `apps/mobile/app/(internal)/(tabs)/trends.tsx` (add navigation)
-- Create new modal: `apps/mobile/components/modals/WeeklyActivitiesModal.tsx`
+**Create**: `packages/core/utils/activity-defaults.ts`
+
+```typescript
+import { activityTypeEnum, type Step, type Duration, type IntensityTarget } from '../schemas';
+
+export interface DefaultsContext {
+  activityType: string;
+  position: number; // 0=first, -1=last
+  totalSteps: number;
+}
+
+export function generateStepName(ctx: DefaultsContext): string {
+  if (ctx.position === 0) {
+    return ctx.activityType.includes('swim') ? 'Easy Swim' : 'Warm-up';
+  }
+  if (ctx.position === ctx.totalSteps - 1 || ctx.position === -1) {
+    return ctx.activityType.includes('swim') ? 'Easy Swim' : 'Cool-down';
+  }
+  return `Interval ${ctx.position}`;
+}
+
+export function getDefaultDuration(ctx: DefaultsContext): Duration {
+  const isWarmup = ctx.position === 0;
+  const isCooldown = ctx.position === ctx.totalSteps - 1;
+
+  if (ctx.activityType.includes('run') || ctx.activityType.includes('bike')) {
+    return {
+      type: 'time',
+      value: isWarmup ? 10 : isCooldown ? 5 : 20,
+      unit: 'minutes'
+    };
+  }
+
+  if (ctx.activityType.includes('swim')) {
+    return {
+      type: 'distance',
+      value: isWarmup ? 200 : isCooldown ? 100 : 400,
+      unit: 'meters'
+    };
+  }
+
+  if (ctx.activityType.includes('strength')) {
+    return { type: 'repetitions', value: 10, unit: 'reps' };
+  }
+
+  return { type: 'time', value: 15, unit: 'minutes' };
+}
+
+export function getDefaultTarget(ctx: DefaultsContext): IntensityTarget | undefined {
+  const isWarmup = ctx.position === 0;
+
+  if (ctx.activityType.includes('bike')) {
+    return { type: '%FTP', intensity: isWarmup ? 60 : 80 };
+  }
+
+  if (ctx.activityType.includes('run')) {
+    return { type: '%MaxHR', intensity: isWarmup ? 60 : 75 };
+  }
+
+  if (ctx.activityType.includes('swim')) {
+    return { type: 'RPE', intensity: isWarmup ? 4 : 7 };
+  }
+
+  return undefined;
+}
+
+export function createDefaultStep(ctx: DefaultsContext): Step {
+  const target = getDefaultTarget(ctx);
+  return {
+    type: 'step',
+    name: generateStepName(ctx),
+    duration: getDefaultDuration(ctx),
+    targets: target ? [target] : [],
+    notes: ''
+  };
+}
+```
+
+**Update**: `packages/core/index.ts`
+```typescript
+export * from './utils/activity-defaults';
+```
 
 ---
 
-### **Phase 4: Calendar Enhancements** (3-4 hours)
+### Phase 2: Timeline Chart (Days 3-5)
 
-**Tasks:**
-1. Add drag gesture handlers for rescheduling
-2. Implement constraint validation on drag
-3. Add TSS totals and intensity colors to calendar days
-4. Add quick action buttons (complete/skip)
-5. Improve visual design (color coding, badges)
+**Create**: `apps/mobile/components/ActivityPlan/TimelineChart.tsx`
 
-**Files to modify:**
-- `apps/mobile/app/(internal)/(tabs)/plan/training-plan/calendar.tsx`
+```typescript
+import { useMemo } from 'react';
+import { View, Text, Pressable } from 'react-native';
+import { VictoryBar, VictoryChart, VictoryStack } from 'victory-native';
+import * as Haptics from 'expo-haptics';
+import {
+  flattenPlanSteps,
+  getDurationMs,
+  getIntensityColor,
+  calculateTotalDuration,
+  type ActivityPlanStructure
+} from '@repo/core';
+
+interface TimelineChartProps {
+  structure: ActivityPlanStructure;
+  selectedStepIndex?: number;
+  onStepPress?: (index: number) => void;
+  height?: number;
+}
+
+export function TimelineChart({
+  structure,
+  selectedStepIndex,
+  onStepPress,
+  height = 120
+}: TimelineChartProps) {
+  const flatSteps = useMemo(() => flattenPlanSteps(structure), [structure]);
+  const totalDuration = useMemo(() => calculateTotalDuration(structure), [structure]);
+
+  if (flatSteps.length === 0) {
+    return (
+      <View className="h-[120px] border-2 border-dashed border-muted rounded-lg items-center justify-center">
+        <Text className="text-muted-foreground">Tap + to add steps</Text>
+      </View>
+    );
+  }
+
+  const chartData = flatSteps.map((step, index) => {
+    const durationMs = getDurationMs(step.duration);
+    const widthPercent = (durationMs / totalDuration) * 100;
+    const intensity = step.targets?.[0]?.intensity || 0;
+    const type = step.targets?.[0]?.type;
+    const color = getIntensityColor(intensity, type);
+
+    return { x: index, y: widthPercent, color, isSelected: index === selectedStepIndex };
+  });
+
+  return (
+    <View style={{ height }}>
+      <VictoryChart horizontal height={height} padding={{ top: 10, bottom: 10, left: 0, right: 0 }}>
+        <VictoryStack>
+          {chartData.map((data, idx) => (
+            <VictoryBar
+              key={idx}
+              data={[data]}
+              style={{
+                data: {
+                  fill: data.color,
+                  opacity: data.isSelected ? 1 : 0.85,
+                  stroke: data.isSelected ? '#3B82F6' : 'transparent',
+                  strokeWidth: 3
+                }
+              }}
+              cornerRadius={4}
+              animate={{ duration: 300 }}
+              events={[{
+                target: 'data',
+                eventHandlers: {
+                  onPress: () => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    onStepPress?.(idx);
+                    return [];
+                  }
+                }
+              }]}
+            />
+          ))}
+        </VictoryStack>
+      </VictoryChart>
+    </View>
+  );
+}
+```
+
+**Uses Existing**:
+- ✅ `flattenPlanSteps()` from @repo/core
+- ✅ `getDurationMs()` from @repo/core
+- ✅ `getIntensityColor()` from @repo/core
+- ✅ `calculateTotalDuration()` from @repo/core
 
 ---
 
-### **Phase 5: Insights & Recommendations** (1-2 hours)
+### Phase 3: Main Screen Rebuild (Days 6-9)
 
-**Tasks:**
-1. Display recommendations from intensity analysis
-2. Add trend indicators (up/down arrows)
-3. Add period comparison cards
-4. Create actionable suggestion cards
+**Rewrite**: `apps/mobile/app/(internal)/(tabs)/plan/create_activity_plan/index.tsx`
 
-**Files to modify:**
-- `apps/mobile/app/(internal)/(tabs)/trends.tsx` (show recommendations)
+**Key Changes**:
+1. Replace dialogs with bottom sheets
+2. Add TimelineChart component
+3. Use React Hook Form properly
+4. Add smart defaults on step creation
+5. Simplify to ~400 lines (from 837)
+
+**Structure**:
+```typescript
+export default function CreateActivityPlanScreen() {
+  const form = useForm({
+    resolver: zodResolver(createActivityPlanSchema),
+    defaultValues: {
+      name: 'New Activity',
+      activity_type: 'outdoor_run',
+      structure: { steps: [] }
+    }
+  });
+
+  const structure = form.watch('structure');
+  const activityType = form.watch('activity_type');
+
+  // Auto-calculate metrics
+  const metrics = useMemo(() => ({
+    duration: calculateTotalDuration(structure),
+    tss: 0, // TODO: Implement
+    if: 0
+  }), [structure]);
+
+  const handleAddStep = () => {
+    const newStep = createDefaultStep({
+      activityType,
+      position: structure.steps.length,
+      totalSteps: structure.steps.length + 1
+    });
+    form.setValue('structure.steps', [...structure.steps, newStep]);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  return (
+    <View className="flex-1">
+      {/* Header with name input */}
+      {/* Activity type selector using ACTIVITY_TYPE_CONFIG */}
+      {/* Metrics cards */}
+      <TimelineChart structure={structure} />
+      <DraggableFlatList
+        data={structure.steps}
+        renderItem={({ item }) => <StepCard step={item} />}
+      />
+      {/* FAB buttons */}
+    </View>
+  );
+}
+```
 
 ---
 
-## 📈 What I Recommend Starting With
+### Phase 4: Supporting Components (Days 10-12)
 
-Since you want to use **real user data**, I recommend we start with:
+**Create**:
+1. `StepCard.tsx` - Draggable card with Reanimated
+2. `MetricCard.tsx` - Simple display card
+3. `ActivityTypeSelector.tsx` - Chips using `ACTIVITY_TYPE_CONFIG`
 
-### **Option A: Fix Calendar First** (Most Practical)
-This makes your planning workflow functional and lets you see your actual schedule with real activities.
-
-### **Option B: Add Charts to Trends** (Most Visual Impact)
-This transforms your trends page from numbers to beautiful visual insights using your completed activities data.
-
-### **Option C: Do Both in Parallel**
-I can work on both simultaneously since they don't depend on each other.
-
----
-
-## 🤔 My Recommendation
-
-**Start with Option A (Fix Calendar) because:**
-1. It's broken right now - highest priority bug fix
-2. You already have real activities data (`activities.list` endpoint exists)
-3. Lower effort than charts (2-3 hours vs 4-5 hours)
-4. Unblocks your weekly planning workflow
-5. Once calendar works, you'll have even more real data to visualize in trends
-
-**Then move to Option B (Charts) because:**
-1. You'll have more completed activities from using the functional calendar
-2. Visual charts make trends data much more engaging
-3. It's the biggest UX improvement opportunity
+**StepCard Features**:
+- Long-press (300ms) enables drag
+- Reanimated scale/opacity animations
+- Uses `ACTIVITY_TYPE_CONFIG` for icons
 
 ---
 
-## ❓ What Would You Like Me To Do?
+### Phase 5: Step Editor Sheet (Days 13-15)
 
-I can help you implement any of these improvements. What would be most valuable for your application right now?
+**Create**: `apps/mobile/components/ActivityPlan/StepEditorSheet.tsx`
 
-1. **Fix the calendar** (make it load real data and enable reschedule/delete)
-2. **Add visual charts to trends** (line charts for CTL/ATL/TSB, bar charts for zones)
-3. **Both** (I'll work on them in parallel)
-4. **Something else** (tell me your specific pain point)
+**Form Fields**:
+1. Name (TextInput)
+2. Duration Type (Segmented: Time/Distance/Reps/Open)
+3. Duration Value (Number input + unit)
+4. Primary Target (Type select + value input)
+5. Secondary Target (Optional, collapsible)
+6. Notes (Optional, collapsible)
+
+**Bottom Sheet** - Use `@rn-primitives/dialog` (already installed)
+
+---
+
+### Phase 6: Polish (Days 16-17)
+
+**Tasks**:
+- Refine all animations (60fps)
+- Add error handling
+- Remove old dialog components
+- Manual testing on iOS/Android physical devices
+
+---
+
+## 📁 Files to Create/Modify
+
+### New Files
+```
+packages/core/utils/
+└── activity-defaults.ts
+
+apps/mobile/components/ActivityPlan/
+├── TimelineChart.tsx
+├── StepCard.tsx
+├── MetricCard.tsx
+├── ActivityTypeSelector.tsx
+└── StepEditorSheet.tsx
+```
+
+### Files to Modify
+```
+packages/core/index.ts (add export)
+apps/mobile/app/(internal)/(tabs)/plan/create_activity_plan/index.tsx (rewrite)
+```
+
+### Files to Remove Later
+```
+Lines 65-308: Old StepDialog
+Lines 311-476: Old RepetitionDialog
+```
+
+---
+
+## ✅ Success Criteria
+
+### User Experience
+- ✅ Create activity in <60 seconds (vs 3-5 min)
+- ✅ Reduce taps from 15+ to 3-5
+- ✅ All operations work one-handed
+- ✅ Visual timeline always visible
+
+### Technical
+- ✅ Use existing @repo/core utilities (no duplication)
+- ✅ Properly integrate React Hook Form + Zod
+- ✅ 60fps animations with Reanimated
+- ✅ Reduce file from 837 to ~400 lines
+
+---
+
+## 🚀 Quick Start
+
+### Step 1: Create Smart Defaults
+```bash
+cd packages/core
+mkdir -p utils
+# Create utils/activity-defaults.ts (see Phase 1)
+# Update index.ts to export
+```
+
+### Step 2: Create Timeline Chart
+```bash
+cd apps/mobile/components/ActivityPlan
+# Create TimelineChart.tsx (see Phase 2)
+# Test with existing activities
+```
+
+### Step 3: Start Screen Rewrite
+```bash
+cd apps/mobile/app/(internal)/(tabs)/plan/create_activity_plan
+# Backup current index.tsx
+# Start new implementation with React Hook Form
+# Integrate TimelineChart
+# Add smart defaults on step creation
+```
+
+---
+
+## 📝 Key Decisions
+
+### Why NOT Over-Engineer
+
+**Don't Create**:
+- ❌ New color system (use existing `getIntensityColor()`)
+- ❌ New duration utils (use existing `getDurationMs()`)
+- ❌ New flatten logic (use existing `flattenPlanSteps()`)
+- ❌ Complex template system (start with 2-3 simple templates)
+- ❌ Advanced animations (Victory Native handles most)
+
+**Do Create**:
+- ✅ Smart defaults (doesn't exist)
+- ✅ Timeline chart component (ActivityGraph is empty)
+- ✅ Mobile-optimized editing (current is modal-heavy)
+
+### Dependencies Already Installed
+- ✅ `victory-native: ^41.20.1`
+- ✅ `react-native-reanimated: ~4.1.3`
+- ✅ `react-hook-form: ^7.66.0`
+- ✅ `react-native-draggable-flatlist: ^4.0.3`
+- ✅ `expo-haptics: ~15.0.7`
+- ✅ `@rn-primitives/*: ^1.2.0`
+
+**No new dependencies needed!**
+
+---
+
+## 🎯 Immediate Next Steps
+
+1. Create `packages/core/utils/activity-defaults.ts`
+2. Export from `packages/core/index.ts`
+3. Create `TimelineChart.tsx` component
+4. Test chart with existing activity data
+5. Begin main screen rewrite with React Hook Form
+
+**Estimated Total Time**: 17 days (~3 weeks)
+
+**Focus**: Simplify, leverage existing code, mobile-first UX

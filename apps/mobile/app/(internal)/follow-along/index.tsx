@@ -5,7 +5,7 @@ import { Text } from "@/components/ui/text";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import {
   ActivityPayload,
-  buildWorkoutCards,
+  buildActivityCards,
   calculateProgress,
   calculateTotalDuration,
   flattenPlanSteps,
@@ -15,7 +15,7 @@ import {
   getIntensityColor,
   getMetricDisplayName,
   getTargetUnit,
-  type WorkoutCard,
+  type ActivityCard,
 } from "@repo/core";
 import { useRouter } from "expo-router";
 import { ChevronLeft, Target, TrendingUp } from "lucide-react-native";
@@ -26,7 +26,7 @@ import { Alert, FlatList, View, ViewToken } from "react-native";
 // TYPES
 // ============================================================================
 
-interface WorkoutStep {
+interface ActivityStep {
   type: string;
   name?: string;
   description?: string;
@@ -48,8 +48,8 @@ interface TargetZone {
 // CUSTOM HOOKS
 // ============================================================================
 
-function useWorkoutInitialization(router: any) {
-  const [workout, setWorkout] = useState<any>(null);
+function useActivityInitialization(router: any) {
+  const [activity, setActivity] = useState<any>(null);
   const [activityPayload, setActivityPayload] =
     useState<ActivityPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -63,24 +63,24 @@ function useWorkoutInitialization(router: any) {
 
         if (!selection) {
           console.error("[FollowAlong] No selection found in store");
-          Alert.alert("Error", "No workout selected");
+          Alert.alert("Error", "No activity selected");
           router.back();
           return;
         }
 
         if (!selection.plan) {
-          console.error("[FollowAlong] No workout plan found in selection");
-          Alert.alert("Error", "No workout plan found");
+          console.error("[FollowAlong] No activity plan found in selection");
+          Alert.alert("Error", "No activity plan found");
           router.back();
           return;
         }
 
-        console.log("[FollowAlong] Workout loaded successfully");
+        console.log("[FollowAlong] Activity loaded successfully");
         setActivityPayload(selection);
-        setWorkout(selection.plan);
+        setActivity(selection.plan);
       } catch (error) {
         console.error("[FollowAlong] Initialization error:", error);
-        Alert.alert("Error", "Failed to load workout. Please try again.", [
+        Alert.alert("Error", "Failed to load activity. Please try again.", [
           { text: "OK", onPress: () => router.back() },
         ]);
       } finally {
@@ -91,7 +91,7 @@ function useWorkoutInitialization(router: any) {
     initializeFromStore();
   }, [router]);
 
-  return { workout, activityPayload, isLoading };
+  return { activity, activityPayload, isLoading };
 }
 
 function useActiveCardTracking() {
@@ -122,7 +122,7 @@ function useActiveCardTracking() {
 // HELPER FUNCTIONS
 // ============================================================================
 
-function formatWorkoutSummary(step: WorkoutStep): string {
+function formatActivitySummary(step: ActivityStep): string {
   const parts: string[] = [];
 
   // Add duration
@@ -170,13 +170,13 @@ function formatTargetSummary(target: TargetZone): string {
 // COMPONENTS
 // ============================================================================
 
-function WorkoutHeader({
-  workout,
+function ActivityHeader({
+  activity,
   currentStep,
   totalSteps,
   onBack,
 }: {
-  workout: any;
+  activity: any;
   currentStep: number;
   totalSteps: number;
   onBack: () => void;
@@ -188,7 +188,7 @@ function WorkoutHeader({
       </Button>
       <View className="flex-1 items-center">
         <Text className="text-lg font-semibold" numberOfLines={1}>
-          {workout.name}
+          {activity.name}
         </Text>
         <Text className="text-xs text-muted-foreground">
           Step {currentStep} of {totalSteps}
@@ -200,11 +200,11 @@ function WorkoutHeader({
 }
 
 function OverviewCard({
-  workout,
+  activity,
   totalSteps,
   totalDuration,
 }: {
-  workout: any;
+  activity: any;
   totalSteps: number;
   totalDuration: number;
 }) {
@@ -212,13 +212,13 @@ function OverviewCard({
     <View className="bg-card border-2 border-primary rounded-xl p-6 shadow-lg">
       <View className="items-center mb-6">
         <Icon as={TrendingUp} size={48} className="text-primary mb-3" />
-        <Text className="text-2xl font-bold text-center">{workout.name}</Text>
+        <Text className="text-2xl font-bold text-center">{activity.name}</Text>
       </View>
 
-      {workout.description && (
+      {activity.description && (
         <View className="mb-6">
           <Text className="text-muted-foreground text-center leading-6">
-            {workout.description}
+            {activity.description}
           </Text>
         </View>
       )}
@@ -235,7 +235,7 @@ function OverviewCard({
 
       <View className="mt-6 p-4 bg-primary/10 rounded-lg">
         <Text className="text-sm text-center font-medium">
-          Swipe up to begin your workout
+          Swipe up to begin your activity
         </Text>
       </View>
     </View>
@@ -256,12 +256,12 @@ function StepCard({
   stepNumber,
   isActive,
 }: {
-  step: WorkoutStep;
+  step: ActivityStep;
   stepNumber: number;
   isActive: boolean;
 }) {
-  const workoutSummary = useMemo(() => {
-    return formatWorkoutSummary(step);
+  const activitySummary = useMemo(() => {
+    return formatActivitySummary(step);
   }, [step]);
 
   return (
@@ -275,7 +275,7 @@ function StepCard({
           Step {stepNumber}
         </Text>
         <Text className="text-3xl font-bold leading-tight">
-          {workoutSummary}
+          {activitySummary}
         </Text>
       </View>
 
@@ -343,9 +343,9 @@ function CompletionCard() {
         <View className="w-20 h-20 bg-primary rounded-full items-center justify-center mb-6">
           <Text className="text-4xl">✓</Text>
         </View>
-        <Text className="text-3xl font-bold mb-3">Workout Complete!</Text>
+        <Text className="text-3xl font-bold mb-3">Activity Complete!</Text>
         <Text className="text-muted-foreground text-center text-lg">
-          Great job finishing your workout.
+          Great job finishing your activity.
         </Text>
       </View>
     </View>
@@ -355,7 +355,7 @@ function CompletionCard() {
 function LoadingState() {
   return (
     <View className="flex-1 bg-background items-center justify-center">
-      <Text className="text-muted-foreground">Loading workout...</Text>
+      <Text className="text-muted-foreground">Loading activity...</Text>
     </View>
   );
 }
@@ -364,9 +364,9 @@ function ErrorState({ onBack }: { onBack: () => void }) {
   return (
     <View className="flex-1 bg-background items-center justify-center p-6">
       <Icon as={Target} size={48} className="text-muted-foreground mb-4" />
-      <Text className="text-lg font-semibold mb-2">Workout Not Found</Text>
+      <Text className="text-lg font-semibold mb-2">Activity Not Found</Text>
       <Text className="text-muted-foreground text-center mb-6">
-        Unable to load the workout plan.
+        Unable to load the activity plan.
       </Text>
       <Button onPress={onBack}>
         <Text>Go Back</Text>
@@ -403,16 +403,16 @@ export default function FollowAlongScreen() {
   const router = useRouter();
   const flatListRef = useRef<FlatList>(null);
 
-  const { workout, isLoading } = useWorkoutInitialization(router);
+  const { activity, isLoading } = useActivityInitialization(router);
   const { activeIndex, onViewableItemsChanged, viewabilityConfig } =
     useActiveCardTracking();
 
   const baseSteps = useMemo(
     () =>
-      workout?.structure?.steps
-        ? flattenPlanSteps(workout.structure.steps)
+      activity?.structure?.steps
+        ? flattenPlanSteps(activity.structure.steps)
         : [],
-    [workout],
+    [activity],
   );
 
   const totalDuration = useMemo(
@@ -421,8 +421,8 @@ export default function FollowAlongScreen() {
   );
 
   const allCards = useMemo(
-    () => buildWorkoutCards(workout, baseSteps),
-    [workout, baseSteps],
+    () => buildActivityCards(activity, baseSteps),
+    [activity, baseSteps],
   );
 
   const progress = useMemo(
@@ -431,14 +431,14 @@ export default function FollowAlongScreen() {
   );
 
   const renderCard = useCallback(
-    ({ item, index }: { item: WorkoutCard; index: number }) => {
+    ({ item, index }: { item: ActivityCard; index: number }) => {
       const isActive = index === activeIndex;
 
       return (
         <CardWrapper isActive={isActive}>
           {item.type === "overview" && (
             <OverviewCard
-              workout={workout}
+              activity={activity}
               totalSteps={baseSteps.length}
               totalDuration={totalDuration}
             />
@@ -454,10 +454,10 @@ export default function FollowAlongScreen() {
         </CardWrapper>
       );
     },
-    [activeIndex, workout, baseSteps.length, totalDuration],
+    [activeIndex, activity, baseSteps.length, totalDuration],
   );
 
-  const keyExtractor = useCallback((item: WorkoutCard) => item.id, []);
+  const keyExtractor = useCallback((item: ActivityCard) => item.id, []);
 
   const snapToOffsets = useMemo(() => {
     return allCards.map((_, index) => index * 500);
@@ -473,12 +473,12 @@ export default function FollowAlongScreen() {
   );
 
   if (isLoading) return <LoadingState />;
-  if (!workout) return <ErrorState onBack={() => router.back()} />;
+  if (!activity) return <ErrorState onBack={() => router.back()} />;
 
   return (
     <View className="flex-1 bg-background">
-      <WorkoutHeader
-        workout={workout}
+      <ActivityHeader
+        activity={activity}
         currentStep={activeIndex}
         totalSteps={allCards.length - 1}
         onBack={() => router.back()}

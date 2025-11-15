@@ -5,4 +5,4 @@ export {
   type ConstraintStatus,
 } from "./ConstraintIndicator";
 export { ConstraintValidator } from "./ConstraintValidator";
-export { WorkoutSelector, type WorkoutOption } from "./WorkoutSelector";
+export { ActivitySelector, type ActivityOption } from "./ActivitySelector";

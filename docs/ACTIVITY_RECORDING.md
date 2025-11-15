@@ -194,7 +194,7 @@ All cards are **always visible** with placeholder values when data is unavailabl
 
 #### 7. Plan Card (When Plan Selected)
 
-**Structured workout guidance:**
+**Structured activity guidance:**
 
 ```
 ┌─────────────────────────────────┐

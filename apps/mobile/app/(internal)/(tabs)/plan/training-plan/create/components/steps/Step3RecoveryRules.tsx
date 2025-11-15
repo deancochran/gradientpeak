@@ -59,7 +59,8 @@ export function Step3RecoveryRules({
       <View className="gap-2">
         <Label nativeID="max-consecutive">
           <Text className="text-base font-semibold">
-            Maximum Consecutive Training Days <Text className="text-destructive">*</Text>
+            Maximum Consecutive Training Days{" "}
+            <Text className="text-destructive">*</Text>
           </Text>
         </Label>
         <Text className="text-sm text-muted-foreground mb-2">
@@ -88,7 +89,8 @@ export function Step3RecoveryRules({
       <View className="gap-2">
         <Label nativeID="min-rest-days">
           <Text className="text-base font-semibold">
-            Minimum Rest Days per Week <Text className="text-destructive">*</Text>
+            Minimum Rest Days per Week{" "}
+            <Text className="text-destructive">*</Text>
           </Text>
         </Label>
         <Text className="text-sm text-muted-foreground mb-2">
@@ -111,11 +113,11 @@ export function Step3RecoveryRules({
         </View>
       </View>
 
-      {/* Min Hours Between Hard Workouts */}
+      {/* Min Hours Between Hard Activities */}
       <View className="gap-2">
         <Label nativeID="min-hours-hard">
           <Text className="text-base font-semibold">
-            Minimum Hours Between Hard Workouts{" "}
+            Minimum Hours Between Hard Activities{" "}
             <Text className="text-destructive">*</Text>
           </Text>
         </Label>
@@ -156,18 +158,20 @@ export function Step3RecoveryRules({
             </Text>
           </View>
           <View className="flex-row justify-between">
-            <Text className="text-sm text-muted-foreground">Rest days/week:</Text>
+            <Text className="text-sm text-muted-foreground">
+              Rest days/week:
+            </Text>
             <Text className="text-sm font-semibold">
               At least {minRestDays} day{minRestDays !== 1 ? "s" : ""}
             </Text>
           </View>
           <View className="flex-row justify-between">
             <Text className="text-sm text-muted-foreground">
-              Hard workout spacing:
+              Hard activity spacing:
             </Text>
             <Text className="text-sm font-semibold">
-              {minHoursBetweenHard} hours ({Math.round(minHoursBetweenHard / 24)}{" "}
-              days)
+              {minHoursBetweenHard} hours (
+              {Math.round(minHoursBetweenHard / 24)} days)
             </Text>
           </View>
         </View>
@@ -179,14 +183,14 @@ export function Step3RecoveryRules({
           🛡️ Why Recovery Matters
         </Text>
         <Text className="text-sm text-muted-foreground leading-5">
-          • <Text className="font-semibold">Prevents overtraining:</Text> Rest days
-          allow your body to adapt and get stronger
+          • <Text className="font-semibold">Prevents overtraining:</Text> Rest
+          days allow your body to adapt and get stronger
           {"\n"}• <Text className="font-semibold">Reduces injury risk:</Text>{" "}
-          Adequate spacing between hard workouts prevents cumulative fatigue
-          {"\n"}• <Text className="font-semibold">Improves performance:</Text> Fresh
-          legs = better quality workouts
-          {"\n"}• <Text className="font-semibold">Sustainable training:</Text> Long-term
-          consistency beats short-term intensity
+          Adequate spacing between hard activities prevents cumulative fatigue
+          {"\n"}• <Text className="font-semibold">Improves performance:</Text>{" "}
+          Fresh legs = better quality activities
+          {"\n"}• <Text className="font-semibold">Sustainable training:</Text>{" "}
+          Long-term consistency beats short-term intensity
         </Text>
       </View>
     </View>

@@ -57,7 +57,7 @@ export const ACTIVITY_TYPE_CONFIG = {
     icon: "waves",
     color: "#0891b2", // cyan-600
     category: "cardio",
-    description: "Swimming workout",
+    description: "Swimming activity",
   },
   other: {
     name: "Other Activity",

@@ -14,7 +14,7 @@ import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "nativewind";
 import * as React from "react";
 import { ActivityIndicator, View } from "react-native";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 // Export ErrorBoundary for the layout
 export function ErrorBoundary({
@@ -98,10 +98,13 @@ function AppContent() {
     <SafeAreaProvider>
       <ThemeProvider value={navTheme}>
         <StatusBar style={isDark ? "light" : "dark"} />
-        <View className="flex-1 bg-background">
+        <SafeAreaView
+          className="flex-1 bg-background"
+          edges={["top", "left", "right"]}
+        >
           <Slot />
           <PortalHost />
-        </View>
+        </SafeAreaView>
       </ThemeProvider>
     </SafeAreaProvider>
   );

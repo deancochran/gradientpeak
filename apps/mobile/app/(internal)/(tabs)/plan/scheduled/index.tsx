@@ -5,35 +5,59 @@ import { Text } from "@/components/ui/text";
 import { trpc } from "@/lib/trpc";
 import { useRouter } from "expo-router";
 import {
-    Activity,
-    Bike,
-    Calendar,
-    Clock,
-    Dumbbell,
-    Footprints,
-    Plus,
-    Waves,
+  Activity,
+  Bike,
+  Calendar,
+  Clock,
+  Dumbbell,
+  Footprints,
+  Plus,
+  Waves,
 } from "lucide-react-native";
 import { useState } from "react";
-import { ActivityIndicator, ScrollView, TouchableOpacity, View } from "react-native";
+import {
+  ActivityIndicator,
+  ScrollView,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { PlannedActivityDetailModal } from "../components/modals/PlannedActivityDetailModal";
 
 const ACTIVITY_CONFIGS = {
-  outdoor_run: { name: "Outdoor Run", icon: Footprints, color: "text-blue-600" },
+  outdoor_run: {
+    name: "Outdoor Run",
+    icon: Footprints,
+    color: "text-blue-600",
+  },
   outdoor_bike: { name: "Outdoor Bike", icon: Bike, color: "text-green-600" },
-  indoor_treadmill: { name: "Treadmill", icon: Footprints, color: "text-purple-600" },
-  indoor_bike_trainer: { name: "Bike Trainer", icon: Bike, color: "text-orange-600" },
-  indoor_strength: { name: "Strength Training", icon: Dumbbell, color: "text-red-600" },
+  indoor_treadmill: {
+    name: "Treadmill",
+    icon: Footprints,
+    color: "text-purple-600",
+  },
+  indoor_bike_trainer: {
+    name: "Bike Trainer",
+    icon: Bike,
+    color: "text-orange-600",
+  },
+  indoor_strength: {
+    name: "Strength Training",
+    icon: Dumbbell,
+    color: "text-red-600",
+  },
   indoor_swim: { name: "Swimming", icon: Waves, color: "text-cyan-600" },
   other: { name: "Other Activity", icon: Activity, color: "text-gray-600" },
 };
 
 export default function ScheduledScreen() {
   const router = useRouter();
-  const [selectedPlannedActivityId, setSelectedPlannedActivityId] = useState<string | null>(null);
+  const [selectedPlannedActivityId, setSelectedPlannedActivityId] = useState<
+    string | null
+  >(null);
 
   // Query all scheduled activities
-  const { data: scheduledActivities, isLoading } = trpc.plannedActivities.list.useQuery();
+  const { data: scheduledActivities, isLoading } =
+    trpc.plannedActivities.list.useQuery();
 
   const handleActivityTap = (activityId: string) => {
     setSelectedPlannedActivityId(activityId);
@@ -48,7 +72,11 @@ export default function ScheduledScreen() {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
-    const activityDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const activityDate = new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+    );
 
     if (activityDate.getTime() === today.getTime()) return "Today";
     if (activityDate.getTime() === tomorrow.getTime()) return "Tomorrow";
@@ -63,8 +91,12 @@ export default function ScheduledScreen() {
     }
 
     // Check if it's next week
-    const nextWeekStart = new Date(endOfWeek.getTime() + 1 * 24 * 60 * 60 * 1000);
-    const nextWeekEnd = new Date(nextWeekStart.getTime() + 6 * 24 * 60 * 60 * 1000);
+    const nextWeekStart = new Date(
+      endOfWeek.getTime() + 1 * 24 * 60 * 60 * 1000,
+    );
+    const nextWeekEnd = new Date(
+      nextWeekStart.getTime() + 6 * 24 * 60 * 60 * 1000,
+    );
 
     if (activityDate >= nextWeekStart && activityDate <= nextWeekEnd) {
       return `Next ${date.toLocaleDateString(undefined, { weekday: "long" })}`;
@@ -93,8 +125,12 @@ export default function ScheduledScreen() {
     const startOfWeek = new Date(today);
     startOfWeek.setDate(today.getDate() - today.getDay());
     const endOfWeek = new Date(startOfWeek.getTime() + 6 * 24 * 60 * 60 * 1000);
-    const nextWeekStart = new Date(endOfWeek.getTime() + 1 * 24 * 60 * 60 * 1000);
-    const nextWeekEnd = new Date(nextWeekStart.getTime() + 6 * 24 * 60 * 60 * 1000);
+    const nextWeekStart = new Date(
+      endOfWeek.getTime() + 1 * 24 * 60 * 60 * 1000,
+    );
+    const nextWeekEnd = new Date(
+      nextWeekStart.getTime() + 6 * 24 * 60 * 60 * 1000,
+    );
 
     const groups = {
       today: [] as any[],
@@ -106,13 +142,21 @@ export default function ScheduledScreen() {
 
     activities.forEach((activity) => {
       const date = new Date(activity.scheduled_date);
-      const activityDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      const activityDate = new Date(
+        date.getFullYear(),
+        date.getMonth(),
+        date.getDate(),
+      );
 
       if (activityDate.getTime() === today.getTime()) {
         groups.today.push(activity);
       } else if (activityDate.getTime() === tomorrow.getTime()) {
         groups.tomorrow.push(activity);
-      } else if (activityDate >= startOfWeek && activityDate <= endOfWeek && activityDate > today) {
+      } else if (
+        activityDate >= startOfWeek &&
+        activityDate <= endOfWeek &&
+        activityDate > today
+      ) {
         groups.thisWeek.push(activity);
       } else if (activityDate >= nextWeekStart && activityDate <= nextWeekEnd) {
         groups.nextWeek.push(activity);
@@ -125,7 +169,10 @@ export default function ScheduledScreen() {
   };
 
   const renderActivityCard = (activity: any) => {
-    const config = ACTIVITY_CONFIGS[activity.activity_plan?.activity_type as keyof typeof ACTIVITY_CONFIGS] || ACTIVITY_CONFIGS.other;
+    const config =
+      ACTIVITY_CONFIGS[
+        activity.activity_plan?.activity_type as keyof typeof ACTIVITY_CONFIGS
+      ] || ACTIVITY_CONFIGS.other;
 
     return (
       <TouchableOpacity
@@ -148,7 +195,7 @@ export default function ScheduledScreen() {
                 {/* Header */}
                 <View className="flex-row items-start justify-between mb-1">
                   <Text className="text-lg font-semibold flex-1">
-                    {activity.activity_plan?.name || "Unnamed Workout"}
+                    {activity.activity_plan?.name || "Unnamed Activity"}
                   </Text>
                   <Text className="text-sm font-medium text-primary">
                     {formatTime(activity.scheduled_date)}
@@ -162,7 +209,10 @@ export default function ScheduledScreen() {
 
                 {/* Notes */}
                 {activity.notes && (
-                  <Text className="text-sm text-muted-foreground mb-2" numberOfLines={2}>
+                  <Text
+                    className="text-sm text-muted-foreground mb-2"
+                    numberOfLines={2}
+                  >
                     {activity.notes}
                   </Text>
                 )}
@@ -171,7 +221,11 @@ export default function ScheduledScreen() {
                 <View className="flex-row items-center gap-4">
                   {activity.activity_plan?.estimated_duration && (
                     <View className="flex-row items-center">
-                      <Icon as={Clock} size={14} className="text-muted-foreground mr-1" />
+                      <Icon
+                        as={Clock}
+                        size={14}
+                        className="text-muted-foreground mr-1"
+                      />
                       <Text className="text-xs text-muted-foreground">
                         {activity.activity_plan.estimated_duration} min
                       </Text>
@@ -205,9 +259,7 @@ export default function ScheduledScreen() {
             </Text>
           </View>
         </View>
-        <View className="gap-3 px-4">
-          {activities.map(renderActivityCard)}
-        </View>
+        <View className="gap-3 px-4">{activities.map(renderActivityCard)}</View>
       </View>
     );
   };
@@ -228,7 +280,7 @@ export default function ScheduledScreen() {
       <View className="flex-1 bg-background">
         {/* Header */}
         <View className="p-4">
-          <Text className="text-2xl font-bold">Scheduled Workouts</Text>
+          <Text className="text-2xl font-bold">Scheduled Activities</Text>
           <Text className="text-muted-foreground mt-1">
             Your planned activities will appear here
           </Text>
@@ -238,16 +290,26 @@ export default function ScheduledScreen() {
         <View className="flex-1 items-center justify-center px-4">
           <View className="bg-muted/30 rounded-lg p-8 max-w-sm">
             <View className="items-center">
-              <Icon as={Calendar} size={64} className="text-muted-foreground mb-4" />
+              <Icon
+                as={Calendar}
+                size={64}
+                className="text-muted-foreground mb-4"
+              />
               <Text className="text-xl font-semibold mb-2 text-center">
-                No Workouts Scheduled
+                No Activities Scheduled
               </Text>
               <Text className="text-muted-foreground text-center mb-6">
                 Browse the library to get started with your training plan
               </Text>
               <Button onPress={handleScheduleNew} className="w-full">
-                <Icon as={Plus} size={16} className="text-primary-foreground mr-2" />
-                <Text className="text-primary-foreground">Schedule from Library</Text>
+                <Icon
+                  as={Plus}
+                  size={16}
+                  className="text-primary-foreground mr-2"
+                />
+                <Text className="text-primary-foreground">
+                  Schedule from Library
+                </Text>
               </Button>
             </View>
           </View>
@@ -262,14 +324,18 @@ export default function ScheduledScreen() {
     <View className="flex-1 bg-background">
       {/* Header */}
       <View className="p-4">
-        <Text className="text-2xl font-bold">Scheduled Workouts</Text>
+        <Text className="text-2xl font-bold">Scheduled Activities</Text>
         <Text className="text-muted-foreground mt-1">
-          {scheduledActivities.length} workout{scheduledActivities.length !== 1 ? "s" : ""} scheduled
+          {scheduledActivities.length} activity
+          {scheduledActivities.length !== 1 ? "s" : ""} scheduled
         </Text>
       </View>
 
       {/* Content */}
-      <ScrollView className="flex-1" contentContainerStyle={{ paddingBottom: 100 }}>
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingBottom: 100 }}
+      >
         {renderGroup("Today", groupedActivities.today)}
         {renderGroup("Tomorrow", groupedActivities.tomorrow)}
         {renderGroup("This Week", groupedActivities.thisWeek)}

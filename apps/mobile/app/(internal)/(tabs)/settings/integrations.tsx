@@ -2,17 +2,16 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect } from "react";
 import { Alert, BackHandler, Platform, ScrollView, View } from "react-native";
 
-import type { PublicIntegrationProvider } from "@repo/core";
-import Constants from "expo-constants";
-import * as Linking from "expo-linking";
-import * as WebBrowser from "expo-web-browser";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ChevronLeft } from "lucide-react-native";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { trpc } from "@/lib/trpc";
+import type { PublicIntegrationProvider } from "@repo/core";
+import Constants from "expo-constants";
+import * as Linking from "expo-linking";
+import * as WebBrowser from "expo-web-browser";
+import { ChevronLeft } from "lucide-react-native";
 
 type IntegrationConfig = {
   provider: PublicIntegrationProvider;
@@ -57,7 +56,6 @@ function getMobileRedirectUri(): string {
 
 export default function IntegrationsScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
 
   // tRPC queries
   const { data: integrations, refetch } = trpc.integrations.list.useQuery();
@@ -241,7 +239,7 @@ export default function IntegrationsScreen() {
         <View className="mb-2">
           <Text className="text-muted-foreground text-base">
             Connect your fitness tracking platforms to sync activities and
-            workouts.
+            activities.
           </Text>
         </View>
 

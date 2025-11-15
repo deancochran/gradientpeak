@@ -3,11 +3,11 @@
  * Centralized exports for training plan calendar components
  */
 
-export { AddWorkoutButton } from "./AddWorkoutButton";
+export { AddActivityButton } from "./AddActivityButton";
 export { DayCard } from "./DayCard";
 export { WeeklySummaryBar } from "./WeeklySummaryBar";
 export { WeekNavigator } from "./WeekNavigator";
-export { WorkoutCard } from "./WorkoutCard";
+export { ActivityCard } from "./ActivityCard";
 
 // Hooks
 export { useWeekNavigation } from "./hooks/useWeekNavigation";

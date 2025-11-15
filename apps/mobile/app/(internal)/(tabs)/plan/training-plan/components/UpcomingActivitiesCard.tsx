@@ -5,7 +5,7 @@ import { useRouter } from "expo-router";
 import { Calendar, ChevronRight, Clock } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
 
-interface UpcomingWorkout {
+interface UpcomingActivity {
   id: string;
   scheduled_date: string;
   activity_plan: {
@@ -17,11 +17,13 @@ interface UpcomingWorkout {
   } | null;
 }
 
-interface UpcomingWorkoutsCardProps {
-  workouts: UpcomingWorkout[];
+interface UpcomingActivitiesCardProps {
+  activities: UpcomingActivity[];
 }
 
-export function UpcomingWorkoutsCard({ workouts }: UpcomingWorkoutsCardProps) {
+export function UpcomingActivitiesCard({
+  activities,
+}: UpcomingActivitiesCardProps) {
   const router = useRouter();
 
   const formatDate = (dateString: string) => {
@@ -65,32 +67,32 @@ export function UpcomingWorkoutsCard({ workouts }: UpcomingWorkoutsCardProps) {
       .join(" ");
   };
 
-  const handleWorkoutPress = (workoutId: string) => {
+  const handleActivityPress = (activityId: string) => {
     router.push({
       pathname:
         "/(internal)/(tabs)/plan/planned_activities/[activity_uuid]" as any,
-      params: { activity_uuid: workoutId },
+      params: { activity_uuid: activityId },
     });
   };
 
-  if (!workouts || workouts.length === 0) {
+  if (!activities || activities.length === 0) {
     return null;
   }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Upcoming Workouts</CardTitle>
+        <CardTitle>Upcoming Activities</CardTitle>
       </CardHeader>
       <CardContent>
         <View className="gap-3">
-          {workouts.map((workout, index) => {
-            if (!workout.activity_plan) return null;
+          {activities.map((activity, index) => {
+            if (!activity.activity_plan) return null;
 
             return (
-              <View key={workout.id}>
+              <View key={activity.id}>
                 <TouchableOpacity
-                  onPress={() => handleWorkoutPress(workout.id)}
+                  onPress={() => handleActivityPress(activity.id)}
                   activeOpacity={0.7}
                 >
                   <View className="flex-row items-center justify-between p-3 bg-muted/30 rounded-lg">
@@ -103,16 +105,16 @@ export function UpcomingWorkoutsCard({ workouts }: UpcomingWorkoutsCardProps) {
                           className="text-muted-foreground"
                         />
                         <Text className="text-sm text-muted-foreground font-medium">
-                          {formatDate(workout.scheduled_date)}
+                          {formatDate(activity.scheduled_date)}
                         </Text>
                       </View>
 
-                      {/* Workout Name */}
+                      {/* Activity Name */}
                       <Text className="font-semibold text-base mb-1">
-                        {workout.activity_plan.name}
+                        {activity.activity_plan.name}
                       </Text>
 
-                      {/* Workout Details */}
+                      {/* Activity Details */}
                       <View className="flex-row items-center gap-3">
                         <View className="flex-row items-center gap-1">
                           <Icon
@@ -121,17 +123,17 @@ export function UpcomingWorkoutsCard({ workouts }: UpcomingWorkoutsCardProps) {
                             className="text-muted-foreground"
                           />
                           <Text className="text-xs text-muted-foreground">
-                            {workout.activity_plan.estimated_duration} min
+                            {activity.activity_plan.estimated_duration} min
                           </Text>
                         </View>
 
-                        {workout.activity_plan.estimated_tss && (
+                        {activity.activity_plan.estimated_tss && (
                           <>
                             <Text className="text-xs text-muted-foreground">
                               •
                             </Text>
                             <Text className="text-xs text-muted-foreground">
-                              {Math.round(workout.activity_plan.estimated_tss)}{" "}
+                              {Math.round(activity.activity_plan.estimated_tss)}{" "}
                               TSS
                             </Text>
                           </>
@@ -140,7 +142,7 @@ export function UpcomingWorkoutsCard({ workouts }: UpcomingWorkoutsCardProps) {
                         <Text className="text-xs text-muted-foreground">•</Text>
                         <Text className="text-xs text-muted-foreground capitalize">
                           {formatActivityType(
-                            workout.activity_plan.activity_type,
+                            activity.activity_plan.activity_type,
                           )}
                         </Text>
                       </View>
@@ -154,8 +156,8 @@ export function UpcomingWorkoutsCard({ workouts }: UpcomingWorkoutsCardProps) {
                   </View>
                 </TouchableOpacity>
 
-                {/* Divider between workouts (not after last one) */}
-                {index < workouts.length - 1 && (
+                {/* Divider between activities (not after last one) */}
+                {index < activities.length - 1 && (
                   <View className="h-px bg-border my-1" />
                 )}
               </View>

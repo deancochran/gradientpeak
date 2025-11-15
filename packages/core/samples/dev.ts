@@ -9,7 +9,7 @@ export const DEV_SAMPLE_BIKE: RecordingServiceActivityPlan = {
   name: "DEV – Indoor Bike Trainer Schema Demo",
   activity_type: "indoor_bike_trainer",
   description:
-    "Compact 1-minute workout using mixed target types and nested steps to validate schema logic.",
+    "Compact 1-minute activity using mixed target types and nested steps to validate schema logic.",
   estimated_duration: 60,
   estimated_tss: 1,
   structure: {
@@ -63,7 +63,7 @@ export const DEV_SAMPLE_RUN: RecordingServiceActivityPlan = {
   name: "DEV – Outdoor Run Schema Demo",
   activity_type: "outdoor_run",
   description:
-    "1-minute developer workout to validate heart-rate and RPE parsing for run-type plans.",
+    "1-minute developer activity to validate heart-rate and RPE parsing for run-type plans.",
   estimated_duration: 60,
   estimated_tss: 1,
   structure: {
@@ -121,7 +121,7 @@ export const DEV_SAMPLE_TREADMILL: RecordingServiceActivityPlan = {
   name: "DEV – Treadmill Schema Demo",
   activity_type: "indoor_treadmill",
   description:
-    "Short treadmill validation workout testing RPE, speed, and nested repetitions.",
+    "Short treadmill validation activity testing RPE, speed, and nested repetitions.",
   estimated_duration: 60,
   estimated_tss: 1,
   structure: {

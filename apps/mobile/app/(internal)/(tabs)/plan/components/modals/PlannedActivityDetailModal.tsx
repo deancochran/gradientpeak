@@ -37,18 +37,18 @@ export function PlannedActivityDetailModal({
   // Delete mutation
   const deleteMutation = trpc.plannedActivities.delete.useMutation({
     onSuccess: () => {
-      Alert.alert("Success", "Workout has been removed from your schedule");
+      Alert.alert("Success", "Activity has been removed from your schedule");
       onClose();
     },
     onError: (error) => {
       Alert.alert(
         "Error",
-        error.message || "Failed to delete workout. Please try again.",
+        error.message || "Failed to delete activity. Please try again.",
       );
     },
   });
 
-  const handleStartWorkout = () => {
+  const handleStartActivity = () => {
     if (!plannedActivity) return;
 
     // Launch ActivityRecorder with the plan
@@ -79,8 +79,8 @@ export function PlannedActivityDetailModal({
 
   const handleDelete = () => {
     Alert.alert(
-      "Delete Workout",
-      "Are you sure you want to remove this workout from your schedule? This action cannot be undone.",
+      "Delete Activity",
+      "Are you sure you want to remove this activity from your schedule? This action cannot be undone.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -116,9 +116,9 @@ export function PlannedActivityDetailModal({
       <Dialog open={isVisible} onOpenChange={(open) => !open && onClose()}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Workout Not Found</DialogTitle>
+            <DialogTitle>Activity Not Found</DialogTitle>
             <DialogDescription>
-              This scheduled workout could not be found.
+              This scheduled activity could not be found.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -136,7 +136,7 @@ export function PlannedActivityDetailModal({
       <DialogContent className="w-full max-w-lg mx-4 max-h-[80%]">
         <DialogHeader>
           <DialogTitle>
-            {plannedActivity?.activity_plan?.name || "Scheduled Workout"}
+            {plannedActivity?.activity_plan?.name || "Scheduled Activity"}
           </DialogTitle>
           <DialogDescription>
             {plannedActivity?.scheduled_date &&
@@ -147,7 +147,7 @@ export function PlannedActivityDetailModal({
         {isLoading ? (
           <View className="flex items-center justify-center py-8">
             <Text className="text-muted-foreground">
-              Loading workout details...
+              Loading activity details...
             </Text>
           </View>
         ) : (
@@ -182,7 +182,7 @@ export function PlannedActivityDetailModal({
                       size={16}
                       className="text-muted-foreground"
                     />
-                    <Text className="font-semibold">Workout Plan</Text>
+                    <Text className="font-semibold">Activity Plan</Text>
                   </View>
 
                   <Text className="font-medium mb-1">
@@ -221,7 +221,7 @@ export function PlannedActivityDetailModal({
                 </View>
               )}
 
-              {/* Workout Structure Preview */}
+              {/* Activity Structure Preview */}
               {plannedActivity?.activity_plan?.structure &&
                 typeof plannedActivity.activity_plan.structure === "object" &&
                 "steps" in plannedActivity.activity_plan.structure &&
@@ -230,7 +230,7 @@ export function PlannedActivityDetailModal({
                 ) && (
                   <View className="bg-muted/30 rounded-lg p-4">
                     <Text className="font-semibold mb-2">
-                      Workout Structure
+                      Activity Structure
                     </Text>
                     <View className="flex flex-col gap-2">
                       {(plannedActivity.activity_plan.structure.steps as any[])
@@ -301,11 +301,11 @@ export function PlannedActivityDetailModal({
           </Button>
 
           <Button
-            onPress={handleStartWorkout}
+            onPress={handleStartActivity}
             disabled={deleteMutation.isPending || isLoading}
           >
             <Icon as={Play} size={16} className="text-primary-foreground" />
-            <Text className="text-primary-foreground">Start Workout</Text>
+            <Text className="text-primary-foreground">Start Activity</Text>
           </Button>
         </DialogFooter>
       </DialogContent>

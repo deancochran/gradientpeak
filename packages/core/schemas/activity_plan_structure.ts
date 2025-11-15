@@ -190,19 +190,11 @@ export const stepSchema = z.object({
     .string()
     .min(1, { message: "Step name must be at least 1 character" })
     .max(100, { message: "Step name cannot exceed 100 characters" })
-    .optional(),
-  description: z
-    .string()
-    .max(500, { message: "Description cannot exceed 500 characters" })
-    .optional(),
+    .default("Step"),
   duration: durationSchema.optional(),
   targets: z
     .array(intensityTargetSchema)
-    .max(5, { message: "Cannot have more than 5 targets per step" })
-    .optional(),
-  controls: z
-    .array(controlSchema)
-    .max(5, { message: "Cannot have more than 5 controls per step" })
+    .max(2, { message: "Cannot have more than 2 targets per step" })
     .optional(),
   notes: z
     .string()
@@ -256,7 +248,7 @@ export const activityPlanStructureSchema = z.object({
     .max(50, { message: "Plan cannot have more than 50 items" })
     .refine(
       (steps) => {
-        // Count total flattened steps to ensure workout isn't too long
+        // Count total flattened steps to ensure activity isn't too long
         const totalSteps = steps.reduce((count, item) => {
           if (item.type === "step") return count + 1;
           return count + item.repeat * item.steps.length;
@@ -284,8 +276,7 @@ export const activityPlanSchema = z.object({
   description: z
     .string()
     .max(1000, { message: "Description cannot exceed 1000 characters" })
-    .optional()
-    .default(""),
+    .optional(),
   activity_type: activityTypeEnum,
   estimated_duration: z
     .number()
@@ -538,12 +529,12 @@ export function getTargetGuidanceText(
 }
 
 /**
- * Workout card interface for UI display
+ * Activity card interface for UI display
  */
-export interface WorkoutCard {
+export interface ActivityCard {
   id: string;
   type: "overview" | "step" | "completion";
-  workout?: ActivityPlan;
+  activity?: ActivityPlan;
   step?: FlattenedStep;
   stepNumber?: number;
 }
@@ -603,14 +594,14 @@ export function calculateTotalDuration(steps: FlattenedStep[]): number {
 }
 
 /**
- * Build workout cards for carousel display
+ * Build activity cards for carousel display
  */
-export function buildWorkoutCards(
-  workout: ActivityPlan,
+export function buildActivityCards(
+  activity: ActivityPlan,
   steps: FlattenedStep[],
-): WorkoutCard[] {
+): ActivityCard[] {
   return [
-    { id: "overview", type: "overview", workout },
+    { id: "overview", type: "overview", activity },
     ...steps.map((step, index) => ({
       id: `step-${index}`,
       type: "step" as const,

@@ -10,14 +10,14 @@ import {
   ScrollView,
   View,
 } from "react-native";
-import { AddWorkoutButton } from "./components/calendar/AddWorkoutButton";
+import { AddActivityButton } from "./components/calendar/AddActivityButton";
 import { DayCard } from "./components/calendar/DayCard";
 import { useWeekNavigation } from "./components/calendar/hooks/useWeekNavigation";
 import { WeeklySummaryBar } from "./components/calendar/WeeklySummaryBar";
 import { WeekNavigator } from "./components/calendar/WeekNavigator";
 
 /**
- * Training Plan Calendar - Weekly view of scheduled workouts
+ * Training Plan Calendar - Weekly view of scheduled activities
  * Phase 2 of Training Plans UI-First Implementation
  */
 export default function TrainingPlanCalendar() {
@@ -82,15 +82,15 @@ export default function TrainingPlanCalendar() {
         2
       : 0;
 
-    const completedWorkouts = completedActivities.length;
-    const totalPlannedWorkouts = plannedActivities.length;
+    const completedActivities = completedActivities.length;
+    const totalPlannedActivities = plannedActivities.length;
 
     // Determine status
     let status: "on_track" | "behind" | "ahead" | "warning" = "on_track";
     const progressPercent =
       targetTSS > 0 ? (completedTSS / targetTSS) * 100 : 0;
 
-    if (progressPercent < 50 && totalPlannedWorkouts > completedWorkouts) {
+    if (progressPercent < 50 && totalPlannedActivities > completedActivities) {
       status = "behind";
     } else if (progressPercent > 120) {
       status = "warning";
@@ -102,17 +102,17 @@ export default function TrainingPlanCalendar() {
       completedTSS,
       plannedTSS,
       targetTSS,
-      completedWorkouts,
-      totalPlannedWorkouts,
+      completedActivities,
+      totalPlannedActivities,
       status,
     };
   };
 
-  // Organize workouts by day
-  const getWorkoutsForDate = (date: Date) => {
+  // Organize activities by day
+  const getActivitiesForDate = (date: Date) => {
     const dateString = date.toISOString().split("T")[0];
 
-    // Get completed workouts for this date
+    // Get completed activities for this date
     const completed = completedActivities
       .filter((activity: any) => {
         const activityDate = new Date(activity.start_time)
@@ -122,14 +122,14 @@ export default function TrainingPlanCalendar() {
       })
       .map((activity: any) => ({
         id: activity.id,
-        name: activity.name || "Completed Workout",
+        name: activity.name || "Completed Activity",
         activityType: activity.activity_type || "unknown",
         duration: Math.round((activity.duration || 0) / 60), // Convert to minutes
         tss: activity.tss || 0,
         status: "completed" as const,
       }));
 
-    // Get planned workouts for this date
+    // Get planned activities for this date
     const planned = plannedActivities
       .filter((activity: any) => {
         const scheduledDate = new Date(activity.scheduled_date)
@@ -139,7 +139,7 @@ export default function TrainingPlanCalendar() {
       })
       .map((activity: any) => ({
         id: activity.id,
-        name: activity.activity_plan?.name || "Scheduled Workout",
+        name: activity.activity_plan?.name || "Scheduled Activity",
         activityType: activity.activity_plan?.activity_type || "unknown",
         duration: activity.activity_plan?.estimated_duration || 0,
         tss: activity.activity_plan?.estimated_tss || 0,
@@ -151,8 +151,8 @@ export default function TrainingPlanCalendar() {
 
   // Check if date is a rest day
   const isRestDay = (date: Date) => {
-    const workouts = getWorkoutsForDate(date);
-    return workouts.length === 0;
+    const activities = getActivitiesForDate(date);
+    return activities.length === 0;
   };
 
   // Check if date is today
@@ -165,21 +165,21 @@ export default function TrainingPlanCalendar() {
     );
   };
 
-  // Handle workout press
-  const handleWorkoutPress = (workoutId: string) => {
+  // Handle activity press
+  const handleActivityPress = (activityId: string) => {
     router.push({
       pathname:
         "/(internal)/(tabs)/plan/planned_activities/[activity_uuid]" as any,
-      params: { activity_uuid: workoutId },
+      params: { activity_uuid: activityId },
     });
   };
 
-  // Handle workout long press (quick actions)
-  const handleWorkoutLongPress = (workoutId: string) => {
-    Alert.alert("Workout Actions", "What would you like to do?", [
+  // Handle activity long press (quick actions)
+  const handleActivityLongPress = (activityId: string) => {
+    Alert.alert("Activity Actions", "What would you like to do?", [
       {
         text: "View Details",
-        onPress: () => handleWorkoutPress(workoutId),
+        onPress: () => handleActivityPress(activityId),
       },
       {
         text: "Reschedule",
@@ -203,12 +203,12 @@ export default function TrainingPlanCalendar() {
     ]);
   };
 
-  // Handle add workout for specific date
-  const handleAddWorkoutForDate = (date: Date) => {
-    // TODO: Open workout selection modal with pre-selected date
+  // Handle add activity for specific date
+  const handleAddActivityForDate = (date: Date) => {
+    // TODO: Open activity selection modal with pre-selected date
     Alert.alert(
-      "Add Workout",
-      `Add a workout for ${date.toLocaleDateString()}?`,
+      "Add Activity",
+      `Add a activity for ${date.toLocaleDateString()}?`,
       [
         {
           text: "Choose from Library",
@@ -231,10 +231,10 @@ export default function TrainingPlanCalendar() {
   };
 
   // Handle floating add button
-  const handleAddWorkout = () => {
+  const handleAddActivity = () => {
     // Default to today
     const today = new Date();
-    handleAddWorkoutForDate(today);
+    handleAddActivityForDate(today);
   };
 
   // Loading state
@@ -253,7 +253,7 @@ export default function TrainingPlanCalendar() {
       <View className="flex-1 bg-background items-center justify-center p-6">
         <Text className="text-2xl font-bold mb-4">No Training Plan</Text>
         <Text className="text-muted-foreground text-center mb-6">
-          Create a training plan to start scheduling workouts
+          Create a training plan to start scheduling activities
         </Text>
         <Button onPress={() => router.push("./create")} size="lg">
           <Text className="text-primary-foreground font-semibold">
@@ -290,8 +290,8 @@ export default function TrainingPlanCalendar() {
             completedTSS={weeklySummary.completedTSS}
             plannedTSS={weeklySummary.plannedTSS}
             targetTSS={weeklySummary.targetTSS}
-            completedWorkouts={weeklySummary.completedWorkouts}
-            totalPlannedWorkouts={weeklySummary.totalPlannedWorkouts}
+            completedActivities={weeklySummary.completedActivities}
+            totalPlannedActivities={weeklySummary.totalPlannedActivities}
             status={weeklySummary.status}
           />
 
@@ -305,12 +305,12 @@ export default function TrainingPlanCalendar() {
               <DayCard
                 key={date.toISOString()}
                 date={date}
-                workouts={getWorkoutsForDate(date)}
+                activities={getActivitiesForDate(date)}
                 isRestDay={isRestDay(date)}
                 isToday={isToday(date)}
-                onWorkoutPress={handleWorkoutPress}
-                onWorkoutLongPress={handleWorkoutLongPress}
-                onAddWorkout={handleAddWorkoutForDate}
+                onActivityPress={handleActivityPress}
+                onActivityLongPress={handleActivityLongPress}
+                onAddActivity={handleAddActivityForDate}
               />
             ))}
           </ScrollView>
@@ -318,7 +318,7 @@ export default function TrainingPlanCalendar() {
       </ScrollView>
 
       {/* Floating Add Button */}
-      <AddWorkoutButton onPress={handleAddWorkout} />
+      <AddActivityButton onPress={handleAddActivity} />
     </View>
   );
 }

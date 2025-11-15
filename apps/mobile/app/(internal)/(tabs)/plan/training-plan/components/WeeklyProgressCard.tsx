@@ -8,22 +8,22 @@ interface WeeklyProgressCardProps {
   completedTSS: number;
   plannedTSS: number;
   targetTSS: number;
-  completedWorkouts: number;
-  totalPlannedWorkouts: number;
+  completedActivities: number;
+  totalPlannedActivities: number;
 }
 
 export function WeeklyProgressCard({
   completedTSS,
   plannedTSS,
   targetTSS,
-  completedWorkouts,
-  totalPlannedWorkouts,
+  completedActivities,
+  totalPlannedActivities,
 }: WeeklyProgressCardProps) {
   // Calculate progress percentages
   const tssProgress = targetTSS > 0 ? (completedTSS / targetTSS) * 100 : 0;
-  const workoutProgress =
-    totalPlannedWorkouts > 0
-      ? (completedWorkouts / totalPlannedWorkouts) * 100
+  const activityProgress =
+    totalPlannedActivities > 0
+      ? (completedActivities / totalPlannedActivities) * 100
       : 0;
 
   // Determine progress bar color based on completion
@@ -34,10 +34,10 @@ export function WeeklyProgressCard({
     return "bg-orange-500";
   };
 
-  const getWorkoutProgressColor = () => {
-    if (workoutProgress >= 90) return "bg-green-500";
-    if (workoutProgress >= 70) return "bg-emerald-500";
-    if (workoutProgress >= 50) return "bg-yellow-500";
+  const getActivityProgressColor = () => {
+    if (activityProgress >= 90) return "bg-green-500";
+    if (activityProgress >= 70) return "bg-emerald-500";
+    if (activityProgress >= 50) return "bg-yellow-500";
     return "bg-orange-500";
   };
 
@@ -92,31 +92,31 @@ export function WeeklyProgressCard({
 
           <View className="h-px bg-border" />
 
-          {/* Workout Completion */}
+          {/* Activity Completion */}
           <View>
             <View className="flex-row items-center justify-between mb-3">
               <View className="flex-row items-center gap-2">
                 <Icon as={CheckCircle2} size={18} className="text-primary" />
-                <Text className="font-semibold">Workout Completion</Text>
+                <Text className="font-semibold">Activity Completion</Text>
               </View>
               <Text className="text-sm text-muted-foreground">
-                {totalPlannedWorkouts > 0 ? Math.round(workoutProgress) : 0}%
+                {totalPlannedActivities > 0 ? Math.round(activityProgress) : 0}%
               </Text>
             </View>
 
-            {/* Workout Progress Bar */}
+            {/* Activity Progress Bar */}
             <View className="bg-muted rounded-full h-3 overflow-hidden mb-2">
               <View
-                className={`${getWorkoutProgressColor()} h-full rounded-full`}
-                style={{ width: `${Math.min(workoutProgress, 100)}%` }}
+                className={`${getActivityProgressColor()} h-full rounded-full`}
+                style={{ width: `${Math.min(activityProgress, 100)}%` }}
               />
             </View>
 
-            {/* Workout Count */}
+            {/* Activity Count */}
             <View className="flex-row items-center justify-between">
-              <Text className="text-2xl font-bold">{completedWorkouts}</Text>
+              <Text className="text-2xl font-bold">{completedActivities}</Text>
               <Text className="text-sm text-muted-foreground">
-                / {totalPlannedWorkouts} workouts
+                / {totalPlannedActivities} activities
               </Text>
             </View>
           </View>
@@ -130,10 +130,11 @@ export function WeeklyProgressCard({
             </View>
           )}
 
-          {tssProgress < 50 && totalPlannedWorkouts > completedWorkouts && (
+          {tssProgress < 50 && totalPlannedActivities > completedActivities && (
             <View className="bg-orange-500/10 rounded-lg p-3">
               <Text className="text-sm text-orange-600 font-medium">
-                ⚠️ Behind on weekly target. Consider completing scheduled workouts.
+                ⚠️ Behind on weekly target. Consider completing scheduled
+                activities.
               </Text>
             </View>
           )}
