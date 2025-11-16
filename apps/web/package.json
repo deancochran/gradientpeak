@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "concurrently \"npm run dev:next\" \"npm run ngrok\"",
-    "dev:next": "next dev --turbopack -H 0.0.0.0",
+    "dev:next": "next dev --turbopack",
     "ngrok": "ngrok http 3000 --domain=outgoing-ape-repeatedly.ngrok-free.app",
     "build": "next build --turbopack",
     "start": "next start",

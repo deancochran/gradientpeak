@@ -2,18 +2,10 @@ import { ActivityTypeSelector } from "@/components/ActivityPlan/ActivityTypeSele
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
+import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
 import {
   calculateAverageIF,
   calculateTotalDuration,
@@ -22,29 +14,8 @@ import {
   getDefaultUserSettings,
 } from "@repo/core";
 import { router } from "expo-router";
-import { ChevronRight, Edit3, Save } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
-import { Alert, ScrollView, View } from "react-native";
-import { z } from "zod";
-
-// Form schema for activity plan details
-const activityPlanFormSchema = z.object({
-  name: z.string().min(1, "Activity name is required"),
-  description: z.string().optional(),
-  activity_type: z.enum([
-    "outdoor_run",
-    "outdoor_bike",
-    "indoor_treadmill",
-    "indoor_bike_trainer",
-    "indoor_strength",
-    "indoor_swim",
-  ]),
-  estimated_duration: z.number().min(1, "Duration must be at least 1 minute"),
-  estimated_tss: z.number().optional(),
-});
-
-type ActivityPlanFormData = z.infer<typeof activityPlanFormSchema>;
+import { Alert, Pressable, View } from "react-native";
 
 /**
  * Format duration in milliseconds to readable string
@@ -62,24 +33,23 @@ function formatDuration(ms: number): string {
 }
 
 export default function CreateActivityPlanScreen() {
-  // For now, we'll use local state. In a real app, this would be global state or URL params
-  const [structure] = useState<{ steps: any[] }>({ steps: [] });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const form = useForm<ActivityPlanFormData>({
-    defaultValues: {
-      name: "",
-      description: "",
-      activity_type: "outdoor_run",
-      estimated_duration: 30,
-      estimated_tss: 0,
-    },
-  });
+  // Get state and actions from Zustand store
+  const {
+    name,
+    description,
+    activityType,
+    structure,
+    setName,
+    setDescription,
+    setActivityType,
+    reset,
+  } = useActivityPlanCreationStore();
 
-  const activityType = form.watch("activity_type");
   const steps = useMemo(() => structure.steps || [], [structure.steps]);
 
-  // Calculate metrics from structure
+  // Calculate metrics from structure - these are read-only derived values
   const metrics = useMemo(() => {
     const flatSteps = flattenPlanSteps(steps);
     const durationMs = calculateTotalDuration(flatSteps);
@@ -98,50 +68,70 @@ export default function CreateActivityPlanScreen() {
     };
   }, [steps, activityType]);
 
-  // Update estimated duration based on structure
+  // Clean up store when navigating away from creation flow
   React.useEffect(() => {
-    if (metrics.duration > 0) {
-      const estimatedMinutes = Math.round(metrics.duration / 60000);
-      form.setValue("estimated_duration", estimatedMinutes);
-    }
-  }, [metrics.duration, form]);
-
-  // Update estimated TSS based on structure
-  React.useEffect(() => {
-    if (metrics.tss > 0) {
-      form.setValue("estimated_tss", Math.round(metrics.tss));
-    }
-  }, [metrics.tss, form]);
+    return () => {
+      // Only reset if we're actually leaving the creation flow
+      // (not just navigating to sub-pages)
+      const currentRoute = router.canGoBack() ? "sub" : "main";
+      if (currentRoute === "main") {
+        reset();
+      }
+    };
+  }, [reset]);
 
   /**
    * Handle navigating to structure editor
    */
   const handleEditStructure = () => {
-    const currentValues = form.getValues();
-
-    // Navigate to structure page with current form data
+    // No need to pass params - structure page will use the store
     router.push({
-      pathname: "/plan/create_activity_plan/structure" as any,
-      params: {
-        activityType: currentValues.activity_type,
-        structureData: JSON.stringify(structure),
-      },
+      pathname:
+        "/(internal)/(tabs)/plan/create_activity_plan/structure/" as any,
     });
+  };
+
+  /**
+   * Handle cancel - go back without saving
+   */
+  const handleCancel = () => {
+    Alert.alert(
+      "Discard Activity Plan",
+      "Are you sure you want to discard this activity plan?",
+      [
+        { text: "Keep Editing", style: "cancel" },
+        {
+          text: "Discard",
+          style: "destructive",
+          onPress: () => {
+            reset(); // Reset the store
+            router.back();
+          },
+        },
+      ],
+    );
   };
 
   /**
    * Handle form submission
    */
-  const handleSubmit = async (data: ActivityPlanFormData) => {
+  const handleSubmit = async () => {
+    // Validate required fields
+    if (!name.trim()) {
+      Alert.alert("Validation Error", "Activity name is required");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
       const finalData = {
-        ...data,
+        name,
+        description,
+        activity_type: activityType,
         structure,
-        estimated_duration:
-          Math.round(metrics.duration / 60000) || data.estimated_duration,
-        estimated_tss: Math.round(metrics.tss) || data.estimated_tss || 0,
+        estimated_duration: Math.round(metrics.duration / 60000) || 0,
+        estimated_tss: Math.round(metrics.tss) || 0,
       };
 
       // TODO: Save to database via API/tRPC
@@ -151,7 +141,10 @@ export default function CreateActivityPlanScreen() {
       Alert.alert("Success", "Activity plan saved successfully!", [
         {
           text: "OK",
-          onPress: () => router.back(),
+          onPress: () => {
+            reset(); // Reset the store after successful save
+            router.back();
+          },
         },
       ]);
     } catch (error) {
@@ -164,208 +157,126 @@ export default function CreateActivityPlanScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <ScrollView className="flex-1">
-        <View className="p-4">
-          {/* Main Form */}
-          <Form {...form}>
-            <View className="gap-6">
-              {/* Activity Name */}
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Activity Name</FormLabel>
-                    <FormControl>
-                      <Input
-                        value={field.value}
-                        onChangeText={field.onChange}
-                        placeholder="e.g., Morning Run, Interval Training"
-                        autoFocus
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+      {/* Header with Cancel, Title, and Submit buttons */}
+      <View className="bg-card border-b border-border">
+        <View className="flex-row items-center justify-between px-4 py-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onPress={handleCancel}
+            disabled={isSubmitting}
+          >
+            <Text>Cancel</Text>
+          </Button>
 
-              {/* Activity Type */}
-              <FormField
-                control={form.control}
-                name="activity_type"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Activity Type</FormLabel>
-                    <FormControl>
-                      <ActivityTypeSelector
-                        value={field.value}
-                        onChange={field.onChange}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+          <Text className="text-lg font-semibold">Create Activity Plan</Text>
 
-              {/* Duration */}
-              <FormField
-                control={form.control}
-                name="estimated_duration"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Estimated Duration (minutes)</FormLabel>
-                    <FormControl>
-                      <Input
-                        value={field.value?.toString() || ""}
-                        onChangeText={(text) => {
-                          const num = parseInt(text);
-                          if (!isNaN(num)) field.onChange(num);
-                        }}
-                        keyboardType="numeric"
-                        placeholder="30"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+          <Button
+            variant="default"
+            size="sm"
+            onPress={handleSubmit}
+            disabled={isSubmitting}
+          >
+            <Text className="text-primary-foreground font-medium">
+              {isSubmitting ? "Saving..." : "Save"}
+            </Text>
+          </Button>
+        </View>
+      </View>
 
-              {/* Description */}
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description (Optional)</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        value={field.value || ""}
-                        onChangeText={field.onChange}
-                        placeholder="Add notes about this activity plan..."
-                        className="min-h-[80px]"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </View>
-          </Form>
+      {/* Compact Form - No scrolling needed */}
+      <View className="flex-1 p-4 gap-4">
+        {/* Row 1: Activity Type Icon + Name Input */}
+        <View className="flex-row gap-3">
+          <ActivityTypeSelector
+            value={activityType}
+            onChange={setActivityType}
+            compact
+          />
 
-          {/* Metrics Overview */}
-          <Card className="mt-6">
-            <CardContent className="p-4">
-              <Text className="font-semibold mb-3">Overview</Text>
-              <View className="flex-row gap-2 mb-3">
-                <View className="flex-1 bg-muted rounded-lg p-3">
-                  <Text className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
-                    Duration
+          <Input
+            value={name}
+            onChangeText={setName}
+            placeholder="Activity name"
+            className="flex-1 h-[48px]"
+          />
+        </View>
+
+        {/* Row 2: Description */}
+        <Textarea
+          value={description}
+          onChangeText={setDescription}
+          placeholder="Description (optional)"
+          className="min-h-[60px] max-h-[80px]"
+          multiline
+          numberOfLines={2}
+          scrollEnabled={true}
+        />
+
+        {/* Combined Structure + Metrics Card */}
+        <Card className="flex-1">
+          <CardContent className="p-4 flex-1">
+            <Pressable onPress={handleEditStructure} className="flex-1">
+              {/* Metrics Row - Minimal and elegant */}
+              <View className="flex-row items-center gap-4 mb-3">
+                <View className="flex-row items-center gap-1">
+                  <Text className="text-xs text-muted-foreground">
+                    Duration:
                   </Text>
-                  <Text className="text-lg font-semibold">
-                    {metrics.durationFormatted ||
-                      `${form.watch("estimated_duration")}min`}
+                  <Text className="text-sm font-medium">
+                    {metrics.durationFormatted || "0min"}
                   </Text>
                 </View>
-                <View className="flex-1 bg-muted rounded-lg p-3">
-                  <Text className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
-                    Steps
+                <View className="flex-row items-center gap-1">
+                  <Text className="text-xs text-muted-foreground">TSS:</Text>
+                  <Text className="text-sm font-medium">
+                    {Math.round(metrics.tss) || 0}
                   </Text>
-                  <Text className="text-lg font-semibold">
+                </View>
+                <View className="flex-row items-center gap-1">
+                  <Text className="text-xs text-muted-foreground">IF:</Text>
+                  <Text className="text-sm font-medium">
+                    {metrics.if.toFixed(2)}
+                  </Text>
+                </View>
+                <View className="flex-row items-center gap-1">
+                  <Text className="text-xs text-muted-foreground">Steps:</Text>
+                  <Text className="text-sm font-medium">
                     {metrics.stepCount}
                   </Text>
                 </View>
               </View>
-              <View className="flex-row gap-2">
-                <View className="flex-1 bg-muted rounded-lg p-3">
-                  <Text className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
-                    TSS
-                  </Text>
-                  <Text className="text-lg font-semibold">
-                    {Math.round(metrics.tss) ||
-                      form.watch("estimated_tss") ||
-                      0}
-                  </Text>
-                </View>
-                <View className="flex-1 bg-muted rounded-lg p-3">
-                  <Text className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
-                    IF
-                  </Text>
-                  <Text className="text-lg font-semibold">
-                    {metrics.if.toFixed(2)}
-                  </Text>
-                </View>
-              </View>
-            </CardContent>
-          </Card>
 
-          {/* Structure Preview */}
-          <Card className="mt-4">
-            <CardContent className="p-4">
-              <View className="flex-row items-center justify-between mb-4">
-                <Text className="font-semibold">Activity Structure</Text>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onPress={handleEditStructure}
-                  className="flex-row items-center gap-2"
-                >
-                  <Icon as={Edit3} size={14} className="text-primary" />
-                  <Text className="text-sm">Edit Structure</Text>
-                  <Icon
-                    as={ChevronRight}
-                    size={14}
-                    className="text-muted-foreground"
-                  />
-                </Button>
-              </View>
-
+              {/* Structure Preview */}
               {steps.length === 0 ? (
-                <View className="py-8 items-center">
-                  <Text className="text-muted-foreground text-center mb-2">
+                <View className="flex-1 items-center justify-center py-12">
+                  <Text className="text-base text-muted-foreground mb-2">
                     No structure defined
                   </Text>
                   <Text className="text-sm text-muted-foreground text-center mb-4">
-                    Tap Edit Structure to add steps and intervals
+                    Tap to add steps and intervals
                   </Text>
-                  <Button
-                    variant="default"
-                    onPress={handleEditStructure}
-                    className="px-6"
-                  >
-                    <Text className="text-primary-foreground">Get Started</Text>
-                  </Button>
+                  <View className="bg-muted rounded-lg px-6 py-3">
+                    <Text className="text-sm font-medium">+ Add Structure</Text>
+                  </View>
                 </View>
               ) : (
-                <View>
+                <View className="flex-1">
                   <TimelineChart
                     structure={structure}
-                    height={100}
+                    height={120}
                     onStepPress={handleEditStructure}
                   />
-                  <View className="mt-3 p-3 bg-muted rounded-lg">
-                    <Text className="text-sm text-muted-foreground text-center">
-                      Tap timeline or Edit Structure to modify steps
+                  <View className="mt-3 p-2 bg-muted/50 rounded-lg">
+                    <Text className="text-xs text-muted-foreground text-center">
+                      Tap to edit structure
                     </Text>
                   </View>
                 </View>
               )}
-            </CardContent>
-          </Card>
-        </View>
-      </ScrollView>
-
-      {/* Footer with Save Button */}
-      <View className="border-t border-border bg-card p-4">
-        <Button
-          onPress={form.handleSubmit(handleSubmit)}
-          disabled={isSubmitting}
-          className="w-full"
-        >
-          <Icon as={Save} size={16} className="text-primary-foreground mr-2" />
-          <Text className="text-primary-foreground">
-            {isSubmitting ? "Saving..." : "Save Activity Plan"}
-          </Text>
-        </Button>
+            </Pressable>
+          </CardContent>
+        </Card>
       </View>
     </View>
   );

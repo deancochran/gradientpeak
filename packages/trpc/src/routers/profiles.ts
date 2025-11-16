@@ -43,6 +43,7 @@ export const profilesRouter = createTRPCRouter({
         });
       }
 
+      // Return profile as-is - tRPC will handle serialization
       return profile;
     } catch (error) {
       if (error instanceof TRPCError) {

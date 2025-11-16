@@ -46,7 +46,7 @@ export default function PlanScreen() {
     trpc.plannedActivities.getWeekCount.useQuery();
 
   const handleCreatePlan = () => {
-    router.push("/(internal)/(tabs)/plan/create_activity_plan");
+    router.push("/");
   };
 
   const handleBrowseLibrary = () => {

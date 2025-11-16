@@ -1,6 +1,6 @@
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { Plus } from "lucide-react-native";
+import { Plus, Zap } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
 import { ActivityCard } from "./ActivityCard";
 
@@ -19,7 +19,10 @@ interface DayCardProps {
   isRestDay: boolean;
   isToday: boolean;
   onActivityPress: (activityId: string) => void;
-  onActivityLongPress?: (activityId: string) => void;
+  onActivityLongPress?: (
+    activityId: string,
+    status: Activity["status"],
+  ) => void;
   onAddActivity: (date: Date) => void;
 }
 
@@ -38,6 +41,10 @@ export function DayCard({
 }: DayCardProps) {
   const dayName = date.toLocaleDateString("en-US", { weekday: "short" });
   const dayNumber = date.getDate();
+
+  // Calculate daily TSS total
+  const dailyTSS = activities.reduce((sum, activity) => sum + activity.tss, 0);
+  const hasActivities = activities.length > 0;
 
   return (
     <View className="flex-1 min-w-[120px]">
@@ -59,10 +66,38 @@ export function DayCard({
         >
           {dayNumber}
         </Text>
+
+        {/* TSS Badge */}
+        {hasActivities && (
+          <View className="mt-2 items-center">
+            <View
+              className={`flex-row items-center gap-1 px-2 py-0.5 rounded-full ${
+                isToday ? "bg-primary-foreground/20" : "bg-primary/10"
+              }`}
+            >
+              <Icon
+                as={Zap}
+                size={10}
+                className={isToday ? "text-primary-foreground" : "text-primary"}
+              />
+              <Text
+                className={`text-xs font-semibold ${
+                  isToday ? "text-primary-foreground" : "text-primary"
+                }`}
+              >
+                {Math.round(dailyTSS)}
+              </Text>
+            </View>
+          </View>
+        )}
       </View>
 
       {/* Day Content */}
-      <View className="bg-card border border-border border-t-0 rounded-b-lg p-2 min-h-[200px]">
+      <View
+        className={`bg-card border border-t-0 rounded-b-lg p-2 min-h-[200px] ${
+          hasActivities ? "border-primary/20" : "border-border"
+        }`}
+      >
         {/* Rest Day Indicator */}
         {isRestDay && activities.length === 0 && (
           <View className="items-center justify-center py-8">
@@ -87,7 +122,7 @@ export function DayCard({
                 tss={activity.tss}
                 status={activity.status}
                 onPress={onActivityPress}
-                onLongPress={onActivityLongPress}
+                onLongPress={(id) => onActivityLongPress?.(id, activity.status)}
               />
             ))}
           </View>

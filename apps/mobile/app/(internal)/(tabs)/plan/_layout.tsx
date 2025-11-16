@@ -28,16 +28,21 @@ export default function PlanLayout() {
         name="create_activity_plan/index"
         options={{
           title: "Create Activity Plan",
-          headerShown: true,
-          headerBackTitle: "Back",
+          headerShown: false,
         }}
       />
       <Stack.Screen
-        name="create_activity_plan/structure"
+        name="create_activity_plan/structure/index"
         options={{
           title: "Edit Structure",
-          headerShown: true,
-          headerBackTitle: "Back",
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="create_activity_plan/structure/repeat/index"
+        options={{
+          title: "Edit Repeat",
+          headerShown: false,
         }}
       />
       <Stack.Screen

@@ -2,10 +2,18 @@ import { RepeatCard } from "@/components/ActivityPlan/RepeatCard";
 import { StepCard } from "@/components/ActivityPlan/StepCard";
 import { StepEditorDialog } from "@/components/ActivityPlan/StepEditorDialog";
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
+import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
 import {
   calculateTotalDuration,
   flattenPlanSteps,
@@ -13,10 +21,9 @@ import {
   type StepOrRepetition,
 } from "@repo/core";
 import * as Haptics from "expo-haptics";
-import { router, useLocalSearchParams } from "expo-router";
-import { Plus, Save } from "lucide-react-native";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, ScrollView, View } from "react-native";
+import { router } from "expo-router";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { Alert, View } from "react-native";
 import DraggableFlatList, {
   RenderItemParams,
   ScaleDecorator,
@@ -24,31 +31,22 @@ import DraggableFlatList, {
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 export default function StructureEditScreen() {
-  const params = useLocalSearchParams();
-
-  // Ensure activityType is a string
-  const activityType = Array.isArray(params.activityType)
-    ? params.activityType[0]
-    : params.activityType || "outdoor_run";
   const [selectedStepIndex, setSelectedStepIndex] = useState<number>();
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [editingStepIndex, setEditingStepIndex] = useState<number | null>(null);
-  const [hasChanges, setHasChanges] = useState(false);
   const isMountedRef = useRef(true);
 
-  // Parse initial structure from params
-  const initialStructure = useMemo(() => {
-    try {
-      const structureData = Array.isArray(params.structureData)
-        ? params.structureData[0]
-        : params.structureData;
-      return structureData ? JSON.parse(structureData) : { steps: [] };
-    } catch {
-      return { steps: [] };
-    }
-  }, [params.structureData]);
-
-  const [structure, setStructure] = useState(initialStructure);
+  // Get state and actions from Zustand store
+  const {
+    activityType,
+    structure,
+    addStep,
+    addRepeat,
+    updateStep,
+    removeStep,
+    reorderSteps,
+  } = useActivityPlanCreationStore();
 
   const steps = useMemo(() => structure.steps || [], [structure.steps]);
 
@@ -63,13 +61,6 @@ export default function StructureEditScreen() {
       durationFormatted: formatDuration(durationMs),
     };
   }, [steps]);
-
-  // Cleanup effect
-  useEffect(() => {
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
 
   /**
    * Format duration in milliseconds to readable string
@@ -87,17 +78,47 @@ export default function StructureEditScreen() {
   }
 
   /**
-   * Handle opening step editor for new step
+   * Handle opening the add menu
    */
-  const handleAddStepWithEditor = useCallback(() => {
+  const handleOpenAddMenu = useCallback(() => {
     if (!isMountedRef.current) return;
+    setAddMenuOpen(true);
+  }, []);
+
+  /**
+   * Handle adding a step via the add menu
+   */
+  const handleAddStep = useCallback(() => {
+    if (!isMountedRef.current) return;
+    setAddMenuOpen(false);
     console.log("🔘 Add Step button pressed - opening dialog for new step");
-    console.log("🔘 Current activityType:", activityType);
-    console.log("🔘 Current steps count:", steps.length);
     setEditingStepIndex(null);
     setEditDialogOpen(true);
-    console.log("🔘 Dialog state set to open, editingStepIndex set to null");
-  }, [activityType, steps.length]);
+  }, []);
+
+  /**
+   * Handle adding a repetition block via the add menu
+   */
+  const handleAddRepetition = useCallback(() => {
+    try {
+      if (!isMountedRef.current) return;
+      setAddMenuOpen(false);
+
+      console.log("🔄 Navigating to repeat editor");
+
+      // Navigate to repeat editing page
+      router.push({
+        pathname:
+          "/(internal)/(tabs)/plan/create_activity_plan/structure/repeat/" as any,
+        params: {
+          repeatIndex: steps.length.toString(), // New repeat will be at the end
+        },
+      });
+    } catch (error) {
+      console.error("❌ Error navigating to repeat editor:", error);
+      Alert.alert("Error", "Failed to open repeat editor. Please try again.");
+    }
+  }, [steps.length]);
 
   /**
    * Handle editing an existing step
@@ -121,18 +142,15 @@ export default function StructureEditScreen() {
         if (editingStepIndex !== null) {
           // Editing existing step
           console.log("📝 Updating existing step at index:", editingStepIndex);
-          const newSteps = [...steps];
-          newSteps[editingStepIndex] = step;
-          setStructure({ steps: newSteps });
+          updateStep(editingStepIndex, step);
         } else {
           // Adding new step
           console.log("➕ Adding new step");
-          setStructure({ steps: [...steps, step] });
+          addStep(step);
         }
 
         setEditDialogOpen(false);
         setEditingStepIndex(null);
-        setHasChanges(true);
 
         if (isMountedRef.current) {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -144,31 +162,8 @@ export default function StructureEditScreen() {
         Alert.alert("Error", "Failed to save step. Please try again.");
       }
     },
-    [editingStepIndex, steps],
+    [editingStepIndex, addStep, updateStep],
   );
-
-  /**
-   * Handle adding a repetition block - navigate to repeat editor
-   */
-  const handleAddRepetition = useCallback(() => {
-    try {
-      if (!isMountedRef.current) return;
-
-      console.log("🔄 Navigating to repeat editor");
-
-      // Navigate to repeat editing page
-      router.push({
-        pathname: "/plan/create_activity_plan/repeat" as any,
-        params: {
-          activityType: activityType,
-          repeatIndex: steps.length.toString(),
-        },
-      });
-    } catch (error) {
-      console.error("❌ Error navigating to repeat editor:", error);
-      Alert.alert("Error", "Failed to open repeat editor. Please try again.");
-    }
-  }, [activityType, steps.length]);
 
   /**
    * Handle editing an existing repetition
@@ -184,11 +179,10 @@ export default function StructureEditScreen() {
         console.log("📝 Navigating to repeat editor for existing repeat");
 
         router.push({
-          pathname: "/plan/create_activity_plan/repeat" as any,
+          pathname:
+            "/(internal)/(tabs)/plan/create_activity_plan/structure/repeat/" as any,
           params: {
-            activityType: activityType,
             repeatIndex: index.toString(),
-            repeatData: JSON.stringify(repetition),
           },
         });
       } catch (error) {
@@ -196,7 +190,7 @@ export default function StructureEditScreen() {
         Alert.alert("Error", "Failed to open repeat editor. Please try again.");
       }
     },
-    [activityType, steps],
+    [steps],
   );
 
   /**
@@ -216,9 +210,7 @@ export default function StructureEditScreen() {
             text: "Delete",
             style: "destructive",
             onPress: () => {
-              const newSteps = steps.filter((_: any, i: number) => i !== index);
-              setStructure({ steps: newSteps });
-              setHasChanges(true);
+              removeStep(index);
 
               if (isMountedRef.current) {
                 Haptics.notificationAsync(
@@ -230,7 +222,7 @@ export default function StructureEditScreen() {
         ],
       );
     },
-    [steps],
+    [steps, removeStep],
   );
 
   /**
@@ -238,20 +230,17 @@ export default function StructureEditScreen() {
    */
   const handleDragEnd = useCallback(
     ({ data }: { data: StepOrRepetition[] }) => {
-      setStructure({ steps: data });
-      setHasChanges(true);
+      reorderSteps(data);
     },
-    [],
+    [reorderSteps],
   );
 
   /**
-   * Handle saving and going back
+   * Handle back navigation
    */
-  const handleSave = useCallback(() => {
-    // Pass the updated structure back via route params
+  const handleBack = useCallback(() => {
+    // Store is automatically saved, just navigate back
     router.back();
-    // In a real app, you'd use proper state management or route params
-    // For now, we'll just go back and the parent will need to handle this
   }, []);
 
   /**
@@ -329,98 +318,105 @@ export default function StructureEditScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      {/* Header with Save Button */}
-      <View className="bg-card border-b border-border px-4 py-3">
-        <View className="flex-row items-center justify-between">
-          <View>
+      {/* Minimal Header with Back, Title, and + button */}
+      <View className="bg-card border-b border-border">
+        <View className="flex-row items-center justify-between px-4 py-3">
+          <Button variant="ghost" size="sm" onPress={handleBack}>
+            <Text>Back</Text>
+          </Button>
+
+          <View className="items-center">
             <Text className="text-lg font-semibold">Edit Structure</Text>
-            <Text className="text-sm text-muted-foreground">
+            <Text className="text-xs text-muted-foreground">
               {metrics.stepCount} steps • {metrics.durationFormatted}
             </Text>
           </View>
-          <Button onPress={handleSave} disabled={!hasChanges} className="px-4">
-            <Icon
-              as={Save}
-              size={16}
-              className="text-primary-foreground mr-2"
-            />
-            <Text className="text-primary-foreground">Save</Text>
+
+          <Button variant="ghost" size="sm" onPress={handleOpenAddMenu}>
+            <Text>+</Text>
           </Button>
         </View>
       </View>
 
-      <ScrollView className="flex-1">
-        <View className="p-4">
-          {/* Timeline Chart */}
-          <Card className="mb-4">
-            <CardContent className="p-4">
-              <Text className="font-semibold mb-4">Timeline</Text>
-              <TimelineChart
-                structure={structure}
-                selectedStepIndex={selectedStepIndex}
-                onStepPress={(index) => {
-                  if (isMountedRef.current) {
-                    setSelectedStepIndex(index);
-                  }
-                }}
-                height={100}
-              />
-            </CardContent>
-          </Card>
+      {/* Horizontal Timeline - Static, minimal vertical space */}
+      <View className="bg-card border-b border-border px-4 py-3">
+        <TimelineChart
+          structure={structure}
+          selectedStepIndex={selectedStepIndex}
+          onStepPress={(index) => {
+            if (isMountedRef.current) {
+              setSelectedStepIndex(index);
+            }
+          }}
+          height={60}
+        />
+      </View>
 
-          {/* Action Buttons */}
-          <View className="flex-row gap-3 mb-6">
+      {/* Structure List - Takes remaining space, scrollable */}
+      <View className="flex-1">
+        {steps.length === 0 ? (
+          <View className="flex-1 items-center justify-center px-8">
+            <Text className="text-lg text-muted-foreground text-center mb-2">
+              No steps added yet
+            </Text>
+            <Text className="text-sm text-muted-foreground text-center mb-6">
+              Tap the + button to add steps or repetition blocks
+            </Text>
+            <Button
+              variant="default"
+              onPress={handleOpenAddMenu}
+              className="px-8"
+            >
+              <Text className="text-primary-foreground">+ Add Step</Text>
+            </Button>
+          </View>
+        ) : (
+          <GestureHandlerRootView style={{ flex: 1 }}>
+            <DraggableFlatList
+              data={steps}
+              renderItem={renderStepItem}
+              keyExtractor={(item, index) =>
+                item.type === "step" ? `step-${index}` : `repeat-${index}`
+              }
+              onDragEnd={handleDragEnd}
+              contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+            />
+          </GestureHandlerRootView>
+        )}
+      </View>
+
+      {/* Add Menu Dialog */}
+      <AlertDialog open={addMenuOpen} onOpenChange={setAddMenuOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Add to Structure</AlertDialogTitle>
+            <AlertDialogDescription>
+              Choose what you want to add to your activity structure
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <View className="gap-3 py-4">
             <Button
               variant="outline"
-              onPress={handleAddStepWithEditor}
-              className="flex-1"
+              onPress={handleAddStep}
+              className="w-full justify-start"
             >
-              <Plus size={16} className="text-foreground" />
-              <Text className="ml-1">Add Step</Text>
+              <Text className="text-base">Add Step</Text>
             </Button>
             <Button
               variant="outline"
               onPress={handleAddRepetition}
-              className="flex-1"
+              className="w-full justify-start"
             >
-              <Text>Add Rep</Text>
+              <Text className="text-base">Add Repeat Block</Text>
             </Button>
           </View>
-
-          {/* Structure List */}
-          <Card>
-            <CardContent className="p-4">
-              <Text className="font-semibold mb-4">Structure</Text>
-
-              {steps.length === 0 ? (
-                <View className="py-12 items-center">
-                  <Text className="text-muted-foreground text-center mb-2">
-                    No steps added yet
-                  </Text>
-                  <View className="p-8">
-                    <Text className="text-sm text-muted-foreground text-center">
-                      Add individual steps or repetition blocks to build your
-                      workout
-                    </Text>
-                  </View>
-                </View>
-              ) : (
-                <GestureHandlerRootView style={{ flex: 1 }}>
-                  <DraggableFlatList
-                    data={steps}
-                    renderItem={renderStepItem}
-                    keyExtractor={(item, index) =>
-                      item.type === "step" ? `step-${index}` : `repeat-${index}`
-                    }
-                    onDragEnd={handleDragEnd}
-                    scrollEnabled={false}
-                  />
-                </GestureHandlerRootView>
-              )}
-            </CardContent>
-          </Card>
-        </View>
-      </ScrollView>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              <Text>Cancel</Text>
+            </AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Step Editor Dialog */}
       <StepEditorDialog

@@ -13,17 +13,18 @@ import {
   ScrollView,
   View,
 } from "react-native";
+import { ActivityListModal } from "./components/ActivityListModal";
 import {
   getDateRangeFromTimeRange,
   TimeRangeSelector,
   type TimeRange,
-} from "./trends/components/TimeRangeSelector";
+} from "./components/TimeRangeSelector";
 import {
   IntensityDistributionChart,
   TrainingLoadChart,
   WeeklyProgressChart,
   type TrainingLoadData,
-} from "./trends/components/charts";
+} from "./components/charts";
 
 type TabView = "overview" | "weekly" | "intensity";
 
@@ -46,6 +47,16 @@ export default function TrendsScreen() {
   const [timeRange, setTimeRange] = useState<TimeRange>("3M");
   const [activeTab, setActiveTab] = useState<TabView>("overview");
   const [refreshing, setRefreshing] = useState(false);
+
+  // Activity list modal state
+  const [activityModalVisible, setActivityModalVisible] = useState(false);
+  const [activityModalConfig, setActivityModalConfig] = useState<{
+    title: string;
+    subtitle?: string;
+    dateFrom: string;
+    dateTo: string;
+    intensityZone?: string;
+  } | null>(null);
 
   // Get user's training plan
   const {
@@ -463,9 +474,18 @@ export default function TrendsScreen() {
                   : "❌";
 
             return (
-              <View
+              <Pressable
                 key={index}
-                className={`p-4 rounded-lg border ${statusColor}`}
+                onPress={() => {
+                  setActivityModalConfig({
+                    title: `Week ${weeklySummary.length - index} Activities`,
+                    subtitle: `${new Date(week.weekStart).toLocaleDateString()} - ${new Date(week.weekEnd).toLocaleDateString()}`,
+                    dateFrom: week.weekStart,
+                    dateTo: week.weekEnd,
+                  });
+                  setActivityModalVisible(true);
+                }}
+                className={`p-4 rounded-lg border ${statusColor} active:opacity-70`}
               >
                 <View className="flex-row items-center justify-between mb-3">
                   <View>
@@ -497,7 +517,7 @@ export default function TrendsScreen() {
                     </Text>
                   </View>
                 </View>
-              </View>
+              </Pressable>
             );
           })}
         </View>
@@ -603,8 +623,24 @@ export default function TrendsScreen() {
           data={distributionPercent}
           totalTSS={totalTSS}
           onZonePress={(zoneKey) => {
-            // TODO: Navigate to activities filtered by zone
-            console.log("Pressed zone:", zoneKey);
+            // Open activity list filtered by intensity zone
+            const zoneLabels: Record<string, string> = {
+              recovery: "Recovery",
+              endurance: "Endurance",
+              tempo: "Tempo",
+              threshold: "Threshold",
+              vo2max: "VO2max",
+              anaerobic: "Anaerobic",
+              neuromuscular: "Sprint",
+            };
+            setActivityModalConfig({
+              title: `${zoneLabels[zoneKey]} Zone Activities`,
+              subtitle: `Activities in the ${zoneLabels[zoneKey].toLowerCase()} intensity zone`,
+              dateFrom: dateRange.start_date,
+              dateTo: dateRange.end_date,
+              intensityZone: zoneKey,
+            });
+            setActivityModalVisible(true);
           }}
           height={320}
         />
@@ -768,6 +804,22 @@ export default function TrendsScreen() {
         {activeTab === "weekly" && renderWeeklyTab()}
         {activeTab === "intensity" && renderIntensityTab()}
       </ScrollView>
+
+      {/* Activity List Modal */}
+      {activityModalConfig && (
+        <ActivityListModal
+          visible={activityModalVisible}
+          title={activityModalConfig.title}
+          subtitle={activityModalConfig.subtitle}
+          dateFrom={activityModalConfig.dateFrom}
+          dateTo={activityModalConfig.dateTo}
+          intensityZone={activityModalConfig.intensityZone}
+          onClose={() => {
+            setActivityModalVisible(false);
+            setActivityModalConfig(null);
+          }}
+        />
+      )}
     </View>
   );
 }

@@ -12,7 +12,9 @@ import {
 } from "react-native";
 import { AddActivityButton } from "./components/calendar/AddActivityButton";
 import { DayCard } from "./components/calendar/DayCard";
+import { DeleteConfirmationModal } from "./components/calendar/DeleteConfirmationModal";
 import { useWeekNavigation } from "./components/calendar/hooks/useWeekNavigation";
+import { RescheduleModal } from "./components/calendar/RescheduleModal";
 import { WeeklySummaryBar } from "./components/calendar/WeeklySummaryBar";
 import { WeekNavigator } from "./components/calendar/WeekNavigator";
 
@@ -41,17 +43,70 @@ export default function TrainingPlanCalendar() {
   const { data: plan, isLoading: loadingPlan } =
     trpc.trainingPlans.get.useQuery();
 
-  // TODO: Get planned activities for the current week
-  // Need to implement trpc.plannedActivities.listByWeek endpoint
-  const plannedActivities: any[] = [];
-  const loadingActivities = false;
-  const refetchActivities = async () => {};
+  // Get planned activities for the current week
+  const {
+    data: plannedActivities = [],
+    isLoading: loadingPlannedActivities,
+    refetch: refetchPlannedActivities,
+  } = trpc.plannedActivities.listByWeek.useQuery({
+    weekStart: currentWeekStart.toISOString().split("T")[0],
+    weekEnd: currentWeekEnd.toISOString().split("T")[0],
+  });
 
-  // TODO: Get completed activities for the current week
-  // Need to implement trpc.activities.list endpoint with date filtering
-  const completedActivities: any[] = [];
+  // Get completed activities for the current week
+  const {
+    data: completedActivities = [],
+    isLoading: loadingCompletedActivities,
+    refetch: refetchCompletedActivities,
+  } = trpc.activities.list.useQuery({
+    date_from: currentWeekStart.toISOString().split("T")[0],
+    date_to: currentWeekEnd.toISOString().split("T")[0],
+  });
+
+  const loadingActivities =
+    loadingPlannedActivities || loadingCompletedActivities;
+  const refetchActivities = async () => {
+    await Promise.all([
+      refetchPlannedActivities(),
+      refetchCompletedActivities(),
+    ]);
+  };
 
   const [refreshing, setRefreshing] = useState(false);
+
+  // Modal states for reschedule and delete
+  const [rescheduleModalVisible, setRescheduleModalVisible] = useState(false);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [selectedActivity, setSelectedActivity] = useState<{
+    id: string;
+    name: string;
+    date: Date;
+  } | null>(null);
+
+  // tRPC mutations
+  const updateMutation = trpc.plannedActivities.update.useMutation({
+    onSuccess: () => {
+      refetchActivities();
+      setRescheduleModalVisible(false);
+      setSelectedActivity(null);
+      Alert.alert("Success", "Activity rescheduled successfully!");
+    },
+    onError: (error) => {
+      Alert.alert("Error", `Failed to reschedule activity: ${error.message}`);
+    },
+  });
+
+  const deleteMutation = trpc.plannedActivities.delete.useMutation({
+    onSuccess: () => {
+      refetchActivities();
+      setDeleteModalVisible(false);
+      setSelectedActivity(null);
+      Alert.alert("Success", "Activity deleted successfully!");
+    },
+    onError: (error) => {
+      Alert.alert("Error", `Failed to delete activity: ${error.message}`);
+    },
+  });
 
   // Handle refresh
   const handleRefresh = async () => {
@@ -66,7 +121,8 @@ export default function TrainingPlanCalendar() {
   // Calculate weekly summary metrics
   const calculateWeeklySummary = () => {
     const completedTSS = completedActivities.reduce(
-      (sum: number, activity: any) => sum + (activity.tss || 0),
+      (sum: number, activity: any) =>
+        sum + (activity.training_stress_score || 0),
       0,
     );
 
@@ -82,15 +138,18 @@ export default function TrainingPlanCalendar() {
         2
       : 0;
 
-    const completedActivities = completedActivities.length;
-    const totalPlannedActivities = plannedActivities.length;
+    const completedActivitiesCount: number = completedActivities.length;
+    const totalPlannedActivities: number = plannedActivities.length;
 
     // Determine status
     let status: "on_track" | "behind" | "ahead" | "warning" = "on_track";
     const progressPercent =
       targetTSS > 0 ? (completedTSS / targetTSS) * 100 : 0;
 
-    if (progressPercent < 50 && totalPlannedActivities > completedActivities) {
+    if (
+      progressPercent < 50 &&
+      totalPlannedActivities > completedActivitiesCount
+    ) {
       status = "behind";
     } else if (progressPercent > 120) {
       status = "warning";
@@ -102,7 +161,7 @@ export default function TrainingPlanCalendar() {
       completedTSS,
       plannedTSS,
       targetTSS,
-      completedActivities,
+      completedActivities: completedActivitiesCount,
       totalPlannedActivities,
       status,
     };
@@ -115,7 +174,7 @@ export default function TrainingPlanCalendar() {
     // Get completed activities for this date
     const completed = completedActivities
       .filter((activity: any) => {
-        const activityDate = new Date(activity.start_time)
+        const activityDate = new Date(activity.started_at)
           .toISOString()
           .split("T")[0];
         return activityDate === dateString;
@@ -124,8 +183,8 @@ export default function TrainingPlanCalendar() {
         id: activity.id,
         name: activity.name || "Completed Activity",
         activityType: activity.activity_type || "unknown",
-        duration: Math.round((activity.duration || 0) / 60), // Convert to minutes
-        tss: activity.tss || 0,
+        duration: Math.round((activity.duration_seconds || 0) / 60), // Convert to minutes
+        tss: activity.training_stress_score || 0,
         status: "completed" as const,
       }));
 
@@ -175,7 +234,33 @@ export default function TrainingPlanCalendar() {
   };
 
   // Handle activity long press (quick actions)
-  const handleActivityLongPress = (activityId: string) => {
+  const handleActivityLongPress = (
+    activityId: string,
+    status: "completed" | "scheduled" | "warning" | "violation",
+  ) => {
+    // Can only reschedule/delete planned activities, not completed ones
+    if (status === "completed") {
+      Alert.alert(
+        "Completed Activity",
+        "This activity has already been completed. You can view details but cannot reschedule or delete it.",
+        [
+          {
+            text: "View Details",
+            onPress: () => handleActivityPress(activityId),
+          },
+          {
+            text: "OK",
+            style: "cancel",
+          },
+        ],
+      );
+      return;
+    }
+
+    // Find the planned activity
+    const plannedActivity = plannedActivities.find((a) => a.id === activityId);
+    if (!plannedActivity) return;
+
     Alert.alert("Activity Actions", "What would you like to do?", [
       {
         text: "View Details",
@@ -184,16 +269,24 @@ export default function TrainingPlanCalendar() {
       {
         text: "Reschedule",
         onPress: () => {
-          // TODO: Implement reschedule
-          Alert.alert("Coming Soon", "Reschedule feature coming soon!");
+          setSelectedActivity({
+            id: plannedActivity.id,
+            name: plannedActivity.activity_plan?.name || "Activity",
+            date: new Date(plannedActivity.scheduled_date),
+          });
+          setRescheduleModalVisible(true);
         },
       },
       {
         text: "Delete",
         style: "destructive",
         onPress: () => {
-          // TODO: Implement delete
-          Alert.alert("Coming Soon", "Delete feature coming soon!");
+          setSelectedActivity({
+            id: plannedActivity.id,
+            name: plannedActivity.activity_plan?.name || "Activity",
+            date: new Date(plannedActivity.scheduled_date),
+          });
+          setDeleteModalVisible(true);
         },
       },
       {
@@ -201,6 +294,25 @@ export default function TrainingPlanCalendar() {
         style: "cancel",
       },
     ]);
+  };
+
+  // Handle reschedule confirmation
+  const handleRescheduleConfirm = (newDate: Date) => {
+    if (!selectedActivity) return;
+
+    updateMutation.mutate({
+      id: selectedActivity.id,
+      scheduled_date: newDate.toISOString().split("T")[0],
+    });
+  };
+
+  // Handle delete confirmation
+  const handleDeleteConfirm = () => {
+    if (!selectedActivity) return;
+
+    deleteMutation.mutate({
+      id: selectedActivity.id,
+    });
   };
 
   // Handle add activity for specific date
@@ -319,6 +431,34 @@ export default function TrainingPlanCalendar() {
 
       {/* Floating Add Button */}
       <AddActivityButton onPress={handleAddActivity} />
+
+      {/* Reschedule Modal */}
+      {selectedActivity && (
+        <RescheduleModal
+          visible={rescheduleModalVisible}
+          activityName={selectedActivity.name}
+          currentDate={selectedActivity.date}
+          onConfirm={handleRescheduleConfirm}
+          onCancel={() => {
+            setRescheduleModalVisible(false);
+            setSelectedActivity(null);
+          }}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {selectedActivity && (
+        <DeleteConfirmationModal
+          visible={deleteModalVisible}
+          activityName={selectedActivity.name}
+          activityDate={selectedActivity.date}
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => {
+            setDeleteModalVisible(false);
+            setSelectedActivity(null);
+          }}
+        />
+      )}
     </View>
   );
 }

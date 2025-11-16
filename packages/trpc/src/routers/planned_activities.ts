@@ -555,4 +555,56 @@ export const plannedActivitiesRouter = createTRPCRouter({
           restDaysStatus === "warning",
       };
     }),
+
+  // ------------------------------
+  // List planned activities by week
+  // ------------------------------
+  listByWeek: protectedProcedure
+    .input(
+      z.object({
+        weekStart: z.string(), // ISO date string for start of week
+        weekEnd: z.string(), // ISO date string for end of week
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const { data, error } = await ctx.supabase
+        .from("planned_activities")
+        .select(
+          `
+          id,
+          idx,
+          profile_id,
+          activity_plan_id,
+          scheduled_date,
+          created_at,
+          activity_plan:activity_plans (
+            id,
+            idx,
+            profile_id,
+            name,
+            activity_type,
+            description,
+            structure,
+            estimated_tss,
+            estimated_duration,
+            version,
+            created_at
+          )
+        `,
+        )
+        .eq("profile_id", ctx.session.user.id)
+        .gte("scheduled_date", input.weekStart)
+        .lte("scheduled_date", input.weekEnd)
+        .order("scheduled_date", { ascending: true })
+        .order("id", { ascending: true });
+
+      if (error) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error.message,
+        });
+      }
+
+      return data || [];
+    }),
 });
