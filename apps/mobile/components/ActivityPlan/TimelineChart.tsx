@@ -16,6 +16,8 @@ interface TimelineChartProps {
   selectedStepIndex?: number;
   onStepPress?: (index: number) => void;
   height?: number;
+  minStepHeight?: number;
+  maxStepHeight?: number;
 }
 
 export function TimelineChart({
@@ -23,7 +25,11 @@ export function TimelineChart({
   selectedStepIndex,
   onStepPress,
   height = 120,
+  minStepHeight = 10,
+  maxStepHeight,
 }: TimelineChartProps) {
+  const svgHeight = height - 16;
+  const maxStepHeightValue = maxStepHeight ?? svgHeight - 30; // Default to available height minus margins
   const flatSteps = useMemo(
     () => flattenPlanSteps(structure.steps || []),
     [structure.steps],
@@ -54,6 +60,11 @@ export function TimelineChart({
     const type = step.targets?.[0]?.type;
     const color = getIntensityColor(intensity, type);
 
+    // Calculate height based on intensity (0-100 scale)
+    const barHeight =
+      minStepHeight + (intensity / 100) * (maxStepHeightValue - minStepHeight);
+    const barY = 20 + maxStepHeightValue - barHeight; // Bars start from bottom
+
     return {
       index,
       widthPercent,
@@ -61,6 +72,8 @@ export function TimelineChart({
       color,
       isSelected: index === selectedStepIndex,
       step,
+      barHeight,
+      barY,
     };
   });
 
@@ -75,8 +88,8 @@ export function TimelineChart({
       <View className="relative">
         <Svg
           width="100%"
-          height={height - 16}
-          viewBox={`0 0 ${chartWidth} ${height - 16}`}
+          height={svgHeight}
+          viewBox={`0 0 ${chartWidth} ${svgHeight}`}
         >
           {
             chartData.reduce(
@@ -87,9 +100,9 @@ export function TimelineChart({
                   <Rect
                     key={idx}
                     x={x}
-                    y={20}
+                    y={data.barY}
                     width={width}
-                    height={height - 56}
+                    height={data.barHeight}
                     fill={data.color}
                     opacity={data.isSelected ? 1 : 0.85}
                     stroke={data.isSelected ? "#3B82F6" : "transparent"}
@@ -125,9 +138,9 @@ export function TimelineChart({
                       style={{
                         position: "absolute",
                         left: x,
-                        top: 20,
+                        top: data.barY,
                         width: width,
-                        height: height - 56,
+                        height: data.barHeight,
                       }}
                     />
                   </TouchableWithoutFeedback>
