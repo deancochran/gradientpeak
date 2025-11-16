@@ -5,54 +5,58 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
+import { useActivityPlanForm } from "@/lib/hooks/forms/useActivityPlanForm";
 import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
+import { formatDuration } from "@/lib/utils/dates";
 import {
   calculateAverageIF,
-  calculateTotalDuration,
   calculateTotalTSS,
   flattenPlanSteps,
   getDefaultUserSettings,
 } from "@repo/core";
 import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { Alert, Pressable, View } from "react-native";
 
-/**
- * Format duration in milliseconds to readable string
- */
-function formatDuration(ms: number): string {
-  const minutes = Math.round(ms / 60000);
-  if (minutes < 60) {
-    return `${minutes}min`;
-  }
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  return remainingMinutes > 0
-    ? `${hours}h ${remainingMinutes}min`
-    : `${hours}h`;
-}
-
 export default function CreateActivityPlanScreen() {
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Get state and actions from Zustand store
+  // Use form hook for state management and submission
   const {
-    name,
-    description,
-    activityType,
-    structure,
+    form,
     setName,
     setDescription,
     setActivityType,
-    reset,
-  } = useActivityPlanCreationStore();
+    metrics,
+    submit,
+    cancel,
+    isSubmitting,
+  } = useActivityPlanForm({
+    onSuccess: (planId) => {
+      Alert.alert("Success", "Activity plan saved successfully!", [
+        {
+          text: "OK",
+          onPress: () => {
+            router.back();
+          },
+        },
+      ]);
+    },
+    onError: (error) => {
+      Alert.alert("Error", "Failed to save activity plan. Please try again.");
+    },
+  });
+
+  const { name, description, activityType, structure } = form;
+
+  // Get direct access to store structure for chart display
+  const storeStructure = useActivityPlanCreationStore(
+    (state) => state.structure,
+  );
 
   const steps = useMemo(() => structure.steps || [], [structure.steps]);
 
-  // Calculate metrics from structure - these are read-only derived values
-  const metrics = useMemo(() => {
+  // Calculate additional metrics (TSS/IF) from structure
+  const additionalMetrics = useMemo(() => {
     const flatSteps = flattenPlanSteps(steps);
-    const durationMs = calculateTotalDuration(flatSteps);
 
     // Get default user settings for TSS/IF calculations
     const userSettings = getDefaultUserSettings(activityType);
@@ -60,99 +64,18 @@ export default function CreateActivityPlanScreen() {
     const averageIF = calculateAverageIF(steps, userSettings);
 
     return {
-      stepCount: flatSteps.length,
-      duration: durationMs,
-      durationFormatted: formatDuration(durationMs),
       tss: totalTSS,
       if: averageIF,
     };
   }, [steps, activityType]);
 
-  // Clean up store when navigating away from creation flow
-  React.useEffect(() => {
-    return () => {
-      // Only reset if we're actually leaving the creation flow
-      // (not just navigating to sub-pages)
-      const currentRoute = router.canGoBack() ? "sub" : "main";
-      if (currentRoute === "main") {
-        reset();
-      }
-    };
-  }, [reset]);
-
   /**
    * Handle navigating to structure editor
    */
   const handleEditStructure = () => {
-    // No need to pass params - structure page will use the store
-    router.push({
-      pathname:
-        "/(internal)/(tabs)/plan/create_activity_plan/structure/" as any,
-    });
-  };
-
-  /**
-   * Handle cancel - go back without saving
-   */
-  const handleCancel = () => {
-    Alert.alert(
-      "Discard Activity Plan",
-      "Are you sure you want to discard this activity plan?",
-      [
-        { text: "Keep Editing", style: "cancel" },
-        {
-          text: "Discard",
-          style: "destructive",
-          onPress: () => {
-            reset(); // Reset the store
-            router.back();
-          },
-        },
-      ],
+    router.push(
+      "/(internal)/(tabs)/plan/create_activity_plan/structure/" as any,
     );
-  };
-
-  /**
-   * Handle form submission
-   */
-  const handleSubmit = async () => {
-    // Validate required fields
-    if (!name.trim()) {
-      Alert.alert("Validation Error", "Activity name is required");
-      return;
-    }
-
-    setIsSubmitting(true);
-
-    try {
-      const finalData = {
-        name,
-        description,
-        activity_type: activityType,
-        structure,
-        estimated_duration: Math.round(metrics.duration / 60000) || 0,
-        estimated_tss: Math.round(metrics.tss) || 0,
-      };
-
-      // TODO: Save to database via API/tRPC
-      console.log("Saving activity plan:", finalData);
-
-      // Show success message
-      Alert.alert("Success", "Activity plan saved successfully!", [
-        {
-          text: "OK",
-          onPress: () => {
-            reset(); // Reset the store after successful save
-            router.back();
-          },
-        },
-      ]);
-    } catch (error) {
-      console.error("Error saving activity plan:", error);
-      Alert.alert("Error", "Failed to save activity plan. Please try again.");
-    } finally {
-      setIsSubmitting(false);
-    }
   };
 
   return (
@@ -163,7 +86,7 @@ export default function CreateActivityPlanScreen() {
           <Button
             variant="ghost"
             size="sm"
-            onPress={handleCancel}
+            onPress={cancel}
             disabled={isSubmitting}
           >
             <Text>Cancel</Text>
@@ -174,7 +97,7 @@ export default function CreateActivityPlanScreen() {
           <Button
             variant="default"
             size="sm"
-            onPress={handleSubmit}
+            onPress={submit}
             disabled={isSubmitting}
           >
             <Text className="text-primary-foreground font-medium">
@@ -224,19 +147,19 @@ export default function CreateActivityPlanScreen() {
                     Duration:
                   </Text>
                   <Text className="text-sm font-medium">
-                    {metrics.durationFormatted || "0min"}
+                    {formatDuration(metrics.duration) || "0min"}
                   </Text>
                 </View>
                 <View className="flex-row items-center gap-1">
                   <Text className="text-xs text-muted-foreground">TSS:</Text>
                   <Text className="text-sm font-medium">
-                    {Math.round(metrics.tss) || 0}
+                    {Math.round(additionalMetrics.tss) || 0}
                   </Text>
                 </View>
                 <View className="flex-row items-center gap-1">
                   <Text className="text-xs text-muted-foreground">IF:</Text>
                   <Text className="text-sm font-medium">
-                    {metrics.if.toFixed(2)}
+                    {additionalMetrics.if.toFixed(2)}
                   </Text>
                 </View>
                 <View className="flex-row items-center gap-1">
@@ -263,7 +186,7 @@ export default function CreateActivityPlanScreen() {
               ) : (
                 <View className="flex-1">
                   <TimelineChart
-                    structure={structure}
+                    structure={storeStructure}
                     height={120}
                     onStepPress={handleEditStructure}
                   />

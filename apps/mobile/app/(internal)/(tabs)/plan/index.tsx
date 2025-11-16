@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
+import { ROUTES } from "@/lib/constants/routes";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { useRouter } from "expo-router";
@@ -46,26 +47,26 @@ export default function PlanScreen() {
     trpc.plannedActivities.getWeekCount.useQuery();
 
   const handleCreatePlan = () => {
-    router.push("/");
+    router.push(ROUTES.PLAN.CREATE);
   };
 
   const handleBrowseLibrary = () => {
-    router.push("/(internal)/(tabs)/plan/library");
+    router.push(ROUTES.PLAN.LIBRARY);
   };
 
   const handleViewScheduled = () => {
-    router.push("/(internal)/(tabs)/plan/planned_activities");
+    router.push(ROUTES.PLAN.SCHEDULED);
   };
 
   const handleScheduleFromLibrary = () => {
     router.push({
-      pathname: "/(internal)/(tabs)/plan/library",
+      pathname: ROUTES.PLAN.LIBRARY,
       params: { scheduleIntent: "true" },
     });
   };
 
   const handleViewTrainingPlan = () => {
-    router.push("/(internal)/(tabs)/plan/training-plan");
+    router.push(ROUTES.PLAN.TRAINING_PLAN.INDEX);
   };
 
   const handleSelectPlannedActivity = (id: string) => {

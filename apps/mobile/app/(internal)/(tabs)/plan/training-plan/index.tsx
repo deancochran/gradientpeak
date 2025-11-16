@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
+import { ROUTES } from "@/lib/constants/routes";
 import { trpc } from "@/lib/trpc";
 import { useRouter } from "expo-router";
 import {
@@ -48,15 +49,15 @@ export default function TrainingPlanOverview() {
   };
 
   const handleCreatePlan = () => {
-    router.push("./create");
+    router.push(ROUTES.PLAN.TRAINING_PLAN.CREATE);
   };
 
   const handleViewCalendar = () => {
-    router.push("./calendar");
+    router.push(ROUTES.PLAN.TRAINING_PLAN.CALENDAR);
   };
 
   const handleViewTrends = () => {
-    router.push("/(internal)/(tabs)/trends" as any);
+    router.push(ROUTES.TRENDS);
   };
 
   // Loading state
@@ -187,7 +188,9 @@ export default function TrainingPlanOverview() {
               </Text>
             )}
           </View>
-          <TouchableOpacity onPress={() => router.push("./settings")}>
+          <TouchableOpacity
+            onPress={() => router.push(ROUTES.PLAN.TRAINING_PLAN.SETTINGS)}
+          >
             <View className="bg-muted rounded-full p-2">
               <Icon as={ChevronRight} size={24} className="text-foreground" />
             </View>

@@ -16,9 +16,10 @@ export const activityPlanCreateSchema = z.object({
     "indoor_bike_trainer",
     "indoor_strength",
     "indoor_swim",
+    "other",
   ]),
   name: z.string().min(1, "Plan name is required"),
-  description: z.string(),
+  description: z.string().max(1000),
   estimated_duration: z.number().positive("Duration must be positive"),
   estimated_tss: z.number().nullable().optional(),
   structure: z.any(), // Will be validated by activityPlanStructureSchema

@@ -5,7 +5,14 @@ interface ActivityPlanCreationState {
   // Form data
   name: string;
   description: string;
-  activityType: string;
+  activityType:
+    | "outdoor_run"
+    | "outdoor_bike"
+    | "indoor_treadmill"
+    | "indoor_bike_trainer"
+    | "indoor_strength"
+    | "indoor_swim"
+    | "other";
   structure: {
     steps: StepOrRepetition[];
   };
@@ -88,8 +95,7 @@ export const useActivityPlanCreationStore = create<ActivityPlanCreationState>(
         },
       })),
 
-    reorderSteps: (steps) =>
-      set({ structure: { steps } }),
+    reorderSteps: (steps) => set({ structure: { steps } }),
 
     updateRepeatAtIndex: (index, repeat) =>
       set((state) => {
@@ -98,9 +104,10 @@ export const useActivityPlanCreationStore = create<ActivityPlanCreationState>(
         return { structure: { steps: newSteps } };
       }),
 
-    reset: () => set({
-      ...initialState,
-      name: generateDefaultActivityName(), // Generate fresh timestamp on reset
-    }),
-  })
+    reset: () =>
+      set({
+        ...initialState,
+        name: generateDefaultActivityName(), // Generate fresh timestamp on reset
+      }),
+  }),
 );

@@ -91,7 +91,7 @@ create table "public"."activity_plans" (
     "version" text not null default '1.0'::text,
     "name" text not null,
     "activity_type" activity_type not null,
-    "description" text not null,
+    "description" text,
     "structure" jsonb not null,
     "estimated_tss" integer not null,
     "estimated_duration" integer not null,
@@ -866,5 +866,3 @@ grant trigger on table "public"."training_plans" to "service_role";
 grant truncate on table "public"."training_plans" to "service_role";
 
 grant update on table "public"."training_plans" to "service_role";
-
-

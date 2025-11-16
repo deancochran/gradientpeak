@@ -14,14 +14,12 @@ export default function PlanLayout() {
         name="library/index"
         options={{
           title: "Activity Library",
-          presentation: "modal",
         }}
       />
       <Stack.Screen
         name="planned_activities/index"
         options={{
           title: "Scheduled Activities",
-          presentation: "modal",
         }}
       />
       <Stack.Screen
@@ -49,7 +47,6 @@ export default function PlanLayout() {
         name="create_planned_activity/index"
         options={{
           title: "Schedule Activity",
-          presentation: "modal",
         }}
       />
     </Stack>

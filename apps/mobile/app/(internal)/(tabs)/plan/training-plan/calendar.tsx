@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
+import { ROUTES } from "@/lib/constants/routes";
 import { trpc } from "@/lib/trpc";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
@@ -227,9 +228,7 @@ export default function TrainingPlanCalendar() {
   // Handle activity press
   const handleActivityPress = (activityId: string) => {
     router.push({
-      pathname:
-        "/(internal)/(tabs)/plan/planned_activities/[activity_uuid]" as any,
-      params: { activity_uuid: activityId },
+      pathname: ROUTES.PLAN.ACTIVITY_DETAIL(activityId),
     });
   };
 
@@ -326,7 +325,7 @@ export default function TrainingPlanCalendar() {
           text: "Choose from Library",
           onPress: () => {
             router.push({
-              pathname: "/(internal)/(tabs)/plan/library" as any,
+              pathname: ROUTES.PLAN.LIBRARY,
               params: {
                 scheduleIntent: "true",
                 scheduledDate: date.toISOString(),
@@ -367,7 +366,10 @@ export default function TrainingPlanCalendar() {
         <Text className="text-muted-foreground text-center mb-6">
           Create a training plan to start scheduling activities
         </Text>
-        <Button onPress={() => router.push("./create")} size="lg">
+        <Button
+          onPress={() => router.push(ROUTES.PLAN.TRAINING_PLAN.CREATE)}
+          size="lg"
+        >
           <Text className="text-primary-foreground font-semibold">
             Create Training Plan
           </Text>

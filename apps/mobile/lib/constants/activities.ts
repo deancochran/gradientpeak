@@ -1,0 +1,108 @@
+import {
+    Activity,
+    Bike,
+    Dumbbell,
+    Footprints,
+    Waves,
+} from "lucide-react-native";
+
+/**
+ * Activity type configuration for icons, labels, and colors
+ * Centralized to avoid duplication across the app
+ */
+export const ACTIVITY_CONFIGS = {
+  outdoor_run: {
+    name: "Outdoor Run",
+    shortName: "Run",
+    icon: Footprints,
+    color: "text-blue-600",
+    bgColor: "bg-blue-50",
+    borderColor: "border-blue-200",
+  },
+  outdoor_bike: {
+    name: "Outdoor Bike",
+    shortName: "Bike",
+    icon: Bike,
+    color: "text-green-600",
+    bgColor: "bg-green-50",
+    borderColor: "border-green-200",
+  },
+  indoor_treadmill: {
+    name: "Treadmill",
+    shortName: "Treadmill",
+    icon: Footprints,
+    color: "text-purple-600",
+    bgColor: "bg-purple-50",
+    borderColor: "border-purple-200",
+  },
+  indoor_bike_trainer: {
+    name: "Bike Trainer",
+    shortName: "Trainer",
+    icon: Bike,
+    color: "text-orange-600",
+    bgColor: "bg-orange-50",
+    borderColor: "border-orange-200",
+  },
+  indoor_strength: {
+    name: "Strength Training",
+    shortName: "Strength",
+    icon: Dumbbell,
+    color: "text-red-600",
+    bgColor: "bg-red-50",
+    borderColor: "border-red-200",
+  },
+  indoor_swim: {
+    name: "Swimming",
+    shortName: "Swim",
+    icon: Waves,
+    color: "text-cyan-600",
+    bgColor: "bg-cyan-50",
+    borderColor: "border-cyan-200",
+  },
+  other: {
+    name: "Other Activity",
+    shortName: "Other",
+    icon: Activity,
+    color: "text-gray-600",
+    bgColor: "bg-gray-50",
+    borderColor: "border-gray-200",
+  },
+} as const;
+
+/**
+ * Valid activity type keys
+ */
+export type ActivityType = keyof typeof ACTIVITY_CONFIGS;
+
+/**
+ * Get activity configuration for a given type
+ * Returns 'other' config as fallback if type not found
+ */
+export function getActivityConfig(activityType: string) {
+  return (
+    ACTIVITY_CONFIGS[activityType as ActivityType] || ACTIVITY_CONFIGS.other
+  );
+}
+
+/**
+ * Activity type options for filters and selectors
+ */
+export const ACTIVITY_FILTER_OPTIONS = [
+  { value: "all" as const, label: "All", icon: Activity },
+  { value: "outdoor_run" as const, label: "Run", icon: Footprints },
+  { value: "outdoor_bike" as const, label: "Bike", icon: Bike },
+  { value: "indoor_strength" as const, label: "Strength", icon: Dumbbell },
+] as const;
+
+/**
+ * All activity type options for creation and editing
+ */
+export const ACTIVITY_TYPE_OPTIONS = [
+  { value: "outdoor_run", label: "Outdoor Run", icon: Footprints },
+  { value: "outdoor_bike", label: "Outdoor Bike", icon: Bike },
+  { value: "indoor_treadmill", label: "Treadmill", icon: Footprints },
+  { value: "indoor_bike_trainer", label: "Bike Trainer", icon: Bike },
+  { value: "indoor_strength", label: "Strength Training", icon: Dumbbell },
+  { value: "indoor_swim", label: "Swimming", icon: Waves },
+  { value: "other", label: "Other", icon: Activity },
+] as const;

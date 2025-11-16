@@ -101,9 +101,19 @@ export default function SchedulePlannedActivityScreen() {
       includeSamples: true,
     });
 
+  // Get utils for query invalidation
+  const utils = trpc.useUtils();
+
   // Mutations
   const createMutation = trpc.plannedActivities.create.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
+      // Invalidate ALL related queries to ensure calendar updates
+      await utils.plannedActivities.list.invalidate();
+      await utils.plannedActivities.listByWeek.invalidate();
+      await utils.plannedActivities.getToday.invalidate();
+      await utils.plannedActivities.getWeekCount.invalidate();
+      await utils.trainingPlans.getCurrentStatus.invalidate();
+
       Alert.alert("Success", "Activity scheduled!");
       router.back();
     },
@@ -113,7 +123,14 @@ export default function SchedulePlannedActivityScreen() {
   });
 
   const updateMutation = trpc.plannedActivities.update.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
+      // Invalidate queries after update as well
+      await utils.plannedActivities.list.invalidate();
+      await utils.plannedActivities.listByWeek.invalidate();
+      await utils.plannedActivities.getToday.invalidate();
+      await utils.plannedActivities.getWeekCount.invalidate();
+      await utils.trainingPlans.getCurrentStatus.invalidate();
+
       Alert.alert("Success", "Activity rescheduled!");
       router.back();
     },

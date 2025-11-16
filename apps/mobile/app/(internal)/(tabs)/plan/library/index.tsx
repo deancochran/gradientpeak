@@ -1,20 +1,13 @@
+import { PlanCard } from "@/components/plan";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Text } from "@/components/ui/text";
+import { ACTIVITY_FILTER_OPTIONS } from "@/lib/constants/activities";
+import { ROUTES } from "@/lib/constants/routes";
 import { trpc } from "@/lib/trpc";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import {
-  Activity,
-  AlertCircle,
-  Bike,
-  Clock,
-  Dumbbell,
-  Footprints,
-  Plus,
-  Waves,
-} from "lucide-react-native";
+import { Activity, Plus } from "lucide-react-native";
 import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -33,39 +26,6 @@ type ActivityType =
   | "indoor_bike_trainer"
   | "indoor_strength"
   | "indoor_swim";
-
-const ACTIVITY_CONFIGS = {
-  outdoor_run: {
-    name: "Outdoor Run",
-    icon: Footprints,
-    color: "text-blue-600",
-  },
-  outdoor_bike: { name: "Outdoor Bike", icon: Bike, color: "text-green-600" },
-  indoor_treadmill: {
-    name: "Treadmill",
-    icon: Footprints,
-    color: "text-purple-600",
-  },
-  indoor_bike_trainer: {
-    name: "Bike Trainer",
-    icon: Bike,
-    color: "text-orange-600",
-  },
-  indoor_strength: {
-    name: "Strength",
-    icon: Dumbbell,
-    color: "text-red-600",
-  },
-  indoor_swim: { name: "Swimming", icon: Waves, color: "text-cyan-600" },
-  other: { name: "Other", icon: Activity, color: "text-gray-600" },
-};
-
-const FILTER_OPTIONS = [
-  { value: "all" as const, label: "All", icon: Activity },
-  { value: "outdoor_run" as const, label: "Run", icon: Footprints },
-  { value: "outdoor_bike" as const, label: "Bike", icon: Bike },
-  { value: "indoor_strength" as const, label: "Strength", icon: Dumbbell },
-];
 
 export default function LibraryScreen() {
   const router = useRouter();
@@ -121,13 +81,13 @@ export default function LibraryScreen() {
   }, []);
 
   const handleCreatePlan = useCallback(() => {
-    router.push("/(internal)/(tabs)/plan/create_activity_plan");
+    router.push(ROUTES.PLAN.CREATE);
   }, [router]);
 
   const handleSchedulePlan = useCallback(
     (planId: string) => {
       router.push({
-        pathname: "/(internal)/(tabs)/plan/create_planned_activity",
+        pathname: ROUTES.PLAN.SCHEDULE_ACTIVITY,
         params: { activityPlanId: planId },
       });
     },
@@ -141,102 +101,23 @@ export default function LibraryScreen() {
   // Render functions
   const renderPlanCard = useCallback(
     (plan: any) => {
-      const config =
-        ACTIVITY_CONFIGS[plan.activity_type as keyof typeof ACTIVITY_CONFIGS] ||
-        ACTIVITY_CONFIGS.other;
-      const isUserPlan = !!plan.profile_id;
-
       return (
-        <TouchableOpacity
+        <PlanCard
           key={plan.id}
-          onPress={() => handlePlanTap(plan.id)}
-          activeOpacity={0.7}
-        >
-          <Card>
-            <CardContent className="p-4">
-              <View className="flex flex-row items-start gap-3">
-                {/* Icon */}
-                <View className="w-11 h-11 rounded-full bg-muted flex items-center justify-center shrink-0">
-                  <Icon as={config.icon} size={20} className={config.color} />
-                </View>
-
-                {/* Content */}
-                <View className="flex-1 min-w-0">
-                  {/* Title Row */}
-                  <View className="flex flex-row items-start justify-between gap-2 mb-1">
-                    <Text
-                      className="text-base font-semibold flex-1"
-                      numberOfLines={2}
-                    >
-                      {plan.name}
-                    </Text>
-                    {isUserPlan && (
-                      <View className="bg-primary/10 px-2 py-0.5 rounded-full">
-                        <Text className="text-xs text-primary font-medium">
-                          Yours
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {/* Type */}
-                  <Text className="text-sm text-muted-foreground mb-2">
-                    {config.name}
-                  </Text>
-
-                  {/* Description */}
-                  {plan.description && (
-                    <Text
-                      className="text-sm text-muted-foreground mb-3"
-                      numberOfLines={2}
-                    >
-                      {plan.description}
-                    </Text>
-                  )}
-
-                  {/* Metadata Row */}
-                  <View className="flex flex-row items-center gap-3 flex-wrap">
-                    {plan.estimated_duration && (
-                      <View className="flex flex-row items-center">
-                        <Icon
-                          as={Clock}
-                          size={14}
-                          className="text-muted-foreground mr-1"
-                        />
-                        <Text className="text-xs text-muted-foreground">
-                          {plan.estimated_duration}m
-                        </Text>
-                      </View>
-                    )}
-
-                    {plan.estimated_tss && (
-                      <Text className="text-xs text-muted-foreground">
-                        TSS {plan.estimated_tss}
-                      </Text>
-                    )}
-
-                    {plan.structure?.steps && (
-                      <Text className="text-xs text-muted-foreground">
-                        {plan.structure.steps.length} steps
-                      </Text>
-                    )}
-                  </View>
-
-                  {/* Schedule Button */}
-                  {scheduleIntent && (
-                    <Button
-                      size="sm"
-                      onPress={() => handleSchedulePlan(plan.id)}
-                      className="mt-3 self-start"
-                    >
-                      <Text className="text-primary-foreground">Schedule</Text>
-                    </Button>
-                  )}
-                </View>
-              </View>
-            </CardContent>
-          </Card>
-        </TouchableOpacity>
+          plan={{
+            id: plan.id,
+            name: plan.name,
+            description: plan.description,
+            activityType: plan.activity_type,
+            estimatedDuration: plan.estimated_duration,
+            estimatedTss: plan.estimated_tss,
+            stepCount: plan.structure?.steps?.length || 0,
+            isOwned: !!plan.profile_id,
+          }}
+          onPress={handlePlanTap}
+          onSchedule={scheduleIntent ? handleSchedulePlan : undefined}
+          showScheduleButton={scheduleIntent}
+        />
       );
     },
     [scheduleIntent, handlePlanTap, handleSchedulePlan],
@@ -244,7 +125,7 @@ export default function LibraryScreen() {
 
   const renderEmptyState = useCallback(() => {
     const isMyPlans = activeTab === "my";
-    const filterLabel = FILTER_OPTIONS.find(
+    const filterLabel = ACTIVITY_FILTER_OPTIONS.find(
       (f) => f.value === selectedType,
     )?.label.toLowerCase();
 
@@ -341,7 +222,7 @@ export default function LibraryScreen() {
         className="px-4 mb-3"
         contentContainerStyle={{ gap: 8 }}
       >
-        {FILTER_OPTIONS.map((filter) => {
+        {ACTIVITY_FILTER_OPTIONS.map((filter) => {
           const isSelected = selectedType === filter.value;
           return (
             <Button
