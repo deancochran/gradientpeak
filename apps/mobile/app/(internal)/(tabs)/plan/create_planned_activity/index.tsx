@@ -95,11 +95,16 @@ export default function SchedulePlannedActivityScreen() {
     { enabled: !!planId && !isEditMode },
   );
 
-  const { data: availablePlans, isLoading: isLoadingPlans } =
+  const { data: availablePlansData, isLoading: isLoadingPlans } =
     trpc.activityPlans.list.useQuery({
       includeOwnOnly: true,
       includeSamples: true,
     });
+
+  const availablePlans = useMemo(
+    () => availablePlansData?.items || [],
+    [availablePlansData],
+  );
 
   // Get utils for query invalidation
   const utils = trpc.useUtils();
@@ -176,7 +181,7 @@ export default function SchedulePlannedActivityScreen() {
     } catch (error) {
       if (error instanceof z.ZodError) {
         const newErrors: Record<string, string> = {};
-        error.errors.forEach((err) => {
+        error.issues.forEach((err) => {
           if (err.path[0]) {
             newErrors[err.path[0] as string] = err.message;
           }
@@ -235,7 +240,9 @@ export default function SchedulePlannedActivityScreen() {
   }, []);
 
   const handleCreateNewPlan = useCallback(() => {
-    router.push("/(internal)/(tabs)/plan/create_activity_plan");
+    router.push({
+      pathname: "/(internal)/(tabs)/plan/create_activity_plan",
+    });
   }, [router]);
 
   const togglePlanPicker = useCallback(() => {
@@ -554,7 +561,7 @@ export default function SchedulePlannedActivityScreen() {
                   Loading plans...
                 </Text>
               </View>
-            ) : !availablePlans || availablePlans.length === 0 ? (
+            ) : !availablePlansData || availablePlans.length === 0 ? (
               <View className="flex-1 flex items-center justify-center p-8">
                 <Text className="text-lg font-semibold mb-2">No Plans</Text>
                 <Text className="text-sm text-muted-foreground text-center mb-4">

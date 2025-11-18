@@ -42,6 +42,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
           scheduled_date,
           profile_id,
           created_at,
+          notes,
           activity_plan:activity_plans (
             id,
             name,
