@@ -313,6 +313,140 @@ export default function SettingsScreen() {
         </CardContent>
       </Card>
 
+      {/* Training Zones Card */}
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-card-foreground">Training Zones</CardTitle>
+          <CardDescription className="text-muted-foreground">
+            View your power and heart rate zones based on FTP and threshold HR
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="gap-4">
+          {profile?.ftp ? (
+            <View className="gap-3">
+              <View className="flex-row items-center justify-between">
+                <View>
+                  <Text className="text-foreground font-medium">FTP</Text>
+                  <Text className="text-muted-foreground text-sm">
+                    {profile.ftp} watts
+                  </Text>
+                </View>
+                <Text className="text-foreground text-sm">Power Zones</Text>
+              </View>
+              <View className="gap-2">
+                <View className="flex-row items-center justify-between text-xs">
+                  <Text className="text-muted-foreground">Recovery</Text>
+                  <Text className="text-foreground">
+                    {Math.round(profile.ftp * 0.55)}-
+                    {Math.round(profile.ftp * 0.75)}W
+                  </Text>
+                </View>
+                <View className="flex-row items-center justify-between text-xs">
+                  <Text className="text-muted-foreground">Tempo</Text>
+                  <Text className="text-foreground">
+                    {Math.round(profile.ftp * 0.75)}-
+                    {Math.round(profile.ftp * 0.9)}W
+                  </Text>
+                </View>
+                <View className="flex-row items-center justify-between text-xs">
+                  <Text className="text-muted-foreground">Threshold</Text>
+                  <Text className="text-foreground">
+                    {Math.round(profile.ftp * 0.9)}-
+                    {Math.round(profile.ftp * 1.05)}W
+                  </Text>
+                </View>
+                <View className="flex-row items-center justify-between text-xs">
+                  <Text className="text-muted-foreground">VO2 Max</Text>
+                  <Text className="text-foreground">
+                    {Math.round(profile.ftp * 1.05)}-
+                    {Math.round(profile.ftp * 1.2)}W
+                  </Text>
+                </View>
+                <View className="flex-row items-center justify-between text-xs">
+                  <Text className="text-muted-foreground">Anaerobic</Text>
+                  <Text className="text-foreground">
+                    {Math.round(profile.ftp * 1.2)}+W
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ) : (
+            <Text className="text-muted-foreground text-sm">
+              Set your FTP in profile settings to see power zones
+            </Text>
+          )}
+
+          {profile?.threshold_hr ? (
+            <View className="gap-3">
+              <Separator className="bg-border" />
+              <View className="flex-row items-center justify-between">
+                <View>
+                  <Text className="text-foreground font-medium">
+                    Threshold HR
+                  </Text>
+                  <Text className="text-muted-foreground text-sm">
+                    {profile.threshold_hr} bpm
+                  </Text>
+                </View>
+                <Text className="text-foreground text-sm">
+                  Heart Rate Zones
+                </Text>
+              </View>
+              <View className="gap-2">
+                <View className="flex-row items-center justify-between text-xs">
+                  <Text className="text-muted-foreground">Recovery</Text>
+                  <Text className="text-foreground">
+                    {Math.round(profile.threshold_hr * 0.68)}-
+                    {Math.round(profile.threshold_hr * 0.83)} bpm
+                  </Text>
+                </View>
+                <View className="flex-row items-center justify-between text-xs">
+                  <Text className="text-muted-foreground">Tempo</Text>
+                  <Text className="text-foreground">
+                    {Math.round(profile.threshold_hr * 0.83)}-
+                    {Math.round(profile.threshold_hr * 0.94)} bpm
+                  </Text>
+                </View>
+                <View className="flex-row items-center justify-between text-xs">
+                  <Text className="text-muted-foreground">Threshold</Text>
+                  <Text className="text-foreground">
+                    {Math.round(profile.threshold_hr * 0.94)}-
+                    {Math.round(profile.threshold_hr * 1.05)} bpm
+                  </Text>
+                </View>
+                <View className="flex-row items-center justify-between text-xs">
+                  <Text className="text-muted-foreground">VO2 Max</Text>
+                  <Text className="text-foreground">
+                    {Math.round(profile.threshold_hr * 1.05)}+ bpm
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ) : (
+            <View>
+              {!profile?.ftp && <Separator className="bg-border my-4" />}
+              <Text className="text-muted-foreground text-sm">
+                Set your threshold HR in profile settings to see heart rate
+                zones
+              </Text>
+            </View>
+          )}
+
+          <Separator className="bg-border" />
+          <Button
+            variant="outline"
+            onPress={() => {
+              // Scroll to profile section
+              const profileCard = "profile-card"; // Would need to add testID to profile card
+              console.log("Scroll to profile for zone configuration");
+            }}
+            className="w-full"
+          >
+            <Text>Update Zones in Profile</Text>
+          </Button>
+        </CardContent>
+      </Card>
+
       {/* App Settings Card */}
       <Card className="bg-card border-border">
         <CardHeader className="pb-4">

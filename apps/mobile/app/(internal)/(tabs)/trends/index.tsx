@@ -249,8 +249,8 @@ export default function TrendsScreen() {
     if (statusLoading) {
       return (
         <View className="items-center justify-center py-12">
-          <ActivityIndicator size="large" />
-          <Text className="text-gray-600 mt-2">Loading status...</Text>
+          <ActivityIndicator size="large" color="#64748b" />
+          <Text className="text-slate-400 mt-2">Loading status...</Text>
         </View>
       );
     }
@@ -258,7 +258,7 @@ export default function TrendsScreen() {
     if (!status) {
       return (
         <View className="items-center justify-center py-12">
-          <Text className="text-gray-600">No training data available</Text>
+          <Text className="text-slate-400">No training data available</Text>
         </View>
       );
     }
@@ -267,9 +267,9 @@ export default function TrendsScreen() {
       <View className="space-y-4">
         {/* Current Status Card */}
         <View
-          className={`p-4 rounded-lg border ${getFormStatusBg(status.form)}`}
+          className={`p-4 rounded-lg border bg-slate-800/50 border-slate-700`}
         >
-          <Text className="text-sm font-medium text-gray-600 mb-2">
+          <Text className="text-sm font-medium text-slate-400 mb-2">
             Current Form Status
           </Text>
           <Text
@@ -277,7 +277,7 @@ export default function TrendsScreen() {
           >
             {status.form}
           </Text>
-          <Text className="text-sm text-gray-600 mt-2">
+          <Text className="text-sm text-slate-400 mt-2">
             TSB: {status.tsb > 0 ? "+" : ""}
             {status.tsb}
           </Text>
@@ -301,49 +301,49 @@ export default function TrendsScreen() {
           )}
 
         {/* Training Metrics */}
-        <View className="bg-white rounded-lg border border-gray-200 p-4">
-          <Text className="text-base font-semibold text-gray-900 mb-3">
+        <View className="bg-slate-800/50 rounded-lg border border-slate-700 p-4">
+          <Text className="text-base font-semibold text-white mb-3">
             Training Load Metrics
           </Text>
 
-          <View className="space-y-3">
+          <View className="gap-3">
             <View className="flex-row items-center justify-between">
               <View>
-                <Text className="text-sm text-gray-600">
+                <Text className="text-sm text-slate-400">
                   Chronic Training Load (CTL)
                 </Text>
-                <Text className="text-xs text-gray-500">42-day fitness</Text>
+                <Text className="text-xs text-slate-500">42-day fitness</Text>
               </View>
-              <Text className="text-2xl font-bold text-gray-900">
+              <Text className="text-2xl font-bold text-white">
                 {status.ctl}
               </Text>
             </View>
 
-            <View className="h-px bg-gray-200" />
+            <View className="h-px bg-slate-700" />
 
             <View className="flex-row items-center justify-between">
               <View>
-                <Text className="text-sm text-gray-600">
+                <Text className="text-sm text-slate-400">
                   Acute Training Load (ATL)
                 </Text>
-                <Text className="text-xs text-gray-500">7-day fatigue</Text>
+                <Text className="text-xs text-slate-500">7-day fatigue</Text>
               </View>
-              <Text className="text-2xl font-bold text-gray-900">
+              <Text className="text-2xl font-bold text-white">
                 {status.atl}
               </Text>
             </View>
 
-            <View className="h-px bg-gray-200" />
+            <View className="h-px bg-slate-700" />
 
             <View className="flex-row items-center justify-between">
               <View>
-                <Text className="text-sm text-gray-600">
+                <Text className="text-sm text-slate-400">
                   Training Stress Balance (TSB)
                 </Text>
-                <Text className="text-xs text-gray-500">Form indicator</Text>
+                <Text className="text-xs text-slate-500">Form indicator</Text>
               </View>
               <Text
-                className={`text-2xl font-bold ${status.tsb > 0 ? "text-green-600" : status.tsb < -10 ? "text-red-600" : "text-gray-900"}`}
+                className={`text-2xl font-bold ${status.tsb > 0 ? "text-green-600" : status.tsb < -10 ? "text-orange-500" : "text-white"}`}
               >
                 {status.tsb > 0 ? "+" : ""}
                 {status.tsb}
@@ -353,21 +353,21 @@ export default function TrendsScreen() {
         </View>
 
         {/* Week Progress */}
-        <View className="bg-white rounded-lg border border-gray-200 p-4">
-          <Text className="text-base font-semibold text-gray-900 mb-3">
+        <View className="bg-slate-800/50 rounded-lg border border-slate-700 p-4">
+          <Text className="text-base font-semibold text-white mb-3">
             This Week&apos;s Progress
           </Text>
 
-          <View className="space-y-3">
+          <View className="gap-3">
             <View>
               <View className="flex-row items-center justify-between mb-1">
-                <Text className="text-sm text-gray-600">Weekly TSS</Text>
-                <Text className="text-sm font-medium text-gray-900">
+                <Text className="text-sm text-slate-400">Weekly TSS</Text>
+                <Text className="text-sm font-medium text-white">
                   {status.weekProgress.completedTSS} /{" "}
                   {status.weekProgress.targetTSS}
                 </Text>
               </View>
-              <View className="h-2 bg-gray-200 rounded-full overflow-hidden">
+              <View className="h-2 bg-slate-700 rounded-full overflow-hidden">
                 <View
                   className="h-full bg-blue-500"
                   style={{
@@ -379,13 +379,13 @@ export default function TrendsScreen() {
 
             <View>
               <View className="flex-row items-center justify-between mb-1">
-                <Text className="text-sm text-gray-600">Activities</Text>
-                <Text className="text-sm font-medium text-gray-900">
+                <Text className="text-sm text-slate-400">Activities</Text>
+                <Text className="text-sm font-medium text-white">
                   {status.weekProgress.completedActivities} /{" "}
                   {status.weekProgress.totalPlannedActivities}
                 </Text>
               </View>
-              <View className="h-2 bg-gray-200 rounded-full overflow-hidden">
+              <View className="h-2 bg-slate-700 rounded-full overflow-hidden">
                 <View
                   className="h-full bg-green-500"
                   style={{
@@ -774,7 +774,7 @@ export default function TrendsScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-slate-950">
       <ScrollView
         className="flex-1"
         contentContainerClassName="p-4"
@@ -784,10 +784,8 @@ export default function TrendsScreen() {
       >
         {/* Header */}
         <View className="mb-4">
-          <Text className="text-2xl font-bold text-gray-900">
-            Training Trends
-          </Text>
-          <Text className="text-sm text-gray-600 mt-1">
+          <Text className="text-2xl font-bold text-white">Training Trends</Text>
+          <Text className="text-slate-400 text-sm mt-1">
             Track your progress and analyze your training
           </Text>
         </View>

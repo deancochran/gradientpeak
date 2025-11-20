@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
+import { Progress } from "@/components/ui/progress";
 import { Text } from "@/components/ui/text";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import { trpc } from "@/lib/trpc";
@@ -243,6 +244,30 @@ export default function PlanScreen() {
             </Text>
           </View>
         </View>
+
+        {/* Plan Progress */}
+        <Card className="bg-primary-foreground/10 border-primary-foreground/20 mb-6">
+          <CardHeader className="pb-3">
+            <View className="flex-row items-center justify-between">
+              <CardTitle className="text-primary-foreground text-base">
+                {planProgress.name}
+              </CardTitle>
+              <Text className="text-primary-foreground text-sm font-medium">
+                Week {planProgress.week}
+              </Text>
+            </View>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <Progress
+              value={planProgress.percentage}
+              className="w-full h-2 mb-2"
+              indicatorClassName="bg-primary-foreground"
+            />
+            <Text className="text-primary-foreground/80 text-sm">
+              {planProgress.percentage}% complete
+            </Text>
+          </CardContent>
+        </Card>
 
         {/* Week Navigation */}
         <View className="flex-row items-center justify-between mb-4">
