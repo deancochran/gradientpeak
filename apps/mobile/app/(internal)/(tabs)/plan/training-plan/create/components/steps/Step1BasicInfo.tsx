@@ -1,40 +1,70 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Text } from "@/components/ui/text";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
+
+export type PlanPreset = "beginner" | "intermediate" | "advanced" | "custom";
 
 interface Step1BasicInfoProps {
   name: string;
   description: string;
+  preset: PlanPreset;
   onNameChange: (value: string) => void;
   onDescriptionChange: (value: string) => void;
+  onPresetChange: (preset: PlanPreset) => void;
   errors?: {
     name?: string;
     description?: string;
   };
 }
 
+const PRESET_OPTIONS: Array<{
+  value: PlanPreset;
+  label: string;
+  description: string;
+  emoji: string;
+}> = [
+  {
+    value: "beginner",
+    label: "Beginner",
+    description: "3 days/week, easier pace",
+    emoji: "🌱",
+  },
+  {
+    value: "intermediate",
+    label: "Intermediate",
+    description: "4 days/week, balanced",
+    emoji: "🏃",
+  },
+  {
+    value: "advanced",
+    label: "Advanced",
+    description: "5+ days/week, high volume",
+    emoji: "🚀",
+  },
+  {
+    value: "custom",
+    label: "Custom",
+    description: "Set your own targets",
+    emoji: "⚙️",
+  },
+];
+
 /**
- * Step 1: Basic Information
- * Collects plan name and description
+ * Step 1: Basic Information + Preset Selection
+ * Streamlined to collect name, optional description, and training level preset
  */
 export function Step1BasicInfo({
   name,
   description,
+  preset,
   onNameChange,
   onDescriptionChange,
+  onPresetChange,
   errors,
 }: Step1BasicInfoProps) {
   return (
     <View className="gap-6">
-      {/* Introduction */}
-      <View className="bg-muted/30 rounded-lg p-4">
-        <Text className="text-sm text-muted-foreground leading-6">
-          Create a personalized training plan to help you reach your fitness
-          goals. Give your plan a memorable name and optional description.
-        </Text>
-      </View>
-
       {/* Plan Name */}
       <View className="gap-2">
         <Label nativeID="plan-name">
@@ -53,46 +83,84 @@ export function Step1BasicInfo({
         {errors?.name && (
           <Text className="text-sm text-destructive">{errors.name}</Text>
         )}
-        <Text className="text-xs text-muted-foreground">
-          {name.length}/100 characters
-        </Text>
       </View>
 
       {/* Description */}
       <View className="gap-2">
         <Label nativeID="plan-description">
           <Text className="text-base font-semibold">
-            Description (Optional)
+            Description{" "}
+            <Text className="text-xs text-muted-foreground">(Optional)</Text>
           </Text>
         </Label>
         <Input
           aria-labelledby="plan-description"
-          placeholder="Describe your training goals..."
+          placeholder="Brief description of your training goal..."
           value={description}
           onChangeText={onDescriptionChange}
           multiline
-          numberOfLines={4}
+          numberOfLines={2}
           maxLength={500}
-          style={{ minHeight: 100 }}
+          style={{ minHeight: 60 }}
         />
-        {errors?.description && (
-          <Text className="text-sm text-destructive">{errors.description}</Text>
-        )}
-        <Text className="text-xs text-muted-foreground">
-          {description.length}/500 characters
-        </Text>
       </View>
 
-      {/* Tips */}
-      <View className="bg-blue-500/10 rounded-lg p-4">
-        <Text className="text-sm font-semibold text-blue-600 mb-2">
-          💡 Tips
+      {/* Preset Selection */}
+      <View className="gap-3">
+        <Label nativeID="training-level">
+          <Text className="text-base font-semibold">Training Level</Text>
+        </Label>
+        <Text className="text-sm text-muted-foreground -mt-1">
+          Choose a starting point (you can customize in the next step)
         </Text>
-        <Text className="text-sm text-muted-foreground leading-5">
-          • Choose a name that reflects your goal (e.g., Base Building, Race
-          Prep)
-          {"\n"}• Include the season or target event in the description
-          {"\n"}• You can always edit these details later
+
+        <View className="gap-2">
+          {PRESET_OPTIONS.map((option) => (
+            <Pressable
+              key={option.value}
+              onPress={() => onPresetChange(option.value)}
+              className={`border-2 rounded-lg p-4 ${
+                preset === option.value
+                  ? "border-primary bg-primary/5"
+                  : "border-border bg-card"
+              }`}
+            >
+              <View className="flex-row items-center justify-between">
+                <View className="flex-row items-center gap-3 flex-1">
+                  <Text className="text-2xl">{option.emoji}</Text>
+                  <View className="flex-1">
+                    <Text
+                      className={`text-base font-semibold ${
+                        preset === option.value
+                          ? "text-primary"
+                          : "text-foreground"
+                      }`}
+                    >
+                      {option.label}
+                    </Text>
+                    <Text className="text-sm text-muted-foreground">
+                      {option.description}
+                    </Text>
+                  </View>
+                </View>
+                {preset === option.value && (
+                  <View className="w-6 h-6 rounded-full bg-primary items-center justify-center">
+                    <Text className="text-primary-foreground text-xs font-bold">
+                      ✓
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+
+      {/* Quick tip */}
+      <View className="bg-muted/30 rounded-lg p-3">
+        <Text className="text-xs text-muted-foreground leading-5">
+          💡 Don't worry about getting it perfect—you can fine-tune all settings
+          in the next step and adjust anytime after creating the plan.
         </Text>
       </View>
     </View>

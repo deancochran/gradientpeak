@@ -108,8 +108,7 @@ export default function StructureEditScreen() {
 
       // Navigate to repeat editing page
       router.push({
-        pathname:
-          "/(internal)/(tabs)/plan/create_activity_plan/structure/repeat/" as any,
+        pathname: "/plan/create_activity_plan/structure/repeat" as any,
         params: {
           repeatIndex: steps.length.toString(), // New repeat will be at the end
         },
@@ -179,8 +178,7 @@ export default function StructureEditScreen() {
         console.log("📝 Navigating to repeat editor for existing repeat");
 
         router.push({
-          pathname:
-            "/(internal)/(tabs)/plan/create_activity_plan/structure/repeat/" as any,
+          pathname: "/plan/create_activity_plan/structure/repeat" as any,
           params: {
             repeatIndex: index.toString(),
           },

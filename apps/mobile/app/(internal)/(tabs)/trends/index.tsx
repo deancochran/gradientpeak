@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { trpc } from "@/lib/trpc";
-import { router } from "expo-router";
+import { useRouter } from "expo-router";
 import { Activity, BarChart3, TrendingUp } from "lucide-react-native";
 import React, { useState } from "react";
 import {
@@ -44,6 +44,7 @@ type TabView = "overview" | "weekly" | "intensity";
  * - Intensity Analysis: Target vs actual intensity distribution
  */
 export default function TrendsScreen() {
+  const router = useRouter();
   const [timeRange, setTimeRange] = useState<TimeRange>("3M");
   const [activeTab, setActiveTab] = useState<TabView>("overview");
   const [refreshing, setRefreshing] = useState(false);

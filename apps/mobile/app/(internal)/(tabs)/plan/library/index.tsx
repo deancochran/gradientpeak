@@ -1,13 +1,10 @@
 import { PlanCard } from "@/components/plan";
-import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Text } from "@/components/ui/text";
 import { ACTIVITY_FILTER_OPTIONS } from "@/lib/constants/activities";
-import { ROUTES } from "@/lib/constants/routes";
 import { trpc } from "@/lib/trpc";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Activity, Plus } from "lucide-react-native";
+import { ChevronDown, Library, Plus } from "lucide-react-native";
 import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -35,8 +32,8 @@ export default function LibraryScreen() {
   const [activeTab, setActiveTab] = useState<"my" | "samples">("my");
   const [selectedType, setSelectedType] = useState<ActivityType>("all");
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [showFilterPicker, setShowFilterPicker] = useState(false);
 
-  // Query options memoized for performance
   const queryOptions = useMemo(
     () => ({
       includeOwnOnly: activeTab === "my",
@@ -47,7 +44,6 @@ export default function LibraryScreen() {
     [activeTab, selectedType],
   );
 
-  // tRPC queries - unified approach
   const {
     data,
     isLoading,
@@ -65,7 +61,6 @@ export default function LibraryScreen() {
     [data],
   );
 
-  // Memoized callbacks
   const handleRefresh = useCallback(() => {
     refetch();
   }, [refetch]);
@@ -81,234 +76,229 @@ export default function LibraryScreen() {
   }, []);
 
   const handleCreatePlan = useCallback(() => {
-    router.push(ROUTES.PLAN.CREATE);
+    router.push("/plan/create_activity_plan" as any);
   }, [router]);
-
-  const handleSchedulePlan = useCallback(
-    (planId: string) => {
-      router.push({
-        pathname: ROUTES.PLAN.SCHEDULE_ACTIVITY,
-        params: { activityPlanId: planId },
-      });
-    },
-    [router],
-  );
 
   const handleCloseModal = useCallback(() => {
     setSelectedPlanId(null);
   }, []);
 
-  // Render functions
+  const selectedFilterLabel = useMemo(
+    () =>
+      ACTIVITY_FILTER_OPTIONS.find((f) => f.value === selectedType)?.label ||
+      "All",
+    [selectedType],
+  );
+
   const renderPlanCard = useCallback(
-    (plan: any) => {
-      return (
-        <PlanCard
-          key={plan.id}
-          plan={{
-            id: plan.id,
-            name: plan.name,
-            description: plan.description,
-            activityType: plan.activity_type,
-            estimatedDuration: plan.estimated_duration,
-            estimatedTss: plan.estimated_tss,
-            stepCount: plan.structure?.steps?.length || 0,
-            isOwned: !!plan.profile_id,
-          }}
-          onPress={handlePlanTap}
-          onSchedule={scheduleIntent ? handleSchedulePlan : undefined}
-          showScheduleButton={scheduleIntent}
-        />
-      );
-    },
-    [scheduleIntent, handlePlanTap, handleSchedulePlan],
+    (plan: any) => (
+      <PlanCard
+        key={plan.id}
+        plan={{
+          id: plan.id,
+          name: plan.name,
+          description: plan.description,
+          activityType: plan.activity_type,
+          estimatedDuration: plan.estimated_duration,
+          estimatedTss: plan.estimated_tss,
+          stepCount: plan.structure?.steps?.length || 0,
+          isOwned: !!plan.profile_id,
+        }}
+        onPress={handlePlanTap}
+      />
+    ),
+    [handlePlanTap],
   );
 
   const renderEmptyState = useCallback(() => {
     const isMyPlans = activeTab === "my";
-    const filterLabel = ACTIVITY_FILTER_OPTIONS.find(
-      (f) => f.value === selectedType,
-    )?.label.toLowerCase();
+    const message = isMyPlans
+      ? selectedType === "all"
+        ? "Create your first plan to get started"
+        : `No ${selectedFilterLabel.toLowerCase()} plans yet`
+      : "No sample plans available";
 
     return (
-      <View className="flex-1 flex items-center justify-center px-6 py-12">
+      <View className="flex-1 items-center justify-center px-6">
         <Icon
-          as={isMyPlans ? Plus : Activity}
-          size={56}
-          className="text-muted-foreground/50 mb-4"
+          as={Library}
+          size={48}
+          className="text-muted-foreground/40 mb-3"
         />
-        <Text className="text-xl font-semibold mb-2 text-center">
-          {isMyPlans ? "No Plans Yet" : "No Samples Available"}
-        </Text>
-        <Text className="text-muted-foreground text-center mb-6 max-w-sm">
-          {isMyPlans
-            ? selectedType === "all"
-              ? "Create your first activity plan to get started."
-              : `No ${filterLabel} plans found. Create one or view all types.`
-            : selectedType === "all"
-              ? "Sample plans will appear here when available."
-              : `No sample ${filterLabel} plans available yet.`}
-        </Text>
-        {isMyPlans && (
-          <Button onPress={handleCreatePlan} size="lg">
-            <Icon
-              as={Plus}
-              size={18}
-              className="text-primary-foreground mr-2"
-            />
-            <Text className="text-primary-foreground font-medium">
-              Create Plan
-            </Text>
-          </Button>
-        )}
+        <Text className="text-muted-foreground text-center">{message}</Text>
       </View>
     );
-  }, [activeTab, selectedType, handleCreatePlan]);
+  }, [activeTab, selectedType, selectedFilterLabel]);
 
   const renderErrorState = useCallback(
     () => (
-      <View className="flex-1 flex items-center justify-center px-6 py-12">
-        <Icon as={AlertCircle} size={56} className="text-destructive/70 mb-4" />
-        <Text className="text-xl font-semibold mb-2 text-center">
-          Failed to Load
-        </Text>
-        <Text className="text-muted-foreground text-center mb-6 max-w-sm">
-          {error?.message || "Something went wrong. Please try again."}
-        </Text>
-        <Button onPress={handleRefresh} variant="outline" size="lg">
-          <Text>Try Again</Text>
-        </Button>
+      <View className="flex-1 items-center justify-center px-6">
+        <Text className="text-destructive mb-2">Failed to load plans</Text>
+        <TouchableOpacity onPress={handleRefresh} activeOpacity={0.7}>
+          <Text className="text-primary">Tap to retry</Text>
+        </TouchableOpacity>
       </View>
     ),
-    [error, handleRefresh],
+    [handleRefresh],
   );
-
-  const renderLoadingFooter = useCallback(() => {
-    if (!hasNextPage) return null;
-
-    return (
-      <View className="py-4 flex items-center">
-        {isFetchingNextPage ? (
-          <View className="flex items-center">
-            <ActivityIndicator size="small" />
-            <Text className="text-sm text-muted-foreground mt-2">
-              Loading...
-            </Text>
-          </View>
-        ) : (
-          <Button variant="outline" onPress={handleLoadMore}>
-            <Text>Load More</Text>
-          </Button>
-        )}
-      </View>
-    );
-  }, [hasNextPage, isFetchingNextPage, handleLoadMore]);
 
   return (
     <View className="flex-1 bg-background">
-      {/* Header */}
-      <View className="px-4 pt-4 pb-3">
-        <Text className="text-2xl font-bold mb-1">Activity Library</Text>
-        <Text className="text-sm text-muted-foreground">
-          {scheduleIntent
-            ? "Select a plan to schedule"
-            : "Browse and manage your plans"}
-        </Text>
+      {/* Filter Bar */}
+      <View className="px-4 pt-4 pb-3 border-b border-border">
+        <View className="flex-row items-center justify-between mb-3">
+          <Text className="text-sm text-muted-foreground">
+            {plans.length} {plans.length === 1 ? "plan" : "plans"}
+          </Text>
+
+          {/* Filter Dropdown */}
+          <TouchableOpacity
+            onPress={() => setShowFilterPicker(!showFilterPicker)}
+            activeOpacity={0.7}
+            className="flex-row items-center gap-1.5 px-3 py-2 rounded-lg bg-muted"
+          >
+            <Text className="text-sm font-medium">{selectedFilterLabel}</Text>
+            <Icon
+              as={ChevronDown}
+              size={16}
+              className="text-muted-foreground"
+            />
+          </TouchableOpacity>
+        </View>
+
+        {/* Segmented Tab Control */}
+        <View className="flex-row bg-muted rounded-lg p-1">
+          <TouchableOpacity
+            onPress={() => setActiveTab("my")}
+            activeOpacity={0.7}
+            className={`flex-1 py-2 rounded-md ${
+              activeTab === "my" ? "bg-background" : ""
+            }`}
+          >
+            <Text
+              className={`text-center text-sm font-medium ${
+                activeTab === "my" ? "text-foreground" : "text-muted-foreground"
+              }`}
+            >
+              My Plans
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setActiveTab("samples")}
+            activeOpacity={0.7}
+            className={`flex-1 py-2 rounded-md ${
+              activeTab === "samples" ? "bg-background" : ""
+            }`}
+          >
+            <Text
+              className={`text-center text-sm font-medium ${
+                activeTab === "samples"
+                  ? "text-foreground"
+                  : "text-muted-foreground"
+              }`}
+            >
+              Samples
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Filters */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        className="px-4 mb-3"
-        contentContainerStyle={{ gap: 8 }}
-      >
-        {ACTIVITY_FILTER_OPTIONS.map((filter) => {
-          const isSelected = selectedType === filter.value;
-          return (
-            <Button
+      {/* Filter Picker Modal */}
+      {showFilterPicker && (
+        <View className="absolute top-20 right-4 bg-card border border-border rounded-lg shadow-lg z-50 min-w-[160px]">
+          {ACTIVITY_FILTER_OPTIONS.map((filter) => (
+            <TouchableOpacity
               key={filter.value}
-              variant={isSelected ? "default" : "outline"}
-              size="sm"
-              onPress={() => setSelectedType(filter.value)}
-              className="flex flex-row items-center gap-2"
+              onPress={() => {
+                setSelectedType(filter.value);
+                setShowFilterPicker(false);
+              }}
+              activeOpacity={0.7}
+              className="flex-row items-center gap-3 px-4 py-3 border-b border-border last:border-b-0"
             >
               <Icon
                 as={filter.icon}
-                size={16}
+                size={18}
                 className={
-                  isSelected ? "text-primary-foreground" : "text-foreground"
+                  selectedType === filter.value
+                    ? "text-primary"
+                    : "text-muted-foreground"
                 }
               />
               <Text
-                className={
-                  isSelected ? "text-primary-foreground" : "text-foreground"
-                }
+                className={`flex-1 ${
+                  selectedType === filter.value
+                    ? "text-foreground font-medium"
+                    : "text-muted-foreground"
+                }`}
               >
                 {filter.label}
               </Text>
-            </Button>
-          );
-        })}
-      </ScrollView>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
 
-      {/* Tabs */}
-      <Tabs
-        value={activeTab}
-        onValueChange={(value) => setActiveTab(value as "my" | "samples")}
-        className="flex-1"
-      >
-        <TabsList className="mx-4 mb-3">
-          <TabsTrigger value="my" className="flex-1">
-            <Text>My Plans</Text>
-          </TabsTrigger>
-          <TabsTrigger value="samples" className="flex-1">
-            <Text>Samples</Text>
-          </TabsTrigger>
-        </TabsList>
+      {/* Content */}
+      <View className="flex-1">
+        {error ? (
+          renderErrorState()
+        ) : isLoading && plans.length === 0 ? (
+          <View className="flex-1 items-center justify-center">
+            <ActivityIndicator size="large" />
+          </View>
+        ) : plans.length === 0 ? (
+          renderEmptyState()
+        ) : (
+          <ScrollView
+            className="flex-1"
+            contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 80 }}
+            refreshControl={
+              <RefreshControl
+                refreshing={isLoading}
+                onRefresh={handleRefresh}
+              />
+            }
+          >
+            {plans.map(renderPlanCard)}
 
-        <TabsContent value={activeTab} className="flex-1">
-          {error ? (
-            renderErrorState()
-          ) : isLoading && plans.length === 0 ? (
-            <View className="flex-1 flex items-center justify-center">
-              <ActivityIndicator size="large" />
-              <Text className="mt-3 text-sm text-muted-foreground">
-                Loading plans...
-              </Text>
-            </View>
-          ) : plans.length === 0 ? (
-            renderEmptyState()
-          ) : (
-            <ScrollView
-              className="flex-1 px-4"
-              contentContainerStyle={{ gap: 12, paddingBottom: 80 }}
-              refreshControl={
-                <RefreshControl
-                  refreshing={isLoading}
-                  onRefresh={handleRefresh}
-                />
-              }
-            >
-              <Text className="text-xs text-muted-foreground uppercase tracking-wide">
-                {plans.length} {plans.length === 1 ? "Plan" : "Plans"}
-              </Text>
-              {plans.map(renderPlanCard)}
-              {renderLoadingFooter()}
-            </ScrollView>
-          )}
-        </TabsContent>
-      </Tabs>
-
-      {/* FAB */}
-      <View className="absolute bottom-6 right-6">
-        <TouchableOpacity
-          onPress={handleCreatePlan}
-          activeOpacity={0.8}
-          className="w-14 h-14 rounded-full bg-primary flex items-center justify-center shadow-lg"
-        >
-          <Icon as={Plus} size={28} className="text-primary-foreground" />
-        </TouchableOpacity>
+            {/* Load More */}
+            {hasNextPage && (
+              <View className="py-4 items-center">
+                {isFetchingNextPage ? (
+                  <ActivityIndicator size="small" />
+                ) : (
+                  <TouchableOpacity
+                    onPress={handleLoadMore}
+                    activeOpacity={0.7}
+                    className="px-6 py-2"
+                  >
+                    <Text className="text-primary text-sm font-medium">
+                      Load more
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+          </ScrollView>
+        )}
       </View>
+
+      {/* FAB - Simple Circle Button */}
+      <TouchableOpacity
+        onPress={handleCreatePlan}
+        activeOpacity={0.8}
+        className="absolute bottom-6 right-6 w-14 h-14 rounded-full bg-primary items-center justify-center shadow-lg"
+        style={{
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.3,
+          shadowRadius: 8,
+          elevation: 8,
+        }}
+      >
+        <Icon as={Plus} size={28} className="text-primary-foreground" />
+      </TouchableOpacity>
 
       {/* Modal */}
       {selectedPlanId && (

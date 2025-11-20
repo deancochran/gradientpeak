@@ -2,7 +2,6 @@ import { ActivityCard } from "@/components/plan";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { ROUTES } from "@/lib/constants/routes";
 import { trpc } from "@/lib/trpc";
 import { useRouter } from "expo-router";
 import { Calendar, Plus } from "lucide-react-native";
@@ -18,14 +17,16 @@ export default function ScheduledScreen() {
 
   // Query all scheduled activities
   const { data: scheduledActivities, isLoading } =
-    trpc.plannedActivities.list.useQuery();
+    trpc.plannedActivities.list.useQuery({
+      limit: 100,
+    });
 
   const handleActivityTap = (activityId: string) => {
     setSelectedPlannedActivityId(activityId);
   };
 
   const handleScheduleNew = () => {
-    router.push(ROUTES.PLAN.SCHEDULE_ACTIVITY);
+    router.push("/plan/create_planned_activity" as any);
   };
 
   const groupActivitiesByDate = (activities: any[]) => {
@@ -125,17 +126,9 @@ export default function ScheduledScreen() {
     );
   }
 
-  if (!scheduledActivities || scheduledActivities.length === 0) {
+  if (!scheduledActivities || scheduledActivities.items.length === 0) {
     return (
       <View className="flex-1 bg-background">
-        {/* Header */}
-        <View className="p-4">
-          <Text className="text-2xl font-bold">Scheduled Activities</Text>
-          <Text className="text-muted-foreground mt-1">
-            Your planned activities will appear here
-          </Text>
-        </View>
-
         {/* Empty State */}
         <View className="flex-1 items-center justify-center px-4">
           <View className="bg-muted/30 rounded-lg p-8 max-w-sm">
@@ -168,16 +161,15 @@ export default function ScheduledScreen() {
     );
   }
 
-  const groupedActivities = groupActivitiesByDate(scheduledActivities);
+  const groupedActivities = groupActivitiesByDate(scheduledActivities.items);
 
   return (
     <View className="flex-1 bg-background">
-      {/* Header */}
-      <View className="p-4">
-        <Text className="text-2xl font-bold">Scheduled Activities</Text>
-        <Text className="text-muted-foreground mt-1">
-          {scheduledActivities.length} activity
-          {scheduledActivities.length !== 1 ? "s" : ""} scheduled
+      {/* Activity Count */}
+      <View className="p-4 pb-2 border-b border-border">
+        <Text className="text-sm text-muted-foreground">
+          {scheduledActivities.items.length} activity
+          {scheduledActivities.items.length !== 1 ? "s" : ""} scheduled
         </Text>
       </View>
 

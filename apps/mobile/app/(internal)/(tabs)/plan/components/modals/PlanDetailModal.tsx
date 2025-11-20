@@ -1,18 +1,15 @@
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { trpc } from "@/lib/trpc";
 import { useRouter } from "expo-router";
-import { Calendar, Clock, Copy, Play, Zap } from "lucide-react-native";
-import { ScrollView, View } from "react-native";
+import { Calendar, Clock, Copy, Play, X, Zap } from "lucide-react-native";
+import {
+  ActivityIndicator,
+  Modal,
+  ScrollView,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 interface PlanDetailModalProps {
   planId: string;
@@ -29,7 +26,6 @@ export function PlanDetailModal({
 }: PlanDetailModalProps) {
   const router = useRouter();
 
-  // Query plan details
   const { data: plan, isLoading } = trpc.activityPlans.getById.useQuery(
     { id: planId },
     { enabled: isVisible && !!planId },
@@ -37,7 +33,7 @@ export function PlanDetailModal({
 
   const handleSchedule = () => {
     router.push({
-      pathname: "/(internal)/(tabs)/plan/create_planned_activity",
+      pathname: "/plan/create_planned_activity" as any,
       params: { planId },
     });
     onClose();
@@ -45,15 +41,12 @@ export function PlanDetailModal({
 
   const handleStartNow = () => {
     if (!plan) return;
-
-    // Launch ActivityRecorder with the plan
     const payload = {
       type: plan.activity_type,
       plan,
     };
-
     router.push({
-      pathname: "/(internal)/record",
+      pathname: "/(internal)/record" as any,
       params: { payload: JSON.stringify(payload) },
     });
     onClose();
@@ -61,14 +54,14 @@ export function PlanDetailModal({
 
   const handleDuplicate = () => {
     router.push({
-      pathname: "/(internal)/(tabs)/plan/create_planned_activity",
+      pathname: "/plan/create_planned_activity" as any,
       params: { templateId: planId },
     });
     onClose();
   };
 
   const formatDuration = (minutes: number) => {
-    if (minutes < 60) return `${minutes} min`;
+    if (minutes < 60) return `${minutes}m`;
     const hours = Math.floor(minutes / 60);
     const remainingMinutes = minutes % 60;
     return remainingMinutes > 0
@@ -76,255 +69,230 @@ export function PlanDetailModal({
       : `${hours}h`;
   };
 
-  const renderActivityStructure = () => {
-    if (
-      !plan?.structure ||
-      typeof plan.structure !== "object" ||
-      !("steps" in plan.structure) ||
-      !Array.isArray(plan.structure.steps) ||
-      plan.structure.steps.length === 0
-    ) {
+  const renderStep = (step: any, index: number) => {
+    if (step.type === "step") {
       return (
-        <Text className="text-sm text-muted-foreground italic">
-          No activity structure available
-        </Text>
+        <View key={index} className="mb-3">
+          <View className="flex-row items-start justify-between mb-1">
+            <Text className="flex-1 font-medium">
+              {step.name || `Step ${index + 1}`}
+            </Text>
+            {step.duration && step.duration !== "untilFinished" && (
+              <Text className="text-sm text-muted-foreground ml-2">
+                {step.duration.value}
+                {step.duration.unit === "minutes" ? "m" : step.duration.unit}
+              </Text>
+            )}
+          </View>
+
+          {step.targets && step.targets.length > 0 && (
+            <View className="flex-row flex-wrap gap-1.5 mt-1">
+              {step.targets.map((target: any, idx: number) => (
+                <View key={idx} className="bg-primary/10 px-2 py-0.5 rounded">
+                  <Text className="text-xs text-primary">
+                    {target.intensity}
+                    {target.type === "%FTP" && "% FTP"}
+                    {target.type === "%MaxHR" && "% HR"}
+                    {target.type === "%ThresholdHR" && "% Threshold"}
+                    {target.type === "watts" && "W"}
+                    {target.type === "bpm" && " bpm"}
+                    {target.type === "RPE" && " RPE"}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {step.notes && (
+            <Text className="text-xs text-muted-foreground mt-1 italic">
+              {step.notes}
+            </Text>
+          )}
+        </View>
       );
     }
 
-    return (
-      <View className="flex flex-col gap-2">
-        {(plan.structure.steps as any[]).map((step: any, index: number) => {
-          if (step.type === "step") {
-            return (
-              <View
-                key={index}
-                className="bg-background border border-border rounded-lg p-3"
-              >
-                <View className="flex flex-row items-center justify-between">
-                  <View className="flex-1">
-                    <Text className="font-medium">
-                      {step.name || `Step ${index + 1}`}
-                    </Text>
-                    {step.description && (
-                      <Text className="text-sm text-muted-foreground mt-1">
-                        {step.description}
-                      </Text>
-                    )}
-                  </View>
+    if (step.type === "repetition") {
+      return (
+        <View
+          key={index}
+          className="mb-3 bg-orange-50 rounded-lg p-3 border-l-2 border-orange-400"
+        >
+          <Text className="font-medium text-sm mb-2">
+            Repeat {step.repeat}×
+          </Text>
+          {step.steps.map((subStep: any, subIdx: number) => (
+            <Text key={subIdx} className="text-sm text-muted-foreground ml-2">
+              • {subStep.name || `Step ${subIdx + 1}`}
+              {subStep.duration &&
+                subStep.duration !== "untilFinished" &&
+                ` (${subStep.duration.value}${subStep.duration.unit === "minutes" ? "m" : subStep.duration.unit})`}
+            </Text>
+          ))}
+        </View>
+      );
+    }
 
-                  {step.duration && step.duration !== "untilFinished" && (
-                    <View className="ml-2">
-                      <Text className="text-sm font-medium">
-                        {step.duration.value} {step.duration.unit}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-
-                {/* Targets */}
-                {step.targets && step.targets.length > 0 && (
-                  <View className="flex flex-row flex-wrap gap-2 mt-2">
-                    {step.targets.map((target: any, targetIndex: number) => (
-                      <View
-                        key={targetIndex}
-                        className="bg-primary/10 px-2 py-1 rounded-full"
-                      >
-                        <Text className="text-xs text-primary font-medium">
-                          {target.intensity}
-                          {target.type === "%FTP" && "% FTP"}
-                          {target.type === "%MaxHR" && "% Max HR"}
-                          {target.type === "%ThresholdHR" && "% Threshold"}
-                          {target.type === "watts" && "W"}
-                          {target.type === "bpm" && " bpm"}
-                          {target.type === "RPE" && "/10 RPE"}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                )}
-
-                {/* Notes */}
-                {step.notes && (
-                  <Text className="text-xs text-muted-foreground mt-2 italic">
-                    {step.notes}
-                  </Text>
-                )}
-              </View>
-            );
-          } else if (step.type === "repetition") {
-            return (
-              <View
-                key={index}
-                className="bg-orange-50 border border-orange-200 rounded-lg p-3"
-              >
-                <View className="flex flex-row items-center gap-2 mb-2">
-                  <View className="bg-orange-500 w-2 h-2 rounded-full" />
-                  <Text className="font-medium">
-                    Repeat {step.repeat} times:
-                  </Text>
-                </View>
-                <View className="flex flex-col gap-1 ml-4">
-                  {step.steps.map((subStep: any, subIndex: number) => (
-                    <Text key={subIndex} className="text-sm">
-                      • {subStep.name || `Step ${subIndex + 1}`}
-                      {subStep.duration &&
-                        subStep.duration !== "untilFinished" &&
-                        ` (${subStep.duration.value} ${subStep.duration.unit})`}
-                    </Text>
-                  ))}
-                </View>
-              </View>
-            );
-          }
-          return null;
-        })}
-      </View>
-    );
+    return null;
   };
 
-  if (!plan && !isLoading) {
-    return (
-      <Dialog open={isVisible} onOpenChange={(open) => !open && onClose()}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Plan Not Found</DialogTitle>
-            <DialogDescription>
-              This activity plan could not be found.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button onPress={onClose}>
-              <Text>Close</Text>
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    );
-  }
+  const steps = (plan?.structure as any)?.steps || [];
+  const hasSteps = Array.isArray(steps) && steps.length > 0;
 
   return (
-    <Dialog open={isVisible} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-full max-w-lg mx-4 max-h-[85%]">
-        <DialogHeader>
-          <DialogTitle>{plan?.name || "Loading..."}</DialogTitle>
-          <DialogDescription>
-            {plan?.description || "Activity plan details"}
-          </DialogDescription>
-        </DialogHeader>
+    <Modal
+      visible={isVisible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <View className="flex-1 bg-background">
+        {/* Header */}
+        <View className="flex-row items-center justify-between px-4 py-3 border-b border-border">
+          <View className="flex-1 mr-3">
+            <Text className="text-lg font-bold" numberOfLines={1}>
+              {plan?.name || "Loading..."}
+            </Text>
+            {plan?.activity_type && (
+              <Text className="text-xs text-muted-foreground capitalize mt-0.5">
+                {plan.activity_type.replace(/_/g, " ")}
+              </Text>
+            )}
+          </View>
+          <TouchableOpacity
+            onPress={onClose}
+            activeOpacity={0.7}
+            className="w-8 h-8 items-center justify-center"
+          >
+            <Icon as={X} size={24} className="text-muted-foreground" />
+          </TouchableOpacity>
+        </View>
 
+        {/* Content */}
         {isLoading ? (
-          <View className="flex items-center justify-center py-8">
-            <Text className="text-muted-foreground">
-              Loading plan details...
+          <View className="flex-1 items-center justify-center">
+            <ActivityIndicator size="large" />
+          </View>
+        ) : !plan ? (
+          <View className="flex-1 items-center justify-center px-6">
+            <Text className="text-muted-foreground text-center">
+              Plan not found
             </Text>
           </View>
         ) : (
-          <ScrollView className="max-h-96">
-            <View className="flex flex-col gap-4 py-4">
-              {/* Plan Summary */}
-              <View className="bg-muted/30 rounded-lg p-4">
-                <View className="flex flex-row justify-between items-start mb-2">
-                  <Text className="font-semibold">Plan Overview</Text>
-                  {plan?.activity_type && (
-                    <Text className="text-sm text-muted-foreground capitalize">
-                      {plan.activity_type.replace(/_/g, " ")}
-                    </Text>
-                  )}
+          <ScrollView
+            className="flex-1"
+            contentContainerStyle={{ padding: 16 }}
+          >
+            {/* Stats Row */}
+            <View className="flex-row items-center gap-6 mb-4 pb-4 border-b border-border">
+              {plan.estimated_duration && (
+                <View className="items-center">
+                  <Icon
+                    as={Clock}
+                    size={20}
+                    className="text-muted-foreground mb-1"
+                  />
+                  <Text className="text-sm font-semibold">
+                    {formatDuration(plan.estimated_duration)}
+                  </Text>
                 </View>
+              )}
 
-                <View className="flex flex-row gap-6">
-                  {plan?.estimated_duration && (
-                    <View className="flex items-center">
-                      <Icon
-                        as={Clock}
-                        size={20}
-                        className="text-muted-foreground mb-1"
-                      />
-                      <Text className="text-sm font-medium">
-                        {formatDuration(plan.estimated_duration)}
-                      </Text>
-                      <Text className="text-xs text-muted-foreground">
-                        Duration
-                      </Text>
-                    </View>
-                  )}
-
-                  {plan?.estimated_tss && (
-                    <View className="flex items-center">
-                      <Icon
-                        as={Zap}
-                        size={20}
-                        className="text-muted-foreground mb-1"
-                      />
-                      <Text className="text-sm font-medium">
-                        {plan.estimated_tss}
-                      </Text>
-                      <Text className="text-xs text-muted-foreground">TSS</Text>
-                    </View>
-                  )}
-
-                  {plan?.structure &&
-                    typeof plan.structure === "object" &&
-                    "steps" in plan.structure &&
-                    Array.isArray(plan.structure.steps) && (
-                      <View className="flex items-center">
-                        <View className="w-5 h-5 bg-muted-foreground rounded-full flex items-center justify-center mb-1">
-                          <Text className="text-xs text-background font-bold">
-                            {(plan.structure.steps as any[]).length}
-                          </Text>
-                        </View>
-                        <Text className="text-xs text-muted-foreground">
-                          Steps
-                        </Text>
-                      </View>
-                    )}
+              {plan.estimated_tss && (
+                <View className="items-center">
+                  <Icon
+                    as={Zap}
+                    size={20}
+                    className="text-muted-foreground mb-1"
+                  />
+                  <Text className="text-sm font-semibold">
+                    {plan.estimated_tss}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">TSS</Text>
                 </View>
-              </View>
+              )}
 
-              {/* Activity Structure */}
-              <View className="bg-muted/30 rounded-lg p-4">
-                <Text className="font-semibold mb-3">Activity Structure</Text>
-                {renderActivityStructure()}
-              </View>
+              {hasSteps && (
+                <View className="items-center">
+                  <View className="w-5 h-5 bg-muted rounded-full items-center justify-center mb-1">
+                    <Text className="text-xs font-bold">{steps.length}</Text>
+                  </View>
+                  <Text className="text-xs text-muted-foreground">Steps</Text>
+                </View>
+              )}
             </View>
+
+            {/* Description */}
+            {plan.description && (
+              <View className="mb-4">
+                <Text className="text-sm text-muted-foreground leading-5">
+                  {plan.description}
+                </Text>
+              </View>
+            )}
+
+            {/* Steps */}
+            {hasSteps ? (
+              <View>
+                <Text className="text-xs uppercase tracking-wide text-muted-foreground mb-3">
+                  Workout Structure
+                </Text>
+                {steps.map((step: any, idx: number) => renderStep(step, idx))}
+              </View>
+            ) : (
+              <Text className="text-sm text-muted-foreground italic text-center py-8">
+                No workout structure available
+              </Text>
+            )}
           </ScrollView>
         )}
 
-        <DialogFooter className="flex flex-row gap-2">
-          <Button variant="outline" onPress={onClose} disabled={isLoading}>
-            <Text>Close</Text>
-          </Button>
+        {/* Action Bar */}
+        <View className="border-t border-border bg-background">
+          <View className="px-4 py-3">
+            {/* Primary Action */}
+            <TouchableOpacity
+              onPress={handleSchedule}
+              activeOpacity={0.8}
+              disabled={isLoading}
+              className="bg-primary rounded-lg py-3.5 flex-row items-center justify-center mb-2"
+            >
+              <Icon
+                as={Calendar}
+                size={18}
+                className="text-primary-foreground mr-2"
+              />
+              <Text className="text-primary-foreground font-semibold">
+                {scheduleIntent ? "Schedule This Activity" : "Schedule"}
+              </Text>
+            </TouchableOpacity>
 
-          <Button
-            variant="outline"
-            onPress={handleDuplicate}
-            disabled={isLoading}
-          >
-            <Icon as={Copy} size={16} className="text-foreground" />
-            <Text>Duplicate & Edit</Text>
-          </Button>
+            {/* Secondary Actions */}
+            <View className="flex-row gap-2">
+              <TouchableOpacity
+                onPress={handleStartNow}
+                activeOpacity={0.7}
+                disabled={isLoading}
+                className="flex-1 bg-muted rounded-lg py-2.5 flex-row items-center justify-center"
+              >
+                <Icon as={Play} size={16} className="text-foreground mr-1.5" />
+                <Text className="text-foreground text-sm">Start Now</Text>
+              </TouchableOpacity>
 
-          <Button
-            variant="outline"
-            onPress={handleStartNow}
-            disabled={isLoading}
-          >
-            <Icon as={Play} size={16} className="text-foreground" />
-            <Text>Start Now</Text>
-          </Button>
-
-          <Button
-            onPress={handleSchedule}
-            disabled={isLoading}
-            className={scheduleIntent ? "bg-primary" : ""}
-          >
-            <Icon as={Calendar} size={16} className="text-primary-foreground" />
-            <Text className="text-primary-foreground">
-              {scheduleIntent ? "Schedule This Activity" : "Schedule"}
-            </Text>
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+              <TouchableOpacity
+                onPress={handleDuplicate}
+                activeOpacity={0.7}
+                disabled={isLoading}
+                className="flex-1 bg-muted rounded-lg py-2.5 flex-row items-center justify-center"
+              >
+                <Icon as={Copy} size={16} className="text-foreground mr-1.5" />
+                <Text className="text-foreground text-sm">Duplicate</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }

@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
+import { ROUTES } from "@/lib/constants/routes";
 import { useActivityPlanForm } from "@/lib/hooks/forms/useActivityPlanForm";
 import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
 import { formatDuration } from "@/lib/utils/dates";
@@ -14,11 +15,12 @@ import {
   flattenPlanSteps,
   getDefaultUserSettings,
 } from "@repo/core";
-import { router } from "expo-router";
+import { useRouter } from "expo-router";
 import React, { useMemo } from "react";
 import { Alert, Pressable, View } from "react-native";
 
 export default function CreateActivityPlanScreen() {
+  const router = useRouter();
   // Use form hook for state management and submission
   const {
     form,
@@ -33,7 +35,16 @@ export default function CreateActivityPlanScreen() {
     onSuccess: (planId) => {
       Alert.alert("Success", "Activity plan saved successfully!", [
         {
-          text: "OK",
+          text: "Schedule Now",
+          onPress: () => {
+            router.push({
+              pathname: ROUTES.PLAN.SCHEDULE_ACTIVITY,
+              params: { activityPlanId: planId },
+            });
+          },
+        },
+        {
+          text: "Done",
           onPress: () => {
             router.back();
           },
@@ -73,9 +84,7 @@ export default function CreateActivityPlanScreen() {
    * Handle navigating to structure editor
    */
   const handleEditStructure = () => {
-    router.push(
-      "/(internal)/(tabs)/plan/create_activity_plan/structure/" as any,
-    );
+    router.push(ROUTES.PLAN.CREATE_ACTIVITY_PLAN.STRUCTURE);
   };
 
   return (

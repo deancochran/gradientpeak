@@ -11,7 +11,7 @@ import {
   ChevronRight,
   TrendingUp,
 } from "lucide-react-native";
-import React from "react";
+import React, { useMemo } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -60,6 +60,24 @@ export default function TrainingPlanOverview() {
     router.push(ROUTES.TRENDS);
   };
 
+  // Derive plan progress
+  const planProgress = useMemo(() => {
+    if (!plan || !plan.structure) return { week: "0/0", percentage: 0 };
+
+    const totalWeeks = plan.structure.target_weeks || 16;
+    const currentWeek = Math.min(
+      Math.ceil(
+        (Date.now() - new Date(plan.created_at).getTime()) /
+          (7 * 24 * 60 * 60 * 1000),
+      ),
+      totalWeeks,
+    );
+    return {
+      week: `${currentWeek}/${totalWeeks}`,
+      percentage: Math.round((currentWeek / totalWeeks) * 100),
+    };
+  }, [plan]);
+
   // Loading state
   if (loadingPlan) {
     return (
@@ -82,14 +100,6 @@ export default function TrainingPlanOverview() {
         }
       >
         <View className="flex-1 p-6 gap-6">
-          {/* Header */}
-          <View>
-            <Text className="text-3xl font-bold">Training Plan</Text>
-            <Text className="text-muted-foreground mt-2">
-              Create a structured plan to reach your fitness goals
-            </Text>
-          </View>
-
           {/* Empty State Card */}
           <Card className="mt-8">
             <CardContent className="p-8">
@@ -178,16 +188,13 @@ export default function TrainingPlanOverview() {
       }
     >
       <View className="flex-1 p-4 gap-4">
-        {/* Header with Plan Name */}
+        {/* Settings Button */}
         <View className="flex-row items-center justify-between mb-2">
-          <View className="flex-1">
-            <Text className="text-3xl font-bold">{plan.name}</Text>
-            {plan.description && (
-              <Text className="text-muted-foreground mt-1">
-                {plan.description}
-              </Text>
-            )}
-          </View>
+          {plan.description && (
+            <Text className="text-muted-foreground flex-1">
+              {plan.description}
+            </Text>
+          )}
           <TouchableOpacity
             onPress={() => router.push(ROUTES.PLAN.TRAINING_PLAN.SETTINGS)}
           >
@@ -233,6 +240,27 @@ export default function TrainingPlanOverview() {
         {status?.upcomingActivities && status.upcomingActivities.length > 0 && (
           <UpcomingActivitiesCard activities={status.upcomingActivities} />
         )}
+
+        {/* Enhanced Plan Context */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Plan Progress</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <View className="gap-3">
+              <View className="flex-row justify-between items-center">
+                <Text className="text-muted-foreground">Current Week</Text>
+                <Text className="font-semibold">{planProgress.week}</Text>
+              </View>
+              <View className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                <View
+                  className="bg-primary h-full"
+                  style={{ width: `${planProgress.percentage}%` }}
+                />
+              </View>
+            </View>
+          </CardContent>
+        </Card>
 
         {/* Action Buttons */}
         <View className="gap-3 mt-2">

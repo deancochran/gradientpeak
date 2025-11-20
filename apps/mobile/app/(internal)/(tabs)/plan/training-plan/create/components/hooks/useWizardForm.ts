@@ -1,34 +1,80 @@
 import { useState } from "react";
 
 /**
- * Form data structure for the training plan wizard
+ * Training plan presets for quick setup
  */
-export interface TrainingPlanFormData {
-  // Step 1: Basic Info
-  name: string;
-  description: string;
+export type PlanPreset = "beginner" | "intermediate" | "advanced" | "custom";
 
-  // Step 2: Weekly Targets
+export interface PresetConfig {
   tssMin: number;
   tssMax: number;
   activitiesPerWeek: number;
+  maxConsecutiveDays: number;
+  minRestDays: number;
+  minHoursBetweenHard: number;
+}
 
-  // Step 3: Recovery Rules
+const PRESETS: Record<PlanPreset, PresetConfig> = {
+  beginner: {
+    tssMin: 100,
+    tssMax: 250,
+    activitiesPerWeek: 3,
+    maxConsecutiveDays: 2,
+    minRestDays: 2,
+    minHoursBetweenHard: 72,
+  },
+  intermediate: {
+    tssMin: 200,
+    tssMax: 400,
+    activitiesPerWeek: 4,
+    maxConsecutiveDays: 3,
+    minRestDays: 2,
+    minHoursBetweenHard: 48,
+  },
+  advanced: {
+    tssMin: 350,
+    tssMax: 600,
+    activitiesPerWeek: 5,
+    maxConsecutiveDays: 4,
+    minRestDays: 1,
+    minHoursBetweenHard: 48,
+  },
+  custom: {
+    tssMin: 200,
+    tssMax: 400,
+    activitiesPerWeek: 4,
+    maxConsecutiveDays: 3,
+    minRestDays: 2,
+    minHoursBetweenHard: 48,
+  },
+};
+
+/**
+ * Form data structure for the training plan wizard
+ */
+export interface TrainingPlanFormData {
+  // Step 1: Basics + Preset
+  name: string;
+  description: string;
+  preset: PlanPreset;
+
+  // Step 2: Training Schedule (combines weekly targets + recovery)
+  tssMin: number;
+  tssMax: number;
+  activitiesPerWeek: number;
   maxConsecutiveDays: number;
   minRestDays: number;
   minHoursBetweenHard: number;
 
-  // Step 4: Periodization (optional)
-  periodization?: {
-    startingCTL: number;
-    targetCTL: number;
-    rampRate: number;
-    targetDate: Date | null;
-  };
+  // Step 3: Periodization (optional, simplified)
+  usePeriodization: boolean;
+  startingCTL?: number;
+  targetCTL?: number;
+  rampRate?: number;
 }
 
 /**
- * Validation errors for each step
+ * Validation errors
  */
 export interface ValidationErrors {
   name?: string;
@@ -43,8 +89,7 @@ export interface ValidationErrors {
 }
 
 /**
- * Hook for managing the training plan wizard form state
- * Handles multi-step navigation, validation, and form data
+ * Streamlined wizard form hook with presets and smart defaults
  */
 export function useWizardForm() {
   const [currentStep, setCurrentStep] = useState(1);
@@ -53,24 +98,61 @@ export function useWizardForm() {
   const [formData, setFormData] = useState<TrainingPlanFormData>({
     name: "",
     description: "",
-    tssMin: 200,
-    tssMax: 400,
-    activitiesPerWeek: 4,
-    maxConsecutiveDays: 3,
-    minRestDays: 1,
-    minHoursBetweenHard: 48,
-    periodization: undefined,
+    preset: "intermediate",
+    ...PRESETS.intermediate,
+    usePeriodization: false,
   });
 
   /**
-   * Update a single field in the form data
+   * Apply preset configuration
+   */
+  const applyPreset = (preset: PlanPreset) => {
+    const config = PRESETS[preset];
+    setFormData((prev) => ({
+      ...prev,
+      preset,
+      ...config,
+    }));
+  };
+
+  /**
+   * Update a single field
    */
   const updateField = <K extends keyof TrainingPlanFormData>(
     field: K,
     value: TrainingPlanFormData[K],
   ) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-    // Clear error for this field when user makes changes
+    setFormData((prev) => {
+      const updated = { ...prev, [field]: value };
+
+      // Auto-adjust related fields for consistency
+      if (field === "tssMin" && typeof value === "number") {
+        // Ensure max is at least 50 more than min
+        if (updated.tssMax < value + 50) {
+          updated.tssMax = value + 100;
+        }
+      }
+
+      if (field === "maxConsecutiveDays" && typeof value === "number") {
+        // Ensure rest days fit in the week
+        const maxRest = 7 - value;
+        if (updated.minRestDays > maxRest) {
+          updated.minRestDays = Math.max(1, maxRest);
+        }
+      }
+
+      if (field === "minRestDays" && typeof value === "number") {
+        // Ensure training days fit in the week
+        const maxTraining = 7 - value;
+        if (updated.maxConsecutiveDays > maxTraining) {
+          updated.maxConsecutiveDays = Math.max(2, maxTraining);
+        }
+      }
+
+      return updated;
+    });
+
+    // Clear error for this field
     if (errors[field as keyof ValidationErrors]) {
       setErrors((prev) => {
         const newErrors = { ...prev };
@@ -81,28 +163,7 @@ export function useWizardForm() {
   };
 
   /**
-   * Update periodization values
-   */
-  const updatePeriodization = (
-    field: keyof NonNullable<TrainingPlanFormData["periodization"]>,
-    value: number | Date | null,
-  ) => {
-    setFormData((prev) => ({
-      ...prev,
-      periodization: {
-        ...(prev.periodization || {
-          startingCTL: 0,
-          targetCTL: 100,
-          rampRate: 5,
-          targetDate: null,
-        }),
-        [field]: value,
-      },
-    }));
-  };
-
-  /**
-   * Validate Step 1: Basic Info
+   * Validate Step 1: Basics
    */
   const validateStep1 = (): boolean => {
     const newErrors: ValidationErrors = {};
@@ -110,9 +171,7 @@ export function useWizardForm() {
     if (!formData.name.trim()) {
       newErrors.name = "Plan name is required";
     } else if (formData.name.length < 3) {
-      newErrors.name = "Plan name must be at least 3 characters";
-    } else if (formData.name.length > 100) {
-      newErrors.name = "Plan name must be less than 100 characters";
+      newErrors.name = "Name must be at least 3 characters";
     }
 
     if (formData.description.length > 500) {
@@ -124,55 +183,44 @@ export function useWizardForm() {
   };
 
   /**
-   * Validate Step 2: Weekly Targets
+   * Validate Step 2: Training Schedule
    */
   const validateStep2 = (): boolean => {
     const newErrors: ValidationErrors = {};
 
-    if (formData.tssMin < 0) {
-      newErrors.tssMin = "Minimum TSS must be positive";
+    if (formData.tssMin < 50 || formData.tssMin > 1000) {
+      newErrors.tssMin = "Min TSS should be 50-1000";
     }
 
-    if (formData.tssMax < 0) {
-      newErrors.tssMax = "Maximum TSS must be positive";
+    if (formData.tssMax < 100 || formData.tssMax > 1500) {
+      newErrors.tssMax = "Max TSS should be 100-1500";
     }
 
     if (formData.tssMin >= formData.tssMax) {
-      newErrors.tssMax = "Maximum TSS must be greater than minimum TSS";
+      newErrors.tssMax = "Max must be greater than min";
     }
 
     if (formData.activitiesPerWeek < 1 || formData.activitiesPerWeek > 14) {
-      newErrors.activitiesPerWeek =
-        "Activities per week must be between 1 and 14";
+      newErrors.activitiesPerWeek = "Must be 1-14 activities";
     }
 
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  /**
-   * Validate Step 3: Recovery Rules
-   */
-  const validateStep3 = (): boolean => {
-    const newErrors: ValidationErrors = {};
-
     if (formData.maxConsecutiveDays < 1 || formData.maxConsecutiveDays > 7) {
-      newErrors.maxConsecutiveDays = "Must be between 1 and 7 days";
+      newErrors.maxConsecutiveDays = "Must be 1-7 days";
     }
 
     if (formData.minRestDays < 0 || formData.minRestDays > 7) {
-      newErrors.minRestDays = "Must be between 0 and 7 days";
+      newErrors.minRestDays = "Must be 0-7 days";
     }
 
-    if (formData.minRestDays + formData.maxConsecutiveDays < 7) {
-      newErrors.minRestDays = "Rest days and training days must fit in a week";
+    if (formData.minRestDays + formData.maxConsecutiveDays > 7) {
+      newErrors.minRestDays = "Training + rest days must fit in a week";
     }
 
     if (
       formData.minHoursBetweenHard < 0 ||
       formData.minHoursBetweenHard > 168
     ) {
-      newErrors.minHoursBetweenHard = "Must be between 0 and 168 hours";
+      newErrors.minHoursBetweenHard = "Must be 0-168 hours";
     }
 
     setErrors(newErrors);
@@ -180,31 +228,41 @@ export function useWizardForm() {
   };
 
   /**
-   * Validate Step 4: Periodization (optional step)
+   * Validate Step 3: Periodization (optional)
    */
-  const validateStep4 = (): boolean => {
-    // Periodization is optional, so if it's not set, it's valid
-    if (!formData.periodization) {
-      return true;
+  const validateStep3 = (): boolean => {
+    if (!formData.usePeriodization) {
+      return true; // Skip validation if not using periodization
     }
 
     const newErrors: ValidationErrors = {};
-    const { startingCTL, targetCTL, rampRate } = formData.periodization;
 
-    if (startingCTL < 0 || startingCTL > 200) {
-      newErrors.periodization = "Starting CTL must be between 0 and 200";
+    if (
+      !formData.startingCTL ||
+      formData.startingCTL < 0 ||
+      formData.startingCTL > 200
+    ) {
+      newErrors.periodization = "Starting CTL must be 0-200";
     }
 
-    if (targetCTL < 0 || targetCTL > 200) {
-      newErrors.periodization = "Target CTL must be between 0 and 200";
+    if (
+      !formData.targetCTL ||
+      formData.targetCTL < 0 ||
+      formData.targetCTL > 250
+    ) {
+      newErrors.periodization = "Target CTL must be 0-250";
     }
 
-    if (targetCTL <= startingCTL) {
-      newErrors.periodization = "Target CTL must be greater than starting CTL";
+    if (
+      formData.startingCTL &&
+      formData.targetCTL &&
+      formData.targetCTL <= formData.startingCTL
+    ) {
+      newErrors.periodization = "Target must be greater than starting CTL";
     }
 
-    if (rampRate < 1 || rampRate > 20) {
-      newErrors.periodization = "Ramp rate must be between 1% and 20%";
+    if (!formData.rampRate || formData.rampRate < 1 || formData.rampRate > 20) {
+      newErrors.periodization = "Ramp rate must be 1-20 per week";
     }
 
     setErrors(newErrors);
@@ -222,19 +280,17 @@ export function useWizardForm() {
         return validateStep2();
       case 3:
         return validateStep3();
-      case 4:
-        return validateStep4();
       default:
-        return false;
+        return true;
     }
   };
 
   /**
-   * Go to next step (with validation)
+   * Next step with validation
    */
   const nextStep = (): boolean => {
     if (validateCurrentStep()) {
-      if (currentStep < 4) {
+      if (currentStep < 3) {
         setCurrentStep(currentStep + 1);
         return true;
       }
@@ -243,27 +299,17 @@ export function useWizardForm() {
   };
 
   /**
-   * Go to previous step
+   * Previous step
    */
   const previousStep = () => {
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
-      setErrors({}); // Clear errors when going back
-    }
-  };
-
-  /**
-   * Skip to a specific step (used for skipping optional steps)
-   */
-  const skipToStep = (step: number) => {
-    if (step >= 1 && step <= 4) {
-      setCurrentStep(step);
       setErrors({});
     }
   };
 
   /**
-   * Reset form to initial state
+   * Reset form
    */
   const resetForm = () => {
     setCurrentStep(1);
@@ -271,13 +317,9 @@ export function useWizardForm() {
     setFormData({
       name: "",
       description: "",
-      tssMin: 200,
-      tssMax: 400,
-      activitiesPerWeek: 4,
-      maxConsecutiveDays: 3,
-      minRestDays: 1,
-      minHoursBetweenHard: 48,
-      periodization: undefined,
+      preset: "intermediate",
+      ...PRESETS.intermediate,
+      usePeriodization: false,
     });
   };
 
@@ -289,18 +331,15 @@ export function useWizardForm() {
 
     // Actions
     updateField,
-    updatePeriodization,
+    applyPreset,
     nextStep,
     previousStep,
-    skipToStep,
     resetForm,
-
-    // Validation
     validateCurrentStep,
 
     // Computed
     isFirstStep: currentStep === 1,
-    isLastStep: currentStep === 4,
-    totalSteps: 4,
+    isLastStep: currentStep === 3,
+    totalSteps: 3,
   };
 }

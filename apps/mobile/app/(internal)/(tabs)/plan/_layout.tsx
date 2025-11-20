@@ -1,54 +1,23 @@
-import { Stack } from "expo-router";
+import { Slot } from "expo-router";
 
+/**
+ * Plan Tab Root Layout
+ *
+ * Uses Slot (not Stack) to avoid unwanted back buttons at the root level.
+ *
+ * Navigation Structure:
+ * - /plan/index - Main plan dashboard (Slot - no back button needed)
+ * - /plan/training-plan/* - Has its own _layout.tsx with Stack for back navigation
+ * - /plan/create_activity_plan/* - Has its own _layout.tsx with Stack for back navigation
+ * - /plan/library - Standalone page (add Stack layout if needs sub-pages)
+ * - /plan/planned_activities - Standalone page (add Stack layout if needs sub-pages)
+ * - /plan/create_planned_activity - Standalone page (add Stack layout if needs sub-pages)
+ *
+ * This hybrid approach gives us:
+ * ✓ No unwanted back button on main plan index
+ * ✓ Proper back navigation within sub-sections
+ * ✓ Each section controls its own navigation behavior
+ */
 export default function PlanLayout() {
-  return (
-    <Stack>
-      <Stack.Screen
-        name="index"
-        options={{
-          title: "Plan",
-          headerShown: false,
-        }}
-      />
-      <Stack.Screen
-        name="library/index"
-        options={{
-          title: "Activity Library",
-        }}
-      />
-      <Stack.Screen
-        name="planned_activities/index"
-        options={{
-          title: "Scheduled Activities",
-        }}
-      />
-      <Stack.Screen
-        name="create_activity_plan/index"
-        options={{
-          title: "Create Activity Plan",
-          headerShown: false,
-        }}
-      />
-      <Stack.Screen
-        name="create_activity_plan/structure/index"
-        options={{
-          title: "Edit Structure",
-          headerShown: false,
-        }}
-      />
-      <Stack.Screen
-        name="create_activity_plan/structure/repeat/index"
-        options={{
-          title: "Edit Repeat",
-          headerShown: false,
-        }}
-      />
-      <Stack.Screen
-        name="create_planned_activity/index"
-        options={{
-          title: "Schedule Activity",
-        }}
-      />
-    </Stack>
-  );
+  return <Slot />;
 }

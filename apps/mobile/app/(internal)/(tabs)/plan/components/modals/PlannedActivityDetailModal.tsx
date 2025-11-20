@@ -1,18 +1,30 @@
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { trpc } from "@/lib/trpc";
+import { format } from "date-fns";
 import { useRouter } from "expo-router";
-import { Calendar, Clock, Edit, Play, Trash2 } from "lucide-react-native";
-import { Alert, ScrollView, View } from "react-native";
+import {
+  Calendar,
+  CheckCircle2,
+  Clock,
+  Edit,
+  Play,
+  Trash2,
+  X,
+  Zap,
+} from "lucide-react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  ScrollView,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { getActivityBgClass, getActivityColor } from "../../utils/colors";
+import { isActivityCompleted } from "../../utils/dateGrouping";
 
 interface PlannedActivityDetailModalProps {
   plannedActivityId: string;
@@ -26,6 +38,7 @@ export function PlannedActivityDetailModal({
   onClose,
 }: PlannedActivityDetailModalProps) {
   const router = useRouter();
+  const utils = trpc.useUtils();
 
   // Query planned activity with plan details
   const { data: plannedActivity, isLoading } =
@@ -37,7 +50,13 @@ export function PlannedActivityDetailModal({
   // Delete mutation
   const deleteMutation = trpc.plannedActivities.delete.useMutation({
     onSuccess: () => {
-      Alert.alert("Success", "Activity has been removed from your schedule");
+      // Invalidate all related queries
+      utils.plannedActivities.list.invalidate();
+      utils.plannedActivities.getToday.invalidate();
+      utils.plannedActivities.getWeekCount.invalidate();
+      utils.trainingPlans.getCurrentStatus.invalidate();
+
+      Alert.alert("Success", "Activity removed from your schedule");
       onClose();
     },
     onError: (error) => {
@@ -49,38 +68,43 @@ export function PlannedActivityDetailModal({
   });
 
   const handleStartActivity = () => {
-    if (!plannedActivity) return;
+    if (!plannedActivity?.activity_plan) return;
 
-    // Launch ActivityRecorder with the plan
-    const payload = {
-      type: plannedActivity.activity_plan?.activity_type,
-      plannedActivityId: plannedActivity.id,
-      plan: plannedActivity.activity_plan,
-    };
-
-    // Navigate to recording session
-    router.push({
-      pathname: "/(internal)/record",
-      params: { payload: JSON.stringify(payload) },
-    });
+    // Close modal first
     onClose();
+
+    // Navigate to activity recording
+    // Adjust this path based on your actual routing structure
+    setTimeout(() => {
+      router.push({
+        pathname: "/record" as any,
+        params: {
+          activityPlanId: plannedActivity.activity_plan.id,
+          plannedActivityId: plannedActivity.id,
+        },
+      });
+    }, 300);
   };
 
   const handleReschedule = () => {
     if (!plannedActivity) return;
 
-    // Navigate to schedule form in edit mode
-    router.push({
-      pathname: "/(internal)/(tabs)/plan/create_planned_activity",
-      params: { activityId: plannedActivity.id },
-    });
+    // Close modal first
     onClose();
+
+    // Navigate to schedule form in edit mode
+    setTimeout(() => {
+      router.push({
+        pathname: "/plan/create_planned_activity" as any,
+        params: { activityId: plannedActivity.id },
+      });
+    }, 300);
   };
 
   const handleDelete = () => {
     Alert.alert(
       "Delete Activity",
-      "Are you sure you want to remove this activity from your schedule? This action cannot be undone.",
+      "Are you sure you want to remove this activity from your schedule?",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -92,223 +116,312 @@ export function PlannedActivityDetailModal({
     );
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString(undefined, {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-  };
+  const completed = plannedActivity
+    ? isActivityCompleted(plannedActivity)
+    : false;
+  const activityType = plannedActivity?.activity_plan?.activity_type || "other";
+  const colorConfig = getActivityColor(activityType);
 
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleTimeString(undefined, {
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    });
-  };
+  const isPastActivity = plannedActivity
+    ? new Date(plannedActivity.scheduled_date) < new Date()
+    : false;
 
-  if (!plannedActivity && !isLoading) {
-    return (
-      <Dialog open={isVisible} onOpenChange={(open) => !open && onClose()}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Activity Not Found</DialogTitle>
-            <DialogDescription>
-              This scheduled activity could not be found.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button onPress={onClose}>
-              <Text>Close</Text>
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    );
-  }
+  const canStart = !completed && !isPastActivity;
 
   return (
-    <Dialog open={isVisible} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-full max-w-lg mx-4 max-h-[80%]">
-        <DialogHeader>
-          <DialogTitle>
-            {plannedActivity?.activity_plan?.name || "Scheduled Activity"}
-          </DialogTitle>
-          <DialogDescription>
-            {plannedActivity?.scheduled_date &&
-              formatDate(plannedActivity.scheduled_date)}
-          </DialogDescription>
-        </DialogHeader>
+    <Modal
+      visible={isVisible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+      transparent={false}
+    >
+      <View className="flex-1 bg-background">
+        {/* Header */}
+        <View className="flex-row items-center justify-between px-4 pt-12 pb-4 border-b border-border bg-card">
+          <View className="flex-1 mr-3">
+            <Text className="text-xl font-bold" numberOfLines={2}>
+              {plannedActivity?.activity_plan?.name || "Activity Details"}
+            </Text>
+            {plannedActivity?.scheduled_date && (
+              <Text className="text-sm text-muted-foreground mt-1">
+                {format(
+                  new Date(plannedActivity.scheduled_date),
+                  "EEEE, MMMM d, yyyy",
+                )}
+              </Text>
+            )}
+          </View>
+          <TouchableOpacity
+            onPress={onClose}
+            activeOpacity={0.7}
+            className="w-10 h-10 items-center justify-center"
+            disabled={deleteMutation.isPending}
+          >
+            <Icon as={X} size={24} className="text-muted-foreground" />
+          </TouchableOpacity>
+        </View>
 
+        {/* Content */}
         {isLoading ? (
-          <View className="flex items-center justify-center py-8">
-            <Text className="text-muted-foreground">
+          <View className="flex-1 items-center justify-center">
+            <ActivityIndicator size="large" />
+            <Text className="text-muted-foreground mt-4">
               Loading activity details...
             </Text>
           </View>
+        ) : !plannedActivity ? (
+          <View className="flex-1 items-center justify-center px-6">
+            <Text className="text-lg font-semibold mb-2">
+              Activity Not Found
+            </Text>
+            <Text className="text-muted-foreground text-center mb-4">
+              This scheduled activity could not be found.
+            </Text>
+            <Button onPress={onClose}>
+              <Text className="text-primary-foreground">Close</Text>
+            </Button>
+          </View>
         ) : (
-          <ScrollView className="max-h-96">
-            <View className="flex flex-col gap-4 py-4">
-              {/* Schedule Info */}
-              <View className="bg-muted/30 rounded-lg p-4">
-                <View className="flex flex-row items-center gap-2 mb-2">
+          <ScrollView className="flex-1" contentContainerClassName="p-4">
+            {/* Status Badge */}
+            {completed && (
+              <Card className="bg-green-50 border-green-200 mb-4">
+                <CardContent className="p-3">
+                  <View className="flex-row items-center gap-2">
+                    <Icon
+                      as={CheckCircle2}
+                      size={20}
+                      className="text-green-600"
+                    />
+                    <Text className="text-green-600 font-semibold">
+                      Activity Completed
+                    </Text>
+                  </View>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Activity Type Badge */}
+            <Card className="mb-4">
+              <CardContent className="p-4">
+                <View className="flex-row items-center gap-3">
+                  <View
+                    className={`w-12 h-12 ${getActivityBgClass(activityType)} rounded-xl items-center justify-center`}
+                  >
+                    <Icon as={Calendar} size={24} className="text-white" />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
+                      Activity Type
+                    </Text>
+                    <Text className="font-semibold capitalize">
+                      {colorConfig.name}
+                    </Text>
+                  </View>
+                </View>
+              </CardContent>
+            </Card>
+
+            {/* Schedule Info */}
+            <Card className="mb-4">
+              <CardContent className="p-4">
+                <View className="flex-row items-center gap-2 mb-3">
                   <Icon
-                    as={Calendar}
+                    as={Clock}
                     size={16}
                     className="text-muted-foreground"
                   />
                   <Text className="font-semibold">Schedule</Text>
                 </View>
-                <Text className="text-sm text-muted-foreground mb-1">
-                  {plannedActivity?.scheduled_date &&
-                    formatDate(plannedActivity.scheduled_date)}
+                <Text className="text-base mb-1">
+                  {format(
+                    new Date(plannedActivity.scheduled_date),
+                    "EEEE, MMMM d, yyyy",
+                  )}
                 </Text>
                 <Text className="text-sm text-muted-foreground">
-                  {plannedActivity?.scheduled_date &&
-                    formatTime(plannedActivity.scheduled_date)}
+                  {format(new Date(plannedActivity.scheduled_date), "h:mm a")}
                 </Text>
-              </View>
+              </CardContent>
+            </Card>
 
-              {/* Plan Summary */}
-              {plannedActivity?.activity_plan && (
-                <View className="bg-muted/30 rounded-lg p-4">
-                  <View className="flex flex-row items-center gap-2 mb-2">
+            {/* Plan Details */}
+            {plannedActivity.activity_plan && (
+              <Card className="mb-4">
+                <CardContent className="p-4">
+                  <View className="flex-row items-center gap-2 mb-3">
                     <Icon
-                      as={Clock}
+                      as={Zap}
                       size={16}
                       className="text-muted-foreground"
                     />
-                    <Text className="font-semibold">Activity Plan</Text>
+                    <Text className="font-semibold">Workout Details</Text>
                   </View>
 
-                  <Text className="font-medium mb-1">
+                  <Text className="text-base font-medium mb-2">
                     {plannedActivity.activity_plan.name}
                   </Text>
 
                   {plannedActivity.activity_plan.description && (
-                    <Text className="text-sm text-muted-foreground mb-2">
+                    <Text className="text-sm text-muted-foreground mb-3">
                       {plannedActivity.activity_plan.description}
                     </Text>
                   )}
 
-                  <View className="flex flex-row gap-4">
+                  <View className="flex-row gap-4 flex-wrap">
                     {plannedActivity.activity_plan.estimated_duration && (
-                      <View>
-                        <Text className="text-xs text-muted-foreground">
+                      <View className="bg-muted/50 px-3 py-2 rounded-lg">
+                        <Text className="text-xs text-muted-foreground mb-1">
                           Duration
                         </Text>
-                        <Text className="text-sm font-medium">
+                        <Text className="text-sm font-semibold">
                           {plannedActivity.activity_plan.estimated_duration} min
                         </Text>
                       </View>
                     )}
 
                     {plannedActivity.activity_plan.estimated_tss && (
-                      <View>
-                        <Text className="text-xs text-muted-foreground">
-                          TSS
+                      <View className="bg-muted/50 px-3 py-2 rounded-lg">
+                        <Text className="text-xs text-muted-foreground mb-1">
+                          Training Stress
                         </Text>
-                        <Text className="text-sm font-medium">
-                          {plannedActivity.activity_plan.estimated_tss}
+                        <Text className="text-sm font-semibold">
+                          {plannedActivity.activity_plan.estimated_tss} TSS
                         </Text>
                       </View>
                     )}
                   </View>
-                </View>
-              )}
+                </CardContent>
+              </Card>
+            )}
 
-              {/* Activity Structure Preview */}
-              {plannedActivity?.activity_plan?.structure &&
-                typeof plannedActivity.activity_plan.structure === "object" &&
-                "steps" in plannedActivity.activity_plan.structure &&
-                Array.isArray(
-                  plannedActivity.activity_plan.structure.steps,
-                ) && (
-                  <View className="bg-muted/30 rounded-lg p-4">
-                    <Text className="font-semibold mb-2">
-                      Activity Structure
+            {/* Workout Structure */}
+            {plannedActivity?.activity_plan?.structure &&
+              typeof plannedActivity.activity_plan.structure === "object" &&
+              (plannedActivity.activity_plan.structure as any).steps &&
+              Array.isArray(
+                (plannedActivity.activity_plan.structure as any).steps,
+              ) &&
+              (plannedActivity.activity_plan.structure as any).steps.length >
+                0 && (
+                <Card className="mb-4">
+                  <CardContent className="p-4">
+                    <Text className="font-semibold mb-3">
+                      Workout Structure
                     </Text>
-                    <View className="flex flex-col gap-2">
-                      {(plannedActivity.activity_plan.structure.steps as any[])
-                        .slice(0, 3)
+                    <View className="gap-2">
+                      {(
+                        (plannedActivity.activity_plan.structure as any)
+                          .steps as any[]
+                      )
+                        .slice(0, 5)
                         .map((step: any, index: number) => (
                           <View
                             key={index}
-                            className="flex flex-row items-center gap-2"
+                            className="flex-row items-start gap-2 py-1"
                           >
-                            <View className="w-2 h-2 bg-primary rounded-full" />
-                            <Text className="text-sm">
-                              {step.name || `Step ${index + 1}`}
+                            <View className="w-6 h-6 bg-primary/10 rounded-full items-center justify-center mt-0.5">
+                              <Text className="text-xs text-primary font-semibold">
+                                {index + 1}
+                              </Text>
+                            </View>
+                            <View className="flex-1">
+                              <Text className="text-sm font-medium">
+                                {step.name || `Step ${index + 1}`}
+                              </Text>
                               {step.duration &&
-                                step.duration !== "untilFinished" &&
-                                ` (${step.duration.value} ${step.duration.unit})`}
-                            </Text>
+                                step.duration !== "untilFinished" && (
+                                  <Text className="text-xs text-muted-foreground">
+                                    {step.duration.value}{" "}
+                                    {step.duration.unit === "minutes"
+                                      ? "min"
+                                      : step.duration.unit}
+                                  </Text>
+                                )}
+                            </View>
                           </View>
                         ))}
-                      {(plannedActivity.activity_plan.structure.steps as any[])
-                        .length > 3 && (
-                        <Text className="text-xs text-muted-foreground ml-4">
+                      {(
+                        (plannedActivity.activity_plan.structure as any)
+                          .steps as any[]
+                      ).length > 5 && (
+                        <Text className="text-xs text-muted-foreground ml-8">
                           +
                           {(
-                            plannedActivity.activity_plan.structure
+                            (plannedActivity.activity_plan.structure as any)
                               .steps as any[]
-                          ).length - 3}{" "}
+                          ).length - 5}{" "}
                           more steps
                         </Text>
                       )}
                     </View>
-                  </View>
-                )}
-            </View>
+                  </CardContent>
+                </Card>
+              )}
+
+            {/* Notes */}
+            {plannedActivity.notes && (
+              <Card className="mb-4">
+                <CardContent className="p-4">
+                  <Text className="font-semibold mb-2">Notes</Text>
+                  <Text className="text-sm text-muted-foreground">
+                    {plannedActivity.notes}
+                  </Text>
+                </CardContent>
+              </Card>
+            )}
           </ScrollView>
         )}
 
-        <DialogFooter className="flex flex-row gap-2">
-          <Button
-            variant="outline"
-            onPress={onClose}
-            disabled={deleteMutation.isPending}
-          >
-            <Text>Close</Text>
-          </Button>
+        {/* Action Bar */}
+        <View className="border-t border-border bg-card">
+          <View className="px-4 py-3 gap-2">
+            {/* Primary Action */}
+            {canStart && (
+              <Button
+                onPress={handleStartActivity}
+                disabled={deleteMutation.isPending || isLoading}
+                size="lg"
+              >
+                <Icon
+                  as={Play}
+                  size={20}
+                  className="text-primary-foreground mr-2"
+                />
+                <Text className="text-primary-foreground font-semibold">
+                  Start Activity
+                </Text>
+              </Button>
+            )}
 
-          <Button
-            variant="outline"
-            onPress={handleReschedule}
-            disabled={deleteMutation.isPending || isLoading}
-          >
-            <Icon as={Edit} size={16} className="text-foreground" />
-            <Text>Reschedule</Text>
-          </Button>
+            {/* Secondary Actions */}
+            <View className="flex-row gap-2">
+              <Button
+                variant="outline"
+                onPress={handleReschedule}
+                disabled={deleteMutation.isPending || isLoading}
+                className="flex-1"
+              >
+                <Icon as={Edit} size={16} className="text-foreground mr-2" />
+                <Text>Reschedule</Text>
+              </Button>
 
-          <Button
-            variant="destructive"
-            onPress={handleDelete}
-            disabled={deleteMutation.isPending || isLoading}
-          >
-            <Icon
-              as={Trash2}
-              size={16}
-              className="text-destructive-foreground"
-            />
-            <Text className="text-destructive-foreground">
-              {deleteMutation.isPending ? "Deleting..." : "Delete"}
-            </Text>
-          </Button>
-
-          <Button
-            onPress={handleStartActivity}
-            disabled={deleteMutation.isPending || isLoading}
-          >
-            <Icon as={Play} size={16} className="text-primary-foreground" />
-            <Text className="text-primary-foreground">Start Activity</Text>
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+              <Button
+                variant="outline"
+                onPress={handleDelete}
+                disabled={deleteMutation.isPending || isLoading}
+                className="flex-1"
+              >
+                <Icon as={Trash2} size={16} className="text-destructive mr-2" />
+                <Text className="text-destructive">
+                  {deleteMutation.isPending ? "Deleting..." : "Delete"}
+                </Text>
+              </Button>
+            </View>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }

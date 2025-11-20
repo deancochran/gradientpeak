@@ -1,269 +1,182 @@
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Text } from "@/components/ui/text";
-import { useState } from "react";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 
-interface Step5PeriodizationProps {
-  periodization?: {
-    startingCTL: number;
-    targetCTL: number;
-    rampRate: number;
-    targetDate: Date | null;
-  };
-  onPeriodizationChange: (
-    field: "startingCTL" | "targetCTL" | "rampRate" | "targetDate",
-    value: number | Date | null,
-  ) => void;
+interface Step3PeriodizationProps {
+  usePeriodization: boolean;
+  startingCTL?: number;
+  targetCTL?: number;
+  rampRate?: number;
+  onUsePeriodizationChange: (value: boolean) => void;
+  onStartingCTLChange: (value: number) => void;
+  onTargetCTLChange: (value: number) => void;
+  onRampRateChange: (value: number) => void;
   errors?: {
     periodization?: string;
   };
 }
 
 /**
- * Step 4: Periodization (Optional)
- * Sets optional periodization parameters for progressive overload
+ * Step 3: Periodization (Optional)
+ * Streamlined periodization setup for progressive fitness building
  */
-export function Step4Periodization({
-  periodization,
-  onPeriodizationChange,
+export function Step3Periodization({
+  usePeriodization,
+  startingCTL = 0,
+  targetCTL = 100,
+  rampRate = 5,
+  onUsePeriodizationChange,
+  onStartingCTLChange,
+  onTargetCTLChange,
+  onRampRateChange,
   errors,
-}: Step5PeriodizationProps) {
-  const [isEnabled, setIsEnabled] = useState(!!periodization);
-
-  const handleStartingCTLChange = (text: string) => {
-    const value = parseInt(text) || 0;
-    onPeriodizationChange("startingCTL", value);
-  };
-
-  const handleTargetCTLChange = (text: string) => {
-    const value = parseInt(text) || 0;
-    onPeriodizationChange("targetCTL", value);
-  };
-
-  const handleRampRateChange = (text: string) => {
-    const value = parseFloat(text) || 0;
-    onPeriodizationChange("rampRate", value);
-  };
-
-  const handleEnablePeriodization = () => {
-    setIsEnabled(true);
-    // Initialize with default values if not set
-    if (!periodization) {
-      onPeriodizationChange("startingCTL", 0);
-      onPeriodizationChange("targetCTL", 100);
-      onPeriodizationChange("rampRate", 5);
-      onPeriodizationChange("targetDate", null);
-    }
-  };
-
-  const handleDisablePeriodization = () => {
-    setIsEnabled(false);
-  };
-
+}: Step3PeriodizationProps) {
   // Calculate estimated weeks to reach target
-  const calculateWeeksToTarget = () => {
-    if (!periodization || !isEnabled) return null;
-
-    const { startingCTL, targetCTL, rampRate } = periodization;
-    if (startingCTL >= targetCTL || rampRate <= 0) return null;
-
-    const ctlGain = targetCTL - startingCTL;
-    const weeksNeeded = Math.ceil(ctlGain / rampRate);
-    return weeksNeeded;
-  };
-
-  const weeksToTarget = calculateWeeksToTarget();
+  const weeksToTarget =
+    usePeriodization && targetCTL > startingCTL && rampRate > 0
+      ? Math.ceil((targetCTL - startingCTL) / rampRate)
+      : null;
 
   return (
     <View className="gap-6">
-      {/* Introduction */}
-      <View className="bg-muted/30 rounded-lg p-4">
-        <Text className="text-sm text-muted-foreground leading-6">
-          <Text className="font-semibold">Optional:</Text> Add periodization to
-          progressively build fitness (CTL) toward a goal. This helps ensure
-          gradual, sustainable progression.
-        </Text>
+      {/* Toggle Section */}
+      <View className="gap-3">
+        <View>
+          <Text className="text-lg font-semibold">Periodization</Text>
+          <Text className="text-sm text-muted-foreground mt-1">
+            Optional: Build fitness progressively toward a goal
+          </Text>
+        </View>
+
+        {/* Toggle Buttons */}
+        <View className="flex-row gap-2">
+          <Pressable
+            onPress={() => onUsePeriodizationChange(false)}
+            className={`flex-1 border-2 rounded-lg p-3 ${
+              !usePeriodization
+                ? "border-primary bg-primary/5"
+                : "border-border bg-card"
+            }`}
+          >
+            <Text
+              className={`text-center font-semibold ${
+                !usePeriodization ? "text-primary" : "text-foreground"
+              }`}
+            >
+              Skip
+            </Text>
+            <Text className="text-xs text-muted-foreground text-center mt-1">
+              Simple plan
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => onUsePeriodizationChange(true)}
+            className={`flex-1 border-2 rounded-lg p-3 ${
+              usePeriodization
+                ? "border-primary bg-primary/5"
+                : "border-border bg-card"
+            }`}
+          >
+            <Text
+              className={`text-center font-semibold ${
+                usePeriodization ? "text-primary" : "text-foreground"
+              }`}
+            >
+              Enable
+            </Text>
+            <Text className="text-xs text-muted-foreground text-center mt-1">
+              Progressive build
+            </Text>
+          </Pressable>
+        </View>
       </View>
 
-      {/* Enable/Disable Toggle */}
-      {!isEnabled ? (
-        <View className="gap-4">
-          <View className="bg-primary/5 rounded-lg p-6 items-center">
-            <Text className="text-lg font-semibold mb-2">
-              Skip Periodization?
-            </Text>
-            <Text className="text-sm text-muted-foreground text-center mb-4">
-              Periodization is optional. You can create a simple training plan
-              without it and manage CTL progression manually.
-            </Text>
-            <View className="flex-row gap-3 w-full">
-              <Button
-                variant="outline"
-                onPress={handleEnablePeriodization}
-                className="flex-1"
-              >
-                <Text className="text-foreground font-medium">
-                  Set Up Periodization
-                </Text>
-              </Button>
-              <Button variant="default" className="flex-1">
-                <Text className="text-primary-foreground font-semibold">
-                  Skip This Step
-                </Text>
-              </Button>
-            </View>
-          </View>
-
-          {/* Benefits Info */}
-          <View className="bg-blue-500/10 rounded-lg p-4">
-            <Text className="text-sm font-semibold text-blue-600 mb-2">
-              📈 Benefits of Periodization
-            </Text>
-            <Text className="text-sm text-muted-foreground leading-5">
-              • <Text className="font-semibold">Progressive overload:</Text>{" "}
-              Gradual increase in training load
-              {"\n"}• <Text className="font-semibold">Goal-oriented:</Text> Plan
-              backward from your target event
-              {"\n"}• <Text className="font-semibold">Injury prevention:</Text>{" "}
-              Controlled ramp rate reduces risk
-              {"\n"}• <Text className="font-semibold">Peak performance:</Text>{" "}
-              Arrive at your goal with optimal fitness
-            </Text>
-          </View>
-        </View>
-      ) : (
+      {/* Periodization Inputs (only show if enabled) */}
+      {usePeriodization ? (
         <View className="gap-5">
-          {/* Disable Button */}
-          <Button
-            variant="ghost"
-            onPress={handleDisablePeriodization}
-            size="sm"
-            className="self-start"
-          >
-            <Text className="text-muted-foreground text-xs">
-              ← Skip periodization
-            </Text>
-          </Button>
-
           {/* Starting CTL */}
           <View className="gap-2">
             <Label nativeID="starting-ctl">
-              <Text className="text-base font-semibold">
-                Current Fitness (Starting CTL)
-              </Text>
+              <Text className="text-sm font-medium">Current Fitness (CTL)</Text>
             </Label>
-            <Text className="text-sm text-muted-foreground mb-2">
-              Your current chronic training load. Use 0 if starting fresh.
-            </Text>
             <Input
               aria-labelledby="starting-ctl"
               placeholder="0"
-              value={periodization?.startingCTL.toString() || "0"}
-              onChangeText={handleStartingCTLChange}
+              value={startingCTL.toString()}
+              onChangeText={(text) => onStartingCTLChange(parseInt(text) || 0)}
               keyboardType="numeric"
             />
             <Text className="text-xs text-muted-foreground">
-              Typical range: 0-150 for most athletes
+              Your current Chronic Training Load (0 if starting fresh)
             </Text>
           </View>
 
           {/* Target CTL */}
           <View className="gap-2">
             <Label nativeID="target-ctl">
-              <Text className="text-base font-semibold">
-                Target Fitness (Goal CTL)
-              </Text>
+              <Text className="text-sm font-medium">Target Fitness (CTL)</Text>
             </Label>
-            <Text className="text-sm text-muted-foreground mb-2">
-              The fitness level you want to reach for your goal event.
-            </Text>
             <Input
               aria-labelledby="target-ctl"
               placeholder="100"
-              value={periodization?.targetCTL.toString() || "100"}
-              onChangeText={handleTargetCTLChange}
+              value={targetCTL.toString()}
+              onChangeText={(text) => onTargetCTLChange(parseInt(text) || 0)}
               keyboardType="numeric"
             />
             <Text className="text-xs text-muted-foreground">
-              Typical range: 50-120 for recreational athletes, 120+ for
-              competitive
+              Goal fitness level for your target event (50-150 typical)
             </Text>
           </View>
 
           {/* Ramp Rate */}
           <View className="gap-2">
             <Label nativeID="ramp-rate">
-              <Text className="text-base font-semibold">
-                Weekly Ramp Rate (CTL gain per week)
+              <Text className="text-sm font-medium">
+                Weekly Ramp Rate (CTL/week)
               </Text>
             </Label>
-            <Text className="text-sm text-muted-foreground mb-2">
-              How fast to build fitness. Conservative = 3-5, Aggressive = 7-10
-            </Text>
             <Input
               aria-labelledby="ramp-rate"
               placeholder="5"
-              value={periodization?.rampRate.toString() || "5"}
-              onChangeText={handleRampRateChange}
+              value={rampRate.toString()}
+              onChangeText={(text) => onRampRateChange(parseFloat(text) || 0)}
               keyboardType="decimal-pad"
             />
             <Text className="text-xs text-muted-foreground">
-              Recommended: 3-7 CTL points per week for sustainable growth
+              How much to increase fitness per week (3-7 recommended)
             </Text>
           </View>
 
-          {/* Target Date (Coming Soon) */}
-          <View className="gap-2">
-            <Label nativeID="target-date">
-              <Text className="text-base font-semibold">Target Event Date</Text>
-            </Label>
-            <Text className="text-sm text-muted-foreground mb-2">
-              (Coming soon) The date of your goal race or event
-            </Text>
-            <View className="bg-muted/50 rounded-lg p-3">
-              <Text className="text-sm text-muted-foreground italic">
-                Date picker will be available in a future update
+          {/* Error Display */}
+          {errors?.periodization && (
+            <View className="bg-destructive/10 rounded-lg p-3">
+              <Text className="text-sm text-destructive">
+                {errors.periodization}
               </Text>
             </View>
-          </View>
+          )}
 
-          {/* Timeline Estimate */}
+          {/* Timeline Preview */}
           {weeksToTarget && weeksToTarget > 0 && (
             <View className="bg-primary/10 rounded-lg p-4">
               <Text className="text-sm font-semibold text-primary mb-3">
                 📅 Estimated Timeline
               </Text>
-              <View className="gap-2">
-                <View className="flex-row justify-between">
-                  <Text className="text-sm text-muted-foreground">
-                    Starting CTL:
+              <View className="flex-row items-center justify-between">
+                <View>
+                  <Text className="text-xs text-muted-foreground">
+                    Fitness Gain
                   </Text>
-                  <Text className="text-sm font-semibold">
-                    {periodization?.startingCTL}
-                  </Text>
-                </View>
-                <View className="flex-row justify-between">
-                  <Text className="text-sm text-muted-foreground">
-                    Target CTL:
-                  </Text>
-                  <Text className="text-sm font-semibold">
-                    {periodization?.targetCTL}
+                  <Text className="text-lg font-bold">
+                    {startingCTL} → {targetCTL}
                   </Text>
                 </View>
-                <View className="flex-row justify-between">
-                  <Text className="text-sm text-muted-foreground">
-                    Weekly gain:
-                  </Text>
-                  <Text className="text-sm font-semibold">
-                    +{periodization?.rampRate} CTL/week
-                  </Text>
-                </View>
-                <View className="h-px bg-border my-1" />
-                <View className="flex-row justify-between">
-                  <Text className="text-sm font-semibold text-primary">
-                    Time to goal:
+                <View className="h-10 w-px bg-border" />
+                <View>
+                  <Text className="text-xs text-muted-foreground">
+                    Time Needed
                   </Text>
                   <Text className="text-lg font-bold text-primary">
                     ~{weeksToTarget} weeks
@@ -273,33 +186,23 @@ export function Step4Periodization({
             </View>
           )}
 
-          {/* Error Message */}
-          {errors?.periodization && (
-            <View className="bg-destructive/10 rounded-lg p-3">
-              <Text className="text-sm text-destructive">
-                {errors.periodization}
-              </Text>
-            </View>
-          )}
-
           {/* Guidance */}
-          <View className="bg-blue-500/10 rounded-lg p-4">
-            <Text className="text-sm font-semibold text-blue-600 mb-2">
-              🎯 Periodization Tips
-            </Text>
-            <Text className="text-sm text-muted-foreground leading-5">
-              • <Text className="font-semibold">Conservative approach:</Text>{" "}
-              3-5 CTL points per week reduces injury risk
-              {"\n"}• <Text className="font-semibold">Build base first:</Text>{" "}
-              Focus on volume before intensity
-              {"\n"}•{" "}
-              <Text className="font-semibold">Include recovery weeks:</Text>{" "}
-              Every 3-4 weeks, reduce volume by 20-30%
-              {"\n"}•{" "}
-              <Text className="font-semibold">Listen to your body:</Text> Adjust
-              if feeling overtrained
+          <View className="bg-muted/30 rounded-lg p-3">
+            <Text className="text-xs text-muted-foreground leading-5">
+              💡 <Text className="font-semibold">Tip:</Text> A conservative ramp
+              rate (3-5 CTL/week) reduces injury risk. Include recovery weeks
+              every 3-4 weeks by reducing volume 20-30%.
             </Text>
           </View>
+        </View>
+      ) : (
+        /* Show info when periodization is disabled */
+        <View className="bg-muted/30 rounded-lg p-4">
+          <Text className="text-sm text-muted-foreground leading-6">
+            Without periodization, you'll manually manage your training load
+            week by week. You can always enable this later in your plan
+            settings.
+          </Text>
         </View>
       )}
     </View>
