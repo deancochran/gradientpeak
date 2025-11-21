@@ -32,6 +32,34 @@ create type public.activity_metric_data_type as enum (
     'boolean'    -- stored as float 0/1 in compression
 );
 
+create type public.integration_provider as enum (
+    'strava',
+    'wahoo',
+    'trainingpeaks',
+    'garmin',
+    'zwift'
+);
+
+-- ============================================================================
+-- PROFILES
+-- ============================================================================
+create table public.profiles (
+    id uuid primary key references auth.users(id) on delete cascade,
+    idx serial unique,
+    gender text,
+    dob date,
+    username text unique,
+    language text default 'en',
+    preferred_units text default 'metric',
+    avatar_url text,
+    bio text,
+    onboarded boolean default false,
+    threshold_hr integer,
+    ftp integer,
+    weight_kg integer,
+    created_at timestamp not null default now()
+);
+
 -- ============================================================================
 -- TRAINING PLANS
 -- ============================================================================
@@ -44,14 +72,14 @@ create table if not exists public.training_plans (
     is_active boolean not null default true,
     structure jsonb not null,
     created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now(),
-
-    -- Constraint: Only one training plan per user
-    constraint unique_training_plan_per_user unique (profile_id)
+    updated_at timestamptz not null default now()
 );
 
 create index if not exists idx_training_plans_profile_id
     on public.training_plans(profile_id);
+
+create index if not exists idx_training_plans_is_active
+    on public.training_plans(is_active) where is_active = true;
 
 -- ============================================================================
 -- ACTIVITY PLANS
@@ -83,8 +111,7 @@ create table if not exists public.planned_activities (
     activity_plan_id uuid not null references public.activity_plans(id) on delete cascade,
     scheduled_date date not null,
     notes text,
-    created_at timestamptz not null default now(),
-    constraint chk_planned_activities_date check (scheduled_date >= current_date)
+    created_at timestamptz not null default now()
 );
 
 create index if not exists idx_planned_activities_profile_id
@@ -92,6 +119,79 @@ create index if not exists idx_planned_activities_profile_id
 
 create index if not exists idx_planned_activities_activity_plan_id
     on public.planned_activities(activity_plan_id);
+
+create index if not exists idx_planned_activities_scheduled_date
+    on public.planned_activities(scheduled_date);
+
+-- ============================================================================
+-- INTEGRATIONS
+-- ============================================================================
+create table public.integrations (
+    id uuid primary key default uuid_generate_v4(),
+    idx serial unique not null,
+    profile_id uuid not null references public.profiles(id) on delete cascade,
+    provider integration_provider not null,
+    access_token text not null,
+    refresh_token text,
+    expires_at timestamptz,
+    scope text,
+    created_at timestamptz not null default now(),
+    constraint unique_integration_type unique (profile_id, provider)
+);
+
+create index if not exists idx_integrations_profile_id
+    on public.integrations(profile_id);
+
+create index if not exists idx_integrations_provider
+    on public.integrations(provider);
+
+create index if not exists idx_integrations_expires_at
+    on public.integrations(expires_at);
+
+-- ============================================================================
+-- OAUTH STATES
+-- ============================================================================
+create table public.oauth_states (
+    id uuid primary key default uuid_generate_v4(),
+    idx serial unique not null,
+    state text not null,
+    profile_id uuid not null references public.profiles(id) on delete cascade,
+    provider integration_provider not null,
+    mobile_redirect_uri text not null,
+    created_at timestamptz not null default now(),
+    expires_at timestamptz not null
+);
+
+create index if not exists idx_oauth_states_expires_at
+    on public.oauth_states(expires_at);
+
+create index if not exists idx_oauth_states_profile_id
+    on public.oauth_states(profile_id);
+
+-- ============================================================================
+-- SYNCED PLANNED ACTIVITIES
+-- ============================================================================
+create table if not exists public.synced_planned_activities (
+    id uuid primary key default uuid_generate_v4(),
+    idx serial unique not null,
+    profile_id uuid not null references public.profiles(id) on delete cascade,
+    planned_activity_id uuid not null references public.planned_activities(id) on delete cascade,
+    provider integration_provider not null,
+    external_workout_id text not null,
+    synced_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    created_at timestamptz not null default now(),
+    constraint unique_planned_activity_per_provider unique (planned_activity_id, provider)
+);
+
+create index if not exists idx_synced_planned_activities_profile
+    on public.synced_planned_activities(profile_id);
+
+create index if not exists idx_synced_planned_activities_planned
+    on public.synced_planned_activities(planned_activity_id);
+
+create index if not exists idx_synced_planned_activities_provider
+    on public.synced_planned_activities(provider, external_workout_id);
 
 -- ============================================================================
 -- ACTIVITIES
@@ -103,6 +203,8 @@ create table if not exists public.activities (
     notes text,
     activity_type activity_type not null default 'other',
     is_private boolean not null default true,
+    provider integration_provider,
+    external_id text,
 
     -- ============================================================================
     -- General Time
@@ -136,13 +238,13 @@ create table if not exists public.activities (
     weather_condition text,
     elevation_gain_per_km numeric(5,2),
     avg_grade numeric(5,2),
-    total_ascent integer not null check (total_ascent >= 0),
-    total_descent integer not null check (total_descent >= 0),
+    total_ascent integer not null default 0 check (total_ascent >= 0),
+    total_descent integer not null default 0 check (total_descent >= 0),
 
     -- ============================================================================
     -- distance metrics
     -- ============================================================================
-    distance integer not null check (distance >= 0),
+    distance integer not null default 0 check (distance >= 0),
     avg_speed numeric(5,2) check (avg_speed >= 0),
     max_speed numeric(5,2) check (max_speed >= 0),
 
@@ -163,7 +265,6 @@ create table if not exists public.activities (
     hr_zone_4_time integer default 0 check (hr_zone_4_time >= 0),
     hr_zone_5_time integer default 0 check (hr_zone_5_time >= 0),
 
-
     -- ============================================================================
     -- cadence
     -- ============================================================================
@@ -177,13 +278,13 @@ create table if not exists public.activities (
     avg_power integer check (avg_power >= 0),
     max_power integer check (max_power >= 0),
     normalized_power integer check (normalized_power >= 0),
-    power_zone_1_time    integer default 0 check (power_zone_1_time >= 0),
-    power_zone_2_time    integer default 0 check (power_zone_2_time >= 0),
-    power_zone_3_time    integer default 0 check (power_zone_3_time >= 0),
-    power_zone_4_time    integer default 0 check (power_zone_4_time >= 0),
-    power_zone_5_time    integer default 0 check (power_zone_5_time >= 0),
-    power_zone_6_time    integer default 0 check (power_zone_6_time >= 0),
-    power_zone_7_time    integer default 0 check (power_zone_7_time >= 0),
+    power_zone_1_time integer default 0 check (power_zone_1_time >= 0),
+    power_zone_2_time integer default 0 check (power_zone_2_time >= 0),
+    power_zone_3_time integer default 0 check (power_zone_3_time >= 0),
+    power_zone_4_time integer default 0 check (power_zone_4_time >= 0),
+    power_zone_5_time integer default 0 check (power_zone_5_time >= 0),
+    power_zone_6_time integer default 0 check (power_zone_6_time >= 0),
+    power_zone_7_time integer default 0 check (power_zone_7_time >= 0),
     power_heart_rate_ratio numeric(5,2),
 
     -- ============================================================================
@@ -206,6 +307,7 @@ create table if not exists public.activities (
     -- ============================================================================
     constraint chk_times check (finished_at >= started_at)
 );
+
 create index if not exists idx_activities_profile_id
     on public.activities(profile_id);
 
@@ -218,6 +320,13 @@ create index if not exists idx_activities_started_at
 create index if not exists idx_activities_planned_activity_id
     on public.activities(planned_activity_id);
 
+create index if not exists idx_activities_provider_external
+    on public.activities(provider, external_id)
+    where external_id is not null;
+
+create unique index if not exists idx_activities_external_unique
+    on public.activities(provider, external_id)
+    where external_id is not null and provider is not null;
 
 -- ============================================================================
 -- ACTIVITY STREAMS
@@ -229,8 +338,8 @@ create table if not exists public.activity_streams (
     type activity_metric not null,
     data_type activity_metric_data_type not null,
     -- compressed payloads
-    compressed_values bytea not null,        -- values (floats, bool-as-float, latlng pairs, etc.)
-    compressed_timestamps bytea not null,    -- elapsed ms from activity start, delta encoded
+    compressed_values bytea not null,
+    compressed_timestamps bytea not null,
     sample_count integer not null check (sample_count > 0),
     original_size integer not null check (original_size >= 0),
     -- stats
@@ -242,6 +351,7 @@ create table if not exists public.activity_streams (
     -- constraints
     constraint unique_activity_type unique (activity_id, type)
 );
+
 create index if not exists idx_activity_streams_activity_id
     on public.activity_streams(activity_id);
 

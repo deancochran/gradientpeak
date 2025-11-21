@@ -50,6 +50,7 @@ export type Database = {
           efficiency_factor: number | null
           elapsed_time: number
           elevation_gain_per_km: number | null
+          external_id: string | null
           finished_at: string
           hr_zone_1_time: number | null
           hr_zone_2_time: number | null
@@ -87,6 +88,7 @@ export type Database = {
           profile_threshold_hr: number | null
           profile_training_load: number | null
           profile_weight_kg: number | null
+          provider: Database["public"]["Enums"]["integration_provider"] | null
           started_at: string
           total_ascent: number
           total_descent: number
@@ -106,10 +108,11 @@ export type Database = {
           calories?: number | null
           created_at?: string
           decoupling?: number | null
-          distance: number
+          distance?: number
           efficiency_factor?: number | null
           elapsed_time: number
           elevation_gain_per_km?: number | null
+          external_id?: string | null
           finished_at: string
           hr_zone_1_time?: number | null
           hr_zone_2_time?: number | null
@@ -147,9 +150,10 @@ export type Database = {
           profile_threshold_hr?: number | null
           profile_training_load?: number | null
           profile_weight_kg?: number | null
+          provider?: Database["public"]["Enums"]["integration_provider"] | null
           started_at: string
-          total_ascent: number
-          total_descent: number
+          total_ascent?: number
+          total_descent?: number
           total_work?: number | null
           training_stress_score?: number | null
           variability_index?: number | null
@@ -170,6 +174,7 @@ export type Database = {
           efficiency_factor?: number | null
           elapsed_time?: number
           elevation_gain_per_km?: number | null
+          external_id?: string | null
           finished_at?: string
           hr_zone_1_time?: number | null
           hr_zone_2_time?: number | null
@@ -207,6 +212,7 @@ export type Database = {
           profile_threshold_hr?: number | null
           profile_training_load?: number | null
           profile_weight_kg?: number | null
+          provider?: Database["public"]["Enums"]["integration_provider"] | null
           started_at?: string
           total_ascent?: number
           total_descent?: number
@@ -519,6 +525,57 @@ export type Database = {
         }
         Relationships: []
       }
+      synced_planned_activities: {
+        Row: {
+          created_at: string
+          external_workout_id: string
+          id: string
+          idx: number
+          planned_activity_id: string
+          profile_id: string
+          provider: Database["public"]["Enums"]["integration_provider"]
+          synced_at: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          external_workout_id: string
+          id?: string
+          idx?: number
+          planned_activity_id: string
+          profile_id: string
+          provider: Database["public"]["Enums"]["integration_provider"]
+          synced_at?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          external_workout_id?: string
+          id?: string
+          idx?: number
+          planned_activity_id?: string
+          profile_id?: string
+          provider?: Database["public"]["Enums"]["integration_provider"]
+          synced_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "synced_planned_activities_planned_activity_id_fkey"
+            columns: ["planned_activity_id"]
+            isOneToOne: false
+            referencedRelation: "planned_activities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "synced_planned_activities_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       training_plans: {
         Row: {
           created_at: string
@@ -557,7 +614,7 @@ export type Database = {
           {
             foreignKeyName: "training_plans_profile_id_fkey"
             columns: ["profile_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
