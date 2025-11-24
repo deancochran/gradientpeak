@@ -6,18 +6,19 @@ import { useMemo } from "react";
  * useHomeData Hook
  *
  * Aggregates data from multiple sources for the home screen dashboard.
- * Provides today's workout, weekly stats, training form status, upcoming workouts,
+ * Provides today's activity, weekly stats, training form status, upcoming activities,
  * and weekly goal progress.
  */
 export function useHomeData() {
   // Get training plan
-  const { data: plan, isLoading: planLoading } = trpc.trainingPlans.get.useQuery();
+  const { data: plan, isLoading: planLoading } =
+    trpc.trainingPlans.get.useQuery();
 
   // Get current training status (CTL, ATL, TSB)
-  const { data: status, isLoading: statusLoading } = trpc.trainingPlans.getCurrentStatus.useQuery(
-    undefined,
-    { enabled: !!plan }
-  );
+  const { data: status, isLoading: statusLoading } =
+    trpc.trainingPlans.getCurrentStatus.useQuery(undefined, {
+      enabled: !!plan,
+    });
 
   // Get all planned activities
   const { data: allPlannedActivities, isLoading: activitiesLoading } =
@@ -42,11 +43,11 @@ export function useHomeData() {
       },
       {
         enabled: !!plan,
-      }
+      },
     );
 
-  // Find today's workout
-  const todaysWorkout = useMemo(() => {
+  // Find today's activity
+  const todaysActivity = useMemo(() => {
     if (!allPlannedActivities?.items) return null;
 
     const today = new Date();
@@ -59,8 +60,8 @@ export function useHomeData() {
 
     return {
       id: todayActivity.id,
-      type: todayActivity.type || "Workout",
-      title: todayActivity.title || "Planned Workout",
+      type: todayActivity.type || "Activity",
+      title: todayActivity.title || "Planned Activity",
       duration: todayActivity.duration_minutes || 0,
       distance: todayActivity.distance_km
         ? parseFloat(todayActivity.distance_km.toFixed(1))
@@ -152,19 +153,23 @@ export function useHomeData() {
     };
   }, [status]);
 
-  // Get upcoming workouts (next 4 days)
-  const upcomingWorkouts = useMemo(() => {
+  // Get upcoming activities (next 4 days)
+  const upcomingActivitys = useMemo(() => {
     if (!allPlannedActivities?.items) return [];
 
     const today = new Date();
     const next4Days = allPlannedActivities.items
       .filter((activity) => {
         const activityDate = new Date(activity.scheduled_date);
-        const daysDiff = Math.floor((activityDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        const daysDiff = Math.floor(
+          (activityDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+        );
         return daysDiff >= 0 && daysDiff <= 3;
       })
-      .sort((a, b) =>
-        new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime()
+      .sort(
+        (a, b) =>
+          new Date(a.scheduled_date).getTime() -
+          new Date(b.scheduled_date).getTime(),
       )
       .slice(0, 4)
       .map((activity) => {
@@ -174,14 +179,18 @@ export function useHomeData() {
         return {
           id: activity.id,
           day: isActivityToday ? "Today" : format(activityDate, "EEEE"),
-          type: activity.type || "Workout",
-          title: activity.title || "Planned Workout",
+          type: activity.type || "Activity",
+          title: activity.title || "Planned Activity",
           distance: activity.distance_km
             ? parseFloat(activity.distance_km.toFixed(1))
             : 0,
           duration: activity.duration_minutes || 0,
           intensity: activity.intensity || "Moderate",
-          status: activity.completed_at ? "completed" : isActivityToday ? "current" : "upcoming",
+          status: activity.completed_at
+            ? "completed"
+            : isActivityToday
+              ? "current"
+              : "upcoming",
         };
       });
 
@@ -221,10 +230,10 @@ export function useHomeData() {
     summaryLoading;
 
   return {
-    todaysWorkout,
+    todaysActivity,
     weeklyStats,
     formStatus,
-    upcomingWorkouts,
+    upcomingActivitys,
     weeklyGoal,
     isLoading,
     hasData: !!plan && !!allPlannedActivities,

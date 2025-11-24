@@ -18,7 +18,7 @@ Implemented functions:
 - ✅ `getDefaultTarget()` - Appropriate intensity targets (FTP/MaxHR/RPE)
 - ✅ `createDefaultStep()` - Complete step generation with context
 - ✅ `createDefaultRepetition()` - Quick interval block creation
-- ✅ `createQuickStartTemplate()` - Templates for easy/intervals/tempo workouts
+- ✅ `createQuickStartTemplate()` - Templates for easy/intervals/tempo activities
 
 **Updated**: `packages/core/index.ts` - Added export for new utility
 
@@ -161,8 +161,8 @@ Implemented functions:
 **Functions Created**:
 - ✅ `calculateIntensityFactor()` - Calculate IF for any step
 - ✅ `calculateStepTSS()` - Calculate TSS for individual step
-- ✅ `calculateTotalTSS()` - Sum TSS for entire workout
-- ✅ `calculateAverageIF()` - Weighted average IF for workout
+- ✅ `calculateTotalTSS()` - Sum TSS for entire activity
+- ✅ `calculateAverageIF()` - Weighted average IF for activity
 - ✅ `getDefaultUserSettings()` - Sensible defaults by activity type
 
 **Sensible Defaults**:
@@ -217,7 +217,7 @@ Implemented functions:
 16. ✅ Add notes to steps
 17. ✅ See real-time TSS calculation
 18. ✅ See real-time Intensity Factor
-19. ✅ Quick Add complete 3-step workout
+19. ✅ Quick Add complete 3-step activity
 
 ### Smart Defaults Examples:
 - **Add first step to Run**: Creates "Warm-up, 10min, 60% MaxHR"
@@ -349,7 +349,7 @@ apps/mobile/app/(internal)/(tabs)/plan/create_activity_plan/index.tsx.backup
    - Users can refine later if needed
 
 2. **Visual Timeline is Essential**
-   - Seeing the whole workout structure helps
+   - Seeing the whole activity structure helps
    - Color-coding by intensity is intuitive
    - Always visible > hidden in modal
 
@@ -370,7 +370,7 @@ apps/mobile/app/(internal)/(tabs)/plan/create_activity_plan/index.tsx.backup
 ### Immediate (Can Use Now):
 - ✅ Test on physical devices (iOS/Android)
 - ✅ Gather user feedback on smart defaults
-- ✅ Test with real workout creation scenarios
+- ✅ Test with real activity creation scenarios
 
 ### Short Term (Phase 5):
 - Create StepEditorSheet component

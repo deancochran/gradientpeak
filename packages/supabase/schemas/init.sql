@@ -131,6 +131,7 @@ create table public.integrations (
     idx serial unique not null,
     profile_id uuid not null references public.profiles(id) on delete cascade,
     provider integration_provider not null,
+    external_id text not null,
     access_token text not null,
     refresh_token text,
     expires_at timestamptz,
@@ -141,6 +142,9 @@ create table public.integrations (
 
 create index if not exists idx_integrations_profile_id
     on public.integrations(profile_id);
+
+create index if not exists idx_integrations_external_id
+    on public.integrations(external_id);
 
 create index if not exists idx_integrations_provider
     on public.integrations(provider);
@@ -177,7 +181,7 @@ create table if not exists public.synced_planned_activities (
     profile_id uuid not null references public.profiles(id) on delete cascade,
     planned_activity_id uuid not null references public.planned_activities(id) on delete cascade,
     provider integration_provider not null,
-    external_workout_id text not null,
+    external_id text not null,
     synced_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
     created_at timestamptz not null default now(),
@@ -191,7 +195,7 @@ create index if not exists idx_synced_planned_activities_planned
     on public.synced_planned_activities(planned_activity_id);
 
 create index if not exists idx_synced_planned_activities_provider
-    on public.synced_planned_activities(provider, external_workout_id);
+    on public.synced_planned_activities(provider, external_id);
 
 -- ============================================================================
 -- ACTIVITIES

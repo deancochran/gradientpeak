@@ -14,7 +14,7 @@ This guide covers manual testing for the redesigned Activity Plan Builder. All f
 ### ✅ Features to Test
 
 1. **Smart Defaults** - Context-aware step creation
-2. **Timeline Chart** - Visual workout representation  
+2. **Timeline Chart** - Visual activity representation  
 3. **Activity Type Selection** - 6 different activity types
 4. **Step Management** - CRUD operations with drag & drop
 5. **Step Editor Dialog** - Comprehensive step editing
@@ -52,7 +52,7 @@ This guide covers manual testing for the redesigned Activity Plan Builder. All f
    - Try each activity type: Run, Bike, Treadmill, Trainer, Strength, Swimming
    - Verify selection highlights and haptic feedback works
 
-2. **Test Quick Add (3-step workout)**:
+2. **Test Quick Add (3-step activity)**:
    - With "Outdoor Run" selected, tap "Quick Add"
    - Verify 3 steps appear: "Warm-up", "Interval 1", "Cool-down"
    - Check durations: 10min, 20min, 5min
@@ -80,7 +80,7 @@ This guide covers manual testing for the redesigned Activity Plan Builder. All f
 
 **Steps**:
 1. **Basic Timeline Display**:
-   - Create a workout with Quick Add
+   - Create a activity with Quick Add
    - Verify timeline shows colored bars
    - Check proportional widths (warmup shorter than main work)
    - Verify colors represent intensity (blue=easy, green=moderate, etc.)
@@ -98,8 +98,8 @@ This guide covers manual testing for the redesigned Activity Plan Builder. All f
    - Change activity type, verify colors update
 
 4. **Edge Cases**:
-   - Create empty workout, verify "Tap + to add steps" message
-   - Create workout with only "Until Finished" durations
+   - Create empty activity, verify "Tap + to add steps" message
+   - Create activity with only "Until Finished" durations
    - Test very short steps vs very long steps
 
 **Expected Results**:
@@ -118,7 +118,7 @@ This guide covers manual testing for the redesigned Activity Plan Builder. All f
 
 **Steps**:
 1. **Basic Calculation**:
-   - Create "Outdoor Bike" workout with Quick Add
+   - Create "Outdoor Bike" activity with Quick Add
    - Note TSS and IF values in metrics cards
    - Expected: TSS ~45-65, IF ~0.7-0.8
 
@@ -140,7 +140,7 @@ This guide covers manual testing for the redesigned Activity Plan Builder. All f
 
 **Expected Results**:
 - ✅ TSS values are realistic (easy hour = 40-60 TSS, hard hour = 80-120 TSS)
-- ✅ IF values range 0.0-2.0+ (typical workouts 0.6-1.2)
+- ✅ IF values range 0.0-2.0+ (typical activities 0.6-1.2)
 - ✅ Calculations update in real-time
 - ✅ Different intensity types (FTP, MaxHR, RPE) all contribute to TSS
 - ✅ Zero intensity targets result in zero TSS contribution
@@ -299,7 +299,7 @@ This guide covers manual testing for the redesigned Activity Plan Builder. All f
    - Switch activity types, watch defaults change
 
 4. **Persistence Testing**:
-   - Create a complex workout
+   - Create a complex activity
    - Try to navigate away (if navigation exists)
    - Return and verify data persistence
    - Test save functionality completely
@@ -319,7 +319,7 @@ This guide covers manual testing for the redesigned Activity Plan Builder. All f
 
 **Steps**:
 1. **Performance Testing**:
-   - Create large workout (20+ steps)
+   - Create large activity (20+ steps)
    - Verify timeline renders smoothly
    - Test scrolling performance in step list
    - Check drag & drop performance with many steps
@@ -344,7 +344,7 @@ This guide covers manual testing for the redesigned Activity Plan Builder. All f
    - Test during device rotation (if supported)
 
 **Expected Results**:
-- ✅ Smooth performance with large workouts (20+ steps)
+- ✅ Smooth performance with large activities (20+ steps)
 - ✅ All animations run at 60fps
 - ✅ Haptic feedback enhances experience without lag
 - ✅ No duplicate actions from rapid tapping
@@ -362,7 +362,7 @@ This guide covers manual testing for the redesigned Activity Plan Builder. All f
 - ❌ Haptic feedback not working on physical device
 
 ### Performance Issues
-- ⚠️ Noticeable lag when adding steps to large workouts
+- ⚠️ Noticeable lag when adding steps to large activities
 - ⚠️ Timeline animation stuttering or dropped frames
 - ⚠️ Scroll performance issues with 10+ steps
 - ⚠️ Dialog open/close animations not smooth
@@ -394,15 +394,15 @@ This guide covers manual testing for the redesigned Activity Plan Builder. All f
 - [ ] Form validation prevents bad data
 
 ### User Experience
-- [ ] Quick Add creates complete 3-step workout in <5 seconds
+- [ ] Quick Add creates complete 3-step activity in <5 seconds
 - [ ] Single step creation takes <30 seconds
 - [ ] All interactions provide haptic feedback
 - [ ] Visual feedback is immediate and clear
 - [ ] Error messages are helpful and actionable
 
 ### Edge Cases
-- [ ] Empty workout state handled gracefully
-- [ ] Very large workouts (20+ steps) perform well
+- [ ] Empty activity state handled gracefully
+- [ ] Very large activities (20+ steps) perform well
 - [ ] All duration types work (time/distance/reps/open)
 - [ ] All intensity types calculate TSS correctly
 - [ ] Maximum targets per step (2) enforced
@@ -420,7 +420,7 @@ This guide covers manual testing for the redesigned Activity Plan Builder. All f
 **Green Light** (Ready for Production):
 - ✅ All core functionality works without crashes
 - ✅ Performance is smooth (60fps) on target devices  
-- ✅ User can create complete workout in <60 seconds
+- ✅ User can create complete activity in <60 seconds
 - ✅ TSS/IF calculations are within reasonable ranges
 - ✅ All data validates and saves correctly
 
@@ -453,7 +453,7 @@ When reporting issues, please include:
 **Issue**: Timeline colors don't update when changing activity type
 **Device**: iPhone 14 Pro, iOS 17.1
 **Steps**: 
-1. Create workout with Outdoor Run (Quick Add)
+1. Create activity with Outdoor Run (Quick Add)
 2. Change activity type to Swimming  
 3. Timeline bars remain blue/green instead of changing
 **Expected**: Timeline should update to reflect new intensity mappings
@@ -467,10 +467,10 @@ When reporting issues, please include:
 
 Before marking testing complete:
 
-1. **Create 3 Different Workouts**:
+1. **Create 3 Different Activities**:
    - Easy 45-min bike ride (TSS ~40-60)
    - Hard 1-hour run with intervals (TSS ~70-100)  
-   - 30-min swim workout (distance-based)
+   - 30-min swim activity (distance-based)
 
 2. **Verify All Calculations Make Sense**:
    - TSS values realistic for effort/duration
@@ -483,7 +483,7 @@ Before marking testing complete:
    - Should feel natural and intuitive
 
 4. **Performance Under Load**:
-   - Create 15-step workout with multiple repetitions
+   - Create 15-step activity with multiple repetitions
    - Verify smooth performance throughout
 
 ---

@@ -173,7 +173,7 @@ export default function ScheduleActivityScreen() {
             {/* Plan Selector */}
             <View>
               <Text className="mb-2 font-semibold text-base">
-                Select Workout Plan
+                Select Activity Plan
               </Text>
 
               {loadingPlans ? (
@@ -325,7 +325,7 @@ export default function ScheduleActivityScreen() {
                   <Textarea
                     value={value}
                     onChangeText={onChange}
-                    placeholder="Add any notes about this workout..."
+                    placeholder="Add any notes about this activity..."
                     className="min-h-[100px]"
                   />
                 )}

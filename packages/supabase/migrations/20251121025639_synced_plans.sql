@@ -116,5 +116,3 @@ grant trigger on table "public"."synced_planned_activities" to "service_role";
 grant truncate on table "public"."synced_planned_activities" to "service_role";
 
 grant update on table "public"."synced_planned_activities" to "service_role";
-
-

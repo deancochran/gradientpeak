@@ -180,7 +180,7 @@ export function createDefaultRepetition(
 }
 
 /**
- * Quick start templates for common workout structures
+ * Quick start templates for common activity structures
  */
 export function createQuickStartTemplate(
   activityType: string,

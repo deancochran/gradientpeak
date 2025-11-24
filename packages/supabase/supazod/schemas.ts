@@ -563,7 +563,7 @@ export const publicProfilesUpdateSchema = z.object({
 
 export const publicSyncedPlannedActivitiesRowSchema = z.object({
   created_at: z.string(),
-  external_workout_id: z.string(),
+  external_activity_id: z.string(),
   id: z.string(),
   idx: z.number(),
   planned_activity_id: z.string(),
@@ -575,7 +575,7 @@ export const publicSyncedPlannedActivitiesRowSchema = z.object({
 
 export const publicSyncedPlannedActivitiesInsertSchema = z.object({
   created_at: z.string().optional(),
-  external_workout_id: z.string(),
+  external_activity_id: z.string(),
   id: z.string().optional(),
   idx: z.number().optional(),
   planned_activity_id: z.string(),
@@ -587,7 +587,7 @@ export const publicSyncedPlannedActivitiesInsertSchema = z.object({
 
 export const publicSyncedPlannedActivitiesUpdateSchema = z.object({
   created_at: z.string().optional(),
-  external_workout_id: z.string().optional(),
+  external_activity_id: z.string().optional(),
   id: z.string().optional(),
   idx: z.number().optional(),
   planned_activity_id: z.string().optional(),

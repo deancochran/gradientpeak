@@ -236,13 +236,13 @@ export function PlanDetailModal({
             {hasSteps ? (
               <View>
                 <Text className="text-xs uppercase tracking-wide text-muted-foreground mb-3">
-                  Workout Structure
+                  Activity Structure
                 </Text>
                 {steps.map((step: any, idx: number) => renderStep(step, idx))}
               </View>
             ) : (
               <Text className="text-sm text-muted-foreground italic text-center py-8">
-                No workout structure available
+                No activity structure available
               </Text>
             )}
           </ScrollView>

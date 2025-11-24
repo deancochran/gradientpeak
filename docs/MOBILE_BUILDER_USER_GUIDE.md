@@ -8,7 +8,7 @@
 
 ## 🎯 Overview
 
-The Activity Builder lets you create structured workout plans with visual feedback and smart defaults. Create a complete workout in under 60 seconds with just 3-5 taps!
+The Activity Builder lets you create structured activity plans with visual feedback and smart defaults. Create a complete activity in under 60 seconds with just 3-5 taps!
 
 ---
 
@@ -48,7 +48,7 @@ Swipe through the horizontal activity type selector:
 
 ### Step 3: Add Steps
 
-Tap the **"+ Step"** button to add workout segments:
+Tap the **"+ Step"** button to add activity segments:
 
 #### First Step (Warmup)
 - Automatically named "Warm-up" (or "Easy Swim" for swimming)
@@ -57,7 +57,7 @@ Tap the **"+ Step"** button to add workout segments:
 
 #### Middle Steps (Main Work)
 - Automatically named "Interval 1", "Interval 2", etc.
-- Pre-filled with main workout duration (20 minutes)
+- Pre-filled with main activity duration (20 minutes)
 - Set to moderate-high intensity (75-80%)
 
 #### Last Step (Cooldown)
@@ -77,7 +77,7 @@ Tap the **"Repeat"** button to create interval blocks:
 
 ### Step 5: Visual Timeline
 
-The **color-coded timeline** shows your entire workout:
+The **color-coded timeline** shows your entire activity:
 
 - **Blue/Cyan**: Recovery/Easy (Zone 1-2)
 - **Green**: Endurance (Zone 2)
@@ -87,7 +87,7 @@ The **color-coded timeline** shows your entire workout:
 
 **Bar Width**: Proportional to step duration
 **Tap bars**: Select that step
-**Visual overview**: See workout structure at a glance
+**Visual overview**: See activity structure at a glance
 
 ### Step 6: Review & Save
 
@@ -105,7 +105,7 @@ The **color-coded timeline** shows your entire workout:
 ```
 - **X**: Cancel and go back
 - **Activity Name**: Tap to edit
-- **Save**: Validates and saves workout
+- **Save**: Validates and saves activity
 
 ### Activity Type Bar
 ```
@@ -132,7 +132,7 @@ The **color-coded timeline** shows your entire workout:
 │ 8 steps              45min     │
 └────────────────────────────────┘
 ```
-- Visual representation of workout
+- Visual representation of activity
 - Color-coded by intensity
 - Proportional bar widths
 - Tap to select steps
@@ -187,7 +187,7 @@ The **color-coded timeline** shows your entire workout:
 
 ## 💡 Smart Default Examples
 
-### Running Workout
+### Running Activity
 ```
 Activity Type: Outdoor Run
 
@@ -204,7 +204,7 @@ Step 3: Cool-down
 - Target: 55% MaxHR
 ```
 
-### Cycling Workout
+### Cycling Activity
 ```
 Activity Type: Outdoor Bike
 
@@ -221,7 +221,7 @@ Step 3: Cool-down
 - Target: 55% FTP
 ```
 
-### Swimming Workout
+### Swimming Activity
 ```
 Activity Type: Swimming
 
@@ -274,7 +274,7 @@ Total: 28 minutes
 
 ### Timeline Usage
 
-- **Quick overview**: Glance at entire workout structure
+- **Quick overview**: Glance at entire activity structure
 - **Balance check**: See if warmup/cooldown are appropriate
 - **Intensity distribution**: Check color variety
 - **Duration visualization**: Spot steps that are too short/long
@@ -290,7 +290,7 @@ Total: 28 minutes
 
 ## 📋 Validation
 
-The app validates your workout before saving:
+The app validates your activity before saving:
 
 ### Required Fields
 - ✅ Activity name (not empty)
@@ -347,7 +347,7 @@ If validation fails:
 ### Q: How accurate is the duration calculation?
 **A**: Very accurate for time-based steps. Distance steps use estimated pace.
 
-### Q: Can I import workouts from files?
+### Q: Can I import activities from files?
 **A**: Not yet. Import feature (.fit, .zwo) planned for Phase 6.
 
 ### Q: Does it work offline?
@@ -357,7 +357,7 @@ If validation fails:
 
 ## 🐛 Troubleshooting
 
-### Issue: Can't save workout
+### Issue: Can't save activity
 - **Check**: Activity name is filled in
 - **Check**: At least one step added
 - **Check**: No validation errors in console
@@ -389,7 +389,7 @@ If validation fails:
 ### Phase 6: Polish & Advanced Features
 - TSS (Training Stress Score) calculation
 - IF (Intensity Factor) calculation
-- Workout templates library
+- Activity templates library
 - Import from .fit, .zwo files
 - Export to various formats
 

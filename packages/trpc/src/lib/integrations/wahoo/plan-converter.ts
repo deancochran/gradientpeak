@@ -1,0 +1,403 @@
+/**
+ * Wahoo Plan Converter
+ * Converts GradientPeak ActivityPlanStructure to Wahoo's plan.json format
+ */
+
+import type {
+  ActivityPlanStructure,
+  Duration,
+  IntensityTarget,
+  Repetition,
+  Step,
+} from "@repo/core";
+
+export interface WahooPlanJson {
+  header: {
+    name: string;
+    version: string;
+    description?: string;
+    workout_type_family: number; // 0 = bike, 1 = run
+    workout_type_location: number; // 0 = indoor, 1 = outdoor
+    ftp?: number;
+    threshold_hr?: number;
+  };
+  intervals: WahooInterval[];
+}
+
+export interface WahooInterval {
+  name: string;
+  exit_trigger_type: "time" | "distance" | "repeat";
+  exit_trigger_value: number;
+  intensity_type: "wu" | "active" | "tempo" | "lt" | "cd" | "recover" | "rest";
+  targets?: WahooTarget[];
+  intervals?: WahooInterval[]; // For repeats
+}
+
+export interface WahooTarget {
+  type: "ftp" | "watts" | "hr" | "threshold_hr" | "speed" | "rpm";
+  low?: number;
+  high?: number;
+  value?: number;
+}
+
+export interface ConvertOptions {
+  activityType: string;
+  name: string;
+  description?: string;
+  ftp?: number;
+  threshold_hr?: number;
+}
+
+/**
+ * Convert GradientPeak activity plan to Wahoo plan.json format
+ */
+export function convertToWahooPlan(
+  structure: ActivityPlanStructure,
+  options: ConvertOptions,
+): WahooPlanJson {
+  const activityTypeMapping = mapActivityType(options.activityType);
+
+  if (!activityTypeMapping) {
+    throw new Error(
+      `Activity type '${options.activityType}' is not supported by Wahoo. Only cycling and running activities can be synced.`,
+    );
+  }
+
+  const { workout_type_family, workout_type_location } = activityTypeMapping;
+
+  const plan: WahooPlanJson = {
+    header: {
+      name: options.name,
+      version: "1.0.0",
+      description: options.description,
+      workout_type_family,
+      workout_type_location,
+    },
+    intervals: [],
+  };
+
+  // Add FTP and threshold HR if available (needed for percentage-based targets)
+  if (options.ftp) {
+    plan.header.ftp = options.ftp;
+  }
+  if (options.threshold_hr) {
+    plan.header.threshold_hr = options.threshold_hr;
+  }
+
+  // Convert steps to intervals
+  for (const step of structure.steps) {
+    if (step.type === "step") {
+      plan.intervals.push(convertStep(step));
+    } else if (step.type === "repetition") {
+      plan.intervals.push(convertRepetition(step));
+    }
+  }
+
+  return plan;
+}
+
+/**
+ * Check if activity type is supported by Wahoo
+ * Wahoo only supports cycling and running workouts with structured intervals
+ */
+export function isActivityTypeSupportedByWahoo(activityType: string): boolean {
+  const supportedTypes = [
+    "outdoor_bike",
+    "indoor_bike_trainer",
+    "outdoor_run",
+    "indoor_treadmill",
+  ];
+  return supportedTypes.includes(activityType);
+}
+
+/**
+ * Map GradientPeak activity type to Wahoo's type system
+ * Returns null if activity type is not supported by Wahoo
+ */
+function mapActivityType(activityType: string): {
+  workout_type_family: number;
+  workout_type_location: number;
+} | null {
+  switch (activityType) {
+    case "outdoor_bike":
+      return { workout_type_family: 0, workout_type_location: 1 };
+    case "indoor_bike_trainer":
+      return { workout_type_family: 0, workout_type_location: 0 };
+    case "outdoor_run":
+      return { workout_type_family: 1, workout_type_location: 1 };
+    case "indoor_treadmill":
+      return { workout_type_family: 1, workout_type_location: 0 };
+    case "indoor_strength":
+    case "indoor_swim":
+    case "other":
+    default:
+      // Return null for unsupported types
+      return null;
+  }
+}
+
+/**
+ * Convert a single step to Wahoo interval
+ */
+function convertStep(step: Step): WahooInterval {
+  const interval: WahooInterval = {
+    name: step.name || "Step",
+    exit_trigger_type: "time",
+    exit_trigger_value: 300, // Default 5 minutes
+    intensity_type: "active",
+  };
+
+  // Convert duration
+  if (step.duration && step.duration !== "untilFinished") {
+    const { type, value } = convertDuration(step.duration);
+    interval.exit_trigger_type = type;
+    interval.exit_trigger_value = value;
+  }
+
+  // Convert intensity type (estimate from targets)
+  if (step.targets && step.targets.length > 0) {
+    interval.intensity_type = inferIntensityType(step.targets[0]!);
+  }
+
+  // Convert targets (Wahoo only shows first target on device)
+  if (step.targets && step.targets.length > 0) {
+    interval.targets = [convertTarget(step.targets[0]!)];
+  }
+
+  return interval;
+}
+
+/**
+ * Convert a repetition block to Wahoo repeat interval
+ */
+function convertRepetition(repetition: Repetition): WahooInterval {
+  const interval: WahooInterval = {
+    name: "Repeat Set",
+    exit_trigger_type: "repeat",
+    exit_trigger_value: repetition.repeat - 1, // Wahoo repeats AFTER first execution
+    intensity_type: "active",
+    intervals: [],
+  };
+
+  // Convert nested steps
+  for (const step of repetition.steps) {
+    interval.intervals!.push(convertStep(step));
+  }
+
+  return interval;
+}
+
+/**
+ * Convert GradientPeak duration to Wahoo format
+ */
+function convertDuration(duration: Duration): {
+  type: "time" | "distance";
+  value: number;
+} {
+  if (duration === "untilFinished") {
+    return { type: "time", value: 300 }; // Default 5 minutes
+  }
+
+  switch (duration.type) {
+    case "time":
+      // Convert to seconds
+      if (duration.unit === "minutes") {
+        return { type: "time", value: duration.value * 60 };
+      }
+      return { type: "time", value: duration.value };
+
+    case "distance":
+      // Convert to meters
+      if (duration.unit === "km") {
+        return { type: "distance", value: duration.value * 1000 };
+      }
+      return { type: "distance", value: duration.value };
+
+    case "repetitions":
+      // Wahoo doesn't support reps as duration, use time estimate
+      return { type: "time", value: duration.value * 30 }; // 30 seconds per rep
+
+    default:
+      return { type: "time", value: 300 };
+  }
+}
+
+/**
+ * Convert GradientPeak intensity target to Wahoo target
+ */
+function convertTarget(target: IntensityTarget): WahooTarget {
+  switch (target.type) {
+    case "%FTP": {
+      // Convert percentage to decimal (e.g., 85% -> 0.85)
+      const value = target.intensity / 100;
+      return {
+        type: "ftp",
+        low: value * 0.95, // 5% tolerance
+        high: value * 1.05,
+      };
+    }
+
+    case "watts": {
+      return {
+        type: "watts",
+        low: target.intensity * 0.95,
+        high: target.intensity * 1.05,
+      };
+    }
+
+    case "bpm": {
+      return {
+        type: "hr",
+        value: target.intensity,
+      };
+    }
+
+    case "%ThresholdHR": {
+      // Convert percentage to decimal
+      const value = target.intensity / 100;
+      return {
+        type: "threshold_hr",
+        low: value * 0.95,
+        high: value * 1.05,
+      };
+    }
+
+    case "%MaxHR": {
+      // Wahoo doesn't have MaxHR type, use absolute HR
+      // This would need the actual max HR value from profile
+      return {
+        type: "hr",
+        value: target.intensity, // Placeholder, needs profile.max_hr
+      };
+    }
+
+    case "speed": {
+      // Convert km/h to m/s for Wahoo
+      const metersPerSecond = target.intensity / 3.6;
+      return {
+        type: "speed",
+        low: metersPerSecond * 0.95,
+        high: metersPerSecond * 1.05,
+      };
+    }
+
+    case "cadence": {
+      return {
+        type: "rpm",
+        low: target.intensity * 0.95,
+        high: target.intensity * 1.05,
+      };
+    }
+
+    case "RPE": {
+      // Wahoo doesn't support RPE, estimate as FTP percentage
+      // RPE 1-10 roughly maps to 50-100% FTP
+      const ftpPercent = (target.intensity / 10) * 0.5 + 0.5;
+      return {
+        type: "ftp",
+        low: ftpPercent * 0.95,
+        high: ftpPercent * 1.05,
+      };
+    }
+
+    default:
+      // Fallback to moderate intensity
+      return {
+        type: "ftp",
+        low: 0.65,
+        high: 0.75,
+      };
+  }
+}
+
+/**
+ * Infer Wahoo intensity type from target intensity
+ */
+function inferIntensityType(
+  target: IntensityTarget,
+): WahooInterval["intensity_type"] {
+  switch (target.type) {
+    case "%FTP":
+    case "watts": {
+      const intensity =
+        target.type === "%FTP" ? target.intensity : target.intensity;
+
+      if (intensity < 60) return "recover";
+      if (intensity < 75) return "active";
+      if (intensity < 90) return "tempo";
+      if (intensity >= 90) return "lt";
+      return "active";
+    }
+
+    case "RPE": {
+      if (target.intensity <= 3) return "recover";
+      if (target.intensity <= 5) return "active";
+      if (target.intensity <= 7) return "tempo";
+      return "lt";
+    }
+
+    default:
+      return "active";
+  }
+}
+
+/**
+ * Validate that the plan structure is compatible with Wahoo
+ */
+export function validateWahooCompatibility(structure: ActivityPlanStructure): {
+  compatible: boolean;
+  warnings: string[];
+} {
+  const warnings: string[] = [];
+
+  // Check total step count (Wahoo has limits)
+  let totalSteps = 0;
+  for (const step of structure.steps) {
+    if (step.type === "step") {
+      totalSteps++;
+    } else if (step.type === "repetition") {
+      totalSteps += step.repeat * step.steps.length;
+    }
+  }
+
+  if (totalSteps > 100) {
+    warnings.push(
+      `Workout has ${totalSteps} steps. Wahoo may have issues with very long workouts.`,
+    );
+  }
+
+  // Check for features Wahoo doesn't support well
+  for (const step of structure.steps) {
+    if (step.type === "step") {
+      // Multiple targets
+      if (step.targets && step.targets.length > 1) {
+        warnings.push(
+          `Step "${step.name}" has multiple targets. Wahoo devices only show the first target.`,
+        );
+      }
+
+      // RPE targets
+      if (step.targets?.some((t) => t.type === "RPE")) {
+        warnings.push(
+          `Step "${step.name}" uses RPE targets. These will be converted to approximate FTP percentages.`,
+        );
+      }
+
+      // Repetition-based duration
+      if (
+        step.duration &&
+        step.duration !== "untilFinished" &&
+        step.duration.type === "repetitions"
+      ) {
+        warnings.push(
+          `Step "${step.name}" uses repetitions as duration. This will be converted to time estimate.`,
+        );
+      }
+    }
+  }
+
+  return {
+    compatible: warnings.length === 0 || totalSteps <= 100,
+    warnings,
+  };
+}

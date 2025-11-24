@@ -33,10 +33,10 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = React.useState(false);
 
   const {
-    todaysWorkout,
+    todaysActivity,
     weeklyStats,
     formStatus,
-    upcomingWorkouts,
+    upcomingActivitys,
     weeklyGoal,
     isLoading,
     hasData,
@@ -48,19 +48,19 @@ export default function HomeScreen() {
     setTimeout(() => setRefreshing(false), 1000);
   };
 
-  const handleStartWorkout = (workoutId?: string) => {
-    if (!todaysWorkout && !workoutId) return;
+  const handleStartActivity = (activityId?: string) => {
+    if (!todaysActivity && !activityId) return;
 
-    const targetWorkout = workoutId
-      ? upcomingWorkouts.find((w) => w.id === workoutId)
-      : todaysWorkout;
+    const targetActivity = activityId
+      ? upcomingActivitys.find((w) => w.id === activityId)
+      : todaysActivity;
 
-    if (!targetWorkout) return;
+    if (!targetActivity) return;
 
     // Set activity selection for the record screen
     const payload: ActivityPayload = {
-      type: targetWorkout.type as any,
-      plannedActivityId: targetWorkout.id,
+      type: targetActivity.type as any,
+      plannedActivityId: targetActivity.id,
       plan: undefined,
     };
 
@@ -159,7 +159,7 @@ export default function HomeScreen() {
       </View>
 
       {/* Today's Focus Card (Hero Element) */}
-      {todaysWorkout ? (
+      {todaysActivity ? (
         <Card className="bg-gradient-to-br from-indigo-600 to-purple-600 border-0 overflow-hidden">
           <CardHeader className="pb-3">
             <View className="flex-row items-center justify-between">
@@ -168,7 +168,7 @@ export default function HomeScreen() {
                   Today's Focus
                 </Text>
                 <Text className="text-white text-2xl font-bold">
-                  {todaysWorkout.title}
+                  {todaysActivity.title}
                 </Text>
               </View>
               <View className="bg-white/20 rounded-full p-3">
@@ -181,39 +181,39 @@ export default function HomeScreen() {
               <View className="flex-row items-center">
                 <Zap size={16} color="#e0e7ff" />
                 <Text className="text-indigo-100 text-sm ml-1">
-                  {todaysWorkout.intensity}
+                  {todaysActivity.intensity}
                 </Text>
               </View>
-              {todaysWorkout.duration > 0 && (
+              {todaysActivity.duration > 0 && (
                 <View className="flex-row items-center">
                   <Target size={16} color="#e0e7ff" />
                   <Text className="text-indigo-100 text-sm ml-1">
-                    {todaysWorkout.duration} min
+                    {todaysActivity.duration} min
                   </Text>
                 </View>
               )}
-              {todaysWorkout.distance > 0 && (
+              {todaysActivity.distance > 0 && (
                 <View className="flex-row items-center">
                   <TrendingUp size={16} color="#e0e7ff" />
                   <Text className="text-indigo-100 text-sm ml-1">
-                    {todaysWorkout.distance} km
+                    {todaysActivity.distance} km
                   </Text>
                 </View>
               )}
             </View>
-            {todaysWorkout.description && (
+            {todaysActivity.description && (
               <Text className="text-indigo-100 text-sm mb-4">
-                {todaysWorkout.description}
+                {todaysActivity.description}
               </Text>
             )}
             <Button
               className="bg-white w-full"
-              onPress={() => handleStartWorkout()}
+              onPress={() => handleStartActivity()}
             >
               <View className="flex-row items-center justify-center">
                 <Play size={20} color="#4f46e5" fill="#4f46e5" />
                 <Text className="text-indigo-600 font-bold text-base ml-2">
-                  Start Workout
+                  Start Activity
                 </Text>
               </View>
             </Button>
@@ -224,7 +224,7 @@ export default function HomeScreen() {
           <CardContent className="p-6 items-center">
             <Calendar size={32} color="#64748b" className="mb-2" />
             <Text className="text-slate-300 text-center font-medium mb-1">
-              No workout scheduled today
+              No activity scheduled today
             </Text>
             <Text className="text-slate-500 text-sm text-center mb-4">
               Rest day or time to plan your next activity
@@ -331,7 +331,7 @@ export default function HomeScreen() {
       )}
 
       {/* Weekly Plan Preview */}
-      {upcomingWorkouts.length > 0 && (
+      {upcomingActivitys.length > 0 && (
         <Card className="bg-slate-800/50 border-slate-700">
           <CardHeader className="flex-row items-center justify-between pb-3">
             <CardTitle className="text-white">This Week's Plan</CardTitle>
@@ -344,47 +344,47 @@ export default function HomeScreen() {
             </Button>
           </CardHeader>
           <CardContent className="gap-2">
-            {upcomingWorkouts.map((workout) => (
+            {upcomingActivitys.map((activity) => (
               <TouchableOpacity
-                key={workout.id}
-                onPress={() => handleStartWorkout(workout.id)}
+                key={activity.id}
+                onPress={() => handleStartActivity(activity.id)}
                 className="flex-row items-center justify-between p-3 bg-slate-700/50 rounded-lg border border-slate-600"
               >
                 <View className="flex-1">
                   <View className="flex-row items-center mb-1">
                     <Text className="text-slate-400 text-xs font-medium mr-2">
-                      {workout.day}
+                      {activity.day}
                     </Text>
                     <View
-                      className={`px-2 py-0.5 rounded ${getStatusBadgeColor(workout.status)}`}
+                      className={`px-2 py-0.5 rounded ${getStatusBadgeColor(activity.status)}`}
                     >
                       <Text
-                        className={`${getStatusTextColor(workout.status)} text-xs font-medium`}
+                        className={`${getStatusTextColor(activity.status)} text-xs font-medium`}
                       >
-                        {workout.status}
+                        {activity.status}
                       </Text>
                     </View>
                   </View>
                   <Text className="text-white font-medium mb-1">
-                    {workout.title}
+                    {activity.title}
                   </Text>
                   <View className="flex-row items-center gap-3">
                     <Text className="text-slate-400 text-xs">
-                      {workout.type}
+                      {activity.type}
                     </Text>
-                    {workout.distance > 0 && (
+                    {activity.distance > 0 && (
                       <Text className="text-slate-400 text-xs">
-                        {workout.distance} km
+                        {activity.distance} km
                       </Text>
                     )}
-                    {workout.duration > 0 && (
+                    {activity.duration > 0 && (
                       <Text className="text-slate-400 text-xs">
-                        {workout.duration} min
+                        {activity.duration} min
                       </Text>
                     )}
                   </View>
                 </View>
-                {workout.status !== "completed" && (
+                {activity.status !== "completed" && (
                   <Play size={20} color="#64748b" />
                 )}
               </TouchableOpacity>

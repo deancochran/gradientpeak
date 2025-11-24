@@ -256,7 +256,7 @@ export function PlannedActivityDetailModal({
                       size={16}
                       className="text-muted-foreground"
                     />
-                    <Text className="font-semibold">Workout Details</Text>
+                    <Text className="font-semibold">Activity Details</Text>
                   </View>
 
                   <Text className="text-base font-medium mb-2">
@@ -296,7 +296,7 @@ export function PlannedActivityDetailModal({
               </Card>
             )}
 
-            {/* Workout Structure */}
+            {/* Activity Structure */}
             {plannedActivity?.activity_plan?.structure &&
               typeof plannedActivity.activity_plan.structure === "object" &&
               (plannedActivity.activity_plan.structure as any).steps &&
@@ -308,7 +308,7 @@ export function PlannedActivityDetailModal({
                 <Card className="mb-4">
                   <CardContent className="p-4">
                     <Text className="font-semibold mb-3">
-                      Workout Structure
+                      Activity Structure
                     </Text>
                     <View className="gap-2">
                       {(

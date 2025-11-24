@@ -114,12 +114,12 @@ export default function PlanScreen() {
     return Math.round((status.weekProgress.completedActivities / total) * 100);
   }, [status]);
 
-  // Upcoming workouts from status.upcomingActivities (limit to 3)
-  const upcomingWorkouts = useMemo(() => {
+  // Upcoming activities from status.upcomingActivities (limit to 3)
+  const upcomingActivitys = useMemo(() => {
     if (!status?.upcomingActivities) return [];
     return status.upcomingActivities.slice(0, 3).map((activity) => ({
       id: activity.id,
-      title: activity.activity_plan?.name || "Unnamed Workout",
+      title: activity.activity_plan?.name || "Unnamed Activity",
       type: activity.activity_plan?.activity_type || "other",
       duration: `${activity.activity_plan?.estimated_duration || 0} min`,
       intensity: "Moderate",
@@ -357,7 +357,7 @@ export default function PlanScreen() {
           <View className="flex-row items-center justify-between">
             <Text className="text-lg font-bold">
               {isToday
-                ? "Today's Workout"
+                ? "Today's Activity"
                 : isPast
                   ? format(selectedDate, "EEEE, MMM d")
                   : format(selectedDate, "EEEE, MMM d")}
@@ -405,7 +405,7 @@ export default function PlanScreen() {
                                 : ""
                             }`}
                           >
-                            {activity.activity_plan?.name || "Workout"}
+                            {activity.activity_plan?.name || "Activity"}
                           </Text>
                           <View className="bg-yellow-50 px-2 py-1 rounded-full ml-2">
                             <Text className="text-xs font-medium text-yellow-600">
@@ -443,7 +443,7 @@ export default function PlanScreen() {
                             className="self-start"
                           >
                             <Text className="text-primary-foreground font-semibold">
-                              Start Workout
+                              Start Activity
                             </Text>
                           </Button>
                         )}
@@ -471,14 +471,14 @@ export default function PlanScreen() {
                   className="text-muted-foreground"
                 />
                 <Text className="text-lg font-semibold mb-1">
-                  {isPast ? "Rest Day" : "No Workout Scheduled"}
+                  {isPast ? "Rest Day" : "No Activity Scheduled"}
                 </Text>
                 <Text className="text-sm text-muted-foreground text-center mb-4">
                   {isPast
                     ? "You rested on this day"
                     : isToday
-                      ? "No workouts scheduled for today"
-                      : "No workouts scheduled for this date"}
+                      ? "No activities scheduled for today"
+                      : "No activities scheduled for this date"}
                 </Text>
                 {!isPast && (
                   <Button
@@ -487,7 +487,7 @@ export default function PlanScreen() {
                     onPress={handleScheduleActivity}
                   >
                     <Icon as={Plus} size={16} className="mr-2" />
-                    <Text>Schedule Workout</Text>
+                    <Text>Schedule Activity</Text>
                   </Button>
                 )}
               </CardContent>
@@ -495,8 +495,8 @@ export default function PlanScreen() {
           )}
         </View>
 
-        {/* Upcoming Workouts - Only show if viewing today */}
-        {isToday && upcomingWorkouts.length > 0 && (
+        {/* Upcoming Activities - Only show if viewing today */}
+        {isToday && upcomingActivitys.length > 0 && (
           <View className="gap-3">
             <View className="flex-row items-center justify-between">
               <Text className="text-lg font-bold">Coming Up</Text>
@@ -510,17 +510,17 @@ export default function PlanScreen() {
               </TouchableOpacity>
             </View>
 
-            {upcomingWorkouts.map((workout) => (
+            {upcomingActivitys.map((activity) => (
               <TouchableOpacity
-                key={workout.id}
-                onPress={() => handleSelectPlannedActivity(workout.id)}
+                key={activity.id}
+                onPress={() => handleSelectPlannedActivity(activity.id)}
                 activeOpacity={0.7}
               >
                 <Card>
                   <CardContent className="p-4">
                     <View className="flex-row items-start gap-3">
                       <View
-                        className={`w-12 h-12 ${getActivityBgClass(workout.type)} rounded-xl items-center justify-center`}
+                        className={`w-12 h-12 ${getActivityBgClass(activity.type)} rounded-xl items-center justify-center`}
                       >
                         <Icon
                           as={Clock}
@@ -532,27 +532,27 @@ export default function PlanScreen() {
                       <View className="flex-1">
                         <View className="flex-row items-start justify-between mb-1">
                           <Text className="font-semibold flex-1">
-                            {workout.title}
+                            {activity.title}
                           </Text>
                           <View
-                            className={`px-2 py-1 rounded-full ml-2 ${getIntensityColor(workout.intensity).bg}`}
+                            className={`px-2 py-1 rounded-full ml-2 ${getIntensityColor(activity.intensity).bg}`}
                           >
                             <Text
-                              className={`text-xs font-medium ${getIntensityColor(workout.intensity).text}`}
+                              className={`text-xs font-medium ${getIntensityColor(activity.intensity).text}`}
                             >
-                              {workout.intensity}
+                              {activity.intensity}
                             </Text>
                           </View>
                         </View>
 
                         <View className="flex-row items-center gap-3 mb-2">
                           <Text className="text-sm text-muted-foreground">
-                            {workout.duration}
+                            {activity.duration}
                           </Text>
                         </View>
 
                         <Text className="text-xs text-muted-foreground">
-                          {workout.date}
+                          {activity.date}
                         </Text>
                       </View>
                     </View>
@@ -635,7 +635,7 @@ export default function PlanScreen() {
                       size={20}
                       className="text-muted-foreground"
                     />
-                    <Text className="font-medium">Workout Library</Text>
+                    <Text className="font-medium">Activity Library</Text>
                   </View>
                   <Icon
                     as={ChevronRight}
@@ -660,7 +660,7 @@ export default function PlanScreen() {
                       size={20}
                       className="text-muted-foreground"
                     />
-                    <Text className="font-medium">Create Custom Workout</Text>
+                    <Text className="font-medium">Create Custom Activity</Text>
                   </View>
                   <Icon
                     as={ChevronRight}

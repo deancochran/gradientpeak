@@ -347,7 +347,14 @@ function buildOAuthUrl(
     wahoo: {
       authUrl: "https://api.wahooligan.com/oauth/authorize",
       clientId: process.env.WAHOO_CLIENT_ID!,
-      scopes: ["plans_write", "routes_write", "user_read"],
+      scopes: [
+        "user_read",
+        "plans_write",
+        "workouts_read",
+        "workouts_write",
+        "offline_data",
+        "routes_write",
+      ],
     },
     trainingpeaks: {
       authUrl: "https://oauth.trainingpeaks.com/oauth/authorize",
