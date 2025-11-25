@@ -102,7 +102,26 @@ create index if not exists idx_activity_plans_profile_id
     on public.activity_plans(profile_id);
 
 -- ============================================================================
--- PLANNED ACTIVITIES (scheduled instantiations of a plan)
+-- ACTIVITY ROUTES
+-- ============================================================================
+create table if not exists public.activity_routes (
+    id uuid primary key default uuid_generate_v4(),
+    idx serial unique not null,
+    profile_id uuid not null references public.profiles(id) on delete cascade,
+    name text not null,
+    description text,
+    file_path text not null, 
+    created_at timestamptz not null default now()
+);
+
+create index if not exists idx_routes_profile_id
+    on public.activity_routes(profile_id);
+
+create index if not exists idx_routes_name
+    on public.activity_routes(name);
+
+-- ============================================================================
+-- PLANNED ACTIVITIES
 -- ============================================================================
 create table if not exists public.planned_activities (
     id uuid primary key default uuid_generate_v4(),
@@ -110,7 +129,7 @@ create table if not exists public.planned_activities (
     profile_id uuid not null references public.profiles(id) on delete cascade,
     activity_plan_id uuid not null references public.activity_plans(id) on delete cascade,
     scheduled_date date not null,
-    notes text,
+    activity_route_id uuid references public.activity_routes(id) on delete set null,
     created_at timestamptz not null default now()
 );
 
