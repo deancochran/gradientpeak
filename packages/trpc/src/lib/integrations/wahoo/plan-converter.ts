@@ -343,12 +343,21 @@ function inferIntensityType(
 
 /**
  * Validate that the plan structure is compatible with Wahoo
+ * Note: This assumes activity type has already been validated with isActivityTypeSupportedByWahoo
  */
 export function validateWahooCompatibility(structure: ActivityPlanStructure): {
   compatible: boolean;
   warnings: string[];
 } {
   const warnings: string[] = [];
+
+  // Check if structure is empty (no intervals)
+  if (!structure.steps || structure.steps.length === 0) {
+    warnings.push(
+      "Workout has no intervals. Wahoo requires at least one interval.",
+    );
+    return { compatible: false, warnings };
+  }
 
   // Check total step count (Wahoo has limits)
   let totalSteps = 0;
