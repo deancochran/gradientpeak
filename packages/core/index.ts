@@ -39,3 +39,5 @@ export * from "./schemas";
 
 // Export everything from utils
 export * from "./utils/activity-defaults";
+export * from "./utils/plan-view-logic";
+export * from "./utils/polyline";

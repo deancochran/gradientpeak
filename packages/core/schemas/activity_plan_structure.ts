@@ -244,7 +244,6 @@ export type StepOrRepetition = z.infer<typeof stepOrRepetitionSchema>;
 export const activityPlanStructureSchema = z.object({
   steps: z
     .array(stepOrRepetitionSchema)
-    .min(1, { message: "Plan must have at least one step or repetition" })
     .max(50, { message: "Plan cannot have more than 50 items" })
     .refine(
       (steps) => {
@@ -259,7 +258,8 @@ export const activityPlanStructureSchema = z.object({
         message:
           "Total expanded steps cannot exceed 200 (including repetitions)",
       },
-    ),
+    )
+    .optional(),
 });
 
 export type ActivityPlanStructure = z.infer<typeof activityPlanStructureSchema>;
@@ -267,31 +267,48 @@ export type ActivityPlanStructure = z.infer<typeof activityPlanStructureSchema>;
 // ==============================
 // COMPLETE ACTIVITY PLAN
 // ==============================
-export const activityPlanSchema = z.object({
-  name: z
-    .string()
-    .min(3, { message: "Name must be at least 3 characters" })
-    .max(100, { message: "Name cannot exceed 100 characters" })
-    .trim(),
-  description: z
-    .string()
-    .max(1000, { message: "Description cannot exceed 1000 characters" })
-    .optional(),
-  activity_type: activityTypeEnum,
-  estimated_duration: z
-    .number()
-    .int({ message: "Duration must be a whole number" })
-    .min(5, { message: "Duration must be at least 5 minutes" })
-    .max(480, { message: "Duration cannot exceed 480 minutes (8 hours)" }),
-  estimated_tss: z
-    .number()
-    .int({ message: "TSS must be a whole number" })
-    .nonnegative({ message: "TSS must be non-negative" })
-    .max(500, { message: "TSS cannot exceed 500" })
-    .nullable()
-    .optional(),
-  structure: activityPlanStructureSchema,
-});
+export const activityPlanSchema = z
+  .object({
+    name: z
+      .string()
+      .min(3, { message: "Name must be at least 3 characters" })
+      .max(100, { message: "Name cannot exceed 100 characters" })
+      .trim(),
+    description: z
+      .string()
+      .max(1000, { message: "Description cannot exceed 1000 characters" })
+      .optional(),
+    activity_type: activityTypeEnum,
+    estimated_duration: z
+      .number()
+      .int({ message: "Duration must be a whole number" })
+      .min(5, { message: "Duration must be at least 5 minutes" })
+      .max(480, { message: "Duration cannot exceed 480 minutes (8 hours)" }),
+    estimated_tss: z
+      .number()
+      .int({ message: "TSS must be a whole number" })
+      .nonnegative({ message: "TSS must be non-negative" })
+      .max(500, { message: "TSS cannot exceed 500" })
+      .nullable()
+      .optional(),
+    structure: activityPlanStructureSchema,
+    route_id: z.string().uuid().optional(),
+    notes: z
+      .string()
+      .max(1000, { message: "Notes cannot exceed 1000 characters" })
+      .optional(),
+  })
+  .refine(
+    (data) => {
+      const hasSteps = data.structure.steps && data.structure.steps.length > 0;
+      const hasRoute = !!data.route_id;
+      return hasSteps || hasRoute;
+    },
+    {
+      message: "Plan must have steps, route, or both",
+      path: ["structure"],
+    },
+  );
 
 export type ActivityPlan = z.infer<typeof activityPlanSchema>;
 
@@ -591,6 +608,18 @@ export function calculateTotalDuration(steps: FlattenedStep[]): number {
   return steps.reduce((total, step) => {
     return total + (step.duration ? getDurationMs(step.duration) : 0);
   }, 0);
+}
+
+/**
+ * Check if an activity type can have a route
+ */
+export function canHaveRoute(activityType: string): boolean {
+  return [
+    "outdoor_run",
+    "outdoor_bike",
+    "indoor_treadmill",
+    "indoor_bike_trainer",
+  ].includes(activityType);
 }
 
 /**

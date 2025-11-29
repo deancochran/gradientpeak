@@ -102,3 +102,4 @@ for select
 using (
   bucket_id = 'profile-routes'
   and auth.uid()::text = (storage.foldername(name))[1]
+)

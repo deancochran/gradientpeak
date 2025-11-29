@@ -47,9 +47,13 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     description,
     activityType,
     structure,
+    routeId,
+    notes,
     setName,
     setDescription,
     setActivityType,
+    setRouteId,
+    setNotes,
     reset,
   } = useActivityPlanCreationStore();
 
@@ -182,6 +186,8 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
         description: description || "",
         activity_type: activityType as any,
         structure,
+        route_id: routeId || undefined,
+        notes: notes || undefined,
         estimated_duration: metrics.durationMinutes || 0,
         estimated_tss: 0, // TODO: Calculate based on structure and user settings
       };
@@ -247,12 +253,16 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
       description,
       activityType,
       structure,
+      routeId,
+      notes,
     },
 
     // Form setters
     setName,
     setDescription,
     setActivityType,
+    setRouteId,
+    setNotes,
 
     // Metrics
     metrics: {

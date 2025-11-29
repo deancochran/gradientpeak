@@ -27,6 +27,7 @@ export default function CreateActivityPlanScreen() {
     setName,
     setDescription,
     setActivityType,
+    setRouteId,
     metrics,
     submit,
     cancel,
@@ -56,7 +57,7 @@ export default function CreateActivityPlanScreen() {
     },
   });
 
-  const { name, description, activityType, structure } = form;
+  const { name, description, activityType, structure, routeId } = form;
 
   // Get direct access to store structure for chart display
   const storeStructure = useActivityPlanCreationStore(
@@ -116,100 +117,113 @@ export default function CreateActivityPlanScreen() {
         </View>
       </View>
 
-      {/* Compact Form - No scrolling needed */}
-      <View className="flex-1 p-4 gap-4">
-        {/* Row 1: Activity Type Icon + Name Input */}
-        <View className="flex-row gap-3">
-          <ActivityTypeSelector
-            value={activityType}
-            onChange={setActivityType}
-            compact
+      {/* Form with ScrollView */}
+      <ScrollView className="flex-1 p-4">
+        <View className="gap-4 pb-6">
+          {/* Row 1: Activity Type Icon + Name Input */}
+          <View className="flex-row gap-3">
+            <ActivityTypeSelector
+              value={activityType}
+              onChange={setActivityType}
+              compact
+            />
+
+            <Input
+              value={name}
+              onChangeText={setName}
+              placeholder="Activity name"
+              className="flex-1 h-[48px]"
+            />
+          </View>
+
+          {/* Row 2: Description */}
+          <Textarea
+            value={description}
+            onChangeText={setDescription}
+            placeholder="Description (optional)"
+            className="min-h-[60px] max-h-[80px]"
+            multiline
+            numberOfLines={2}
+            scrollEnabled={true}
           />
 
-          <Input
-            value={name}
-            onChangeText={setName}
-            placeholder="Activity name"
-            className="flex-1 h-[48px]"
+          {/* Route Selector */}
+          <RouteSelector
+            activityType={activityType}
+            selectedRouteId={routeId}
+            onSelectRoute={setRouteId}
           />
-        </View>
 
-        {/* Row 2: Description */}
-        <Textarea
-          value={description}
-          onChangeText={setDescription}
-          placeholder="Description (optional)"
-          className="min-h-[60px] max-h-[80px]"
-          multiline
-          numberOfLines={2}
-          scrollEnabled={true}
-        />
-
-        {/* Combined Structure + Metrics Card */}
-        <Card className="flex-1">
-          <CardContent className="p-4 flex-1">
-            <Pressable onPress={handleEditStructure} className="flex-1">
-              {/* Metrics Row - Minimal and elegant */}
-              <View className="flex-row items-center gap-4 mb-3">
-                <View className="flex-row items-center gap-1">
-                  <Text className="text-xs text-muted-foreground">
-                    Duration:
-                  </Text>
-                  <Text className="text-sm font-medium">
-                    {formatDuration(metrics.duration) || "0min"}
-                  </Text>
-                </View>
-                <View className="flex-row items-center gap-1">
-                  <Text className="text-xs text-muted-foreground">TSS:</Text>
-                  <Text className="text-sm font-medium">
-                    {Math.round(additionalMetrics.tss) || 0}
-                  </Text>
-                </View>
-                <View className="flex-row items-center gap-1">
-                  <Text className="text-xs text-muted-foreground">IF:</Text>
-                  <Text className="text-sm font-medium">
-                    {additionalMetrics.if.toFixed(2)}
-                  </Text>
-                </View>
-                <View className="flex-row items-center gap-1">
-                  <Text className="text-xs text-muted-foreground">Steps:</Text>
-                  <Text className="text-sm font-medium">
-                    {metrics.stepCount}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Structure Preview */}
-              {steps.length === 0 ? (
-                <View className="flex-1 items-center justify-center py-12">
-                  <Text className="text-base text-muted-foreground mb-2">
-                    No structure defined
-                  </Text>
-                  <Text className="text-sm text-muted-foreground text-center mb-4">
-                    Tap to add steps and intervals
-                  </Text>
-                  <View className="bg-muted rounded-lg px-6 py-3">
-                    <Text className="text-sm font-medium">+ Add Structure</Text>
+          {/* Combined Structure + Metrics Card */}
+          <Card>
+            <CardContent className="p-4 flex-1">
+              <Pressable onPress={handleEditStructure} className="flex-1">
+                {/* Metrics Row - Minimal and elegant */}
+                <View className="flex-row items-center gap-4 mb-3">
+                  <View className="flex-row items-center gap-1">
+                    <Text className="text-xs text-muted-foreground">
+                      Duration:
+                    </Text>
+                    <Text className="text-sm font-medium">
+                      {formatDuration(metrics.duration) || "0min"}
+                    </Text>
                   </View>
-                </View>
-              ) : (
-                <View className="flex-1">
-                  <TimelineChart
-                    structure={storeStructure}
-                    height={120}
-                    onStepPress={handleEditStructure}
-                  />
-                  <View className="mt-3 p-2 bg-muted/50 rounded-lg">
-                    <Text className="text-xs text-muted-foreground text-center">
-                      Tap to edit structure
+                  <View className="flex-row items-center gap-1">
+                    <Text className="text-xs text-muted-foreground">TSS:</Text>
+                    <Text className="text-sm font-medium">
+                      {Math.round(additionalMetrics.tss) || 0}
+                    </Text>
+                  </View>
+                  <View className="flex-row items-center gap-1">
+                    <Text className="text-xs text-muted-foreground">IF:</Text>
+                    <Text className="text-sm font-medium">
+                      {additionalMetrics.if.toFixed(2)}
+                    </Text>
+                  </View>
+                  <View className="flex-row items-center gap-1">
+                    <Text className="text-xs text-muted-foreground">
+                      Steps:
+                    </Text>
+                    <Text className="text-sm font-medium">
+                      {metrics.stepCount}
                     </Text>
                   </View>
                 </View>
-              )}
-            </Pressable>
-          </CardContent>
-        </Card>
-      </View>
+
+                {/* Structure Preview */}
+                {steps.length === 0 ? (
+                  <View className="flex-1 items-center justify-center py-12">
+                    <Text className="text-base text-muted-foreground mb-2">
+                      No structure defined
+                    </Text>
+                    <Text className="text-sm text-muted-foreground text-center mb-4">
+                      Tap to add steps and intervals
+                    </Text>
+                    <View className="bg-muted rounded-lg px-6 py-3">
+                      <Text className="text-sm font-medium">
+                        + Add Structure
+                      </Text>
+                    </View>
+                  </View>
+                ) : (
+                  <View className="flex-1">
+                    <TimelineChart
+                      structure={storeStructure}
+                      height={120}
+                      onStepPress={handleEditStructure}
+                    />
+                    <View className="mt-3 p-2 bg-muted/50 rounded-lg">
+                      <Text className="text-xs text-muted-foreground text-center">
+                        Tap to edit structure
+                      </Text>
+                    </View>
+                  </View>
+                )}
+              </Pressable>
+            </CardContent>
+          </Card>
+        </View>
+      </ScrollView>
     </View>
   );
 }

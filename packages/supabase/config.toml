@@ -113,6 +113,11 @@ file_size_limit = "50MiB"
 # allowed_mime_types = ["image/png", "image/jpeg"]
 # objects_path = "./images"
 
+[storage.buckets.gpx-routes]
+public = false
+file_size_limit = "10MiB"
+allowed_mime_types = ["application/gpx+xml", "text/xml", "application/xml"]
+
 [auth]
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used

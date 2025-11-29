@@ -41,6 +41,19 @@ create type public.integration_provider as enum (
 );
 
 -- ============================================================================
+-- HELPER FUNCTIONS
+-- ============================================================================
+
+-- Function to automatically update updated_at timestamp
+create or replace function update_updated_at_column()
+returns trigger as $$
+begin
+    new.updated_at = now();
+    return new;
+end;
+$$ language plpgsql;
+
+-- ============================================================================
 -- PROFILES
 -- ============================================================================
 create table public.profiles (
@@ -57,8 +70,14 @@ create table public.profiles (
     threshold_hr integer,
     ftp integer,
     weight_kg integer,
-    created_at timestamp not null default now()
+    created_at timestamp not null default now(),
+    updated_at timestamptz not null default now()
 );
+
+create trigger update_profiles_updated_at
+    before update on public.profiles
+    for each row
+    execute function update_updated_at_column();
 
 -- ============================================================================
 -- TRAINING PLANS
@@ -81,25 +100,10 @@ create index if not exists idx_training_plans_profile_id
 create index if not exists idx_training_plans_is_active
     on public.training_plans(is_active) where is_active = true;
 
--- ============================================================================
--- ACTIVITY PLANS
--- ============================================================================
-create table if not exists public.activity_plans (
-    id uuid primary key default uuid_generate_v4(),
-    idx serial unique not null,
-    profile_id uuid not null references public.profiles(id) on delete cascade,
-    version text not null default '1.0',
-    name text not null,
-    activity_type activity_type not null,
-    description text not null,
-    structure jsonb not null,
-    estimated_tss integer not null check (estimated_tss >= 0),
-    estimated_duration integer not null check (estimated_duration >= 0),
-    created_at timestamptz not null default now()
-);
-
-create index if not exists idx_activity_plans_profile_id
-    on public.activity_plans(profile_id);
+create trigger update_training_plans_updated_at
+    before update on public.training_plans
+    for each row
+    execute function update_updated_at_column();
 
 -- ============================================================================
 -- ACTIVITY ROUTES
@@ -110,8 +114,16 @@ create table if not exists public.activity_routes (
     profile_id uuid not null references public.profiles(id) on delete cascade,
     name text not null,
     description text,
-    file_path text not null, 
-    created_at timestamptz not null default now()
+    activity_type activity_type not null,
+    file_path text not null,
+    total_distance integer not null check (total_distance >= 0),
+    total_ascent integer check (total_ascent >= 0),
+    total_descent integer check (total_descent >= 0),
+    polyline text not null,
+    elevation_polyline text,
+    source text,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
 );
 
 create index if not exists idx_routes_profile_id
@@ -119,6 +131,49 @@ create index if not exists idx_routes_profile_id
 
 create index if not exists idx_routes_name
     on public.activity_routes(name);
+
+create index if not exists idx_routes_activity_type
+    on public.activity_routes(activity_type);
+
+create index if not exists idx_routes_created_at
+    on public.activity_routes(created_at desc);
+
+create trigger update_activity_routes_updated_at
+    before update on public.activity_routes
+    for each row
+    execute function update_updated_at_column();
+
+-- ============================================================================
+-- ACTIVITY PLANS
+-- ============================================================================
+create table if not exists public.activity_plans (
+    id uuid primary key default uuid_generate_v4(),
+    idx serial unique not null,
+    profile_id uuid not null references public.profiles(id) on delete cascade,
+    version text not null default '1.0',
+    name text not null,
+    notes text,
+    activity_type activity_type not null,
+    description text not null,
+    structure jsonb not null,
+    route_id uuid references public.activity_routes(id) on delete set null,
+    estimated_tss integer not null check (estimated_tss >= 0),
+    estimated_duration integer not null check (estimated_duration >= 0),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_activity_plans_profile_id
+    on public.activity_plans(profile_id);
+
+create index if not exists idx_activity_plans_route_id
+    on public.activity_plans(route_id)
+    where route_id is not null;
+
+create trigger update_activity_plans_updated_at
+    before update on public.activity_plans
+    for each row
+    execute function update_updated_at_column();
 
 -- ============================================================================
 -- PLANNED ACTIVITIES
@@ -129,8 +184,9 @@ create table if not exists public.planned_activities (
     profile_id uuid not null references public.profiles(id) on delete cascade,
     activity_plan_id uuid not null references public.activity_plans(id) on delete cascade,
     scheduled_date date not null,
-    activity_route_id uuid references public.activity_routes(id) on delete set null,
-    created_at timestamptz not null default now()
+    notes text,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
 );
 
 create index if not exists idx_planned_activities_profile_id
@@ -141,6 +197,14 @@ create index if not exists idx_planned_activities_activity_plan_id
 
 create index if not exists idx_planned_activities_scheduled_date
     on public.planned_activities(scheduled_date);
+
+create index if not exists idx_planned_activities_plan_date
+    on public.planned_activities(activity_plan_id, scheduled_date);
+
+create trigger update_planned_activities_updated_at
+    before update on public.planned_activities
+    for each row
+    execute function update_updated_at_column();
 
 -- ============================================================================
 -- INTEGRATIONS
@@ -156,6 +220,7 @@ create table public.integrations (
     expires_at timestamptz,
     scope text,
     created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
     constraint unique_integration_type unique (profile_id, provider)
 );
 
@@ -170,6 +235,11 @@ create index if not exists idx_integrations_provider
 
 create index if not exists idx_integrations_expires_at
     on public.integrations(expires_at);
+
+create trigger update_integrations_updated_at
+    before update on public.integrations
+    for each row
+    execute function update_updated_at_column();
 
 -- ============================================================================
 -- OAUTH STATES
@@ -215,6 +285,11 @@ create index if not exists idx_synced_planned_activities_planned
 
 create index if not exists idx_synced_planned_activities_provider
     on public.synced_planned_activities(provider, external_id);
+
+create trigger update_synced_planned_activities_updated_at
+    before update on public.synced_planned_activities
+    for each row
+    execute function update_updated_at_column();
 
 -- ============================================================================
 -- ACTIVITIES
@@ -324,6 +399,7 @@ create table if not exists public.activities (
     -- audit
     -- ============================================================================
     created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
 
     -- ============================================================================
     -- constraints
@@ -350,6 +426,11 @@ create index if not exists idx_activities_provider_external
 create unique index if not exists idx_activities_external_unique
     on public.activities(provider, external_id)
     where external_id is not null and provider is not null;
+
+create trigger update_activities_updated_at
+    before update on public.activities
+    for each row
+    execute function update_updated_at_column();
 
 -- ============================================================================
 -- ACTIVITY STREAMS
@@ -380,3 +461,45 @@ create index if not exists idx_activity_streams_activity_id
 
 create index if not exists idx_activity_streams_type
     on public.activity_streams(type);
+
+-- ============================================================================
+-- STORAGE: GPX ROUTES BUCKET
+-- ============================================================================
+
+-- Create storage bucket for GPX route files
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+    'gpx-routes',
+    'gpx-routes',
+    false,
+    10485760, -- 10MB in bytes
+    array['application/gpx+xml', 'text/xml', 'application/xml']
+)
+on conflict (id) do nothing;
+
+-- Allow users to upload their own GPX files
+create policy "Users can upload their own GPX files"
+    on storage.objects
+    for insert
+    with check (
+        bucket_id = 'gpx-routes' and
+        (storage.foldername(name))[1] = auth.uid()::text
+    );
+
+-- Allow users to read their own GPX files
+create policy "Users can read their own GPX files"
+    on storage.objects
+    for select
+    using (
+        bucket_id = 'gpx-routes' and
+        (storage.foldername(name))[1] = auth.uid()::text
+    );
+
+-- Allow users to delete their own GPX files
+create policy "Users can delete their own GPX files"
+    on storage.objects
+    for delete
+    using (
+        bucket_id = 'gpx-routes' and
+        (storage.foldername(name))[1] = auth.uid()::text
+    );

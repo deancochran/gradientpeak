@@ -68,6 +68,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         "android.permission.WAKE_LOCK",
         "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
       ],
+      config: {
+        googleMaps: {
+          apiKey: process.env.EXPO_PUBLIC_GOOGLE_API_KEY,
+        },
+      },
     },
     updates: {
       url: `https://u.expo.dev/${EAS_PROJECT_ID}`,

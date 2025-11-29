@@ -16,12 +16,16 @@ interface ActivityPlanCreationState {
   structure: {
     steps: StepOrRepetition[];
   };
+  routeId: string | null;
+  notes: string;
 
   // Actions
   setName: (name: string) => void;
   setDescription: (description: string) => void;
   setActivityType: (type: string) => void;
   setStructure: (structure: { steps: StepOrRepetition[] }) => void;
+  setRouteId: (routeId: string | null) => void;
+  setNotes: (notes: string) => void;
   updateStep: (index: number, step: StepOrRepetition) => void;
   addStep: (step: Step) => void;
   addRepeat: (repeat: StepOrRepetition) => void;
@@ -58,6 +62,8 @@ const initialState = {
   description: "",
   activityType: "outdoor_run",
   structure: { steps: [] },
+  routeId: null,
+  notes: "",
 };
 
 export const useActivityPlanCreationStore = create<ActivityPlanCreationState>(
@@ -70,6 +76,8 @@ export const useActivityPlanCreationStore = create<ActivityPlanCreationState>(
     setDescription: (description) => set({ description }),
     setActivityType: (activityType) => set({ activityType }),
     setStructure: (structure) => set({ structure }),
+    setRouteId: (routeId) => set({ routeId }),
+    setNotes: (notes) => set({ notes }),
 
     updateStep: (index, step) =>
       set((state) => {

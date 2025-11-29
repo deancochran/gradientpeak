@@ -6,6 +6,7 @@ import { authRouter } from "./auth";
 import { integrationsRouter } from "./integrations";
 import { plannedActivitiesRouter } from "./planned_activities";
 import { profilesRouter } from "./profiles";
+import { routesRouter } from "./routes";
 import { trainingPlansRouter } from "./training_plans";
 
 export const appRouter = createTRPCRouter({
@@ -16,6 +17,7 @@ export const appRouter = createTRPCRouter({
   plannedActivities: plannedActivitiesRouter,
   integrations: integrationsRouter,
   trainingPlans: trainingPlansRouter,
+  routes: routesRouter,
 });
 
 export type AppRouter = typeof appRouter;

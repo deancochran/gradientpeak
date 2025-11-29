@@ -12,6 +12,7 @@
     "@repo/supabase": "workspace:*",
     "@trpc/client": "^11.5.1",
     "@trpc/server": "^11.5.1",
+    "@xmldom/xmldom": "^0.8.11",
     "drizzle-orm": "^0.44.5",
     "next": "^15.5.3",
     "superjson": "^2.2.2",
