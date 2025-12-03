@@ -1,3 +1,4 @@
+import { trainingPlanCreateFormSchema } from "@repo/core";
 import { useState } from "react";
 
 /**
@@ -168,14 +169,26 @@ export function useWizardForm() {
   const validateStep1 = (): boolean => {
     const newErrors: ValidationErrors = {};
 
-    if (!formData.name.trim()) {
-      newErrors.name = "Plan name is required";
-    } else if (formData.name.length < 3) {
-      newErrors.name = "Name must be at least 3 characters";
-    }
+    try {
+      // Use standardized schema for validation
+      const step1Schema = trainingPlanCreateFormSchema.pick({
+        name: true,
+        description: true,
+      });
 
-    if (formData.description.length > 500) {
-      newErrors.description = "Description must be less than 500 characters";
+      step1Schema.parse({
+        name: formData.name,
+        description: formData.description || null,
+      });
+    } catch (error: any) {
+      if (error?.issues) {
+        error.issues.forEach((issue: any) => {
+          const field = issue.path[0] as keyof ValidationErrors;
+          if (field) {
+            newErrors[field] = issue.message;
+          }
+        });
+      }
     }
 
     setErrors(newErrors);
@@ -188,39 +201,44 @@ export function useWizardForm() {
   const validateStep2 = (): boolean => {
     const newErrors: ValidationErrors = {};
 
-    if (formData.tssMin < 50 || formData.tssMin > 1000) {
-      newErrors.tssMin = "Min TSS should be 50-1000";
-    }
+    try {
+      // Use standardized schema for validation
+      const step2Schema = trainingPlanCreateFormSchema.pick({
+        tss_min: true,
+        tss_max: true,
+        activities_per_week: true,
+        max_consecutive_days: true,
+        min_rest_days: true,
+        min_hours_between_hard: true,
+      });
 
-    if (formData.tssMax < 100 || formData.tssMax > 1500) {
-      newErrors.tssMax = "Max TSS should be 100-1500";
-    }
-
-    if (formData.tssMin >= formData.tssMax) {
-      newErrors.tssMax = "Max must be greater than min";
-    }
-
-    if (formData.activitiesPerWeek < 1 || formData.activitiesPerWeek > 14) {
-      newErrors.activitiesPerWeek = "Must be 1-14 activities";
-    }
-
-    if (formData.maxConsecutiveDays < 1 || formData.maxConsecutiveDays > 7) {
-      newErrors.maxConsecutiveDays = "Must be 1-7 days";
-    }
-
-    if (formData.minRestDays < 0 || formData.minRestDays > 7) {
-      newErrors.minRestDays = "Must be 0-7 days";
-    }
-
-    if (formData.minRestDays + formData.maxConsecutiveDays > 7) {
-      newErrors.minRestDays = "Training + rest days must fit in a week";
-    }
-
-    if (
-      formData.minHoursBetweenHard < 0 ||
-      formData.minHoursBetweenHard > 168
-    ) {
-      newErrors.minHoursBetweenHard = "Must be 0-168 hours";
+      step2Schema.parse({
+        tss_min: formData.tssMin,
+        tss_max: formData.tssMax,
+        activities_per_week: formData.activitiesPerWeek,
+        max_consecutive_days: formData.maxConsecutiveDays,
+        min_rest_days: formData.minRestDays,
+        min_hours_between_hard: formData.minHoursBetweenHard,
+      });
+    } catch (error: any) {
+      if (error?.issues) {
+        error.issues.forEach((issue: any) => {
+          const path = issue.path[0] as string;
+          // Map snake_case to camelCase for error display
+          const fieldMap: Record<string, keyof ValidationErrors> = {
+            tss_min: "tssMin",
+            tss_max: "tssMax",
+            activities_per_week: "activitiesPerWeek",
+            max_consecutive_days: "maxConsecutiveDays",
+            min_rest_days: "minRestDays",
+            min_hours_between_hard: "minHoursBetweenHard",
+          };
+          const field = fieldMap[path];
+          if (field) {
+            newErrors[field] = issue.message;
+          }
+        });
+      }
     }
 
     setErrors(newErrors);
@@ -237,32 +255,27 @@ export function useWizardForm() {
 
     const newErrors: ValidationErrors = {};
 
-    if (
-      !formData.startingCTL ||
-      formData.startingCTL < 0 ||
-      formData.startingCTL > 200
-    ) {
-      newErrors.periodization = "Starting CTL must be 0-200";
-    }
+    try {
+      // Use standardized schema for validation
+      const step3Schema = trainingPlanCreateFormSchema.pick({
+        use_periodization: true,
+        starting_ctl: true,
+        target_ctl: true,
+        ramp_rate: true,
+      });
 
-    if (
-      !formData.targetCTL ||
-      formData.targetCTL < 0 ||
-      formData.targetCTL > 250
-    ) {
-      newErrors.periodization = "Target CTL must be 0-250";
-    }
-
-    if (
-      formData.startingCTL &&
-      formData.targetCTL &&
-      formData.targetCTL <= formData.startingCTL
-    ) {
-      newErrors.periodization = "Target must be greater than starting CTL";
-    }
-
-    if (!formData.rampRate || formData.rampRate < 1 || formData.rampRate > 20) {
-      newErrors.periodization = "Ramp rate must be 1-20 per week";
+      step3Schema.parse({
+        use_periodization: formData.usePeriodization,
+        starting_ctl: formData.startingCTL || null,
+        target_ctl: formData.targetCTL || null,
+        ramp_rate: formData.rampRate || null,
+      });
+    } catch (error: any) {
+      if (error?.issues) {
+        error.issues.forEach((issue: any) => {
+          newErrors.periodization = issue.message;
+        });
+      }
     }
 
     setErrors(newErrors);

@@ -3,12 +3,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-    Select,
-    SelectContent,
-    SelectGroup,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,18 +19,19 @@ import { CheckCircle, FileText, Upload } from "lucide-react-native";
 import { useState } from "react";
 import { Alert, ScrollView, View } from "react-native";
 
-const ACTIVITY_TYPES = [
-  { value: "outdoor_run", label: "Outdoor Run" },
-  { value: "outdoor_bike", label: "Outdoor Bike" },
-  { value: "indoor_treadmill", label: "Indoor Treadmill" },
-  { value: "indoor_bike_trainer", label: "Indoor Bike Trainer" },
+const ACTIVITY_CATEGORIES = [
+  { value: "run", label: "Run" },
+  { value: "bike", label: "Bike" },
+  { value: "swim", label: "Swim" },
+  { value: "strength", label: "Strength" },
+  { value: "other", label: "Other" },
 ];
 
 export default function UploadRouteScreen() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [activityType, setActivityType] = useState<string>("outdoor_run");
+  const [activityCategory, setActivityCategory] = useState<string>("run");
   const [selectedFile, setSelectedFile] = useState<{
     name: string;
     content: string;
@@ -94,7 +95,7 @@ export default function UploadRouteScreen() {
     uploadMutation.mutate({
       name: name.trim(),
       description: description.trim() || undefined,
-      activityType: activityType as any,
+      activityCategory: activityCategory as any,
       fileContent: selectedFile.content,
       fileName: selectedFile.name,
     });
@@ -124,11 +125,7 @@ export default function UploadRouteScreen() {
                     {selectedFile.name}
                   </Text>
                   <CheckCircle className="text-green-500" size={20} />
-                  <Button
-                    onPress={handlePickFile}
-                    variant="ghost"
-                    size="sm"
-                  >
+                  <Button onPress={handlePickFile} variant="ghost" size="sm">
                     <Text className="text-xs">Change</Text>
                   </Button>
                 </View>
@@ -153,18 +150,21 @@ export default function UploadRouteScreen() {
               </View>
 
               <View>
-                <Label className="mb-2">Activity Type *</Label>
-                <Select value={activityType} onValueChange={setActivityType}>
+                <Label className="mb-2">Activity Category *</Label>
+                <Select
+                  value={activityCategory}
+                  onValueChange={setActivityCategory}
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select activity type" />
+                    <SelectValue placeholder="Select activity category" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      {ACTIVITY_TYPES.map((type) => (
+                      {ACTIVITY_CATEGORIES.map((category) => (
                         <SelectItem
-                          key={type.value}
-                          value={type.value}
-                          label={type.label}
+                          key={category.value}
+                          value={category.value}
+                          label={category.label}
                         />
                       ))}
                     </SelectGroup>

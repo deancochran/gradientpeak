@@ -1,31 +1,15 @@
 import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
 import { trpc } from "@/lib/trpc";
+import { getErrorMessage, showErrorAlert } from "@/lib/utils/formErrors";
+import {
+  activityPlanCreateFormSchema,
+  type ActivityPlanCreateFormData,
+} from "@repo/core";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo } from "react";
 import { Alert } from "react-native";
-import { z } from "zod";
 
-/**
- * Validation schema for activity plan form
- */
-const activityPlanFormSchema = z.object({
-  name: z.string().min(1, "Activity name is required").max(200),
-  description: z.string().max(1000),
-  activityType: z.enum([
-    "outdoor_run",
-    "outdoor_bike",
-    "indoor_treadmill",
-    "indoor_bike_trainer",
-    "indoor_strength",
-    "indoor_swim",
-    "other",
-  ]),
-  structure: z.object({
-    steps: z.array(z.any()), // Full validation handled by backend
-  }),
-});
-
-export type ActivityPlanFormData = z.infer<typeof activityPlanFormSchema>;
+export type ActivityPlanFormData = ActivityPlanCreateFormData;
 
 interface UseActivityPlanFormOptions {
   planId?: string;
@@ -45,13 +29,15 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
   const {
     name,
     description,
-    activityType,
+    activityLocation,
+    activityCategory,
     structure,
     routeId,
     notes,
     setName,
     setDescription,
-    setActivityType,
+    setActivityLocation,
+    setActivityCategory,
     setRouteId,
     setNotes,
     reset,
@@ -81,7 +67,13 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     },
     onError: (error) => {
       console.error("Failed to create activity plan:", error);
-      options.onError?.(error as Error);
+
+      // Call custom error handler or show user-friendly alert
+      if (options.onError) {
+        options.onError(error);
+      } else {
+        showErrorAlert(error, "Failed to Create Plan");
+      }
     },
   });
 
@@ -97,7 +89,13 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     },
     onError: (error) => {
       console.error("Failed to update activity plan:", error);
-      options.onError?.(error as Error);
+
+      // Call custom error handler or show user-friendly alert
+      if (options.onError) {
+        options.onError(error);
+      } else {
+        showErrorAlert(error, "Failed to Update Plan");
+      }
     },
   });
 
@@ -106,7 +104,8 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     if (existingPlan && isEditMode) {
       setName(existingPlan.name);
       setDescription(existingPlan.description || "");
-      setActivityType(existingPlan.activity_type);
+      setActivityLocation(existingPlan.activity_location);
+      setActivityCategory(existingPlan.activity_category);
       if (existingPlan.structure) {
         // Structure should already be in the correct format
         useActivityPlanCreationStore.setState({
@@ -114,7 +113,14 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
         });
       }
     }
-  }, [existingPlan, isEditMode, setName, setDescription, setActivityType]);
+  }, [
+    existingPlan,
+    isEditMode,
+    setName,
+    setDescription,
+    setActivityLocation,
+    setActivityCategory,
+  ]);
 
   // Calculate metrics from structure
   const metrics = useMemo(() => {
@@ -151,45 +157,61 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
   // Validation
   const validate = useCallback(() => {
     try {
-      activityPlanFormSchema.parse({
+      activityPlanCreateFormSchema.parse({
         name,
-        description,
-        activityType,
+        description: description || null,
+        activity_location: activityLocation,
+        activity_category: activityCategory,
+        estimated_duration: metrics.durationMinutes * 60 || 60,
+        estimated_tss: null,
+        route_id: routeId || null,
+        notes: notes || null,
         structure,
       });
       return { isValid: true, errors: {} };
-    } catch (error) {
-      if (error instanceof z.ZodError) {
+    } catch (error: any) {
+      if (error?.issues) {
         const errors: Record<string, string> = {};
-        error.issues.forEach((err) => {
+        error.issues.forEach((err: any) => {
           if (err.path[0]) {
             errors[err.path[0] as string] = err.message;
           }
         });
         return { isValid: false, errors };
       }
-      return { isValid: false, errors: { general: "Validation failed" } };
+      return { isValid: false, errors: { general: getErrorMessage(error) } };
     }
-  }, [name, description, activityType, structure]);
+  }, [
+    name,
+    description,
+    activityLocation,
+    activityCategory,
+    structure,
+    metrics,
+    routeId,
+    notes,
+  ]);
 
   // Submit handler
   const submit = useCallback(async () => {
     const validation = validate();
     if (!validation.isValid) {
-      Alert.alert("Validation Error", Object.values(validation.errors)[0]);
+      const firstError = Object.values(validation.errors)[0];
+      Alert.alert("Please Check Your Input", firstError);
       return null;
     }
 
     try {
       const payload = {
         name,
-        description: description || "",
-        activity_type: activityType as any,
+        description: description || null,
+        activity_location: activityLocation as any,
+        activity_category: activityCategory as any,
         structure,
-        route_id: routeId || undefined,
-        notes: notes || undefined,
-        estimated_duration: metrics.durationMinutes || 0,
-        estimated_tss: 0, // TODO: Calculate based on structure and user settings
+        route_id: routeId || null,
+        notes: notes || null,
+        estimated_duration: metrics.durationMinutes * 60 || 60, // Convert to seconds
+        estimated_tss: null, // TODO: Calculate based on structure and user settings
       };
 
       if (isEditMode) {
@@ -204,15 +226,20 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
       }
     } catch (error) {
       console.error("Submit error:", error);
+      // Error is already handled by mutation onError callbacks
+      // Just log and return null to indicate failure
       return null;
     }
   }, [
     validate,
     name,
     description,
-    activityType,
+    activityLocation,
+    activityCategory,
     structure,
     metrics,
+    routeId,
+    notes,
     isEditMode,
     options.planId,
     createMutation,
@@ -251,7 +278,8 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     form: {
       name,
       description,
-      activityType,
+      activityLocation,
+      activityCategory,
       structure,
       routeId,
       notes,
@@ -260,7 +288,8 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     // Form setters
     setName,
     setDescription,
-    setActivityType,
+    setActivityLocation,
+    setActivityCategory,
     setRouteId,
     setNotes,
 

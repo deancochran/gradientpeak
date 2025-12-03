@@ -4,6 +4,7 @@ import type { ActivityPlanStructure } from "./activity_plan_structure";
 
 export * from "./activity_payload";
 export * from "./activity_plan_structure";
+export * from "./form-schemas";
 export * from "./planned_activity";
 export * from "./training_plan_structure";
 

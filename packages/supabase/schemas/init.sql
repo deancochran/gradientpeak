@@ -1,13 +1,19 @@
 -- ============================================================================
 -- ENUMS
 -- ============================================================================
-create type public.activity_type as enum (
-    'outdoor_run',
-    'outdoor_bike',
-    'indoor_treadmill',
-    'indoor_bike_trainer',
-    'indoor_strength',
-    'indoor_swim',
+
+-- Location where activity takes place
+create type public.activity_location as enum (
+    'outdoor',
+    'indoor'
+);
+
+-- Category/type of activity (broad classification)
+create type public.activity_category as enum (
+    'run',
+    'bike',
+    'swim',
+    'strength',
     'other'
 );
 
@@ -114,7 +120,7 @@ create table if not exists public.activity_routes (
     profile_id uuid not null references public.profiles(id) on delete cascade,
     name text not null,
     description text,
-    activity_type activity_type not null,
+    activity_category activity_category not null default 'run',
     file_path text not null,
     total_distance integer not null check (total_distance >= 0),
     total_ascent integer check (total_ascent >= 0),
@@ -132,8 +138,8 @@ create index if not exists idx_routes_profile_id
 create index if not exists idx_routes_name
     on public.activity_routes(name);
 
-create index if not exists idx_routes_activity_type
-    on public.activity_routes(activity_type);
+create index if not exists idx_routes_activity_category
+    on public.activity_routes(activity_category);
 
 create index if not exists idx_routes_created_at
     on public.activity_routes(created_at desc);
@@ -153,7 +159,8 @@ create table if not exists public.activity_plans (
     version text not null default '1.0',
     name text not null,
     notes text,
-    activity_type activity_type not null,
+    activity_location activity_location not null default 'indoor',
+    activity_category activity_category not null default 'run',
     description text not null,
     structure jsonb not null,
     route_id uuid references public.activity_routes(id) on delete set null,
@@ -299,7 +306,8 @@ create table if not exists public.activities (
     idx serial unique not null,
     name text not null,
     notes text,
-    activity_type activity_type not null default 'other',
+    activity_location activity_location not null default 'indoor',
+    activity_category activity_category not null default 'run',
     is_private boolean not null default true,
     provider integration_provider,
     external_id text,
@@ -410,8 +418,11 @@ create table if not exists public.activities (
 create index if not exists idx_activities_profile_id
     on public.activities(profile_id);
 
-create index if not exists idx_activities_activity_type
-    on public.activities(activity_type);
+create index if not exists idx_activities_activity_location
+    on public.activities(activity_location);
+
+create index if not exists idx_activities_activity_category
+    on public.activities(activity_category);
 
 create index if not exists idx_activities_started_at
     on public.activities(started_at);
@@ -461,45 +472,3 @@ create index if not exists idx_activity_streams_activity_id
 
 create index if not exists idx_activity_streams_type
     on public.activity_streams(type);
-
--- ============================================================================
--- STORAGE: GPX ROUTES BUCKET
--- ============================================================================
-
--- Create storage bucket for GPX route files
-insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values (
-    'gpx-routes',
-    'gpx-routes',
-    false,
-    10485760, -- 10MB in bytes
-    array['application/gpx+xml', 'text/xml', 'application/xml']
-)
-on conflict (id) do nothing;
-
--- Allow users to upload their own GPX files
-create policy "Users can upload their own GPX files"
-    on storage.objects
-    for insert
-    with check (
-        bucket_id = 'gpx-routes' and
-        (storage.foldername(name))[1] = auth.uid()::text
-    );
-
--- Allow users to read their own GPX files
-create policy "Users can read their own GPX files"
-    on storage.objects
-    for select
-    using (
-        bucket_id = 'gpx-routes' and
-        (storage.foldername(name))[1] = auth.uid()::text
-    );
-
--- Allow users to delete their own GPX files
-create policy "Users can delete their own GPX files"
-    on storage.objects
-    for delete
-    using (
-        bucket_id = 'gpx-routes' and
-        (storage.foldername(name))[1] = auth.uid()::text
-    );

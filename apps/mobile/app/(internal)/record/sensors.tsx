@@ -1,3 +1,4 @@
+import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
@@ -17,7 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, View } from "react-native";
 import type { Device } from "react-native-ble-plx";
 
-export default function BluetoothModal() {
+function SensorsScreen() {
   const router = useRouter();
 
   const service = useSharedActivityRecorder();
@@ -328,5 +329,13 @@ export default function BluetoothModal() {
         </View>
       </ScrollView>
     </View>
+  );
+}
+
+export default function SensorsScreenWithErrorBoundary() {
+  return (
+    <ErrorBoundary fallback={ScreenErrorFallback}>
+      <SensorsScreen />
+    </ErrorBoundary>
   );
 }

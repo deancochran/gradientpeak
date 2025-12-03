@@ -333,7 +333,7 @@ export function usePlan(service: ActivityRecorderService | null) {
     hasPlan: true as const,
     name: planDetails?.name,
     description: planDetails?.description,
-    activityType: planDetails?.activity_type,
+    activityType: planDetails?.activity_category,
     stepIndex: info.index,
     stepCount: info.total,
     currentStep: info.current,

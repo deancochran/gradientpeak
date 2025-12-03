@@ -211,7 +211,7 @@ export function getDayActivitySummary<
     hasActivities: dayActivities.length > 0,
     completed: dayActivities.every((a) => isActivityCompleted(a)),
     activityType:
-      (dayActivities[0] as any)?.activity_plan?.activity_type || "rest",
+      (dayActivities[0] as any)?.activity_plan?.activity_category || "rest",
     activityCount: dayActivities.length,
   };
 }

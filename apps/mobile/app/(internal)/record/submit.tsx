@@ -1,3 +1,4 @@
+import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -16,6 +17,10 @@ import { useActivitySubmission } from "@/lib/hooks/useActivitySubmission";
 import { useRequireAuth } from "@/lib/hooks/useAuth";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { zodResolver } from "@hookform/resolvers/zod";
+import {
+  activitySubmissionFormSchema,
+  type ActivitySubmissionFormData,
+} from "@repo/core";
 import { useRouter } from "expo-router";
 import { CheckCircle, Loader2, Send, Trash2 } from "lucide-react-native";
 import { useForm } from "react-hook-form";
@@ -26,16 +31,8 @@ import {
   ScrollView,
   View,
 } from "react-native";
-import { z } from "zod";
 
-const activityFormSchema = z.object({
-  name: z.string().min(1, "Activity name is required"),
-  notes: z.string().optional(),
-});
-
-type ActivityFormData = z.infer<typeof activityFormSchema>;
-
-export default function SubmitRecordingModal() {
+function SubmitScreen() {
   const router = useRouter();
   const { profile } = useRequireAuth();
 
@@ -43,15 +40,16 @@ export default function SubmitRecordingModal() {
   const { recordingId } = useActivityRecorderData(service);
   const submission = useActivitySubmission(service);
 
-  const form = useForm<ActivityFormData>({
-    resolver: zodResolver(activityFormSchema),
+  const form = useForm<ActivitySubmissionFormData>({
+    resolver: zodResolver(activitySubmissionFormSchema),
     defaultValues: {
       name: submission.activity?.name || "",
-      notes: submission.activity?.notes || "",
+      notes: submission.activity?.notes || null,
+      is_private: false,
     },
   });
 
-  const handleSubmit = async (data: ActivityFormData) => {
+  const handleSubmit = async (data: ActivitySubmissionFormData) => {
     submission.update(data);
     await submission.submit();
     if (service) {
@@ -260,3 +258,11 @@ const hasAnalytics = (activity: any) =>
   activity.variability_index ||
   activity.efficiency_factor ||
   activity.adherence_score != null;
+
+export default function SubmitScreenWithErrorBoundary() {
+  return (
+    <ErrorBoundary fallback={ScreenErrorFallback}>
+      <SubmitScreen />
+    </ErrorBoundary>
+  );
+}

@@ -42,7 +42,7 @@ export function PlanDetailModal({
   const handleStartNow = () => {
     if (!plan) return;
     const payload = {
-      type: plan.activity_type,
+      type: plan.activity_category,
       plan,
     };
     router.push({
@@ -153,9 +153,9 @@ export function PlanDetailModal({
             <Text className="text-lg font-bold" numberOfLines={1}>
               {plan?.name || "Loading..."}
             </Text>
-            {plan?.activity_type && (
+            {plan?.activity_category && (
               <Text className="text-xs text-muted-foreground capitalize mt-0.5">
-                {plan.activity_type.replace(/_/g, " ")}
+                {plan.activity_category.replace(/_/g, " ")}
               </Text>
             )}
           </View>

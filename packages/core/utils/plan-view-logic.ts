@@ -29,8 +29,10 @@ export function getRecordingViewConfig(
   const hasSteps = !!(structure.steps && structure.steps.length > 0);
   const hasRoute = !!routeId;
   const isIndoor =
-    activityType === "indoor_treadmill" || activityType === "indoor_bike_trainer";
-  const isOutdoor = activityType === "outdoor_run" || activityType === "outdoor_bike";
+    activityType === "indoor_treadmill" ||
+    activityType === "indoor_bike_trainer";
+  const isOutdoor =
+    activityType === "outdoor_run" || activityType === "outdoor_bike";
 
   // Indoor without route
   if (isIndoor && !hasRoute) {
@@ -88,14 +90,10 @@ export function getRecordingViewConfig(
 
 /**
  * Check if an activity type can have a route
+ * Note: All activity types can optionally have a route attached
  */
 export function canHaveRoute(activityType: ActivityType): boolean {
-  return [
-    "outdoor_run",
-    "outdoor_bike",
-    "indoor_treadmill",
-    "indoor_bike_trainer",
-  ].includes(activityType);
+  return true; // Routes are optional for all activity types
 }
 
 /**

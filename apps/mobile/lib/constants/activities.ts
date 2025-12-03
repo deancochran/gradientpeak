@@ -1,9 +1,9 @@
 import {
-    Activity,
-    Bike,
-    Dumbbell,
-    Footprints,
-    Waves,
+  Activity,
+  Bike,
+  Dumbbell,
+  Footprints,
+  Waves,
 } from "lucide-react-native";
 
 /**
@@ -97,7 +97,7 @@ export const ACTIVITY_FILTER_OPTIONS = [
 /**
  * All activity type options for creation and editing
  */
-export const ACTIVITY_TYPE_OPTIONS = [
+export const ACTIVITY_CATEGORY_OPTIONS = [
   { value: "outdoor_run", label: "Outdoor Run", icon: Footprints },
   { value: "outdoor_bike", label: "Outdoor Bike", icon: Bike },
   { value: "indoor_treadmill", label: "Treadmill", icon: Footprints },

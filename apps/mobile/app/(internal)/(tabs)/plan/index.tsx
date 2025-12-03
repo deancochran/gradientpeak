@@ -1,7 +1,14 @@
+import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import {
+  DayActivityList,
+  PlanHeader,
+  UpcomingActivities,
+  WeekCalendar,
+} from "@/components/plan";
+import { PlanCalendarSkeleton } from "@/components/shared";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
-import { Progress } from "@/components/ui/progress";
 import { Text } from "@/components/ui/text";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import { trpc } from "@/lib/trpc";
@@ -9,19 +16,15 @@ import { ActivityPayload } from "@repo/core";
 import { format } from "date-fns";
 import { useRouter } from "expo-router";
 import {
-  Calendar,
-  ChevronLeft,
   ChevronRight,
-  Clock,
-  Flame,
   Library,
+  MapPin,
   Plus,
-  Target,
   TrendingUp,
 } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
 import {
-  ActivityIndicator,
+  RefreshControl,
   ScrollView,
   TouchableOpacity,
   View,
@@ -35,7 +38,7 @@ import {
   normalizeDate,
 } from "./utils/dateGrouping";
 
-export default function PlanScreen() {
+function PlanScreen() {
   const router = useRouter();
 
   const [selectedPlannedActivityId, setSelectedPlannedActivityId] = useState<
@@ -43,6 +46,7 @@ export default function PlanScreen() {
   >(null);
   const [weekOffset, setWeekOffset] = useState(0);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [refreshing, setRefreshing] = useState(false);
 
   // Calculate week dates based on offset
   const weekDates = useMemo(() => {
@@ -57,21 +61,30 @@ export default function PlanScreen() {
   const dates = weekDates.map((date) => date.getDate());
 
   // Query for training plan
-  const { data: plan, isLoading: loadingPlan } =
-    trpc.trainingPlans.get.useQuery();
+  const {
+    data: plan,
+    isLoading: loadingPlan,
+    refetch: refetchPlan,
+  } = trpc.trainingPlans.get.useQuery();
 
-  const { data: status, isLoading: loadingStatus } =
-    trpc.trainingPlans.getCurrentStatus.useQuery(undefined, {
-      enabled: !!plan,
-    });
+  const {
+    data: status,
+    isLoading: loadingStatus,
+    refetch: refetchStatus,
+  } = trpc.trainingPlans.getCurrentStatus.useQuery(undefined, {
+    enabled: !!plan,
+  });
 
   // Query for all planned activities
-  const { data: allPlannedActivities, isLoading: loadingAllPlanned } =
-    trpc.plannedActivities.list.useQuery({
-      limit: 100,
-    });
+  const {
+    data: allPlannedActivities,
+    isLoading: loadingAllPlanned,
+    refetch: refetchActivities,
+  } = trpc.plannedActivities.list.useQuery({
+    limit: 100,
+  });
 
-  const { data: weeklyScheduled = 0 } =
+  const { data: weeklyScheduled = 0, refetch: refetchWeekCount } =
     trpc.plannedActivities.getWeekCount.useQuery();
 
   // Get activities for the selected date
@@ -101,7 +114,8 @@ export default function PlanScreen() {
       }
 
       const completed = dayActivities.every((a) => isActivityCompleted(a));
-      const type = dayActivities[0]?.activity_plan?.activity_type || "other";
+      const type =
+        dayActivities[0]?.activity_plan?.activity_category || "other";
       return { completed, type, count: dayActivities.length };
     });
   }, [allPlannedActivities, weekDates]);
@@ -120,7 +134,7 @@ export default function PlanScreen() {
     return status.upcomingActivities.slice(0, 3).map((activity) => ({
       id: activity.id,
       title: activity.activity_plan?.name || "Unnamed Activity",
-      type: activity.activity_plan?.activity_type || "other",
+      type: activity.activity_plan?.activity_category || "other",
       duration: `${activity.activity_plan?.estimated_duration || 0} min`,
       intensity: "Moderate",
       date: format(new Date(activity.scheduled_date), "EEE, MMM d"),
@@ -174,7 +188,7 @@ export default function PlanScreen() {
     }
 
     const payload: ActivityPayload = {
-      type: plannedActivity.activity_plan.activity_type,
+      type: plannedActivity.activity_plan.activity_category,
       plannedActivityId: plannedActivity.id,
       plan: plannedActivity.activity_plan,
     };
@@ -187,380 +201,79 @@ export default function PlanScreen() {
     router.push("/plan/create_planned_activity" as any);
   };
 
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([
+      refetchPlan(),
+      refetchStatus(),
+      refetchActivities(),
+      refetchWeekCount(),
+    ]);
+    setRefreshing(false);
+  };
+
   // Loading state
   if (loadingPlan || loadingStatus || loadingAllPlanned) {
     return (
-      <View className="flex-1 bg-background items-center justify-center">
-        <ActivityIndicator size="large" />
-        <Text className="text-muted-foreground mt-4">Loading plan...</Text>
-      </View>
+      <ScrollView className="flex-1 bg-background p-6">
+        <PlanCalendarSkeleton />
+      </ScrollView>
     );
   }
 
   return (
-    <ScrollView className="flex-1 bg-background">
-      {/* Gradient Header */}
-      <View className="bg-primary px-5 pt-12 pb-6">
-        <View className="flex-row justify-between items-center mb-6">
-          <Text className="text-2xl font-bold text-primary-foreground">
-            Plan
-          </Text>
-          <TouchableOpacity
-            onPress={() => router.push("/plan/planned_activities" as any)}
-            className="p-2"
-            activeOpacity={0.7}
-          >
-            <Icon as={Calendar} size={24} className="text-primary-foreground" />
-          </TouchableOpacity>
-        </View>
+    <ScrollView
+      className="flex-1 bg-background"
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+      }
+    >
+      {/* Header with Stats */}
+      <PlanHeader
+        adherenceRate={adherenceRate}
+        weeklyScheduled={weeklyScheduled}
+        planProgress={planProgress}
+        onCalendarPress={() => router.push("/plan/planned_activities" as any)}
+      />
 
-        {/* Stats Row */}
-        <View className="flex-row gap-3 mb-6">
-          <View className="flex-1 bg-primary-foreground/10 rounded-xl p-3">
-            <View className="flex-row items-center gap-1 mb-1">
-              <Icon as={Target} size={16} className="text-primary-foreground" />
-              <Text className="text-xs text-primary-foreground/90">
-                Adherence
-              </Text>
-            </View>
-            <Text className="text-2xl font-bold text-primary-foreground">
-              {adherenceRate}%
-            </Text>
-          </View>
-
-          <View className="flex-1 bg-primary-foreground/10 rounded-xl p-3">
-            <View className="flex-row items-center gap-1 mb-1">
-              <Icon
-                as={TrendingUp}
-                size={16}
-                className="text-primary-foreground"
-              />
-              <Text className="text-xs text-primary-foreground/90">
-                This Week
-              </Text>
-            </View>
-            <Text className="text-2xl font-bold text-primary-foreground">
-              {weeklyScheduled}
-            </Text>
-          </View>
-        </View>
-
-        {/* Plan Progress */}
-        <Card className="bg-primary-foreground/10 border-primary-foreground/20 mb-6">
-          <CardHeader className="pb-3">
-            <View className="flex-row items-center justify-between">
-              <CardTitle className="text-primary-foreground text-base">
-                {planProgress.name}
-              </CardTitle>
-              <Text className="text-primary-foreground text-sm font-medium">
-                Week {planProgress.week}
-              </Text>
-            </View>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <Progress
-              value={planProgress.percentage}
-              className="w-full h-2 mb-2"
-              indicatorClassName="bg-primary-foreground"
-            />
-            <Text className="text-primary-foreground/80 text-sm">
-              {planProgress.percentage}% complete
-            </Text>
-          </CardContent>
-        </Card>
-
-        {/* Week Navigation */}
-        <View className="flex-row items-center justify-between mb-4">
-          <TouchableOpacity
-            className="p-2"
-            onPress={handlePreviousWeek}
-            activeOpacity={0.7}
-          >
-            <Icon
-              as={ChevronLeft}
-              size={20}
-              className="text-primary-foreground"
-            />
-          </TouchableOpacity>
-          <Text className="font-medium text-primary-foreground">
-            {format(startOfWeek, "MMM d")} - {format(endOfWeek, "MMM d")}
-          </Text>
-          <TouchableOpacity
-            className="p-2"
-            onPress={handleNextWeek}
-            activeOpacity={0.7}
-          >
-            <Icon
-              as={ChevronRight}
-              size={20}
-              className="text-primary-foreground"
-            />
-          </TouchableOpacity>
-        </View>
-
-        {/* Week Calendar */}
-        <View className="flex-row justify-between">
-          {weekDays.map((day, idx) => {
-            const dateObj = weekDates[idx];
-            const isSelectedDay = isSameDay(dateObj, selectedDate);
-            const isTodayMarker = isSameDay(dateObj, new Date());
-
-            return (
-              <TouchableOpacity
-                key={idx}
-                onPress={() => handleSelectDay(idx)}
-                className={`items-center ${isSelectedDay ? "opacity-100" : "opacity-60"}`}
-                activeOpacity={0.7}
-              >
-                <Text className="text-xs mb-2 text-primary-foreground">
-                  {day}
-                </Text>
-                <View
-                  className={`w-12 h-12 rounded-lg items-center justify-center relative ${
-                    isSelectedDay
-                      ? "bg-primary-foreground"
-                      : "bg-primary-foreground/10"
-                  }`}
-                >
-                  <Text
-                    className={`text-sm font-semibold ${
-                      isSelectedDay ? "text-primary" : "text-primary-foreground"
-                    }`}
-                  >
-                    {dates[idx]}
-                  </Text>
-                  {weekActivities[idx].count > 0 && (
-                    <View
-                      className={`absolute bottom-1 w-1.5 h-1.5 rounded-full ${
-                        weekActivities[idx].completed
-                          ? "bg-green-500"
-                          : isSelectedDay
-                            ? "bg-primary"
-                            : "bg-primary-foreground"
-                      }`}
-                    />
-                  )}
-                  {isTodayMarker && !isSelectedDay && (
-                    <View className="absolute top-1 right-1 w-1 h-1 rounded-full bg-yellow-400" />
-                  )}
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
+      {/* Week Calendar */}
+      <WeekCalendar
+        weekDates={weekDates}
+        weekDays={weekDays}
+        dates={dates}
+        weekActivities={weekActivities}
+        selectedDate={selectedDate}
+        startOfWeek={startOfWeek}
+        endOfWeek={endOfWeek}
+        onPreviousWeek={handlePreviousWeek}
+        onNextWeek={handleNextWeek}
+        onSelectDay={handleSelectDay}
+      />
 
       {/* Content Area */}
       <View className="px-5 py-6 gap-4">
-        {/* Selected Day Section */}
-        <View className="gap-3">
-          <View className="flex-row items-center justify-between">
-            <Text className="text-lg font-bold">
-              {isToday
-                ? "Today's Activity"
-                : isPast
-                  ? format(selectedDate, "EEEE, MMM d")
-                  : format(selectedDate, "EEEE, MMM d")}
-            </Text>
-            {selectedDayActivities.length > 0 && (
-              <Text className="text-sm text-muted-foreground">
-                {selectedDayActivities.length}{" "}
-                {selectedDayActivities.length === 1 ? "activity" : "activities"}
-              </Text>
-            )}
-          </View>
+        {/* Selected Day Activities */}
+        <DayActivityList
+          selectedDate={selectedDate}
+          activities={selectedDayActivities}
+          isToday={isToday}
+          isPast={isPast}
+          onActivityPress={handleSelectPlannedActivity}
+          onStartActivity={handleStartActivity}
+          onScheduleActivity={handleScheduleActivity}
+          getActivityBgClass={getActivityBgClass}
+          isActivityCompleted={isActivityCompleted}
+        />
 
-          {selectedDayActivities.length > 0 ? (
-            selectedDayActivities.map((activity: any) => (
-              <TouchableOpacity
-                key={activity.id}
-                onPress={() => handleSelectPlannedActivity(activity.id)}
-                activeOpacity={0.7}
-              >
-                <Card
-                  className={`${
-                    isActivityCompleted(activity)
-                      ? "border-green-500/30 bg-green-50/50"
-                      : "border-primary/20"
-                  }`}
-                >
-                  <CardContent className="p-0">
-                    <View className="flex-row items-center p-4 gap-3">
-                      <View
-                        className={`w-14 h-14 ${getActivityBgClass(activity.activity_plan?.activity_type)} rounded-xl items-center justify-center`}
-                      >
-                        <Icon
-                          as={Flame}
-                          size={28}
-                          className="text-primary-foreground"
-                        />
-                      </View>
-
-                      <View className="flex-1">
-                        <View className="flex-row items-start justify-between mb-1">
-                          <Text
-                            className={`font-bold text-base flex-1 ${
-                              isActivityCompleted(activity)
-                                ? "line-through text-muted-foreground"
-                                : ""
-                            }`}
-                          >
-                            {activity.activity_plan?.name || "Activity"}
-                          </Text>
-                          <View className="bg-yellow-50 px-2 py-1 rounded-full ml-2">
-                            <Text className="text-xs font-medium text-yellow-600">
-                              Moderate
-                            </Text>
-                          </View>
-                        </View>
-
-                        <View className="flex-row items-center gap-3 mb-3">
-                          <View className="flex-row items-center gap-1">
-                            <Icon
-                              as={Clock}
-                              size={14}
-                              className="text-muted-foreground"
-                            />
-                            <Text className="text-sm text-muted-foreground">
-                              {activity.activity_plan?.estimated_duration || 0}{" "}
-                              min
-                            </Text>
-                          </View>
-                          {activity.activity_plan?.activity_type && (
-                            <Text className="text-sm text-muted-foreground capitalize">
-                              {activity.activity_plan.activity_type.replace(
-                                /_/g,
-                                " ",
-                              )}
-                            </Text>
-                          )}
-                        </View>
-
-                        {isToday && !isActivityCompleted(activity) && (
-                          <Button
-                            size="sm"
-                            onPress={() => handleStartActivity(activity)}
-                            className="self-start"
-                          >
-                            <Text className="text-primary-foreground font-semibold">
-                              Start Activity
-                            </Text>
-                          </Button>
-                        )}
-
-                        {isActivityCompleted(activity) && (
-                          <View className="flex-row items-center gap-1">
-                            <View className="w-2 h-2 bg-green-500 rounded-full" />
-                            <Text className="text-sm text-green-600 font-medium">
-                              Completed
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                    </View>
-                  </CardContent>
-                </Card>
-              </TouchableOpacity>
-            ))
-          ) : (
-            <Card>
-              <CardContent className="p-6 items-center">
-                <Icon
-                  as={Calendar}
-                  size={48}
-                  className="text-muted-foreground"
-                />
-                <Text className="text-lg font-semibold mb-1">
-                  {isPast ? "Rest Day" : "No Activity Scheduled"}
-                </Text>
-                <Text className="text-sm text-muted-foreground text-center mb-4">
-                  {isPast
-                    ? "You rested on this day"
-                    : isToday
-                      ? "No activities scheduled for today"
-                      : "No activities scheduled for this date"}
-                </Text>
-                {!isPast && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onPress={handleScheduleActivity}
-                  >
-                    <Icon as={Plus} size={16} className="mr-2" />
-                    <Text>Schedule Activity</Text>
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-          )}
-        </View>
-
-        {/* Upcoming Activities - Only show if viewing today */}
-        {isToday && upcomingActivitys.length > 0 && (
-          <View className="gap-3">
-            <View className="flex-row items-center justify-between">
-              <Text className="text-lg font-bold">Coming Up</Text>
-              <TouchableOpacity
-                onPress={() => router.push("/plan/planned_activities" as any)}
-                activeOpacity={0.7}
-              >
-                <Text className="text-sm text-primary font-medium">
-                  View All
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {upcomingActivitys.map((activity) => (
-              <TouchableOpacity
-                key={activity.id}
-                onPress={() => handleSelectPlannedActivity(activity.id)}
-                activeOpacity={0.7}
-              >
-                <Card>
-                  <CardContent className="p-4">
-                    <View className="flex-row items-start gap-3">
-                      <View
-                        className={`w-12 h-12 ${getActivityBgClass(activity.type)} rounded-xl items-center justify-center`}
-                      >
-                        <Icon
-                          as={Clock}
-                          size={24}
-                          className="text-primary-foreground"
-                        />
-                      </View>
-
-                      <View className="flex-1">
-                        <View className="flex-row items-start justify-between mb-1">
-                          <Text className="font-semibold flex-1">
-                            {activity.title}
-                          </Text>
-                          <View
-                            className={`px-2 py-1 rounded-full ml-2 ${getIntensityColor(activity.intensity).bg}`}
-                          >
-                            <Text
-                              className={`text-xs font-medium ${getIntensityColor(activity.intensity).text}`}
-                            >
-                              {activity.intensity}
-                            </Text>
-                          </View>
-                        </View>
-
-                        <View className="flex-row items-center gap-3 mb-2">
-                          <Text className="text-sm text-muted-foreground">
-                            {activity.duration}
-                          </Text>
-                        </View>
-
-                        <Text className="text-xs text-muted-foreground">
-                          {activity.date}
-                        </Text>
-                      </View>
-                    </View>
-                  </CardContent>
-                </Card>
-              </TouchableOpacity>
-            ))}
-          </View>
+        {/* Upcoming Activities */}
+        {isToday && (
+          <UpcomingActivities
+            activities={upcomingActivitys}
+            onActivityPress={handleSelectPlannedActivity}
+            onViewAll={() => router.push("/plan/planned_activities" as any)}
+            getActivityBgClass={getActivityBgClass}
+            getIntensityColor={getIntensityColor}
+          />
         )}
 
         {/* Training Plan Progress */}
@@ -623,6 +336,31 @@ export default function PlanScreen() {
         {/* Quick Actions */}
         <View className="gap-2 pt-2">
           <TouchableOpacity
+            onPress={() => router.push("/routes" as any)}
+            activeOpacity={0.7}
+          >
+            <Card>
+              <CardContent className="p-3">
+                <View className="flex-row items-center justify-between">
+                  <View className="flex-row items-center gap-3">
+                    <Icon
+                      as={MapPin}
+                      size={20}
+                      className="text-muted-foreground"
+                    />
+                    <Text className="font-medium">Routes</Text>
+                  </View>
+                  <Icon
+                    as={ChevronRight}
+                    size={20}
+                    className="text-muted-foreground"
+                  />
+                </View>
+              </CardContent>
+            </Card>
+          </TouchableOpacity>
+
+          <TouchableOpacity
             onPress={() => router.push("/plan/library" as any)}
             activeOpacity={0.7}
           >
@@ -683,5 +421,13 @@ export default function PlanScreen() {
         />
       )}
     </ScrollView>
+  );
+}
+
+export default function PlanScreenWithErrorBoundary() {
+  return (
+    <ErrorBoundary fallback={ScreenErrorFallback}>
+      <PlanScreen />
+    </ErrorBoundary>
   );
 }

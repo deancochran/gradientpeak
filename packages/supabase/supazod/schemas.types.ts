@@ -6,14 +6,17 @@
 
 import { z } from "zod";
 import * as generated from "./schemas";
+export type PublicActivityCategory = z.infer<
+  typeof generated.publicActivityCategorySchema
+>;
+export type PublicActivityLocation = z.infer<
+  typeof generated.publicActivityLocationSchema
+>;
 export type PublicActivityMetric = z.infer<
   typeof generated.publicActivityMetricSchema
 >;
 export type PublicActivityMetricDataType = z.infer<
   typeof generated.publicActivityMetricDataTypeSchema
->;
-export type PublicActivityType = z.infer<
-  typeof generated.publicActivityTypeSchema
 >;
 export type PublicIntegrationProvider = z.infer<
   typeof generated.publicIntegrationProviderSchema
@@ -42,6 +45,18 @@ export type PublicActivityPlansUpdate = z.infer<
 >;
 export type PublicActivityPlansRelationships = z.infer<
   typeof generated.publicActivityPlansRelationshipsSchema
+>;
+export type PublicActivityRoutesRow = z.infer<
+  typeof generated.publicActivityRoutesRowSchema
+>;
+export type PublicActivityRoutesInsert = z.infer<
+  typeof generated.publicActivityRoutesInsertSchema
+>;
+export type PublicActivityRoutesUpdate = z.infer<
+  typeof generated.publicActivityRoutesUpdateSchema
+>;
+export type PublicActivityRoutesRelationships = z.infer<
+  typeof generated.publicActivityRoutesRelationshipsSchema
 >;
 export type PublicActivityStreamsRow = z.infer<
   typeof generated.publicActivityStreamsRowSchema

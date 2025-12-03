@@ -8,7 +8,7 @@ import { FlatList, Pressable, TextInput, View } from "react-native";
 export interface ActivityOption {
   id: string;
   name: string;
-  activity_type: string;
+  activity_category: string;
   estimated_duration: number;
   estimated_tss: number | null;
   description?: string | null;
@@ -109,7 +109,7 @@ export function ActivitySelector({
           {/* Activity Type Icon */}
           <View className="mr-3 items-center justify-center w-10 h-10 rounded-full bg-gray-100">
             <Text className="text-2xl">
-              {getActivityTypeIcon(item.activity_type)}
+              {getActivityTypeIcon(item.activity_category)}
             </Text>
           </View>
 
@@ -121,7 +121,7 @@ export function ActivitySelector({
               {item.name}
             </Text>
             <Text className="text-sm text-gray-600 mt-0.5">
-              {getActivityTypeLabel(item.activity_type)}
+              {getActivityTypeLabel(item.activity_category)}
             </Text>
             {item.description && (
               <Text className="text-xs text-gray-500 mt-1" numberOfLines={2}>

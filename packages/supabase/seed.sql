@@ -94,12 +94,3 @@ with check (
   bucket_id = 'profile-routes'
   and auth.uid()::text = (storage.foldername(name))[1]
 );
-
--- Users can view their own GPX files
-create policy "Users can view their own routes"
-on storage.objects
-for select
-using (
-  bucket_id = 'profile-routes'
-  and auth.uid()::text = (storage.foldername(name))[1]
-)

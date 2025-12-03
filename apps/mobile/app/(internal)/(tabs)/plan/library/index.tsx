@@ -1,4 +1,5 @@
 import { PlanCard } from "@/components/plan";
+import { ListSkeleton } from "@/components/shared";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { ACTIVITY_FILTER_OPTIONS } from "@/lib/constants/activities";
@@ -7,7 +8,6 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronDown, Library, Plus } from "lucide-react-native";
 import { useCallback, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   RefreshControl,
   ScrollView,
   TouchableOpacity,
@@ -98,7 +98,7 @@ export default function LibraryScreen() {
           id: plan.id,
           name: plan.name,
           description: plan.description,
-          activityType: plan.activity_type,
+          activityType: plan.activity_category,
           estimatedDuration: plan.estimated_duration,
           estimatedTss: plan.estimated_tss,
           stepCount: plan.structure?.steps?.length || 0,
@@ -244,8 +244,8 @@ export default function LibraryScreen() {
         {error ? (
           renderErrorState()
         ) : isLoading && plans.length === 0 ? (
-          <View className="flex-1 items-center justify-center">
-            <ActivityIndicator size="large" />
+          <View className="flex-1 p-4">
+            <ListSkeleton count={5} />
           </View>
         ) : plans.length === 0 ? (
           renderEmptyState()

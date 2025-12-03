@@ -4,6 +4,13 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo } from "react";
 import { trpc } from "../trpc";
 
+/**
+ * useAuth - Primary auth hook with unified state management
+ *
+ * Combines Zustand store (session, user) with tRPC query (profile).
+ * Profile data is synced to store to maintain single source of truth.
+ */
+
 export const useAuth = () => {
   const store = useAuthStore();
   const { session, user } = store;
@@ -11,10 +18,10 @@ export const useAuth = () => {
   const isAuthenticated = useMemo(() => !!session?.user, [session]);
 
   useEffect(() => {
-    if (store.hydrated && !store.initialized) {
+    if (!store.ready && !store.loading) {
       store.initialize();
     }
-  }, [store.hydrated, store.initialized, store.initialize]);
+  }, [store.ready, store.loading, store.initialize]);
 
   // Use tRPC query for profile data - this gives you caching, refetching, etc.
   const profileQuery = trpc.profiles.get.useQuery(
@@ -26,22 +33,38 @@ export const useAuth = () => {
     },
   );
 
+  // Sync profile from tRPC to store to maintain single source of truth
+  useEffect(() => {
+    if (profileQuery.data) {
+      store.setProfile(profileQuery.data);
+    } else if (profileQuery.isError || !isAuthenticated) {
+      // Clear profile if query fails or user logs out
+      store.setProfile(null);
+    }
+  }, [
+    profileQuery.data,
+    profileQuery.isError,
+    isAuthenticated,
+    store.setProfile,
+  ]);
+
   return {
-    // Auth state from Zustand
+    // Auth state from Zustand (single source of truth)
     user,
     session,
+    profile: store.profile, // Now from store (synced from tRPC)
     loading: store.loading,
+    ready: store.ready,
     error: store.error,
     isAuthenticated,
 
-    // Profile data from tRPC/React Query
-    profile: profileQuery.data,
+    // Profile query status (for loading/error states)
     profileLoading: profileQuery.isLoading,
     profileError: profileQuery.error,
     refreshProfile: profileQuery.refetch,
 
     // Combined loading state
-    isFullyLoaded: !store.loading && !profileQuery.isLoading,
+    isFullyLoaded: store.ready && !store.loading && !profileQuery.isLoading,
   };
 };
 

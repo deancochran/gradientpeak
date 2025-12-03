@@ -277,12 +277,12 @@ export function ActivityListModal({
                     {/* Activity Type */}
                     <View className="flex-row items-center gap-2 mb-3">
                       <Icon
-                        as={getActivityIcon(activity.activity_type)}
+                        as={getActivityIcon(activity.activity_category)}
                         size={14}
                         className="text-gray-600"
                       />
                       <Text className="text-sm text-gray-600">
-                        {formatActivityType(activity.activity_type)}
+                        {formatActivityType(activity.activity_category)}
                       </Text>
                     </View>
 

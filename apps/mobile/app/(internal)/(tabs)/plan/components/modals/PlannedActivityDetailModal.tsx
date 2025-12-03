@@ -1,3 +1,4 @@
+import { ErrorBoundary, ModalErrorFallback } from "@/components/ErrorBoundary";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
@@ -32,7 +33,7 @@ interface PlannedActivityDetailModalProps {
   onClose: () => void;
 }
 
-export function PlannedActivityDetailModal({
+function PlannedActivityDetailModalContent({
   plannedActivityId,
   isVisible,
   onClose,
@@ -119,7 +120,8 @@ export function PlannedActivityDetailModal({
   const completed = plannedActivity
     ? isActivityCompleted(plannedActivity)
     : false;
-  const activityType = plannedActivity?.activity_plan?.activity_type || "other";
+  const activityType =
+    plannedActivity?.activity_plan?.activity_category || "other";
   const colorConfig = getActivityColor(activityType);
 
   const isPastActivity = plannedActivity
@@ -423,5 +425,18 @@ export function PlannedActivityDetailModal({
         </View>
       </View>
     </Modal>
+  );
+}
+
+export function PlannedActivityDetailModal(
+  props: PlannedActivityDetailModalProps,
+) {
+  return (
+    <ErrorBoundary
+      fallback={ModalErrorFallback}
+      resetKeys={[props.plannedActivityId]}
+    >
+      <PlannedActivityDetailModalContent {...props} />
+    </ErrorBoundary>
   );
 }

@@ -7,34 +7,34 @@ import { MapPin, TrendingUp, X } from "lucide-react-native";
 import { View } from "react-native";
 import MapView, { Polyline } from "react-native-maps";
 import {
-    Select,
-    SelectContent,
-    SelectGroup,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "../ui/select";
 
 interface RouteSelectorProps {
-  activityType: string;
+  activityCategory: string;
   selectedRouteId?: string | null;
   onSelectRoute: (routeId: string | null) => void;
 }
 
 export function RouteSelector({
-  activityType,
+  activityCategory,
   selectedRouteId,
   onSelectRoute,
 }: RouteSelectorProps) {
+  // Fetch routes filtered by activity category
   const { data } = trpc.routes.list.useInfiniteQuery(
     {
-      activityType: activityType as any,
+      activityCategory: activityCategory as any,
       limit: 50,
     },
     {
-      enabled: ["outdoor_run", "outdoor_bike", "indoor_treadmill", "indoor_bike_trainer"].includes(
-        activityType,
-      ),
+      enabled: true,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
     },
   );
 
@@ -49,18 +49,6 @@ export function RouteSelector({
     const km = meters / 1000;
     return `${km.toFixed(1)} km`;
   };
-
-  // Don't show selector for activity types that can't have routes
-  if (
-    ![
-      "outdoor_run",
-      "outdoor_bike",
-      "indoor_treadmill",
-      "indoor_bike_trainer",
-    ].includes(activityType)
-  ) {
-    return null;
-  }
 
   return (
     <Card>

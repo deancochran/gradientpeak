@@ -6,11 +6,18 @@
 import type { ActivityPlanStructure } from "@repo/core";
 import type { Database } from "@repo/supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createWahooClient } from "./client";
+import { createWahooClient, supportsRoutes } from "./client";
 import {
   convertToWahooPlan,
+  isActivityTypeSupportedByWahoo,
   validateWahooCompatibility,
 } from "./plan-converter";
+import {
+  convertRouteToFIT,
+  getRouteStartCoordinate,
+  getWorkoutTypeFamilyForRoute,
+  validateRouteForWahoo,
+} from "./route-converter";
 
 type SyncAction = "created" | "updated" | "recreated" | "no_change";
 
@@ -47,7 +54,8 @@ export class WahooSyncService {
             description,
             activity_type,
             structure,
-            updated_at
+            updated_at,
+            route_id
           )
         `,
         )
@@ -97,6 +105,59 @@ export class WahooSyncService {
         };
       }
 
+      // 4b. Fetch route data if route_id is present
+      let routeData = null;
+      const routeId = planned.activity_plan.route_id;
+      if (routeId) {
+        const { data: route, error: routeError } = await this.supabase
+          .from("activity_routes")
+          .select(
+            `
+            id,
+            name,
+            description,
+            file_path,
+            total_distance,
+            total_ascent,
+            total_descent,
+            activity_category
+          `,
+          )
+          .eq("id", routeId)
+          .eq("profile_id", profileId)
+          .single();
+
+        if (!routeError && route) {
+          // Load route file from storage
+          const { data: fileData, error: storageError } =
+            await this.supabase.storage
+              .from("routes")
+              .download(route.file_path);
+
+          if (!storageError && fileData) {
+            try {
+              const fileContent = await fileData.text();
+              // Parse GPX file - you'll need to import parseRoute from your routes utils
+              const parsed = this.parseRouteFile(fileContent);
+
+              routeData = {
+                id: route.id,
+                name: route.name,
+                description: route.description,
+                activityType: route.activity_category,
+                coordinates: parsed.coordinates,
+                totalDistance: route.total_distance,
+                totalAscent: route.total_ascent,
+                totalDescent: route.total_descent,
+              };
+            } catch (error) {
+              console.warn("Failed to parse route file:", error);
+              // Continue without route
+            }
+          }
+        }
+      }
+
       // 5. Check if already synced
       const { data: existingSync } = await this.supabase
         .from("synced_planned_activities")
@@ -134,6 +195,7 @@ export class WahooSyncService {
           wahooClient,
           profileId,
           validation.warnings,
+          routeData,
         );
       } else {
         // Update existing sync
@@ -161,6 +223,37 @@ export class WahooSyncService {
   }
 
   /**
+   * Parse a route file (GPX format)
+   * This is a simplified parser - for production, use a proper GPX parser
+   */
+  private parseRouteFile(content: string): {
+    coordinates: Array<{
+      latitude: number;
+      longitude: number;
+      elevation?: number;
+    }>;
+  } {
+    // Simple GPX parsing - extract trkpt elements
+    const coordinates: Array<{
+      latitude: number;
+      longitude: number;
+      elevation?: number;
+    }> = [];
+
+    const trkptRegex = /<trkpt[^>]*lat="([^"]*)"[^>]*lon="([^"]*)"/g;
+    let match;
+
+    while ((match = trkptRegex.exec(content)) !== null) {
+      coordinates.push({
+        latitude: parseFloat(match[1]),
+        longitude: parseFloat(match[2]),
+      });
+    }
+
+    return { coordinates };
+  }
+
+  /**
    * Create a new sync (first time syncing this planned activity)
    */
   private async createNewSync(
@@ -170,7 +263,65 @@ export class WahooSyncService {
     wahooClient: any,
     profileId: string,
     warnings?: string[],
+    routeData?: any,
   ): Promise<SyncResult> {
+    // Sync route first if present
+    let wahooRouteId: number | undefined;
+    if (routeData && supportsRoutes(planned.activity_plan.activity_type)) {
+      try {
+        // Validate route for Wahoo
+        const validation = validateRouteForWahoo(routeData);
+        if (!validation.valid) {
+          return {
+            success: false,
+            action: "no_change",
+            error: `Route validation failed: ${validation.errors.join(", ")}`,
+            warnings: validation.warnings,
+          };
+        }
+
+        // Convert route to FIT format
+        const fitFile = convertRouteToFIT(routeData);
+        const startCoord = getRouteStartCoordinate(routeData.coordinates);
+
+        if (!startCoord) {
+          return {
+            success: false,
+            action: "no_change",
+            error: "Route has no starting coordinates",
+          };
+        }
+
+        // Create route in Wahoo
+        const wahooRoute = await wahooClient.createRoute({
+          file: fitFile,
+          filename: `${routeData.name}.fit`,
+          externalId: routeData.id,
+          providerUpdatedAt: new Date().toISOString(),
+          name: routeData.name,
+          description: routeData.description,
+          workoutTypeFamilyId: getWorkoutTypeFamilyForRoute(
+            routeData.activityType,
+          ),
+          startLat: startCoord.latitude,
+          startLng: startCoord.longitude,
+          distance: routeData.totalDistance,
+          ascent: routeData.totalAscent || 0,
+          descent: routeData.totalDescent,
+        });
+
+        wahooRouteId = wahooRoute.id;
+        warnings = [...(warnings || []), ...validation.warnings];
+      } catch (error) {
+        console.error("Failed to sync route to Wahoo:", error);
+        // Continue without route - workout can still be created
+        warnings = [
+          ...(warnings || []),
+          "Route sync failed, workout created without route",
+        ];
+      }
+    }
+
     // Convert to Wahoo format
     const wahooPlan = convertToWahooPlan(structure, {
       activityType: planned.activity_plan.activity_type,
@@ -189,12 +340,13 @@ export class WahooSyncService {
       externalId: planned.activity_plan.id,
     });
 
-    // Create workout on Wahoo's calendar
+    // Create workout on Wahoo's calendar with optional route
     const workout = await wahooClient.createWorkout({
       planId: plan.id,
       name: planned.activity_plan.name,
       scheduledDate: new Date(planned.scheduled_date).toISOString(),
       externalId: planned.id,
+      routeId: wahooRouteId,
     });
 
     // Store sync record (only workout_id, not plan_id)

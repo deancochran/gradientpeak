@@ -1,4 +1,4 @@
-import { Button } from "@/components/ui/button";
+import { EmptyStateCard, ListSkeleton } from "@/components/shared";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { trpc } from "@/lib/trpc";
@@ -6,7 +6,7 @@ import { useRouter } from "expo-router";
 import { Calendar, Plus } from "lucide-react-native";
 import { useState } from "react";
 import {
-  ActivityIndicator,
+  RefreshControl,
   ScrollView,
   TouchableOpacity,
   View,
@@ -19,6 +19,7 @@ export default function ScheduledScreen() {
   const [selectedPlannedActivityId, setSelectedPlannedActivityId] = useState<
     string | null
   >(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Query all scheduled activities
   const {
@@ -31,6 +32,12 @@ export default function ScheduledScreen() {
 
   const scheduledActivities = scheduledData?.items || [];
 
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await refetch();
+    setRefreshing(false);
+  };
+
   const handleActivityTap = (activityId: string) => {
     setSelectedPlannedActivityId(activityId);
   };
@@ -41,43 +48,32 @@ export default function ScheduledScreen() {
 
   if (isLoading) {
     return (
-      <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator size="large" />
-        <Text className="text-muted-foreground mt-4">
-          Loading scheduled activities...
-        </Text>
-      </View>
+      <ScrollView className="flex-1 bg-background p-4">
+        <ListSkeleton count={8} />
+      </ScrollView>
     );
   }
 
   if (scheduledActivities.length === 0) {
     return (
-      <View className="flex-1 bg-background">
-        {/* Empty State */}
-        <View className="flex-1 p-6 items-center justify-center">
-          <Icon
-            as={Calendar}
-            size={64}
-            className="text-muted-foreground mb-4"
+      <ScrollView
+        className="flex-1 bg-background"
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
+      >
+        <View className="flex-1 p-6 items-center justify-center min-h-[500px]">
+          <EmptyStateCard
+            icon={Calendar}
+            title="No Activities Scheduled"
+            description="Browse the library to get started with your training plan"
+            actionLabel="Browse Library"
+            onAction={handleScheduleNew}
+            iconSize={64}
+            iconColor="text-primary"
           />
-          <Text className="text-xl font-semibold mb-2">
-            No Activities Scheduled
-          </Text>
-          <Text className="text-muted-foreground text-center mb-6">
-            Browse the library to get started with your training plan
-          </Text>
-          <Button onPress={handleScheduleNew} size="lg">
-            <Icon
-              as={Plus}
-              size={20}
-              className="text-primary-foreground mr-2"
-            />
-            <Text className="text-primary-foreground font-semibold">
-              Browse Library
-            </Text>
-          </Button>
         </View>
-      </View>
+      </ScrollView>
     );
   }
 
@@ -93,7 +89,13 @@ export default function ScheduledScreen() {
       </View>
 
       {/* Activity List */}
-      <ScrollView className="flex-1" contentContainerClassName="py-4">
+      <ScrollView
+        className="flex-1"
+        contentContainerClassName="py-4"
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
+      >
         <ActivityList
           activities={scheduledActivities}
           onActivityPress={handleActivityTap}

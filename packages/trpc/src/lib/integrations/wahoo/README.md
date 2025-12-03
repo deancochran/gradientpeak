@@ -18,11 +18,35 @@ The following activity types **cannot** be synced to Wahoo and will be automatic
 - `indoor_swim` - Wahoo does not support structured swimming workouts
 - `other` - Generic activity type not supported
 
+## Route Support
+
+### Supported Activity Types for Routes
+Routes (GPS navigation) are **only** supported for outdoor activities:
+- ✅ `outdoor_bike` - Full route support with turn-by-turn navigation
+- ✅ `outdoor_run` - Full route support with turn-by-turn navigation
+- ❌ `indoor_bike_trainer` - No route support (indoor activity)
+- ❌ `indoor_treadmill` - No route support (indoor activity)
+
+### How Route Syncing Works
+
+When a planned activity has a route attached (`activity_plan.route_id`):
+
+1. **Validation** - Check if the activity type supports routes
+2. **Route Conversion** - Convert GPX coordinates to Wahoo's FIT format
+3. **Upload Route** - Create route in Wahoo's library via `/v1/routes` API
+4. **Link to Workout** - Attach the route to the workout via `route_id` parameter
+5. **Sync to Device** - Route automatically syncs to user's Wahoo device
+
+### Route File Format
+- **GradientPeak Storage**: GPX files in Supabase Storage
+- **Wahoo API Format**: FIT files (converted automatically)
+- **Conversion**: Coordinates → FIT records with lat/lng in semicircles
+
 ## How It Works
 
 ### Activity Type Validation
 
-When a user attempts to sync a planned activity to Wahoo, the system:
+When a user creates or syncs a planned activity to Wahoo, the system:
 
 1. **Checks activity type compatibility** (`isActivityTypeSupportedByWahoo()`)
    - If the activity type is not supported, returns an error immediately
@@ -34,14 +58,21 @@ When a user attempts to sync a planned activity to Wahoo, the system:
    - Warns if the workout is too long (>100 steps)
    - Warns about features Wahoo doesn't support well (multiple targets, RPE, etc.)
 
-3. **Converts to Wahoo format** (`convertToWahooPlan()`)
+3. **Syncs route (if present and supported)**
+   - Checks if activity type supports routes (`supportsRoutes()`)
+   - Validates route data (`validateRouteForWahoo()`)
+   - Converts GPX coordinates to FIT format (`convertRouteToFIT()`)
+   - Creates route in Wahoo's library via API
+   - Returns Wahoo route ID for linking to workout
+
+4. **Converts plan to Wahoo format** (`convertToWahooPlan()`)
    - Throws an error if activity type mapping fails
    - Converts intervals and targets to Wahoo's JSON format
    - Maps activity types to Wahoo's workout_type_family and workout_type_location
 
-4. **Creates plan and workout** (only if all validations pass)
+5. **Creates plan and workout** (only if all validations pass)
    - Creates plan in Wahoo's library
-   - Creates workout on Wahoo's calendar
+   - Creates workout on Wahoo's calendar with optional route_id
    - Stores sync record in database
 
 ### Error Messages
@@ -58,9 +89,10 @@ Only cycling (outdoor_bike, indoor_bike_trainer) and running
 
 ### Files
 
-- **`client.ts`** - Wahoo API client with typed responses
+- **`client.ts`** - Wahoo API client with typed responses (plans, workouts, routes)
 - **`plan-converter.ts`** - Converts GradientPeak plans to Wahoo format
-- **`sync-service.ts`** - Orchestrates the sync process
+- **`route-converter.ts`** - Converts GPX routes to Wahoo FIT format
+- **`sync-service.ts`** - Orchestrates the sync process (plans + routes)
 - **`activity-importer.ts`** - Imports completed workouts from Wahoo webhooks
 - **`/apps/web/src/app/api/webhooks/wahoo/route.ts`** - Webhook receiver endpoint
 
@@ -80,11 +112,22 @@ Check plan structure valid?
     Return error: "Plan structure incompatible"
     
     ↓ (Yes)
-Convert to Wahoo format
+Has route attached? (route_id)
+    ↓ (Yes - outdoor bike/run)
+    Validate route data
+        ↓
+    Convert GPX → FIT
+        ↓
+    Upload route to Wahoo
+        ↓
+    Get Wahoo route_id
+    
+    ↓ (No route, or indoor activity)
+Convert plan to Wahoo format
     ↓
 Create plan in Wahoo library
     ↓
-Create workout on Wahoo calendar
+Create workout on Wahoo calendar (with route_id if available)
     ↓
 Store sync record in database
 ```
@@ -139,8 +182,16 @@ All Wahoo API methods return fully-typed responses:
 const plan: WahooPlan = await wahooClient.createPlan({...});
 console.log(plan.id); // number (Wahoo plan ID)
 
+// Create route - returns full WahooRoute object
+const route: WahooRoute = await wahooClient.createRoute({...});
+console.log(route.id); // number (Wahoo route ID)
+
 // Create workout - returns full WahooWorkout object
-const workout: WahooWorkout = await wahooClient.createWorkout({...});
+const workout: WahooWorkout = await wahooClient.createWorkout({
+  planId: plan.id,
+  routeId: route.id, // Optional - only for outdoor activities
+  ...
+});
 console.log(workout.id); // number (Wahoo workout ID)
 
 // Get user profile - returns full WahooUser object
@@ -292,8 +343,10 @@ curl https://yourdomain.com/api/webhooks/wahoo
 - [ ] Fetch actual workout start time from Wahoo API
 - [ ] Support for workout notes/descriptions
 - [ ] Bi-directional workout updates (edit synced workouts)
-- [ ] Route/GPS data sync
+- [x] ~~Route/GPS data sync~~ **COMPLETED** - Routes now sync automatically
 - [ ] Power zone sync
+- [ ] Route preview on mobile before sync
+- [ ] Bi-directional route sync (download routes from Wahoo)
 
 ## Support
 

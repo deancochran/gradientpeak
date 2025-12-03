@@ -1,3 +1,4 @@
+import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Progress } from "@/components/ui/progress";
@@ -399,7 +400,7 @@ function CardWrapper({
 // MAIN COMPONENT
 // ============================================================================
 
-export default function FollowAlongScreen() {
+function FollowAlongScreen() {
   const router = useRouter();
   const flatListRef = useRef<FlatList>(null);
 
@@ -508,5 +509,13 @@ export default function FollowAlongScreen() {
         contentContainerStyle={{ paddingVertical: 20 }}
       />
     </View>
+  );
+}
+
+export default function FollowAlongScreenWithErrorBoundary() {
+  return (
+    <ErrorBoundary fallback={ScreenErrorFallback}>
+      <FollowAlongScreen />
+    </ErrorBoundary>
   );
 }

@@ -25,7 +25,7 @@ interface PlannedActivityCardProps {
     activity_plan?: {
       id: string;
       name: string;
-      activity_type: string;
+      activity_category: string;
       estimated_duration?: number;
       estimated_tss?: number;
       description?: string;
@@ -102,7 +102,7 @@ export function PlannedActivityCard({
   compact = false,
   showDate = true,
 }: PlannedActivityCardProps) {
-  const activityType = activity.activity_plan?.activity_type || "other";
+  const activityType = activity.activity_plan?.activity_category || "other";
   const colorConfig = getActivityColor(activityType);
   const IconComponent = getActivityIcon(activityType);
   const completed = isActivityCompleted(activity);

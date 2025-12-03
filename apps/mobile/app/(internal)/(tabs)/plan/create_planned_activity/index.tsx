@@ -4,7 +4,13 @@ import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
+import { zodResolver } from "@hookform/resolvers/zod";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import {
+  plannedActivityScheduleFormSchema,
+  type PlannedActivityScheduleFormData,
+} from "@repo/core";
+import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Calendar, Plus } from "lucide-react-native";
@@ -12,20 +18,10 @@ import React, { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import {
   ActivityIndicator,
-  Alert,
   ScrollView,
   TouchableOpacity,
   View,
 } from "react-native";
-import { z } from "zod";
-
-const scheduleSchema = z.object({
-  activityPlanId: z.string().min(1, "Select a plan"),
-  scheduledDate: z.date(),
-  notes: z.string().optional(),
-});
-
-type ScheduleFormData = z.infer<typeof scheduleSchema>;
 
 export default function ScheduleActivityScreen() {
   const router = useRouter();
@@ -33,6 +29,7 @@ export default function ScheduleActivityScreen() {
   const plannedActivityId = params.activityId as string;
   const preselectedPlanId = params.planId as string;
   const isEditMode = !!plannedActivityId;
+  const queryClient = useQueryClient();
 
   const {
     control,
@@ -40,19 +37,22 @@ export default function ScheduleActivityScreen() {
     setValue,
     watch,
     formState: { errors },
-  } = useForm<ScheduleFormData>({
+  } = useForm<PlannedActivityScheduleFormData>({
+    resolver: zodResolver(plannedActivityScheduleFormSchema),
     defaultValues: {
-      scheduledDate: new Date(),
-      notes: "",
-      activityPlanId: preselectedPlanId || "",
+      scheduled_date: new Date().toISOString(),
+      notes: null,
+      activity_plan_id: preselectedPlanId || "",
+      training_plan_id: null,
     },
   });
 
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<any>(null);
 
-  const scheduledDate = watch("scheduledDate");
-  const activityPlanId = watch("activityPlanId");
+  const scheduledDateString = watch("scheduled_date");
+  const scheduledDate = new Date(scheduledDateString);
+  const activityPlanId = watch("activity_plan_id");
 
   // Fetch available plans
   const { data: plansData, isLoading: loadingPlans } =
@@ -78,9 +78,9 @@ export default function ScheduleActivityScreen() {
 
   useEffect(() => {
     if (existingActivity) {
-      setValue("activityPlanId", existingActivity.activity_plan.id);
-      setValue("scheduledDate", new Date(existingActivity.scheduled_date));
-      setValue("notes", existingActivity.notes || "");
+      setValue("activity_plan_id", existingActivity.activity_plan.id);
+      setValue("scheduled_date", existingActivity.scheduled_date);
+      setValue("notes", existingActivity.notes || null);
       setSelectedPlan(existingActivity.activity_plan);
     }
   }, [existingActivity, setValue]);
@@ -96,7 +96,7 @@ export default function ScheduleActivityScreen() {
       const plan = plans.find((p) => p.id === preselectedPlanId);
       if (plan) {
         setSelectedPlan(plan);
-        setValue("activityPlanId", plan.id);
+        setValue("activity_plan_id", plan.id);
       }
     }
   }, [preselectedPlanId, plans, setValue]);
@@ -110,9 +110,6 @@ export default function ScheduleActivityScreen() {
       utils.plannedActivities.getWeekCount.invalidate();
       router.back();
     },
-    onError: (error) => {
-      Alert.alert("Error", error.message);
-    },
   });
 
   const updateMutation = trpc.plannedActivities.update.useMutation({
@@ -122,24 +119,21 @@ export default function ScheduleActivityScreen() {
       utils.plannedActivities.getById.invalidate({ id: plannedActivityId });
       router.back();
     },
-    onError: (error) => {
-      Alert.alert("Error", error.message);
-    },
   });
 
-  const onSubmit = (data: ScheduleFormData) => {
+  const onSubmit = (data: PlannedActivityScheduleFormData) => {
     if (isEditMode) {
       updateMutation.mutate({
         id: plannedActivityId,
-        activity_plan_id: data.activityPlanId,
-        scheduled_date: data.scheduledDate.toISOString(),
-        notes: data.notes || null,
+        activity_plan_id: data.activity_plan_id,
+        scheduled_date: data.scheduled_date,
+        notes: data.notes || undefined,
       });
     } else {
       createMutation.mutate({
-        activity_plan_id: data.activityPlanId,
-        scheduled_date: data.scheduledDate.toISOString(),
-        notes: data.notes || null,
+        activity_plan_id: data.activity_plan_id,
+        scheduled_date: data.scheduled_date,
+        notes: data.notes || undefined,
       });
     }
   };
@@ -150,13 +144,13 @@ export default function ScheduleActivityScreen() {
 
   const handleSelectPlan = (plan: any) => {
     setSelectedPlan(plan);
-    setValue("activityPlanId", plan.id);
+    setValue("activity_plan_id", plan.id);
   };
 
   const handleDateChange = (event: any, date?: Date) => {
     setShowDatePicker(false);
     if (date) {
-      setValue("scheduledDate", date);
+      setValue("scheduled_date", date.toISOString());
     }
   };
 
@@ -220,12 +214,12 @@ export default function ScheduleActivityScreen() {
                       >
                         {plan.name}
                       </Text>
-                      {plan.activity_type && (
+                      {plan.activity_category && (
                         <Text
                           className="text-xs text-muted-foreground capitalize"
                           numberOfLines={1}
                         >
-                          {plan.activity_type.replace(/_/g, " ")}
+                          {plan.activity_category.replace(/_/g, " ")}
                         </Text>
                       )}
                       {plan.estimated_duration && (
@@ -238,9 +232,9 @@ export default function ScheduleActivityScreen() {
                 </ScrollView>
               )}
 
-              {errors.activityPlanId && (
+              {errors.activity_plan_id && (
                 <Text className="text-destructive mt-2 text-sm">
-                  {errors.activityPlanId.message}
+                  {errors.activity_plan_id.message}
                 </Text>
               )}
             </View>
@@ -306,9 +300,9 @@ export default function ScheduleActivityScreen() {
                   minimumDate={new Date()}
                 />
               )}
-              {errors.scheduledDate && (
+              {errors.scheduled_date && (
                 <Text className="text-destructive mt-2 text-sm">
-                  {errors.scheduledDate.message}
+                  {errors.scheduled_date.message}
                 </Text>
               )}
             </View>

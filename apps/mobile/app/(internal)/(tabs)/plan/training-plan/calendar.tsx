@@ -183,7 +183,7 @@ export default function TrainingPlanCalendar() {
       .map((activity: any) => ({
         id: activity.id,
         name: activity.name || "Completed Activity",
-        activityType: activity.activity_type || "unknown",
+        activityType: activity.activity_category || "unknown",
         duration: Math.round((activity.duration_seconds || 0) / 60), // Convert to minutes
         tss: activity.training_stress_score || 0,
         status: "completed" as const,
@@ -200,7 +200,7 @@ export default function TrainingPlanCalendar() {
       .map((activity: any) => ({
         id: activity.id,
         name: activity.activity_plan?.name || "Scheduled Activity",
-        activityType: activity.activity_plan?.activity_type || "unknown",
+        activityType: activity.activity_plan?.activity_category || "unknown",
         duration: activity.activity_plan?.estimated_duration || 0,
         tss: activity.activity_plan?.estimated_tss || 0,
         status: "scheduled" as const, // TODO: Add constraint validation

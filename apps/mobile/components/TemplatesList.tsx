@@ -179,7 +179,7 @@ export function TemplatesList({ onTemplateSelect }: TemplatesListProps) {
   // Handle template selection for follow along mode
   function handleFollowAlong(template: any) {
     const payload: ActivityPayload = {
-      type: template.activity_type,
+      type: template.activity_category,
       plan: template,
     };
     activitySelectionStore.setSelection(payload);
@@ -189,7 +189,7 @@ export function TemplatesList({ onTemplateSelect }: TemplatesListProps) {
   // Handle template selection for record mode
   function handleRecord(template: any) {
     const payload: ActivityPayload = {
-      type: template.activity_type,
+      type: template.activity_category,
       plan: template,
     };
     onTemplateSelect(payload);

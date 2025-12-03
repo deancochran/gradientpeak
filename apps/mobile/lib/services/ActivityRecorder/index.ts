@@ -373,7 +373,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this._steps = flattenPlanSteps(plan.structure.steps);
     this._stepIndex = 0;
     this._stepStartMovingTime = this.getMovingTime();
-    this.selectedActivityType = plan.activity_type;
+    this.selectedActivityType = plan.activity_category;
 
     this.emit("planSelected", { plan, plannedId });
     this.emit("stepChanged", this.getStepInfo());
@@ -586,7 +586,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         const plan: RecordingServiceActivityPlan = {
           name: payload.plan.name,
           description: payload.plan.description || "",
-          activity_type: payload.plan.activity_type,
+          activity_category: payload.plan.activity_category,
           estimated_duration: payload.plan.estimated_duration,
           estimated_tss: payload.plan.estimated_tss,
           structure: payload.plan.structure,

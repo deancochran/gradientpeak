@@ -1,3 +1,4 @@
+import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { RecordingCarousel } from "@/components/RecordingCarousel";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -12,11 +13,6 @@ import {
 import { useAllPermissionsGranted } from "@/lib/hooks/useStandalonePermissions";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
-import {
-  type CarouselCardConfig,
-  type CarouselCardType,
-  createDefaultCardsConfig,
-} from "types/carousel";
 import { useRouter } from "expo-router";
 import {
   Bluetooth,
@@ -28,8 +24,13 @@ import {
 } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, View } from "react-native";
+import {
+  type CarouselCardConfig,
+  type CarouselCardType,
+  createDefaultCardsConfig,
+} from "types/carousel";
 
-export default function RecordModal() {
+function RecordScreen() {
   const router = useRouter();
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -246,5 +247,13 @@ export default function RecordModal() {
         </View>
       </View>
     </View>
+  );
+}
+
+export default function RecordScreenWithErrorBoundary() {
+  return (
+    <ErrorBoundary fallback={ScreenErrorFallback}>
+      <RecordScreen />
+    </ErrorBoundary>
   );
 }

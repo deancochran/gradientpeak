@@ -46,10 +46,10 @@ export default function InternalLayout() {
         }}
       />
       <Tabs.Screen
-        name="plan"
+        name="trends"
         options={{
-          tabBarIcon: ({ color }) => <Icon as={Calendar} size={24} />,
-          title: "Plan",
+          tabBarIcon: ({ color }) => <Icon as={TrendingUp} size={24} />,
+          title: "Trends",
         }}
       />
       <Tabs.Screen
@@ -60,10 +60,10 @@ export default function InternalLayout() {
         }}
       />
       <Tabs.Screen
-        name="trends"
+        name="plan"
         options={{
-          tabBarIcon: ({ color }) => <Icon as={TrendingUp} size={24} />,
-          title: "Trends",
+          tabBarIcon: ({ color }) => <Icon as={Calendar} size={24} />,
+          title: "Plan",
         }}
       />
       <Tabs.Screen

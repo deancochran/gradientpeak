@@ -4,11 +4,17 @@ import { Text } from "@/components/ui/text";
 import { trpc } from "@/lib/trpc";
 import { decodePolyline } from "@repo/core";
 import { useRouter } from "expo-router";
-import { MapPin, Plus, Trash2, TrendingDown, TrendingUp } from "lucide-react-native";
+import {
+  MapPin,
+  Plus,
+  Trash2,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react-native";
 import { Alert, FlatList, Pressable, View } from "react-native";
 import MapView, { Polyline } from "react-native-maps";
 
-const ACTIVITY_TYPE_LABELS: Record<string, string> = {
+const ACTIVITY_CATEGORY_LABELS: Record<string, string> = {
   outdoor_run: "🏃 Run",
   outdoor_bike: "🚴 Bike",
   indoor_treadmill: "🏃 Treadmill",
@@ -97,7 +103,10 @@ export default function RoutesLibraryScreen() {
             {/* Route Info */}
             <View className="p-4">
               <View className="flex-row items-center justify-between mb-2">
-                <Text className="text-lg font-semibold flex-1" numberOfLines={1}>
+                <Text
+                  className="text-lg font-semibold flex-1"
+                  numberOfLines={1}
+                >
                   {item.name}
                 </Text>
                 <Button
@@ -111,7 +120,8 @@ export default function RoutesLibraryScreen() {
               </View>
 
               <Text className="text-sm text-muted-foreground mb-3">
-                {ACTIVITY_TYPE_LABELS[item.activity_type] || item.activity_type}
+                {ACTIVITY_CATEGORY_LABELS[item.activity_category] ||
+                  item.activity_category}
               </Text>
 
               {/* Stats */}

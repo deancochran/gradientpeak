@@ -1,4 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card";
+import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { LucideIcon } from "lucide-react-native";
 import { View } from "react-native";
@@ -14,9 +15,15 @@ interface StatCardProps {
   className?: string;
 }
 
-export function StatCard({ title, value, icon: Icon, trend, className }: StatCardProps) {
+export function StatCard({
+  title,
+  value,
+  icon: IconComponent,
+  trend,
+  className,
+}: StatCardProps) {
   const getTrendColor = () => {
-    if (!trend) return "text-slate-400";
+    if (!trend) return "text-muted-foreground";
     // For fitness-related stats, up is usually good, down is bad
     // For fatigue, down is good, up is concerning
     if (title.toLowerCase().includes("fatigue")) {
@@ -31,14 +38,20 @@ export function StatCard({ title, value, icon: Icon, trend, className }: StatCar
   };
 
   return (
-    <Card className={`flex-1 bg-slate-800/50 border-slate-700 ${className || ""}`}>
+    <Card className={`flex-1 bg-card border-border ${className || ""}`}>
       <CardContent className="p-4">
         <View className="flex-row items-center justify-between mb-2">
-          <Text className="text-slate-400 text-xs font-medium">{title}</Text>
-          <Icon size={16} color="#94a3b8" />
+          <Text className="text-muted-foreground text-xs font-medium">
+            {title}
+          </Text>
+          <Icon
+            as={IconComponent}
+            size={16}
+            className="text-muted-foreground"
+          />
         </View>
         <View className="flex-row items-end justify-between">
-          <Text className="text-white text-xl font-bold">{value}</Text>
+          <Text className="text-foreground text-xl font-bold">{value}</Text>
           {trend && (
             <View className="flex-row items-center">
               <Text className={`${getTrendColor()} text-sm font-semibold`}>

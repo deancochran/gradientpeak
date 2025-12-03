@@ -4,6 +4,7 @@ import {
 } from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { WahooSyncService } from "../lib/integrations/wahoo/sync-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 // Validation constraint schema
@@ -175,6 +176,31 @@ export const plannedActivitiesRouter = createTRPCRouter({
 
       if (error)
         throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+
+      // Automatically sync to Wahoo if integration is connected
+      // This runs asynchronously and doesn't block the response
+      const syncWahoo = async () => {
+        try {
+          // Check if Wahoo integration exists
+          const { data: integration } = await ctx.supabase
+            .from("integrations")
+            .select("provider")
+            .eq("profile_id", ctx.session.user.id)
+            .eq("provider", "wahoo")
+            .single();
+
+          if (integration) {
+            const syncService = new WahooSyncService(ctx.supabase);
+            await syncService.syncPlannedActivity(data.id, ctx.session.user.id);
+          }
+        } catch (error) {
+          // Log error but don't fail the request
+          console.error("Failed to auto-sync to Wahoo:", error);
+        }
+      };
+
+      // Trigger sync without awaiting
+      syncWahoo();
 
       return data;
     }),

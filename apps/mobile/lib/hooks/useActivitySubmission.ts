@@ -29,6 +29,9 @@
 
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { trpc } from "@/lib/trpc";
+import { queryKeys } from "@repo/trpc/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { Alert } from "react-native";
 
 import {
   AggregatedStream,
@@ -130,7 +133,7 @@ function calculateActivityMetrics(
   | "id"
   | "name"
   | "notes"
-  | "activity_type"
+  | "activity_category"
   | "started_at"
   | "finished_at"
   | "planned_activity_id"
@@ -367,6 +370,8 @@ async function compressStreamData(
 // ================================
 
 export function useActivitySubmission(service: ActivityRecorderService | null) {
+  const queryClient = useQueryClient();
+
   const [state, dispatch] = useReducer(submissionReducer, {
     phase: "loading",
     activity: null,
@@ -375,7 +380,36 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
   });
 
   const createActivityWithStreamsMutation =
-    trpc.activities.createWithStreams.useMutation();
+    trpc.activities.createWithStreams.useMutation({
+      onSuccess: (data) => {
+        // Invalidate relevant queries after successful upload
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.activities.lists(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.trainingPlans.status(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.plannedActivities.weekCount(),
+        });
+
+        // Set the new activity in cache
+        if (data.id) {
+          queryClient.setQueryData(queryKeys.activities.detail(data.id), data);
+        }
+
+        console.log(
+          "[useActivitySubmission] Activity uploaded and cache invalidated",
+        );
+      },
+      onError: (error) => {
+        console.error("[useActivitySubmission] Upload failed:", error);
+        Alert.alert(
+          "Upload Failed",
+          error.message || "Failed to upload activity. Please try again.",
+        );
+      },
+    });
 
   // ================================
   // Auto-process recording on recordingComplete event
@@ -429,15 +463,70 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
       // 2. Calculate activity metrics
       const metrics = calculateActivityMetrics(metadata, aggregatedStreams);
 
-      // 3. Compress streams
+      // 3. Compress streams with error handling
       const compressedStreams: Omit<
         PublicActivityStreamsInsert,
         "activity_id"
       >[] = [];
+      const compressionErrors: Array<{ stream: string; error: Error }> = [];
 
-      for (const aggregated of aggregatedStreams.values()) {
-        const compressed = await compressStreamData(aggregated);
-        compressedStreams.push(compressed);
+      for (const [key, aggregated] of aggregatedStreams.entries()) {
+        try {
+          const compressed = await compressStreamData(aggregated);
+          compressedStreams.push(compressed);
+          console.log(
+            `[useActivitySubmission] Successfully compressed stream: ${key}`,
+          );
+        } catch (error) {
+          console.error(
+            `[useActivitySubmission] Failed to compress stream ${key}:`,
+            error,
+          );
+          compressionErrors.push({
+            stream: key,
+            error: error instanceof Error ? error : new Error(String(error)),
+          });
+
+          // Store uncompressed data as fallback
+          // This prevents complete data loss
+          console.warn(
+            `[useActivitySubmission] Storing ${key} as uncompressed fallback`,
+          );
+
+          // Create a fallback stream entry with raw data
+          const fallbackStream: Omit<
+            PublicActivityStreamsInsert,
+            "activity_id"
+          > = {
+            type: aggregated.metric,
+            data_type: aggregated.dataType,
+            compressed_values: JSON.stringify(aggregated.values),
+            compressed_timestamps: JSON.stringify(aggregated.timestamps),
+            sample_count: aggregated.sampleCount,
+            original_size:
+              aggregated.values.length * 8 + aggregated.timestamps.length * 4,
+            min_value: aggregated.minValue,
+            max_value: aggregated.maxValue,
+            avg_value: aggregated.avgValue,
+          };
+          compressedStreams.push(fallbackStream);
+        }
+      }
+
+      // Warn user if compression failed for any streams
+      if (compressionErrors.length > 0) {
+        const streamNames = compressionErrors.map((e) => e.stream).join(", ");
+        console.warn(
+          `[useActivitySubmission] ${compressionErrors.length} stream(s) failed compression: ${streamNames}`,
+        );
+
+        // Note: Alert shown but processing continues
+        // Data is saved with larger file size rather than lost
+        Alert.alert(
+          "Compression Warning",
+          `Some activity data (${streamNames}) couldn't be compressed. Your activity will be uploaded with a larger file size. All data is preserved.`,
+          [{ text: "OK" }],
+        );
       }
 
       // 4. Build final activity object
@@ -447,7 +536,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         started_at: metadata.startedAt,
         finished_at: metadata.endedAt,
         name: `${metadata.activityType.replace(/_/g, " ")} - ${new Date(metadata.startedAt).toLocaleDateString()}`,
-        activity_type: metadata.activityType,
+        activity_category: metadata.activityType,
         profile_age: profileAge,
         profile_ftp: metadata.profile.ftp,
         profile_threshold_hr: metadata.profile.threshold_hr,
@@ -519,7 +608,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
       await service.liveMetricsManager.streamBuffer.cleanup();
 
       console.log(
-        "[useActivitySubmission] Activity uploaded and local files deleted",
+        "[useActivitySubmission] Activity uploaded, cache invalidated, and local files deleted",
       );
       dispatch({ type: "SUCCESS" });
     } catch (err) {

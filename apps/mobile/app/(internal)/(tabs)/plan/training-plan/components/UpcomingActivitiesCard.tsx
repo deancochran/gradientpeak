@@ -11,7 +11,7 @@ interface UpcomingActivity {
   activity_plan: {
     id: string;
     name: string;
-    activity_type: string;
+    activity_category: string;
     estimated_duration: number;
     estimated_tss: number;
   } | null;
@@ -142,7 +142,7 @@ export function UpcomingActivitiesCard({
                         <Text className="text-xs text-muted-foreground">•</Text>
                         <Text className="text-xs text-muted-foreground capitalize">
                           {formatActivityType(
-                            activity.activity_plan.activity_type,
+                            activity.activity_plan.activity_category,
                           )}
                         </Text>
                       </View>

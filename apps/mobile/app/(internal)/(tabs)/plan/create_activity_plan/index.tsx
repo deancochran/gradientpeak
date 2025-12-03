@@ -1,5 +1,6 @@
-import { ActivityTypeSelector } from "@/components/ActivityPlan/ActivityTypeSelector";
+import { ActivityCategorySelector } from "@/components/ActivityPlan/ActivityCategorySelector";
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
+import { RouteSelector } from "@/components/Routes/RouteSelector";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,7 +18,7 @@ import {
 } from "@repo/core";
 import { useRouter } from "expo-router";
 import React, { useMemo } from "react";
-import { Alert, Pressable, View } from "react-native";
+import { Alert, Pressable, ScrollView, View } from "react-native";
 
 export default function CreateActivityPlanScreen() {
   const router = useRouter();
@@ -26,7 +27,8 @@ export default function CreateActivityPlanScreen() {
     form,
     setName,
     setDescription,
-    setActivityType,
+    setActivityLocation,
+    setActivityCategory,
     setRouteId,
     metrics,
     submit,
@@ -57,7 +59,14 @@ export default function CreateActivityPlanScreen() {
     },
   });
 
-  const { name, description, activityType, structure, routeId } = form;
+  const {
+    name,
+    description,
+    activityLocation,
+    activityCategory,
+    structure,
+    routeId,
+  } = form;
 
   // Get direct access to store structure for chart display
   const storeStructure = useActivityPlanCreationStore(
@@ -71,7 +80,9 @@ export default function CreateActivityPlanScreen() {
     const flatSteps = flattenPlanSteps(steps);
 
     // Get default user settings for TSS/IF calculations
-    const userSettings = getDefaultUserSettings(activityType);
+    // Map new structure to legacy format for calculations
+    const legacyActivityType = `${activityLocation}_${activityCategory}` as any;
+    const userSettings = getDefaultUserSettings(legacyActivityType);
     const totalTSS = calculateTotalTSS(steps, userSettings);
     const averageIF = calculateAverageIF(steps, userSettings);
 
@@ -79,7 +90,7 @@ export default function CreateActivityPlanScreen() {
       tss: totalTSS,
       if: averageIF,
     };
-  }, [steps, activityType]);
+  }, [steps, activityLocation, activityCategory]);
 
   /**
    * Handle navigating to structure editor
@@ -120,11 +131,11 @@ export default function CreateActivityPlanScreen() {
       {/* Form with ScrollView */}
       <ScrollView className="flex-1 p-4">
         <View className="gap-4 pb-6">
-          {/* Row 1: Activity Type Icon + Name Input */}
+          {/* Row 1: Activity Category Icon + Name Input */}
           <View className="flex-row gap-3">
-            <ActivityTypeSelector
-              value={activityType}
-              onChange={setActivityType}
+            <ActivityCategorySelector
+              value={activityCategory}
+              onChange={setActivityCategory}
               compact
             />
 
@@ -133,6 +144,14 @@ export default function CreateActivityPlanScreen() {
               onChangeText={setName}
               placeholder="Activity name"
               className="flex-1 h-[48px]"
+            />
+          </View>
+
+          {/* Row 1.5: Activity Location */}
+          <View>
+            <ActivityLocationSelector
+              value={activityLocation}
+              onChange={setActivityLocation}
             />
           </View>
 
@@ -149,7 +168,7 @@ export default function CreateActivityPlanScreen() {
 
           {/* Route Selector */}
           <RouteSelector
-            activityType={activityType}
+            activityCategory={activityCategory}
             selectedRouteId={routeId}
             onSelectRoute={setRouteId}
           />

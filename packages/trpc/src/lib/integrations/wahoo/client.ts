@@ -23,6 +23,22 @@ export interface WahooWorkoutData {
   name: string;
   scheduledDate: string; // ISO date string
   externalId: string; // Your planned_activity_id
+  routeId?: number; // Optional route_id to attach to workout
+}
+
+export interface WahooRouteData {
+  file: string; // Base64 encoded FIT file
+  filename: string;
+  externalId: string;
+  providerUpdatedAt: string;
+  name: string;
+  description?: string;
+  workoutTypeFamilyId: number;
+  startLat: number;
+  startLng: number;
+  distance: number; // meters
+  ascent: number; // meters
+  descent?: number; // meters
 }
 
 export interface WahooApiError extends Error {
@@ -95,6 +111,35 @@ export interface WahooWorkoutSummary {
   edited: boolean;
 }
 
+export interface WahooRoute {
+  id: number;
+  user_id: number;
+  name: string;
+  description: string | null;
+  file: {
+    url: string;
+  };
+  workout_type_family_id: number;
+  external_id: string;
+  provider_updated_at: string;
+  deleted: boolean;
+  start_lat: number;
+  start_lng: number;
+  distance: number;
+  ascent: number;
+  descent: number;
+  updated_at: string;
+  created_at: string;
+}
+
+/**
+ * Check if activity type supports routes in Wahoo
+ * Only outdoor cycling and outdoor running support routes
+ */
+export function supportsRoutes(activityType: string): boolean {
+  return activityType === "outdoor_bike" || activityType === "outdoor_run";
+}
+
 export class WahooClient {
   private accessToken: string;
   private refreshToken?: string;
@@ -136,7 +181,7 @@ export class WahooClient {
    * @returns Full WahooWorkout object (with id, name, starts, etc.)
    */
   async createWorkout(workoutData: WahooWorkoutData): Promise<WahooWorkout> {
-    const body = {
+    const body: any = {
       workout: {
         plan_id: workoutData.planId,
         name: workoutData.name,
@@ -144,6 +189,11 @@ export class WahooClient {
         external_id: workoutData.externalId,
       },
     };
+
+    // Add route_id if provided
+    if (workoutData.routeId) {
+      body.workout.route_id = workoutData.routeId;
+    }
 
     const response = await this.makeRequest<WahooWorkout>("/v1/workouts", {
       method: "POST",
@@ -227,6 +277,75 @@ export class WahooClient {
         method: "GET",
       },
     );
+  }
+
+  /**
+   * Create a route in Wahoo's library
+   * Routes contain GPS data and can be attached to workouts
+   */
+  async createRoute(routeData: WahooRouteData): Promise<WahooRoute> {
+    const formData = new URLSearchParams();
+    formData.append("route[file]", routeData.file);
+    formData.append("route[filename]", routeData.filename);
+    formData.append("route[external_id]", routeData.externalId);
+    formData.append("route[provider_updated_at]", routeData.providerUpdatedAt);
+    formData.append("route[name]", routeData.name);
+    if (routeData.description) {
+      formData.append("route[description]", routeData.description);
+    }
+    formData.append(
+      "route[workout_type_family_id]",
+      routeData.workoutTypeFamilyId.toString(),
+    );
+    formData.append("route[start_lat]", routeData.startLat.toString());
+    formData.append("route[start_lng]", routeData.startLng.toString());
+    formData.append("route[distance]", routeData.distance.toString());
+    formData.append("route[ascent]", routeData.ascent.toString());
+    if (routeData.descent !== undefined) {
+      formData.append("route[descent]", routeData.descent.toString());
+    }
+
+    const response = await this.makeRequest<WahooRoute>("/v1/routes", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: formData.toString(),
+    });
+
+    return response;
+  }
+
+  /**
+   * Get a route by ID
+   */
+  async getRoute(routeId: string): Promise<WahooRoute> {
+    return await this.makeRequest<WahooRoute>(`/v1/routes/${routeId}`, {
+      method: "GET",
+    });
+  }
+
+  /**
+   * Get all routes, optionally filtered by external_id
+   */
+  async getRoutes(externalId?: string): Promise<WahooRoute[]> {
+    const params = externalId
+      ? `?external_id=${encodeURIComponent(externalId)}`
+      : "";
+    return await this.makeRequest<WahooRoute[]>(`/v1/routes${params}`, {
+      method: "GET",
+    });
+  }
+
+  /**
+   * Delete a route from Wahoo's library
+   */
+  async deleteRoute(routeId: string): Promise<{ success: boolean }> {
+    await this.makeRequest(`/v1/routes/${routeId}`, {
+      method: "DELETE",
+    });
+
+    return { success: true };
   }
 
   /**

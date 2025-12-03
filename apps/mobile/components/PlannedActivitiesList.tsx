@@ -28,14 +28,14 @@ const mockPlannedActivities = [
     id: "1",
     name: "Morning Run",
     description: "Easy 5K run to start the day",
-    activity_type: "outdoor_run",
+    activity_category: "outdoor_run",
     scheduled_date: new Date().toISOString(),
     estimated_duration: 30,
     estimated_tss: 35,
     plan: {
       id: "plan-1",
       name: "Morning Run",
-      activity_type: "outdoor_run",
+      activity_category: "outdoor_run",
       structure: {
         version: "1.0",
         steps: [
@@ -134,7 +134,7 @@ export function PlannedActivitiesList({
   // Handle planned activity selection for follow along mode
   const handleFollowAlong = (activity: any) => {
     const payload: ActivityPayload = {
-      type: activity.activity_type,
+      type: activity.activity_category,
       plannedActivityId: activity.id,
       plan: activity.plan,
     };
@@ -145,7 +145,7 @@ export function PlannedActivitiesList({
   // Handle planned activity selection for record mode
   const handleRecord = (activity: any) => {
     const payload: ActivityPayload = {
-      type: activity.activity_type,
+      type: activity.activity_category,
       plannedActivityId: activity.id,
       plan: activity.plan,
     };
@@ -215,7 +215,7 @@ function PlannedActivityCard({
   onRecord,
 }: PlannedActivityCardProps) {
   const config =
-    ACTIVITY_CONFIGS[activity.activity_type] || ACTIVITY_CONFIGS.other;
+    ACTIVITY_CONFIGS[activity.activity_category] || ACTIVITY_CONFIGS.other;
 
   // Format the scheduled date
   const formatDate = (dateString: string) => {

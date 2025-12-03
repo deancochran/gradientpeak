@@ -5,17 +5,17 @@ import { trpc } from "@/lib/trpc";
 import { decodePolyline } from "@repo/core";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
-    Calendar,
-    Edit,
-    MapPin,
-    Trash2,
-    TrendingDown,
-    TrendingUp,
+  Calendar,
+  Edit,
+  MapPin,
+  Trash2,
+  TrendingDown,
+  TrendingUp,
 } from "lucide-react-native";
 import { Alert, ScrollView, View } from "react-native";
 import MapView, { Polyline, PROVIDER_GOOGLE } from "react-native-maps";
 
-const ACTIVITY_TYPE_LABELS: Record<string, string> = {
+const ACTIVITY_CATEGORY_LABELS: Record<string, string> = {
   outdoor_run: "🏃 Outdoor Run",
   outdoor_bike: "🚴 Outdoor Bike",
   indoor_treadmill: "🏃 Indoor Treadmill",
@@ -100,10 +100,10 @@ export default function RouteDetailScreen() {
               style={{ flex: 1 }}
               provider={PROVIDER_GOOGLE}
               initialRegion={{
-                latitude: coordinates[Math.floor(coordinates.length / 2)]
-                  .latitude,
-                longitude: coordinates[Math.floor(coordinates.length / 2)]
-                  .longitude,
+                latitude:
+                  coordinates[Math.floor(coordinates.length / 2)].latitude,
+                longitude:
+                  coordinates[Math.floor(coordinates.length / 2)].longitude,
                 latitudeDelta: 0.05,
                 longitudeDelta: 0.05,
               }}
@@ -122,14 +122,17 @@ export default function RouteDetailScreen() {
           <View>
             <Text className="text-2xl font-bold mb-2">{route.name}</Text>
             <Text className="text-base text-muted-foreground">
-              {ACTIVITY_TYPE_LABELS[route.activity_type] || route.activity_type}
+              {ACTIVITY_CATEGORY_LABELS[route.activity_category] ||
+                route.activity_category}
             </Text>
           </View>
 
           {/* Stats Card */}
           <Card>
             <CardContent className="p-4">
-              <Text className="text-sm font-semibold mb-3">Route Statistics</Text>
+              <Text className="text-sm font-semibold mb-3">
+                Route Statistics
+              </Text>
 
               <View className="gap-3">
                 <View className="flex-row items-center justify-between">
@@ -146,7 +149,9 @@ export default function RouteDetailScreen() {
                   <View className="flex-row items-center justify-between">
                     <View className="flex-row items-center gap-2">
                       <TrendingUp size={20} className="text-green-600" />
-                      <Text className="text-muted-foreground">Elevation Gain</Text>
+                      <Text className="text-muted-foreground">
+                        Elevation Gain
+                      </Text>
                     </View>
                     <Text className="font-semibold">{route.total_ascent}m</Text>
                   </View>
@@ -156,9 +161,13 @@ export default function RouteDetailScreen() {
                   <View className="flex-row items-center justify-between">
                     <View className="flex-row items-center gap-2">
                       <TrendingDown size={20} className="text-red-600" />
-                      <Text className="text-muted-foreground">Elevation Loss</Text>
+                      <Text className="text-muted-foreground">
+                        Elevation Loss
+                      </Text>
                     </View>
-                    <Text className="font-semibold">{route.total_descent}m</Text>
+                    <Text className="font-semibold">
+                      {route.total_descent}m
+                    </Text>
                   </View>
                 )}
 
@@ -180,7 +189,9 @@ export default function RouteDetailScreen() {
             <Card>
               <CardContent className="p-4">
                 <Text className="text-sm font-semibold mb-2">Description</Text>
-                <Text className="text-muted-foreground">{route.description}</Text>
+                <Text className="text-muted-foreground">
+                  {route.description}
+                </Text>
               </CardContent>
             </Card>
           )}

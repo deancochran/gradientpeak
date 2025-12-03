@@ -2,13 +2,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import {
-    Activity,
-    Bike,
-    Clock,
-    Dumbbell,
-    Footprints,
-    User,
-    Waves,
+  Activity,
+  Bike,
+  Clock,
+  Dumbbell,
+  Footprints,
+  User,
+  Waves,
 } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
 
@@ -17,7 +17,7 @@ interface PlanCardProps {
     id: string;
     name: string;
     description?: string;
-    activity_type: string;
+    activity_category: string;
     estimated_duration?: number;
     estimated_tss?: number;
     created_by?: string;
@@ -61,7 +61,7 @@ export function PlanCard({
   showOwnership = true,
 }: PlanCardProps) {
   const config =
-    ACTIVITY_CONFIGS[plan.activity_type as keyof typeof ACTIVITY_CONFIGS] ||
+    ACTIVITY_CONFIGS[plan.activity_category as keyof typeof ACTIVITY_CONFIGS] ||
     ACTIVITY_CONFIGS.other;
   const isUserPlan = plan.created_by && showOwnership;
 

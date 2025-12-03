@@ -29,13 +29,14 @@ export const durationUnitEnum = z.enum([
 
 export const durationTypeEnum = z.enum(["time", "distance", "repetitions"]);
 
-export const activityTypeEnum = z.enum([
-  "outdoor_run",
-  "outdoor_bike",
-  "indoor_treadmill",
-  "indoor_bike_trainer",
-  "indoor_strength",
-  "indoor_swim",
+export const activityLocationEnum = z.enum(["outdoor", "indoor"]);
+
+export const activityCategoryEnum = z.enum([
+  "run",
+  "bike",
+  "swim",
+  "strength",
+  "other",
 ]);
 
 // ==============================
@@ -278,7 +279,8 @@ export const activityPlanSchema = z
       .string()
       .max(1000, { message: "Description cannot exceed 1000 characters" })
       .optional(),
-    activity_type: activityTypeEnum,
+    activity_location: activityLocationEnum,
+    activity_category: activityCategoryEnum,
     estimated_duration: z
       .number()
       .int({ message: "Duration must be a whole number" })
@@ -612,14 +614,10 @@ export function calculateTotalDuration(steps: FlattenedStep[]): number {
 
 /**
  * Check if an activity type can have a route
+ * Note: All activity types can optionally have a route attached
  */
 export function canHaveRoute(activityType: string): boolean {
-  return [
-    "outdoor_run",
-    "outdoor_bike",
-    "indoor_treadmill",
-    "indoor_bike_trainer",
-  ].includes(activityType);
+  return true; // Routes are optional for all activity types
 }
 
 /**

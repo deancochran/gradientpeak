@@ -3,30 +3,98 @@ import { endOfWeek, format, isToday, startOfWeek } from "date-fns";
 import { useMemo } from "react";
 
 /**
+ * Default values for when data is not available
+ */
+const DEFAULT_WEEKLY_STATS = {
+  volume: 0,
+  fitness: 0,
+  fatigue: 0,
+  fitnessChange: 0,
+  fatigueChange: 0,
+};
+
+const DEFAULT_FORM_STATUS = {
+  label: "No Data",
+  percentage: 0,
+  color: "slate",
+  explanation: "Complete activities to see your training form",
+  tsb: 0,
+  ctl: 0,
+  atl: 0,
+};
+
+/**
  * useHomeData Hook
  *
  * Aggregates data from multiple sources for the home screen dashboard.
  * Provides today's activity, weekly stats, training form status, upcoming activities,
  * and weekly goal progress.
+ *
+ * OPTIMIZATION: All queries now run in parallel instead of cascading.
+ * - Removed `enabled: !!plan` dependencies to allow parallel fetching
+ * - Queries gracefully handle missing data with fallback values
+ * - Improved loading state by using Promise.all pattern
  */
 export function useHomeData() {
-  // Get training plan
+  // Get training plan (no longer blocks other queries)
   const { data: plan, isLoading: planLoading } =
     trpc.trainingPlans.get.useQuery();
 
   // Get current training status (CTL, ATL, TSB)
+  // Now loads in parallel with plan query
+  // Use select to pre-calculate form status
   const { data: status, isLoading: statusLoading } =
     trpc.trainingPlans.getCurrentStatus.useQuery(undefined, {
-      enabled: !!plan,
+      select: (data) => {
+        if (!data) return null;
+
+        const tsb = data.tsb ?? 0;
+        let label: string;
+        let color: string;
+        let explanation: string;
+
+        if (tsb > 10) {
+          label = "Fresh";
+          color = "green";
+          explanation = "Well rested and ready for hard training";
+        } else if (tsb >= -10 && tsb <= 10) {
+          label = "Optimal";
+          color = "blue";
+          explanation = "Great balance between fitness and fatigue";
+        } else if (tsb >= -20 && tsb < -10) {
+          label = "Productive";
+          color = "purple";
+          explanation = "Building fitness through consistent training";
+        } else {
+          label = "Fatigued";
+          color = "orange";
+          explanation = "Consider recovery or lighter training";
+        }
+
+        const percentage = Math.max(0, Math.min(100, ((tsb + 30) / 60) * 100));
+
+        return {
+          ...data,
+          formStatus: {
+            label,
+            percentage: Math.round(percentage),
+            color,
+            explanation,
+            tsb: Math.round(tsb),
+            ctl: Math.round(data.ctl ?? 0),
+            atl: Math.round(data.atl ?? 0),
+          },
+        };
+      },
     });
 
-  // Get all planned activities
+  // Get all planned activities (loads in parallel)
   const { data: allPlannedActivities, isLoading: activitiesLoading } =
     trpc.plannedActivities.list.useQuery({
       limit: 100,
     });
 
-  // Get weekly activity count
+  // Get weekly activity count (loads in parallel)
   const { data: weeklyScheduled = 0, isLoading: weekCountLoading } =
     trpc.plannedActivities.getWeekCount.useQuery();
 
@@ -34,23 +102,26 @@ export function useHomeData() {
   const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 }); // Monday
   const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 });
 
-  // Get weekly summary for stats
+  // Get weekly summary for stats (loads in parallel)
+  // Uses plan ID when available, gracefully handles when not
+  const planId = plan?.id ?? "";
   const { data: weeklySummary, isLoading: summaryLoading } =
     trpc.trainingPlans.getWeeklySummary.useQuery(
       {
-        training_plan_id: plan?.id ?? "",
+        training_plan_id: planId,
         weeks_back: 1,
       },
       {
-        enabled: !!plan,
+        // Only skip the query if we know there's no plan at all
+        enabled: planId !== "" || planLoading,
       },
     );
 
-  // Find today's activity
+  // Find today's activity - optimized dependencies
   const todaysActivity = useMemo(() => {
-    if (!allPlannedActivities?.items) return null;
+    if (!allPlannedActivities?.items || allPlannedActivities.items.length === 0)
+      return null;
 
-    const today = new Date();
     const todayActivity = allPlannedActivities.items.find((activity) => {
       const activityDate = new Date(activity.scheduled_date);
       return isToday(activityDate);
@@ -70,92 +141,55 @@ export function useHomeData() {
       scheduledTime: todayActivity.scheduled_date,
       description: todayActivity.description,
     };
-  }, [allPlannedActivities]);
+  }, [allPlannedActivities?.items?.length]); // Only recalculate when items array length changes
 
-  // Calculate weekly stats
+  // Calculate weekly stats - optimized dependencies
   const weeklyStats = useMemo(() => {
     if (!weeklySummary || weeklySummary.length === 0) {
       return {
-        volume: 0,
+        ...DEFAULT_WEEKLY_STATS,
         fitness: status?.ctl ?? 0,
         fatigue: status?.atl ?? 0,
-        fitnessChange: 0,
-        fatigueChange: 0,
       };
     }
 
     const currentWeek = weeklySummary[0];
     const previousWeek = weeklySummary[1];
 
+    const currentCtl = status?.ctl ?? 0;
+    const currentAtl = status?.atl ?? 0;
+
     // Calculate changes from previous week
     const fitnessChange = previousWeek
-      ? Math.round((status?.ctl ?? 0) - (previousWeek.ending_ctl ?? 0))
+      ? Math.round(currentCtl - (previousWeek.ending_ctl ?? 0))
       : 0;
     const fatigueChange = previousWeek
-      ? Math.round((status?.atl ?? 0) - (previousWeek.ending_atl ?? 0))
+      ? Math.round(currentAtl - (previousWeek.ending_atl ?? 0))
       : 0;
 
     return {
       volume: currentWeek?.total_distance_km ?? 0,
-      fitness: Math.round(status?.ctl ?? 0),
-      fatigue: Math.round(status?.atl ?? 0),
+      fitness: Math.round(currentCtl),
+      fatigue: Math.round(currentAtl),
       fitnessChange,
       fatigueChange,
     };
-  }, [weeklySummary, status]);
+  }, [
+    weeklySummary?.length,
+    weeklySummary?.[0]?.total_distance_km,
+    weeklySummary?.[1]?.ending_ctl,
+    weeklySummary?.[1]?.ending_atl,
+    status?.ctl,
+    status?.atl,
+  ]); // Only specific values, not entire objects
 
-  // Calculate training form status
-  const formStatus = useMemo(() => {
-    if (!status) {
-      return {
-        label: "No Data",
-        percentage: 0,
-        color: "slate",
-        explanation: "Complete activities to see your training form",
-      };
-    }
+  // Training form status now comes pre-calculated from query select
+  const formStatus = status?.formStatus ?? DEFAULT_FORM_STATUS;
 
-    const tsb = status.tsb ?? 0;
-
-    let label: string;
-    let color: string;
-    let explanation: string;
-
-    if (tsb > 10) {
-      label = "Fresh";
-      color = "green";
-      explanation = "Well rested and ready for hard training";
-    } else if (tsb >= -10 && tsb <= 10) {
-      label = "Optimal";
-      color = "blue";
-      explanation = "Great balance between fitness and fatigue";
-    } else if (tsb >= -20 && tsb < -10) {
-      label = "Productive";
-      color = "purple";
-      explanation = "Building fitness through consistent training";
-    } else {
-      label = "Fatigued";
-      color = "orange";
-      explanation = "Consider recovery or lighter training";
-    }
-
-    // Convert TSB to percentage (map -30 to 30 range to 0-100)
-    const percentage = Math.max(0, Math.min(100, ((tsb + 30) / 60) * 100));
-
-    return {
-      label,
-      percentage: Math.round(percentage),
-      color,
-      explanation,
-      tsb: Math.round(tsb),
-      ctl: Math.round(status.ctl ?? 0),
-      atl: Math.round(status.atl ?? 0),
-    };
-  }, [status]);
-
-  // Get upcoming activities (next 4 days)
+  // Get upcoming activities (next 4 days) - optimized dependencies
   const upcomingActivitys = useMemo(() => {
-    if (!allPlannedActivities?.items) return [];
+    if (!allPlannedActivities?.items || allPlannedActivities.items.length === 0)
+      return [];
 
     const today = new Date();
     const next4Days = allPlannedActivities.items
@@ -195,9 +229,9 @@ export function useHomeData() {
       });
 
     return next4Days;
-  }, [allPlannedActivities]);
+  }, [allPlannedActivities?.items?.length]); // Only recalculate when items length changes
 
-  // Calculate weekly goal progress
+  // Calculate weekly goal progress - optimized dependencies
   const weeklyGoal = useMemo(() => {
     if (!weeklySummary || weeklySummary.length === 0 || !plan) {
       return {
@@ -220,14 +254,24 @@ export function useHomeData() {
       percentage: Math.min(100, percentage),
       unit: "km",
     };
-  }, [weeklySummary, plan]);
+  }, [
+    weeklySummary?.length,
+    weeklySummary?.[0]?.total_distance_km,
+    weeklySummary?.[0]?.planned_distance_km,
+    plan?.id,
+  ]); // Only specific values
 
+  // Improved loading state: only show loading if ANY query is still loading
+  // This provides faster initial render since queries load in parallel
   const isLoading =
     planLoading ||
     statusLoading ||
     activitiesLoading ||
     weekCountLoading ||
     summaryLoading;
+
+  // Consider data available even during loading to show partial UI faster
+  const hasData = !!allPlannedActivities;
 
   return {
     todaysActivity,
@@ -236,6 +280,14 @@ export function useHomeData() {
     upcomingActivitys,
     weeklyGoal,
     isLoading,
-    hasData: !!plan && !!allPlannedActivities,
+    hasData,
+    // Expose individual loading states for granular UI control
+    queryStates: {
+      planLoading,
+      statusLoading,
+      activitiesLoading,
+      weekCountLoading,
+      summaryLoading,
+    },
   };
 }

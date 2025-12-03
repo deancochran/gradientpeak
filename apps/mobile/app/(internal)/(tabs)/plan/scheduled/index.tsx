@@ -99,7 +99,8 @@ export default function ScheduledScreen() {
               activity={{
                 id: activity.id,
                 name: activity.activity_plan?.name || "Unnamed Activity",
-                activityType: activity.activity_plan?.activity_type || "other",
+                activityType:
+                  activity.activity_plan?.activity_category || "other",
                 duration: activity.activity_plan?.estimated_duration || 0,
                 tss: activity.activity_plan?.estimated_tss || 0,
                 scheduledDate: activity.scheduled_date,

@@ -6,6 +6,7 @@ import type {
 import type { PublicIntegrationsInsert } from "@repo/supabase";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { WahooSyncService } from "../lib/integrations/wahoo/sync-service";
 import { createTRPCRouter, protectedProcedure, publicProcedure } from "../trpc";
 
 // Input schemas using supazod types
@@ -314,6 +315,77 @@ export const integrationsRouter = createTRPCRouter({
 
       return { success: true };
     }),
+
+  // ==============================
+  // Wahoo Sync Endpoints
+  // ==============================
+
+  // Sync a planned activity to Wahoo
+  wahoo: createTRPCRouter({
+    syncPlannedActivity: protectedProcedure
+      .input(
+        z.object({
+          plannedActivityId: z.string().uuid(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        const syncService = new WahooSyncService(ctx.supabase);
+        const result = await syncService.syncPlannedActivity(
+          input.plannedActivityId,
+          ctx.session.user.id,
+        );
+
+        if (!result.success) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: result.error || "Failed to sync to Wahoo",
+          });
+        }
+
+        return result;
+      }),
+
+    // Unsync (remove) a planned activity from Wahoo
+    unsyncPlannedActivity: protectedProcedure
+      .input(
+        z.object({
+          plannedActivityId: z.string().uuid(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        const syncService = new WahooSyncService(ctx.supabase);
+        const result = await syncService.unsyncPlannedActivity(
+          input.plannedActivityId,
+          ctx.session.user.id,
+        );
+
+        if (!result.success) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: result.error || "Failed to unsync from Wahoo",
+          });
+        }
+
+        return result;
+      }),
+
+    // Get sync status for a planned activity
+    getSyncStatus: protectedProcedure
+      .input(
+        z.object({
+          plannedActivityId: z.string().uuid(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        const syncService = new WahooSyncService(ctx.supabase);
+        const status = await syncService.getSyncStatus(
+          input.plannedActivityId,
+          ctx.session.user.id,
+        );
+
+        return status;
+      }),
+  }),
 });
 
 // Helper functions (will be implemented in separate files)

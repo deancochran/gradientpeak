@@ -2,117 +2,25 @@ import { useRouter } from "expo-router";
 import { useState } from "react";
 import { ScrollView, View } from "react-native";
 
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
-
+import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import {
+  ProfileSection,
+  SettingItem,
+  SettingItemSeparator,
+  SettingsGroup,
+  TrainingZonesSection,
+} from "@/components/settings";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useTheme } from "@/lib/stores/theme-store";
 import { supabase } from "@/lib/supabase/client";
-import { trpc } from "@/lib/trpc";
 
-const profileSchema = z.object({
-  username: z
-    .string()
-    .min(8, {
-      message: "Username must be at least 8 characters.",
-    })
-    .optional()
-    .or(z.literal("")),
-  weightKg: z
-    .number()
-    .min(30, {
-      message: "Weight must be at least 30kg.",
-    })
-    .max(300, {
-      message: "Weight must be less than 300kg.",
-    })
-    .optional()
-    .or(z.literal("")),
-  ftp: z
-    .number()
-    .min(50, {
-      message: "FTP must be at least 50 watts.",
-    })
-    .max(1000, {
-      message: "FTP must be less than 1000 watts.",
-    })
-    .optional()
-    .or(z.literal("")),
-  thresholdHr: z
-    .number()
-    .min(100, {
-      message: "Threshold HR must be at least 100 bpm.",
-    })
-    .max(250, {
-      message: "Threshold HR must be less than 250 bpm.",
-    })
-    .optional()
-    .or(z.literal("")),
-});
-
-type ProfileFormValues = z.infer<typeof profileSchema>;
-
-export default function SettingsScreen() {
+function SettingsScreen() {
   const router = useRouter();
   const { user, profile, refreshProfile } = useAuth();
   const { theme, setTheme } = useTheme();
-  const [isEditing, setIsEditing] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-
-  const updateProfileMutation = trpc.profiles.update.useMutation();
-
-  const form = useForm<ProfileFormValues>({
-    resolver: zodResolver(profileSchema),
-    defaultValues: {
-      username: profile?.username || "",
-      weightKg: profile?.weight_kg || undefined,
-      ftp: profile?.ftp || undefined,
-      thresholdHr: profile?.threshold_hr || undefined,
-    },
-  });
-
-  const onSubmit = async (data: ProfileFormValues) => {
-    try {
-      await updateProfileMutation.mutateAsync({
-        username: data.username || undefined,
-        weight_kg: data.weightKg || undefined,
-        ftp: data.ftp || undefined,
-        threshold_hr: data.thresholdHr || undefined,
-      });
-
-      await refreshProfile();
-      setIsEditing(false);
-    } catch (error) {
-      console.error("Failed to update profile:", error);
-    }
-  };
-
-  const onCancel = () => {
-    form.reset();
-    setIsEditing(false);
-  };
-
   const [signoutLoading, setSignoutLoading] = useState(false);
 
   const handleSignOut = async () => {
@@ -138,477 +46,165 @@ export default function SettingsScreen() {
         <Text variant="h2" className="text-foreground">
           Settings
         </Text>
-        {!isEditing ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onPress={() => setIsEditing(true)}
-            testID="edit-profile-button"
-          >
-            <Text>Edit Profile</Text>
-          </Button>
-        ) : (
-          <View className="flex-row gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onPress={onCancel}
-              testID="cancel-button"
-            >
-              <Text>Cancel</Text>
-            </Button>
-            <Button
-              variant="default"
-              size="sm"
-              onPress={form.handleSubmit(onSubmit)}
-              disabled={updateProfileMutation.isPending}
-              testID="save-button"
-            >
-              <Text>
-                {updateProfileMutation.isPending ? "Saving..." : "Save"}
-              </Text>
-            </Button>
-          </View>
-        )}
       </View>
 
-      {/* User Profile Card */}
-      <Card className="bg-card border-border">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-card-foreground">
-            Profile Information
-          </CardTitle>
-          <CardDescription className="text-muted-foreground">
-            Manage your personal information and training metrics
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="gap-6">
-          <Form {...form}>
-            <View className="gap-4">
-              <FormField
-                control={form.control}
-                name="username"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Username</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="Enter username"
-                        value={field.value || ""}
-                        onChangeText={field.onChange}
-                        editable={isEditing}
-                        testID="username-input"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+      {/* Profile Section */}
+      <ProfileSection
+        profile={profile}
+        onRefreshProfile={() => refreshProfile().then(() => {})}
+      />
 
-              <FormField
-                control={form.control}
-                name="weightKg"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Weight (kg)</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="Enter weight"
-                        value={field.value ? field.value.toString() : ""}
-                        onChangeText={(text) => {
-                          const num = text ? Number(text) : undefined;
-                          field.onChange(num);
-                        }}
-                        keyboardType="numeric"
-                        editable={isEditing}
-                        testID="weight-input"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+      {/* Integrations */}
+      <SettingsGroup
+        title="Integrations"
+        description="Connect your fitness tracking platforms"
+        testID="integrations-section"
+      >
+        <SettingItem
+          type="button"
+          label="Third-Party Services"
+          description="Sync activities from Strava, Garmin, and more"
+          buttonLabel="Manage"
+          variant="outline"
+          onPress={() =>
+            router.push("/(internal)/(tabs)/settings/integrations" as any)
+          }
+          testID="integrations"
+        />
+      </SettingsGroup>
 
-              <FormField
-                control={form.control}
-                name="ftp"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>FTP (watts)</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="Enter FTP"
-                        value={field.value ? field.value.toString() : ""}
-                        onChangeText={(text) => {
-                          const num = text ? Number(text) : undefined;
-                          field.onChange(num);
-                        }}
-                        keyboardType="numeric"
-                        editable={isEditing}
-                        testID="ftp-input"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+      {/* Training Zones */}
+      <TrainingZonesSection
+        profile={profile}
+        onUpdateZones={() => {
+          // Scroll to profile section would go here if needed
+          console.log("Scroll to profile for zone configuration");
+        }}
+      />
 
-              <FormField
-                control={form.control}
-                name="thresholdHr"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Threshold HR (bpm)</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="Enter threshold HR"
-                        value={field.value ? field.value.toString() : ""}
-                        onChangeText={(text) => {
-                          const num = text ? Number(text) : undefined;
-                          field.onChange(num);
-                        }}
-                        keyboardType="numeric"
-                        editable={isEditing}
-                        testID="threshold-hr-input"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </View>
-          </Form>
-        </CardContent>
-      </Card>
+      {/* App Settings */}
+      <SettingsGroup
+        title="App Settings"
+        description="Customize your app experience"
+        testID="app-settings-section"
+      >
+        <SettingItem
+          type="toggle"
+          label="Notifications"
+          description="Receive activity reminders and updates"
+          value={notificationsEnabled}
+          onValueChange={setNotificationsEnabled}
+          testID="notifications"
+        />
 
-      {/* Integrations Card */}
-      <Card className="bg-card border-border">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-card-foreground">Integrations</CardTitle>
-          <CardDescription className="text-muted-foreground">
-            Connect your fitness tracking platforms
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="gap-4">
-          <View className="flex-row items-center justify-between">
-            <View className="flex-1">
-              <Text className="text-foreground font-medium">
-                Third-Party Services
-              </Text>
-              <Text className="text-muted-foreground text-sm">
-                Sync activities from Strava, Garmin, and more
-              </Text>
-            </View>
-            <Button
-              variant="outline"
-              size="sm"
-              onPress={() =>
-                router.push("/(internal)/(tabs)/settings/integrations")
-              }
-              testID="integrations-button"
-            >
-              <Text>Manage</Text>
-            </Button>
-          </View>
-        </CardContent>
-      </Card>
+        <SettingItemSeparator />
 
-      {/* Training Zones Card */}
-      <Card className="bg-card border-border">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-card-foreground">Training Zones</CardTitle>
-          <CardDescription className="text-muted-foreground">
-            View your power and heart rate zones based on FTP and threshold HR
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="gap-4">
-          {profile?.ftp ? (
-            <View className="gap-3">
-              <View className="flex-row items-center justify-between">
-                <View>
-                  <Text className="text-foreground font-medium">FTP</Text>
-                  <Text className="text-muted-foreground text-sm">
-                    {profile.ftp} watts
-                  </Text>
-                </View>
-                <Text className="text-foreground text-sm">Power Zones</Text>
-              </View>
-              <View className="gap-2">
-                <View className="flex-row items-center justify-between text-xs">
-                  <Text className="text-muted-foreground">Recovery</Text>
-                  <Text className="text-foreground">
-                    {Math.round(profile.ftp * 0.55)}-
-                    {Math.round(profile.ftp * 0.75)}W
-                  </Text>
-                </View>
-                <View className="flex-row items-center justify-between text-xs">
-                  <Text className="text-muted-foreground">Tempo</Text>
-                  <Text className="text-foreground">
-                    {Math.round(profile.ftp * 0.75)}-
-                    {Math.round(profile.ftp * 0.9)}W
-                  </Text>
-                </View>
-                <View className="flex-row items-center justify-between text-xs">
-                  <Text className="text-muted-foreground">Threshold</Text>
-                  <Text className="text-foreground">
-                    {Math.round(profile.ftp * 0.9)}-
-                    {Math.round(profile.ftp * 1.05)}W
-                  </Text>
-                </View>
-                <View className="flex-row items-center justify-between text-xs">
-                  <Text className="text-muted-foreground">VO2 Max</Text>
-                  <Text className="text-foreground">
-                    {Math.round(profile.ftp * 1.05)}-
-                    {Math.round(profile.ftp * 1.2)}W
-                  </Text>
-                </View>
-                <View className="flex-row items-center justify-between text-xs">
-                  <Text className="text-muted-foreground">Anaerobic</Text>
-                  <Text className="text-foreground">
-                    {Math.round(profile.ftp * 1.2)}+W
-                  </Text>
-                </View>
-              </View>
-            </View>
-          ) : (
-            <Text className="text-muted-foreground text-sm">
-              Set your FTP in profile settings to see power zones
-            </Text>
-          )}
+        <SettingItem
+          type="toggle"
+          label="Dark Mode"
+          description="Switch between light and dark themes"
+          value={theme === "dark"}
+          onValueChange={(isChecked) => setTheme(isChecked ? "dark" : "light")}
+          testID="dark-mode"
+        />
 
-          {profile?.threshold_hr ? (
-            <View className="gap-3">
-              <Separator className="bg-border" />
-              <View className="flex-row items-center justify-between">
-                <View>
-                  <Text className="text-foreground font-medium">
-                    Threshold HR
-                  </Text>
-                  <Text className="text-muted-foreground text-sm">
-                    {profile.threshold_hr} bpm
-                  </Text>
-                </View>
-                <Text className="text-foreground text-sm">
-                  Heart Rate Zones
-                </Text>
-              </View>
-              <View className="gap-2">
-                <View className="flex-row items-center justify-between text-xs">
-                  <Text className="text-muted-foreground">Recovery</Text>
-                  <Text className="text-foreground">
-                    {Math.round(profile.threshold_hr * 0.68)}-
-                    {Math.round(profile.threshold_hr * 0.83)} bpm
-                  </Text>
-                </View>
-                <View className="flex-row items-center justify-between text-xs">
-                  <Text className="text-muted-foreground">Tempo</Text>
-                  <Text className="text-foreground">
-                    {Math.round(profile.threshold_hr * 0.83)}-
-                    {Math.round(profile.threshold_hr * 0.94)} bpm
-                  </Text>
-                </View>
-                <View className="flex-row items-center justify-between text-xs">
-                  <Text className="text-muted-foreground">Threshold</Text>
-                  <Text className="text-foreground">
-                    {Math.round(profile.threshold_hr * 0.94)}-
-                    {Math.round(profile.threshold_hr * 1.05)} bpm
-                  </Text>
-                </View>
-                <View className="flex-row items-center justify-between text-xs">
-                  <Text className="text-muted-foreground">VO2 Max</Text>
-                  <Text className="text-foreground">
-                    {Math.round(profile.threshold_hr * 1.05)}+ bpm
-                  </Text>
-                </View>
-              </View>
-            </View>
-          ) : (
-            <View>
-              {!profile?.ftp && <Separator className="bg-border my-4" />}
-              <Text className="text-muted-foreground text-sm">
-                Set your threshold HR in profile settings to see heart rate
-                zones
-              </Text>
-            </View>
-          )}
+        <SettingItemSeparator />
 
-          <Separator className="bg-border" />
-          <Button
-            variant="outline"
-            onPress={() => {
-              // Scroll to profile section
-              const profileCard = "profile-card"; // Would need to add testID to profile card
-              console.log("Scroll to profile for zone configuration");
-            }}
-            className="w-full"
-          >
-            <Text>Update Zones in Profile</Text>
-          </Button>
-        </CardContent>
-      </Card>
+        <SettingItem
+          type="toggle"
+          label="Auto Sync"
+          description="Automatically sync activities when online"
+          value={true}
+          onValueChange={() => {}}
+          disabled
+          testID="auto-sync"
+        />
+      </SettingsGroup>
 
-      {/* App Settings Card */}
-      <Card className="bg-card border-border">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-card-foreground">App Settings</CardTitle>
-          <CardDescription className="text-muted-foreground">
-            Customize your app experience
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="gap-4">
-          <View className="flex-row items-center justify-between">
-            <View className="flex-1">
-              <Text className="text-foreground font-medium">Notifications</Text>
-              <Text className="text-muted-foreground text-sm">
-                Receive activity reminders and updates
-              </Text>
-            </View>
-            <Switch
-              checked={notificationsEnabled}
-              onCheckedChange={setNotificationsEnabled}
-              testID="notifications-switch"
-            />
-          </View>
+      {/* Account Actions */}
+      <SettingsGroup
+        title="Account Actions"
+        description="Manage your account settings"
+        testID="account-actions-section"
+      >
+        <Button
+          variant="outline"
+          onPress={() => console.log("Change password - not implemented yet")}
+          testID="change-password-button"
+        >
+          <Text>Change Password</Text>
+        </Button>
 
-          <Separator className="bg-border" />
+        <Button
+          variant="outline"
+          onPress={() => console.log("Export data")}
+          testID="export-data-button"
+        >
+          <Text>Export My Data</Text>
+        </Button>
 
-          <View className="flex-row items-center justify-between">
-            <View className="flex-1">
-              <Text className="text-foreground font-medium">Dark Mode</Text>
-              <Text className="text-muted-foreground text-sm">
-                Switch between light and dark themes
-              </Text>
-            </View>
-            <Switch
-              checked={theme === "dark"}
-              onCheckedChange={(isChecked) => {
-                setTheme(isChecked ? "dark" : "light");
-              }}
-              testID="dark-mode-switch"
-            />
-          </View>
+        <SettingItemSeparator />
 
-          <Separator className="bg-border" />
-
-          <View className="flex-row items-center justify-between">
-            <View className="flex-1">
-              <Text className="text-foreground font-medium">Auto Sync</Text>
-              <Text className="text-muted-foreground text-sm">
-                Automatically sync activities when online
-              </Text>
-            </View>
-            <Switch
-              checked={true}
-              onCheckedChange={() => {}}
-              disabled
-              testID="auto-sync-switch"
-            />
-          </View>
-        </CardContent>
-      </Card>
-
-      {/* Account Actions Card */}
-      <Card className="bg-card border-border">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-card-foreground">
-            Account Actions
-          </CardTitle>
-          <CardDescription className="text-muted-foreground">
-            Manage your account settings
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="gap-4">
-          <Button
-            variant="outline"
-            onPress={() => console.log("Change password - not implemented yet")}
-            testID="change-password-button"
-          >
-            <Text>Change Password</Text>
-          </Button>
-
-          <Button
-            variant="outline"
-            onPress={() => console.log("Export data")}
-            testID="export-data-button"
-          >
-            <Text>Export My Data</Text>
-          </Button>
-
-          <Separator className="bg-border" />
-
-          <Button
-            testID="sign-out-button"
-            onPress={handleSignOut}
-            disabled={signoutLoading}
-          >
-            <Text>{signoutLoading ? "Signing out..." : "Sign out"}</Text>
-          </Button>
-        </CardContent>
-      </Card>
+        <Button
+          testID="sign-out-button"
+          onPress={handleSignOut}
+          disabled={signoutLoading}
+        >
+          <Text>{signoutLoading ? "Signing out..." : "Sign out"}</Text>
+        </Button>
+      </SettingsGroup>
 
       {/* App Information */}
-      <Card className="bg-card border-border">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-card-foreground">
-            App Information
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="gap-2">
-          <Text className="text-muted-foreground">Version 1.0.0</Text>
-          <Text className="text-muted-foreground">Build 12345</Text>
-          <Button
-            variant="link"
-            onPress={() => console.log("View licenses")}
-            className="self-start"
-            testID="licenses-button"
-          >
-            <Text className="text-primary">View Licenses</Text>
-          </Button>
-        </CardContent>
-      </Card>
+      <SettingsGroup title="App Information" testID="app-info-section">
+        <Text className="text-muted-foreground">Version 1.0.0</Text>
+        <Text className="text-muted-foreground">Build 12345</Text>
+        <SettingItem
+          type="link"
+          label="Licenses"
+          linkLabel="View Licenses"
+          onPress={() => console.log("View licenses")}
+          testID="licenses"
+        />
+      </SettingsGroup>
 
       {/* Permissions Management */}
-      <Card className="bg-card border-border">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-card-foreground">
-            Permissions Management
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="gap-2">
-          <Button
-            variant="link"
-            onPress={() =>
-              router.push("/(internal)/(tabs)/settings/permissions")
-            }
-            className="self-start"
-            testID="permissions-button"
-          >
-            <Text className="text-primary">Manage Permissions</Text>
-          </Button>
-        </CardContent>
-      </Card>
+      <SettingsGroup
+        title="Permissions Management"
+        testID="permissions-section"
+      >
+        <SettingItem
+          type="link"
+          label="Permissions"
+          linkLabel="Manage Permissions"
+          onPress={() =>
+            router.push("/(internal)/(tabs)/settings/permissions" as any)
+          }
+          testID="permissions"
+        />
+      </SettingsGroup>
 
       {/* Debug Info (Development only) */}
       {__DEV__ && (
-        <Card className="bg-muted border-border">
-          <CardHeader>
-            <CardTitle className="text-card-foreground">
-              Debug Information
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="gap-2">
-            <Text className="text-muted-foreground text-xs">
-              User ID: {user?.id || "None"}
-            </Text>
-            <Text className="text-muted-foreground text-xs">
-              Email: {user?.email || "None"}
-            </Text>
-            <Text className="text-muted-foreground text-xs">
-              Profile ID: {profile?.id || "None"}
-            </Text>
-          </CardContent>
-        </Card>
+        <SettingsGroup title="Debug Information" testID="debug-info-section">
+          <Text className="text-muted-foreground text-xs">
+            User ID: {user?.id || "None"}
+          </Text>
+          <Text className="text-muted-foreground text-xs">
+            Email: {user?.email || "None"}
+          </Text>
+          <Text className="text-muted-foreground text-xs">
+            Profile ID: {profile?.id || "None"}
+          </Text>
+        </SettingsGroup>
       )}
     </ScrollView>
+  );
+}
+
+export default function SettingsScreenWithErrorBoundary() {
+  return (
+    <ErrorBoundary fallback={ScreenErrorFallback}>
+      <SettingsScreen />
+    </ErrorBoundary>
   );
 }

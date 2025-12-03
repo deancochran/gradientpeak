@@ -1,8 +1,8 @@
 import {
-    calculateRouteStats,
-    encodeElevationPolyline,
-    encodePolyline,
-    simplifyCoordinates
+  calculateRouteStats,
+  encodeElevationPolyline,
+  encodePolyline,
+  simplifyCoordinates,
 } from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -13,14 +13,8 @@ const ROUTES_BUCKET = "gpx-routes";
 
 // Input schemas
 const listRoutesSchema = z.object({
-  activityType: z
-    .enum([
-      "outdoor_run",
-      "outdoor_bike",
-      "indoor_treadmill",
-      "indoor_bike_trainer",
-      "all",
-    ])
+  activityCategory: z
+    .enum(["run", "bike", "swim", "strength", "other", "all"])
     .optional(),
   limit: z.number().min(1).max(100).default(20),
   cursor: z.string().optional(),
@@ -29,12 +23,7 @@ const listRoutesSchema = z.object({
 const uploadRouteSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().max(1000).optional(),
-  activityType: z.enum([
-    "outdoor_run",
-    "outdoor_bike",
-    "indoor_treadmill",
-    "indoor_bike_trainer",
-  ]),
+  activityCategory: z.enum(["run", "bike", "swim", "strength", "other"]),
   fileContent: z.string().min(1),
   fileName: z.string(),
   source: z.string().optional(),
@@ -57,7 +46,7 @@ export const routesRouter = createTRPCRouter({
           idx,
           name,
           description,
-          activity_type,
+          activity_category,
           total_distance,
           total_ascent,
           total_descent,
@@ -72,9 +61,9 @@ export const routesRouter = createTRPCRouter({
         .order("id", { ascending: true })
         .limit(limit + 1);
 
-      // Apply activity type filter
-      if (input.activityType && input.activityType !== "all") {
-        query = query.eq("activity_type", input.activityType);
+      // Apply activity category filter
+      if (input.activityCategory && input.activityCategory !== "all") {
+        query = query.eq("activity_category", input.activityCategory);
       }
 
       // Apply cursor
@@ -124,7 +113,7 @@ export const routesRouter = createTRPCRouter({
           idx,
           name,
           description,
-          activity_type,
+          activity_category,
           total_distance,
           total_ascent,
           total_descent,
@@ -165,7 +154,7 @@ export const routesRouter = createTRPCRouter({
           total_distance,
           total_ascent,
           total_descent,
-          activity_type
+          activity_category
         `,
         )
         .eq("id", input.id)
@@ -202,7 +191,7 @@ export const routesRouter = createTRPCRouter({
         totalDistance: routeData.total_distance,
         totalAscent: routeData.total_ascent,
         totalDescent: routeData.total_descent,
-        activityType: routeData.activity_type,
+        activityCategory: routeData.activity_category,
       };
     }),
 
@@ -240,9 +229,7 @@ export const routesRouter = createTRPCRouter({
         // Encode elevation if available
         let elevationPolyline: string | null = null;
         if (simplified.some((coord) => coord.altitude !== undefined)) {
-          const elevations = simplified.map(
-            (coord) => coord.altitude || 0,
-          );
+          const elevations = simplified.map((coord) => coord.altitude || 0);
           elevationPolyline = encodeElevationPolyline(elevations);
         }
 
@@ -273,7 +260,7 @@ export const routesRouter = createTRPCRouter({
             profile_id: ctx.session.user.id,
             name: input.name,
             description: input.description,
-            activity_type: input.activityType,
+            activity_category: input.activityCategory,
             file_path: filePath,
             total_distance: stats.totalDistance,
             total_ascent: stats.totalAscent,
@@ -288,7 +275,7 @@ export const routesRouter = createTRPCRouter({
             idx,
             name,
             description,
-            activity_type,
+            activity_category,
             total_distance,
             total_ascent,
             total_descent,
@@ -418,7 +405,7 @@ export const routesRouter = createTRPCRouter({
           idx,
           name,
           description,
-          activity_type,
+          activity_category,
           total_distance,
           total_ascent,
           total_descent,

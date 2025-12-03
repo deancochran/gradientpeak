@@ -5,6 +5,7 @@ import "@/global.css";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
 import { StreamBuffer } from "@/lib/services/ActivityRecorder/StreamBuffer";
+import { initSentry } from "@/lib/services/sentry";
 import { useTheme } from "@/lib/stores/theme-store";
 import { NAV_THEME } from "@/lib/theme";
 import { ThemeProvider } from "@react-navigation/native";
@@ -15,6 +16,9 @@ import { useColorScheme } from "nativewind";
 import * as React from "react";
 import { ActivityIndicator, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+
+// Initialize Sentry error tracking for production
+initSentry();
 
 // Export ErrorBoundary for the layout
 export function ErrorBoundary({
@@ -118,6 +122,9 @@ export default function RootLayout() {
     StreamBuffer.cleanupOrphanedRecordings().catch((error) => {
       console.warn("Failed to cleanup orphaned recordings:", error);
     });
+
+    // Note: Sentry is initialized at module level above to catch early errors
+    console.log("App initialization complete - Sentry active in production");
   }, []);
 
   return (
