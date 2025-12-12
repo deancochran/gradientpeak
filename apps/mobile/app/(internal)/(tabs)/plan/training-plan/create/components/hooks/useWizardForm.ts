@@ -12,7 +12,6 @@ export interface PresetConfig {
   activitiesPerWeek: number;
   maxConsecutiveDays: number;
   minRestDays: number;
-  minHoursBetweenHard: number;
 }
 
 const PRESETS: Record<PlanPreset, PresetConfig> = {
@@ -22,7 +21,6 @@ const PRESETS: Record<PlanPreset, PresetConfig> = {
     activitiesPerWeek: 3,
     maxConsecutiveDays: 2,
     minRestDays: 2,
-    minHoursBetweenHard: 72,
   },
   intermediate: {
     tssMin: 200,
@@ -30,7 +28,6 @@ const PRESETS: Record<PlanPreset, PresetConfig> = {
     activitiesPerWeek: 4,
     maxConsecutiveDays: 3,
     minRestDays: 2,
-    minHoursBetweenHard: 48,
   },
   advanced: {
     tssMin: 350,
@@ -38,7 +35,6 @@ const PRESETS: Record<PlanPreset, PresetConfig> = {
     activitiesPerWeek: 5,
     maxConsecutiveDays: 4,
     minRestDays: 1,
-    minHoursBetweenHard: 48,
   },
   custom: {
     tssMin: 200,
@@ -46,7 +42,6 @@ const PRESETS: Record<PlanPreset, PresetConfig> = {
     activitiesPerWeek: 4,
     maxConsecutiveDays: 3,
     minRestDays: 2,
-    minHoursBetweenHard: 48,
   },
 };
 
@@ -65,7 +60,6 @@ export interface TrainingPlanFormData {
   activitiesPerWeek: number;
   maxConsecutiveDays: number;
   minRestDays: number;
-  minHoursBetweenHard: number;
 
   // Step 3: Periodization (optional, simplified)
   usePeriodization: boolean;
@@ -85,7 +79,6 @@ export interface ValidationErrors {
   activitiesPerWeek?: string;
   maxConsecutiveDays?: string;
   minRestDays?: string;
-  minHoursBetweenHard?: string;
   periodization?: string;
 }
 
@@ -209,7 +202,6 @@ export function useWizardForm() {
         activities_per_week: true,
         max_consecutive_days: true,
         min_rest_days: true,
-        min_hours_between_hard: true,
       });
 
       step2Schema.parse({
@@ -218,7 +210,6 @@ export function useWizardForm() {
         activities_per_week: formData.activitiesPerWeek,
         max_consecutive_days: formData.maxConsecutiveDays,
         min_rest_days: formData.minRestDays,
-        min_hours_between_hard: formData.minHoursBetweenHard,
       });
     } catch (error: any) {
       if (error?.issues) {
@@ -231,7 +222,6 @@ export function useWizardForm() {
             activities_per_week: "activitiesPerWeek",
             max_consecutive_days: "maxConsecutiveDays",
             min_rest_days: "minRestDays",
-            min_hours_between_hard: "minHoursBetweenHard",
           };
           const field = fieldMap[path];
           if (field) {

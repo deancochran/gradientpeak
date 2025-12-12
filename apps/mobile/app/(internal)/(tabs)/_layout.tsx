@@ -13,6 +13,7 @@ import {
   TrendingUp,
 } from "lucide-react-native";
 import React from "react";
+import { View } from "react-native";
 
 export default function InternalLayout() {
   const { theme } = useTheme();
@@ -46,10 +47,10 @@ export default function InternalLayout() {
         }}
       />
       <Tabs.Screen
-        name="trends"
+        name="plan"
         options={{
-          tabBarIcon: ({ color }) => <Icon as={TrendingUp} size={24} />,
-          title: "Trends",
+          tabBarIcon: ({ color }) => <Icon as={Calendar} size={24} />,
+          title: "Plan",
         }}
       />
       <Tabs.Screen
@@ -60,32 +61,41 @@ export default function InternalLayout() {
         }}
       />
       <Tabs.Screen
-        name="plan"
+        name="trends"
         options={{
-          tabBarIcon: ({ color }) => <Icon as={Calendar} size={24} />,
-          title: "Plan",
+          tabBarIcon: ({ color }) => <Icon as={TrendingUp} size={24} />,
+          title: "Trends",
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
-          tabBarIcon: ({ color }) => (
-            <>
-              {profile?.avatar_url ? (
+          tabBarIcon: ({ color, focused }) => {
+            // Extract timestamp from avatar URL if it exists (added during upload)
+            // This ensures React Native's image cache updates when avatar changes
+            const avatarUri = profile?.avatar_url;
+
+            return (
+              <View className="items-center justify-center">
                 <Avatar
-                  alt="profile"
-                  className="border-background web:border-0 web:ring-2 web:ring-background border-2"
+                  alt={profile?.username || "User"}
+                  className={`w-7 h-7 ${focused ? "border-2 border-primary" : "border-2 border-transparent"}`}
                 >
-                  <AvatarImage source={{ uri: profile?.avatar_url }} />
+                  {avatarUri ? (
+                    <AvatarImage
+                      source={{ uri: avatarUri }}
+                      key={avatarUri} // Key changes when URL changes, forcing re-render
+                    />
+                  ) : null}
                   <AvatarFallback>
-                    <Text>ZN</Text>
+                    <Text className="text-xs">
+                      {profile?.username?.charAt(0)?.toUpperCase() || "U"}
+                    </Text>
                   </AvatarFallback>
                 </Avatar>
-              ) : (
-                <Icon as={Settings} size={24} />
-              )}
-            </>
-          ),
+              </View>
+            );
+          },
           title: "Settings",
           headerShown: false,
         }}

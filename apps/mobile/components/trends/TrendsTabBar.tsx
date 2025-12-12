@@ -1,9 +1,24 @@
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { Activity, BarChart3, TrendingUp } from "lucide-react-native";
-import { Pressable, View } from "react-native";
+import {
+  Activity,
+  BarChart3,
+  TrendingUp,
+  BarChart2,
+  Zap,
+  Heart,
+  Calendar,
+} from "lucide-react-native";
+import { Pressable, View, ScrollView } from "react-native";
 
-export type TabView = "overview" | "weekly" | "intensity";
+export type TabView =
+  | "overview"
+  | "volume"
+  | "performance"
+  | "fitness"
+  | "consistency"
+  | "weekly"
+  | "intensity";
 
 interface TrendsTabBarProps {
   activeTab: TabView;
@@ -11,83 +26,52 @@ interface TrendsTabBarProps {
 }
 
 export function TrendsTabBar({ activeTab, onTabChange }: TrendsTabBarProps) {
+  const tabs = [
+    { id: "overview" as const, label: "Overview", icon: TrendingUp },
+    { id: "volume" as const, label: "Volume", icon: BarChart2 },
+    { id: "performance" as const, label: "Performance", icon: Zap },
+    { id: "fitness" as const, label: "Fitness", icon: Heart },
+    { id: "consistency" as const, label: "Consistency", icon: Calendar },
+  ];
+
   return (
-    <View className="flex-row bg-muted rounded-lg p-1 mb-4">
-      <Pressable
-        onPress={() => onTabChange("overview")}
-        className={`flex-1 py-2 px-3 rounded-md ${
-          activeTab === "overview" ? "bg-card shadow-sm" : ""
-        }`}
-      >
-        <View className="flex-row items-center justify-center">
-          <Icon
-            as={TrendingUp}
-            size={16}
-            className={
-              activeTab === "overview"
-                ? "text-primary"
-                : "text-muted-foreground"
-            }
-          />
-          <Text
-            className={`ml-1 text-sm font-medium ${
-              activeTab === "overview" ? "text-primary" : "text-muted-foreground"
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      className="mb-4"
+    >
+      <View className="flex-row bg-muted rounded-lg p-1 gap-1">
+        {tabs.map((tab) => (
+          <Pressable
+            key={tab.id}
+            onPress={() => onTabChange(tab.id)}
+            className={`py-2 px-3 rounded-md ${
+              activeTab === tab.id ? "bg-card shadow-sm" : ""
             }`}
           >
-            Overview
-          </Text>
-        </View>
-      </Pressable>
-
-      <Pressable
-        onPress={() => onTabChange("weekly")}
-        className={`flex-1 py-2 px-3 rounded-md ${
-          activeTab === "weekly" ? "bg-card shadow-sm" : ""
-        }`}
-      >
-        <View className="flex-row items-center justify-center">
-          <Icon
-            as={BarChart3}
-            size={16}
-            className={
-              activeTab === "weekly" ? "text-primary" : "text-muted-foreground"
-            }
-          />
-          <Text
-            className={`ml-1 text-sm font-medium ${
-              activeTab === "weekly" ? "text-primary" : "text-muted-foreground"
-            }`}
-          >
-            Weekly
-          </Text>
-        </View>
-      </Pressable>
-
-      <Pressable
-        onPress={() => onTabChange("intensity")}
-        className={`flex-1 py-2 px-3 rounded-md ${
-          activeTab === "intensity" ? "bg-card shadow-sm" : ""
-        }`}
-      >
-        <View className="flex-row items-center justify-center">
-          <Icon
-            as={Activity}
-            size={16}
-            className={
-              activeTab === "intensity"
-                ? "text-primary"
-                : "text-muted-foreground"
-            }
-          />
-          <Text
-            className={`ml-1 text-sm font-medium ${
-              activeTab === "intensity" ? "text-primary" : "text-muted-foreground"
-            }`}
-          >
-            Intensity
-          </Text>
-        </View>
-      </Pressable>
-    </View>
+            <View className="flex-row items-center justify-center">
+              <Icon
+                as={tab.icon}
+                size={16}
+                className={
+                  activeTab === tab.id
+                    ? "text-primary"
+                    : "text-muted-foreground"
+                }
+              />
+              <Text
+                className={`ml-1 text-sm font-medium whitespace-nowrap ${
+                  activeTab === tab.id
+                    ? "text-primary"
+                    : "text-muted-foreground"
+                }`}
+              >
+                {tab.label}
+              </Text>
+            </View>
+          </Pressable>
+        ))}
+      </View>
+    </ScrollView>
   );
 }

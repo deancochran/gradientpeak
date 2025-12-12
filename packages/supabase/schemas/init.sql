@@ -65,7 +65,6 @@ $$ language plpgsql;
 create table public.profiles (
     id uuid primary key references auth.users(id) on delete cascade,
     idx serial unique,
-    gender text,
     dob date,
     username text unique,
     language text default 'en',
@@ -472,3 +471,13 @@ create index if not exists idx_activity_streams_activity_id
 
 create index if not exists idx_activity_streams_type
     on public.activity_streams(type);
+
+-- ============================================================================
+-- ROW LEVEL SECURITY
+-- ============================================================================
+-- RLS is disabled for all tables because authorization is handled at the
+-- application layer via tRPC's protectedProcedure middleware and explicit
+-- profile_id filtering in all queries. The backend uses service role key.
+--
+-- Note: If you need to allow direct database access (e.g., for webhooks or
+-- third-party integrations), enable RLS on specific tables and add policies.

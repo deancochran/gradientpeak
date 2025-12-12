@@ -1,7 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { profileQuickUpdateSchema } from "@repo/core";
-import { queryKeys } from "@repo/trpc/client";
-import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { View } from "react-native";
@@ -24,6 +22,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
+import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { trpc } from "@/lib/trpc";
 
 interface ProfileSectionProps {
@@ -41,48 +40,12 @@ export function ProfileSection({
   onRefreshProfile,
 }: ProfileSectionProps) {
   const [isEditing, setIsEditing] = useState(false);
-  const queryClient = useQueryClient();
+  const utils = trpc.useUtils();
 
-  const updateProfileMutation = trpc.profiles.update.useMutation({
-    onMutate: async (variables) => {
-      // Cancel outgoing refetches
-      await queryClient.cancelQueries({
-        queryKey: queryKeys.profile.current(),
-      });
-
-      // Snapshot previous value
-      const previousProfile = queryClient.getQueryData(
-        queryKeys.profile.current(),
-      );
-
-      // Optimistically update
-      queryClient.setQueryData(queryKeys.profile.current(), (old: any) => {
-        if (!old) return old;
-        return {
-          ...old,
-          username: variables.username ?? old.username,
-          weight_kg: variables.weight_kg ?? old.weight_kg,
-          ftp: variables.ftp ?? old.ftp,
-          threshold_hr: variables.threshold_hr ?? old.threshold_hr,
-        };
-      });
-
-      return { previousProfile };
-    },
-    onError: (err, variables, context) => {
-      // Rollback on error
-      if (context?.previousProfile) {
-        queryClient.setQueryData(
-          queryKeys.profile.current(),
-          context.previousProfile,
-        );
-      }
-    },
+  const updateProfileMutation = useReliableMutation(trpc.profiles.update, {
+    invalidate: [utils.profiles, utils.trainingPlans],
+    success: "Profile updated!",
     onSuccess: async () => {
-      // Invalidate related queries
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.trainingPlans.status(),
-      });
       await onRefreshProfile();
       setIsEditing(false);
     },

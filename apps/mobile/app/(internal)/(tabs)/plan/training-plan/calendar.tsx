@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { ROUTES } from "@/lib/constants/routes";
+import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { trpc } from "@/lib/trpc";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
@@ -85,27 +86,21 @@ export default function TrainingPlanCalendar() {
   } | null>(null);
 
   // tRPC mutations
-  const updateMutation = trpc.plannedActivities.update.useMutation({
+  const updateMutation = useReliableMutation(trpc.plannedActivities.update, {
+    invalidate: [utils.plannedActivities],
+    success: "Activity rescheduled successfully!",
     onSuccess: () => {
-      refetchActivities();
       setRescheduleModalVisible(false);
       setSelectedActivity(null);
-      Alert.alert("Success", "Activity rescheduled successfully!");
-    },
-    onError: (error) => {
-      Alert.alert("Error", `Failed to reschedule activity: ${error.message}`);
     },
   });
 
-  const deleteMutation = trpc.plannedActivities.delete.useMutation({
+  const deleteMutation = useReliableMutation(trpc.plannedActivities.delete, {
+    invalidate: [utils.plannedActivities],
+    success: "Activity deleted successfully!",
     onSuccess: () => {
-      refetchActivities();
       setDeleteModalVisible(false);
       setSelectedActivity(null);
-      Alert.alert("Success", "Activity deleted successfully!");
-    },
-    onError: (error) => {
-      Alert.alert("Error", `Failed to delete activity: ${error.message}`);
     },
   });
 

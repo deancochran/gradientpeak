@@ -646,19 +646,35 @@ export const activityCategorySchema = z.enum([
  * Activity Plan Create Form Schema
  * Used when creating a new activity plan
  */
-export const activityPlanCreateFormSchema = z.object({
-  name: activityPlanNameSchema,
-  description: optionalActivityPlanDescriptionSchema,
-  activity_location: activityLocationSchema,
-  activity_category: activityCategorySchema,
-  estimated_duration: estimatedDurationSchema,
-  estimated_tss: optionalEstimatedTssSchema,
-  route_id: z.string().uuid().optional().nullable(),
-  notes: activityPlanNotesSchema,
-  structure: z.object({
-    steps: z.array(z.any()), // Complex validation handled elsewhere
-  }),
-});
+export const activityPlanCreateFormSchema = z
+  .object({
+    name: activityPlanNameSchema,
+    description: optionalActivityPlanDescriptionSchema,
+    activity_location: activityLocationSchema,
+    activity_category: activityCategorySchema,
+    estimated_duration: estimatedDurationSchema,
+    estimated_tss: optionalEstimatedTssSchema,
+    route_id: z.string().uuid().optional().nullable(),
+    notes: activityPlanNotesSchema,
+    structure: z.object({
+      steps: z
+        .array(z.any())
+        .min(1, "Activity plan must have at least one step"), // Minimum 1 step required
+    }),
+  })
+  .refine(
+    (data) => {
+      // Validate that estimated duration is reasonable for the number of steps
+      const stepCount = data.structure.steps.length;
+      const minDuration = stepCount * 30; // Assume minimum 30 seconds per step
+      return data.estimated_duration >= minDuration;
+    },
+    {
+      message:
+        "Estimated duration is too short for the number of steps in the activity",
+      path: ["estimated_duration"],
+    },
+  );
 
 export type ActivityPlanCreateFormData = z.infer<
   typeof activityPlanCreateFormSchema
@@ -961,13 +977,6 @@ export const trainingPlanCreateFormSchema = z
         .min(0, "Rest days cannot be negative")
         .max(7, "Maximum 7 rest days per week"),
     ),
-    min_hours_between_hard: z.preprocess(
-      stringToNumber,
-      z
-        .number()
-        .min(0, "Hours cannot be negative")
-        .max(168, "Maximum 168 hours (1 week)"),
-    ),
 
     // Step 4: Periodization (Optional)
     use_periodization: z.boolean().optional().default(false),
@@ -977,8 +986,8 @@ export const trainingPlanCreateFormSchema = z
       stringToNumber,
       z
         .number()
-        .min(1, "Ramp rate must be at least 1")
-        .max(20, "Ramp rate must be less than 20")
+        .min(0.01, "Ramp rate must be at least 0.01")
+        .max(1, "Ramp rate must be at most 1 (100%)")
         .optional()
         .nullable(),
     ),
@@ -1001,6 +1010,32 @@ export const trainingPlanCreateFormSchema = z
     {
       message: "Target CTL must be greater than starting CTL",
       path: ["target_ctl"],
+    },
+  )
+  .refine(
+    (data) => {
+      // Validate that activities per week is achievable with rest days
+      if (data.activities_per_week > 7 - data.min_rest_days) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: "Activities per week must fit within available training days",
+      path: ["activities_per_week"],
+    },
+  )
+  .refine(
+    (data) => {
+      // Validate reasonable TSS per activity (not too high)
+      const avgTSS = (data.tss_min + data.tss_max) / 2;
+      const avgPerActivity = avgTSS / data.activities_per_week;
+      return avgPerActivity <= 500; // Max 500 TSS per activity
+    },
+    {
+      message:
+        "Average TSS per activity is unreasonably high (>500). Please adjust your targets.",
+      path: ["tss_max"],
     },
   );
 

@@ -18,7 +18,8 @@ const validateConstraintsSchema = z.object({
 
 // Update your schema to support cursor-based pagination
 const plannedActivityListSchema = z.object({
-  activity_type: z.string().optional(),
+  activity_category: z.string().optional(),
+  activity_location: z.string().optional(),
   activity_plan_id: z.string().optional(),
   date_from: z.string().optional(),
   date_to: z.string().optional(),
@@ -47,7 +48,8 @@ export const plannedActivitiesRouter = createTRPCRouter({
           activity_plan:activity_plans (
             id,
             name,
-            activity_type,
+            activity_category,
+            activity_location,
             description,
             structure,
             estimated_tss,
@@ -87,7 +89,8 @@ export const plannedActivitiesRouter = createTRPCRouter({
         activity_plan:activity_plans (
           id,
           name,
-          activity_type,
+          activity_category,
+          activity_location,
           estimated_duration,
           estimated_tss
         )
@@ -325,7 +328,8 @@ export const plannedActivitiesRouter = createTRPCRouter({
             idx,
             profile_id,
             name,
-            activity_type,
+            activity_category,
+            activity_location,
             description,
             structure,
             estimated_tss,
@@ -351,8 +355,17 @@ export const plannedActivitiesRouter = createTRPCRouter({
       // Apply date filters
       if (input.date_from) query = query.gte("scheduled_date", input.date_from);
       if (input.date_to) query = query.lte("scheduled_date", input.date_to);
-      if (input.activity_type) {
-        query = query.eq("activity_plan.activity_type", input.activity_type);
+      if (input.activity_category) {
+        query = query.eq(
+          "activity_plan.activity_category",
+          input.activity_category,
+        );
+      }
+      if (input.activity_location) {
+        query = query.eq(
+          "activity_plan.activity_location",
+          input.activity_location,
+        );
       }
 
       const { data, error } = await query;
@@ -609,7 +622,8 @@ export const plannedActivitiesRouter = createTRPCRouter({
             idx,
             profile_id,
             name,
-            activity_type,
+            activity_category,
+            activity_location,
             description,
             structure,
             estimated_tss,

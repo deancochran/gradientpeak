@@ -6,9 +6,10 @@
 import type { Database } from "@repo/supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { WahooWorkoutSummary } from "./client";
+import { fromActivityType, type ActivityType } from "./activity-type-utils";
 
-// Wahoo workout type mapping to GradientPeak activity types
-const WAHOO_WORKOUT_TYPE_MAP: Record<number, string> = {
+// Wahoo workout type mapping to GradientPeak legacy activity types
+const WAHOO_WORKOUT_TYPE_MAP: Record<number, ActivityType> = {
   0: "outdoor_bike", // BIKING OUTDOOR
   1: "outdoor_run", // RUNNING OUTDOOR
   2: "indoor_strength", // FITNESS EQUIPMENT
@@ -39,13 +40,12 @@ export class WahooActivityImporter {
   ): Promise<ImportResult> {
     try {
       // 1. Find user by external_id
-      const { data: integration, error: integrationError } =
-        await this.supabase
-          .from("integrations")
-          .select("profile_id")
-          .eq("provider", "wahoo")
-          .eq("external_id", wahooUserId.toString())
-          .single();
+      const { data: integration, error: integrationError } = await this.supabase
+        .from("integrations")
+        .select("profile_id")
+        .eq("provider", "wahoo")
+        .eq("external_id", wahooUserId.toString())
+        .single();
 
       if (integrationError || !integration) {
         console.error(
@@ -89,6 +89,7 @@ export class WahooActivityImporter {
       // Note: In a real implementation, you'd fetch this from Wahoo API
       // For now, we'll infer from the workout_type_id in the summary
       const activityType = this.inferActivityType(summary);
+      const { category, location } = fromActivityType(activityType);
 
       // 5. Calculate start time from duration
       const startedAt = this.calculateStartTime(summary);
@@ -103,8 +104,9 @@ export class WahooActivityImporter {
         // Timestamps
         started_at: startedAt,
 
-        // Activity type
-        activity_type: activityType,
+        // Activity type (new schema)
+        activity_category: category,
+        activity_location: location,
 
         // Core metrics
         distance: summary.distance_accum || 0,
@@ -176,7 +178,7 @@ export class WahooActivityImporter {
    * In production, this should fetch the workout details from Wahoo API
    * to get the actual workout_type_id
    */
-  private inferActivityType(summary: WahooWorkoutSummary): string {
+  private inferActivityType(summary: WahooWorkoutSummary): ActivityType {
     // Check if it's a cycling workout (has power data)
     if (summary.power_avg > 0 || summary.power_bike_np_last > 0) {
       return "indoor_bike_trainer";
@@ -207,10 +209,8 @@ export class WahooActivityImporter {
   /**
    * Map Wahoo workout type ID to GradientPeak activity type
    */
-  private mapWorkoutType(workoutTypeId: number): string {
-    return (
-      WAHOO_WORKOUT_TYPE_MAP[workoutTypeId] || "indoor_bike_trainer"
-    );
+  private mapWorkoutType(workoutTypeId: number): ActivityType {
+    return WAHOO_WORKOUT_TYPE_MAP[workoutTypeId] || "indoor_bike_trainer";
   }
 }
 

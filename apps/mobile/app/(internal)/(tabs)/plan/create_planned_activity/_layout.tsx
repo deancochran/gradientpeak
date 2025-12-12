@@ -1,5 +1,11 @@
 import { Stack } from "expo-router";
 
+/**
+ * Create Planned Activity Layout
+ *
+ * Stack-based navigation with proper headers and back navigation.
+ * The screen can add header actions (Save/Submit) via navigation.setOptions.
+ */
 export default function CreatePlannedActivityLayout() {
   return (
     <Stack
@@ -15,6 +21,7 @@ export default function CreatePlannedActivityLayout() {
         name="index"
         options={{
           title: "Schedule Activity",
+          // Individual screen can set headerRight via navigation.setOptions
         }}
       />
     </Stack>

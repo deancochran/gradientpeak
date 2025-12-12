@@ -473,7 +473,7 @@ async function storeOAuthState(
   const { createClient } = await import("@supabase/supabase-js");
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY!,
   );
 
   const { error } = await supabase.from("oauth_states").insert({

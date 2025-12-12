@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
+import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { trpc } from "@/lib/trpc";
 import { decodePolyline } from "@repo/core";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -32,15 +33,10 @@ export default function RouteDetailScreen() {
     { enabled: !!id },
   );
 
-  const deleteMutation = trpc.routes.delete.useMutation({
-    onSuccess: () => {
-      utils.routes.list.invalidate();
-      router.back();
-      Alert.alert("Success", "Route deleted successfully");
-    },
-    onError: (error) => {
-      Alert.alert("Error", error.message);
-    },
+  const deleteMutation = useReliableMutation(trpc.routes.delete, {
+    invalidate: [utils.routes],
+    success: "Route deleted successfully",
+    onSuccess: () => router.back(),
   });
 
   const handleDelete = () => {

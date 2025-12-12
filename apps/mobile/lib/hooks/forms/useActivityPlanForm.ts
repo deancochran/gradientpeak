@@ -194,6 +194,15 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
 
   // Submit handler
   const submit = useCallback(async () => {
+    // Check for empty structure first
+    if (!structure.steps || structure.steps.length === 0) {
+      Alert.alert(
+        "Activity Structure Required",
+        "Please add at least one step to your activity plan before saving.",
+      );
+      return null;
+    }
+
     const validation = validate();
     if (!validation.isValid) {
       const firstError = Object.values(validation.errors)[0];
@@ -211,7 +220,7 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
         route_id: routeId || null,
         notes: notes || null,
         estimated_duration: metrics.durationMinutes * 60 || 60, // Convert to seconds
-        estimated_tss: null, // TODO: Calculate based on structure and user settings
+        estimated_tss: null, // Will be calculated by backend based on structure and user profile
       };
 
       if (isEditMode) {

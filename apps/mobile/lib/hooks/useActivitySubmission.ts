@@ -53,6 +53,7 @@ import {
   calculateTotalWork,
   calculateTSS,
   calculateVariabilityIndex,
+  mapActivityTypeToCategory,
   PublicActivitiesInsert,
   PublicActivityStreamsInsert,
 } from "@repo/core";
@@ -536,7 +537,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         started_at: metadata.startedAt,
         finished_at: metadata.endedAt,
         name: `${metadata.activityType.replace(/_/g, " ")} - ${new Date(metadata.startedAt).toLocaleDateString()}`,
-        activity_category: metadata.activityType,
+        activity_category: mapActivityTypeToCategory(metadata.activityType),
         profile_age: profileAge,
         profile_ftp: metadata.profile.ftp,
         profile_threshold_hr: metadata.profile.threshold_hr,

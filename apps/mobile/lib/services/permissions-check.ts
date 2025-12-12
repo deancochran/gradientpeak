@@ -23,20 +23,69 @@ export type AllPermissionsStatus = {
 };
 
 class StandalonePermissionsManager {
+  // Cache to prevent excessive checks
+  private cache: {
+    status: AllPermissionsStatus | null;
+    timestamp: number;
+  } = {
+    status: null,
+    timestamp: 0,
+  };
+  private readonly CACHE_DURATION_MS = 2000; // 2 seconds
+
   /**
    * Check all permissions and return their current status
+   * Uses caching to prevent excessive permission checks
    */
-  async checkAllPermissions(): Promise<AllPermissionsStatus> {
+  async checkAllPermissions(
+    forceRefresh = false,
+  ): Promise<AllPermissionsStatus> {
+    const now = Date.now();
+
+    // Return cached result if still valid and not forcing refresh
+    if (
+      !forceRefresh &&
+      this.cache.status &&
+      now - this.cache.timestamp < this.CACHE_DURATION_MS
+    ) {
+      console.log("[PermissionsManager] Returning cached permissions");
+      return this.cache.status;
+    }
+
+    console.log(
+      "[PermissionsManager] Checking permissions (cache miss or expired)",
+    );
+
     const [bluetooth, location, locationBackground] = await Promise.all([
       this.checkBluetoothPermission(),
       this.checkLocationPermission(),
       this.checkBackgroundLocationPermission(),
     ]);
 
-    return {
+    const status = {
       bluetooth,
       location,
       locationBackground,
+    };
+
+    // Update cache
+    this.cache = {
+      status,
+      timestamp: now,
+    };
+
+    return status;
+  }
+
+  /**
+   * Clear the permission cache
+   * Useful when permissions are requested or changed
+   */
+  clearCache(): void {
+    console.log("[PermissionsManager] Clearing cache");
+    this.cache = {
+      status: null,
+      timestamp: 0,
     };
   }
 
@@ -46,11 +95,22 @@ class StandalonePermissionsManager {
   async areAllPermissionsGranted(): Promise<boolean> {
     const permissions = await this.checkAllPermissions();
 
-    return (
+    const allGranted =
       permissions.bluetooth?.granted === true &&
       permissions.location?.granted === true &&
-      permissions.locationBackground?.granted === true
-    );
+      permissions.locationBackground?.granted === true;
+
+    // Only log if not all granted (to reduce noise)
+    if (!allGranted) {
+      console.log("[PermissionsManager] areAllPermissionsGranted check:", {
+        bluetooth: permissions.bluetooth?.granted,
+        location: permissions.location?.granted,
+        locationBackground: permissions.locationBackground?.granted,
+        allGranted,
+      });
+    }
+
+    return allGranted;
   }
 
   /**
@@ -74,22 +134,21 @@ class StandalonePermissionsManager {
 
           const granted = scanResult && connectResult;
 
-          // Check if we can ask again
-          const scanCanAsk = await PermissionsAndroid.request(
-            PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-            {
-              title: "Bluetooth Permission",
-              message: "This app needs Bluetooth access to connect to sensors",
-              buttonNeutral: "Ask Me Later",
-              buttonNegative: "Cancel",
-              buttonPositive: "OK",
-            },
-          );
+          // Only log if not granted
+          if (!granted) {
+            console.log("[PermissionsManager] Bluetooth check (Android 12+):", {
+              apiLevel,
+              scanResult,
+              connectResult,
+              granted,
+            });
+          }
 
+          // We assume we can ask again unless explicitly denied
+          // Note: There's no reliable way to check NEVER_ASK_AGAIN without requesting
           return {
             granted,
-            canAskAgain:
-              scanCanAsk !== PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN,
+            canAskAgain: !granted, // Can ask if not already granted
           };
         } else {
           // Older Android versions
@@ -129,12 +188,26 @@ class StandalonePermissionsManager {
       const { status, canAskAgain } =
         await Location.getForegroundPermissionsAsync();
 
+      const granted = status === "granted";
+
+      // Only log if not granted
+      if (!granted) {
+        console.log("[PermissionsManager] Location check:", {
+          status,
+          granted,
+          canAskAgain,
+        });
+      }
+
       return {
-        granted: status === "granted",
+        granted,
         canAskAgain: canAskAgain ?? status !== "denied",
       };
     } catch (error) {
-      console.error("Error checking location permission:", error);
+      console.error(
+        "[PermissionsManager] Error checking location permission:",
+        error,
+      );
       return null;
     }
   }
@@ -149,12 +222,26 @@ class StandalonePermissionsManager {
       const { status, canAskAgain } =
         await Location.getBackgroundPermissionsAsync();
 
+      const granted = status === "granted";
+
+      // Only log if not granted
+      if (!granted) {
+        console.log("[PermissionsManager] Background location check:", {
+          status,
+          granted,
+          canAskAgain,
+        });
+      }
+
       return {
-        granted: status === "granted",
+        granted,
         canAskAgain: canAskAgain ?? status !== "denied",
       };
     } catch (error) {
-      console.error("Error checking background location permission:", error);
+      console.error(
+        "[PermissionsManager] Error checking background location permission:",
+        error,
+      );
       return null;
     }
   }
@@ -163,16 +250,28 @@ class StandalonePermissionsManager {
    * Request a specific permission
    */
   async requestPermission(type: PermissionType): Promise<boolean> {
+    // Clear cache before requesting
+    this.clearCache();
+
+    let result: boolean;
     switch (type) {
       case "bluetooth":
-        return await this.requestBluetoothPermission();
+        result = await this.requestBluetoothPermission();
+        break;
       case "location":
-        return await this.requestLocationPermission();
+        result = await this.requestLocationPermission();
+        break;
       case "location-background":
-        return await this.requestBackgroundLocationPermission();
+        result = await this.requestBackgroundLocationPermission();
+        break;
       default:
-        return false;
+        result = false;
     }
+
+    // Clear cache after requesting to force re-check
+    this.clearCache();
+
+    return result;
   }
 
   /**
@@ -273,8 +372,10 @@ class StandalonePermissionsManager {
 export const permissionsChecker = new StandalonePermissionsManager();
 
 // Export convenience functions
-export async function checkAllPermissions(): Promise<AllPermissionsStatus> {
-  return permissionsChecker.checkAllPermissions();
+export async function checkAllPermissions(
+  forceRefresh = false,
+): Promise<AllPermissionsStatus> {
+  return permissionsChecker.checkAllPermissions(forceRefresh);
 }
 
 export async function areAllPermissionsGranted(): Promise<boolean> {
@@ -285,4 +386,8 @@ export async function requestPermission(
   type: PermissionType,
 ): Promise<boolean> {
   return permissionsChecker.requestPermission(type);
+}
+
+export function clearPermissionsCache(): void {
+  permissionsChecker.clearCache();
 }

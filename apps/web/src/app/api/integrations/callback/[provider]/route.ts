@@ -98,7 +98,7 @@ export async function GET(
   // Create Supabase client with service role for OAuth operations
   const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY!,
     {
       cookies: {
         getAll: () => [],

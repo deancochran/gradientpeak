@@ -81,7 +81,7 @@ enabled = true
 # Port to use for Supabase Studio.
 port = 54323
 # External URL of the API server that frontend connects to.
-api_url = "http://192.168.0.96"
+api_url = "http://IP_ADDRESS"
 # OpenAI API Key to use for Supabase AI in the Supabase Studio.
 openai_api_key = "env(OPENAI_API_KEY)"
 
@@ -122,13 +122,13 @@ allowed_mime_types = ["application/gpx+xml", "text/xml", "application/xml"]
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
-site_url = "http://192.168.0.96:3000"
+site_url = "http://IP_ADDRESS:3000"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
 additional_redirect_urls = [
   "http://127.0.0.1:3000",
   "https://127.0.0.1:3000",
-  "http://192.168.0.96:3000",
-  "https://192.168.0.96:3000",
+  "http://IP_ADDRESS:3000",
+  "https://IP_ADDRESS:3000",
   "app-scheme-dev://auth/callback",
   "app-scheme-dev://(modal)/reset-password",
   "app-scheme-prev://auth/callback",

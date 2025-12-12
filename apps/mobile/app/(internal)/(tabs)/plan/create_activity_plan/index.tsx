@@ -1,4 +1,7 @@
-import { ActivityCategorySelector } from "@/components/ActivityPlan/ActivityCategorySelector";
+import {
+  ActivityCategorySelector,
+  ActivityLocationSelector,
+} from "@/components/ActivityPlan/ActivityCategorySelector";
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
 import { RouteSelector } from "@/components/Routes/RouteSelector";
 import { Button } from "@/components/ui/button";

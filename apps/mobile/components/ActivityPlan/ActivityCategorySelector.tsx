@@ -6,7 +6,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Text } from "@/components/ui/text";
-import { ACTIVITY_CATEGORY_CONFIG } from "@repo/core";
+import { ACTIVITY_CATEGORY_CONFIG, ACTIVITY_LOCATIONS } from "@repo/core";
 import * as Haptics from "expo-haptics";
 import { memo, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
@@ -31,8 +31,9 @@ export const ActivityTypeSelector = memo<ActivityTypeSelectorProps>(
       setOpen(false);
     };
 
-    const selectedConfig =
-      ACTIVITY_CATEGORY_CONFIG[value as keyof typeof ACTIVITY_CATEGORY_CONFIG];
+    const selectedConfig = value
+      ? ACTIVITY_CATEGORY_CONFIG[value as keyof typeof ACTIVITY_CATEGORY_CONFIG]
+      : undefined;
 
     // Compact icon-only dropdown
     if (compact) {
@@ -161,8 +162,9 @@ export const ActivityCategorySelector = memo<ActivityCategorySelectorProps>(
       setOpen(false);
     };
 
-    const selectedConfig =
-      ACTIVITY_CATEGORY_CONFIG[value as keyof typeof ACTIVITY_CATEGORY_CONFIG];
+    const selectedConfig = value
+      ? ACTIVITY_CATEGORY_CONFIG[value as keyof typeof ACTIVITY_CATEGORY_CONFIG]
+      : undefined;
 
     // Compact icon-only dropdown
     if (compact) {

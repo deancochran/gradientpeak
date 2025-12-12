@@ -11,18 +11,10 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 const listActivityPlansSchema = z.object({
   includeOwnOnly: z.boolean().default(true),
   includeSamples: z.boolean().default(false),
-  activityType: z
-    .enum([
-      "outdoor_run",
-      "outdoor_bike",
-      "indoor_treadmill",
-      "indoor_bike_trainer",
-      "indoor_strength",
-      "indoor_swim",
-      "other",
-      "all",
-    ])
+  activityCategory: z
+    .enum(["run", "bike", "swim", "strength", "other", "all"])
     .optional(),
+  activityLocation: z.enum(["outdoor", "indoor", "all"]).optional(),
   limit: z.number().min(1).max(100).default(20),
   cursor: z.string().optional(),
 });
@@ -54,7 +46,8 @@ export const activityPlansRouter = createTRPCRouter({
           idx,
           name,
           description,
-          activity_type,
+          activity_category,
+          activity_location,
           estimated_duration,
           estimated_tss,
           structure,
@@ -85,8 +78,11 @@ export const activityPlansRouter = createTRPCRouter({
       }
 
       // Apply activity type filter
-      if (input.activityType && input.activityType !== "all") {
-        query = query.eq("activity_type", input.activityType);
+      if (input.activityCategory && input.activityCategory !== "all") {
+        query = query.eq("activity_category", input.activityCategory);
+      }
+      if (input.activityLocation && input.activityLocation !== "all") {
+        query = query.eq("activity_location", input.activityLocation);
       }
 
       // Apply cursor (if provided, fetch items after this cursor)
@@ -138,7 +134,8 @@ export const activityPlansRouter = createTRPCRouter({
           idx,
           name,
           description,
-          activity_type,
+          activity_category,
+          activity_location,
           estimated_duration,
           estimated_tss,
           structure,
@@ -226,7 +223,8 @@ export const activityPlansRouter = createTRPCRouter({
           idx,
           name,
           description,
-          activity_type,
+          activity_category,
+          activity_location,
           estimated_duration,
           estimated_tss,
           structure,
@@ -304,7 +302,8 @@ export const activityPlansRouter = createTRPCRouter({
           idx,
           name,
           description,
-          activity_type,
+          activity_category,
+          activity_location,
           estimated_duration,
           estimated_tss,
           structure,
@@ -399,7 +398,8 @@ export const activityPlansRouter = createTRPCRouter({
           `
           name,
           description,
-          activity_type,
+          activity_category,
+          activity_location,
           estimated_duration,
           estimated_tss,
           structure,
@@ -436,7 +436,8 @@ export const activityPlansRouter = createTRPCRouter({
         .insert({
           name: input.newName,
           description: originalPlan.description,
-          activity_type: originalPlan.activity_type,
+          activity_category: originalPlan.activity_category,
+          activity_location: originalPlan.activity_location,
           estimated_duration: originalPlan.estimated_duration,
           estimated_tss: originalPlan.estimated_tss,
           structure: originalPlan.structure,
@@ -449,7 +450,8 @@ export const activityPlansRouter = createTRPCRouter({
           idx,
           name,
           description,
-          activity_type,
+          activity_category,
+          activity_location,
           estimated_duration,
           estimated_tss,
           structure,

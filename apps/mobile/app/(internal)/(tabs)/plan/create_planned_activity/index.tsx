@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
+import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { trpc } from "@/lib/trpc";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -10,7 +11,6 @@ import {
   plannedActivityScheduleFormSchema,
   type PlannedActivityScheduleFormData,
 } from "@repo/core";
-import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Calendar, Plus } from "lucide-react-native";
@@ -29,7 +29,6 @@ export default function ScheduleActivityScreen() {
   const plannedActivityId = params.activityId as string;
   const preselectedPlanId = params.planId as string;
   const isEditMode = !!plannedActivityId;
-  const queryClient = useQueryClient();
 
   const {
     control,
@@ -51,7 +50,10 @@ export default function ScheduleActivityScreen() {
   const [selectedPlan, setSelectedPlan] = useState<any>(null);
 
   const scheduledDateString = watch("scheduled_date");
-  const scheduledDate = new Date(scheduledDateString);
+  const scheduledDate =
+    scheduledDateString && !isNaN(Date.parse(scheduledDateString))
+      ? new Date(scheduledDateString)
+      : new Date();
   const activityPlanId = watch("activity_plan_id");
 
   // Fetch available plans
@@ -103,22 +105,16 @@ export default function ScheduleActivityScreen() {
 
   const utils = trpc.useUtils();
 
-  const createMutation = trpc.plannedActivities.create.useMutation({
-    onSuccess: () => {
-      utils.plannedActivities.list.invalidate();
-      utils.plannedActivities.getToday.invalidate();
-      utils.plannedActivities.getWeekCount.invalidate();
-      router.back();
-    },
+  const createMutation = useReliableMutation(trpc.plannedActivities.create, {
+    invalidate: [utils.plannedActivities],
+    success: "Activity scheduled!",
+    onSuccess: () => router.back(),
   });
 
-  const updateMutation = trpc.plannedActivities.update.useMutation({
-    onSuccess: () => {
-      utils.plannedActivities.list.invalidate();
-      utils.plannedActivities.getToday.invalidate();
-      utils.plannedActivities.getById.invalidate({ id: plannedActivityId });
-      router.back();
-    },
+  const updateMutation = useReliableMutation(trpc.plannedActivities.update, {
+    invalidate: [utils.plannedActivities],
+    success: "Activity updated!",
+    onSuccess: () => router.back(),
   });
 
   const onSubmit = (data: PlannedActivityScheduleFormData) => {

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 export const activitiesRouter = createTRPCRouter({
-  // List activities by date range
+  // List activities by date range (legacy - for trends/analytics)
   list: protectedProcedure
     .input(
       z.object({
@@ -25,6 +25,66 @@ export const activitiesRouter = createTRPCRouter({
 
       if (error) throw new Error(error.message);
       return data || [];
+    }),
+
+  // Paginated list of activities with filters
+  listPaginated: protectedProcedure
+    .input(
+      z.object({
+        limit: z.number().min(1).max(100).default(20),
+        offset: z.number().min(0).default(0),
+        activity_category: z
+          .enum(["run", "bike", "swim", "strength", "other"])
+          .optional(),
+        date_from: z.string().optional(),
+        date_to: z.string().optional(),
+        sort_by: z
+          .enum(["date", "distance", "duration", "tss"])
+          .default("date"),
+        sort_order: z.enum(["asc", "desc"]).default("desc"),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      let query = ctx.supabase
+        .from("activities")
+        .select("*", { count: "exact" })
+        .eq("profile_id", ctx.session.user.id);
+
+      // Apply filters
+      if (input.activity_category) {
+        query = query.eq("activity_category", input.activity_category);
+      }
+      if (input.date_from) {
+        query = query.gte("started_at", input.date_from);
+      }
+      if (input.date_to) {
+        query = query.lte("started_at", input.date_to);
+      }
+
+      // Apply sorting
+      const sortColumn = {
+        date: "started_at",
+        distance: "distance",
+        duration: "elapsed_time",
+        tss: "training_stress_score",
+      }[input.sort_by];
+
+      query = query.order(sortColumn, {
+        ascending: input.sort_order === "asc",
+      });
+
+      // Apply pagination
+      query = query.range(input.offset, input.offset + input.limit - 1);
+
+      const { data, error, count } = await query;
+
+      if (error) throw new Error(error.message);
+
+      return {
+        items: data || [],
+        total: count || 0,
+        hasMore: (count || 0) > input.offset + input.limit,
+      };
     }),
 
   // Simplified: Just create the activity first

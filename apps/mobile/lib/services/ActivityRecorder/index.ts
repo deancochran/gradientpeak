@@ -200,12 +200,21 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // Permissions
   // ================================
 
-  async checkPermissions(): Promise<void> {
-    this._permissionsStatus = await checkAllPermissions();
+  async checkPermissions(forceRefresh = false): Promise<void> {
+    this._permissionsStatus = await checkAllPermissions(forceRefresh);
   }
 
   getPermissionsStatus(): AllPermissionsStatus {
     return this._permissionsStatus;
+  }
+
+  /**
+   * Refresh permissions and return whether all are granted
+   * Useful before starting a recording
+   */
+  async refreshAndCheckAllPermissions(): Promise<boolean> {
+    await this.checkPermissions(true); // Force refresh
+    return await areAllPermissionsGranted();
   }
 
   // ================================
@@ -317,7 +326,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       index: this._stepIndex,
       total: this._steps.length,
       current: this.currentStep,
-      progress: this.stepProgress,
+      progress: this.hasPlan && this.currentStep ? this.stepProgress : null,
       isLast: this._stepIndex >= this._steps.length - 1,
       isFinished: this.isFinished,
     };
@@ -403,6 +412,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
    * Timed steps advance automatically when their duration is reached
    */
   advanceStep(): void {
+    if (!this.hasPlan || !this.currentStep) {
+      console.warn("[Service] Cannot advance step - no plan active");
+      return;
+    }
+
     const progress = this.stepProgress;
     if (!progress?.canAdvance) {
       console.warn("[Service] Cannot advance step");
@@ -686,7 +700,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     });
 
     // Auto-advance plan steps when recording
-    if (this.state === "recording" && this.hasPlan) {
+    if (this.state === "recording" && this.hasPlan && this.currentStep) {
       const progress = this.stepProgress;
       if (
         progress &&

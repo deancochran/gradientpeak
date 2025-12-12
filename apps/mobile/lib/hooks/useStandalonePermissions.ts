@@ -26,9 +26,10 @@ export function useStandalonePermissions() {
   const [isLoading, setIsLoading] = useState(true);
 
   // Check permissions on mount and when returning from settings
-  const checkPermissions = useCallback(async () => {
+  const checkPermissions = useCallback(async (forceRefresh = false) => {
     try {
-      const status = await checkAllPermissions();
+      setIsLoading(true);
+      const status = await checkAllPermissions(forceRefresh);
       setPermissions(status);
 
       const granted = await areAllPermissionsGranted();
@@ -49,8 +50,11 @@ export function useStandalonePermissions() {
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextAppState) => {
       if (nextAppState === "active") {
-        // Re-check permissions when app becomes active
-        checkPermissions();
+        // Force refresh permissions when app becomes active (user may have changed them in settings)
+        console.log(
+          "[useStandalonePermissions] App became active, force refreshing permissions",
+        );
+        checkPermissions(true);
       }
     });
 
@@ -118,18 +122,44 @@ export function useStandalonePermissions() {
 export function useAllPermissionsGranted() {
   const [allGranted, setAllGranted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     let mounted = true;
 
-    const check = async () => {
+    const check = async (forceRefresh = false) => {
       try {
+        if (mounted) {
+          setIsLoading(true);
+        }
+
+        // Check permissions with optional force refresh
         const granted = await areAllPermissionsGranted();
+
         if (mounted) {
           setAllGranted(granted);
+          console.log(
+            "[useAllPermissionsGranted] Permissions check result:",
+            granted,
+          );
         }
       } catch (error) {
-        console.error("Error checking permissions:", error);
+        console.error(
+          "[useAllPermissionsGranted] Error checking permissions:",
+          error,
+        );
+
+        // Retry logic for transient errors
+        if (mounted && retryCount < 3) {
+          console.log(
+            `[useAllPermissionsGranted] Retrying... (${retryCount + 1}/3)`,
+          );
+          setTimeout(() => {
+            if (mounted) {
+              setRetryCount((prev) => prev + 1);
+            }
+          }, 1000);
+        }
       } finally {
         if (mounted) {
           setIsLoading(false);
@@ -139,10 +169,13 @@ export function useAllPermissionsGranted() {
 
     check();
 
-    // Re-check when app becomes active
+    // Re-check when app becomes active (force refresh to bypass cache)
     const subscription = AppState.addEventListener("change", (nextAppState) => {
       if (nextAppState === "active" && mounted) {
-        check();
+        console.log(
+          "[useAllPermissionsGranted] App became active, force refreshing",
+        );
+        check(true);
       }
     });
 
@@ -150,7 +183,7 @@ export function useAllPermissionsGranted() {
       mounted = false;
       subscription?.remove();
     };
-  }, []);
+  }, [retryCount]);
 
   return { allGranted, isLoading };
 }

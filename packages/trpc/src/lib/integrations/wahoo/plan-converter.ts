@@ -10,6 +10,8 @@ import type {
   Repetition,
   Step,
 } from "@repo/core";
+import type { ActivityType } from "./activity-type-utils";
+import { isWahooSupported, toWahooTypes } from "./activity-type-utils";
 
 export interface WahooPlanJson {
   header: {
@@ -41,7 +43,7 @@ export interface WahooTarget {
 }
 
 export interface ConvertOptions {
-  activityType: string;
+  activityType: ActivityType;
   name: string;
   description?: string;
   ftp?: number;
@@ -55,7 +57,7 @@ export function convertToWahooPlan(
   structure: ActivityPlanStructure,
   options: ConvertOptions,
 ): WahooPlanJson {
-  const activityTypeMapping = mapActivityType(options.activityType);
+  const activityTypeMapping = toWahooTypes(options.activityType);
 
   if (!activityTypeMapping) {
     throw new Error(
@@ -96,45 +98,8 @@ export function convertToWahooPlan(
   return plan;
 }
 
-/**
- * Check if activity type is supported by Wahoo
- * Wahoo only supports cycling and running workouts with structured intervals
- */
-export function isActivityTypeSupportedByWahoo(activityType: string): boolean {
-  const supportedTypes = [
-    "outdoor_bike",
-    "indoor_bike_trainer",
-    "outdoor_run",
-    "indoor_treadmill",
-  ];
-  return supportedTypes.includes(activityType);
-}
-
-/**
- * Map GradientPeak activity type to Wahoo's type system
- * Returns null if activity type is not supported by Wahoo
- */
-function mapActivityType(activityType: string): {
-  workout_type_family: number;
-  workout_type_location: number;
-} | null {
-  switch (activityType) {
-    case "outdoor_bike":
-      return { workout_type_family: 0, workout_type_location: 1 };
-    case "indoor_bike_trainer":
-      return { workout_type_family: 0, workout_type_location: 0 };
-    case "outdoor_run":
-      return { workout_type_family: 1, workout_type_location: 1 };
-    case "indoor_treadmill":
-      return { workout_type_family: 1, workout_type_location: 0 };
-    case "indoor_strength":
-    case "indoor_swim":
-    case "other":
-    default:
-      // Return null for unsupported types
-      return null;
-  }
-}
+// Re-export from activity-type-utils for backwards compatibility
+export { isWahooSupported as isActivityTypeSupportedByWahoo } from "./activity-type-utils";
 
 /**
  * Convert a single step to Wahoo interval

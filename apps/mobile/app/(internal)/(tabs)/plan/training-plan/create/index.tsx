@@ -1,4 +1,5 @@
 import { Text } from "@/components/ui/text";
+import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { trpc } from "@/lib/trpc";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
@@ -49,13 +50,10 @@ export default function CreateTrainingPlan() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Create training plan mutation
-  const createPlanMutation = trpc.trainingPlans.create.useMutation({
+  const createPlanMutation = useReliableMutation(trpc.trainingPlans.create, {
+    invalidate: [utils.trainingPlans],
     onSuccess: () => {
-      // Invalidate queries to refresh data
-      utils.trainingPlans.get.invalidate();
-      utils.trainingPlans.getCurrentStatus.invalidate();
-
-      // Show success message
+      // Show custom success dialog
       Alert.alert(
         "Success!",
         "Your training plan has been created successfully.",
@@ -133,10 +131,18 @@ export default function CreateTrainingPlan() {
           target_weekly_tss_min: formData.tssMin,
           target_weekly_tss_max: formData.tssMax,
           target_activities_per_week: formData.activitiesPerWeek,
-          max_consecutive_training_days: formData.maxConsecutiveDays,
+          max_consecutive_days: formData.maxConsecutiveDays,
           min_rest_days_per_week: formData.minRestDays,
-          min_hours_between_hard_activities: formData.minHoursBetweenHard,
-          periodization: periodizationData,
+          periodization_template: periodizationData
+            ? {
+                starting_ctl: periodizationData.startingCTL,
+                target_ctl: periodizationData.targetCTL,
+                ramp_rate: periodizationData.rampRate / 100, // Convert percentage to decimal (0-1)
+                target_date: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+                  .toISOString()
+                  .split("T")[0], // 90 days from now
+              }
+            : undefined,
         },
       });
     } catch (error) {
@@ -198,7 +204,6 @@ export default function CreateTrainingPlan() {
             activitiesPerWeek={formData.activitiesPerWeek}
             maxConsecutiveDays={formData.maxConsecutiveDays}
             minRestDays={formData.minRestDays}
-            minHoursBetweenHard={formData.minHoursBetweenHard}
             onTssMinChange={(value) => updateField("tssMin", value)}
             onTssMaxChange={(value) => updateField("tssMax", value)}
             onActivitiesPerWeekChange={(value) =>
@@ -208,9 +213,6 @@ export default function CreateTrainingPlan() {
               updateField("maxConsecutiveDays", value)
             }
             onMinRestDaysChange={(value) => updateField("minRestDays", value)}
-            onMinHoursBetweenHardChange={(value) =>
-              updateField("minHoursBetweenHard", value)
-            }
             errors={errors}
           />
         );

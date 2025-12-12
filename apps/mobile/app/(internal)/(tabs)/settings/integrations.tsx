@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
+import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { trpc } from "@/lib/trpc";
 import type { PublicIntegrationProvider } from "@repo/core";
 import Constants from "expo-constants";
@@ -57,10 +58,17 @@ function getMobileRedirectUri(): string {
 export default function IntegrationsScreen() {
   const router = useRouter();
 
+  const utils = trpc.useUtils();
+
   // tRPC queries
   const { data: integrations, refetch } = trpc.integrations.list.useQuery();
-  const getAuthUrlMutation = trpc.integrations.getAuthUrl.useMutation();
-  const disconnectMutation = trpc.integrations.disconnect.useMutation();
+  const getAuthUrlMutation = useReliableMutation(trpc.integrations.getAuthUrl, {
+    silent: true, // No success message for auth URL generation
+  });
+  const disconnectMutation = useReliableMutation(trpc.integrations.disconnect, {
+    invalidate: [utils.integrations],
+    success: "Integration disconnected",
+  });
 
   // Handle deep link and trigger cleanup via refetch
   const handleDeepLink = useCallback(

@@ -1,8 +1,16 @@
 import { useRouter } from "expo-router";
 import { useCallback, useEffect } from "react";
-import { Alert, BackHandler, ScrollView, View } from "react-native";
+import {
+  Alert,
+  BackHandler,
+  Linking,
+  Platform,
+  ScrollView,
+  View,
+} from "react-native";
 
-import { ChevronLeft } from "lucide-react-native";
+import { ChevronLeft, Loader2 } from "lucide-react-native";
+import { useStandalonePermissions } from "@/lib/hooks/useStandalonePermissions";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -19,6 +27,14 @@ import { Text } from "@/components/ui/text";
 
 export default function PermissionsScreen() {
   const router = useRouter();
+  const {
+    permissions,
+    allGranted,
+    isLoading,
+    ensurePermission,
+    requestAllPermissions,
+    checkPermissions,
+  } = useStandalonePermissions();
 
   // Handle close action
   const handleClose = useCallback(() => {
@@ -38,18 +54,48 @@ export default function PermissionsScreen() {
     return () => backHandler.remove();
   }, [handleClose]);
 
-  const handleOpenSystemSettings = () => {
-    Alert.alert(
-      "System Settings",
-      "To modify app permissions, please go to your device settings.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Open Settings",
-          onPress: () => console.log("Open system settings"),
-        },
-      ],
-    );
+  const handleOpenSystemSettings = async () => {
+    try {
+      await Linking.openSettings();
+    } catch (error) {
+      console.error("Failed to open settings:", error);
+      Alert.alert(
+        "Error",
+        "Unable to open system settings. Please open Settings manually and navigate to this app.",
+      );
+    }
+  };
+
+  const handleRequestPermission = async (
+    type: "bluetooth" | "location" | "location-background",
+  ) => {
+    const granted = await ensurePermission(type);
+    if (!granted) {
+      Alert.alert(
+        "Permission Denied",
+        "This permission is required for the app to function properly. Please enable it in system settings.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Open Settings", onPress: handleOpenSystemSettings },
+        ],
+      );
+    }
+  };
+
+  const handleRequestAllPermissions = async () => {
+    const granted = await requestAllPermissions();
+    if (granted) {
+      Alert.alert("Success", "All permissions have been granted!");
+    } else {
+      Alert.alert(
+        "Permissions Required",
+        "Some permissions were not granted. Please enable them in system settings.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Open Settings", onPress: handleOpenSystemSettings },
+        ],
+      );
+    }
   };
 
   return (
@@ -80,6 +126,39 @@ export default function PermissionsScreen() {
             Manage app permissions and privacy settings to control how
             GradientPeak accesses your device features.
           </Text>
+          {isLoading && (
+            <View className="flex-row items-center gap-2 mt-2">
+              <Icon
+                as={Loader2}
+                size={16}
+                className="color-muted-foreground animate-spin"
+              />
+              <Text className="text-muted-foreground text-sm">
+                Checking permissions...
+              </Text>
+            </View>
+          )}
+          {!isLoading && allGranted && (
+            <View className="mt-2 p-3 bg-green-500/10 rounded-lg">
+              <Text className="text-green-600 dark:text-green-400 font-medium">
+                ✓ All required permissions granted
+              </Text>
+            </View>
+          )}
+          {!isLoading && !allGranted && (
+            <View className="mt-2 p-3 bg-amber-500/10 rounded-lg">
+              <Text className="text-amber-600 dark:text-amber-400 font-medium">
+                ⚠ Some permissions are missing
+              </Text>
+              <Button
+                onPress={handleRequestAllPermissions}
+                variant="link"
+                className="self-start mt-1 p-0"
+              >
+                <Text className="text-primary">Request All Permissions</Text>
+              </Button>
+            </View>
+          )}
         </View>
 
         {/* Location Permissions */}
@@ -103,8 +182,9 @@ export default function PermissionsScreen() {
                 </Text>
               </View>
               <Switch
-                checked={true}
-                onCheckedChange={() => handleOpenSystemSettings()}
+                checked={permissions.location?.granted ?? false}
+                onCheckedChange={() => handleRequestPermission("location")}
+                disabled={isLoading}
                 testID="location-switch"
               />
             </View>
@@ -121,8 +201,11 @@ export default function PermissionsScreen() {
                 </Text>
               </View>
               <Switch
-                checked={true}
-                onCheckedChange={() => handleOpenSystemSettings()}
+                checked={permissions.locationBackground?.granted ?? false}
+                onCheckedChange={() =>
+                  handleRequestPermission("location-background")
+                }
+                disabled={isLoading || !permissions.location?.granted}
                 testID="background-location-switch"
               />
             </View>
@@ -148,8 +231,9 @@ export default function PermissionsScreen() {
                 </Text>
               </View>
               <Switch
-                checked={true}
-                onCheckedChange={() => handleOpenSystemSettings()}
+                checked={permissions.bluetooth?.granted ?? false}
+                onCheckedChange={() => handleRequestPermission("bluetooth")}
+                disabled={isLoading}
                 testID="bluetooth-switch"
               />
             </View>

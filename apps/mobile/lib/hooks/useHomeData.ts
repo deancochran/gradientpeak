@@ -104,16 +104,16 @@ export function useHomeData() {
 
   // Get weekly summary for stats (loads in parallel)
   // Uses plan ID when available, gracefully handles when not
-  const planId = plan?.id ?? "";
+  const planId = plan?.id;
   const { data: weeklySummary, isLoading: summaryLoading } =
     trpc.trainingPlans.getWeeklySummary.useQuery(
       {
-        training_plan_id: planId,
+        training_plan_id: planId ?? "", // Fallback for type safety, but query won't run
         weeks_back: 1,
       },
       {
-        // Only skip the query if we know there's no plan at all
-        enabled: planId !== "" || planLoading,
+        // Only run query when we have a valid plan ID
+        enabled: !!planId && planId !== "",
       },
     );
 

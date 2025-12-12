@@ -9,20 +9,17 @@ interface Step2WeeklyTargetsProps {
   activitiesPerWeek: number;
   maxConsecutiveDays: number;
   minRestDays: number;
-  minHoursBetweenHard: number;
   onTssMinChange: (value: number) => void;
   onTssMaxChange: (value: number) => void;
   onActivitiesPerWeekChange: (value: number) => void;
   onMaxConsecutiveDaysChange: (value: number) => void;
   onMinRestDaysChange: (value: number) => void;
-  onMinHoursBetweenHardChange: (value: number) => void;
   errors?: {
     tssMin?: string;
     tssMax?: string;
     activitiesPerWeek?: string;
     maxConsecutiveDays?: string;
     minRestDays?: string;
-    minHoursBetweenHard?: string;
   };
 }
 
@@ -36,13 +33,11 @@ export function Step2WeeklyTargets({
   activitiesPerWeek,
   maxConsecutiveDays,
   minRestDays,
-  minHoursBetweenHard,
   onTssMinChange,
   onTssMaxChange,
   onActivitiesPerWeekChange,
   onMaxConsecutiveDaysChange,
   onMinRestDaysChange,
-  onMinHoursBetweenHardChange,
   errors,
 }: Step2WeeklyTargetsProps) {
   const averageTSS = Math.round((tssMin + tssMax) / 2);
@@ -190,38 +185,12 @@ export function Step2WeeklyTargets({
           </View>
         </View>
 
-        {/* Hours Between Hard Activities */}
-        <View className="gap-2">
-          <Label nativeID="hours-between-hard">
-            <Text className="text-sm font-medium">
-              Hours Between Hard Efforts
-            </Text>
-          </Label>
-          <Input
-            aria-labelledby="hours-between-hard"
-            placeholder="48"
-            value={minHoursBetweenHard.toString()}
-            onChangeText={(text) =>
-              onMinHoursBetweenHardChange(parseInt(text) || 0)
-            }
-            keyboardType="numeric"
-          />
-          {errors?.minHoursBetweenHard && (
-            <Text className="text-xs text-destructive">
-              {errors.minHoursBetweenHard}
-            </Text>
-          )}
-          <Text className="text-xs text-muted-foreground">
-            48 hours (2 days) recommended
-          </Text>
-        </View>
-
         {/* Recovery Summary */}
         <View className="bg-muted/30 rounded-lg p-3">
           <Text className="text-xs text-muted-foreground leading-5">
-            Your schedule: Train up to {maxConsecutiveDays} days in a row, rest
-            at least {minRestDays} day{minRestDays !== 1 ? "s" : ""}/week, and
-            space hard efforts by {minHoursBetweenHard} hours
+            Your schedule: Train up to {maxConsecutiveDays} days in a row with
+            at least {minRestDays} rest day{minRestDays !== 1 ? "s" : ""} per
+            week
           </Text>
         </View>
       </View>

@@ -13,11 +13,13 @@ import {
   validateWahooCompatibility,
 } from "./plan-converter";
 import {
-  convertRouteToFIT,
-  getRouteStartCoordinate,
+  prepareGPXForWahoo,
+  extractStartCoordinates,
   getWorkoutTypeFamilyForRoute,
   validateRouteForWahoo,
+  type RouteFileData,
 } from "./route-converter";
+import { toActivityType } from "./activity-type-utils";
 
 type SyncAction = "created" | "updated" | "recreated" | "no_change";
 
@@ -52,7 +54,8 @@ export class WahooSyncService {
             id,
             name,
             description,
-            activity_type,
+            activity_category,
+            activity_location,
             structure,
             updated_at,
             route_id
@@ -95,8 +98,12 @@ export class WahooSyncService {
         };
       }
 
-      // 4. Check if activity type is supported by Wahoo
-      const activityType = planned.activity_plan.activity_type;
+      // 4. Convert activity category + location to activity type
+      const activityType = toActivityType(
+        planned.activity_plan.activity_category,
+        planned.activity_plan.activity_location,
+      );
+
       if (!isActivityTypeSupportedByWahoo(activityType)) {
         return {
           success: false,
@@ -106,8 +113,10 @@ export class WahooSyncService {
       }
 
       // 4b. Fetch route data if route_id is present
-      let routeData = null;
+      let routeData: RouteFileData | null = null;
+      let gpxContent: string | null = null;
       const routeId = planned.activity_plan.route_id;
+
       if (routeId) {
         const { data: route, error: routeError } = await this.supabase
           .from("activity_routes")
@@ -128,7 +137,7 @@ export class WahooSyncService {
           .single();
 
         if (!routeError && route) {
-          // Load route file from storage
+          // Load GPX file from storage
           const { data: fileData, error: storageError } =
             await this.supabase.storage
               .from("routes")
@@ -136,22 +145,27 @@ export class WahooSyncService {
 
           if (!storageError && fileData) {
             try {
-              const fileContent = await fileData.text();
-              // Parse GPX file - you'll need to import parseRoute from your routes utils
-              const parsed = this.parseRouteFile(fileContent);
+              gpxContent = await fileData.text();
+
+              // Extract start coordinates from GPX
+              const startCoords = extractStartCoordinates(gpxContent);
 
               routeData = {
-                id: route.id,
+                filePath: route.file_path,
                 name: route.name,
                 description: route.description,
-                activityType: route.activity_category,
-                coordinates: parsed.coordinates,
+                activityType: toActivityType(
+                  route.activity_category,
+                  "outdoor",
+                ),
                 totalDistance: route.total_distance,
                 totalAscent: route.total_ascent,
                 totalDescent: route.total_descent,
+                startLat: startCoords?.latitude,
+                startLng: startCoords?.longitude,
               };
             } catch (error) {
-              console.warn("Failed to parse route file:", error);
+              console.warn("Failed to load route file:", error);
               // Continue without route
             }
           }
@@ -194,8 +208,10 @@ export class WahooSyncService {
           profile,
           wahooClient,
           profileId,
+          activityType,
           validation.warnings,
           routeData,
+          gpxContent,
         );
       } else {
         // Update existing sync
@@ -206,6 +222,7 @@ export class WahooSyncService {
           profile,
           wahooClient,
           profileId,
+          activityType,
           validation.warnings,
         );
       }
@@ -223,37 +240,6 @@ export class WahooSyncService {
   }
 
   /**
-   * Parse a route file (GPX format)
-   * This is a simplified parser - for production, use a proper GPX parser
-   */
-  private parseRouteFile(content: string): {
-    coordinates: Array<{
-      latitude: number;
-      longitude: number;
-      elevation?: number;
-    }>;
-  } {
-    // Simple GPX parsing - extract trkpt elements
-    const coordinates: Array<{
-      latitude: number;
-      longitude: number;
-      elevation?: number;
-    }> = [];
-
-    const trkptRegex = /<trkpt[^>]*lat="([^"]*)"[^>]*lon="([^"]*)"/g;
-    let match;
-
-    while ((match = trkptRegex.exec(content)) !== null) {
-      coordinates.push({
-        latitude: parseFloat(match[1]),
-        longitude: parseFloat(match[2]),
-      });
-    }
-
-    return { coordinates };
-  }
-
-  /**
    * Create a new sync (first time syncing this planned activity)
    */
   private async createNewSync(
@@ -262,12 +248,14 @@ export class WahooSyncService {
     profile: any,
     wahooClient: any,
     profileId: string,
+    activityType: string,
     warnings?: string[],
-    routeData?: any,
+    routeData?: RouteFileData | null,
+    gpxContent?: string | null,
   ): Promise<SyncResult> {
     // Sync route first if present
     let wahooRouteId: number | undefined;
-    if (routeData && supportsRoutes(planned.activity_plan.activity_type)) {
+    if (routeData && gpxContent && supportsRoutes(activityType as any)) {
       try {
         // Validate route for Wahoo
         const validation = validateRouteForWahoo(routeData);
@@ -280,11 +268,8 @@ export class WahooSyncService {
           };
         }
 
-        // Convert route to FIT format
-        const fitFile = convertRouteToFIT(routeData);
-        const startCoord = getRouteStartCoordinate(routeData.coordinates);
-
-        if (!startCoord) {
+        // Check if we have start coordinates
+        if (!routeData.startLat || !routeData.startLng) {
           return {
             success: false,
             action: "no_change",
@@ -292,22 +277,25 @@ export class WahooSyncService {
           };
         }
 
+        // Prepare GPX file for Wahoo (base64 encode)
+        const base64Gpx = prepareGPXForWahoo(gpxContent);
+
         // Create route in Wahoo
         const wahooRoute = await wahooClient.createRoute({
-          file: fitFile,
-          filename: `${routeData.name}.fit`,
-          externalId: routeData.id,
+          file: base64Gpx,
+          filename: `${routeData.name}.gpx`,
+          externalId: routeData.filePath,
           providerUpdatedAt: new Date().toISOString(),
           name: routeData.name,
           description: routeData.description,
           workoutTypeFamilyId: getWorkoutTypeFamilyForRoute(
             routeData.activityType,
           ),
-          startLat: startCoord.latitude,
-          startLng: startCoord.longitude,
+          startLat: routeData.startLat,
+          startLng: routeData.startLng,
           distance: routeData.totalDistance,
           ascent: routeData.totalAscent || 0,
-          descent: routeData.totalDescent,
+          descent: routeData.totalDescent || 0,
         });
 
         wahooRouteId = wahooRoute.id;
@@ -324,7 +312,7 @@ export class WahooSyncService {
 
     // Convert to Wahoo format
     const wahooPlan = convertToWahooPlan(structure, {
-      activityType: planned.activity_plan.activity_type,
+      activityType: activityType as any,
       name: planned.activity_plan.name,
       description: planned.activity_plan.description,
       ftp: profile?.ftp || undefined,
@@ -336,7 +324,7 @@ export class WahooSyncService {
       structure: wahooPlan,
       name: planned.activity_plan.name,
       description: planned.activity_plan.description,
-      activityType: planned.activity_plan.activity_type,
+      activityType: activityType as any,
       externalId: planned.activity_plan.id,
     });
 
@@ -378,6 +366,7 @@ export class WahooSyncService {
     profile: any,
     wahooClient: any,
     profileId: string,
+    activityType: string,
     warnings?: string[],
   ): Promise<SyncResult> {
     // Determine what changed by comparing timestamps or hashing structure
@@ -411,7 +400,7 @@ export class WahooSyncService {
       // Structure changed - need to recreate
       // Convert to Wahoo format
       const wahooPlan = convertToWahooPlan(structure, {
-        activityType: planned.activity_plan.activity_type,
+        activityType: activityType as any,
         name: planned.activity_plan.name,
         description: planned.activity_plan.description,
         ftp: profile?.ftp || undefined,
@@ -423,7 +412,7 @@ export class WahooSyncService {
         structure: wahooPlan,
         name: planned.activity_plan.name,
         description: planned.activity_plan.description,
-        activityType: planned.activity_plan.activity_type,
+        activityType: activityType as any,
         externalId: planned.activity_plan.id,
       });
 

@@ -5,6 +5,8 @@ export * from "./calculations";
 // (ActivityType and getIntensityZone come from schemas instead)
 export {
   ACTIVITY_CATEGORIES,
+  ACTIVITY_CATEGORY_CONFIG,
+  ACTIVITY_LOCATIONS,
   ACTIVITY_TYPE_CONFIG,
   BLE_SERVICE_UUIDS,
   CONVERSION_FACTORS,

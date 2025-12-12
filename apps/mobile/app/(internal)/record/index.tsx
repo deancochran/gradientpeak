@@ -43,7 +43,16 @@ function RecordScreen() {
   const plan = usePlan(service);
   const { isOutdoorActivity } = useActivityStatus(service);
   const { start, pause, resume, finish } = useRecorderActions(service);
-  const { allGranted: allPermissionsGranted } = useAllPermissionsGranted();
+  const { allGranted: allPermissionsGranted, isLoading: permissionsLoading } =
+    useAllPermissionsGranted();
+
+  // Debug: Log permission status changes
+  useEffect(() => {
+    console.log("[RecordModal] Permission status changed:", {
+      allPermissionsGranted,
+      permissionsLoading,
+    });
+  }, [allPermissionsGranted, permissionsLoading]);
 
   // Initialize from store selection
   useEffect(() => {
@@ -86,28 +95,75 @@ function RecordScreen() {
     initializeFromStore();
   }, [service, isInitialized, router]);
 
-  // Handle start action - check permissions first
+  // Handle start action - request permissions if needed, then start
   const handleStart = useCallback(async () => {
     console.log("[RecordModal] Start clicked, checking permissions");
+    console.log("[RecordModal] allPermissionsGranted:", allPermissionsGranted);
 
     if (!allPermissionsGranted) {
-      Alert.alert(
-        "Permissions Required",
-        "All permissions (Bluetooth, Location, and Background Location) are required to start recording activities. Please grant all permissions before starting.",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Manage Permissions",
-            onPress: () => router.push("/(internal)/permissions"),
-          },
-        ],
+      console.log(
+        "[RecordModal] Permissions not granted, requesting permissions",
       );
-      return;
+
+      // Request all permissions inline
+      if (!service) {
+        Alert.alert("Error", "Service not initialized");
+        return;
+      }
+
+      try {
+        const granted = await service.refreshAndCheckAllPermissions();
+
+        if (!granted) {
+          // Still not granted after check, request them
+          const { requestPermission } = await import(
+            "@/lib/services/permissions-check"
+          );
+
+          // Request in sequence
+          await requestPermission("bluetooth");
+          await requestPermission("location");
+          await requestPermission("location-background");
+
+          // Final check
+          const finalCheck = await service.refreshAndCheckAllPermissions();
+
+          if (!finalCheck) {
+            Alert.alert(
+              "Permissions Required",
+              "This app requires Bluetooth, Location, and Background Location permissions to record activities. Please enable them in your device settings.",
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Open Settings",
+                  onPress: () =>
+                    router.push("/(internal)/(tabs)/settings/permissions"),
+                },
+              ],
+            );
+            return;
+          }
+        }
+      } catch (error) {
+        console.error("[RecordModal] Error requesting permissions:", error);
+        Alert.alert(
+          "Error",
+          "Failed to request permissions. Please try again.",
+        );
+        return;
+      }
     }
 
     // All permissions granted, start recording
-    await start();
-  }, [allPermissionsGranted, start, router]);
+    console.log("[RecordModal] Permissions granted, starting recording");
+    try {
+      await start();
+      console.log("[RecordModal] Recording started successfully");
+    } catch (error) {
+      console.error("[RecordModal] Error starting recording:", error);
+      Alert.alert("Error", "Failed to start recording. Please try again.");
+    }
+  }, [allPermissionsGranted, start, service, router]);
 
   // Handle finish action - navigate immediately
   const handleFinish = useCallback(async () => {

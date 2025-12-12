@@ -76,7 +76,7 @@ export const getActivityDisplayName = (type: ActivityType): string => {
 };
 
 /**
- * Get activity type category
+ * Get activity type category (for general categorization)
  */
 export const getActivityCategory = (
   type: ActivityType,
@@ -96,6 +96,29 @@ export const getActivityCategory = (
     return "strength";
   }
   return "other";
+};
+
+/**
+ * Map ActivityType to database activity_category enum
+ */
+export const mapActivityTypeToCategory = (
+  type: ActivityType,
+): "run" | "bike" | "swim" | "strength" | "other" => {
+  switch (type) {
+    case "outdoor_run":
+    case "indoor_treadmill":
+      return "run";
+    case "outdoor_bike":
+    case "indoor_bike_trainer":
+      return "bike";
+    case "indoor_swim":
+      return "swim";
+    case "indoor_strength":
+      return "strength";
+    case "other":
+    default:
+      return "other";
+  }
 };
 
 /**

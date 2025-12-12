@@ -3,7 +3,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
 import { trpc } from "@/lib/trpc";
 import { decodePolyline } from "@repo/core";
-import { MapPin, TrendingUp, X } from "lucide-react-native";
+import { useRouter } from "expo-router";
+import { MapPin, TrendingUp, Upload, X } from "lucide-react-native";
 import { View } from "react-native";
 import MapView, { Polyline } from "react-native-maps";
 import {
@@ -14,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../ui/select";
+import { Icon } from "../ui/icon";
 
 interface RouteSelectorProps {
   activityCategory: string;
@@ -26,6 +28,8 @@ export function RouteSelector({
   selectedRouteId,
   onSelectRoute,
 }: RouteSelectorProps) {
+  const router = useRouter();
+
   // Fetch routes filtered by activity category
   const { data } = trpc.routes.list.useInfiniteQuery(
     {
@@ -38,12 +42,22 @@ export function RouteSelector({
     },
   );
 
+  // Extract string ID in case it's an object
+  const routeId =
+    typeof selectedRouteId === "string"
+      ? selectedRouteId
+      : (selectedRouteId as any)?.value || null;
+
   const { data: selectedRoute } = trpc.routes.get.useQuery(
-    { id: selectedRouteId! },
-    { enabled: !!selectedRouteId },
+    { id: routeId! },
+    { enabled: !!routeId && typeof routeId === "string" },
   );
 
   const routes = data?.pages.flatMap((page) => page.items) ?? [];
+
+  const handleUploadRoute = () => {
+    router.push("/routes/upload" as any);
+  };
 
   const formatDistance = (meters: number) => {
     const km = meters / 1000;
@@ -68,32 +82,55 @@ export function RouteSelector({
         </View>
 
         {routes.length === 0 ? (
-          <View className="py-4 items-center">
-            <Text className="text-sm text-muted-foreground text-center">
+          <View className="py-6 items-center gap-3">
+            <Text className="text-sm text-muted-foreground text-center mb-1">
               No routes available for this activity type
             </Text>
+            <Button
+              variant="outline"
+              size="sm"
+              onPress={handleUploadRoute}
+              className="flex-row gap-2"
+            >
+              <Icon as={Upload} size={16} className="text-foreground" />
+              <Text>Upload Route</Text>
+            </Button>
           </View>
         ) : (
           <>
-            <Select
-              value={selectedRouteId || undefined}
-              onValueChange={(value) => onSelectRoute(value || null)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select a route (optional)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {routes.map((route) => (
-                    <SelectItem
-                      key={route.id}
-                      value={route.id}
-                      label={route.name}
-                    />
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
+            <View className="flex-row gap-2 mb-2">
+              <View className="flex-1">
+                <Select
+                  value={selectedRouteId || undefined}
+                  onValueChange={(option) => {
+                    // Handle both string and object returns from Select
+                    const routeId =
+                      typeof option === "string"
+                        ? option
+                        : option?.value || null;
+                    onSelectRoute(routeId);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a route (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {routes.map((route) => (
+                        <SelectItem
+                          key={route.id}
+                          value={route.id}
+                          label={route.name}
+                        />
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </View>
+              <Button variant="outline" size="icon" onPress={handleUploadRoute}>
+                <Icon as={Upload} size={18} className="text-foreground" />
+              </Button>
+            </View>
 
             {/* Selected Route Preview */}
             {selectedRoute && (

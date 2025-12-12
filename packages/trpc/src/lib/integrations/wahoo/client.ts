@@ -3,6 +3,8 @@
  * Handles communication with Wahoo's API for plans and workouts
  */
 
+import type { ActivityType } from "./activity-type-utils";
+
 const WAHOO_API_BASE = "https://api.wahooligan.com";
 
 export interface WahooClientConfig {
@@ -14,7 +16,7 @@ export interface WahooPlanData {
   structure: Record<string, any>;
   name: string;
   description: string;
-  activityType: string;
+  activityType: ActivityType;
   externalId: string; // Your planned_activity_id or activity_plan_id
 }
 
@@ -27,7 +29,7 @@ export interface WahooWorkoutData {
 }
 
 export interface WahooRouteData {
-  file: string; // Base64 encoded FIT file
+  file: string; // Base64 encoded GPX file
   filename: string;
   externalId: string;
   providerUpdatedAt: string;
@@ -132,13 +134,8 @@ export interface WahooRoute {
   created_at: string;
 }
 
-/**
- * Check if activity type supports routes in Wahoo
- * Only outdoor cycling and outdoor running support routes
- */
-export function supportsRoutes(activityType: string): boolean {
-  return activityType === "outdoor_bike" || activityType === "outdoor_run";
-}
+// Re-export supportsRoutes from activity-type-utils for backwards compatibility
+export { supportsRoutes } from "./activity-type-utils";
 
 export class WahooClient {
   private accessToken: string;

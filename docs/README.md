@@ -98,14 +98,14 @@ Database Schema → Supabase Types → Core Zod Schemas → tRPC → Apps
 **Mobile** (`apps/mobile/.env`):
 ```bash
 EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-anon-key
 ```
 
 **Web** (`apps/web/.env.local`):
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-anon-key
+NEXT_PRIVATE_SUPABASE_SECRET_KEY=your-service-role-key
 ```
 
 ### Local Supabase (Optional)

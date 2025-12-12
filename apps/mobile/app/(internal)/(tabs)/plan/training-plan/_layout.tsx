@@ -1,5 +1,11 @@
 import { Stack } from "expo-router";
 
+/**
+ * Training Plan Layout
+ *
+ * Stack-based navigation with proper headers, back navigation, and modal presentation.
+ * The create screen uses modal presentation for a focused creation flow.
+ */
 export default function TrainingPlanLayout() {
   return (
     <Stack
@@ -35,6 +41,8 @@ export default function TrainingPlanLayout() {
         options={{
           title: "Create Training Plan",
           presentation: "modal",
+          headerShown: true,
+          // Modal with header allows for consistent navigation and optional header actions
         }}
       />
     </Stack>

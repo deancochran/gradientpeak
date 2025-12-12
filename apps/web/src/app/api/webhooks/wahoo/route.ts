@@ -140,10 +140,7 @@ function verifyWebhookSignature(
     const digest = hmac.update(body, "utf8").digest("hex");
 
     // Constant-time comparison to prevent timing attacks
-    return crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(digest),
-    );
+    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest));
   } catch (error) {
     console.error("Error verifying webhook signature:", error);
     return false;
@@ -168,7 +165,7 @@ async function processWorkoutSummary(
     // Create Supabase client with service role for webhook processing
     const supabase = createClient<Database>(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY!,
     );
 
     // Import the activity
@@ -177,9 +174,7 @@ async function processWorkoutSummary(
 
     if (result.success) {
       if (result.skipped) {
-        console.log(
-          `Skipped workout summary ${summary.id}: ${result.reason}`,
-        );
+        console.log(`Skipped workout summary ${summary.id}: ${result.reason}`);
       } else {
         console.log(
           `Successfully imported workout summary ${summary.id} as activity ${result.activityId}`,

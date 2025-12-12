@@ -448,7 +448,8 @@ export const trainingPlansRouter = createTRPCRouter({
         activity_plan:activity_plans (
           id,
           name,
-          activity_type,
+          activity_category,
+          activity_location,
           estimated_duration,
           estimated_tss
         )

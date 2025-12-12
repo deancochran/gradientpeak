@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
+import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { trpc } from "@/lib/trpc";
 import { format } from "date-fns";
 import { useRouter } from "expo-router";
@@ -49,23 +50,10 @@ function PlannedActivityDetailModalContent({
     );
 
   // Delete mutation
-  const deleteMutation = trpc.plannedActivities.delete.useMutation({
-    onSuccess: () => {
-      // Invalidate all related queries
-      utils.plannedActivities.list.invalidate();
-      utils.plannedActivities.getToday.invalidate();
-      utils.plannedActivities.getWeekCount.invalidate();
-      utils.trainingPlans.getCurrentStatus.invalidate();
-
-      Alert.alert("Success", "Activity removed from your schedule");
-      onClose();
-    },
-    onError: (error) => {
-      Alert.alert(
-        "Error",
-        error.message || "Failed to delete activity. Please try again.",
-      );
-    },
+  const deleteMutation = useReliableMutation(trpc.plannedActivities.delete, {
+    invalidate: [utils.plannedActivities, utils.trainingPlans],
+    success: "Activity removed from your schedule",
+    onSuccess: () => onClose(),
   });
 
   const handleStartActivity = () => {

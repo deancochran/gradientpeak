@@ -131,7 +131,9 @@ export const profilesRouter = createTRPCRouter({
 
         const { data: activities, error } = await ctx.supabase
           .from("activities")
-          .select("duration, distance, tss, activity_type, started_at")
+          .select(
+            "duration, distance, tss, activity_category, activity_location, started_at",
+          )
           .eq("profile_id", ctx.session.user.id)
           .gte("started_at", startDate.toISOString())
           .lte("started_at", endDate.toISOString());

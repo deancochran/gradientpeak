@@ -19,7 +19,7 @@ import {
   PublicActivityMetric,
   PublicActivityMetricDataType,
 } from "@repo/core";
-import * as FileSystem from "expo-file-system";
+import { Directory, File, Paths } from "expo-file-system";
 import { LocationReading, SensorReading } from "./types";
 
 // ================================
@@ -41,17 +41,20 @@ interface StreamChunk {
 // ================================
 
 export class StreamBuffer {
-  private readings: Map<PublicActivityMetric, Array<{ value: number; timestamp: number }>> = new Map();
+  private readings: Map<
+    PublicActivityMetric,
+    Array<{ value: number; timestamp: number }>
+  > = new Map();
   private locations: LocationReading[] = [];
   private chunkIndex = 0;
   private lastFlushTime: Date;
   private sessionId: string;
-  private storageDir: string;
+  private storageDir: Directory;
 
   constructor() {
     this.lastFlushTime = new Date();
     this.sessionId = `recording_${Date.now()}`;
-    this.storageDir = `${FileSystem.cacheDirectory}${this.sessionId}/`;
+    this.storageDir = new Directory(Paths.cache, this.sessionId);
   }
 
   /**
@@ -59,13 +62,10 @@ export class StreamBuffer {
    */
   async initialize(): Promise<void> {
     try {
-      const dirInfo = await FileSystem.getInfoAsync(this.storageDir);
-      if (!dirInfo.exists) {
-        await FileSystem.makeDirectoryAsync(this.storageDir, {
-          intermediates: true,
-        });
+      if (!this.storageDir.exists) {
+        this.storageDir.create({ intermediates: true });
       }
-      console.log("[StreamBuffer] Initialized storage:", this.storageDir);
+      console.log("[StreamBuffer] Initialized storage:", this.storageDir.uri);
     } catch (error) {
       console.error("[StreamBuffer] Failed to initialize storage:", error);
       throw error;
@@ -148,7 +148,7 @@ export class StreamBuffer {
 
         // Write altitude separately if available
         const altitudes = this.locations.filter(
-          (loc) => loc.altitude !== undefined
+          (loc) => loc.altitude !== undefined,
         );
         if (altitudes.length > 0) {
           const altitudeChunk: StreamChunk = {
@@ -166,7 +166,7 @@ export class StreamBuffer {
       }
 
       console.log(
-        `[StreamBuffer] Flushed chunk ${this.chunkIndex} (${this.readings.size} metrics, ${this.locations.length} locations) in ${Date.now() - flushStartTime}ms`
+        `[StreamBuffer] Flushed chunk ${this.chunkIndex} (${this.readings.size} metrics, ${this.locations.length} locations) in ${Date.now() - flushStartTime}ms`,
       );
 
       // Clear memory after successful write
@@ -186,13 +186,16 @@ export class StreamBuffer {
    */
   private async writeChunk(
     metric: PublicActivityMetric,
-    chunk: StreamChunk
+    chunk: StreamChunk,
   ): Promise<void> {
     const filename = `chunk_${this.chunkIndex}_${metric}.json`;
-    const filepath = `${this.storageDir}${filename}`;
+    const file = new File(this.storageDir.uri, filename);
 
     try {
-      await FileSystem.writeAsStringAsync(filepath, JSON.stringify(chunk));
+      file.write(JSON.stringify(chunk));
+      console.log(
+        `[StreamBuffer] Wrote chunk ${filename} (${chunk.sampleCount} samples)`,
+      );
     } catch (error) {
       console.error(`[StreamBuffer] Failed to write chunk ${filename}:`, error);
       throw error;
@@ -209,8 +212,10 @@ export class StreamBuffer {
 
     try {
       // List all chunk files
-      const files = await FileSystem.readDirectoryAsync(this.storageDir);
-      const chunkFiles = files.filter((f) => f.startsWith("chunk_"));
+      const contents = this.storageDir.list();
+      const chunkFiles = contents
+        .filter((item) => item instanceof File && item.uri.includes("chunk_"))
+        .map((file) => (file as File).uri.split("/").pop()!);
 
       console.log(`[StreamBuffer] Found ${chunkFiles.length} chunk files`);
 
@@ -237,13 +242,13 @@ export class StreamBuffer {
 
         const aggregatedStream = await this.aggregateMetricChunks(
           metric,
-          files
+          files,
         );
         aggregated.set(metric, aggregatedStream);
       }
 
       console.log(
-        `[StreamBuffer] Aggregation complete in ${Date.now() - aggregateStartTime}ms (${aggregated.size} metrics)`
+        `[StreamBuffer] Aggregation complete in ${Date.now() - aggregateStartTime}ms (${aggregated.size} metrics)`,
       );
 
       return aggregated;
@@ -258,19 +263,22 @@ export class StreamBuffer {
    */
   private async aggregateMetricChunks(
     metric: string,
-    filenames: string[]
+    filenames: string[],
   ): Promise<AggregatedStream> {
     const chunks: StreamChunk[] = [];
 
     // Read all chunk files
     for (const filename of filenames) {
-      const filepath = `${this.storageDir}${filename}`;
       try {
-        const content = await FileSystem.readAsStringAsync(filepath);
+        const file = new File(this.storageDir.uri, filename);
+        const content = file.textSync();
         const chunk = JSON.parse(content) as StreamChunk;
         chunks.push(chunk);
       } catch (error) {
-        console.error(`[StreamBuffer] Failed to read chunk ${filename}:`, error);
+        console.error(
+          `[StreamBuffer] Failed to read chunk ${filename}:`,
+          error,
+        );
         throw error;
       }
     }
@@ -357,7 +365,7 @@ export class StreamBuffer {
    * Determine data type for a metric
    */
   private getDataTypeForMetric(
-    metric: PublicActivityMetric
+    metric: PublicActivityMetric,
   ): PublicActivityMetricDataType {
     switch (metric) {
       case "latlng":
@@ -413,9 +421,8 @@ export class StreamBuffer {
    */
   async cleanup(): Promise<void> {
     try {
-      const dirInfo = await FileSystem.getInfoAsync(this.storageDir);
-      if (dirInfo.exists) {
-        await FileSystem.deleteAsync(this.storageDir, { idempotent: true });
+      if (this.storageDir.exists) {
+        this.storageDir.delete();
         console.log("[StreamBuffer] Cleaned up storage directory");
       }
     } catch (error) {
@@ -430,31 +437,33 @@ export class StreamBuffer {
    */
   static async cleanupOrphanedRecordings(): Promise<void> {
     try {
-      const cacheDir = FileSystem.cacheDirectory;
-      if (!cacheDir) return;
-
-      const files = await FileSystem.readDirectoryAsync(cacheDir);
-      const recordingDirs = files.filter((f) => f.startsWith("recording_"));
+      const cacheDir = new Directory(Paths.cache);
+      const contents = cacheDir.list();
+      const recordingDirs = contents.filter(
+        (item) => item instanceof Directory && item.uri.includes("recording_"),
+      );
 
       console.log(
-        `[StreamBuffer] Found ${recordingDirs.length} recording directories to clean up`
+        `[StreamBuffer] Found ${recordingDirs.length} recording directories to clean up`,
       );
 
       for (const dir of recordingDirs) {
-        const dirPath = `${cacheDir}${dir}/`;
         try {
-          await FileSystem.deleteAsync(dirPath, { idempotent: true });
+          (dir as Directory).delete();
         } catch (error) {
           console.warn(
-            `[StreamBuffer] Failed to delete orphaned directory ${dir}:`,
-            error
+            `[StreamBuffer] Failed to delete orphaned directory:`,
+            error,
           );
         }
       }
 
       console.log("[StreamBuffer] Orphaned recordings cleanup complete");
     } catch (error) {
-      console.error("[StreamBuffer] Failed to cleanup orphaned recordings:", error);
+      console.error(
+        "[StreamBuffer] Failed to cleanup orphaned recordings:",
+        error,
+      );
       // Don't throw - cleanup failure shouldn't prevent app startup
     }
   }

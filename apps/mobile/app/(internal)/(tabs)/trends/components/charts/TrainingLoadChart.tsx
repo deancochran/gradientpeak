@@ -1,8 +1,9 @@
 // apps/mobile/app/(internal)/(tabs)/trends/components/charts/TrainingLoadChart.tsx
 
 import { Text } from "@/components/ui/text";
-import { Dimensions, View } from "react-native";
-import { LineChart } from "react-native-chart-kit";
+import { View } from "react-native";
+import { CartesianChart, Line } from "victory-native";
+import { useFont } from "@shopify/react-native-skia";
 
 export interface TrainingLoadData {
   date: string;
@@ -20,148 +21,102 @@ export function TrainingLoadChart({
   data,
   height = 250,
 }: TrainingLoadChartProps) {
-  const screenWidth = Dimensions.get("window").width;
-
-  if (!data || data.length === 0) {
-    return (
-      <View
-        className="bg-white rounded-lg border border-gray-200 p-4"
-        style={{ height }}
-      >
-        <Text className="text-base font-semibold text-gray-900 mb-2">
-          Training Load Chart
-        </Text>
-        <View className="flex-1 items-center justify-center">
-          <Text className="text-gray-500">No training load data available</Text>
-        </View>
-      </View>
-    );
-  }
+  const isEmpty = !data || data.length === 0;
 
   // Prepare data for chart - show last 30 days max for readability
-  const recentData = data.slice(-30);
+  const recentData = isEmpty ? [] : data.slice(-30);
 
-  const chartData = {
-    labels: recentData.map((d, index) => {
-      if (index % Math.ceil(recentData.length / 5) === 0) {
-        const date = new Date(d.date);
-        return `${date.getMonth() + 1}/${date.getDate()}`;
-      }
-      return "";
-    }),
-    datasets: [
-      {
-        data: recentData.map((d) => d.ctl),
-        color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`, // blue
-        strokeWidth: 3,
-      },
-      {
-        data: recentData.map((d) => d.atl),
-        color: (opacity = 1) => `rgba(245, 158, 11, ${opacity})`, // yellow
-        strokeWidth: 3,
-      },
-      {
-        data: recentData.map((d) => d.tsb),
-        color: (opacity = 1) => {
-          const avgTsb =
-            recentData.reduce((sum, d) => sum + d.tsb, 0) / recentData.length;
-          return avgTsb > 0
-            ? `rgba(16, 185, 129, ${opacity})` // green
-            : `rgba(239, 68, 68, ${opacity})`; // red
-        },
-        strokeWidth: 2,
-      },
-    ],
-  };
-
-  const chartConfig = {
-    backgroundColor: "#ffffff",
-    backgroundGradientFrom: "#ffffff",
-    backgroundGradientTo: "#ffffff",
-    decimalPlaces: 0,
-    color: (opacity = 1) => `rgba(107, 114, 128, ${opacity})`,
-    labelColor: (opacity = 1) => `rgba(107, 114, 128, ${opacity})`,
-    style: {
-      borderRadius: 8,
-    },
-    propsForDots: {
-      r: "0",
-    },
-    propsForBackgroundLines: {
-      strokeDasharray: "",
-      stroke: "#f3f4f6",
-      strokeWidth: 1,
-    },
-  };
+  // Transform data for victory-native
+  const chartData = recentData.map((d, index) => ({
+    index,
+    ctl: d.ctl,
+    atl: d.atl,
+    tsb: d.tsb,
+    date: d.date,
+  }));
 
   return (
-    <View className="bg-white rounded-lg border border-gray-200 p-4">
-      <Text className="text-base font-semibold text-gray-900 mb-2">
+    <View className="bg-card rounded-lg border border-border p-4">
+      <Text className="text-base font-semibold text-foreground mb-2">
         Training Load Curve
       </Text>
-      <Text className="text-xs text-gray-500 mb-4">
+      <Text className="text-xs text-muted-foreground mb-4">
         CTL (Fitness), ATL (Fatigue), and TSB (Form) over time
       </Text>
 
-      <LineChart
-        data={chartData}
-        width={screenWidth - 64}
-        height={height}
-        chartConfig={chartConfig}
-        bezier
-        style={{
-          marginVertical: 8,
-          borderRadius: 8,
-        }}
-        withHorizontalLabels={true}
-        withVerticalLabels={true}
-        withDots={false}
-        withShadow={false}
-        fromZero={false}
-      />
+      <View style={{ height: height - 50 }}>
+        {isEmpty ? (
+          <View className="flex-1 items-center justify-center bg-muted/30 rounded">
+            <Text className="text-muted-foreground text-sm mb-1">
+              No training load data yet
+            </Text>
+            <Text className="text-muted-foreground text-xs text-center px-4">
+              Complete activities to track your fitness (CTL), fatigue (ATL),
+              and form (TSB)
+            </Text>
+          </View>
+        ) : (
+          <CartesianChart
+            data={chartData}
+            xKey="index"
+            yKeys={["ctl", "atl", "tsb"]}
+          >
+            {({ points }) => (
+              <>
+                {/* CTL line (blue) */}
+                <Line points={points.ctl} color="#3b82f6" strokeWidth={3} />
+                {/* ATL line (orange) */}
+                <Line points={points.atl} color="#f59e0b" strokeWidth={3} />
+                {/* TSB line (green/red based on value) */}
+                <Line points={points.tsb} color="#10b981" strokeWidth={2} />
+              </>
+            )}
+          </CartesianChart>
+        )}
+      </View>
 
       {/* Legend */}
-      <View className="flex-row justify-center mt-2 space-x-6">
+      <View className="flex-row justify-center mt-2 gap-6">
         <View className="flex-row items-center">
           <View className="w-3 h-0.5 bg-blue-500 mr-1" />
-          <Text className="text-xs text-gray-600">CTL (Fitness)</Text>
+          <Text className="text-xs text-muted-foreground">CTL (Fitness)</Text>
         </View>
         <View className="flex-row items-center">
           <View className="w-3 h-0.5 bg-yellow-500 mr-1" />
-          <Text className="text-xs text-gray-600">ATL (Fatigue)</Text>
+          <Text className="text-xs text-muted-foreground">ATL (Fatigue)</Text>
         </View>
         <View className="flex-row items-center">
           <View className="w-3 h-0.5 bg-green-500 mr-1" />
-          <Text className="text-xs text-gray-600">TSB (Form)</Text>
+          <Text className="text-xs text-muted-foreground">TSB (Form)</Text>
         </View>
       </View>
 
       {/* Current values */}
-      {recentData.length > 0 && (
-        <View className="flex-row justify-around mt-4 pt-3 border-t border-gray-100">
+      {!isEmpty && recentData.length > 0 && (
+        <View className="flex-row justify-around mt-4 pt-3 border-t border-border">
           <View className="items-center">
-            <Text className="text-xs text-gray-500">Current CTL</Text>
+            <Text className="text-xs text-muted-foreground">Current CTL</Text>
             <Text className="text-sm font-semibold text-blue-600">
-              {recentData[recentData.length - 1].ctl}
+              {recentData[recentData.length - 1]!.ctl}
             </Text>
           </View>
           <View className="items-center">
-            <Text className="text-xs text-gray-500">Current ATL</Text>
+            <Text className="text-xs text-muted-foreground">Current ATL</Text>
             <Text className="text-sm font-semibold text-yellow-600">
-              {recentData[recentData.length - 1].atl}
+              {recentData[recentData.length - 1]!.atl}
             </Text>
           </View>
           <View className="items-center">
-            <Text className="text-xs text-gray-500">Current TSB</Text>
+            <Text className="text-xs text-muted-foreground">Current TSB</Text>
             <Text
               className={`text-sm font-semibold ${
-                recentData[recentData.length - 1].tsb > 0
+                recentData[recentData.length - 1]!.tsb > 0
                   ? "text-green-600"
                   : "text-red-600"
               }`}
             >
-              {recentData[recentData.length - 1].tsb > 0 ? "+" : ""}
-              {recentData[recentData.length - 1].tsb}
+              {recentData[recentData.length - 1]!.tsb > 0 ? "+" : ""}
+              {recentData[recentData.length - 1]!.tsb}
             </Text>
           </View>
         </View>

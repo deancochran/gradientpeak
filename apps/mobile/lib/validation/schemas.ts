@@ -3,9 +3,32 @@
  *
  * Provides reusable, well-tested validation patterns for forms throughout the app.
  * Includes helpful error messages and proper handling of optional/nullable fields.
+ *
+ * NOTE: Many schemas have been moved to @repo/core/schemas/form-schemas.ts for reuse
+ * across mobile and web apps. Import from there when possible.
  */
 
 import { z } from "zod";
+
+// Re-export commonly used schemas from core for convenience
+export {
+  profileSettingsFormSchema,
+  activitySubmissionFormSchema,
+  activityPlanCreateFormSchema,
+  plannedActivityScheduleFormSchema,
+  trainingPlanCreateFormSchema,
+  trainingPlanBasicInfoFormSchema,
+  trainingPlanWeeklyTargetsFormSchema,
+  trainingPlanPeriodizationFormSchema,
+  type ProfileSettingsFormData,
+  type ActivitySubmissionFormData,
+  type ActivityPlanCreateFormData,
+  type PlannedActivityScheduleFormData,
+  type TrainingPlanCreateFormData,
+  type TrainingPlanBasicInfoFormData,
+  type TrainingPlanWeeklyTargetsFormData,
+  type TrainingPlanPeriodizationFormData,
+} from "@repo/core";
 
 // ============================================================================
 // HELPER FUNCTIONS & PATTERNS
@@ -40,17 +63,15 @@ export const optionalString = (minLength?: number, maxLength?: number) => {
   let schema = z.string().optional().or(z.literal(""));
 
   if (minLength !== undefined) {
-    schema = schema.refine(
-      (val) => !val || val.length >= minLength,
-      { message: `Must be at least ${minLength} characters` }
-    ) as any;
+    schema = schema.refine((val) => !val || val.length >= minLength, {
+      message: `Must be at least ${minLength} characters`,
+    }) as any;
   }
 
   if (maxLength !== undefined) {
-    schema = schema.refine(
-      (val) => !val || val.length <= maxLength,
-      { message: `Must be less than ${maxLength} characters` }
-    ) as any;
+    schema = schema.refine((val) => !val || val.length <= maxLength, {
+      message: `Must be less than ${maxLength} characters`,
+    }) as any;
   }
 
   return schema;
@@ -64,73 +85,78 @@ export const optionalString = (minLength?: number, maxLength?: number) => {
  * Profile settings form schema
  * Used in: app/(internal)/(tabs)/settings/index.tsx
  */
-export const profileFormSchema = z.object({
-  username: z
-    .string()
-    .min(3, "Username must be at least 3 characters")
-    .max(30, "Username must be less than 30 characters")
-    .regex(/^[a-zA-Z0-9_-]+$/, "Username can only contain letters, numbers, hyphens, and underscores")
-    .optional()
-    .or(z.literal("")),
+export const profileFormSchema = z
+  .object({
+    username: z
+      .string()
+      .min(3, "Username must be at least 3 characters")
+      .max(30, "Username must be less than 30 characters")
+      .regex(
+        /^[a-zA-Z0-9_-]+$/,
+        "Username can only contain letters, numbers, hyphens, and underscores",
+      )
+      .optional()
+      .or(z.literal("")),
 
-  weightKg: z
-    .number({
-      invalid_type_error: "Weight must be a number",
-    })
-    .min(30, "Weight must be at least 30kg")
-    .max(300, "Weight must be less than 300kg")
-    .optional()
-    .nullable(),
+    weightKg: z
+      .number({
+        invalid_type_error: "Weight must be a number",
+      })
+      .min(30, "Weight must be at least 30kg")
+      .max(300, "Weight must be less than 300kg")
+      .optional()
+      .nullable(),
 
-  ftp: z
-    .number({
-      invalid_type_error: "FTP must be a number",
-    })
-    .min(50, "FTP must be at least 50 watts")
-    .max(500, "FTP must be less than 500 watts")
-    .optional()
-    .nullable(),
+    ftp: z
+      .number({
+        invalid_type_error: "FTP must be a number",
+      })
+      .min(50, "FTP must be at least 50 watts")
+      .max(500, "FTP must be less than 500 watts")
+      .optional()
+      .nullable(),
 
-  thresholdHr: z
-    .number({
-      invalid_type_error: "Threshold HR must be a number",
-    })
-    .min(100, "Threshold HR must be at least 100 bpm")
-    .max(250, "Threshold HR must be less than 250 bpm")
-    .optional()
-    .nullable(),
+    thresholdHr: z
+      .number({
+        invalid_type_error: "Threshold HR must be a number",
+      })
+      .min(100, "Threshold HR must be at least 100 bpm")
+      .max(250, "Threshold HR must be less than 250 bpm")
+      .optional()
+      .nullable(),
 
-  maxHr: z
-    .number({
-      invalid_type_error: "Max HR must be a number",
-    })
-    .min(120, "Max HR must be at least 120 bpm")
-    .max(250, "Max HR must be less than 250 bpm")
-    .optional()
-    .nullable(),
+    maxHr: z
+      .number({
+        invalid_type_error: "Max HR must be a number",
+      })
+      .min(120, "Max HR must be at least 120 bpm")
+      .max(250, "Max HR must be less than 250 bpm")
+      .optional()
+      .nullable(),
 
-  age: z
-    .number({
-      invalid_type_error: "Age must be a number",
-    })
-    .int("Age must be a whole number")
-    .min(13, "Must be at least 13 years old")
-    .max(99, "Must be less than 100 years old")
-    .optional()
-    .nullable(),
-}).refine(
-  (data) => {
-    // If threshold HR is set, it should be less than max HR
-    if (data.thresholdHr && data.maxHr) {
-      return data.thresholdHr < data.maxHr;
-    }
-    return true;
-  },
-  {
-    message: "Threshold HR must be less than Max HR",
-    path: ["thresholdHr"],
-  }
-);
+    age: z
+      .number({
+        invalid_type_error: "Age must be a number",
+      })
+      .int("Age must be a whole number")
+      .min(13, "Must be at least 13 years old")
+      .max(99, "Must be less than 100 years old")
+      .optional()
+      .nullable(),
+  })
+  .refine(
+    (data) => {
+      // If threshold HR is set, it should be less than max HR
+      if (data.thresholdHr && data.maxHr) {
+        return data.thresholdHr < data.maxHr;
+      }
+      return true;
+    },
+    {
+      message: "Threshold HR must be less than Max HR",
+      path: ["thresholdHr"],
+    },
+  );
 
 export type ProfileFormValues = z.infer<typeof profileFormSchema>;
 
@@ -164,7 +190,9 @@ export const activitySubmissionSchema = z.object({
     .nullable(),
 });
 
-export type ActivitySubmissionFormValues = z.infer<typeof activitySubmissionSchema>;
+export type ActivitySubmissionFormValues = z.infer<
+  typeof activitySubmissionSchema
+>;
 
 // ============================================================================
 // ACTIVITY PLAN CREATION SCHEMAS
@@ -204,92 +232,103 @@ const heartRateZoneSchema = z
  * Activity step schema
  * Used in activity plan creation
  */
-export const activityStepSchema = z.object({
-  duration: stepDurationSchema,
+export const activityStepSchema = z
+  .object({
+    duration: stepDurationSchema,
 
-  targetPowerLow: powerZoneSchema.optional().nullable(),
-  targetPowerHigh: powerZoneSchema.optional().nullable(),
+    targetPowerLow: powerZoneSchema.optional().nullable(),
+    targetPowerHigh: powerZoneSchema.optional().nullable(),
 
-  targetHrLow: heartRateZoneSchema.optional().nullable(),
-  targetHrHigh: heartRateZoneSchema.optional().nullable(),
+    targetHrLow: heartRateZoneSchema.optional().nullable(),
+    targetHrHigh: heartRateZoneSchema.optional().nullable(),
 
-  description: z
-    .string()
-    .max(200, "Step description must be less than 200 characters")
-    .optional()
-    .or(z.literal("")),
-}).refine(
-  (data) => {
-    // If both power targets are set, low must be less than high
-    if (data.targetPowerLow && data.targetPowerHigh) {
-      return data.targetPowerLow <= data.targetPowerHigh;
-    }
-    return true;
-  },
-  {
-    message: "Low power target must be less than or equal to high power target",
-    path: ["targetPowerLow"],
-  }
-).refine(
-  (data) => {
-    // If both HR targets are set, low must be less than high
-    if (data.targetHrLow && data.targetHrHigh) {
-      return data.targetHrLow <= data.targetHrHigh;
-    }
-    return true;
-  },
-  {
-    message: "Low HR target must be less than or equal to high HR target",
-    path: ["targetHrLow"],
-  }
-);
+    description: z
+      .string()
+      .max(200, "Step description must be less than 200 characters")
+      .optional()
+      .or(z.literal("")),
+  })
+  .refine(
+    (data) => {
+      // If both power targets are set, low must be less than high
+      if (data.targetPowerLow && data.targetPowerHigh) {
+        return data.targetPowerLow <= data.targetPowerHigh;
+      }
+      return true;
+    },
+    {
+      message:
+        "Low power target must be less than or equal to high power target",
+      path: ["targetPowerLow"],
+    },
+  )
+  .refine(
+    (data) => {
+      // If both HR targets are set, low must be less than high
+      if (data.targetHrLow && data.targetHrHigh) {
+        return data.targetHrLow <= data.targetHrHigh;
+      }
+      return true;
+    },
+    {
+      message: "Low HR target must be less than or equal to high HR target",
+      path: ["targetHrLow"],
+    },
+  );
 
 /**
  * Activity plan creation schema
  * Used in: app/(internal)/(tabs)/plan/create_activity_plan/index.tsx
  */
-export const activityPlanCreationSchema = z.object({
-  name: z
-    .string()
-    .min(3, "Plan name must be at least 3 characters")
-    .max(100, "Plan name must be less than 100 characters")
-    .trim(),
+export const activityPlanCreationSchema = z
+  .object({
+    name: z
+      .string()
+      .min(3, "Plan name must be at least 3 characters")
+      .max(100, "Plan name must be less than 100 characters")
+      .trim(),
 
-  description: z
-    .string()
-    .max(500, "Description must be less than 500 characters")
-    .optional()
-    .or(z.literal("")),
+    description: z
+      .string()
+      .max(500, "Description must be less than 500 characters")
+      .optional()
+      .or(z.literal("")),
 
-  activityType: z.enum(["run", "bike", "swim", "other"], {
-    errorMap: () => ({ message: "Please select an activity type" }),
-  }),
+    activityType: z.enum(["run", "bike", "swim", "other"], {
+      errorMap: () => ({ message: "Please select an activity type" }),
+    }),
 
-  steps: z
-    .array(activityStepSchema)
-    .min(1, "Activity must have at least one step")
-    .max(50, "Activity cannot have more than 50 steps"),
+    steps: z
+      .array(activityStepSchema)
+      .min(1, "Activity must have at least one step")
+      .max(50, "Activity cannot have more than 50 steps"),
 
-  estimatedDuration: z
-    .number()
-    .min(5, "Activity must be at least 5 minutes")
-    .max(480, "Activity must be less than 8 hours")
-    .optional(),
-}).refine(
-  (data) => {
-    // Calculate total duration from steps
-    const totalDuration = data.steps.reduce((sum, step) => sum + step.duration, 0);
+    estimatedDuration: z
+      .number()
+      .min(5, "Activity must be at least 5 minutes")
+      .max(480, "Activity must be less than 8 hours")
+      .optional(),
+  })
+  .refine(
+    (data) => {
+      // Calculate total duration from steps
+      const totalDuration = data.steps.reduce(
+        (sum, step) => sum + step.duration,
+        0,
+      );
 
-    // Warn if total exceeds 8 hours
-    return totalDuration <= 480;
-  },
-  {
-    message: "Total activity duration cannot exceed 8 hours",
-    path: ["steps"],
-  }
-);
+      // Warn if total exceeds 8 hours
+      return totalDuration <= 480;
+    },
+    {
+      message: "Total activity duration cannot exceed 8 hours",
+      path: ["steps"],
+    },
+  );
 
-export type ActivityPlanCreationFormValues = z.infer<typeof activityPlanCreationSchema>;
+export type ActivityPlanCreationFormValues = z.infer<
+  typeof activityPlanCreationSchema
+>;
 
 // ============================================================================
 // PLANNED ACTIVITY CREATION SCHEMAS
@@ -300,9 +339,7 @@ export type ActivityPlanCreationFormValues = z.infer<typeof activityPlanCreation
  * Used in: app/(internal)/(tabs)/plan/create_planned_activity/index.tsx
  */
 export const plannedActivityCreationSchema = z.object({
-  activityPlanId: z
-    .string()
-    .uuid("Invalid activity plan selected"),
+  activityPlanId: z.string().uuid("Invalid activity plan selected"),
 
   scheduledDate: z
     .date({
@@ -311,7 +348,7 @@ export const plannedActivityCreationSchema = z.object({
     })
     .refine(
       (date) => date >= new Date(new Date().setHours(0, 0, 0, 0)),
-      "Cannot schedule activities in the past"
+      "Cannot schedule activities in the past",
     ),
 
   notes: z
@@ -321,7 +358,9 @@ export const plannedActivityCreationSchema = z.object({
     .or(z.literal("")),
 });
 
-export type PlannedActivityCreationFormValues = z.infer<typeof plannedActivityCreationSchema>;
+export type PlannedActivityCreationFormValues = z.infer<
+  typeof plannedActivityCreationSchema
+>;
 
 // ============================================================================
 // TRAINING PLAN CREATION SCHEMAS
@@ -330,45 +369,43 @@ export type PlannedActivityCreationFormValues = z.infer<typeof plannedActivityCr
 /**
  * Training plan basic info schema (Step 1 of wizard)
  */
-export const trainingPlanBasicInfoSchema = z.object({
-  name: z
-    .string()
-    .min(3, "Plan name must be at least 3 characters")
-    .max(100, "Plan name must be less than 100 characters")
-    .trim(),
+export const trainingPlanBasicInfoSchema = z
+  .object({
+    name: z
+      .string()
+      .min(3, "Plan name must be at least 3 characters")
+      .max(100, "Plan name must be less than 100 characters")
+      .trim(),
 
-  goal: z.enum(["endurance", "speed", "strength", "general"], {
-    errorMap: () => ({ message: "Please select a training goal" }),
-  }),
+    goal: z.enum(["endurance", "speed", "strength", "general"], {
+      errorMap: () => ({ message: "Please select a training goal" }),
+    }),
 
-  startDate: z
-    .date({
+    startDate: z.date({
       required_error: "Start date is required",
       invalid_type_error: "Invalid date format",
     }),
 
-  endDate: z
-    .date({
+    endDate: z.date({
       required_error: "End date is required",
       invalid_type_error: "Invalid date format",
     }),
-}).refine(
-  (data) => data.endDate > data.startDate,
-  {
+  })
+  .refine((data) => data.endDate > data.startDate, {
     message: "End date must be after start date",
     path: ["endDate"],
-  }
-).refine(
-  (data) => {
-    const duration = data.endDate.getTime() - data.startDate.getTime();
-    const weeks = duration / (1000 * 60 * 60 * 24 * 7);
-    return weeks >= 1 && weeks <= 52;
-  },
-  {
-    message: "Training plan must be between 1 and 52 weeks",
-    path: ["endDate"],
-  }
-);
+  })
+  .refine(
+    (data) => {
+      const duration = data.endDate.getTime() - data.startDate.getTime();
+      const weeks = duration / (1000 * 60 * 60 * 24 * 7);
+      return weeks >= 1 && weeks <= 52;
+    },
+    {
+      message: "Training plan must be between 1 and 52 weeks",
+      path: ["endDate"],
+    },
+  );
 
 /**
  * Training plan weekly targets schema (Step 2 of wizard)
@@ -419,7 +456,7 @@ export const passwordSchema = z
   .max(128, "Password must be less than 128 characters")
   .regex(
     /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
-    "Password must contain at least one uppercase letter, one lowercase letter, and one number"
+    "Password must contain at least one uppercase letter, one lowercase letter, and one number",
   );
 
 /**
@@ -450,7 +487,7 @@ export const phoneSchema = z
   .string()
   .regex(
     /^[+]?[(]?[0-9]{1,4}[)]?[-\s.]?[(]?[0-9]{1,4}[)]?[-\s.]?[0-9]{1,9}$/,
-    "Invalid phone number format"
+    "Invalid phone number format",
   )
   .optional()
   .or(z.literal(""));
@@ -482,6 +519,9 @@ export function hasFieldError(fieldName: string, errors: any): boolean {
 /**
  * Gets error message for a specific field
  */
-export function getFieldError(fieldName: string, errors: any): string | undefined {
+export function getFieldError(
+  fieldName: string,
+  errors: any,
+): string | undefined {
   return errors[fieldName]?.message;
 }

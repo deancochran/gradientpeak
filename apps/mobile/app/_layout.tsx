@@ -7,8 +7,6 @@ import { QueryProvider } from "@/lib/providers/QueryProvider";
 import { StreamBuffer } from "@/lib/services/ActivityRecorder/StreamBuffer";
 import { initSentry } from "@/lib/services/sentry";
 import { useTheme } from "@/lib/stores/theme-store";
-import { NAV_THEME } from "@/lib/theme";
-import { ThemeProvider } from "@react-navigation/native";
 import { PortalHost } from "@rn-primitives/portal";
 import { router, Slot } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -85,9 +83,8 @@ function AppContent() {
     );
   }
 
-  // Use NativeWind's colorScheme instead of theme store
+  // Use NativeWind's colorScheme
   const isDark = colorScheme === "dark";
-  const navTheme = isDark ? NAV_THEME.dark : NAV_THEME.light;
 
   console.log(
     "Rendering with theme:",
@@ -100,16 +97,14 @@ function AppContent() {
 
   return (
     <SafeAreaProvider>
-      <ThemeProvider value={navTheme}>
-        <StatusBar style={isDark ? "light" : "dark"} />
-        <SafeAreaView
-          className="flex-1 bg-background"
-          edges={["top", "left", "right"]}
-        >
-          <Slot />
-          <PortalHost />
-        </SafeAreaView>
-      </ThemeProvider>
+      <StatusBar style={isDark ? "light" : "dark"} />
+      <SafeAreaView
+        className="flex-1 bg-background"
+        edges={["top", "left", "right"]}
+      >
+        <Slot />
+        <PortalHost />
+      </SafeAreaView>
     </SafeAreaProvider>
   );
 }

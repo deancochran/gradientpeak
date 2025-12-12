@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import {
   Select,
   SelectContent,
@@ -37,18 +38,12 @@ export default function UploadRouteScreen() {
     content: string;
   } | null>(null);
 
-  const uploadMutation = trpc.routes.upload.useMutation({
-    onSuccess: () => {
-      Alert.alert("Success", "Route uploaded successfully!", [
-        {
-          text: "OK",
-          onPress: () => router.back(),
-        },
-      ]);
-    },
-    onError: (error) => {
-      Alert.alert("Error", error.message || "Failed to upload route");
-    },
+  const utils = trpc.useUtils();
+
+  const uploadMutation = useReliableMutation(trpc.routes.upload, {
+    invalidate: [utils.routes],
+    success: "Route uploaded successfully!",
+    onSuccess: () => router.back(),
   });
 
   const handlePickFile = async () => {

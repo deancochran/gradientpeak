@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
+import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { trpc } from "@/lib/trpc";
 import { X } from "lucide-react-native";
 import { useEffect, useState } from "react";
@@ -103,8 +104,12 @@ export function AddActivityModal({
     },
   );
 
+  const utils = trpc.useUtils();
+
   // Schedule activity mutation
-  const scheduleMutation = trpc.plannedActivities.create.useMutation({
+  const scheduleMutation = useReliableMutation(trpc.plannedActivities.create, {
+    invalidate: [utils.plannedActivities],
+    success: "Activity scheduled!",
     onSuccess: () => {
       onSuccess?.();
       onClose();
@@ -113,15 +118,10 @@ export function AddActivityModal({
 
   const handleSchedule = async () => {
     if (!selectedActivity) return;
-
-    try {
-      await scheduleMutation.mutateAsync({
-        activity_plan_id: selectedActivity.id,
-        scheduled_date: selectedDate,
-      });
-    } catch (error) {
-      console.error("Failed to schedule activity:", error);
-    }
+    await scheduleMutation.mutateAsync({
+      activity_plan_id: selectedActivity.id,
+      scheduled_date: selectedDate,
+    });
   };
 
   const formatDate = (dateStr: string): string => {
