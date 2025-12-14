@@ -1,5 +1,3 @@
-import { TRPCError } from "@trpc/server";
-import { z } from "zod";
 import {
   calculateATL,
   calculateCTL,
@@ -7,6 +5,8 @@ import {
   getFormStatus,
   getTrainingIntensityZone,
 } from "@repo/core";
+import { TRPCError } from "@trpc/server";
+import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 // Input schemas
@@ -17,15 +17,11 @@ const dateRangeSchema = z.object({
 
 const volumeTrendsSchema = dateRangeSchema.extend({
   groupBy: z.enum(["day", "week", "month"]).default("week"),
-  activity_category: z
-    .enum(["run", "bike", "swim", "strength", "other"])
-    .optional(),
+  type: z.enum(["run", "bike", "swim", "strength", "other"]).optional(),
 });
 
 const performanceTrendsSchema = dateRangeSchema.extend({
-  activity_category: z
-    .enum(["run", "bike", "swim", "strength", "other"])
-    .optional(),
+  type: z.enum(["run", "bike", "swim", "strength", "other"]).optional(),
 });
 
 const zoneDistributionTrendsSchema = dateRangeSchema.extend({
@@ -33,9 +29,7 @@ const zoneDistributionTrendsSchema = dateRangeSchema.extend({
 });
 
 const peakPerformancesSchema = z.object({
-  activity_category: z
-    .enum(["run", "bike", "swim", "strength", "other"])
-    .optional(),
+  type: z.enum(["run", "bike", "swim", "strength", "other"]).optional(),
   metric: z.enum(["distance", "speed", "power", "duration", "tss"]),
   limit: z.number().min(1).max(50).default(10),
 });
@@ -51,7 +45,7 @@ export const trendsRouter = createTRPCRouter({
       let query = ctx.supabase
         .from("activities")
         .select(
-          "started_at, distance, moving_time, elapsed_time, activity_category",
+          "started_at, distance_meters, moving_seconds, duration_seconds, type",
         )
         .eq("profile_id", ctx.session.user.id)
         .gte("started_at", input.start_date)
@@ -59,8 +53,8 @@ export const trendsRouter = createTRPCRouter({
         .order("started_at", { ascending: true });
 
       // Filter by category if provided
-      if (input.activity_category) {
-        query = query.eq("activity_category", input.activity_category);
+      if (input.type) {
+        query = query.eq("type", input.type);
       }
 
       const { data: activities, error } = await query;
@@ -117,8 +111,9 @@ export const trendsRouter = createTRPCRouter({
         }
 
         const group = groupedData.get(groupKey)!;
-        group.totalDistance += activity.distance || 0;
-        group.totalTime += activity.moving_time || activity.elapsed_time || 0;
+        group.totalDistance += activity.distance_meters || 0;
+        group.totalTime +=
+          activity.moving_seconds || activity.duration_seconds || 0;
         group.activityCount += 1;
       }
 
@@ -130,11 +125,11 @@ export const trendsRouter = createTRPCRouter({
       // Calculate totals
       const totals = {
         totalDistance: activities.reduce(
-          (sum, a) => sum + (a.distance || 0),
+          (sum, a) => sum + (a.distance_meters || 0),
           0,
         ),
         totalTime: activities.reduce(
-          (sum, a) => sum + (a.moving_time || a.elapsed_time || 0),
+          (sum, a) => sum + (a.moving_seconds || a.duration_seconds || 0),
           0,
         ),
         totalActivities: activities.length,
@@ -152,15 +147,15 @@ export const trendsRouter = createTRPCRouter({
       let query = ctx.supabase
         .from("activities")
         .select(
-          "id, name, started_at, distance, moving_time, avg_speed, avg_power, avg_heart_rate, activity_category",
+          "id, name, started_at, distance_meters, moving_seconds, metrics, type",
         )
         .eq("profile_id", ctx.session.user.id)
         .gte("started_at", input.start_date)
         .lte("started_at", input.end_date)
         .order("started_at", { ascending: true });
 
-      if (input.activity_category) {
-        query = query.eq("activity_category", input.activity_category);
+      if (input.type) {
+        query = query.eq("type", input.type);
       }
 
       const { data: activities, error } = await query;
@@ -176,16 +171,19 @@ export const trendsRouter = createTRPCRouter({
         return { dataPoints: [] };
       }
 
-      const dataPoints = activities.map((activity) => ({
-        date: activity.started_at,
-        activityId: activity.id,
-        activityName: activity.name,
-        avgSpeed: activity.avg_speed || null,
-        avgPower: activity.avg_power || null,
-        avgHeartRate: activity.avg_heart_rate || null,
-        distance: activity.distance || 0,
-        duration: activity.moving_time || 0,
-      }));
+      const dataPoints = activities.map((activity) => {
+        const metrics = (activity.metrics as Record<string, any>) || {};
+        return {
+          date: activity.started_at,
+          activityId: activity.id,
+          activityName: activity.name,
+          avgSpeed: metrics.avg_speed || null,
+          avgPower: metrics.avg_power || null,
+          avgHeartRate: metrics.avg_heart_rate || null,
+          distance: activity.distance_meters || 0,
+          duration: activity.moving_seconds || 0,
+        };
+      });
 
       return { dataPoints };
     }),
@@ -205,7 +203,7 @@ export const trendsRouter = createTRPCRouter({
 
       const { data: activities, error: activitiesError } = await ctx.supabase
         .from("activities")
-        .select("started_at, training_stress_score")
+        .select("started_at, metrics")
         .eq("profile_id", ctx.session.user.id)
         .gte("started_at", extendedStart.toISOString())
         .lte("started_at", endDate.toISOString())
@@ -232,7 +230,8 @@ export const trendsRouter = createTRPCRouter({
           .toISOString()
           .split("T")[0];
         if (!dateStr) continue;
-        const tss = activity.training_stress_score || 0;
+        const metrics = (activity.metrics as Record<string, any>) || {};
+        const tss = metrics.tss || 0;
         activitiesByDate.set(
           dateStr,
           (activitiesByDate.get(dateStr) || 0) + tss,
@@ -297,12 +296,15 @@ export const trendsRouter = createTRPCRouter({
       }
 
       // Current status
-      const currentStatus = dataPoints.length > 0 ? {
-        ctl: Math.round(finalCTL * 10) / 10,
-        atl: Math.round(finalATL * 10) / 10,
-        tsb: Math.round(finalTSB * 10) / 10,
-        form: getFormStatus(finalTSB),
-      } : null;
+      const currentStatus =
+        dataPoints.length > 0
+          ? {
+              ctl: Math.round(finalCTL * 10) / 10,
+              atl: Math.round(finalATL * 10) / 10,
+              tsb: Math.round(finalTSB * 10) / 10,
+              form: getFormStatus(finalTSB),
+            }
+          : null;
 
       return { dataPoints, currentStatus };
     }),
@@ -319,12 +321,10 @@ export const trendsRouter = createTRPCRouter({
       // Get activities with intensity factor and TSS
       const { data: activities, error } = await ctx.supabase
         .from("activities")
-        .select("id, started_at, training_stress_score, intensity_factor")
+        .select("id, started_at, metrics")
         .eq("profile_id", ctx.session.user.id)
         .gte("started_at", input.start_date)
         .lte("started_at", input.end_date)
-        .not("intensity_factor", "is", null)
-        .not("training_stress_score", "is", null)
         .order("started_at", { ascending: true });
 
       if (error) {
@@ -358,6 +358,13 @@ export const trendsRouter = createTRPCRouter({
       >();
 
       for (const activity of activities) {
+        const metrics = (activity.metrics as Record<string, any>) || {};
+        const intensityFactor = metrics.if || null;
+        const tss = metrics.tss || null;
+
+        // Skip activities without both IF and TSS
+        if (!intensityFactor || !tss) continue;
+
         const date = new Date(activity.started_at);
         // Get Monday of the week
         const weekStart = new Date(date);
@@ -381,10 +388,11 @@ export const trendsRouter = createTRPCRouter({
         }
 
         const week = weeklyData.get(weekKey)!;
-        const intensityFactor = (activity.intensity_factor || 0) / 100;
-        const tss = activity.training_stress_score || 0;
+        const intensityFactorNormalized = intensityFactor / 100;
 
-        const zone = getTrainingIntensityZone(intensityFactor) as IntensityZone;
+        const zone = getTrainingIntensityZone(
+          intensityFactorNormalized,
+        ) as IntensityZone;
         week.zones[zone] += tss;
         week.totalTSS += tss;
       }
@@ -404,9 +412,8 @@ export const trendsRouter = createTRPCRouter({
         if (week.totalTSS > 0) {
           for (const zone in week.zones) {
             const zoneKey = zone as IntensityZone;
-            zones[zoneKey] = Math.round(
-              (week.zones[zoneKey] / week.totalTSS) * 1000,
-            ) / 10;
+            zones[zoneKey] =
+              Math.round((week.zones[zoneKey] / week.totalTSS) * 1000) / 10;
           }
         }
 
@@ -529,7 +536,9 @@ export const trendsRouter = createTRPCRouter({
         ) + 1;
       const totalWeeks = totalDays / 7;
       const weeklyAvg =
-        totalWeeks > 0 ? Math.round((activities.length / totalWeeks) * 10) / 10 : 0;
+        totalWeeks > 0
+          ? Math.round((activities.length / totalWeeks) * 10) / 10
+          : 0;
 
       return {
         activityDays,
@@ -551,44 +560,41 @@ export const trendsRouter = createTRPCRouter({
       let query = ctx.supabase
         .from("activities")
         .select(
-          "id, name, started_at, distance, moving_time, avg_speed, avg_power, max_power, training_stress_score, activity_category",
+          "id, name, started_at, distance_meters, moving_seconds, metrics, type",
         )
         .eq("profile_id", ctx.session.user.id);
 
-      if (input.activity_category) {
-        query = query.eq("activity_category", input.activity_category);
+      if (input.type) {
+        query = query.eq("type", input.type);
       }
 
       // Order by the selected metric
+      // Note: We can't order by JSONB fields directly, so we'll fetch all and sort in memory
       switch (input.metric) {
         case "distance":
           query = query
-            .order("distance", { ascending: false })
-            .not("distance", "is", null);
-          break;
-        case "speed":
-          query = query
-            .order("avg_speed", { ascending: false })
-            .not("avg_speed", "is", null);
-          break;
-        case "power":
-          query = query
-            .order("avg_power", { ascending: false })
-            .not("avg_power", "is", null);
+            .order("distance_meters", { ascending: false })
+            .not("distance_meters", "is", null);
           break;
         case "duration":
           query = query
-            .order("moving_time", { ascending: false })
-            .not("moving_time", "is", null);
+            .order("moving_seconds", { ascending: false })
+            .not("moving_seconds", "is", null);
           break;
+        case "speed":
+        case "power":
         case "tss":
-          query = query
-            .order("training_stress_score", { ascending: false })
-            .not("training_stress_score", "is", null);
+          // These are in JSONB, can't order in DB efficiently
+          // Will sort after fetching
           break;
       }
 
-      query = query.limit(input.limit);
+      // For metrics stored in JSONB, we need more records to sort
+      if (["speed", "power", "tss"].includes(input.metric)) {
+        query = query.limit(input.limit * 10); // Fetch more to sort
+      } else {
+        query = query.limit(input.limit);
+      }
 
       const { data: activities, error } = await query;
 
@@ -603,43 +609,59 @@ export const trendsRouter = createTRPCRouter({
         return { performances: [] };
       }
 
-      const performances = activities.map((activity, index) => {
-        let value: number | null = null;
-        let unit = "";
+      // Map activities to performances with extracted values
+      const allPerformances = activities
+        .map((activity) => {
+          const metrics = (activity.metrics as Record<string, any>) || {};
+          let value: number | null = null;
+          let unit = "";
 
-        switch (input.metric) {
-          case "distance":
-            value = activity.distance;
-            unit = "m";
-            break;
-          case "speed":
-            value = activity.avg_speed;
-            unit = "m/s";
-            break;
-          case "power":
-            value = activity.avg_power;
-            unit = "W";
-            break;
-          case "duration":
-            value = activity.moving_time;
-            unit = "s";
-            break;
-          case "tss":
-            value = activity.training_stress_score;
-            unit = "TSS";
-            break;
-        }
+          switch (input.metric) {
+            case "distance":
+              value = activity.distance_meters;
+              unit = "m";
+              break;
+            case "speed":
+              value = metrics.avg_speed;
+              unit = "m/s";
+              break;
+            case "power":
+              value = metrics.avg_power;
+              unit = "W";
+              break;
+            case "duration":
+              value = activity.moving_seconds;
+              unit = "s";
+              break;
+            case "tss":
+              value = metrics.tss;
+              unit = "TSS";
+              break;
+          }
 
-        return {
+          return {
+            activityId: activity.id,
+            activityName: activity.name,
+            date: activity.started_at,
+            value,
+            unit,
+            category: activity.type,
+          };
+        })
+        .filter((p) => p.value !== null && p.value !== undefined);
+
+      // Sort by value descending for JSONB metrics
+      if (["speed", "power", "tss"].includes(input.metric)) {
+        allPerformances.sort((a, b) => (b.value || 0) - (a.value || 0));
+      }
+
+      // Take top N and add ranks
+      const performances = allPerformances
+        .slice(0, input.limit)
+        .map((perf, index) => ({
+          ...perf,
           rank: index + 1,
-          activityId: activity.id,
-          activityName: activity.name,
-          date: activity.started_at,
-          value,
-          unit,
-          category: activity.activity_category,
-        };
-      });
+        }));
 
       return { performances };
     }),

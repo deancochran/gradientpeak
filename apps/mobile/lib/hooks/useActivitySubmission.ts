@@ -129,21 +129,16 @@ function submissionReducer(
 function calculateActivityMetrics(
   metadata: import("@/lib/services/ActivityRecorder/types").RecordingMetadata,
   aggregatedStreams: Map<string, AggregatedStream>,
-): Omit<
-  PublicActivitiesInsert,
-  | "id"
-  | "name"
-  | "notes"
-  | "activity_category"
-  | "started_at"
-  | "finished_at"
-  | "planned_activity_id"
-  | "profile_id"
-  | "profile_age"
-  | "profile_ftp"
-  | "profile_threshold_hr"
-  | "profile_weight_kg"
-> {
+): {
+  durationSeconds: number;
+  movingSeconds: number;
+  distanceMeters: number;
+  metrics: Record<string, unknown>;
+  hrZoneSeconds: number[] | null;
+  powerZoneSeconds: number[] | null;
+  profileSnapshot: Record<string, unknown> | null;
+  location: "indoor" | "outdoor" | null;
+} {
   if (!metadata.startedAt || !metadata.endedAt) {
     throw new Error(
       `Invalid recording: startedAt=${metadata.startedAt}, endedAt=${metadata.endedAt}`,
@@ -160,24 +155,23 @@ function calculateActivityMetrics(
   const gradientStream = aggregatedStreams.get("gradient");
 
   // Base calculations
-  const elapsed_time = calculateElapsedTime(
-    metadata.startedAt,
-    metadata.endedAt,
+  const duration_seconds = Math.round(
+    calculateElapsedTime(metadata.startedAt, metadata.endedAt),
   );
-  const moving_time = calculateMovingTime(
-    metadata.startedAt,
-    metadata.endedAt,
-    aggregatedStreams,
+  const moving_seconds = Math.round(
+    calculateMovingTime(
+      metadata.startedAt,
+      metadata.endedAt,
+      aggregatedStreams,
+    ),
   );
 
+  // Distance in meters
+  const distance_meters = Math.round(distanceStream?.maxValue || 0);
+
   // Simple aggregated values
-  const distance = Math.round(distanceStream?.maxValue || 0);
-  const avg_heart_rate = hrStream?.avgValue
-    ? Math.round(hrStream.avgValue)
-    : undefined;
-  const max_heart_rate = hrStream?.maxValue
-    ? Math.round(hrStream.maxValue)
-    : undefined;
+  const avg_hr = hrStream?.avgValue ? Math.round(hrStream.avgValue) : undefined;
+  const max_hr = hrStream?.maxValue ? Math.round(hrStream.maxValue) : undefined;
   const avg_power = powerStream?.avgValue
     ? Math.round(powerStream.avgValue)
     : undefined;
@@ -199,7 +193,7 @@ function calculateActivityMetrics(
     powerStream,
     metadata.profile.ftp,
   );
-  const training_stress_score = Math.round(
+  const tss = Math.round(
     calculateTSS(
       metadata.startedAt,
       metadata.endedAt,
@@ -207,11 +201,11 @@ function calculateActivityMetrics(
       metadata.profile,
     ) || 0,
   );
-  const variability_index = Math.round(
+  const vi = Math.round(
     calculateVariabilityIndex(powerStream, normalized_power) || 0,
   );
   const total_work = Math.round(
-    calculateTotalWork(powerStream, elapsed_time) || 0,
+    calculateTotalWork(powerStream, duration_seconds) || 0,
   );
 
   // Zone calculations
@@ -219,16 +213,11 @@ function calculateActivityMetrics(
   const power_zones = calculatePowerZones(powerStream, metadata.profile.ftp);
 
   // Multi-stream advanced metrics
-  const efficiency_factor = Math.round(
-    calculateEfficiencyFactor(powerStream, hrStream) || 0,
-  );
+  const ef = Math.round(calculateEfficiencyFactor(powerStream, hrStream) || 0);
   const decoupling = Math.round(
     calculateDecoupling(powerStream, hrStream) || 0,
   );
-  const power_heart_rate_ratio = calculatePowerHeartRateRatio(
-    powerStream,
-    hrStream,
-  );
+  const power_hr_ratio = calculatePowerHeartRateRatio(powerStream, hrStream);
   const power_weight_ratio = calculatePowerWeightRatio(
     powerStream,
     metadata.profile.weight_kg,
@@ -256,45 +245,102 @@ function calculateActivityMetrics(
     ) || 0,
   );
 
-  return {
-    elapsed_time,
-    moving_time,
-    distance,
-    avg_speed,
-    max_speed,
-    avg_heart_rate,
-    max_heart_rate,
-    hr_zone_1_time: hr_zones.zone1,
-    hr_zone_2_time: hr_zones.zone2,
-    hr_zone_3_time: hr_zones.zone3,
-    hr_zone_4_time: hr_zones.zone4,
-    hr_zone_5_time: hr_zones.zone5,
-    avg_power,
-    max_power,
-    normalized_power,
-    intensity_factor,
-    training_stress_score,
-    variability_index,
-    total_work,
-    power_zone_1_time: power_zones.zone1,
-    power_zone_2_time: power_zones.zone2,
-    power_zone_3_time: power_zones.zone3,
-    power_zone_4_time: power_zones.zone4,
-    power_zone_5_time: power_zones.zone5,
-    power_zone_6_time: power_zones.zone6,
-    power_zone_7_time: power_zones.zone7,
-    avg_cadence,
-    max_cadence,
+  // Calculate max HR percentage of threshold (if threshold exists)
+  const max_hr_pct_threshold =
+    max_hr && metadata.profile.threshold_hr
+      ? Math.round((max_hr / metadata.profile.threshold_hr) * 100)
+      : undefined;
 
-    total_ascent,
-    total_descent,
-    avg_grade,
-    elevation_gain_per_km,
-    efficiency_factor,
-    decoupling,
-    power_heart_rate_ratio,
-    power_weight_ratio,
-    calories,
+  // Build metrics JSONB object
+  const metrics: Record<string, unknown> = {};
+
+  // Only include defined values
+  if (avg_power !== undefined) metrics.avg_power = avg_power;
+  if (max_power !== undefined) metrics.max_power = max_power;
+  if (normalized_power !== undefined)
+    metrics.normalized_power = normalized_power;
+  if (avg_hr !== undefined) metrics.avg_hr = avg_hr;
+  if (max_hr !== undefined) metrics.max_hr = max_hr;
+  if (max_hr_pct_threshold !== undefined)
+    metrics.max_hr_pct_threshold = max_hr_pct_threshold;
+  if (avg_cadence !== undefined) metrics.avg_cadence = avg_cadence;
+  if (max_cadence !== undefined) metrics.max_cadence = max_cadence;
+  if (avg_speed !== undefined) metrics.avg_speed = avg_speed;
+  if (max_speed !== undefined) metrics.max_speed = max_speed;
+  if (total_work !== undefined) metrics.total_work = total_work;
+  if (calories !== undefined) metrics.calories = calories;
+  if (total_ascent !== undefined) metrics.total_ascent = total_ascent;
+  if (total_descent !== undefined) metrics.total_descent = total_descent;
+  if (avg_grade !== undefined) metrics.avg_grade = avg_grade;
+  if (elevation_gain_per_km !== undefined)
+    metrics.elevation_gain_per_km = elevation_gain_per_km;
+  if (tss !== undefined) metrics.tss = tss;
+  if (intensity_factor !== undefined) metrics.if = intensity_factor;
+  if (vi !== undefined) metrics.vi = vi;
+  if (ef !== undefined) metrics.ef = ef;
+  if (power_weight_ratio !== undefined)
+    metrics.power_weight_ratio = power_weight_ratio;
+  if (power_hr_ratio !== undefined) metrics.power_hr_ratio = power_hr_ratio;
+  if (decoupling !== undefined) metrics.decoupling = decoupling;
+
+  // Build HR zone seconds array (5 zones)
+  // Using zone arrays that match the database schema
+  const hrZoneSeconds = hr_zones
+    ? [
+        Math.round(hr_zones.zone1 || 0),
+        Math.round(hr_zones.zone2 || 0),
+        Math.round(hr_zones.zone3 || 0),
+        Math.round(hr_zones.zone4 || 0),
+        Math.round(hr_zones.zone5 || 0),
+      ]
+    : null;
+
+  // Build power zone seconds array (7 zones)
+  // Using zone arrays that match the database schema
+  const powerZoneSeconds = power_zones
+    ? [
+        Math.round(power_zones.zone1 || 0),
+        Math.round(power_zones.zone2 || 0),
+        Math.round(power_zones.zone3 || 0),
+        Math.round(power_zones.zone4 || 0),
+        Math.round(power_zones.zone5 || 0),
+        Math.round(power_zones.zone6 || 0),
+        Math.round(power_zones.zone7 || 0),
+      ]
+    : null;
+
+  // Build profile snapshot
+  const profileAge = calculateAge(metadata.profile.dob);
+  const profileSnapshot: Record<string, unknown> = {};
+
+  if (metadata.profile.ftp !== undefined)
+    profileSnapshot.ftp = metadata.profile.ftp;
+  if (metadata.profile.weight_kg !== undefined)
+    profileSnapshot.weight_kg = metadata.profile.weight_kg;
+  if (metadata.profile.threshold_hr !== undefined)
+    profileSnapshot.threshold_hr = metadata.profile.threshold_hr;
+  if (profileAge !== undefined) profileSnapshot.age = profileAge;
+  // Note: recovery_time and training_load would come from profile if available
+  // For now, we'll omit them if not present
+
+  // Determine location based on activity type
+  const activityType = metadata.activityType;
+  const location = activityType.startsWith("outdoor")
+    ? "outdoor"
+    : activityType.startsWith("indoor")
+      ? "indoor"
+      : null;
+
+  return {
+    durationSeconds: duration_seconds,
+    movingSeconds: moving_seconds,
+    distanceMeters: distance_meters,
+    metrics,
+    hrZoneSeconds,
+    powerZoneSeconds,
+    profileSnapshot:
+      Object.keys(profileSnapshot).length > 0 ? profileSnapshot : null,
+    location,
   };
 }
 
@@ -461,10 +507,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         `[useActivitySubmission] Aggregated ${aggregatedStreams.size} metrics`,
       );
 
-      // 2. Calculate activity metrics
-      const metrics = calculateActivityMetrics(metadata, aggregatedStreams);
-
-      // 3. Compress streams with error handling
+      // 2. Compress streams with error handling
       const compressedStreams: Omit<
         PublicActivityStreamsInsert,
         "activity_id"
@@ -530,20 +573,28 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         );
       }
 
-      // 4. Build final activity object
-      const profileAge = calculateAge(metadata.profile.dob);
+      // 3. Build final activity object
+      const calculatedMetrics = calculateActivityMetrics(
+        metadata,
+        aggregatedStreams,
+      );
+
       const activity: PublicActivitiesInsert = {
         profile_id: metadata.profileId,
         started_at: metadata.startedAt,
         finished_at: metadata.endedAt,
         name: `${metadata.activityType.replace(/_/g, " ")} - ${new Date(metadata.startedAt).toLocaleDateString()}`,
-        activity_category: mapActivityTypeToCategory(metadata.activityType),
-        profile_age: profileAge,
-        profile_ftp: metadata.profile.ftp,
-        profile_threshold_hr: metadata.profile.threshold_hr,
-        profile_weight_kg: metadata.profile.weight_kg,
+        type: mapActivityTypeToCategory(metadata.activityType),
+        location: calculatedMetrics.location,
+        duration_seconds: calculatedMetrics.durationSeconds,
+        moving_seconds: calculatedMetrics.movingSeconds,
+        distance_meters: calculatedMetrics.distanceMeters,
+        metrics: calculatedMetrics.metrics,
+        hr_zone_seconds: calculatedMetrics.hrZoneSeconds,
+        power_zone_seconds: calculatedMetrics.powerZoneSeconds,
+        profile_snapshot: calculatedMetrics.profileSnapshot,
         planned_activity_id: metadata.plannedActivityId || null,
-        ...metrics,
+        route_id: null, // Will be set if route is attached
       };
 
       console.log("[useActivitySubmission] Activity processed successfully");

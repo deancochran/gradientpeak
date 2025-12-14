@@ -202,36 +202,42 @@ function SubmitScreen() {
                 <View className="space-y-3">
                   <Text className="text-base font-semibold">Analytics</Text>
                   <View className="bg-card rounded-2xl border p-4 space-y-3">
-                    {submission.activity.training_stress_score && (
+                    {submission.activity.metrics?.tss && (
                       <MetricRow
                         label="Training Stress Score"
                         value={Math.round(
-                          submission.activity.training_stress_score,
+                          submission.activity.metrics.tss,
                         ).toString()}
                       />
                     )}
-                    {submission.activity.intensity_factor && (
+                    {submission.activity.metrics?.intensity_factor && (
                       <MetricRow
                         label="Intensity Factor"
-                        value={submission.activity.intensity_factor.toFixed(2)}
+                        value={submission.activity.metrics.intensity_factor.toFixed(
+                          2,
+                        )}
                       />
                     )}
-                    {submission.activity.variability_index && (
+                    {submission.activity.metrics?.variability_index && (
                       <MetricRow
                         label="Variability Index"
-                        value={submission.activity.variability_index.toFixed(2)}
+                        value={submission.activity.metrics.variability_index.toFixed(
+                          2,
+                        )}
                       />
                     )}
-                    {submission.activity.efficiency_factor && (
+                    {submission.activity.metrics?.efficiency_factor && (
                       <MetricRow
                         label="Efficiency Factor"
-                        value={submission.activity.efficiency_factor.toFixed(2)}
+                        value={submission.activity.metrics.efficiency_factor.toFixed(
+                          2,
+                        )}
                       />
                     )}
-                    {submission.activity.adherence_score != null && (
+                    {submission.activity.metrics?.adherence_score != null && (
                       <MetricRow
                         label="Plan Adherence"
-                        value={`${Math.round(submission.activity.adherence_score * 100)}%`}
+                        value={`${Math.round(submission.activity.metrics.adherence_score * 100)}%`}
                       />
                     )}
                   </View>
@@ -253,11 +259,11 @@ const MetricRow = ({ label, value }: { label: string; value: string }) => (
 );
 
 const hasAnalytics = (activity: any) =>
-  activity.training_stress_score ||
-  activity.intensity_factor ||
-  activity.variability_index ||
-  activity.efficiency_factor ||
-  activity.adherence_score != null;
+  activity.metrics?.tss ||
+  activity.metrics?.intensity_factor ||
+  activity.metrics?.variability_index ||
+  activity.metrics?.efficiency_factor ||
+  activity.metrics?.adherence_score != null;
 
 export default function SubmitScreenWithErrorBoundary() {
   return (

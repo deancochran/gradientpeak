@@ -1,6 +1,6 @@
 import {
   activityPlanCreateSchema,
-  activityPlanStructureSchema,
+  activityPlanStructureSchemaV2,
   activityPlanUpdateSchema,
 } from "@repo/core";
 import { TRPCError } from "@trpc/server";
@@ -19,13 +19,18 @@ const listActivityPlansSchema = z.object({
   cursor: z.string().optional(),
 });
 
+// Helper to validate V2 structure only
+function validateStructure(structure: unknown): void {
+  activityPlanStructureSchemaV2.parse(structure);
+}
+
 const createActivityPlanInput = activityPlanCreateSchema.extend({
-  structure: activityPlanStructureSchema, // Strongly validate the JSONB structure
+  structure: activityPlanStructureSchemaV2, // V2 structure only
   estimated_tss: z.number().nullable().optional(),
 });
 
 const updateActivityPlanInput = activityPlanUpdateSchema.extend({
-  structure: activityPlanStructureSchema.optional(), // Strongly validate the JSONB structure if provided
+  structure: activityPlanStructureSchemaV2.optional(), // V2 structure only
   estimated_tss: z.number().nullable().optional(),
 });
 
@@ -155,14 +160,14 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
-      // Validate structure on read (defensive programming)
+      // Validate V2 structure on read (defensive programming)
       try {
         if (data.structure) {
-          activityPlanStructureSchema.parse(data.structure);
+          validateStructure(data.structure);
         }
       } catch (validationError) {
         console.error(
-          "Invalid structure in database for plan",
+          "Invalid V2 structure in database for plan",
           input.id,
           validationError,
         );
@@ -197,13 +202,13 @@ export const activityPlansRouter = createTRPCRouter({
   create: protectedProcedure
     .input(createActivityPlanInput)
     .mutation(async ({ ctx, input }) => {
-      // Validate the structure before saving to database
+      // Validate the V2 structure before saving to database
       try {
-        activityPlanStructureSchema.parse(input.structure);
+        validateStructure(input.structure);
       } catch (validationError) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Invalid activity plan structure",
+          message: "Invalid activity plan structure (V2 required)",
           cause: validationError,
         });
       }
@@ -275,14 +280,14 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
-      // Validate structure if provided
+      // Validate V2 structure if provided
       if (updates.structure) {
         try {
-          activityPlanStructureSchema.parse(updates.structure);
+          validateStructure(updates.structure);
         } catch (validationError) {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "Invalid activity plan structure",
+            message: "Invalid activity plan structure (V2 required)",
             cause: validationError,
           });
         }
@@ -417,15 +422,15 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
-      // Validate the structure from the original plan
+      // Validate the V2 structure from the original plan
       try {
         if (originalPlan.structure) {
-          activityPlanStructureSchema.parse(originalPlan.structure);
+          validateStructure(originalPlan.structure);
         }
       } catch (validationError) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Original plan has invalid structure",
+          message: "Original plan has invalid structure (V2 required)",
           cause: validationError,
         });
       }

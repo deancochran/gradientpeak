@@ -134,7 +134,7 @@ export function PlannedActivitiesList({
   // Handle planned activity selection for follow along mode
   const handleFollowAlong = (activity: any) => {
     const payload: ActivityPayload = {
-      type: activity.activity_category,
+      type: activity.type || activity.activity_category,
       plannedActivityId: activity.id,
       plan: activity.plan,
     };
@@ -145,7 +145,7 @@ export function PlannedActivitiesList({
   // Handle planned activity selection for record mode
   const handleRecord = (activity: any) => {
     const payload: ActivityPayload = {
-      type: activity.activity_category,
+      type: activity.type || activity.activity_category,
       plannedActivityId: activity.id,
       plan: activity.plan,
     };

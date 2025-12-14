@@ -33,13 +33,20 @@ export const ActivityListItem = memo(
     activity: {
       id: string;
       name: string;
-      distance_km?: number | null;
-      duration_minutes?: number | null;
+      distance_meters?: number | null;
+      duration_seconds?: number | null;
       started_at: string;
-      activity_category?: string | null;
+      type?: string | null;
     };
     onPress?: () => void;
   }) => {
+    const distanceKm = activity.distance_meters
+      ? activity.distance_meters / 1000
+      : null;
+    const durationMinutes = activity.duration_seconds
+      ? Math.floor(activity.duration_seconds / 60)
+      : null;
+
     return (
       <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
         <Card className="mb-3">
@@ -49,25 +56,25 @@ export const ActivityListItem = memo(
                 {activity.name || "Untitled Activity"}
               </Text>
               <Text className="text-xs text-muted-foreground">
-                {activity.activity_category || "Activity"}
+                {activity.type || "Activity"}
               </Text>
             </View>
 
             <View className="flex-row items-center gap-4">
-              {activity.distance_km != null && (
+              {distanceKm != null && (
                 <View className="flex-row items-center gap-1">
                   <MapPin size={14} className="text-muted-foreground" />
                   <Text className="text-sm text-muted-foreground">
-                    {activity.distance_km.toFixed(1)} km
+                    {distanceKm.toFixed(1)} km
                   </Text>
                 </View>
               )}
 
-              {activity.duration_minutes != null && (
+              {durationMinutes != null && (
                 <View className="flex-row items-center gap-1">
                   <Clock size={14} className="text-muted-foreground" />
                   <Text className="text-sm text-muted-foreground">
-                    {Math.floor(activity.duration_minutes)} min
+                    {durationMinutes} min
                   </Text>
                 </View>
               )}
@@ -86,11 +93,11 @@ export const ActivityListItem = memo(
     return (
       prev.activity.id === next.activity.id &&
       prev.activity.name === next.activity.name &&
-      prev.activity.distance_km === next.activity.distance_km &&
-      prev.activity.duration_minutes === next.activity.duration_minutes &&
-      prev.activity.activity_category === next.activity.activity_category
+      prev.activity.distance_meters === next.activity.distance_meters &&
+      prev.activity.duration_seconds === next.activity.duration_seconds &&
+      prev.activity.type === next.activity.type
     );
-  }
+  },
 );
 
 ActivityListItem.displayName = "ActivityListItem";
@@ -156,14 +163,14 @@ export const PlannedActivityListItem = memo(
 
     return (
       <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
-        <Card
-          className={`mb-3 ${isCompleted ? "opacity-60" : ""}`}
-        >
+        <Card className={`mb-3 ${isCompleted ? "opacity-60" : ""}`}>
           <CardContent className="p-4">
             <View className="flex-row items-start justify-between mb-2">
               <View className="flex-1">
                 <Text className="text-base font-semibold mb-1">
-                  {activity.activity_plan?.title || activity.title || "Planned Activity"}
+                  {activity.activity_plan?.title ||
+                    activity.title ||
+                    "Planned Activity"}
                 </Text>
                 {showDate && (
                   <Text className="text-xs text-muted-foreground">
@@ -215,10 +222,11 @@ export const PlannedActivityListItem = memo(
       prev.activity.intensity === next.activity.intensity &&
       prev.activity.completed_at === next.activity.completed_at &&
       prev.activity.activity_plan?.id === next.activity.activity_plan?.id &&
-      prev.activity.activity_plan?.title === next.activity.activity_plan?.title &&
+      prev.activity.activity_plan?.title ===
+        next.activity.activity_plan?.title &&
       prev.showDate === next.showDate
     );
-  }
+  },
 );
 
 PlannedActivityListItem.displayName = "PlannedActivityListItem";
@@ -316,7 +324,7 @@ export const WeeklySummaryCard = memo(
       prev.week.activitiesCompleted === next.week.activitiesCompleted &&
       prev.week.activitiesPlanned === next.week.activitiesPlanned
     );
-  }
+  },
 );
 
 WeeklySummaryCard.displayName = "WeeklySummaryCard";
@@ -369,7 +377,7 @@ export const MetricCard = memo(
       prev.value === next.value &&
       prev.subtitle === next.subtitle
     );
-  }
+  },
 );
 
 MetricCard.displayName = "MetricCard";

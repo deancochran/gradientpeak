@@ -13,7 +13,8 @@ export type CarouselCardType =
   | "analysis"
   | "elevation"
   | "map"
-  | "plan";
+  | "plan"
+  | "trainer";
 
 /**
  * Configuration for a single carousel card
@@ -46,7 +47,7 @@ export interface CarouselState {
  * Helper function to get sorted, enabled cards from configuration
  */
 export function getEnabledCards(
-  cards: Record<CarouselCardType, CarouselCardConfig>
+  cards: Record<CarouselCardType, CarouselCardConfig>,
 ): CarouselCardType[] {
   return Object.values(cards)
     .filter((card) => card.enabled)
@@ -60,7 +61,7 @@ export function getEnabledCards(
 export function createDefaultCardConfig(
   cardId: CarouselCardType,
   order: number,
-  enabled = true
+  enabled = true,
 ): CarouselCardConfig {
   return {
     id: cardId,
@@ -80,6 +81,7 @@ export const DEFAULT_CARD_ORDER: CarouselCardType[] = [
   "elevation",
   "map",
   "plan",
+  "trainer",
 ];
 
 /**
@@ -97,5 +99,6 @@ export function createDefaultCardsConfig(): Record<
     elevation: createDefaultCardConfig("elevation", 4, true),
     map: createDefaultCardConfig("map", 5, false), // Disabled by default
     plan: createDefaultCardConfig("plan", 6, false), // Disabled by default
+    trainer: createDefaultCardConfig("trainer", 7, false), // Disabled by default
   };
 }

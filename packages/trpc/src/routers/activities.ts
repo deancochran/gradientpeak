@@ -17,7 +17,15 @@ export const activitiesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const { data, error } = await ctx.supabase
         .from("activities")
-        .select("*")
+        .select(
+          `
+          id, name, type, location,
+          started_at, finished_at,
+          duration_seconds, moving_seconds, distance_meters,
+          metrics, hr_zone_seconds, power_zone_seconds,
+          planned_activity_id, route_id
+        `,
+        )
         .eq("profile_id", ctx.session.user.id)
         .gte("started_at", input.date_from)
         .lte("started_at", input.date_to)
@@ -47,12 +55,21 @@ export const activitiesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       let query = ctx.supabase
         .from("activities")
-        .select("*", { count: "exact" })
+        .select(
+          `
+          id, name, type, location,
+          started_at, duration_seconds, distance_meters,
+          metrics->avg_power as avg_power,
+          metrics->avg_hr as avg_hr,
+          metrics->tss as tss
+        `,
+          { count: "exact" },
+        )
         .eq("profile_id", ctx.session.user.id);
 
       // Apply filters
       if (input.activity_category) {
-        query = query.eq("activity_category", input.activity_category);
+        query = query.eq("type", input.activity_category); // Updated column name
       }
       if (input.date_from) {
         query = query.gte("started_at", input.date_from);
@@ -64,9 +81,9 @@ export const activitiesRouter = createTRPCRouter({
       // Apply sorting
       const sortColumn = {
         date: "started_at",
-        distance: "distance",
-        duration: "elapsed_time",
-        tss: "training_stress_score",
+        distance: "distance_meters", // Updated column name
+        duration: "duration_seconds", // Updated column name
+        tss: "metrics->tss", // Now in JSONB
       }[input.sort_by];
 
       query = query.order(sortColumn, {
@@ -231,18 +248,45 @@ export const activitiesRouter = createTRPCRouter({
       return data;
     }),
 
-  // Update activity (e.g., to set intensity_factor and TSS after calculation)
+  // Update activity (e.g., to set metrics after calculation)
   update: protectedProcedure
     .input(
       z.object({
         id: z.string().uuid(),
-        intensity_factor: z.number().int().min(0).max(200).optional(),
-        training_stress_score: z.number().int().min(0).optional(),
-        normalized_power: z.number().int().min(0).optional(),
+        metrics: z
+          .object({
+            if: z.number().optional(),
+            tss: z.number().optional(),
+            normalized_power: z.number().optional(),
+          })
+          .optional(),
+        name: z.string().optional(),
+        notes: z.string().nullable().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { id, ...updates } = input;
+      const { id, metrics, ...otherUpdates } = input;
+
+      // Build the update object
+      const updates: Record<string, unknown> = { ...otherUpdates };
+
+      // If metrics are provided, merge them with existing metrics
+      if (metrics && Object.keys(metrics).length > 0) {
+        // First get the current activity to merge metrics
+        const { data: currentActivity, error: fetchError } = await ctx.supabase
+          .from("activities")
+          .select("metrics")
+          .eq("id", id)
+          .eq("profile_id", ctx.session.user.id)
+          .single();
+
+        if (fetchError) throw new Error(fetchError.message);
+
+        // Merge new metrics with existing
+        const existingMetrics =
+          (currentActivity?.metrics as Record<string, unknown>) || {};
+        updates.metrics = { ...existingMetrics, ...metrics };
+      }
 
       const { data, error } = await ctx.supabase
         .from("activities")
@@ -254,5 +298,142 @@ export const activitiesRouter = createTRPCRouter({
 
       if (error) throw new Error(error.message);
       return data;
+    }),
+
+  // Upload trainer control events for an activity
+  uploadTrainerEvents: protectedProcedure
+    .input(
+      z.object({
+        activityId: z.string().uuid(),
+        events: z.array(
+          z.object({
+            timestamp: z.number(),
+            controlType: z.enum(["power_target", "simulation", "resistance"]),
+            targetValue: z.number(),
+            actualValue: z.number().optional(),
+            success: z.boolean(),
+            errorMessage: z.string().optional(),
+          }),
+        ),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      console.log(
+        `[tRPC] Uploading ${input.events.length} trainer control events`,
+      );
+
+      // Verify activity belongs to user
+      const { data: activity } = await ctx.supabase
+        .from("activities")
+        .select("id, profile_id")
+        .eq("id", input.activityId)
+        .single();
+
+      if (!activity || activity.profile_id !== ctx.session.user.id) {
+        throw new Error("Activity not found or access denied");
+      }
+
+      // Batch insert control events
+      const { data, error } = await ctx.supabase
+        .from("trainer_control_events")
+        .insert(
+          input.events.map((e) => ({
+            activity_id: input.activityId,
+            timestamp: new Date(e.timestamp).toISOString(),
+            control_type: e.controlType,
+            target_value: e.targetValue,
+            actual_value: e.actualValue,
+            success: e.success,
+            error_message: e.errorMessage,
+          })),
+        );
+
+      if (error) {
+        console.error("[tRPC] Failed to upload trainer events:", error);
+        throw new Error("Failed to save trainer control events");
+      }
+
+      console.log("[tRPC] Successfully uploaded trainer control events");
+      return { success: true, count: input.events.length };
+    }),
+
+  // Get control adherence analysis for an activity
+  getControlAdherence: protectedProcedure
+    .input(
+      z.object({
+        activityId: z.string().uuid(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      // Verify activity belongs to user
+      const { data: activity } = await ctx.supabase
+        .from("activities")
+        .select("id, profile_id, trainer_controlled, control_mode")
+        .eq("id", input.activityId)
+        .single();
+
+      if (!activity || activity.profile_id !== ctx.session.user.id) {
+        throw new Error("Activity not found or access denied");
+      }
+
+      if (!activity.trainer_controlled) {
+        return {
+          hasControlData: false,
+          adherencePercent: 0,
+          events: [],
+        };
+      }
+
+      // Fetch control events
+      const { data: events } = await ctx.supabase
+        .from("trainer_control_events")
+        .select("*")
+        .eq("activity_id", input.activityId)
+        .order("timestamp", { ascending: true });
+
+      if (!events || events.length === 0) {
+        return {
+          hasControlData: false,
+          adherencePercent: 0,
+          events: [],
+        };
+      }
+
+      // Calculate adherence statistics
+      const successfulEvents = events.filter((e) => e.success);
+      const eventsWithActual = events.filter((e) => e.actual_value != null);
+
+      let avgDeviation = 0;
+      let adherencePercent = 100;
+
+      if (eventsWithActual.length > 0) {
+        const deviations = eventsWithActual.map((e) =>
+          Math.abs(e.target_value - (e.actual_value || 0)),
+        );
+        avgDeviation =
+          deviations.reduce((a, b) => a + b, 0) / deviations.length;
+
+        // Calculate adherence percentage
+        const avgTarget =
+          eventsWithActual.reduce((a, e) => a + e.target_value, 0) /
+          eventsWithActual.length;
+        adherencePercent = Math.max(0, 100 - (avgDeviation / avgTarget) * 100);
+      }
+
+      return {
+        hasControlData: true,
+        controlMode: activity.control_mode,
+        totalEvents: events.length,
+        successfulEvents: successfulEvents.length,
+        avgDeviation,
+        adherencePercent: Math.round(adherencePercent * 100) / 100,
+        events: events.map((e) => ({
+          timestamp: e.timestamp,
+          controlType: e.control_type,
+          targetValue: e.target_value,
+          actualValue: e.actual_value,
+          success: e.success,
+        })),
+      };
     }),
 });

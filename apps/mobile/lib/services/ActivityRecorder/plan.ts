@@ -1,10 +1,8 @@
 import {
-  ActivityPlanStructure,
-  FlattenedStep,
-  flattenPlanSteps,
-  getDurationMs,
+  ActivityPlanStructureV2,
+  getDurationSeconds,
+  PlanStepV2,
   RecordingServiceActivityPlan,
-  Step,
 } from "@repo/core";
 import { EventEmitter } from "expo";
 
@@ -15,7 +13,7 @@ export interface PlannedActivityProgress {
   totalSteps: number;
   elapsedInStep: number;
   duration?: number;
-  targets?: Step["targets"];
+  targets?: PlanStepV2["targets"];
 }
 
 // Define event types for PlanManager
@@ -32,7 +30,7 @@ interface PlanManagerEvents {
 }
 
 export class PlanManager extends EventEmitter<PlanManagerEvents> {
-  private flattenedSteps: FlattenedStep[] = [];
+  private steps: PlanStepV2[] = [];
   public planProgress?: PlannedActivityProgress;
   public selectedActivityPlan: RecordingServiceActivityPlan;
   public plannedActivityId: string | undefined;
@@ -46,23 +44,26 @@ export class PlanManager extends EventEmitter<PlanManagerEvents> {
   ) {
     super();
     this.selectedActivityPlan = selectedPlannedActivity;
-    this.flattenedSteps = flattenPlanSteps(
-      (selectedPlannedActivity.structure as ActivityPlanStructure).steps,
-    );
+
+    // V2 structure - steps are already flat
+    const structure =
+      selectedPlannedActivity.structure as ActivityPlanStructureV2;
+    this.steps = structure.steps;
+
     this.plannedActivityId = plannedActivityId;
 
     this.planProgress = {
       state: "not_started",
       currentStepIndex: 0,
       completedSteps: 0,
-      totalSteps: this.flattenedSteps.length,
+      totalSteps: this.steps.length,
       elapsedInStep: 0,
       targets: undefined,
     };
   }
 
   public clearPlannedActivity() {
-    this.flattenedSteps = [];
+    this.steps = [];
     this.planProgress = undefined;
   }
 
@@ -108,7 +109,7 @@ export class PlanManager extends EventEmitter<PlanManagerEvents> {
         currentStepIndex: this.planProgress.currentStepIndex + 1,
       };
 
-      const nextStep = this.flattenedSteps[this.planProgress.currentStepIndex];
+      const nextStep = this.steps[this.planProgress.currentStepIndex];
       if (!nextStep) {
         this.planProgress = { ...this.planProgress, state: "finished" };
         this.emit("planFinished", this.planProgress);
@@ -138,9 +139,13 @@ export class PlanManager extends EventEmitter<PlanManagerEvents> {
   public updatePlanProgress(deltaMs: number) {
     if (!this.planProgress || this.planProgress.state !== "in_progress") return;
 
-    const step = this.flattenedSteps[this.planProgress.currentStepIndex];
+    const step = this.steps[this.planProgress.currentStepIndex];
     if (!step) return;
-    if (step.duration === "untilFinished") return;
+
+    // Handle "untilFinished" duration
+    if (step.duration.type === "untilFinished") {
+      return;
+    }
 
     this.planProgress = {
       ...this.planProgress,
@@ -159,7 +164,7 @@ export class PlanManager extends EventEmitter<PlanManagerEvents> {
   }
 
   private moveToStep(index: number) {
-    const step = this.flattenedSteps[index];
+    const step = this.steps[index];
     if (!step || !this.planProgress) return;
 
     console.log(`Moving to step ${index}:`, {
@@ -168,16 +173,19 @@ export class PlanManager extends EventEmitter<PlanManagerEvents> {
       targets: step.targets,
     });
 
+    // Calculate duration in milliseconds
+    let durationMs: number | undefined;
+    if (step.duration.type !== "untilFinished") {
+      durationMs = getDurationSeconds(step.duration) * 1000;
+    }
+
     this.planProgress = {
       ...this.planProgress,
       state: "in_progress",
       currentStepIndex: index,
       elapsedInStep: 0,
       targets: step.targets,
-      duration:
-        step.duration && step.duration !== "untilFinished"
-          ? getDurationMs(step.duration)
-          : undefined,
+      duration: durationMs,
     };
 
     // Reset last update time for accurate delta calculation
@@ -187,9 +195,9 @@ export class PlanManager extends EventEmitter<PlanManagerEvents> {
     this.emit("planProgressUpdate", this.planProgress);
   }
 
-  public getCurrentStep(): FlattenedStep | undefined {
+  public getCurrentStep(): PlanStepV2 | undefined {
     if (!this.planProgress) return undefined;
-    return this.flattenedSteps[this.planProgress.currentStepIndex];
+    return this.steps[this.planProgress.currentStepIndex];
   }
 
   public getProgress(): PlannedActivityProgress | undefined {

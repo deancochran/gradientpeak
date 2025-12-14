@@ -21,6 +21,7 @@ import {
   Pause,
   Play,
   Square,
+  Zap,
 } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, View } from "react-native";
@@ -29,6 +30,17 @@ import {
   type CarouselCardType,
   createDefaultCardsConfig,
 } from "types/carousel";
+
+// Helper function to resolve power target
+function resolvePowerTarget(target: any, profile: any): number | null {
+  if (typeof target === "number") return Math.round(target);
+  if (target.type === "%FTP" || target.type === "ftp") {
+    const ftp = profile?.ftp || 200;
+    return Math.round((target.intensity / 100) * ftp);
+  }
+  if (target.type === "watts") return Math.round(target.intensity || 0);
+  return null;
+}
 
 function RecordScreen() {
   const router = useRouter();
@@ -206,6 +218,14 @@ function RecordScreen() {
       console.log("[RecordModal] Enabling plan card");
     }
 
+    // Enable trainer card when a controllable trainer is connected
+    const hasControllableTrainer =
+      service?.sensorsManager.getControllableTrainer()?.isControllable ?? false;
+    config.trainer.enabled = hasControllableTrainer;
+    if (hasControllableTrainer) {
+      console.log("[RecordModal] Enabling trainer control card");
+    }
+
     console.log(
       "[RecordModal] Cards config updated:",
       Object.values(config)
@@ -213,7 +233,7 @@ function RecordScreen() {
         .map((c) => c.id),
     );
     return config;
-  }, [isOutdoorActivity, plan.hasPlan]);
+  }, [isOutdoorActivity, plan.hasPlan, service]);
 
   // Show loading state while initializing
   if (!isInitialized) {
@@ -226,6 +246,66 @@ function RecordScreen() {
 
   return (
     <View className="flex-1 bg-background">
+      {/* Sensor Disconnect Warning */}
+      {(() => {
+        const disconnectedSensors = service?.sensorsManager
+          .getConnectedSensors()
+          .filter((s) => s.connectionState === "disconnected");
+
+        if (!disconnectedSensors || disconnectedSensors.length === 0)
+          return null;
+
+        return (
+          <View className="bg-yellow-500/20 px-4 py-2 border-b border-yellow-500/40">
+            <View className="flex-row items-center gap-2">
+              <Icon as={AlertTriangle} size={16} className="text-yellow-600" />
+              <Text className="text-xs text-yellow-600 font-medium">
+                {disconnectedSensors.length} sensor(s) disconnected
+              </Text>
+            </View>
+            <Text className="text-xs text-yellow-600 mt-1">
+              {disconnectedSensors.map((s) => s.name).join(", ")} - attempting
+              reconnection
+            </Text>
+          </View>
+        );
+      })()}
+
+      {/* Trainer Control Indicator */}
+      {(() => {
+        const trainer = service?.sensorsManager.getControllableTrainer();
+        const currentStep = service?.currentStep;
+
+        if (!trainer || !trainer.isControllable) return null;
+
+        let targetDisplay = "Connected";
+        if (currentStep?.targets?.power) {
+          const powerTarget = resolvePowerTarget(
+            currentStep.targets.power,
+            service?.recordingMetadata?.profile,
+          );
+          if (powerTarget) {
+            targetDisplay = `Target: ${powerTarget}W`;
+          }
+        } else if (currentStep?.targets?.grade !== undefined) {
+          targetDisplay = `Target: ${currentStep.targets.grade}%`;
+        }
+
+        return (
+          <View className="bg-primary/10 px-4 py-2 border-b border-primary/20">
+            <View className="flex-row items-center gap-2">
+              <Icon as={Zap} size={16} className="text-primary" />
+              <Text className="text-xs text-primary font-medium">
+                Trainer Control Active
+              </Text>
+              <Text className="text-xs text-primary ml-auto">
+                {targetDisplay}
+              </Text>
+            </View>
+          </View>
+        );
+      })()}
+
       {/* Carousel - Now takes full height */}
       <RecordingCarousel
         cardsConfig={cardsConfig}

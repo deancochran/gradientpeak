@@ -7,7 +7,6 @@ import { trpc } from "@/lib/trpc";
 import { format } from "date-fns";
 import { useLocalSearchParams } from "expo-router";
 import {
-  Activity,
   Calendar,
   Clock,
   Heart,
@@ -160,89 +159,92 @@ function ActivityDetailScreen() {
     (s) => s.type === "cadence",
   );
 
-  // Heart Rate Zones
-  const hrZones =
-    activity.hr_zone_1_time ||
-    activity.hr_zone_2_time ||
-    activity.hr_zone_3_time ||
-    activity.hr_zone_4_time ||
-    activity.hr_zone_5_time
-      ? [
-          {
-            zone: 1,
-            time: activity.hr_zone_1_time || 0,
-            label: "Zone 1 (Recovery)",
-          },
-          {
-            zone: 2,
-            time: activity.hr_zone_2_time || 0,
-            label: "Zone 2 (Endurance)",
-          },
-          {
-            zone: 3,
-            time: activity.hr_zone_3_time || 0,
-            label: "Zone 3 (Tempo)",
-          },
-          {
-            zone: 4,
-            time: activity.hr_zone_4_time || 0,
-            label: "Zone 4 (Threshold)",
-          },
-          {
-            zone: 5,
-            time: activity.hr_zone_5_time || 0,
-            label: "Zone 5 (VO2 Max)",
-          },
-        ]
-      : [];
+  // Extract metrics from JSONB field
+  const metrics = activity.metrics || {};
+  const avgPower = metrics.avg_power;
+  const avgHeartRate = metrics.avg_heart_rate;
+  const avgSpeed = metrics.avg_speed;
+  const maxSpeed = metrics.max_speed;
+  const avgCadence = metrics.avg_cadence;
+  const maxCadence = metrics.max_cadence;
+  const tss = metrics.tss;
+  const intensityFactor = metrics.intensity_factor;
+  const totalAscent = metrics.total_ascent || 0;
+  const totalDescent = metrics.total_descent || 0;
 
-  // Power Zones
-  const powerZones =
-    activity.power_zone_1_time ||
-    activity.power_zone_2_time ||
-    activity.power_zone_3_time ||
-    activity.power_zone_4_time ||
-    activity.power_zone_5_time ||
-    activity.power_zone_6_time ||
-    activity.power_zone_7_time
-      ? [
-          {
-            zone: 1,
-            time: activity.power_zone_1_time || 0,
-            label: "Zone 1 (Active Recovery)",
-          },
-          {
-            zone: 2,
-            time: activity.power_zone_2_time || 0,
-            label: "Zone 2 (Endurance)",
-          },
-          {
-            zone: 3,
-            time: activity.power_zone_3_time || 0,
-            label: "Zone 3 (Tempo)",
-          },
-          {
-            zone: 4,
-            time: activity.power_zone_4_time || 0,
-            label: "Zone 4 (Threshold)",
-          },
-          {
-            zone: 5,
-            time: activity.power_zone_5_time || 0,
-            label: "Zone 5 (VO2 Max)",
-          },
-          {
-            zone: 6,
-            time: activity.power_zone_6_time || 0,
-            label: "Zone 6 (Anaerobic)",
-          },
-          {
-            zone: 7,
-            time: activity.power_zone_7_time || 0,
-            label: "Zone 7 (Neuromuscular)",
-          },
-        ]
-      : [];
+  // Heart Rate Zones - now from array
+  const hrZoneSeconds = activity.hr_zone_seconds || [];
+  const hrZones = hrZoneSeconds.some((time) => time > 0)
+    ? [
+        {
+          zone: 1,
+          time: hrZoneSeconds[0] || 0,
+          label: "Zone 1 (Recovery)",
+        },
+        {
+          zone: 2,
+          time: hrZoneSeconds[1] || 0,
+          label: "Zone 2 (Endurance)",
+        },
+        {
+          zone: 3,
+          time: hrZoneSeconds[2] || 0,
+          label: "Zone 3 (Tempo)",
+        },
+        {
+          zone: 4,
+          time: hrZoneSeconds[3] || 0,
+          label: "Zone 4 (Threshold)",
+        },
+        {
+          zone: 5,
+          time: hrZoneSeconds[4] || 0,
+          label: "Zone 5 (VO2 Max)",
+        },
+      ]
+    : [];
+
+  // Power Zones - now from array
+  const powerZoneSeconds = activity.power_zone_seconds || [];
+  const powerZones = powerZoneSeconds.some((time) => time > 0)
+    ? [
+        {
+          zone: 1,
+          time: powerZoneSeconds[0] || 0,
+          label: "Zone 1 (Active Recovery)",
+        },
+        {
+          zone: 2,
+          time: powerZoneSeconds[1] || 0,
+          label: "Zone 2 (Endurance)",
+        },
+        {
+          zone: 3,
+          time: powerZoneSeconds[2] || 0,
+          label: "Zone 3 (Tempo)",
+        },
+        {
+          zone: 4,
+          time: powerZoneSeconds[3] || 0,
+          label: "Zone 4 (Threshold)",
+        },
+        {
+          zone: 5,
+          time: powerZoneSeconds[4] || 0,
+          label: "Zone 5 (VO2 Max)",
+        },
+        {
+          zone: 6,
+          time: powerZoneSeconds[5] || 0,
+          label: "Zone 6 (Anaerobic)",
+        },
+        {
+          zone: 7,
+          time: powerZoneSeconds[6] || 0,
+          label: "Zone 7 (Neuromuscular)",
+        },
+      ]
+    : [];
 
   const hrColors = [
     "bg-blue-400",
@@ -270,13 +272,13 @@ function ActivityDetailScreen() {
           <CardContent className="p-6">
             <View className="items-center mb-4">
               <Text className="text-3xl mb-2">
-                {activity.activity_category === "run"
+                {activity.type === "run"
                   ? "🏃"
-                  : activity.activity_category === "bike"
+                  : activity.type === "bike"
                     ? "🚴"
-                    : activity.activity_category === "swim"
+                    : activity.type === "swim"
                       ? "🏊"
-                      : activity.activity_category === "strength"
+                      : activity.type === "strength"
                         ? "💪"
                         : "🎯"}
               </Text>
@@ -307,41 +309,36 @@ function ActivityDetailScreen() {
 
         {/* Key Stats Grid */}
         <View className="flex-row gap-2">
-          {activity.distance > 0 && (
+          {activity.distance_meters > 0 && (
             <StatCard
               icon={MapPin}
               label="Distance"
-              value={formatDistance(activity.distance)}
+              value={formatDistance(activity.distance_meters)}
             />
           )}
           <StatCard
             icon={Clock}
             label="Duration"
-            value={formatDuration(activity.elapsed_time)}
+            value={formatDuration(activity.duration_seconds)}
           />
         </View>
 
         <View className="flex-row gap-2">
-          {activity.avg_heart_rate && (
+          {avgHeartRate && (
             <StatCard
               icon={Heart}
               label="Avg HR"
-              value={activity.avg_heart_rate}
+              value={avgHeartRate}
               unit="bpm"
             />
           )}
-          {activity.avg_power && (
-            <StatCard
-              icon={Zap}
-              label="Avg Power"
-              value={activity.avg_power}
-              unit="W"
-            />
+          {avgPower && (
+            <StatCard icon={Zap} label="Avg Power" value={avgPower} unit="W" />
           )}
         </View>
 
         {/* Training Load */}
-        {activity.training_stress_score && (
+        {tss && (
           <Card>
             <CardHeader>
               <CardTitle>Training Load</CardTitle>
@@ -359,18 +356,16 @@ function ActivityDetailScreen() {
                       TSS
                     </Text>
                   </View>
-                  <Text className="text-3xl font-bold">
-                    {activity.training_stress_score}
-                  </Text>
+                  <Text className="text-3xl font-bold">{tss}</Text>
                 </View>
 
-                {activity.intensity_factor && (
+                {intensityFactor && (
                   <View className="flex-1">
                     <Text className="text-xs text-muted-foreground uppercase mb-1">
                       Intensity Factor
                     </Text>
                     <Text className="text-3xl font-bold">
-                      {(activity.intensity_factor / 100).toFixed(2)}
+                      {(intensityFactor / 100).toFixed(2)}
                     </Text>
                   </View>
                 )}
@@ -380,14 +375,14 @@ function ActivityDetailScreen() {
         )}
 
         {/* Elevation */}
-        {(activity.total_ascent > 0 || activity.total_descent > 0) && (
+        {(totalAscent > 0 || totalDescent > 0) && (
           <Card>
             <CardHeader>
               <CardTitle>Elevation</CardTitle>
             </CardHeader>
             <CardContent>
               <View className="flex-row gap-4">
-                {activity.total_ascent > 0 && (
+                {totalAscent > 0 && (
                   <View className="flex-1">
                     <View className="flex-row items-center gap-2 mb-1">
                       <Icon
@@ -400,19 +395,19 @@ function ActivityDetailScreen() {
                       </Text>
                     </View>
                     <Text className="text-2xl font-bold">
-                      {activity.total_ascent}
+                      {totalAscent}
                       <Text className="text-sm text-muted-foreground"> m</Text>
                     </Text>
                   </View>
                 )}
 
-                {activity.total_descent > 0 && (
+                {totalDescent > 0 && (
                   <View className="flex-1">
                     <Text className="text-xs text-muted-foreground uppercase mb-1">
                       Descent
                     </Text>
                     <Text className="text-2xl font-bold">
-                      {activity.total_descent}
+                      {totalDescent}
                       <Text className="text-sm text-muted-foreground"> m</Text>
                     </Text>
                   </View>
@@ -423,37 +418,37 @@ function ActivityDetailScreen() {
         )}
 
         {/* Speed/Pace Stats */}
-        {(activity.avg_speed || activity.max_speed) && (
+        {(avgSpeed || maxSpeed) && (
           <Card>
             <CardHeader>
               <CardTitle>
-                {activity.activity_category === "run" ? "Pace" : "Speed"}
+                {activity.type === "run" ? "Pace" : "Speed"}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <View className="flex-row gap-4">
-                {activity.avg_speed && (
+                {avgSpeed && (
                   <View className="flex-1">
                     <Text className="text-xs text-muted-foreground uppercase mb-1">
                       Average
                     </Text>
                     <Text className="text-xl font-bold">
-                      {activity.activity_category === "run"
-                        ? formatPace(activity.avg_speed)
-                        : formatSpeed(activity.avg_speed)}
+                      {activity.type === "run"
+                        ? formatPace(avgSpeed)
+                        : formatSpeed(avgSpeed)}
                     </Text>
                   </View>
                 )}
 
-                {activity.max_speed && (
+                {maxSpeed && (
                   <View className="flex-1">
                     <Text className="text-xs text-muted-foreground uppercase mb-1">
                       Maximum
                     </Text>
                     <Text className="text-xl font-bold">
-                      {activity.activity_category === "run"
-                        ? formatPace(activity.max_speed)
-                        : formatSpeed(activity.max_speed)}
+                      {activity.type === "run"
+                        ? formatPace(maxSpeed)
+                        : formatSpeed(maxSpeed)}
                     </Text>
                   </View>
                 )}
@@ -481,20 +476,20 @@ function ActivityDetailScreen() {
         )}
 
         {/* Cadence */}
-        {(activity.avg_cadence || activity.max_cadence) && (
+        {(avgCadence || maxCadence) && (
           <Card>
             <CardHeader>
               <CardTitle>Cadence</CardTitle>
             </CardHeader>
             <CardContent>
               <View className="flex-row gap-4">
-                {activity.avg_cadence && (
+                {avgCadence && (
                   <View className="flex-1">
                     <Text className="text-xs text-muted-foreground uppercase mb-1">
                       Average
                     </Text>
                     <Text className="text-2xl font-bold">
-                      {activity.avg_cadence}
+                      {avgCadence}
                       <Text className="text-sm text-muted-foreground">
                         {" "}
                         rpm
@@ -503,13 +498,13 @@ function ActivityDetailScreen() {
                   </View>
                 )}
 
-                {activity.max_cadence && (
+                {maxCadence && (
                   <View className="flex-1">
                     <Text className="text-xs text-muted-foreground uppercase mb-1">
                       Maximum
                     </Text>
                     <Text className="text-2xl font-bold">
-                      {activity.max_cadence}
+                      {maxCadence}
                       <Text className="text-sm text-muted-foreground">
                         {" "}
                         rpm

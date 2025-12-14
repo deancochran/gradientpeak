@@ -11,7 +11,6 @@ import {
   Activity,
   Calendar,
   ChevronRight,
-  Filter,
   TrendingUp,
 } from "lucide-react-native";
 import React, { useState } from "react";
@@ -25,15 +24,18 @@ import {
 type ActivityCategory = "run" | "bike" | "swim" | "strength" | "other" | "all";
 type SortBy = "date" | "distance" | "duration" | "tss";
 
-const ACTIVITY_TYPES: { value: ActivityCategory; label: string; icon: string }[] =
-  [
-    { value: "all", label: "All", icon: "🏃" },
-    { value: "run", label: "Run", icon: "🏃" },
-    { value: "bike", label: "Bike", icon: "🚴" },
-    { value: "swim", label: "Swim", icon: "🏊" },
-    { value: "strength", label: "Strength", icon: "💪" },
-    { value: "other", label: "Other", icon: "🎯" },
-  ];
+const ACTIVITY_TYPES: {
+  value: ActivityCategory;
+  label: string;
+  icon: string;
+}[] = [
+  { value: "all", label: "All", icon: "🏃" },
+  { value: "run", label: "Run", icon: "🏃" },
+  { value: "bike", label: "Bike", icon: "🚴" },
+  { value: "swim", label: "Swim", icon: "🏊" },
+  { value: "strength", label: "Strength", icon: "💪" },
+  { value: "other", label: "Other", icon: "🎯" },
+];
 
 function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
@@ -95,12 +97,12 @@ function ActivitiesScreen() {
     setPage(0); // Reset to first page
   };
 
-  const getActivityIcon = (category: string) => {
-    const type = ACTIVITY_TYPES.find((t) => t.value === category);
-    return type?.icon || "🎯";
+  const getActivityIcon = (type: string) => {
+    const activityType = ACTIVITY_TYPES.find((t) => t.value === type);
+    return activityType?.icon || "🎯";
   };
 
-  const getActivityColor = (category: string) => {
+  const getActivityColor = (type: string) => {
     const colors: Record<string, string> = {
       run: "text-orange-500",
       bike: "text-blue-500",
@@ -108,7 +110,7 @@ function ActivitiesScreen() {
       strength: "text-purple-500",
       other: "text-gray-500",
     };
-    return colors[category] || "text-gray-500";
+    return colors[type] || "text-gray-500";
   };
 
   if (isLoading && page === 0) {
@@ -208,7 +210,7 @@ function ActivitiesScreen() {
                         {/* Activity Name & Type */}
                         <View className="flex-row items-center gap-2 mb-2">
                           <Text className="text-2xl">
-                            {getActivityIcon(activity.activity_category)}
+                            {getActivityIcon(activity.type)}
                           </Text>
                           <Text
                             className="text-lg font-semibold flex-1"
@@ -226,25 +228,28 @@ function ActivitiesScreen() {
                             className="text-muted-foreground"
                           />
                           <Text className="text-sm text-muted-foreground">
-                            {format(new Date(activity.started_at), "MMM d, yyyy 'at' h:mm a")}
+                            {format(
+                              new Date(activity.started_at),
+                              "MMM d, yyyy 'at' h:mm a",
+                            )}
                           </Text>
                         </View>
 
                         {/* Stats Row */}
                         <View className="flex-row items-center gap-4">
-                          {activity.distance > 0 && (
+                          {activity.distance_meters > 0 && (
                             <View className="flex-row items-center gap-1">
                               <Text className="text-sm font-semibold">
-                                {formatDistance(activity.distance)}
+                                {formatDistance(activity.distance_meters)}
                               </Text>
                             </View>
                           )}
                           <View className="flex-row items-center gap-1">
                             <Text className="text-sm text-muted-foreground">
-                              {formatDuration(activity.elapsed_time)}
+                              {formatDuration(activity.duration_seconds)}
                             </Text>
                           </View>
-                          {activity.training_stress_score && (
+                          {activity.metrics?.tss && (
                             <View className="flex-row items-center gap-1">
                               <Icon
                                 as={TrendingUp}
@@ -252,7 +257,7 @@ function ActivitiesScreen() {
                                 className="text-primary"
                               />
                               <Text className="text-sm font-medium text-primary">
-                                {activity.training_stress_score} TSS
+                                {activity.metrics.tss} TSS
                               </Text>
                             </View>
                           )}

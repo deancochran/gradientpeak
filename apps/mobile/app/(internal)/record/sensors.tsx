@@ -13,7 +13,7 @@ import {
   type AllPermissionsStatus,
 } from "@/lib/services/permissions-check";
 import { useRouter } from "expo-router";
-import { Bluetooth, RefreshCw, X } from "lucide-react-native";
+import { Battery, Bluetooth, RefreshCw, X, Zap } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, View } from "react-native";
 import type { Device } from "react-native-ble-plx";
@@ -240,7 +240,62 @@ function SensorsScreen() {
               >
                 <View className="flex-row items-center gap-3 flex-1">
                   <View className="w-2 h-2 rounded-full bg-green-500" />
-                  <Text className="font-medium">{sensor.name}</Text>
+                  <View className="flex-1">
+                    <View className="flex-row items-center gap-2">
+                      <Text className="font-medium">{sensor.name}</Text>
+                      {/* Battery indicator */}
+                      {sensor.batteryLevel !== undefined && (
+                        <View className="flex-row items-center gap-1">
+                          <Icon
+                            as={Battery}
+                            size={14}
+                            className={
+                              sensor.batteryLevel > 20
+                                ? "text-green-600"
+                                : sensor.batteryLevel > 10
+                                  ? "text-yellow-600"
+                                  : "text-red-600"
+                            }
+                          />
+                          <Text
+                            className={`text-xs ${
+                              sensor.batteryLevel > 20
+                                ? "text-green-600"
+                                : sensor.batteryLevel > 10
+                                  ? "text-yellow-600"
+                                  : "text-red-600"
+                            }`}
+                          >
+                            {sensor.batteryLevel}%
+                          </Text>
+                        </View>
+                      )}
+                      {/* Control badge */}
+                      {sensor.isControllable && (
+                        <View className="bg-green-500/20 px-2 py-1 rounded flex-row items-center gap-1">
+                          <Icon as={Zap} size={12} className="text-green-600" />
+                          <Text className="text-xs text-green-600 font-medium">
+                            Control
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    {/* Show current control mode if controllable */}
+                    {sensor.isControllable &&
+                      (() => {
+                        const controller =
+                          service?.sensorsManager.getFTMSController(sensor.id);
+                        const mode = controller?.getCurrentMode();
+                        if (mode) {
+                          return (
+                            <Text className="text-xs text-muted-foreground mt-1">
+                              Mode: {mode}
+                            </Text>
+                          );
+                        }
+                        return null;
+                      })()}
+                  </View>
                 </View>
                 <Button
                   size="sm"
@@ -297,9 +352,32 @@ function SensorsScreen() {
                   className="flex-row items-center justify-between py-3 border-b border-border"
                 >
                   <View className="flex-1">
-                    <Text className="font-medium">
-                      {device.name || "Unknown Device"}
-                    </Text>
+                    <View className="flex-row items-center gap-2">
+                      <Text className="font-medium">
+                        {device.name || "Unknown Device"}
+                      </Text>
+                      {/* Check if this is a connected sensor with controllable flag */}
+                      {(() => {
+                        const connectedSensor = connectedSensors.find(
+                          (s) => s.id === device.id,
+                        );
+                        if (connectedSensor?.isControllable) {
+                          return (
+                            <View className="bg-green-500/20 px-2 py-1 rounded flex-row items-center gap-1">
+                              <Icon
+                                as={Zap}
+                                size={12}
+                                className="text-green-600"
+                              />
+                              <Text className="text-xs text-green-600 font-medium">
+                                Control
+                              </Text>
+                            </View>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </View>
                     {device.id && (
                       <Text
                         className="text-xs text-muted-foreground mt-0.5"

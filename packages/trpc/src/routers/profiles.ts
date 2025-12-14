@@ -132,7 +132,7 @@ export const profilesRouter = createTRPCRouter({
         const { data: activities, error } = await ctx.supabase
           .from("activities")
           .select(
-            "duration, distance, tss, activity_category, activity_location, started_at",
+            "duration_seconds, distance_meters, metrics, type, location, started_at",
           )
           .eq("profile_id", ctx.session.user.id)
           .gte("started_at", startDate.toISOString())
@@ -147,11 +147,16 @@ export const profilesRouter = createTRPCRouter({
 
         const totalActivities = activities?.length || 0;
         const totalDuration =
-          activities?.reduce((sum, a) => sum + (a.duration || 0), 0) || 0;
+          activities?.reduce((sum, a) => sum + (a.duration_seconds || 0), 0) ||
+          0;
         const totalDistance =
-          activities?.reduce((sum, a) => sum + (a.distance || 0), 0) || 0;
+          activities?.reduce((sum, a) => sum + (a.distance_meters || 0), 0) ||
+          0;
         const totalTSS =
-          activities?.reduce((sum, a) => sum + (a.tss || 0), 0) || 0;
+          activities?.reduce((sum, a) => {
+            const metrics = (a.metrics as Record<string, any>) || {};
+            return sum + (metrics.tss || 0);
+          }, 0) || 0;
 
         return {
           totalActivities,

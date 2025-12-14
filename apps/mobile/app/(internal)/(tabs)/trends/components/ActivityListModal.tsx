@@ -60,7 +60,7 @@ export function ActivityListModal({
   // Filter by intensity zone if specified
   const filteredActivities = intensityZone
     ? activities.filter((activity) => {
-        const if_value = activity.intensity_factor || 0;
+        const if_value = activity.metrics?.intensity_factor || 0;
         // Map intensity factor to zones
         switch (intensityZone) {
           case "recovery":
@@ -115,7 +115,7 @@ export function ActivityListModal({
     return Activity;
   };
 
-  const getIntensityColor = (if_value: number | null) => {
+  const getIntensityColor = (if_value: number | null | undefined) => {
     if (!if_value) return "text-gray-400";
     if (if_value < 0.55) return "text-blue-500";
     if (if_value < 0.75) return "text-green-500";
@@ -218,7 +218,7 @@ export function ActivityListModal({
                     <Text className="text-2xl font-bold text-blue-900">
                       {Math.round(
                         filteredActivities.reduce(
-                          (sum, a) => sum + (a.training_stress_score || 0),
+                          (sum, a) => sum + (a.metrics?.tss || 0),
                           0,
                         ),
                       )}
@@ -232,7 +232,7 @@ export function ActivityListModal({
                     <Text className="text-2xl font-bold text-blue-900">
                       {formatDuration(
                         filteredActivities.reduce(
-                          (sum, a) => sum + ((a as any).duration_seconds || 0),
+                          (sum, a) => sum + (a.duration_seconds || 0),
                           0,
                         ),
                       )}
@@ -277,12 +277,12 @@ export function ActivityListModal({
                     {/* Activity Type */}
                     <View className="flex-row items-center gap-2 mb-3">
                       <Icon
-                        as={getActivityIcon(activity.activity_category)}
+                        as={getActivityIcon(activity.type)}
                         size={14}
                         className="text-gray-600"
                       />
                       <Text className="text-sm text-gray-600">
-                        {formatActivityType(activity.activity_category)}
+                        {formatActivityType(activity.type)}
                       </Text>
                     </View>
 
@@ -291,19 +291,17 @@ export function ActivityListModal({
                       <View className="flex-row items-center gap-1">
                         <Icon as={Clock} size={14} className="text-gray-500" />
                         <Text className="text-sm text-gray-700">
-                          {formatDuration(
-                            (activity as any).duration_seconds || 0,
-                          )}
+                          {formatDuration(activity.duration_seconds || 0)}
                         </Text>
                       </View>
 
                       <Text className="text-gray-400">•</Text>
 
                       <Text className="text-sm text-gray-700">
-                        {Math.round(activity.training_stress_score || 0)} TSS
+                        {Math.round(activity.metrics?.tss || 0)} TSS
                       </Text>
 
-                      {activity.intensity_factor && (
+                      {activity.metrics?.intensity_factor && (
                         <>
                           <Text className="text-gray-400">•</Text>
                           <View className="flex-row items-center gap-1">
@@ -311,13 +309,13 @@ export function ActivityListModal({
                               as={Zap}
                               size={14}
                               className={getIntensityColor(
-                                activity.intensity_factor,
+                                activity.metrics.intensity_factor,
                               )}
                             />
                             <Text
-                              className={`text-sm font-medium ${getIntensityColor(activity.intensity_factor)}`}
+                              className={`text-sm font-medium ${getIntensityColor(activity.metrics.intensity_factor)}`}
                             >
-                              IF {activity.intensity_factor.toFixed(2)}
+                              IF {activity.metrics.intensity_factor.toFixed(2)}
                             </Text>
                           </View>
                         </>

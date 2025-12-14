@@ -15,8 +15,8 @@
 import { PublicProfilesRow } from "@repo/core";
 import { EventEmitter } from "expo";
 import { MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
-import { StreamBuffer } from "./StreamBuffer";
 import { DataBuffer } from "./DataBuffer";
+import { StreamBuffer } from "./StreamBuffer";
 import {
   LiveMetricsState,
   LocationReading,
@@ -161,7 +161,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   }
 
   /**
-   * Ingest sensor data with batched updates
+   * Ingest sensor data with batched updates and validation
    */
   public ingestSensorData(reading: SensorReading): void {
     const timestamp = reading.timestamp || Date.now();
@@ -169,6 +169,18 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     // Add to buffer for real-time calculations (always, for display)
     // Type narrowing: check if numeric or tuple
     if (typeof reading.value === "number") {
+      // Validate sensor data using sensor models
+      const model = getSensorModel(reading.metric);
+      if (model) {
+        const validated = model.validate(reading.value);
+        if (validated === null) {
+          // Invalid reading, skip it
+          return;
+        }
+        // Use validated value
+        reading.value = validated;
+      }
+
       // Numeric reading (power, HR, cadence, etc.)
       this.buffer.add({
         metric: reading.metric,
@@ -271,6 +283,22 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    */
   public getMetric(metric: keyof LiveMetricsState): number | undefined {
     return this.metrics[metric] as number | undefined;
+  }
+
+  /**
+   * Get metrics in simplified format (cleaner API)
+   * This is the recommended way to access metrics for UI components
+   */
+  public getSimplifiedMetrics(): SimplifiedMetrics {
+    const currentReadings = this.getCurrentReadings();
+    const hasEnoughData = this.hasEnoughDataForAdvancedMetrics();
+
+    return convertToSimplifiedMetrics(
+      this.metrics,
+      currentReadings,
+      hasEnoughData,
+      this.profile,
+    );
   }
 
   /**

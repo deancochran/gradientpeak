@@ -1,57 +1,47 @@
 import type { RecordingServiceActivityPlan } from "../schemas";
+import { createPlan, Duration, Target } from "../schemas/activity_payload";
 
 /**
  * DEV SAMPLE 1 – Indoor Bike Trainer Stress Test
- * Demonstrates %FTP, cadence, and nested repetition handling.
+ * Demonstrates %FTP, cadence, and interval handling.
  */
 export const DEV_SAMPLE_BIKE: RecordingServiceActivityPlan = {
-  version: "1.0",
+  version: "2.0",
   name: "DEV – Indoor Bike Trainer Schema Demo",
-  activity_type: "indoor_bike_trainer",
   description:
-    "Compact 1-minute activity using mixed target types and nested steps to validate schema logic.",
+    "Compact 1-minute activity using mixed target types and intervals to validate schema logic.",
   estimated_duration: 60,
   estimated_tss: 1,
-  structure: {
-    steps: [
-      {
-        type: "step",
-        name: "Warm-up Spin",
-        duration: { type: "time", value: 8, unit: "seconds" },
-        targets: [{ type: "%FTP", intensity: 55 }],
-        notes: "Basic warm-up validation step",
-      },
-      {
-        type: "repetition",
-        repeat: 2,
-        steps: [
-          {
-            type: "step",
-            name: "Cadence Surge",
-            duration: { type: "time", value: 6, unit: "seconds" },
-            targets: [
-              { type: "cadence", intensity: 110 },
-              { type: "%FTP", intensity: 85 },
-            ],
-            notes: "Dual-target test",
-          },
-          {
-            type: "step",
-            name: "Recovery",
-            duration: { type: "time", value: 4, unit: "seconds" },
-            targets: [{ type: "%FTP", intensity: 50 }],
-          },
-        ],
-      },
-      {
-        type: "step",
-        name: "Cool-down",
-        duration: { type: "time", value: 12, unit: "seconds" },
-        targets: [{ type: "%ThresholdHR", intensity: 70 }],
-        notes: "Schema end step",
-      },
-    ],
-  },
+  structure: createPlan()
+    .step({
+      name: "Warm-up Spin",
+      duration: Duration.seconds(8),
+      targets: [Target.ftp(55)],
+      notes: "Basic warm-up validation step",
+    })
+    .interval({
+      repeat: 2,
+      steps: [
+        {
+          name: "Cadence Surge",
+          duration: Duration.seconds(6),
+          targets: [Target.cadence(110), Target.ftp(85)],
+          notes: "Dual-target test",
+        },
+        {
+          name: "Recovery",
+          duration: Duration.seconds(4),
+          targets: [Target.ftp(50)],
+        },
+      ],
+    })
+    .step({
+      name: "Cool-down",
+      duration: Duration.seconds(12),
+      targets: [Target.thresholdHR(70)],
+      notes: "Schema end step",
+    })
+    .build(),
 };
 
 /**
@@ -59,57 +49,45 @@ export const DEV_SAMPLE_BIKE: RecordingServiceActivityPlan = {
  * Validates HR, RPE, and mixed step durations.
  */
 export const DEV_SAMPLE_RUN: RecordingServiceActivityPlan = {
-  version: "1.0",
+  version: "2.0",
   name: "DEV – Outdoor Run Schema Demo",
-  activity_type: "outdoor_run",
   description:
     "1-minute developer activity to validate heart-rate and RPE parsing for run-type plans.",
   estimated_duration: 60,
   estimated_tss: 1,
-  structure: {
-    steps: [
-      {
-        type: "step",
-        name: "Warm-up Jog",
-        duration: { type: "time", value: 10, unit: "seconds" },
-        targets: [{ type: "%ThresholdHR", intensity: 60 }],
-      },
-      {
-        type: "step",
-        name: "Tempo Push",
-        duration: { type: "time", value: 15, unit: "seconds" },
-        targets: [
-          { type: "%MaxHR", intensity: 90 },
-          { type: "RPE", intensity: 8 },
-        ],
-        notes: "Dual HR + RPE mapping",
-      },
-      {
-        type: "step",
-        name: "Short Recovery",
-        duration: { type: "time", value: 10, unit: "seconds" },
-        targets: [{ type: "RPE", intensity: 4 }],
-      },
-      {
-        type: "repetition",
-        repeat: 2,
-        steps: [
-          {
-            type: "step",
-            name: "Strides",
-            duration: { type: "time", value: 5, unit: "seconds" },
-            targets: [{ type: "cadence", intensity: 180 }],
-          },
-        ],
-      },
-      {
-        type: "step",
-        name: "Cooldown",
-        duration: { type: "time", value: 10, unit: "seconds" },
-        targets: [{ type: "%ThresholdHR", intensity: 65 }],
-      },
-    ],
-  },
+  structure: createPlan()
+    .step({
+      name: "Warm-up Jog",
+      duration: Duration.seconds(10),
+      targets: [Target.thresholdHR(60)],
+    })
+    .step({
+      name: "Tempo Push",
+      duration: Duration.seconds(15),
+      targets: [Target.maxHR(90), Target.rpe(8)],
+      notes: "Dual HR + RPE mapping",
+    })
+    .step({
+      name: "Short Recovery",
+      duration: Duration.seconds(10),
+      targets: [Target.rpe(4)],
+    })
+    .interval({
+      repeat: 2,
+      steps: [
+        {
+          name: "Strides",
+          duration: Duration.seconds(5),
+          targets: [Target.cadence(180)],
+        },
+      ],
+    })
+    .step({
+      name: "Cooldown",
+      duration: Duration.seconds(10),
+      targets: [Target.thresholdHR(65)],
+    })
+    .build(),
 };
 
 /**
@@ -117,48 +95,40 @@ export const DEV_SAMPLE_RUN: RecordingServiceActivityPlan = {
  * Includes RPE, speed, and nested repetition sequence.
  */
 export const DEV_SAMPLE_TREADMILL: RecordingServiceActivityPlan = {
-  version: "1.0",
+  version: "2.0",
   name: "DEV – Treadmill Schema Demo",
-  activity_type: "indoor_treadmill",
   description:
-    "Short treadmill validation activity testing RPE, speed, and nested repetitions.",
+    "Short treadmill validation activity testing RPE, speed, and intervals.",
   estimated_duration: 60,
   estimated_tss: 1,
-  structure: {
-    steps: [
-      {
-        type: "step",
-        name: "Walk Warm-up",
-        duration: { type: "time", value: 10, unit: "seconds" },
-        targets: [{ type: "speed", intensity: 4.5 }],
-      },
-      {
-        type: "repetition",
-        repeat: 2,
-        steps: [
-          {
-            type: "step",
-            name: "Run Burst",
-            duration: { type: "time", value: 8, unit: "seconds" },
-            targets: [{ type: "RPE", intensity: 9 }],
-            notes: "Short high effort",
-          },
-          {
-            type: "step",
-            name: "Recovery Jog",
-            duration: { type: "time", value: 4, unit: "seconds" },
-            targets: [{ type: "speed", intensity: 5.0 }],
-          },
-        ],
-      },
-      {
-        type: "step",
-        name: "Cool-down",
-        duration: { type: "time", value: 10, unit: "seconds" },
-        targets: [{ type: "RPE", intensity: 5 }],
-      },
-    ],
-  },
+  structure: createPlan()
+    .step({
+      name: "Walk Warm-up",
+      duration: Duration.seconds(10),
+      targets: [Target.speed(4.5)],
+    })
+    .interval({
+      repeat: 2,
+      steps: [
+        {
+          name: "Run Burst",
+          duration: Duration.seconds(8),
+          targets: [Target.rpe(9)],
+          notes: "Short high effort",
+        },
+        {
+          name: "Recovery Jog",
+          duration: Duration.seconds(4),
+          targets: [Target.speed(5.0)],
+        },
+      ],
+    })
+    .step({
+      name: "Cool-down",
+      duration: Duration.seconds(10),
+      targets: [Target.rpe(5)],
+    })
+    .build(),
 };
 
 /**
@@ -166,48 +136,40 @@ export const DEV_SAMPLE_TREADMILL: RecordingServiceActivityPlan = {
  * Tests distance-based durations, RPE, and cadence (stroke rate) targets.
  */
 export const DEV_SAMPLE_SWIM: RecordingServiceActivityPlan = {
-  version: "1.0",
+  version: "2.0",
   name: "DEV – Swim Schema Demo",
-  activity_type: "indoor_swim",
   description:
     "Compact swim plan verifying distance units and stroke-rate handling.",
   estimated_duration: 60,
   estimated_tss: 1,
-  structure: {
-    steps: [
-      {
-        type: "step",
-        name: "Warm-up",
-        duration: { type: "distance", value: 25, unit: "meters" },
-        targets: [{ type: "RPE", intensity: 4 }],
-      },
-      {
-        type: "step",
-        name: "Drill",
-        duration: { type: "distance", value: 25, unit: "meters" },
-        targets: [{ type: "cadence", intensity: 40 }],
-        notes: "Stroke rate check",
-      },
-      {
-        type: "repetition",
-        repeat: 2,
-        steps: [
-          {
-            type: "step",
-            name: "Sprint Length",
-            duration: { type: "distance", value: 12.5, unit: "meters" },
-            targets: [{ type: "RPE", intensity: 9 }],
-          },
-        ],
-      },
-      {
-        type: "step",
-        name: "Easy Finish",
-        duration: { type: "distance", value: 25, unit: "meters" },
-        targets: [{ type: "RPE", intensity: 3 }],
-      },
-    ],
-  },
+  structure: createPlan()
+    .step({
+      name: "Warm-up",
+      duration: Duration.meters(25),
+      targets: [Target.rpe(4)],
+    })
+    .step({
+      name: "Drill",
+      duration: Duration.meters(25),
+      targets: [Target.cadence(40)],
+      notes: "Stroke rate check",
+    })
+    .interval({
+      repeat: 2,
+      steps: [
+        {
+          name: "Sprint Length",
+          duration: Duration.meters(12.5),
+          targets: [Target.rpe(9)],
+        },
+      ],
+    })
+    .step({
+      name: "Easy Finish",
+      duration: Duration.meters(25),
+      targets: [Target.rpe(3)],
+    })
+    .build(),
 };
 
 /**
@@ -215,48 +177,40 @@ export const DEV_SAMPLE_SWIM: RecordingServiceActivityPlan = {
  * Validates repetitions, resistance control, and multi-metric targeting.
  */
 export const DEV_SAMPLE_STRENGTH: RecordingServiceActivityPlan = {
-  version: "1.0",
+  version: "2.0",
   name: "DEV – Strength Schema Demo",
-  activity_type: "indoor_strength",
   description:
     "One-minute strength training plan to validate reps, resistance, and dual targets.",
   estimated_duration: 60,
   estimated_tss: 1,
-  structure: {
-    steps: [
-      {
-        type: "step",
-        name: "Warm-up Stretch",
-        duration: { type: "time", value: 10, unit: "seconds" },
-        targets: [{ type: "RPE", intensity: 3 }],
-      },
-      {
-        type: "repetition",
-        repeat: 2,
-        steps: [
-          {
-            type: "step",
-            name: "Push-ups",
-            duration: { type: "repetitions", value: 10, unit: "reps" },
-            targets: [{ type: "RPE", intensity: 8 }],
-          },
-          {
-            type: "step",
-            name: "Squat Hold",
-            duration: { type: "time", value: 6, unit: "seconds" },
-            targets: [{ type: "RPE", intensity: 10 }],
-            notes: "Resistance + control example",
-          },
-        ],
-      },
-      {
-        type: "step",
-        name: "Cooldown Stretch",
-        duration: { type: "time", value: 10, unit: "seconds" },
-        targets: [{ type: "RPE", intensity: 4 }],
-      },
-    ],
-  },
+  structure: createPlan()
+    .step({
+      name: "Warm-up Stretch",
+      duration: Duration.seconds(10),
+      targets: [Target.rpe(3)],
+    })
+    .interval({
+      repeat: 2,
+      steps: [
+        {
+          name: "Push-ups",
+          duration: Duration.reps(10),
+          targets: [Target.rpe(8)],
+        },
+        {
+          name: "Squat Hold",
+          duration: Duration.seconds(6),
+          targets: [Target.rpe(10)],
+          notes: "Resistance + control example",
+        },
+      ],
+    })
+    .step({
+      name: "Cooldown Stretch",
+      duration: Duration.seconds(10),
+      targets: [Target.rpe(4)],
+    })
+    .build(),
 };
 
 /**

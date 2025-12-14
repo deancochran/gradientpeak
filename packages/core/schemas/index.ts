@@ -1,9 +1,8 @@
 import type { PublicActivityPlansInsert } from "@repo/supabase";
 import { z } from "zod";
-import type { ActivityPlanStructure } from "./activity_plan_structure";
+import type { ActivityPlanStructureV2 } from "./activity_plan_v2";
 
 export * from "./activity_payload";
-export * from "./activity_plan_structure";
 export * from "./form-schemas";
 export * from "./planned_activity";
 export * from "./training_plan_structure";
@@ -31,12 +30,12 @@ export const activityPlanUpdateSchema = activityPlanCreateSchema.partial();
 
 // Note: plannedActivityCreateSchema and plannedActivityUpdateSchema are now exported from ./planned_activity
 
-// Legacy type for ActivityRecorder service
+// Type for ActivityRecorder service (V2 only)
 export type RecordingServiceActivityPlan = Omit<
   PublicActivityPlansInsert,
   "id" | "idx" | "profile_id" | "created_at"
 > & {
-  structure: ActivityPlanStructure;
+  structure: ActivityPlanStructureV2;
 };
 
 // tRPC-specific Training Plans Schemas

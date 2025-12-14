@@ -1,14 +1,19 @@
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { getIntensityColor, type Step } from "@repo/core";
+import {
+  type PlanStepV2,
+  formatDuration,
+  formatIntensityTarget,
+  getStepIntensityColor,
+} from "@repo/core";
 import * as Haptics from "expo-haptics";
 import { Edit3, GripVertical, Trash2 } from "lucide-react-native";
 import { memo } from "react";
 import { View } from "react-native";
 
 interface StepCardProps {
-  step: Step;
+  step: PlanStepV2;
   index: number;
   isActive?: boolean;
   onPress?: () => void;
@@ -19,57 +24,11 @@ interface StepCardProps {
 }
 
 /**
- * Format duration for display
+ * Format all targets for display
  */
-function formatDuration(duration?: Step["duration"]): string {
-  if (!duration || duration === "untilFinished") {
-    return "Until Finished";
-  }
-
-  switch (duration.type) {
-    case "time":
-      if (duration.unit === "minutes") {
-        return `${duration.value}min`;
-      }
-      return `${duration.value}s`;
-    case "distance":
-      if (duration.unit === "km") {
-        return `${duration.value}km`;
-      }
-      return `${duration.value}m`;
-    case "repetitions":
-      return `${duration.value} reps`;
-    default:
-      return "";
-  }
-}
-
-/**
- * Format intensity target for display
- */
-function formatTarget(target?: { type: string; intensity: number }): string {
-  if (!target) return "";
-
-  switch (target.type) {
-    case "%FTP":
-      return `${target.intensity}% FTP`;
-    case "%MaxHR":
-      return `${target.intensity}% MaxHR`;
-    case "%ThresholdHR":
-      return `${target.intensity}% LTHR`;
-    case "watts":
-      return `${target.intensity}W`;
-    case "bpm":
-      return `${target.intensity} bpm`;
-    case "speed":
-      return `${target.intensity} km/h`;
-    case "cadence":
-      return `${target.intensity} rpm`;
-    case "RPE":
-      return `RPE ${target.intensity}`;
-    default:
-      return "";
-  }
+function formatAllTargets(targets?: PlanStepV2["targets"]): string {
+  if (!targets || targets.length === 0) return "";
+  return targets.map(formatIntensityTarget).join(" + ");
 }
 
 export const StepCard = memo<StepCardProps>(function StepCard({
@@ -82,10 +41,7 @@ export const StepCard = memo<StepCardProps>(function StepCard({
   onEdit,
   isDraggable = true,
 }: StepCardProps) {
-  const primaryTarget = step.targets?.[0];
-  const intensity = primaryTarget?.intensity || 0;
-  const targetType = primaryTarget?.type;
-  const color = getIntensityColor(intensity, targetType);
+  const color = getStepIntensityColor(step);
 
   const handlePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -145,9 +101,9 @@ export const StepCard = memo<StepCardProps>(function StepCard({
             </Text>
           </View>
 
-          {primaryTarget && (
+          {step.targets && step.targets.length > 0 && (
             <Text className="text-sm text-muted-foreground">
-              {formatTarget(primaryTarget)}
+              {formatAllTargets(step.targets)}
             </Text>
           )}
 

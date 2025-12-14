@@ -135,6 +135,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private _stepIndex: number = 0;
   private _stepStartMovingTime: number = 0; // Moving time when current step started
 
+  // === Manual Control Override ===
+  private manualControlOverride: boolean = false;
+
   // === Private Managers ===
   private notificationsManager?: NotificationsManager;
 
@@ -190,6 +193,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       "change",
       (nextState) => this.handleAppStateChange(nextState),
     );
+
+    // Setup plan-based trainer control
+    this.setupPlanTrainerIntegration();
 
     console.log("[ActivityRecorderService] Initialized", {
       profileId: profile.id,
@@ -443,6 +449,21 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   async startRecording() {
     console.log("[Service] Starting recording");
 
+    // Prevent concurrent recordings
+    if (this.state === "recording") {
+      const error =
+        "Cannot start recording: A recording is already in progress";
+      console.error(`[Service] ${error}`);
+      throw new Error(error);
+    }
+
+    if (this.state === "paused") {
+      const error =
+        "Cannot start recording: Please resume the paused recording first";
+      console.error(`[Service] ${error}`);
+      throw new Error(error);
+    }
+
     // Check all necessary permissions
     const allGranted = await areAllPermissionsGranted();
     if (!allGranted) {
@@ -625,6 +646,160 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   // ================================
+  // Manual Control Override
+  // ================================
+
+  /**
+   * Enable or disable manual control override
+   * When enabled, automatic plan-based trainer control is suspended
+   * When disabled (back to auto), plan targets are reapplied
+   */
+  public setManualControlMode(enabled: boolean): void {
+    this.manualControlOverride = enabled;
+    console.log(
+      `[Service] Manual control: ${enabled ? "enabled" : "disabled"}`,
+    );
+
+    if (!enabled && this.state === "recording" && this.currentStep) {
+      // Re-apply plan targets when switching back to auto
+      console.log(
+        "[Service] Reapplying plan targets after manual override disabled",
+      );
+      this.applyStepTargets(this.currentStep);
+    }
+  }
+
+  /**
+   * Check if manual control override is currently active
+   */
+  public isManualControlActive(): boolean {
+    return this.manualControlOverride;
+  }
+
+  // ================================
+  // FTMS Trainer Control Integration
+  // ================================
+
+  /**
+   * Setup automatic trainer control based on workout plan
+   * Applies power/grade targets when steps change
+   */
+  private setupPlanTrainerIntegration(): void {
+    // Apply targets when step changes
+    this.on("stepChanged", async ({ current }) => {
+      // Skip if manual control is active
+      if (this.manualControlOverride) {
+        console.log("[Service] Manual control active, skipping auto target");
+        return;
+      }
+
+      if (!current || this.state !== "recording") return;
+
+      const trainer = this.sensorsManager.getControllableTrainer();
+      if (!trainer) return;
+
+      console.log("[Service] Applying step targets:", current.name);
+      await this.applyStepTargets(current);
+    });
+
+    // Apply initial target when recording starts
+    this.on("stateChanged", async (state) => {
+      // Skip if manual control is active
+      if (this.manualControlOverride) {
+        console.log("[Service] Manual control active, skipping auto target");
+        return;
+      }
+
+      if (state !== "recording") return;
+
+      const step = this.currentStep;
+      if (!step) return;
+
+      const trainer = this.sensorsManager.getControllableTrainer();
+      if (!trainer) return;
+
+      console.log("[Service] Applying initial targets");
+      await this.applyStepTargets(step);
+    });
+  }
+
+  /**
+   * Apply targets from a plan step to the trainer
+   */
+  private async applyStepTargets(step: FlattenedStep): Promise<void> {
+    if (!step.targets) {
+      console.log("[Service] No targets for this step");
+      return;
+    }
+
+    const trainer = this.sensorsManager.getControllableTrainer();
+    if (!trainer) {
+      console.log("[Service] No controllable trainer");
+      return;
+    }
+
+    try {
+      // Check for power targets (ERG mode)
+      if (step.targets.power) {
+        const powerTarget = this.resolvePowerTarget(step.targets.power);
+        if (powerTarget) {
+          console.log(`[Service] Applying power target: ${powerTarget}W`);
+          const success = await this.sensorsManager.setPowerTarget(powerTarget);
+
+          if (!success) {
+            this.emit("error", `Failed to set power target: ${powerTarget}W`);
+          }
+        }
+      }
+      // Check for grade targets (SIM mode)
+      else if (step.targets.grade !== undefined) {
+        console.log(`[Service] Applying grade target: ${step.targets.grade}%`);
+        const success = await this.sensorsManager.setSimulation({
+          grade: step.targets.grade,
+          windSpeed: 0,
+          crr: 0.005,
+          windResistance: 0.51,
+        });
+
+        if (!success) {
+          this.emit(
+            "error",
+            `Failed to set grade target: ${step.targets.grade}%`,
+          );
+        }
+      }
+    } catch (error) {
+      console.error("[Service] Failed to apply step targets:", error);
+      this.emit("error", "Failed to apply workout targets to trainer");
+    }
+  }
+
+  /**
+   * Resolve power target from plan step to absolute watts
+   */
+  private resolvePowerTarget(target: any): number | null {
+    // Handle absolute watts
+    if (typeof target === "number") {
+      return Math.round(target);
+    }
+
+    // Handle percentage of FTP
+    if (target.type === "%FTP" || target.type === "ftp") {
+      const ftp = this.profile.ftp || 200; // Fallback to 200W
+      const percentage = target.intensity || target.value || 0;
+      return Math.round((percentage / 100) * ftp);
+    }
+
+    // Handle watts object
+    if (target.type === "watts") {
+      return Math.round(target.intensity || target.value || 0);
+    }
+
+    console.warn("[Service] Unable to resolve power target:", target);
+    return null;
+  }
+
+  // ================================
   // Data Handling
   // ================================
 
@@ -740,6 +915,14 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return this.recordingMetadata;
   }
 
+  /**
+   * Get metrics in simplified format
+   * This is the recommended way to access metrics for UI components
+   */
+  getSimplifiedMetrics(): SimplifiedMetrics {
+    return this.liveMetricsManager.getSimplifiedMetrics();
+  }
+
   // ================================
   // Cleanup
   // ================================
@@ -792,3 +975,15 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     console.log("[Service] Cleanup complete");
   }
 }
+
+// ================================
+// Re-exports for convenience
+// ================================
+export {
+  getHRZone,
+  getPowerZone,
+  getZoneDistribution,
+  HR_ZONE_NAMES,
+  POWER_ZONE_NAMES,
+} from "./SimplifiedMetrics";
+export type { SimplifiedMetrics } from "./SimplifiedMetrics";

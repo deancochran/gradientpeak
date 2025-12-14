@@ -1,7 +1,7 @@
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import type { CarouselCardType } from "types/carousel";
 import React, { memo } from "react";
 import { Dimensions } from "react-native";
+import type { CarouselCardType } from "types/carousel";
 import { AnalysisCard } from "./cards/AnalysisCard";
 import { DashboardCard } from "./cards/DashboardCard";
 import { ElevationCard } from "./cards/ElevationCard";
@@ -9,6 +9,7 @@ import { EnhancedPlanCard } from "./cards/EnhancedPlanCard";
 import { HeartRateCard } from "./cards/HeartRateCard";
 import { MapCard } from "./cards/MapCard";
 import { PowerCard } from "./cards/PowerCard";
+import { TrainerControlCard } from "./cards/TrainerControlCard";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
@@ -41,6 +42,11 @@ export const CarouselCard = memo(
       case "plan":
         return (
           <EnhancedPlanCard service={service} screenWidth={SCREEN_WIDTH} />
+        );
+
+      case "trainer":
+        return (
+          <TrainerControlCard service={service} screenWidth={SCREEN_WIDTH} />
         );
 
       default:
