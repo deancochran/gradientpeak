@@ -930,6 +930,60 @@ export class SensorsManager {
   }
 
   /**
+   * Set target speed
+   */
+  async setTargetSpeed(speedKph: number): Promise<boolean> {
+    if (!this.controllableTrainer?.ftmsController) {
+      console.warn("[SensorsManager] No controllable trainer connected");
+      return false;
+    }
+
+    return await this.controllableTrainer.ftmsController.setTargetSpeed(
+      speedKph,
+    );
+  }
+
+  /**
+   * Set target inclination
+   */
+  async setTargetInclination(percent: number): Promise<boolean> {
+    if (!this.controllableTrainer?.ftmsController) {
+      console.warn("[SensorsManager] No controllable trainer connected");
+      return false;
+    }
+
+    return await this.controllableTrainer.ftmsController.setTargetInclination(
+      percent,
+    );
+  }
+
+  /**
+   * Set target heart rate
+   */
+  async setTargetHeartRate(bpm: number): Promise<boolean> {
+    if (!this.controllableTrainer?.ftmsController) {
+      console.warn("[SensorsManager] No controllable trainer connected");
+      return false;
+    }
+
+    return await this.controllableTrainer.ftmsController.setTargetHeartRate(
+      bpm,
+    );
+  }
+
+  /**
+   * Set target cadence
+   */
+  async setTargetCadence(rpm: number): Promise<boolean> {
+    if (!this.controllableTrainer?.ftmsController) {
+      console.warn("[SensorsManager] No controllable trainer connected");
+      return false;
+    }
+
+    return await this.controllableTrainer.ftmsController.setTargetCadence(rpm);
+  }
+
+  /**
    * Reset trainer control
    */
   async resetTrainerControl(): Promise<boolean> {
@@ -939,6 +993,19 @@ export class SensorsManager {
     }
 
     return await this.controllableTrainer.ftmsController.reset();
+  }
+
+  /**
+   * Get FTMS controller for advanced access
+   */
+  getFTMSController(
+    sensorId?: string,
+  ): import("./FTMSController").FTMSController | undefined {
+    if (sensorId) {
+      const sensor = this.connectedSensors.get(sensorId);
+      return sensor?.ftmsController;
+    }
+    return this.controllableTrainer?.ftmsController;
   }
 
   /**
