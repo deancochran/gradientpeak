@@ -301,142 +301,150 @@ create trigger update_synced_planned_activities_updated_at
 -- ACTIVITIES
 -- ============================================================================
 create table if not exists public.activities (
+    -- ============================================================================
+    -- Core identity
+    -- ============================================================================
     id uuid primary key default uuid_generate_v4(),
     idx serial unique not null,
+    profile_id uuid not null references public.profiles(id) on delete cascade,
+
+    -- ============================================================================
+    -- Core metadata
+    -- ============================================================================
     name text not null,
     notes text,
-    activity_location activity_location not null default 'indoor',
-    activity_category activity_category not null default 'run',
+    type text not null, -- 'bike', 'run', 'swim', 'strength', 'other'
+    location text, -- 'indoor', 'outdoor'
     is_private boolean not null default true,
+
+    -- ============================================================================
+    -- Core timing fields (indexed - kept as columns for performance)
+    -- ============================================================================
+    started_at timestamptz not null,
+    finished_at timestamptz not null,
+    duration_seconds integer not null default 0 check (duration_seconds >= 0),
+    moving_seconds integer not null default 0 check (moving_seconds >= 0),
+
+    -- ============================================================================
+    -- Core distance (indexed - kept as column for performance)
+    -- ============================================================================
+    distance_meters integer not null default 0 check (distance_meters >= 0),
+
+    -- ============================================================================
+    -- All metrics as JSONB (flexible schema for future expansion)
+    -- ============================================================================
+    -- Structure:
+    -- {
+    --   "avg_power": 250, "max_power": 450, "normalized_power": 265,
+    --   "avg_hr": 145, "max_hr": 178, "max_hr_pct_threshold": 0.92,
+    --   "avg_cadence": 90, "max_cadence": 110,
+    --   "avg_speed": 8.5, "max_speed": 15.2,
+    --   "total_work": 900000, "calories": 625,
+    --   "total_ascent": 450, "total_descent": 430,
+    --   "avg_grade": 2.3, "elevation_gain_per_km": 45,
+    --   "avg_temperature": 22.5, "max_temperature": 24.0, "weather_condition": "sunny",
+    --   "tss": 85, "if": 0.82, "vi": 1.06, "ef": 1.72,
+    --   "power_weight_ratio": 3.33, "power_hr_ratio": 1.72, "decoupling": 3.5
+    -- }
+    metrics jsonb not null default '{}'::jsonb,
+
+    -- ============================================================================
+    -- Zone times as arrays (much cleaner than individual columns)
+    -- ============================================================================
+    hr_zone_seconds integer[5], -- [z1, z2, z3, z4, z5]
+    power_zone_seconds integer[7], -- [z1, z2, z3, z4, z5, z6, z7]
+
+    -- ============================================================================
+    -- Profile snapshot as JSONB (instead of 6 separate columns)
+    -- ============================================================================
+    -- Structure: { "ftp": 250, "weight_kg": 75, "threshold_hr": 165, "age": 32, "recovery_time": 48, "training_load": 150 }
+    profile_snapshot jsonb,
+
+    -- ============================================================================
+    -- Planned workout adherence
+    -- ============================================================================
+    avg_target_adherence numeric(5,2) check (avg_target_adherence >= 0 and avg_target_adherence <= 100),
+
+    -- ============================================================================
+    -- References
+    -- ============================================================================
+    planned_activity_id uuid references public.planned_activities(id) on delete set null,
+    route_id uuid references public.activity_routes(id) on delete set null,
+
+    -- ============================================================================
+    -- External integration
+    -- ============================================================================
     provider integration_provider,
     external_id text,
 
     -- ============================================================================
-    -- General Time
-    -- ============================================================================
-    started_at timestamptz not null,
-    finished_at timestamptz not null,
-    elapsed_time integer not null check (elapsed_time >= 0),
-    moving_time integer not null check (moving_time >= 0),
-
-    -- ============================================================================
-    -- Structured Plan
-    -- ============================================================================
-    planned_activity_id uuid references public.planned_activities(id) on delete set null,
-
-    -- ============================================================================
-    -- profile Info
-    -- ============================================================================
-    profile_id uuid not null references public.profiles(id) on delete cascade,
-    profile_age integer check (profile_age >= 0),
-    profile_weight_kg integer check (profile_weight_kg > 0),
-    profile_ftp integer check (profile_ftp >= 0),
-    profile_threshold_hr integer check (profile_threshold_hr >= 0),
-    profile_recovery_time integer check (profile_recovery_time >= 0),
-    profile_training_load integer check (profile_training_load >= 0),
-
-    -- ============================================================================
-    -- environmental
-    -- ============================================================================
-    avg_temperature numeric(5,2),
-    max_temperature numeric(5,2),
-    weather_condition text,
-    elevation_gain_per_km numeric(5,2),
-    avg_grade numeric(5,2),
-    total_ascent integer not null default 0 check (total_ascent >= 0),
-    total_descent integer not null default 0 check (total_descent >= 0),
-
-    -- ============================================================================
-    -- distance metrics
-    -- ============================================================================
-    distance integer not null default 0 check (distance >= 0),
-    avg_speed numeric(5,2) check (avg_speed >= 0),
-    max_speed numeric(5,2) check (max_speed >= 0),
-
-    -- ============================================================================
-    -- calories
-    -- ============================================================================
-    calories integer check (calories >= 0),
-
-    -- ============================================================================
-    -- heart rate
-    -- ============================================================================
-    avg_heart_rate integer check (avg_heart_rate >= 0),
-    max_heart_rate integer check (max_heart_rate >= 0),
-    max_hr_pct_threshold numeric(5,2),
-    hr_zone_1_time integer default 0 check (hr_zone_1_time >= 0),
-    hr_zone_2_time integer default 0 check (hr_zone_2_time >= 0),
-    hr_zone_3_time integer default 0 check (hr_zone_3_time >= 0),
-    hr_zone_4_time integer default 0 check (hr_zone_4_time >= 0),
-    hr_zone_5_time integer default 0 check (hr_zone_5_time >= 0),
-
-    -- ============================================================================
-    -- cadence
-    -- ============================================================================
-    avg_cadence integer check (avg_cadence >= 0),
-    max_cadence integer check (max_cadence >= 0),
-
-    -- ============================================================================
-    -- power metrics
-    -- ============================================================================
-    total_work integer check (total_work >= 0),
-    avg_power integer check (avg_power >= 0),
-    max_power integer check (max_power >= 0),
-    normalized_power integer check (normalized_power >= 0),
-    power_zone_1_time integer default 0 check (power_zone_1_time >= 0),
-    power_zone_2_time integer default 0 check (power_zone_2_time >= 0),
-    power_zone_3_time integer default 0 check (power_zone_3_time >= 0),
-    power_zone_4_time integer default 0 check (power_zone_4_time >= 0),
-    power_zone_5_time integer default 0 check (power_zone_5_time >= 0),
-    power_zone_6_time integer default 0 check (power_zone_6_time >= 0),
-    power_zone_7_time integer default 0 check (power_zone_7_time >= 0),
-    power_heart_rate_ratio numeric(5,2),
-
-    -- ============================================================================
-    -- analysis metrics
-    -- ============================================================================
-    intensity_factor integer check (intensity_factor >= 0 and intensity_factor <= 200),
-    efficiency_factor integer check (efficiency_factor >= 0 and efficiency_factor <= 100),
-    power_weight_ratio numeric(5,2) check (power_weight_ratio >= 0),
-    decoupling integer check (decoupling >= 0 and decoupling <= 100),
-    training_stress_score integer check (training_stress_score >= 0),
-    variability_index integer check (variability_index >= 0),
-
-    -- ============================================================================
-    -- audit
+    -- Audit timestamps
     -- ============================================================================
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
 
     -- ============================================================================
-    -- constraints
+    -- Constraints
     -- ============================================================================
-    constraint chk_times check (finished_at >= started_at)
+    constraint chk_times check (finished_at >= started_at),
+    constraint chk_moving_time check (moving_seconds >= 0 and moving_seconds <= duration_seconds)
 );
 
-create index if not exists idx_activities_profile_id
-    on public.activities(profile_id);
+-- Essential indexes (optimized for common queries)
+create index if not exists idx_activities_profile_started
+    on public.activities(profile_id, started_at desc);
 
-create index if not exists idx_activities_activity_location
-    on public.activities(activity_location);
+create index if not exists idx_activities_type
+    on public.activities(type);
 
-create index if not exists idx_activities_activity_category
-    on public.activities(activity_category);
+create index if not exists idx_activities_location
+    on public.activities(location)
+    where location is not null;
 
-create index if not exists idx_activities_started_at
-    on public.activities(started_at);
+create index if not exists idx_activities_started
+    on public.activities(started_at desc);
 
-create index if not exists idx_activities_planned_activity_id
-    on public.activities(planned_activity_id);
+create index if not exists idx_activities_planned
+    on public.activities(planned_activity_id)
+    where planned_activity_id is not null;
 
-create index if not exists idx_activities_provider_external
+create index if not exists idx_activities_route
+    on public.activities(route_id)
+    where route_id is not null;
+
+create index if not exists idx_activities_external
     on public.activities(provider, external_id)
-    where external_id is not null;
+    where provider is not null;
 
 create unique index if not exists idx_activities_external_unique
     on public.activities(provider, external_id)
     where external_id is not null and provider is not null;
 
+-- JSONB GIN indexes for common metric queries
+create index if not exists idx_activities_metrics_power
+    on public.activities using gin ((metrics -> 'avg_power'));
+
+create index if not exists idx_activities_metrics_hr
+    on public.activities using gin ((metrics -> 'avg_hr'));
+
+create index if not exists idx_activities_metrics_tss
+    on public.activities using gin ((metrics -> 'tss'));
+
+create index if not exists idx_activities_metrics_all
+    on public.activities using gin (metrics jsonb_path_ops);
+
+-- Array GIN indexes for zone queries
+create index if not exists idx_activities_hr_zones
+    on public.activities using gin (hr_zone_seconds);
+
+create index if not exists idx_activities_power_zones
+    on public.activities using gin (power_zone_seconds);
+
+-- Full-text search on activity names
+create index if not exists idx_activities_name_search
+    on public.activities using gin (to_tsvector('english', name));
+
+-- Trigger for auto-updating updated_at timestamp
 create trigger update_activities_updated_at
     before update on public.activities
     for each row

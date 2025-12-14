@@ -36,196 +36,79 @@ export type Database = {
     Tables: {
       activities: {
         Row: {
-          activity_category: Database["public"]["Enums"]["activity_category"]
-          activity_location: Database["public"]["Enums"]["activity_location"]
-          avg_cadence: number | null
-          avg_grade: number | null
-          avg_heart_rate: number | null
-          avg_power: number | null
-          avg_speed: number | null
-          avg_temperature: number | null
-          calories: number | null
           created_at: string
-          decoupling: number | null
-          distance: number
-          efficiency_factor: number | null
-          elapsed_time: number
-          elevation_gain_per_km: number | null
+          distance_meters: number
+          duration_seconds: number
           external_id: string | null
           finished_at: string
-          hr_zone_1_time: number | null
-          hr_zone_2_time: number | null
-          hr_zone_3_time: number | null
-          hr_zone_4_time: number | null
-          hr_zone_5_time: number | null
+          hr_zone_seconds: number[] | null
           id: string
           idx: number
-          intensity_factor: number | null
           is_private: boolean
-          max_cadence: number | null
-          max_heart_rate: number | null
-          max_hr_pct_threshold: number | null
-          max_power: number | null
-          max_speed: number | null
-          max_temperature: number | null
-          moving_time: number
+          location: string | null
+          metrics: Json
+          moving_seconds: number
           name: string
-          normalized_power: number | null
           notes: string | null
           planned_activity_id: string | null
-          power_heart_rate_ratio: number | null
-          power_weight_ratio: number | null
-          power_zone_1_time: number | null
-          power_zone_2_time: number | null
-          power_zone_3_time: number | null
-          power_zone_4_time: number | null
-          power_zone_5_time: number | null
-          power_zone_6_time: number | null
-          power_zone_7_time: number | null
-          profile_age: number | null
-          profile_ftp: number | null
+          power_zone_seconds: number[] | null
           profile_id: string
-          profile_recovery_time: number | null
-          profile_threshold_hr: number | null
-          profile_training_load: number | null
-          profile_weight_kg: number | null
+          profile_snapshot: Json | null
           provider: Database["public"]["Enums"]["integration_provider"] | null
+          route_id: string | null
           started_at: string
-          total_ascent: number
-          total_descent: number
-          total_work: number | null
-          training_stress_score: number | null
+          type: string
           updated_at: string
-          variability_index: number | null
-          weather_condition: string | null
         }
         Insert: {
-          activity_category?: Database["public"]["Enums"]["activity_category"]
-          activity_location?: Database["public"]["Enums"]["activity_location"]
-          avg_cadence?: number | null
-          avg_grade?: number | null
-          avg_heart_rate?: number | null
-          avg_power?: number | null
-          avg_speed?: number | null
-          avg_temperature?: number | null
-          calories?: number | null
           created_at?: string
-          decoupling?: number | null
-          distance?: number
-          efficiency_factor?: number | null
-          elapsed_time: number
-          elevation_gain_per_km?: number | null
+          distance_meters?: number
+          duration_seconds?: number
           external_id?: string | null
           finished_at: string
-          hr_zone_1_time?: number | null
-          hr_zone_2_time?: number | null
-          hr_zone_3_time?: number | null
-          hr_zone_4_time?: number | null
-          hr_zone_5_time?: number | null
+          hr_zone_seconds?: number[] | null
           id?: string
           idx?: number
-          intensity_factor?: number | null
           is_private?: boolean
-          max_cadence?: number | null
-          max_heart_rate?: number | null
-          max_hr_pct_threshold?: number | null
-          max_power?: number | null
-          max_speed?: number | null
-          max_temperature?: number | null
-          moving_time: number
+          location?: string | null
+          metrics?: Json
+          moving_seconds?: number
           name: string
-          normalized_power?: number | null
           notes?: string | null
           planned_activity_id?: string | null
-          power_heart_rate_ratio?: number | null
-          power_weight_ratio?: number | null
-          power_zone_1_time?: number | null
-          power_zone_2_time?: number | null
-          power_zone_3_time?: number | null
-          power_zone_4_time?: number | null
-          power_zone_5_time?: number | null
-          power_zone_6_time?: number | null
-          power_zone_7_time?: number | null
-          profile_age?: number | null
-          profile_ftp?: number | null
+          power_zone_seconds?: number[] | null
           profile_id: string
-          profile_recovery_time?: number | null
-          profile_threshold_hr?: number | null
-          profile_training_load?: number | null
-          profile_weight_kg?: number | null
+          profile_snapshot?: Json | null
           provider?: Database["public"]["Enums"]["integration_provider"] | null
+          route_id?: string | null
           started_at: string
-          total_ascent?: number
-          total_descent?: number
-          total_work?: number | null
-          training_stress_score?: number | null
+          type: string
           updated_at?: string
-          variability_index?: number | null
-          weather_condition?: string | null
         }
         Update: {
-          activity_category?: Database["public"]["Enums"]["activity_category"]
-          activity_location?: Database["public"]["Enums"]["activity_location"]
-          avg_cadence?: number | null
-          avg_grade?: number | null
-          avg_heart_rate?: number | null
-          avg_power?: number | null
-          avg_speed?: number | null
-          avg_temperature?: number | null
-          calories?: number | null
           created_at?: string
-          decoupling?: number | null
-          distance?: number
-          efficiency_factor?: number | null
-          elapsed_time?: number
-          elevation_gain_per_km?: number | null
+          distance_meters?: number
+          duration_seconds?: number
           external_id?: string | null
           finished_at?: string
-          hr_zone_1_time?: number | null
-          hr_zone_2_time?: number | null
-          hr_zone_3_time?: number | null
-          hr_zone_4_time?: number | null
-          hr_zone_5_time?: number | null
+          hr_zone_seconds?: number[] | null
           id?: string
           idx?: number
-          intensity_factor?: number | null
           is_private?: boolean
-          max_cadence?: number | null
-          max_heart_rate?: number | null
-          max_hr_pct_threshold?: number | null
-          max_power?: number | null
-          max_speed?: number | null
-          max_temperature?: number | null
-          moving_time?: number
+          location?: string | null
+          metrics?: Json
+          moving_seconds?: number
           name?: string
-          normalized_power?: number | null
           notes?: string | null
           planned_activity_id?: string | null
-          power_heart_rate_ratio?: number | null
-          power_weight_ratio?: number | null
-          power_zone_1_time?: number | null
-          power_zone_2_time?: number | null
-          power_zone_3_time?: number | null
-          power_zone_4_time?: number | null
-          power_zone_5_time?: number | null
-          power_zone_6_time?: number | null
-          power_zone_7_time?: number | null
-          profile_age?: number | null
-          profile_ftp?: number | null
+          power_zone_seconds?: number[] | null
           profile_id?: string
-          profile_recovery_time?: number | null
-          profile_threshold_hr?: number | null
-          profile_training_load?: number | null
-          profile_weight_kg?: number | null
+          profile_snapshot?: Json | null
           provider?: Database["public"]["Enums"]["integration_provider"] | null
+          route_id?: string | null
           started_at?: string
-          total_ascent?: number
-          total_descent?: number
-          total_work?: number | null
-          training_stress_score?: number | null
+          type?: string
           updated_at?: string
-          variability_index?: number | null
-          weather_condition?: string | null
         }
         Relationships: [
           {
@@ -240,6 +123,13 @@ export type Database = {
             columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activities_route_id_fkey"
+            columns: ["route_id"]
+            isOneToOne: false
+            referencedRelation: "activity_routes"
             referencedColumns: ["id"]
           },
         ]
@@ -577,7 +467,6 @@ export type Database = {
           created_at: string
           dob: string | null
           ftp: number | null
-          gender: string | null
           id: string
           idx: number
           language: string | null
@@ -594,7 +483,6 @@ export type Database = {
           created_at?: string
           dob?: string | null
           ftp?: number | null
-          gender?: string | null
           id: string
           idx?: number
           language?: string | null
@@ -611,7 +499,6 @@ export type Database = {
           created_at?: string
           dob?: string | null
           ftp?: number | null
-          gender?: string | null
           id?: string
           idx?: number
           language?: string | null
