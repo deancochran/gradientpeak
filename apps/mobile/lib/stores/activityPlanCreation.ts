@@ -1,4 +1,7 @@
-import { type Step, type StepOrRepetition } from "@repo/core";
+import {
+  type ActivityPlanStructureV2,
+  type PlanStepV2,
+} from "@repo/core/schemas/activity_plan_v2";
 import { create } from "zustand";
 
 interface ActivityPlanCreationState {
@@ -7,9 +10,7 @@ interface ActivityPlanCreationState {
   description: string;
   activityLocation: "outdoor" | "indoor";
   activityCategory: "run" | "bike" | "swim" | "strength" | "other";
-  structure: {
-    steps: StepOrRepetition[];
-  };
+  structure: ActivityPlanStructureV2;
   routeId: string | null;
   notes: string;
 
@@ -20,17 +21,21 @@ interface ActivityPlanCreationState {
   setActivityCategory: (
     category: "run" | "bike" | "swim" | "strength" | "other",
   ) => void;
-  setStructure: (structure: { steps: StepOrRepetition[] }) => void;
+  setStructure: (structure: ActivityPlanStructureV2) => void;
   setRouteId: (routeId: string | null) => void;
   setNotes: (notes: string) => void;
-  updateStep: (index: number, step: StepOrRepetition) => void;
-  addStep: (step: Step) => void;
-  addRepeat: (repeat: StepOrRepetition) => void;
-  removeStep: (index: number) => void;
-  reorderSteps: (steps: StepOrRepetition[]) => void;
 
-  // Repeat editing
-  updateRepeatAtIndex: (index: number, repeat: StepOrRepetition) => void;
+  // V2 Step management
+  addStep: (step: PlanStepV2) => void;
+  addSteps: (steps: PlanStepV2[]) => void;
+  updateStep: (index: number, step: PlanStepV2) => void;
+  removeStep: (index: number) => void;
+  removeSteps: (indices: number[]) => void;
+  reorderSteps: (steps: PlanStepV2[]) => void;
+
+  // Segment management
+  updateSegmentName: (oldName: string, newName: string) => void;
+  removeSegment: (segmentName: string) => void;
 
   // Reset
   reset: () => void;
@@ -59,7 +64,7 @@ const initialState = {
   description: "",
   activityLocation: "outdoor" as const,
   activityCategory: "run" as const,
-  structure: { steps: [] },
+  structure: { version: 2 as const, steps: [] },
   routeId: null,
   notes: "",
 };
@@ -78,38 +83,70 @@ export const useActivityPlanCreationStore = create<ActivityPlanCreationState>(
     setRouteId: (routeId) => set({ routeId }),
     setNotes: (notes) => set({ notes }),
 
+    // V2 Step management
+    addStep: (step) =>
+      set((state) => ({
+        structure: {
+          version: 2,
+          steps: [...state.structure.steps, step],
+        },
+      })),
+
+    addSteps: (steps) =>
+      set((state) => ({
+        structure: {
+          version: 2,
+          steps: [...state.structure.steps, ...steps],
+        },
+      })),
+
     updateStep: (index, step) =>
       set((state) => {
         const newSteps = [...state.structure.steps];
         newSteps[index] = step;
-        return { structure: { steps: newSteps } };
+        return { structure: { version: 2, steps: newSteps } };
       }),
-
-    addStep: (step) =>
-      set((state) => ({
-        structure: { steps: [...state.structure.steps, step] },
-      })),
-
-    addRepeat: (repeat) =>
-      set((state) => ({
-        structure: { steps: [...state.structure.steps, repeat] },
-      })),
 
     removeStep: (index) =>
       set((state) => ({
         structure: {
+          version: 2,
           steps: state.structure.steps.filter((_, i) => i !== index),
         },
       })),
 
-    reorderSteps: (steps) => set({ structure: { steps } }),
+    removeSteps: (indices) =>
+      set((state) => ({
+        structure: {
+          version: 2,
+          steps: state.structure.steps.filter((_, i) => !indices.includes(i)),
+        },
+      })),
 
-    updateRepeatAtIndex: (index, repeat) =>
-      set((state) => {
-        const newSteps = [...state.structure.steps];
-        newSteps[index] = repeat;
-        return { structure: { steps: newSteps } };
-      }),
+    reorderSteps: (steps) => set({ structure: { version: 2, steps } }),
+
+    // Segment management
+    updateSegmentName: (oldName, newName) =>
+      set((state) => ({
+        structure: {
+          version: 2,
+          steps: state.structure.steps.map((step) =>
+            step.segmentName === oldName
+              ? { ...step, segmentName: newName }
+              : step,
+          ),
+        },
+      })),
+
+    removeSegment: (segmentName) =>
+      set((state) => ({
+        structure: {
+          version: 2,
+          steps: state.structure.steps.filter(
+            (step) => step.segmentName !== segmentName,
+          ),
+        },
+      })),
 
     reset: () =>
       set({

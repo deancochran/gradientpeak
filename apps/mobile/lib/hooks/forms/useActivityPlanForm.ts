@@ -122,33 +122,26 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     setActivityCategory,
   ]);
 
-  // Calculate metrics from structure
+  // Calculate metrics from V2 structure
   const metrics = useMemo(() => {
-    const flatSteps = structure.steps.flatMap((step: any) => {
-      if (step.type === "repetition") {
-        return Array(step.repeat || 1)
-          .fill(step.steps)
-          .flat();
-      }
-      return [step];
-    });
+    const steps = structure.steps || [];
 
-    const durationMs = flatSteps.reduce((sum: number, step: any) => {
-      if (!step.duration || step.duration === "untilFinished") return sum;
-      const value = step.duration.value || 0;
-      const multiplier =
-        step.duration.unit === "minutes"
-          ? 60000
-          : step.duration.unit === "seconds"
-            ? 1000
-            : step.duration.unit === "hours"
-              ? 3600000
-              : 0;
-      return sum + value * multiplier;
+    const durationMs = steps.reduce((sum: number, step) => {
+      const duration = step.duration;
+      if (duration.type === "time") {
+        return sum + duration.seconds * 1000;
+      } else if (duration.type === "distance") {
+        // Estimate 5 min/km
+        return sum + (duration.meters / 1000) * 5 * 60 * 1000;
+      } else if (duration.type === "repetitions") {
+        // Estimate 30s per rep
+        return sum + duration.count * 30 * 1000;
+      }
+      return sum;
     }, 0);
 
     return {
-      stepCount: flatSteps.length,
+      stepCount: steps.length,
       durationMs,
       durationMinutes: Math.round(durationMs / 60000),
     };

@@ -1,23 +1,19 @@
 import { Text } from "@/components/ui/text";
-import {
-  calculateTotalDuration,
-  flattenPlanSteps,
-  getDurationMs,
-  getIntensityColor,
-  type ActivityPlanStructure,
-} from "@repo/core";
+import { getDurationMs } from "@/lib/utils/durationConversion";
+import { type ActivityPlanStructureV2 } from "@repo/core/schemas/activity_plan_v2";
 import * as Haptics from "expo-haptics";
 import { useMemo } from "react";
 import { TouchableWithoutFeedback, View } from "react-native";
 import Svg, { Rect } from "react-native-svg";
 
 interface TimelineChartProps {
-  structure: ActivityPlanStructure;
+  structure: ActivityPlanStructureV2;
   selectedStepIndex?: number;
   onStepPress?: (index: number) => void;
   height?: number;
   minStepHeight?: number;
   maxStepHeight?: number;
+  compact?: boolean;
 }
 
 export function TimelineChart({
@@ -27,20 +23,23 @@ export function TimelineChart({
   height = 120,
   minStepHeight = 10,
   maxStepHeight,
+  compact = false,
 }: TimelineChartProps) {
   const svgHeight = height - 16;
-  const maxStepHeightValue = maxStepHeight ?? svgHeight - 30; // Default to available height minus margins
-  const flatSteps = useMemo(
-    () => flattenPlanSteps(structure.steps || []),
+  const maxStepHeightValue = maxStepHeight ?? svgHeight - 30;
+
+  const steps: PlanStepV2[] = useMemo(
+    () => structure.steps || [],
     [structure.steps],
   );
 
-  const totalDuration = useMemo(
-    () => calculateTotalDuration(flatSteps),
-    [flatSteps],
-  );
+  const totalDuration = useMemo(() => {
+    return steps.reduce((total, step) => {
+      return total + getDurationMs(step.duration);
+    }, 0);
+  }, [steps]);
 
-  if (flatSteps.length === 0) {
+  if (steps.length === 0) {
     return (
       <View
         style={{ height }}
@@ -52,18 +51,17 @@ export function TimelineChart({
   }
 
   const chartWidth = 300;
-  const chartData = flatSteps.map((step, index) => {
-    const durationMs = step.duration ? getDurationMs(step.duration) : 0;
+  const chartData = steps.map((step, index) => {
+    const durationMs = getDurationMs(step.duration);
     const widthPercent =
       totalDuration > 0 ? (durationMs / totalDuration) * 100 : 0;
     const intensity = step.targets?.[0]?.intensity || 0;
-    const type = step.targets?.[0]?.type;
-    const color = getIntensityColor(intensity, type);
+    const color = getStepIntensityColor(step);
 
     // Calculate height based on intensity (0-100 scale)
     const barHeight =
       minStepHeight + (intensity / 100) * (maxStepHeightValue - minStepHeight);
-    const barY = 20 + maxStepHeightValue - barHeight; // Bars start from bottom
+    const barY = 20 + maxStepHeightValue - barHeight;
 
     return {
       index,
@@ -157,29 +155,33 @@ export function TimelineChart({
       </View>
 
       {/* Labels */}
-      <View className="flex-row justify-between mt-2">
-        <Text className="text-xs text-muted-foreground">
-          {flatSteps.length} step{flatSteps.length !== 1 ? "s" : ""}
-        </Text>
-        <Text className="text-xs text-muted-foreground">
-          {Math.round(totalDuration / 60000)}min
-        </Text>
-      </View>
-
-      {/* Selected step info */}
-      {selectedStepIndex !== undefined && flatSteps[selectedStepIndex] && (
-        <View className="mt-2 p-2 bg-muted rounded-md">
-          <Text className="text-xs font-medium">
-            Step {selectedStepIndex + 1}: {flatSteps[selectedStepIndex].name}
+      {!compact && (
+        <View className="flex-row justify-between mt-2">
+          <Text className="text-xs text-muted-foreground">
+            {steps.length} step{steps.length !== 1 ? "s" : ""}
           </Text>
-          {flatSteps[selectedStepIndex].targets?.[0] && (
-            <Text className="text-xs text-muted-foreground">
-              {flatSteps[selectedStepIndex].targets![0].type}:{" "}
-              {flatSteps[selectedStepIndex].targets![0].intensity}
-            </Text>
-          )}
+          <Text className="text-xs text-muted-foreground">
+            {Math.round(totalDuration / 60000)}min
+          </Text>
         </View>
       )}
+
+      {/* Selected step info */}
+      {!compact &&
+        selectedStepIndex !== undefined &&
+        steps[selectedStepIndex] && (
+          <View className="mt-2 p-2 bg-muted rounded-md">
+            <Text className="text-xs font-medium">
+              Step {selectedStepIndex + 1}: {steps[selectedStepIndex].name}
+            </Text>
+            {steps[selectedStepIndex].targets?.[0] && (
+              <Text className="text-xs text-muted-foreground">
+                {steps[selectedStepIndex].targets![0].type}:{" "}
+                {steps[selectedStepIndex].targets![0].intensity}
+              </Text>
+            )}
+          </View>
+        )}
     </View>
   );
 }

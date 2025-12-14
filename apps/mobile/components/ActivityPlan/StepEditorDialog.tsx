@@ -12,7 +12,7 @@ import {
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
 
-import { createDefaultStep, type IntensityTarget, type Step } from "@repo/core";
+import type { PlanStepV2 } from "@repo/core/schemas/activity_plan_v2";
 import * as Haptics from "expo-haptics";
 import { Plus, Trash2 } from "lucide-react-native";
 import { useEffect, useRef } from "react";
@@ -23,21 +23,23 @@ import { z } from "zod";
 interface StepEditorDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  step?: Step;
-  onSave: (step: Step) => void;
+  step?: PlanStepV2;
+  onSave: (step: PlanStepV2) => void;
   activityType?: string;
+  defaultSegmentName?: string;
 }
 
-// Form schema that matches the Step type
+// Form schema for V2 step editing
 const formSchema = z.object({
-  type: z.literal("step"),
   name: z.string().min(1, "Step name is required"),
+  description: z.string().optional(),
+  segmentName: z.string().optional(),
   duration: z
     .union([
       z.object({
         type: z.literal("time"),
         value: z.number().min(1),
-        unit: z.enum(["seconds", "minutes"]),
+        unit: z.enum(["seconds", "minutes", "hours"]),
       }),
       z.object({
         type: z.literal("distance"),
@@ -68,7 +70,7 @@ const formSchema = z.object({
         intensity: z.number().min(0),
       }),
     )
-    .max(2)
+    .max(3)
     .optional(),
   notes: z.string().optional(),
 });
@@ -85,6 +87,7 @@ const DURATION_TYPES = [
 const TIME_UNITS = [
   { value: "seconds", label: "seconds" },
   { value: "minutes", label: "minutes" },
+  { value: "hours", label: "hours" },
 ];
 
 const DISTANCE_UNITS = [
@@ -109,26 +112,18 @@ export function StepEditorDialog({
   step,
   onSave,
   activityType,
+  defaultSegmentName,
 }: StepEditorDialogProps) {
   const isMountedRef = useRef(true);
 
-  // Create default step for initial form values
-  const defaultStep = createDefaultStep({
-    activityType: activityType || "outdoor_run",
-    position: 0,
-    totalSteps: 1,
-  });
-
   const form = useForm<FormData>({
     defaultValues: {
-      type: "step",
-      name: defaultStep.name ?? "New Step",
-      duration:
-        defaultStep.duration === "untilFinished"
-          ? { type: "time", value: 10, unit: "minutes" }
-          : defaultStep.duration,
-      targets: defaultStep.targets || [],
-      notes: defaultStep.notes || "",
+      name: "New Step",
+      description: "",
+      segmentName: defaultSegmentName || "",
+      duration: { type: "time", value: 10, unit: "minutes" },
+      targets: [],
+      notes: "",
     },
   });
 
@@ -146,90 +141,127 @@ export function StepEditorDialog({
   useEffect(() => {
     if (!isMountedRef.current) return;
 
-    console.log("🔄 StepEditorDialog: Resetting form", {
-      step,
-      open,
-      activityType,
-    });
-
     if (step) {
-      // Editing existing step
-      console.log("📝 Editing existing step:", step.name);
+      // Editing existing step - convert V2 duration to UI format
+      const duration = step.duration;
+      let uiDuration:
+        | { type: "time"; value: number; unit: "seconds" | "minutes" | "hours" }
+        | { type: "distance"; value: number; unit: "meters" | "km" }
+        | { type: "repetitions"; value: number; unit: "reps" }
+        | "untilFinished" = { type: "time", value: 10, unit: "minutes" };
+
+      if (duration.type === "time") {
+        if (duration.seconds >= 3600) {
+          uiDuration = {
+            type: "time",
+            value: duration.seconds / 3600,
+            unit: "hours",
+          };
+        } else if (duration.seconds >= 60) {
+          uiDuration = {
+            type: "time",
+            value: duration.seconds / 60,
+            unit: "minutes",
+          };
+        } else {
+          uiDuration = {
+            type: "time",
+            value: duration.seconds,
+            unit: "seconds",
+          };
+        }
+      } else if (duration.type === "distance") {
+        if (duration.meters >= 1000) {
+          uiDuration = {
+            type: "distance",
+            value: duration.meters / 1000,
+            unit: "km",
+          };
+        } else {
+          uiDuration = {
+            type: "distance",
+            value: duration.meters,
+            unit: "meters",
+          };
+        }
+      } else if (duration.type === "repetitions") {
+        uiDuration = {
+          type: "repetitions",
+          value: duration.count,
+          unit: "reps",
+        };
+      } else if (duration.type === "untilFinished") {
+        uiDuration = "untilFinished";
+      }
+
       form.reset({
-        type: "step",
         name: step.name || "",
-        duration: step.duration || { type: "time", value: 10, unit: "minutes" },
+        description: step.description || "",
+        segmentName: step.segmentName || defaultSegmentName || "",
+        duration: uiDuration,
         targets: step.targets || [],
         notes: step.notes || "",
       });
     } else if (open) {
-      // Creating new step - only reset when dialog actually opens
-      console.log("➕ Creating new step with defaults");
-      const defaultStep = createDefaultStep({
-        activityType: activityType || "outdoor_run",
-        position: 0,
-        totalSteps: 1,
+      // Creating new step
+      form.reset({
+        name: "New Step",
+        description: "",
+        segmentName: defaultSegmentName || "",
+        duration: { type: "time", value: 10, unit: "minutes" },
+        targets: [],
+        notes: "",
       });
-
-      console.log("🎯 Default step created:", defaultStep);
-
-      const formValues = {
-        type: "step" as const,
-        name: defaultStep.name ?? "New Step",
-        duration:
-          defaultStep.duration === "untilFinished"
-            ? { type: "time" as const, value: 10, unit: "minutes" as const }
-            : defaultStep.duration,
-        targets: defaultStep.targets || [],
-        notes: defaultStep.notes || "",
-      };
-
-      console.log("📋 Form values to set:", formValues);
-      form.reset(formValues);
-
-      // Force update form values to ensure they stick
-      setTimeout(() => {
-        form.setValue("name", formValues.name);
-        form.setValue("duration", formValues.duration);
-        form.setValue("targets", formValues.targets);
-      }, 100);
     }
-  }, [step, form, activityType, open]);
+  }, [step, form, open, defaultSegmentName]);
 
   const handleSave = () => {
     if (!isMountedRef.current) return;
 
     const values = form.getValues();
-    console.log("💾 Attempting to save step with values:", values);
-
     const result = formSchema.safeParse(values);
 
     if (!result.success) {
       console.error("❌ Validation errors:", result.error.flatten());
-      console.error("❌ Failed values:", values);
-      // Show the first validation error to help debug
-      const firstError = result.error.issues[0];
-      if (firstError) {
-        console.error(
-          "❌ First error:",
-          firstError.path.join("."),
-          firstError.message,
-        );
-      }
       return;
     }
 
-    console.log("✅ Validation passed, saving step:", result.data);
+    // Convert UI duration to V2 format
+    const uiDuration = result.data.duration;
+    let v2Duration: PlanStepV2["duration"];
+
+    if (uiDuration === "untilFinished") {
+      v2Duration = { type: "untilFinished" };
+    } else if (uiDuration) {
+      v2Duration = convertUIToV2Duration({
+        type: uiDuration.type,
+        value: uiDuration.value,
+        unit: uiDuration.unit,
+      });
+    } else {
+      v2Duration = { type: "time", seconds: 600 }; // Default 10 minutes
+    }
+
+    // Create V2 step
+    const stepV2: PlanStepV2 = {
+      name: result.data.name,
+      description: result.data.description,
+      duration: v2Duration,
+      targets: result.data.targets as IntensityTargetV2[],
+      segmentName: result.data.segmentName,
+      notes: result.data.notes,
+    };
+
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    onSave(result.data as Step);
+    onSave(stepV2);
     onOpenChange(false);
   };
 
   const handleAddTarget = () => {
     if (!isMountedRef.current) return;
-    if (targets.length >= 2) return;
+    if (targets.length >= 3) return;
 
-    const defaultTarget: IntensityTarget = activityType?.includes("bike")
+    const defaultTarget: IntensityTargetV2 = activityType?.includes("bike")
       ? { type: "%FTP", intensity: 75 }
       : activityType?.includes("run")
         ? { type: "%MaxHR", intensity: 75 }
@@ -344,6 +376,42 @@ export function StepEditorDialog({
                 />
               </View>
 
+              {/* Description */}
+              <View>
+                <Label nativeID="step-description">
+                  Description (Optional)
+                </Label>
+                <Controller
+                  control={form.control}
+                  name="description"
+                  render={({ field: { onChange, value } }) => (
+                    <Input
+                      value={value || ""}
+                      onChangeText={onChange}
+                      placeholder="Brief description of this step"
+                      aria-labelledby="step-description"
+                    />
+                  )}
+                />
+              </View>
+
+              {/* Segment Name */}
+              <View>
+                <Label nativeID="segment-name">Segment (Optional)</Label>
+                <Controller
+                  control={form.control}
+                  name="segmentName"
+                  render={({ field: { onChange, value } }) => (
+                    <Input
+                      value={value || ""}
+                      onChangeText={onChange}
+                      placeholder="e.g., Warmup, Intervals, Cooldown"
+                      aria-labelledby="segment-name"
+                    />
+                  )}
+                />
+              </View>
+
               {/* Duration Type */}
               <View>
                 <Label nativeID="duration-type">Duration Type</Label>
@@ -452,7 +520,7 @@ export function StepEditorDialog({
               <View>
                 <View className="flex-row items-center justify-between mb-2">
                   <Label>Intensity Targets</Label>
-                  {targets.length < 2 && (
+                  {targets.length < 3 && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -579,9 +647,9 @@ export function StepEditorDialog({
                   </View>
                 ))}
 
-                {targets.length === 2 && (
+                {targets.length === 3 && (
                   <Text className="text-xs text-muted-foreground mt-1">
-                    Maximum 2 targets per step
+                    Maximum 3 targets per step
                   </Text>
                 )}
               </View>

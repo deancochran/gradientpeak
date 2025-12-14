@@ -6,7 +6,7 @@ import {
   formatDuration,
   formatIntensityTarget,
   getStepIntensityColor,
-} from "@repo/core";
+} from "@repo/core/schemas/activity_plan_v2";
 import * as Haptics from "expo-haptics";
 import { Edit3, GripVertical, Trash2 } from "lucide-react-native";
 import { memo } from "react";
