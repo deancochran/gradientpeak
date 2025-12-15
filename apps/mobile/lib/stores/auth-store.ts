@@ -36,6 +36,11 @@ export const useAuthStore = create<AuthState>()(
       _listenerRegistered: false as boolean,
 
       setSession: (session: Session | null) => {
+        console.log("🔄 Auth Store: setSession called", {
+          hasSession: !!session,
+          hasUser: !!session?.user,
+          email: session?.user?.email,
+        });
         set({
           session,
           user: session?.user || null,
@@ -73,11 +78,18 @@ export const useAuthStore = create<AuthState>()(
 
           if (error) {
             console.error("❌ Auth Store init error:", error);
-            set({ error, loading: false, ready: true });
+            // Still mark as ready even on error so the app doesn't hang
+            set({
+              error,
+              loading: false,
+              ready: true,
+              session: null,
+              user: null,
+            });
             return;
           }
 
-          console.log("🔄 Setting session");
+          console.log("🔄 Setting session", { hasSession: !!session });
           set({ session, user: session?.user || null });
 
           // Set up auth listener once per store instance
@@ -100,10 +112,13 @@ export const useAuthStore = create<AuthState>()(
           );
         } catch (err) {
           console.error("❌ Auth Store unexpected init error:", err);
+          // Mark as ready even on error so the app doesn't hang waiting for auth
           set({
             error: err instanceof Error ? err : new Error(String(err)),
             loading: false,
             ready: true,
+            session: null,
+            user: null,
           });
         } finally {
           console.log("🔄 Finally block: setting loading=false, ready=true");

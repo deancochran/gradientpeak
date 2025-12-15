@@ -1,8 +1,105 @@
-// Export everything from calculations
-export * from "./calculations";
+/**
+ * @repo/core - Core types, schemas, and utilities
+ *
+ * Simplified export strategy with minimal manual maintenance.
+ */
 
-// Export from constants, excluding duplicates that exist in schemas
-// (ActivityType and getIntensityZone come from schemas instead)
+// ============================================================================
+// Core Modules - Export everything except conflicts
+// ============================================================================
+
+export * from "./database-types";
+export * from "./ftms-types";
+
+// Export calculations with formatDuration renamed (conflicts with schemas)
+export {
+  formatDuration as formatDurationSeconds, // Renamed: takes number (seconds)
+} from "./calculations";
+// Export everything else from calculations
+export type {
+  AggregatedStream,
+  ActivityProfilePoint,
+  ActivityStats,
+} from "./calculations";
+export {
+  calculateElapsedTime,
+  calculateMovingTime,
+  calculateNormalizedPower,
+  calculateIntensityFactor,
+  calculateTSS,
+  calculateVariabilityIndex,
+  calculateTotalWork,
+  calculateHRZones,
+  calculateMaxHRPercent,
+  calculatePowerZones,
+  calculateEfficiencyFactor,
+  calculateDecoupling,
+  calculatePowerHeartRateRatio,
+  calculatePowerWeightRatio,
+  calculateElevationChanges,
+  calculateAverageGrade,
+  calculateElevationGainPerKm,
+  calculateCalories,
+  calculateAge,
+  calculateDistance,
+  calculateTotalDistance,
+  calculateAverageSpeed,
+  calculateAveragePace,
+  estimateCalories,
+  calculatePercentageChange,
+  calculateMovingAverage,
+  parseDuration,
+  addDays,
+  startOfDay,
+  endOfDay,
+  metersPerSecondToKph,
+  metersPerSecondToMph,
+  kphToMps,
+  mphToMps,
+  kgToLbs,
+  lbsToKg,
+  metersToFeet,
+  feetToMeters,
+  kmToMiles,
+  milesToKm,
+  celsiusToFahrenheit,
+  fahrenheitToCelsius,
+  formatDistance,
+  formatSpeed,
+  formatPace,
+  formatWeight,
+  formatPower,
+  formatHeartRate,
+  formatCadence,
+  formatTSS,
+  clamp,
+  lerp,
+  metersToKm,
+  msToKmh,
+  formatAltitude,
+  formatAccuracy,
+  getIntensityZone,
+  extractActivityProfile,
+  calculateActivityStats,
+  formatDurationCompact,
+  formatDurationCompactMs,
+  calculateCTL,
+  calculateATL,
+  calculateTSB,
+  calculateTrainingLoadSeries,
+  getFormStatus,
+  getFormStatusColor,
+  calculateTrainingIntensityFactor,
+  getTrainingIntensityZone,
+  calculateTrainingTSS,
+  estimateTSS,
+  calculateRampRate,
+  isRampRateSafe,
+  projectCTL,
+  calculateTargetDailyTSS,
+} from "./calculations";
+
+// Export constants (exclude ActivityType - comes from schemas instead)
 export {
   ACTIVITY_CATEGORIES,
   ACTIVITY_CATEGORY_CONFIG,
@@ -13,6 +110,11 @@ export {
   EARTH_RADIUS_METERS,
   FATIGUE_LEVEL_THRESHOLDS,
   FITNESS_LEVEL_THRESHOLDS,
+  FTMS_CHARACTERISTICS,
+  FTMS_FEATURE_BITS,
+  FTMS_OPCODES,
+  FTMS_RESULT_CODES,
+  FTMS_TARGET_SETTING_BITS,
   HR_ZONE_MAX_PERCENTAGES,
   HR_ZONE_NAMES,
   HR_ZONE_PERCENTAGES,
@@ -30,17 +132,22 @@ export {
   VALIDATION_RANGES,
 } from "./constants";
 
-// Export everything from database-types
-export * from "./database-types";
+// ============================================================================
+// Organized Modules - Use barrel files
+// ============================================================================
 
-// Export everything from samples
 export * from "./samples";
+export * from "./schemas"; // Includes formatDuration(DurationV2)
 
-// Export everything from schemas (includes ActivityType and getIntensityZone)
-export * from "./schemas";
+// Utils - use new barrel file
+export * from "./utils";
 
-// Export everything from utils
-export * from "./utils/activity-defaults";
-export * from "./utils/plan-view-logic";
-export * from "./utils/polyline";
-export * from "./utils/recording-config-resolver";
+// ============================================================================
+// Namespace Exports - For organized imports
+// ============================================================================
+
+export * as Schemas from "./schemas";
+export * as Utils from "./utils";
+export * as Samples from "./samples";
+export * as Constants from "./constants";
+export * as Calculations from "./calculations";

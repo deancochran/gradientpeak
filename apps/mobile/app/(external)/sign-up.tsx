@@ -63,6 +63,11 @@ export default function SignUpScreen() {
       const { error } = await supabase.auth.signUp({
         email: data.email,
         password: data.password,
+        options: {
+          // For mobile apps, we don't set emailRedirectTo since we can't handle web redirects
+          // Instead, users should verify via the app after clicking the email link
+          // Or disable email confirmation in development
+        },
       });
 
       if (error) {

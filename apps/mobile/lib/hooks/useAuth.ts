@@ -27,7 +27,7 @@ export const useAuth = () => {
   const profileQuery = trpc.profiles.get.useQuery(
     undefined, // or whatever parameters your profile query needs
     {
-      enabled: !!user && isAuthenticated, // Only fetch if user is authenticated
+      enabled: store.ready && !!user && isAuthenticated, // Only fetch if auth store is ready and user is authenticated
       staleTime: 5 * 60 * 1000, // Consider data stale after 5 minutes
       retry: 3,
     },
@@ -96,10 +96,19 @@ export const useRedirectIfAuthenticated = (
   const router = useRouter();
 
   useEffect(() => {
-    if (!auth.loading && auth.isAuthenticated) {
+    console.log("🔄 useRedirectIfAuthenticated:", {
+      loading: auth.loading,
+      isAuthenticated: auth.isAuthenticated,
+      ready: auth.ready,
+      hasSession: !!auth.session,
+      hasUser: !!auth.user,
+    });
+
+    if (auth.ready && !auth.loading && auth.isAuthenticated) {
+      console.log("✅ Redirecting to:", redirectTo);
       router.replace(redirectTo);
     }
-  }, [auth.loading, auth.isAuthenticated, router, redirectTo]);
+  }, [auth.ready, auth.loading, auth.isAuthenticated, router, redirectTo]);
 
   return auth;
 };

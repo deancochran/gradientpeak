@@ -9,64 +9,90 @@
  */
 
 import {
-    isContinuousActivity,
-    isOutdoorActivity,
-    isStepBasedActivity,
-    shouldUseFollowAlong
-} from '../schemas/activity_payload'
-import type { RecordingCapabilities, RecordingConfigInput, RecordingConfiguration } from '../schemas/recording_config'
+  isContinuousActivity,
+  isOutdoorActivity,
+  isStepBasedActivity,
+  shouldUseFollowAlong,
+} from "../schemas/activity_payload";
+import type {
+  RecordingCapabilities,
+  RecordingConfigInput,
+  RecordingConfiguration,
+} from "../schemas/recording_config";
 
 export class RecordingConfigResolver {
   /**
    * Main entry point - converts input to full configuration
    */
   static resolve(input: RecordingConfigInput): RecordingConfiguration {
-    const capabilities = this.computeCapabilities(input)
-    const validation = this.validate(input, capabilities)
+    const capabilities = this.computeCapabilities(input);
+    const validation = this.validate(input, capabilities);
 
     return {
       input,
       capabilities: {
         ...capabilities,
-        ...validation
-      }
-    }
+        ...validation,
+      },
+    };
   }
 
   /**
    * Compute what the app can do based on context
+   *
+   * Philosophy: Show capabilities whenever they exist, unless hiding them prevents user errors.
+   * Allow maximum flexibility - users should control their experience.
    */
-  private static computeCapabilities(input: RecordingConfigInput): Omit<RecordingCapabilities, 'isValid' | 'errors' | 'warnings'> {
-    const isOutdoor = isOutdoorActivity(input.activityType)
-    const hasStructuredPlan = input.plan?.hasStructure ?? false
-    const hasFtmsTrainer = !!input.devices.ftmsTrainer
-    const hasRoute = input.plan?.hasRoute ?? false
+  private static computeCapabilities(
+    input: RecordingConfigInput,
+  ): Omit<RecordingCapabilities, "isValid" | "errors" | "warnings"> {
+    const isOutdoor = isOutdoorActivity(input.activityType);
+    const hasStructuredPlan = input.plan?.hasStructure ?? false;
+    const hasFtmsTrainer = !!input.devices.ftmsTrainer;
+    const hasRoute = input.plan?.hasRoute ?? false;
 
-    // Data collection capabilities
-    const canTrackLocation = isOutdoor && input.gpsAvailable
-    const canTrackPower = input.devices.hasPowerMeter || hasFtmsTrainer
-    const canTrackHeartRate = input.devices.hasHeartRateMonitor
-    const canTrackCadence = input.devices.hasCadenceSensor
+    // Data collection capabilities - straightforward hardware checks
+    const canTrackLocation = isOutdoor && input.gpsAvailable;
+    const canTrackPower = input.devices.hasPowerMeter || hasFtmsTrainer;
+    const canTrackHeartRate = input.devices.hasHeartRateMonitor;
+    const canTrackCadence = input.devices.hasCadenceSensor;
 
-    // UI features
-    const shouldShowMap = canTrackLocation || (hasRoute && !isOutdoor) // Show map if tracking GPS OR if indoor with route (visualization)
-    const shouldShowSteps = hasStructuredPlan
-    const shouldShowRouteOverlay = canTrackLocation && hasRoute
-    const shouldShowTurnByTurn = canTrackLocation && hasRoute // Only outdoor with route
-    const shouldShowFollowAlong = shouldUseFollowAlong(input.activityType) // Swim, other
-    const shouldShowPowerTarget = hasFtmsTrainer && hasStructuredPlan
+    // UI features - show if the capability makes sense
+    // Map: Show if we're tracking real GPS location OR have a route to visualize progress on
+    // Indoor routes show map to visualize progress along the route based on distance/effort
+    const shouldShowMap = canTrackLocation || hasRoute;
 
-    // Automation
-    const canAutoAdvanceSteps = hasStructuredPlan && !(input.plan?.requiresManualAdvance ?? false)
-    const canAutoControlTrainer = hasFtmsTrainer &&
-                                   hasStructuredPlan &&
-                                   (input.devices.ftmsTrainer?.autoControlEnabled ?? false)
+    // Steps: Show if there's a structured plan to follow
+    const shouldShowSteps = hasStructuredPlan;
+
+    // Route overlay: Show if we're tracking location AND have a route to overlay
+    const shouldShowRouteOverlay = canTrackLocation && hasRoute;
+
+    // Turn-by-turn: Only for outdoor navigation with GPS + route
+    const shouldShowTurnByTurn = canTrackLocation && hasRoute;
+
+    // Follow-along: Activity-specific (swim lanes, etc)
+    const shouldShowFollowAlong = shouldUseFollowAlong(input.activityType);
+
+    // Trainer control: Show whenever a controllable trainer is connected
+    // Users can manually control power/resistance OR enable auto-erg if they have a plan/route
+    const shouldShowTrainerControl = hasFtmsTrainer;
+
+    // Automation - only enable automatic features when we have data to automate with
+    const canAutoAdvanceSteps =
+      hasStructuredPlan && !(input.plan?.requiresManualAdvance ?? false);
+
+    // Auto-follow: Can automatically adjust trainer IF user enables it AND we have targets to follow
+    const shouldAutoFollowTargets =
+      hasFtmsTrainer &&
+      (hasStructuredPlan || hasRoute) && // Plan provides power targets, route provides grade
+      (input.devices.ftmsTrainer?.autoControlEnabled ?? false);
 
     // Primary metric
     const primaryMetric = this.determinePrimaryMetric(input, {
       canTrackLocation,
-      canTrackPower
-    })
+      canTrackPower,
+    });
 
     return {
       canTrackLocation,
@@ -78,11 +104,11 @@ export class RecordingConfigResolver {
       shouldShowRouteOverlay,
       shouldShowTurnByTurn,
       shouldShowFollowAlong,
-      shouldShowPowerTarget,
+      shouldShowTrainerControl,
       canAutoAdvanceSteps,
-      canAutoControlTrainer,
-      primaryMetric
-    }
+      shouldAutoFollowTargets,
+      primaryMetric,
+    };
   }
 
   /**
@@ -90,13 +116,13 @@ export class RecordingConfigResolver {
    */
   private static determinePrimaryMetric(
     input: RecordingConfigInput,
-    computed: { canTrackLocation: boolean; canTrackPower: boolean }
-  ): RecordingCapabilities['primaryMetric'] {
+    computed: { canTrackLocation: boolean; canTrackPower: boolean },
+  ): RecordingCapabilities["primaryMetric"] {
     // Priority order:
-    if (isStepBasedActivity(input.activityType)) return 'reps'
-    if (computed.canTrackPower) return 'power'
-    if (computed.canTrackLocation) return 'distance'
-    return 'time'
+    if (isStepBasedActivity(input.activityType)) return "reps";
+    if (computed.canTrackPower) return "power";
+    if (computed.canTrackLocation) return "distance";
+    return "time";
   }
 
   /**
@@ -104,44 +130,57 @@ export class RecordingConfigResolver {
    */
   private static validate(
     input: RecordingConfigInput,
-    capabilities: Omit<RecordingCapabilities, 'isValid' | 'errors' | 'warnings'>
-  ): Pick<RecordingCapabilities, 'isValid' | 'errors' | 'warnings'> {
-    const errors: string[] = []
-    const warnings: string[] = []
+    capabilities: Omit<
+      RecordingCapabilities,
+      "isValid" | "errors" | "warnings"
+    >,
+  ): Pick<RecordingCapabilities, "isValid" | "errors" | "warnings"> {
+    const errors: string[] = [];
+    const warnings: string[] = [];
 
     // GPS validation - outdoor activities REQUIRE GPS
     if (isOutdoorActivity(input.activityType) && !input.gpsAvailable) {
-      errors.push('GPS is required for outdoor activities. Please enable location services.')
+      errors.push(
+        "GPS is required for outdoor activities. Please enable location services.",
+      );
     }
 
     // Route navigation requires GPS
     if (capabilities.shouldShowTurnByTurn && !capabilities.canTrackLocation) {
-      errors.push('Route navigation requires GPS.')
+      errors.push("Route navigation requires GPS.");
     }
 
-    // Warn if trainer control is enabled but no structured plan
-    if (input.devices.ftmsTrainer?.autoControlEnabled && !input.plan?.hasStructure) {
-      warnings.push('Auto trainer control requires a structured plan. Control will be manual.')
+    // Warn if auto-control is enabled but we have no targets to follow
+    if (
+      input.devices.ftmsTrainer?.autoControlEnabled &&
+      !input.plan?.hasStructure &&
+      !input.plan?.hasRoute
+    ) {
+      warnings.push(
+        "Auto ERG requires a structured plan or route with grade data. You can still manually control the trainer.",
+      );
     }
 
     // Warn if planned but no structure
-    if (input.mode === 'planned' && !input.plan?.hasStructure) {
-      warnings.push('Selected plan has no structure. Recording as unplanned.')
+    if (input.mode === "planned" && !input.plan?.hasStructure) {
+      warnings.push("Selected plan has no structure. Recording as unplanned.");
     }
 
     // Info if no sensors for continuous activity
-    if (isContinuousActivity(input.activityType) &&
-        !input.devices.hasPowerMeter &&
-        !input.devices.hasHeartRateMonitor &&
-        !input.devices.hasCadenceSensor &&
-        !input.devices.ftmsTrainer) {
-      warnings.push('No sensors connected. Metrics will be limited.')
+    if (
+      isContinuousActivity(input.activityType) &&
+      !input.devices.hasPowerMeter &&
+      !input.devices.hasHeartRateMonitor &&
+      !input.devices.hasCadenceSensor &&
+      !input.devices.ftmsTrainer
+    ) {
+      warnings.push("No sensors connected. Metrics will be limited.");
     }
 
     return {
       isValid: errors.length === 0,
       errors,
-      warnings
-    }
+      warnings,
+    };
   }
 }

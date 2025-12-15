@@ -138,6 +138,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // === Manual Control Override ===
   private manualControlOverride: boolean = false;
 
+  // === GPS Availability Cache ===
+  private _gpsAvailable: boolean = false;
+
   // === Private Managers ===
   private notificationsManager?: NotificationsManager;
 
@@ -338,7 +341,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     };
   }
   get planTimeRemaining(): number {
-    if (!this.hasPlan || this.isFinished) return 0;
+    if (!this.hasPlan || this.isFinished || !this.currentStep) return 0;
 
     let totalRemainingMs = 0;
 
@@ -498,6 +501,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     // Start location tracking
     await this.locationManager.startForegroundTracking();
     await this.locationManager.startBackgroundTracking();
+    this._gpsAvailable = true;
 
     // Start foreground service notification
     const activityName =
@@ -686,7 +690,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
    */
   private setupPlanTrainerIntegration(): void {
     // Apply targets when step changes
-    this.on("stepChanged", async ({ current }) => {
+    this.addListener("stepChanged", async ({ current }) => {
       // Skip if manual control is active
       if (this.manualControlOverride) {
         console.log("[Service] Manual control active, skipping auto target");
@@ -703,7 +707,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     });
 
     // Apply initial target when recording starts
-    this.on("stateChanged", async (state) => {
+    this.addListener("stateChanged", async (state) => {
       // Skip if manual control is active
       if (this.manualControlOverride) {
         console.log("[Service] Manual control active, skipping auto target");
@@ -816,7 +820,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       typeof reading.value === "number"
     ) {
       const metrics = this.liveMetricsManager.getMetrics();
-      const progress = this.stepProgress;
+      const progress =
+        this.hasPlan && this.currentStep ? this.stepProgress : null;
       this.notificationsManager
         .update({
           elapsedInStep: progress?.movingTime || 0,
@@ -962,7 +967,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
           .getConnectedSensors()
           .some((s) => s.type === "cadence"),
       },
-      gpsAvailable: this.locationManager.isLocationEnabled(),
+      gpsAvailable: this._gpsAvailable,
     });
   }
 
@@ -990,6 +995,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     // Cleanup managers
     await this.locationManager.cleanup();
     await this.sensorsManager.disconnectAll();
+
+    // Reset GPS availability
+    this._gpsAvailable = false;
 
     // Stop foreground service
     if (this.notificationsManager) {

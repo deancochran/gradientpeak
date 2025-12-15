@@ -82,7 +82,7 @@ export const ACTIVITY_TYPE_CONFIG = {
     location: "outdoor" as const,
     activityCategory: "bike" as const,
   },
-  indoor_treadmill: {
+  indoor_run: {
     name: "Treadmill",
     shortName: "Treadmill",
     icon: "🏃",
@@ -92,7 +92,7 @@ export const ACTIVITY_TYPE_CONFIG = {
     location: "indoor" as const,
     activityCategory: "run" as const,
   },
-  indoor_bike_trainer: {
+  indoor_bike: {
     name: "Bike Trainer",
     shortName: "Trainer",
     icon: "🚴",

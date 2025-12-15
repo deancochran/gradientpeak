@@ -1,6 +1,10 @@
 import { Text } from "@/components/ui/text";
 import { getDurationMs } from "@/lib/utils/durationConversion";
-import { type ActivityPlanStructureV2 } from "@repo/core/schemas/activity_plan_v2";
+import {
+  type ActivityPlanStructureV2,
+  type PlanStepV2,
+  getStepIntensityColor,
+} from "@repo/core/schemas/activity_plan_v2";
 import * as Haptics from "expo-haptics";
 import { useMemo } from "react";
 import { TouchableWithoutFeedback, View } from "react-native";

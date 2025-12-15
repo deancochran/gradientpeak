@@ -16,6 +16,7 @@ import { PublicProfilesRow } from "@repo/core";
 import { EventEmitter } from "expo";
 import { MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
 import { DataBuffer } from "./DataBuffer";
+import { getSensorModel } from "./SimplifiedMetrics";
 import { StreamBuffer } from "./StreamBuffer";
 import {
   LiveMetricsState,

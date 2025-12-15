@@ -3,10 +3,10 @@ import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import {
   type PlanStepV2,
-  formatDuration,
+  formatDurationV2,
   formatIntensityTarget,
   getStepIntensityColor,
-} from "@repo/core/schemas/activity_plan_v2";
+} from "@repo/core";
 import * as Haptics from "expo-haptics";
 import { Edit3, GripVertical, Trash2 } from "lucide-react-native";
 import { memo } from "react";
@@ -97,7 +97,7 @@ export const StepCard = memo<StepCardProps>(function StepCard({
           <View className="flex-row items-center justify-between mb-1">
             <Text className="font-semibold text-base">{step.name}</Text>
             <Text className="text-sm text-muted-foreground">
-              {formatDuration(step.duration)}
+              {formatDurationV2(step.duration)}
             </Text>
           </View>
 

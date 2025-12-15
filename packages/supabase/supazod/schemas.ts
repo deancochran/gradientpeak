@@ -62,6 +62,7 @@ export const jsonSchema: z.ZodSchema<Json> = z.lazy(() =>
 );
 
 export const publicActivitiesRowSchema = z.object({
+  avg_target_adherence: z.number().nullable(),
   created_at: z.string(),
   distance_meters: z.number(),
   duration_seconds: z.number(),
@@ -88,6 +89,7 @@ export const publicActivitiesRowSchema = z.object({
 });
 
 export const publicActivitiesInsertSchema = z.object({
+  avg_target_adherence: z.number().optional().nullable(),
   created_at: z.string().optional(),
   distance_meters: z.number().optional(),
   duration_seconds: z.number().optional(),
@@ -114,6 +116,7 @@ export const publicActivitiesInsertSchema = z.object({
 });
 
 export const publicActivitiesUpdateSchema = z.object({
+  avg_target_adherence: z.number().optional().nullable(),
   created_at: z.string().optional(),
   distance_meters: z.number().optional(),
   duration_seconds: z.number().optional(),

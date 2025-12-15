@@ -9,7 +9,7 @@ import {
   getIntensityColor,
   type ActivityPlanStructure,
   type IntensityTarget,
-} from "./schemas";
+} from "./schemas/activity_plan_structure";
 
 // Aggregated stream data
 export interface AggregatedStream {

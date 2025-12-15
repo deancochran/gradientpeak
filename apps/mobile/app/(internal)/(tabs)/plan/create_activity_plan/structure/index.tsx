@@ -4,31 +4,37 @@ import { StepCard } from "@/components/ActivityPlan/StepCard";
 import { StepEditorDialog } from "@/components/ActivityPlan/StepEditorDialog";
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
 import {
-    AlertDialog,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
 import { getDurationMs } from "@/lib/utils/durationConversion";
-import { groupStepsBySegment, type PlanStepV2 } from "@repo/core/schemas/activity_plan_v2";
+import {
+  groupStepsBySegment,
+  type PlanStepV2,
+} from "@repo/core/schemas/activity_plan_v2";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { Menu, Plus, TrendingUp } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Pressable, SafeAreaView, ScrollView, TextInput, View } from "react-native";
+import { Alert, Pressable, ScrollView, TextInput, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function StructureEditScreen() {
   const [editingStepIndex, setEditingStepIndex] = useState<number | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [intervalWizardOpen, setIntervalWizardOpen] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
-  const [collapsedSegments, setCollapsedSegments] = useState<Set<string>>(new Set());
+  const [collapsedSegments, setCollapsedSegments] = useState<Set<string>>(
+    new Set(),
+  );
   const [renamingSegment, setRenamingSegment] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const isMountedRef = useRef(true);
@@ -79,7 +85,9 @@ export default function StructureEditScreen() {
     }
     const hours = Math.floor(minutes / 60);
     const remainingMinutes = minutes % 60;
-    return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}min` : `${hours}h`;
+    return remainingMinutes > 0
+      ? `${hours}h ${remainingMinutes}min`
+      : `${hours}h`;
   }
 
   const handleToggleSegmentCollapse = useCallback((segmentName: string) => {
@@ -185,7 +193,9 @@ export default function StructureEditScreen() {
             onPress: () => {
               removeStep(globalIndex);
               if (isMountedRef.current) {
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                Haptics.notificationAsync(
+                  Haptics.NotificationFeedbackType.Success,
+                );
               }
             },
           },
@@ -199,7 +209,8 @@ export default function StructureEditScreen() {
     router.back();
   }, []);
 
-  const editingStep = editingStepIndex !== null ? steps[editingStepIndex] : undefined;
+  const editingStep =
+    editingStepIndex !== null ? steps[editingStepIndex] : undefined;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -230,11 +241,15 @@ export default function StructureEditScreen() {
             </View>
             <View className="items-center">
               <Text className="text-xs text-muted-foreground">Duration</Text>
-              <Text className="text-lg font-semibold">{metrics.durationFormatted}</Text>
+              <Text className="text-lg font-semibold">
+                {metrics.durationFormatted}
+              </Text>
             </View>
             <View className="items-center">
               <Text className="text-xs text-muted-foreground">Segments</Text>
-              <Text className="text-lg font-semibold">{segmentedSteps.length}</Text>
+              <Text className="text-lg font-semibold">
+                {segmentedSteps.length}
+              </Text>
             </View>
           </View>
         </View>
@@ -337,12 +352,20 @@ export default function StructureEditScreen() {
             </AlertDialogHeader>
 
             <View className="gap-3 py-4">
-              <Button onPress={handleAddStep} variant="outline" className="w-full">
+              <Button
+                onPress={handleAddStep}
+                variant="outline"
+                className="w-full"
+              >
                 <Plus size={18} className="text-foreground mr-2" />
                 <Text>Single Step</Text>
               </Button>
 
-              <Button onPress={handleAddInterval} variant="outline" className="w-full">
+              <Button
+                onPress={handleAddInterval}
+                variant="outline"
+                className="w-full"
+              >
                 <Menu size={18} className="text-foreground mr-2" />
                 <Text>Interval Set</Text>
               </Button>
@@ -357,7 +380,10 @@ export default function StructureEditScreen() {
         </AlertDialog>
 
         {/* Rename Segment Dialog */}
-        <AlertDialog open={!!renamingSegment} onOpenChange={(open) => !open && setRenamingSegment(null)}>
+        <AlertDialog
+          open={!!renamingSegment}
+          onOpenChange={(open) => !open && setRenamingSegment(null)}
+        >
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Rename Segment</AlertDialogTitle>

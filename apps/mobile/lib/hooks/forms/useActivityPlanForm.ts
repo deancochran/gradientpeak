@@ -206,7 +206,7 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     try {
       const payload = {
         name,
-        description: description || null,
+        description: description || "", // Empty string instead of null
         activity_location: activityLocation as any,
         activity_category: activityCategory as any,
         structure,

@@ -218,7 +218,7 @@ function RecordScreen() {
     // Enable cards based on capabilities
     config.map.enabled = capabilities.shouldShowMap;
     config.plan.enabled = capabilities.shouldShowSteps;
-    config.trainer.enabled = capabilities.shouldShowPowerTarget;
+    config.trainer.enabled = capabilities.shouldShowTrainerControl;
     config.power.enabled = capabilities.canTrackPower;
     config.heartrate.enabled = capabilities.canTrackHeartRate;
 

@@ -1,4 +1,3 @@
-import { useAuthStore } from "@/lib/stores/auth-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createClient } from "@supabase/supabase-js";
 import "react-native-url-polyfill/auto";
@@ -14,14 +13,3 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: false,
   },
 });
-
-export const getAuthHeaders = () => {
-  const session = useAuthStore.getState().session;
-  const headers = new Headers();
-
-  if (session?.access_token) {
-    headers.set("Authorization", `Bearer ${session.access_token}`);
-  }
-
-  return headers;
-};

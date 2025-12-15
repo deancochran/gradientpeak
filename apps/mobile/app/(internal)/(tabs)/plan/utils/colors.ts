@@ -31,13 +31,13 @@ export const ACTIVITY_COLORS: Record<string, ActivityColorConfig> = {
     text: "text-blue-600",
     iconBg: "bg-blue-500",
   },
-  indoor_treadmill: {
+  indoor_run: {
     name: "Treadmill",
     bg: "bg-purple-500",
     text: "text-purple-600",
     iconBg: "bg-purple-500",
   },
-  indoor_bike_trainer: {
+  indoor_bike: {
     name: "Bike Trainer",
     bg: "bg-cyan-500",
     text: "text-cyan-600",
@@ -91,7 +91,7 @@ export const INTENSITY_COLORS: Record<string, IntensityColorConfig> = {
  * Get color configuration for an activity type
  */
 export function getActivityColor(
-  type: string | undefined
+  type: string | undefined,
 ): ActivityColorConfig {
   if (!type) return ACTIVITY_COLORS.other;
   return ACTIVITY_COLORS[type] || ACTIVITY_COLORS.other;
@@ -101,7 +101,7 @@ export function getActivityColor(
  * Get color configuration for an intensity level
  */
 export function getIntensityColor(
-  intensity: string | undefined
+  intensity: string | undefined,
 ): IntensityColorConfig {
   if (!intensity) {
     return {

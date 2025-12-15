@@ -192,6 +192,10 @@ export const stepSchema = z.object({
     .min(1, { message: "Step name must be at least 1 character" })
     .max(100, { message: "Step name cannot exceed 100 characters" })
     .default("Step"),
+  description: z
+    .string()
+    .max(500, { message: "Description cannot exceed 500 characters" })
+    .optional(),
   duration: durationSchema.optional(),
   targets: z
     .array(intensityTargetSchema)

@@ -6,6 +6,11 @@ import {
   Characteristic,
   Device,
 } from "react-native-ble-plx";
+import {
+  FTMSController,
+  type FTMSFeatures,
+  ControlMode,
+} from "./FTMSController";
 import { SensorReading } from "./types";
 
 /** --- Connection states --- */

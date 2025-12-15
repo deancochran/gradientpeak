@@ -12,7 +12,10 @@ import {
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
 
-import type { PlanStepV2 } from "@repo/core/schemas/activity_plan_v2";
+import type {
+  PlanStepV2,
+  IntensityTargetV2,
+} from "@repo/core/schemas/activity_plan_v2";
 import * as Haptics from "expo-haptics";
 import { Plus, Trash2 } from "lucide-react-native";
 import { useEffect, useRef } from "react";
@@ -29,31 +32,28 @@ interface StepEditorDialogProps {
   defaultSegmentName?: string;
 }
 
-// Form schema for V2 step editing
+// Form schema for V2 step editing - uses V2 duration format directly
 const formSchema = z.object({
   name: z.string().min(1, "Step name is required"),
   description: z.string().optional(),
   segmentName: z.string().optional(),
-  duration: z
-    .union([
-      z.object({
-        type: z.literal("time"),
-        value: z.number().min(1),
-        unit: z.enum(["seconds", "minutes", "hours"]),
-      }),
-      z.object({
-        type: z.literal("distance"),
-        value: z.number().min(1),
-        unit: z.enum(["meters", "km"]),
-      }),
-      z.object({
-        type: z.literal("repetitions"),
-        value: z.number().min(1),
-        unit: z.literal("reps"),
-      }),
-      z.literal("untilFinished"),
-    ])
-    .optional(),
+  duration: z.discriminatedUnion("type", [
+    z.object({
+      type: z.literal("time"),
+      seconds: z.number().int().positive(),
+    }),
+    z.object({
+      type: z.literal("distance"),
+      meters: z.number().int().positive(),
+    }),
+    z.object({
+      type: z.literal("repetitions"),
+      count: z.number().int().positive(),
+    }),
+    z.object({
+      type: z.literal("untilFinished"),
+    }),
+  ]),
   targets: z
     .array(
       z.object({
@@ -76,6 +76,13 @@ const formSchema = z.object({
 });
 
 type FormData = z.infer<typeof formSchema>;
+
+// Helper type for UI display - internal to component only
+type DurationUI =
+  | { type: "time"; value: number; unit: "seconds" | "minutes" | "hours" }
+  | { type: "distance"; value: number; unit: "meters" | "km" }
+  | { type: "repetitions"; value: number; unit: "reps" }
+  | { type: "untilFinished" };
 
 const DURATION_TYPES = [
   { value: "time", label: "Time-based" },
@@ -106,6 +113,51 @@ const INTENSITY_TYPES = [
   { value: "RPE", label: "RPE (1-10)" },
 ];
 
+// Helper functions to convert between V2 format and UI display
+function v2ToUIValue(duration: FormData["duration"]): {
+  value: number;
+  unit: string;
+} {
+  if (duration.type === "time") {
+    const seconds = duration.seconds;
+    if (seconds >= 3600 && seconds % 3600 === 0) {
+      return { value: seconds / 3600, unit: "hours" };
+    }
+    if (seconds >= 60 && seconds % 60 === 0) {
+      return { value: seconds / 60, unit: "minutes" };
+    }
+    return { value: seconds, unit: "seconds" };
+  }
+  if (duration.type === "distance") {
+    const meters = duration.meters;
+    if (meters >= 1000 && meters % 1000 === 0) {
+      return { value: meters / 1000, unit: "km" };
+    }
+    return { value: meters, unit: "meters" };
+  }
+  if (duration.type === "repetitions") {
+    return { value: duration.count, unit: "reps" };
+  }
+  return { value: 0, unit: "seconds" };
+}
+
+function uiToV2Value(
+  type: "time" | "distance" | "repetitions",
+  value: number,
+  unit: string,
+): number {
+  if (type === "time") {
+    if (unit === "hours") return Math.round(value * 3600);
+    if (unit === "minutes") return Math.round(value * 60);
+    return Math.round(value);
+  }
+  if (type === "distance") {
+    if (unit === "km") return Math.round(value * 1000);
+    return Math.round(value);
+  }
+  return Math.round(value); // repetitions
+}
+
 export function StepEditorDialog({
   open,
   onOpenChange,
@@ -121,7 +173,7 @@ export function StepEditorDialog({
       name: "New Step",
       description: "",
       segmentName: defaultSegmentName || "",
-      duration: { type: "time", value: 10, unit: "minutes" },
+      duration: { type: "time", seconds: 600 }, // 10 minutes in V2 format
       targets: [],
       notes: "",
     },
@@ -142,73 +194,22 @@ export function StepEditorDialog({
     if (!isMountedRef.current) return;
 
     if (step) {
-      // Editing existing step - convert V2 duration to UI format
-      const duration = step.duration;
-      let uiDuration:
-        | { type: "time"; value: number; unit: "seconds" | "minutes" | "hours" }
-        | { type: "distance"; value: number; unit: "meters" | "km" }
-        | { type: "repetitions"; value: number; unit: "reps" }
-        | "untilFinished" = { type: "time", value: 10, unit: "minutes" };
-
-      if (duration.type === "time") {
-        if (duration.seconds >= 3600) {
-          uiDuration = {
-            type: "time",
-            value: duration.seconds / 3600,
-            unit: "hours",
-          };
-        } else if (duration.seconds >= 60) {
-          uiDuration = {
-            type: "time",
-            value: duration.seconds / 60,
-            unit: "minutes",
-          };
-        } else {
-          uiDuration = {
-            type: "time",
-            value: duration.seconds,
-            unit: "seconds",
-          };
-        }
-      } else if (duration.type === "distance") {
-        if (duration.meters >= 1000) {
-          uiDuration = {
-            type: "distance",
-            value: duration.meters / 1000,
-            unit: "km",
-          };
-        } else {
-          uiDuration = {
-            type: "distance",
-            value: duration.meters,
-            unit: "meters",
-          };
-        }
-      } else if (duration.type === "repetitions") {
-        uiDuration = {
-          type: "repetitions",
-          value: duration.count,
-          unit: "reps",
-        };
-      } else if (duration.type === "untilFinished") {
-        uiDuration = "untilFinished";
-      }
-
+      // Editing existing step - use V2 duration directly
       form.reset({
         name: step.name || "",
         description: step.description || "",
         segmentName: step.segmentName || defaultSegmentName || "",
-        duration: uiDuration,
+        duration: step.duration, // Already in V2 format
         targets: step.targets || [],
         notes: step.notes || "",
       });
     } else if (open) {
-      // Creating new step
+      // Creating new step - use V2 format
       form.reset({
         name: "New Step",
         description: "",
         segmentName: defaultSegmentName || "",
-        duration: { type: "time", value: 10, unit: "minutes" },
+        duration: { type: "time", seconds: 600 }, // 10 minutes
         targets: [],
         notes: "",
       });
@@ -226,27 +227,11 @@ export function StepEditorDialog({
       return;
     }
 
-    // Convert UI duration to V2 format
-    const uiDuration = result.data.duration;
-    let v2Duration: PlanStepV2["duration"];
-
-    if (uiDuration === "untilFinished") {
-      v2Duration = { type: "untilFinished" };
-    } else if (uiDuration) {
-      v2Duration = convertUIToV2Duration({
-        type: uiDuration.type,
-        value: uiDuration.value,
-        unit: uiDuration.unit,
-      });
-    } else {
-      v2Duration = { type: "time", seconds: 600 }; // Default 10 minutes
-    }
-
-    // Create V2 step
+    // Create V2 step - duration is already in V2 format
     const stepV2: PlanStepV2 = {
       name: result.data.name,
       description: result.data.description,
-      duration: v2Duration,
+      duration: result.data.duration, // Already in V2 format
       targets: result.data.targets as IntensityTargetV2[],
       segmentName: result.data.segmentName,
       notes: result.data.notes,
@@ -285,35 +270,30 @@ export function StepEditorDialog({
     if (!isMountedRef.current) return;
 
     if (value === "untilFinished") {
-      form.setValue("duration", "untilFinished");
+      form.setValue("duration", { type: "untilFinished" });
     } else if (value === "time") {
-      form.setValue("duration", { type: "time", value: 10, unit: "minutes" });
+      form.setValue("duration", { type: "time", seconds: 600 }); // 10 minutes
     } else if (value === "distance") {
-      form.setValue("duration", {
-        type: "distance",
-        value: 1000,
-        unit: "meters",
-      });
+      form.setValue("duration", { type: "distance", meters: 1000 }); // 1km
     } else if (value === "repetitions") {
-      form.setValue("duration", {
-        type: "repetitions",
-        value: 10,
-        unit: "reps",
-      });
+      form.setValue("duration", { type: "repetitions", count: 10 });
     }
   };
 
   const getDurationUnits = () => {
-    if (!durationType || durationType === "untilFinished") return [];
+    if (!durationType || durationType.type === "untilFinished") return [];
     if (durationType.type === "time") return TIME_UNITS;
     if (durationType.type === "distance") return DISTANCE_UNITS;
     return [{ value: "reps", label: "reps" }];
   };
 
-  const currentDurationType =
-    durationType === "untilFinished" || !durationType
-      ? "untilFinished"
-      : durationType.type;
+  const currentDurationType = durationType?.type || "time";
+
+  // Get current UI value and unit for display
+  const currentUIValue =
+    durationType && durationType.type !== "untilFinished"
+      ? v2ToUIValue(durationType)
+      : { value: 10, unit: "minutes" };
 
   const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
   const dialogWidth = Math.min(screenWidth * 0.9, 400);
@@ -444,23 +424,48 @@ export function StepEditorDialog({
               </View>
 
               {/* Duration Value & Unit */}
-              {durationType && durationType !== "untilFinished" && (
+              {durationType && durationType.type !== "untilFinished" && (
                 <View className="flex-row gap-3">
                   <View className="flex-1">
                     <Label nativeID="duration-value">Value</Label>
                     <Controller
                       control={form.control}
-                      name="duration.value"
-                      render={({
-                        field: { onChange, value },
-                        fieldState: { error },
-                      }) => (
+                      name="duration"
+                      render={({ fieldState: { error } }) => (
                         <>
                           <Input
-                            value={value?.toString() || ""}
+                            value={currentUIValue.value.toString()}
                             onChangeText={(text) => {
                               const num = parseFloat(text);
-                              if (!isNaN(num)) onChange(num);
+                              if (!isNaN(num) && durationType) {
+                                const duration = form.getValues("duration");
+                                if (duration.type === "time") {
+                                  const seconds = uiToV2Value(
+                                    "time",
+                                    num,
+                                    currentUIValue.unit,
+                                  );
+                                  form.setValue("duration", {
+                                    type: "time",
+                                    seconds,
+                                  });
+                                } else if (duration.type === "distance") {
+                                  const meters = uiToV2Value(
+                                    "distance",
+                                    num,
+                                    currentUIValue.unit,
+                                  );
+                                  form.setValue("duration", {
+                                    type: "distance",
+                                    meters,
+                                  });
+                                } else if (duration.type === "repetitions") {
+                                  form.setValue("duration", {
+                                    type: "repetitions",
+                                    count: Math.round(num),
+                                  });
+                                }
+                              }
                             }}
                             keyboardType="numeric"
                             placeholder="0"
@@ -481,16 +486,42 @@ export function StepEditorDialog({
                       <Label nativeID="duration-unit">Unit</Label>
                       <Controller
                         control={form.control}
-                        name="duration.unit"
-                        render={({ field: { onChange, value } }) => (
+                        name="duration"
+                        render={() => (
                           <Select
                             defaultValue={{
-                              value: value || "",
-                              label: value || "",
+                              value: currentUIValue.unit,
+                              label: currentUIValue.unit,
                             }}
                             onValueChange={(option) => {
-                              if (typeof option === "object" && option.value) {
-                                onChange(option.value);
+                              if (
+                                typeof option === "object" &&
+                                option.value &&
+                                durationType
+                              ) {
+                                const newUnit = option.value;
+                                const duration = form.getValues("duration");
+                                if (duration.type === "time") {
+                                  const seconds = uiToV2Value(
+                                    "time",
+                                    currentUIValue.value,
+                                    newUnit,
+                                  );
+                                  form.setValue("duration", {
+                                    type: "time",
+                                    seconds,
+                                  });
+                                } else if (duration.type === "distance") {
+                                  const meters = uiToV2Value(
+                                    "distance",
+                                    currentUIValue.value,
+                                    newUnit,
+                                  );
+                                  form.setValue("duration", {
+                                    type: "distance",
+                                    meters,
+                                  });
+                                }
                               }
                             }}
                           >

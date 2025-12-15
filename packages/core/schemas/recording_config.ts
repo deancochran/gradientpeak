@@ -9,8 +9,8 @@
  * - GPS availability
  */
 
-import type { FTMSFeatures } from "../../apps/mobile/lib/services/ActivityRecorder/FTMSController"
-import type { PublicActivityType } from "./activity_payload"
+import type { FTMSFeatures } from "../ftms-types";
+import type { ActivityType } from "./activity_payload";
 
 // ============================================================================
 // Configuration Input
@@ -18,31 +18,31 @@ import type { PublicActivityType } from "./activity_payload"
 
 export interface RecordingConfigInput {
   // Core activity details
-  activityType: PublicActivityType
-  mode: 'planned' | 'unplanned'
+  activityType: ActivityType;
+  mode: "planned" | "unplanned";
 
   // Plan details (if planned)
   plan?: {
-    hasStructure: boolean      // Has steps to follow
-    hasRoute: boolean          // Has GPS route
-    stepCount: number
-    requiresManualAdvance: boolean  // Any "untilFinished" steps
-  }
+    hasStructure: boolean; // Has steps to follow
+    hasRoute: boolean; // Has GPS route
+    stepCount: number;
+    requiresManualAdvance: boolean; // Any "untilFinished" steps
+  };
 
   // Connected devices
   devices: {
     ftmsTrainer?: {
-      deviceId: string
-      features: FTMSFeatures
-      autoControlEnabled: boolean
-    }
-    hasPowerMeter: boolean
-    hasHeartRateMonitor: boolean
-    hasCadenceSensor: boolean
-  }
+      deviceId: string;
+      features: FTMSFeatures;
+      autoControlEnabled: boolean;
+    };
+    hasPowerMeter: boolean;
+    hasHeartRateMonitor: boolean;
+    hasCadenceSensor: boolean;
+  };
 
   // Environment
-  gpsAvailable: boolean
+  gpsAvailable: boolean;
 }
 
 // ============================================================================
@@ -51,30 +51,30 @@ export interface RecordingConfigInput {
 
 export interface RecordingCapabilities {
   // Data collection
-  canTrackLocation: boolean
-  canTrackPower: boolean
-  canTrackHeartRate: boolean
-  canTrackCadence: boolean
+  canTrackLocation: boolean;
+  canTrackPower: boolean;
+  canTrackHeartRate: boolean;
+  canTrackCadence: boolean;
 
   // UI features - what to show
-  shouldShowMap: boolean
-  shouldShowSteps: boolean
-  shouldShowRouteOverlay: boolean
-  shouldShowTurnByTurn: boolean
-  shouldShowFollowAlong: boolean
-  shouldShowPowerTarget: boolean
+  shouldShowMap: boolean;
+  shouldShowSteps: boolean;
+  shouldShowRouteOverlay: boolean;
+  shouldShowTurnByTurn: boolean;
+  shouldShowFollowAlong: boolean;
+  shouldShowTrainerControl: boolean; // Renamed from shouldShowPowerTarget - shows trainer control card
 
   // Automation - what to do automatically
-  canAutoAdvanceSteps: boolean
-  canAutoControlTrainer: boolean
+  canAutoAdvanceSteps: boolean;
+  shouldAutoFollowTargets: boolean; // Renamed from canAutoControlTrainer - auto-adjust trainer to follow plan/route targets
 
   // Primary metric for navigation
-  primaryMetric: 'time' | 'distance' | 'reps' | 'power'
+  primaryMetric: "time" | "distance" | "reps" | "power";
 
   // Validation
-  isValid: boolean
-  errors: string[]
-  warnings: string[]
+  isValid: boolean;
+  errors: string[];
+  warnings: string[];
 }
 
 // ============================================================================
@@ -82,6 +82,6 @@ export interface RecordingCapabilities {
 // ============================================================================
 
 export interface RecordingConfiguration {
-  input: RecordingConfigInput
-  capabilities: RecordingCapabilities
+  input: RecordingConfigInput;
+  capabilities: RecordingCapabilities;
 }

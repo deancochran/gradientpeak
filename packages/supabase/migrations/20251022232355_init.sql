@@ -2,7 +2,7 @@ create type "public"."activity_metric" as enum ('heartrate', 'power', 'speed', '
 
 create type "public"."activity_metric_data_type" as enum ('float', 'latlng', 'boolean');
 
-create type "public"."activity_type" as enum ('outdoor_run', 'outdoor_bike', 'indoor_treadmill', 'indoor_bike_trainer', 'indoor_strength', 'indoor_swim', 'other');
+create type "public"."activity_type" as enum ('outdoor_run', 'outdoor_bike', 'indoor_run', 'indoor_bike', 'indoor_strength', 'indoor_swim', 'other');
 
 create type "public"."integration_provider" as enum ('strava', 'wahoo', 'trainingpeaks', 'garmin', 'zwift');
 
@@ -90,7 +90,6 @@ create table "public"."activity_plans" (
     "profile_id" uuid not null,
     "version" text not null default '1.0'::text,
     "name" text not null,
-    "activity_type" activity_type not null,
     "description" text,
     "structure" jsonb not null,
     "estimated_tss" integer not null,

@@ -27,7 +27,7 @@ export const ACTIVITY_CONFIGS = {
     bgColor: "bg-green-50",
     borderColor: "border-green-200",
   },
-  indoor_treadmill: {
+  indoor_run: {
     name: "Treadmill",
     shortName: "Treadmill",
     icon: Footprints,
@@ -35,7 +35,7 @@ export const ACTIVITY_CONFIGS = {
     bgColor: "bg-purple-50",
     borderColor: "border-purple-200",
   },
-  indoor_bike_trainer: {
+  indoor_bike: {
     name: "Bike Trainer",
     shortName: "Trainer",
     icon: Bike,
@@ -100,8 +100,8 @@ export const ACTIVITY_FILTER_OPTIONS = [
 export const ACTIVITY_CATEGORY_OPTIONS = [
   { value: "outdoor_run", label: "Outdoor Run", icon: Footprints },
   { value: "outdoor_bike", label: "Outdoor Bike", icon: Bike },
-  { value: "indoor_treadmill", label: "Treadmill", icon: Footprints },
-  { value: "indoor_bike_trainer", label: "Bike Trainer", icon: Bike },
+  { value: "indoor_run", label: "Treadmill", icon: Footprints },
+  { value: "indoor_bike", label: "Bike Trainer", icon: Bike },
   { value: "indoor_strength", label: "Strength Training", icon: Dumbbell },
   { value: "indoor_swim", label: "Swimming", icon: Waves },
   { value: "other", label: "Other", icon: Activity },

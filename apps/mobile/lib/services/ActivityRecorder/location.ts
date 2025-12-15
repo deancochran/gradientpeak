@@ -335,6 +335,13 @@ export class LocationManager {
     }
   }
 
+  /**
+   * Check if location tracking is enabled (either foreground or background)
+   */
+  async isLocationEnabled(): Promise<boolean> {
+    return this.isTrackingForeground() || (await this.isTrackingBackground());
+  }
+
   // --- Subscription Management ---
   addCallback(callback: (location: Location.LocationObject) => void): void {
     this.locationCallbacks.add(callback);

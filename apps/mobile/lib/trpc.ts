@@ -1,4 +1,4 @@
-import { getAuthHeaders } from "@/lib/supabase/client";
+import { getAuthHeaders } from "@/lib/supabase/auth-headers";
 import type { AppRouter } from "@repo/trpc/client";
 import { httpBatchLink, loggerLink } from "@trpc/client";
 import { createTRPCReact } from "@trpc/react-query";
@@ -25,7 +25,12 @@ export function createTRPCClient() {
       httpBatchLink({
         transformer: superjson,
         url: getApiUrl(),
-        headers: getAuthHeaders,
+        headers: () => {
+          const authHeaders = getAuthHeaders();
+          authHeaders.set("x-client-type", "mobile");
+          authHeaders.set("x-trpc-source", "react-native");
+          return authHeaders;
+        },
       }),
     ],
   });

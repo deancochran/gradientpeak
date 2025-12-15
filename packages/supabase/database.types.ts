@@ -36,6 +36,7 @@ export type Database = {
     Tables: {
       activities: {
         Row: {
+          avg_target_adherence: number | null
           created_at: string
           distance_meters: number
           duration_seconds: number
@@ -61,6 +62,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          avg_target_adherence?: number | null
           created_at?: string
           distance_meters?: number
           duration_seconds?: number
@@ -86,6 +88,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          avg_target_adherence?: number | null
           created_at?: string
           distance_meters?: number
           duration_seconds?: number

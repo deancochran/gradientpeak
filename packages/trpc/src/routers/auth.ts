@@ -6,7 +6,11 @@ import { createTRPCRouter, protectedProcedure, publicProcedure } from "../trpc";
 const signUpSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
-  metadata: z.record(z.string(), z.any()).optional(),
+  metadata: z
+    .object({
+      emailRedirectTo: z.string().url().optional(),
+    })
+    .optional(),
 });
 
 const signInSchema = z.object({
@@ -39,7 +43,9 @@ export const authRouter = createTRPCRouter({
         const { data, error } = await ctx.supabase.auth.signUp({
           email: input.email,
           password: input.password,
-          options: input.metadata ? { data: input.metadata } : undefined,
+          options: {
+            emailRedirectTo: input.metadata?.emailRedirectTo,
+          },
         });
 
         if (error) {
