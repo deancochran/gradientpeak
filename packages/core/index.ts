@@ -43,3 +43,4 @@ export * from "./schemas";
 export * from "./utils/activity-defaults";
 export * from "./utils/plan-view-logic";
 export * from "./utils/polyline";
+export * from "./utils/recording-config-resolver";

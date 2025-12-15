@@ -10,6 +10,7 @@ import {
   useRecordingState,
   useSensors,
 } from "@/lib/hooks/useActivityRecorder";
+import { useRecordingCapabilities } from "@/lib/hooks/useRecordingConfig";
 import { useAllPermissionsGranted } from "@/lib/hooks/useStandalonePermissions";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
@@ -198,42 +199,39 @@ function RecordScreen() {
     });
   }, [isOutdoorActivity, plan.hasPlan]);
 
-  // Determine which cards to show - reactively updates based on activity status
-  // Using configuration object instead of array to prevent ordering issues
+  // Get recording capabilities - determines what UI to show
+  const capabilities = useRecordingCapabilities(service);
+
+  // Determine which cards to show based on capabilities
   const cardsConfig = useMemo((): Record<
     CarouselCardType,
     CarouselCardConfig
   > => {
     const config = createDefaultCardsConfig();
 
-    // Enable map card for outdoor activities
-    config.map.enabled = isOutdoorActivity;
-    if (isOutdoorActivity) {
-      console.log("[RecordModal] Enabling map card for outdoor activity");
+    if (!capabilities) {
+      // No capabilities yet, show only dashboard
+      console.log("[RecordModal] No capabilities, showing dashboard only");
+      return config;
     }
 
-    // Enable plan card when a plan is active
-    config.plan.enabled = plan.hasPlan;
-    if (plan.hasPlan) {
-      console.log("[RecordModal] Enabling plan card");
-    }
+    // Enable cards based on capabilities
+    config.map.enabled = capabilities.shouldShowMap;
+    config.plan.enabled = capabilities.shouldShowSteps;
+    config.trainer.enabled = capabilities.shouldShowPowerTarget;
+    config.power.enabled = capabilities.canTrackPower;
+    config.heartrate.enabled = capabilities.canTrackHeartRate;
 
-    // Enable trainer card when a controllable trainer is connected
-    const hasControllableTrainer =
-      service?.sensorsManager.getControllableTrainer()?.isControllable ?? false;
-    config.trainer.enabled = hasControllableTrainer;
-    if (hasControllableTrainer) {
-      console.log("[RecordModal] Enabling trainer control card");
-    }
+    console.log("[RecordModal] Cards enabled based on capabilities:", {
+      map: config.map.enabled,
+      plan: config.plan.enabled,
+      trainer: config.trainer.enabled,
+      power: config.power.enabled,
+      heartrate: config.heartrate.enabled,
+    });
 
-    console.log(
-      "[RecordModal] Cards config updated:",
-      Object.values(config)
-        .filter((c) => c.enabled)
-        .map((c) => c.id),
-    );
     return config;
-  }, [isOutdoorActivity, plan.hasPlan, service]);
+  }, [capabilities]);
 
   // Show loading state while initializing
   if (!isInitialized) {

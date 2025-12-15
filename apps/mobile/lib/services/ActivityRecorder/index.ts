@@ -923,6 +923,49 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return this.liveMetricsManager.getSimplifiedMetrics();
   }
 
+  /**
+   * Get recording configuration - what features should be available/shown
+   */
+  getRecordingConfiguration(): import("@repo/core").RecordingConfiguration {
+    const { RecordingConfigResolver } = require("@repo/core");
+
+    const ftmsDevice = this.sensorsManager.getControllableTrainer();
+
+    return RecordingConfigResolver.resolve({
+      activityType: this.selectedActivityType,
+      mode: this._plan ? "planned" : "unplanned",
+      plan: this._plan
+        ? {
+            hasStructure: this._steps.length > 0,
+            hasRoute: false, // TODO: Check if plan has route when route support is added
+            stepCount: this._steps.length,
+            requiresManualAdvance: this._steps.some(
+              (step) => step.duration.type === "untilFinished",
+            ),
+          }
+        : undefined,
+      devices: {
+        ftmsTrainer: ftmsDevice
+          ? {
+              deviceId: ftmsDevice.id,
+              features: ftmsDevice.ftmsFeatures || {},
+              autoControlEnabled: !this.manualControlOverride,
+            }
+          : undefined,
+        hasPowerMeter: this.sensorsManager
+          .getConnectedSensors()
+          .some((s) => s.type === "power"),
+        hasHeartRateMonitor: this.sensorsManager
+          .getConnectedSensors()
+          .some((s) => s.type === "heart_rate"),
+        hasCadenceSensor: this.sensorsManager
+          .getConnectedSensors()
+          .some((s) => s.type === "cadence"),
+      },
+      gpsAvailable: this.locationManager.isLocationEnabled(),
+    });
+  }
+
   // ================================
   // Cleanup
   // ================================
