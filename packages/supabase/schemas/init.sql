@@ -163,8 +163,6 @@ create table if not exists public.activity_plans (
     description text not null,
     structure jsonb not null,
     route_id uuid references public.activity_routes(id) on delete set null,
-    estimated_tss integer not null check (estimated_tss >= 0),
-    estimated_duration integer not null check (estimated_duration >= 0),
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );

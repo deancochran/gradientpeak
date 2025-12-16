@@ -6,3 +6,4 @@ export { VolumeTab } from "./VolumeTab";
 export { PerformanceTab } from "./PerformanceTab";
 export { FitnessTab } from "./FitnessTab";
 export { ConsistencyTab } from "./ConsistencyTab";
+export { CollapsibleSection } from "./CollapsibleSection";

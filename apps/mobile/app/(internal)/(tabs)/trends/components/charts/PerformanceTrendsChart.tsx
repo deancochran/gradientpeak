@@ -2,7 +2,6 @@ import { Text } from "@/components/ui/text";
 import React from "react";
 import { View } from "react-native";
 import { CartesianChart, Line } from "victory-native";
-import { Circle, useFont } from "@shopify/react-native-skia";
 
 export interface PerformanceDataPoint {
   date: string;

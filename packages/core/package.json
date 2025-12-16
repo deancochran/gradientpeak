@@ -6,6 +6,7 @@
   "exports": {
     ".": "./index.ts",
     "./calculations": "./calculations/index.ts",
+    "./estimation": "./estimation/index.ts",
     "./schemas/*": "./schemas/*.ts"
   },
   "scripts": {

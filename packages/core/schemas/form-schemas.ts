@@ -645,36 +645,19 @@ export const activityCategorySchema = z.enum([
 /**
  * Activity Plan Create Form Schema
  * Used when creating a new activity plan
+ * Note: estimated_duration and estimated_tss are calculated server-side
  */
-export const activityPlanCreateFormSchema = z
-  .object({
-    name: activityPlanNameSchema,
-    description: optionalActivityPlanDescriptionSchema,
-    activity_location: activityLocationSchema,
-    activity_category: activityCategorySchema,
-    estimated_duration: estimatedDurationSchema,
-    estimated_tss: optionalEstimatedTssSchema,
-    route_id: z.string().uuid().optional().nullable(),
-    notes: activityPlanNotesSchema,
-    structure: z.object({
-      steps: z
-        .array(z.any())
-        .min(1, "Activity plan must have at least one step"), // Minimum 1 step required
-    }),
-  })
-  .refine(
-    (data) => {
-      // Validate that estimated duration is reasonable for the number of steps
-      const stepCount = data.structure.steps.length;
-      const minDuration = stepCount * 30; // Assume minimum 30 seconds per step
-      return data.estimated_duration >= minDuration;
-    },
-    {
-      message:
-        "Estimated duration is too short for the number of steps in the activity",
-      path: ["estimated_duration"],
-    },
-  );
+export const activityPlanCreateFormSchema = z.object({
+  name: activityPlanNameSchema,
+  description: optionalActivityPlanDescriptionSchema,
+  activity_location: activityLocationSchema,
+  activity_category: activityCategorySchema,
+  route_id: z.string().uuid().optional().nullable(),
+  notes: activityPlanNotesSchema,
+  structure: z.object({
+    steps: z.array(z.any()).min(1, "Activity plan must have at least one step"), // Minimum 1 step required
+  }),
+});
 
 export type ActivityPlanCreateFormData = z.infer<
   typeof activityPlanCreateFormSchema

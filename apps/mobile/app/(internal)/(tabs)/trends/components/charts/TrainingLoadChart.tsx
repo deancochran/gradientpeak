@@ -3,7 +3,6 @@
 import { Text } from "@/components/ui/text";
 import { View } from "react-native";
 import { CartesianChart, Line } from "victory-native";
-import { useFont } from "@shopify/react-native-skia";
 
 export interface TrainingLoadData {
   date: string;

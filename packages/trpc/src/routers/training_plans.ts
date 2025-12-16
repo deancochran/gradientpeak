@@ -354,7 +354,7 @@ export const trainingPlansRouter = createTRPCRouter({
 
     const { data: activities, error: activitiesError } = await ctx.supabase
       .from("activities")
-      .select("started_at, training_stress_score")
+      .select("started_at, metrics")
       .eq("profile_id", ctx.session.user.id)
       .gte("started_at", fortyTwoDaysAgo.toISOString())
       .order("started_at", { ascending: true });
@@ -372,7 +372,9 @@ export const trainingPlansRouter = createTRPCRouter({
 
     if (activities && activities.length > 0) {
       for (const activity of activities) {
-        const tss = activity.training_stress_score || 0;
+        // TSS is now stored in metrics JSONB column
+        const metrics = activity.metrics as any;
+        const tss = metrics?.tss || 0;
         ctl = calculateCTL(ctl, tss);
         atl = calculateATL(atl, tss);
       }
@@ -392,14 +394,14 @@ export const trainingPlansRouter = createTRPCRouter({
     // Get completed activities this week
     const { data: weekActivities } = await ctx.supabase
       .from("activities")
-      .select("training_stress_score")
+      .select("metrics")
       .eq("profile_id", ctx.session.user.id)
       .gte("started_at", startOfWeek.toISOString())
       .lt("started_at", endOfWeek.toISOString());
 
     const completedWeeklyTSS =
       weekActivities?.reduce(
-        (sum, act) => sum + (act.training_stress_score || 0),
+        (sum, act) => sum + ((act.metrics as any)?.tss || 0),
         0,
       ) || 0;
 
@@ -590,7 +592,7 @@ export const trainingPlansRouter = createTRPCRouter({
 
       const { data: activities, error: activitiesError } = await ctx.supabase
         .from("activities")
-        .select("started_at, training_stress_score")
+        .select("started_at, metrics")
         .eq("profile_id", ctx.session.user.id)
         .gte("started_at", extendedStart.toISOString())
         .lte("started_at", endDate.toISOString())
@@ -613,7 +615,7 @@ export const trainingPlansRouter = createTRPCRouter({
           .toISOString()
           .split("T")[0];
         if (!dateStr) continue;
-        const tss = activity.training_stress_score || 0;
+        const tss = (activity.metrics as any)?.tss || 0;
         activitiesByDate.set(
           dateStr,
           (activitiesByDate.get(dateStr) || 0) + tss,
@@ -717,7 +719,7 @@ export const trainingPlansRouter = createTRPCRouter({
       // Get all completed activities in range
       const { data: completedActivities } = await ctx.supabase
         .from("activities")
-        .select("started_at, training_stress_score")
+        .select("started_at, metrics")
         .eq("profile_id", ctx.session.user.id)
         .gte("started_at", startDate.toISOString())
         .lte("started_at", today.toISOString());
@@ -753,7 +755,7 @@ export const trainingPlansRouter = createTRPCRouter({
           }) || [];
 
         const completedTSS = weekCompleted.reduce(
-          (sum, act) => sum + (act.training_stress_score || 0),
+          (sum, act) => sum + ((act.metrics as any)?.tss || 0),
           0,
         );
 
@@ -807,7 +809,7 @@ export const trainingPlansRouter = createTRPCRouter({
       // Get completed activities in date range with intensity_factor
       const { data: activities, error } = await ctx.supabase
         .from("activities")
-        .select("id, training_stress_score, intensity_factor, started_at")
+        .select("id, metrics, started_at")
         .eq("profile_id", ctx.session.user.id)
         .gte("started_at", input.start_date)
         .lte("started_at", input.end_date)
@@ -847,13 +849,16 @@ export const trainingPlansRouter = createTRPCRouter({
       if (activities && activities.length > 0) {
         for (const activity of activities) {
           // Skip activities without intensity_factor or TSS
-          if (!activity.intensity_factor || !activity.training_stress_score) {
+          const metrics = activity.metrics as any;
+          const intensityFactorValue = metrics?.if || 0;
+          const tss = metrics?.tss || 0;
+
+          if (!intensityFactorValue || !tss) {
             continue;
           }
 
           // Convert IF from integer (0-100) to decimal (0.00-1.00)
-          const intensityFactor = activity.intensity_factor / 100;
-          const tss = activity.training_stress_score;
+          const intensityFactor = intensityFactorValue / 100;
 
           // Get the zone for this IF value
           const zone = getTrainingIntensityZone(
@@ -935,7 +940,11 @@ export const trainingPlansRouter = createTRPCRouter({
         totalActivities,
         totalTSS: Math.round(totalTSS),
         activitiesWithIntensity:
-          activities?.filter((a) => a.intensity_factor !== null).length || 0,
+          activities?.filter(
+            (a) =>
+              (a.metrics as any)?.if !== null &&
+              (a.metrics as any)?.if !== undefined,
+          ).length || 0,
         recommendations,
       };
     }),
@@ -956,11 +965,10 @@ export const trainingPlansRouter = createTRPCRouter({
       // Get activities with IF values
       const { data: activities, error } = await ctx.supabase
         .from("activities")
-        .select("id, intensity_factor, training_stress_score, started_at")
+        .select("id, metrics, started_at")
         .eq("profile_id", ctx.session.user.id)
         .gte("started_at", startDate.toISOString())
         .lte("started_at", endDate.toISOString())
-        .not("intensity_factor", "is", null)
         .order("started_at", { ascending: true });
 
       if (error) {
@@ -1016,10 +1024,13 @@ export const trainingPlansRouter = createTRPCRouter({
             };
           }
 
-          if (!activity.intensity_factor) continue;
+          const metrics = activity.metrics as any;
+          const intensityFactorValue = metrics?.if || 0;
 
-          const intensityFactor = activity.intensity_factor / 100;
-          const tss = activity.training_stress_score || 0;
+          if (!intensityFactorValue) continue;
+
+          const intensityFactor = intensityFactorValue / 100;
+          const tss = metrics?.tss || 0;
           const zone = getTrainingIntensityZone(
             intensityFactor,
           ) as IntensityZone;
@@ -1068,14 +1079,20 @@ export const trainingPlansRouter = createTRPCRouter({
     )
     .query(async ({ ctx, input }) => {
       // Get activities with IF >= 0.85 (threshold and above)
-      const { data: activities, error } = await ctx.supabase
+      const { data: allActivities, error } = await ctx.supabase
         .from("activities")
-        .select("id, name, started_at, intensity_factor, training_stress_score")
+        .select("id, name, started_at, metrics")
         .eq("profile_id", ctx.session.user.id)
         .gte("started_at", input.start_date)
         .lte("started_at", input.end_date)
-        .gte("intensity_factor", 85) // IF >= 0.85
         .order("started_at", { ascending: true });
+
+      // Filter activities with IF >= 85 in the metrics JSONB
+      const activities =
+        allActivities?.filter((a) => {
+          const metrics = a.metrics as any;
+          return (metrics?.if || 0) >= 85;
+        }) || [];
 
       if (error) {
         throw new TRPCError({
@@ -1113,18 +1130,21 @@ export const trainingPlansRouter = createTRPCRouter({
             (1000 * 60 * 60);
 
           if (hoursBetween < input.min_hours) {
+            const prevMetrics = prev.metrics as any;
+            const currMetrics = curr.metrics as any;
+
             violations.push({
               activity1: {
                 id: prev.id,
                 name: prev.name || "Unnamed activity",
                 started_at: prev.started_at,
-                intensity_factor: prev.intensity_factor ?? 0,
+                intensity_factor: prevMetrics?.if ?? 0,
               },
               activity2: {
                 id: curr.id,
                 name: curr.name || "Unnamed activity",
                 started_at: curr.started_at,
-                intensity_factor: curr.intensity_factor ?? 0,
+                intensity_factor: currMetrics?.if ?? 0,
               },
               hoursBetween: Math.round(hoursBetween * 10) / 10,
             });

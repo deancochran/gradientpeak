@@ -3,7 +3,6 @@
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { trpc } from "@/lib/trpc";
-import { useRouter } from "expo-router";
 import {
   Activity,
   Calendar,
@@ -29,6 +28,7 @@ interface ActivityListModalProps {
   dateTo: string;
   intensityZone?: string;
   onClose: () => void;
+  onActivityPress?: (activityId: string) => void;
 }
 
 /**
@@ -43,9 +43,8 @@ export function ActivityListModal({
   dateTo,
   intensityZone,
   onClose,
+  onActivityPress,
 }: ActivityListModalProps) {
-  const router = useRouter();
-
   // Fetch activities for the date range
   const { data: activities = [], isLoading } = trpc.activities.list.useQuery(
     {
@@ -127,12 +126,10 @@ export function ActivityListModal({
   };
 
   const handleActivityPress = (activityId: string) => {
+    if (onActivityPress) {
+      onActivityPress(activityId);
+    }
     onClose();
-    // Navigate to activity detail view
-    router.push({
-      pathname: "/(internal)/(tabs)/plan/activities/[activity_id]" as any,
-      params: { activity_id: activityId },
-    });
   };
 
   return (

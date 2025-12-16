@@ -14,12 +14,11 @@
  */
 
 import {
-  FlattenedStep,
-  flattenPlanSteps,
   getDurationMs,
   PublicActivityType,
   PublicProfilesRow,
   RecordingServiceActivityPlan,
+  type PlanStepV2,
 } from "@repo/core";
 
 import {
@@ -59,7 +58,7 @@ export interface StepProgress {
 export interface StepInfo {
   index: number;
   total: number;
-  current: FlattenedStep | undefined;
+  current: PlanStepV2 | undefined;
   progress: StepProgress | null;
   isLast: boolean;
   isFinished: boolean;
@@ -131,7 +130,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // === Plan State (minimal tracking) ===
   private _plan?: RecordingServiceActivityPlan;
   private _plannedActivityId?: string;
-  private _steps: FlattenedStep[] = [];
+  private _steps: PlanStepV2[] = [];
   private _stepIndex: number = 0;
   private _stepStartMovingTime: number = 0; // Moving time when current step started
 
@@ -275,7 +274,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return this._steps.length;
   }
 
-  get currentStep(): FlattenedStep | undefined {
+  get currentStep(): PlanStepV2 | undefined {
     return this._steps[this._stepIndex];
   }
 
@@ -385,10 +384,41 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   selectPlan(plan: RecordingServiceActivityPlan, plannedId?: string): void {
     console.log("[Service] Selected plan:", plan.name);
+    console.log(
+      "[Service] Plan structure:",
+      JSON.stringify(plan.structure, null, 2),
+    );
 
     this._plan = plan;
     this._plannedActivityId = plannedId;
-    this._steps = flattenPlanSteps(plan.structure.steps);
+
+    // Load V2 structure steps (already flat)
+    try {
+      if (plan.structure && plan.structure.steps) {
+        // V2 structure: steps are already flat, use them directly
+        this._steps = plan.structure.steps;
+        console.log(
+          `[Service] Loaded ${this._steps.length} steps from V2 structure`,
+        );
+
+        if (this._steps.length === 0) {
+          console.warn("[Service] Plan structure has 0 steps");
+        }
+      } else {
+        console.warn(
+          "[Service] Plan has no structure.steps, defaulting to empty steps array",
+        );
+        this._steps = [];
+      }
+    } catch (error) {
+      console.error("[Service] Error loading plan steps:", error);
+      console.error(
+        "[Service] Error details:",
+        error instanceof Error ? error.message : String(error),
+      );
+      this._steps = [];
+    }
+
     this._stepIndex = 0;
     this._stepStartMovingTime = this.getMovingTime();
     this.selectedActivityType = plan.activity_category;
@@ -730,7 +760,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   /**
    * Apply targets from a plan step to the trainer
    */
-  private async applyStepTargets(step: FlattenedStep): Promise<void> {
+  private async applyStepTargets(step: PlanStepV2): Promise<void> {
     if (!step.targets) {
       console.log("[Service] No targets for this step");
       return;
@@ -936,9 +966,21 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     const ftmsDevice = this.sensorsManager.getControllableTrainer();
 
+    // Determine if we're in planned mode - check both _plan and _plannedActivityId
+    // This ensures we show planned mode UI even if structure parsing failed
+    const isPlannedMode = !!(this._plan || this._plannedActivityId);
+
+    console.log("[Service] getRecordingConfiguration:", {
+      isPlannedMode,
+      hasPlan: !!this._plan,
+      hasPlannedId: !!this._plannedActivityId,
+      stepsLength: this._steps.length,
+      activityType: this.selectedActivityType,
+    });
+
     return RecordingConfigResolver.resolve({
       activityType: this.selectedActivityType,
-      mode: this._plan ? "planned" : "unplanned",
+      mode: isPlannedMode ? "planned" : "unplanned",
       plan: this._plan
         ? {
             hasStructure: this._steps.length > 0,

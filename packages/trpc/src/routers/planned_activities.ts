@@ -6,6 +6,10 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { WahooSyncService } from "../lib/integrations/wahoo/sync-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import {
+  addEstimationToPlan,
+  addEstimationToPlans,
+} from "../utils/estimation-helpers";
 
 // Validation constraint schema
 const validateConstraintsSchema = z.object({
@@ -52,8 +56,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
             activity_location,
             description,
             structure,
-            estimated_tss,
-            estimated_duration,
+            route_id,
             version
           )
         `,
@@ -67,6 +70,19 @@ export const plannedActivitiesRouter = createTRPCRouter({
           code: "NOT_FOUND",
           message: "Planned activity not found",
         });
+
+      // Add estimation to the activity plan
+      if (data.activity_plan) {
+        const planWithEstimation = await addEstimationToPlan(
+          data.activity_plan,
+          ctx.supabase,
+          ctx.session.user.id,
+        );
+        return {
+          ...data,
+          activity_plan: planWithEstimation,
+        };
+      }
 
       return data;
     }),
@@ -91,8 +107,8 @@ export const plannedActivitiesRouter = createTRPCRouter({
           name,
           activity_category,
           activity_location,
-          estimated_duration,
-          estimated_tss
+          structure,
+          route_id
         )
       `,
       )
@@ -106,6 +122,24 @@ export const plannedActivitiesRouter = createTRPCRouter({
         code: "INTERNAL_SERVER_ERROR",
         message: error.message,
       });
+    }
+
+    // Add estimation to each activity plan
+    if (data && data.length > 0) {
+      const plansWithEstimation = await addEstimationToPlans(
+        data.map((pa) => pa.activity_plan).filter(Boolean),
+        ctx.supabase,
+        ctx.session.user.id,
+      );
+
+      // Map back to planned activities
+      const plansMap = new Map(plansWithEstimation.map((p) => [p.id, p]));
+      return data.map((pa) => ({
+        ...pa,
+        activity_plan: pa.activity_plan
+          ? plansMap.get(pa.activity_plan.id)
+          : null,
+      }));
     }
 
     return data || [];
@@ -332,8 +366,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
             activity_location,
             description,
             structure,
-            estimated_tss,
-            estimated_duration,
+            route_id,
             version,
             created_at
           )
@@ -381,6 +414,25 @@ export const plannedActivitiesRouter = createTRPCRouter({
       const hasMore = data.length > limit;
       const items = hasMore ? data.slice(0, limit) : data;
 
+      // Add estimation to each activity plan
+      let itemsWithEstimation = items;
+      if (items.length > 0) {
+        const plansWithEstimation = await addEstimationToPlans(
+          items.map((pa) => pa.activity_plan).filter(Boolean),
+          ctx.supabase,
+          ctx.session.user.id,
+        );
+
+        // Map back to planned activities
+        const plansMap = new Map(plansWithEstimation.map((p) => [p.id, p]));
+        itemsWithEstimation = items.map((pa) => ({
+          ...pa,
+          activity_plan: pa.activity_plan
+            ? plansMap.get(pa.activity_plan.id)
+            : null,
+        }));
+      }
+
       // Generate next cursor from last item
       let nextCursor: string | undefined;
       if (hasMore && items.length > 0) {
@@ -390,7 +442,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
       }
 
       return {
-        items,
+        items: itemsWithEstimation,
         nextCursor,
       };
     }),
@@ -416,11 +468,13 @@ export const plannedActivitiesRouter = createTRPCRouter({
         });
       }
 
-      // Get the activity plan to get estimated_tss
+      // Get the activity plan to calculate TSS
       const { data: activityPlan, error: activityPlanError } =
         await ctx.supabase
           .from("activity_plans")
-          .select("id, estimated_tss")
+          .select(
+            "id, activity_category, activity_location, structure, route_id",
+          )
           .eq("id", input.activity_plan_id)
           .single();
 
@@ -442,7 +496,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
       const endOfWeek = new Date(startOfWeek);
       endOfWeek.setDate(startOfWeek.getDate() + 7);
 
-      // Get this week's planned activities
+      // Get this week's planned activities with full plan data for TSS calculation
       const { data: plannedThisWeek } = await ctx.supabase
         .from("planned_activities")
         .select(
@@ -450,7 +504,11 @@ export const plannedActivitiesRouter = createTRPCRouter({
           id,
           scheduled_date,
           activity_plan:activity_plans (
-            estimated_tss
+            id,
+            activity_category,
+            activity_location,
+            structure,
+            route_id
           )
         `,
         )
@@ -458,14 +516,38 @@ export const plannedActivitiesRouter = createTRPCRouter({
         .gte("scheduled_date", startOfWeek.toISOString().split("T")[0])
         .lt("scheduled_date", endOfWeek.toISOString().split("T")[0]);
 
-      // Calculate current weekly TSS
-      const currentWeeklyTSS = (plannedThisWeek || []).reduce(
-        (sum, pa) => sum + (pa.activity_plan?.estimated_tss || 0),
-        0,
+      // Get user profile for TSS estimation
+      const { data: profile } = await ctx.supabase
+        .from("profiles")
+        .select("ftp, threshold_hr, weight_kg, dob")
+        .eq("id", ctx.session.user.id)
+        .single();
+
+      // Calculate TSS for current week's activities
+      const { estimateActivity, buildEstimationContext } = await import(
+        "../utils/estimation-helpers"
       );
 
+      const currentWeeklyTSS = (plannedThisWeek || []).reduce((sum, pa) => {
+        if (!pa.activity_plan) return sum;
+
+        const context = buildEstimationContext({
+          userProfile: profile || undefined,
+          activityPlan: pa.activity_plan,
+        });
+        const estimation = estimateActivity(context);
+        return sum + estimation.tss;
+      }, 0);
+
+      // Calculate TSS for the new activity
+      const context = buildEstimationContext({
+        userProfile: profile || undefined,
+        activityPlan,
+      });
+      const newActivityEstimation = estimateActivity(context);
+
       // Calculate new weekly TSS
-      const newWeeklyTSS = currentWeeklyTSS + (activityPlan.estimated_tss || 0);
+      const newWeeklyTSS = currentWeeklyTSS + newActivityEstimation.tss;
 
       // Check 1: Weekly TSS constraint
       const maxWeeklyTSS = structure.target_weekly_tss_max || Infinity;
@@ -626,8 +708,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
             activity_location,
             description,
             structure,
-            estimated_tss,
-            estimated_duration,
+            route_id,
             version,
             created_at
           )
@@ -644,6 +725,24 @@ export const plannedActivitiesRouter = createTRPCRouter({
           code: "INTERNAL_SERVER_ERROR",
           message: error.message,
         });
+      }
+
+      // Add estimation to each activity plan
+      if (data && data.length > 0) {
+        const plansWithEstimation = await addEstimationToPlans(
+          data.map((pa) => pa.activity_plan).filter(Boolean),
+          ctx.supabase,
+          ctx.session.user.id,
+        );
+
+        // Map back to planned activities
+        const plansMap = new Map(plansWithEstimation.map((p) => [p.id, p]));
+        return data.map((pa) => ({
+          ...pa,
+          activity_plan: pa.activity_plan
+            ? plansMap.get(pa.activity_plan.id)
+            : null,
+        }));
       }
 
       return data || [];

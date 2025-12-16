@@ -2,7 +2,6 @@ import { Text } from "@/components/ui/text";
 import React from "react";
 import { View } from "react-native";
 import { CartesianChart, Bar } from "victory-native";
-import { useFont } from "@shopify/react-native-skia";
 
 export interface ZoneDistributionWeekData {
   weekStart: string;

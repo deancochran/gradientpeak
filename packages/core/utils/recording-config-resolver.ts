@@ -63,7 +63,9 @@ export class RecordingConfigResolver {
     const shouldShowMap = canTrackLocation || hasRoute;
 
     // Steps: Show if there's a structured plan to follow
-    const shouldShowSteps = hasStructuredPlan;
+    // FAULT TOLERANCE: Always show plan card if in planned mode, even if structure parsing failed
+    // This ensures users can always see their plan details during recording
+    const shouldShowSteps = hasStructuredPlan || input.mode === "planned";
 
     // Route overlay: Show if we're tracking location AND have a route to overlay
     const shouldShowRouteOverlay = canTrackLocation && hasRoute;

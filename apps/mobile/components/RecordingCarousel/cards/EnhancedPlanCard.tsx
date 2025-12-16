@@ -5,7 +5,7 @@ import { Text } from "@/components/ui/text";
 import { useCurrentReadings, usePlan } from "@/lib/hooks/useActivityRecorder";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import {
-  ActivityPlanStructure,
+  type ActivityPlanStructureV2,
   convertTargetToAbsolute,
   extractActivityProfile,
   formatDuration,
@@ -406,7 +406,7 @@ CurrentIntervalView.displayName = "CurrentIntervalView";
 
 interface ActivityGraphViewProps {
   planTimeRemaining: number;
-  structure: ActivityPlanStructure;
+  structure: ActivityPlanStructureV2;
   currentStepIndex: number;
 }
 
@@ -500,7 +500,7 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
     const progressPercent = progress ? progress.progress : 0;
 
     const isPending = service?.state !== "recording";
-    const structure = service?.plan?.structure as ActivityPlanStructure;
+    const structure = service?.plan?.structure as ActivityPlanStructureV2;
 
     const adherenceScore = hasPlan && !isFinished ? 95 : undefined;
 

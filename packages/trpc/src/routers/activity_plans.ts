@@ -6,6 +6,10 @@ import {
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import {
+  addEstimationToPlan,
+  addEstimationToPlans,
+} from "../utils/estimation-helpers";
 
 // Input schemas for queries
 const listActivityPlansSchema = z.object({
@@ -26,12 +30,10 @@ function validateStructure(structure: unknown): void {
 
 const createActivityPlanInput = activityPlanCreateSchema.extend({
   structure: activityPlanStructureSchemaV2, // V2 structure only
-  estimated_tss: z.number().nullable().optional(),
 });
 
 const updateActivityPlanInput = activityPlanUpdateSchema.extend({
   structure: activityPlanStructureSchemaV2.optional(), // V2 structure only
-  estimated_tss: z.number().nullable().optional(),
 });
 
 export const activityPlansRouter = createTRPCRouter({
@@ -53,12 +55,11 @@ export const activityPlansRouter = createTRPCRouter({
           description,
           activity_category,
           activity_location,
-          estimated_duration,
-          estimated_tss,
           structure,
           version,
           created_at,
-          profile_id
+          profile_id,
+          route_id
         `,
         )
         .order("created_at", { ascending: false })
@@ -111,6 +112,13 @@ export const activityPlansRouter = createTRPCRouter({
       const hasMore = data.length > limit;
       const items = hasMore ? data.slice(0, limit) : data;
 
+      // Add dynamic TSS estimation to each plan
+      const itemsWithEstimation = await addEstimationToPlans(
+        items,
+        ctx.supabase,
+        ctx.session.user.id,
+      );
+
       // Generate next cursor from last item
       let nextCursor: string | undefined;
       if (hasMore && items.length > 0) {
@@ -120,7 +128,7 @@ export const activityPlansRouter = createTRPCRouter({
       }
 
       return {
-        items,
+        items: itemsWithEstimation,
         nextCursor,
       };
     }),
@@ -141,12 +149,11 @@ export const activityPlansRouter = createTRPCRouter({
           description,
           activity_category,
           activity_location,
-          estimated_duration,
-          estimated_tss,
           structure,
           version,
           created_at,
-          profile_id
+          profile_id,
+          route_id
         `,
         )
         .eq("id", input.id)
@@ -174,7 +181,14 @@ export const activityPlansRouter = createTRPCRouter({
         // Don't fail the query, but log the issue
       }
 
-      return data;
+      // Add dynamic TSS estimation
+      const planWithEstimation = await addEstimationToPlan(
+        data,
+        ctx.supabase,
+        ctx.session.user.id,
+      );
+
+      return planWithEstimation;
     }),
 
   // ------------------------------
@@ -219,8 +233,6 @@ export const activityPlansRouter = createTRPCRouter({
           ...input,
           profile_id: ctx.session.user.id,
           version: "1.0", // Default version
-          // Convert estimated_tss to null if undefined
-          estimated_tss: input.estimated_tss,
         })
         .select(
           `
@@ -230,12 +242,11 @@ export const activityPlansRouter = createTRPCRouter({
           description,
           activity_category,
           activity_location,
-          estimated_duration,
-          estimated_tss,
           structure,
           version,
           created_at,
-          profile_id
+          profile_id,
+          route_id
         `,
         )
         .single();
@@ -247,7 +258,14 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
-      return data;
+      // Add dynamic TSS estimation to created plan
+      const planWithEstimation = await addEstimationToPlan(
+        data,
+        ctx.supabase,
+        ctx.session.user.id,
+      );
+
+      return planWithEstimation;
     }),
 
   // ------------------------------
@@ -295,11 +313,7 @@ export const activityPlansRouter = createTRPCRouter({
 
       const { data, error } = await ctx.supabase
         .from("activity_plans")
-        .update({
-          ...updates,
-          // Convert estimated_tss to null if undefined
-          estimated_tss: updates.estimated_tss ?? undefined,
-        })
+        .update(updates)
         .eq("id", id)
         .select(
           `
@@ -309,12 +323,11 @@ export const activityPlansRouter = createTRPCRouter({
           description,
           activity_category,
           activity_location,
-          estimated_duration,
-          estimated_tss,
           structure,
           version,
           created_at,
-          profile_id
+          profile_id,
+          route_id
         `,
         )
         .single();
@@ -326,7 +339,14 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
-      return data;
+      // Add dynamic TSS estimation to updated plan
+      const planWithEstimation = await addEstimationToPlan(
+        data,
+        ctx.supabase,
+        ctx.session.user.id,
+      );
+
+      return planWithEstimation;
     }),
 
   // ------------------------------
@@ -405,10 +425,9 @@ export const activityPlansRouter = createTRPCRouter({
           description,
           activity_category,
           activity_location,
-          estimated_duration,
-          estimated_tss,
           structure,
-          version
+          version,
+          route_id
         `,
         )
         .eq("id", input.id)
@@ -443,10 +462,9 @@ export const activityPlansRouter = createTRPCRouter({
           description: originalPlan.description,
           activity_category: originalPlan.activity_category,
           activity_location: originalPlan.activity_location,
-          estimated_duration: originalPlan.estimated_duration,
-          estimated_tss: originalPlan.estimated_tss,
           structure: originalPlan.structure,
           version: originalPlan.version,
+          route_id: originalPlan.route_id,
           profile_id: ctx.session.user.id,
         })
         .select(
@@ -457,12 +475,11 @@ export const activityPlansRouter = createTRPCRouter({
           description,
           activity_category,
           activity_location,
-          estimated_duration,
-          estimated_tss,
           structure,
           version,
           created_at,
-          profile_id
+          profile_id,
+          route_id
         `,
         )
         .single();
@@ -474,6 +491,13 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
-      return data;
+      // Add dynamic TSS estimation to duplicated plan
+      const planWithEstimation = await addEstimationToPlan(
+        data,
+        ctx.supabase,
+        ctx.session.user.id,
+      );
+
+      return planWithEstimation;
     }),
 });

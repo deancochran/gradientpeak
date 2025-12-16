@@ -155,8 +155,6 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
         description: description || null,
         activity_location: activityLocation,
         activity_category: activityCategory,
-        estimated_duration: metrics.durationMinutes * 60 || 60,
-        estimated_tss: null,
         route_id: routeId || null,
         notes: notes || null,
         structure,
@@ -180,7 +178,6 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     activityLocation,
     activityCategory,
     structure,
-    metrics,
     routeId,
     notes,
   ]);
@@ -212,8 +209,7 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
         structure,
         route_id: routeId || null,
         notes: notes || null,
-        estimated_duration: metrics.durationMinutes * 60 || 60, // Convert to seconds
-        estimated_tss: null, // Will be calculated by backend based on structure and user profile
+        // estimated_duration and estimated_tss are now calculated server-side
       };
 
       if (isEditMode) {

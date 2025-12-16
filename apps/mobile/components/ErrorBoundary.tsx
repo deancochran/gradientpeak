@@ -2,7 +2,7 @@
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import { captureException } from "@/lib/services/sentry";
-import { router } from "expo-router";
+import { router, useRouter } from "expo-router";
 import * as React from "react";
 import { ScrollView, View } from "react-native";
 
@@ -93,6 +93,16 @@ export class ErrorBoundary extends React.Component<Props, State> {
  * Default error fallback component
  */
 function DefaultErrorFallback({ error, resetError }: ErrorFallbackProps) {
+  const handleGoHome = () => {
+    try {
+      router.replace("/");
+    } catch (e) {
+      console.error("Failed to navigate home:", e);
+      // If navigation fails, just reset the error
+      resetError();
+    }
+  };
+
   return (
     <View className="flex-1 justify-center items-center p-5 bg-background">
       <Text className="text-destructive text-2xl font-bold mb-3 text-center">
@@ -124,7 +134,7 @@ function DefaultErrorFallback({ error, resetError }: ErrorFallbackProps) {
 
       <Button
         variant="outline"
-        onPress={() => router.replace("/")}
+        onPress={handleGoHome}
         className="w-full max-w-xs"
       >
         <Text className="text-foreground">Go Home</Text>
@@ -137,6 +147,16 @@ function DefaultErrorFallback({ error, resetError }: ErrorFallbackProps) {
  * Screen-level error fallback with full-screen layout
  */
 export function ScreenErrorFallback({ error, resetError }: ErrorFallbackProps) {
+  const handleGoBack = () => {
+    try {
+      router.back();
+    } catch (e) {
+      console.error("Failed to navigate back:", e);
+      // If navigation fails, just reset the error
+      resetError();
+    }
+  };
+
   return (
     <View className="flex-1 justify-center items-center p-6 bg-background">
       <View className="items-center max-w-md">
@@ -173,11 +193,7 @@ export function ScreenErrorFallback({ error, resetError }: ErrorFallbackProps) {
           </Text>
         </Button>
 
-        <Button
-          variant="outline"
-          onPress={() => router.back()}
-          className="w-full"
-        >
+        <Button variant="outline" onPress={handleGoBack} className="w-full">
           <Text className="text-foreground">Go Back</Text>
         </Button>
       </View>
@@ -189,6 +205,16 @@ export function ScreenErrorFallback({ error, resetError }: ErrorFallbackProps) {
  * Modal-level error fallback with compact layout
  */
 export function ModalErrorFallback({ error, resetError }: ErrorFallbackProps) {
+  const handleClose = () => {
+    try {
+      router.back();
+    } catch (e) {
+      console.error("Failed to close modal:", e);
+      // If navigation fails, just reset the error
+      resetError();
+    }
+  };
+
   return (
     <View className="flex-1 justify-center items-center p-5 bg-background">
       <View className="items-center max-w-sm">
@@ -219,7 +245,7 @@ export function ModalErrorFallback({ error, resetError }: ErrorFallbackProps) {
         <Button
           variant="ghost"
           size="sm"
-          onPress={() => router.back()}
+          onPress={handleClose}
           className="w-full"
         >
           <Text className="text-muted-foreground">Close</Text>

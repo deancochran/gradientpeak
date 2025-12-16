@@ -143,8 +143,6 @@ export type Database = {
           activity_location: Database["public"]["Enums"]["activity_location"]
           created_at: string
           description: string
-          estimated_duration: number
-          estimated_tss: number
           id: string
           idx: number
           name: string
@@ -160,8 +158,6 @@ export type Database = {
           activity_location?: Database["public"]["Enums"]["activity_location"]
           created_at?: string
           description: string
-          estimated_duration: number
-          estimated_tss: number
           id?: string
           idx?: number
           name: string
@@ -177,8 +173,6 @@ export type Database = {
           activity_location?: Database["public"]["Enums"]["activity_location"]
           created_at?: string
           description?: string
-          estimated_duration?: number
-          estimated_tss?: number
           id?: string
           idx?: number
           name?: string
