@@ -1,4 +1,4 @@
-import { publicProfilesUpdateSchema } from "@repo/supabase";
+import { publicProfilesUpdateSchema } from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
@@ -15,10 +15,8 @@ const profileStatsSchema = z.object({
 });
 
 const trainingZonesUpdateSchema = z.object({
-  maxHeartRate: z.number().optional(),
-  restingHeartRate: z.number().optional(),
-  ftpWatts: z.number().optional(),
-  zoneCalculationMethod: z.string().optional(),
+  threshold_hr: z.number().int().positive().optional(),
+  ftp: z.number().int().positive().optional(),
 });
 
 export const profilesRouter = createTRPCRouter({
@@ -182,9 +180,7 @@ export const profilesRouter = createTRPCRouter({
     try {
       const { data: profile, error } = await ctx.supabase
         .from("profiles")
-        .select(
-          "max_heart_rate, resting_heart_rate, ftp_watts, zone_calculation_method",
-        )
+        .select("threshold_hr, ftp")
         .eq("id", ctx.session.user.id)
         .single();
 
@@ -195,82 +191,61 @@ export const profilesRouter = createTRPCRouter({
         });
       }
 
-      // Calculate heart rate zones (basic 5-zone model)
-      const heartRateZones =
-        profile.max_heart_rate && profile.resting_heart_rate
-          ? {
-              zone1: {
-                min: profile.resting_heart_rate,
-                max: Math.round(
-                  profile.resting_heart_rate +
-                    (profile.max_heart_rate - profile.resting_heart_rate) * 0.6,
-                ),
-              },
-              zone2: {
-                min: Math.round(
-                  profile.resting_heart_rate +
-                    (profile.max_heart_rate - profile.resting_heart_rate) * 0.6,
-                ),
-                max: Math.round(
-                  profile.resting_heart_rate +
-                    (profile.max_heart_rate - profile.resting_heart_rate) * 0.7,
-                ),
-              },
-              zone3: {
-                min: Math.round(
-                  profile.resting_heart_rate +
-                    (profile.max_heart_rate - profile.resting_heart_rate) * 0.7,
-                ),
-                max: Math.round(
-                  profile.resting_heart_rate +
-                    (profile.max_heart_rate - profile.resting_heart_rate) * 0.8,
-                ),
-              },
-              zone4: {
-                min: Math.round(
-                  profile.resting_heart_rate +
-                    (profile.max_heart_rate - profile.resting_heart_rate) * 0.8,
-                ),
-                max: Math.round(
-                  profile.resting_heart_rate +
-                    (profile.max_heart_rate - profile.resting_heart_rate) * 0.9,
-                ),
-              },
-              zone5: {
-                min: Math.round(
-                  profile.resting_heart_rate +
-                    (profile.max_heart_rate - profile.resting_heart_rate) * 0.9,
-                ),
-                max: profile.max_heart_rate,
-              },
-            }
-          : null;
-
-      // Calculate power zones (basic 7-zone model based on FTP)
-      const powerZones = profile.ftp_watts
+      // Calculate heart rate zones based on threshold HR
+      // Threshold HR is typically at the top of Zone 3 (~85-90% of max HR)
+      const heartRateZones = profile.threshold_hr
         ? {
-            zone1: { min: 0, max: Math.round(profile.ftp_watts * 0.55) },
+            // Estimate max HR from threshold (assuming threshold is ~87% of max)
+            maxHR: Math.round(profile.threshold_hr / 0.87),
+
+            zone1: {
+              min: Math.round(profile.threshold_hr * 0.55), // ~50-60% max HR
+              max: Math.round(profile.threshold_hr * 0.75), // ~65% max HR
+            },
             zone2: {
-              min: Math.round(profile.ftp_watts * 0.55),
-              max: Math.round(profile.ftp_watts * 0.75),
+              min: Math.round(profile.threshold_hr * 0.75), // ~65% max HR
+              max: Math.round(profile.threshold_hr * 0.87), // ~75% max HR
             },
             zone3: {
-              min: Math.round(profile.ftp_watts * 0.75),
-              max: Math.round(profile.ftp_watts * 0.9),
+              min: Math.round(profile.threshold_hr * 0.87), // ~75% max HR
+              max: Math.round(profile.threshold_hr * 0.98), // ~85% max HR (at threshold)
             },
             zone4: {
-              min: Math.round(profile.ftp_watts * 0.9),
-              max: Math.round(profile.ftp_watts * 1.05),
+              min: Math.round(profile.threshold_hr * 0.98), // ~85% max HR
+              max: Math.round(profile.threshold_hr * 1.06), // ~92% max HR
             },
             zone5: {
-              min: Math.round(profile.ftp_watts * 1.05),
-              max: Math.round(profile.ftp_watts * 1.2),
+              min: Math.round(profile.threshold_hr * 1.06), // ~92% max HR
+              max: Math.round(profile.threshold_hr / 0.87), // ~100% max HR
+            },
+          }
+        : null;
+
+      // Calculate power zones (basic 7-zone model based on FTP)
+      const powerZones = profile.ftp
+        ? {
+            zone1: { min: 0, max: Math.round(profile.ftp * 0.55) },
+            zone2: {
+              min: Math.round(profile.ftp * 0.55),
+              max: Math.round(profile.ftp * 0.75),
+            },
+            zone3: {
+              min: Math.round(profile.ftp * 0.75),
+              max: Math.round(profile.ftp * 0.9),
+            },
+            zone4: {
+              min: Math.round(profile.ftp * 0.9),
+              max: Math.round(profile.ftp * 1.05),
+            },
+            zone5: {
+              min: Math.round(profile.ftp * 1.05),
+              max: Math.round(profile.ftp * 1.2),
             },
             zone6: {
-              min: Math.round(profile.ftp_watts * 1.2),
-              max: Math.round(profile.ftp_watts * 1.5),
+              min: Math.round(profile.ftp * 1.2),
+              max: Math.round(profile.ftp * 1.5),
             },
-            zone7: { min: Math.round(profile.ftp_watts * 1.5), max: null },
+            zone7: { min: Math.round(profile.ftp * 1.5), max: null },
           }
         : null;
 
@@ -278,10 +253,8 @@ export const profilesRouter = createTRPCRouter({
         heartRateZones,
         powerZones,
         profile: {
-          maxHeartRate: profile.max_heart_rate,
-          restingHeartRate: profile.resting_heart_rate,
-          ftpWatts: profile.ftp_watts,
-          zoneCalculationMethod: profile.zone_calculation_method,
+          threshold_hr: profile.threshold_hr,
+          ftp: profile.ftp,
         },
       };
     } catch (error) {
@@ -301,13 +274,10 @@ export const profilesRouter = createTRPCRouter({
       try {
         const updateData: any = {};
 
-        if (input.maxHeartRate !== undefined)
-          updateData.max_heart_rate = input.maxHeartRate;
-        if (input.restingHeartRate !== undefined)
-          updateData.resting_heart_rate = input.restingHeartRate;
-        if (input.ftpWatts !== undefined) updateData.ftp_watts = input.ftpWatts;
-        if (input.zoneCalculationMethod !== undefined)
-          updateData.zone_calculation_method = input.zoneCalculationMethod;
+        // Map input fields to actual schema columns
+        if (input.threshold_hr !== undefined)
+          updateData.threshold_hr = input.threshold_hr;
+        if (input.ftp !== undefined) updateData.ftp = input.ftp;
 
         const { data: profile, error } = await ctx.supabase
           .from("profiles")

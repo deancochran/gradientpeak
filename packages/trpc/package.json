@@ -7,6 +7,11 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src",
+    "watch": "tsc --noEmit --watch --preserveWatchOutput"
+  },
   "dependencies": {
     "@repo/core": "workspace:*",
     "@repo/supabase": "workspace:*",

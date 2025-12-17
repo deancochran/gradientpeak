@@ -10,8 +10,6 @@ export const UPPER_BODY_STRENGTH: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Upper Body Strength",
   description: "Comprehensive upper body strength training session",
-  estimated_tss: 50,
-  estimated_duration: 2700, // 45 minutes
   structure: createPlan()
     .step({
       name: "Dynamic Warm-up",
@@ -60,8 +58,6 @@ export const LOWER_BODY_STRENGTH: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Lower Body Strength",
   description: "Comprehensive lower body strength and power training",
-  estimated_tss: 60,
-  estimated_duration: 3000, // 50 minutes
   structure: createPlan()
     .step({
       name: "Dynamic Warm-up",
@@ -110,8 +106,6 @@ export const FULL_BODY_CIRCUIT: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Full Body Circuit",
   description: "High-intensity full body circuit training",
-  estimated_tss: 65,
-  estimated_duration: 2400, // 40 minutes
   structure: createPlan()
     .step({
       name: "Movement Prep",
@@ -155,8 +149,6 @@ export const CORE_STABILITY: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Core and Stability",
   description: "Focused core strength and stability training",
-  estimated_tss: 35,
-  estimated_duration: 1800, // 30 minutes
   structure: createPlan()
     .step({
       name: "Core Activation",
@@ -205,8 +197,6 @@ export const FUNCTIONAL_MOVEMENT: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Functional Movement",
   description: "Movement patterns for daily life and sport performance",
-  estimated_tss: 45,
-  estimated_duration: 2100, // 35 minutes
   structure: createPlan()
     .step({
       name: "Movement Preparation",

@@ -2,11 +2,11 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
-import {
-  ActivityPayload,
-  ActivityType,
-  getSampleActivitiesByType,
+import type {
+  PublicActivityCategory,
+  PublicActivityLocation,
 } from "@repo/core";
+import { ActivityPayload, getSampleActivitiesByCategory } from "@repo/core";
 import { useRouter } from "expo-router";
 import {
   Activity,
@@ -27,63 +27,71 @@ import { TouchableOpacity, View } from "react-native";
 // Category configurations
 const CATEGORIES = [
   {
-    id: "outdoor_run",
+    id: "run-outdoor",
     name: "Running",
     icon: Footprints,
     color: "text-emerald-600",
-    activityType: "outdoor_run" as ActivityType,
+    category: "run" as PublicActivityCategory,
+    location: "outdoor" as PublicActivityLocation,
   },
   {
-    id: "outdoor_bike",
+    id: "bike-outdoor",
     name: "Cycling",
     icon: Bike,
     color: "text-blue-600",
-    activityType: "outdoor_bike" as ActivityType,
+    category: "bike" as PublicActivityCategory,
+    location: "outdoor" as PublicActivityLocation,
   },
   {
-    id: "indoor_bike_trainer",
+    id: "bike-indoor",
     name: "Indoor Cycling",
     icon: Bike,
     color: "text-orange-600",
-    activityType: "indoor_bike_trainer" as ActivityType,
+    category: "bike" as PublicActivityCategory,
+    location: "indoor" as PublicActivityLocation,
   },
   {
-    id: "indoor_treadmill",
+    id: "run-indoor",
     name: "Treadmill",
     icon: Footprints,
     color: "text-purple-600",
-    activityType: "indoor_treadmill" as ActivityType,
+    category: "run" as PublicActivityCategory,
+    location: "indoor" as PublicActivityLocation,
   },
   {
-    id: "indoor_strength",
+    id: "strength-indoor",
     name: "Strength",
     icon: Dumbbell,
     color: "text-red-600",
-    activityType: "indoor_strength" as ActivityType,
+    category: "strength" as PublicActivityCategory,
+    location: "indoor" as PublicActivityLocation,
   },
   {
-    id: "indoor_swim",
+    id: "swim-indoor",
     name: "Swimming",
     icon: Waves,
     color: "text-cyan-600",
-    activityType: "indoor_swim" as ActivityType,
+    category: "swim" as PublicActivityCategory,
+    location: "indoor" as PublicActivityLocation,
   },
   {
-    id: "other",
+    id: "other-outdoor",
     name: "Other",
     icon: Activity,
     color: "text-gray-600",
-    activityType: "other" as ActivityType,
+    category: "other" as PublicActivityCategory,
+    location: "outdoor" as PublicActivityLocation,
   },
   // Conditionally spread the dev object into the array
   ...(__DEV__
     ? [
         {
-          id: "dev",
+          id: "dev-outdoor",
           name: "Dev",
           icon: Code,
           color: "text-blue-600",
-          activityType: "dev" as ActivityType,
+          category: "dev" as any,
+          location: "outdoor" as PublicActivityLocation,
         },
       ]
     : []),
@@ -101,7 +109,10 @@ export function TemplatesList({ onTemplateSelect }: TemplatesListProps) {
     return (
       <View className="gap-3">
         {CATEGORIES.map((category) => {
-          const templates = getSampleActivitiesByType(category.activityType);
+          const templates = getSampleActivitiesByCategory(
+            category.category as any,
+            category.location,
+          );
 
           return (
             <TouchableOpacity
@@ -147,7 +158,10 @@ export function TemplatesList({ onTemplateSelect }: TemplatesListProps) {
   const category = CATEGORIES.find((c) => c.id === selectedCategory);
   if (!category) return null;
 
-  const templates = getSampleActivitiesByType(category.activityType);
+  const templates = getSampleActivitiesByCategory(
+    category.category as any,
+    category.location,
+  );
 
   return (
     <View className="gap-3">
@@ -179,7 +193,8 @@ export function TemplatesList({ onTemplateSelect }: TemplatesListProps) {
   // Handle template selection for follow along mode
   function handleFollowAlong(template: any) {
     const payload: ActivityPayload = {
-      type: template.activity_category,
+      category: template.activity_category,
+      location: template.activity_location || category.location,
       plan: template,
     };
     activitySelectionStore.setSelection(payload);
@@ -189,7 +204,8 @@ export function TemplatesList({ onTemplateSelect }: TemplatesListProps) {
   // Handle template selection for record mode
   function handleRecord(template: any) {
     const payload: ActivityPayload = {
-      type: template.activity_category,
+      category: template.activity_category,
+      location: template.activity_location || category.location,
       plan: template,
     };
     onTemplateSelect(payload);

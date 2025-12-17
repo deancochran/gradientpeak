@@ -37,7 +37,7 @@ interface EnhancedPlanCardProps {
 
 interface ProfileMetrics {
   ftp?: number;
-  thresholdHr?: number;
+  threshold_hr?: number;
 }
 
 // ================================
@@ -60,7 +60,7 @@ function getProfileMetrics(
 
   return {
     ftp: profile?.ftp,
-    thresholdHr: profile?.thresholdHr,
+    threshold_hr: profile?.threshold_hr,
   };
 }
 
@@ -74,7 +74,7 @@ function getProfileMetrics(
 function formatIntervalDescription(
   duration: number,
   targets?: IntensityTarget[],
-  profile?: { ftp?: number; thresholdHr?: number },
+  profile?: { ftp?: number; threshold_hr?: number },
 ): string {
   const parts: string[] = [];
 

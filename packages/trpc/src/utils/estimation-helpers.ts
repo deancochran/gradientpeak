@@ -2,30 +2,21 @@
  * Helper functions for integrating TSS estimation into tRPC endpoints
  */
 
+import type {
+  PublicActivityPlansRow,
+  PublicActivityRoutesRow,
+} from "@repo/core";
 import {
+  buildEstimationContext,
   estimateActivity,
   estimateMetrics,
-  buildEstimationContext,
-  type EstimationResult,
-  type MetricEstimations,
 } from "@repo/core/estimation";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
  * Activity plan with estimation added
  */
-export interface ActivityPlanWithEstimation {
-  id: string;
-  idx: number;
-  name: string;
-  description: string;
-  activity_category: string;
-  activity_location: string;
-  structure: any;
-  version: string;
-  created_at: string;
-  profile_id: string | null;
-  route_id?: string | null;
+export interface ActivityPlanWithEstimation extends PublicActivityPlansRow {
   // Dynamically calculated fields
   estimated_tss: number;
   estimated_duration: number;
@@ -40,7 +31,7 @@ export interface ActivityPlanWithEstimation {
  * Calculate TSS and metrics for a single activity plan
  */
 export async function addEstimationToPlan(
-  plan: any,
+  plan: PublicActivityPlansRow,
   supabase: SupabaseClient,
   userId: string,
 ): Promise<ActivityPlanWithEstimation> {
@@ -69,7 +60,7 @@ export async function addEstimationToPlan(
       activity_category: plan.activity_category,
       activity_location: plan.activity_location,
       structure: plan.structure,
-      route_id: plan.route_id,
+      route_id: plan.route_id ?? undefined,
     },
     route,
   });
@@ -95,7 +86,7 @@ export async function addEstimationToPlan(
  * More efficient than calling addEstimationToPlan repeatedly
  */
 export async function addEstimationToPlans(
-  plans: any[],
+  plans: PublicActivityPlansRow[],
   supabase: SupabaseClient,
   userId: string,
 ): Promise<ActivityPlanWithEstimation[]> {
@@ -140,7 +131,7 @@ export async function addEstimationToPlans(
           activity_category: plan.activity_category,
           activity_location: plan.activity_location,
           structure: plan.structure,
-          route_id: plan.route_id,
+          route_id: plan.route_id ?? undefined,
         },
         route,
       });
@@ -218,11 +209,11 @@ export async function estimatePlannedActivity(
     .single();
 
   // Fetch route if referenced
-  let route: any = undefined;
+  let route: PublicActivityRoutesRow;
   if (plan.route_id) {
     const { data: routeData } = await supabase
-      .from("routes")
-      .select("distance_meters, total_ascent, total_descent, average_grade")
+      .from("activity_routes")
+      .select("*")
       .eq("id", plan.route_id)
       .single();
     route = routeData;

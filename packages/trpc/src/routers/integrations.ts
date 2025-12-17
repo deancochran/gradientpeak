@@ -1,9 +1,10 @@
 import type {
   PublicIntegrationProvider,
+  PublicIntegrationsInsert,
   PublicIntegrationsRow,
   PublicIntegrationsUpdate,
 } from "@repo/core";
-import type { PublicIntegrationsInsert } from "@repo/supabase";
+
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { WahooSyncService } from "../lib/integrations/wahoo/sync-service";

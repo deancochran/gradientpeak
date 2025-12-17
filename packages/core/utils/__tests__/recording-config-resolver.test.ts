@@ -12,7 +12,7 @@ describe("RecordingConfigResolver", () => {
   describe("Outdoor Activities", () => {
     it("outdoor run with GPS - shows map, tracks location", () => {
       const input: RecordingConfigInput = {
-        activityType: "outdoor_run",
+        activityCategory: "run", activityLocation: "outdoor",
         mode: "unplanned",
         devices: {
           hasPowerMeter: false,
@@ -34,7 +34,7 @@ describe("RecordingConfigResolver", () => {
 
     it("outdoor run without GPS - validation error", () => {
       const input: RecordingConfigInput = {
-        activityType: "outdoor_run",
+        activityCategory: "run", activityLocation: "outdoor",
         mode: "unplanned",
         devices: {
           hasPowerMeter: false,
@@ -54,7 +54,7 @@ describe("RecordingConfigResolver", () => {
 
     it("outdoor bike with structured plan and GPS - shows map and steps", () => {
       const input: RecordingConfigInput = {
-        activityType: "outdoor_bike",
+        activityCategory: "bike", activityLocation: "outdoor",
         mode: "planned",
         plan: {
           hasStructure: true,
@@ -84,7 +84,7 @@ describe("RecordingConfigResolver", () => {
   describe("Indoor Trainer Activities", () => {
     it("indoor trainer without plan - shows trainer control, no auto control", () => {
       const input: RecordingConfigInput = {
-        activityType: "indoor_bike_trainer",
+        activityCategory: "bike", activityLocation: "indoor",
         mode: "unplanned",
         devices: {
           ftmsTrainer: {
@@ -114,7 +114,7 @@ describe("RecordingConfigResolver", () => {
 
     it("indoor trainer with structured plan - shows steps, power target, auto control", () => {
       const input: RecordingConfigInput = {
-        activityType: "indoor_bike_trainer",
+        activityCategory: "bike", activityLocation: "indoor",
         mode: "planned",
         plan: {
           hasStructure: true,
@@ -151,7 +151,7 @@ describe("RecordingConfigResolver", () => {
 
     it("indoor trainer with route (visualization) - shows map but no navigation", () => {
       const input: RecordingConfigInput = {
-        activityType: "indoor_bike_trainer",
+        activityCategory: "bike", activityLocation: "indoor",
         mode: "planned",
         plan: {
           hasStructure: true,
@@ -182,7 +182,7 @@ describe("RecordingConfigResolver", () => {
 
     it("indoor trainer with manual advance steps", () => {
       const input: RecordingConfigInput = {
-        activityType: "indoor_bike_trainer",
+        activityCategory: "bike", activityLocation: "indoor",
         mode: "planned",
         plan: {
           hasStructure: true,
@@ -206,7 +206,7 @@ describe("RecordingConfigResolver", () => {
 
     it("indoor trainer with route only (no structured plan) - shows map, trainer control, auto-erg via grade", () => {
       const input: RecordingConfigInput = {
-        activityType: "indoor_bike_trainer",
+        activityCategory: "bike", activityLocation: "indoor",
         mode: "planned",
         plan: {
           hasStructure: false, // No structured workout steps
@@ -245,7 +245,7 @@ describe("RecordingConfigResolver", () => {
   describe("Indoor Treadmill Activities", () => {
     it("treadmill with structured plan - shows steps, time-based", () => {
       const input: RecordingConfigInput = {
-        activityType: "indoor_treadmill",
+        activityCategory: "run", activityLocation: "indoor",
         mode: "planned",
         plan: {
           hasStructure: true,
@@ -274,7 +274,7 @@ describe("RecordingConfigResolver", () => {
   describe("Strength Training", () => {
     it("strength with structured plan - reps-based, shows steps", () => {
       const input: RecordingConfigInput = {
-        activityType: "indoor_strength",
+        activityCategory: "strength", activityLocation: "indoor",
         mode: "planned",
         plan: {
           hasStructure: true,
@@ -303,7 +303,7 @@ describe("RecordingConfigResolver", () => {
   describe("Swimming", () => {
     it("swim activity - requires follow-along", () => {
       const input: RecordingConfigInput = {
-        activityType: "indoor_swim",
+        activityCategory: "swim", activityLocation: "indoor",
         mode: "planned",
         plan: {
           hasStructure: true,
@@ -330,7 +330,7 @@ describe("RecordingConfigResolver", () => {
   describe("Planned vs Unplanned", () => {
     it("planned without structure - warns and acts as unplanned", () => {
       const input: RecordingConfigInput = {
-        activityType: "indoor_bike_trainer",
+        activityCategory: "bike", activityLocation: "indoor",
         mode: "planned",
         plan: {
           hasStructure: false, // No structure!
@@ -359,7 +359,7 @@ describe("RecordingConfigResolver", () => {
   describe("Device Connectivity", () => {
     it("no sensors for continuous activity - info warning", () => {
       const input: RecordingConfigInput = {
-        activityType: "indoor_bike_trainer",
+        activityCategory: "bike", activityLocation: "indoor",
         mode: "unplanned",
         devices: {
           hasPowerMeter: false,
@@ -378,7 +378,7 @@ describe("RecordingConfigResolver", () => {
 
     it("with heart rate sensor - can track heart rate", () => {
       const input: RecordingConfigInput = {
-        activityType: "indoor_treadmill",
+        activityCategory: "run", activityLocation: "indoor",
         mode: "unplanned",
         devices: {
           hasPowerMeter: false,
@@ -398,7 +398,7 @@ describe("RecordingConfigResolver", () => {
   describe("Primary Metric Selection", () => {
     it("prioritizes reps for step-based activities", () => {
       const input: RecordingConfigInput = {
-        activityType: "indoor_strength",
+        activityCategory: "strength", activityLocation: "indoor",
         mode: "planned",
         plan: {
           hasStructure: true,
@@ -421,7 +421,7 @@ describe("RecordingConfigResolver", () => {
 
     it("prioritizes power when available", () => {
       const input: RecordingConfigInput = {
-        activityType: "indoor_bike_trainer",
+        activityCategory: "bike", activityLocation: "indoor",
         mode: "unplanned",
         devices: {
           hasPowerMeter: true,
@@ -438,7 +438,7 @@ describe("RecordingConfigResolver", () => {
 
     it("falls back to distance when GPS available", () => {
       const input: RecordingConfigInput = {
-        activityType: "outdoor_run",
+        activityCategory: "run", activityLocation: "outdoor",
         mode: "unplanned",
         devices: {
           hasPowerMeter: false,
@@ -455,7 +455,7 @@ describe("RecordingConfigResolver", () => {
 
     it("falls back to time when nothing else available", () => {
       const input: RecordingConfigInput = {
-        activityType: "indoor_treadmill",
+        activityCategory: "run", activityLocation: "indoor",
         mode: "unplanned",
         devices: {
           hasPowerMeter: false,
@@ -474,7 +474,7 @@ describe("RecordingConfigResolver", () => {
   describe("Edge Cases", () => {
     it("handles undefined plan gracefully", () => {
       const input: RecordingConfigInput = {
-        activityType: "indoor_bike_trainer",
+        activityCategory: "bike", activityLocation: "indoor",
         mode: "unplanned",
         devices: {
           hasPowerMeter: false,
@@ -493,7 +493,7 @@ describe("RecordingConfigResolver", () => {
 
     it("handles FTMS trainer with auto control disabled", () => {
       const input: RecordingConfigInput = {
-        activityType: "indoor_bike_trainer",
+        activityCategory: "bike", activityLocation: "indoor",
         mode: "planned",
         plan: {
           hasStructure: true,

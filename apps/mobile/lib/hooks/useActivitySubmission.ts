@@ -323,13 +323,8 @@ function calculateActivityMetrics(
   // Note: recovery_time and training_load would come from profile if available
   // For now, we'll omit them if not present
 
-  // Determine location based on activity type
-  const activityType = metadata.activityType;
-  const location = activityType.startsWith("outdoor")
-    ? "outdoor"
-    : activityType.startsWith("indoor")
-      ? "indoor"
-      : null;
+  // Get location from metadata
+  const location = metadata.activityLocation;
 
   return {
     durationSeconds: duration_seconds,
@@ -583,8 +578,8 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         profile_id: metadata.profileId,
         started_at: metadata.startedAt,
         finished_at: metadata.endedAt,
-        name: `${metadata.activityType.replace(/_/g, " ")} - ${new Date(metadata.startedAt).toLocaleDateString()}`,
-        type: mapActivityTypeToCategory(metadata.activityType),
+        name: `${metadata.activityLocation} ${metadata.activityCategory} - ${new Date(metadata.startedAt).toLocaleDateString()}`,
+        type: metadata.activityCategory,
         location: calculatedMetrics.location,
         duration_seconds: calculatedMetrics.durationSeconds,
         moving_seconds: calculatedMetrics.movingSeconds,

@@ -6,6 +6,7 @@
 import type { ActivityPlanStructure } from "@repo/core";
 import type { Database } from "@repo/supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { toActivityType } from "./activity-type-utils";
 import { createWahooClient, supportsRoutes } from "./client";
 import {
   convertToWahooPlan,
@@ -13,13 +14,12 @@ import {
   validateWahooCompatibility,
 } from "./plan-converter";
 import {
-  prepareGPXForWahoo,
   extractStartCoordinates,
   getWorkoutTypeFamilyForRoute,
+  prepareGPXForWahoo,
   validateRouteForWahoo,
   type RouteFileData,
 } from "./route-converter";
-import { toActivityType } from "./activity-type-utils";
 
 type SyncAction = "created" | "updated" | "recreated" | "no_change";
 
@@ -153,14 +153,14 @@ export class WahooSyncService {
               routeData = {
                 filePath: route.file_path,
                 name: route.name,
-                description: route.description,
+                description: route.description ?? undefined,
                 activityType: toActivityType(
                   route.activity_category,
                   "outdoor",
                 ),
                 totalDistance: route.total_distance,
-                totalAscent: route.total_ascent,
-                totalDescent: route.total_descent,
+                totalAscent: route.total_ascent ?? undefined,
+                totalDescent: route.total_descent ?? undefined,
                 startLat: startCoords?.latitude,
                 startLng: startCoords?.longitude,
               };
@@ -175,7 +175,7 @@ export class WahooSyncService {
       // 5. Check if already synced
       const { data: existingSync } = await this.supabase
         .from("synced_planned_activities")
-        .select("id, external_workout_id, updated_at")
+        .select("id, external_id, updated_at")
         .eq("planned_activity_id", plannedActivityId)
         .eq("provider", "wahoo")
         .single();
@@ -342,7 +342,7 @@ export class WahooSyncService {
       profile_id: profileId,
       planned_activity_id: planned.id,
       provider: "wahoo",
-      external_workout_id: workout.id.toString(),
+      external_id: workout.id.toString(),
       synced_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
@@ -379,7 +379,7 @@ export class WahooSyncService {
     if (!structureChanged) {
       // Only metadata might have changed (name or date)
       // Update the workout
-      await wahooClient.updateWorkout(existingSync.external_workout_id, {
+      await wahooClient.updateWorkout(existingSync.external_id, {
         name: planned.activity_plan.name,
         scheduledDate: new Date(planned.scheduled_date).toISOString(),
       });
@@ -393,7 +393,7 @@ export class WahooSyncService {
       return {
         success: true,
         action: "updated",
-        workoutId: existingSync.external_workout_id,
+        workoutId: existingSync.external_id,
         warnings,
       };
     } else {
@@ -426,7 +426,7 @@ export class WahooSyncService {
 
       // Delete old workout
       try {
-        await wahooClient.deleteWorkout(existingSync.external_workout_id);
+        await wahooClient.deleteWorkout(existingSync.external_id);
       } catch (error) {
         // Log but don't fail if old workout can't be deleted
         console.warn("Failed to delete old Wahoo workout:", error);
@@ -436,7 +436,7 @@ export class WahooSyncService {
       await this.supabase
         .from("synced_planned_activities")
         .update({
-          external_workout_id: workout.id.toString(),
+          external_id: workout.id.toString(),
           updated_at: new Date().toISOString(),
         })
         .eq("id", existingSync.id);
@@ -461,7 +461,7 @@ export class WahooSyncService {
       // 1. Fetch sync record
       const { data: sync, error: syncError } = await this.supabase
         .from("synced_planned_activities")
-        .select("id, external_workout_id")
+        .select("id, external_id")
         .eq("planned_activity_id", plannedActivityId)
         .eq("provider", "wahoo")
         .eq("profile_id", profileId)
@@ -498,7 +498,7 @@ export class WahooSyncService {
       });
 
       try {
-        await wahooClient.deleteWorkout(sync.external_workout_id);
+        await wahooClient.deleteWorkout(sync.external_id);
       } catch (error) {
         console.warn("Failed to delete Wahoo workout:", error);
         // Continue to delete sync record even if Wahoo delete fails

@@ -18,8 +18,6 @@ export const SAMPLE_SWEET_SPOT_WORKOUT: RecordingServiceActivityPlan = {
   name: "Sweet Spot Intervals",
   description:
     "60-minute indoor trainer activity focusing on sweet spot power development. Focus on maintaining steady power output during intervals. Use cadence of 85-95 RPM throughout",
-  estimated_tss: 75,
-  estimated_duration: 3600,
   structure: createPlan()
     .step({
       name: "Easy Warm-up",
@@ -74,8 +72,6 @@ export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "VO2 Max Development",
   description: "75-minute activity with challenging VO2 max intervals",
-  estimated_tss: 95,
-  estimated_duration: 4500,
   structure: createPlan()
     .step({
       name: "Progressive Warm-up",
@@ -142,8 +138,6 @@ export const SAMPLE_RECOVERY_WORKOUT: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Active Recovery Ride",
   description: "45-minute easy recovery ride to promote blood flow",
-  estimated_tss: 25,
-  estimated_duration: 2700,
   structure: createPlan()
     .step({
       name: "Easy Warm-up",
@@ -177,8 +171,6 @@ export const SAMPLE_SPRINT_WORKOUT: RecordingServiceActivityPlan = {
   name: "Sprint Power Development",
   description:
     "Short activity focusing on neuromuscular power and sprint development",
-  estimated_tss: 55,
-  estimated_duration: 2100,
   structure: createPlan()
     .step({
       name: "Progressive Warm-up",
@@ -234,8 +226,6 @@ export const SAMPLE_THRESHOLD_HR_WORKOUT: RecordingServiceActivityPlan = {
   name: "Threshold Heart Rate Intervals",
   description:
     "45-minute indoor trainer activity focused on threshold heart rate intervals. Maintain steady cadence of 85-95 RPM and target threshold HR zones during main intervals.",
-  estimated_tss: 60,
-  estimated_duration: 2700, // 45 minutes
   structure: createPlan()
     .step({
       name: "Easy Warm-up",
@@ -281,8 +271,6 @@ export const SAMPLE_TESTING_WORKOUT: RecordingServiceActivityPlan = {
   name: "Comprehensive 1-Minute Schema Test",
   description:
     "A short test activity containing every major step type and target style to validate parsing, UI rendering, and compliance scoring.",
-  estimated_tss: 1,
-  estimated_duration: 60,
   structure: createPlan()
     .step({
       name: "Warm-up Spin",

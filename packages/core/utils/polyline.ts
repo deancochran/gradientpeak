@@ -1,4 +1,4 @@
-import polyline from '@mapbox/polyline';
+import polyline from "@mapbox/polyline";
 
 export interface LatLng {
   latitude: number;
@@ -56,10 +56,7 @@ export function simplifyCoordinates(
 /**
  * Douglas-Peucker algorithm for coordinate simplification
  */
-function douglasPeucker(
-  points: LatLngAlt[],
-  tolerance: number,
-): LatLngAlt[] {
+function douglasPeucker(points: LatLngAlt[], tolerance: number): LatLngAlt[] {
   if (points.length <= 2) return points;
 
   let maxDistance = 0;
@@ -67,10 +64,17 @@ function douglasPeucker(
 
   const first = points[0];
   const last = points[points.length - 1];
+  if (!first || !last) {
+    throw new Error("Point Assumed but not found");
+  }
 
   // Find the point with maximum distance from the line
   for (let i = 1; i < points.length - 1; i++) {
-    const distance = perpendicularDistance(points[i], first, last);
+    const point = points[i];
+    if (!point) {
+      throw new Error("Point Assumed but not found");
+    }
+    const distance = perpendicularDistance(point, first, last);
     if (distance > maxDistance) {
       maxDistance = distance;
       maxIndex = i;
@@ -165,6 +169,9 @@ export function calculateRouteStats(coords: LatLngAlt[]): RouteStats {
   for (let i = 1; i < coords.length; i++) {
     const prev = coords[i - 1];
     const curr = coords[i];
+    if (!prev || !curr) {
+      throw new Error("LatLng Assumed but not found");
+    }
 
     // Calculate distance
     totalDistance += calculateDistance(prev, curr);
@@ -218,11 +225,15 @@ export function calculateBounds(coords: LatLng[]): {
   if (coords.length === 0) {
     return { minLat: 0, maxLat: 0, minLng: 0, maxLng: 0 };
   }
+  const firstCoord = coords[0];
+  if (!firstCoord) {
+    throw new Error("No Coord found");
+  }
 
-  let minLat = coords[0].latitude;
-  let maxLat = coords[0].latitude;
-  let minLng = coords[0].longitude;
-  let maxLng = coords[0].longitude;
+  let minLat = firstCoord.latitude;
+  let maxLat = firstCoord.latitude;
+  let minLng = firstCoord.longitude;
+  let maxLng = firstCoord.longitude;
 
   for (const coord of coords) {
     minLat = Math.min(minLat, coord.latitude);

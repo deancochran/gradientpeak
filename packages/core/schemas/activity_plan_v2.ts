@@ -227,7 +227,7 @@ export function formatIntensityTarget(target: IntensityTargetV2): string {
     case "RPE":
       return `${target.intensity}/10`;
     default:
-      return `${target.intensity}`;
+      return `No Target Intensity`;
   }
 }
 

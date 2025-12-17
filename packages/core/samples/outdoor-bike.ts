@@ -10,8 +10,6 @@ export const EASY_ENDURANCE_RIDE: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Easy Endurance Ride",
   description: "Comfortable outdoor ride focusing on aerobic base building",
-  estimated_tss: 45,
-  estimated_duration: 3600, // 60 minutes
   structure: createPlan()
     .step({
       name: "Easy Ride",
@@ -32,8 +30,6 @@ export const SWEET_SPOT_OUTDOOR_RIDE: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Sweet Spot Intervals",
   description: "Outdoor ride with sweet spot power intervals",
-  estimated_tss: 85,
-  estimated_duration: 4500, // 75 minutes
   structure: createPlan()
     .step({
       name: "Warm-up",
@@ -76,8 +72,6 @@ export const TEMPO_INTERVALS_RIDE: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Tempo Intervals",
   description: "Outdoor ride with sustained tempo efforts",
-  estimated_tss: 90,
-  estimated_duration: 4800, // 80 minutes
   structure: createPlan()
     .step({
       name: "Progressive Warm-up",
@@ -122,8 +116,6 @@ export const CLIMBING_INTERVALS_RIDE: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Climbing Intervals",
   description: "High-intensity climbing intervals for outdoor terrain",
-  estimated_tss: 95,
-  estimated_duration: 4200, // 70 minutes
   structure: createPlan()
     .step({
       name: "Warm-up",
@@ -166,8 +158,6 @@ export const GROUP_RIDE_SIMULATION: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Group Ride Simulation",
   description: "Variable intensity ride simulating group ride dynamics",
-  estimated_tss: 80,
-  estimated_duration: 5400, // 90 minutes
   structure: createPlan()
     .step({
       name: "Group Warm-up",

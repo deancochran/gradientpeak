@@ -9,8 +9,8 @@
  * - GPS availability
  */
 
+import type { ActivityCategory, ActivityLocation } from "../constants";
 import type { FTMSFeatures } from "../ftms-types";
-import type { ActivityType } from "./activity_payload";
 
 // ============================================================================
 // Configuration Input
@@ -18,7 +18,8 @@ import type { ActivityType } from "./activity_payload";
 
 export interface RecordingConfigInput {
   // Core activity details
-  activityType: ActivityType;
+  activityCategory: ActivityCategory;
+  activityLocation: ActivityLocation;
   mode: "planned" | "unplanned";
 
   // Plan details (if planned)

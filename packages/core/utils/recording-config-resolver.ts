@@ -46,7 +46,7 @@ export class RecordingConfigResolver {
   private static computeCapabilities(
     input: RecordingConfigInput,
   ): Omit<RecordingCapabilities, "isValid" | "errors" | "warnings"> {
-    const isOutdoor = isOutdoorActivity(input.activityType);
+    const isOutdoor = isOutdoorActivity(input.activityLocation);
     const hasStructuredPlan = input.plan?.hasStructure ?? false;
     const hasFtmsTrainer = !!input.devices.ftmsTrainer;
     const hasRoute = input.plan?.hasRoute ?? false;
@@ -74,7 +74,7 @@ export class RecordingConfigResolver {
     const shouldShowTurnByTurn = canTrackLocation && hasRoute;
 
     // Follow-along: Activity-specific (swim lanes, etc)
-    const shouldShowFollowAlong = shouldUseFollowAlong(input.activityType);
+    const shouldShowFollowAlong = shouldUseFollowAlong(input.activityCategory);
 
     // Trainer control: Show whenever a controllable trainer is connected
     // Users can manually control power/resistance OR enable auto-erg if they have a plan/route
@@ -121,7 +121,7 @@ export class RecordingConfigResolver {
     computed: { canTrackLocation: boolean; canTrackPower: boolean },
   ): RecordingCapabilities["primaryMetric"] {
     // Priority order:
-    if (isStepBasedActivity(input.activityType)) return "reps";
+    if (isStepBasedActivity(input.activityCategory)) return "reps";
     if (computed.canTrackPower) return "power";
     if (computed.canTrackLocation) return "distance";
     return "time";
@@ -141,7 +141,7 @@ export class RecordingConfigResolver {
     const warnings: string[] = [];
 
     // GPS validation - outdoor activities REQUIRE GPS
-    if (isOutdoorActivity(input.activityType) && !input.gpsAvailable) {
+    if (isOutdoorActivity(input.activityLocation) && !input.gpsAvailable) {
       errors.push(
         "GPS is required for outdoor activities. Please enable location services.",
       );
@@ -170,7 +170,7 @@ export class RecordingConfigResolver {
 
     // Info if no sensors for continuous activity
     if (
-      isContinuousActivity(input.activityType) &&
+      isContinuousActivity(input.activityCategory, input.activityLocation) &&
       !input.devices.hasPowerMeter &&
       !input.devices.hasHeartRateMonitor &&
       !input.devices.hasCadenceSensor &&

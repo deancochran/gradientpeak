@@ -139,6 +139,12 @@ export const ACTIVITY_TYPE_CONFIG = {
  */
 export type ActivityType = keyof typeof ACTIVITY_TYPE_CONFIG;
 
+// Re-export database types for convenience
+export type {
+  PublicActivityCategory as ActivityCategory,
+  PublicActivityLocation as ActivityLocation,
+} from "@repo/supabase";
+
 /**
  * Activity categories for grouping
  */

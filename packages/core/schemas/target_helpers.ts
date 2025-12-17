@@ -53,7 +53,9 @@ export const Target = {
 /**
  * Get primary target from step
  */
-export function getPrimaryTarget(step: PlanStepV2): IntensityTargetV2 | undefined {
+export function getPrimaryTarget(
+  step: PlanStepV2,
+): IntensityTargetV2 | undefined {
   return step.targets?.[0];
 }
 
@@ -260,7 +262,7 @@ export function getTargetGuidance(
  */
 export function convertTargetToAbsolute(
   target: IntensityTargetV2,
-  profile: { ftp?: number; thresholdHr?: number; maxHr?: number },
+  profile: { ftp?: number; threshold_hr?: number },
 ): { intensity: number; unit: string; label: string } | null {
   switch (target.type) {
     case "%FTP":
@@ -274,19 +276,11 @@ export function convertTargetToAbsolute(
       return null;
 
     case "%ThresholdHR":
-      if (profile.thresholdHr) {
+      if (profile.threshold_hr) {
         return {
-          intensity: Math.round((target.intensity / 100) * profile.thresholdHr),
-          unit: "bpm",
-          label: "Heart Rate",
-        };
-      }
-      return null;
-
-    case "%MaxHR":
-      if (profile.maxHr) {
-        return {
-          intensity: Math.round((target.intensity / 100) * profile.maxHr),
+          intensity: Math.round(
+            (target.intensity / 100) * profile.threshold_hr,
+          ),
           unit: "bpm",
           label: "Heart Rate",
         };

@@ -1,7 +1,8 @@
 import {
+  PublicActivityCategory,
+  PublicActivityLocation,
   PublicActivityMetric,
   PublicActivityMetricDataType,
-  PublicActivityType,
 } from "@repo/core";
 import {
   Activity,
@@ -11,7 +12,10 @@ import {
   Waves,
 } from "lucide-react-native";
 
-export const ACTIVITY_NAMES: Record<PublicActivityType, string> = {
+/**
+ * @deprecated Use getActivityDisplayName from @repo/core instead
+ */
+export const ACTIVITY_NAMES = {
   outdoor_run: "Run",
   outdoor_bike: "Bike",
   indoor_bike_trainer: "Trainer",
@@ -19,9 +23,30 @@ export const ACTIVITY_NAMES: Record<PublicActivityType, string> = {
   indoor_strength: "Strength",
   indoor_swim: "Swim",
   other: "Other",
-};
+} as const;
 
-export const ACTIVITY_ICONS: Record<PublicActivityType, any> = {
+/**
+ * Get icon for activity category
+ */
+export function getActivityIcon(category: PublicActivityCategory): any {
+  switch (category) {
+    case "run":
+      return Footprints;
+    case "bike":
+      return Bike;
+    case "strength":
+      return Dumbbell;
+    case "swim":
+      return Waves;
+    case "other":
+      return Activity;
+  }
+}
+
+/**
+ * @deprecated Use getActivityIcon instead
+ */
+export const ACTIVITY_ICONS = {
   outdoor_run: Footprints,
   outdoor_bike: Bike,
   indoor_bike_trainer: Bike,
@@ -29,7 +54,7 @@ export const ACTIVITY_ICONS: Record<PublicActivityType, any> = {
   indoor_strength: Dumbbell,
   indoor_swim: Waves,
   other: Activity,
-};
+} as const;
 // ================================
 // Sensor Reading Types
 // ================================
@@ -144,7 +169,7 @@ export interface ZoneConfig {
 // === Profile Information ===
 export interface ProfileMetrics {
   ftp?: number; // Functional Threshold Power
-  thresholdHr?: number; // Lactate Threshold Heart Rate
+  threshold_hr?: number; // Lactate Threshold Heart Rate
   weight?: number; // kg
   age?: number; // years
 }
@@ -385,7 +410,8 @@ export interface LiveMetricsConfig {
 export interface RecordingMetadata {
   startedAt: string; // ISO timestamp
   endedAt?: string; // ISO timestamp (set on finish)
-  activityType: PublicActivityType;
+  activityCategory: PublicActivityCategory;
+  activityLocation: PublicActivityLocation;
   profileId: string;
   profile: ProfileMetrics & {
     id: string;

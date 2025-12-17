@@ -12,22 +12,22 @@ import { z } from "zod";
 
 // Re-export commonly used schemas from core for convenience
 export {
-  profileSettingsFormSchema,
-  activitySubmissionFormSchema,
   activityPlanCreateFormSchema,
+  activitySubmissionFormSchema,
   plannedActivityScheduleFormSchema,
-  trainingPlanCreateFormSchema,
+  profileSettingsFormSchema,
   trainingPlanBasicInfoFormSchema,
-  trainingPlanWeeklyTargetsFormSchema,
+  trainingPlanCreateFormSchema,
   trainingPlanPeriodizationFormSchema,
-  type ProfileSettingsFormData,
-  type ActivitySubmissionFormData,
+  trainingPlanWeeklyTargetsFormSchema,
   type ActivityPlanCreateFormData,
+  type ActivitySubmissionFormData,
   type PlannedActivityScheduleFormData,
-  type TrainingPlanCreateFormData,
+  type ProfileSettingsFormData,
   type TrainingPlanBasicInfoFormData,
-  type TrainingPlanWeeklyTargetsFormData,
+  type TrainingPlanCreateFormData,
   type TrainingPlanPeriodizationFormData,
+  type TrainingPlanWeeklyTargetsFormData,
 } from "@repo/core";
 
 // ============================================================================
@@ -100,7 +100,7 @@ export const profileFormSchema = z
 
     weightKg: z
       .number({
-        invalid_type_error: "Weight must be a number",
+        error: "Weight must be a number",
       })
       .min(30, "Weight must be at least 30kg")
       .max(300, "Weight must be less than 300kg")
@@ -109,34 +109,24 @@ export const profileFormSchema = z
 
     ftp: z
       .number({
-        invalid_type_error: "FTP must be a number",
+        error: "FTP must be a number",
       })
       .min(50, "FTP must be at least 50 watts")
       .max(500, "FTP must be less than 500 watts")
       .optional()
       .nullable(),
 
-    thresholdHr: z
+    threshold_hr: z
       .number({
-        invalid_type_error: "Threshold HR must be a number",
+        error: "Threshold HR must be a number",
       })
       .min(100, "Threshold HR must be at least 100 bpm")
       .max(250, "Threshold HR must be less than 250 bpm")
       .optional()
       .nullable(),
-
-    maxHr: z
-      .number({
-        invalid_type_error: "Max HR must be a number",
-      })
-      .min(120, "Max HR must be at least 120 bpm")
-      .max(250, "Max HR must be less than 250 bpm")
-      .optional()
-      .nullable(),
-
     age: z
       .number({
-        invalid_type_error: "Age must be a number",
+        error: "Age must be a number",
       })
       .int("Age must be a whole number")
       .min(13, "Must be at least 13 years old")
@@ -146,15 +136,11 @@ export const profileFormSchema = z
   })
   .refine(
     (data) => {
-      // If threshold HR is set, it should be less than max HR
-      if (data.thresholdHr && data.maxHr) {
-        return data.thresholdHr < data.maxHr;
-      }
       return true;
     },
     {
       message: "Threshold HR must be less than Max HR",
-      path: ["thresholdHr"],
+      path: ["threshold_hr"],
     },
   );
 
@@ -203,7 +189,7 @@ export type ActivitySubmissionFormValues = z.infer<
  */
 const stepDurationSchema = z
   .number({
-    invalid_type_error: "Duration must be a number",
+    error: "Duration must be a number",
   })
   .min(0.5, "Step duration must be at least 30 seconds")
   .max(120, "Step duration must be less than 2 hours");
@@ -213,7 +199,7 @@ const stepDurationSchema = z
  */
 const powerZoneSchema = z
   .number({
-    invalid_type_error: "Power must be a number",
+    error: "Power must be a number",
   })
   .min(0, "Power cannot be negative")
   .max(300, "Power cannot exceed 300% FTP");
@@ -223,7 +209,7 @@ const powerZoneSchema = z
  */
 const heartRateZoneSchema = z
   .number({
-    invalid_type_error: "Heart rate must be a number",
+    error: "Heart rate must be a number",
   })
   .min(0, "Heart rate cannot be negative")
   .max(100, "Heart rate cannot exceed 100% of max");
@@ -343,8 +329,7 @@ export const plannedActivityCreationSchema = z.object({
 
   scheduledDate: z
     .date({
-      required_error: "Scheduled date is required",
-      invalid_type_error: "Invalid date format",
+      error: "Scheduled date is required",
     })
     .refine(
       (date) => date >= new Date(new Date().setHours(0, 0, 0, 0)),
@@ -382,13 +367,11 @@ export const trainingPlanBasicInfoSchema = z
     }),
 
     startDate: z.date({
-      required_error: "Start date is required",
-      invalid_type_error: "Invalid date format",
+      error: "Start date is required",
     }),
 
     endDate: z.date({
-      required_error: "End date is required",
-      invalid_type_error: "Invalid date format",
+      error: "End date is required",
     }),
   })
   .refine((data) => data.endDate > data.startDate, {
@@ -413,14 +396,14 @@ export const trainingPlanBasicInfoSchema = z
 export const trainingPlanWeeklyTargetsSchema = z.object({
   weeklyDistanceKm: z
     .number({
-      invalid_type_error: "Distance must be a number",
+      error: "Distance must be a number",
     })
     .min(5, "Weekly distance must be at least 5km")
     .max(500, "Weekly distance must be less than 500km"),
 
   weeklyTSS: z
     .number({
-      invalid_type_error: "TSS must be a number",
+      error: "TSS must be a number",
     })
     .int("TSS must be a whole number")
     .min(50, "Weekly TSS must be at least 50")
@@ -428,7 +411,7 @@ export const trainingPlanWeeklyTargetsSchema = z.object({
 
   activitiesPerWeek: z
     .number({
-      invalid_type_error: "Activities per week must be a number",
+      error: "Activities per week must be a number",
     })
     .int("Activities per week must be a whole number")
     .min(1, "Must have at least 1 activity per week")

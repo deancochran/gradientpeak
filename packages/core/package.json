@@ -10,7 +10,9 @@
     "./schemas/*": "./schemas/*.ts"
   },
   "scripts": {
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "check-types": "tsc --noEmit",
+    "watch": "concurrently \"tsc --noEmit --watch --preserveWatchOutput\" \"chokidar '**/*.{ts,tsx,js,jsx}' -c 'eslint .'\""
   },
   "dependencies": {
     "@mapbox/polyline": "^1.2.1",
@@ -21,6 +23,8 @@
     "@repo/supabase": "workspace:*",
     "@repo/typescript-config": "workspace:*",
     "@types/jest": "^29.5.0",
+    "@types/mapbox__polyline": "^1.0.5",
+    "concurrently": "^9.2.1",
     "typescript": "^5.5.2"
   }
 }

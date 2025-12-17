@@ -91,7 +91,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
     console.log("[LiveMetricsManager] Initialized with profile:", {
       ftp: this.profile.ftp,
-      thresholdHr: this.profile.thresholdHr,
+      threshold_hr: this.profile.threshold_hr,
       weight: this.profile.weight,
     });
   }
@@ -628,10 +628,10 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       this.metrics.maxHeartRate = this.maxHeartRate;
 
       // Calculate % of threshold HR
-      if (this.profile.thresholdHr) {
+      if (this.profile.threshold_hr) {
         const latestHr = this.buffer.getLatest("heartrate") || 0;
         this.metrics.maxHrPctThreshold =
-          (latestHr / this.profile.thresholdHr) * 100;
+          (latestHr / this.profile.threshold_hr) * 100;
       }
     }
   }
@@ -902,7 +902,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private extractProfileMetrics(profile: PublicProfilesRow): ProfileMetrics {
     return {
       ftp: profile.ftp ?? undefined,
-      thresholdHr: profile.threshold_hr ?? undefined,
+      threshold_hr: profile.threshold_hr ?? undefined,
       weight: profile.weight_kg ?? undefined,
       age: undefined, // Age calculation from DOB would go here if needed
     };
@@ -912,16 +912,16 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    * Calculate zone thresholds
    */
   private calculateZones(profile: ProfileMetrics): ZoneConfig {
-    const thresholdHr = profile.thresholdHr || 150;
+    const threshold_hr = profile.threshold_hr || 150;
     const ftp = profile.ftp || 200;
 
     return {
       // 5-zone HR model
       hrZones: [
-        Math.round(thresholdHr * 0.68), // Zone 1: <68%
-        Math.round(thresholdHr * 0.83), // Zone 2: 68-82%
-        Math.round(thresholdHr * 0.94), // Zone 3: 83-94%
-        Math.round(thresholdHr * 1.05), // Zone 4: 94-105%
+        Math.round(threshold_hr * 0.68), // Zone 1: <68%
+        Math.round(threshold_hr * 0.83), // Zone 2: 68-82%
+        Math.round(threshold_hr * 0.94), // Zone 3: 83-94%
+        Math.round(threshold_hr * 1.05), // Zone 4: 94-105%
         Infinity, // Zone 5: >105%
       ],
 

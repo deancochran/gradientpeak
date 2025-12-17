@@ -334,7 +334,7 @@ The `@repo/core` package is designed for maximum portability and testability:
 import { calculateHrZones, validateActivity } from '@repo/core';
 
 // Zone calculations using pure functions
-const zones = calculateHrZones(thresholdHr, maxHr);
+const zones = calculateHrZones(threshold_hr, maxHr);
 
 // JSON validation with Zod schemas
 const validation = validateActivity(activityJson);

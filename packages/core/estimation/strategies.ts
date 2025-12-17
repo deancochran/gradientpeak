@@ -1,3 +1,7 @@
+<<<<<<< HEAD
+=======
+import type { PublicActivityCategory } from "@repo/supabase";
+>>>>>>> e8b2c4e (ftms working)
 import {
   flattenPlanSteps,
   getDurationMs,
@@ -7,12 +11,16 @@ import {
   calculateStepIntensityFactor,
   type UserSettings,
 } from "../utils/activity-defaults";
+<<<<<<< HEAD
 import type {
   EstimationContext,
   EstimationResult,
   Route,
   ActivityType,
 } from "./types";
+=======
+import type { EstimationContext, EstimationResult, Route } from "./types";
+>>>>>>> e8b2c4e (ftms working)
 
 // ==============================
 // Strategy 1: Structure-Based
@@ -26,7 +34,11 @@ import type {
 export function estimateFromStructure(
   context: EstimationContext,
 ): EstimationResult {
+<<<<<<< HEAD
   const { structure, profile, activityType } = context;
+=======
+  const { structure, profile, activityCategory } = context;
+>>>>>>> e8b2c4e (ftms working)
 
   if (!structure?.steps || structure.steps.length === 0) {
     throw new Error("Structure-based estimation requires steps");
@@ -34,10 +46,16 @@ export function estimateFromStructure(
 
   const flatSteps = flattenPlanSteps(structure.steps);
   const userSettings: UserSettings = {
+<<<<<<< HEAD
     ftp: profile.ftp,
     maxHR: profile.maxHR,
     thresholdHR: profile.thresholdHR,
     restingHR: profile.restingHR,
+=======
+    ftp: profile.ftp ?? null,
+    thresholdHR: profile.threshold_hr ?? null,
+    restingHR: 60, // Default resting HR - not in current schema
+>>>>>>> e8b2c4e (ftms working)
   };
 
   let totalTSS = 0;
@@ -61,7 +79,17 @@ export function estimateFromStructure(
     totalWeightedIF += stepIF * stepDuration;
 
     // Distribute time into zones based on targets
+<<<<<<< HEAD
     distributeStepIntoZones(step, stepDuration, hrZones, powerZones, profile);
+=======
+    distributeStepIntoZones(
+      step,
+      stepDuration,
+      hrZones,
+      powerZones,
+      userSettings,
+    );
+>>>>>>> e8b2c4e (ftms working)
   }
 
   const avgIF = totalDuration > 0 ? totalWeightedIF / totalDuration : 0;
@@ -69,16 +97,34 @@ export function estimateFromStructure(
   const warnings: string[] = [];
   const factors = ["structure-based"];
 
+<<<<<<< HEAD
   if (!profile.ftp && activityType === "bike") {
     warnings.push("Missing FTP - using estimated values. Add FTP for better accuracy.");
+=======
+  if (!profile.ftp && activityCategory === "bike") {
+    warnings.push(
+      "Missing FTP - using estimated values. Add FTP for better accuracy.",
+    );
+>>>>>>> e8b2c4e (ftms working)
     factors.push("default-ftp");
   } else if (profile.ftp) {
     factors.push("user-ftp");
   }
 
+<<<<<<< HEAD
   if (!profile.thresholdHR && (activityType === "run" || activityType === "bike")) {
     warnings.push("Missing Threshold HR - heart rate estimates may be less accurate.");
   } else if (profile.thresholdHR) {
+=======
+  if (
+    !profile.threshold_hr &&
+    (activityCategory === "run" || activityCategory === "bike")
+  ) {
+    warnings.push(
+      "Missing Threshold HR - heart rate estimates may be less accurate.",
+    );
+  } else if (profile.threshold_hr) {
+>>>>>>> e8b2c4e (ftms working)
     factors.push("user-threshold-hr");
   }
 
@@ -88,8 +134,13 @@ export function estimateFromStructure(
     intensityFactor: Math.round(avgIF * 100) / 100,
     estimatedHRZones: hrZones.map(Math.round),
     estimatedPowerZones: powerZones.map(Math.round),
+<<<<<<< HEAD
     confidence: profile.ftp || profile.thresholdHR ? "high" : "medium",
     confidenceScore: profile.ftp ? 95 : profile.thresholdHR ? 85 : 75,
+=======
+    confidence: profile.ftp || profile.threshold_hr ? "high" : "medium",
+    confidenceScore: profile.ftp ? 95 : profile.threshold_hr ? 85 : 75,
+>>>>>>> e8b2c4e (ftms working)
     factors,
     warnings: warnings.length > 0 ? warnings : undefined,
   };
@@ -103,13 +154,18 @@ function distributeStepIntoZones(
   duration: number,
   hrZones: number[],
   powerZones: number[],
+<<<<<<< HEAD
   profile: { ftp?: number; thresholdHR?: number },
+=======
+  profile: UserSettings,
+>>>>>>> e8b2c4e (ftms working)
 ): void {
   const primaryTarget = step.targets?.[0];
   if (!primaryTarget) return;
 
   // Determine power zone
   if (primaryTarget.type === "%FTP" || primaryTarget.type === "watts") {
+<<<<<<< HEAD
     const ftpPercent =
       primaryTarget.type === "watts" && profile.ftp
         ? (primaryTarget.intensity / profile.ftp) * 100
@@ -117,6 +173,21 @@ function distributeStepIntoZones(
 
     const powerZoneIndex = getPowerZoneIndex(ftpPercent);
     powerZones[powerZoneIndex] += duration;
+=======
+    let ftpPercent = primaryTarget.intensity;
+
+    if (primaryTarget.type === "watts" && profile.ftp) {
+      ftpPercent = (primaryTarget.intensity / profile.ftp) * 100;
+    }
+
+    const powerZoneIndex = getPowerZoneIndex(ftpPercent);
+    if (
+      powerZoneIndex !== undefined &&
+      powerZones[powerZoneIndex] !== undefined
+    ) {
+      powerZones[powerZoneIndex] += duration;
+    }
+>>>>>>> e8b2c4e (ftms working)
   }
 
   // Determine HR zone
@@ -129,16 +200,34 @@ function distributeStepIntoZones(
 
     if (primaryTarget.type === "%ThresholdHR") {
       hrPercent = primaryTarget.intensity;
+<<<<<<< HEAD
     } else if (primaryTarget.type === "%MaxHR" && profile.thresholdHR) {
       // Convert MaxHR to ThresholdHR (approx: MaxHR * 0.9 = ThresholdHR)
       const estimatedThresholdPercent = (primaryTarget.intensity * 0.9) / 1;
       hrPercent = estimatedThresholdPercent;
     } else if (primaryTarget.type === "bpm" && profile.thresholdHR) {
+=======
+    } else if (primaryTarget.type === "%MaxHR") {
+      // Convert MaxHR to ThresholdHR (approx: MaxHR * 0.9 = ThresholdHR)
+      const estimatedThresholdPercent = (primaryTarget.intensity * 0.9) / 1;
+      hrPercent = estimatedThresholdPercent;
+    } else if (
+      primaryTarget.type === "bpm" &&
+      profile.thresholdHR &&
+      profile.thresholdHR !== null
+    ) {
+>>>>>>> e8b2c4e (ftms working)
       hrPercent = (primaryTarget.intensity / profile.thresholdHR) * 100;
     }
 
     const hrZoneIndex = getHRZoneIndex(hrPercent);
+<<<<<<< HEAD
     hrZones[hrZoneIndex] += duration;
+=======
+    if (hrZoneIndex !== undefined && hrZones[hrZoneIndex] !== undefined) {
+      hrZones[hrZoneIndex] += duration;
+    }
+>>>>>>> e8b2c4e (ftms working)
   }
 }
 
@@ -177,18 +266,32 @@ function getHRZoneIndex(thresholdPercent: number): number {
  * Medium accuracy for outdoor activities without structure
  * Accuracy: 70-80% depending on route detail
  */
+<<<<<<< HEAD
 export function estimateFromRoute(context: EstimationContext): EstimationResult {
   const { route, profile, activityType, fitnessState } = context;
+=======
+export function estimateFromRoute(
+  context: EstimationContext,
+): EstimationResult {
+  const { route, profile, activityCategory, fitnessState } = context;
+>>>>>>> e8b2c4e (ftms working)
 
   if (!route) {
     throw new Error("Route-based estimation requires route data");
   }
 
   // Estimate base speed based on activity type and fitness level
+<<<<<<< HEAD
   const baseSpeed = estimateBaseSpeed(activityType, fitnessState);
 
   // Adjust for terrain
   const terrainAdjustment = calculateTerrainAdjustment(route, activityType);
+=======
+  const baseSpeed = estimateBaseSpeed(activityCategory, fitnessState);
+
+  // Adjust for terrain
+  const terrainAdjustment = calculateTerrainAdjustment(route, activityCategory);
+>>>>>>> e8b2c4e (ftms working)
   const effectiveSpeed = baseSpeed * terrainAdjustment;
 
   // Estimate duration
@@ -198,16 +301,28 @@ export function estimateFromRoute(context: EstimationContext): EstimationResult 
   const avgPower = estimatePowerFromElevation(
     route.totalAscent,
     route.distanceMeters,
+<<<<<<< HEAD
     profile.weightKg || 70,
     profile.ftp,
     activityType,
+=======
+    profile.weight_kg || 70,
+    profile.ftp,
+    activityCategory,
+>>>>>>> e8b2c4e (ftms working)
   );
 
   // Calculate IF and TSS
   let IF = 0.75; // Default moderate effort
+<<<<<<< HEAD
   if (profile.ftp && avgPower && activityType === "bike") {
     IF = avgPower / profile.ftp;
   } else if (activityType === "run") {
+=======
+  if (profile.ftp && avgPower && activityCategory === "bike") {
+    IF = avgPower / profile.ftp;
+  } else if (activityCategory === "run") {
+>>>>>>> e8b2c4e (ftms working)
     // Running IF estimation based on route difficulty
     const climbingFactor = route.totalAscent / route.distanceMeters;
     IF = 0.7 + Math.min(0.25, climbingFactor * 10); // More climbing = higher effort
@@ -218,15 +333,26 @@ export function estimateFromRoute(context: EstimationContext): EstimationResult 
   const warnings: string[] = [];
   const factors = ["route-based", "terrain-adjusted"];
 
+<<<<<<< HEAD
   if (!profile.ftp && activityType === "bike") {
     warnings.push("Missing FTP - using estimated effort level.");
   }
   if (!profile.weightKg) {
+=======
+  if (!profile.ftp && activityCategory === "bike") {
+    warnings.push("Missing FTP - using estimated effort level.");
+  }
+  if (!profile.weight_kg) {
+>>>>>>> e8b2c4e (ftms working)
     warnings.push("Missing weight - using default 70kg for calculations.");
   }
 
   if (profile.ftp) factors.push("user-ftp");
+<<<<<<< HEAD
   if (profile.weightKg) factors.push("user-weight");
+=======
+  if (profile.weight_kg) factors.push("user-weight");
+>>>>>>> e8b2c4e (ftms working)
   if (fitnessState) factors.push("fitness-adjusted");
 
   return {
@@ -245,11 +371,19 @@ export function estimateFromRoute(context: EstimationContext): EstimationResult 
  * Estimate base speed for activity type
  */
 function estimateBaseSpeed(
+<<<<<<< HEAD
   activityType: ActivityType,
   fitnessState?: { ctl: number },
 ): number {
   // Base speeds in m/s for moderate effort
   const baseSpeeds: Record<ActivityType, number> = {
+=======
+  activityCategory: PublicActivityCategory,
+  fitnessState?: { ctl: number },
+): number {
+  // Base speeds in m/s for moderate effort
+  const baseSpeeds: Record<PublicActivityCategory, number> = {
+>>>>>>> e8b2c4e (ftms working)
     run: 3.5, // ~4:45/km pace
     bike: 8.5, // ~30 km/h
     swim: 1.2, // ~1:25/100m pace
@@ -257,14 +391,27 @@ function estimateBaseSpeed(
     other: 3.0,
   };
 
+<<<<<<< HEAD
   let speed = baseSpeeds[activityType];
+=======
+  let speed = baseSpeeds[activityCategory];
+>>>>>>> e8b2c4e (ftms working)
 
   // Adjust for fitness level (CTL)
   if (fitnessState && fitnessState.ctl > 0) {
     // Higher fitness = faster base speed
     // CTL of 50 = baseline, CTL of 100 = 10% faster
     const fitnessMultiplier = 1 + (fitnessState.ctl - 50) / 500;
+<<<<<<< HEAD
     speed *= Math.max(0.8, Math.min(1.2, fitnessMultiplier));
+=======
+    speed = speed
+      ? speed * Math.max(0.8, Math.min(1.2, fitnessMultiplier))
+      : speed;
+  }
+  if (!speed) {
+    throw new Error("Assumed Speed, found not");
+>>>>>>> e8b2c4e (ftms working)
   }
 
   return speed;
@@ -275,9 +422,15 @@ function estimateBaseSpeed(
  */
 function calculateTerrainAdjustment(
   route: Route,
+<<<<<<< HEAD
   activityType: ActivityType,
 ): number {
   if (activityType === "strength" || activityType === "swim") {
+=======
+  activityCategory: PublicActivityCategory,
+): number {
+  if (activityCategory === "strength" || activityCategory === "swim") {
+>>>>>>> e8b2c4e (ftms working)
     return 1.0; // No terrain adjustment
   }
 
@@ -302,7 +455,11 @@ function calculateTerrainAdjustment(
   }
 
   // Cycling is more affected by hills than running
+<<<<<<< HEAD
   if (activityType === "bike") {
+=======
+  if (activityCategory === "bike") {
+>>>>>>> e8b2c4e (ftms working)
     adjustment = adjustment * 0.9 + 0.1; // Scale adjustment more aggressively
   }
 
@@ -316,10 +473,17 @@ function estimatePowerFromElevation(
   totalAscent: number,
   distanceMeters: number,
   weightKg: number,
+<<<<<<< HEAD
   ftp?: number,
   activityType?: ActivityType,
 ): number | undefined {
   if (activityType !== "bike") return undefined;
+=======
+  ftp?: number | null,
+  activityCategory?: PublicActivityCategory,
+): number | undefined {
+  if (activityCategory !== "bike") return undefined;
+>>>>>>> e8b2c4e (ftms working)
 
   // Physics-based estimation:
   // Power = (weight * gravity * elevation) / time + rolling resistance + air resistance
@@ -350,11 +514,19 @@ function estimatePowerFromElevation(
 export function estimateFromTemplate(
   context: EstimationContext,
 ): EstimationResult {
+<<<<<<< HEAD
   const { activityType, fitnessState } = context;
 
   // Default templates for different activity types
   const templates: Record<
     ActivityType,
+=======
+  const { activityCategory, fitnessState } = context;
+
+  // Default templates for different activity types
+  const templates: Record<
+    PublicActivityCategory,
+>>>>>>> e8b2c4e (ftms working)
     { avgIF: number; avgDuration: number; avgTSS: number }
   > = {
     bike: { avgIF: 0.75, avgDuration: 3600, avgTSS: 60 },
@@ -364,7 +536,11 @@ export function estimateFromTemplate(
     other: { avgIF: 0.65, avgDuration: 1800, avgTSS: 30 },
   };
 
+<<<<<<< HEAD
   const template = templates[activityType];
+=======
+  const template = templates[activityCategory];
+>>>>>>> e8b2c4e (ftms working)
 
   // Adjust based on user fitness level (CTL)
   const fitnessMultiplier = fitnessState
@@ -375,7 +551,13 @@ export function estimateFromTemplate(
     "No structure or route provided - using default estimates.",
     "Add workout structure or select a route for better accuracy.",
   ];
+<<<<<<< HEAD
 
+=======
+  if (!template) {
+    throw new Error("Assumed template, not found");
+  }
+>>>>>>> e8b2c4e (ftms working)
   return {
     tss: Math.round(template.avgTSS * fitnessMultiplier),
     duration: template.avgDuration,

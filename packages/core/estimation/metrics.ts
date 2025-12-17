@@ -1,8 +1,12 @@
 import type {
-  EstimationResult,
+  PublicActivityCategory,
+  PublicActivityLocation,
+  PublicProfilesRow,
+} from "@repo/supabase";
+import type {
   EstimationContext,
+  EstimationResult,
   MetricEstimations,
-  ActivityType,
 } from "./types";
 
 /**
@@ -14,7 +18,7 @@ export function estimateMetrics(
   context: EstimationContext,
 ): MetricEstimations {
   const { duration, intensityFactor, tss } = baseEstimation;
-  const { profile, activityType, route } = context;
+  const { profile, activityCategory, activityLocation, route } = context;
 
   // Estimate calories
   const calories = estimateCalories(
@@ -22,15 +26,22 @@ export function estimateMetrics(
     intensityFactor,
     tss,
     profile,
-    activityType,
+    activityCategory,
+    activityLocation,
   );
 
   // Estimate distance
-  const distance = estimateDistance(duration, intensityFactor, activityType, route);
+  const distance = estimateDistance(
+    duration,
+    intensityFactor,
+    activityCategory,
+    activityLocation,
+    route,
+  );
 
   // Estimate average power
   const avgPower =
-    profile.ftp && activityType === "bike"
+    profile.ftp && activityCategory === "bike"
       ? Math.round(profile.ftp * intensityFactor)
       : undefined;
 
@@ -65,22 +76,26 @@ function estimateCalories(
   duration: number,
   intensityFactor: number,
   tss: number,
-  profile: { ftp?: number; weightKg?: number; age?: number; thresholdHR?: number },
-  activityType: ActivityType,
+  profile: PublicProfilesRow,
+  activityCategory: PublicActivityCategory,
+  activityLocation: PublicActivityLocation,
 ): number {
   // Method 1: Power-based (most accurate for cycling)
-  if (profile.ftp && activityType === "bike") {
+  if (profile.ftp && activityCategory === "bike") {
     const avgPower = profile.ftp * intensityFactor;
     const durationHours = duration / 3600;
     // kJ = watts * seconds / 1000, roughly 1 kJ = 1 kcal for cycling
-    return avgPower * duration / 1000;
+    return (avgPower * duration) / 1000;
   }
 
   // Method 2: HR-based estimation
-  if (profile.thresholdHR && profile.weightKg && profile.age) {
+  // Note: Need to calculate age from dob
+  // Calculate age from date of birth
+  const age = profile.dob ? calculateAgeFromDOB(profile.dob) : undefined;
+  if (profile.threshold_hr && profile.weight_kg && age) {
     const avgHR = estimateAvgHR(intensityFactor, profile);
     if (avgHR) {
-      return estimateCaloriesFromHR(duration, avgHR, profile);
+      return estimateCaloriesFromHR(duration, avgHR, profile.weight_kg, age);
     }
   }
 
@@ -96,11 +111,11 @@ function estimateCalories(
 function estimateCaloriesFromHR(
   duration: number,
   avgHR: number,
-  profile: { weightKg: number; age: number },
+  weightKg: number,
+  age: number,
 ): number {
   const durationMinutes = duration / 60;
-  const weight = profile.weightKg;
-  const age = profile.age;
+  const weight = weightKg;
 
   // Gender-specific calorie estimation
   // Using male formula as default (could be enhanced with gender data)
@@ -118,9 +133,13 @@ function estimateCaloriesFromHR(
  */
 export function estimateAvgHR(
   intensityFactor: number,
-  profile: { thresholdHR?: number; maxHR?: number; restingHR?: number },
+  profile: PublicProfilesRow,
 ): number | undefined {
-  const { thresholdHR, maxHR, restingHR } = profile;
+  const thresholdHR = profile.threshold_hr;
+  // Note: max_hr and resting_hr are not in current schema
+  // Using estimated values based on threshold_hr
+  const maxHR = thresholdHR ? Math.round(thresholdHR / 0.9) : undefined;
+  const restingHR = 60; // Default resting HR
 
   if (!thresholdHR && !maxHR) return undefined;
 
@@ -158,7 +177,8 @@ export function estimateAvgHR(
 function estimateDistance(
   duration: number,
   intensityFactor: number,
-  activityType: ActivityType,
+  activityCategory: PublicActivityCategory,
+  activityLocation: PublicActivityLocation,
   route?: { distanceMeters: number },
 ): number | undefined {
   // If route provided, use route distance
@@ -167,13 +187,17 @@ function estimateDistance(
   }
 
   // Only estimate for run/bike/swim
-  if (activityType === "strength" || activityType === "other") {
+  if (activityCategory === "strength" || activityCategory === "other") {
     return undefined;
   }
 
   // Typical speeds by activity type and effort level
   const effortLevel = getEffortLevel(intensityFactor);
-  const speeds = getTypicalSpeeds(activityType, effortLevel);
+  const speeds = getTypicalSpeeds(
+    activityCategory,
+    activityLocation,
+    effortLevel,
+  );
 
   return speeds * duration; // distance in meters
 }
@@ -191,7 +215,8 @@ function getEffortLevel(intensityFactor: number): "easy" | "moderate" | "hard" {
  * Get typical speeds for activity types (m/s)
  */
 function getTypicalSpeeds(
-  activityType: ActivityType,
+  activityCategory: PublicActivityCategory,
+  activityLocation: PublicActivityLocation,
   effortLevel: "easy" | "moderate" | "hard",
 ): number {
   const speedTables = {
@@ -222,7 +247,7 @@ function getTypicalSpeeds(
     },
   };
 
-  return speedTables[activityType][effortLevel];
+  return speedTables[activityCategory]?.[effortLevel] || 3.0;
 }
 
 /**
@@ -232,7 +257,7 @@ function getTypicalSpeeds(
 export function estimateZoneDistribution(
   duration: number,
   intensityFactor: number,
-  activityType: ActivityType,
+  activityCategory: PublicActivityCategory,
 ): {
   powerZones?: number[]; // [z1-z7] in seconds
   hrZones?: number[]; // [z1-z5] in seconds
@@ -240,14 +265,14 @@ export function estimateZoneDistribution(
   // For structured workouts, zones are calculated in strategies.ts
   // This is a fallback for template-based estimates
 
-  if (activityType === "bike") {
+  if (activityCategory === "bike") {
     return {
       powerZones: estimatePowerZones(duration, intensityFactor),
       hrZones: estimateHRZones(duration, intensityFactor),
     };
   }
 
-  if (activityType === "run") {
+  if (activityCategory === "run") {
     return {
       hrZones: estimateHRZones(duration, intensityFactor),
     };
@@ -289,6 +314,25 @@ function estimatePowerZones(duration: number, avgIF: number): number[] {
   }
 
   return zones.map(Math.round);
+}
+
+/**
+ * Calculate age from date of birth string
+ */
+function calculateAgeFromDOB(dob: string): number {
+  const birthDate = new Date(dob);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+
+  if (
+    monthDiff < 0 ||
+    (monthDiff === 0 && today.getDate() < birthDate.getDate())
+  ) {
+    age--;
+  }
+
+  return age;
 }
 
 /**

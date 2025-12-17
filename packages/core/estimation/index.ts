@@ -8,30 +8,33 @@
  * making plans fully shareable while maintaining personalized accuracy.
  */
 
+import { addDays } from "../calculations";
+import { estimateWeeklyLoad, predictFatigue } from "./fatigue";
+import { estimateMetrics as estimateMetricsInternal } from "./metrics";
+import {
+  estimateFromRoute,
+  estimateFromStructure,
+  estimateFromTemplate,
+} from "./strategies";
 import type {
   EstimationContext,
   EstimationResult,
-  MetricEstimations,
   FatiguePrediction,
-  PlannedActivity,
   FitnessState,
+  MetricEstimations,
+  PlannedActivity,
   WeeklyLoadEstimation,
 } from "./types";
-import {
-  estimateFromStructure,
-  estimateFromRoute,
-  estimateFromTemplate,
-} from "./strategies";
-import { estimateMetrics as estimateMetricsInternal } from "./metrics";
-import { predictFatigue, estimateWeeklyLoad } from "./fatigue";
-import { addDays } from "../calculations";
 
 // Re-export types
 export * from "./types";
 
 // Re-export functions
-export { estimateMetricsInternal as estimateMetrics };
-export { predictFatigue, estimateWeeklyLoad };
+export {
+  estimateMetricsInternal as estimateMetrics,
+  estimateWeeklyLoad,
+  predictFatigue,
+};
 
 /**
  * Main estimation function - automatically selects best strategy
@@ -63,7 +66,7 @@ export function estimateActivity(context: EstimationContext): EstimationResult {
   }
 
   // Strategy 2: Route-based
-  if (context.route && context.location === "outdoor") {
+  if (context.route && context.activityLocation === "outdoor") {
     try {
       return estimateFromRoute(context);
     } catch (error) {
@@ -136,7 +139,7 @@ export function estimateActivityBatch(
   }>,
   context: Omit<
     EstimationContext,
-    "structure" | "route" | "activityType" | "location"
+    "structure" | "route" | "activityCategory" | "activityLocation"
   >,
 ): Map<string, EstimationResult> {
   const results = new Map<string, EstimationResult>();
@@ -147,8 +150,8 @@ export function estimateActivityBatch(
         ...context,
         structure: plan.structure,
         route: plan.route,
-        activityType: plan.activity_category as any,
-        location: plan.activity_location as any,
+        activityCategory: plan.activity_category as any,
+        activityLocation: plan.activity_location as any,
       };
 
       const estimation = estimateActivity(planContext);
@@ -324,18 +327,13 @@ export function buildEstimationContext(params: {
   // Calculate age from date of birth
   const age = userProfile.dob ? calculateAge(userProfile.dob) : undefined;
 
+  // Note: This function builds a context but needs proper profile type
+  // The profile parameter should match PublicProfilesRow from the database
   return {
-    profile: {
-      ftp: userProfile.ftp || undefined,
-      thresholdHR: userProfile.threshold_hr || undefined,
-      maxHR: userProfile.max_hr || undefined,
-      restingHR: userProfile.resting_hr || undefined,
-      weightKg: userProfile.weight_kg || undefined,
-      age,
-    },
+    profile: userProfile as any, // Cast to match PublicProfilesRow
     fitnessState,
-    activityType: activityPlan.activity_category as any,
-    location: activityPlan.activity_location as any,
+    activityCategory: activityPlan.activity_category as any,
+    activityLocation: activityPlan.activity_location as any,
     structure: activityPlan.structure,
     route: route
       ? {

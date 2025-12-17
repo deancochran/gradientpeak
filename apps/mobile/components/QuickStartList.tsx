@@ -1,7 +1,11 @@
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { ActivityType, getActivityDisplayName } from "@repo/core";
+import {
+  PublicActivityCategory,
+  PublicActivityLocation,
+  getActivityDisplayName,
+} from "@repo/core";
 import {
   Activity,
   Bike,
@@ -13,54 +17,65 @@ import {
 import { View } from "react-native";
 
 interface QuickStartListProps {
-  onActivitySelect: (activityType: ActivityType) => void;
+  onActivitySelect: (
+    category: PublicActivityCategory,
+    location: PublicActivityLocation,
+  ) => void;
 }
 
-// Activity type configurations
+// Activity configurations
 const ACTIVITY_CONFIGS: {
-  type: ActivityType;
+  category: PublicActivityCategory;
+  location: PublicActivityLocation;
   icon: any;
   color: string;
   description: string;
 }[] = [
   {
-    type: "outdoor_run",
+    category: "run",
+    location: "outdoor",
     icon: Footprints,
     color: "text-emerald-600",
     description: "GPS tracking, pace analysis",
   },
   {
-    type: "outdoor_bike",
+    category: "bike",
+    location: "outdoor",
     icon: Bike,
     color: "text-blue-600",
     description: "GPS tracking, speed & elevation",
   },
   {
-    type: "indoor_bike_trainer",
+    category: "bike",
+    location: "indoor",
     icon: Bike,
     color: "text-orange-600",
     description: "Power & cadence tracking",
   },
   {
-    type: "indoor_treadmill",
+    category: "run",
+    location: "indoor",
     icon: Footprints,
     color: "text-purple-600",
     description: "Pace & incline tracking",
   },
   {
-    type: "indoor_strength",
+    category: "strength",
+    location: "indoor",
     icon: Dumbbell,
     color: "text-red-600",
     description: "Sets, reps & weight tracking",
   },
   {
-    type: "indoor_swim",
+    category: "swim",
+    location: "indoor",
     icon: Waves,
     color: "text-cyan-600",
     description: "Distance & stroke tracking",
   },
   {
-    type: "other",
+    category: "other",
+    location: "outdoor",
     icon: Activity,
     color: "text-gray-600",
     description: "Basic time & heart rate",
@@ -70,11 +85,11 @@ const ACTIVITY_CONFIGS: {
 export function QuickStartList({ onActivitySelect }: QuickStartListProps) {
   return (
     <View className="gap-3">
-      {ACTIVITY_CONFIGS.map((config) => (
+      {ACTIVITY_CONFIGS.map((config, index) => (
         <ActivityCard
-          key={config.type}
+          key={`${config.category}-${config.location}-${index}`}
           config={config}
-          onSelect={() => onActivitySelect(config.type)}
+          onSelect={() => onActivitySelect(config.category, config.location)}
         />
       ))}
     </View>
@@ -101,7 +116,7 @@ function ActivityCard({ config, onSelect }: ActivityCardProps) {
 
       <View className="flex-1">
         <Text className="text-lg font-semibold mb-1">
-          {getActivityDisplayName(config.type)}
+          {getActivityDisplayName(config.category, config.location)}
         </Text>
         <Text className="text-sm text-muted-foreground">
           {config.description}

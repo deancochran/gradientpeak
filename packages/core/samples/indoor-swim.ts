@@ -11,8 +11,6 @@ export const EASY_SWIM: RecordingServiceActivityPlan = {
   name: "Easy Swim",
   description:
     "Comfortable continuous swim focusing on technique and aerobic base",
-  estimated_tss: 40,
-  estimated_duration: 2700,
   structure: createPlan()
     .step({
       name: "Easy Warm-up",
@@ -46,8 +44,6 @@ export const SPRINT_INTERVALS_SWIM: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Sprint Intervals",
   description: "High-intensity sprint intervals for speed development",
-  estimated_tss: 75,
-  estimated_duration: 3000,
   structure: createPlan()
     .step({
       name: "Progressive Warm-up",
@@ -107,8 +103,6 @@ export const THRESHOLD_SWIM: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Threshold Set",
   description: "Sustained threshold efforts for lactate tolerance",
-  estimated_tss: 80,
-  estimated_duration: 3600,
   structure: createPlan()
     .step({
       name: "Warm-up",
@@ -152,8 +146,6 @@ export const TECHNIQUE_SWIM: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Technique Focus",
   description: "Technical swimming session focusing on stroke mechanics",
-  estimated_tss: 30,
-  estimated_duration: 2400,
   structure: createPlan()
     .step({
       name: "Easy Warm-up",
@@ -208,8 +200,6 @@ export const ENDURANCE_SWIM: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Endurance Set",
   description: "Long aerobic swim for endurance base building",
-  estimated_tss: 60,
-  estimated_duration: 4500,
   structure: createPlan()
     .step({
       name: "Extended Warm-up",

@@ -28,7 +28,8 @@ import type {
   StatsUpdateEvent,
 } from "@/lib/services/ActivityRecorder/types";
 import type {
-  PublicActivityType,
+  PublicActivityCategory,
+  PublicActivityLocation,
   PublicProfilesRow,
   RecordingServiceActivityPlan,
 } from "@repo/core";
@@ -58,7 +59,10 @@ export interface RecorderActions {
   finish: () => Promise<void>;
 
   // Activity selection
-  selectActivity: (type: PublicActivityType) => void;
+  selectActivity: (
+    category: PublicActivityCategory,
+    location: PublicActivityLocation,
+  ) => void;
 
   // Device management
   startScan: () => Promise<void>; // Event-based scanning
@@ -136,7 +140,7 @@ export function useActivityRecorderData(
     // Recording state
     isActive: recordingState === "recording",
     isPaused: recordingState === "paused",
-    recordingId: service?.recording?.id,
+    recordingId: service?.recordingMetadata?.id,
 
     // Service reference for advanced use
     service,
@@ -421,20 +425,18 @@ export function useMovingTime(service: ActivityRecorderService | null): number {
  */
 export function useActivityStatus(service: ActivityRecorderService | null): {
   isOutdoorActivity: boolean;
-  activityType: PublicActivityType;
+  activityCategory: PublicActivityCategory;
+  activityLocation: PublicActivityLocation;
 } {
   useServiceEvent(service, "activitySelected");
 
-  // Helper function to check if activity is outdoor
-  const checkIsOutdoor = (type: PublicActivityType): boolean => {
-    return ["outdoor_run", "outdoor_bike"].includes(type);
-  };
-
-  const activityType = service?.selectedActivityType || "indoor_bike_trainer";
+  const activityCategory = service?.selectedActivityCategory || "bike";
+  const activityLocation = service?.selectedActivityLocation || "indoor";
 
   return {
-    isOutdoorActivity: checkIsOutdoor(activityType),
-    activityType,
+    isOutdoorActivity: activityLocation === "outdoor",
+    activityCategory,
+    activityLocation,
   };
 }
 
@@ -485,9 +487,9 @@ export function useRecorderActions(
 
   // Activity selection
   const selectActivity = useCallback(
-    (type: PublicActivityType) => {
+    (category: PublicActivityCategory, location: PublicActivityLocation) => {
       if (!service) return;
-      service.selectUnplannedActivity(type);
+      service.selectUnplannedActivity(category, location);
     },
     [service],
   );

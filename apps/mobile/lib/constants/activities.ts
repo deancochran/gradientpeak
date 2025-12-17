@@ -1,3 +1,7 @@
+import type {
+  PublicActivityCategory,
+  PublicActivityLocation,
+} from "@repo/supabase";
 import {
   Activity,
   Bike,
@@ -7,8 +11,81 @@ import {
 } from "lucide-react-native";
 
 /**
- * Activity type configuration for icons, labels, and colors
- * Centralized to avoid duplication across the app
+ * Activity category configuration for icons, labels, and colors
+ * Used for the new separated category + location system
+ */
+export const ACTIVITY_CATEGORY_CONFIGS = {
+  run: {
+    name: "Run",
+    icon: Footprints,
+    color: "text-blue-600",
+    bgColor: "bg-blue-50",
+    borderColor: "border-blue-200",
+  },
+  bike: {
+    name: "Bike",
+    icon: Bike,
+    color: "text-green-600",
+    bgColor: "bg-green-50",
+    borderColor: "border-green-200",
+  },
+  swim: {
+    name: "Swim",
+    icon: Waves,
+    color: "text-cyan-600",
+    bgColor: "bg-cyan-50",
+    borderColor: "border-cyan-200",
+  },
+  strength: {
+    name: "Strength",
+    icon: Dumbbell,
+    color: "text-red-600",
+    bgColor: "bg-red-50",
+    borderColor: "border-red-200",
+  },
+  other: {
+    name: "Other",
+    icon: Activity,
+    color: "text-gray-600",
+    bgColor: "bg-gray-50",
+    borderColor: "border-gray-200",
+  },
+} as const;
+
+/**
+ * Get activity configuration for category + location
+ */
+export function getActivityCategoryConfig(category: string) {
+  return (
+    ACTIVITY_CATEGORY_CONFIGS[category as PublicActivityCategory] ||
+    ACTIVITY_CATEGORY_CONFIGS.other
+  );
+}
+
+/**
+ * Get display name for category + location combination
+ */
+export function getActivityDisplayName(
+  category: PublicActivityCategory,
+  location: PublicActivityLocation,
+): string {
+  const categoryConfig = getActivityCategoryConfig(category);
+  const locationText = location === "indoor" ? "Indoor" : "Outdoor";
+
+  // Special cases for better naming
+  if (category === "run" && location === "indoor") {
+    return "Treadmill";
+  }
+  if (category === "bike" && location === "indoor") {
+    return "Bike Trainer";
+  }
+
+  return `${locationText} ${categoryConfig.name}`;
+}
+
+/**
+ * Legacy: Activity type configuration for backwards compatibility
+ * @deprecated Use ACTIVITY_CATEGORY_CONFIGS with getActivityCategoryConfig instead
  */
 export const ACTIVITY_CONFIGS = {
   outdoor_run: {
@@ -75,8 +152,9 @@ export const ACTIVITY_CONFIGS = {
 export type ActivityType = keyof typeof ACTIVITY_CONFIGS;
 
 /**
- * Get activity configuration for a given type
+ * Get activity configuration for a given type (legacy)
  * Returns 'other' config as fallback if type not found
+ * @deprecated Use getActivityCategoryConfig instead
  */
 export function getActivityConfig(activityType: string) {
   return (

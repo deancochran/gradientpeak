@@ -5,7 +5,11 @@ import { Icon } from "@/components/ui/icon";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Text } from "@/components/ui/text";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
-import { ActivityPayload, ActivityType } from "@repo/core";
+import {
+  ActivityPayload,
+  PublicActivityCategory,
+  PublicActivityLocation,
+} from "@repo/core";
 import { useRouter } from "expo-router";
 import { Calendar, FileText, Zap } from "lucide-react-native";
 import React, { useEffect, useState } from "react";
@@ -41,9 +45,13 @@ export default function RecordLauncher() {
   };
 
   // Quick start activity selection
-  const handleQuickStart = (activityType: ActivityType) => {
+  const handleQuickStart = (
+    category: PublicActivityCategory,
+    location: PublicActivityLocation,
+  ) => {
     const payload: ActivityPayload = {
-      type: activityType,
+      category,
+      location,
       // No plannedActivityId or plan for quick start
     };
     handleActivitySelected(payload);

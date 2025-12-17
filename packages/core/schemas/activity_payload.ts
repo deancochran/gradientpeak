@@ -155,24 +155,22 @@ export type ActivityUpload = z.infer<typeof ActivityUploadSchema>;
 // ACTIVITY TYPE SCHEMA
 // ==============================
 
-export const ActivityTypeSchema = z.enum([
-  "outdoor_run",
-  "outdoor_bike",
-  "indoor_bike_trainer",
-  "indoor_treadmill",
-  "indoor_strength",
-  "indoor_swim",
-  "other",
-]);
+// Import database types
+import type {
+  PublicActivityCategory,
+  PublicActivityLocation,
+} from "@repo/supabase";
 
-export type ActivityType = z.infer<typeof ActivityTypeSchema>;
+export type ActivityCategory = PublicActivityCategory;
+export type ActivityLocation = PublicActivityLocation;
 
 // ==============================
 // ACTIVITY PAYLOAD SCHEMA
 // ==============================
 
 export const ActivityPayloadSchema = z.object({
-  type: ActivityTypeSchema,
+  category: z.enum(["run", "bike", "swim", "strength", "other"]),
+  location: z.enum(["indoor", "outdoor"]),
   plannedActivityId: z.string().optional(),
   plan: z.custom<RecordingServiceActivityPlan>().optional(),
 });
@@ -184,154 +182,148 @@ export type ActivityPayload = z.infer<typeof ActivityPayloadSchema>;
 // ==============================
 
 /**
- * Check if activity type is continuous (time/distance based)
+ * Check if activity is continuous (time/distance based)
  */
-export const isContinuousActivity = (type: ActivityType): boolean => {
-  return [
-    "outdoor_run",
-    "outdoor_bike",
-    "indoor_bike_trainer",
-    "indoor_treadmill",
-  ].includes(type);
+export const isContinuousActivity = (
+  category: ActivityCategory,
+  location: ActivityLocation,
+): boolean => {
+  return (
+    (category === "run" || category === "bike") &&
+    (location === "outdoor" || location === "indoor")
+  );
 };
 
 /**
- * Check if activity type is step-based (reps/sets based)
+ * Check if activity is step-based (reps/sets based)
  */
-export const isStepBasedActivity = (type: ActivityType): boolean => {
-  return ["indoor_strength"].includes(type);
+export const isStepBasedActivity = (category: ActivityCategory): boolean => {
+  return category === "strength";
 };
 
 /**
- * Check if activity type is outdoor (requires GPS)
+ * Check if activity is outdoor (requires GPS)
  */
-export const isOutdoorActivity = (type: ActivityType): boolean => {
-  return ["outdoor_run", "outdoor_bike"].includes(type);
+export const isOutdoorActivity = (location: ActivityLocation): boolean => {
+  return location === "outdoor";
 };
 
 /**
- * Get display name for activity type
+ * Get display name for activity
  */
-export const getActivityDisplayName = (type: ActivityType): string => {
-  const names: Record<ActivityType, string> = {
-    outdoor_run: "Outdoor Run",
-    outdoor_bike: "Outdoor Bike",
-    indoor_bike_trainer: "Indoor Bike Trainer",
-    indoor_treadmill: "Treadmill",
-    indoor_strength: "Strength Training",
-    indoor_swim: "Swimming",
-    other: "Other Activity",
-  };
-  return names[type];
+export const getActivityDisplayName = (
+  category: ActivityCategory,
+  location: ActivityLocation,
+): string => {
+  if (category === "bike" && location === "indoor")
+    return "Indoor Bike Trainer";
+  if (category === "run" && location === "indoor") return "Treadmill";
+  if (category === "strength") return "Strength Training";
+  if (category === "swim") return "Swimming";
+  if (category === "other") return "Other Activity";
+
+  // Standard format: "Outdoor Run", "Outdoor Bike"
+  const locationStr = location.charAt(0).toUpperCase() + location.slice(1);
+  const categoryStr = category.charAt(0).toUpperCase() + category.slice(1);
+  return `${locationStr} ${categoryStr}`;
 };
 
 /**
- * Get activity type category (for general categorization)
+ * Get activity general category (for general categorization)
  */
-export const getActivityCategory = (
-  type: ActivityType,
+export const getActivityGeneralCategory = (
+  category: ActivityCategory,
 ): "cardio" | "strength" | "other" => {
-  if (
-    [
-      "outdoor_run",
-      "outdoor_bike",
-      "indoor_bike_trainer",
-      "indoor_treadmill",
-      "indoor_swim",
-    ].includes(type)
-  ) {
+  if (["run", "bike", "swim"].includes(category)) {
     return "cardio";
   }
-  if (type === "indoor_strength") {
+  if (category === "strength") {
     return "strength";
   }
   return "other";
 };
 
 /**
- * Map ActivityType to database activity_category enum
+ * Check if activity supports structured activities
  */
-export const mapActivityTypeToCategory = (
-  type: ActivityType,
-): "run" | "bike" | "swim" | "strength" | "other" => {
-  switch (type) {
-    case "outdoor_run":
-    case "indoor_treadmill":
-      return "run";
-    case "outdoor_bike":
-    case "indoor_bike_trainer":
-      return "bike";
-    case "indoor_swim":
-      return "swim";
-    case "indoor_strength":
-      return "strength";
-    case "other":
-    default:
-      return "other";
+export const supportsStructuredActivities = (
+  category: ActivityCategory,
+  location: ActivityLocation,
+): boolean => {
+  return category === "run" || category === "bike" || category === "strength";
+};
+
+/**
+ * Get primary metrics for activity
+ */
+export const getPrimaryMetrics = (
+  category: ActivityCategory,
+  location: ActivityLocation,
+): string[] => {
+  if (category === "run" && location === "outdoor") {
+    return ["pace", "heartRate", "distance", "elevation"];
   }
+  if (category === "run" && location === "indoor") {
+    return ["pace", "heartRate", "incline"];
+  }
+  if (category === "bike" && location === "outdoor") {
+    return ["power", "speed", "heartRate", "cadence", "elevation"];
+  }
+  if (category === "bike" && location === "indoor") {
+    return ["power", "heartRate", "cadence"];
+  }
+  if (category === "strength") {
+    return ["weight", "reps", "sets", "restTime"];
+  }
+  if (category === "swim") {
+    return ["pace", "distance", "strokes"];
+  }
+  return ["heartRate", "time"];
 };
 
 /**
- * Check if activity type supports structured activities
+ * Check if activity typically uses power data
  */
-export const supportsStructuredActivities = (type: ActivityType): boolean => {
-  return [
-    "outdoor_run",
-    "outdoor_bike",
-    "indoor_bike_trainer",
-    "indoor_treadmill",
-    "indoor_strength",
-  ].includes(type);
+export const usesPowerData = (category: ActivityCategory): boolean => {
+  return category === "bike";
 };
 
 /**
- * Get primary metrics for activity type
+ * Check if activity typically uses pace data
  */
-export const getPrimaryMetrics = (type: ActivityType): string[] => {
-  const metrics: Record<ActivityType, string[]> = {
-    outdoor_run: ["pace", "heartRate", "distance", "elevation"],
-    outdoor_bike: ["power", "speed", "heartRate", "cadence", "elevation"],
-    indoor_bike_trainer: ["power", "heartRate", "cadence"],
-    indoor_treadmill: ["pace", "heartRate", "incline"],
-    indoor_strength: ["weight", "reps", "sets", "restTime"],
-    indoor_swim: ["pace", "distance", "strokes"],
-    other: ["heartRate", "time"],
-  };
-  return metrics[type];
+export const usesPaceData = (category: ActivityCategory): boolean => {
+  return category === "run" || category === "swim";
 };
 
 /**
- * Check if activity type typically uses power data
- */
-export const usesPowerData = (type: ActivityType): boolean => {
-  return ["outdoor_bike", "indoor_bike_trainer"].includes(type);
-};
-
-/**
- * Check if activity type typically uses pace data
- */
-export const usesPaceData = (type: ActivityType): boolean => {
-  return ["outdoor_run", "indoor_treadmill", "indoor_swim"].includes(type);
-};
-
-/**
- * Check if activity type should use follow-along screen
+ * Check if activity should use follow-along screen
  * Swim and other activities are mandatory to use follow-along
  */
-export const shouldUseFollowAlong = (type: ActivityType): boolean => {
-  return ["indoor_swim", "other"].includes(type);
+export const shouldUseFollowAlong = (category: ActivityCategory): boolean => {
+  return category === "swim" || category === "other";
 };
 
 /**
- * Check if activity type can be recorded on the phone
+ * Map old combined activityType to category
+ * @deprecated Migration helper
+ */
+export const mapActivityTypeToCategory = (
+  activityType: string,
+): ActivityCategory => {
+  if (activityType.includes("run")) return "run";
+  if (activityType.includes("bike")) return "bike";
+  if (activityType.includes("swim")) return "swim";
+  if (activityType.includes("strength")) return "strength";
+  return "other";
+};
+
+/**
+ * Check if activity can be recorded on the phone
  * These activities support live metric tracking during recording
  */
-export const canRecordActivity = (type: ActivityType): boolean => {
-  return [
-    "indoor_treadmill",
-    "indoor_bike_trainer",
-    "outdoor_run",
-    "outdoor_bike",
-    "indoor_strength",
-  ].includes(type);
+export const canRecordActivity = (
+  category: ActivityCategory,
+  location: ActivityLocation,
+): boolean => {
+  return category === "run" || category === "bike" || category === "strength";
 };

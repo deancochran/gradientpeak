@@ -13,6 +13,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { addEstimationToPlans } from "../utils/estimation-helpers";
 
 export const trainingPlansRouter = createTRPCRouter({
   // ------------------------------
@@ -405,27 +406,37 @@ export const trainingPlansRouter = createTRPCRouter({
         0,
       ) || 0;
 
-    // Get planned activities this week
+    // Get planned activities this week with their activity plans
     const { data: plannedActivities } = await ctx.supabase
       .from("planned_activities")
       .select(
         `
         id,
         scheduled_date,
-        activity_plan:activity_plans (
-          estimated_tss
-        )
+        activity_plan:activity_plans (*)
       `,
       )
       .eq("profile_id", ctx.session.user.id)
       .gte("scheduled_date", startOfWeek.toISOString().split("T")[0])
       .lt("scheduled_date", endOfWeek.toISOString().split("T")[0]);
 
-    const plannedWeeklyTSS =
-      plannedActivities?.reduce(
-        (sum, pa) => sum + (pa.activity_plan?.estimated_tss || 0),
-        0,
-      ) || 0;
+    // Extract activity plans and add estimations
+    const activityPlans =
+      plannedActivities?.map((pa) => pa.activity_plan).filter(Boolean) || [];
+
+    const plansWithEstimations =
+      activityPlans.length > 0
+        ? await addEstimationToPlans(
+            activityPlans,
+            ctx.supabase,
+            ctx.session.user.id,
+          )
+        : [];
+
+    const plannedWeeklyTSS = plansWithEstimations.reduce(
+      (sum, plan) => sum + plan.estimated_tss,
+      0,
+    );
 
     const totalPlannedActivities = plannedActivities?.length || 0;
 
@@ -441,20 +452,13 @@ export const trainingPlansRouter = createTRPCRouter({
     const fiveDaysFromNow = new Date(today);
     fiveDaysFromNow.setDate(today.getDate() + 5);
 
-    const { data: upcomingActivities } = await ctx.supabase
+    const { data: upcomingActivitiesRaw } = await ctx.supabase
       .from("planned_activities")
       .select(
         `
         id,
         scheduled_date,
-        activity_plan:activity_plans (
-          id,
-          name,
-          activity_category,
-          activity_location,
-          estimated_duration,
-          estimated_tss
-        )
+        activity_plan:activity_plans (*)
       `,
       )
       .eq("profile_id", ctx.session.user.id)
@@ -462,6 +466,40 @@ export const trainingPlansRouter = createTRPCRouter({
       .lte("scheduled_date", fiveDaysFromNow.toISOString().split("T")[0])
       .order("scheduled_date", { ascending: true })
       .limit(5);
+
+    // Add estimations to upcoming activity plans
+    const upcomingPlans =
+      upcomingActivitiesRaw?.map((pa) => pa.activity_plan).filter(Boolean) ||
+      [];
+
+    const upcomingPlansWithEstimations =
+      upcomingPlans.length > 0
+        ? await addEstimationToPlans(
+            upcomingPlans,
+            ctx.supabase,
+            ctx.session.user.id,
+          )
+        : [];
+
+    // Map back to planned activities structure with estimated values
+    const upcomingActivities =
+      upcomingActivitiesRaw?.map((pa, index) => ({
+        id: pa.id,
+        scheduled_date: pa.scheduled_date,
+        activity_plan: upcomingPlansWithEstimations[index]
+          ? {
+              id: upcomingPlansWithEstimations[index].id,
+              name: upcomingPlansWithEstimations[index].name,
+              activity_category:
+                upcomingPlansWithEstimations[index].activity_category,
+              activity_location:
+                upcomingPlansWithEstimations[index].activity_location,
+              estimated_duration:
+                upcomingPlansWithEstimations[index].estimated_duration,
+              estimated_tss: upcomingPlansWithEstimations[index].estimated_tss,
+            }
+          : null,
+      })) || [];
 
     // Get target TSS from training plan structure
     const structure = plan.structure as any;
@@ -700,21 +738,50 @@ export const trainingPlansRouter = createTRPCRouter({
       const startDate = new Date(today);
       startDate.setDate(today.getDate() - input.weeks_back * 7);
 
-      // Get all planned activities in range
-      const { data: plannedActivities } = await ctx.supabase
+      // Get all planned activities in range with full activity plans
+      const { data: plannedActivitiesRaw } = await ctx.supabase
         .from("planned_activities")
         .select(
           `
           id,
           scheduled_date,
-          activity_plan:activity_plans (
-            estimated_tss
-          )
+          activity_plan:activity_plans (*)
         `,
         )
         .eq("training_plan_id", input.training_plan_id)
         .gte("scheduled_date", startDate.toISOString().split("T")[0])
         .lte("scheduled_date", today.toISOString().split("T")[0]);
+
+      // Extract activity plans and add estimations
+      const activityPlans =
+        plannedActivitiesRaw?.map((pa) => pa.activity_plan).filter(Boolean) ||
+        [];
+
+      const plansWithEstimations =
+        activityPlans.length > 0
+          ? await addEstimationToPlans(
+              activityPlans,
+              ctx.supabase,
+              ctx.session.user.id,
+            )
+          : [];
+
+      // Create a map for quick lookup of estimated TSS by plan ID
+      const estimationMap = new Map(
+        plansWithEstimations.map((plan) => [plan.id, plan.estimated_tss]),
+      );
+
+      // Map planned activities with their estimations
+      const plannedActivities =
+        plannedActivitiesRaw?.map((pa) => ({
+          ...pa,
+          activity_plan: pa.activity_plan
+            ? {
+                ...pa.activity_plan,
+                estimated_tss: estimationMap.get(pa.activity_plan.id) || 0,
+              }
+            : null,
+        })) || [];
 
       // Get all completed activities in range
       const { data: completedActivities } = await ctx.supabase

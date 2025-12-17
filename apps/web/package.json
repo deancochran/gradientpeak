@@ -8,7 +8,9 @@
     "ngrok": "ngrok http 3000 --domain=outgoing-ape-repeatedly.ngrok-free.app",
     "build": "next build --turbopack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check-types": "tsc --noEmit",
+    "watch": "concurrently \"tsc --noEmit --watch --preserveWatchOutput\" \"chokidar 'src/**/*.{ts,tsx,js,jsx}' -c 'eslint .'\""
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",

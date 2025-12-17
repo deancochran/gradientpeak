@@ -15,16 +15,15 @@
 
 import {
   getDurationMs,
-  PublicActivityType,
   PublicProfilesRow,
   RecordingServiceActivityPlan,
   type PlanStepV2,
 } from "@repo/core";
 
 import {
-  type AllPermissionsStatus,
   areAllPermissionsGranted,
   checkAllPermissions,
+  type AllPermissionsStatus,
 } from "../permissions-check";
 import { LiveMetricsManager } from "./LiveMetricsManager";
 import { LocationManager } from "./location";
@@ -80,7 +79,10 @@ export interface ServiceEvents {
   recordingComplete: () => void;
 
   // Unplanned activity was selected
-  activitySelected: (type: PublicActivityType) => void;
+  activitySelected: (data: {
+    category: PublicActivityCategory;
+    location: PublicActivityLocation;
+  }) => void;
 
   // Activity payload was processed
   payloadProcessed: (payload: import("@repo/core").ActivityPayload) => void;
@@ -114,7 +116,8 @@ export interface ServiceEvents {
 export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // === Public State ===
   public state: RecordingState = "pending";
-  public selectedActivityType: PublicActivityType = "indoor_bike_trainer";
+  public selectedActivityCategory: PublicActivityCategory = "bike";
+  public selectedActivityLocation: PublicActivityLocation = "indoor";
   public recordingMetadata?: RecordingMetadata;
 
   // === Public Managers (direct access - no forwarding) ===
@@ -421,7 +424,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     this._stepIndex = 0;
     this._stepStartMovingTime = this.getMovingTime();
-    this.selectedActivityType = plan.activity_category;
+    this.selectedActivityCategory = plan.activity_category;
+    this.selectedActivityLocation = plan.activity_location || "indoor";
 
     this.emit("planSelected", { plan, plannedId });
     this.emit("stepChanged", this.getStepInfo());
@@ -509,7 +513,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     // Create recording metadata (in-memory)
     this.recordingMetadata = {
       startedAt: new Date().toISOString(),
-      activityType: this.selectedActivityType,
+      activityCategory: this.selectedActivityCategory,
+      activityLocation: this.selectedActivityLocation,
       profileId: this.profile.id,
       profile: this.profile,
       plannedActivityId: this._plannedActivityId,
@@ -535,7 +540,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     // Start foreground service notification
     const activityName =
-      this._plan?.name || this.selectedActivityType.replace(/_/g, " ");
+      this._plan?.name ||
+      `${this.selectedActivityLocation} ${this.selectedActivityCategory}`;
     this.notificationsManager = new NotificationsManager(activityName);
     await this.notificationsManager.startForegroundService();
 
@@ -628,14 +634,18 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // ================================
 
   /**
-   * Select an unplanned activity type
-   * Clears any existing plan and updates the activity type
+   * Select an unplanned activity
+   * Clears any existing plan and updates the activity category and location
    */
-  selectUnplannedActivity(type: PublicActivityType): void {
-    console.log("[Service] Selected unplanned activity:", type);
-    this.selectedActivityType = type;
+  selectUnplannedActivity(
+    category: PublicActivityCategory,
+    location: PublicActivityLocation,
+  ): void {
+    console.log("[Service] Selected unplanned activity:", category, location);
+    this.selectedActivityCategory = category;
+    this.selectedActivityLocation = location;
     this.clearPlan();
-    this.emit("activitySelected", type);
+    this.emit("activitySelected", { category, location });
   }
 
   /**
@@ -667,9 +677,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         // Quick start activity
         console.log(
           "[Service] Selecting unplanned activity from payload:",
-          payload.type,
+          payload.category,
+          payload.location,
         );
-        this.selectUnplannedActivity(payload.type);
+        this.selectUnplannedActivity(payload.category, payload.location);
       }
 
       this.emit("payloadProcessed", payload);
@@ -975,11 +986,13 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       hasPlan: !!this._plan,
       hasPlannedId: !!this._plannedActivityId,
       stepsLength: this._steps.length,
-      activityType: this.selectedActivityType,
+      activityCategory: this.selectedActivityCategory,
+      activityLocation: this.selectedActivityLocation,
     });
 
     return RecordingConfigResolver.resolve({
-      activityType: this.selectedActivityType,
+      activityCategory: this.selectedActivityCategory,
+      activityLocation: this.selectedActivityLocation,
       mode: isPlannedMode ? "planned" : "unplanned",
       plan: this._plan
         ? {

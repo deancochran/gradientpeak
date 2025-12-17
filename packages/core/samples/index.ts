@@ -53,11 +53,36 @@ export const SAMPLE_ACTIVITIES_BY_TYPE = {
   dev: SAMPLE_DEV_ACTIVITIES,
 } as const;
 
-// Helper function to get sample activities by type
+// Helper function to get sample activities by type (legacy)
 export function getSampleActivitiesByType(
   activityType: keyof typeof SAMPLE_ACTIVITIES_BY_TYPE,
 ) {
   return SAMPLE_ACTIVITIES_BY_TYPE[activityType] || [];
+}
+
+// Helper function to get sample activities by category and location
+export function getSampleActivitiesByCategory(
+  category: "run" | "bike" | "swim" | "strength" | "other" | "dev",
+  location: "indoor" | "outdoor",
+) {
+  const key = `${location}_${category}` as const;
+
+  // Map to the actual keys in SAMPLE_ACTIVITIES_BY_TYPE
+  const mappings: Record<string, keyof typeof SAMPLE_ACTIVITIES_BY_TYPE> = {
+    outdoor_run: "outdoor_run",
+    outdoor_bike: "outdoor_bike",
+    indoor_run: "indoor_treadmill",
+    indoor_bike: "indoor_bike_trainer",
+    indoor_strength: "indoor_strength",
+    indoor_swim: "indoor_swim",
+    outdoor_other: "other",
+    indoor_other: "other",
+    outdoor_dev: "dev",
+    indoor_dev: "dev",
+  };
+
+  const mappedKey = mappings[key];
+  return mappedKey ? SAMPLE_ACTIVITIES_BY_TYPE[mappedKey] || [] : [];
 }
 
 // Total count of sample activities: 36 activities across 7 activity types

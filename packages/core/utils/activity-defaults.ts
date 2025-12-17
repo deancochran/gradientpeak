@@ -4,11 +4,45 @@ import {
   getDurationMs,
 } from "../schemas/activity_plan_structure";
 
+import type { PublicProfilesRow } from "@repo/supabase";
+import type { ActivityCategory, ActivityLocation } from "../constants";
+
+/**
+ * Simplified user settings for estimation calculations
+ */
+export type UserSettings = {
+  ftp?: number | null;
+  thresholdHR?: number | null;
+  restingHR?: number;
+};
+
+/**
+ * Helper to get FTP from either UserSettings or PublicProfilesRow
+ */
+function getFtp(
+  settings: PublicProfilesRow | UserSettings,
+): number | null | undefined {
+  return settings.ftp;
+}
+
+/**
+ * Helper to get threshold HR from either UserSettings or PublicProfilesRow
+ */
+function getThresholdHR(
+  settings: PublicProfilesRow | UserSettings,
+): number | null | undefined {
+  if ("threshold_hr" in settings) {
+    return settings.threshold_hr;
+  }
+  return (settings as UserSettings).thresholdHR;
+}
+
 /**
  * Context for generating smart defaults for activity steps
  */
 export interface DefaultsContext {
-  activityType: string;
+  activityCategory: ActivityCategory;
+  activityLocation: ActivityLocation;
   position: number; // 0 = first step, -1 = last step
   totalSteps: number;
 }
@@ -21,15 +55,15 @@ export function generateStepName(ctx: DefaultsContext): string {
   const isCooldown = ctx.position === ctx.totalSteps - 1 || ctx.position === -1;
 
   if (isWarmup) {
-    return ctx.activityType.includes("swim") ? "Easy Swim" : "Warm-up";
+    return ctx.activityCategory === "swim" ? "Easy Swim" : "Warm-up";
   }
 
   if (isCooldown) {
-    return ctx.activityType.includes("swim") ? "Easy Swim" : "Cool-down";
+    return ctx.activityCategory === "swim" ? "Easy Swim" : "Cool-down";
   }
 
   // Middle steps
-  if (ctx.activityType.includes("strength")) {
+  if (ctx.activityCategory === "strength") {
     return `Exercise ${ctx.position}`;
   }
 
@@ -44,7 +78,7 @@ export function getDefaultDuration(ctx: DefaultsContext): Duration {
   const isCooldown = ctx.position === ctx.totalSteps - 1 || ctx.position === -1;
 
   // Running and cycling - time-based
-  if (ctx.activityType.includes("run") || ctx.activityType.includes("bike")) {
+  if (ctx.activityCategory === "run" || ctx.activityCategory === "bike") {
     if (isWarmup) {
       return { type: "time", value: 10, unit: "minutes" };
     }
@@ -55,7 +89,7 @@ export function getDefaultDuration(ctx: DefaultsContext): Duration {
   }
 
   // Swimming - distance-based
-  if (ctx.activityType.includes("swim")) {
+  if (ctx.activityCategory === "swim") {
     if (isWarmup) {
       return { type: "distance", value: 200, unit: "meters" };
     }
@@ -66,7 +100,7 @@ export function getDefaultDuration(ctx: DefaultsContext): Duration {
   }
 
   // Strength training - repetition-based
-  if (ctx.activityType.includes("strength")) {
+  if (ctx.activityCategory === "strength") {
     return { type: "repetitions", value: 10, unit: "reps" };
   }
 
@@ -84,7 +118,7 @@ export function getDefaultTarget(
   const isCooldown = ctx.position === ctx.totalSteps - 1 || ctx.position === -1;
 
   // Cycling - use %FTP
-  if (ctx.activityType.includes("bike")) {
+  if (ctx.activityCategory === "bike") {
     if (isWarmup) {
       return { type: "%FTP", intensity: 60 };
     }
@@ -95,7 +129,7 @@ export function getDefaultTarget(
   }
 
   // Running - use %MaxHR
-  if (ctx.activityType.includes("run")) {
+  if (ctx.activityCategory === "run") {
     if (isWarmup) {
       return { type: "%MaxHR", intensity: 60 };
     }
@@ -106,7 +140,7 @@ export function getDefaultTarget(
   }
 
   // Swimming - use RPE
-  if (ctx.activityType.includes("swim")) {
+  if (ctx.activityCategory === "swim") {
     if (isWarmup) {
       return { type: "RPE", intensity: 4 };
     }
@@ -117,7 +151,7 @@ export function getDefaultTarget(
   }
 
   // Strength training - use RPE
-  if (ctx.activityType.includes("strength")) {
+  if (ctx.activityCategory === "strength") {
     return { type: "RPE", intensity: 7 };
   }
 
@@ -183,13 +217,15 @@ export function createDefaultRepetition(
  * Quick start templates for common activity structures
  */
 export function createQuickStartTemplate(
-  activityType: string,
+  activityCategory: ActivityCategory,
+  activityLocation: ActivityLocation,
   templateType: "easy" | "intervals" | "tempo",
 ): {
   steps: Array<Step | { type: "repetition"; repeat: number; steps: Step[] }>;
 } {
   const ctx: DefaultsContext = {
-    activityType,
+    activityCategory,
+    activityLocation,
     position: 0,
     totalSteps: 3,
   };
@@ -217,11 +253,12 @@ export function createQuickStartTemplate(
 
     case "tempo":
       // Warmup -> Tempo block -> Cooldown
-      const tempoIntensity = activityType.includes("bike")
-        ? { type: "%FTP" as const, intensity: 85 }
-        : activityType.includes("run")
-          ? { type: "%MaxHR" as const, intensity: 85 }
-          : { type: "RPE" as const, intensity: 8 };
+      const tempoIntensity =
+        activityCategory === "bike"
+          ? { type: "%FTP" as const, intensity: 85 }
+          : activityCategory === "run"
+            ? { type: "%MaxHR" as const, intensity: 85 }
+            : { type: "RPE" as const, intensity: 8 };
 
       const tempoStep: Step = {
         type: "step",
@@ -245,21 +282,11 @@ export function createQuickStartTemplate(
 }
 
 /**
- * User settings interface for TSS/IF calculations
- */
-export interface UserSettings {
-  ftp?: number; // Functional Threshold Power in watts
-  maxHR?: number; // Maximum heart rate in bpm
-  thresholdHR?: number; // Lactate threshold heart rate in bpm
-  restingHR?: number; // Resting heart rate in bpm
-}
-
-/**
  * Calculate Intensity Factor (IF) for a step
  */
 export function calculateStepIntensityFactor(
   step: Step,
-  userSettings: UserSettings = {},
+  userSettings: PublicProfilesRow | UserSettings,
 ): number {
   const target = step.targets?.[0];
   if (!target) return 0;
@@ -269,8 +296,9 @@ export function calculateStepIntensityFactor(
       return target.intensity / 100;
 
     case "watts":
-      if (userSettings.ftp) {
-        return target.intensity / userSettings.ftp;
+      const ftp = getFtp(userSettings);
+      if (ftp) {
+        return target.intensity / ftp;
       }
       // Default FTP assumption: 250W for average cyclist
       return target.intensity / 250;
@@ -284,8 +312,9 @@ export function calculateStepIntensityFactor(
       return target.intensity / 100;
 
     case "bpm":
-      if (userSettings.thresholdHR) {
-        return target.intensity / userSettings.thresholdHR;
+      const thresholdHR = getThresholdHR(userSettings);
+      if (thresholdHR) {
+        return target.intensity / thresholdHR;
       }
       // Default threshold HR assumption: 170 bpm
       return target.intensity / 170;
@@ -305,7 +334,7 @@ export function calculateStepIntensityFactor(
  */
 export function calculateStepTSS(
   step: Step,
-  userSettings: UserSettings = {},
+  userSettings: PublicProfilesRow,
 ): number {
   const durationMs = step.duration ? getDurationMs(step.duration) : 0;
   const durationHours = durationMs / (1000 * 60 * 60);
@@ -323,7 +352,7 @@ export function calculateStepTSS(
  */
 export function calculateTotalTSS(
   steps: Array<Step | { type: "repetition"; repeat: number; steps: Step[] }>,
-  userSettings: UserSettings = {},
+  userSettings: PublicProfilesRow,
 ): number {
   const flatSteps = flattenPlanSteps(steps);
 
@@ -337,7 +366,7 @@ export function calculateTotalTSS(
  */
 export function calculateAverageIF(
   steps: Array<Step | { type: "repetition"; repeat: number; steps: Step[] }>,
-  userSettings: UserSettings = {},
+  userSettings: PublicProfilesRow,
 ): number {
   const flatSteps = flattenPlanSteps(steps);
 
@@ -360,19 +389,19 @@ export function calculateAverageIF(
 /**
  * Get sensible default user settings based on activity type
  */
-export function getDefaultUserSettings(activityType: string): UserSettings {
-  if (activityType.includes("bike")) {
+export function getDefaultUserSettings(
+  activityCategory: ActivityCategory,
+): UserSettings {
+  if (activityCategory === "bike") {
     return {
       ftp: 250, // Watts - average recreational cyclist
-      maxHR: 190,
       thresholdHR: 170,
       restingHR: 60,
     };
   }
 
-  if (activityType.includes("run")) {
+  if (activityCategory === "run") {
     return {
-      maxHR: 190,
       thresholdHR: 175, // Typically higher than cycling
       restingHR: 50,
     };
@@ -380,7 +409,6 @@ export function getDefaultUserSettings(activityType: string): UserSettings {
 
   // Default for all activities
   return {
-    maxHR: 190,
     thresholdHR: 170,
     restingHR: 55,
   };

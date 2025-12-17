@@ -259,29 +259,7 @@ function PlannedActivityDetailModalContent({
                     </Text>
                   )}
 
-                  <View className="flex-row gap-4 flex-wrap">
-                    {plannedActivity.activity_plan.estimated_duration && (
-                      <View className="bg-muted/50 px-3 py-2 rounded-lg">
-                        <Text className="text-xs text-muted-foreground mb-1">
-                          Duration
-                        </Text>
-                        <Text className="text-sm font-semibold">
-                          {plannedActivity.activity_plan.estimated_duration} min
-                        </Text>
-                      </View>
-                    )}
-
-                    {plannedActivity.activity_plan.estimated_tss && (
-                      <View className="bg-muted/50 px-3 py-2 rounded-lg">
-                        <Text className="text-xs text-muted-foreground mb-1">
-                          Training Stress
-                        </Text>
-                        <Text className="text-sm font-semibold">
-                          {plannedActivity.activity_plan.estimated_tss} TSS
-                        </Text>
-                      </View>
-                    )}
-                  </View>
+                  {/* Estimated metrics removed from schema - calculate from structure if needed */}
                 </CardContent>
               </Card>
             )}

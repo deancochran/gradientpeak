@@ -13,13 +13,23 @@
     "check-types": {
       "dependsOn": ["^check-types"]
     },
+    "watch": {
+      "cache": false,
+      "persistent": true
+    },
     "dev": {
       "cache": false,
       "persistent": true
     },
     "test": {
       "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", ".env*", "tests/**", "**/*.test.*", "src/**"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        ".env*",
+        "tests/**",
+        "**/*.test.*",
+        "src/**"
+      ],
       "outputs": ["coverage/**", "test-results/**", "dist/**"],
       "cache": true
     },
@@ -31,8 +41,18 @@
     },
     "test:e2e": {
       "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", ".env*", "tests/e2e/**", ".maestro/**", "src/**"],
-      "outputs": ["playwright-report/**", "test-results/**", "maestro-results/**"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        ".env*",
+        "tests/e2e/**",
+        ".maestro/**",
+        "src/**"
+      ],
+      "outputs": [
+        "playwright-report/**",
+        "test-results/**",
+        "maestro-results/**"
+      ],
       "cache": false
     },
     "test:watch": {
@@ -45,8 +65,19 @@
     },
     "test:ci": {
       "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", ".env*", "tests/**", "**/*.test.*", "src/**"],
-      "outputs": ["coverage/**", "test-results/**", "playwright-report/**", "dist/**"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        ".env*",
+        "tests/**",
+        "**/*.test.*",
+        "src/**"
+      ],
+      "outputs": [
+        "coverage/**",
+        "test-results/**",
+        "playwright-report/**",
+        "dist/**"
+      ],
       "cache": true
     }
   }

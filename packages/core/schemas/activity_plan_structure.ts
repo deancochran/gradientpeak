@@ -285,18 +285,6 @@ export const activityPlanSchema = z
       .optional(),
     activity_location: activityLocationEnum,
     activity_category: activityCategoryEnum,
-    estimated_duration: z
-      .number()
-      .int({ message: "Duration must be a whole number" })
-      .min(5, { message: "Duration must be at least 5 minutes" })
-      .max(480, { message: "Duration cannot exceed 480 minutes (8 hours)" }),
-    estimated_tss: z
-      .number()
-      .int({ message: "TSS must be a whole number" })
-      .nonnegative({ message: "TSS must be non-negative" })
-      .max(500, { message: "TSS cannot exceed 500" })
-      .nullable()
-      .optional(),
     structure: activityPlanStructureSchema,
     route_id: z.string().uuid().optional(),
     notes: z
@@ -567,7 +555,7 @@ export interface ActivityCard {
  */
 export function convertTargetToAbsolute(
   target: IntensityTarget,
-  profile: { ftp?: number; thresholdHr?: number },
+  profile: { ftp?: number; threshold_hr?: number },
 ): { intensity?: number; unit: string; label: string } {
   switch (target.type) {
     case "%FTP":
@@ -585,9 +573,11 @@ export function convertTargetToAbsolute(
       };
 
     case "%ThresholdHR":
-      if (profile.thresholdHr && target.intensity) {
+      if (profile.threshold_hr && target.intensity) {
         return {
-          intensity: Math.round((target.intensity / 100) * profile.thresholdHr),
+          intensity: Math.round(
+            (target.intensity / 100) * profile.threshold_hr,
+          ),
           unit: "bpm",
           label: "Heart Rate",
         };
