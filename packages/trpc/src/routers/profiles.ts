@@ -1,4 +1,4 @@
-import { publicProfilesUpdateSchema } from "@repo/core";
+import { profileQuickUpdateSchema } from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
@@ -55,7 +55,11 @@ export const profilesRouter = createTRPCRouter({
   }),
 
   update: protectedProcedure
-    .input(publicProfilesUpdateSchema)
+    .input(
+      profileQuickUpdateSchema.extend({
+        avatar_url: z.string().nullable().optional(),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       try {
         const { data: profile, error } = await ctx.supabase

@@ -4,8 +4,11 @@ import {
   getDurationMs,
 } from "../schemas/activity_plan_structure";
 
-import type { PublicProfilesRow } from "@repo/supabase";
-import type { ActivityCategory, ActivityLocation } from "../constants";
+import type {
+  PublicActivityCategory,
+  PublicActivityLocation,
+  PublicProfilesRow,
+} from "@repo/supabase";
 
 /**
  * Simplified user settings for estimation calculations
@@ -41,8 +44,8 @@ function getThresholdHR(
  * Context for generating smart defaults for activity steps
  */
 export interface DefaultsContext {
-  activityCategory: ActivityCategory;
-  activityLocation: ActivityLocation;
+  activityCategory: PublicActivityCategory;
+  activityLocation: PublicActivityLocation;
   position: number; // 0 = first step, -1 = last step
   totalSteps: number;
 }
@@ -217,8 +220,8 @@ export function createDefaultRepetition(
  * Quick start templates for common activity structures
  */
 export function createQuickStartTemplate(
-  activityCategory: ActivityCategory,
-  activityLocation: ActivityLocation,
+  activityCategory: PublicActivityCategory,
+  activityLocation: PublicActivityLocation,
   templateType: "easy" | "intervals" | "tempo",
 ): {
   steps: Array<Step | { type: "repetition"; repeat: number; steps: Step[] }>;
@@ -390,7 +393,7 @@ export function calculateAverageIF(
  * Get sensible default user settings based on activity type
  */
 export function getDefaultUserSettings(
-  activityCategory: ActivityCategory,
+  activityCategory: PublicActivityCategory,
 ): UserSettings {
   if (activityCategory === "bike") {
     return {

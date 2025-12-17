@@ -111,27 +111,23 @@ export class SensorModel<T> {
  * Sensor validation models with range checking
  */
 export const sensorModels = {
-  power: new SensorModel(
+  power: new SensorModel<number>(
     "power",
     (v: number) => v >= 0 && v <= 4000,
     0,
   ),
-  heartrate: new SensorModel(
+  heartrate: new SensorModel<number>(
     "heartrate",
     (v: number) => v >= 30 && v <= 250,
     0,
   ),
-  cadence: new SensorModel(
+  cadence: new SensorModel<number>(
     "cadence",
     (v: number) => v >= 0 && v <= 255,
     0,
   ),
-  speed: new SensorModel(
-    "speed",
-    (v: number) => v >= 0 && v <= 100,
-    0,
-  ),
-  temperature: new SensorModel(
+  speed: new SensorModel<number>("speed", (v: number) => v >= 0 && v <= 100, 0),
+  temperature: new SensorModel<number>(
     "temperature",
     (v: number) => v >= -50 && v <= 60,
     0,
@@ -167,8 +163,8 @@ export function getPowerZone(watts: number, ftp: number): number {
  * Calculate heart rate zone index (0-4) based on threshold HR
  * Using 5-zone model
  */
-export function getHRZone(bpm: number, thresholdHR: number): number {
-  const percent = (bpm / thresholdHR) * 100;
+export function getHRZone(bpm: number, threshold_hr: number): number {
+  const percent = (bpm / threshold_hr) * 100;
   if (percent < 81) return 0; // Zone 1 - Recovery
   if (percent < 89) return 1; // Zone 2 - Aerobic
   if (percent < 94) return 2; // Zone 3 - Tempo

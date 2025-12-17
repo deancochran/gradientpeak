@@ -11,10 +11,14 @@ async function handler(request: Request) {
   const headersList = await headers();
   const cookieStore = await cookies();
 
-  // Create a cookie-aware Supabase client that can persist sessions
+  // Create a Supabase client with SERVICE ROLE KEY for full database access
+  // This is safe because:
+  // 1. Service role key is only used server-side (never exposed to client)
+  // 2. tRPC protectedProcedure middleware validates authentication
+  // 3. All queries explicitly filter by ctx.session.user.id
   const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY!,
     {
       cookies: {
         getAll() {

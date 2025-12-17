@@ -209,14 +209,27 @@ export async function estimatePlannedActivity(
     .single();
 
   // Fetch route if referenced
-  let route: PublicActivityRoutesRow;
+  let route:
+    | {
+        distance_meters: number;
+        total_ascent: number;
+        total_descent: number;
+        average_grade?: number;
+      }
+    | undefined;
   if (plan.route_id) {
     const { data: routeData } = await supabase
       .from("activity_routes")
       .select("*")
       .eq("id", plan.route_id)
       .single();
-    route = routeData;
+    if (routeData) {
+      route = {
+        distance_meters: routeData.total_distance,
+        total_ascent: routeData.total_ascent || 0,
+        total_descent: routeData.total_descent || 0,
+      };
+    }
   }
 
   // Build estimation context with fitness state

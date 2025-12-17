@@ -95,6 +95,11 @@ export class WahooActivityImporter {
       const startedAt = this.calculateStartTime(summary);
 
       // 6. Map Wahoo metrics to GradientPeak schema
+      const finishedAt = new Date(
+        new Date(startedAt).getTime() +
+          (summary.duration_total_accum || 0) * 1000,
+      ).toISOString();
+
       const activity = {
         profile_id: integration.profile_id,
         provider: "wahoo" as const,
@@ -103,39 +108,30 @@ export class WahooActivityImporter {
 
         // Timestamps
         started_at: startedAt,
+        finished_at: finishedAt,
 
         // Activity type (new schema)
-        activity_category: category,
-        activity_location: location,
+        type: activityType,
+        name: `${category} Activity`,
 
         // Core metrics
-        distance: summary.distance_accum || 0,
-        moving_time: summary.duration_active_accum || 0,
-        elapsed_time: summary.duration_total_accum || 0,
-        total_ascent: summary.ascent_accum || 0,
-        total_descent: 0, // Wahoo doesn't provide descent
-        calories: summary.calories_accum || 0,
+        distance_meters: summary.distance_accum || 0,
+        duration_seconds: summary.duration_total_accum || 0,
+        moving_seconds: summary.duration_active_accum || 0,
 
-        // Power metrics
-        avg_power: summary.power_avg || null,
-        normalized_power: summary.power_bike_np_last || null,
-        training_stress_score: summary.power_bike_tss_last || null,
-
-        // Heart rate
-        avg_hr: summary.heart_rate_avg || null,
-
-        // Cadence
-        avg_cadence: summary.cadence_avg || null,
-
-        // Speed (convert m/s to km/h)
-        avg_speed: summary.speed_avg ? summary.speed_avg * 3.6 : null,
-
-        // Work (convert joules to kilojoules)
-        work: summary.work_accum ? summary.work_accum / 1000 : null,
-
-        // Metadata
-        manual: summary.manual || false,
-        name: null, // Will be set by default in database
+        // Additional metrics in metrics field
+        metrics: {
+          total_ascent: summary.ascent_accum || 0,
+          total_descent: 0, // Wahoo doesn't provide descent
+          calories: summary.calories_accum || 0,
+          avg_power: summary.power_avg || null,
+          normalized_power: summary.power_bike_np_last || null,
+          training_stress_score: summary.power_bike_tss_last || null,
+          avg_hr: summary.heart_rate_avg || null,
+          avg_cadence: summary.cadence_avg || null,
+          avg_speed: summary.speed_avg ? summary.speed_avg * 3.6 : null,
+          work: summary.work_accum ? summary.work_accum / 1000 : null,
+        },
       };
 
       // 7. Create activity

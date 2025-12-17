@@ -481,9 +481,27 @@ create index if not exists idx_activity_streams_type
 -- ============================================================================
 -- ROW LEVEL SECURITY
 -- ============================================================================
--- RLS is disabled for all tables because authorization is handled at the
--- application layer via tRPC's protectedProcedure middleware and explicit
--- profile_id filtering in all queries. The backend uses service role key.
+-- RLS is DISABLED for all tables because:
+-- 1. Backend uses SERVICE ROLE KEY (bypasses RLS anyway)
+-- 2. Authorization is handled at application layer via tRPC protectedProcedure
+-- 3. All queries explicitly filter by profile_id = ctx.session.user.id
+-- 4. Simpler development and debugging for MVP
 --
--- Note: If you need to allow direct database access (e.g., for webhooks or
--- third-party integrations), enable RLS on specific tables and add policies.
+-- This architecture is secure because:
+-- - Service role key is never exposed to clients
+-- - Authentication middleware validates all requests
+-- - Business logic enforces data isolation
+--
+-- If you need RLS in the future (e.g., for direct client access or third-party
+-- integrations), enable it per table and add appropriate policies.
+
+alter table public.activities disable row level security;
+alter table public.activity_plans disable row level security;
+alter table public.activity_routes disable row level security;
+alter table public.activity_streams disable row level security;
+alter table public.integrations disable row level security;
+alter table public.oauth_states disable row level security;
+alter table public.planned_activities disable row level security;
+alter table public.profiles disable row level security;
+alter table public.synced_planned_activities disable row level security;
+alter table public.training_plans disable row level security;

@@ -13,6 +13,7 @@ export type {
   RepetitionDuration,
   IntensityTarget,
   Step,
+  Repetition,
   StepOrRepetition,
   FlattenedStep,
   ActivityPlanStructure,

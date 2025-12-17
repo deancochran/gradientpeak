@@ -62,6 +62,9 @@ export function useReliableMutation<T extends { useMutation: any }>(
 ) {
   return mutation.useMutation({
     onSuccess: (data: any, variables: any, context: any) => {
+      // Custom success callback first (e.g., onClose to dismiss modals)
+      options.onSuccess?.(data);
+
       // Invalidate queries
       if (options.invalidate) {
         options.invalidate.forEach((util) => {
@@ -69,13 +72,13 @@ export function useReliableMutation<T extends { useMutation: any }>(
         });
       }
 
-      // Show success message
+      // Show success message after modal is closed
       if (options.success) {
-        Alert.alert("Success", options.success);
+        // Small delay to ensure modal dismissal completes
+        setTimeout(() => {
+          Alert.alert("Success", options.success);
+        }, 300);
       }
-
-      // Custom success callback
-      options.onSuccess?.(data);
     },
     onError: (error: any, variables: any, context: any) => {
       // Custom error callback first

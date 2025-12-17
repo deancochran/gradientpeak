@@ -3,6 +3,8 @@ import {
   PublicActivityLocation,
   PublicActivityMetric,
   PublicActivityMetricDataType,
+  PublicProfilesRow,
+  RecordingServiceActivityPlan,
 } from "@repo/core";
 import {
   Activity,
@@ -413,15 +415,9 @@ export interface RecordingMetadata {
   activityCategory: PublicActivityCategory;
   activityLocation: PublicActivityLocation;
   profileId: string;
-  profile: ProfileMetrics & {
-    id: string;
-    dob: string | null;
-    ftp: number | null;
-    threshold_hr: number | null;
-    weight_kg: number | null;
-  };
+  profile: PublicProfilesRow;
   plannedActivityId?: string;
-  activityPlan?: import("@repo/core").RecordingServiceActivityPlan;
+  activityPlan?: RecordingServiceActivityPlan;
 }
 
 // ================================

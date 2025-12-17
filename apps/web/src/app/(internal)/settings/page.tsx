@@ -1,11 +1,11 @@
 "use client";
 
-import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import * as z from "zod";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 
 import { useAuth } from "@/components/providers/auth-provider";
 import { trpc } from "@/lib/trpc/client";
@@ -60,14 +60,7 @@ const profileSchema = z.object({
     .string()
     .min(2, "Name must be at least 2 characters")
     .max(50, "Name must be less than 50 characters"),
-  avatar_url: z
-    .string()
-    .url("Must be a valid URL")
-    .optional()
-    .or(z.literal("")),
 });
-
-type ProfileFormValues = z.infer<typeof profileSchema>;
 
 export default function SettingsPage() {
   // Auth and Profile data
@@ -125,11 +118,10 @@ export default function SettingsPage() {
   // Hooks
   const router = useRouter();
 
-  const form = useForm<ProfileFormValues>({
+  const form = useForm<z.infer<typeof profileSchema>>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
       username: "",
-      avatar_url: "",
     },
   });
 
@@ -138,7 +130,6 @@ export default function SettingsPage() {
     if (profile) {
       form.reset({
         username: profile.username || "",
-        avatar_url: profile.avatar_url || "",
       });
     }
   }, [profile, form]);
@@ -178,14 +169,16 @@ export default function SettingsPage() {
   }, [avatarBlobUrl]);
 
   // Event handlers
-  const onSubmit = async (values: ProfileFormValues) => {
+  const onSubmit = async (values: z.infer<typeof profileSchema>) => {
     if (!user) return;
 
     setUpdating(true);
     try {
       await updateProfileMutation.mutateAsync({
         username: values.username,
-        avatar_url: values.avatar_url || null,
+        weight_kg: profile?.weight_kg ?? null,
+        ftp: profile?.ftp ?? null,
+        threshold_hr: profile?.threshold_hr ?? null,
       });
     } catch {
       // Error handling is done in mutation onError
@@ -238,11 +231,11 @@ export default function SettingsPage() {
       // Update profile with new avatar path
       await updateProfileMutation.mutateAsync({
         username: profile?.username || "",
+        weight_kg: profile?.weight_kg ?? null,
+        ftp: profile?.ftp ?? null,
+        threshold_hr: profile?.threshold_hr ?? null,
         avatar_url: filePath,
       });
-
-      // Update form
-      form.setValue("avatar_url", filePath);
 
       toast.success("Avatar updated successfully");
     } catch (error) {

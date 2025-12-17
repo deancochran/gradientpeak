@@ -12,7 +12,7 @@ import { formatDuration } from "@/lib/utils/dates";
 import {
   ActivityCategorySelector,
   ActivityLocationSelector,
-} from "@components/ActivityPlan/ActivityCategorySelector";
+} from "@/components/ActivityPlan/ActivityCategorySelector";
 import {
   calculateAverageIF,
   calculateTotalTSS,

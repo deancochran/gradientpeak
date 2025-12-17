@@ -1,26 +1,15 @@
-<<<<<<< HEAD
-=======
-import type { PublicProfilesRow } from "@repo/supabase";
-import type { ActivityCategory, ActivityLocation } from "../constants";
->>>>>>> e8b2c4e (ftms working)
+import type {
+  PublicActivityCategory,
+  PublicActivityLocation,
+  PublicProfilesRow,
+} from "@repo/supabase";
+
 import type { ActivityPlanStructure } from "../schemas/activity_plan_structure";
 
 // ==============================
 // User Profile & Context Types
 // ==============================
 
-<<<<<<< HEAD
-export interface UserProfile {
-  ftp?: number; // Functional Threshold Power (watts)
-  thresholdHR?: number; // Lactate Threshold HR (bpm)
-  maxHR?: number; // Maximum HR (bpm)
-  restingHR?: number; // Resting HR (bpm)
-  weightKg?: number; // Body weight
-  age?: number; // User age
-}
-
-=======
->>>>>>> e8b2c4e (ftms working)
 export interface FitnessState {
   ctl: number; // Chronic Training Load (42-day fitness)
   atl: number; // Acute Training Load (7-day fatigue)
@@ -35,35 +24,20 @@ export interface Route {
   averageGrade?: number;
 }
 
-<<<<<<< HEAD
-export type ActivityType = "bike" | "run" | "swim" | "strength" | "other";
-export type ActivityLocation = "indoor" | "outdoor";
-
-=======
->>>>>>> e8b2c4e (ftms working)
 // ==============================
 // Estimation Context
 // ==============================
 
 export interface EstimationContext {
   // User profile data
-<<<<<<< HEAD
-  profile: UserProfile;
-=======
   profile: PublicProfilesRow;
->>>>>>> e8b2c4e (ftms working)
 
   // Current fitness state
   fitnessState?: FitnessState;
 
   // Activity details
-<<<<<<< HEAD
-  activityType: ActivityType;
-  location: ActivityLocation;
-=======
-  activityCategory: ActivityCategory;
-  activityLocation: ActivityLocation;
->>>>>>> e8b2c4e (ftms working)
+  activityCategory: PublicActivityCategory;
+  activityLocation: PublicActivityLocation;
 
   // Optional route data
   route?: Route;
@@ -119,16 +93,12 @@ export interface FatigueImpact {
 // Fatigue Prediction
 // ==============================
 
-<<<<<<< HEAD
-export type FormStatus = "fresh" | "optimal" | "neutral" | "tired" | "overreaching";
-=======
 export type FormStatus =
   | "fresh"
   | "optimal"
   | "neutral"
   | "tired"
   | "overreaching";
->>>>>>> e8b2c4e (ftms working)
 
 export interface FatiguePrediction {
   afterActivity: {

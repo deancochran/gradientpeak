@@ -31,7 +31,7 @@ export function encodePolyline(coordinates: LatLng[]): string {
  */
 export function decodePolyline(encoded: string): LatLng[] {
   const coords = polyline.decode(encoded);
-  return coords.map(([latitude, longitude]) => ({
+  return coords.map(([latitude, longitude]: [number, number]) => ({
     latitude,
     longitude,
   }));
@@ -210,7 +210,7 @@ export function encodeElevationPolyline(elevations: number[]): string {
  */
 export function decodeElevationPolyline(encoded: string): number[] {
   const coords = polyline.decode(encoded, 6);
-  return coords.map(([_, elevation]) => elevation / 10); // Unscale
+  return coords.map(([_, elevation]: [number, number]) => elevation / 10); // Unscale
 }
 
 /**

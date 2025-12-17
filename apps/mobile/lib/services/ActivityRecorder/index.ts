@@ -15,9 +15,12 @@
 
 import {
   getDurationMs,
-  PublicProfilesRow,
   RecordingServiceActivityPlan,
   type PlanStepV2,
+  BLE_SERVICE_UUIDS,
+  PublicActivityCategory,
+  PublicActivityLocation,
+  PublicProfilesRow,
 } from "@repo/core";
 
 import {
@@ -34,6 +37,7 @@ import { RecordingMetadata, SensorReading } from "./types";
 import { EventEmitter } from "expo";
 import { LocationObject } from "expo-location";
 import { AppState, AppStateStatus } from "react-native";
+import { SimplifiedMetrics } from "./SimplifiedMetrics";
 
 // ================================
 // Types
@@ -295,20 +299,18 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     let durationMs = 0;
     let requiresManualAdvance = false;
 
-    if (step.duration === "untilFinished") {
+    if (step.duration.type === "untilFinished") {
       requiresManualAdvance = true;
-    } else if (step.duration) {
-      if (step.duration.unit === "meters") {
-        // Placeholder: Assuming 5 m/s (18 km/h) average speed for distance-based steps
-        // This should ideally come from user profile or activity type for better accuracy
-        const estimatedSpeedMPS = 5; // meters per second
-        durationMs = (step.duration.value / estimatedSpeedMPS) * 1000;
-      } else if (step.duration.unit === "km") {
-        const estimatedSpeedMPS = 5; // meters per second
-        durationMs = ((step.duration.value * 1000) / estimatedSpeedMPS) * 1000;
-      } else {
-        durationMs = getDurationMs(step.duration);
-      }
+    } else if (step.duration.type === "time") {
+      durationMs = step.duration.seconds * 1000;
+    } else if (step.duration.type === "distance") {
+      // Placeholder: Assuming 5 m/s (18 km/h) average speed for distance-based steps
+      // This should ideally come from user profile or activity type for better accuracy
+      const estimatedSpeedMPS = 5; // meters per second
+      durationMs = (step.duration.meters / estimatedSpeedMPS) * 1000;
+    } else if (step.duration.type === "repetitions") {
+      // For repetitions, we can't estimate duration - treat as manual advance
+      requiresManualAdvance = true;
     }
 
     if (requiresManualAdvance) {
@@ -359,22 +361,18 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     // Add durations for all subsequent steps
     for (let i = this._stepIndex + 1; i < this._steps.length; i++) {
       const step = this._steps[i];
-      if (step.duration === "untilFinished") {
+      if (step.duration.type === "untilFinished") {
         // If a step is "untilFinished", we cannot determine total remaining time
-        // For simplicity, we'll return a large number or 0.
-        // A more robust solution might involve user input or a different way to handle "untilFinished" in plan totals.
-        return 0; // Or some other indicator like -1 to signify indefinite
-      } else if (step.duration) {
-        if (step.duration.unit === "meters") {
-          const estimatedSpeedMPS = 5; // meters per second (placeholder)
-          totalRemainingMs += (step.duration.value / estimatedSpeedMPS) * 1000;
-        } else if (step.duration.unit === "km") {
-          const estimatedSpeedMPS = 5; // meters per second (placeholder)
-          totalRemainingMs +=
-            ((step.duration.value * 1000) / estimatedSpeedMPS) * 1000;
-        } else {
-          totalRemainingMs += getDurationMs(step.duration);
-        }
+        // For simplicity, we'll return 0 to signify indefinite
+        return 0;
+      } else if (step.duration.type === "time") {
+        totalRemainingMs += step.duration.seconds * 1000;
+      } else if (step.duration.type === "distance") {
+        const estimatedSpeedMPS = 5; // meters per second (placeholder)
+        totalRemainingMs += (step.duration.meters / estimatedSpeedMPS) * 1000;
+      } else if (step.duration.type === "repetitions") {
+        // Can't estimate duration for repetitions
+        return 0;
       }
     }
 
@@ -394,6 +392,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     this._plan = plan;
     this._plannedActivityId = plannedId;
+    if (!plan.activity_category || !plan.activity_location) {
+      throw new Error("no plan category or location found");
+    }
 
     // Load V2 structure steps (already flat)
     try {
@@ -666,8 +667,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
           name: payload.plan.name,
           description: payload.plan.description || "",
           activity_category: payload.plan.activity_category,
-          estimated_duration: payload.plan.estimated_duration,
-          estimated_tss: payload.plan.estimated_tss,
+          activity_location: payload.plan.activity_location,
           structure: payload.plan.structure,
         };
 
@@ -784,35 +784,24 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     }
 
     try {
-      // Check for power targets (ERG mode)
-      if (step.targets.power) {
-        const powerTarget = this.resolvePowerTarget(step.targets.power);
-        if (powerTarget) {
-          console.log(`[Service] Applying power target: ${powerTarget}W`);
-          const success = await this.sensorsManager.setPowerTarget(powerTarget);
+      // Find power or FTP target (ERG mode)
+      const powerTarget = step.targets.find(
+        (t) => t.type === "watts" || t.type === "%FTP",
+      );
+
+      if (powerTarget) {
+        const powerWatts = this.resolvePowerTarget(powerTarget);
+        if (powerWatts) {
+          console.log(`[Service] Applying power target: ${powerWatts}W`);
+          const success = await this.sensorsManager.setPowerTarget(powerWatts);
 
           if (!success) {
-            this.emit("error", `Failed to set power target: ${powerTarget}W`);
+            this.emit("error", `Failed to set power target: ${powerWatts}W`);
           }
         }
       }
-      // Check for grade targets (SIM mode)
-      else if (step.targets.grade !== undefined) {
-        console.log(`[Service] Applying grade target: ${step.targets.grade}%`);
-        const success = await this.sensorsManager.setSimulation({
-          grade: step.targets.grade,
-          windSpeed: 0,
-          crr: 0.005,
-          windResistance: 0.51,
-        });
-
-        if (!success) {
-          this.emit(
-            "error",
-            `Failed to set grade target: ${step.targets.grade}%`,
-          );
-        }
-      }
+      // Note: Grade targets are not part of IntensityTargetV2
+      // If you need grade/simulation mode, it should be added to the schema
     } catch (error) {
       console.error("[Service] Failed to apply step targets:", error);
       this.emit("error", "Failed to apply workout targets to trainer");
@@ -822,22 +811,19 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   /**
    * Resolve power target from plan step to absolute watts
    */
-  private resolvePowerTarget(target: any): number | null {
-    // Handle absolute watts
-    if (typeof target === "number") {
-      return Math.round(target);
-    }
-
+  private resolvePowerTarget(
+    target: import("@repo/core").IntensityTargetV2,
+  ): number | null {
     // Handle percentage of FTP
-    if (target.type === "%FTP" || target.type === "ftp") {
+    if (target.type === "%FTP") {
       const ftp = this.profile.ftp || 200; // Fallback to 200W
-      const percentage = target.intensity || target.value || 0;
+      const percentage = target.intensity;
       return Math.round((percentage / 100) * ftp);
     }
 
-    // Handle watts object
+    // Handle absolute watts
     if (target.type === "watts") {
-      return Math.round(target.intensity || target.value || 0);
+      return Math.round(target.intensity);
     }
 
     console.warn("[Service] Unable to resolve power target:", target);
@@ -1014,13 +1000,15 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
           : undefined,
         hasPowerMeter: this.sensorsManager
           .getConnectedSensors()
-          .some((s) => s.type === "power"),
+          .some((s) => s.services.includes(BLE_SERVICE_UUIDS.CYCLING_POWER)),
         hasHeartRateMonitor: this.sensorsManager
           .getConnectedSensors()
-          .some((s) => s.type === "heart_rate"),
+          .some((s) => s.services.includes(BLE_SERVICE_UUIDS.HEART_RATE)),
         hasCadenceSensor: this.sensorsManager
           .getConnectedSensors()
-          .some((s) => s.type === "cadence"),
+          .some((s) =>
+            s.services.includes(BLE_SERVICE_UUIDS.CYCLING_SPEED_AND_CADENCE),
+          ),
       },
       gpsAvailable: this._gpsAvailable,
     });

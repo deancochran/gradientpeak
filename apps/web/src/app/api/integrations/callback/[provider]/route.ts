@@ -151,10 +151,20 @@ export async function GET(
     // Exchange code for tokens with the provider
     const tokens = await exchangeCodeForTokens(provider, code);
 
+    // Extract external user ID from token response
+    // Different providers return this in different fields
+    const externalId =
+      tokens.athlete?.id?.toString() || // Strava
+      tokens.user?.id?.toString() || // Wahoo, TrainingPeaks
+      tokens.userId?.toString() || // Generic
+      tokens.id?.toString() || // Fallback
+      "unknown";
+
     // Store integration using tRPC
     await caller.integrations.storeIntegration({
       userId,
       provider,
+      externalId,
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token || null,
       expiresAt: tokens.expires_in

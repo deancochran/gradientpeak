@@ -49,16 +49,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
           profile_id,
           created_at,
           notes,
-          activity_plan:activity_plans (
-            id,
-            name,
-            activity_category,
-            activity_location,
-            description,
-            structure,
-            route_id,
-            version
-          )
+          activity_plan:activity_plans (*)
         `,
         )
         .eq("id", input.id)
@@ -102,14 +93,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
         `
         id,
         scheduled_date,
-        activity_plan:activity_plans (
-          id,
-          name,
-          activity_category,
-          activity_location,
-          structure,
-          route_id
-        )
+        activity_plan:activity_plans (*)
       `,
       )
       .eq("profile_id", ctx.session.user.id)
@@ -251,10 +235,12 @@ export const plannedActivitiesRouter = createTRPCRouter({
         .object({
           id: z.string().uuid(),
         })
-        .merge(plannedActivityUpdateSchema),
+        .and(plannedActivityUpdateSchema),
     )
     .mutation(async ({ ctx, input }) => {
-      const { id, ...updates } = input;
+      const { id, ...updates } = input as { id: string } & z.infer<
+        typeof plannedActivityUpdateSchema
+      >;
 
       // Check ownership
       const { data: existing } = await ctx.supabase
@@ -275,7 +261,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
         const { data: activityPlan, error: planError } = await ctx.supabase
           .from("activity_plans")
           .select("id, profile_id")
-          .eq("id", updates.activity_plan_id)
+          .eq("id", updates.activity_plan_id as string)
           .or(`profile_id.eq.${ctx.session.user.id},profile_id.is.null`)
           .single();
 
@@ -357,19 +343,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
           activity_plan_id,
           scheduled_date,
           created_at,
-          activity_plan:activity_plans (
-            id,
-            idx,
-            profile_id,
-            name,
-            activity_category,
-            activity_location,
-            description,
-            structure,
-            route_id,
-            version,
-            created_at
-          )
+          activity_plan:activity_plans (*)
         `,
         )
         .eq("profile_id", ctx.session.user.id)
@@ -414,22 +388,29 @@ export const plannedActivitiesRouter = createTRPCRouter({
       const hasMore = data.length > limit;
       const items = hasMore ? data.slice(0, limit) : data;
 
+      // Filter out items without activity plans (shouldn't happen due to FK constraint)
+      const validItems = items.filter(
+        (
+          item,
+        ): item is typeof item & {
+          activity_plan: NonNullable<typeof item.activity_plan>;
+        } => item.activity_plan != null,
+      );
+
       // Add estimation to each activity plan
-      let itemsWithEstimation = items;
-      if (items.length > 0) {
+      let itemsWithEstimation = validItems;
+      if (validItems.length > 0) {
         const plansWithEstimation = await addEstimationToPlans(
-          items.map((pa) => pa.activity_plan).filter(Boolean),
+          validItems.map((pa) => pa.activity_plan),
           ctx.supabase,
           ctx.session.user.id,
         );
 
         // Map back to planned activities
         const plansMap = new Map(plansWithEstimation.map((p) => [p.id, p]));
-        itemsWithEstimation = items.map((pa) => ({
+        itemsWithEstimation = validItems.map((pa) => ({
           ...pa,
-          activity_plan: pa.activity_plan
-            ? plansMap.get(pa.activity_plan.id)
-            : null,
+          activity_plan: plansMap.get(pa.activity_plan.id) || pa.activity_plan,
         }));
       }
 
@@ -503,13 +484,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
           `
           id,
           scheduled_date,
-          activity_plan:activity_plans (
-            id,
-            activity_category,
-            activity_location,
-            structure,
-            route_id
-          )
+          activity_plan:activity_plans (*)
         `,
         )
         .eq("profile_id", ctx.session.user.id)
@@ -525,15 +500,18 @@ export const plannedActivitiesRouter = createTRPCRouter({
 
       // Calculate TSS for current week's activities
       const { estimateActivity, buildEstimationContext } = await import(
-        "../utils/estimation-helpers"
+        "@repo/core"
       );
 
       const currentWeeklyTSS = (plannedThisWeek || []).reduce((sum, pa) => {
         if (!pa.activity_plan) return sum;
 
         const context = buildEstimationContext({
-          userProfile: profile || undefined,
-          activityPlan: pa.activity_plan,
+          userProfile: profile || {},
+          activityPlan: {
+            ...pa.activity_plan,
+            route_id: pa.activity_plan.route_id || undefined,
+          },
         });
         const estimation = estimateActivity(context);
         return sum + estimation.tss;
@@ -541,8 +519,11 @@ export const plannedActivitiesRouter = createTRPCRouter({
 
       // Calculate TSS for the new activity
       const context = buildEstimationContext({
-        userProfile: profile || undefined,
-        activityPlan,
+        userProfile: profile || {},
+        activityPlan: {
+          ...activityPlan,
+          route_id: activityPlan.route_id || undefined,
+        },
       });
       const newActivityEstimation = estimateActivity(context);
 
@@ -699,19 +680,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
           activity_plan_id,
           scheduled_date,
           created_at,
-          activity_plan:activity_plans (
-            id,
-            idx,
-            profile_id,
-            name,
-            activity_category,
-            activity_location,
-            description,
-            structure,
-            route_id,
-            version,
-            created_at
-          )
+          activity_plan:activity_plans (*)
         `,
         )
         .eq("profile_id", ctx.session.user.id)

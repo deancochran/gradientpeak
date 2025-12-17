@@ -1026,7 +1026,7 @@ export function getIntensityZone(
 export function extractActivityProfile(
   structure: ActivityPlanStructure,
 ): ActivityProfilePoint[] {
-  const flattenedSteps = flattenPlanSteps(structure.steps);
+  const flattenedSteps = flattenPlanSteps(structure.steps ?? []);
   let cumulativeTime = 0;
 
   return flattenedSteps.map((step, index) => {
@@ -1060,7 +1060,7 @@ export function extractActivityProfile(
 export function calculateActivityStats(
   structure: ActivityPlanStructure,
 ): ActivityStats {
-  const flattenedSteps = flattenPlanSteps(structure.steps);
+  const flattenedSteps = flattenPlanSteps(structure.steps ?? []);
 
   const stats: ActivityStats = {
     totalSteps: flattenedSteps.length,

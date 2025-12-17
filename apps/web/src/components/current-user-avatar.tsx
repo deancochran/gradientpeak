@@ -13,26 +13,23 @@ export function CurrentUserAvatar() {
   });
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
-  // Get avatar URL when profile changes
-  useEffect(() => {
-    const getAvatarUrl = async (path: string) => {
-      try {
-        const { signedUrl } = await trpc.storage.getSignedUrl.query({
-          filePath: path,
-        });
-        setAvatarUrl(signedUrl);
-      } catch (error) {
-        console.error("Error getting avatar URL:", error);
-        setAvatarUrl(null);
-      }
-    };
+  // Get signed URL for avatar
+  const { data: avatarData } = trpc.storage.getSignedUrl.useQuery(
+    { filePath: profile?.avatar_url || "" },
+    {
+      enabled: !!profile?.avatar_url,
+      refetchOnWindowFocus: false,
+    },
+  );
 
-    if (profile?.avatar_url) {
-      getAvatarUrl(profile.avatar_url);
+  // Update avatar URL when data changes
+  useEffect(() => {
+    if (avatarData?.signedUrl) {
+      setAvatarUrl(avatarData.signedUrl);
     } else {
       setAvatarUrl(null);
     }
-  }, [profile?.avatar_url]);
+  }, [avatarData?.signedUrl]);
 
   const getInitials = (name: string | null) => {
     if (!name) return "U";

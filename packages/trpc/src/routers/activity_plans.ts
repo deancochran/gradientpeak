@@ -47,21 +47,7 @@ export const activityPlansRouter = createTRPCRouter({
 
       let query = ctx.supabase
         .from("activity_plans")
-        .select(
-          `
-          id,
-          idx,
-          name,
-          description,
-          activity_category,
-          activity_location,
-          structure,
-          version,
-          created_at,
-          profile_id,
-          route_id
-        `,
-        )
+        .select("*")
         .order("created_at", { ascending: false })
         .order("id", { ascending: true }) // Secondary sort for stable pagination
         .limit(limit + 1); // Fetch one extra to check if there's more
@@ -141,21 +127,7 @@ export const activityPlansRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const { data, error } = await ctx.supabase
         .from("activity_plans")
-        .select(
-          `
-          id,
-          idx,
-          name,
-          description,
-          activity_category,
-          activity_location,
-          structure,
-          version,
-          created_at,
-          profile_id,
-          route_id
-        `,
-        )
+        .select("*")
         .eq("id", input.id)
         .or(`profile_id.eq.${ctx.session.user.id},profile_id.is.null`) // Allow user's plans or sample plans
         .single();
@@ -234,21 +206,7 @@ export const activityPlansRouter = createTRPCRouter({
           profile_id: ctx.session.user.id,
           version: "1.0", // Default version
         })
-        .select(
-          `
-          id,
-          idx,
-          name,
-          description,
-          activity_category,
-          activity_location,
-          structure,
-          version,
-          created_at,
-          profile_id,
-          route_id
-        `,
-        )
+        .select("*")
         .single();
 
       if (error) {
@@ -277,10 +235,12 @@ export const activityPlansRouter = createTRPCRouter({
         .object({
           id: z.string().uuid(),
         })
-        .merge(updateActivityPlanInput),
+        .and(updateActivityPlanInput),
     )
     .mutation(async ({ ctx, input }) => {
-      const { id, ...updates } = input;
+      const { id, ...updates } = input as { id: string } & z.infer<
+        typeof updateActivityPlanInput
+      >;
 
       // Check ownership
       const { data: existing } = await ctx.supabase
@@ -315,21 +275,7 @@ export const activityPlansRouter = createTRPCRouter({
         .from("activity_plans")
         .update(updates)
         .eq("id", id)
-        .select(
-          `
-          id,
-          idx,
-          name,
-          description,
-          activity_category,
-          activity_location,
-          structure,
-          version,
-          created_at,
-          profile_id,
-          route_id
-        `,
-        )
+        .select("*")
         .single();
 
       if (error) {
@@ -467,21 +413,7 @@ export const activityPlansRouter = createTRPCRouter({
           route_id: originalPlan.route_id,
           profile_id: ctx.session.user.id,
         })
-        .select(
-          `
-          id,
-          idx,
-          name,
-          description,
-          activity_category,
-          activity_location,
-          structure,
-          version,
-          created_at,
-          profile_id,
-          route_id
-        `,
-        )
+        .select("*")
         .single();
 
       if (error) {

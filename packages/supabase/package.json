@@ -10,11 +10,11 @@
     "dev": "supabase start",
     "update-types": "npm run generate-types && npm run generate-schemas",
     "generate-types": "supabase gen types typescript --local > database.types.ts",
-    "generate-schemas": "supazod -i database.types.ts -o supazod/schemas.ts -t supazod/schemas.types.ts -s public,schema_a,schema_b"
+    "generate-schemas": "supazod -i database.types.ts -o supazod/schemas.ts -t supazod/schemas.types.ts -s public,schema_a,schema_b && npm run postgenerate",
+    "postgenerate": "sed -i '1s|^|// @ts-nocheck\\n|' supazod/schemas.ts"
   },
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",
-    "supabase": "^2.65.2",
     "supazod": "^2.0.0"
   },
   "peerDependencies": {

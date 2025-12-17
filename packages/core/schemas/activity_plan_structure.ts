@@ -335,12 +335,13 @@ export function flattenPlanSteps(
 ): FlattenedStep[] {
   for (const step of steps) {
     if (step.type === "step") {
-      acc.push({
+      const flattenedStep: FlattenedStep = {
         ...step,
         index: acc.length,
         fromRepetition: parentRep ?? undefined,
         originalRepetitionIndex: parentRep,
-      });
+      };
+      acc.push(flattenedStep);
     } else if (step.type === "repetition") {
       for (let i = 0; i < step.repeat; i++) {
         flattenPlanSteps(step.steps, acc, i);

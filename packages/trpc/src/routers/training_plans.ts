@@ -168,10 +168,12 @@ export const trainingPlansRouter = createTRPCRouter({
         .object({
           id: z.string().uuid(),
         })
-        .merge(trainingPlanUpdateInputSchema),
+        .and(trainingPlanUpdateInputSchema),
     )
     .mutation(async ({ ctx, input }) => {
-      const { id, ...updates } = input;
+      const { id, ...updates } = input as { id: string } & z.infer<
+        typeof trainingPlanUpdateInputSchema
+      >;
 
       // Check ownership
       const { data: existing } = await ctx.supabase
@@ -205,9 +207,9 @@ export const trainingPlansRouter = createTRPCRouter({
       const { data, error } = await ctx.supabase
         .from("training_plans")
         .update({
-          name: updates.name,
-          description: updates.description,
-          structure: updates.structure,
+          name: updates.name as string | undefined,
+          description: updates.description as string | null | undefined,
+          structure: updates.structure as any,
         })
         .eq("id", id)
         .select(

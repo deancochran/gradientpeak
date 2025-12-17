@@ -730,8 +730,8 @@ private getPowerZone(watts: number, ftp: number): number {
  * Zone 3 (Threshold): 94-99% threshold
  * Zone 4 (VO2 Max): >= 100% threshold
  */
-private getHRZone(bpm: number, thresholdHR: number): number {
-  const percent = (bpm / thresholdHR) * 100;
+private getHRZone(bpm: number, threshold_hr: number): number {
+  const percent = (bpm / threshold_hr) * 100;
   
   if (percent < 81) return 0; // Zone 1 (Recovery)
   if (percent < 89) return 1; // Zone 2 (Aerobic)

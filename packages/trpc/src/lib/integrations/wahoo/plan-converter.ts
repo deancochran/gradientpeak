@@ -87,11 +87,13 @@ export function convertToWahooPlan(
   }
 
   // Convert steps to intervals
-  for (const step of structure.steps) {
-    if (step.type === "step") {
-      plan.intervals.push(convertStep(step));
-    } else if (step.type === "repetition") {
-      plan.intervals.push(convertRepetition(step));
+  if (structure.steps) {
+    for (const step of structure.steps) {
+      if (step.type === "step") {
+        plan.intervals.push(convertStep(step));
+      } else if (step.type === "repetition") {
+        plan.intervals.push(convertRepetition(step));
+      }
     }
   }
 

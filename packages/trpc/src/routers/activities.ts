@@ -130,11 +130,33 @@ export const activitiesRouter = createTRPCRouter({
       z.object({
         activity_id: z.string().uuid(),
         streams: z.array(
-          publicActivityStreamsInsertSchema.omit({
-            activity_id: true,
-            id: true,
-            idx: true,
-            created_at: true,
+          z.object({
+            type: z.union([
+              z.literal("heartrate"),
+              z.literal("power"),
+              z.literal("speed"),
+              z.literal("cadence"),
+              z.literal("distance"),
+              z.literal("latlng"),
+              z.literal("moving"),
+              z.literal("altitude"),
+              z.literal("elevation"),
+              z.literal("temperature"),
+              z.literal("gradient"),
+              z.literal("heading"),
+            ]),
+            data_type: z.union([
+              z.literal("float"),
+              z.literal("latlng"),
+              z.literal("boolean"),
+            ]),
+            compressed_values: z.string(),
+            compressed_timestamps: z.string(),
+            sample_count: z.number(),
+            original_size: z.number(),
+            min_value: z.number().nullable().optional(),
+            max_value: z.number().nullable().optional(),
+            avg_value: z.number().nullable().optional(),
           }),
         ),
       }),
@@ -158,17 +180,65 @@ export const activitiesRouter = createTRPCRouter({
   createWithStreams: protectedProcedure
     .input(
       z.object({
-        activity: publicActivitiesInsertSchema.omit({
-          id: true,
-          idx: true,
-          created_at: true,
+        activity: z.object({
+          profile_id: z.string(),
+          name: z.string(),
+          type: z.string(),
+          started_at: z.string(),
+          finished_at: z.string(),
+          duration_seconds: z.number().optional(),
+          moving_seconds: z.number().optional(),
+          distance_meters: z.number().optional(),
+          location: z.string().nullable().optional(),
+          metrics: z.any().optional(),
+          hr_zone_seconds: z.array(z.number()).nullable().optional(),
+          power_zone_seconds: z.array(z.number()).nullable().optional(),
+          profile_snapshot: z.any().nullable().optional(),
+          planned_activity_id: z.string().nullable().optional(),
+          route_id: z.string().nullable().optional(),
+          notes: z.string().nullable().optional(),
+          is_private: z.boolean().optional(),
+          external_id: z.string().nullable().optional(),
+          provider: z
+            .union([
+              z.literal("strava"),
+              z.literal("wahoo"),
+              z.literal("trainingpeaks"),
+              z.literal("garmin"),
+              z.literal("zwift"),
+            ])
+            .nullable()
+            .optional(),
+          avg_target_adherence: z.number().nullable().optional(),
         }),
         activity_streams: z.array(
-          publicActivityStreamsInsertSchema.omit({
-            activity_id: true,
-            id: true,
-            idx: true,
-            created_at: true,
+          z.object({
+            type: z.union([
+              z.literal("heartrate"),
+              z.literal("power"),
+              z.literal("speed"),
+              z.literal("cadence"),
+              z.literal("distance"),
+              z.literal("latlng"),
+              z.literal("moving"),
+              z.literal("altitude"),
+              z.literal("elevation"),
+              z.literal("temperature"),
+              z.literal("gradient"),
+              z.literal("heading"),
+            ]),
+            data_type: z.union([
+              z.literal("float"),
+              z.literal("latlng"),
+              z.literal("boolean"),
+            ]),
+            compressed_values: z.string(),
+            compressed_timestamps: z.string(),
+            sample_count: z.number(),
+            original_size: z.number(),
+            min_value: z.number().nullable().optional(),
+            max_value: z.number().nullable().optional(),
+            avg_value: z.number().nullable().optional(),
           }),
         ),
       }),
@@ -206,10 +276,7 @@ export const activitiesRouter = createTRPCRouter({
         streams = streamsData;
       }
 
-      return {
-        activity,
-        streams,
-      };
+      return activity;
     }),
 
   getActivityWithStreams: protectedProcedure
@@ -298,142 +365,5 @@ export const activitiesRouter = createTRPCRouter({
 
       if (error) throw new Error(error.message);
       return data;
-    }),
-
-  // Upload trainer control events for an activity
-  uploadTrainerEvents: protectedProcedure
-    .input(
-      z.object({
-        activityId: z.string().uuid(),
-        events: z.array(
-          z.object({
-            timestamp: z.number(),
-            controlType: z.enum(["power_target", "simulation", "resistance"]),
-            targetValue: z.number(),
-            actualValue: z.number().optional(),
-            success: z.boolean(),
-            errorMessage: z.string().optional(),
-          }),
-        ),
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      console.log(
-        `[tRPC] Uploading ${input.events.length} trainer control events`,
-      );
-
-      // Verify activity belongs to user
-      const { data: activity } = await ctx.supabase
-        .from("activities")
-        .select("id, profile_id")
-        .eq("id", input.activityId)
-        .single();
-
-      if (!activity || activity.profile_id !== ctx.session.user.id) {
-        throw new Error("Activity not found or access denied");
-      }
-
-      // Batch insert control events
-      const { data, error } = await ctx.supabase
-        .from("trainer_control_events")
-        .insert(
-          input.events.map((e) => ({
-            activity_id: input.activityId,
-            timestamp: new Date(e.timestamp).toISOString(),
-            control_type: e.controlType,
-            target_value: e.targetValue,
-            actual_value: e.actualValue,
-            success: e.success,
-            error_message: e.errorMessage,
-          })),
-        );
-
-      if (error) {
-        console.error("[tRPC] Failed to upload trainer events:", error);
-        throw new Error("Failed to save trainer control events");
-      }
-
-      console.log("[tRPC] Successfully uploaded trainer control events");
-      return { success: true, count: input.events.length };
-    }),
-
-  // Get control adherence analysis for an activity
-  getControlAdherence: protectedProcedure
-    .input(
-      z.object({
-        activityId: z.string().uuid(),
-      }),
-    )
-    .query(async ({ ctx, input }) => {
-      // Verify activity belongs to user
-      const { data: activity } = await ctx.supabase
-        .from("activities")
-        .select("id, profile_id, trainer_controlled, control_mode")
-        .eq("id", input.activityId)
-        .single();
-
-      if (!activity || activity.profile_id !== ctx.session.user.id) {
-        throw new Error("Activity not found or access denied");
-      }
-
-      if (!activity.trainer_controlled) {
-        return {
-          hasControlData: false,
-          adherencePercent: 0,
-          events: [],
-        };
-      }
-
-      // Fetch control events
-      const { data: events } = await ctx.supabase
-        .from("trainer_control_events")
-        .select("*")
-        .eq("activity_id", input.activityId)
-        .order("timestamp", { ascending: true });
-
-      if (!events || events.length === 0) {
-        return {
-          hasControlData: false,
-          adherencePercent: 0,
-          events: [],
-        };
-      }
-
-      // Calculate adherence statistics
-      const successfulEvents = events.filter((e) => e.success);
-      const eventsWithActual = events.filter((e) => e.actual_value != null);
-
-      let avgDeviation = 0;
-      let adherencePercent = 100;
-
-      if (eventsWithActual.length > 0) {
-        const deviations = eventsWithActual.map((e) =>
-          Math.abs(e.target_value - (e.actual_value || 0)),
-        );
-        avgDeviation =
-          deviations.reduce((a, b) => a + b, 0) / deviations.length;
-
-        // Calculate adherence percentage
-        const avgTarget =
-          eventsWithActual.reduce((a, e) => a + e.target_value, 0) /
-          eventsWithActual.length;
-        adherencePercent = Math.max(0, 100 - (avgDeviation / avgTarget) * 100);
-      }
-
-      return {
-        hasControlData: true,
-        controlMode: activity.control_mode,
-        totalEvents: events.length,
-        successfulEvents: successfulEvents.length,
-        avgDeviation,
-        adherencePercent: Math.round(adherencePercent * 100) / 100,
-        events: events.map((e) => ({
-          timestamp: e.timestamp,
-          controlType: e.control_type,
-          targetValue: e.target_value,
-          actualValue: e.actual_value,
-          success: e.success,
-        })),
-      };
     }),
 });

@@ -45,7 +45,7 @@ interface EstimationContext {
   // User profile data
   profile: {
     ftp?: number;              // Functional Threshold Power (watts)
-    thresholdHR?: number;      // Lactate Threshold HR (bpm)
+    threshold_hr?: number;      // Lactate Threshold HR (bpm)
     maxHR?: number;            // Maximum HR (bpm)
     restingHR?: number;        // Resting HR (bpm)
     weightKg?: number;         // Body weight
@@ -419,12 +419,12 @@ function estimateAvgHR(
   intensityFactor: number,
   context: EstimationContext
 ): number | undefined {
-  const { thresholdHR, maxHR, restingHR } = context.profile;
+  const { threshold_hr, maxHR, restingHR } = context.profile;
   
-  if (!thresholdHR && !maxHR) return undefined;
+  if (!threshold_hr && !maxHR) return undefined;
   
   // Use threshold HR if available, otherwise estimate from max HR
-  const lthr = thresholdHR || (maxHR ? maxHR * 0.9 : undefined);
+  const lthr = threshold_hr || (maxHR ? maxHR * 0.9 : undefined);
   if (!lthr) return undefined;
   
   // IF 1.0 = threshold HR
@@ -472,7 +472,7 @@ const { data: fitnessState } = trpc.trends.getCurrentFitness.useQuery();
 const estimationContext: EstimationContext = {
   profile: {
     ftp: profile?.ftp,
-    thresholdHR: profile?.threshold_hr,
+    threshold_hr: profile?.threshold_hr,
     weightKg: profile?.weight_kg,
     age: profile?.dob ? calculateAge(profile.dob) : undefined,
   },
@@ -757,7 +757,7 @@ const estimation = useMemo(() => {
   const context: EstimationContext = {
     profile: {
       ftp: profile.ftp,
-      thresholdHR: profile.threshold_hr,
+      threshold_hr: profile.threshold_hr,
       weightKg: profile.weight_kg,
       age: profile.dob ? calculateAge(profile.dob) : undefined,
     },

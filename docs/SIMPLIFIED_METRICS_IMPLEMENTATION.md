@@ -150,8 +150,8 @@ function getPowerZone(watts: number, ftp: number): number {
 
 #### HR Zones (5 zones)
 ```typescript
-function getHRZone(bpm: number, thresholdHR: number): number {
-  const percent = (bpm / thresholdHR) * 100;
+function getHRZone(bpm: number, threshold_hr: number): number {
+  const percent = (bpm / threshold_hr) * 100;
   if (percent < 81) return 0;  // Zone 1 - Recovery
   if (percent < 89) return 1;  // Zone 2 - Aerobic
   if (percent < 94) return 2;  // Zone 3 - Tempo

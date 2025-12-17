@@ -267,6 +267,7 @@ export const integrationsRouter = createTRPCRouter({
       z.object({
         userId: z.string(),
         provider: providerSchema,
+        externalId: z.string(),
         accessToken: z.string(),
         refreshToken: z.string().nullable(),
         expiresAt: z.string().nullable(),
@@ -278,6 +279,7 @@ export const integrationsRouter = createTRPCRouter({
       const integrationData: PublicIntegrationsInsert = {
         profile_id: input.userId,
         provider: input.provider,
+        external_id: input.externalId,
         access_token: input.accessToken,
         refresh_token: input.refreshToken,
         expires_at: input.expiresAt,

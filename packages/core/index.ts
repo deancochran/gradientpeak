@@ -1,18 +1,37 @@
 /**
  * @repo/core - Core types, schemas, and utilities
  *
- * Simplified export strategy with minimal manual maintenance.
+ * This package serves as the main dependency for web, mobile, and tRPC packages.
+ * It re-exports database types from @repo/supabase and provides business logic,
+ * calculations, schemas, and utilities.
+ *
+ * Architecture:
+ * - Database types come from @repo/supabase (single source of truth)
+ * - Business logic, calculations, and utilities are defined here
+ * - All exports are organized for easy consumption by consuming packages
  */
 
 // ============================================================================
-// Core Modules - Export everything except conflicts
+// Database Layer - Re-export from @repo/supabase
 // ============================================================================
+// This provides a single import point for database types and schemas
+// while maintaining the @repo/supabase package as the source of truth
+export * from "@repo/supabase";
 
+// ============================================================================
+// FTMS (Fitness Machine Service) Types
+// ============================================================================
 export * from "./ftms-types";
 
-// Export calculations with formatDuration renamed (conflicts with schemas)
-export { formatDuration as formatDurationSeconds } from "./calculations";
-// Export everything else from calculations
+// ============================================================================
+// Calculations Module
+// ============================================================================
+// Note: This module exports ALL functions from calculations.ts, including
+// formatDuration(seconds: number). There's also a formatDuration in schemas
+// that works with DurationV2 objects. Both are exported - TypeScript will
+// handle overload resolution based on the argument type.
+
+// Export all calculations functions and types
 export {
   addDays,
   calculateActivityStats,
@@ -61,6 +80,7 @@ export {
   formatAltitude,
   formatCadence,
   formatDistance,
+  formatDuration, // ⚠️ Works with number (seconds) - see note above
   formatDurationCompact,
   formatDurationCompactMs,
   formatHeartRate,
@@ -96,7 +116,9 @@ export type {
   AggregatedStream,
 } from "./calculations";
 
-// Export constants (exclude ActivityType - comes from schemas instead)
+// ============================================================================
+// Constants Module
+// ============================================================================
 export {
   ACTIVITY_CATEGORIES,
   ACTIVITY_CATEGORY_CONFIG,
@@ -130,21 +152,25 @@ export {
 } from "./constants";
 
 // ============================================================================
-// Organized Modules - Use barrel files
+// Barrel File Exports - Automatically export from subdirectories
 // ============================================================================
+// These barrel files (index.ts in each directory) handle their own exports
+// and will automatically pick up new files added to their directories
 
-export * from "./samples";
-export * from "./schemas"; // Includes formatDuration(DurationV2)
-
-// Utils - use new barrel file
-export * from "./utils";
+export * from "./estimation"; // TSS estimation system
+export * from "./samples"; // Sample data for testing and development
+export * from "./schemas"; // Zod schemas and types (includes formatDuration for DurationV2)
+export * from "./utils"; // Utility functions
 
 // ============================================================================
 // Namespace Exports - For organized imports
 // ============================================================================
+// Allows consumers to import as: import { Calculations } from '@repo/core'
+// and use as: Calculations.calculateTSS(...)
 
 export * as Calculations from "./calculations";
 export * as Constants from "./constants";
+export * as Estimation from "./estimation";
 export * as Samples from "./samples";
 export * as Schemas from "./schemas";
 export * as Utils from "./utils";

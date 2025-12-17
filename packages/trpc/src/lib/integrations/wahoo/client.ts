@@ -373,7 +373,7 @@ export class WahooClient {
 
       // Handle 204 No Content
       if (response.status === 204) {
-        return { success: true };
+        return { success: true } as T;
       }
 
       const data = await response.json();

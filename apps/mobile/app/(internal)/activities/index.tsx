@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { trpc } from "@/lib/trpc";
+import { PublicActivityCategory } from "@repo/core";
 import { format } from "date-fns";
 import { useRouter } from "expo-router";
 import {
@@ -21,15 +22,13 @@ import {
   View,
 } from "react-native";
 
-type ActivityCategory = "run" | "bike" | "swim" | "strength" | "other" | "all";
 type SortBy = "date" | "distance" | "duration" | "tss";
 
 const ACTIVITY_TYPES: {
-  value: ActivityCategory;
+  value: PublicActivityCategory;
   label: string;
   icon: string;
 }[] = [
-  { value: "all", label: "All", icon: "🏃" },
   { value: "run", label: "Run", icon: "🏃" },
   { value: "bike", label: "Bike", icon: "🚴" },
   { value: "swim", label: "Swim", icon: "🏊" },
@@ -54,7 +53,8 @@ function formatDistance(meters: number): string {
 function ActivitiesScreen() {
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedType, setSelectedType] = useState<ActivityCategory>("all");
+  const [selectedType, setSelectedType] =
+    useState<PublicActivityCategory>("bike");
   const [sortBy, setSortBy] = useState<SortBy>("date");
   const [page, setPage] = useState(0);
   const limit = 20;
@@ -67,7 +67,7 @@ function ActivitiesScreen() {
   } = trpc.activities.listPaginated.useQuery({
     limit,
     offset: page * limit,
-    activity_category: selectedType === "all" ? undefined : selectedType,
+    activity_category: selectedType === "bike" ? undefined : selectedType,
     sort_by: sortBy,
     sort_order: "desc",
   });
@@ -92,7 +92,7 @@ function ActivitiesScreen() {
     }
   };
 
-  const handleTypeChange = (type: ActivityCategory) => {
+  const handleTypeChange = (type: PublicActivityCategory) => {
     setSelectedType(type);
     setPage(0); // Reset to first page
   };

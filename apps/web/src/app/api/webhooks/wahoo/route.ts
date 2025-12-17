@@ -14,7 +14,7 @@
  */
 
 import type { Database } from "@repo/supabase";
-import { createActivityImporter } from "@repo/trpc/lib/integrations/wahoo/activity-importer";
+import { createActivityImporter } from "@repo/trpc/webhooks";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";

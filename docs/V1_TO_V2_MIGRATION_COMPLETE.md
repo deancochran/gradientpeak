@@ -27,7 +27,7 @@ Converted all sample files from V1 to V2 using PlanBuilderV2 API:
 All samples now:
 - Use `createPlan()` builder API
 - Use `Duration` helpers (seconds, minutes, meters, km, reps)
-- Use `Target` helpers (ftp, watts, bpm, thresholdHR, maxHR, speed, cadence, rpe)
+- Use `Target` helpers (ftp, watts, bpm, threshold_hr, maxHR, speed, cadence, rpe)
 - Use `.interval({ repeat: N, steps: [...] })` instead of nested repetitions
 - Have version "2.0"
 

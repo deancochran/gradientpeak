@@ -185,8 +185,8 @@ export type ActivityPayload = z.infer<typeof ActivityPayloadSchema>;
  * Check if activity is continuous (time/distance based)
  */
 export const isContinuousActivity = (
-  category: ActivityCategory,
-  location: ActivityLocation,
+  category: PublicActivityCategory,
+  location: PublicActivityLocation,
 ): boolean => {
   return (
     (category === "run" || category === "bike") &&
@@ -197,14 +197,18 @@ export const isContinuousActivity = (
 /**
  * Check if activity is step-based (reps/sets based)
  */
-export const isStepBasedActivity = (category: ActivityCategory): boolean => {
+export const isStepBasedActivity = (
+  category: PublicActivityCategory,
+): boolean => {
   return category === "strength";
 };
 
 /**
  * Check if activity is outdoor (requires GPS)
  */
-export const isOutdoorActivity = (location: ActivityLocation): boolean => {
+export const isOutdoorActivity = (
+  location: PublicActivityLocation,
+): boolean => {
   return location === "outdoor";
 };
 
@@ -212,8 +216,8 @@ export const isOutdoorActivity = (location: ActivityLocation): boolean => {
  * Get display name for activity
  */
 export const getActivityDisplayName = (
-  category: ActivityCategory,
-  location: ActivityLocation,
+  category: PublicActivityCategory,
+  location: PublicActivityLocation,
 ): string => {
   if (category === "bike" && location === "indoor")
     return "Indoor Bike Trainer";
@@ -232,7 +236,7 @@ export const getActivityDisplayName = (
  * Get activity general category (for general categorization)
  */
 export const getActivityGeneralCategory = (
-  category: ActivityCategory,
+  category: PublicActivityCategory,
 ): "cardio" | "strength" | "other" => {
   if (["run", "bike", "swim"].includes(category)) {
     return "cardio";
@@ -247,8 +251,8 @@ export const getActivityGeneralCategory = (
  * Check if activity supports structured activities
  */
 export const supportsStructuredActivities = (
-  category: ActivityCategory,
-  location: ActivityLocation,
+  category: PublicActivityCategory,
+  location: PublicActivityLocation,
 ): boolean => {
   return category === "run" || category === "bike" || category === "strength";
 };
@@ -257,8 +261,8 @@ export const supportsStructuredActivities = (
  * Get primary metrics for activity
  */
 export const getPrimaryMetrics = (
-  category: ActivityCategory,
-  location: ActivityLocation,
+  category: PublicActivityCategory,
+  location: PublicActivityLocation,
 ): string[] => {
   if (category === "run" && location === "outdoor") {
     return ["pace", "heartRate", "distance", "elevation"];
@@ -284,14 +288,14 @@ export const getPrimaryMetrics = (
 /**
  * Check if activity typically uses power data
  */
-export const usesPowerData = (category: ActivityCategory): boolean => {
+export const usesPowerData = (category: PublicActivityCategory): boolean => {
   return category === "bike";
 };
 
 /**
  * Check if activity typically uses pace data
  */
-export const usesPaceData = (category: ActivityCategory): boolean => {
+export const usesPaceData = (category: PublicActivityCategory): boolean => {
   return category === "run" || category === "swim";
 };
 
@@ -299,7 +303,9 @@ export const usesPaceData = (category: ActivityCategory): boolean => {
  * Check if activity should use follow-along screen
  * Swim and other activities are mandatory to use follow-along
  */
-export const shouldUseFollowAlong = (category: ActivityCategory): boolean => {
+export const shouldUseFollowAlong = (
+  category: PublicActivityCategory,
+): boolean => {
   return category === "swim" || category === "other";
 };
 
@@ -309,7 +315,7 @@ export const shouldUseFollowAlong = (category: ActivityCategory): boolean => {
  */
 export const mapActivityTypeToCategory = (
   activityType: string,
-): ActivityCategory => {
+): PublicActivityCategory => {
   if (activityType.includes("run")) return "run";
   if (activityType.includes("bike")) return "bike";
   if (activityType.includes("swim")) return "swim";
@@ -322,8 +328,8 @@ export const mapActivityTypeToCategory = (
  * These activities support live metric tracking during recording
  */
 export const canRecordActivity = (
-  category: ActivityCategory,
-  location: ActivityLocation,
+  category: PublicActivityCategory,
+  location: PublicActivityLocation,
 ): boolean => {
   return category === "run" || category === "bike" || category === "strength";
 };
