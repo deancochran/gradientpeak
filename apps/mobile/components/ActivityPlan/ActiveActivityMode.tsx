@@ -2,13 +2,24 @@
 // Active Activity Mode
 // ================================
 
+import { memo } from "react";
+import { ScrollView, View } from "react-native";
+import { Activity } from "lucide-react-native";
+import {
+  type ActivityPlanStructureV2,
+  extractActivityProfileV2,
+} from "@repo/core";
+import { Text } from "@/components/ui/text";
+import { Icon } from "@/components/ui/icon";
+import type { CurrentMetrics } from "@/types"; // Adjust this import path as needed
+
 const ActiveActivityMode = memo<{
   planProgress?: any;
   activityPlan?: any;
   currentMetrics: CurrentMetrics;
   onNextStep?: () => void;
   isAdvancing: boolean;
-  structure: ActivityPlanStructure;
+  structure: ActivityPlanStructureV2;
 }>(function ActiveActivityMode({
   planProgress,
   activityPlan,
@@ -35,7 +46,7 @@ const ActiveActivityMode = memo<{
     );
   }
 
-  const profileData = extractActivityProfile(structure);
+  const profileData = extractActivityProfileV2(structure);
   const upcomingSteps = profileData.slice(
     planProgress.currentStepIndex + 1,
     planProgress.currentStepIndex + 4,
@@ -50,3 +61,5 @@ const ActiveActivityMode = memo<{
 });
 
 ActiveActivityMode.displayName = "ActiveActivityMode";
+
+export default ActiveActivityMode;

@@ -1,14 +1,13 @@
 /**
  * Wahoo Plan Converter
- * Converts GradientPeak ActivityPlanStructure to Wahoo's plan.json format
+ * Converts GradientPeak ActivityPlanStructureV2 to Wahoo's plan.json format
  */
 
 import type {
-  ActivityPlanStructure,
-  Duration,
-  IntensityTarget,
-  Repetition,
-  Step,
+  ActivityPlanStructureV2,
+  DurationV2,
+  IntensityTargetV2,
+  PlanStepV2,
 } from "@repo/core";
 import type { ActivityType } from "./activity-type-utils";
 import { isWahooSupported, toWahooTypes } from "./activity-type-utils";
@@ -54,7 +53,7 @@ export interface ConvertOptions {
  * Convert GradientPeak activity plan to Wahoo plan.json format
  */
 export function convertToWahooPlan(
-  structure: ActivityPlanStructure,
+  structure: ActivityPlanStructureV2,
   options: ConvertOptions,
 ): WahooPlanJson {
   const activityTypeMapping = toWahooTypes(options.activityType);
@@ -86,27 +85,74 @@ export function convertToWahooPlan(
     plan.header.threshold_hr = options.threshold_hr;
   }
 
-  // Convert steps to intervals
+  // Convert V2 steps to intervals
+  // V2 structure is already flat, so we need to detect repetitions by segmentName
   if (structure.steps) {
-    for (const step of structure.steps) {
-      if (step.type === "step") {
-        plan.intervals.push(convertStep(step));
-      } else if (step.type === "repetition") {
-        plan.intervals.push(convertRepetition(step));
+    const intervals = convertV2StepsToIntervals(structure.steps);
+    plan.intervals = intervals;
+  }
+
+  return plan;
+}
+
+/**
+ * Convert flat V2 steps to Wahoo intervals, detecting repetitions by segment
+ */
+function convertV2StepsToIntervals(steps: PlanStepV2[]): WahooInterval[] {
+  const intervals: WahooInterval[] = [];
+
+  // Group steps by segment to reconstruct repetitions
+  const segmentMap = new Map<string, PlanStepV2[]>();
+
+  for (const step of steps) {
+    const segmentKey = step.segmentName || "default";
+    if (!segmentMap.has(segmentKey)) {
+      segmentMap.set(segmentKey, []);
+    }
+    segmentMap.get(segmentKey)!.push(step);
+  }
+
+  // Convert each segment
+  for (const [segmentName, segmentSteps] of segmentMap) {
+    // Check if this is a repetition segment (has originalRepetitionCount > 1)
+    const firstStep = segmentSteps[0];
+    const repeatCount = firstStep?.originalRepetitionCount || 1;
+
+    if (repeatCount > 1 && segmentSteps.length > 0) {
+      // This is a repetition - create a Wahoo repeat interval
+      const stepsPerRepeat = segmentSteps.length / repeatCount;
+      const repeatInterval: WahooInterval = {
+        name: segmentName,
+        exit_trigger_type: "repeat",
+        exit_trigger_value: repeatCount - 1, // Wahoo repeats AFTER first execution
+        intensity_type: "active",
+        intervals: [],
+      };
+
+      // Take only the first iteration of steps
+      for (let i = 0; i < stepsPerRepeat; i++) {
+        repeatInterval.intervals!.push(convertStep(segmentSteps[i]!));
+      }
+
+      intervals.push(repeatInterval);
+    } else {
+      // Regular steps, not a repetition
+      for (const step of segmentSteps) {
+        intervals.push(convertStep(step));
       }
     }
   }
 
-  return plan;
+  return intervals;
 }
 
 // Re-export from activity-type-utils for backwards compatibility
 export { isWahooSupported as isActivityTypeSupportedByWahoo } from "./activity-type-utils";
 
 /**
- * Convert a single step to Wahoo interval
+ * Convert a single V2 step to Wahoo interval
  */
-function convertStep(step: Step): WahooInterval {
+function convertStep(step: PlanStepV2): WahooInterval {
   const interval: WahooInterval = {
     name: step.name || "Step",
     exit_trigger_type: "time",
@@ -115,11 +161,9 @@ function convertStep(step: Step): WahooInterval {
   };
 
   // Convert duration
-  if (step.duration && step.duration !== "untilFinished") {
-    const { type, value } = convertDuration(step.duration);
-    interval.exit_trigger_type = type;
-    interval.exit_trigger_value = value;
-  }
+  const { type, value } = convertDuration(step.duration);
+  interval.exit_trigger_type = type;
+  interval.exit_trigger_value = value;
 
   // Convert intensity type (estimate from targets)
   if (step.targets && step.targets.length > 0) {
@@ -135,54 +179,27 @@ function convertStep(step: Step): WahooInterval {
 }
 
 /**
- * Convert a repetition block to Wahoo repeat interval
+ * Convert GradientPeak V2 duration to Wahoo format
  */
-function convertRepetition(repetition: Repetition): WahooInterval {
-  const interval: WahooInterval = {
-    name: "Repeat Set",
-    exit_trigger_type: "repeat",
-    exit_trigger_value: repetition.repeat - 1, // Wahoo repeats AFTER first execution
-    intensity_type: "active",
-    intervals: [],
-  };
-
-  // Convert nested steps
-  for (const step of repetition.steps) {
-    interval.intervals!.push(convertStep(step));
-  }
-
-  return interval;
-}
-
-/**
- * Convert GradientPeak duration to Wahoo format
- */
-function convertDuration(duration: Duration): {
+function convertDuration(duration: DurationV2): {
   type: "time" | "distance";
   value: number;
 } {
-  if (duration === "untilFinished") {
-    return { type: "time", value: 300 }; // Default 5 minutes
-  }
-
   switch (duration.type) {
     case "time":
-      // Convert to seconds
-      if (duration.unit === "minutes") {
-        return { type: "time", value: duration.value * 60 };
-      }
-      return { type: "time", value: duration.value };
+      // Already in seconds
+      return { type: "time", value: duration.seconds };
 
     case "distance":
-      // Convert to meters
-      if (duration.unit === "km") {
-        return { type: "distance", value: duration.value * 1000 };
-      }
-      return { type: "distance", value: duration.value };
+      // Already in meters
+      return { type: "distance", value: duration.meters };
 
     case "repetitions":
       // Wahoo doesn't support reps as duration, use time estimate
-      return { type: "time", value: duration.value * 30 }; // 30 seconds per rep
+      return { type: "time", value: duration.count * 30 }; // 30 seconds per rep
+
+    case "untilFinished":
+      return { type: "time", value: 300 }; // Default 5 minutes
 
     default:
       return { type: "time", value: 300 };
@@ -190,9 +207,9 @@ function convertDuration(duration: Duration): {
 }
 
 /**
- * Convert GradientPeak intensity target to Wahoo target
+ * Convert GradientPeak V2 intensity target to Wahoo target
  */
-function convertTarget(target: IntensityTarget): WahooTarget {
+function convertTarget(target: IntensityTargetV2): WahooTarget {
   switch (target.type) {
     case "%FTP": {
       // Convert percentage to decimal (e.g., 85% -> 0.85)
@@ -281,7 +298,7 @@ function convertTarget(target: IntensityTarget): WahooTarget {
  * Infer Wahoo intensity type from target intensity
  */
 function inferIntensityType(
-  target: IntensityTarget,
+  target: IntensityTargetV2,
 ): WahooInterval["intensity_type"] {
   switch (target.type) {
     case "%FTP":
@@ -312,7 +329,9 @@ function inferIntensityType(
  * Validate that the plan structure is compatible with Wahoo
  * Note: This assumes activity type has already been validated with isActivityTypeSupportedByWahoo
  */
-export function validateWahooCompatibility(structure: ActivityPlanStructure): {
+export function validateWahooCompatibility(
+  structure: ActivityPlanStructureV2,
+): {
   compatible: boolean;
   warnings: string[];
 } {
@@ -326,15 +345,8 @@ export function validateWahooCompatibility(structure: ActivityPlanStructure): {
     return { compatible: false, warnings };
   }
 
-  // Check total step count (Wahoo has limits)
-  let totalSteps = 0;
-  for (const step of structure.steps) {
-    if (step.type === "step") {
-      totalSteps++;
-    } else if (step.type === "repetition") {
-      totalSteps += step.repeat * step.steps.length;
-    }
-  }
+  // V2 structure is already flat, so total steps is just the array length
+  const totalSteps = structure.steps.length;
 
   if (totalSteps > 100) {
     warnings.push(
@@ -344,31 +356,25 @@ export function validateWahooCompatibility(structure: ActivityPlanStructure): {
 
   // Check for features Wahoo doesn't support well
   for (const step of structure.steps) {
-    if (step.type === "step") {
-      // Multiple targets
-      if (step.targets && step.targets.length > 1) {
-        warnings.push(
-          `Step "${step.name}" has multiple targets. Wahoo devices only show the first target.`,
-        );
-      }
+    // Multiple targets
+    if (step.targets && step.targets.length > 1) {
+      warnings.push(
+        `Step "${step.name}" has multiple targets. Wahoo devices only show the first target.`,
+      );
+    }
 
-      // RPE targets
-      if (step.targets?.some((t) => t.type === "RPE")) {
-        warnings.push(
-          `Step "${step.name}" uses RPE targets. These will be converted to approximate FTP percentages.`,
-        );
-      }
+    // RPE targets
+    if (step.targets?.some((t) => t.type === "RPE")) {
+      warnings.push(
+        `Step "${step.name}" uses RPE targets. These will be converted to approximate FTP percentages.`,
+      );
+    }
 
-      // Repetition-based duration
-      if (
-        step.duration &&
-        step.duration !== "untilFinished" &&
-        step.duration.type === "repetitions"
-      ) {
-        warnings.push(
-          `Step "${step.name}" uses repetitions as duration. This will be converted to time estimate.`,
-        );
-      }
+    // Repetition-based duration
+    if (step.duration.type === "repetitions") {
+      warnings.push(
+        `Step "${step.name}" uses repetitions as duration. This will be converted to time estimate.`,
+      );
     }
   }
 

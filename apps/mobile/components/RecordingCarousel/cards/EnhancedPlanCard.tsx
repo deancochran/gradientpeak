@@ -7,12 +7,12 @@ import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import {
   type ActivityPlanStructureV2,
   convertTargetToAbsolute,
-  extractActivityProfile,
   formatDuration,
   formatDurationCompactMs,
-  getDurationMs,
-  IntensityTarget,
-  isValueInTargetRange,
+  getStepIntensityColor,
+  type IntensityTargetV2,
+  isInTargetRange,
+  type PlanStepV2,
 } from "@repo/core";
 import {
   AlertTriangle,
@@ -73,7 +73,7 @@ function getProfileMetrics(
  */
 function formatIntervalDescription(
   duration: number,
-  targets?: IntensityTarget[],
+  targets?: IntensityTargetV2[],
   profile?: { ftp?: number; threshold_hr?: number },
 ): string {
   const parts: string[] = [];
@@ -84,15 +84,17 @@ function formatIntervalDescription(
 
   if (targets && targets.length > 0 && profile) {
     const primaryTarget = targets[0];
-    const converted = convertTargetToAbsolute(primaryTarget, profile);
+    if (primaryTarget) {
+      const converted = convertTargetToAbsolute(primaryTarget, profile);
 
-    let targetStr = "";
-    if (converted.intensity) {
-      targetStr = `${converted.intensity}`;
-    }
+      let targetStr = "";
+      if (converted.intensity) {
+        targetStr = `${converted.intensity}`;
+      }
 
-    if (targetStr) {
-      parts.push(`@ ${targetStr} ${converted.unit}`);
+      if (targetStr) {
+        parts.push(`@ ${targetStr} ${converted.unit}`);
+      }
     }
   }
 
@@ -104,12 +106,12 @@ function formatIntervalDescription(
  */
 function getTargetStatus(
   current: number,
-  target: IntensityTarget,
+  target: IntensityTargetV2 | null | undefined,
   converted: { intensity?: number; unit: string; label: string },
 ): "within" | "below" | "above" {
-  if (!target.intensity) return "within";
+  if (!target || !target.intensity) return "within";
 
-  const inRange = isValueInTargetRange(current, target);
+  const inRange = isInTargetRange(current, target);
   if (inRange) return "within";
 
   return current < target.intensity ? "below" : "above";
@@ -120,7 +122,7 @@ function getTargetStatus(
 // ================================
 
 interface CurrentSensorReadingsProps {
-  targets?: IntensityTarget[];
+  targets?: IntensityTargetV2[];
   currentMetrics: {
     power?: number;
     heartRate?: number;
@@ -138,7 +140,7 @@ const CurrentSensorReadings = memo<CurrentSensorReadingsProps>(
       return null;
     }
 
-    const getMetricDisplay = (target: IntensityTarget) => {
+    const getMetricDisplay = (target: IntensityTargetV2) => {
       const converted = convertTargetToAbsolute(target, profile);
       let icon = Target;
       let value: number | undefined;
@@ -259,7 +261,7 @@ CurrentSensorReadings.displayName = "CurrentSensorReadings";
 
 interface CurrentIntervalViewProps {
   duration: number;
-  targets?: IntensityTarget[];
+  targets?: IntensityTargetV2[];
   name?: string;
   notes?: string;
   progress: number; // 0-1
@@ -271,7 +273,7 @@ interface CurrentIntervalViewProps {
   stepCount: number;
   hasNextStep: boolean;
   nextDuration?: number;
-  nextTargets?: IntensityTarget[];
+  nextTargets?: IntensityTargetV2[];
   nextName?: string;
   profile: ProfileMetrics;
 }
@@ -412,13 +414,29 @@ interface ActivityGraphViewProps {
 
 const ActivityGraphView = memo<ActivityGraphViewProps>(
   ({ planTimeRemaining, structure, currentStepIndex }) => {
-    const profileData = extractActivityProfile(structure);
-    const totalDuration = profileData.reduce(
-      (sum, step) => sum + step.duration,
-      0,
-    );
+    if (!structure?.steps || structure.steps.length === 0) return null;
 
-    if (profileData.length === 0) return null;
+    const steps = structure.steps;
+
+    // Calculate duration for each step in seconds
+    const stepDurations = steps.map((step) => {
+      if (step.duration.type === "time") {
+        return step.duration.seconds;
+      } else if (step.duration.type === "distance") {
+        // Estimate 5 min/km pace for distance-based steps
+        return (step.duration.meters / 1000) * 300;
+      } else if (step.duration.type === "repetitions") {
+        // Estimate 10 seconds per repetition
+        return step.duration.count * 10;
+      } else {
+        // untilFinished - default to 5 minutes
+        return 300;
+      }
+    });
+
+    const totalDuration = stepDurations.reduce((sum, dur) => sum + dur, 0);
+
+    if (totalDuration === 0) return null;
 
     return (
       <View className="flex-col gap-2 w-full">
@@ -432,14 +450,23 @@ const ActivityGraphView = memo<ActivityGraphViewProps>(
         </View>
         <View className="bg-muted/20 rounded-lg border border-muted/20 p-2">
           <View style={{ height: 48 }} className="flex-row items-end w-full">
-            {profileData.map((step, index) => {
-              const width = Math.max(2, (step.duration / totalDuration) * 100);
+            {steps.map((step, index) => {
+              const duration = stepDurations[index];
+              const width = Math.max(2, (duration / totalDuration) * 100);
+
+              // Get intensity from primary target
+              const primaryTarget = step.targets?.[0];
+              const intensity = primaryTarget?.intensity ?? 0;
+
+              // Calculate height based on intensity (assuming FTP-based)
               const height = Math.max(
                 20,
-                Math.min(100, (step.intensity / 120) * 100),
+                Math.min(100, (intensity / 120) * 100),
               );
+
               const isActive = index === currentStepIndex;
               const opacity = isActive ? 1 : 0.3;
+              const color = getStepIntensityColor(step);
 
               return (
                 <View
@@ -447,9 +474,9 @@ const ActivityGraphView = memo<ActivityGraphViewProps>(
                   style={{
                     width: `${width}%`,
                     height: `${height}%`,
-                    backgroundColor: step.color,
+                    backgroundColor: color,
                     borderWidth: isActive ? 2 : 1,
-                    borderColor: isActive ? step.color : "rgba(0,0,0,0.1)",
+                    borderColor: isActive ? color : "rgba(0,0,0,0.1)",
                     opacity,
                   }}
                   className="rounded-sm justify-start items-center"
@@ -508,16 +535,25 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
     const hasNextStep = hasPlan && nextStepIndex < stepCount;
 
     let nextStepDuration = 0;
-    let nextStepTargets: IntensityTarget[] | undefined;
+    let nextStepTargets: IntensityTargetV2[] | undefined;
     let nextStepName: string | undefined;
 
-    if (hasNextStep && service) {
-      const nextStep = (service as any)?._steps?.[nextStepIndex];
+    if (hasNextStep && structure?.steps) {
+      const nextStep = structure.steps[nextStepIndex];
       if (nextStep) {
-        nextStepDuration =
-          nextStep.duration && nextStep.duration !== "untilFinished"
-            ? getDurationMs(nextStep.duration)
-            : 0;
+        // Convert V2 duration to milliseconds
+        if (nextStep.duration.type === "time") {
+          nextStepDuration = nextStep.duration.seconds * 1000;
+        } else if (nextStep.duration.type === "distance") {
+          // Estimate 5 min/km pace
+          nextStepDuration = (nextStep.duration.meters / 1000) * 300 * 1000;
+        } else if (nextStep.duration.type === "repetitions") {
+          // Estimate 10 seconds per repetition
+          nextStepDuration = nextStep.duration.count * 10 * 1000;
+        } else {
+          // untilFinished
+          nextStepDuration = 0;
+        }
         nextStepTargets = nextStep.targets;
         nextStepName = nextStep.name;
       }

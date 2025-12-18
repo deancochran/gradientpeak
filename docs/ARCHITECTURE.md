@@ -155,7 +155,7 @@ interface ActivityPlanStructure {
 interface ActivityStep {
   name: string;
   duration: Duration | "untilFinished";
-  targets?: IntensityTarget[];  // Max 2 targets
+  targets?: IntensityTargetV2[];  // Max 2 targets
   class: "warmup" | "active" | "cooldown" | "recovery" | "interval" | "rest";
   repetitions?: {
     repeat: number;

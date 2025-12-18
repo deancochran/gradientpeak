@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
+import { trpc } from "@/lib/trpc";
 import { ActivityPayload } from "@repo/core";
 import { useRouter } from "expo-router";
 import {
@@ -15,53 +16,12 @@ import {
   Smartphone,
   Waves,
 } from "lucide-react-native";
-import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, View } from "react-native";
+import React from "react";
+import { ActivityIndicator, View } from "react-native";
 
 interface PlannedActivitiesListProps {
   onActivitySelect: (plannedActivity: any) => void;
 }
-
-// Sample data - replace with actual API call
-const mockPlannedActivities = [
-  {
-    id: "1",
-    name: "Morning Run",
-    description: "Easy 5K run to start the day",
-    activity_category: "outdoor_run",
-    scheduled_date: new Date().toISOString(),
-    estimated_duration: 30,
-    estimated_tss: 35,
-    plan: {
-      id: "plan-1",
-      name: "Morning Run",
-      activity_category: "outdoor_run",
-      structure: {
-        version: "1.0",
-        steps: [
-          {
-            type: "step",
-            name: "Warm-up",
-            duration: { type: "time", value: 5, unit: "minutes" },
-            targets: [{ type: "zone", zone: 1 }],
-          },
-          {
-            type: "step",
-            name: "Main Run",
-            duration: { type: "time", value: 20, unit: "minutes" },
-            targets: [{ type: "zone", zone: 2 }],
-          },
-          {
-            type: "step",
-            name: "Cool-down",
-            duration: { type: "time", value: 5, unit: "minutes" },
-            targets: [{ type: "zone", zone: 1 }],
-          },
-        ],
-      },
-    },
-  },
-];
 
 const ACTIVITY_CONFIGS: Record<
   string,
@@ -108,35 +68,19 @@ export function PlannedActivitiesList({
   onActivitySelect,
 }: PlannedActivitiesListProps) {
   const router = useRouter();
-  const [plannedActivities, setPlannedActivities] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // Simulate API call
-    const loadPlannedActivities = async () => {
-      try {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        setPlannedActivities(mockPlannedActivities);
-      } catch (error) {
-        console.error("Failed to load planned activities:", error);
-        Alert.alert(
-          "Error",
-          "Failed to load planned activities. Please try again.",
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadPlannedActivities();
-  }, []);
+  // Fetch today's planned activities using tRPC
+  const { data: plannedActivities, isLoading: loading } =
+    trpc.plannedActivities.getToday.useQuery();
 
   // Handle planned activity selection for follow along mode
   const handleFollowAlong = (activity: any) => {
+    const activityPlan = activity.activity_plan;
     const payload: ActivityPayload = {
-      type: activity.type || activity.activity_category,
+      category: activityPlan?.activity_category || "other",
+      location: activityPlan?.activity_location || "indoor",
       plannedActivityId: activity.id,
-      plan: activity.plan,
+      plan: activityPlan,
     };
     activitySelectionStore.setSelection(payload);
     router.push("/follow-along");
@@ -144,10 +88,12 @@ export function PlannedActivitiesList({
 
   // Handle planned activity selection for record mode
   const handleRecord = (activity: any) => {
+    const activityPlan = activity.activity_plan;
     const payload: ActivityPayload = {
-      type: activity.type || activity.activity_category,
+      category: activityPlan?.activity_category || "other",
+      location: activityPlan?.activity_location || "indoor",
       plannedActivityId: activity.id,
-      plan: activity.plan,
+      plan: activityPlan,
     };
     onActivitySelect(payload);
   };
@@ -163,7 +109,7 @@ export function PlannedActivitiesList({
     );
   }
 
-  if (plannedActivities.length === 0) {
+  if (!plannedActivities || plannedActivities.length === 0) {
     return (
       <View className="bg-muted/30 rounded-lg p-8">
         <View className="items-center">
@@ -173,11 +119,11 @@ export function PlannedActivitiesList({
             className="text-muted-foreground mb-4"
           />
           <Text className="text-lg font-semibold mb-2">
-            No Planned Activities
+            No Planned Activities Today
           </Text>
           <Text className="text-muted-foreground text-center">
-            Your scheduled activities will appear here when you create a
-            training plan.
+            You have no activities scheduled for today. Check the Plan tab to
+            schedule activities.
           </Text>
         </View>
       </View>
@@ -188,7 +134,7 @@ export function PlannedActivitiesList({
     <View className="gap-3">
       <Text className="text-sm text-muted-foreground mb-2">
         {plannedActivities.length} activity
-        {plannedActivities.length !== 1 ? "ies" : ""} scheduled
+        {plannedActivities.length !== 1 ? "ies" : ""} scheduled for today
       </Text>
 
       {plannedActivities.map((activity) => (
@@ -214,8 +160,9 @@ function PlannedActivityCard({
   onFollowAlong,
   onRecord,
 }: PlannedActivityCardProps) {
-  const config =
-    ACTIVITY_CONFIGS[activity.activity_category] || ACTIVITY_CONFIGS.other;
+  const activityPlan = activity.activity_plan;
+  const activityCategory = activityPlan?.activity_category || "other";
+  const config = ACTIVITY_CONFIGS[activityCategory] || ACTIVITY_CONFIGS.other;
 
   // Format the scheduled date
   const formatDate = (dateString: string) => {
@@ -260,7 +207,7 @@ function PlannedActivityCard({
           {/* Header */}
           <View className="flex-row items-start justify-between mb-1">
             <Text className="text-lg font-semibold flex-1">
-              {activity.name}
+              {activityPlan?.name || "Planned Activity"}
             </Text>
             <Text className="text-sm font-medium text-primary">
               {formatDate(activity.scheduled_date)}
@@ -273,15 +220,15 @@ function PlannedActivityCard({
           </Text>
 
           {/* Description */}
-          {activity.description && (
+          {activityPlan?.description && (
             <Text className="text-sm text-muted-foreground mb-2">
-              {activity.description}
+              {activityPlan.description}
             </Text>
           )}
 
           {/* Metadata */}
           <View className="flex-row items-center gap-4">
-            {activity.estimated_duration && (
+            {activityPlan?.estimated_duration_minutes && (
               <View className="flex-row items-center">
                 <Icon
                   as={Clock}
@@ -289,15 +236,15 @@ function PlannedActivityCard({
                   className="text-muted-foreground mr-1"
                 />
                 <Text className="text-xs text-muted-foreground">
-                  {activity.estimated_duration} min
+                  {activityPlan.estimated_duration_minutes} min
                 </Text>
               </View>
             )}
 
-            {activity.estimated_tss && (
+            {activityPlan?.estimated_tss && (
               <View className="flex-row items-center">
                 <Text className="text-xs text-muted-foreground">
-                  TSS: {activity.estimated_tss}
+                  TSS: {Math.round(activityPlan.estimated_tss)}
                 </Text>
               </View>
             )}

@@ -14,10 +14,8 @@ import {
   ActivityLocationSelector,
 } from "@/components/ActivityPlan/ActivityCategorySelector";
 import {
-  calculateAverageIF,
-  calculateTotalTSS,
-  flattenPlanSteps,
-  getDefaultUserSettings,
+  calculateActivityStatsV2,
+  type ActivityPlanStructureV2,
 } from "@repo/core";
 import { useRouter } from "expo-router";
 import React, { useMemo } from "react";
@@ -78,22 +76,24 @@ export default function CreateActivityPlanScreen() {
 
   const steps = useMemo(() => structure.steps || [], [structure.steps]);
 
-  // Calculate additional metrics (TSS/IF) from structure
+  // Calculate additional metrics (TSS/IF) from V2 structure
   const additionalMetrics = useMemo(() => {
-    const flatSteps = flattenPlanSteps(steps);
+    if (steps.length === 0) {
+      return { tss: 0, if: 0 };
+    }
 
-    // Get default user settings for TSS/IF calculations
-    // Map new structure to legacy format for calculations
-    const legacyActivityType = `${activityLocation}_${activityCategory}` as any;
-    const userSettings = getDefaultUserSettings(legacyActivityType);
-    const totalTSS = calculateTotalTSS(steps, userSettings);
-    const averageIF = calculateAverageIF(steps, userSettings);
+    const structureV2: ActivityPlanStructureV2 = {
+      version: 2,
+      steps,
+    };
+
+    const stats = calculateActivityStatsV2(structureV2);
 
     return {
-      tss: totalTSS,
-      if: averageIF,
+      tss: stats.tss,
+      if: stats.intensityFactor,
     };
-  }, [steps, activityLocation, activityCategory]);
+  }, [steps]);
 
   /**
    * Handle navigating to structure editor

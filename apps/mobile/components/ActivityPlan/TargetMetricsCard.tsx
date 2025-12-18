@@ -1,6 +1,10 @@
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { IntensityTarget } from "@repo/core";
+import {
+  getTargetRange,
+  isInTargetRange,
+  type IntensityTargetV2,
+} from "@repo/core";
 import { Heart, Target, Zap } from "lucide-react-native";
 import React, { memo } from "react";
 import { View } from "react-native";
@@ -10,7 +14,7 @@ import { View } from "react-native";
 // ================================
 
 interface TargetMetricsCardProps {
-  target: IntensityTarget;
+  target: IntensityTargetV2;
   current?: number;
 }
 
@@ -79,38 +83,19 @@ const TargetMetricsCard = memo<TargetMetricsCardProps>(
 
     // Format target display
     const getTargetDisplay = () => {
-      if (target.intensity) {
-        return `${Math.round(target.intensity)}`;
-      }
-      if (target.min && target.max) {
-        return `${Math.round(target.min)}-${Math.round(target.max)}`;
-      }
-      if (target.min) return `>${Math.round(target.min)}`;
-      if (target.max) return `<${Math.round(target.max)}`;
-      return "--";
+      const [min, max] = getTargetRange(target);
+      return `${Math.round(target.intensity)} (${Math.round(min)}-${Math.round(max)})`;
     };
 
     // Check if current is in range
-    const isInRange = () => {
+    const checkIsInRange = () => {
       if (current === undefined) return null;
-      const min = target.min || 0;
-      const max = target.max || Infinity;
-      const targetVal = target.intensity;
-
-      if (targetVal) {
-        // Within 5% of target
-        const tolerance = targetVal * 0.05;
-        return (
-          current >= targetVal - tolerance && current <= targetVal + tolerance
-        );
-      }
-
-      return current >= min && current <= max;
+      return isInTargetRange(current, target);
     };
 
     const metricInfo = getMetricInfo();
     const targetDisplay = getTargetDisplay();
-    const inRange = isInRange();
+    const inRange = checkIsInRange();
     const currentDisplay = current !== undefined ? Math.round(current) : "--";
 
     return (
@@ -164,7 +149,7 @@ TargetMetricsCard.displayName = "TargetMetricsCard";
 // ================================
 
 interface TargetMetricsGridProps {
-  targets?: IntensityTarget[];
+  targets?: IntensityTargetV2[];
   currentMetrics: {
     heartRate?: number;
     power?: number;

@@ -5,53 +5,12 @@ import type { ActivityPlanStructureV2 } from "./activity_plan_v2";
 // Export from activity_payload (includes ActivityType)
 export * from "./activity_payload";
 
-// Export from activity_plan_structure (V1 - legacy)
-export type {
-  Duration,
-  TimeDuration,
-  DistanceDuration,
-  RepetitionDuration,
-  IntensityTarget,
-  Step,
-  Repetition,
-  StepOrRepetition,
-  FlattenedStep,
-  ActivityPlanStructure,
-} from "./activity_plan_structure";
-export {
-  intensityTypeEnum,
-  controlTypeEnum,
-  controlUnitEnum,
-  durationUnitEnum,
-  durationTypeEnum,
-  activityLocationEnum,
-  activityCategoryEnum,
-  controlSchema,
-  timeDurationSchema,
-  distanceDurationSchema,
-  repetitionDurationSchema,
-  durationSchema,
-  percentageFTPTargetSchema,
-  percentageMaxHRTargetSchema,
-  percentageThresholdHRTargetSchema,
-  wattsTargetSchema,
-  bpmTargetSchema,
-  speedTargetSchema,
-  cadenceTargetSchema,
-  rpeTargetSchema,
-  intensityTargetSchema,
-  stepSchema,
-  activityPlanStructureSchema,
-  getDurationMs,
-  getTargetUnit,
-  convertTargetToAbsolute,
-  calculateTotalDuration,
-  flattenPlanSteps,
-  canHaveRoute,
-  getIntensityColor,
-} from "./activity_plan_structure";
+// ============================================================================
+// ACTIVITY PLAN V2 SCHEMA (RECOMMENDED - Current Standard)
+// ============================================================================
+// V2 uses a flat structure where repetitions are expanded at creation time
+// This is the preferred schema for all new code
 
-// Export from activity_plan_v2 (V2 - new schema)
 export type {
   DurationV2,
   IntensityTargetV2,
@@ -67,6 +26,7 @@ export {
   formatIntensityTarget,
   formatStepTargets,
   groupStepsBySegment,
+  validateActivityPlanStructureV2,
 } from "./activity_plan_v2";
 
 // Export V2 helpers explicitly with V2 suffix to avoid conflicts

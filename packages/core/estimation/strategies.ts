@@ -1,14 +1,77 @@
 import type { PublicActivityCategory } from "@repo/supabase";
-import {
-  flattenPlanSteps,
-  getDurationMs,
-  type Step,
-} from "../schemas/activity_plan_structure";
-import {
-  calculateStepIntensityFactor,
-  type UserSettings,
-} from "../utils/activity-defaults";
+import type { PlanStepV2 } from "../schemas/activity_plan_v2";
 import type { EstimationContext, EstimationResult, Route } from "./types";
+
+/**
+ * User settings for estimation calculations
+ */
+interface UserSettings {
+  ftp?: number | null;
+  thresholdHR?: number | null;
+  restingHR?: number;
+}
+
+/**
+ * Get duration in seconds for a V2 step
+ */
+function getDurationSeconds(
+  duration: PlanStepV2["duration"],
+  options?: { paceSecondsPerKm?: number; secondsPerRep?: number },
+): number {
+  switch (duration.type) {
+    case "time":
+      return duration.seconds;
+    case "distance":
+      const paceSecondsPerKm = options?.paceSecondsPerKm ?? 300; // 5 min/km default
+      return (duration.meters / 1000) * paceSecondsPerKm;
+    case "repetitions":
+      const secondsPerRep = options?.secondsPerRep ?? 10; // 10 sec/rep default
+      return duration.count * secondsPerRep;
+    case "untilFinished":
+      return 300; // 5 minutes default
+    default:
+      return 0;
+  }
+}
+
+/**
+ * Calculate Intensity Factor (IF) for a V2 step
+ */
+function calculateStepIntensityFactor(
+  step: PlanStepV2,
+  userSettings: UserSettings,
+): number {
+  const target = step.targets?.[0];
+  if (!target) return 0;
+
+  switch (target.type) {
+    case "%FTP":
+      return target.intensity / 100;
+
+    case "watts":
+      const ftp = userSettings.ftp ?? 250; // Default FTP
+      return target.intensity / ftp;
+
+    case "%MaxHR":
+      // Convert %MaxHR to rough IF equivalent
+      // 85% MaxHR ≈ threshold ≈ IF 1.0
+      return Math.max(0, (target.intensity - 50) / 35);
+
+    case "%ThresholdHR":
+      return target.intensity / 100;
+
+    case "bpm":
+      const thresholdHR = userSettings.thresholdHR ?? 170; // Default threshold HR
+      return target.intensity / thresholdHR;
+
+    case "RPE":
+      // RPE 6-7 ≈ threshold ≈ IF 1.0
+      return Math.max(0, (target.intensity - 3) / 4);
+
+    default:
+      return 0;
+  }
+}
 
 // ==============================
 // Strategy 1: Structure-Based
@@ -28,7 +91,8 @@ export function estimateFromStructure(
     throw new Error("Structure-based estimation requires steps");
   }
 
-  const flatSteps = flattenPlanSteps(structure.steps);
+  // V2 structure is already flat, no need to flatten
+  const steps = structure.steps;
   const userSettings: UserSettings = {
     ftp: profile.ftp ?? null,
     thresholdHR: profile.threshold_hr ?? null,
@@ -42,11 +106,8 @@ export function estimateFromStructure(
   const hrZones = [0, 0, 0, 0, 0];
   const powerZones = [0, 0, 0, 0, 0, 0, 0];
 
-  for (const step of flatSteps) {
-    const stepDuration =
-      step.duration && step.duration !== "untilFinished"
-        ? getDurationMs(step.duration) / 1000
-        : 300; // Default 5 minutes for untilFinished
+  for (const step of steps) {
+    const stepDuration = getDurationSeconds(step.duration);
 
     const stepIF = calculateStepIntensityFactor(step, userSettings);
     const stepTSS = (stepDuration / 3600) * Math.pow(stepIF, 2) * 100;
@@ -107,7 +168,7 @@ export function estimateFromStructure(
  * Distribute step duration into HR and power zones based on targets
  */
 function distributeStepIntoZones(
-  step: Step,
+  step: PlanStepV2,
   duration: number,
   hrZones: number[],
   powerZones: number[],

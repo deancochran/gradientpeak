@@ -2,8 +2,15 @@
 // Activity Progress Graph (Mini version)
 // ================================
 
+import { memo } from "react";
+import { View } from "react-native";
+import {
+  type ActivityPlanStructureV2,
+  extractActivityProfileV2,
+} from "@repo/core";
+
 interface ActivityProgressGraphProps {
-  structure: ActivityPlanStructure;
+  structure: ActivityPlanStructureV2;
   currentStep: number;
   className?: string;
 }
@@ -14,7 +21,7 @@ export const ActivityProgressGraph = memo<ActivityProgressGraphProps>(
     currentStep,
     className = "h-12",
   }: ActivityProgressGraphProps) {
-    const profileData = extractActivityProfile(structure);
+    const profileData = extractActivityProfileV2(structure);
 
     return (
       <View className={`bg-muted/20 rounded-md p-1 ${className}`}>

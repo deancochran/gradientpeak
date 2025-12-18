@@ -128,7 +128,7 @@ export function StepEditSheet({
     };
 
     // Build target object
-    const target: IntensityTarget = {
+    const target: IntensityTargetV2 = {
       type: targetType as any,
       intensity: intensityVal,
     };

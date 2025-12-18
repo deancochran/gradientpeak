@@ -2,18 +2,19 @@
 // Target Metrics Display
 // ================================
 
+import { getTargetRange, type IntensityTargetV2 } from "@repo/core";
+import { memo } from "react";
+import { Text, View } from "react-native";
+
 interface TargetZoneIndicatorProps {
-  target: IntensityTarget;
+  target: IntensityTargetV2;
   current?: number;
 }
 
 const TargetZoneIndicator = memo<TargetZoneIndicatorProps>(
   function TargetZoneIndicator({ target, current }) {
-    const minVal =
-      target.min || (target.intensity ? target.intensity * 0.95 : 0);
-    const maxVal =
-      target.max || (target.intensity ? target.intensity * 1.05 : 100);
-    const targetVal = target.intensity || (minVal + maxVal) / 2;
+    const [minVal, maxVal] = getTargetRange(target);
+    const targetVal = target.intensity;
 
     const range = maxVal - minVal;
     const currentPercent = current

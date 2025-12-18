@@ -19,7 +19,7 @@ interface FlattenedChartStep {
   index: number;
   name?: string;
   duration: Duration | undefined;
-  targets: IntensityTarget[] | undefined;
+  targets: IntensityTargetV2[] | undefined;
   durationMs: number;
   isRepetition: boolean;
   repetitionIndex?: number;
@@ -89,7 +89,7 @@ function calculateStepWidth(
  * Get intensity percentage for height calculation
  */
 function getIntensityPercentage(
-  targets: IntensityTarget[] | undefined,
+  targets: IntensityTargetV2[] | undefined,
 ): number {
   if (!targets || targets.length === 0) return 0;
 
@@ -134,7 +134,7 @@ function formatDuration(duration: Duration | undefined): string {
 /**
  * Format target for display
  */
-function formatTarget(targets: IntensityTarget[] | undefined): string {
+function formatTarget(targets: IntensityTargetV2[] | undefined): string {
   if (!targets || targets.length === 0) return "Rest";
 
   const primary = targets[0];

@@ -573,7 +573,7 @@ export interface Step {
   type: 'step';
   name: string;
   duration?: Duration | 'untilFinished';
-  targets?: IntensityTarget[]; // Max 2 targets
+  targets?: IntensityTargetV2[]; // Max 2 targets
   notes?: string;
 }
 

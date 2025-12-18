@@ -1,17 +1,19 @@
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
-import {
-  calculateTotalDuration,
-  flattenPlanSteps,
-  type StepOrRepetition,
-} from "@repo/core";
+import { type PlanStepV2 } from "@repo/core";
 import * as Haptics from "expo-haptics";
 import { Edit3, GripVertical, RefreshCw, Trash2 } from "lucide-react-native";
 import { memo } from "react";
 import { TouchableOpacity, View } from "react-native";
 
+interface RepeatSegment {
+  segmentName: string;
+  steps: PlanStepV2[];
+  segmentIndex: number;
+}
+
 interface RepeatCardProps {
-  repetition: StepOrRepetition;
+  segment: RepeatSegment;
   index: number;
   isActive?: boolean;
   onPress?: () => void;
@@ -21,8 +23,28 @@ interface RepeatCardProps {
   isDraggable?: boolean;
 }
 
+/**
+ * Calculate duration for a V2 step in milliseconds
+ */
+function getStepDurationMs(step: PlanStepV2): number {
+  switch (step.duration.type) {
+    case "time":
+      return step.duration.seconds * 1000;
+    case "distance":
+      // Estimate: 5 min/km pace
+      return (step.duration.meters / 1000) * 5 * 60 * 1000;
+    case "repetitions":
+      // Estimate: 30 seconds per rep
+      return step.duration.count * 30 * 1000;
+    case "untilFinished":
+      return 300000; // 5 minutes default
+    default:
+      return 0;
+  }
+}
+
 const RepeatCard = memo(function RepeatCard({
-  repetition,
+  segment,
   index,
   isActive = false,
   onPress,
@@ -31,18 +53,15 @@ const RepeatCard = memo(function RepeatCard({
   onEdit,
   isDraggable = true,
 }: RepeatCardProps) {
-  if (repetition.type !== "repetition") {
-    return null;
-  }
+  const stepCount = segment.steps.length;
+  const repeatCount = segment.steps[0]?.originalRepetitionCount || 1;
 
-  const stepCount = repetition.steps?.length || 0;
-  const repeatCount = repetition.repeat || 1;
-
-  // Calculate duration per repeat
-  const stepDuration = repetition.steps
-    ? calculateTotalDuration(flattenPlanSteps(repetition.steps))
-    : 0;
-  const totalDuration = stepDuration * repeatCount;
+  // Calculate duration from V2 steps
+  const totalDuration = segment.steps.reduce(
+    (sum, step) => sum + getStepDurationMs(step),
+    0,
+  );
+  const stepDuration = repeatCount > 0 ? totalDuration / repeatCount : 0;
 
   const formatDuration = (ms: number): string => {
     const minutes = Math.round(ms / 60000);
@@ -151,11 +170,11 @@ const RepeatCard = memo(function RepeatCard({
           </View>
 
           {/* Steps Preview */}
-          {repetition.steps && repetition.steps.length > 0 && (
+          {segment.steps.length > 0 && (
             <View className="mt-3 pt-3 border-t border-border">
               <Text className="text-xs text-muted-foreground mb-2">Steps:</Text>
               <View className="flex-row flex-wrap gap-1">
-                {repetition.steps.map((step, stepIndex) => (
+                {segment.steps.slice(0, repeatCount).map((step, stepIndex) => (
                   <View
                     key={stepIndex}
                     className="bg-muted px-2 py-1 rounded-md"

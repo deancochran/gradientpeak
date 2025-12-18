@@ -2,9 +2,19 @@
 // Activity Preview Mode
 // ================================
 
-const ActivityPreviewMode = memo<{ structure: ActivityPlanStructure }>(
+import { memo } from "react";
+import { ScrollView, View } from "react-native";
+import {
+  type ActivityPlanStructureV2,
+  extractActivityProfileV2,
+} from "@repo/core";
+import { ActivityGraph } from "./ActivityGraph";
+import { ActivityMetricsGrid } from "./ActivityMetricsGrid";
+import { StepBreakdown } from "./StepBreakdown";
+
+const ActivityPreviewMode = memo<{ structure: ActivityPlanStructureV2 }>(
   function ActivityPreviewMode({ structure }) {
-    const profileData = extractActivityProfile(structure);
+    const profileData = extractActivityProfileV2(structure);
 
     return (
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
@@ -29,3 +39,5 @@ const ActivityPreviewMode = memo<{ structure: ActivityPlanStructure }>(
 );
 
 ActivityPreviewMode.displayName = "ActivityPreviewMode";
+
+export default ActivityPreviewMode;

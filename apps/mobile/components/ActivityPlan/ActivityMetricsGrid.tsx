@@ -1,10 +1,21 @@
+import { memo } from "react";
+import { View } from "react-native";
+import { Activity, Clock, TrendingUp, Zap } from "lucide-react-native";
+import {
+  type ActivityPlanStructureV2,
+  calculateActivityStatsV2,
+  formatDurationCompact,
+} from "@repo/core";
+import { Text } from "@/components/ui/text";
+import { MetricCard } from "./MetricCard";
+
 interface ActivityMetricsGridProps {
-  structure: ActivityPlanStructure;
+  structure: ActivityPlanStructureV2;
 }
 
 export const ActivityMetricsGrid = memo<ActivityMetricsGridProps>(
   function ActivityMetricsGrid({ structure }) {
-    const stats = calculateActivityStats(structure);
+    const stats = calculateActivityStatsV2(structure);
 
     return (
       <View className="gap-3 mb-4">

@@ -2,8 +2,13 @@
 // Step Preview Components
 // ================================
 
+import { PlanStepV2 } from "@repo/core";
+import { memo } from "react";
+import { View } from "react-native";
+import { Text } from "../ui/text";
+
 interface StepPreviewCardProps {
-  step: ActivityProfilePoint;
+  step: PlanStepV2;
   isUpcoming?: boolean;
   showDuration?: boolean;
 }

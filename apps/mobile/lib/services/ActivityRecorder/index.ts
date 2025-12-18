@@ -14,7 +14,6 @@
  */
 
 import {
-  getDurationMs,
   RecordingServiceActivityPlan,
   type PlanStepV2,
   BLE_SERVICE_UUIDS,
@@ -666,8 +665,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         const plan: RecordingServiceActivityPlan = {
           name: payload.plan.name,
           description: payload.plan.description || "",
-          activity_category: payload.plan.activity_category,
-          activity_location: payload.plan.activity_location,
+          activity_category: payload.plan.activity_category || payload.category,
+          activity_location: payload.plan.activity_location || payload.location,
           structure: payload.plan.structure,
         };
 

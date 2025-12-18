@@ -34,7 +34,6 @@ export * from "./ftms-types";
 // Export all calculations functions and types
 export {
   addDays,
-  calculateActivityStats,
   calculateAge,
   calculateATL,
   calculateAverageGrade,
@@ -73,7 +72,6 @@ export {
   endOfDay,
   estimateCalories,
   estimateTSS,
-  extractActivityProfile,
   fahrenheitToCelsius,
   feetToMeters,
   formatAccuracy,
@@ -91,7 +89,6 @@ export {
   formatWeight,
   getFormStatus,
   getFormStatusColor,
-  getIntensityZone,
   getTrainingIntensityZone,
   isRampRateSafe,
   kgToLbs,
@@ -110,11 +107,19 @@ export {
   projectCTL,
   startOfDay,
 } from "./calculations";
+export type { AggregatedStream } from "./calculations";
+
+// V2 Calculations (for ActivityPlanStructureV2)
+export {
+  extractActivityProfileV2,
+  calculateActivityStatsV2,
+  calculateTotalDurationSecondsV2,
+  getStepAtTimeV2,
+} from "./calculations_v2";
 export type {
-  ActivityProfilePoint,
-  ActivityStats,
-  AggregatedStream,
-} from "./calculations";
+  ActivityProfilePointV2,
+  ActivityStatsV2,
+} from "./calculations_v2";
 
 // ============================================================================
 // Constants Module
@@ -169,6 +174,7 @@ export * from "./utils"; // Utility functions
 // and use as: Calculations.calculateTSS(...)
 
 export * as Calculations from "./calculations";
+export * as CalculationsV2 from "./calculations_v2";
 export * as Constants from "./constants";
 export * as Estimation from "./estimation";
 export * as Samples from "./samples";

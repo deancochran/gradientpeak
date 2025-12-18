@@ -8,14 +8,14 @@ import { View } from "react-native";
 // ================================
 
 interface MetricCardProps {
-  icon: React.ComponentType<any>;
+  icon: any; //lucide react card
   label: string;
   value: string;
   subtitle?: string;
   color?: string;
 }
 
-const MetricCard = memo<MetricCardProps>(function MetricCard({
+export const MetricCard = memo<MetricCardProps>(function MetricCard({
   icon: IconComponent,
   label,
   value,

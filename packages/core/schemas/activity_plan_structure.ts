@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { IntensityTargetV2 } from "./activity_plan_v2";
 
 // ==============================
 // ENUMS
@@ -430,7 +431,7 @@ export function getIntensityColor(intensity: number, type?: string): string {
  */
 export function isValueInTargetRange(
   current: number,
-  target: IntensityTarget,
+  target: IntensityTargetV2,
 ): boolean {
   const tolerance = target.intensity * 0.05;
   return (
@@ -442,7 +443,7 @@ export function isValueInTargetRange(
 /**
  * Format target range for display
  */
-export function formatTargetRange(target: IntensityTarget): string {
+export function formatTargetRange(target: IntensityTargetV2): string {
   const unit = getTargetUnit(target.type);
   return `${target.intensity}${unit}`;
 }
@@ -519,7 +520,7 @@ export function formatMetricValue(value: number, type: string): string {
  * Get guidance text based on current vs target
  */
 export function getTargetGuidanceText(
-  target: IntensityTarget,
+  target: IntensityTargetV2,
   current?: number,
 ): string {
   if (!current) return "Waiting for data...";
@@ -555,7 +556,7 @@ export interface ActivityCard {
  * Convert percentage-based targets to absolute values using profile
  */
 export function convertTargetToAbsolute(
-  target: IntensityTarget,
+  target: IntensityTargetV2,
   profile: { ftp?: number; threshold_hr?: number },
 ): { intensity?: number; unit: string; label: string } {
   switch (target.type) {

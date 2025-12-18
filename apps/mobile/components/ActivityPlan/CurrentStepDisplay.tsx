@@ -1,10 +1,12 @@
 import { memo } from "react";
-import { ActivityPlanStructure, formatDuration, Step } from "@repo/core";
-import { Text } from "@/components/ui/text"
-import { Icon } from "@/components/ui/icon"
+import { type ActivityPlanStructureV2, formatDuration, Step } from "@repo/core";
+import { Text } from "@/components/ui/text";
+import { Icon } from "@/components/ui/icon";
 import { View } from "react-native";
 import { Clock } from "lucide-react-native";
 import { TargetMetricsGrid } from "./TargetMetricsCard";
+import type { CurrentMetrics } from "@/types"; // Adjust this import path as needed
+
 // ================================
 // Current Step Display
 // ================================
@@ -15,7 +17,7 @@ const CurrentStepDisplay = memo<{
   currentStep?: Step;
   onNextStep?: () => void;
   isAdvancing: boolean;
-  structure: ActivityPlanStructure;
+  structure: ActivityPlanStructureV2;
 }>(function CurrentStepDisplay({
   planProgress,
   currentMetrics,
@@ -24,8 +26,6 @@ const CurrentStepDisplay = memo<{
   isAdvancing,
   structure,
 }) {
-
-
   return (
     <View className="mb-6">
       <View className="flex-row justify-between items-center mb-3">
@@ -36,7 +36,8 @@ const CurrentStepDisplay = memo<{
           <View className="p-4 bg-muted/20 rounded-lg mb-4">
             <View className="mb-3">
               <Text className="text-base font-semibold">
-                {currentStep.name || `Step ${planProgress.currentStepIndex + 1}`}
+                {currentStep.name ||
+                  `Step ${planProgress.currentStepIndex + 1}`}
               </Text>
               {currentStep.description && (
                 <Text className="text-sm text-muted-foreground mt-1">
@@ -75,3 +76,5 @@ const CurrentStepDisplay = memo<{
 });
 
 CurrentStepDisplay.displayName = "CurrentStepDisplay";
+
+export default CurrentStepDisplay;

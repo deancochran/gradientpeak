@@ -2,11 +2,14 @@
 // Activity Graph Component
 // ================================
 
-import { ActivityPlanStructure, extractActivityProfile } from "@repo/core";
+import {
+  type ActivityPlanStructureV2,
+  extractActivityProfileV2,
+} from "@repo/core";
 import { memo } from "react";
 
 interface ActivityGraphProps {
-  structure: ActivityPlanStructure;
+  structure: ActivityPlanStructureV2;
   currentStep?: number;
   onStepPress?: (stepIndex: number) => void;
   className?: string;
@@ -17,7 +20,7 @@ export const ActivityGraph = memo<ActivityGraphProps>(function ActivityGraph({
   onStepPress,
   className = "h-24",
 }: ActivityGraphProps) {
-  const profileData = extractActivityProfile(structure);
+  const profileData = extractActivityProfileV2(structure);
   const totalDuration = profileData.reduce(
     (sum, step) => sum + step.duration,
     0,

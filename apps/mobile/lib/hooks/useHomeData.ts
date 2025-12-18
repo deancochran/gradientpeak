@@ -95,12 +95,8 @@ export function useHomeData() {
     });
 
   // Get weekly activity count (loads in parallel)
-  const { data: weeklyScheduled = 0, isLoading: weekCountLoading } =
+  const { isLoading: weekCountLoading } =
     trpc.plannedActivities.getWeekCount.useQuery();
-
-  // Calculate weekly date range
-  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 }); // Monday
-  const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 });
 
   // Get weekly summary for stats (loads in parallel)
   // Uses plan ID when available, gracefully handles when not

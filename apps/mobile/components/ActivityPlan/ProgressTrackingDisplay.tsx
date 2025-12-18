@@ -2,9 +2,16 @@
 // Progress Tracking Display
 // ================================
 
+import { memo } from "react";
+import { View } from "react-native";
+import { type ActivityPlanStructureV2, formatDuration } from "@repo/core";
+import { Text } from "@/components/ui/text";
+import { ActivityProgressGraph } from "./ActivityProgress";
+import type { CurrentMetrics } from "@/types"; // Adjust this import path as needed
+
 const ProgressTrackingDisplay = memo<{
   planProgress: any;
-  structure: ActivityPlanStructure;
+  structure: ActivityPlanStructureV2;
   currentMetrics: CurrentMetrics;
 }>(function ProgressTrackingDisplay({
   planProgress,
@@ -71,3 +78,5 @@ const ProgressTrackingDisplay = memo<{
 });
 
 ProgressTrackingDisplay.displayName = "ProgressTrackingDisplay";
+
+export default ProgressTrackingDisplay;

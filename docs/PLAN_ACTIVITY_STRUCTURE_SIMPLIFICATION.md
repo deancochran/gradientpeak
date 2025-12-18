@@ -94,7 +94,7 @@ export interface Step {
   type: 'step';
   name: string;
   duration?: Duration | 'untilFinished';  // Complex but useful!
-  targets?: IntensityTarget[]; // Multiple targets - useful!
+  targets?: IntensityTargetV2[]; // Multiple targets - useful!
   notes?: string;
 }
 

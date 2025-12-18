@@ -1,4 +1,4 @@
-import type { ActivityPlanStructure } from "../schemas/activity_plan_structure";
+import type { ActivityPlanStructureV2 } from "../schemas/activity_plan_v2";
 
 export type ActivityType =
   | "outdoor_run"
@@ -23,7 +23,7 @@ export interface RecordingViewConfig {
  */
 export function getRecordingViewConfig(
   activityType: ActivityType,
-  structure: ActivityPlanStructure,
+  structure: ActivityPlanStructureV2,
   routeId: string | null | undefined,
 ): RecordingViewConfig {
   const hasSteps = !!(structure.steps && structure.steps.length > 0);

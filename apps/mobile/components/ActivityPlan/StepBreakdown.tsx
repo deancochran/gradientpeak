@@ -1,3 +1,6 @@
+import { View } from "react-native";
+import { Text } from "../ui/text";
+
 interface StepBreakdownProps {
   steps: ActivityProfilePoint[];
   maxSteps?: number;
