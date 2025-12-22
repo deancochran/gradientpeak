@@ -125,31 +125,12 @@ function HomeScreen() {
         todaysActivity={todaysActivity}
         onStartActivity={() => handleStartActivity()}
         onViewPlan={() => router.push("/(internal)/(tabs)/plan")}
+        onPress={() => {
+          if (todaysActivity) {
+            router.push(`/(internal)/activities/${todaysActivity.id}`);
+          }
+        }}
       />
-
-      {/* Quick Stats Grid */}
-      {hasData && (
-        <View className="flex-row gap-3">
-          <StatCard
-            title="30-Day Volume"
-            value={`${weeklyStats.volume.toFixed(1)} km`}
-            icon={Target}
-            className="flex-1"
-          />
-          <StatCard
-            title="Activities"
-            value={weeklyStats.activitiesCompleted}
-            icon={TrendingUp}
-            className="flex-1"
-          />
-          <StatCard
-            title="Total TSS"
-            value={weeklyStats.totalTSS}
-            icon={Flame}
-            className="flex-1"
-          />
-        </View>
-      )}
 
       {/* Training Readiness Indicator */}
       {hasData && (
@@ -162,6 +143,7 @@ function HomeScreen() {
           atlStatus={trainingReadiness.atlStatus}
           tsb={trainingReadiness.tsb}
           tsbStatus={trainingReadiness.tsbStatus}
+          onPress={() => router.push("/(internal)/(tabs)/trends")}
         />
       )}
 

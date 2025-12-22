@@ -11,7 +11,7 @@ import {
   TrendingUp,
   Zap,
 } from "lucide-react-native";
-import { View } from "react-native";
+import { TouchableOpacity, View } from "react-native";
 
 interface TodaysActivity {
   id: string;
@@ -29,12 +29,14 @@ interface TodaysFocusCardProps {
   todaysActivity: TodaysActivity | null;
   onStartActivity: () => void;
   onViewPlan: () => void;
+  onPress: () => void;
 }
 
 export function TodaysFocusCard({
   todaysActivity,
   onStartActivity,
   onViewPlan,
+  onPress,
 }: TodaysFocusCardProps) {
   // Check if it's a rest day (activity type is "Rest" or similar)
   const isRestDay =
@@ -102,63 +104,41 @@ export function TodaysFocusCard({
   }
 
   return (
-    <Card className="bg-gradient-to-br from-indigo-600 to-purple-600 border-0 overflow-hidden">
-      <CardHeader className="pb-3">
-        <View className="flex-row items-center justify-between">
-          <View className="flex-1">
-            <Text className="text-indigo-200 text-xs font-semibold uppercase tracking-wider mb-1">
-              Today's Focus
-            </Text>
-            <Text className="text-white text-2xl font-bold">
-              {todaysActivity.title}
-            </Text>
-          </View>
-          <View className="bg-white/20 rounded-full p-3">
-            <Activity size={24} color="#ffffff" />
-          </View>
-        </View>
-      </CardHeader>
-      <CardContent className="pt-0">
-        <View className="flex-row items-center mb-4 gap-4">
-          {todaysActivity.intensity && (
-            <View className="flex-row items-center">
-              <Zap size={16} color="#e0e7ff" />
-              <Text className="text-indigo-100 text-sm ml-1">
-                {todaysActivity.intensity}
+    <TouchableOpacity onPress={onPress}>
+      <Card className="border-0 overflow-hidden">
+        <CardContent className="p-4">
+          <View className="flex-row items-center justify-between">
+            <View>
+              <View className="flex-row items-center gap-2">
+                <Activity size={20} />
+                <Text className="text-lg font-bold">
+                  {todaysActivity.title}
+                </Text>
+                <View className="px-2 py-1 rounded-full">
+                  <Text className="text-xs font-semibold">Today</Text>
+                </View>
+              </View>
+              <Text className="text-sm mt-1">
+                {todaysActivity.scheduledTime}
+                {todaysActivity.duration > 0 &&
+                  ` • ${todaysActivity.duration} min`}
+                {todaysActivity.distance > 0 &&
+                  ` • ${todaysActivity.distance} km`}
               </Text>
             </View>
-          )}
-          {todaysActivity.duration > 0 && (
-            <View className="flex-row items-center">
-              <Target size={16} color="#e0e7ff" />
-              <Text className="text-indigo-100 text-sm ml-1">
-                {todaysActivity.duration} min
-              </Text>
-            </View>
-          )}
-          {todaysActivity.distance > 0 && (
-            <View className="flex-row items-center">
-              <TrendingUp size={16} color="#e0e7ff" />
-              <Text className="text-indigo-100 text-sm ml-1">
-                {todaysActivity.distance} km
-              </Text>
-            </View>
-          )}
-        </View>
-        {todaysActivity.description && (
-          <Text className="text-indigo-100 text-sm mb-4">
-            {todaysActivity.description}
-          </Text>
-        )}
-        <Button className="bg-white w-full" onPress={onStartActivity}>
-          <View className="flex-row items-center justify-center">
-            <Play size={20} color="#4f46e5" fill="#4f46e5" />
-            <Text className="text-indigo-600 font-bold text-base ml-2">
-              Start Activity
-            </Text>
+            <Button
+              variant="secondary"
+              className="py-2 px-4"
+              onPress={onStartActivity}
+            >
+              <View className="flex-row items-center justify-center">
+                <Play size={18} />
+                <Text className="font-bold text-sm ml-2">Start</Text>
+              </View>
+            </Button>
           </View>
-        </Button>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </TouchableOpacity>
   );
 }
