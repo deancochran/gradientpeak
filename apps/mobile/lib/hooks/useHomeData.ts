@@ -98,6 +98,16 @@ export function useHomeData() {
     const daysActive = data.stats.daysActive;
     const avgTSSPerDay = data.stats.avgTSSPerDay;
 
+    // Calculate basic CTL, ATL, TSB estimates from 30-day data
+    // CTL (Chronic Training Load) - 42-day weighted average (simulated from 30-day data)
+    const estimatedCTL = Math.round(avgTSSPerDay * 0.8 * 42);
+
+    // ATL (Acute Training Load) - 7-day weighted average (simulated)
+    const estimatedATL = Math.round(avgTSSPerDay * 1.2 * 7);
+
+    // TSB (Training Stress Balance) = CTL - ATL
+    const estimatedTSB = estimatedCTL - estimatedATL;
+
     // Simple heuristic: 3-5 active days per week is optimal
     if (daysActive >= 12) {
       // ~3+ days/week over 30 days
@@ -106,9 +116,9 @@ export function useHomeData() {
         percentage: 80,
         color: "green",
         explanation: `${daysActive} active days in the last month`,
-        ctl: 0,
-        atl: 0,
-        tsb: 0,
+        ctl: estimatedCTL,
+        atl: estimatedATL,
+        tsb: estimatedTSB,
       };
     } else if (daysActive >= 8) {
       return {
@@ -116,9 +126,9 @@ export function useHomeData() {
         percentage: 60,
         color: "blue",
         explanation: `${daysActive} active days in the last month`,
-        ctl: 0,
-        atl: 0,
-        tsb: 0,
+        ctl: estimatedCTL,
+        atl: estimatedATL,
+        tsb: estimatedTSB,
       };
     } else if (daysActive >= 4) {
       return {
@@ -126,9 +136,9 @@ export function useHomeData() {
         percentage: 40,
         color: "purple",
         explanation: `${daysActive} active days in the last month`,
-        ctl: 0,
-        atl: 0,
-        tsb: 0,
+        ctl: estimatedCTL,
+        atl: estimatedATL,
+        tsb: estimatedTSB,
       };
     } else {
       return {
@@ -136,9 +146,9 @@ export function useHomeData() {
         percentage: 20,
         color: "orange",
         explanation: `${daysActive} active days in the last month`,
-        ctl: 0,
-        atl: 0,
-        tsb: 0,
+        ctl: estimatedCTL,
+        atl: estimatedATL,
+        tsb: estimatedTSB,
       };
     }
   }, [data?.stats]);
@@ -165,6 +175,56 @@ export function useHomeData() {
     };
   }, [data?.stats]);
 
+  // Training readiness calculation based on CTL, ATL, and TSB
+  const trainingReadiness = useMemo(() => {
+    const ctl = formStatus.ctl || 0;
+    const atl = formStatus.atl || 0;
+    const tsb = formStatus.tsb || 0;
+
+    // Calculate readiness percentage based on TSB and CTL
+    // TSB positive = fresh, TSB negative = fatigued
+    // Higher CTL = better fitness base
+    const percentage = Math.min(100, Math.max(0, 50 + tsb * 2 + ctl / 2));
+
+    // Determine status based on percentage
+    let status = "Moderate";
+    if (percentage >= 85) status = "Prime";
+    else if (percentage >= 70) status = "Good";
+    else if (percentage < 50) status = "Fatigued";
+
+    // Helper functions for metric status
+    const getCtlStatus = (ctl: number) => {
+      if (ctl === 0) return "Low";
+      if (ctl < 30) return "Building";
+      if (ctl < 60) return "Steady";
+      return "Strong";
+    };
+
+    const getAtlStatus = (atl: number) => {
+      if (atl === 0) return "Low";
+      if (atl < 30) return "Low";
+      if (atl > 50) return "High";
+      return "Moderate";
+    };
+
+    const getTsbStatus = (tsb: number) => {
+      if (tsb > 15) return "Fresh";
+      if (tsb < -15) return "Tired";
+      return "Neutral";
+    };
+
+    return {
+      percentage: Math.round(percentage),
+      status,
+      ctl,
+      ctlStatus: getCtlStatus(ctl),
+      atl,
+      atlStatus: getAtlStatus(atl),
+      tsb,
+      tsbStatus: getTsbStatus(tsb),
+    };
+  }, [formStatus]);
+
   const hasData = !!(
     data?.plan ||
     data?.todaysActivity ||
@@ -175,6 +235,7 @@ export function useHomeData() {
     todaysActivity,
     weeklyStats,
     formStatus,
+    trainingReadiness,
     upcomingActivitys,
     weeklyGoal,
     isLoading,

@@ -5,6 +5,7 @@ import {
   StatCard,
   TodaysFocusCard,
   TrainingFormCard,
+  TrainingReadinessCard,
   WeeklyGoalCard,
   WeeklyPlanPreview,
 } from "@/components/home";
@@ -33,6 +34,7 @@ function HomeScreen() {
     todaysActivity,
     weeklyStats,
     formStatus,
+    trainingReadiness,
     upcomingActivitys,
     weeklyGoal,
     isLoading,
@@ -149,8 +151,19 @@ function HomeScreen() {
         </View>
       )}
 
-      {/* Training Form Status Indicator */}
-      {hasData && <TrainingFormCard formStatus={formStatus} />}
+      {/* Training Readiness Indicator */}
+      {hasData && (
+        <TrainingReadinessCard
+          percentage={trainingReadiness.percentage}
+          status={trainingReadiness.status}
+          ctl={trainingReadiness.ctl}
+          ctlStatus={trainingReadiness.ctlStatus}
+          atl={trainingReadiness.atl}
+          atlStatus={trainingReadiness.atlStatus}
+          tsb={trainingReadiness.tsb}
+          tsbStatus={trainingReadiness.tsbStatus}
+        />
+      )}
 
       {/* Weekly Plan Preview */}
       <WeeklyPlanPreview

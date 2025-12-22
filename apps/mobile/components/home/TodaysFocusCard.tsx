@@ -3,12 +3,13 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import {
-    Activity,
-    Calendar,
-    Play,
-    Target,
-    TrendingUp,
-    Zap,
+  Activity,
+  Calendar,
+  Coffee,
+  Play,
+  Target,
+  TrendingUp,
+  Zap,
 } from "lucide-react-native";
 import { View } from "react-native";
 
@@ -35,11 +36,20 @@ export function TodaysFocusCard({
   onStartActivity,
   onViewPlan,
 }: TodaysFocusCardProps) {
+  // Check if it's a rest day (activity type is "Rest" or similar)
+  const isRestDay =
+    todaysActivity?.type?.toLowerCase().includes("rest") ||
+    todaysActivity?.title?.toLowerCase().includes("rest");
+
   if (!todaysActivity) {
     return (
       <Card className="bg-card border-border">
         <CardContent className="p-6 items-center">
-          <Icon as={Calendar} size={32} className="text-muted-foreground mb-2" />
+          <Icon
+            as={Calendar}
+            size={32}
+            className="text-muted-foreground mb-2"
+          />
           <Text className="text-card-foreground text-center font-medium mb-1">
             No activity scheduled today
           </Text>
@@ -48,6 +58,43 @@ export function TodaysFocusCard({
           </Text>
           <Button variant="outline" onPress={onViewPlan}>
             <Text className="text-muted-foreground">View Plan</Text>
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Rest day variant - uses card theme instead of gradient
+  if (isRestDay) {
+    return (
+      <Card className="bg-card border-border">
+        <CardHeader className="pb-3">
+          <View className="flex-row items-center justify-between">
+            <View className="flex-1">
+              <Text className="text-muted-foreground text-xs font-semibold uppercase tracking-wider mb-1">
+                Today's Focus
+              </Text>
+              <Text className="text-foreground text-2xl font-bold">
+                {todaysActivity.title}
+              </Text>
+            </View>
+            <View className="bg-primary/10 rounded-full p-3">
+              <Icon as={Coffee} size={24} className="text-primary" />
+            </View>
+          </View>
+        </CardHeader>
+        <CardContent className="pt-0">
+          {todaysActivity.description && (
+            <Text className="text-muted-foreground text-sm mb-4">
+              {todaysActivity.description}
+            </Text>
+          )}
+          <Text className="text-foreground text-sm mb-4">
+            Recovery is just as important as training. Take time to rest and let
+            your body adapt.
+          </Text>
+          <Button variant="outline" onPress={onViewPlan} className="w-full">
+            <Text>View Full Week</Text>
           </Button>
         </CardContent>
       </Card>
