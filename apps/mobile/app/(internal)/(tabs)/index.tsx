@@ -8,7 +8,6 @@ import {
   WeeklyGoalCard,
   WeeklyPlanPreview,
 } from "@/components/home";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/hooks/useAuth";
@@ -38,12 +37,13 @@ function HomeScreen() {
     weeklyGoal,
     isLoading,
     hasData,
+    refetch,
   } = useHomeData();
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    // Trigger refetch by remounting (simple approach)
-    setTimeout(() => setRefreshing(false), 1000);
+    await refetch();
+    setRefreshing(false);
   };
 
   const handleStartActivity = (activityId?: string) => {
@@ -57,7 +57,8 @@ function HomeScreen() {
 
     // Set activity selection for the record screen
     const payload: ActivityPayload = {
-      type: targetActivity.type as any,
+      category: targetActivity.type as any,
+      location: "outdoor", // Default to outdoor, will be properly set when creating plans
       plannedActivityId: targetActivity.id,
       plan: undefined,
     };
@@ -128,37 +129,21 @@ function HomeScreen() {
       {hasData && (
         <View className="flex-row gap-3">
           <StatCard
-            title="Weekly Volume"
+            title="30-Day Volume"
             value={`${weeklyStats.volume.toFixed(1)} km`}
             icon={Target}
             className="flex-1"
           />
           <StatCard
-            title="Fitness"
-            value={weeklyStats.fitness}
+            title="Activities"
+            value={weeklyStats.activitiesCompleted}
             icon={TrendingUp}
-            trend={
-              weeklyStats.fitnessChange !== 0
-                ? {
-                    value: weeklyStats.fitnessChange,
-                    direction: weeklyStats.fitnessChange > 0 ? "up" : "down",
-                  }
-                : undefined
-            }
             className="flex-1"
           />
           <StatCard
-            title="Fatigue"
-            value={weeklyStats.fatigue}
+            title="Total TSS"
+            value={weeklyStats.totalTSS}
             icon={Flame}
-            trend={
-              weeklyStats.fatigueChange !== 0
-                ? {
-                    value: weeklyStats.fatigueChange,
-                    direction: weeklyStats.fatigueChange > 0 ? "up" : "down",
-                  }
-                : undefined
-            }
             className="flex-1"
           />
         </View>
@@ -189,31 +174,6 @@ function HomeScreen() {
         <EmptyState
           onCreatePlan={() => router.push("/(internal)/(tabs)/plan")}
         />
-      )}
-
-      {/* Debug Info (Development only) */}
-      {__DEV__ && (
-        <Card className="bg-muted/50 border-border">
-          <CardHeader>
-            <CardTitle className="text-muted-foreground text-sm">
-              Debug Info
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="gap-1">
-            <Text className="text-muted-foreground text-xs">
-              User ID: {user?.id || "None"}
-            </Text>
-            <Text className="text-muted-foreground text-xs">
-              Email: {user?.email || "None"}
-            </Text>
-            <Text className="text-muted-foreground text-xs">
-              Profile: {profile?.username || "None"}
-            </Text>
-            <Text className="text-muted-foreground text-xs">
-              Has Plan: {hasData ? "Yes" : "No"}
-            </Text>
-          </CardContent>
-        </Card>
       )}
     </ScrollView>
   );

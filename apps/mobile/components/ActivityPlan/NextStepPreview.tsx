@@ -1,5 +1,11 @@
+import { memo } from "react";
+import { ScrollView, View } from "react-native";
+import { Text } from "../ui/text";
+import { PlanStepV2 } from "@repo/core";
+import StepPreviewCard from "./StepPreviewCard";
+
 interface UpcomingStepsPreviewProps {
-  steps: ActivityProfilePoint[];
+  steps: PlanStepV2[];
   title?: string;
 }
 
@@ -22,7 +28,7 @@ export const UpcomingStepsPreview = memo<UpcomingStepsPreviewProps>(
         >
           <View className="flex-row gap-3 px-1">
             {steps.map((step, index) => (
-              <View key={step.index} className="w-64">
+              <View key={index} className="w-64">
                 <StepPreviewCard
                   step={step}
                   isUpcoming={true}

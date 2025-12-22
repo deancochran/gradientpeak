@@ -3,7 +3,7 @@
  * Orchestrates syncing planned activities to Wahoo
  */
 
-import type { ActivityPlanStructure } from "@repo/core";
+import type { ActivityPlanStructureV2 } from "@repo/core";
 import type { Database } from "@repo/supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { toActivityType } from "./activity-type-utils";
@@ -187,7 +187,7 @@ export class WahooSyncService {
 
       // 6. Validate compatibility
       const structure = planned.activity_plan
-        .structure as ActivityPlanStructure;
+        .structure as ActivityPlanStructureV2;
       const validation = validateWahooCompatibility(structure);
 
       if (!validation.compatible) {
@@ -244,7 +244,7 @@ export class WahooSyncService {
    */
   private async createNewSync(
     planned: any,
-    structure: ActivityPlanStructure,
+    structure: ActivityPlanStructureV2,
     profile: any,
     wahooClient: any,
     profileId: string,
@@ -362,7 +362,7 @@ export class WahooSyncService {
   private async updateExistingSync(
     planned: any,
     existingSync: any,
-    structure: ActivityPlanStructure,
+    structure: ActivityPlanStructureV2,
     profile: any,
     wahooClient: any,
     profileId: string,

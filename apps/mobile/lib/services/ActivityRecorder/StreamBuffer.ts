@@ -403,7 +403,7 @@ export class StreamBuffer {
       chunkIndex: this.chunkIndex,
       lastFlushTime: this.lastFlushTime,
       memoryEstimateMB: totalBytes / (1024 * 1024),
-      storageDir: this.storageDir,
+      storageDir: this.storageDir.name,
     };
   }
 

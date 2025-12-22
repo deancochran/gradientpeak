@@ -2,7 +2,14 @@
 // Step Preview Components
 // ================================
 
-import { PlanStepV2 } from "@repo/core";
+import {
+  PlanStepV2,
+  formatDurationCompact,
+  calculateTotalDurationSecondsV2,
+  getStepIntensityColor,
+  getTargetDisplayName,
+  formatTargetValue,
+} from "@repo/core";
 import { memo } from "react";
 import { View } from "react-native";
 import { Text } from "../ui/text";
@@ -43,24 +50,24 @@ const StepPreviewCard = memo<StepPreviewCardProps>(function StepPreviewCard({
         {showDuration && (
           <View className="ml-2">
             <Text className="text-xs text-muted-foreground">
-              {formatDurationCompact(step.duration)}
+              {formatDurationCompact(calculateTotalDurationSecondsV2([step]))}
             </Text>
           </View>
         )}
       </View>
 
       {/* Intensity indicator */}
-      <View className="flex-row items-center gap-2 mb-2">
-        <View
-          className="w-3 h-3 rounded-full"
-          style={{ backgroundColor: step.color }}
-        />
-        <Text className="text-xs text-muted-foreground">
-          {step.intensityType && step.intensity > 0
-            ? `${Math.round(step.intensity)}% ${step.intensityType.replace("%", "")}`
-            : "Recovery"}
-        </Text>
-      </View>
+      {step.targets && step.targets.length > 0 && (
+        <View className="flex-row items-center gap-2 mb-2">
+          <View
+            className="w-3 h-3 rounded-full"
+            style={{ backgroundColor: getStepIntensityColor(step) }}
+          />
+          <Text className="text-xs text-muted-foreground">
+            {step.targets.map((t) => formatTargetValue(t)).join(", ")}
+          </Text>
+        </View>
+      )}
 
       {/* Targets preview */}
       {step.targets && step.targets.length > 0 && (
@@ -68,7 +75,7 @@ const StepPreviewCard = memo<StepPreviewCardProps>(function StepPreviewCard({
           {step.targets.map((target, index) => (
             <View key={index} className="px-2 py-1 bg-muted/50 rounded-md">
               <Text className="text-xs text-muted-foreground">
-                {getMetricDisplayName(target.type)}: {formatTargetRange(target)}
+                {getTargetDisplayName(target.type)}: {formatTargetValue(target)}
               </Text>
             </View>
           ))}
@@ -79,3 +86,5 @@ const StepPreviewCard = memo<StepPreviewCardProps>(function StepPreviewCard({
 });
 
 StepPreviewCard.displayName = "StepPreviewCard";
+
+export default StepPreviewCard;

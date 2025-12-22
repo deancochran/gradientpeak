@@ -194,18 +194,18 @@ export function TemplatesList({ onTemplateSelect }: TemplatesListProps) {
   function handleFollowAlong(template: any) {
     const payload: ActivityPayload = {
       category: template.activity_category,
-      location: template.activity_location || category.location,
+      location: template.activity_location,
       plan: template,
     };
     activitySelectionStore.setSelection(payload);
-    router.push("/follow-along");
+    router.push("/follow-along" as any);
   }
 
   // Handle template selection for record mode
   function handleRecord(template: any) {
     const payload: ActivityPayload = {
       category: template.activity_category,
-      location: template.activity_location || category.location,
+      location: template.activity_location,
       plan: template,
     };
     onTemplateSelect(payload);

@@ -1,4 +1,4 @@
-import { BLE_SERVICE_UUIDS } from "@repo/core";
+import { BLE_SERVICE_UUIDS, FTMS_CHARACTERISTICS } from "@repo/core";
 import { Buffer } from "buffer";
 import {
   BleError,
@@ -7,9 +7,9 @@ import {
   Device,
 } from "react-native-ble-plx";
 import {
+  ControlMode,
   FTMSController,
   type FTMSFeatures,
-  ControlMode,
 } from "./FTMSController";
 import { SensorReading } from "./types";
 
@@ -19,6 +19,17 @@ export type SensorConnectionState =
   | "connecting"
   | "connected"
   | "failed";
+
+/** --- Valid state transitions for connection state machine --- */
+const VALID_STATE_TRANSITIONS: Record<
+  SensorConnectionState,
+  SensorConnectionState[]
+> = {
+  disconnected: ["connecting", "failed"],
+  connecting: ["connected", "disconnected", "failed"],
+  connected: ["disconnected"],
+  failed: ["connecting", "disconnected"],
+};
 
 /** --- Connected sensor interface --- */
 export interface ConnectedSensor {
@@ -38,6 +49,13 @@ export interface ConnectedSensor {
 
   // Battery monitoring
   batteryLevel?: number; // 0-100
+
+  // State machine tracking
+  stateTransitionInProgress?: boolean;
+  pendingStateTransition?: {
+    targetState: SensorConnectionState;
+    timestamp: number;
+  };
 }
 
 /** --- Metric Types --- */
@@ -80,6 +98,11 @@ export class SensorsManager {
   private readonly MAX_RECONNECTION_ATTEMPTS = 5;
   private readonly RECONNECTION_BACKOFF_BASE_MS = 500;
 
+  // State transition debouncing
+  private stateTransitionTimers: Map<string, ReturnType<typeof setTimeout>> =
+    new Map();
+  private readonly STATE_TRANSITION_DEBOUNCE_MS = 500;
+
   constructor() {
     this.initialize();
     this.startConnectionMonitoring();
@@ -92,6 +115,90 @@ export class SensorsManager {
       if (state === "PoweredOff" || state === "Unauthorized")
         this.disconnectAll();
     }, true);
+  }
+
+  /**
+   * Transition sensor connection state with validation and debouncing
+   * Prevents rapid state changes and ensures valid state transitions
+   */
+  private transitionSensorState(
+    sensor: ConnectedSensor,
+    targetState: SensorConnectionState,
+    immediate: boolean = false,
+  ): void {
+    // Check if transition is valid
+    const currentState = sensor.connectionState;
+    const validTransitions = VALID_STATE_TRANSITIONS[currentState];
+
+    if (!validTransitions.includes(targetState)) {
+      console.warn(
+        `[SensorsManager] Invalid state transition for ${sensor.name}: ${currentState} -> ${targetState}`,
+      );
+      return;
+    }
+
+    // Check if a transition is already in progress
+    if (sensor.stateTransitionInProgress && !immediate) {
+      console.log(
+        `[SensorsManager] State transition already in progress for ${sensor.name}, queuing ${targetState}`,
+      );
+      sensor.pendingStateTransition = {
+        targetState,
+        timestamp: Date.now(),
+      };
+      return;
+    }
+
+    // Apply immediate transition (no debounce)
+    if (immediate) {
+      this.applyStateTransition(sensor, targetState);
+      return;
+    }
+
+    // Debounce state transitions to prevent flicker
+    const existingTimer = this.stateTransitionTimers.get(sensor.id);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+
+    sensor.stateTransitionInProgress = true;
+
+    const timer = setTimeout(() => {
+      this.applyStateTransition(sensor, targetState);
+      this.stateTransitionTimers.delete(sensor.id);
+
+      // Process any pending transitions
+      if (sensor.pendingStateTransition) {
+        const pending = sensor.pendingStateTransition;
+        sensor.pendingStateTransition = undefined;
+
+        // Only apply if still recent (within 2 seconds)
+        if (Date.now() - pending.timestamp < 2000) {
+          this.transitionSensorState(sensor, pending.targetState, false);
+        }
+      }
+    }, this.STATE_TRANSITION_DEBOUNCE_MS);
+
+    this.stateTransitionTimers.set(sensor.id, timer);
+  }
+
+  /**
+   * Apply state transition and notify listeners
+   */
+  private applyStateTransition(
+    sensor: ConnectedSensor,
+    targetState: SensorConnectionState,
+  ): void {
+    const previousState = sensor.connectionState;
+    sensor.connectionState = targetState;
+    sensor.stateTransitionInProgress = false;
+
+    console.log(
+      `[SensorsManager] ${sensor.name} state transition: ${previousState} -> ${targetState}`,
+    );
+
+    // Notify connection callbacks
+    this.connectionCallbacks.forEach((cb) => cb(sensor));
   }
 
   /** Start monitoring sensor connection health */
@@ -135,8 +242,7 @@ export class SensorsManager {
           console.log(
             `[SensorsManager] Sensor ${sensor.name} disconnected (no data for ${timeSinceLastData}ms)`,
           );
-          sensor.connectionState = "disconnected";
-          this.connectionCallbacks.forEach((cb) => cb(sensor));
+          this.transitionSensorState(sensor, "disconnected", true);
 
           // Start reconnection with exponential backoff
           await this.attemptReconnection(sensor.id, 1);
@@ -167,16 +273,14 @@ export class SensorsManager {
       console.error(
         `[SensorsManager] Max reconnection attempts (${this.MAX_RECONNECTION_ATTEMPTS}) reached for ${sensor.name}`,
       );
-      sensor.connectionState = "failed";
+      this.transitionSensorState(sensor, "failed", true);
       this.reconnectionAttempts.delete(sensorId);
-      this.connectionCallbacks.forEach((cb) => cb(sensor));
       return;
     }
 
     // Update state
-    sensor.connectionState = "connecting";
+    this.transitionSensorState(sensor, "connecting", true);
     this.reconnectionAttempts.set(sensorId, attempt);
-    this.connectionCallbacks.forEach((cb) => cb(sensor));
 
     console.log(
       `[SensorsManager] Reconnection attempt ${attempt}/${this.MAX_RECONNECTION_ATTEMPTS} for ${sensor.name}`,
@@ -245,10 +349,9 @@ export class SensorsManager {
 
       // If sensor was marked as disconnected but is sending data, update state
       if (sensor.connectionState === "disconnected") {
-        sensor.connectionState = "connected";
+        this.transitionSensorState(sensor, "connected", true);
         // Cancel any ongoing reconnection attempts since sensor is back
         this.cancelReconnectionAttempts(deviceId);
-        this.connectionCallbacks.forEach((cb) => cb(sensor));
       }
     }
   }
@@ -324,7 +427,7 @@ export class SensorsManager {
       // Update state to connecting
       let sensor = this.connectedSensors.get(deviceId);
       if (sensor) {
-        sensor.connectionState = "connecting";
+        this.transitionSensorState(sensor, "connecting", true);
       } else {
         sensor = {
           id: deviceId,
@@ -332,8 +435,9 @@ export class SensorsManager {
           connectionState: "connecting",
         } as ConnectedSensor;
         this.connectedSensors.set(deviceId, sensor);
+        // Note: new sensors start in "connecting" state, no transition needed
+        this.connectionCallbacks.forEach((cb) => cb(sensor!));
       }
-      this.connectionCallbacks.forEach((cb) => cb(sensor!));
 
       const device = await this.bleManager.connectToDevice(deviceId, {
         timeout: 10000,
@@ -376,9 +480,8 @@ export class SensorsManager {
       // Enhanced disconnect handler with reconnection
       device.onDisconnected((error) => {
         console.log("Disconnected:", device.name, error?.message || "");
-        connectedSensor.connectionState = "disconnected";
+        this.transitionSensorState(connectedSensor, "disconnected", true);
         connectedSensor.lastDataTimestamp = undefined;
-        this.connectionCallbacks.forEach((cb) => cb(connectedSensor));
         // Health monitoring will handle reconnection attempt
       });
 
@@ -392,8 +495,7 @@ export class SensorsManager {
 
       const existingSensor = this.connectedSensors.get(deviceId);
       if (existingSensor) {
-        existingSensor.connectionState = "failed";
-        this.connectionCallbacks.forEach((cb) => cb(existingSensor));
+        this.transitionSensorState(existingSensor, "failed", true);
       }
       return null;
     }
@@ -431,8 +533,7 @@ export class SensorsManager {
     console.log(`[SensorsManager] Disconnecting sensor: ${sensor.name}`);
 
     // Update connection state and notify callbacks first
-    sensor.connectionState = "disconnected";
-    this.connectionCallbacks.forEach((cb) => cb(sensor));
+    this.transitionSensorState(sensor, "disconnected", true);
 
     // Cancel BLE connection if device exists
     if (sensor.device) {
@@ -487,6 +588,9 @@ export class SensorsManager {
         await controller.subscribeStatus((status) => {
           console.log(`[SensorsManager] Trainer status: ${status}`);
         });
+
+        // Monitor FTMS Indoor Bike Data characteristic for power, cadence, etc.
+        await this.monitorFTMSIndoorBikeData(sensor);
 
         console.log("[SensorsManager] FTMS control setup successful");
         console.log("[SensorsManager] Capabilities:", features);
@@ -679,6 +783,239 @@ export class SensorsManager {
       console.error(
         `[SensorsManager] Critical battery: ${sensorName} at ${level}%`,
       );
+    }
+  }
+
+  /**
+   * Monitor FTMS Indoor Bike Data characteristic (0x2AD2)
+   * Provides power, cadence, speed, distance, and more from smart trainers
+   * https://www.bluetooth.com/specifications/specs/fitness-machine-service-1-0/
+   */
+  private async monitorFTMSIndoorBikeData(
+    sensor: ConnectedSensor,
+  ): Promise<void> {
+    const indoorBikeDataUuid =
+      FTMS_CHARACTERISTICS.INDOOR_BIKE_DATA.toLowerCase();
+
+    if (!sensor.characteristics.has(indoorBikeDataUuid)) {
+      console.log(
+        `[SensorsManager] ${sensor.name} does not provide Indoor Bike Data characteristic`,
+      );
+      return;
+    }
+
+    console.log(
+      `[SensorsManager] Monitoring Indoor Bike Data for ${sensor.name}`,
+    );
+
+    try {
+      const service = (await sensor.device.services()).find(
+        (s) =>
+          s.uuid.toLowerCase() ===
+          BLE_SERVICE_UUIDS.FITNESS_MACHINE.toLowerCase(),
+      );
+
+      if (!service) {
+        console.warn(
+          `[SensorsManager] Fitness Machine service not found for ${sensor.name}`,
+        );
+        return;
+      }
+
+      const characteristic = (await service.characteristics()).find(
+        (c) => c.uuid.toLowerCase() === indoorBikeDataUuid,
+      );
+
+      if (!characteristic) {
+        console.warn(
+          `[SensorsManager] Indoor Bike Data characteristic not found`,
+        );
+        return;
+      }
+
+      // Monitor for updates
+      characteristic.monitor((error, char) => {
+        if (error) {
+          console.warn(
+            `[SensorsManager] Indoor Bike Data monitoring error for ${sensor.name}:`,
+            error,
+          );
+          return;
+        }
+
+        if (!char?.value) return;
+
+        const buffer = Buffer.from(char.value, "base64");
+        const readings = this.parseIndoorBikeData(buffer.buffer, sensor.id);
+
+        if (readings && readings.length > 0) {
+          // Update sensor health timestamp
+          this.updateSensorDataTimestamp(sensor.id);
+
+          // Emit all parsed readings
+          readings.forEach((reading) => {
+            this.dataCallbacks.forEach((cb) => cb(reading));
+          });
+        }
+      });
+    } catch (error) {
+      console.error(
+        `[SensorsManager] Failed to monitor Indoor Bike Data for ${sensor.name}:`,
+        error,
+      );
+    }
+  }
+
+  /**
+   * Parse FTMS Indoor Bike Data characteristic
+   * Flags indicate which fields are present according to FTMS spec Section 4.9.2
+   *
+   * @param data - Raw characteristic data buffer
+   * @param deviceId - Device ID for metadata
+   * @returns Array of sensor readings (power, cadence, speed, etc.)
+   */
+  private parseIndoorBikeData(
+    data: ArrayBuffer,
+    deviceId: string,
+  ): SensorReading[] {
+    if (data.byteLength < 2) return [];
+
+    const view = new DataView(data);
+    const flags = view.getUint16(0, true); // Flags field (2 bytes, little-endian)
+    let offset = 2; // Start after flags
+
+    const readings: SensorReading[] = [];
+    const timestamp = Date.now();
+
+    try {
+      // Bit 0: More Data (0 = no more data, 1 = more data)
+      // Not used for parsing, just indicates if more characteristics exist
+
+      // Bit 1: Average Speed present
+      if (flags & 0x02) {
+        if (data.byteLength >= offset + 2) {
+          const avgSpeed = view.getUint16(offset, true) * 0.01; // Resolution: 0.01 km/h
+          offset += 2;
+
+          // Convert km/h to m/s for consistency with other speed sensors
+          const speedMs = avgSpeed / 3.6;
+          const reading = this.validateSensorReading({
+            metric: "speed",
+            dataType: "float",
+            value: speedMs,
+            timestamp,
+            metadata: { deviceId, source: "ftms_indoor_bike" },
+          });
+          if (reading) readings.push(reading);
+        }
+      }
+
+      // Bit 2: Instantaneous Cadence present
+      if (flags & 0x04) {
+        if (data.byteLength >= offset + 2) {
+          const cadence = view.getUint16(offset, true) * 0.5; // Resolution: 0.5 rpm
+          offset += 2;
+
+          const reading = this.validateSensorReading({
+            metric: "cadence",
+            dataType: "float",
+            value: cadence,
+            timestamp,
+            metadata: { deviceId, source: "ftms_indoor_bike" },
+          });
+          if (reading) readings.push(reading);
+
+          console.log(
+            `[SensorsManager] Parsed cadence from FTMS: ${cadence.toFixed(1)} rpm`,
+          );
+        }
+      }
+
+      // Bit 3: Average Cadence present
+      if (flags & 0x08) {
+        if (data.byteLength >= offset + 2) {
+          const avgCadence = view.getUint16(offset, true) * 0.5; // Resolution: 0.5 rpm
+          offset += 2;
+
+          // We prioritize instantaneous cadence, but if only average is present, use it
+          if (!(flags & 0x04)) {
+            const reading = this.validateSensorReading({
+              metric: "cadence",
+              dataType: "float",
+              value: avgCadence,
+              timestamp,
+              metadata: { deviceId, source: "ftms_indoor_bike_avg" },
+            });
+            if (reading) readings.push(reading);
+
+            console.log(
+              `[SensorsManager] Parsed average cadence from FTMS: ${avgCadence.toFixed(1)} rpm`,
+            );
+          }
+        }
+      }
+
+      // Bit 4: Total Distance present (uint24, 1 meter resolution)
+      if (flags & 0x10) {
+        if (data.byteLength >= offset + 3) {
+          // Read 24-bit unsigned integer (3 bytes, little-endian)
+          const totalDistance =
+            view.getUint8(offset) |
+            (view.getUint8(offset + 1) << 8) |
+            (view.getUint8(offset + 2) << 16);
+          offset += 3;
+
+          // Distance is cumulative, not used directly as a reading
+          // but could be tracked for validation
+        }
+      }
+
+      // Bit 5: Resistance Level present (sint16, unitless, resolution 1)
+      if (flags & 0x20) {
+        if (data.byteLength >= offset + 2) {
+          const resistanceLevel = view.getInt16(offset, true);
+          offset += 2;
+          // Resistance level is not a standard metric we track currently
+        }
+      }
+
+      // Bit 6: Instantaneous Power present (sint16, watts, resolution 1W)
+      if (flags & 0x40) {
+        if (data.byteLength >= offset + 2) {
+          const power = view.getInt16(offset, true);
+          offset += 2;
+
+          const reading = this.validateSensorReading({
+            metric: "power",
+            dataType: "float",
+            value: power,
+            timestamp,
+            metadata: { deviceId, source: "ftms_indoor_bike" },
+          });
+          if (reading) readings.push(reading);
+        }
+      }
+
+      // Bit 7: Average Power present (sint16, watts, resolution 1W)
+      if (flags & 0x80) {
+        if (data.byteLength >= offset + 2) {
+          const avgPower = view.getInt16(offset, true);
+          offset += 2;
+          // We prioritize instantaneous power over average
+        }
+      }
+
+      // Additional fields exist (bits 8-13) but are less commonly used:
+      // - Expended Energy (Total/Per Hour/Per Minute)
+      // - Heart Rate
+      // - Metabolic Equivalent
+      // - Elapsed Time
+      // - Remaining Time
+
+      return readings;
+    } catch (error) {
+      console.error("[SensorsManager] Error parsing Indoor Bike Data:", error);
+      return [];
     }
   }
 

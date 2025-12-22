@@ -7,6 +7,7 @@ import { useRouter } from "expo-router";
 import { MapPin, TrendingUp, Upload, X } from "lucide-react-native";
 import { View } from "react-native";
 import MapView, { Polyline } from "react-native-maps";
+import { Icon } from "../ui/icon";
 import {
   Select,
   SelectContent,
@@ -15,7 +16,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../ui/select";
-import { Icon } from "../ui/icon";
 
 interface RouteSelectorProps {
   activityCategory: string;
@@ -101,7 +101,11 @@ export function RouteSelector({
             <View className="flex-row gap-2 mb-2">
               <View className="flex-1">
                 <Select
-                  value={selectedRouteId || undefined}
+                  value={
+                    selectedRouteId
+                      ? { value: selectedRouteId, label: selectedRouteId }
+                      : undefined
+                  }
                   onValueChange={(option) => {
                     // Handle both string and object returns from Select
                     const routeId =
@@ -172,14 +176,15 @@ export function RouteSelector({
                         {formatDistance(selectedRoute.total_distance)}
                       </Text>
                     </View>
-                    {selectedRoute.total_ascent > 0 && (
-                      <View className="flex-row items-center gap-1">
-                        <TrendingUp size={14} className="text-green-600" />
-                        <Text className="text-xs">
-                          {selectedRoute.total_ascent}m
-                        </Text>
-                      </View>
-                    )}
+                    {selectedRoute.total_ascent != null &&
+                      selectedRoute.total_ascent > 0 && (
+                        <View className="flex-row items-center gap-1">
+                          <TrendingUp size={14} className="text-green-600" />
+                          <Text className="text-xs">
+                            {selectedRoute.total_ascent}m
+                          </Text>
+                        </View>
+                      )}
                   </View>
                 </View>
               </View>

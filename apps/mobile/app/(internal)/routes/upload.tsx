@@ -28,6 +28,12 @@ const ACTIVITY_CATEGORIES = [
   { value: "other", label: "Other" },
 ];
 
+// Helper to create Option objects for Select components
+const createOption = (value: string, label?: string) => ({
+  value,
+  label: label || value,
+});
+
 export default function UploadRouteScreen() {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -147,8 +153,12 @@ export default function UploadRouteScreen() {
               <View>
                 <Label className="mb-2">Activity Category *</Label>
                 <Select
-                  value={activityCategory}
-                  onValueChange={setActivityCategory}
+                  value={createOption(activityCategory)}
+                  onValueChange={(
+                    option: { value: string; label: string } | undefined,
+                  ) => {
+                    if (option) setActivityCategory(option.value);
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select activity category" />

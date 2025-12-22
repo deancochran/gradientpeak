@@ -552,21 +552,22 @@ export const activityPlanDescriptionSchema = z.preprocess(
 /**
  * Optional activity plan description (nullable)
  */
-export const optionalActivityPlanDescriptionSchema = z.preprocess(
-  (val) => trimString(emptyStringToNull(val)),
-  z
-    .string()
-    .max(1000, "Description must be less than 1000 characters")
-    .nullable(),
-);
+export const optionalActivityPlanDescriptionSchema = z
+  .string()
+  .nullable()
+  .transform((val) => trimString(emptyStringToNull(val)))
+  .pipe(z.string().max(1000, "Description must be less than 1000 characters"));
 
 /**
  * Activity plan notes validation
  */
-export const activityPlanNotesSchema = z.preprocess(
-  (val) => trimString(emptyStringToNull(val)),
-  z.string().max(2000, "Notes must be less than 2000 characters").nullable(),
-);
+export const activityPlanNotesSchema = z
+  .string()
+  .nullable()
+  .transform((val) => trimString(emptyStringToNull(val)))
+  .pipe(
+    z.string().max(2000, "Notes must be less than 2000 characters").nullable(),
+  );
 
 /**
  * Estimated duration validation (in seconds)

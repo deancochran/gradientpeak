@@ -83,7 +83,9 @@ function getDurationSeconds(
 /**
  * Get intensity zone from FTP percentage
  */
-function getIntensityZone(ftpPercent: number): "z1" | "z2" | "z3" | "z4" | "z5" {
+function getIntensityZone(
+  ftpPercent: number,
+): "z1" | "z2" | "z3" | "z4" | "z5" {
   if (ftpPercent >= 106) return "z5";
   if (ftpPercent >= 91) return "z4";
   if (ftpPercent >= 76) return "z3";
@@ -242,6 +244,8 @@ export function getStepAtTimeV2(
 
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
+    if (!step) continue;
+
     const duration = getDurationSeconds(step.duration, options);
 
     if (elapsedSeconds < cumulativeTime + duration) {

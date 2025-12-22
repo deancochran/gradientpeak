@@ -1,39 +1,39 @@
 import { Button } from "@/components/ui/button";
 import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
 import {
-    type Duration,
-    type IntensityTarget,
-    type Step
-} from "@repo/core/schemas/activity_plan_structure";
+  type DurationV2,
+  type IntensityTargetV2,
+  type PlanStepV2,
+} from "@repo/core";
 import { Copy, Trash2 } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { Alert, ScrollView, View } from "react-native";
 
 interface StepEditSheetProps {
   isVisible: boolean;
-  step: Step | null;
+  step: PlanStepV2 | null;
   stepIndex: number | null;
   onClose: () => void;
-  onSave: (updatedStep: Step) => void;
+  onSave: (updatedStep: PlanStepV2) => void;
   onDelete: () => void;
   onDuplicate: () => void;
 }
@@ -53,9 +53,13 @@ export function StepEditSheet({
   const [notes, setNotes] = useState("");
 
   // Duration state
-  const [durationType, setDurationType] = useState<"time" | "distance" | "repetitions">("time");
+  const [durationType, setDurationType] = useState<
+    "time" | "distance" | "repetitions" | "untilFinished"
+  >("time");
   const [durationValue, setDurationValue] = useState("");
-  const [durationUnit, setDurationUnit] = useState<"seconds" | "minutes" | "meters" | "km" | "reps">("minutes");
+  const [durationUnit, setDurationUnit] = useState<
+    "seconds" | "minutes" | "hours" | "meters" | "km"
+  >("minutes");
 
   // Target state
   const [targetType, setTargetType] = useState<string>("%FTP");
@@ -68,13 +72,35 @@ export function StepEditSheet({
       setDescription(step.description || "");
       setNotes(step.notes || "");
 
-      // Set duration
-      if (step.duration && step.duration !== "untilFinished") {
-        setDurationType(step.duration.type);
-        setDurationValue(step.duration.value.toString());
-        setDurationUnit(step.duration.unit);
-      } else {
-        setDurationType("time");
+      // Set duration (V2 format)
+      const duration = step.duration;
+      setDurationType(duration.type);
+
+      if (duration.type === "time") {
+        // Convert seconds to appropriate unit
+        if (duration.seconds >= 3600) {
+          setDurationValue((duration.seconds / 3600).toString());
+          setDurationUnit("hours");
+        } else if (duration.seconds >= 60) {
+          setDurationValue((duration.seconds / 60).toString());
+          setDurationUnit("minutes");
+        } else {
+          setDurationValue(duration.seconds.toString());
+          setDurationUnit("seconds");
+        }
+      } else if (duration.type === "distance") {
+        // Convert meters to appropriate unit
+        if (duration.meters >= 1000) {
+          setDurationValue((duration.meters / 1000).toString());
+          setDurationUnit("km");
+        } else {
+          setDurationValue(duration.meters.toString());
+          setDurationUnit("meters");
+        }
+      } else if (duration.type === "repetitions") {
+        setDurationValue(duration.count.toString());
+        setDurationUnit("seconds"); // Placeholder, not used for reps
+      } else if (duration.type === "untilFinished") {
         setDurationValue("");
         setDurationUnit("minutes");
       }
@@ -108,61 +134,98 @@ export function StepEditSheet({
       return;
     }
 
-    const durationVal = parseFloat(durationValue);
-    if (!durationValue || isNaN(durationVal) || durationVal <= 0) {
-      Alert.alert("Validation Error", "Please enter a valid duration");
-      return;
+    // Build duration object (V2 format)
+    let duration: DurationV2;
+
+    if (durationType === "untilFinished") {
+      duration = { type: "untilFinished" };
+    } else {
+      const durationVal = parseFloat(durationValue);
+      if (!durationValue || isNaN(durationVal) || durationVal <= 0) {
+        Alert.alert("Validation Error", "Please enter a valid duration");
+        return;
+      }
+
+      if (durationType === "time") {
+        // Convert to seconds
+        let seconds = durationVal;
+        if (durationUnit === "minutes") {
+          seconds = durationVal * 60;
+        } else if (durationUnit === "hours") {
+          seconds = durationVal * 3600;
+        }
+        duration = { type: "time", seconds: Math.round(seconds) };
+      } else if (durationType === "distance") {
+        // Convert to meters
+        let meters = durationVal;
+        if (durationUnit === "km") {
+          meters = durationVal * 1000;
+        }
+        duration = { type: "distance", meters: Math.round(meters) };
+      } else if (durationType === "repetitions") {
+        duration = { type: "repetitions", count: Math.round(durationVal) };
+      } else {
+        Alert.alert("Validation Error", "Invalid duration type");
+        return;
+      }
     }
 
-    const intensityVal = parseFloat(targetIntensity);
-    if (!targetIntensity || isNaN(intensityVal) || intensityVal <= 0) {
-      Alert.alert("Validation Error", "Please enter a valid target intensity");
-      return;
+    // Build target object (optional for V2)
+    let targets: IntensityTargetV2[] | undefined;
+
+    if (targetIntensity.trim()) {
+      const intensityVal = parseFloat(targetIntensity);
+      if (isNaN(intensityVal) || intensityVal <= 0) {
+        Alert.alert(
+          "Validation Error",
+          "Please enter a valid target intensity",
+        );
+        return;
+      }
+
+      const target: IntensityTargetV2 = {
+        type: targetType as any,
+        intensity: intensityVal,
+      };
+      targets = [target];
     }
 
-    // Build duration object
-    const duration: Duration = {
-      type: durationType,
-      value: durationVal,
-      unit: durationUnit as any,
-    };
-
-    // Build target object
-    const target: IntensityTargetV2 = {
-      type: targetType as any,
-      intensity: intensityVal,
-    };
-
-    // Build updated step
-    const updatedStep: Step = {
-      type: "step",
+    // Build updated step (V2 format)
+    const updatedStep: PlanStepV2 = {
       name: name.trim(),
       description: description.trim() || undefined,
       notes: notes.trim() || undefined,
       duration,
-      targets: [target],
+      targets,
+      // Preserve existing metadata if editing
+      segmentName: step?.segmentName,
+      segmentIndex: step?.segmentIndex,
+      originalRepetitionCount: step?.originalRepetitionCount,
     };
 
     onSave(updatedStep);
   };
 
   const handleDelete = () => {
-    Alert.alert(
-      "Delete Step",
-      "Are you sure you want to delete this step?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: onDelete,
-        },
-      ],
-    );
+    Alert.alert("Delete Step", "Are you sure you want to delete this step?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: onDelete,
+      },
+    ]);
   };
 
-  const handleDurationTypeChange = (type: string) => {
-    const durType = type as "time" | "distance" | "repetitions";
+  const handleDurationTypeChange = (
+    option: { value: string; label: string } | undefined,
+  ) => {
+    if (!option) return;
+    const durType = option.value as
+      | "time"
+      | "distance"
+      | "repetitions"
+      | "untilFinished";
     setDurationType(durType);
 
     // Auto-adjust unit based on type
@@ -171,7 +234,10 @@ export function StepEditSheet({
     } else if (durType === "distance") {
       setDurationUnit("km");
     } else if (durType === "repetitions") {
-      setDurationUnit("reps");
+      setDurationUnit("seconds"); // Placeholder
+    } else if (durType === "untilFinished") {
+      setDurationValue("");
+      setDurationUnit("minutes");
     }
   };
 
@@ -216,7 +282,10 @@ export function StepEditSheet({
 
               <View className="gap-2">
                 <Label>Duration Type</Label>
-                <Select value={durationType} onValueChange={handleDurationTypeChange}>
+                <Select
+                  value={durationType}
+                  onValueChange={handleDurationTypeChange}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select duration type" />
                   </SelectTrigger>
@@ -230,62 +299,75 @@ export function StepEditSheet({
                     <SelectItem label="Repetitions" value="repetitions">
                       Repetitions
                     </SelectItem>
+                    <SelectItem label="Until Finished" value="untilFinished">
+                      Until Finished
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </View>
 
-              <View className="flex-row gap-2">
-                <View className="flex-1 gap-2">
-                  <Label>Value *</Label>
-                  <Input
-                    value={durationValue}
-                    onChangeText={setDurationValue}
-                    placeholder="e.g., 5"
-                    keyboardType="numeric"
-                  />
-                </View>
+              {durationType !== "untilFinished" && (
+                <View className="flex-row gap-2">
+                  <View className="flex-1 gap-2">
+                    <Label>Value *</Label>
+                    <Input
+                      value={durationValue}
+                      onChangeText={setDurationValue}
+                      placeholder="e.g., 5"
+                      keyboardType="numeric"
+                    />
+                  </View>
 
-                <View className="flex-1 gap-2">
-                  <Label>Unit</Label>
-                  <Select value={durationUnit} onValueChange={(val) => setDurationUnit(val as any)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Unit" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {durationType === "time" && (
-                        <>
-                          <SelectItem label="Minutes" value="minutes">
-                            Minutes
+                  <View className="flex-1 gap-2">
+                    <Label>Unit</Label>
+                    <Select
+                      value={durationUnit}
+                      onValueChange={(option) =>
+                        option && setDurationUnit(option.value as any)
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Unit" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {durationType === "time" && (
+                          <>
+                            <SelectItem label="Seconds" value="seconds">
+                              Seconds
+                            </SelectItem>
+                            <SelectItem label="Minutes" value="minutes">
+                              Minutes
+                            </SelectItem>
+                            <SelectItem label="Hours" value="hours">
+                              Hours
+                            </SelectItem>
+                          </>
+                        )}
+                        {durationType === "distance" && (
+                          <>
+                            <SelectItem label="Meters" value="meters">
+                              Meters
+                            </SelectItem>
+                            <SelectItem label="Kilometers" value="km">
+                              Kilometers
+                            </SelectItem>
+                          </>
+                        )}
+                        {durationType === "repetitions" && (
+                          <SelectItem label="Reps" value="reps">
+                            Reps
                           </SelectItem>
-                          <SelectItem label="Seconds" value="seconds">
-                            Seconds
-                          </SelectItem>
-                        </>
-                      )}
-                      {durationType === "distance" && (
-                        <>
-                          <SelectItem label="Kilometers" value="km">
-                            Kilometers
-                          </SelectItem>
-                          <SelectItem label="Meters" value="meters">
-                            Meters
-                          </SelectItem>
-                        </>
-                      )}
-                      {durationType === "repetitions" && (
-                        <SelectItem label="Reps" value="reps">
-                          Reps
-                        </SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </View>
                 </View>
-              </View>
+              )}
             </View>
 
             {/* Target Section */}
             <View className="gap-3 p-3 bg-muted/30 rounded-lg">
-              <Text className="font-semibold">Target Intensity</Text>
+              <Text className="font-semibold">Target Intensity (optional)</Text>
 
               <View className="gap-2">
                 <Label>Target Type</Label>
@@ -309,6 +391,12 @@ export function StepEditSheet({
                     <SelectItem label="BPM" value="bpm">
                       BPM
                     </SelectItem>
+                    <SelectItem label="Speed (m/s)" value="speed">
+                      Speed (m/s)
+                    </SelectItem>
+                    <SelectItem label="Cadence (rpm)" value="cadence">
+                      Cadence (rpm)
+                    </SelectItem>
                     <SelectItem label="RPE (1-10)" value="RPE">
                       RPE (1-10)
                     </SelectItem>
@@ -317,7 +405,7 @@ export function StepEditSheet({
               </View>
 
               <View className="gap-2">
-                <Label>Intensity Value *</Label>
+                <Label>Intensity Value</Label>
                 <Input
                   value={targetIntensity}
                   onChangeText={setTargetIntensity}
@@ -359,7 +447,11 @@ export function StepEditSheet({
               </Button>
 
               <Button variant="destructive" onPress={handleDelete}>
-                <Icon as={Trash2} size={16} className="text-destructive-foreground" />
+                <Icon
+                  as={Trash2}
+                  size={16}
+                  className="text-destructive-foreground"
+                />
               </Button>
             </>
           )}

@@ -280,9 +280,7 @@ export const activityPlanCreationSchema = z
       .optional()
       .or(z.literal("")),
 
-    activityType: z.enum(["run", "bike", "swim", "other"], {
-      errorMap: () => ({ message: "Please select an activity type" }),
-    }),
+    activityType: z.enum(["run", "bike", "swim", "other"]),
 
     steps: z
       .array(activityStepSchema)
@@ -362,9 +360,7 @@ export const trainingPlanBasicInfoSchema = z
       .max(100, "Plan name must be less than 100 characters")
       .trim(),
 
-    goal: z.enum(["endurance", "speed", "strength", "general"], {
-      errorMap: () => ({ message: "Please select a training goal" }),
-    }),
+    goal: z.enum(["endurance", "speed", "strength", "general"]),
 
     startDate: z.date({
       error: "Start date is required",
@@ -449,9 +445,14 @@ export const confirmPasswordSchema = (passwordField: string = "password") =>
   z
     .string()
     .min(1, "Please confirm your password")
-    .refine((val, ctx) => val === ctx.parent[passwordField], {
-      message: "Passwords do not match",
-    });
+    .refine(
+      (check: string) => {
+        return check === passwordField;
+      },
+      {
+        message: "Passwords do not match",
+      },
+    );
 
 /**
  * URL validation

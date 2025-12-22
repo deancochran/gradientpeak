@@ -158,8 +158,8 @@ export function getTargetRange(target: IntensityTargetV2): [number, number] {
 /**
  * Get unit for target type
  */
-export function getTargetUnit(type: IntensityTargetV2["type"]): string {
-  switch (type) {
+export function getTargetUnit(target: IntensityTargetV2): string {
+  switch (target.type) {
     case "%FTP":
     case "%MaxHR":
     case "%ThresholdHR":
@@ -246,14 +246,14 @@ export function getTargetGuidance(
     const difference = Math.abs(target.intensity - current);
     return {
       status: "below",
-      message: `Increase by ${Math.round(difference)}${getTargetUnit(target.type)}`,
+      message: `Increase by ${Math.round(difference)}${getTargetUnit(target)}`,
     };
   }
 
   const difference = Math.abs(current - target.intensity);
   return {
     status: "above",
-    message: `Decrease by ${Math.round(difference)}${getTargetUnit(target.type)}`,
+    message: `Decrease by ${Math.round(difference)}${getTargetUnit(target)}`,
   };
 }
 
@@ -291,7 +291,7 @@ export function convertTargetToAbsolute(
       // Already absolute
       return {
         intensity: target.intensity,
-        unit: getTargetUnit(target.type),
+        unit: getTargetUnit(target),
         label: getTargetDisplayName(target.type),
       };
   }

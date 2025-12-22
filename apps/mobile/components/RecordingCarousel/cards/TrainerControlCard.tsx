@@ -7,6 +7,7 @@ import { Text } from "@/components/ui/text";
 import { useCurrentReadings, usePlan } from "@/lib/hooks/useActivityRecorder";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { ControlMode } from "@/lib/services/ActivityRecorder/FTMSController";
+import * as Haptics from "expo-haptics";
 import {
   AlertCircle,
   Lock,
@@ -19,7 +20,7 @@ import {
   Unlock,
   Zap,
 } from "lucide-react-native";
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { Alert, View } from "react-native";
 
 // ================================
@@ -31,8 +32,26 @@ interface TrainerControlCardProps {
   screenWidth: number;
 }
 
+// Supported control modes (subset of ControlMode)
+type SupportedControlMode =
+  | ControlMode.ERG
+  | ControlMode.SIM
+  | ControlMode.RESISTANCE;
+
 // Mode configuration for each control type
-const MODE_CONFIG = {
+const MODE_CONFIG: Record<
+  SupportedControlMode,
+  {
+    label: string;
+    description: string;
+    unit: string;
+    increment: number;
+    min: number;
+    max: number;
+    icon: typeof Zap;
+    color: string;
+  }
+> = {
   [ControlMode.ERG]: {
     label: "ERG Mode",
     description: "Target Power (Watts)",
@@ -72,13 +91,19 @@ const MODE_CONFIG = {
 export const TrainerControlCard = memo<TrainerControlCardProps>(
   ({ service, screenWidth }) => {
     // State
-    const [currentMode, setCurrentMode] = useState<ControlMode>(
+    const [currentMode, setCurrentMode] = useState<SupportedControlMode>(
       ControlMode.ERG,
     );
     const [targetValue, setTargetValue] = useState<number>(100);
     const [isLocked, setIsLocked] = useState<boolean>(false);
     const [isAutoMode, setIsAutoMode] = useState<boolean>(true);
     const [currentPower, setCurrentPower] = useState<number | undefined>();
+
+    // Hold-to-repeat refs
+    const holdTimerRef = useRef<number | null>(null);
+    const repeatTimerRef = useRef<number | null>(null);
+    const holdStartTimeRef = useRef<number>(0);
+    const currentIntervalRef = useRef<number>(200); // Start interval
 
     // Hooks
     const trainer = service?.sensorsManager.getControllableTrainer();
@@ -87,11 +112,11 @@ export const TrainerControlCard = memo<TrainerControlCardProps>(
     const current = useCurrentReadings(service);
 
     // Determine if this is a planned workout (has plan with targets)
-    const isPlannedWorkout = hasPlan && currentStep?.targets;
+    const isPlannedWorkout = hasPlan && !!currentStep?.targets;
 
     // Subscribe to power readings for ERG mode display
     useEffect(() => {
-      if (!service) return;
+      if (!service) return undefined;
 
       const unsubscribe = service.sensorsManager.subscribe((reading) => {
         if (reading.metric === "power" && typeof reading.value === "number") {
@@ -99,11 +124,13 @@ export const TrainerControlCard = memo<TrainerControlCardProps>(
         }
       });
 
-      return unsubscribe;
+      return () => {
+        unsubscribe();
+      };
     }, [service]);
 
     // Handle mode change
-    const handleModeChange = async (newMode: ControlMode) => {
+    const handleModeChange = async (newMode: SupportedControlMode) => {
       if (isLocked) {
         Alert.alert(
           "Mode Locked",
@@ -196,6 +223,81 @@ export const TrainerControlCard = memo<TrainerControlCardProps>(
       }
     };
 
+    // Clean up timers
+    const clearHoldTimers = () => {
+      if (holdTimerRef.current) {
+        clearTimeout(holdTimerRef.current);
+        holdTimerRef.current = null;
+      }
+      if (repeatTimerRef.current) {
+        clearTimeout(repeatTimerRef.current);
+        repeatTimerRef.current = null;
+      }
+    };
+
+    // Calculate accelerated interval based on hold duration
+    const calculateInterval = (holdDuration: number): number => {
+      const INITIAL_INTERVAL = 200; // Start at 200ms
+      const MIN_INTERVAL = 50; // Max speed at 50ms
+      const ACCELERATION_TIME = 2000; // Reach max speed in 2 seconds
+
+      if (holdDuration < INITIAL_INTERVAL) {
+        return INITIAL_INTERVAL;
+      }
+
+      // Linear acceleration from INITIAL_INTERVAL to MIN_INTERVAL over ACCELERATION_TIME
+      const progress = Math.min(
+        (holdDuration - INITIAL_INTERVAL) / ACCELERATION_TIME,
+        1,
+      );
+      return Math.round(
+        INITIAL_INTERVAL - (INITIAL_INTERVAL - MIN_INTERVAL) * progress,
+      );
+    };
+
+    // Repeat adjustment function with acceleration
+    const repeatAdjustment = (delta: number) => {
+      adjustTarget(delta);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+      const holdDuration = Date.now() - holdStartTimeRef.current;
+      const nextInterval = calculateInterval(holdDuration);
+      currentIntervalRef.current = nextInterval;
+
+      // Schedule next repeat
+      repeatTimerRef.current = setTimeout(() => {
+        repeatAdjustment(delta);
+      }, nextInterval);
+    };
+
+    // Handle press in (start hold-to-repeat)
+    const handlePressIn = (delta: number) => {
+      // Initial adjustment with medium haptic
+      adjustTarget(delta);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+      // Record start time for acceleration calculation
+      holdStartTimeRef.current = Date.now();
+      currentIntervalRef.current = 200;
+
+      // Start hold timer (delay before repeat starts)
+      holdTimerRef.current = setTimeout(() => {
+        repeatAdjustment(delta);
+      }, 400); // 400ms delay before repeat starts
+    };
+
+    // Handle press out (stop hold-to-repeat)
+    const handlePressOut = () => {
+      clearHoldTimers();
+    };
+
+    // Clean up on unmount
+    useEffect(() => {
+      return () => {
+        clearHoldTimers();
+      };
+    }, []);
+
     // No trainer connected
     if (!trainer || !trainer.isControllable) {
       return (
@@ -259,16 +361,16 @@ export const TrainerControlCard = memo<TrainerControlCardProps>(
               </Text>
             </View>
 
-            <View className="gap-6">
+            <View className="gap-4">
               {/* Auto/Manual Mode Toggle (only for planned workouts) */}
               {isPlannedWorkout && (
-                <View className="p-4 bg-muted/20 rounded-lg border border-muted/20">
+                <View className="p-3 bg-muted/20 rounded-lg border border-muted/20">
                   <View className="flex-row items-center justify-between">
                     <View className="flex-1">
                       <Text className="text-sm font-semibold">
                         {isAutoMode ? "Auto Mode" : "Manual Mode"}
                       </Text>
-                      <Text className="text-xs text-muted-foreground mt-1">
+                      <Text className="text-xs text-muted-foreground mt-0.5">
                         {isAutoMode
                           ? "Following workout plan targets"
                           : "Manual control override active"}
@@ -307,19 +409,24 @@ export const TrainerControlCard = memo<TrainerControlCardProps>(
                 </View>
 
                 <View className="flex-row gap-2">
-                  {[
-                    ControlMode.ERG,
-                    ControlMode.SIM,
-                    ControlMode.RESISTANCE,
-                  ].map((mode) => {
-                    const modeConfig = MODE_CONFIG[mode];
+                  {(
+                    [
+                      ControlMode.ERG,
+                      ControlMode.SIM,
+                      ControlMode.RESISTANCE,
+                    ] as const
+                  ).map((mode) => {
+                    const modeConfig =
+                      MODE_CONFIG[mode as SupportedControlMode];
                     const isActive = currentMode === mode;
 
                     return (
                       <Button
                         key={mode}
                         variant={isActive ? "default" : "outline"}
-                        onPress={() => handleModeChange(mode)}
+                        onPress={() =>
+                          handleModeChange(mode as SupportedControlMode)
+                        }
                         className="flex-1"
                         disabled={isLocked || (isAutoMode && isPlannedWorkout)}
                       >
@@ -347,31 +454,31 @@ export const TrainerControlCard = memo<TrainerControlCardProps>(
                   <Text className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                     Current vs Target
                   </Text>
-                  <View className="flex-row gap-3">
+                  <View className="flex-row gap-2">
                     {/* Current Power */}
-                    <View className="flex-1 p-4 bg-yellow-500/10 rounded-lg border border-yellow-500/20">
+                    <View className="flex-1 p-3 bg-yellow-500/10 rounded-lg border border-yellow-500/20">
                       <Text className="text-xs text-yellow-600 font-medium uppercase">
                         Current
                       </Text>
-                      <Text className="text-3xl font-bold text-yellow-500 mt-1">
+                      <Text className="text-2xl font-bold text-yellow-500 mt-1">
                         {currentPower !== undefined
                           ? Math.round(currentPower)
                           : "--"}
                       </Text>
-                      <Text className="text-xs text-muted-foreground mt-1">
+                      <Text className="text-xs text-muted-foreground mt-0.5">
                         watts
                       </Text>
                     </View>
 
                     {/* Target Power */}
-                    <View className="flex-1 p-4 bg-primary/10 rounded-lg border border-primary/20">
+                    <View className="flex-1 p-3 bg-primary/10 rounded-lg border border-primary/20">
                       <Text className="text-xs text-primary font-medium uppercase">
                         Target
                       </Text>
-                      <Text className="text-3xl font-bold text-primary mt-1">
+                      <Text className="text-2xl font-bold text-primary mt-1">
                         {Math.round(targetValue)}
                       </Text>
-                      <Text className="text-xs text-muted-foreground mt-1">
+                      <Text className="text-xs text-muted-foreground mt-0.5">
                         watts
                       </Text>
                     </View>
@@ -385,16 +492,16 @@ export const TrainerControlCard = memo<TrainerControlCardProps>(
                   {config.description}
                 </Text>
 
-                <View className="p-4 bg-muted/20 rounded-lg border border-muted/20">
+                <View className="p-3 bg-muted/20 rounded-lg border border-muted/20">
                   {/* Current Value Display */}
-                  <View className="items-center mb-4">
-                    <Icon as={config.icon} size={32} className={config.color} />
-                    <Text className="text-5xl font-bold mt-2">
+                  <View className="items-center mb-3">
+                    <Icon as={config.icon} size={28} className={config.color} />
+                    <Text className="text-4xl font-bold mt-1.5">
                       {currentMode === ControlMode.SIM
                         ? targetValue.toFixed(1)
                         : Math.round(targetValue)}
                     </Text>
-                    <Text className="text-sm text-muted-foreground mt-1">
+                    <Text className="text-sm text-muted-foreground mt-0.5">
                       {config.unit}
                     </Text>
                   </View>
@@ -403,23 +510,27 @@ export const TrainerControlCard = memo<TrainerControlCardProps>(
                   <View className="flex-row gap-2">
                     <Button
                       variant="outline"
-                      className="flex-1 h-14"
+                      className="flex-1 h-12"
                       onPress={() => adjustTarget(-config.increment)}
+                      onPressIn={() => handlePressIn(-config.increment)}
+                      onPressOut={handlePressOut}
                       disabled={isAutoMode && isPlannedWorkout}
                     >
-                      <Icon as={Minus} size={24} />
-                      <Text className="ml-2 font-semibold">
+                      <Icon as={Minus} size={20} />
+                      <Text className="ml-1.5 font-semibold text-sm">
                         {config.increment}
                       </Text>
                     </Button>
                     <Button
                       variant="outline"
-                      className="flex-1 h-14"
+                      className="flex-1 h-12"
                       onPress={() => adjustTarget(config.increment)}
+                      onPressIn={() => handlePressIn(config.increment)}
+                      onPressOut={handlePressOut}
                       disabled={isAutoMode && isPlannedWorkout}
                     >
-                      <Icon as={Plus} size={24} />
-                      <Text className="ml-2 font-semibold">
+                      <Icon as={Plus} size={20} />
+                      <Text className="ml-1.5 font-semibold text-sm">
                         {config.increment}
                       </Text>
                     </Button>
@@ -427,13 +538,13 @@ export const TrainerControlCard = memo<TrainerControlCardProps>(
 
                   {/* Quick Adjustment Presets (for ERG mode) */}
                   {currentMode === ControlMode.ERG && (
-                    <View className="flex-row gap-2 mt-2">
+                    <View className="flex-row gap-1.5 mt-2">
                       {[50, 100, 150, 200, 250].map((watts) => (
                         <Button
                           key={watts}
                           variant="ghost"
                           size="sm"
-                          className="flex-1"
+                          className="flex-1 h-8"
                           onPress={() => {
                             setTargetValue(watts);
                             service?.sensorsManager.setPowerTarget(watts);

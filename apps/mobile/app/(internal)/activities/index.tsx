@@ -249,18 +249,22 @@ function ActivitiesScreen() {
                               {formatDuration(activity.duration_seconds)}
                             </Text>
                           </View>
-                          {activity.metrics?.tss && (
-                            <View className="flex-row items-center gap-1">
-                              <Icon
-                                as={TrendingUp}
-                                size={14}
-                                className="text-primary"
-                              />
-                              <Text className="text-sm font-medium text-primary">
-                                {activity.metrics.tss} TSS
-                              </Text>
-                            </View>
-                          )}
+                          {activity.metrics &&
+                            typeof activity.metrics === "object" &&
+                            !Array.isArray(activity.metrics) &&
+                            "tss" in activity.metrics &&
+                            typeof activity.metrics.tss === "number" && (
+                              <View className="flex-row items-center gap-1">
+                                <Icon
+                                  as={TrendingUp}
+                                  size={14}
+                                  className="text-primary"
+                                />
+                                <Text className="text-sm font-medium text-primary">
+                                  {activity.metrics.tss} TSS
+                                </Text>
+                              </View>
+                            )}
                         </View>
                       </View>
 

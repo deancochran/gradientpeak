@@ -1,8 +1,11 @@
+import { memo } from "react";
 import { View } from "react-native";
 import { Text } from "../ui/text";
+import { PlanStepV2 } from "@repo/core";
+import StepPreviewCard from "./StepPreviewCard";
 
 interface StepBreakdownProps {
-  steps: ActivityProfilePoint[];
+  steps: PlanStepV2[];
   maxSteps?: number;
   showAll?: boolean;
   title?: string;
@@ -22,7 +25,7 @@ export const StepBreakdown = memo<StepBreakdownProps>(function StepBreakdown({
       <Text className="text-sm font-medium mb-3">{title}</Text>
       <View className="gap-3">
         {displaySteps.map((step, index) => (
-          <StepPreviewCard key={step.index} step={step} showDuration={true} />
+          <StepPreviewCard key={index} step={step} showDuration={true} />
         ))}
       </View>
 

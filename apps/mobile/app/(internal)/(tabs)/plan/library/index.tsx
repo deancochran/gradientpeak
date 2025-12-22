@@ -8,6 +8,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronDown, Library, Plus } from "lucide-react-native";
 import { useCallback, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   RefreshControl,
   ScrollView,
   TouchableOpacity,

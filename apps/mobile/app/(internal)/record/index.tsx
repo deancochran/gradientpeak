@@ -16,16 +16,19 @@ import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvi
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import { useRouter } from "expo-router";
 import {
+  AlertTriangle,
   Bluetooth,
   ChevronLeft,
   ChevronRight,
   Pause,
   Play,
   Square,
+  X,
   Zap,
 } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, View } from "react-native";
+import { Alert, Pressable, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   type CarouselCardConfig,
   type CarouselCardType,
@@ -46,6 +49,9 @@ function resolvePowerTarget(target: any, profile: any): number | null {
 function RecordScreen() {
   const router = useRouter();
   const [isInitialized, setIsInitialized] = useState(false);
+  const [trainerNotificationDismissed, setTrainerNotificationDismissed] =
+    useState(false);
+  const insets = useSafeAreaInsets();
 
   // Use shared service from context (provided by _layout.tsx)
   const service = useSharedActivityRecorder();
@@ -85,7 +91,8 @@ function RecordScreen() {
         }
 
         console.log("[RecordModal] Selection loaded:", {
-          type: selection.type,
+          category: selection.category,
+          location: selection.location,
           hasPlan: !!selection.plan,
           plannedActivityId: selection.plannedActivityId,
         });
@@ -129,9 +136,8 @@ function RecordScreen() {
 
         if (!granted) {
           // Still not granted after check, request them
-          const { requestPermission } = await import(
-            "@/lib/services/permissions-check"
-          );
+          const { requestPermission } =
+            await import("@/lib/services/permissions-check");
 
           // Request in sequence
           await requestPermission("bluetooth");
@@ -269,17 +275,21 @@ function RecordScreen() {
         );
       })()}
 
-      {/* Trainer Control Indicator */}
+      {/* Trainer Control Notification (Dismissible) */}
       {(() => {
         const trainer = service?.sensorsManager.getControllableTrainer();
         const currentStep = service?.currentStep;
 
-        if (!trainer || !trainer.isControllable) return null;
+        if (!trainer || !trainer.isControllable || trainerNotificationDismissed)
+          return null;
 
         let targetDisplay = "Connected";
-        if (currentStep?.targets?.power) {
+        const powerTargetIndex = currentStep?.targets?.findIndex(
+          (target) => target.type === "%FTP",
+        );
+        if (powerTargetIndex) {
           const powerTarget = resolvePowerTarget(
-            currentStep.targets.power,
+            currentStep?.targets?.[powerTargetIndex].intensity,
             service?.recordingMetadata?.profile,
           );
           if (powerTarget) {
@@ -296,9 +306,16 @@ function RecordScreen() {
               <Text className="text-xs text-primary font-medium">
                 Trainer Control Active
               </Text>
-              <Text className="text-xs text-primary ml-auto">
+              <Text className="text-xs text-primary ml-auto mr-2">
                 {targetDisplay}
               </Text>
+              <Pressable
+                onPress={() => setTrainerNotificationDismissed(true)}
+                className="p-1 -mr-1"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Icon as={X} size={14} className="text-primary/60" />
+              </Pressable>
             </View>
           </View>
         );
@@ -313,7 +330,10 @@ function RecordScreen() {
         }}
       />
       {/* Footer */}
-      <View className="bg-background px-4">
+      <View
+        className="bg-background px-4"
+        style={{ paddingBottom: Math.max(insets.bottom, 16) }}
+      >
         <View className="flex-row gap-3">
           {state === "pending" && (
             <Button

@@ -188,7 +188,8 @@ function PlanScreen() {
     }
 
     const payload: ActivityPayload = {
-      type: plannedActivity.activity_plan.activity_category,
+      category: plannedActivity.activity_plan.activity_category,
+      location: plannedActivity.activity_plan.activity_location,
       plannedActivityId: plannedActivity.id,
       plan: plannedActivity.activity_plan,
     };

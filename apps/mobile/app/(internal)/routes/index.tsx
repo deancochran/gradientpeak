@@ -66,7 +66,7 @@ export default function RoutesLibraryScreen() {
 
     return (
       <Pressable
-        onPress={() => router.push(`/routes/${item.id}`)}
+        onPress={() => router.push(`/routes/${item.id}` as any)}
         className="mb-3"
       >
         <Card>
@@ -173,7 +173,7 @@ export default function RoutesLibraryScreen() {
             <Text className="text-muted-foreground text-center mb-6">
               Upload your first GPX route to get started
             </Text>
-            <Button onPress={() => router.push("/routes/upload")}>
+            <Button onPress={() => router.push("/routes/upload" as any)}>
               <Plus className="text-primary-foreground mr-2" size={20} />
               <Text className="text-primary-foreground">Upload Route</Text>
             </Button>
@@ -194,7 +194,7 @@ export default function RoutesLibraryScreen() {
           <Button
             size="lg"
             className="rounded-full shadow-lg"
-            onPress={() => router.push("/routes/upload")}
+            onPress={() => router.push("/routes/upload" as any)}
           >
             <Plus className="text-primary-foreground" size={24} />
           </Button>

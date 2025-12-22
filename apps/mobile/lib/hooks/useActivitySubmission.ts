@@ -53,7 +53,6 @@ import {
   calculateTotalWork,
   calculateTSS,
   calculateVariabilityIndex,
-  mapActivityTypeToCategory,
   PublicActivitiesInsert,
   PublicActivityStreamsInsert,
 } from "@repo/core";
@@ -584,10 +583,10 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         duration_seconds: calculatedMetrics.durationSeconds,
         moving_seconds: calculatedMetrics.movingSeconds,
         distance_meters: calculatedMetrics.distanceMeters,
-        metrics: calculatedMetrics.metrics,
-        hr_zone_seconds: calculatedMetrics.hrZoneSeconds,
-        power_zone_seconds: calculatedMetrics.powerZoneSeconds,
-        profile_snapshot: calculatedMetrics.profileSnapshot,
+        metrics: calculatedMetrics.metrics as any, // JSONB metrics object
+        hr_zone_seconds: calculatedMetrics.hrZoneSeconds ?? undefined,
+        power_zone_seconds: calculatedMetrics.powerZoneSeconds ?? undefined,
+        profile_snapshot: calculatedMetrics.profileSnapshot ?? undefined,
         planned_activity_id: metadata.plannedActivityId || null,
         route_id: null, // Will be set if route is attached
       };

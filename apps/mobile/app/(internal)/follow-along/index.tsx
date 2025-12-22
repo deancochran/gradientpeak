@@ -6,17 +6,14 @@ import { Text } from "@/components/ui/text";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import {
   ActivityPayload,
-  buildActivityCards,
-  calculateProgress,
-  calculateTotalDuration,
-  flattenPlanSteps,
+  calculateTotalDurationSecondsV2,
+  DurationV2,
   formatDurationCompact,
-  formatMetricValue,
-  getDurationMs,
-  getIntensityColor,
-  getMetricDisplayName,
+  formatIntensityTarget,
+  getStepIntensityColor,
   getTargetUnit,
-  type ActivityCard,
+  IntensityTargetV2,
+  PlanStepV2,
 } from "@repo/core";
 import { useRouter } from "expo-router";
 import { ChevronLeft, Target, TrendingUp } from "lucide-react-native";
@@ -27,23 +24,85 @@ import { Alert, FlatList, View, ViewToken } from "react-native";
 // TYPES
 // ============================================================================
 
-interface ActivityStep {
-  type: string;
-  name?: string;
-  description?: string;
-  duration?: any;
-  targets?: TargetZone[];
-  notes?: string;
-}
-
-interface TargetZone {
-  type: string;
-  intensity: number;
-}
+type ActivityCard =
+  | { type: "overview"; id: string }
+  | { type: "step"; id: string; step: PlanStepV2; stepNumber: number }
+  | { type: "completion"; id: string };
 
 // ============================================================================
-// TARGET CONFIGURATION
+// HELPER FUNCTIONS - DURATION
 // ============================================================================
+
+function getDurationMs(duration: DurationV2): number {
+  switch (duration.type) {
+    case "time":
+      return duration.seconds * 1000;
+    case "distance":
+      // Estimate based on 5 min/km pace
+      const km = duration.meters / 1000;
+      return km * 5 * 60 * 1000;
+    case "repetitions":
+      // Estimate 10 seconds per rep
+      return duration.count * 10 * 1000;
+    case "untilFinished":
+      return 0; // Unknown duration
+    default:
+      return 0;
+  }
+}
+
+function getMetricDisplayName(type: string): string {
+  switch (type) {
+    case "%FTP":
+      return "Power (FTP)";
+    case "%MaxHR":
+      return "Heart Rate (Max)";
+    case "%ThresholdHR":
+      return "Heart Rate (LT)";
+    case "watts":
+      return "Power";
+    case "bpm":
+      return "Heart Rate";
+    case "speed":
+      return "Speed";
+    case "cadence":
+      return "Cadence";
+    case "RPE":
+      return "Effort (RPE)";
+    default:
+      return type;
+  }
+}
+
+function buildActivityCards(
+  activity: any,
+  steps: PlanStepV2[],
+): ActivityCard[] {
+  const cards: ActivityCard[] = [];
+
+  // Overview card
+  cards.push({ type: "overview", id: "overview" });
+
+  // Step cards
+  steps.forEach((step, index) => {
+    cards.push({
+      type: "step",
+      id: `step-${index}`,
+      step,
+      stepNumber: index + 1,
+    });
+  });
+
+  // Completion card
+  cards.push({ type: "completion", id: "completion" });
+
+  return cards;
+}
+
+function calculateProgress(currentIndex: number, totalCards: number): number {
+  if (totalCards <= 1) return 0;
+  return (currentIndex / (totalCards - 1)) * 100;
+}
 
 // ============================================================================
 // CUSTOM HOOKS
@@ -123,11 +182,11 @@ function useActiveCardTracking() {
 // HELPER FUNCTIONS
 // ============================================================================
 
-function formatActivitySummary(step: ActivityStep): string {
+function formatActivitySummary(step: PlanStepV2): string {
   const parts: string[] = [];
 
   // Add duration
-  if (step.duration && step.duration !== "untilFinished") {
+  if (step.duration && step.duration.type !== "untilFinished") {
     const ms = getDurationMs(step.duration);
     const totalSeconds = Math.floor(ms / 1000);
     const minutes = Math.floor(totalSeconds / 60);
@@ -163,8 +222,8 @@ function formatActivitySummary(step: ActivityStep): string {
   return step.name || "Exercise";
 }
 
-function formatTargetSummary(target: TargetZone): string {
-  return formatMetricValue(target.intensity || 0, target.type);
+function formatTargetSummary(target: IntensityTargetV2): string {
+  return formatIntensityTarget(target);
 }
 
 // ============================================================================
@@ -257,7 +316,7 @@ function StepCard({
   stepNumber,
   isActive,
 }: {
-  step: ActivityStep;
+  step: PlanStepV2;
   stepNumber: number;
   isActive: boolean;
 }) {
@@ -316,12 +375,16 @@ function StepCard({
   );
 }
 
-function TargetChip({ target }: { target: TargetZone }) {
-  const intensity = target.intensity || 0;
-  const color = useMemo(
-    () => getIntensityColor(intensity, target.type),
-    [intensity, target.type],
-  );
+function TargetChip({ target }: { target: IntensityTargetV2 }) {
+  // Create a mock step with just this target to get the color
+  const color = useMemo(() => {
+    const mockStep: PlanStepV2 = {
+      name: "Step",
+      duration: { type: "time", seconds: 60 },
+      targets: [target],
+    };
+    return getStepIntensityColor(mockStep);
+  }, [target]);
 
   return (
     <View className="flex-row items-center p-3 border border-border rounded-lg bg-background">
@@ -330,8 +393,8 @@ function TargetChip({ target }: { target: TargetZone }) {
         style={{ backgroundColor: color }}
       />
       <Text className="font-medium text-base flex-1">
-        {getMetricDisplayName(target.type)}: {intensity}
-        {getTargetUnit(target.type)}
+        {getMetricDisplayName(target.type)}: {target.intensity}
+        {getTargetUnit(target)}
       </Text>
     </View>
   );
@@ -408,16 +471,10 @@ function FollowAlongScreen() {
   const { activeIndex, onViewableItemsChanged, viewabilityConfig } =
     useActiveCardTracking();
 
-  const baseSteps = useMemo(
-    () =>
-      activity?.structure?.steps
-        ? flattenPlanSteps(activity.structure.steps)
-        : [],
-    [activity],
-  );
+  const baseSteps = useMemo(() => activity?.structure?.steps || [], [activity]);
 
   const totalDuration = useMemo(
-    () => calculateTotalDuration(baseSteps),
+    () => calculateTotalDurationSecondsV2(baseSteps) * 1000, // Convert to ms
     [baseSteps],
   );
 
@@ -465,7 +522,7 @@ function FollowAlongScreen() {
   }, [allCards]);
 
   const getItemLayout = useCallback(
-    (_: any, index: number) => ({
+    (_: ArrayLike<ActivityCard> | null | undefined, index: number) => ({
       length: 500,
       offset: 500 * index,
       index,

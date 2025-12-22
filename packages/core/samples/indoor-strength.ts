@@ -10,6 +10,8 @@ export const UPPER_BODY_STRENGTH: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Upper Body Strength",
   description: "Comprehensive upper body strength training session",
+  activity_category: "strength",
+  activity_location: "indoor",
   structure: createPlan()
     .step({
       name: "Dynamic Warm-up",
@@ -58,6 +60,8 @@ export const LOWER_BODY_STRENGTH: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Lower Body Strength",
   description: "Comprehensive lower body strength and power training",
+  activity_category: "strength",
+  activity_location: "indoor",
   structure: createPlan()
     .step({
       name: "Dynamic Warm-up",
@@ -106,6 +110,8 @@ export const FULL_BODY_CIRCUIT: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Full Body Circuit",
   description: "High-intensity full body circuit training",
+  activity_category: "strength",
+  activity_location: "indoor",
   structure: createPlan()
     .step({
       name: "Movement Prep",
@@ -149,6 +155,8 @@ export const CORE_STABILITY: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Core and Stability",
   description: "Focused core strength and stability training",
+  activity_category: "strength",
+  activity_location: "indoor",
   structure: createPlan()
     .step({
       name: "Core Activation",
@@ -197,6 +205,8 @@ export const FUNCTIONAL_MOVEMENT: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Functional Movement",
   description: "Movement patterns for daily life and sport performance",
+  activity_category: "strength",
+  activity_location: "indoor",
   structure: createPlan()
     .step({
       name: "Movement Preparation",

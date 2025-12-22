@@ -12,9 +12,7 @@ import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
-import { useActivityRecorderData } from "@/lib/hooks/useActivityRecorder";
 import { useActivitySubmission } from "@/lib/hooks/useActivitySubmission";
-import { useRequireAuth } from "@/lib/hooks/useAuth";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -32,30 +30,44 @@ import {
   View,
 } from "react-native";
 
+// Type for activity metrics
+interface ActivityMetrics {
+  tss?: number;
+  intensity_factor?: number;
+  if?: number;
+  variability_index?: number;
+  vi?: number;
+  efficiency_factor?: number;
+  ef?: number;
+  adherence_score?: number;
+  [key: string]: unknown;
+}
+
 function SubmitScreen() {
   const router = useRouter();
-  const { profile } = useRequireAuth();
 
   const service = useSharedActivityRecorder();
-  const { recordingId } = useActivityRecorderData(service);
   const submission = useActivitySubmission(service);
 
   const form = useForm<ActivitySubmissionFormData>({
-    resolver: zodResolver(activitySubmissionFormSchema),
+    resolver: zodResolver(activitySubmissionFormSchema) as any,
     defaultValues: {
       name: submission.activity?.name || "",
-      notes: submission.activity?.notes || null,
+      notes: submission.activity?.notes,
       is_private: false,
-    },
+    } as ActivitySubmissionFormData,
   });
 
   const handleSubmit = async (data: ActivitySubmissionFormData) => {
-    submission.update(data);
+    // Only pass name and notes to submission.update
+    submission.update({ name: data.name, notes: data.notes ?? undefined });
     await submission.submit();
     if (service) {
       await service.cleanup();
     }
-    router.push("/(internal)/(tabs)/" as any);
+    // Navigate back twice: once to close submit screen, once to close record modal
+    router.back();
+    router.back();
   };
 
   const handleDiscard = () => {
@@ -73,7 +85,9 @@ function SubmitScreen() {
               await service.liveMetricsManager.streamBuffer.cleanup();
               await service.cleanup();
             }
-            router.push("/(internal)/(tabs)/" as any);
+            // Navigate back twice: once to close submit screen, once to close record modal
+            router.back();
+            router.back();
           },
         },
       ],
@@ -202,44 +216,56 @@ function SubmitScreen() {
                 <View className="space-y-3">
                   <Text className="text-base font-semibold">Analytics</Text>
                   <View className="bg-card rounded-2xl border p-4 space-y-3">
-                    {submission.activity.metrics?.tss && (
-                      <MetricRow
-                        label="Training Stress Score"
-                        value={Math.round(
-                          submission.activity.metrics.tss,
-                        ).toString()}
-                      />
-                    )}
-                    {submission.activity.metrics?.intensity_factor && (
-                      <MetricRow
-                        label="Intensity Factor"
-                        value={submission.activity.metrics.intensity_factor.toFixed(
-                          2,
-                        )}
-                      />
-                    )}
-                    {submission.activity.metrics?.variability_index && (
-                      <MetricRow
-                        label="Variability Index"
-                        value={submission.activity.metrics.variability_index.toFixed(
-                          2,
-                        )}
-                      />
-                    )}
-                    {submission.activity.metrics?.efficiency_factor && (
-                      <MetricRow
-                        label="Efficiency Factor"
-                        value={submission.activity.metrics.efficiency_factor.toFixed(
-                          2,
-                        )}
-                      />
-                    )}
-                    {submission.activity.metrics?.adherence_score != null && (
-                      <MetricRow
-                        label="Plan Adherence"
-                        value={`${Math.round(submission.activity.metrics.adherence_score * 100)}%`}
-                      />
-                    )}
+                    {(() => {
+                      const metrics = submission.activity
+                        .metrics as ActivityMetrics;
+                      return (
+                        <>
+                          {metrics?.tss && (
+                            <MetricRow
+                              label="Training Stress Score"
+                              value={Math.round(metrics.tss).toString()}
+                            />
+                          )}
+                          {(metrics?.intensity_factor ?? metrics?.if) && (
+                            <MetricRow
+                              label="Intensity Factor"
+                              value={(
+                                metrics.intensity_factor ??
+                                metrics.if ??
+                                0
+                              ).toFixed(2)}
+                            />
+                          )}
+                          {(metrics?.variability_index ?? metrics?.vi) && (
+                            <MetricRow
+                              label="Variability Index"
+                              value={(
+                                metrics.variability_index ??
+                                metrics.vi ??
+                                0
+                              ).toFixed(2)}
+                            />
+                          )}
+                          {(metrics?.efficiency_factor ?? metrics?.ef) && (
+                            <MetricRow
+                              label="Efficiency Factor"
+                              value={(
+                                metrics.efficiency_factor ??
+                                metrics.ef ??
+                                0
+                              ).toFixed(2)}
+                            />
+                          )}
+                          {metrics?.adherence_score != null && (
+                            <MetricRow
+                              label="Plan Adherence"
+                              value={`${Math.round(metrics.adherence_score * 100)}%`}
+                            />
+                          )}
+                        </>
+                      );
+                    })()}
                   </View>
                 </View>
               )}
@@ -258,12 +284,19 @@ const MetricRow = ({ label, value }: { label: string; value: string }) => (
   </View>
 );
 
-const hasAnalytics = (activity: any) =>
-  activity.metrics?.tss ||
-  activity.metrics?.intensity_factor ||
-  activity.metrics?.variability_index ||
-  activity.metrics?.efficiency_factor ||
-  activity.metrics?.adherence_score != null;
+const hasAnalytics = (activity: any) => {
+  const metrics = activity.metrics as ActivityMetrics;
+  return (
+    metrics?.tss ||
+    metrics?.intensity_factor ||
+    metrics?.if ||
+    metrics?.variability_index ||
+    metrics?.vi ||
+    metrics?.efficiency_factor ||
+    metrics?.ef ||
+    metrics?.adherence_score != null
+  );
+};
 
 export default function SubmitScreenWithErrorBoundary() {
   return (

@@ -7,12 +7,12 @@ import { View } from "react-native";
 import { type ActivityPlanStructureV2, formatDuration } from "@repo/core";
 import { Text } from "@/components/ui/text";
 import { ActivityProgressGraph } from "./ActivityProgress";
-import type { CurrentMetrics } from "@/types"; // Adjust this import path as needed
+import type { CurrentReadings } from "@/lib/services/ActivityRecorder/types";
 
 const ProgressTrackingDisplay = memo<{
   planProgress: any;
   structure: ActivityPlanStructureV2;
-  currentMetrics: CurrentMetrics;
+  currentMetrics: CurrentReadings;
 }>(function ProgressTrackingDisplay({
   planProgress,
   structure,

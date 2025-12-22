@@ -87,13 +87,15 @@ function formatIntervalDescription(
     if (primaryTarget) {
       const converted = convertTargetToAbsolute(primaryTarget, profile);
 
-      let targetStr = "";
-      if (converted.intensity) {
-        targetStr = `${converted.intensity}`;
-      }
+      if (converted) {
+        let targetStr = "";
+        if (converted.intensity) {
+          targetStr = `${converted.intensity}`;
+        }
 
-      if (targetStr) {
-        parts.push(`@ ${targetStr} ${converted.unit}`);
+        if (targetStr) {
+          parts.push(`@ ${targetStr} ${converted.unit}`);
+        }
       }
     }
   }
@@ -107,9 +109,9 @@ function formatIntervalDescription(
 function getTargetStatus(
   current: number,
   target: IntensityTargetV2 | null | undefined,
-  converted: { intensity?: number; unit: string; label: string },
+  converted: { intensity?: number; unit: string; label: string } | null,
 ): "within" | "below" | "above" {
-  if (!target || !target.intensity) return "within";
+  if (!target || !target.intensity || !converted) return "within";
 
   const inRange = isInTargetRange(current, target);
   if (inRange) return "within";
@@ -211,7 +213,7 @@ const CurrentSensorReadings = memo<CurrentSensorReadingsProps>(
                       className={display.color}
                     />
                     <Text className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                      {display.converted.label}
+                      {display.converted?.label ?? "Target"}
                     </Text>
                   </View>
                   {isOffTarget && (
@@ -238,10 +240,10 @@ const CurrentSensorReadings = memo<CurrentSensorReadingsProps>(
                     Target:{" "}
                   </Text>
                   <Text className="text-xs font-semibold text-muted-foreground">
-                    {display.converted.intensity
+                    {display.converted?.intensity
                       ? `${display.converted.intensity}`
                       : "No target"}
-                    {display.converted.unit}
+                    {display.converted?.unit ?? ""}
                   </Text>
                 </View>
               </View>

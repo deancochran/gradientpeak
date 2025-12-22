@@ -1,6 +1,5 @@
-import { EmptyStateCard, TrendsOverviewSkeleton } from "@/components/shared";
+import { TrendsOverviewSkeleton } from "@/components/shared";
 import { Text } from "@/components/ui/text";
-import { Calendar } from "lucide-react-native";
 import { View } from "react-native";
 import {
   ConsistencyHeatmap,
@@ -37,11 +36,13 @@ export function ConsistencyTab({
   return (
     <View className="space-y-4">
       {/* Consistency Heatmap */}
-      <ConsistencyHeatmap
-        data={consistencyData}
-        startDate={startDate}
-        endDate={endDate}
-      />
+      {consistencyData && (
+        <ConsistencyHeatmap
+          data={consistencyData}
+          startDate={startDate}
+          endDate={endDate}
+        />
+      )}
 
       {/* Training Frequency */}
       <View className="bg-card rounded-lg border border-border p-4">

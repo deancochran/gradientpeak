@@ -49,6 +49,18 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         NSMotionUsageDescription:
           "This app needs motion access to track your activity.",
         UNNotificationAlertStyle: "alert",
+        // Allow HTTP connections for development
+        NSAppTransportSecurity: {
+          NSAllowsArbitraryLoads: true,
+          NSExceptionDomains: {
+            localhost: {
+              NSExceptionAllowsInsecureHTTPLoads: true,
+            },
+            "100.119.109.24": {
+              NSExceptionAllowsInsecureHTTPLoads: true,
+            },
+          },
+        },
       },
     },
     android: {

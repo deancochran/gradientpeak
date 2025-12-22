@@ -13,7 +13,7 @@ interface WeeklySummary {
   plannedActivities: number;
   completedActivities: number;
   activityPercentage: number;
-  status: "good" | "warning" | "danger";
+  status: "good" | "warning" | "poor";
 }
 
 interface WeeklyTabProps {

@@ -10,6 +10,8 @@ export const EASY_AEROBIC_RUN: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Easy Aerobic Run",
   description: "Comfortable outdoor run focusing on aerobic base building",
+  activity_category: "run",
+  activity_location: "outdoor",
   structure: createPlan()
     .step({
       name: "Easy Run",
@@ -30,6 +32,8 @@ export const TEMPO_RUN: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Tempo Run",
   description: "Sustained tempo effort with warm-up and cool-down",
+  activity_category: "run",
+  activity_location: "outdoor",
   structure: createPlan()
     .step({
       name: "Warm-up Jog",
@@ -61,6 +65,8 @@ export const INTERVAL_RUN: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "5K Pace Intervals",
   description: "High-intensity intervals at 5K race pace",
+  activity_category: "run",
+  activity_location: "outdoor",
   structure: createPlan()
     .step({
       name: "Warm-up",
@@ -103,6 +109,8 @@ export const LONG_RUN: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Long Steady Run",
   description: "Extended aerobic run for endurance building",
+  activity_category: "run",
+  activity_location: "outdoor",
   structure: createPlan()
     .step({
       name: "Easy Start",
@@ -134,6 +142,8 @@ export const FARTLEK_RUN: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Fartlek Training",
   description: "Unstructured speed play with varied intensities",
+  activity_category: "run",
+  activity_location: "outdoor",
   structure: createPlan()
     .step({
       name: "Warm-up",

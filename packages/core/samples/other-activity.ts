@@ -10,6 +10,8 @@ export const YOGA_FLOW: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Yoga Flow",
   description: "Gentle yoga flow for flexibility and mindfulness",
+  activity_category: "other",
+  activity_location: "outdoor",
   structure: createPlan()
     .step({
       name: "Centering & Breath",
@@ -54,6 +56,8 @@ export const ROCK_CLIMBING_SESSION: RecordingServiceActivityPlan = {
   name: "Rock Climbing Session",
   description:
     "Indoor/outdoor rock climbing session with warm-up and cool-down",
+  activity_category: "other",
+  activity_location: "outdoor",
   structure: createPlan()
     .step({
       name: "Dynamic Warm-up",
@@ -109,6 +113,8 @@ export const HIKING_ADVENTURE: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Hiking Adventure",
   description: "Moderate-intensity hiking with varied terrain",
+  activity_category: "other",
+  activity_location: "outdoor",
   structure: createPlan()
     .step({
       name: "Trail Approach",
@@ -147,6 +153,8 @@ export const CROSSFIT_WOD: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "CrossFit WOD",
   description: "High-intensity CrossFit activity of the day",
+  activity_category: "other",
+  activity_location: "outdoor",
   structure: createPlan()
     .step({
       name: "General Warm-up",
@@ -185,6 +193,8 @@ export const WALKING_RECOVERY: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Recovery Walk",
   description: "Gentle walking session for active recovery",
+  activity_category: "other",
+  activity_location: "outdoor",
   structure: createPlan()
     .step({
       name: "Easy Start",

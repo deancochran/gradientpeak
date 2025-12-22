@@ -20,7 +20,8 @@ class ActivitySelectionStore {
    */
   setSelection(payload: ActivityPayload): void {
     console.log("[ActivitySelectionStore] Setting selection:", {
-      type: payload.type,
+      category: payload.category,
+      location: payload.location,
       hasPlan: !!payload.plan,
       plannedActivityId: payload.plannedActivityId,
     });
@@ -34,7 +35,11 @@ class ActivitySelectionStore {
   consumeSelection(): ActivityPayload | null {
     const current = this.selection;
     if (current) {
-      console.log("[ActivitySelectionStore] Consuming selection:", current.type);
+      console.log(
+        "[ActivitySelectionStore] Consuming selection:",
+        current.category,
+        current.location,
+      );
       this.selection = null;
     } else {
       console.log("[ActivitySelectionStore] No selection to consume");
@@ -56,7 +61,11 @@ class ActivitySelectionStore {
    */
   clear(): void {
     if (this.selection) {
-      console.log("[ActivitySelectionStore] Clearing selection:", this.selection.type);
+      console.log(
+        "[ActivitySelectionStore] Clearing selection:",
+        this.selection.category,
+        this.selection.location,
+      );
     } else {
       console.log("[ActivitySelectionStore] Clearing empty store");
     }
@@ -73,10 +82,16 @@ class ActivitySelectionStore {
   /**
    * Get selection info for debugging
    */
-  getSelectionInfo(): { hasSelection: boolean; type?: string; hasPlan?: boolean } {
+  getSelectionInfo(): {
+    hasSelection: boolean;
+    category?: string;
+    location?: string;
+    hasPlan?: boolean;
+  } {
     return {
       hasSelection: this.selection !== null,
-      type: this.selection?.type,
+      category: this.selection?.category,
+      location: this.selection?.location,
       hasPlan: !!this.selection?.plan,
     };
   }

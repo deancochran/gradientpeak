@@ -1,15 +1,14 @@
 import { Text } from "@/components/ui/text";
 import {
-  type Duration,
-  type IntensityTarget,
-  type StepOrRepetition,
-  getDurationMs,
-  getIntensityColor,
+  type DurationV2,
+  type IntensityTargetV2,
+  type PlanStepV2,
+  getStepIntensityColor,
 } from "@repo/core";
 import { Dimensions, ScrollView, TouchableOpacity, View } from "react-native";
 
 interface ActivityStepChartProps {
-  steps: StepOrRepetition[];
+  steps: PlanStepV2[];
   selectedStepIndex: number | null;
   onStepPress: (index: number) => void;
   onStepLongPress: (index: number) => void;
@@ -17,13 +16,11 @@ interface ActivityStepChartProps {
 
 interface FlattenedChartStep {
   index: number;
-  name?: string;
-  duration: Duration | undefined;
+  name: string;
+  duration: DurationV2;
   targets: IntensityTargetV2[] | undefined;
   durationMs: number;
-  isRepetition: boolean;
-  repetitionIndex?: number;
-  stepInRepetition?: number;
+  isFromRepetition: boolean;
 }
 
 const MIN_STEP_WIDTH = 60;
@@ -31,43 +28,38 @@ const CHART_HEIGHT = 200;
 const STEP_PADDING = 4;
 
 /**
- * Flatten steps for chart visualization
+ * Convert DurationV2 to milliseconds for chart calculations
  */
-function flattenStepsForChart(steps: StepOrRepetition[]): FlattenedChartStep[] {
-  const flattened: FlattenedChartStep[] = [];
-  let globalIndex = 0;
-
-  for (const step of steps) {
-    if (step.type === "step") {
-      flattened.push({
-        index: globalIndex++,
-        name: step.name,
-        duration: step.duration,
-        targets: step.targets,
-        durationMs: step.duration ? getDurationMs(step.duration) : 0,
-        isRepetition: false,
-      });
-    } else if (step.type === "repetition") {
-      // Add each repetition cycle
-      for (let repIndex = 0; repIndex < step.repeat; repIndex++) {
-        for (let stepIndex = 0; stepIndex < step.steps.length; stepIndex++) {
-          const repStep = step.steps[stepIndex];
-          flattened.push({
-            index: globalIndex++,
-            name: repStep.name,
-            duration: repStep.duration,
-            targets: repStep.targets,
-            durationMs: repStep.duration ? getDurationMs(repStep.duration) : 0,
-            isRepetition: true,
-            repetitionIndex: repIndex,
-            stepInRepetition: stepIndex,
-          });
-        }
-      }
-    }
+function getDurationMs(duration: DurationV2): number {
+  switch (duration.type) {
+    case "time":
+      return duration.seconds * 1000;
+    case "distance":
+      // Estimate: 1km = ~5 min at moderate pace
+      return (duration.meters / 1000) * 5 * 60 * 1000;
+    case "repetitions":
+      // Estimate: 1 rep = ~30 seconds
+      return duration.count * 30 * 1000;
+    case "untilFinished":
+      return 60 * 1000; // Default 1 minute for visualization
+    default:
+      return 0;
   }
+}
 
-  return flattened;
+/**
+ * Flatten steps for chart visualization
+ * V2 schema already has flat structure, just add visualization properties
+ */
+function flattenStepsForChart(steps: PlanStepV2[]): FlattenedChartStep[] {
+  return steps.map((step, index) => ({
+    index,
+    name: step.name,
+    duration: step.duration,
+    targets: step.targets,
+    durationMs: getDurationMs(step.duration),
+    isFromRepetition: step.originalRepetitionCount !== undefined,
+  }));
 }
 
 /**
@@ -110,22 +102,22 @@ function getIntensityPercentage(
 /**
  * Format duration for display
  */
-function formatDuration(duration: Duration | undefined): string {
-  if (!duration || duration === "untilFinished") return "Open";
-
+function formatDuration(duration: DurationV2): string {
   switch (duration.type) {
     case "time":
-      if (duration.unit === "minutes") {
-        return `${duration.value}m`;
+      if (duration.seconds >= 60) {
+        return `${Math.round(duration.seconds / 60)}m`;
       }
-      return `${duration.value}s`;
+      return `${duration.seconds}s`;
     case "distance":
-      if (duration.unit === "km") {
-        return `${duration.value}km`;
+      if (duration.meters >= 1000) {
+        return `${(duration.meters / 1000).toFixed(1)}km`;
       }
-      return `${duration.value}m`;
+      return `${duration.meters}m`;
     case "repetitions":
-      return `${duration.value}x`;
+      return `${duration.count}x`;
+    case "untilFinished":
+      return "Open";
     default:
       return "Unknown";
   }
@@ -209,8 +201,13 @@ export function ActivityStepChart({
             (intensityPercent / 100) * (CHART_HEIGHT - 40),
           );
 
+          // Use the helper function from core package
           const color = step.targets?.[0]
-            ? getIntensityColor(intensityPercent, step.targets[0].type)
+            ? getStepIntensityColor({
+                name: step.name,
+                duration: step.duration,
+                targets: step.targets,
+              })
             : "#94a3b8";
 
           const isSelected = step.index === selectedStepIndex;
@@ -238,7 +235,7 @@ export function ActivityStepChart({
               >
                 {/* Step info */}
                 <View>
-                  {step.isRepetition && step.repetitionIndex === 0 && (
+                  {step.isFromRepetition && (
                     <Text
                       className="text-white text-[10px] font-bold"
                       numberOfLines={1}
@@ -250,7 +247,7 @@ export function ActivityStepChart({
                     className="text-white text-xs font-semibold"
                     numberOfLines={1}
                   >
-                    {step.name || `Step ${step.index + 1}`}
+                    {step.name}
                   </Text>
                 </View>
 

@@ -137,7 +137,7 @@ export function ProfileSection({
                   <FormControl>
                     <Input
                       placeholder="Enter username"
-                      value={field.value || ""}
+                      value={field.value ?? ""}
                       onChangeText={field.onChange}
                       editable={isEditing}
                       testID="username-input"

@@ -444,15 +444,15 @@ export function isValueInTargetRange(
  * Format target range for display
  */
 export function formatTargetRange(target: IntensityTargetV2): string {
-  const unit = getTargetUnit(target.type);
+  const unit = getTargetUnit(target);
   return `${target.intensity}${unit}`;
 }
 
 /**
  * Get unit for target type
  */
-export function getTargetUnit(type: string): string {
-  switch (type) {
+export function getTargetUnit(type: IntensityTargetV2): string {
+  switch (type.type) {
     case "%FTP":
     case "%MaxHR":
     case "%ThresholdHR":
@@ -475,8 +475,8 @@ export function getTargetUnit(type: string): string {
 /**
  * Get display name for metric type
  */
-export function getMetricDisplayName(type: string): string {
-  switch (type) {
+export function getMetricDisplayName(target: IntensityTargetV2): string {
+  switch (target.type) {
     case "%FTP":
       return "Power (FTP)";
     case "%MaxHR":
@@ -494,25 +494,25 @@ export function getMetricDisplayName(type: string): string {
     case "RPE":
       return "Effort (RPE)";
     default:
-      return type;
+      return "";
   }
 }
 
 /**
  * Format metric value for display
  */
-export function formatMetricValue(value: number, type: string): string {
-  const unit = getTargetUnit(type);
+export function formatMetricValue(target: IntensityTargetV2): string {
+  const unit = getTargetUnit(target);
 
-  switch (type) {
+  switch (target.type) {
     case "speed":
-      return `${value.toFixed(1)}${unit}`;
+      return `${target.intensity.toFixed(1)}${unit}`;
     case "%FTP":
     case "%MaxHR":
     case "%ThresholdHR":
-      return `${Math.round(value)}${unit}`;
+      return `${Math.round(target.intensity)}${unit}`;
     default:
-      return `${Math.round(value)}${unit}`;
+      return `${Math.round(target.intensity)}${unit}`;
   }
 }
 
@@ -534,10 +534,10 @@ export function getTargetGuidanceText(
 
   if (current < targetValue) {
     const difference = targetValue - current;
-    return `Increase by ${Math.round(difference)}${getTargetUnit(target.type)}`;
+    return `Increase by ${Math.round(difference)}${getTargetUnit(target)}`;
   } else {
     const difference = current - targetValue;
-    return `Decrease by ${Math.round(difference)}${getTargetUnit(target.type)}`;
+    return `Decrease by ${Math.round(difference)}${getTargetUnit(target)}`;
   }
 }
 
@@ -593,8 +593,8 @@ export function convertTargetToAbsolute(
     default:
       return {
         intensity: target.intensity,
-        unit: getTargetUnit(target.type),
-        label: getMetricDisplayName(target.type),
+        unit: getTargetUnit(target),
+        label: getMetricDisplayName(target),
       };
   }
 }

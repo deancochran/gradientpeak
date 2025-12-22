@@ -40,6 +40,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private zones: ZoneConfig;
   private metrics: LiveMetricsState;
   private isActive = false;
+  private activityLocation?: PublicActivityLocation; // Track if indoor/outdoor
 
   // === Core Components ===
   private buffer: DataBuffer; // 60-second rolling window for calculations
@@ -72,6 +73,10 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private maxCadence = 0;
   private maxTemperature = 0;
 
+  // === Virtual Distance (for indoor activities) ===
+  private lastPowerUpdate?: number; // Timestamp of last power reading
+  private lastPowerValue = 0; // Last power reading in watts
+
   // === Zone Time Tracking ===
   private zoneStartTime?: number;
   private currentHrZone?: number;
@@ -97,6 +102,15 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   }
 
   // ==================== PUBLIC API ====================
+
+  /**
+   * Set activity location (indoor/outdoor)
+   * Should be called before startRecording() to properly configure distance calculation
+   */
+  public setActivityLocation(location: PublicActivityLocation): void {
+    this.activityLocation = location;
+    console.log("[LiveMetricsManager] Activity location set to:", location);
+  }
 
   /**
    * Start recording - initialize timers and state
@@ -194,6 +208,16 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
         this.updateMaxValues(reading.metric, reading.value);
       }
 
+      // Calculate virtual distance for indoor activities based on power
+      if (
+        this.isActive &&
+        this.activityLocation === "indoor" &&
+        reading.metric === "power" &&
+        typeof reading.value === "number"
+      ) {
+        this.updateVirtualDistance(reading.value, timestamp);
+      }
+
       // Batch sensor updates for UI (max 10Hz)
       this.pendingSensorUpdates.set(reading.metric, reading.value);
 
@@ -235,7 +259,12 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     });
 
     // Calculate distance if we have a previous location (only when active)
-    if (this.isActive && this.lastLocation) {
+    // Skip GPS distance for indoor activities (use virtual distance from power instead)
+    if (
+      this.isActive &&
+      this.lastLocation &&
+      this.activityLocation !== "indoor"
+    ) {
       const distance = this.calculateDistance(this.lastLocation, location);
 
       // Filter GPS noise
@@ -851,6 +880,102 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
         this.maxTemperature = Math.max(this.maxTemperature, value);
         break;
     }
+  }
+
+  /**
+   * Calculate virtual distance for indoor activities based on power
+   * Uses physics model to estimate speed from power output
+   */
+  private updateVirtualDistance(powerWatts: number, timestamp: number): void {
+    // Skip if this is the first power reading
+    if (!this.lastPowerUpdate) {
+      this.lastPowerUpdate = timestamp;
+      this.lastPowerValue = powerWatts;
+      return;
+    }
+
+    // Calculate time elapsed since last update (in seconds)
+    const deltaTime = (timestamp - this.lastPowerUpdate) / 1000;
+
+    // Skip if unreasonable time delta
+    if (deltaTime <= 0 || deltaTime > 10) {
+      this.lastPowerUpdate = timestamp;
+      this.lastPowerValue = powerWatts;
+      return;
+    }
+
+    // Average power over the interval
+    const avgPower = (powerWatts + this.lastPowerValue) / 2;
+
+    // Calculate virtual distance using power-to-speed model
+    const distanceMeters = this.calculateVirtualDistanceFromPower(
+      avgPower,
+      deltaTime,
+    );
+
+    // Add to total distance
+    this.totalDistance += distanceMeters;
+
+    // Update last values
+    this.lastPowerUpdate = timestamp;
+    this.lastPowerValue = powerWatts;
+  }
+
+  /**
+   * Calculate virtual distance from power using physics model
+   * Models road cycling physics: power = (rolling resistance + air resistance) * speed
+   *
+   * @param powerWatts - Average power in watts
+   * @param durationSeconds - Duration in seconds
+   * @returns Distance in meters
+   */
+  private calculateVirtualDistanceFromPower(
+    powerWatts: number,
+    durationSeconds: number,
+  ): number {
+    // Physics constants for road cycling
+    const CRR = 0.005; // Coefficient of rolling resistance (typical road tire)
+    const CDA = 0.324; // Drag coefficient * frontal area (typical cycling position)
+    const AIR_DENSITY = 1.225; // kg/m³ (air density at sea level, 15°C)
+    const DRIVETRAIN_LOSS = 0.03; // 3% drivetrain loss
+
+    // Account for drivetrain loss
+    const effectivePower = powerWatts * (1 - DRIVETRAIN_LOSS);
+
+    // Get rider weight from profile (default 75kg if not set)
+    const riderWeightKg = this.profile.weight || 75;
+    const bikeWeightKg = 8; // Typical bike weight
+    const totalMassKg = riderWeightKg + bikeWeightKg;
+
+    // Solve for speed iteratively
+    // Power equation: P = (CRR * m * g * v) + (0.5 * ρ * CDA * v³)
+    // Where: P = power, m = mass, g = gravity, v = velocity, ρ = air density
+
+    let speed = 0; // m/s
+
+    // Iterate to find speed that matches the power output
+    // Start from 0 and increment by 0.1 m/s until we exceed the power
+    for (let v = 0; v < 20; v += 0.1) {
+      // 20 m/s = 72 km/h max speed for iteration
+      const rollingResistance = CRR * totalMassKg * 9.81 * v;
+      const airResistance = 0.5 * AIR_DENSITY * CDA * Math.pow(v, 3);
+      const requiredPower = rollingResistance + airResistance;
+
+      if (requiredPower >= effectivePower) {
+        speed = v;
+        break;
+      }
+    }
+
+    // If no power (coasting), speed is 0
+    if (powerWatts <= 0) {
+      speed = 0;
+    }
+
+    // Calculate distance: distance = speed * time
+    const distanceMeters = speed * durationSeconds;
+
+    return distanceMeters;
   }
 
   /**

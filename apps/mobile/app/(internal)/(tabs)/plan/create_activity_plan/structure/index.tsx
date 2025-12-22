@@ -124,7 +124,7 @@ export default function StructureEditScreen() {
     [removeSegment],
   );
 
-  const handleAddStep = useCallback((segmentName?: string) => {
+  const handleAddStep = useCallback(() => {
     if (!isMountedRef.current) return;
     setAddMenuOpen(false);
     setEditingStepIndex(null);

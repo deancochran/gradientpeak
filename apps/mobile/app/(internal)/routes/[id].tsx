@@ -141,7 +141,7 @@ export default function RouteDetailScreen() {
                   </Text>
                 </View>
 
-                {route.total_ascent > 0 && (
+                {route.total_ascent != null && route.total_ascent > 0 && (
                   <View className="flex-row items-center justify-between">
                     <View className="flex-row items-center gap-2">
                       <TrendingUp size={20} className="text-green-600" />
@@ -153,7 +153,7 @@ export default function RouteDetailScreen() {
                   </View>
                 )}
 
-                {route.total_descent > 0 && (
+                {route.total_descent != null && route.total_descent > 0 && (
                   <View className="flex-row items-center justify-between">
                     <View className="flex-row items-center gap-2">
                       <TrendingDown size={20} className="text-red-600" />

@@ -14,7 +14,7 @@ import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { formatDuration } from "@repo/core";
 import { Clock } from "lucide-react-native";
 import React from "react";
-import { View } from "react-native";
+import { ScrollView, View } from "react-native";
 
 interface DashboardCardProps {
   service: ActivityRecorderService | null;
@@ -55,9 +55,13 @@ export const DashboardCard: React.FC<DashboardCardProps> = ({
           </View>
 
           {/* Live Metrics Section */}
-          <View className="mb-6">
+          <View className="flex-1">
             <Text className={CARD_STYLES.sectionHeader}>Live Metrics</Text>
-            <View className="gap-3">
+            <ScrollView
+              className="flex-1"
+              showsVerticalScrollIndicator={false}
+              contentContainerClassName="gap-3 pb-4"
+            >
               {/* Row 1: Power & Heart Rate */}
               <View className="flex-row gap-3">
                 <View
@@ -150,7 +154,40 @@ export const DashboardCard: React.FC<DashboardCardProps> = ({
                   <Text className="text-xs text-muted-foreground">cal</Text>
                 </View>
               </View>
-            </View>
+
+              {/* Row 4: Elevation Gain & Loss (for outdoor activities) */}
+              {(stats.ascent > 0 || stats.descent > 0) && (
+                <View className="flex-row gap-3">
+                  <View
+                    className={`flex-1 ${CARD_STYLES.metricCard} ${ANIMATIONS.transition}`}
+                  >
+                    <Text className="text-xs text-muted-foreground mb-1">
+                      Elevation Gain
+                    </Text>
+                    <Text
+                      className={`text-xl font-semibold ${ANIMATIONS.valueChange}`}
+                    >
+                      {Math.round(stats.ascent || 0)}
+                    </Text>
+                    <Text className="text-xs text-muted-foreground">m</Text>
+                  </View>
+
+                  <View
+                    className={`flex-1 ${CARD_STYLES.metricCard} ${ANIMATIONS.transition}`}
+                  >
+                    <Text className="text-xs text-muted-foreground mb-1">
+                      Elevation Loss
+                    </Text>
+                    <Text
+                      className={`text-xl font-semibold ${ANIMATIONS.valueChange}`}
+                    >
+                      {Math.round(stats.descent || 0)}
+                    </Text>
+                    <Text className="text-xs text-muted-foreground">m</Text>
+                  </View>
+                </View>
+              )}
+            </ScrollView>
           </View>
         </CardContent>
       </Card>

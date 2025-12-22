@@ -1,5 +1,9 @@
 import { memo } from "react";
-import { type ActivityPlanStructureV2, formatDuration, Step } from "@repo/core";
+import {
+  type ActivityPlanStructureV2,
+  formatDuration,
+  PlanStepV2,
+} from "@repo/core";
 import { Text } from "@/components/ui/text";
 import { Icon } from "@/components/ui/icon";
 import { View } from "react-native";
@@ -14,7 +18,7 @@ import type { CurrentMetrics } from "@/types"; // Adjust this import path as nee
 const CurrentStepDisplay = memo<{
   planProgress: any;
   currentMetrics: CurrentMetrics;
-  currentStep?: Step;
+  currentStep?: PlanStepV2;
   onNextStep?: () => void;
   isAdvancing: boolean;
   structure: ActivityPlanStructureV2;

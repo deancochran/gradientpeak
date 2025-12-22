@@ -14,12 +14,12 @@
  */
 
 import {
-  RecordingServiceActivityPlan,
-  type PlanStepV2,
   BLE_SERVICE_UUIDS,
   PublicActivityCategory,
   PublicActivityLocation,
   PublicProfilesRow,
+  RecordingServiceActivityPlan,
+  type PlanStepV2,
 } from "@repo/core";
 
 import {
@@ -523,6 +523,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     this.state = "recording";
 
+    // Configure LiveMetricsManager with activity location before starting
+    this.liveMetricsManager.setActivityLocation(this.selectedActivityLocation);
+
     // Start LiveMetricsManager (initializes StreamBuffer)
     await this.liveMetricsManager.startRecording();
 
@@ -764,6 +767,37 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
       console.log("[Service] Applying initial targets");
       await this.applyStepTargets(step);
+    });
+
+    // Hot-plug detection: Apply targets when a controllable trainer connects mid-workout
+    this.sensorsManager.subscribeConnection(async (sensor) => {
+      // Skip if manual control is active
+      if (this.manualControlOverride) {
+        console.log("[Service] Manual control active, skipping auto target");
+        return;
+      }
+
+      // Only react to newly connected controllable trainers
+      if (!sensor.isControllable || sensor.connectionState !== "connected") {
+        return;
+      }
+
+      // Only apply if we're actively recording with a plan
+      if (this.state !== "recording" || !this.hasPlan || !this.currentStep) {
+        return;
+      }
+
+      console.log(
+        `[Service] Controllable trainer "${sensor.name}" connected during recording - applying Auto ERG`,
+      );
+
+      // Apply current step targets to the newly connected trainer
+      await this.applyStepTargets(this.currentStep);
+
+      // Show success notification (optional - can be removed if too noisy)
+      console.log(
+        `[Service] Auto ERG activated for "${sensor.name}" at ${this.currentStep.name}`,
+      );
     });
   }
 

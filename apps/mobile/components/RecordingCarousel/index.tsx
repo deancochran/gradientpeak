@@ -1,5 +1,4 @@
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import type { CarouselCardConfig, CarouselCardType } from "types/carousel";
 import React, {
   memo,
   useCallback,
@@ -9,6 +8,7 @@ import React, {
   useState,
 } from "react";
 import { Dimensions, FlatList, View } from "react-native";
+import type { CarouselCardConfig, CarouselCardType } from "types/carousel";
 import { CarouselCard } from "./CarouselCard";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
@@ -167,12 +167,16 @@ export const RecordingCarousel = memo(
           pagingEnabled
           showsHorizontalScrollIndicator={false}
           snapToInterval={SCREEN_WIDTH}
+          snapToAlignment="center"
           decelerationRate="fast"
+          disableIntervalMomentum
           scrollEventThrottle={16}
           onMomentumScrollEnd={handleMomentumScrollEnd}
           onScrollToIndexFailed={handleScrollToIndexFailed}
           getItemLayout={getItemLayout}
           removeClippedSubviews={true}
+          bounces={false}
+          overScrollMode="never"
           style={{ flex: 1 }}
         />
 

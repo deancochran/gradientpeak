@@ -11,6 +11,8 @@ export const THRESHOLD_RUN_WORKOUT_1: RecordingServiceActivityPlan = {
   name: "Threshold Run Development 1",
   description:
     "Indoor treadmill session focusing on threshold heart rate intervals",
+  activity_category: "run",
+  activity_location: "indoor",
   structure: createPlan()
     .step({
       name: "Progressive Warm-up",
@@ -54,6 +56,8 @@ export const THRESHOLD_RUN_WORKOUT_2: RecordingServiceActivityPlan = {
   name: "Threshold Run Development 2",
   description:
     "Longer indoor treadmill threshold session with progressive intervals",
+  activity_category: "run",
+  activity_location: "indoor",
   structure: createPlan()
     .step({
       name: "Warm-up Jog",
@@ -102,6 +106,8 @@ export const SPEED_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Speed Intervals",
   description: "High-intensity speed intervals for VO2 max development",
+  activity_category: "run",
+  activity_location: "indoor",
   structure: createPlan()
     .step({
       name: "Progressive Warm-up",
@@ -144,6 +150,8 @@ export const EASY_RECOVERY_RUN: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Easy Recovery Run",
   description: "Low-intensity recovery run for active recovery",
+  activity_category: "run",
+  activity_location: "indoor",
   structure: createPlan()
     .step({
       name: "Easy Recovery Run",
@@ -163,6 +171,8 @@ export const HILL_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "Hill Intervals",
   description: "Incline-based intervals for strength and power development",
+  activity_category: "run",
+  activity_location: "indoor",
   structure: createPlan()
     .step({
       name: "Flat Warm-up",

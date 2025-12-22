@@ -1,3 +1,7 @@
+import {
+  ActivityCategorySelector,
+  ActivityLocationSelector,
+} from "@/components/ActivityPlan/ActivityCategorySelector";
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
 import { RouteSelector } from "@/components/Routes/RouteSelector";
 import { Button } from "@/components/ui/button";
@@ -9,10 +13,6 @@ import { ROUTES } from "@/lib/constants/routes";
 import { useActivityPlanForm } from "@/lib/hooks/forms/useActivityPlanForm";
 import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
 import { formatDuration } from "@/lib/utils/dates";
-import {
-  ActivityCategorySelector,
-  ActivityLocationSelector,
-} from "@/components/ActivityPlan/ActivityCategorySelector";
 import {
   calculateActivityStatsV2,
   type ActivityPlanStructureV2,
@@ -90,8 +90,8 @@ export default function CreateActivityPlanScreen() {
     const stats = calculateActivityStatsV2(structureV2);
 
     return {
-      tss: stats.tss,
-      if: stats.intensityFactor,
+      tss: stats.estimatedTSS,
+      if: stats.avgPower / 100, // Convert avgPower (%FTP) to IF (0-1 scale)
     };
   }, [steps]);
 
@@ -138,7 +138,11 @@ export default function CreateActivityPlanScreen() {
           <View className="flex-row gap-3">
             <ActivityCategorySelector
               value={activityCategory}
-              onChange={setActivityCategory}
+              onChange={(category) =>
+                setActivityCategory(
+                  category as "run" | "bike" | "swim" | "strength" | "other",
+                )
+              }
               compact
             />
 
@@ -154,7 +158,9 @@ export default function CreateActivityPlanScreen() {
           <View>
             <ActivityLocationSelector
               value={activityLocation}
-              onChange={setActivityLocation}
+              onChange={(location) =>
+                setActivityLocation(location as "outdoor" | "indoor")
+              }
             />
           </View>
 

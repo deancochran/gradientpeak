@@ -59,9 +59,7 @@ export const activitiesRouter = createTRPCRouter({
           `
           id, name, type, location,
           started_at, duration_seconds, distance_meters,
-          metrics->avg_power as avg_power,
-          metrics->avg_hr as avg_hr,
-          metrics->tss as tss
+          metrics
         `,
           { count: "exact" },
         )
