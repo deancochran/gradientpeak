@@ -30,12 +30,9 @@ export default function InternalLayout() {
         headerShown: false,
         tabBarActiveTintColor: navTheme.colors.primary,
         tabBarInactiveTintColor: currentTheme.mutedForeground,
-        tabBarLabelStyle: {
-          fontSize: 11,
-          overflow: "visible",
-        },
+        tabBarShowLabel: false,
         tabBarStyle: {
-          height: 60,
+          height: 80,
         },
       }}
     >
@@ -43,13 +40,15 @@ export default function InternalLayout() {
         name="index"
         options={{
           title: "Home",
-          tabBarIcon: ({ color }) => <Icon as={Home} size={24} />,
+          tabBarIcon: ({ color }) => <Icon as={Home} size={28} color={color} />,
         }}
       />
       <Tabs.Screen
         name="plan"
         options={{
-          tabBarIcon: ({ color }) => <Icon as={Calendar} size={24} />,
+          tabBarIcon: ({ color }) => (
+            <Icon as={Calendar} size={28} color={color} />
+          ),
           title: "Plan",
         }}
       />
@@ -57,13 +56,17 @@ export default function InternalLayout() {
         name="record-launcher"
         options={{
           title: "Record",
-          tabBarIcon: ({ color }) => <Icon as={Circle} size={24} />,
+          tabBarIcon: ({ color }) => (
+            <Icon as={Circle} size={28} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="trends"
         options={{
-          tabBarIcon: ({ color }) => <Icon as={TrendingUp} size={24} />,
+          tabBarIcon: ({ color }) => (
+            <Icon as={TrendingUp} size={28} color={color} />
+          ),
           title: "Trends",
         }}
       />
@@ -79,7 +82,7 @@ export default function InternalLayout() {
               <View className="items-center justify-center">
                 <Avatar
                   alt={profile?.username || "User"}
-                  className={`w-7 h-7 ${focused ? "border-2 border-primary" : "border-2 border-transparent"}`}
+                  className={`w-8 h-8 ${focused ? "border-2 border-primary" : "border-2 border-transparent"}`}
                 >
                   {avatarUri ? (
                     <AvatarImage
@@ -88,7 +91,7 @@ export default function InternalLayout() {
                     />
                   ) : null}
                   <AvatarFallback>
-                    <Text className="text-xs">
+                    <Text className="text-sm">
                       {profile?.username?.charAt(0)?.toUpperCase() || "U"}
                     </Text>
                   </AvatarFallback>

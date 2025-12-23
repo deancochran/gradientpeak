@@ -18,6 +18,8 @@ export function useHomeData() {
     days: 4,
   });
 
+  const plan = useMemo(() => data?.plan, [data?.plan]);
+
   // Transform today's activity for the UI
   const todaysActivity = useMemo(() => {
     if (!data?.todaysActivity) return null;
@@ -64,22 +66,20 @@ export function useHomeData() {
 
   // Simple weekly stats (using 30-day data)
   const weeklyStats = useMemo(() => {
-    if (!data?.stats) {
+    if (!data?.weeklyStats) {
       return {
         volume: 0,
         activitiesCompleted: 0,
         totalTSS: 0,
-        daysActive: 0,
       };
     }
 
     return {
-      volume: parseFloat(data.stats.totalDistance.toFixed(1)),
-      activitiesCompleted: data.stats.totalActivities,
-      totalTSS: data.stats.totalTSS,
-      daysActive: data.stats.daysActive,
+      volume: parseFloat(data.weeklyStats.totalDistance.toFixed(1)),
+      activitiesCompleted: data.weeklyStats.workouts,
+      totalTSS: data.weeklyStats.totalTSS,
     };
-  }, [data?.stats]);
+  }, [data?.weeklyStats]);
 
   // Simplified form status - for MVP, just show if they have recent activity
   const formStatus = useMemo(() => {
@@ -232,6 +232,7 @@ export function useHomeData() {
   );
 
   return {
+    plan,
     todaysActivity,
     weeklyStats,
     formStatus,

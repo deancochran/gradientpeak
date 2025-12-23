@@ -53,7 +53,7 @@ export default function TrainingPlanOverview() {
   };
 
   const handleViewCalendar = () => {
-    router.push(ROUTES.PLAN.TRAINING_PLAN.CALENDAR);
+    router.push(ROUTES.PLAN.INDEX);
   };
 
   const handleViewTrends = () => {

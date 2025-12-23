@@ -4,8 +4,8 @@
  */
 
 export { ActivityCard, type ActivityCardData } from "./ActivityCard";
-export { DayActivityList } from "./DayActivityList";
+export { GhostCard } from "./GhostCard";
+export { HeroCard, StackedHeroCards } from "./HeroCard";
 export { PlanCard, type PlanCardData } from "./PlanCard";
-export { PlanHeader } from "./PlanHeader";
-export { UpcomingActivities } from "./UpcomingActivities";
-export { WeekCalendar } from "./WeekCalendar";
+export { WeeklyLedger } from "./WeeklyLedger";
+export { WeekStrip } from "./WeekStrip";

@@ -1,36 +1,30 @@
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import {
-  DayActivityList,
-  PlanHeader,
-  UpcomingActivities,
-  WeekCalendar,
-} from "@/components/plan";
+import PlanProgressCard from "@/components/home/PlanProgressCard";
+import { GhostCard } from "@/components/plan/GhostCard";
+import { HeroCard, StackedHeroCards } from "@/components/plan/HeroCard";
+import { WeekStrip } from "@/components/plan/WeekStrip";
+import { WeeklyLedger } from "@/components/plan/WeeklyLedger";
 import { PlanCalendarSkeleton } from "@/components/shared";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import { trpc } from "@/lib/trpc";
 import { ActivityPayload } from "@repo/core";
 import { format } from "date-fns";
-import { useRouter } from "expo-router";
-import {
-  ChevronRight,
-  Library,
-  MapPin,
-  Plus,
-  TrendingUp,
-} from "lucide-react-native";
-import React, { useMemo, useState } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { Calendar, CalendarDays, Plus, Target } from "lucide-react-native";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   RefreshControl,
   ScrollView,
   TouchableOpacity,
   View,
 } from "react-native";
+import { AllActivitiesCalendarModal } from "./components/modals/AllActivitiesCalendarModal";
+import { PlanDetailsModal } from "./components/modals/PlanDetailsModal";
 import { PlannedActivityDetailModal } from "./components/modals/PlannedActivityDetailModal";
-import { getActivityBgClass, getIntensityColor } from "./utils/colors";
+import { ScheduleActivityModal } from "./components/modals/ScheduleActivityModal";
 import {
   getWeekDates,
   isActivityCompleted,
@@ -40,6 +34,7 @@ import {
 
 function PlanScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams();
 
   const [selectedPlannedActivityId, setSelectedPlannedActivityId] = useState<
     string | null
@@ -48,17 +43,22 @@ function PlanScreen() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [refreshing, setRefreshing] = useState(false);
 
+  // Modal states for consolidated UI
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [showAllActivitiesModal, setShowAllActivitiesModal] = useState(false);
+  const [showPlanDetailsModal, setShowPlanDetailsModal] = useState(false);
+
+  // Handle navigation params to open modal
+  useEffect(() => {
+    if (params.activityId && typeof params.activityId === "string") {
+      setSelectedPlannedActivityId(params.activityId);
+    }
+  }, [params.activityId]);
+
   // Calculate week dates based on offset
   const weekDates = useMemo(() => {
     return getWeekDates(weekOffset);
   }, [weekOffset]);
-
-  const startOfWeek = weekDates[0];
-  const endOfWeek = weekDates[6];
-
-  // Format week days and dates for display
-  const weekDays = weekDates.map((date) => format(date, "EEE"));
-  const dates = weekDates.map((date) => date.getDate());
 
   // Query for training plan
   const {
@@ -128,42 +128,62 @@ function PlanScreen() {
     return Math.round((status.weekProgress.completedActivities / total) * 100);
   }, [status]);
 
-  // Upcoming activities from status.upcomingActivities (limit to 3)
-  const upcomingActivitys = useMemo(() => {
-    if (!status?.upcomingActivities) return [];
-    return status.upcomingActivities.slice(0, 3).map((activity) => ({
-      id: activity.id,
-      title: activity.activity_plan?.name || "Unnamed Activity",
-      type: activity.activity_plan?.activity_category || "other",
-      duration: `${activity.activity_plan?.estimated_duration || 0} min`,
-      intensity: "Moderate",
-      date: format(new Date(activity.scheduled_date), "EEE, MMM d"),
-    }));
-  }, [status]);
+  // Get upcoming activities (next 3-4 days after today, excluding today)
+  const upcomingActivities = useMemo(() => {
+    if (!allPlannedActivities?.items) return [];
 
-  // Plan progress calculation
-  const planProgress = useMemo(() => {
-    if (!plan || !plan.structure) {
-      return { name: "No Active Plan", week: "0/0", percentage: 0 };
+    const today = normalizeDate(new Date());
+    const futureDays: { date: Date; activities: any[] }[] = [];
+
+    // Get next 4 days
+    for (let i = 1; i <= 4; i++) {
+      const futureDate = new Date(today);
+      futureDate.setDate(futureDate.getDate() + i);
+      const normalized = normalizeDate(futureDate);
+
+      const activities = allPlannedActivities.items.filter((activity) => {
+        const activityDate = normalizeDate(new Date(activity.scheduled_date));
+        return activityDate.getTime() === normalized.getTime();
+      });
+
+      if (activities.length > 0) {
+        futureDays.push({ date: normalized, activities });
+      }
     }
 
-    const totalWeeks = (plan.structure as any).target_weeks || 16;
-    const weeksSinceStart = Math.floor(
-      (Date.now() - new Date(plan.created_at).getTime()) /
-        (7 * 24 * 60 * 60 * 1000),
-    );
-    const currentWeek = Math.min(weeksSinceStart + 1, totalWeeks);
+    return futureDays.slice(0, 3); // Limit to 3 days
+  }, [allPlannedActivities]);
+
+  // Calculate weekly totals for ledger
+  const weeklyTotals = useMemo(() => {
+    if (!status?.weekProgress) {
+      return { distance: 0, time: 0, count: 0 };
+    }
+
+    // Calculate from completed activities in the current week
+    const startOfWeek = weekDates[0];
+    const endOfWeek = weekDates[6];
+
+    const completedThisWeek =
+      allPlannedActivities?.items.filter((activity) => {
+        const activityDate = new Date(activity.scheduled_date);
+        return (
+          isActivityCompleted(activity) &&
+          activityDate >= startOfWeek &&
+          activityDate <= endOfWeek
+        );
+      }) || [];
+
+    // For now, use placeholder values (in production, fetch from completed activities)
+    const totalDistance = 0; // Would sum actual distance from completed_activity
+    const totalTime = 0; // Would sum actual time from completed_activity
 
     return {
-      name: plan.name,
-      week: `${currentWeek}/${totalWeeks}`,
-      percentage: Math.min(Math.round((currentWeek / totalWeeks) * 100), 100),
+      distance: totalDistance,
+      time: totalTime,
+      count: completedThisWeek.length,
     };
-  }, [plan]);
-
-  // Check if selected date is today
-  const isToday = isSameDay(selectedDate, new Date());
-  const isPast = selectedDate < new Date();
+  }, [status, allPlannedActivities, weekDates]);
 
   // Navigation handlers
   const handlePreviousWeek = () => {
@@ -199,7 +219,15 @@ function PlanScreen() {
   };
 
   const handleScheduleActivity = () => {
-    router.push("/plan/create_planned_activity" as any);
+    setShowScheduleModal(true);
+  };
+
+  const handleViewAllActivities = () => {
+    setShowAllActivitiesModal(true);
+  };
+
+  const handleViewPlanDetails = () => {
+    setShowPlanDetailsModal(true);
   };
 
   const handleRefresh = async () => {
@@ -222,196 +250,210 @@ function PlanScreen() {
     );
   }
 
+  // Calculate plan progress if we have a plan with target date
+  const planProgress = useMemo(() => {
+    if (!plan) return null;
+
+    // For now, we'll show basic plan info without progress
+    // In the future, we can add target_date to the plan query
+    return {
+      planName: plan.name,
+      weeksOut: 0, // Will calculate from target_date when available
+      progress: 0, // Will calculate from CTL progress when available
+      date: "Active",
+    };
+  }, [plan]);
+
   return (
-    <ScrollView
-      className="flex-1 bg-background"
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-      }
-    >
-      {/* Header with Stats */}
-      <PlanHeader
-        adherenceRate={adherenceRate}
-        weeklyScheduled={weeklyScheduled}
-        planProgress={planProgress}
-        onCalendarPress={() => router.push("/plan/planned_activities" as any)}
-      />
-
-      {/* Week Calendar */}
-      <WeekCalendar
-        weekDates={weekDates}
-        weekDays={weekDays}
-        dates={dates}
-        weekActivities={weekActivities}
-        selectedDate={selectedDate}
-        startOfWeek={startOfWeek}
-        endOfWeek={endOfWeek}
-        onPreviousWeek={handlePreviousWeek}
-        onNextWeek={handleNextWeek}
-        onSelectDay={handleSelectDay}
-      />
-
-      {/* Content Area */}
-      <View className="px-5 py-6 gap-4">
-        {/* Selected Day Activities */}
-        <DayActivityList
-          selectedDate={selectedDate}
-          activities={selectedDayActivities}
-          isToday={isToday}
-          isPast={isPast}
-          onActivityPress={handleSelectPlannedActivity}
-          onStartActivity={handleStartActivity}
-          onScheduleActivity={handleScheduleActivity}
-          getActivityBgClass={getActivityBgClass}
-          isActivityCompleted={isActivityCompleted}
-        />
-
-        {/* Upcoming Activities */}
-        {isToday && (
-          <UpcomingActivities
-            activities={upcomingActivitys}
-            onActivityPress={handleSelectPlannedActivity}
-            onViewAll={() => router.push("/plan/planned_activities" as any)}
-            getActivityBgClass={getActivityBgClass}
-            getIntensityColor={getIntensityColor}
-          />
-        )}
-
-        {/* Training Plan Progress */}
-        {plan && (
-          <TouchableOpacity
-            onPress={() => router.push("/plan/training-plan" as any)}
-            activeOpacity={0.7}
-          >
-            <Card className="bg-primary/5 border-primary/10">
-              <CardContent className="p-4">
-                <View className="flex-row items-center justify-between mb-2">
-                  <Text className="font-semibold">{planProgress.name}</Text>
-                  <Text className="text-sm text-primary font-medium">
-                    Week {planProgress.week}
+    <View className="flex-1 bg-background">
+      {/* 1. THE ANCHOR (Top 15% - Sticky) */}
+      <View className="bg-card border-b border-border">
+        {/* Plan Progress Card or Empty State */}
+        {plan ? (
+          <View className="px-4 pt-3">
+            <PlanProgressCard
+              planName={planProgress!.planName}
+              weeksOut={planProgress!.weeksOut}
+              progress={planProgress!.progress}
+              date={planProgress!.date}
+              onPress={handleViewPlanDetails}
+            />
+          </View>
+        ) : (
+          <View className="px-4 pt-3">
+            <View className="bg-muted/30 border-2 border-dashed border-muted-foreground/30 p-4 rounded-xl">
+              <View className="flex-row items-center mb-2">
+                <View className="bg-muted p-2 rounded-full mr-2">
+                  <Icon
+                    as={Target}
+                    size={16}
+                    className="text-muted-foreground"
+                  />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-sm font-semibold text-foreground mb-1">
+                    No Training Plan
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">
+                    Create a plan to track your progress
                   </Text>
                 </View>
-                <View className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                  <View
-                    className="bg-primary h-full"
-                    style={{ width: `${planProgress.percentage}%` }}
-                  />
-                </View>
-              </CardContent>
-            </Card>
-          </TouchableOpacity>
-        )}
-
-        {/* No Plan CTA */}
-        {!plan && (
-          <Card className="bg-muted/50">
-            <CardContent className="p-6 items-center">
-              <Icon
-                as={TrendingUp}
-                size={48}
-                className="text-muted-foreground mb-3"
-              />
-              <Text className="text-lg font-semibold mb-1">
-                Create Your Training Plan
-              </Text>
-              <Text className="text-sm text-muted-foreground text-center mb-4">
-                Get personalized training recommendations and track your
-                progress
-              </Text>
+              </View>
               <Button
-                onPress={() => router.push("/plan/training-plan/create" as any)}
+                variant="outline"
+                size="sm"
+                onPress={() =>
+                  router.push("/(internal)/(tabs)/plan/training-plan" as any)
+                }
+                className="mt-2"
               >
-                <Icon
-                  as={Plus}
-                  size={20}
-                  className="text-primary-foreground mr-2"
-                />
-                <Text className="text-primary-foreground font-semibold">
-                  Create Plan
+                <Text className="text-xs font-medium">
+                  Create Training Plan
                 </Text>
               </Button>
-            </CardContent>
-          </Card>
+            </View>
+          </View>
         )}
 
-        {/* Quick Actions */}
-        <View className="gap-2 pt-2">
-          <TouchableOpacity
-            onPress={() => router.push("/routes" as any)}
-            activeOpacity={0.7}
-          >
-            <Card>
-              <CardContent className="p-3">
-                <View className="flex-row items-center justify-between">
-                  <View className="flex-row items-center gap-3">
-                    <Icon
-                      as={MapPin}
-                      size={20}
-                      className="text-muted-foreground"
-                    />
-                    <Text className="font-medium">Routes</Text>
-                  </View>
-                  <Icon
-                    as={ChevronRight}
-                    size={20}
-                    className="text-muted-foreground"
-                  />
-                </View>
-              </CardContent>
-            </Card>
-          </TouchableOpacity>
+        {/* Header Row: Month + Action Icons */}
+        <View className="flex-row items-center justify-between px-4 pt-3 pb-2">
+          <Text className="text-2xl font-bold">
+            {format(selectedDate, "MMMM")}
+          </Text>
 
-          <TouchableOpacity
-            onPress={() => router.push("/plan/library" as any)}
-            activeOpacity={0.7}
-          >
-            <Card>
-              <CardContent className="p-3">
-                <View className="flex-row items-center justify-between">
-                  <View className="flex-row items-center gap-3">
-                    <Icon
-                      as={Library}
-                      size={20}
-                      className="text-muted-foreground"
-                    />
-                    <Text className="font-medium">Activity Library</Text>
-                  </View>
-                  <Icon
-                    as={ChevronRight}
-                    size={20}
-                    className="text-muted-foreground"
-                  />
-                </View>
-              </CardContent>
-            </Card>
-          </TouchableOpacity>
+          {/* Action Icons */}
+          <View className="flex-row items-center gap-2">
+            {/* Training Plan Details - Only show if plan exists */}
+            {plan && (
+              <TouchableOpacity
+                onPress={handleViewPlanDetails}
+                className="w-10 h-10 rounded-full bg-muted items-center justify-center"
+                activeOpacity={0.7}
+              >
+                <Icon as={Calendar} size={20} className="text-foreground" />
+              </TouchableOpacity>
+            )}
 
-          <TouchableOpacity
-            onPress={() => router.push("/plan/create_activity_plan" as any)}
-            activeOpacity={0.7}
-          >
-            <Card>
-              <CardContent className="p-3">
-                <View className="flex-row items-center justify-between">
-                  <View className="flex-row items-center gap-3">
-                    <Icon
-                      as={Plus}
-                      size={20}
-                      className="text-muted-foreground"
-                    />
-                    <Text className="font-medium">Create Custom Activity</Text>
-                  </View>
-                  <Icon
-                    as={ChevronRight}
-                    size={20}
-                    className="text-muted-foreground"
-                  />
-                </View>
-              </CardContent>
-            </Card>
-          </TouchableOpacity>
+            {/* All Activities Calendar */}
+            <TouchableOpacity
+              onPress={handleViewAllActivities}
+              className="w-10 h-10 rounded-full bg-muted items-center justify-center"
+              activeOpacity={0.7}
+            >
+              <Icon as={CalendarDays} size={20} className="text-foreground" />
+            </TouchableOpacity>
+
+            {/* Schedule New Activity */}
+            <TouchableOpacity
+              onPress={handleScheduleActivity}
+              className="w-12 h-12 rounded-full bg-primary items-center justify-center"
+              activeOpacity={0.8}
+            >
+              <Icon as={Plus} size={24} className="text-primary-foreground" />
+            </TouchableOpacity>
+          </View>
         </View>
+
+        {/* Week Strip with Status Dots */}
+        <WeekStrip
+          weekDates={weekDates}
+          weekActivities={weekActivities}
+          selectedDate={selectedDate}
+          onSelectDay={handleSelectDay}
+          onPreviousWeek={handlePreviousWeek}
+          onNextWeek={handleNextWeek}
+        />
       </View>
+
+      {/* Scrollable Content */}
+      <ScrollView
+        className="flex-1"
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
+      >
+        <View className="px-4 py-5">
+          {/* 2. THE STAGE (Middle 45% - Selected Day Focus) */}
+          <View className="mb-6">
+            {/* Date Label */}
+            <Text className="text-lg font-semibold mb-4">
+              {format(selectedDate, "EEEE, MMM d")}
+            </Text>
+
+            {/* Hero Content (Scenarios A, B, C, or D) */}
+            {selectedDayActivities.length === 0 ? (
+              // Scenario D: Empty/Casual - Ghost Card
+              <GhostCard onPress={handleScheduleActivity} />
+            ) : selectedDayActivities.length === 1 ? (
+              // Scenario A or B: Single Activity - Hero Card
+              <HeroCard
+                activity={selectedDayActivities[0]}
+                onPress={() =>
+                  handleSelectPlannedActivity(selectedDayActivities[0].id)
+                }
+                onStartActivity={() =>
+                  handleStartActivity(selectedDayActivities[0])
+                }
+                isCompleted={isActivityCompleted(selectedDayActivities[0])}
+                isPrimary={true}
+              />
+            ) : (
+              // Scenario C: Multiple Activities - Stacked View
+              <StackedHeroCards
+                activities={selectedDayActivities}
+                onActivityPress={handleSelectPlannedActivity}
+                onStartActivity={handleStartActivity}
+                isActivityCompleted={isActivityCompleted}
+              />
+            )}
+          </View>
+
+          {/* 3. THE HORIZON (Bottom 30% - Forecast) */}
+          {upcomingActivities.length > 0 && (
+            <View className="mb-6">
+              <Text className="text-base font-semibold mb-3">Up Next</Text>
+              <View className="gap-2">
+                {upcomingActivities.map(({ date, activities }, idx) => (
+                  <TouchableOpacity
+                    key={idx}
+                    onPress={() => setSelectedDate(date)}
+                    className="bg-card border border-border rounded-lg p-3"
+                    activeOpacity={0.7}
+                  >
+                    <View className="flex-row items-center justify-between">
+                      <View className="flex-1">
+                        <Text className="text-sm font-semibold mb-1">
+                          {format(date, "EEE")}
+                        </Text>
+                        <Text className="text-xs text-muted-foreground">
+                          {activities[0]?.activity_plan?.name ||
+                            "Unnamed Activity"}
+                          {activities.length > 1 &&
+                            ` + ${activities.length - 1} more`}
+                        </Text>
+                      </View>
+                      {activities[0]?.activity_plan?.estimated_duration && (
+                        <Text className="text-sm text-muted-foreground">
+                          {activities[0].activity_plan.estimated_duration} min
+                        </Text>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* 4. THE LEDGER (Footer - Collapsible Insight) */}
+          <WeeklyLedger
+            totalDistance={weeklyTotals.distance}
+            totalTime={weeklyTotals.time}
+            activityCount={weeklyTotals.count}
+            unit="mi"
+            defaultCollapsed={true}
+          />
+        </View>
+      </ScrollView>
 
       {/* Activity Detail Modal */}
       {selectedPlannedActivityId && (
@@ -421,7 +463,26 @@ function PlanScreen() {
           onClose={() => setSelectedPlannedActivityId(null)}
         />
       )}
-    </ScrollView>
+
+      {/* Schedule Activity Modal */}
+      <ScheduleActivityModal
+        isVisible={showScheduleModal}
+        onClose={() => setShowScheduleModal(false)}
+        preselectedDate={selectedDate}
+      />
+
+      {/* All Activities Calendar Modal */}
+      <AllActivitiesCalendarModal
+        isVisible={showAllActivitiesModal}
+        onClose={() => setShowAllActivitiesModal(false)}
+      />
+
+      {/* Training Plan Details Modal */}
+      <PlanDetailsModal
+        isVisible={showPlanDetailsModal}
+        onClose={() => setShowPlanDetailsModal(false)}
+      />
+    </View>
   );
 }
 

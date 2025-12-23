@@ -1,22 +1,14 @@
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import {
-  EmptyState,
-  QuickActions,
-  StatCard,
-  TodaysFocusCard,
-  TrainingFormCard,
+  TodaysTrainingCard,
   TrainingReadinessCard,
-  WeeklyGoalCard,
-  WeeklyPlanPreview,
+  WeeklySnapshot,
 } from "@/components/home";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useHomeData } from "@/lib/hooks/useHomeData";
-import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
-import { ActivityPayload } from "@repo/core";
 import { useRouter } from "expo-router";
-import { Flame, Target, TrendingUp } from "lucide-react-native";
 import React from "react";
 import {
   RefreshControl,
@@ -31,14 +23,11 @@ function HomeScreen() {
   const [refreshing, setRefreshing] = React.useState(false);
 
   const {
+    plan,
     todaysActivity,
     weeklyStats,
-    formStatus,
     trainingReadiness,
-    upcomingActivitys,
-    weeklyGoal,
     isLoading,
-    hasData,
     refetch,
   } = useHomeData();
 
@@ -48,26 +37,18 @@ function HomeScreen() {
     setRefreshing(false);
   };
 
-  const handleStartActivity = (activityId?: string) => {
-    if (!todaysActivity && !activityId) return;
+  const handleStartActivity = () => {
+    if (!todaysActivity) return;
 
-    const targetActivity = activityId
-      ? upcomingActivitys.find((w) => w.id === activityId)
-      : todaysActivity;
+    // Navigate to plan page with activity ID to open the modal
+    router.push({
+      pathname: "/(internal)/(tabs)/plan",
+      params: { activityId: todaysActivity.id },
+    } as any);
+  };
 
-    if (!targetActivity) return;
-
-    // Set activity selection for the record screen
-    const payload: ActivityPayload = {
-      category: targetActivity.type as any,
-      location: "outdoor", // Default to outdoor, will be properly set when creating plans
-      plannedActivityId: targetActivity.id,
-      plan: undefined,
-    };
-
-    activitySelectionStore.setSelection(payload);
-
-    router.push("/(internal)/(tabs)/record");
+  const handleViewPlan = () => {
+    router.push("/(internal)/(tabs)/plan");
   };
 
   if (isLoading) {
@@ -87,10 +68,17 @@ function HomeScreen() {
     );
   }
 
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good morning";
+    if (hour < 18) return "Good afternoon";
+    return "Good evening";
+  };
+
   return (
     <ScrollView
       className="flex-1 bg-background"
-      contentContainerClassName="p-4 gap-4"
+      contentContainerClassName="px-5 py-6 gap-5"
       showsVerticalScrollIndicator={false}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
@@ -98,21 +86,18 @@ function HomeScreen() {
       testID="home-screen"
     >
       {/* Header Section */}
-      <View className="flex-row items-center justify-between mb-2">
-        <View>
+      <View className="flex-row items-center justify-between mb-1">
+        <View className="flex-1 mr-3">
           <Text className="text-3xl font-bold text-foreground">
-            GradientPeak
-          </Text>
-          <Text className="text-muted-foreground text-sm mt-1">
-            Welcome back,{" "}
-            {profile?.username || user?.email?.split("@")[0] || "Athlete"}
+            {getGreeting()}, {profile?.username || "Athlete"}
           </Text>
         </View>
         <TouchableOpacity
           onPress={() => router.push("/(internal)/(tabs)/settings")}
-          className="w-10 h-10 rounded-full bg-muted items-center justify-center"
+          className="w-12 h-12 rounded-full bg-primary items-center justify-center shadow-sm"
+          activeOpacity={0.7}
         >
-          <Text className="text-foreground text-lg font-semibold">
+          <Text className="text-primary-foreground text-xl font-bold">
             {profile?.username?.charAt(0)?.toUpperCase() ||
               user?.email?.charAt(0)?.toUpperCase() ||
               "A"}
@@ -120,56 +105,37 @@ function HomeScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Today's Focus Card (Hero Element) */}
-      <TodaysFocusCard
-        todaysActivity={todaysActivity}
-        onStartActivity={() => handleStartActivity()}
-        onViewPlan={() => router.push("/(internal)/(tabs)/plan")}
-        onPress={() => {
-          if (todaysActivity) {
-            router.push(`/(internal)/activities/${todaysActivity.id}`);
-          }
-        }}
-      />
-
       {/* Training Readiness Indicator */}
-      {hasData && (
-        <TrainingReadinessCard
-          percentage={trainingReadiness.percentage}
-          status={trainingReadiness.status}
-          ctl={trainingReadiness.ctl}
-          ctlStatus={trainingReadiness.ctlStatus}
-          atl={trainingReadiness.atl}
-          atlStatus={trainingReadiness.atlStatus}
-          tsb={trainingReadiness.tsb}
-          tsbStatus={trainingReadiness.tsbStatus}
-          onPress={() => router.push("/(internal)/(tabs)/trends")}
-        />
-      )}
-
-      {/* Weekly Plan Preview */}
-      <WeeklyPlanPreview
-        upcomingActivities={upcomingActivitys}
-        onActivityPress={(activityId) => handleStartActivity(activityId)}
-        onViewAll={() => router.push("/(internal)/(tabs)/plan")}
+      <TrainingReadinessCard
+        ctl={trainingReadiness.ctl}
+        atl={trainingReadiness.atl}
+        tsb={trainingReadiness.tsb}
+        form={
+          trainingReadiness.tsb > 15
+            ? "fresh"
+            : trainingReadiness.tsb > 5
+              ? "optimal"
+              : trainingReadiness.tsb > -10
+                ? "neutral"
+                : trainingReadiness.tsb > -20
+                  ? "tired"
+                  : "overreaching"
+        }
       />
 
-      {/* Weekly Goal Progress */}
-      {hasData && <WeeklyGoalCard weeklyGoal={weeklyGoal} />}
-
-      {/* Quick Actions */}
-      <QuickActions
-        onPlanPress={() => router.push("/(internal)/(tabs)/plan")}
-        onTrendsPress={() => router.push("/(internal)/(tabs)/trends")}
-        onRecordPress={() => router.push("/(internal)/(tabs)/record")}
+      {/* Today's Training Card - Most Important */}
+      <TodaysTrainingCard
+        todaysActivity={todaysActivity}
+        onStartActivity={handleStartActivity}
+        onViewPlan={handleViewPlan}
       />
 
-      {/* Empty State for New Users */}
-      {!hasData && (
-        <EmptyState
-          onCreatePlan={() => router.push("/(internal)/(tabs)/plan")}
-        />
-      )}
+      {/* Weekly Snapshot */}
+      <WeeklySnapshot
+        distance={parseFloat((weeklyStats.volume * 0.621371).toFixed(1))}
+        workouts={weeklyStats.activitiesCompleted}
+        totalTSS={weeklyStats.totalTSS}
+      />
     </ScrollView>
   );
 }

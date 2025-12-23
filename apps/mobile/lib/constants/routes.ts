@@ -15,7 +15,6 @@ export const ROUTES = {
     // Training Plan Routes
     TRAINING_PLAN: {
       INDEX: "/plan/training-plan" as const,
-      CALENDAR: "/plan/training-plan/calendar" as const,
       CREATE: "/plan/training-plan/create" as const,
       SETTINGS: "/plan/training-plan/settings" as const,
     },

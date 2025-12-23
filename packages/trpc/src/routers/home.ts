@@ -136,6 +136,42 @@ export const homeRouter = createTRPCRouter({
         activities?.map((a) => a.started_at.split("T")[0]) || [],
       ).size;
 
+      // 4. Get stats for the current week (Sunday to Saturday)
+      const now = new Date();
+      const startOfWeek = new Date(now);
+      startOfWeek.setDate(now.getDate() - now.getDay()); // Sunday
+      startOfWeek.setHours(0, 0, 0, 0);
+
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(startOfWeek.getDate() + 6); // Saturday
+      endOfWeek.setHours(23, 59, 59, 999);
+
+      const { data: weeklyActivities, error: weeklyStatsError } =
+        await ctx.supabase
+          .from("activities")
+          .select("distance_meters, metrics")
+          .eq("profile_id", userId)
+          .gte("started_at", startOfWeek.toISOString())
+          .lte("started_at", endOfWeek.toISOString());
+
+      if (weeklyStatsError) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: weeklyStatsError.message,
+        });
+      }
+
+      const weeklyDistance =
+        weeklyActivities?.reduce(
+          (sum, a) => sum + (a.distance_meters || 0),
+          0,
+        ) || 0;
+      const weeklyTSS =
+        weeklyActivities?.reduce((sum, a) => {
+          const metrics = (a.metrics as Record<string, any>) || {};
+          return sum + (metrics.tss || 0);
+        }, 0) || 0;
+
       return {
         plan: plan || null,
         todaysActivity: todaysActivity || null,
@@ -147,6 +183,11 @@ export const homeRouter = createTRPCRouter({
           totalTSS: Math.round(totalTSS),
           daysActive: uniqueDays,
           avgTSSPerDay: uniqueDays > 0 ? Math.round(totalTSS / uniqueDays) : 0,
+        },
+        weeklyStats: {
+          totalDistance: weeklyDistance / 1000, // km
+          totalTSS: Math.round(weeklyTSS),
+          workouts: weeklyActivities?.length || 0,
         },
       };
     }),
