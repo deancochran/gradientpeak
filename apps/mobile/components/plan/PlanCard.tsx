@@ -1,3 +1,21 @@
+/**
+ * @deprecated This component is deprecated. Use ActivityPlanCard from @/components/shared/ActivityPlanCard instead.
+ *
+ * ActivityPlanCard provides a unified interface that accepts:
+ * - activityPlan prop: Direct activity_plan database object
+ * - plannedActivity prop: planned_activity with nested activity_plan
+ * - activity prop (legacy): Pre-formatted ActivityPlanCardData
+ *
+ * Migration example:
+ * ```tsx
+ * // Old:
+ * <PlanCard plan={planData} onPress={handlePress} />
+ *
+ * // New:
+ * <ActivityPlanCard activityPlan={planData} onPress={() => handlePress(planData.id)} />
+ * ```
+ */
+
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
@@ -6,6 +24,9 @@ import { formatDuration } from "@/lib/utils/dates";
 import { Clock } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
 
+/**
+ * @deprecated Use ActivityPlanCard instead
+ */
 export interface PlanCardData {
   id: string;
   name: string;
@@ -18,6 +39,9 @@ export interface PlanCardData {
   isOwned?: boolean;
 }
 
+/**
+ * @deprecated Use ActivityPlanCard instead
+ */
 interface PlanCardProps {
   plan: PlanCardData;
   onPress?: (id: string) => void;
@@ -26,6 +50,9 @@ interface PlanCardProps {
   compact?: boolean;
 }
 
+/**
+ * @deprecated Use ActivityPlanCard from @/components/shared/ActivityPlanCard instead
+ */
 export function PlanCard({
   plan,
   onPress,

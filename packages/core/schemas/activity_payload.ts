@@ -10,7 +10,6 @@ export {
   formatIntensityTarget,
   formatStepTargets,
   getStepIntensityColor,
-  groupStepsBySegment,
   intensityTargetSchemaV2,
   planStepSchemaV2,
   validateActivityPlanStructureV2,

@@ -4,14 +4,12 @@ import {
 } from "@/components/RecordingCarousel/constants";
 import { ZoneChart } from "@/components/RecordingCarousel/shared/ZoneChart";
 import { Card, CardContent } from "@/components/ui/card";
-import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import {
   useCurrentReadings,
   useSessionStats,
 } from "@/lib/hooks/useActivityRecorder";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import { Heart } from "lucide-react-native";
 import React from "react";
 import { View } from "react-native";
 
@@ -53,20 +51,8 @@ export const HeartRateCard: React.FC<HeartRateCardProps> = ({
 
   return (
     <View style={{ width: screenWidth }} className="flex-1 p-4">
-      <Card className={CARD_STYLES.wrapper}>
+      <Card className="flex-1 py-0">
         <CardContent className={CARD_STYLES.content}>
-          {/* Header */}
-          <View className={CARD_STYLES.header}>
-            <View className="flex-row items-center">
-              <Icon
-                as={Heart}
-                size={CARD_STYLES.iconSize}
-                className="text-red-500 mr-2"
-              />
-              <Text className="text-lg font-semibold">Heart Rate</Text>
-            </View>
-          </View>
-
           {/* Current HR - Large Display */}
           <View className="items-center mb-8">
             <Text

@@ -7,6 +7,7 @@ import { createPlan, Duration, Target } from "../schemas/activity_payload";
  * Estimated TSS: ~35
  */
 export const EASY_AEROBIC_RUN: RecordingServiceActivityPlan = {
+  id: "3b6c7d8e-9f0a-1b2c-3d4e-5f6a7b8c9d0e",
   version: "2.0",
   name: "Easy Aerobic Run",
   description: "Comfortable outdoor run focusing on aerobic base building",
@@ -62,6 +63,7 @@ export const TEMPO_RUN: RecordingServiceActivityPlan = {
  * Estimated TSS: ~85
  */
 export const INTERVAL_RUN: RecordingServiceActivityPlan = {
+  id: "4c7d8e9f-0a1b-2c3d-4e5f-6a7b8c9d0e1f",
   version: "2.0",
   name: "5K Pace Intervals",
   description: "High-intensity intervals at 5K race pace",
@@ -106,6 +108,7 @@ export const INTERVAL_RUN: RecordingServiceActivityPlan = {
  * Estimated TSS: ~65
  */
 export const LONG_RUN: RecordingServiceActivityPlan = {
+  id: "5d8e9f0a-1b2c-3d4e-5f6a-7b8c9d0e1f2a",
   version: "2.0",
   name: "Long Steady Run",
   description: "Extended aerobic run for endurance building",
@@ -139,6 +142,7 @@ export const LONG_RUN: RecordingServiceActivityPlan = {
  * Estimated TSS: ~70
  */
 export const FARTLEK_RUN: RecordingServiceActivityPlan = {
+  id: "6e9f0a1b-2c3d-4e5f-6a7b-8c9d0e1f2a3b",
   version: "2.0",
   name: "Fartlek Training",
   description: "Unstructured speed play with varied intensities",
@@ -177,5 +181,104 @@ export const FARTLEK_RUN: RecordingServiceActivityPlan = {
     .build(),
 };
 
+export const SYSTEM_TEMPO_RUN: RecordingServiceActivityPlan = {
+  id: "b6c2d5e4-9f3a-8b7c-2d1e-3f0a6b5c4d2f",
+  version: "2.0",
+  name: "Tempo Run",
+  description:
+    "20 minute tempo run at 85% FTP - Comfortably hard sustained effort",
+  activity_category: "run",
+  activity_location: "outdoor",
+  structure: createPlan()
+    .warmup({
+      duration: Duration.minutes(10),
+      targets: [Target.ftp(65)],
+      notes: "Easy warmup pace",
+    })
+    .step({
+      name: "Tempo",
+      duration: Duration.minutes(20),
+      targets: [Target.ftp(85), Target.bpm(165)],
+      notes: "Comfortably hard tempo pace",
+    })
+    .cooldown({
+      duration: Duration.minutes(10),
+      targets: [Target.ftp(60)],
+      notes: "Easy cool down",
+    })
+    .build(),
+};
+
+export const SYSTEM_THRESHOLD_INTERVALS_RUN: RecordingServiceActivityPlan = {
+  id: "c7d3e6f5-0a4b-9c8d-3e2f-4a1b7c6d5e3a",
+  version: "2.0",
+  name: "Threshold Intervals",
+  description: "6x1km at 95% FTP with 2min recovery - Build speed endurance",
+  activity_category: "run",
+  activity_location: "outdoor",
+  structure: createPlan()
+    .warmup({
+      duration: Duration.minutes(15),
+      targets: [Target.ftp(65)],
+    })
+    .interval({
+      repeat: 6,
+      name: "Intervals",
+      steps: [
+        {
+          name: "Fast",
+          duration: Duration.km(1),
+          targets: [Target.ftp(95)],
+          notes: "Threshold pace",
+        },
+        {
+          name: "Recovery",
+          duration: Duration.minutes(2),
+          targets: [Target.ftp(60)],
+          notes: "Easy jog",
+        },
+      ],
+    })
+    .cooldown({
+      duration: Duration.minutes(10),
+      targets: [Target.ftp(60)],
+    })
+    .build(),
+};
+
+export const SYSTEM_LONG_EASY_RUN: RecordingServiceActivityPlan = {
+  id: "d8e4f7a6-1b5c-0d9e-4f3a-5b2c8d7e6f4b",
+  version: "2.0",
+  name: "Long Easy Run",
+  description: "15km easy long run at 70% effort - Build aerobic endurance",
+  activity_category: "run",
+  activity_location: "outdoor",
+  structure: createPlan()
+    .warmup({
+      duration: Duration.minutes(10),
+      targets: [Target.ftp(65)],
+    })
+    .step({
+      name: "Easy Long Run",
+      duration: Duration.km(15),
+      targets: [Target.ftp(70), Target.bpm(145)],
+      notes: "Maintain steady aerobic pace",
+      intervalName: "Main Set",
+    })
+    .cooldown({
+      duration: Duration.minutes(5),
+      targets: [Target.ftp(60)],
+    })
+    .build(),
+};
+
 export const SAMPLE_OUTDOOR_RUN_ACTIVITIES: Array<RecordingServiceActivityPlan> =
-  [EASY_AEROBIC_RUN, TEMPO_RUN, INTERVAL_RUN, LONG_RUN, FARTLEK_RUN];
+  [
+    EASY_AEROBIC_RUN,
+    INTERVAL_RUN,
+    LONG_RUN,
+    FARTLEK_RUN,
+    SYSTEM_TEMPO_RUN,
+    SYSTEM_THRESHOLD_INTERVALS_RUN,
+    SYSTEM_LONG_EASY_RUN,
+  ];

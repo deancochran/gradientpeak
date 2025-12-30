@@ -2,10 +2,7 @@ import { EmptyStateCard, TrendsOverviewSkeleton } from "@/components/shared";
 import { Text } from "@/components/ui/text";
 import { TrendingUp } from "lucide-react-native";
 import { View } from "react-native";
-import {
-  VolumeTrendsChart,
-  type VolumeDataPoint,
-} from "../../app/(internal)/(tabs)/trends/components/charts";
+import { VolumeTrendsChart, type VolumeDataPoint } from "@/components/charts";
 
 interface VolumeTrendsData {
   dataPoints: VolumeDataPoint[];

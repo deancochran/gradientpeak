@@ -3,7 +3,7 @@ import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { useSessionStats } from "@/lib/hooks/useActivityRecorder";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import { BarChart3, Target, TrendingUp } from "lucide-react-native";
+import { Target, TrendingUp } from "lucide-react-native";
 import React from "react";
 import { View } from "react-native";
 
@@ -29,16 +29,8 @@ export const AnalysisCard: React.FC<AnalysisCardProps> = ({
 
   return (
     <View style={{ width: screenWidth }} className="flex-1 p-4">
-      <Card className="flex-1">
+      <Card className="flex-1 py-0">
         <CardContent>
-          {/* Header */}
-          <View className="flex-row items-center justify-between mb-6">
-            <View className="flex-row items-center">
-              <Icon as={BarChart3} size={24} className="text-blue-500 mr-2" />
-              <Text className="text-lg font-semibold">Analysis</Text>
-            </View>
-          </View>
-
           {/* TSS - Large Display */}
           <View className="items-center mb-8">
             <Text

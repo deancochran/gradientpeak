@@ -107,6 +107,7 @@ export const LOWER_BODY_STRENGTH: RecordingServiceActivityPlan = {
  * Estimated TSS: ~65
  */
 export const FULL_BODY_CIRCUIT: RecordingServiceActivityPlan = {
+  id: "aaaa1111-2222-3333-4444-555555555555",
   version: "2.0",
   name: "Full Body Circuit",
   description: "High-intensity full body circuit training",
@@ -152,6 +153,7 @@ export const FULL_BODY_CIRCUIT: RecordingServiceActivityPlan = {
  * Estimated TSS: ~35
  */
 export const CORE_STABILITY: RecordingServiceActivityPlan = {
+  id: "aaaa2222-3333-4444-5555-666666666666",
   version: "2.0",
   name: "Core and Stability",
   description: "Focused core strength and stability training",
@@ -202,6 +204,7 @@ export const CORE_STABILITY: RecordingServiceActivityPlan = {
  * Estimated TSS: ~45
  */
 export const FUNCTIONAL_MOVEMENT: RecordingServiceActivityPlan = {
+  id: "aaaa3333-4444-5555-6666-777777777777",
   version: "2.0",
   name: "Functional Movement",
   description: "Movement patterns for daily life and sport performance",
@@ -252,11 +255,144 @@ export const FUNCTIONAL_MOVEMENT: RecordingServiceActivityPlan = {
     .build(),
 };
 
+export const SYSTEM_UPPER_BODY_STRENGTH: RecordingServiceActivityPlan = {
+  id: "e9f5a8b7-2c6d-1e0f-5a4b-6c3d9e8f7a0b",
+  version: "2.0",
+  name: "Upper Body Strength",
+  description:
+    "Bench press, rows, and overhead press - Complete upper body workout",
+  activity_category: "strength",
+  activity_location: "indoor",
+  structure: createPlan()
+    .warmup({
+      duration: Duration.minutes(5),
+      notes: "Dynamic stretching and mobility",
+    })
+    .interval({
+      repeat: 3,
+      name: "Bench Press",
+      steps: [
+        {
+          name: "Bench Press",
+          duration: Duration.reps(8),
+          targets: [Target.rpe(8)],
+          notes: "Heavy weight",
+        },
+        {
+          name: "Rest",
+          duration: Duration.seconds(90),
+        },
+      ],
+    })
+    .interval({
+      repeat: 3,
+      name: "Rows",
+      steps: [
+        {
+          name: "Bent Over Rows",
+          duration: Duration.reps(10),
+          targets: [Target.rpe(7)],
+        },
+        {
+          name: "Rest",
+          duration: Duration.seconds(90),
+        },
+      ],
+    })
+    .interval({
+      repeat: 3,
+      name: "Overhead Press",
+      steps: [
+        {
+          name: "Overhead Press",
+          duration: Duration.reps(8),
+          targets: [Target.rpe(8)],
+        },
+        {
+          name: "Rest",
+          duration: Duration.seconds(90),
+        },
+      ],
+    })
+    .cooldown({
+      duration: Duration.minutes(5),
+      notes: "Static stretching",
+    })
+    .build(),
+};
+
+export const SYSTEM_LOWER_BODY_STRENGTH: RecordingServiceActivityPlan = {
+  id: "f0a6b9c8-3d7e-2f1a-6b5c-7d4e0f9a8b1c",
+  version: "2.0",
+  name: "Lower Body Strength",
+  description: "Squats, deadlifts, and lunges - Complete lower body workout",
+  activity_category: "strength",
+  activity_location: "indoor",
+  structure: createPlan()
+    .warmup({
+      duration: Duration.minutes(5),
+      notes: "Dynamic leg swings and mobility",
+    })
+    .interval({
+      repeat: 4,
+      name: "Squats",
+      steps: [
+        {
+          name: "Back Squats",
+          duration: Duration.reps(5),
+          targets: [Target.rpe(9)],
+          notes: "Heavy weight, focus on form",
+        },
+        {
+          name: "Rest",
+          duration: Duration.minutes(3),
+          notes: "Full recovery",
+        },
+      ],
+    })
+    .interval({
+      repeat: 3,
+      name: "Deadlifts",
+      steps: [
+        {
+          name: "Romanian Deadlifts",
+          duration: Duration.reps(8),
+          targets: [Target.rpe(8)],
+        },
+        {
+          name: "Rest",
+          duration: Duration.minutes(2),
+        },
+      ],
+    })
+    .interval({
+      repeat: 3,
+      name: "Lunges",
+      steps: [
+        {
+          name: "Walking Lunges",
+          duration: Duration.reps(12),
+          targets: [Target.rpe(7)],
+          notes: "Each leg",
+        },
+        {
+          name: "Rest",
+          duration: Duration.seconds(90),
+        },
+      ],
+    })
+    .cooldown({
+      duration: Duration.minutes(5),
+      notes: "Foam rolling and stretching",
+    })
+    .build(),
+};
+
 export const SAMPLE_INDOOR_STRENGTH_ACTIVITIES: Array<RecordingServiceActivityPlan> =
   [
-    UPPER_BODY_STRENGTH,
-    LOWER_BODY_STRENGTH,
     FULL_BODY_CIRCUIT,
     CORE_STABILITY,
     FUNCTIONAL_MOVEMENT,
+    SYSTEM_UPPER_BODY_STRENGTH,
+    SYSTEM_LOWER_BODY_STRENGTH,
   ];

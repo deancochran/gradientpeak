@@ -11,3 +11,11 @@ export { WeeklyPlanPreview } from "./WeeklyPlanPreview";
 export { default as PlanProgressCard } from "./PlanProgressCard";
 export { default as TodaysTrainingCard } from "./TodaysTrainingCard";
 export { default as WeeklySnapshot } from "./WeeklySnapshot";
+
+// Trend cards for dashboard
+export {
+  TrendCard,
+  MicroLineChart,
+  MicroBarChart,
+  ChartModal,
+} from "./TrendCards";

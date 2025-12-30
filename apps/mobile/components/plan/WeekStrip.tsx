@@ -1,10 +1,10 @@
-import React from "react";
-import { View, TouchableOpacity } from "react-native";
-import { Text } from "@/components/ui/text";
 import { Icon } from "@/components/ui/icon";
-import { ChevronLeft, ChevronRight } from "lucide-react-native";
+import { Text } from "@/components/ui/text";
+import { isSameDay } from "@/lib/utils/plan/dateGrouping";
 import { format } from "date-fns";
-import { isSameDay, normalizeDate } from "@/app/(internal)/(tabs)/plan/utils/dateGrouping";
+import { ChevronLeft, ChevronRight } from "lucide-react-native";
+import React from "react";
+import { TouchableOpacity, View } from "react-native";
 
 interface DayStatus {
   completed: boolean;
@@ -27,7 +27,7 @@ export function WeekStrip({
   selectedDate,
   onSelectDay,
   onPreviousWeek,
-  onNextWeek
+  onNextWeek,
 }: WeekStripProps) {
   return (
     <View className="bg-card border-b border-border">
@@ -58,7 +58,9 @@ export function WeekStrip({
                 {/* Day Letter */}
                 <Text
                   className={`text-xs mb-1.5 ${
-                    isSelected ? "text-primary font-bold" : "text-muted-foreground"
+                    isSelected
+                      ? "text-primary font-bold"
+                      : "text-muted-foreground"
                   }`}
                 >
                   {format(date, "EEEEE")}
@@ -70,8 +72,8 @@ export function WeekStrip({
                     isSelected
                       ? "bg-primary"
                       : isToday
-                      ? "border-2 border-primary"
-                      : ""
+                        ? "border-2 border-primary"
+                        : ""
                   }`}
                 >
                   <Text
@@ -79,8 +81,8 @@ export function WeekStrip({
                       isSelected
                         ? "text-primary-foreground"
                         : isToday
-                        ? "text-primary"
-                        : "text-foreground"
+                          ? "text-primary"
+                          : "text-foreground"
                     }`}
                   >
                     {date.getDate()}

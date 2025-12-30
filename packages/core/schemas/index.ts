@@ -11,54 +11,57 @@ export * from "./activity_payload";
 // V2 uses a flat structure where repetitions are expanded at creation time
 // This is the preferred schema for all new code
 
-export type {
-  DurationV2,
-  IntensityTargetV2,
-  PlanStepV2,
-  ActivityPlanStructureV2,
-} from "./activity_plan_v2";
 export {
-  durationSchemaV2,
-  intensityTargetSchemaV2,
-  planStepSchemaV2,
   activityPlanStructureSchemaV2,
-  getStepIntensityColor,
+  durationSchemaV2,
   formatIntensityTarget,
   formatStepTargets,
-  groupStepsBySegment,
+  getStepIntensityColor,
+  intensityTargetSchemaV2,
+  intervalSchemaV2,
+  intervalStepSchemaV2,
+  planStepSchemaV2,
   validateActivityPlanStructureV2,
+} from "./activity_plan_v2";
+export type {
+  ActivityPlanStructureV2,
+  DurationV2,
+  IntensityTargetV2,
+  IntervalStepV2,
+  IntervalV2,
+  PlanStepV2,
 } from "./activity_plan_v2";
 
 // Export V2 helpers explicitly with V2 suffix to avoid conflicts
 export {
-  formatDuration as formatDurationV2,
-  getDurationSeconds as getDurationSecondsV2,
   calculateTotalDurationV2,
   Duration as DurationV2Helpers,
+  formatDuration as formatDurationV2,
+  getDurationSeconds as getDurationSecondsV2,
 } from "./duration_helpers";
 export {
-  Target as TargetV2Helpers,
+  convertTargetToAbsolute as convertTargetToAbsoluteV2,
+  formatTargetValue,
   getPrimaryTarget,
-  hasTargetType,
   getTargetByType,
-  isInTargetRange,
+  getTargetDisplayName,
+  getTargetGuidance,
   getTargetRange,
   getTargetUnit as getTargetUnitV2,
-  getTargetDisplayName,
-  formatTargetValue,
-  getTargetGuidance,
-  convertTargetToAbsolute as convertTargetToAbsoluteV2,
+  hasTargetType,
+  isInTargetRange,
+  Target as TargetV2Helpers,
 } from "./target_helpers";
 
 // Export plan builder V2
 export {
-  PlanBuilderV2,
-  createPlan,
-  createTempoRunPlan,
-  createVO2MaxPlan,
-  createStrengthPlan,
   createEnduranceRidePlan,
+  createPlan,
+  createStrengthPlan,
+  createTempoRunPlan,
   createThresholdPlan,
+  createVO2MaxPlan,
+  PlanBuilderV2,
 } from "./plan_builder_v2";
 
 // Export from form-schemas
@@ -93,9 +96,10 @@ export const activityPlanUpdateSchema = activityPlanCreateSchema.partial();
 // Type for ActivityRecorder service (V2 only)
 export type RecordingServiceActivityPlan = Omit<
   PublicActivityPlansInsert,
-  "id" | "idx" | "profile_id" | "created_at"
+  "idx" | "profile_id" | "created_at"
 > & {
   structure: ActivityPlanStructureV2;
+  route_id?: string | null; // Optional route ID for outdoor activities
 };
 
 // tRPC-specific Training Plans Schemas

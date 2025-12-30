@@ -3,8 +3,8 @@ import { ActivityPayload } from "@repo/core";
 /**
  * ActivitySelectionStore - Simple singleton store for activity selection
  *
- * This store manages the activity selection state for navigation between
- * record launcher, follow-along, and record screens without URL parameters.
+ * This store manages the activity selection state for navigation to the
+ * record screen without URL parameters.
  *
  * Key features:
  * - Consume-once pattern: selection is cleared after being read

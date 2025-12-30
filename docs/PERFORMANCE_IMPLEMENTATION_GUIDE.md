@@ -177,7 +177,7 @@ const createActivityWithStreamsMutation = trpc.activities.createWithStreams.useM
 
 ### Step 2.2: Profile Settings Optimistic Update
 
-**File**: `apps/mobile/app/(internal)/(tabs)/settings/index.tsx`
+**File**: `apps/mobile/app/(internal)/(tabs)/index.tsx`
 
 Find the mutation (should be around line ~200-300):
 

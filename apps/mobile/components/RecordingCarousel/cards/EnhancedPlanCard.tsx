@@ -11,8 +11,8 @@ import {
   formatDurationCompactMs,
   getStepIntensityColor,
   type IntensityTargetV2,
+  type IntervalStepV2,
   isInTargetRange,
-  type PlanStepV2,
 } from "@repo/core";
 import {
   AlertTriangle,
@@ -45,23 +45,37 @@ interface ProfileMetrics {
 // ================================
 
 /**
- * Extract profile metrics from the service
+ * Extract profile metrics from the service with enhanced safety checks
  */
 function getProfileMetrics(
   service: ActivityRecorderService | null,
 ): ProfileMetrics {
   if (!service?.liveMetricsManager) {
+    console.warn("[EnhancedPlanCard] No live metrics manager available");
     return {};
   }
 
-  // Access the private profile through the manager's internal state
-  const manager = service.liveMetricsManager as any;
-  const profile = manager.profile;
+  try {
+    // Access the private profile through the manager's internal state
+    const manager = service.liveMetricsManager as any;
+    const profile = manager?.profile;
 
-  return {
-    ftp: profile?.ftp,
-    threshold_hr: profile?.threshold_hr,
-  };
+    if (!profile) {
+      console.warn("[EnhancedPlanCard] No profile data available");
+      return {};
+    }
+
+    return {
+      ftp: profile.ftp ?? undefined,
+      threshold_hr: profile.threshold_hr ?? undefined,
+    };
+  } catch (error) {
+    console.error(
+      "[EnhancedPlanCard] Error extracting profile metrics:",
+      error,
+    );
+    return {};
+  }
 }
 
 /**
@@ -76,31 +90,42 @@ function formatIntervalDescription(
   targets?: IntensityTargetV2[],
   profile?: { ftp?: number; threshold_hr?: number },
 ): string {
-  const parts: string[] = [];
+  try {
+    const parts: string[] = [];
 
-  if (duration > 0) {
-    parts.push(formatDurationCompactMs(duration));
-  }
+    if (duration > 0) {
+      parts.push(formatDurationCompactMs(duration));
+    }
 
-  if (targets && targets.length > 0 && profile) {
-    const primaryTarget = targets[0];
-    if (primaryTarget) {
-      const converted = convertTargetToAbsolute(primaryTarget, profile);
+    if (targets && targets.length > 0 && profile) {
+      const primaryTarget = targets[0];
+      if (primaryTarget) {
+        const converted = convertTargetToAbsolute(primaryTarget, profile);
 
-      if (converted) {
-        let targetStr = "";
-        if (converted.intensity) {
-          targetStr = `${converted.intensity}`;
-        }
+        if (converted) {
+          let targetStr = "";
+          if (
+            converted.intensity !== undefined &&
+            converted.intensity !== null
+          ) {
+            targetStr = `${converted.intensity}`;
+          }
 
-        if (targetStr) {
-          parts.push(`@ ${targetStr} ${converted.unit}`);
+          if (targetStr) {
+            parts.push(`@ ${targetStr} ${converted.unit || ""}`);
+          }
         }
       }
     }
-  }
 
-  return parts.join(" ") || "No details";
+    return parts.join(" ") || "No details";
+  } catch (error) {
+    console.error(
+      "[EnhancedPlanCard] Error formatting interval description:",
+      error,
+    );
+    return "No details";
+  }
 }
 
 /**
@@ -148,6 +173,8 @@ const CurrentSensorReadings = memo<CurrentSensorReadingsProps>(
       let value: number | undefined;
       let color = "text-muted-foreground";
       let status: "within" | "below" | "above" = "within";
+      let displayTarget: string;
+      let displayUnit: string;
 
       switch (target.type) {
         case "%FTP":
@@ -155,31 +182,72 @@ const CurrentSensorReadings = memo<CurrentSensorReadingsProps>(
           icon = Zap;
           value = currentMetrics.power;
           color = "text-yellow-500";
-          if (value !== undefined && target) {
-            status = getTargetStatus(value, target, converted);
+
+          // If FTP is available, show absolute watts
+          if (converted && converted.intensity !== undefined) {
+            displayTarget = `${converted.intensity}`;
+            displayUnit = converted.unit;
+            if (value !== undefined && target) {
+              status = getTargetStatus(value, target, converted);
+            }
+          } else {
+            // No FTP available - show percentage
+            displayTarget = `${target.intensity}`;
+            displayUnit = target.type === "%FTP" ? "% FTP" : "W";
           }
           break;
+
         case "%MaxHR":
         case "%ThresholdHR":
         case "bpm":
           icon = Heart;
           value = currentMetrics.heartRate;
           color = "text-red-500";
-          if (value !== undefined && target) {
-            status = getTargetStatus(value, target, converted);
+
+          // If threshold HR is available, show absolute BPM
+          if (converted && converted.intensity !== undefined) {
+            displayTarget = `${converted.intensity}`;
+            displayUnit = converted.unit;
+            if (value !== undefined && target) {
+              status = getTargetStatus(value, target, converted);
+            }
+          } else {
+            // No threshold HR available - show percentage
+            displayTarget = `${target.intensity}`;
+            displayUnit =
+              target.type === "%MaxHR"
+                ? "% Max HR"
+                : target.type === "%ThresholdHR"
+                  ? "% Threshold"
+                  : "bpm";
           }
           break;
+
         case "cadence":
           icon = Target;
           value = currentMetrics.cadence;
           color = "text-blue-500";
-          if (value !== undefined && target) {
+          displayTarget = `${target.intensity}`;
+          displayUnit = "rpm";
+          if (value !== undefined && target && converted) {
             status = getTargetStatus(value, target, converted);
           }
           break;
+
+        default:
+          displayTarget = `${target.intensity}`;
+          displayUnit = "";
       }
 
-      return { icon, value, color, status, converted };
+      return {
+        icon,
+        value,
+        color,
+        status,
+        converted,
+        displayTarget,
+        displayUnit,
+      };
     };
 
     return (
@@ -240,10 +308,7 @@ const CurrentSensorReadings = memo<CurrentSensorReadingsProps>(
                     Target:{" "}
                   </Text>
                   <Text className="text-xs font-semibold text-muted-foreground">
-                    {display.converted?.intensity
-                      ? `${display.converted.intensity}`
-                      : "No target"}
-                    {display.converted?.unit ?? ""}
+                    {display.displayTarget} {display.displayUnit}
                   </Text>
                 </View>
               </View>
@@ -299,17 +364,15 @@ const CurrentIntervalView = memo<CurrentIntervalViewProps>(
     nextName,
     profile,
   }) => {
-    if (!hasPlan) {
+    if (!hasPlan || !name) {
       return (
         <View className="flex-col gap-2 items-center py-8 w-full">
           <View className="w-12 h-12 bg-muted/20 rounded-full items-center justify-center">
             <Icon as={Calendar} size={24} className="text-muted-foreground" />
           </View>
-          <Text className="text-base font-medium text-center">
-            No Active Plan
-          </Text>
+          <Text className="text-base font-medium text-center">Free Ride</Text>
           <Text className="text-center text-xs text-muted-foreground px-4">
-            Select a training plan to see activity details
+            No structured workout loaded. Just ride!
           </Text>
         </View>
       );
@@ -416,9 +479,17 @@ interface ActivityGraphViewProps {
 
 const ActivityGraphView = memo<ActivityGraphViewProps>(
   ({ planTimeRemaining, structure, currentStepIndex }) => {
-    if (!structure?.steps || structure.steps.length === 0) return null;
+    if (!structure?.intervals || structure.intervals.length === 0) return null;
 
-    const steps = structure.steps;
+    // Expand intervals into flat steps for visualization
+    const steps: IntervalStepV2[] = [];
+    for (const interval of structure.intervals) {
+      for (let i = 0; i < interval.repetitions; i++) {
+        for (const step of interval.steps) {
+          steps.push(step);
+        }
+      }
+    }
 
     // Calculate duration for each step in seconds
     const stepDurations = steps.map((step) => {
@@ -540,8 +611,18 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
     let nextStepTargets: IntensityTargetV2[] | undefined;
     let nextStepName: string | undefined;
 
-    if (hasNextStep && structure?.steps) {
-      const nextStep = structure.steps[nextStepIndex];
+    if (hasNextStep && structure?.intervals) {
+      // Expand intervals to find the next step
+      const flatSteps: IntervalStepV2[] = [];
+      for (const interval of structure.intervals) {
+        for (let i = 0; i < interval.repetitions; i++) {
+          for (const step of interval.steps) {
+            flatSteps.push(step);
+          }
+        }
+      }
+
+      const nextStep = flatSteps[nextStepIndex];
       if (nextStep) {
         // Convert V2 duration to milliseconds
         if (nextStep.duration.type === "time") {
@@ -563,22 +644,8 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
 
     return (
       <View style={{ width: screenWidth }} className="flex-1 p-4">
-        <Card className={CARD_STYLES.wrapper}>
+        <Card className="flex-1 py-0">
           <CardContent className={CARD_STYLES.content}>
-            {/* Header */}
-            <View className={CARD_STYLES.header}>
-              <View className="flex-row items-center">
-                <Icon
-                  as={Target}
-                  size={CARD_STYLES.iconSize}
-                  className="text-blue-500 mr-2"
-                />
-                <Text className="text-lg font-semibold line-clamp-1">
-                  {planName || "Activity Plan"}
-                </Text>
-              </View>
-            </View>
-
             <View className="gap-6">
               {hasPlan && (
                 <ActivityGraphView

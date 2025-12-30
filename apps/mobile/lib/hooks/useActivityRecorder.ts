@@ -140,7 +140,7 @@ export function useActivityRecorderData(
     // Recording state
     isActive: recordingState === "recording",
     isPaused: recordingState === "paused",
-    recordingId: service?.recordingMetadata?.id,
+    recordingId: service?.recordingMetadata?.plannedActivityId,
 
     // Service reference for advanced use
     service,

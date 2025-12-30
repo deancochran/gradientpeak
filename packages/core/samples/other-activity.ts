@@ -7,6 +7,7 @@ import { createPlan, Duration, Target } from "../schemas/activity_payload";
  * Estimated TSS: ~30
  */
 export const YOGA_FLOW: RecordingServiceActivityPlan = {
+  id: "3d6e7f8a-9b0c-1d2e-3f4a-5b6c7d8e9f0a",
   version: "2.0",
   name: "Yoga Flow",
   description: "Gentle yoga flow for flexibility and mindfulness",
@@ -52,6 +53,7 @@ export const YOGA_FLOW: RecordingServiceActivityPlan = {
  * Estimated TSS: ~70
  */
 export const ROCK_CLIMBING_SESSION: RecordingServiceActivityPlan = {
+  id: "4e7f8a9b-0c1d-2e3f-4a5b-6c7d8e9f0a1b",
   version: "2.0",
   name: "Rock Climbing Session",
   description:
@@ -110,6 +112,7 @@ export const ROCK_CLIMBING_SESSION: RecordingServiceActivityPlan = {
  * Estimated TSS: ~60
  */
 export const HIKING_ADVENTURE: RecordingServiceActivityPlan = {
+  id: "5f8a9b0c-1d2e-3f4a-5b6c-7d8e9f0a1b2c",
   version: "2.0",
   name: "Hiking Adventure",
   description: "Moderate-intensity hiking with varied terrain",
@@ -150,6 +153,7 @@ export const HIKING_ADVENTURE: RecordingServiceActivityPlan = {
  * Estimated TSS: ~80
  */
 export const CROSSFIT_WOD: RecordingServiceActivityPlan = {
+  id: "6a9b0c1d-2e3f-4a5b-6c7d-8e9f0a1b2c3d",
   version: "2.0",
   name: "CrossFit WOD",
   description: "High-intensity CrossFit activity of the day",
@@ -190,6 +194,7 @@ export const CROSSFIT_WOD: RecordingServiceActivityPlan = {
  * Estimated TSS: ~20
  */
 export const WALKING_RECOVERY: RecordingServiceActivityPlan = {
+  id: "7b0c1d2e-3f4a-5b6c-7d8e-9f0a1b2c3d4e",
   version: "2.0",
   name: "Recovery Walk",
   description: "Gentle walking session for active recovery",

@@ -1,7 +1,7 @@
 import type {
   PublicActivityCategory,
   PublicActivityLocation,
-} from "@repo/supabase";
+} from "@repo/core";
 import {
   Activity,
   Bike,

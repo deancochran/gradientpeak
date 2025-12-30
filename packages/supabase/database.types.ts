@@ -145,11 +145,12 @@ export type Database = {
           description: string
           id: string
           idx: number
+          is_system_template: boolean
           name: string
           notes: string | null
-          profile_id: string
+          profile_id: string | null
           route_id: string | null
-          structure: Json
+          structure: Json | null
           updated_at: string
           version: string
         }
@@ -160,11 +161,12 @@ export type Database = {
           description: string
           id?: string
           idx?: number
+          is_system_template?: boolean
           name: string
           notes?: string | null
-          profile_id: string
+          profile_id?: string | null
           route_id?: string | null
-          structure: Json
+          structure?: Json | null
           updated_at?: string
           version?: string
         }
@@ -175,11 +177,12 @@ export type Database = {
           description?: string
           id?: string
           idx?: number
+          is_system_template?: boolean
           name?: string
           notes?: string | null
-          profile_id?: string
+          profile_id?: string | null
           route_id?: string | null
-          structure?: Json
+          structure?: Json | null
           updated_at?: string
           version?: string
         }

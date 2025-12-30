@@ -7,7 +7,7 @@ import {
   ZoneDistributionOverTimeChart,
   type TrainingLoadData,
   type ZoneDistributionWeekData,
-} from "../../app/(internal)/(tabs)/trends/components/charts";
+} from "@/components/charts";
 
 interface FitnessTabProps {
   trainingLoadData: {

@@ -1,7 +1,7 @@
 import {
   ActivityPlanStructureV2,
   getDurationSeconds,
-  PlanStepV2,
+  IntervalStepV2,
   RecordingServiceActivityPlan,
 } from "@repo/core";
 import { EventEmitter } from "expo";
@@ -13,7 +13,7 @@ export interface PlannedActivityProgress {
   totalSteps: number;
   elapsedInStep: number;
   duration?: number;
-  targets?: PlanStepV2["targets"];
+  targets?: IntervalStepV2["targets"];
 }
 
 // Define event types for PlanManager
@@ -30,7 +30,7 @@ interface PlanManagerEvents {
 }
 
 export class PlanManager extends EventEmitter<PlanManagerEvents> {
-  private steps: PlanStepV2[] = [];
+  private steps: IntervalStepV2[] = [];
   public planProgress?: PlannedActivityProgress;
   public selectedActivityPlan: RecordingServiceActivityPlan;
   public plannedActivityId: string | undefined;
@@ -45,10 +45,20 @@ export class PlanManager extends EventEmitter<PlanManagerEvents> {
     super();
     this.selectedActivityPlan = selectedPlannedActivity;
 
-    // V2 structure - steps are already flat
+    // V2 structure - expand intervals into flat steps for recording
     const structure =
       selectedPlannedActivity.structure as ActivityPlanStructureV2;
-    this.steps = structure.steps;
+
+    // Expand intervals × repetitions into flat steps
+    const flatSteps: IntervalStepV2[] = [];
+    for (const interval of structure.intervals) {
+      for (let i = 0; i < interval.repetitions; i++) {
+        for (const step of interval.steps) {
+          flatSteps.push(step);
+        }
+      }
+    }
+    this.steps = flatSteps;
 
     this.plannedActivityId = plannedActivityId;
 
@@ -195,7 +205,7 @@ export class PlanManager extends EventEmitter<PlanManagerEvents> {
     this.emit("planProgressUpdate", this.planProgress);
   }
 
-  public getCurrentStep(): PlanStepV2 | undefined {
+  public getCurrentStep(): IntervalStepV2 | undefined {
     if (!this.planProgress) return undefined;
     return this.steps[this.planProgress.currentStepIndex];
   }

@@ -7,6 +7,7 @@ import { createPlan, Duration, Target } from "../schemas/activity_payload";
  * Estimated TSS: ~45
  */
 export const EASY_ENDURANCE_RIDE: RecordingServiceActivityPlan = {
+  id: "8c1d2e3f-4a5b-6c7d-8e9f-0a1b2c3d4e5f",
   version: "2.0",
   name: "Easy Endurance Ride",
   description: "Comfortable outdoor ride focusing on aerobic base building",
@@ -29,6 +30,7 @@ export const EASY_ENDURANCE_RIDE: RecordingServiceActivityPlan = {
  * Estimated TSS: ~85
  */
 export const SWEET_SPOT_OUTDOOR_RIDE: RecordingServiceActivityPlan = {
+  id: "9d2e3f4a-5b6c-7d8e-9f0a-1b2c3d4e5f6a",
   version: "2.0",
   name: "Sweet Spot Intervals",
   description: "Outdoor ride with sweet spot power intervals",
@@ -73,6 +75,7 @@ export const SWEET_SPOT_OUTDOOR_RIDE: RecordingServiceActivityPlan = {
  * Estimated TSS: ~90
  */
 export const TEMPO_INTERVALS_RIDE: RecordingServiceActivityPlan = {
+  id: "0e3f4a5b-6c7d-8e9f-0a1b-2c3d4e5f6a7b",
   version: "2.0",
   name: "Tempo Intervals",
   description: "Outdoor ride with sustained tempo efforts",
@@ -119,6 +122,7 @@ export const TEMPO_INTERVALS_RIDE: RecordingServiceActivityPlan = {
  * Estimated TSS: ~95
  */
 export const CLIMBING_INTERVALS_RIDE: RecordingServiceActivityPlan = {
+  id: "1f4a5b6c-7d8e-9f0a-1b2c-3d4e5f6a7b8c",
   version: "2.0",
   name: "Climbing Intervals",
   description: "High-intensity climbing intervals for outdoor terrain",
@@ -163,6 +167,7 @@ export const CLIMBING_INTERVALS_RIDE: RecordingServiceActivityPlan = {
  * Estimated TSS: ~80
  */
 export const GROUP_RIDE_SIMULATION: RecordingServiceActivityPlan = {
+  id: "2a5b6c7d-8e9f-0a1b-2c3d-4e5f6a7b8c9d",
   version: "2.0",
   name: "Group Ride Simulation",
   description: "Variable intensity ride simulating group ride dynamics",
@@ -213,6 +218,32 @@ export const GROUP_RIDE_SIMULATION: RecordingServiceActivityPlan = {
     .build(),
 };
 
+export const SYSTEM_LONG_ENDURANCE_RIDE: RecordingServiceActivityPlan = {
+  id: "a5f1b4c3-8e2b-7a6d-1c0f-2e9d5b4a3c1e",
+  version: "2.0",
+  name: "Long Endurance Ride",
+  description: "2 hour Zone 2 endurance ride at 70% FTP - Build aerobic base",
+  activity_category: "bike",
+  activity_location: "outdoor",
+  structure: createPlan()
+    .warmup({
+      duration: Duration.minutes(15),
+      targets: [Target.ftp(60)],
+    })
+    .step({
+      name: "Zone 2 Endurance",
+      duration: Duration.hours(2),
+      targets: [Target.ftp(70), Target.bpm(140)],
+      notes: "Keep it conversational",
+      intervalName: "Main Set",
+    })
+    .cooldown({
+      duration: Duration.minutes(10),
+      targets: [Target.ftp(55)],
+    })
+    .build(),
+};
+
 export const SAMPLE_OUTDOOR_BIKE_ACTIVITIES: Array<RecordingServiceActivityPlan> =
   [
     EASY_ENDURANCE_RIDE,
@@ -220,4 +251,5 @@ export const SAMPLE_OUTDOOR_BIKE_ACTIVITIES: Array<RecordingServiceActivityPlan>
     TEMPO_INTERVALS_RIDE,
     CLIMBING_INTERVALS_RIDE,
     GROUP_RIDE_SIMULATION,
+    SYSTEM_LONG_ENDURANCE_RIDE,
   ];

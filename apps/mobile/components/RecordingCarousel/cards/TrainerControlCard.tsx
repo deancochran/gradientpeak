@@ -9,7 +9,6 @@ import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { ControlMode } from "@/lib/services/ActivityRecorder/FTMSController";
 import * as Haptics from "expo-haptics";
 import {
-  AlertCircle,
   Lock,
   Minus,
   Mountain,
@@ -20,7 +19,7 @@ import {
   Unlock,
   Zap,
 } from "lucide-react-native";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, View } from "react-native";
 
 // ================================
@@ -107,12 +106,40 @@ export const TrainerControlCard = memo<TrainerControlCardProps>(
 
     // Hooks
     const trainer = service?.sensorsManager.getControllableTrainer();
-    const hasPlan = usePlan(service).hasPlan;
+    const planData = usePlan(service);
+    const hasPlan = planData.hasPlan;
     const currentStep = service?.currentStep;
     const current = useCurrentReadings(service);
 
     // Determine if this is a planned workout (has plan with targets)
     const isPlannedWorkout = hasPlan && !!currentStep?.targets;
+
+    // Get plan target power for display in auto mode
+    const planTargetPower = useMemo(() => {
+      if (!isPlannedWorkout || !currentStep?.targets) return null;
+
+      const powerTarget = currentStep.targets.find(
+        (t) => t.type === "watts" || t.type === "%FTP",
+      );
+
+      if (!powerTarget) return null;
+
+      // Resolve to absolute watts
+      if (powerTarget.type === "watts") {
+        return Math.round(powerTarget.intensity);
+      }
+
+      // Resolve %FTP to watts using profile
+      if (powerTarget.type === "%FTP" && service?.liveMetricsManager) {
+        const manager = service.liveMetricsManager as any;
+        const profile = manager?.profile;
+        if (profile?.ftp) {
+          return Math.round((powerTarget.intensity / 100) * profile.ftp);
+        }
+      }
+
+      return null;
+    }, [isPlannedWorkout, currentStep, service]);
 
     // Subscribe to power readings for ERG mode display
     useEffect(() => {
@@ -129,6 +156,21 @@ export const TrainerControlCard = memo<TrainerControlCardProps>(
       };
     }, [service]);
 
+    // Sync targetValue with plan when in auto mode
+    useEffect(() => {
+      if (
+        isAutoMode &&
+        isPlannedWorkout &&
+        planTargetPower !== null &&
+        currentMode === ControlMode.ERG
+      ) {
+        console.log(
+          `[TrainerControl] Syncing target with plan: ${planTargetPower}W`,
+        );
+        setTargetValue(planTargetPower);
+      }
+    }, [isAutoMode, isPlannedWorkout, planTargetPower, currentMode]);
+
     // Handle mode change
     const handleModeChange = async (newMode: SupportedControlMode) => {
       if (isLocked) {
@@ -139,12 +181,43 @@ export const TrainerControlCard = memo<TrainerControlCardProps>(
         return;
       }
 
-      setCurrentMode(newMode);
+      if (!trainer || !service) return;
 
-      // Reset target to reasonable default for new mode
-      if (newMode === ControlMode.ERG) setTargetValue(100);
-      else if (newMode === ControlMode.SIM) setTargetValue(0);
-      else if (newMode === ControlMode.RESISTANCE) setTargetValue(5);
+      try {
+        // Reset trainer to clear previous mode
+        await service.sensorsManager.resetTrainerControl();
+
+        // Update local state
+        setCurrentMode(newMode);
+
+        // Reset target to reasonable default for new mode and apply immediately
+        let defaultTarget = 0;
+        if (newMode === ControlMode.ERG) {
+          defaultTarget = 100;
+          setTargetValue(defaultTarget);
+          await service.sensorsManager.setPowerTarget(defaultTarget);
+        } else if (newMode === ControlMode.SIM) {
+          defaultTarget = 0;
+          setTargetValue(defaultTarget);
+          await service.sensorsManager.setSimulation({
+            grade: defaultTarget,
+            windSpeed: 0,
+            crr: 0.005,
+            windResistance: 0.51,
+          });
+        } else if (newMode === ControlMode.RESISTANCE) {
+          defaultTarget = 5;
+          setTargetValue(defaultTarget);
+          await service.sensorsManager.setResistanceTarget(defaultTarget);
+        }
+
+        console.log(
+          `[TrainerControl] Switched to ${newMode} mode with target: ${defaultTarget}`,
+        );
+      } catch (error) {
+        console.error("[TrainerControl] Failed to change mode:", error);
+        Alert.alert("Error", "Failed to change trainer mode");
+      }
     };
 
     // Adjust target value
@@ -301,36 +374,26 @@ export const TrainerControlCard = memo<TrainerControlCardProps>(
     // No trainer connected
     if (!trainer || !trainer.isControllable) {
       return (
-        <View style={{ width: screenWidth }} className="flex-1 p-4">
-          <Card className={CARD_STYLES.wrapper}>
+        <View
+          style={{ width: screenWidth }}
+          className={CARD_STYLES.outerContainer}
+        >
+          <Card className="flex-1 py-0">
             <CardContent className={CARD_STYLES.content}>
-              {/* Header */}
-              <View className={CARD_STYLES.header}>
-                <View className="flex-row items-center">
+              <View className="flex-1 items-center justify-center">
+                <View className="w-12 h-12 bg-muted/20 rounded-full items-center justify-center mb-3">
                   <Icon
                     as={Settings}
-                    size={CARD_STYLES.iconSize}
-                    className="text-muted-foreground mr-2"
-                  />
-                  <Text className="text-lg font-semibold">Trainer Control</Text>
-                </View>
-              </View>
-
-              {/* No Trainer Message */}
-              <View className="flex-1 items-center justify-center gap-4 py-8">
-                <View className="w-16 h-16 bg-muted/20 rounded-full items-center justify-center">
-                  <Icon
-                    as={AlertCircle}
-                    size={32}
+                    size={24}
                     className="text-muted-foreground"
                   />
                 </View>
-                <Text className="text-base font-medium text-center">
-                  No Controllable Trainer
+                <Text className="text-lg font-semibold text-center mb-2">
+                  No Trainer Connected
                 </Text>
-                <Text className="text-center text-sm text-muted-foreground px-8">
-                  Connect an FTMS-capable smart trainer to access control
-                  features
+                <Text className="text-sm text-muted-foreground text-center px-4">
+                  Connect a smart trainer to control power, resistance, and
+                  grade.
                 </Text>
               </View>
             </CardContent>
@@ -343,24 +406,12 @@ export const TrainerControlCard = memo<TrainerControlCardProps>(
     const config = MODE_CONFIG[currentMode];
 
     return (
-      <View style={{ width: screenWidth }} className="flex-1 p-4">
-        <Card className={CARD_STYLES.wrapper}>
+      <View
+        style={{ width: screenWidth }}
+        className={CARD_STYLES.outerContainer}
+      >
+        <Card className="flex-1 py-0">
           <CardContent className={CARD_STYLES.content}>
-            {/* Header */}
-            <View className={CARD_STYLES.header}>
-              <View className="flex-row items-center">
-                <Icon
-                  as={Settings}
-                  size={CARD_STYLES.iconSize}
-                  className="text-primary mr-2"
-                />
-                <Text className="text-lg font-semibold">Trainer Control</Text>
-              </View>
-              <Text className="text-sm text-muted-foreground">
-                {trainer.name}
-              </Text>
-            </View>
-
             <View className="gap-4">
               {/* Auto/Manual Mode Toggle (only for planned workouts) */}
               {isPlannedWorkout && (
@@ -472,9 +523,18 @@ export const TrainerControlCard = memo<TrainerControlCardProps>(
 
                     {/* Target Power */}
                     <View className="flex-1 p-3 bg-primary/10 rounded-lg border border-primary/20">
-                      <Text className="text-xs text-primary font-medium uppercase">
-                        Target
-                      </Text>
+                      <View className="flex-row items-center justify-between">
+                        <Text className="text-xs text-primary font-medium uppercase">
+                          Target
+                        </Text>
+                        {isAutoMode && isPlannedWorkout && (
+                          <View className="bg-primary/20 px-1.5 py-0.5 rounded">
+                            <Text className="text-[9px] text-primary font-bold uppercase tracking-wider">
+                              Plan
+                            </Text>
+                          </View>
+                        )}
+                      </View>
                       <Text className="text-2xl font-bold text-primary mt-1">
                         {Math.round(targetValue)}
                       </Text>

@@ -11,16 +11,22 @@ export * from "./activity-defaults";
 export { isIndoorActivity } from "./plan-view-logic";
 
 // Export from polyline (exclude calculateDistance - in calculations)
-export type { LatLng, LatLngAlt, RouteStats } from "./polyline";
 export {
-  encodePolyline,
-  decodePolyline,
-  simplifyCoordinates,
-  calculateRouteStats,
-  encodeElevationPolyline,
-  decodeElevationPolyline,
   calculateBounds,
+  calculateRouteStats,
+  decodeElevationPolyline,
+  decodePolyline,
+  encodeElevationPolyline,
+  encodePolyline,
+  simplifyCoordinates,
 } from "./polyline";
+export type { LatLng, LatLngAlt, RouteStats } from "./polyline";
 
 // Export all recording config utilities
 export * from "./recording-config-resolver";
+
+// Export date utilities
+export * from "./dates";
+
+// Export date grouping utilities
+export * from "./date-grouping";

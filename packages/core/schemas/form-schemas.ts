@@ -404,7 +404,8 @@ export const optionalBioSchema = z.preprocess(
 
 /**
  * Profile Settings Form Schema
- * Comprehensive schema for user profile settings with cross-field validation
+ * Matches the actual database schema (public.profiles table)
+ * Fields: username, bio, weight_kg, ftp, threshold_hr, dob, avatar_url, preferred_units, language, onboarded
  */
 export const profileSettingsFormSchema = z
   .object({
@@ -413,40 +414,12 @@ export const profileSettingsFormSchema = z
     weight_kg: optionalWeightKgSchema,
     ftp: optionalFtpSchema,
     threshold_hr: optionalThresholdHrSchema,
-    max_hr: optionalMaxHrSchema,
-    resting_hr: optionalRestingHrSchema,
     dob: optionalDobSchema,
-    gender: optionalGenderSchema,
     avatar_url: optionalUrlSchema,
     preferred_units: z.enum(["metric", "imperial"]).optional().nullable(),
     language: z.string().max(10).optional().nullable(),
+    onboarded: z.boolean().optional().nullable(),
   })
-  .refine(
-    (data) => {
-      // If both threshold HR and max HR are provided, threshold must be less than max
-      if (data.threshold_hr && data.max_hr) {
-        return data.threshold_hr < data.max_hr;
-      }
-      return true;
-    },
-    {
-      message: "Threshold heart rate must be less than maximum heart rate",
-      path: ["threshold_hr"],
-    },
-  )
-  .refine(
-    (data) => {
-      // If both resting HR and threshold HR are provided, resting must be less than threshold
-      if (data.resting_hr && data.threshold_hr) {
-        return data.resting_hr < data.threshold_hr;
-      }
-      return true;
-    },
-    {
-      message: "Resting heart rate must be less than threshold heart rate",
-      path: ["resting_hr"],
-    },
-  )
   .refine(
     (data) => {
       // Power-to-weight ratio sanity check (if both provided)
@@ -477,6 +450,15 @@ export const profileQuickUpdateSchema = z.object({
 });
 
 export type ProfileQuickUpdateData = z.infer<typeof profileQuickUpdateSchema>;
+
+/**
+ * Avatar update schema (avatar only)
+ */
+export const profileAvatarUpdateSchema = z.object({
+  avatar_url: z.string().url("Invalid avatar URL").nullable(),
+});
+
+export type ProfileAvatarUpdateData = z.infer<typeof profileAvatarUpdateSchema>;
 
 // ============================================================================
 // ACTIVITY SUBMISSION FORM SCHEMAS
@@ -647,18 +629,46 @@ export const activityCategorySchema = z.enum([
  * Activity Plan Create Form Schema
  * Used when creating a new activity plan
  * Note: estimated_duration and estimated_tss are calculated server-side
+ *
+ * Structure, route, and description are all optional, but at least ONE must be provided:
+ * - Structure-only: Structured workout (intervals/steps)
+ * - Route-only: Just follow a route
+ * - Description-only: Casual activity with no structure
+ * - Structure + Route: Structured workout on a specific route
+ * - Structure + Description: Structured workout with notes
+ * - Route + Description: Route with contextual notes
  */
-export const activityPlanCreateFormSchema = z.object({
-  name: activityPlanNameSchema,
-  description: optionalActivityPlanDescriptionSchema,
-  activity_location: activityLocationSchema,
-  activity_category: activityCategorySchema,
-  route_id: z.string().uuid().optional().nullable(),
-  notes: activityPlanNotesSchema,
-  structure: z.object({
-    steps: z.array(z.any()).min(1, "Activity plan must have at least one step"), // Minimum 1 step required
-  }),
-});
+export const activityPlanCreateFormSchema = z
+  .object({
+    name: activityPlanNameSchema,
+    description: optionalActivityPlanDescriptionSchema,
+    activity_location: activityLocationSchema,
+    activity_category: activityCategorySchema,
+    route_id: z.string().uuid().optional().nullable(),
+    notes: activityPlanNotesSchema,
+    structure: z
+      .object({
+        version: z.literal(2),
+        intervals: z.array(z.any()).min(1),
+      })
+      .optional()
+      .nullable(),
+  })
+  .refine(
+    (data) => {
+      // At least one of structure, route_id, or description must be provided
+      return (
+        data.structure !== null ||
+        data.route_id !== null ||
+        (data.description !== null && data.description.trim() !== "")
+      );
+    },
+    {
+      message:
+        "Activity plan must have at least one of: structure, route, or description",
+      path: ["structure"],
+    },
+  );
 
 export type ActivityPlanCreateFormData = z.infer<
   typeof activityPlanCreateFormSchema

@@ -25,6 +25,8 @@ export const ActivityGraph = memo<ActivityGraphProps>(function ActivityGraph({
     (sum, step) => sum + step.duration,
     0,
   );
+
+  return null; // TODO: Implement graph visualization
 });
 
 ActivityGraph.displayName = "ActivityGraph";

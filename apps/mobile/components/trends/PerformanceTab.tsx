@@ -6,7 +6,7 @@ import { View, TouchableOpacity } from "react-native";
 import {
   PerformanceTrendsChart,
   type PerformanceDataPoint,
-} from "../../app/(internal)/(tabs)/trends/components/charts";
+} from "@/components/charts";
 
 interface PerformanceTabProps {
   performanceData: {

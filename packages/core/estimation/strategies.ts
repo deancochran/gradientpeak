@@ -1,5 +1,5 @@
 import type { PublicActivityCategory } from "@repo/supabase";
-import type { PlanStepV2 } from "../schemas/activity_plan_v2";
+import type { IntervalStepV2 } from "../schemas/activity_plan_v2";
 import type { EstimationContext, EstimationResult, Route } from "./types";
 
 /**
@@ -15,7 +15,7 @@ interface UserSettings {
  * Get duration in seconds for a V2 step
  */
 function getDurationSeconds(
-  duration: PlanStepV2["duration"],
+  duration: IntervalStepV2["duration"],
   options?: { paceSecondsPerKm?: number; secondsPerRep?: number },
 ): number {
   switch (duration.type) {
@@ -38,7 +38,7 @@ function getDurationSeconds(
  * Calculate Intensity Factor (IF) for a V2 step
  */
 function calculateStepIntensityFactor(
-  step: PlanStepV2,
+  step: IntervalStepV2,
   userSettings: UserSettings,
 ): number {
   const target = step.targets?.[0];
@@ -87,12 +87,11 @@ export function estimateFromStructure(
 ): EstimationResult {
   const { structure, profile, activityCategory } = context;
 
-  if (!structure?.steps || structure.steps.length === 0) {
-    throw new Error("Structure-based estimation requires steps");
+  if (!structure?.intervals || structure.intervals.length === 0) {
+    throw new Error("Structure-based estimation requires intervals");
   }
 
-  // V2 structure is already flat, no need to flatten
-  const steps = structure.steps;
+  const intervals = structure.intervals;
   const userSettings: UserSettings = {
     ftp: profile.ftp ?? null,
     thresholdHR: profile.threshold_hr ?? null,
@@ -106,24 +105,29 @@ export function estimateFromStructure(
   const hrZones = [0, 0, 0, 0, 0];
   const powerZones = [0, 0, 0, 0, 0, 0, 0];
 
-  for (const step of steps) {
-    const stepDuration = getDurationSeconds(step.duration);
+  // Iterate through each interval and its repetitions
+  for (const interval of intervals) {
+    for (let rep = 0; rep < interval.repetitions; rep++) {
+      for (const step of interval.steps) {
+        const stepDuration = getDurationSeconds(step.duration);
 
-    const stepIF = calculateStepIntensityFactor(step, userSettings);
-    const stepTSS = (stepDuration / 3600) * Math.pow(stepIF, 2) * 100;
+        const stepIF = calculateStepIntensityFactor(step, userSettings);
+        const stepTSS = (stepDuration / 3600) * Math.pow(stepIF, 2) * 100;
 
-    totalTSS += stepTSS;
-    totalDuration += stepDuration;
-    totalWeightedIF += stepIF * stepDuration;
+        totalTSS += stepTSS;
+        totalDuration += stepDuration;
+        totalWeightedIF += stepIF * stepDuration;
 
-    // Distribute time into zones based on targets
-    distributeStepIntoZones(
-      step,
-      stepDuration,
-      hrZones,
-      powerZones,
-      userSettings,
-    );
+        // Distribute time into zones based on targets
+        distributeStepIntoZones(
+          step,
+          stepDuration,
+          hrZones,
+          powerZones,
+          userSettings,
+        );
+      }
+    }
   }
 
   const avgIF = totalDuration > 0 ? totalWeightedIF / totalDuration : 0;
@@ -168,7 +172,7 @@ export function estimateFromStructure(
  * Distribute step duration into HR and power zones based on targets
  */
 function distributeStepIntoZones(
-  step: PlanStepV2,
+  step: IntervalStepV2,
   duration: number,
   hrZones: number[],
   powerZones: number[],

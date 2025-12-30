@@ -7,7 +7,8 @@ import type {
   ActivityPlanStructureV2,
   DurationV2,
   IntensityTargetV2,
-  PlanStepV2,
+  IntervalStepV2,
+  IntervalV2,
 } from "@repo/core";
 import type { ActivityType } from "./activity-type-utils";
 import { isWahooSupported, toWahooTypes } from "./activity-type-utils";
@@ -85,10 +86,9 @@ export function convertToWahooPlan(
     plan.header.threshold_hr = options.threshold_hr;
   }
 
-  // Convert V2 steps to intervals
-  // V2 structure is already flat, so we need to detect repetitions by segmentName
-  if (structure.steps) {
-    const intervals = convertV2StepsToIntervals(structure.steps);
+  // Convert V2 intervals to Wahoo intervals
+  if (structure.intervals && structure.intervals.length > 0) {
+    const intervals = convertIntervals(structure.intervals);
     plan.intervals = intervals;
   }
 
@@ -96,54 +96,39 @@ export function convertToWahooPlan(
 }
 
 /**
- * Convert flat V2 steps to Wahoo intervals, detecting repetitions by segment
+ * Convert V2 intervals to Wahoo intervals
  */
-function convertV2StepsToIntervals(steps: PlanStepV2[]): WahooInterval[] {
-  const intervals: WahooInterval[] = [];
+function convertIntervals(intervals: IntervalV2[]): WahooInterval[] {
+  const wahooIntervals: WahooInterval[] = [];
 
-  // Group steps by segment to reconstruct repetitions
-  const segmentMap = new Map<string, PlanStepV2[]>();
+  for (const interval of intervals) {
+    const repeatCount = interval.repetitions;
 
-  for (const step of steps) {
-    const segmentKey = step.segmentName || "default";
-    if (!segmentMap.has(segmentKey)) {
-      segmentMap.set(segmentKey, []);
-    }
-    segmentMap.get(segmentKey)!.push(step);
-  }
-
-  // Convert each segment
-  for (const [segmentName, segmentSteps] of segmentMap) {
-    // Check if this is a repetition segment (has originalRepetitionCount > 1)
-    const firstStep = segmentSteps[0];
-    const repeatCount = firstStep?.originalRepetitionCount || 1;
-
-    if (repeatCount > 1 && segmentSteps.length > 0) {
+    if (repeatCount > 1) {
       // This is a repetition - create a Wahoo repeat interval
-      const stepsPerRepeat = segmentSteps.length / repeatCount;
       const repeatInterval: WahooInterval = {
-        name: segmentName,
+        name: interval.name,
         exit_trigger_type: "repeat",
         exit_trigger_value: repeatCount - 1, // Wahoo repeats AFTER first execution
         intensity_type: "active",
         intervals: [],
       };
 
-      // Take only the first iteration of steps
-      for (let i = 0; i < stepsPerRepeat; i++) {
-        repeatInterval.intervals!.push(convertStep(segmentSteps[i]!));
+      // Add all steps in the interval as the pattern
+      for (const step of interval.steps) {
+        repeatInterval.intervals!.push(convertStep(step));
       }
 
-      intervals.push(repeatInterval);
+      wahooIntervals.push(repeatInterval);
     } else {
-      // Regular steps, not a repetition
-      for (const step of segmentSteps) {
-        intervals.push(convertStep(step));
+      // Single repetition - add steps directly
+      for (const step of interval.steps) {
+        wahooIntervals.push(convertStep(step));
       }
     }
   }
 
-  return intervals;
+  return wahooIntervals;
 }
 
 // Re-export from activity-type-utils for backwards compatibility
@@ -152,7 +137,7 @@ export { isWahooSupported as isActivityTypeSupportedByWahoo } from "./activity-t
 /**
  * Convert a single V2 step to Wahoo interval
  */
-function convertStep(step: PlanStepV2): WahooInterval {
+function convertStep(step: IntervalStepV2): WahooInterval {
   const interval: WahooInterval = {
     name: step.name || "Step",
     exit_trigger_type: "time",
@@ -338,15 +323,18 @@ export function validateWahooCompatibility(
   const warnings: string[] = [];
 
   // Check if structure is empty (no intervals)
-  if (!structure.steps || structure.steps.length === 0) {
+  if (!structure.intervals || structure.intervals.length === 0) {
     warnings.push(
       "Workout has no intervals. Wahoo requires at least one interval.",
     );
     return { compatible: false, warnings };
   }
 
-  // V2 structure is already flat, so total steps is just the array length
-  const totalSteps = structure.steps.length;
+  // Calculate total steps (expand intervals × repetitions)
+  let totalSteps = 0;
+  for (const interval of structure.intervals) {
+    totalSteps += interval.steps.length * interval.repetitions;
+  }
 
   if (totalSteps > 100) {
     warnings.push(
@@ -355,26 +343,28 @@ export function validateWahooCompatibility(
   }
 
   // Check for features Wahoo doesn't support well
-  for (const step of structure.steps) {
-    // Multiple targets
-    if (step.targets && step.targets.length > 1) {
-      warnings.push(
-        `Step "${step.name}" has multiple targets. Wahoo devices only show the first target.`,
-      );
-    }
+  for (const interval of structure.intervals) {
+    for (const step of interval.steps) {
+      // Multiple targets
+      if (step.targets && step.targets.length > 1) {
+        warnings.push(
+          `Step "${step.name}" has multiple targets. Wahoo devices only show the first target.`,
+        );
+      }
 
-    // RPE targets
-    if (step.targets?.some((t) => t.type === "RPE")) {
-      warnings.push(
-        `Step "${step.name}" uses RPE targets. These will be converted to approximate FTP percentages.`,
-      );
-    }
+      // RPE targets
+      if (step.targets?.some((t: IntensityTargetV2) => t.type === "RPE")) {
+        warnings.push(
+          `Step "${step.name}" uses RPE targets. These will be converted to approximate FTP percentages.`,
+        );
+      }
 
-    // Repetition-based duration
-    if (step.duration.type === "repetitions") {
-      warnings.push(
-        `Step "${step.name}" uses repetitions as duration. This will be converted to time estimate.`,
-      );
+      // Repetition-based duration
+      if (step.duration.type === "repetitions") {
+        warnings.push(
+          `Step "${step.name}" uses repetitions as duration. This will be converted to time estimate.`,
+        );
+      }
     }
   }
 

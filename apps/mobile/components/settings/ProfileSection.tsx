@@ -54,10 +54,10 @@ export function ProfileSection({
   const form = useForm({
     resolver: zodResolver(profileQuickUpdateSchema),
     defaultValues: {
-      username: profile?.username || null,
-      weight_kg: profile?.weight_kg || null,
-      ftp: profile?.ftp || null,
-      threshold_hr: profile?.threshold_hr || null,
+      username: profile?.username || "",
+      weight_kg: profile?.weight_kg || undefined,
+      ftp: profile?.ftp || undefined,
+      threshold_hr: profile?.threshold_hr || undefined,
     },
   });
 
@@ -137,7 +137,7 @@ export function ProfileSection({
                   <FormControl>
                     <Input
                       placeholder="Enter username"
-                      value={field.value ?? ""}
+                      value={field.value?.toString() ?? ""}
                       onChangeText={field.onChange}
                       editable={isEditing}
                       testID="username-input"

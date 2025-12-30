@@ -150,25 +150,48 @@ create trigger update_activity_routes_updated_at
 
 -- ============================================================================
 -- ACTIVITY PLANS
+-- Activity plans can be one of:
+-- 1. User-created plans (profile_id set, is_system_template = false)
+-- 2. System templates (profile_id = null, is_system_template = true)
+--
+-- Plans can be:
+-- 1. Structured workouts (intervals/steps with optional route)
+-- 2. Route-following activities (route with optional structure)
+-- 3. Casual activities (description only, no structure or route)
+-- At least one of structure, route_id, or description must be present.
 -- ============================================================================
 create table if not exists public.activity_plans (
     id uuid primary key default uuid_generate_v4(),
     idx serial unique not null,
-    profile_id uuid not null references public.profiles(id) on delete cascade,
+    profile_id uuid references public.profiles(id) on delete cascade,
+    is_system_template boolean not null default false,
     version text not null default '1.0',
     name text not null,
     notes text,
     activity_location activity_location not null default 'indoor',
     activity_category activity_category not null default 'run',
     description text not null,
-    structure jsonb not null,
+    structure jsonb,
     route_id uuid references public.activity_routes(id) on delete set null,
     created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now()
+    updated_at timestamptz not null default now(),
+    constraint activity_plans_has_content check (
+        structure is not null or
+        route_id is not null
+    ),
+    constraint activity_plans_system_template_check check (
+        (is_system_template = true and profile_id is null) or
+        (is_system_template = false and profile_id is not null)
+    )
 );
 
 create index if not exists idx_activity_plans_profile_id
-    on public.activity_plans(profile_id);
+    on public.activity_plans(profile_id)
+    where profile_id is not null;
+
+create index if not exists idx_activity_plans_system_templates
+    on public.activity_plans(is_system_template)
+    where is_system_template = true;
 
 create index if not exists idx_activity_plans_route_id
     on public.activity_plans(route_id)
@@ -366,8 +389,7 @@ create table if not exists public.activities (
     -- ============================================================================
     -- References
     -- ============================================================================
-    planned_activity_id uuid references public.planned_activities(id) on delete set null,
-    route_id uuid references public.activity_routes(id) on delete set null,
+    activity_plan_id uuid references public.activity_plans(id) on delete set null,
 
     -- ============================================================================
     -- External integration

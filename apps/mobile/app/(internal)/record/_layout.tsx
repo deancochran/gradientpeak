@@ -41,7 +41,6 @@ export default function RecordLayout() {
           name="index"
           options={{
             title: "Record Activity",
-            presentation: "modal",
             headerShown: false,
             gestureEnabled: false, // Prevent accidental exit during recording
           }}

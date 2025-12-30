@@ -10,12 +10,7 @@ import {
   useSessionStats,
 } from "@/lib/hooks/useActivityRecorder";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import {
-  Activity,
-  Mountain,
-  TrendingDown,
-  TrendingUp,
-} from "lucide-react-native";
+import { Activity, TrendingDown, TrendingUp } from "lucide-react-native";
 import React from "react";
 import { View } from "react-native";
 
@@ -30,6 +25,12 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
 }) => {
   const current = useCurrentReadings(service);
   const stats = useSessionStats(service);
+
+  // Route elevation profile data
+  const hasRoute = service?.hasRoute || false;
+  const route = service?.currentRoute;
+  const routeProgress = service?.routeProgress || 0;
+  const currentRouteDistance = service?.currentRouteDistance || 0;
 
   const hasDistance = stats?.distance && stats.distance > 0;
   const hasElevationData =
@@ -67,20 +68,8 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
 
   return (
     <View style={{ width: screenWidth }} className="flex-1 p-4">
-      <Card className={CARD_STYLES.wrapper}>
+      <Card className="flex-1 py-0">
         <CardContent className={CARD_STYLES.content}>
-          {/* Header */}
-          <View className={CARD_STYLES.header}>
-            <View className="flex-row items-center">
-              <Icon
-                as={Mountain}
-                size={CARD_STYLES.iconSize}
-                className="text-green-600 mr-2"
-              />
-              <Text className="text-lg font-semibold">Elevation</Text>
-            </View>
-          </View>
-
           {/* Current Elevation */}
           <View className="items-center mb-8">
             <Text
@@ -93,8 +82,95 @@ export const ElevationCard: React.FC<ElevationCardProps> = ({
             </Text>
           </View>
 
+          {/* Route Elevation Profile */}
+          {hasRoute && route?.elevation_profile && (
+            <View className="mb-4">
+              <Text className={CARD_STYLES.sectionHeader}>Route Profile</Text>
+              <View className="bg-muted/50 rounded-lg p-3 mt-2">
+                {/* Simple elevation profile visualization */}
+                <View className="flex-row items-end justify-between h-24 mb-2">
+                  {route.elevation_profile
+                    .slice(0, 50)
+                    .map((point: any, index: number) => {
+                      const height = Math.max(
+                        10,
+                        (point.elevation /
+                          Math.max(
+                            ...route.elevation_profile.map(
+                              (p: any) => p.elevation,
+                            ),
+                          )) *
+                          100,
+                      );
+                      const isPassed =
+                        (point.distance / route.total_distance) * 100 <=
+                        routeProgress;
+                      return (
+                        <View
+                          key={index}
+                          className={`flex-1 ${isPassed ? "bg-primary" : "bg-muted-foreground/30"} rounded-t-sm mx-px`}
+                          style={{ height: `${height}%` }}
+                        />
+                      );
+                    })}
+                </View>
+
+                {/* Progress indicator */}
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-xs text-muted-foreground">
+                    {(currentRouteDistance / 1000).toFixed(1)} km
+                  </Text>
+                  <View className="flex-row items-center gap-2">
+                    <View className="flex-1 h-1 bg-muted rounded-full overflow-hidden w-20">
+                      <View
+                        className="h-full bg-primary rounded-full"
+                        style={{ width: `${routeProgress}%` }}
+                      />
+                    </View>
+                    <Text className="text-xs text-muted-foreground">
+                      {routeProgress.toFixed(0)}%
+                    </Text>
+                  </View>
+                  <Text className="text-xs text-muted-foreground">
+                    {(route.total_distance / 1000).toFixed(1)} km
+                  </Text>
+                </View>
+
+                {/* Route stats */}
+                <View className="flex-row justify-between mt-3 pt-3 border-t border-border">
+                  <View>
+                    <Text className="text-xs text-muted-foreground">
+                      Total Ascent
+                    </Text>
+                    <Text className="text-sm font-semibold text-green-500">
+                      {route.total_ascent}m
+                    </Text>
+                  </View>
+                  <View>
+                    <Text className="text-xs text-muted-foreground">
+                      Total Descent
+                    </Text>
+                    <Text className="text-sm font-semibold text-blue-500">
+                      {route.total_descent}m
+                    </Text>
+                  </View>
+                  <View>
+                    <Text className="text-xs text-muted-foreground">
+                      Distance
+                    </Text>
+                    <Text className="text-sm font-semibold">
+                      {(route.total_distance / 1000).toFixed(1)} km
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+          )}
+
           <View className="gap-3">
-            <Text className={CARD_STYLES.sectionHeader}>Elevation Metrics</Text>
+            <Text className={CARD_STYLES.sectionHeader}>
+              {hasRoute ? "Current Activity" : "Elevation Metrics"}
+            </Text>
             <View className="flex-row gap-3">
               <View
                 className={`flex-1 items-center ${CARD_STYLES.metricCardColored("green")} ${ANIMATIONS.transition}`}

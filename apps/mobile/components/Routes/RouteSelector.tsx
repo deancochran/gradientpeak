@@ -56,7 +56,7 @@ export function RouteSelector({
   const routes = data?.pages.flatMap((page) => page.items) ?? [];
 
   const handleUploadRoute = () => {
-    router.push("/routes/upload" as any);
+    router.push("/route-upload" as any);
   };
 
   const formatDistance = (meters: number) => {

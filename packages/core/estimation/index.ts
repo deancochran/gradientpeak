@@ -54,7 +54,7 @@ export function estimateActivity(context: EstimationContext): EstimationResult {
   }
 
   // Strategy 1: Structure-based (preferred)
-  if (context.structure?.steps && context.structure.steps.length > 0) {
+  if (context.structure?.intervals && context.structure.intervals.length > 0) {
     try {
       return estimateFromStructure(context);
     } catch (error) {

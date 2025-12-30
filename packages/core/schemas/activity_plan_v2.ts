@@ -109,10 +109,11 @@ export const intensityTargetSchemaV2 = z.discriminatedUnion("type", [
 export type IntensityTargetV2 = z.infer<typeof intensityTargetSchemaV2>;
 
 // ==============================
-// PLAN STEP V2 (Flat structure)
+// INTERVAL STEP V2 (Nested inside intervals)
 // ==============================
 
-export const planStepSchemaV2 = z.object({
+export const intervalStepSchemaV2 = z.object({
+  id: z.string().uuid(),
   name: z.string().min(1).max(100).default("Step"),
   description: z.string().max(500).optional(),
   notes: z.string().max(1000).optional(),
@@ -122,27 +123,116 @@ export const planStepSchemaV2 = z.object({
 
   // Multiple targets (optional)
   targets: z.array(intensityTargetSchemaV2).max(3).optional(),
-
-  // Optional metadata for grouping/display
-  segmentName: z.string().max(100).optional(),
-  segmentIndex: z.number().int().nonnegative().optional(),
-  originalRepetitionCount: z.number().int().positive().optional(), // Track if from repetition
 });
 
-export type PlanStepV2 = z.infer<typeof planStepSchemaV2>;
+export type IntervalStepV2 = z.infer<typeof intervalStepSchemaV2>;
 
 // ==============================
-// ACTIVITY PLAN STRUCTURE V2
+// INTERVAL V2 (Container for steps with repetitions)
+// ==============================
+
+export const intervalSchemaV2 = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1).max(100),
+  repetitions: z.number().int().min(1).max(50).default(1),
+  steps: z.array(intervalStepSchemaV2).min(1).max(20),
+  notes: z.string().max(1000).optional(),
+});
+
+export type IntervalV2 = z.infer<typeof intervalSchemaV2>;
+
+// ==============================
+// ACTIVITY PLAN STRUCTURE V2 (Updated)
 // ==============================
 
 export const activityPlanStructureSchemaV2 = z.object({
   version: z.literal(2),
-  steps: z.array(planStepSchemaV2).min(1).max(200),
+  intervals: z.array(intervalSchemaV2).min(1).max(50),
 });
 
 export type ActivityPlanStructureV2 = z.infer<
   typeof activityPlanStructureSchemaV2
 >;
+
+// ==============================
+// MINIMAL STRUCTURE HELPERS
+// For route-only or casual activity plans
+// ==============================
+
+/**
+ * Create a minimal "follow route" structure
+ * Used when user only provides a route without specific intervals
+ */
+export function createFollowRouteStructure(): ActivityPlanStructureV2 {
+  return {
+    version: 2,
+    intervals: [
+      {
+        id: crypto.randomUUID(),
+        name: "Follow Route",
+        repetitions: 1,
+        steps: [
+          {
+            id: crypto.randomUUID(),
+            name: "Follow Route",
+            duration: { type: "untilFinished" },
+            targets: [],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+/**
+ * Create a minimal "free activity" structure
+ * Used when user only provides a description for casual activities
+ */
+export function createFreeActivityStructure(
+  activityName: string = "Free Activity",
+): ActivityPlanStructureV2 {
+  return {
+    version: 2,
+    intervals: [
+      {
+        id: crypto.randomUUID(),
+        name: activityName,
+        repetitions: 1,
+        steps: [
+          {
+            id: crypto.randomUUID(),
+            name: activityName,
+            duration: { type: "untilFinished" },
+            targets: [],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+// ==============================
+// DEPRECATED: Old flat step structure (kept for migration)
+// ==============================
+
+/**
+ * @deprecated Use IntervalStepV2 instead. This is kept only for migration purposes.
+ */
+export const planStepSchemaV2 = z.object({
+  name: z.string().min(1).max(100).default("Step"),
+  description: z.string().max(500).optional(),
+  notes: z.string().max(1000).optional(),
+  duration: durationSchemaV2,
+  targets: z.array(intensityTargetSchemaV2).max(3).optional(),
+  segmentName: z.string().max(100).optional(),
+  segmentIndex: z.number().int().nonnegative().optional(),
+  originalRepetitionCount: z.number().int().positive().optional(),
+});
+
+/**
+ * @deprecated Use IntervalStepV2 instead. This is kept only for migration purposes.
+ */
+export type PlanStepV2 = z.infer<typeof planStepSchemaV2>;
 
 // ==============================
 // VALIDATION HELPERS
@@ -170,9 +260,11 @@ export function validateActivityPlanStructureV2(data: unknown): {
 // ==============================
 
 /**
- * Get intensity color for visualization
+ * Get intensity color for visualization (works with both IntervalStepV2 and deprecated PlanStepV2)
  */
-export function getStepIntensityColor(step: PlanStepV2): string {
+export function getStepIntensityColor(
+  step: IntervalStepV2 | PlanStepV2,
+): string {
   const primaryTarget = step.targets?.[0];
   if (!primaryTarget) return "#94a3b8"; // gray for no target
 
@@ -234,30 +326,7 @@ export function formatIntensityTarget(target: IntensityTargetV2): string {
 /**
  * Format all targets for a step
  */
-export function formatStepTargets(step: PlanStepV2): string {
+export function formatStepTargets(step: IntervalStepV2 | PlanStepV2): string {
   if (!step.targets || step.targets.length === 0) return "No targets";
   return step.targets.map(formatIntensityTarget).join(" + ");
-}
-
-/**
- * Group steps by segment for display
- */
-export function groupStepsBySegment(
-  steps: PlanStepV2[],
-): Array<{ segmentName: string; steps: PlanStepV2[] }> {
-  const groups: Array<{ segmentName: string; steps: PlanStepV2[] }> = [];
-  let currentGroup: { segmentName: string; steps: PlanStepV2[] } | null = null;
-
-  for (const step of steps) {
-    const segmentName = step.segmentName || "Main";
-
-    if (!currentGroup || currentGroup.segmentName !== segmentName) {
-      currentGroup = { segmentName, steps: [] };
-      groups.push(currentGroup);
-    }
-
-    currentGroup.steps.push(step);
-  }
-
-  return groups;
 }

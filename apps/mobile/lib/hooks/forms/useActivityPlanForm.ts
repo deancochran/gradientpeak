@@ -124,24 +124,34 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
 
   // Calculate metrics from V2 structure
   const metrics = useMemo(() => {
-    const steps = structure.steps || [];
+    const intervals = structure.intervals || [];
 
-    const durationMs = steps.reduce((sum: number, step) => {
-      const duration = step.duration;
-      if (duration.type === "time") {
-        return sum + duration.seconds * 1000;
-      } else if (duration.type === "distance") {
-        // Estimate 5 min/km
-        return sum + (duration.meters / 1000) * 5 * 60 * 1000;
-      } else if (duration.type === "repetitions") {
-        // Estimate 30s per rep
-        return sum + duration.count * 30 * 1000;
+    let totalSteps = 0;
+    let durationMs = 0;
+
+    for (const interval of intervals) {
+      totalSteps += interval.steps.length * interval.repetitions;
+
+      for (const step of interval.steps) {
+        const duration = step.duration;
+        let stepDurationMs = 0;
+
+        if (duration.type === "time") {
+          stepDurationMs = duration.seconds * 1000;
+        } else if (duration.type === "distance") {
+          // Estimate 5 min/km
+          stepDurationMs = (duration.meters / 1000) * 5 * 60 * 1000;
+        } else if (duration.type === "repetitions") {
+          // Estimate 30s per rep
+          stepDurationMs = duration.count * 30 * 1000;
+        }
+
+        durationMs += stepDurationMs * interval.repetitions;
       }
-      return sum;
-    }, 0);
+    }
 
     return {
-      stepCount: steps.length,
+      stepCount: totalSteps,
       durationMs,
       durationMinutes: Math.round(durationMs / 60000),
     };
@@ -185,10 +195,10 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
   // Submit handler
   const submit = useCallback(async () => {
     // Check for empty structure first
-    if (!structure.steps || structure.steps.length === 0) {
+    if (!structure.intervals || structure.intervals.length === 0) {
       Alert.alert(
         "Activity Structure Required",
-        "Please add at least one step to your activity plan before saving.",
+        "Please add at least one interval to your activity plan before saving.",
       );
       return null;
     }
@@ -247,7 +257,9 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
   // Cancel handler
   const cancel = useCallback(() => {
     const hasChanges =
-      name !== "" || description !== "" || structure.steps.length > 0;
+      name !== "" ||
+      description !== "" ||
+      (structure.intervals && structure.intervals.length > 0);
 
     if (hasChanges) {
       Alert.alert(

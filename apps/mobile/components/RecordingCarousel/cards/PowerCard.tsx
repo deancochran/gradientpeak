@@ -11,7 +11,7 @@ import {
   useSessionStats,
 } from "@/lib/hooks/useActivityRecorder";
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import { Target, Zap } from "lucide-react-native";
+import { Target } from "lucide-react-native";
 import React from "react";
 import { View } from "react-native";
 
@@ -54,20 +54,8 @@ export const PowerCard: React.FC<PowerCardProps> = ({
 
   return (
     <View style={{ width: screenWidth }} className="flex-1 p-4">
-      <Card className={CARD_STYLES.wrapper}>
+      <Card className="flex-1 py-0">
         <CardContent className={CARD_STYLES.content}>
-          {/* Header */}
-          <View className={CARD_STYLES.header}>
-            <View className="flex-row items-center">
-              <Icon
-                as={Zap}
-                size={CARD_STYLES.iconSize}
-                className="text-yellow-500 mr-2"
-              />
-              <Text className="text-lg font-semibold">Power</Text>
-            </View>
-          </View>
-
           {/* Current Power - Large Display */}
           <View className="items-center mb-8">
             <Text

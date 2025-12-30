@@ -2,10 +2,7 @@ import { EmptyStateCard, TrendsOverviewSkeleton } from "@/components/shared";
 import { Text } from "@/components/ui/text";
 import { TrendingUp } from "lucide-react-native";
 import { View } from "react-native";
-import {
-  TrainingLoadChart,
-  type TrainingLoadData,
-} from "../../app/(internal)/(tabs)/trends/components/charts";
+import { TrainingLoadChart, type TrainingLoadData } from "@/components/charts";
 
 interface Status {
   form: string;

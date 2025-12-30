@@ -1,6 +1,7 @@
 import {
   type ActivityPlanStructureV2,
-  type PlanStepV2,
+  type IntervalV2,
+  type IntervalStepV2,
 } from "@repo/core/schemas/activity_plan_v2";
 import { create } from "zustand";
 
@@ -25,17 +26,21 @@ interface ActivityPlanCreationState {
   setRouteId: (routeId: string | null) => void;
   setNotes: (notes: string) => void;
 
-  // V2 Step management
-  addStep: (step: PlanStepV2) => void;
-  addSteps: (steps: PlanStepV2[]) => void;
-  updateStep: (index: number, step: PlanStepV2) => void;
-  removeStep: (index: number) => void;
-  removeSteps: (indices: number[]) => void;
-  reorderSteps: (steps: PlanStepV2[]) => void;
+  // V2 Interval management
+  addInterval: (interval: IntervalV2) => void;
+  updateInterval: (intervalId: string, interval: IntervalV2) => void;
+  removeInterval: (intervalId: string) => void;
+  reorderIntervals: (intervals: IntervalV2[]) => void;
 
-  // Segment management
-  updateSegmentName: (oldName: string, newName: string) => void;
-  removeSegment: (segmentName: string) => void;
+  // Step management within intervals
+  addStepToInterval: (intervalId: string, step: IntervalStepV2) => void;
+  updateStepInInterval: (
+    intervalId: string,
+    stepId: string,
+    step: IntervalStepV2,
+  ) => void;
+  removeStepFromInterval: (intervalId: string, stepId: string) => void;
+  reorderStepsInInterval: (intervalId: string, steps: IntervalStepV2[]) => void;
 
   // Reset
   reset: () => void;
@@ -64,7 +69,7 @@ const initialState = {
   description: "",
   activityLocation: "outdoor" as const,
   activityCategory: "run" as const,
-  structure: { version: 2 as const, steps: [] },
+  structure: { version: 2 as const, intervals: [] },
   routeId: null,
   notes: "",
 };
@@ -83,67 +88,89 @@ export const useActivityPlanCreationStore = create<ActivityPlanCreationState>(
     setRouteId: (routeId) => set({ routeId }),
     setNotes: (notes) => set({ notes }),
 
-    // V2 Step management
-    addStep: (step) =>
+    // V2 Interval management
+    addInterval: (interval) =>
       set((state) => ({
         structure: {
           version: 2,
-          steps: [...state.structure.steps, step],
+          intervals: [...state.structure.intervals, interval],
         },
       })),
 
-    addSteps: (steps) =>
+    updateInterval: (intervalId, interval) =>
       set((state) => ({
         structure: {
           version: 2,
-          steps: [...state.structure.steps, ...steps],
-        },
-      })),
-
-    updateStep: (index, step) =>
-      set((state) => {
-        const newSteps = [...state.structure.steps];
-        newSteps[index] = step;
-        return { structure: { version: 2, steps: newSteps } };
-      }),
-
-    removeStep: (index) =>
-      set((state) => ({
-        structure: {
-          version: 2,
-          steps: state.structure.steps.filter((_, i) => i !== index),
-        },
-      })),
-
-    removeSteps: (indices) =>
-      set((state) => ({
-        structure: {
-          version: 2,
-          steps: state.structure.steps.filter((_, i) => !indices.includes(i)),
-        },
-      })),
-
-    reorderSteps: (steps) => set({ structure: { version: 2, steps } }),
-
-    // Segment management
-    updateSegmentName: (oldName, newName) =>
-      set((state) => ({
-        structure: {
-          version: 2,
-          steps: state.structure.steps.map((step) =>
-            step.segmentName === oldName
-              ? { ...step, segmentName: newName }
-              : step,
+          intervals: state.structure.intervals.map((i) =>
+            i.id === intervalId ? interval : i,
           ),
         },
       })),
 
-    removeSegment: (segmentName) =>
+    removeInterval: (intervalId) =>
       set((state) => ({
         structure: {
           version: 2,
-          steps: state.structure.steps.filter(
-            (step) => step.segmentName !== segmentName,
+          intervals: state.structure.intervals.filter(
+            (i) => i.id !== intervalId,
+          ),
+        },
+      })),
+
+    reorderIntervals: (intervals) =>
+      set({ structure: { version: 2, intervals } }),
+
+    // Step management within intervals
+    addStepToInterval: (intervalId, step) =>
+      set((state) => ({
+        structure: {
+          version: 2,
+          intervals: state.structure.intervals.map((interval) =>
+            interval.id === intervalId
+              ? { ...interval, steps: [...interval.steps, step] }
+              : interval,
+          ),
+        },
+      })),
+
+    updateStepInInterval: (intervalId, stepId, step) =>
+      set((state) => ({
+        structure: {
+          version: 2,
+          intervals: state.structure.intervals.map((interval) =>
+            interval.id === intervalId
+              ? {
+                  ...interval,
+                  steps: interval.steps.map((s) =>
+                    s.id === stepId ? step : s,
+                  ),
+                }
+              : interval,
+          ),
+        },
+      })),
+
+    removeStepFromInterval: (intervalId, stepId) =>
+      set((state) => ({
+        structure: {
+          version: 2,
+          intervals: state.structure.intervals.map((interval) =>
+            interval.id === intervalId
+              ? {
+                  ...interval,
+                  steps: interval.steps.filter((s) => s.id !== stepId),
+                }
+              : interval,
+          ),
+        },
+      })),
+
+    reorderStepsInInterval: (intervalId, steps) =>
+      set((state) => ({
+        structure: {
+          version: 2,
+          intervals: state.structure.intervals.map((interval) =>
+            interval.id === intervalId ? { ...interval, steps } : interval,
           ),
         },
       })),

@@ -1,10 +1,7 @@
 import { TrendsOverviewSkeleton } from "@/components/shared";
 import { Text } from "@/components/ui/text";
 import { View } from "react-native";
-import {
-  ConsistencyHeatmap,
-  type ConsistencyData,
-} from "../../app/(internal)/(tabs)/trends/components/charts";
+import { ConsistencyHeatmap, type ConsistencyData } from "@/components/charts";
 
 interface ConsistencyTabProps {
   consistencyData: ConsistencyData | null;

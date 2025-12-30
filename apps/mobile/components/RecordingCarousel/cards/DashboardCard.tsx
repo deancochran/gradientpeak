@@ -1,9 +1,5 @@
-import {
-  ANIMATIONS,
-  CARD_STYLES,
-} from "@/components/RecordingCarousel/constants";
+import { CARD_STYLES } from "@/components/RecordingCarousel/constants";
 import { Card, CardContent } from "@/components/ui/card";
-import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import {
   useCurrentReadings,
@@ -12,9 +8,8 @@ import {
 
 import { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { formatDuration } from "@repo/core";
-import { Clock } from "lucide-react-native";
 import React from "react";
-import { ScrollView, View } from "react-native";
+import { View } from "react-native";
 
 interface DashboardCardProps {
   service: ActivityRecorderService | null;
@@ -29,165 +24,91 @@ export const DashboardCard: React.FC<DashboardCardProps> = ({
   const stats = useSessionStats(service);
 
   return (
-    <View style={{ width: screenWidth }} className="flex-1 p-4">
-      <Card className={CARD_STYLES.wrapper}>
+    <View style={{ width: screenWidth }} className={CARD_STYLES.outerContainer}>
+      <Card className="flex-1 py-0">
         <CardContent className={CARD_STYLES.content}>
-          {/* Header */}
-          <View className={CARD_STYLES.header}>
-            <View className="flex-row items-center">
-              <Icon
-                as={Clock}
-                size={CARD_STYLES.iconSize}
-                className="text-blue-500 mr-2"
-              />
-              <Text className="text-lg font-semibold">Dashboard</Text>
-            </View>
-          </View>
-
-          {/* Primary Metric - Elapsed Time */}
-          <View className="items-center mb-8">
+          {/* Row 1: Elapsed Time - Spans 2 columns */}
+          <View className={CARD_STYLES.primaryMetricContainer}>
             <Text
-              className={`text-5xl font-bold text-blue-500 ${ANIMATIONS.valueChange}`}
+              className={CARD_STYLES.primaryMetric}
+              style={{ color: "#3b82f6" }}
             >
               {formatDuration(stats.duration || 0)}
             </Text>
-            <Text className="text-sm text-muted-foreground">elapsed time</Text>
+            <Text className="text-sm text-muted-foreground mt-1">
+              elapsed time
+            </Text>
           </View>
 
-          {/* Live Metrics Section */}
-          <View className="flex-1">
-            <Text className={CARD_STYLES.sectionHeader}>Live Metrics</Text>
-            <ScrollView
-              className="flex-1"
-              showsVerticalScrollIndicator={false}
-              contentContainerClassName="gap-3 pb-4"
-            >
-              {/* Row 1: Power & Heart Rate */}
-              <View className="flex-row gap-3">
-                <View
-                  className={`flex-1 ${CARD_STYLES.metricCard} ${ANIMATIONS.transition}`}
-                >
-                  <Text className="text-xs text-muted-foreground mb-1">
-                    Power
-                  </Text>
-                  <Text
-                    className={`text-xl font-semibold ${ANIMATIONS.valueChange}`}
-                  >
-                    {current.power ?? "--"}
-                  </Text>
-                  <Text className="text-xs text-muted-foreground">watts</Text>
-                </View>
+          {/* Row 2: Power | HR */}
+          <View
+            className={`flex-row ${CARD_STYLES.columnGap} ${CARD_STYLES.rowGap}`}
+          >
+            <View className={`flex-1 ${CARD_STYLES.metricCard}`}>
+              <Text className="text-xs text-muted-foreground mb-1">Power</Text>
+              <Text className="text-3xl font-semibold">
+                {current.power ?? "--"}
+              </Text>
+              <Text className="text-xs text-muted-foreground mt-0.5">
+                watts
+              </Text>
+            </View>
 
-                <View
-                  className={`flex-1 ${CARD_STYLES.metricCard} ${ANIMATIONS.transition}`}
-                >
-                  <Text className="text-xs text-muted-foreground mb-1">
-                    Heart Rate
-                  </Text>
-                  <Text
-                    className={`text-xl font-semibold ${ANIMATIONS.valueChange}`}
-                  >
-                    {current.heartRate ?? "--"}
-                  </Text>
-                  <Text className="text-xs text-muted-foreground">bpm</Text>
-                </View>
-              </View>
+            <View className={`flex-1 ${CARD_STYLES.metricCard}`}>
+              <Text className="text-xs text-muted-foreground mb-1">HR</Text>
+              <Text className="text-3xl font-semibold">
+                {current.heartRate ?? "--"}
+              </Text>
+              <Text className="text-xs text-muted-foreground mt-0.5">bpm</Text>
+            </View>
+          </View>
 
-              {/* Row 2: Cadence & Speed */}
-              <View className="flex-row gap-3">
-                <View
-                  className={`flex-1 ${CARD_STYLES.metricCard} ${ANIMATIONS.transition}`}
-                >
-                  <Text className="text-xs text-muted-foreground mb-1">
-                    Cadence
-                  </Text>
-                  <Text
-                    className={`text-xl font-semibold ${ANIMATIONS.valueChange}`}
-                  >
-                    {current.cadence ?? "--"}
-                  </Text>
-                  <Text className="text-xs text-muted-foreground">rpm</Text>
-                </View>
+          {/* Row 3: Cadence | Speed */}
+          <View
+            className={`flex-row ${CARD_STYLES.columnGap} ${CARD_STYLES.rowGap}`}
+          >
+            <View className={`flex-1 ${CARD_STYLES.metricCard}`}>
+              <Text className="text-xs text-muted-foreground mb-1">
+                Cadence
+              </Text>
+              <Text className="text-3xl font-semibold">
+                {current.cadence ?? "--"}
+              </Text>
+              <Text className="text-xs text-muted-foreground mt-0.5">rpm</Text>
+            </View>
 
-                <View
-                  className={`flex-1 ${CARD_STYLES.metricCard} ${ANIMATIONS.transition}`}
-                >
-                  <Text className="text-xs text-muted-foreground mb-1">
-                    Speed
-                  </Text>
-                  <Text
-                    className={`text-xl font-semibold ${ANIMATIONS.valueChange}`}
-                  >
-                    {current.speed?.toFixed(1) ?? "--"}
-                  </Text>
-                  <Text className="text-xs text-muted-foreground">km/h</Text>
-                </View>
-              </View>
+            <View className={`flex-1 ${CARD_STYLES.metricCard}`}>
+              <Text className="text-xs text-muted-foreground mb-1">Speed</Text>
+              <Text className="text-3xl font-semibold">
+                {current.speed !== undefined
+                  ? (current.speed * 3.6).toFixed(1)
+                  : "--"}
+              </Text>
+              <Text className="text-xs text-muted-foreground mt-0.5">km/h</Text>
+            </View>
+          </View>
 
-              {/* Row 3: Distance & Calories */}
-              <View className="flex-row gap-3">
-                <View
-                  className={`flex-1 ${CARD_STYLES.metricCard} ${ANIMATIONS.transition}`}
-                >
-                  <Text className="text-xs text-muted-foreground mb-1">
-                    Distance
-                  </Text>
-                  <Text
-                    className={`text-xl font-semibold ${ANIMATIONS.valueChange}`}
-                  >
-                    {((stats.distance || 0) / 1000).toFixed(2)}
-                  </Text>
-                  <Text className="text-xs text-muted-foreground">km</Text>
-                </View>
+          {/* Row 4: Distance | Calories */}
+          <View className={`flex-row ${CARD_STYLES.columnGap}`}>
+            <View className={`flex-1 ${CARD_STYLES.metricCard}`}>
+              <Text className="text-xs text-muted-foreground mb-1">
+                Distance
+              </Text>
+              <Text className="text-3xl font-semibold">
+                {((stats.distance || 0) / 1000).toFixed(2)}
+              </Text>
+              <Text className="text-xs text-muted-foreground mt-0.5">km</Text>
+            </View>
 
-                <View
-                  className={`flex-1 ${CARD_STYLES.metricCard} ${ANIMATIONS.transition}`}
-                >
-                  <Text className="text-xs text-muted-foreground mb-1">
-                    Calories
-                  </Text>
-                  <Text
-                    className={`text-xl font-semibold ${ANIMATIONS.valueChange}`}
-                  >
-                    {stats.calories || 0}
-                  </Text>
-                  <Text className="text-xs text-muted-foreground">cal</Text>
-                </View>
-              </View>
-
-              {/* Row 4: Elevation Gain & Loss (for outdoor activities) */}
-              {(stats.ascent > 0 || stats.descent > 0) && (
-                <View className="flex-row gap-3">
-                  <View
-                    className={`flex-1 ${CARD_STYLES.metricCard} ${ANIMATIONS.transition}`}
-                  >
-                    <Text className="text-xs text-muted-foreground mb-1">
-                      Elevation Gain
-                    </Text>
-                    <Text
-                      className={`text-xl font-semibold ${ANIMATIONS.valueChange}`}
-                    >
-                      {Math.round(stats.ascent || 0)}
-                    </Text>
-                    <Text className="text-xs text-muted-foreground">m</Text>
-                  </View>
-
-                  <View
-                    className={`flex-1 ${CARD_STYLES.metricCard} ${ANIMATIONS.transition}`}
-                  >
-                    <Text className="text-xs text-muted-foreground mb-1">
-                      Elevation Loss
-                    </Text>
-                    <Text
-                      className={`text-xl font-semibold ${ANIMATIONS.valueChange}`}
-                    >
-                      {Math.round(stats.descent || 0)}
-                    </Text>
-                    <Text className="text-xs text-muted-foreground">m</Text>
-                  </View>
-                </View>
-              )}
-            </ScrollView>
+            <View className={`flex-1 ${CARD_STYLES.metricCard}`}>
+              <Text className="text-xs text-muted-foreground mb-1">
+                Calories
+              </Text>
+              <Text className="text-3xl font-semibold">
+                {stats.calories || 0}
+              </Text>
+              <Text className="text-xs text-muted-foreground mt-0.5">cal</Text>
+            </View>
           </View>
         </CardContent>
       </Card>

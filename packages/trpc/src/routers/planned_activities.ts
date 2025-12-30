@@ -169,7 +169,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
         .from("activity_plans")
         .select("id, profile_id")
         .eq("id", input.activity_plan_id)
-        .or(`profile_id.eq.${ctx.session.user.id},profile_id.is.null`) // Allow user's plans or sample plans
+        .or(`profile_id.eq.${ctx.session.user.id},is_system_template.eq.true`) // Allow user's plans or system templates
         .single();
 
       if (planError || !activityPlan) {
@@ -262,7 +262,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
           .from("activity_plans")
           .select("id, profile_id")
           .eq("id", updates.activity_plan_id as string)
-          .or(`profile_id.eq.${ctx.session.user.id},profile_id.is.null`)
+          .or(`profile_id.eq.${ctx.session.user.id},is_system_template.eq.true`)
           .single();
 
         if (planError || !activityPlan) {
@@ -457,6 +457,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
             "id, activity_category, activity_location, structure, route_id",
           )
           .eq("id", input.activity_plan_id)
+          .or(`profile_id.eq.${ctx.session.user.id},is_system_template.eq.true`)
           .single();
 
       if (activityPlanError || !activityPlan) {
@@ -499,9 +500,8 @@ export const plannedActivitiesRouter = createTRPCRouter({
         .single();
 
       // Calculate TSS for current week's activities
-      const { estimateActivity, buildEstimationContext } = await import(
-        "@repo/core"
-      );
+      const { estimateActivity, buildEstimationContext } =
+        await import("@repo/core");
 
       const currentWeeklyTSS = (plannedThisWeek || []).reduce((sum, pa) => {
         if (!pa.activity_plan) return sum;

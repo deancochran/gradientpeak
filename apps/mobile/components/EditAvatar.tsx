@@ -18,9 +18,11 @@ export default function Avatar({ url, size = 150, onUpload }: Props) {
     if (url) downloadImage(url);
   }, [url]);
 
+  const utils = trpc.useUtils();
+
   async function downloadImage(path: string) {
     try {
-      const { signedUrl } = await trpc.storage.getSignedUrl.query({
+      const { signedUrl } = await utils.client.storage.getSignedUrl.query({
         filePath: path,
       });
       setAvatarUrl(signedUrl);
@@ -61,7 +63,7 @@ export default function Avatar({ url, size = 150, onUpload }: Props) {
 
       // Get signed upload URL
       const { signedUrl, path } =
-        await trpc.storage.createSignedUploadUrl.mutate({
+        await utils.client.storage.createSignedUploadUrl.mutate({
           fileName,
           fileType,
         });

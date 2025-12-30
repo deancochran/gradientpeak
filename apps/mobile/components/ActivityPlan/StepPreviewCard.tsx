@@ -5,7 +5,6 @@
 import {
   PlanStepV2,
   formatDurationCompact,
-  calculateTotalDurationSecondsV2,
   getStepIntensityColor,
   getTargetDisplayName,
   formatTargetValue,
@@ -18,6 +17,26 @@ interface StepPreviewCardProps {
   step: PlanStepV2;
   isUpcoming?: boolean;
   showDuration?: boolean;
+}
+
+/**
+ * Calculate duration in seconds for a single step
+ */
+function getStepDurationSeconds(duration: PlanStepV2["duration"]): number {
+  switch (duration.type) {
+    case "time":
+      return duration.seconds;
+    case "distance":
+      // Estimate: 5 min/km = 300 sec/km
+      return (duration.meters / 1000) * 300;
+    case "repetitions":
+      // Estimate: 30 seconds per rep
+      return duration.count * 30;
+    case "untilFinished":
+      return 0;
+    default:
+      return 0;
+  }
 }
 
 const StepPreviewCard = memo<StepPreviewCardProps>(function StepPreviewCard({
@@ -50,7 +69,7 @@ const StepPreviewCard = memo<StepPreviewCardProps>(function StepPreviewCard({
         {showDuration && (
           <View className="ml-2">
             <Text className="text-xs text-muted-foreground">
-              {formatDurationCompact(calculateTotalDurationSecondsV2([step]))}
+              {formatDurationCompact(getStepDurationSeconds(step.duration))}
             </Text>
           </View>
         )}

@@ -11,7 +11,13 @@ import {
 } from "@repo/core";
 import { Text } from "@/components/ui/text";
 import { Icon } from "@/components/ui/icon";
-import type { CurrentMetrics } from "@/types"; // Adjust this import path as needed
+
+type CurrentMetrics = {
+  power?: number;
+  heartRate?: number;
+  cadence?: number;
+  speed?: number;
+};
 
 const ActiveActivityMode = memo<{
   planProgress?: any;

@@ -12,11 +12,15 @@
  * - Simple data flow: Buffer -> Calculate -> Emit
  */
 
-import { PublicProfilesRow } from "@repo/core";
+import { PublicActivityLocation, PublicProfilesRow } from "@repo/core";
 import { EventEmitter } from "expo";
 import { MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
 import { DataBuffer } from "./DataBuffer";
-import { getSensorModel } from "./SimplifiedMetrics";
+import {
+  convertToSimplifiedMetrics,
+  getSensorModel,
+  SimplifiedMetrics,
+} from "./SimplifiedMetrics";
 import { StreamBuffer } from "./StreamBuffer";
 import {
   LiveMetricsState,
@@ -143,6 +147,10 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   public pauseRecording(): void {
     this.isActive = false;
     this.pauseStartTime = Date.now();
+
+    // Stop timers to prevent unnecessary calculations and emissions during pause
+    this.stopTimers();
+
     console.log("[LiveMetricsManager] Paused");
   }
 
@@ -156,6 +164,16 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     }
     this.isActive = true;
     this.zoneStartTime = Date.now();
+
+    // Restart timers when resuming
+    this.updateTimer = setInterval(() => {
+      this.calculateAndEmitMetrics();
+    }, RECORDING_CONFIG.UPDATE_INTERVAL);
+
+    this.persistenceTimer = setInterval(() => {
+      this.persistAndCleanup();
+    }, RECORDING_CONFIG.PERSISTENCE_INTERVAL);
+
     console.log("[LiveMetricsManager] Resumed");
   }
 
@@ -246,6 +264,11 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    * Ingest location data
    */
   public ingestLocationData(location: LocationReading): void {
+    // Update lastLocation FIRST so getCurrentReadings() can access it immediately
+    // This ensures the GPS signal modal disappears as soon as location data arrives
+    const previousLocation = this.lastLocation;
+    this.lastLocation = location;
+
     // Add to streamBuffer for persistence (only when active)
     if (this.isActive) {
       this.streamBuffer.addLocation(location);
@@ -258,14 +281,20 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       timestamp: location.timestamp,
     });
 
+    // Emit sensor update immediately so UI reflects GPS acquisition
+    this.emit("sensorUpdate", {
+      readings: this.getCurrentReadings(),
+      timestamp: Date.now(),
+    });
+
     // Calculate distance if we have a previous location (only when active)
     // Skip GPS distance for indoor activities (use virtual distance from power instead)
     if (
       this.isActive &&
-      this.lastLocation &&
+      previousLocation &&
       this.activityLocation !== "indoor"
     ) {
-      const distance = this.calculateDistance(this.lastLocation, location);
+      const distance = this.calculateDistance(previousLocation, location);
 
       // Filter GPS noise
       if (
@@ -297,8 +326,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
         this.updateElevation(location.altitude);
       }
     }
-
-    this.lastLocation = location;
   }
 
   /**
@@ -521,10 +548,63 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   }
 
   /**
-   * Calculate current speed from buffer
+   * Calculate current speed from buffer or recent GPS data
+   * Returns speed in m/s
    */
   private calculateCurrentSpeed(): number | undefined {
-    return this.buffer.getLatest("speed");
+    // First try to get speed from power meter or sensor
+    const sensorSpeed = this.buffer.getLatest("speed");
+    if (sensorSpeed !== undefined) {
+      return sensorSpeed;
+    }
+
+    // Calculate from recent GPS data if available (for outdoor activities)
+    if (this.activityLocation === "outdoor" && this.lastLocation) {
+      // Get last 5 seconds of location data to calculate speed
+      const recentLocations = this.buffer.getRecent("latlng", 5);
+      if (recentLocations.length >= 2) {
+        // Use the most recent speed calculation
+        // Speed = distance / time
+        const now = Date.now();
+        const timeSinceLastUpdate = now - this.lastLocation.timestamp;
+
+        // If we have recent movement (within last 3 seconds), use maxSpeed
+        if (timeSinceLastUpdate < 3000 && this.maxSpeed > 0) {
+          return this.maxSpeed;
+        }
+      }
+    }
+
+    // For indoor activities, calculate from virtual distance
+    if (this.activityLocation === "indoor" && this.lastPowerValue > 0) {
+      // Estimate speed from power using the same physics model
+      const powerWatts = this.lastPowerValue;
+      const CRR = 0.005;
+      const CDA = 0.324;
+      const AIR_DENSITY = 1.225;
+      const DRIVETRAIN_LOSS = 0.03;
+      const effectivePower = powerWatts * (1 - DRIVETRAIN_LOSS);
+      const riderWeightKg = this.profile.weight || 75;
+      const bikeWeightKg = 8;
+      const totalMassKg = riderWeightKg + bikeWeightKg;
+
+      // Solve for speed
+      let speed = 0;
+      for (let v = 0; v < 20; v += 0.1) {
+        const rollingResistance = CRR * totalMassKg * 9.81 * v;
+        const airResistance = 0.5 * AIR_DENSITY * CDA * Math.pow(v, 3);
+        const requiredPower = rollingResistance + airResistance;
+
+        if (requiredPower >= effectivePower) {
+          speed = v;
+          break;
+        }
+      }
+
+      return speed > 0 ? speed : undefined;
+    }
+
+    return undefined;
   }
 
   /**

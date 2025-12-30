@@ -26,7 +26,7 @@ export function getRecordingViewConfig(
   structure: ActivityPlanStructureV2,
   routeId: string | null | undefined,
 ): RecordingViewConfig {
-  const hasSteps = !!(structure.steps && structure.steps.length > 0);
+  const hasSteps = !!(structure.intervals && structure.intervals.length > 0);
   const hasRoute = !!routeId;
   const isIndoor =
     activityType === "indoor_treadmill" ||

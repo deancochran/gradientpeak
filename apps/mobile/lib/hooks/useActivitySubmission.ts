@@ -586,7 +586,9 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         metrics: calculatedMetrics.metrics as any, // JSONB metrics object
         hr_zone_seconds: calculatedMetrics.hrZoneSeconds ?? undefined,
         power_zone_seconds: calculatedMetrics.powerZoneSeconds ?? undefined,
-        profile_snapshot: calculatedMetrics.profileSnapshot ?? undefined,
+        profile_snapshot: calculatedMetrics.profileSnapshot
+          ? JSON.parse(JSON.stringify(calculatedMetrics.profileSnapshot))
+          : undefined,
         planned_activity_id: metadata.plannedActivityId || null,
         route_id: null, // Will be set if route is attached
       };
@@ -600,7 +602,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         error: err instanceof Error ? err.message : "Processing failed",
       });
     }
-  }, [service?.recording?.id, service?.state]);
+  }, [service?.recordingMetadata?.startedAt, service?.state]);
 
   // Listen for recording completion event
   useEffect(() => {

@@ -2,10 +2,30 @@ import type {
   ActivityPlanStructureV2,
   DurationV2,
   IntensityTargetV2,
-  PlanStepV2,
+  IntervalV2,
+  IntervalStepV2,
 } from "./activity_plan_v2";
 import { Duration } from "./duration_helpers";
 import { Target } from "./target_helpers";
+
+/**
+ * Generate a UUID v4
+ * Cross-platform implementation that works in Node.js, browser, and React Native
+ */
+function generateUUID(): string {
+  // Use crypto.randomUUID if available (Node.js 16+, modern browsers)
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+
+  // Fallback: Generate UUID v4 manually
+  // Template: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 // ==============================
 // PLAN BUILDER V2
@@ -15,14 +35,14 @@ import { Target } from "./target_helpers";
 /**
  * Fluent builder for creating activity plan structures
  *
- * NOTE: Repetitions are expanded at creation time.
- * The builder handles the expansion, creating individual steps with metadata.
+ * NOTE: Works with interval-based structure.
+ * All steps must be inside an interval (even single steps become intervals with repetitions=1).
  */
 export class PlanBuilderV2 {
-  private steps: PlanStepV2[] = [];
+  private intervals: IntervalV2[] = [];
 
   /**
-   * Add a single step to the plan
+   * Add a single step to the plan (creates an interval with 1 step and 1 repetition)
    */
   step(config: {
     name: string;
@@ -30,28 +50,35 @@ export class PlanBuilderV2 {
     targets?: IntensityTargetV2[];
     notes?: string;
     description?: string;
-    segmentName?: string;
+    intervalName?: string;
   }): this {
-    this.steps.push({
+    const intervalStep: IntervalStepV2 = {
+      id: generateUUID(),
       name: config.name,
       duration: config.duration,
       targets: config.targets,
       notes: config.notes,
       description: config.description,
-      segmentName: config.segmentName,
+    };
+
+    this.intervals.push({
+      id: generateUUID(),
+      name: config.intervalName || config.name,
+      repetitions: 1,
+      steps: [intervalStep],
     });
+
     return this;
   }
 
   /**
-   * Add an interval (repetition expanded into individual steps)
+   * Add an interval with multiple steps and repetitions
    *
-   * NOTE: This expands repetitions at creation time.
-   * Each repetition becomes individual steps with originalRepetitionCount metadata.
+   * NOTE: Repetitions are stored as metadata, NOT expanded into individual steps.
    */
   interval(config: {
     repeat: number;
-    segmentName?: string;
+    name?: string;
     steps: Array<{
       name: string;
       duration: DurationV2;
@@ -59,33 +86,32 @@ export class PlanBuilderV2 {
       notes?: string;
       description?: string;
     }>;
+    notes?: string;
   }): this {
-    const { repeat, segmentName, steps } = config;
+    const { repeat, name, steps, notes } = config;
 
-    // Expand repetitions into individual steps
-    for (let i = 0; i < repeat; i++) {
-      for (let j = 0; j < steps.length; j++) {
-        const step = steps[j];
-        if (!step) continue;
+    const intervalSteps: IntervalStepV2[] = steps.map((step) => ({
+      id: generateUUID(),
+      name: step.name,
+      duration: step.duration,
+      targets: step.targets,
+      notes: step.notes,
+      description: step.description,
+    }));
 
-        this.steps.push({
-          name: step.name,
-          duration: step.duration,
-          targets: step.targets,
-          notes: step.notes,
-          description: step.description,
-          segmentName: segmentName || `Interval ${i + 1}`,
-          segmentIndex: i,
-          originalRepetitionCount: repeat,
-        });
-      }
-    }
+    this.intervals.push({
+      id: generateUUID(),
+      name: name || `Interval ${this.intervals.length + 1}`,
+      repetitions: repeat,
+      steps: intervalSteps,
+      notes,
+    });
 
     return this;
   }
 
   /**
-   * Add a warmup segment
+   * Add a warmup interval
    */
   warmup(config: {
     name?: string;
@@ -98,12 +124,12 @@ export class PlanBuilderV2 {
       duration: config.duration,
       targets: config.targets,
       notes: config.notes,
-      segmentName: "Warmup",
+      intervalName: "Warmup",
     });
   }
 
   /**
-   * Add a cooldown segment
+   * Add a cooldown interval
    */
   cooldown(config: {
     name?: string;
@@ -116,7 +142,7 @@ export class PlanBuilderV2 {
       duration: config.duration,
       targets: config.targets,
       notes: config.notes,
-      segmentName: "Cooldown",
+      intervalName: "Cooldown",
     });
   }
 
@@ -129,6 +155,7 @@ export class PlanBuilderV2 {
       duration: config.duration,
       targets: [],
       notes: config.notes,
+      intervalName: "Rest",
     });
   }
 
@@ -136,32 +163,41 @@ export class PlanBuilderV2 {
    * Build the final activity plan structure
    */
   build(): ActivityPlanStructureV2 {
-    if (this.steps.length === 0) {
-      throw new Error("Plan must have at least one step");
+    if (this.intervals.length === 0) {
+      throw new Error("Plan must have at least one interval");
     }
 
-    if (this.steps.length > 200) {
-      throw new Error("Plan cannot have more than 200 steps");
+    if (this.intervals.length > 50) {
+      throw new Error("Plan cannot have more than 50 intervals");
     }
 
     return {
       version: 2,
-      steps: this.steps,
+      intervals: this.intervals,
     };
   }
 
   /**
-   * Get current step count
+   * Get current interval count
    */
-  getStepCount(): number {
-    return this.steps.length;
+  getIntervalCount(): number {
+    return this.intervals.length;
   }
 
   /**
-   * Clear all steps
+   * Get total step count (intervals × steps × repetitions)
+   */
+  getTotalStepCount(): number {
+    return this.intervals.reduce((total, interval) => {
+      return total + interval.steps.length * interval.repetitions;
+    }, 0);
+  }
+
+  /**
+   * Clear all intervals
    */
   clear(): this {
-    this.steps = [];
+    this.intervals = [];
     return this;
   }
 }
@@ -210,7 +246,7 @@ export function createVO2MaxPlan(): ActivityPlanStructureV2 {
     })
     .interval({
       repeat: 5,
-      segmentName: "VO2 Max",
+      name: "VO2 Max",
       steps: [
         {
           name: "Hard",
@@ -244,7 +280,7 @@ export function createStrengthPlan(): ActivityPlanStructureV2 {
     })
     .interval({
       repeat: 3,
-      segmentName: "Squats",
+      name: "Squats",
       steps: [
         {
           name: "Squats",
@@ -259,7 +295,7 @@ export function createStrengthPlan(): ActivityPlanStructureV2 {
     })
     .interval({
       repeat: 3,
-      segmentName: "Bench Press",
+      name: "Bench Press",
       steps: [
         {
           name: "Bench Press",
@@ -312,7 +348,7 @@ export function createThresholdPlan(): ActivityPlanStructureV2 {
     })
     .interval({
       repeat: 3,
-      segmentName: "Threshold",
+      name: "Threshold",
       steps: [
         {
           name: "Threshold",

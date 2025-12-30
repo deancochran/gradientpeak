@@ -1,7 +1,8 @@
 import type {
   ActivityPlanStructureV2,
   IntensityTargetV2,
-  PlanStepV2,
+  IntervalStepV2,
+  IntervalV2,
 } from "./schemas/activity_plan_v2";
 import { getStepIntensityColor } from "./schemas/activity_plan_v2";
 
@@ -50,7 +51,7 @@ export interface ActivityStatsV2 {
  * Provides estimation for distance/rep-based durations
  */
 function getDurationSeconds(
-  duration: PlanStepV2["duration"],
+  duration: IntervalStepV2["duration"],
   options?: {
     paceSecondsPerKm?: number; // for distance-based
     secondsPerRep?: number; // for repetition-based
@@ -99,7 +100,7 @@ function getIntensityZone(
 
 /**
  * Extract activity profile data for visualization (V2)
- * Works with flat V2 structure - no flattening needed
+ * Works with interval-based V2 structure
  */
 export function extractActivityProfileV2(
   structure: ActivityPlanStructureV2,
@@ -108,37 +109,49 @@ export function extractActivityProfileV2(
     secondsPerRep?: number;
   },
 ): ActivityProfilePointV2[] {
-  const steps = structure.steps;
+  const intervals = structure.intervals;
   let cumulativeTime = 0;
+  const points: ActivityProfilePointV2[] = [];
+  let globalIndex = 0;
 
-  return steps.map((step, index) => {
-    const primaryTarget = step.targets?.[0];
-    const intensity = primaryTarget?.intensity ?? 0;
-    const duration = getDurationSeconds(step.duration, options);
+  // Iterate through each interval
+  for (const interval of intervals) {
+    // Repeat each interval based on repetitions
+    for (let rep = 0; rep < interval.repetitions; rep++) {
+      // Process each step in the interval
+      for (const step of interval.steps) {
+        const primaryTarget = step.targets?.[0];
+        const intensity = primaryTarget?.intensity ?? 0;
+        const duration = getDurationSeconds(step.duration, options);
 
-    const point: ActivityProfilePointV2 = {
-      index,
-      name: step.name || `Step ${index + 1}`,
-      description: step.description,
-      notes: step.notes,
-      intensity,
-      intensityType: primaryTarget?.type,
-      duration,
-      color: getStepIntensityColor(step),
-      targets: step.targets,
-      cumulativeTime,
-      segmentName: step.segmentName,
-      segmentIndex: step.segmentIndex,
-    };
+        const point: ActivityProfilePointV2 = {
+          index: globalIndex,
+          name: step.name || `Step ${globalIndex + 1}`,
+          description: step.description,
+          notes: step.notes,
+          intensity,
+          intensityType: primaryTarget?.type,
+          duration,
+          color: getStepIntensityColor(step),
+          targets: step.targets,
+          cumulativeTime,
+          segmentName: interval.name,
+          segmentIndex: rep,
+        };
 
-    cumulativeTime += duration;
-    return point;
-  });
+        cumulativeTime += duration;
+        points.push(point);
+        globalIndex++;
+      }
+    }
+  }
+
+  return points;
 }
 
 /**
  * Calculate comprehensive activity statistics (V2)
- * Works with flat V2 structure
+ * Works with interval-based V2 structure
  */
 export function calculateActivityStatsV2(
   structure: ActivityPlanStructureV2,
@@ -148,11 +161,16 @@ export function calculateActivityStatsV2(
     ftpWatts?: number; // for converting watts to FTP%
   },
 ): ActivityStatsV2 {
-  const steps = structure.steps;
+  const intervals = structure.intervals;
   const ftpWatts = options?.ftpWatts ?? 250; // Default FTP for calculations
 
+  // Count total steps across all intervals × repetitions
+  const totalSteps = intervals.reduce((total, interval) => {
+    return total + interval.steps.length * interval.repetitions;
+  }, 0);
+
   const stats: ActivityStatsV2 = {
-    totalSteps: steps.length,
+    totalSteps,
     totalDuration: 0,
     avgPower: 0,
     maxPower: 0,
@@ -165,32 +183,39 @@ export function calculateActivityStatsV2(
   let totalIntensity = 0;
   let totalIntensityTime = 0;
 
-  steps.forEach((step) => {
-    // Calculate duration
-    const duration = getDurationSeconds(step.duration, options);
-    stats.totalDuration += duration;
+  // Iterate through each interval and its repetitions
+  for (const interval of intervals) {
+    for (let rep = 0; rep < interval.repetitions; rep++) {
+      for (const step of interval.steps) {
+        // Calculate duration
+        const duration = getDurationSeconds(step.duration, options);
+        stats.totalDuration += duration;
 
-    // Analyze targets
-    step.targets?.forEach((target) => {
-      if (target.type === "%FTP" || target.type === "watts") {
-        const intensity = target.intensity;
+        // Analyze targets
+        step.targets?.forEach((target) => {
+          if (target.type === "%FTP" || target.type === "watts") {
+            const intensity = target.intensity;
 
-        // Convert watts to FTP% for consistent analysis
-        const ftpPercent =
-          target.type === "watts" ? (intensity / ftpWatts) * 100 : intensity;
+            // Convert watts to FTP% for consistent analysis
+            const ftpPercent =
+              target.type === "watts"
+                ? (intensity / ftpWatts) * 100
+                : intensity;
 
-        totalIntensity += ftpPercent * duration; // Weight by duration
-        totalIntensityTime += duration;
+            totalIntensity += ftpPercent * duration; // Weight by duration
+            totalIntensityTime += duration;
 
-        if (ftpPercent > stats.maxPower) stats.maxPower = ftpPercent;
-        if (ftpPercent > 85) stats.intervalCount++; // High intensity intervals
+            if (ftpPercent > stats.maxPower) stats.maxPower = ftpPercent;
+            if (ftpPercent > 85) stats.intervalCount++; // High intensity intervals
 
-        // Track intensity zones weighted by duration
-        const zone = getIntensityZone(ftpPercent);
-        stats.intensityZones[zone] += duration;
+            // Track intensity zones weighted by duration
+            const zone = getIntensityZone(ftpPercent);
+            stats.intensityZones[zone] += duration;
+          }
+        });
       }
-    });
-  });
+    }
+  }
 
   // Calculate weighted averages
   stats.avgPower =
@@ -212,14 +237,17 @@ export function calculateActivityStatsV2(
  * Calculate total duration for all steps in seconds
  */
 export function calculateTotalDurationSecondsV2(
-  steps: PlanStepV2[],
+  intervals: IntervalV2[],
   options?: {
     paceSecondsPerKm?: number;
     secondsPerRep?: number;
   },
 ): number {
-  return steps.reduce((total, step) => {
-    return total + getDurationSeconds(step.duration, options);
+  return intervals.reduce((total, interval) => {
+    const intervalDuration = interval.steps.reduce((stepTotal, step) => {
+      return stepTotal + getDurationSeconds(step.duration, options);
+    }, 0);
+    return total + intervalDuration * interval.repetitions;
   }, 0);
 }
 
@@ -234,33 +262,37 @@ export function getStepAtTimeV2(
     secondsPerRep?: number;
   },
 ): {
-  step: PlanStepV2;
+  step: IntervalStepV2;
   stepIndex: number;
   stepProgress: number; // 0-1
   stepElapsed: number; // seconds into this step
 } | null {
-  const steps = structure.steps;
+  const intervals = structure.intervals;
   let cumulativeTime = 0;
+  let globalStepIndex = 0;
 
-  for (let i = 0; i < steps.length; i++) {
-    const step = steps[i];
-    if (!step) continue;
+  // Iterate through each interval and its repetitions
+  for (const interval of intervals) {
+    for (let rep = 0; rep < interval.repetitions; rep++) {
+      for (const step of interval.steps) {
+        const duration = getDurationSeconds(step.duration, options);
 
-    const duration = getDurationSeconds(step.duration, options);
+        if (elapsedSeconds < cumulativeTime + duration) {
+          const stepElapsed = elapsedSeconds - cumulativeTime;
+          const stepProgress = duration > 0 ? stepElapsed / duration : 0;
 
-    if (elapsedSeconds < cumulativeTime + duration) {
-      const stepElapsed = elapsedSeconds - cumulativeTime;
-      const stepProgress = duration > 0 ? stepElapsed / duration : 0;
+          return {
+            step,
+            stepIndex: globalStepIndex,
+            stepProgress,
+            stepElapsed,
+          };
+        }
 
-      return {
-        step,
-        stepIndex: i,
-        stepProgress,
-        stepElapsed,
-      };
+        cumulativeTime += duration;
+        globalStepIndex++;
+      }
     }
-
-    cumulativeTime += duration;
   }
 
   return null; // Activity completed

@@ -56,8 +56,12 @@ export const profilesRouter = createTRPCRouter({
 
   update: protectedProcedure
     .input(
-      profileQuickUpdateSchema.extend({
+      profileQuickUpdateSchema.partial().extend({
         avatar_url: z.string().nullable().optional(),
+        bio: z.string().max(500).nullable().optional(),
+        dob: z.string().nullable().optional(),
+        preferred_units: z.enum(["metric", "imperial"]).nullable().optional(),
+        language: z.string().max(10).nullable().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {

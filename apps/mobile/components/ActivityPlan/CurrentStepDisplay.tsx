@@ -9,7 +9,13 @@ import { Icon } from "@/components/ui/icon";
 import { View } from "react-native";
 import { Clock } from "lucide-react-native";
 import { TargetMetricsGrid } from "./TargetMetricsCard";
-import type { CurrentMetrics } from "@/types"; // Adjust this import path as needed
+
+type CurrentMetrics = {
+  power?: number;
+  heartRate?: number;
+  cadence?: number;
+  speed?: number;
+};
 
 // ================================
 // Current Step Display

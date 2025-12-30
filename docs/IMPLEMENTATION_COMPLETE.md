@@ -155,7 +155,7 @@ export {
 
 ### Phase 2: Settings Form Optimization (Completed ✅)
 
-**File Modified**: `apps/mobile/app/(internal)/(tabs)/settings/index.tsx`
+**File Modified**: `apps/mobile/app/(internal)/(tabs)/index.tsx`
 
 **Implementation**:
 - Replaced basic mutation with optimistic update pattern

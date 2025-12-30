@@ -13,7 +13,7 @@ import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
 
 import type {
-  PlanStepV2,
+  IntervalStepV2,
   IntensityTargetV2,
 } from "@repo/core/schemas/activity_plan_v2";
 import * as Haptics from "expo-haptics";
@@ -26,8 +26,8 @@ import { z } from "zod";
 interface StepEditorDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  step?: PlanStepV2;
-  onSave: (step: PlanStepV2) => void;
+  step?: IntervalStepV2;
+  onSave: (step: IntervalStepV2) => void;
   activityType?: string;
   defaultSegmentName?: string;
 }
@@ -36,7 +36,6 @@ interface StepEditorDialogProps {
 const formSchema = z.object({
   name: z.string().min(1, "Step name is required"),
   description: z.string().optional(),
-  segmentName: z.string().optional(),
   duration: z.discriminatedUnion("type", [
     z.object({
       type: z.literal("time"),
@@ -172,7 +171,6 @@ export function StepEditorDialog({
     defaultValues: {
       name: "New Step",
       description: "",
-      segmentName: defaultSegmentName || "",
       duration: { type: "time", seconds: 600 }, // 10 minutes in V2 format
       targets: [],
       notes: "",
@@ -198,7 +196,6 @@ export function StepEditorDialog({
       form.reset({
         name: step.name || "",
         description: step.description || "",
-        segmentName: step.segmentName || defaultSegmentName || "",
         duration: step.duration, // Already in V2 format
         targets: step.targets || [],
         notes: step.notes || "",
@@ -208,7 +205,6 @@ export function StepEditorDialog({
       form.reset({
         name: "New Step",
         description: "",
-        segmentName: defaultSegmentName || "",
         duration: { type: "time", seconds: 600 }, // 10 minutes
         targets: [],
         notes: "",
@@ -227,13 +223,13 @@ export function StepEditorDialog({
       return;
     }
 
-    // Create V2 step - duration is already in V2 format
-    const stepV2: PlanStepV2 = {
+    // Create IntervalStepV2 - duration is already in V2 format
+    const stepV2: IntervalStepV2 = {
+      id: step?.id || require("expo-crypto").randomUUID(),
       name: result.data.name,
       description: result.data.description,
       duration: result.data.duration, // Already in V2 format
       targets: result.data.targets as IntensityTargetV2[],
-      segmentName: result.data.segmentName,
       notes: result.data.notes,
     };
 
@@ -370,23 +366,6 @@ export function StepEditorDialog({
                       onChangeText={onChange}
                       placeholder="Brief description of this step"
                       aria-labelledby="step-description"
-                    />
-                  )}
-                />
-              </View>
-
-              {/* Segment Name */}
-              <View>
-                <Label nativeID="segment-name">Segment (Optional)</Label>
-                <Controller
-                  control={form.control}
-                  name="segmentName"
-                  render={({ field: { onChange, value } }) => (
-                    <Input
-                      value={value || ""}
-                      onChangeText={onChange}
-                      placeholder="e.g., Warmup, Intervals, Cooldown"
-                      aria-labelledby="segment-name"
                     />
                   )}
                 />

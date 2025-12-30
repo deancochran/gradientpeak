@@ -264,7 +264,7 @@ export type IntensityTargetV2 =
 1. `apps/mobile/lib/services/ActivityRecorder/plan.ts`
 2. `apps/mobile/lib/stores/activityPlanCreation.ts`
 3. `apps/mobile/components/ActivityPlan/*.tsx` (18 files)
-4. `apps/mobile/app/(internal)/follow-along/index.tsx`
+4. `apps/mobile/app/(internal)/follow/index.tsx`
 5. `apps/mobile/lib/hooks/forms/useActivityPlanForm.ts`
 
 **Dependencies**: PHASE 1 must be complete
@@ -1729,7 +1729,7 @@ This section provides a comprehensive list of all files that will be created, mo
     - May need updates if rendering plan steps
 
 #### Screen Files (Modified)
-19. **`apps/mobile/app/(internal)/follow-along/index.tsx`** (MODIFIED)
+19. **`apps/mobile/app/(internal)/follow/index.tsx`** (MODIFIED)
     - Update to use V2 plan structure
     - Runtime step completion evaluation
     - Distance/duration tracking with pause support

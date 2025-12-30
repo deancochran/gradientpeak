@@ -2,7 +2,7 @@ import { Text } from "@/components/ui/text";
 import { getDurationMs } from "@/lib/utils/durationConversion";
 import {
   type ActivityPlanStructureV2,
-  type PlanStepV2,
+  type IntervalStepV2,
   getStepIntensityColor,
 } from "@repo/core/schemas/activity_plan_v2";
 import * as Haptics from "expo-haptics";
@@ -32,10 +32,21 @@ export function TimelineChart({
   const svgHeight = height - 16;
   const maxStepHeightValue = maxStepHeight ?? svgHeight - 30;
 
-  const steps: PlanStepV2[] = useMemo(
-    () => structure.steps || [],
-    [structure.steps],
-  );
+  // Expand intervals into flat steps for visualization
+  const steps: IntervalStepV2[] = useMemo(() => {
+    const flatSteps: IntervalStepV2[] = [];
+    const intervals = structure.intervals || [];
+
+    for (const interval of intervals) {
+      for (let i = 0; i < interval.repetitions; i++) {
+        for (const step of interval.steps) {
+          flatSteps.push(step);
+        }
+      }
+    }
+
+    return flatSteps;
+  }, [structure.intervals]);
 
   const totalDuration = useMemo(() => {
     return steps.reduce((total, step) => {

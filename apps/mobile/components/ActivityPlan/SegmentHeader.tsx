@@ -3,11 +3,11 @@ import { Text } from "@/components/ui/text";
 import type { PlanStepV2 } from "@repo/core/schemas/activity_plan_v2";
 import * as Haptics from "expo-haptics";
 import {
-    ChevronDown,
-    ChevronRight,
-    Edit2,
-    MoreVertical,
-    Trash2,
+  ChevronDown,
+  ChevronRight,
+  Edit2,
+  MoreVertical,
+  Trash2,
 } from "lucide-react-native";
 import { useState } from "react";
 import { Alert, Pressable, View } from "react-native";
@@ -15,6 +15,7 @@ import { Alert, Pressable, View } from "react-native";
 interface SegmentHeaderProps {
   segmentName: string;
   steps: PlanStepV2[];
+  repetitions?: number;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   onRename?: () => void;
@@ -24,6 +25,7 @@ interface SegmentHeaderProps {
 export function SegmentHeader({
   segmentName,
   steps,
+  repetitions = 1,
   isCollapsed,
   onToggleCollapse,
   onRename,
@@ -73,9 +75,10 @@ export function SegmentHeader({
     setShowActions(false);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
+    const totalSteps = steps.length * repetitions;
     Alert.alert(
-      "Delete Segment",
-      `Are you sure you want to delete the "${segmentName}" segment and all ${steps.length} step(s) in it?`,
+      "Delete Interval",
+      `Are you sure you want to delete the "${segmentName}" interval${repetitions > 1 ? ` (${repetitions} repetitions)` : ""} and all ${totalSteps} step(s)?`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -107,18 +110,21 @@ export function SegmentHeader({
         </Pressable>
 
         {/* Segment Info */}
-        <Pressable
-          onPress={handleToggle}
-          className="flex-1 active:opacity-70"
-        >
+        <Pressable onPress={handleToggle} className="flex-1 active:opacity-70">
           <View className="flex-row items-baseline gap-2">
             <Text className="text-base font-semibold">{segmentName}</Text>
+            {repetitions > 1 && (
+              <Text className="text-sm text-muted-foreground">
+                × {repetitions}
+              </Text>
+            )}
+            <Text className="text-sm text-muted-foreground">•</Text>
             <Text className="text-sm text-muted-foreground">
               {steps.length} step{steps.length !== 1 ? "s" : ""}
             </Text>
             <Text className="text-sm text-muted-foreground">•</Text>
             <Text className="text-sm text-muted-foreground">
-              {formatDuration(totalDurationMs)}
+              {formatDuration(totalDurationMs * repetitions)}
             </Text>
           </View>
         </Pressable>
@@ -147,22 +153,20 @@ export function SegmentHeader({
                     className="flex-row items-center px-4 py-3 active:bg-muted"
                   >
                     <Edit2 size={16} className="text-foreground mr-3" />
-                    <Text className="text-sm">Rename Segment</Text>
+                    <Text className="text-sm">Rename Interval</Text>
                   </Pressable>
                 )}
 
                 {onDelete && (
                   <>
-                    {onRename && (
-                      <View className="h-px bg-border mx-2" />
-                    )}
+                    {onRename && <View className="h-px bg-border mx-2" />}
                     <Pressable
                       onPress={handleDelete}
                       className="flex-row items-center px-4 py-3 active:bg-muted"
                     >
                       <Trash2 size={16} className="text-destructive mr-3" />
                       <Text className="text-sm text-destructive">
-                        Delete Segment
+                        Delete Interval
                       </Text>
                     </Pressable>
                   </>

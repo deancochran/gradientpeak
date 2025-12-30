@@ -19,7 +19,7 @@ import {
   PublicActivityLocation,
   PublicProfilesRow,
   RecordingServiceActivityPlan,
-  type PlanStepV2,
+  type IntervalStepV2,
 } from "@repo/core";
 
 import {
@@ -30,6 +30,7 @@ import {
 import { LiveMetricsManager } from "./LiveMetricsManager";
 import { LocationManager } from "./location";
 import { NotificationsManager } from "./notification";
+import { PlanManager } from "./plan";
 import { SensorsManager } from "./sensors";
 import { RecordingMetadata, SensorReading } from "./types";
 
@@ -37,6 +38,10 @@ import { EventEmitter } from "expo";
 import { LocationObject } from "expo-location";
 import { AppState, AppStateStatus } from "react-native";
 import { SimplifiedMetrics } from "./SimplifiedMetrics";
+import {
+  validatePlanRequirements,
+  type PlanValidationResult,
+} from "./planValidation";
 
 // ================================
 // Types
@@ -60,7 +65,7 @@ export interface StepProgress {
 export interface StepInfo {
   index: number;
   total: number;
-  current: PlanStepV2 | undefined;
+  current: IntervalStepV2 | undefined;
   progress: StepProgress | null;
   isLast: boolean;
   isFinished: boolean;
@@ -136,7 +141,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // === Plan State (minimal tracking) ===
   private _plan?: RecordingServiceActivityPlan;
   private _plannedActivityId?: string;
-  private _steps: PlanStepV2[] = [];
+  private _steps: IntervalStepV2[] = [];
   private _stepIndex: number = 0;
   private _stepStartMovingTime: number = 0; // Moving time when current step started
 
@@ -145,6 +150,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   // === GPS Availability Cache ===
   private _gpsAvailable: boolean = false;
+
+  // === Route State ===
+  private _currentRoute: any | null = null; // Full route data with coordinates
+  private _routeDistance: number = 0; // Total route distance in meters
+  private _currentRouteDistance: number = 0; // User's current distance along route
 
   // === Private Managers ===
   private notificationsManager?: NotificationsManager;
@@ -172,6 +182,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.liveMetricsManager = new LiveMetricsManager(profile);
     this.locationManager = new LocationManager();
     this.sensorsManager = new SensorsManager();
+
+    // Start location tracking immediately for map preview
+    this.startEarlyLocationTracking();
 
     // Check permissions on initialization
     this.checkPermissions();
@@ -280,12 +293,89 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return this._steps.length;
   }
 
-  get currentStep(): PlanStepV2 | undefined {
+  get currentStep(): IntervalStepV2 | undefined {
     return this._steps[this._stepIndex];
   }
 
   get isFinished(): boolean {
     return this.hasPlan && this._stepIndex >= this._steps.length;
+  }
+
+  // ================================
+  // Route Getters
+  // ================================
+
+  get hasRoute(): boolean {
+    return this._currentRoute !== null;
+  }
+
+  get currentRoute(): any | null {
+    return this._currentRoute;
+  }
+
+  get routeDistance(): number {
+    return this._routeDistance;
+  }
+
+  get currentRouteDistance(): number {
+    return this._currentRouteDistance;
+  }
+
+  get routeProgress(): number {
+    if (!this.hasRoute || this._routeDistance === 0) return 0;
+    return (this._currentRouteDistance / this._routeDistance) * 100;
+  }
+
+  /**
+   * Get recorded GPS path (all location points recorded so far)
+   * Returns array of coordinates for displaying user's path on map
+   */
+  get recordedGpsPath(): Array<{ latitude: number; longitude: number }> {
+    if (!this.liveMetricsManager?.streamBuffer) return [];
+
+    // Get locations from StreamBuffer's in-memory buffer
+    const locations =
+      (this.liveMetricsManager.streamBuffer as any).locations || [];
+
+    return locations.map((loc: any) => ({
+      latitude: loc.latitude,
+      longitude: loc.longitude,
+    }));
+  }
+
+  /**
+   * Get current grade (%) based on route elevation profile
+   * Returns grade at current position along route
+   */
+  get currentRouteGrade(): number {
+    if (!this.hasRoute || !this._currentRoute?.elevation_profile) return 0;
+
+    const profile = this._currentRoute.elevation_profile;
+    if (!profile || profile.length < 2) return 0;
+
+    // Find the segment we're currently on
+    let segmentIndex = 0;
+    for (let i = 0; i < profile.length - 1; i++) {
+      if (
+        this._currentRouteDistance >= profile[i].distance &&
+        this._currentRouteDistance < profile[i + 1].distance
+      ) {
+        segmentIndex = i;
+        break;
+      }
+    }
+
+    // Calculate grade between current and next point
+    const current = profile[segmentIndex];
+    const next = profile[Math.min(segmentIndex + 1, profile.length - 1)];
+
+    const elevationChange = next.elevation - current.elevation;
+    const distanceChange = next.distance - current.distance;
+
+    if (distanceChange === 0) return 0;
+
+    // Grade as percentage: (rise / run) * 100
+    return (elevationChange / distanceChange) * 100;
   }
 
   get stepProgress(): StepProgress {
@@ -395,23 +485,30 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       throw new Error("no plan category or location found");
     }
 
-    // Load V2 structure steps (already flat)
-    try {
-      if (plan.structure && plan.structure.steps) {
-        // V2 structure: steps are already flat, use them directly
-        this._steps = plan.structure.steps;
-        console.log(
-          `[Service] Loaded ${this._steps.length} steps from V2 structure`,
-        );
+    // Load route if plan has one
+    if (plan.route_id) {
+      console.log(
+        "[Service] Plan has route, loading route data:",
+        plan.route_id,
+      );
+      this.loadRoute(plan.route_id).catch((error) => {
+        console.error("[Service] Failed to load route:", error);
+        // Continue without route - don't fail the whole plan selection
+      });
+    }
 
-        if (this._steps.length === 0) {
-          console.warn("[Service] Plan structure has 0 steps");
-        }
-      } else {
-        console.warn(
-          "[Service] Plan has no structure.steps, defaulting to empty steps array",
-        );
-        this._steps = [];
+    // Create PlanManager which will handle expanding intervals to flat steps
+    try {
+      // PlanManager constructor expands intervals × repetitions into flat steps internally
+      const planManager = new PlanManager(plan, plannedId);
+      this._steps = (planManager as any).steps || []; // Access private steps array
+
+      console.log(
+        `[Service] Loaded ${this._steps.length} steps from plan manager`,
+      );
+
+      if (this._steps.length === 0) {
+        console.warn("[Service] Plan structure has 0 steps");
       }
     } catch (error) {
       console.error("[Service] Error loading plan steps:", error);
@@ -422,13 +519,21 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       this._steps = [];
     }
 
+    // Initialize to step 0 (first step)
     this._stepIndex = 0;
-    this._stepStartMovingTime = this.getMovingTime();
+    this._stepStartMovingTime = 0; // Will be set when recording starts
     this.selectedActivityCategory = plan.activity_category;
     this.selectedActivityLocation = plan.activity_location || "indoor";
 
     this.emit("planSelected", { plan, plannedId });
+
+    // Emit step changed immediately so UI shows the first step
     this.emit("stepChanged", this.getStepInfo());
+
+    console.log(
+      "[Service] Plan ready with first step:",
+      this.currentStep?.name,
+    );
   }
 
   clearPlan(): void {
@@ -439,8 +544,194 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this._steps = [];
     this._stepIndex = 0;
     this._stepStartMovingTime = 0;
+    this._currentRoute = null;
+    this._routeDistance = 0;
+    this._currentRouteDistance = 0;
 
     this.emit("planCleared");
+  }
+
+  /**
+   * Load full route data from the server
+   */
+  private async loadRoute(routeId: string): Promise<void> {
+    try {
+      console.log("[Service] Loading route:", routeId);
+
+      // Import vanilla trpc client (for use outside React components)
+      const { vanillaTrpc } = await import("@/lib/trpc");
+
+      // Load full route with coordinates
+      const route = await vanillaTrpc.routes.loadFull.query({ id: routeId });
+
+      if (!route || !route.coordinates || route.coordinates.length === 0) {
+        console.warn("[Service] Route has no coordinates");
+        return;
+      }
+
+      this._currentRoute = route;
+
+      // Calculate total route distance
+      this._routeDistance = this.calculateRouteDistance(route.coordinates);
+      this._currentRouteDistance = 0;
+
+      console.log("[Service] Route loaded successfully:", {
+        id: route.id,
+        name: route.name,
+        points: route.coordinates.length,
+        distance: this._routeDistance,
+      });
+
+      // Emit event for UI to update
+      this.emit("routeLoaded" as any, route);
+    } catch (error) {
+      console.error("[Service] Failed to load route:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Calculate total distance of a route from coordinates
+   */
+  private calculateRouteDistance(
+    coordinates: Array<{ latitude: number; longitude: number }>,
+  ): number {
+    if (coordinates.length < 2) return 0;
+
+    let totalDistance = 0;
+    for (let i = 1; i < coordinates.length; i++) {
+      const prev = coordinates[i - 1];
+      const curr = coordinates[i];
+      totalDistance += this.calculateDistance(
+        prev.latitude,
+        prev.longitude,
+        curr.latitude,
+        curr.longitude,
+      );
+    }
+
+    return totalDistance;
+  }
+
+  /**
+   * Calculate distance between two GPS coordinates using Haversine formula
+   */
+  private calculateDistance(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number,
+  ): number {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = (lat1 * Math.PI) / 180;
+    const φ2 = (lat2 * Math.PI) / 180;
+    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+    const a =
+      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c;
+  }
+
+  /**
+   * Update current position along route
+   * Called from location updates
+   */
+  private updateRouteProgress(latitude: number, longitude: number): void {
+    if (!this.hasRoute || !this._currentRoute?.coordinates) return;
+
+    const previousDistance = this._currentRouteDistance;
+
+    // Find closest point on route and calculate distance traveled
+    const coordinates = this._currentRoute.coordinates;
+    let minDistance = Infinity;
+    let closestIndex = 0;
+
+    for (let i = 0; i < coordinates.length; i++) {
+      const distance = this.calculateDistance(
+        latitude,
+        longitude,
+        coordinates[i].lat,
+        coordinates[i].lng,
+      );
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestIndex = i;
+      }
+    }
+
+    // Calculate distance along route up to closest point
+    let distanceAlongRoute = 0;
+    for (let i = 1; i <= closestIndex; i++) {
+      distanceAlongRoute += this.calculateDistance(
+        coordinates[i - 1].lat,
+        coordinates[i - 1].lng,
+        coordinates[i].lat,
+        coordinates[i].lng,
+      );
+    }
+
+    this._currentRouteDistance = distanceAlongRoute;
+
+    // Apply grade-based resistance for indoor activities with FTMS
+    // Only if: indoor location, has trainer, recording, NOT in manual control mode
+    if (
+      this.selectedActivityLocation === "indoor" &&
+      this.state === "recording" &&
+      !this.manualControlOverride &&
+      Math.abs(distanceAlongRoute - previousDistance) > 10 // Only update every 10m
+    ) {
+      this.applyRouteGradeToTrainer();
+    }
+  }
+
+  /**
+   * Apply current route grade to FTMS trainer as resistance
+   * For indoor training with outdoor routes (virtual route riding)
+   */
+  private async applyRouteGradeToTrainer(): Promise<void> {
+    const trainer = this.sensorsManager.getControllableTrainer();
+    if (!trainer) return;
+
+    const grade = this.currentRouteGrade;
+
+    // Check if trainer supports slope/grade control
+    if (trainer.ftmsFeatures?.inclinationSupported) {
+      console.log(
+        `[Service] Applying route grade to trainer: ${grade.toFixed(1)}%`,
+      );
+
+      try {
+        const success = await this.sensorsManager.setTargetInclination(grade);
+        if (!success) {
+          console.warn(`[Service] Failed to set grade: ${grade.toFixed(1)}%`);
+        }
+      } catch (error) {
+        console.error("[Service] Error applying route grade:", error);
+      }
+    }
+  }
+
+  /**
+   * Start GPS location tracking early (before recording starts)
+   * This allows the map to show the user's location in pending state
+   */
+  private async startEarlyLocationTracking(): Promise<void> {
+    try {
+      console.log("[Service] Starting early location tracking for map preview");
+      await this.locationManager.startForegroundTracking();
+      this._gpsAvailable = true;
+      console.log("[Service] Early location tracking started successfully");
+    } catch (error) {
+      console.error(
+        "[Service] Failed to start early location tracking:",
+        error,
+      );
+      // Don't throw - this is a nice-to-have for map preview
+    }
   }
 
   /**
@@ -482,6 +773,18 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // ================================
   // Recording Lifecycle
   // ================================
+
+  /**
+   * Validate plan requirements before starting recording
+   * Returns validation result with missing metrics and warnings
+   */
+  public validatePlanRequirements(): PlanValidationResult | null {
+    if (!this._plan) {
+      return null; // No plan, no validation needed
+    }
+
+    return validatePlanRequirements(this._plan, this.profile);
+  }
 
   async startRecording() {
     console.log("[Service] Starting recording");
@@ -533,7 +836,19 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.startTime = Date.now();
     this.pausedTime = 0;
     this.lastPauseTime = undefined;
-    this._stepStartMovingTime = 0; // Reset step timer for plan
+
+    // Reset step timer for plan (will be 0 when recording starts)
+    this._stepStartMovingTime = 0;
+
+    // If we have a plan, emit the initial step info now that recording has started
+    if (this.hasPlan && this.currentStep) {
+      console.log(
+        "[Service] Recording started with plan, step:",
+        this.currentStep.name,
+      );
+      this.emit("stepChanged", this.getStepInfo());
+    }
+
     this.startElapsedTimeUpdates();
 
     // Start location tracking
@@ -637,6 +952,25 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // ================================
 
   /**
+   * Update activity configuration (category/location) without clearing plan or route
+   * Use this when the user switches between indoor/outdoor during configuration
+   */
+  updateActivityConfiguration(
+    category: PublicActivityCategory,
+    location: PublicActivityLocation,
+  ): void {
+    console.log(
+      "[Service] Updating activity configuration:",
+      category,
+      location,
+    );
+    this.selectedActivityCategory = category;
+    this.selectedActivityLocation = location;
+    // Don't clear plan - preserve any existing plan/route
+    this.emit("activitySelected", { category, location });
+  }
+
+  /**
    * Select an unplanned activity
    * Clears any existing plan and updates the activity category and location
    */
@@ -671,18 +1005,30 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
           activity_category: payload.plan.activity_category || payload.category,
           activity_location: payload.plan.activity_location || payload.location,
           structure: payload.plan.structure,
+          route_id: payload.plan.route_id || null,
         };
 
         console.log("[Service] Selecting plan from payload:", plan.name);
         this.selectPlan(plan, payload.plannedActivityId);
       } else {
-        // Quick start activity
-        console.log(
-          "[Service] Selecting unplanned activity from payload:",
-          payload.category,
-          payload.location,
-        );
-        this.selectUnplannedActivity(payload.category, payload.location);
+        // Quick start activity - only clear plan if this is initial setup
+        // If state is 'pending', this is initial setup, so clear any existing plan
+        // Otherwise, just update configuration to preserve user's setup
+        if (this.state === "pending") {
+          console.log(
+            "[Service] Selecting unplanned activity from payload (initial):",
+            payload.category,
+            payload.location,
+          );
+          this.selectUnplannedActivity(payload.category, payload.location);
+        } else {
+          console.log(
+            "[Service] Updating activity configuration from payload:",
+            payload.category,
+            payload.location,
+          );
+          this.updateActivityConfiguration(payload.category, payload.location);
+        }
       }
 
       this.emit("payloadProcessed", payload);
@@ -804,7 +1150,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   /**
    * Apply targets from a plan step to the trainer
    */
-  private async applyStepTargets(step: PlanStepV2): Promise<void> {
+  private async applyStepTargets(step: IntervalStepV2): Promise<void> {
     if (!step.targets) {
       console.log("[Service] No targets for this step");
       return;
@@ -849,9 +1195,22 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   ): number | null {
     // Handle percentage of FTP
     if (target.type === "%FTP") {
-      const ftp = this.profile.ftp || 200; // Fallback to 200W
+      if (!this.profile.ftp) {
+        console.warn(
+          "[Service] Cannot apply %FTP target - no FTP value in profile. User should set FTP in settings.",
+        );
+        this.emit(
+          "error",
+          "Cannot apply power target: FTP not set in profile. Please set your FTP in settings.",
+        );
+        return null;
+      }
       const percentage = target.intensity;
-      return Math.round((percentage / 100) * ftp);
+      const watts = Math.round((percentage / 100) * this.profile.ftp);
+      console.log(
+        `[Service] Resolved %FTP target: ${percentage}% of ${this.profile.ftp}W = ${watts}W`,
+      );
+      return watts;
     }
 
     // Handle absolute watts
@@ -868,10 +1227,12 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // ================================
 
   private handleSensorData(reading: SensorReading) {
-    if (this.state !== "recording") return;
-
-    // Send to LiveMetricsManager for processing
+    // Always ingest sensor data for real-time display (even before recording starts)
+    // The LiveMetricsManager will only persist data when recording is active
     this.liveMetricsManager.ingestSensorData(reading);
+
+    // Only update notifications and do recording-specific processing when actually recording
+    if (this.state !== "recording") return;
 
     // Update notification with key metrics
     if (
@@ -893,18 +1254,29 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   private handleLocationData(location: LocationObject) {
-    if (this.state !== "recording" && this.state !== "paused") return;
-
     const timestamp = location.timestamp || Date.now();
 
-    // Send to LiveMetricsManager for processing
+    // Always ingest location data for real-time display (even in pending state for map preview)
+    // The LiveMetricsManager will only persist data when recording is active
     this.liveMetricsManager.ingestLocationData({
       latitude: location.coords.latitude,
       longitude: location.coords.longitude,
       altitude: location.coords.altitude || undefined,
       accuracy: location.coords.accuracy || undefined,
+      heading: location.coords.heading || undefined,
       timestamp: timestamp,
     });
+
+    // Only process for recording logic when actually recording/paused
+    if (this.state !== "recording" && this.state !== "paused") return;
+
+    // Update route progress if a route is loaded
+    if (this.hasRoute) {
+      this.updateRouteProgress(
+        location.coords.latitude,
+        location.coords.longitude,
+      );
+    }
   }
 
   // ================================
@@ -960,15 +1332,20 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   /**
    * Get total moving time (excluding paused time)
    * This is the time used for plan step progression
+   * Returns time in milliseconds
    */
   public getMovingTime(): number {
     if (!this.startTime) return 0;
 
-    const elapsed = Date.now() - this.startTime;
-    const totalPaused =
-      this.state === "paused"
-        ? this.pausedTime + (Date.now() - (this.lastPauseTime || 0))
-        : this.pausedTime;
+    const now = Date.now();
+    const elapsed = now - this.startTime;
+
+    // Calculate total paused time
+    let totalPaused = this.pausedTime;
+    if (this.state === "paused" && this.lastPauseTime) {
+      // Add current pause duration
+      totalPaused += now - this.lastPauseTime;
+    }
 
     return Math.max(0, elapsed - totalPaused);
   }

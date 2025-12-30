@@ -7,7 +7,9 @@
     ".": "./index.ts",
     "./calculations": "./calculations/index.ts",
     "./estimation": "./estimation/index.ts",
-    "./schemas/*": "./schemas/*.ts"
+    "./schemas/*": "./schemas/*.ts",
+    "./utils": "./utils/index.ts",
+    "./utils/*": "./utils/*.ts"
   },
   "scripts": {
     "lint": "eslint .",

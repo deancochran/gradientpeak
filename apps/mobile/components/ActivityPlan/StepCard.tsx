@@ -14,7 +14,7 @@ import { View } from "react-native";
 
 interface StepCardProps {
   step: PlanStepV2;
-  index: number;
+  index?: number;
   isActive?: boolean;
   onPress?: () => void;
   onLongPress?: () => void;

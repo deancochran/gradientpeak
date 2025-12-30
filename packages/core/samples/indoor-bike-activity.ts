@@ -9,68 +9,12 @@ import type { RecordingServiceActivityPlan } from "../schemas";
 import { createPlan, Duration, Target } from "../schemas/activity_payload";
 
 /**
- * Beginner Indoor Bike Activity - Sweet Spot Intervals
- * Total time: 60 minutes
- * Estimated TSS: ~75
- */
-export const SAMPLE_SWEET_SPOT_WORKOUT: RecordingServiceActivityPlan = {
-  version: "2.0",
-  name: "Sweet Spot Intervals",
-  description:
-    "60-minute indoor trainer activity focusing on sweet spot power development. Focus on maintaining steady power output during intervals. Use cadence of 85-95 RPM throughout",
-  activity_category: "bike",
-  activity_location: "indoor",
-  structure: createPlan()
-    .step({
-      name: "Easy Warm-up",
-      duration: Duration.minutes(10),
-      targets: [Target.ftp(55)],
-      notes: "Focus on smooth pedaling and getting the legs moving",
-    })
-    .step({
-      name: "Build to Threshold",
-      duration: Duration.minutes(5),
-      targets: [Target.ftp(85)],
-      notes: "Steady progressive increase in effort",
-    })
-    .step({
-      name: "Recovery",
-      duration: Duration.minutes(3),
-      targets: [Target.ftp(55)],
-      notes: "Keep legs moving, prepare for main set",
-    })
-    .interval({
-      repeat: 4,
-      steps: [
-        {
-          name: "Sweet Spot Interval",
-          duration: Duration.minutes(8),
-          targets: [Target.ftp(90)],
-          notes: "Hold steady power in sweet spot zone (88-94% FTP)",
-        },
-        {
-          name: "Recovery",
-          duration: Duration.minutes(3),
-          targets: [Target.ftp(55)],
-          notes: "Active recovery, keep pedaling easy",
-        },
-      ],
-    })
-    .step({
-      name: "Cool-down",
-      duration: Duration.minutes(10),
-      targets: [Target.ftp(50)],
-      notes: "Easy spinning to flush the legs",
-    })
-    .build(),
-};
-
-/**
  * Advanced Indoor Bike Activity - VO2 Max Intervals
  * Total time: 75 minutes
  * Estimated TSS: ~95
  */
 export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
+  id: "8a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d",
   version: "2.0",
   name: "VO2 Max Development",
   description: "75-minute activity with challenging VO2 max intervals",
@@ -139,6 +83,7 @@ export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
  * Estimated TSS: ~25
  */
 export const SAMPLE_RECOVERY_WORKOUT: RecordingServiceActivityPlan = {
+  id: "9b2c3d4e-5f6a-7b8c-9d0e-1f2a3b4c5d6e",
   version: "2.0",
   name: "Active Recovery Ride",
   description: "45-minute easy recovery ride to promote blood flow",
@@ -173,6 +118,7 @@ export const SAMPLE_RECOVERY_WORKOUT: RecordingServiceActivityPlan = {
  * Estimated TSS: ~55
  */
 export const SAMPLE_SPRINT_WORKOUT: RecordingServiceActivityPlan = {
+  id: "0c3d4e5f-6a7b-8c9d-0e1f-2a3b4c5d6e7f",
   version: "2.0",
   name: "Sprint Power Development",
   description:
@@ -230,6 +176,7 @@ export const SAMPLE_SPRINT_WORKOUT: RecordingServiceActivityPlan = {
 };
 
 export const SAMPLE_THRESHOLD_HR_WORKOUT: RecordingServiceActivityPlan = {
+  id: "1d4e5f6a-7b8c-9d0e-1f2a-3b4c5d6e7f8a",
   version: "2.0",
   name: "Threshold Heart Rate Intervals",
   description:
@@ -277,6 +224,7 @@ export const SAMPLE_THRESHOLD_HR_WORKOUT: RecordingServiceActivityPlan = {
 };
 
 export const SAMPLE_TESTING_WORKOUT: RecordingServiceActivityPlan = {
+  id: "2e5f6a7b-8c9d-0e1f-2a3b-4c5d6e7f8a9b",
   version: "2.0",
   name: "Comprehensive 1-Minute Schema Test",
   description:
@@ -334,12 +282,134 @@ export const SAMPLE_TESTING_WORKOUT: RecordingServiceActivityPlan = {
     .build(),
 };
 
+export const SYSTEM_SWEET_SPOT_WORKOUT: RecordingServiceActivityPlan = {
+  id: "d2c8f1a0-5b9e-4e3a-8f7d-9c6b4a2e1f0d",
+  version: "2.0",
+  name: "Sweet Spot Intervals",
+  description: "Classic sweet spot workout with 3x10min intervals at 90% FTP",
+  activity_category: "bike",
+  activity_location: "indoor",
+  structure: createPlan()
+    .warmup({
+      duration: Duration.minutes(10),
+      targets: [Target.ftp(60)],
+      notes: "Easy spin to warm up",
+    })
+    .step({
+      name: "Build",
+      duration: Duration.minutes(5),
+      targets: [Target.ftp(75)],
+      notes: "Gradually increase intensity",
+    })
+    .interval({
+      repeat: 3,
+      name: "Sweet Spot",
+      steps: [
+        {
+          name: "Sweet Spot",
+          duration: Duration.minutes(10),
+          targets: [Target.ftp(90), Target.bpm(155)],
+          notes: "Steady effort in sweet spot zone",
+        },
+        {
+          name: "Recovery",
+          duration: Duration.minutes(5),
+          targets: [Target.ftp(55)],
+          notes: "Easy recovery spin",
+        },
+      ],
+    })
+    .cooldown({
+      duration: Duration.minutes(10),
+      targets: [Target.ftp(50)],
+      notes: "Easy spin to cool down",
+    })
+    .build(),
+};
+
+export const SYSTEM_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
+  id: "e3d9a2b1-6c0f-5f4b-9a8e-0d7c5b3f2a1e",
+  version: "2.0",
+  name: "VO2 Max Intervals",
+  description:
+    "5x3min at 120% FTP with 3min recovery - High intensity aerobic capacity development",
+  activity_category: "bike",
+  activity_location: "indoor",
+  structure: createPlan()
+    .warmup({
+      duration: Duration.minutes(15),
+      targets: [Target.ftp(65)],
+    })
+    .interval({
+      repeat: 5,
+      name: "VO2 Max",
+      steps: [
+        {
+          name: "Hard",
+          duration: Duration.minutes(3),
+          targets: [Target.ftp(120), Target.bpm(180)],
+          notes: "Maximum sustainable effort",
+        },
+        {
+          name: "Recovery",
+          duration: Duration.minutes(3),
+          targets: [Target.ftp(50)],
+          notes: "Full recovery",
+        },
+      ],
+    })
+    .cooldown({
+      duration: Duration.minutes(10),
+      targets: [Target.ftp(55)],
+    })
+    .build(),
+};
+
+export const SYSTEM_FTP_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
+  id: "f4e0b3c2-7d1a-6a5c-0b9f-1e8d6c4a3b2f",
+  version: "2.0",
+  name: "FTP Intervals",
+  description:
+    "4x8min at 95% FTP (threshold) - Build sustainable power at threshold",
+  activity_category: "bike",
+  activity_location: "indoor",
+  structure: createPlan()
+    .warmup({
+      duration: Duration.minutes(15),
+      targets: [Target.ftp(65)],
+    })
+    .interval({
+      repeat: 4,
+      name: "Threshold",
+      steps: [
+        {
+          name: "Threshold",
+          duration: Duration.minutes(8),
+          targets: [Target.ftp(95), Target.thresholdHR(100)],
+          notes: "At threshold - max sustainable for 1 hour",
+        },
+        {
+          name: "Recovery",
+          duration: Duration.minutes(4),
+          targets: [Target.ftp(55)],
+        },
+      ],
+    })
+    .cooldown({
+      duration: Duration.minutes(10),
+      targets: [Target.ftp(60)],
+    })
+    .build(),
+};
+
 export const SAMPLE_INDOOR_TRAINER_ACTIVITIES: Array<RecordingServiceActivityPlan> =
   [
-    SAMPLE_SWEET_SPOT_WORKOUT,
     SAMPLE_VO2_MAX_WORKOUT,
     SAMPLE_RECOVERY_WORKOUT,
     SAMPLE_SPRINT_WORKOUT,
     SAMPLE_THRESHOLD_HR_WORKOUT,
     SAMPLE_TESTING_WORKOUT,
+    SYSTEM_SWEET_SPOT_WORKOUT,
+    SYSTEM_VO2_MAX_WORKOUT,
+    SYSTEM_FTP_INTERVALS_WORKOUT,
   ];

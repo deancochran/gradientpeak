@@ -1,15 +1,18 @@
-import type { DurationV2 } from "@repo/core/schemas/activity_plan_v2";
-
 /**
  * V2 Duration Conversion Utilities
  *
- * These utilities help convert between V2 duration format and UI representations.
- * V2 uses a flat structure with type-specific fields:
- * - time: { type: "time", seconds: number }
- * - distance: { type: "distance", meters: number }
- * - repetitions: { type: "repetitions", count: number }
- * - untilFinished: { type: "untilFinished" }
+ * This file re-exports duration utilities from @repo/core
+ * Use the core package directly for new code: import { formatDurationV2, getDurationSecondsV2 } from "@repo/core"
+ *
+ * @deprecated Import from @repo/core instead
  */
+
+import {
+  calculateTotalDurationV2,
+  formatDurationV2 as formatDurationCore,
+  getDurationSecondsV2 as getDurationSecondsCore,
+} from "@repo/core";
+import type { DurationV2 } from "@repo/core/schemas/activity_plan_v2";
 
 // ==============================
 // UI -> V2 Conversion
@@ -157,34 +160,15 @@ export function convertV2ToUIFormat(duration: DurationV2): DurationUIOutput {
  * Returns estimated duration for distance/reps
  */
 export function getDurationMs(duration: DurationV2): number {
-  switch (duration.type) {
-    case "time":
-      return duration.seconds * 1000;
-
-    case "distance":
-      // Estimate based on 5 min/km pace
-      return (duration.meters / 1000) * 5 * 60 * 1000;
-
-    case "repetitions":
-      // Estimate 30 seconds per rep
-      return duration.count * 30 * 1000;
-
-    case "untilFinished":
-      return 0;
-
-    default:
-      return 0;
-  }
+  return getDurationSecondsCore(duration) * 1000;
 }
 
 /**
  * Get duration in seconds (for time-based durations only)
+ * @deprecated Use getDurationSecondsV2 from @repo/core instead
  */
 export function getDurationSeconds(duration: DurationV2): number {
-  if (duration.type === "time") {
-    return duration.seconds;
-  }
-  return Math.round(getDurationMs(duration) / 1000);
+  return getDurationSecondsCore(duration);
 }
 
 // ==============================
@@ -193,41 +177,10 @@ export function getDurationSeconds(duration: DurationV2): number {
 
 /**
  * Format duration for display
+ * @deprecated Use formatDurationV2 from @repo/core instead
  */
 export function formatDuration(duration: DurationV2): string {
-  switch (duration.type) {
-    case "time": {
-      const seconds = duration.seconds;
-      const hours = Math.floor(seconds / 3600);
-      const minutes = Math.floor((seconds % 3600) / 60);
-      const secs = seconds % 60;
-
-      if (hours > 0) {
-        return `${hours}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-      }
-      if (minutes > 0) {
-        return `${minutes}:${secs.toString().padStart(2, "0")}`;
-      }
-      return `${secs}s`;
-    }
-
-    case "distance": {
-      const meters = duration.meters;
-      if (meters >= 1000) {
-        return `${(meters / 1000).toFixed(2)} km`;
-      }
-      return `${meters} m`;
-    }
-
-    case "repetitions":
-      return `${duration.count} reps`;
-
-    case "untilFinished":
-      return "Until Finished";
-
-    default:
-      return "Unknown";
-  }
+  return formatDurationCore(duration);
 }
 
 /**
@@ -269,9 +222,9 @@ export function formatDurationShort(duration: DurationV2): string {
 
 /**
  * Calculate total duration from multiple steps
+ * @deprecated Use calculateTotalDurationV2 from @repo/core instead
  */
 export function calculateTotalDurationMs(durations: DurationV2[]): number {
-  return durations.reduce((total, duration) => {
-    return total + getDurationMs(duration);
-  }, 0);
+  const steps = durations.map((duration) => ({ duration }));
+  return calculateTotalDurationV2(steps) * 1000;
 }

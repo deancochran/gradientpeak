@@ -2,7 +2,7 @@ import { ChartSkeleton, EmptyStateCard } from "@/components/shared";
 import { Text } from "@/components/ui/text";
 import { Calendar } from "lucide-react-native";
 import { Pressable, View } from "react-native";
-import { WeeklyProgressChart } from "../../app/(internal)/(tabs)/trends/components/charts";
+import { WeeklyProgressChart } from "@/components/charts";
 
 interface WeeklySummary {
   weekStart: string;

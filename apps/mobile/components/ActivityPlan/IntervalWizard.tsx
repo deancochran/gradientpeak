@@ -5,8 +5,9 @@ import { Label } from "@/components/ui/label";
 import { Text } from "@/components/ui/text";
 import { convertUIToV2Duration } from "@/lib/utils/durationConversion";
 import type {
-    IntensityTargetV2,
-    PlanStepV2,
+  IntensityTargetV2,
+  IntervalV2,
+  IntervalStepV2,
 } from "@repo/core/schemas/activity_plan_v2";
 import * as Haptics from "expo-haptics";
 import { useEffect, useState } from "react";
@@ -16,7 +17,7 @@ import Svg, { Rect, Text as SvgText } from "react-native-svg";
 interface IntervalWizardProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave: (steps: PlanStepV2[]) => void;
+  onSave: (interval: IntervalV2) => void;
   defaultSegmentName?: string;
 }
 
@@ -81,50 +82,51 @@ export function IntervalWizard({
   };
 
   const handleSave = () => {
-    const expandedSteps: PlanStepV2[] = [];
+    const steps: IntervalStepV2[] = [];
 
-    for (let i = 0; i < config.repeatCount; i++) {
-      // Work step
-      expandedSteps.push({
-        name: config.workName,
-        duration: convertUIToV2Duration({
-          type: "time",
-          value: config.workDuration,
-          unit: config.workUnit,
-        }),
-        targets: [
-          {
-            type: "%FTP",
-            intensity: config.workIntensity,
-          } as IntensityTargetV2,
-        ],
-        segmentName: config.segmentName,
-        segmentIndex: i,
-        originalRepetitionCount: config.repeatCount,
-      });
+    // Work step
+    steps.push({
+      id: require("expo-crypto").randomUUID(),
+      name: config.workName,
+      duration: convertUIToV2Duration({
+        type: "time",
+        value: config.workDuration,
+        unit: config.workUnit,
+      }),
+      targets: [
+        {
+          type: "%FTP",
+          intensity: config.workIntensity,
+        } as IntensityTargetV2,
+      ],
+    });
 
-      // Rest step
-      expandedSteps.push({
-        name: config.restName,
-        duration: convertUIToV2Duration({
-          type: "time",
-          value: config.restDuration,
-          unit: config.restUnit,
-        }),
-        targets: [
-          {
-            type: "%FTP",
-            intensity: config.restIntensity,
-          } as IntensityTargetV2,
-        ],
-        segmentName: config.segmentName,
-        segmentIndex: i,
-        originalRepetitionCount: config.repeatCount,
-      });
-    }
+    // Rest step
+    steps.push({
+      id: require("expo-crypto").randomUUID(),
+      name: config.restName,
+      duration: convertUIToV2Duration({
+        type: "time",
+        value: config.restDuration,
+        unit: config.restUnit,
+      }),
+      targets: [
+        {
+          type: "%FTP",
+          intensity: config.restIntensity,
+        } as IntensityTargetV2,
+      ],
+    });
+
+    const interval: IntervalV2 = {
+      id: require("expo-crypto").randomUUID(),
+      name: config.segmentName,
+      repetitions: config.repeatCount,
+      steps: steps,
+    };
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    onSave(expandedSteps);
+    onSave(interval);
     onOpenChange(false);
   };
 
@@ -204,9 +206,7 @@ export function IntervalWizard({
 
               {/* Work Section */}
               <View className="border border-border rounded-lg p-4 bg-muted/30">
-                <Text className="text-base font-semibold mb-3">
-                  Work Phase
-                </Text>
+                <Text className="text-base font-semibold mb-3">Work Phase</Text>
 
                 <View className="gap-3">
                   <View>
@@ -238,7 +238,9 @@ export function IntervalWizard({
                       <View className="flex-row gap-1">
                         <Button
                           variant={
-                            config.workUnit === "seconds" ? "default" : "outline"
+                            config.workUnit === "seconds"
+                              ? "default"
+                              : "outline"
                           }
                           size="sm"
                           onPress={() =>
@@ -258,7 +260,9 @@ export function IntervalWizard({
                         </Button>
                         <Button
                           variant={
-                            config.workUnit === "minutes" ? "default" : "outline"
+                            config.workUnit === "minutes"
+                              ? "default"
+                              : "outline"
                           }
                           size="sm"
                           onPress={() =>
@@ -297,9 +301,7 @@ export function IntervalWizard({
 
               {/* Rest Section */}
               <View className="border border-border rounded-lg p-4 bg-muted/30">
-                <Text className="text-base font-semibold mb-3">
-                  Rest Phase
-                </Text>
+                <Text className="text-base font-semibold mb-3">Rest Phase</Text>
 
                 <View className="gap-3">
                   <View>
@@ -331,7 +333,9 @@ export function IntervalWizard({
                       <View className="flex-row gap-1">
                         <Button
                           variant={
-                            config.restUnit === "seconds" ? "default" : "outline"
+                            config.restUnit === "seconds"
+                              ? "default"
+                              : "outline"
                           }
                           size="sm"
                           onPress={() =>
@@ -351,7 +355,9 @@ export function IntervalWizard({
                         </Button>
                         <Button
                           variant={
-                            config.restUnit === "minutes" ? "default" : "outline"
+                            config.restUnit === "minutes"
+                              ? "default"
+                              : "outline"
                           }
                           size="sm"
                           onPress={() =>
@@ -454,7 +460,10 @@ export function IntervalWizard({
                       rx="4"
                     />
                     <SvgText
-                      x={previewWidth * workPercent + (previewWidth * restPercent) / 2}
+                      x={
+                        previewWidth * workPercent +
+                        (previewWidth * restPercent) / 2
+                      }
                       y={previewHeight / 2}
                       fontSize="12"
                       fill="white"

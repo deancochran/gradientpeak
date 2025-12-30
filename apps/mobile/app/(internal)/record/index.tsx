@@ -1,3 +1,4 @@
+import { ActivitySelectionModal } from "@/components/ActivitySelectionModal";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { RecordingCarousel } from "@/components/RecordingCarousel";
 import { Button } from "@/components/ui/button";
@@ -14,15 +15,24 @@ import { useRecordingCapabilities } from "@/lib/hooks/useRecordingConfig";
 import { useAllPermissionsGranted } from "@/lib/hooks/useStandalonePermissions";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
+import type {
+  ActivityPayload,
+  PublicActivityCategory,
+  PublicActivityLocation,
+} from "@repo/core";
 import { useRouter } from "expo-router";
 import {
+  Activity,
   AlertTriangle,
+  Bike,
   Bluetooth,
-  ChevronLeft,
   ChevronRight,
+  Dumbbell,
+  Footprints,
   Pause,
   Play,
   Square,
+  Waves,
   X,
   Zap,
 } from "lucide-react-native";
@@ -51,6 +61,7 @@ function RecordScreen() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [trainerNotificationDismissed, setTrainerNotificationDismissed] =
     useState(false);
+  const [activityModalVisible, setActivityModalVisible] = useState(false);
   const insets = useSafeAreaInsets();
 
   // Use shared service from context (provided by _layout.tsx)
@@ -60,7 +71,8 @@ function RecordScreen() {
   const state = useRecordingState(service);
   const { count: sensorCount } = useSensors(service);
   const plan = usePlan(service);
-  const { isOutdoorActivity } = useActivityStatus(service);
+  const { isOutdoorActivity, activityCategory, activityLocation } =
+    useActivityStatus(service);
   const { start, pause, resume, finish } = useRecorderActions(service);
   const { allGranted: allPermissionsGranted, isLoading: permissionsLoading } =
     useAllPermissionsGranted();
@@ -73,7 +85,7 @@ function RecordScreen() {
     });
   }, [allPermissionsGranted, permissionsLoading]);
 
-  // Initialize from store selection
+  // Initialize from store selection (or show inline selector)
   useEffect(() => {
     if (!service || isInitialized) return;
 
@@ -81,12 +93,23 @@ function RecordScreen() {
       try {
         console.log("[RecordModal] Loading selection from store");
 
-        // Get selection from store
-        const selection = activitySelectionStore.consumeSelection();
+        // Get selection from store (don't consume yet)
+        const selection = activitySelectionStore.peekSelection();
+
         if (!selection) {
-          console.error("[RecordModal] No selection found in store");
-          Alert.alert("Error", "No activity selected");
-          router.back();
+          // No pre-loaded activity - this is a direct tab access
+          // Default to outdoor run
+          console.log(
+            "[RecordModal] No selection found - defaulting to outdoor run",
+          );
+
+          const defaultPayload: ActivityPayload = {
+            category: "run",
+            location: "outdoor",
+          };
+
+          service.selectActivityFromPayload(defaultPayload);
+          setIsInitialized(true);
           return;
         }
 
@@ -101,6 +124,9 @@ function RecordScreen() {
         console.log("[RecordModal] Processing selection with service method");
         service.selectActivityFromPayload(selection);
 
+        // Now consume the selection
+        activitySelectionStore.consumeSelection();
+
         setIsInitialized(true);
       } catch (error) {
         console.error("[RecordModal] Error initializing from store:", error);
@@ -114,6 +140,48 @@ function RecordScreen() {
 
     initializeFromStore();
   }, [service, isInitialized, router]);
+
+  // Handle activity selection from modal (for quick start)
+  const handleActivitySelect = useCallback(
+    (category: PublicActivityCategory, location: PublicActivityLocation) => {
+      if (!service) {
+        Alert.alert("Error", "Service not initialized");
+        return;
+      }
+
+      console.log("[RecordModal] Activity selected from modal:", {
+        category,
+        location,
+      });
+
+      const payload: ActivityPayload = {
+        category,
+        location,
+      };
+
+      // Initialize the service with quick start
+      // Note: Modal handles closing itself, no need to set state here
+      service.selectActivityFromPayload(payload);
+    },
+    [service],
+  );
+
+  // Get activity icon based on category (memoized to prevent re-computation)
+  const ActivityIcon = useMemo(() => {
+    switch (activityCategory) {
+      case "run":
+        return Footprints;
+      case "bike":
+        return Bike;
+      case "swim":
+        return Waves;
+      case "strength":
+        return Dumbbell;
+      case "other":
+      default:
+        return Activity;
+    }
+  }, [activityCategory]);
 
   // Handle start action - request permissions if needed, then start
   const handleStart = useCallback(async () => {
@@ -155,8 +223,7 @@ function RecordScreen() {
                 { text: "Cancel", style: "cancel" },
                 {
                   text: "Open Settings",
-                  onPress: () =>
-                    router.push("/(internal)/(tabs)/settings/permissions"),
+                  onPress: () => router.push("/permissions"),
                 },
               ],
             );
@@ -173,7 +240,67 @@ function RecordScreen() {
       }
     }
 
-    // All permissions granted, start recording
+    // Validate plan requirements before starting
+    if (service) {
+      const validation = service.validatePlanRequirements();
+
+      if (validation && !validation.isValid) {
+        // Plan has missing required metrics
+        const metricDetails = validation.missingMetrics
+          .map((m) => `• ${m.name}\n  ${m.description}`)
+          .join("\n\n");
+
+        Alert.alert(
+          "Profile Setup Required",
+          `This workout requires the following metrics:\n\n${metricDetails}\n\nWithout these, automatic trainer control (ERG mode) and accurate targets will not be available.\n\nSet these in Settings → Profile.`,
+          [
+            {
+              text: "Go to Settings",
+              onPress: () => {
+                router.push("/settings");
+              },
+            },
+            {
+              text: "Continue Anyway",
+              style: "destructive",
+              onPress: async () => {
+                console.log(
+                  "[RecordModal] User chose to continue without required metrics",
+                );
+                try {
+                  await start();
+                  console.log("[RecordModal] Recording started successfully");
+                } catch (error) {
+                  console.error(
+                    "[RecordModal] Error starting recording:",
+                    error,
+                  );
+                  Alert.alert(
+                    "Error",
+                    "Failed to start recording. Please try again.",
+                  );
+                }
+              },
+            },
+            {
+              text: "Cancel",
+              style: "cancel",
+            },
+          ],
+        );
+        return;
+      }
+
+      // Show warnings if any (non-blocking)
+      if (validation && validation.warnings.length > 0) {
+        console.log(
+          "[RecordModal] Plan validation warnings:",
+          validation.warnings,
+        );
+      }
+    }
+
+    // All permissions granted and plan validated, start recording
     console.log("[RecordModal] Permissions granted, starting recording");
     try {
       await start();
@@ -208,36 +335,34 @@ function RecordScreen() {
   // Get recording capabilities - determines what UI to show
   const capabilities = useRecordingCapabilities(service);
 
-  // Determine which cards to show based on capabilities
+  // Fixed cards configuration - always show these 4 cards in order
   const cardsConfig = useMemo((): Record<
     CarouselCardType,
     CarouselCardConfig
   > => {
     const config = createDefaultCardsConfig();
 
-    if (!capabilities) {
-      // No capabilities yet, show only dashboard
-      console.log("[RecordModal] No capabilities, showing dashboard only");
-      return config;
-    }
+    // Always show these 4 cards in this specific order:
+    config.dashboard.enabled = true;
+    config.dashboard.order = 0;
 
-    // Enable cards based on capabilities
-    config.map.enabled = capabilities.shouldShowMap;
-    config.plan.enabled = capabilities.shouldShowSteps;
-    config.trainer.enabled = capabilities.shouldShowTrainerControl;
-    config.power.enabled = capabilities.canTrackPower;
-    config.heartrate.enabled = capabilities.canTrackHeartRate;
+    config.map.enabled = true;
+    config.map.order = 1;
 
-    console.log("[RecordModal] Cards enabled based on capabilities:", {
-      map: config.map.enabled,
-      plan: config.plan.enabled,
-      trainer: config.trainer.enabled,
-      power: config.power.enabled,
-      heartrate: config.heartrate.enabled,
-    });
+    config.plan.enabled = true;
+    config.plan.order = 2;
+
+    config.trainer.enabled = true;
+    config.trainer.order = 3;
+
+    // Disable all other cards
+    config.power.enabled = false;
+    config.heartrate.enabled = false;
+    config.analysis.enabled = false;
+    config.elevation.enabled = false;
 
     return config;
-  }, [capabilities]);
+  }, []); // No dependencies - cards never change
 
   // Show loading state while initializing
   if (!isInitialized) {
@@ -248,8 +373,40 @@ function RecordScreen() {
     );
   }
 
+  // Check if we need to show the activity selection prompt
+  const needsActivitySelection = !activityCategory;
+
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
+      {/* Floating Close Button (only shows before recording starts) */}
+      {state === "pending" && (
+        <View
+          className="absolute top-4 left-4 z-50"
+          style={{ top: insets.top + 16 }}
+        >
+          <Button
+            size="icon"
+            variant="outline"
+            onPress={() => {
+              // Dismiss the record screen
+              router.back();
+            }}
+            className="h-10 w-10 rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-lg"
+          >
+            <Icon as={X} size={20} />
+          </Button>
+        </View>
+      )}
+
+      {/* Activity Selection Modal */}
+      <ActivitySelectionModal
+        visible={activityModalVisible}
+        onClose={() => setActivityModalVisible(false)}
+        onActivitySelect={handleActivitySelect}
+        currentCategory={activityCategory || "run"}
+        currentLocation={activityLocation || "outdoor"}
+      />
+
       {/* Sensor Disconnect Warning */}
       {(() => {
         const disconnectedSensors = service?.sensorsManager
@@ -287,16 +444,21 @@ function RecordScreen() {
         const powerTargetIndex = currentStep?.targets?.findIndex(
           (target) => target.type === "%FTP",
         );
-        if (powerTargetIndex) {
+        if (powerTargetIndex && Array.isArray(currentStep?.targets)) {
           const powerTarget = resolvePowerTarget(
-            currentStep?.targets?.[powerTargetIndex].intensity,
+            currentStep?.targets?.[powerTargetIndex]?.intensity,
             service?.recordingMetadata?.profile,
           );
           if (powerTarget) {
             targetDisplay = `Target: ${powerTarget}W`;
           }
-        } else if (currentStep?.targets?.grade !== undefined) {
-          targetDisplay = `Target: ${currentStep.targets.grade}%`;
+        } else if (
+          currentStep?.targets &&
+          typeof currentStep.targets === "object" &&
+          "grade" in currentStep.targets &&
+          currentStep.targets.grade !== undefined
+        ) {
+          targetDisplay = `Target: ${(currentStep.targets as { grade: number }).grade}%`;
         }
 
         return (
@@ -335,20 +497,23 @@ function RecordScreen() {
         style={{ paddingBottom: Math.max(insets.bottom, 16) }}
       >
         <View className="flex-row gap-3">
+          {/* Activity Type Icon Button - Opens selection modal */}
           {state === "pending" && (
             <Button
               size="icon"
               variant="outline"
               className="h-14 w-14 rounded-xl"
-              onPress={() => router.back()}
+              onPress={() => setActivityModalVisible(true)}
             >
-              <Icon as={ChevronLeft} size={24} />
+              <Icon as={ActivityIcon} size={24} />
             </Button>
           )}
+
+          {/* Start Button */}
           {state === "pending" && (
             <Button onPress={handleStart} className="flex-1 h-14 rounded-xl">
               <Icon as={Play} size={24} className="color-background" />
-              <Text className=" font-semibold text-lg">Start </Text>
+              <Text className="font-semibold text-lg">Start</Text>
             </Button>
           )}
 

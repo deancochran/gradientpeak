@@ -94,3 +94,12 @@ with check (
   bucket_id = 'profile-routes'
   and auth.uid()::text = (storage.foldername(name))[1]
 );
+
+-- ============================================================================
+-- SYSTEM ACTIVITY PLAN TEMPLATES
+-- ============================================================================
+-- Templates are now seeded via TypeScript script for better maintainability.
+-- Run: pnpm seed-templates
+--
+-- See: packages/supabase/scripts/seed-templates.ts
+-- Template definitions: packages/core/samples/index.ts

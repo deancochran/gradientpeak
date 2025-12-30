@@ -1,44 +1,66 @@
 /**
  * Centralized route constants for the application
  * Use these constants instead of hardcoded strings to avoid typos and ensure consistency
+ *
+ * NOTE: All standard routes now use flat structure with descriptive names
  */
 
 export const ROUTES = {
   // Plan Tab Routes
   PLAN: {
     INDEX: "/plan" as const,
-    CREATE: "/plan/create_activity_plan" as const,
-    LIBRARY: "/plan/library" as const,
-    SCHEDULED: "/plan/planned_activities" as const,
-    SCHEDULE_ACTIVITY: "/plan/create_planned_activity" as const,
+    CREATE: "/create-activity-plan" as const,
+    LIBRARY: "/plan-library" as const,
+    SCHEDULED: "/scheduled-activities-list" as const,
 
     // Training Plan Routes
     TRAINING_PLAN: {
-      INDEX: "/plan/training-plan" as const,
-      CREATE: "/plan/training-plan/create" as const,
-      SETTINGS: "/plan/training-plan/settings" as const,
+      INDEX: "/training-plan" as const,
+      CREATE: "/training-plan-create" as const,
+      SETTINGS: "/training-plan-settings" as const,
     },
 
     // Create Activity Plan Routes
     CREATE_ACTIVITY_PLAN: {
-      INDEX: "/plan/create_activity_plan" as const,
-      STRUCTURE: "/plan/create_activity_plan/structure" as const,
-      REPEAT: "/plan/create_activity_plan/structure/repeat" as const,
+      INDEX: "/create-activity-plan" as const,
+      STRUCTURE: "/create-activity-plan-structure" as const,
+      REPEAT: "/create-activity-plan-repeat" as const,
     },
 
     // Dynamic Routes (use with params)
     PLAN_DETAIL: (planId: string) => `/plan/${planId}` as const,
     ACTIVITY_DETAIL: (activityId: string) =>
-      `/plan/planned_activities/${activityId}` as const,
+      `/scheduled-activity-detail?id=${activityId}` as const,
+  },
+
+  // Activities Routes
+  ACTIVITIES: {
+    LIST: "/activities-list" as const,
+    DETAIL: (activityId: string) =>
+      `/activity-detail?id=${activityId}` as const,
+  },
+
+  // Routes Routes
+  ROUTES: {
+    LIST: "/routes-list" as const,
+    DETAIL: (routeId: string) => `/route-detail?id=${routeId}` as const,
+    UPLOAD: "/route-upload" as const,
   },
 
   // Other Tab Routes
-  TRENDS: "/trends" as const,
+  DISCOVER: "/(internal)/(tabs)/discover" as const,
+  LIBRARY: "/(internal)/(tabs)/library" as const,
+
+  // Settings & Profile
+  SETTINGS: "/settings" as const,
   PROFILE: "/profile" as const,
+  PROFILE_EDIT: "/profile-edit" as const,
+  INTEGRATIONS: "/integrations" as const,
+  NOTIFICATIONS: "/notifications" as const,
+  PERMISSIONS: "/permissions" as const,
 
   // Activity Recording
   RECORD: "/record" as const,
-  FOLLOW_ALONG: "/follow-along" as const,
 } as const;
 
 /**

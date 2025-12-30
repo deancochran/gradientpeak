@@ -7,6 +7,94 @@ const BACKGROUND_LOCATION_TASK = "background-location-task";
 const LOCATION_BUFFER_KEY = "location_buffer";
 const MAX_BUFFER_SIZE = 100;
 
+// Static callback registry for background task
+const backgroundLocationCallbacks = new Set<
+  (location: Location.LocationObject) => void
+>();
+
+// Define background location task at module level (required for Expo)
+TaskManager.defineTask(
+  BACKGROUND_LOCATION_TASK,
+  async ({ data, error }: TaskManager.TaskManagerTaskBody<any>) => {
+    if (error) {
+      console.error("Background location task error:", error);
+      return;
+    }
+    if (data) {
+      const { locations } = data as { locations: Location.LocationObject[] };
+
+      // Process each location through callbacks
+      for (const location of locations) {
+        // Validate location quality
+        if (isLocationValid(location)) {
+          // Update last location time
+          await AsyncStorage.setItem(
+            "last_location_time",
+            location.timestamp.toString(),
+          );
+
+          // Notify all registered callbacks
+          backgroundLocationCallbacks.forEach((cb) => {
+            try {
+              cb(location);
+            } catch (e) {
+              console.warn("Error in background location callback:", e);
+            }
+          });
+        } else {
+          console.warn("Received invalid location in background, skipping");
+        }
+      }
+
+      // Buffer management for offline storage
+      await bufferLocations(locations);
+    }
+  },
+);
+
+// Helper function for location validation
+function isLocationValid(location: Location.LocationObject): boolean {
+  const { coords } = location;
+
+  // Basic validation
+  if (!coords || coords.accuracy === null || coords.accuracy > 50) {
+    return false;
+  }
+
+  // Check for reasonable lat/lng values
+  if (Math.abs(coords.latitude) > 90 || Math.abs(coords.longitude) > 180) {
+    return false;
+  }
+
+  return true;
+}
+
+// Helper function for buffering locations
+async function bufferLocations(
+  locations: Location.LocationObject[],
+): Promise<void> {
+  try {
+    // Get current buffer
+    const bufferedStr = await AsyncStorage.getItem(LOCATION_BUFFER_KEY);
+    let buffer: Location.LocationObject[] = bufferedStr
+      ? JSON.parse(bufferedStr)
+      : [];
+
+    // Add new locations
+    buffer.push(...locations);
+
+    // Trim buffer if it gets too large
+    if (buffer.length > MAX_BUFFER_SIZE) {
+      buffer = buffer.slice(-MAX_BUFFER_SIZE);
+    }
+
+    // Persist to storage
+    await AsyncStorage.setItem(LOCATION_BUFFER_KEY, JSON.stringify(buffer));
+  } catch (error) {
+    console.warn("Failed to buffer locations:", error);
+  }
+}
+
 export class LocationManager {
   private locationSubscription: Location.LocationSubscription | null = null;
   private locationCallbacks = new Set<
@@ -19,25 +107,6 @@ export class LocationManager {
   private readonly HEALTH_CHECK_INTERVAL = 10000; // 10 seconds
 
   constructor() {
-    TaskManager.defineTask(this.taskName, async ({ data, error }) => {
-      if (error) {
-        console.error("Background location task error:", error);
-        return;
-      }
-      if (data) {
-        const { locations } = data as { locations: Location.LocationObject[] };
-
-        // Process each location
-        for (const location of locations) {
-          await this.handleLocationUpdate(location);
-        }
-
-        // Buffer management for offline storage
-        await this.bufferLocations(locations);
-      }
-      return;
-    });
-
     // Load any existing buffered locations on startup
     this.loadBufferedLocations();
   }
@@ -47,7 +116,7 @@ export class LocationManager {
     this.lastLocationTime = location.timestamp;
 
     // Validate location quality
-    if (!this.isLocationValid(location)) {
+    if (!isLocationValid(location)) {
       console.warn("Received invalid location, skipping");
       return;
     }
@@ -59,44 +128,6 @@ export class LocationManager {
         console.warn("Error in location callback:", e);
       }
     });
-  }
-
-  private isLocationValid(location: Location.LocationObject): boolean {
-    const { coords } = location;
-
-    // Basic validation
-    if (!coords || coords.accuracy === null || coords.accuracy > 50) {
-      return false;
-    }
-
-    // Check for reasonable lat/lng values
-    if (Math.abs(coords.latitude) > 90 || Math.abs(coords.longitude) > 180) {
-      return false;
-    }
-
-    return true;
-  }
-
-  private async bufferLocations(
-    locations: Location.LocationObject[],
-  ): Promise<void> {
-    try {
-      // Add to current buffer
-      this.locationBuffer.push(...locations);
-
-      // Trim buffer if it gets too large
-      if (this.locationBuffer.length > MAX_BUFFER_SIZE) {
-        this.locationBuffer = this.locationBuffer.slice(-MAX_BUFFER_SIZE);
-      }
-
-      // Persist to storage
-      await AsyncStorage.setItem(
-        LOCATION_BUFFER_KEY,
-        JSON.stringify(this.locationBuffer),
-      );
-    } catch (error) {
-      console.warn("Failed to buffer locations:", error);
-    }
   }
 
   private async loadBufferedLocations(): Promise<void> {
@@ -346,14 +377,20 @@ export class LocationManager {
   // --- Subscription Management ---
   addCallback(callback: (location: Location.LocationObject) => void): void {
     this.locationCallbacks.add(callback);
+    // Also add to background callback registry for background location updates
+    backgroundLocationCallbacks.add(callback);
   }
 
   removeCallback(callback: (location: Location.LocationObject) => void): void {
     this.locationCallbacks.delete(callback);
+    // Also remove from background callback registry
+    backgroundLocationCallbacks.delete(callback);
   }
 
   clearAllCallbacks(): void {
     this.locationCallbacks.clear();
+    // Also clear background callback registry
+    backgroundLocationCallbacks.clear();
   }
 
   getCallbackCount(): number {

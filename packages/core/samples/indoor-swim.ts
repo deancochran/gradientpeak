@@ -7,6 +7,7 @@ import { createPlan, Duration, Target } from "../schemas/activity_payload";
  * Estimated TSS: ~40
  */
 export const EASY_SWIM: RecordingServiceActivityPlan = {
+  id: "3f6a7b8c-9d0e-1f2a-3b4c-5d6e7f8a9b0c",
   version: "2.0",
   name: "Easy Swim",
   description:
@@ -43,6 +44,7 @@ export const EASY_SWIM: RecordingServiceActivityPlan = {
  * Estimated TSS: ~75
  */
 export const SPRINT_INTERVALS_SWIM: RecordingServiceActivityPlan = {
+  id: "4a7b8c9d-0e1f-2a3b-4c5d-6e7f8a9b0c1d",
   version: "2.0",
   name: "Sprint Intervals",
   description: "High-intensity sprint intervals for speed development",
@@ -104,6 +106,7 @@ export const SPRINT_INTERVALS_SWIM: RecordingServiceActivityPlan = {
  * Estimated TSS: ~80
  */
 export const THRESHOLD_SWIM: RecordingServiceActivityPlan = {
+  id: "5b8c9d0e-1f2a-3b4c-5d6e-7f8a9b0c1d2e",
   version: "2.0",
   name: "Threshold Set",
   description: "Sustained threshold efforts for lactate tolerance",
@@ -149,6 +152,7 @@ export const THRESHOLD_SWIM: RecordingServiceActivityPlan = {
  * Estimated TSS: ~30
  */
 export const TECHNIQUE_SWIM: RecordingServiceActivityPlan = {
+  id: "6c9d0e1f-2a3b-4c5d-6e7f-8a9b0c1d2e3f",
   version: "2.0",
   name: "Technique Focus",
   description: "Technical swimming session focusing on stroke mechanics",
@@ -205,6 +209,7 @@ export const TECHNIQUE_SWIM: RecordingServiceActivityPlan = {
  * Estimated TSS: ~60
  */
 export const ENDURANCE_SWIM: RecordingServiceActivityPlan = {
+  id: "7d0e1f2a-3b4c-5d6e-7f8a-9b0c1d2e3f4a",
   version: "2.0",
   name: "Endurance Set",
   description: "Long aerobic swim for endurance base building",

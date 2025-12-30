@@ -184,7 +184,7 @@ These files were identified in the audit but are outside the main activity plan 
 3. **`/apps/mobile/app/(internal)/(tabs)/plan/components/StepEditSheet.tsx`**
    - Status: Legacy component, verify if still in use
 
-4. **`/apps/mobile/app/(internal)/follow-along/index.tsx`**
+4. **`/apps/mobile/app/(internal)/follow/index.tsx`**
    - Status: Activity recording/playback - needs V2 update
 
 5. **`/apps/mobile/components/PlannedActivitiesList.tsx`**

@@ -1,3 +1,4 @@
+import type { RecordingServiceActivityPlan } from "../schemas";
 import { SAMPLE_DEV_ACTIVITIES } from "./dev";
 import { SAMPLE_INDOOR_TRAINER_ACTIVITIES } from "./indoor-bike-activity";
 import { SAMPLE_INDOOR_STRENGTH_ACTIVITIES } from "./indoor-strength";
@@ -87,3 +88,66 @@ export function getSampleActivitiesByCategory(
 
 // Total count of sample activities: 36 activities across 7 activity types
 export const TOTAL_SAMPLE_ACTIVITIES = SAMPLE_ACTIVITIES.length;
+
+// ============================================================================
+// SYSTEM TEMPLATE REGISTRY
+// ============================================================================
+
+export type SystemTemplate = RecordingServiceActivityPlan & { id: string };
+
+/**
+ * Helper to map raw sample plans to SystemTemplate
+ */
+function mapToTemplate(plan: RecordingServiceActivityPlan): SystemTemplate {
+  if (!plan.id) {
+    throw new Error(`System template "${plan.name}" must have an ID`);
+  }
+  return plan as SystemTemplate;
+}
+
+// Convert samples to templates with appropriate tags
+const indoorBikeTemplates = SAMPLE_INDOOR_TRAINER_ACTIVITIES.filter(
+  (p) => !p.name.includes("Schema Test"),
+).map(mapToTemplate);
+
+const treadmillTemplates = SAMPLE_TREADMILL_ACTIVITIES.map(mapToTemplate);
+
+const outdoorRunTemplates = SAMPLE_OUTDOOR_RUN_ACTIVITIES.map(mapToTemplate);
+
+const outdoorBikeTemplates = SAMPLE_OUTDOOR_BIKE_ACTIVITIES.map(mapToTemplate);
+
+const strengthTemplates = SAMPLE_INDOOR_STRENGTH_ACTIVITIES.map(mapToTemplate);
+
+const swimTemplates = SAMPLE_INDOOR_SWIM_ACTIVITIES.map(mapToTemplate);
+
+const otherTemplates = SAMPLE_OTHER_ACTIVITIES.map(mapToTemplate);
+
+/**
+ * All system templates that should be uploaded to the database.
+ * Add new templates here and they'll automatically be included in the seed script.
+ */
+export const SYSTEM_TEMPLATES: SystemTemplate[] = [
+  ...indoorBikeTemplates,
+  ...treadmillTemplates,
+  ...outdoorRunTemplates,
+  ...outdoorBikeTemplates,
+  ...strengthTemplates,
+  ...swimTemplates,
+  ...otherTemplates,
+];
+
+/**
+ * Get templates filtered by category
+ */
+export function getTemplatesByCategory(
+  category: SystemTemplate["activity_category"],
+): SystemTemplate[] {
+  return SYSTEM_TEMPLATES.filter((t) => t.activity_category === category);
+}
+
+/**
+ * Get template by name
+ */
+export function getTemplateByName(name: string): SystemTemplate | undefined {
+  return SYSTEM_TEMPLATES.find((t) => t.name === name);
+}

@@ -14,7 +14,7 @@ import {
 // Input schemas for queries
 const listActivityPlansSchema = z.object({
   includeOwnOnly: z.boolean().default(true),
-  includeSamples: z.boolean().default(false),
+  includeSystemTemplates: z.boolean().default(false),
   activityCategory: z
     .enum(["run", "bike", "swim", "strength", "other", "all"])
     .optional(),
@@ -53,16 +53,16 @@ export const activityPlansRouter = createTRPCRouter({
         .limit(limit + 1); // Fetch one extra to check if there's more
 
       // Filter by ownership
-      if (input.includeOwnOnly && !input.includeSamples) {
+      if (input.includeOwnOnly && !input.includeSystemTemplates) {
         // Only user's plans
         query = query.eq("profile_id", ctx.session.user.id);
-      } else if (!input.includeOwnOnly && input.includeSamples) {
-        // Only sample plans (assuming samples have null profile_id or special profile)
-        query = query.is("profile_id", null);
-      } else if (input.includeOwnOnly && input.includeSamples) {
-        // Both user's plans and samples
+      } else if (!input.includeOwnOnly && input.includeSystemTemplates) {
+        // Only system templates
+        query = query.eq("is_system_template", true);
+      } else if (input.includeOwnOnly && input.includeSystemTemplates) {
+        // Both user's plans and system templates
         query = query.or(
-          `profile_id.eq.${ctx.session.user.id},profile_id.is.null`,
+          `profile_id.eq.${ctx.session.user.id},is_system_template.eq.true`,
         );
       } else {
         // Neither - return empty (shouldn't happen but defensive)
@@ -129,7 +129,7 @@ export const activityPlansRouter = createTRPCRouter({
         .from("activity_plans")
         .select("*")
         .eq("id", input.id)
-        .or(`profile_id.eq.${ctx.session.user.id},profile_id.is.null`) // Allow user's plans or sample plans
+        .or(`profile_id.eq.${ctx.session.user.id},is_system_template.eq.true`) // Allow user's plans or system templates
         .single();
 
       if (error) {
@@ -377,7 +377,7 @@ export const activityPlansRouter = createTRPCRouter({
         `,
         )
         .eq("id", input.id)
-        .or(`profile_id.eq.${ctx.session.user.id},profile_id.is.null`) // Allow user's plans or sample plans
+        .or(`profile_id.eq.${ctx.session.user.id},is_system_template.eq.true`) // Allow user's plans or system templates
         .single();
 
       if (fetchError || !originalPlan) {
