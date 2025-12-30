@@ -119,7 +119,7 @@ export function getActivitiesForWeek<
     );
 
     if (daysDiff >= 0 && daysDiff < 7) {
-      weekActivities[daysDiff].push(activity);
+      weekActivities[daysDiff]?.push(activity);
     }
   });
 

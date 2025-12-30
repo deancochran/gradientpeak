@@ -13,7 +13,7 @@ export function formatDate(
     relative?: boolean;
     includeYear?: boolean;
     format?: "short" | "long";
-  }
+  },
 ): string {
   const dateObj = typeof date === "string" ? new Date(date) : date;
   const now = new Date();
@@ -23,7 +23,7 @@ export function formatDate(
   const activityDate = new Date(
     dateObj.getFullYear(),
     dateObj.getMonth(),
-    dateObj.getDate()
+    dateObj.getDate(),
   );
 
   // Relative dates if enabled
@@ -43,10 +43,10 @@ export function formatDate(
 
     // Check if it's next week
     const nextWeekStart = new Date(
-      endOfWeek.getTime() + 1 * 24 * 60 * 60 * 1000
+      endOfWeek.getTime() + 1 * 24 * 60 * 60 * 1000,
     );
     const nextWeekEnd = new Date(
-      nextWeekStart.getTime() + 6 * 24 * 60 * 60 * 1000
+      nextWeekStart.getTime() + 6 * 24 * 60 * 60 * 1000,
     );
 
     if (activityDate >= nextWeekStart && activityDate <= nextWeekEnd) {
@@ -82,7 +82,7 @@ export function formatTime(
   options?: {
     includeSeconds?: boolean;
     use24Hour?: boolean;
-  }
+  },
 ): string {
   const dateObj = typeof date === "string" ? new Date(date) : date;
 
@@ -104,7 +104,7 @@ export function formatDateTime(
     relative?: boolean;
     includeYear?: boolean;
     use24Hour?: boolean;
-  }
+  },
 ): string {
   const dateStr = formatDate(date, {
     relative: options?.relative,
@@ -155,7 +155,7 @@ export function formatDurationSec(seconds: number): string {
  */
 export function toISODate(date: Date | string): string {
   const dateObj = typeof date === "string" ? new Date(date) : date;
-  return dateObj.toISOString().split("T")[0];
+  return dateObj.toISOString().split("T")[0] ?? "";
 }
 
 /**
@@ -262,7 +262,7 @@ export function formatDateRange(
   endDate: Date | string,
   options?: {
     includeYear?: boolean;
-  }
+  },
 ): string {
   const start = typeof startDate === "string" ? new Date(startDate) : startDate;
   const end = typeof endDate === "string" ? new Date(endDate) : endDate;

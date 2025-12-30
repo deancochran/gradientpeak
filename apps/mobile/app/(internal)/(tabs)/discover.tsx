@@ -1,31 +1,21 @@
-import { PlannedActivitiesList } from "@/components/PlannedActivitiesList";
-import { QuickStartList } from "@/components/QuickStartList";
 import { AppHeader } from "@/components/shared";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Text } from "@/components/ui/text";
 import { useRequireAuth } from "@/lib/hooks/useAuth";
-import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
-import {
-  buildEstimationContext,
-  estimateActivity,
-  getSampleActivitiesByCategory,
-  SAMPLE_ACTIVITIES,
-} from "@repo/core";
+import { trpc } from "@/lib/trpc";
 import { useRouter } from "expo-router";
 import {
   Activity,
   Bike,
-  Clock,
   Dumbbell,
   Filter,
   Footprints,
+  Loader2,
   Waves,
   X,
-  Zap,
 } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
 import {
@@ -35,6 +25,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+// Wait, the previous file had FilterModal inline. I should probably keep it inline or define it in this file if it wasn't imported.
+// The previous file had `function FilterModal(...)` at the bottom. I will preserve that.
 
 // Complete category configurations matching database schema
 const CATEGORIES = [
@@ -92,49 +84,22 @@ const CATEGORIES = [
   },
 ] as const;
 
-// Transform template to activity_plan format (for consistency with database schema)
-function transformTemplateToActivityPlan(template: any, profile: any): any {
-  // Calculate estimates
-  let estimates = null;
-  try {
-    const context = buildEstimationContext({
-      userProfile: profile || {},
-      activityPlan: template,
-    });
-    estimates = estimateActivity(context);
-  } catch (error) {
-    // Use template defaults
-  }
-
-  const durationMinutes = estimates
-    ? Math.round(estimates.duration / 60)
-    : template.estimated_duration;
-  const tss = estimates ? Math.round(estimates.tss) : template.estimated_tss;
-
-  // Return in activity_plan database schema format
-  return {
-    id:
-      template.id ||
-      `${template.activity_category}-${template.activity_location}`,
-    name: template.name,
-    activity_category: template.activity_category,
-    activity_location: template.activity_location,
-    description: template.description,
-    structure: template.structure,
-    estimated_duration: durationMinutes,
-    estimated_tss: tss,
-    route_id: template.structure?.route_id,
-    notes: template.description,
-  };
-}
-
 export default function DiscoverPage() {
   const router = useRouter();
   const { profile } = useRequireAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-  const [selectedTab, setSelectedTab] = useState("templates");
+
+  // Fetch activity plans (templates) from tRPC
+  const { data: activityPlansData, isLoading } =
+    trpc.activityPlans.list.useQuery({
+      includeSystemTemplates: true,
+      includeOwnOnly: false,
+      limit: 100, // Fetch enough to cover standard templates
+    });
+
+  const activityPlans = activityPlansData?.items || [];
 
   // Determine if we're in search/filter mode
   const isFilterMode =
@@ -142,7 +107,7 @@ export default function DiscoverPage() {
 
   // Get filtered activities
   const filteredActivities = useMemo(() => {
-    let activities = SAMPLE_ACTIVITIES;
+    let activities = activityPlans;
 
     // Filter by selected categories
     if (selectedCategories.length > 0) {
@@ -163,12 +128,11 @@ export default function DiscoverPage() {
     }
 
     return activities;
-  }, [searchQuery, selectedCategories]);
+  }, [activityPlans, searchQuery, selectedCategories]);
 
-  // Handle template selection - navigate to detail page
   const handleTemplatePress = (template: any) => {
     router.push({
-      pathname: "/activity-plan-detail" as any,
+      pathname: "/(internal)/(standard)/activity-plan-detail",
       params: {
         template: JSON.stringify(template),
         source: "discover",
@@ -176,75 +140,23 @@ export default function DiscoverPage() {
     });
   };
 
-  // Handle "View All" for a category
   const handleViewAll = (categoryId: string) => {
+    setSearchQuery("");
     setSelectedCategories([categoryId]);
+    // The view will automatically switch to filtered mode
   };
 
-  // Clear filters
   const handleClearFilters = () => {
     setSearchQuery("");
     setSelectedCategories([]);
   };
 
-  // Handle quick start selection
-  const handleQuickStart = (category: any, location: any) => {
-    const payload = {
-      category,
-      location,
-    };
-    activitySelectionStore.setSelection(payload);
-    router.push("/record");
-  };
-
-  // Handle template selection
-  const handleTemplateSelected = (templatePayload: any) => {
-    activitySelectionStore.setSelection(templatePayload);
-    router.push("/record");
-  };
-
-  // Handle planned activity selection
-  const handlePlannedActivitySelected = (plannedActivityPayload: any) => {
-    activitySelectionStore.setSelection(plannedActivityPayload);
-    router.push("/record");
-  };
-
   return (
     <View className="flex-1 bg-background">
-      <AppHeader title="Discover" />
-      {/* Header with Tabs */}
-      <View className="px-4 pt-4 pb-4 border-b border-border bg-background">
-        {/* Tab Navigation */}
-        <Tabs
-          value={selectedTab}
-          onValueChange={setSelectedTab}
-          className="mb-4"
-        >
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger
-              value="templates"
-              className="flex-row items-center gap-2"
-            >
-              <Icon as={Zap} size={16} />
-              <Text className="text-sm font-medium">Templates</Text>
-            </TabsTrigger>
-            <TabsTrigger
-              value="quick-start"
-              className="flex-row items-center gap-2"
-            >
-              <Icon as={Activity} size={16} />
-              <Text className="text-sm font-medium">Quick Start</Text>
-            </TabsTrigger>
-            <TabsTrigger
-              value="planned"
-              className="flex-row items-center gap-2"
-            >
-              <Icon as={Clock} size={16} />
-              <Text className="text-sm font-medium">Planned</Text>
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+      <AppHeader title="Discover" showBack={false} />
 
+      {/* Header with Search and Filters */}
+      <View className="px-4 pt-4 pb-4 border-b border-border bg-background">
         <View className="flex-row gap-2">
           {/* Search Input */}
           <View className="flex-1">
@@ -305,85 +217,58 @@ export default function DiscoverPage() {
       </View>
 
       {/* Content Area */}
-      <Tabs
-        value={selectedTab}
-        onValueChange={setSelectedTab}
-        className="flex-1"
-      >
-        {/* Templates Tab */}
-        <TabsContent value="templates" className="flex-1 mt-0">
-          <ScrollView className="flex-1">
-            {isFilterMode ? (
-              // Filtered List View
-              <View className="p-4">
-                <Text className="text-sm text-muted-foreground mb-4">
+      {isLoading ? (
+        <View className="flex-1 items-center justify-center">
+          <Icon as={Loader2} size={32} className="text-primary animate-spin" />
+        </View>
+      ) : (
+        <View className="flex-1">
+          {isFilterMode ? (
+            // Filtered List View (Vertical)
+            <FlatList
+              data={filteredActivities}
+              contentContainerStyle={{ padding: 16, gap: 16 }}
+              keyExtractor={(item) => item.id}
+              ListHeaderComponent={
+                <Text className="text-sm text-muted-foreground mb-2">
                   {filteredActivities.length} result
                   {filteredActivities.length !== 1 ? "s" : ""}
                 </Text>
-
-                {filteredActivities.map((activity, index) => (
-                  <ActivityPlanCard
-                    key={`${activity.activity_category}-${activity.activity_location}-${index}`}
-                    activityPlan={transformTemplateToActivityPlan(
-                      activity,
-                      profile,
-                    )}
-                    onPress={() => handleTemplatePress(activity)}
-                    variant="default"
-                  />
-                ))}
-
-                {filteredActivities.length === 0 && (
-                  <View className="items-center justify-center py-12">
-                    <Text className="text-muted-foreground text-center">
-                      No activities found matching your criteria
-                    </Text>
-                  </View>
-                )}
-              </View>
-            ) : (
-              // Default Categorized Rows View
-              <View className="py-4">
-                {CATEGORIES.map((category) => (
-                  <CategoryRow
-                    key={category.id}
-                    category={category}
-                    profile={profile}
-                    onViewAll={() => handleViewAll(category.id)}
-                    onTemplatePress={handleTemplatePress}
-                  />
-                ))}
-              </View>
-            )}
-          </ScrollView>
-        </TabsContent>
-
-        {/* Quick Start Tab */}
-        <TabsContent value="quick-start" className="flex-1 mt-0">
-          <ScrollView className="flex-1 p-4">
-            <View className="mb-2">
-              <Text className="text-sm text-muted-foreground">
-                Start a new activity immediately
-              </Text>
-            </View>
-            <QuickStartList onActivitySelect={handleQuickStart} />
-          </ScrollView>
-        </TabsContent>
-
-        {/* Planned Activities Tab */}
-        <TabsContent value="planned" className="flex-1 mt-0">
-          <ScrollView className="flex-1 p-4">
-            <View className="mb-2">
-              <Text className="text-sm text-muted-foreground">
-                Your scheduled activities
-              </Text>
-            </View>
-            <PlannedActivitiesList
-              onActivitySelect={handlePlannedActivitySelected}
+              }
+              renderItem={({ item }) => (
+                <ActivityPlanCard
+                  activityPlan={item}
+                  onPress={() => handleTemplatePress(item)}
+                  variant="default"
+                />
+              )}
+              ListEmptyComponent={
+                <View className="items-center justify-center py-12">
+                  <Text className="text-muted-foreground text-center">
+                    No activities found matching your criteria
+                  </Text>
+                </View>
+              }
             />
-          </ScrollView>
-        </TabsContent>
-      </Tabs>
+          ) : (
+            // Default Categorized Rows View
+            <ScrollView className="flex-1 py-4">
+              {CATEGORIES.map((category) => (
+                <CategoryRow
+                  key={category.id}
+                  category={category}
+                  activities={activityPlans.filter(
+                    (p) => p.activity_category === category.id,
+                  )}
+                  onViewAll={() => handleViewAll(category.id)}
+                  onTemplatePress={handleTemplatePress}
+                />
+              ))}
+              <View className="h-8" />
+            </ScrollView>
+          )}
+        </View>
+      )}
 
       {/* Filter Modal */}
       <FilterModal
@@ -399,32 +284,17 @@ export default function DiscoverPage() {
 // Category Row Component
 interface CategoryRowProps {
   category: (typeof CATEGORIES)[number];
-  profile: any;
+  activities: any[];
   onViewAll: () => void;
   onTemplatePress: (template: any) => void;
 }
 
 function CategoryRow({
   category,
-  profile,
+  activities,
   onViewAll,
   onTemplatePress,
 }: CategoryRowProps) {
-  // Get all activities for this category
-  const activities = useMemo(() => {
-    const allActivities: any[] = [];
-
-    category.subcategories.forEach((sub) => {
-      const activities = getSampleActivitiesByCategory(
-        sub.category as any,
-        sub.location as any,
-      );
-      allActivities.push(...activities);
-    });
-
-    return allActivities;
-  }, [category]);
-
   if (activities.length === 0) return null;
 
   return (
@@ -447,13 +317,11 @@ function CategoryRow({
         data={activities.slice(0, 5)} // Show first 5
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}
-        keyExtractor={(item, index) =>
-          `${item.activity_category}-${item.activity_location}-${index}`
-        }
+        keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <View style={{ width: 280 }}>
             <ActivityPlanCard
-              activityPlan={transformTemplateToActivityPlan(item, profile)}
+              activityPlan={item}
               onPress={() => onTemplatePress(item)}
               variant="default"
             />
@@ -490,70 +358,74 @@ function FilterModal({
     <Modal
       visible={visible}
       animationType="slide"
-      transparent={true}
+      presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <View className="flex-1 bg-black/50">
-        <TouchableOpacity
-          className="flex-1"
-          activeOpacity={1}
-          onPress={onClose}
-        />
+      <View className="flex-1 bg-background">
+        {/* Modal Header */}
+        <View className="flex-row items-center justify-between p-4 border-b border-border">
+          <Text className="text-lg font-semibold">Filter Activities</Text>
+          <TouchableOpacity onPress={onClose}>
+            <Icon as={X} size={24} className="text-foreground" />
+          </TouchableOpacity>
+        </View>
 
-        <View className="bg-background rounded-t-3xl p-6 pb-8">
-          {/* Header */}
-          <View className="flex-row items-center justify-between mb-6">
-            <Text className="text-2xl font-bold">Filter Activities</Text>
-            <TouchableOpacity onPress={onClose}>
-              <Icon as={X} size={24} className="text-muted-foreground" />
-            </TouchableOpacity>
-          </View>
+        {/* Filter Content */}
+        <ScrollView className="flex-1 p-4">
+          <Text className="text-sm font-medium text-muted-foreground mb-3 uppercase">
+            Categories
+          </Text>
 
-          {/* Categories */}
-          <Text className="text-sm text-muted-foreground mb-3">Categories</Text>
-
-          <View className="gap-3 mb-6">
+          <View className="flex-row flex-wrap gap-2">
             {CATEGORIES.map((category) => {
               const isSelected = selectedCategories.includes(category.id);
-
               return (
                 <TouchableOpacity
                   key={category.id}
                   onPress={() => toggleCategory(category.id)}
-                  className={`flex-row items-center p-4 rounded-xl border ${
+                  className={`flex-row items-center gap-2 px-4 py-3 rounded-xl border ${
                     isSelected
-                      ? "bg-primary/10 border-primary"
+                      ? "bg-primary border-primary"
                       : "bg-card border-border"
                   }`}
                 >
-                  <View className="w-12 h-12 rounded-full bg-muted items-center justify-center mr-3">
-                    <Icon
-                      as={category.icon}
-                      size={24}
-                      className={category.color}
-                    />
-                  </View>
-
-                  <View className="flex-1">
-                    <Text className="font-semibold">{category.name}</Text>
-                  </View>
-
-                  {isSelected && (
-                    <View className="w-6 h-6 rounded-full bg-primary items-center justify-center">
-                      <Text className="text-primary-foreground text-xs font-bold">
-                        ✓
-                      </Text>
-                    </View>
-                  )}
+                  <Icon
+                    as={category.icon}
+                    size={20}
+                    className={
+                      isSelected ? "text-primary-foreground" : category.color
+                    }
+                  />
+                  <Text
+                    className={
+                      isSelected ? "text-primary-foreground font-medium" : ""
+                    }
+                  >
+                    {category.name}
+                  </Text>
                 </TouchableOpacity>
               );
             })}
           </View>
+        </ScrollView>
 
-          {/* Apply Button */}
-          <Button onPress={onClose} className="w-full">
-            <Text className="font-semibold">Apply Filters</Text>
-          </Button>
+        {/* Modal Footer */}
+        <View className="p-4 border-t border-border bg-background safe-area-bottom">
+          <View className="flex-row gap-4">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onPress={() => {
+                onCategoriesChange([]);
+                onClose();
+              }}
+            >
+              <Text>Reset</Text>
+            </Button>
+            <Button className="flex-1" onPress={onClose}>
+              <Text>Apply Filters</Text>
+            </Button>
+          </View>
         </View>
       </View>
     </Modal>
