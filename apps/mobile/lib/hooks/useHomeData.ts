@@ -1,72 +1,66 @@
 import { trpc } from "@/lib/trpc";
-import { format, isToday } from "date-fns";
+import { format } from "date-fns";
 import { useMemo } from "react";
 
 /**
- * useHomeData Hook - Simplified for MVP
+ * useHomeData Hook
  *
- * Uses the new home.getDashboard endpoint which combines multiple queries
- * into a single optimized call. This provides:
- * - Today's activity
- * - Upcoming activities (next 4 days)
- * - Basic 30-day stats
- * - Training plan info
+ * Consumes the consolidated home.getDashboard endpoint.
+ * Adapted to provide data for the Home Screen UI.
  */
 export function useHomeData() {
-  // Single optimized query for all home screen data
   const { data, isLoading, refetch } = trpc.home.getDashboard.useQuery({
-    days: 4,
+    days: 7,
   });
 
-  const plan = useMemo(() => data?.plan, [data?.plan]);
+  const plan = useMemo(() => data?.activePlan, [data?.activePlan]);
 
   // Transform today's activity for the UI
   const todaysActivity = useMemo(() => {
     if (!data?.todaysActivity) return null;
 
     const activity = data.todaysActivity;
-    const plan = activity.activity_plan as any; // Type includes dynamic estimation fields
     return {
       id: activity.id,
-      type: plan?.activity_category || "Activity",
-      title: plan?.name || "Planned Activity",
-      duration: plan?.estimated_duration || 0,
-      distance: plan?.estimated_distance
-        ? parseFloat(plan.estimated_distance.toFixed(1))
+      type: activity.activityType || "Activity",
+      title: activity.activityName || "Planned Activity",
+      duration: activity.estimatedDuration || 0,
+      distance: activity.estimatedDistance
+        ? parseFloat((activity.estimatedDistance / 1000).toFixed(1)) // Convert meters to km
         : 0,
-      zone: "Moderate", // Intensity is determined after completion, not before
-      scheduledTime: activity.scheduled_date,
-      description: plan?.description,
+      zone: "Moderate",
+      scheduledTime: activity.date,
+      description: "",
     };
   }, [data?.todaysActivity]);
 
-  // Transform upcoming activities for the UI
+  // Transform upcoming activities
+  // Note: Keeping typo 'upcomingActivitys' for backward compatibility if used elsewhere
   const upcomingActivitys = useMemo(() => {
-    if (!data?.upcomingActivities?.length) return [];
+    if (!data?.schedule?.length) return [];
 
-    return data.upcomingActivities.map((activity) => {
-      const activityDate = new Date(activity.scheduled_date);
-      const isActivityToday = isToday(activityDate);
-      const plan = activity.activity_plan as any; // Type includes dynamic estimation fields
+    return data.schedule
+      .filter((a) => !a.isToday)
+      .map((activity) => {
+        const activityDate = new Date(activity.date);
+        return {
+          id: activity.id,
+          day: format(activityDate, "EEEE"),
+          type: activity.activityType || "Activity",
+          title: activity.activityName || "Planned Activity",
+          distance: activity.estimatedDistance
+            ? parseFloat((activity.estimatedDistance / 1000).toFixed(1))
+            : 0,
+          duration: activity.estimatedDuration || 0,
+          intensity: "Moderate",
+          status: "upcoming" as const,
+        };
+      });
+  }, [data?.schedule]);
 
-      return {
-        id: activity.id,
-        day: isActivityToday ? "Today" : format(activityDate, "EEEE"),
-        type: plan?.activity_category || "Activity",
-        title: plan?.name || "Planned Activity",
-        distance: plan?.estimated_distance
-          ? parseFloat(plan.estimated_distance.toFixed(1))
-          : 0,
-        duration: plan?.estimated_duration || 0,
-        intensity: "Moderate", // Intensity is determined after completion
-        status: "upcoming" as const,
-      };
-    });
-  }, [data?.upcomingActivities]);
-
-  // Simple weekly stats (using 30-day data)
+  // Weekly stats
   const weeklyStats = useMemo(() => {
-    if (!data?.weeklyStats) {
+    if (!data?.weeklySummary) {
       return {
         volume: 0,
         activitiesCompleted: 0,
@@ -75,15 +69,15 @@ export function useHomeData() {
     }
 
     return {
-      volume: parseFloat(data.weeklyStats.totalDistance.toFixed(1)),
-      activitiesCompleted: data.weeklyStats.workouts,
-      totalTSS: data.weeklyStats.totalTSS,
+      volume: parseFloat(data.weeklySummary.actual.distance.toFixed(1)),
+      activitiesCompleted: data.weeklySummary.actual.count,
+      totalTSS: data.weeklySummary.actual.tss,
     };
-  }, [data?.weeklyStats]);
+  }, [data?.weeklySummary]);
 
-  // Simplified form status - for MVP, just show if they have recent activity
+  // Form Status (Real Data)
   const formStatus = useMemo(() => {
-    if (!data?.stats?.totalActivities) {
+    if (!data?.currentStatus) {
       return {
         label: "No Data",
         percentage: 0,
@@ -95,67 +89,36 @@ export function useHomeData() {
       };
     }
 
-    const daysActive = data.stats.daysActive;
-    const avgTSSPerDay = data.stats.avgTSSPerDay;
+    const { ctl, atl, tsb, form } = data.currentStatus;
 
-    // Calculate basic CTL, ATL, TSB estimates from 30-day data
-    // CTL (Chronic Training Load) - 42-day weighted average (simulated from 30-day data)
-    const estimatedCTL = Math.round(avgTSSPerDay * 0.8 * 42);
+    // Map form status to UI props
+    const statusMap: Record<
+      string,
+      { label: string; color: string; percentage: number }
+    > = {
+      fresh: { label: "Fresh", color: "green", percentage: 90 },
+      optimal: { label: "Optimal", color: "blue", percentage: 80 },
+      neutral: { label: "Neutral", color: "gray", percentage: 60 },
+      tired: { label: "Tired", color: "orange", percentage: 40 },
+      overreaching: { label: "Overreaching", color: "red", percentage: 20 },
+    };
 
-    // ATL (Acute Training Load) - 7-day weighted average (simulated)
-    const estimatedATL = Math.round(avgTSSPerDay * 1.2 * 7);
+    const status = statusMap[form] || statusMap.neutral;
 
-    // TSB (Training Stress Balance) = CTL - ATL
-    const estimatedTSB = estimatedCTL - estimatedATL;
+    return {
+      label: status.label,
+      percentage: status.percentage,
+      color: status.color,
+      explanation: `TSB: ${tsb > 0 ? "+" : ""}${tsb}`,
+      ctl,
+      atl,
+      tsb,
+    };
+  }, [data?.currentStatus]);
 
-    // Simple heuristic: 3-5 active days per week is optimal
-    if (daysActive >= 12) {
-      // ~3+ days/week over 30 days
-      return {
-        label: "Active",
-        percentage: 80,
-        color: "green",
-        explanation: `${daysActive} active days in the last month`,
-        ctl: estimatedCTL,
-        atl: estimatedATL,
-        tsb: estimatedTSB,
-      };
-    } else if (daysActive >= 8) {
-      return {
-        label: "Moderate",
-        percentage: 60,
-        color: "blue",
-        explanation: `${daysActive} active days in the last month`,
-        ctl: estimatedCTL,
-        atl: estimatedATL,
-        tsb: estimatedTSB,
-      };
-    } else if (daysActive >= 4) {
-      return {
-        label: "Light",
-        percentage: 40,
-        color: "purple",
-        explanation: `${daysActive} active days in the last month`,
-        ctl: estimatedCTL,
-        atl: estimatedATL,
-        tsb: estimatedTSB,
-      };
-    } else {
-      return {
-        label: "Getting Started",
-        percentage: 20,
-        color: "orange",
-        explanation: `${daysActive} active days in the last month`,
-        ctl: estimatedCTL,
-        atl: estimatedATL,
-        tsb: estimatedTSB,
-      };
-    }
-  }, [data?.stats]);
-
-  // Simplified weekly goal - based on current week's TSS
+  // Weekly Goal (Planned vs Actual)
   const weeklyGoal = useMemo(() => {
-    if (!data?.stats?.totalTSS) {
+    if (!data?.weeklySummary) {
       return {
         actual: 0,
         target: 0,
@@ -164,54 +127,44 @@ export function useHomeData() {
       };
     }
 
-    // For MVP: show weekly average from 30-day stats
-    const weeklyAverage = Math.round((data.stats.totalTSS / 30) * 7);
-
     return {
-      actual: weeklyAverage,
-      target: 0, // Will be set when user creates a structured plan
-      percentage: 100, // Always 100% for now since we're just showing average
-      unit: "TSS/week avg",
+      actual: data.weeklySummary.actual.tss,
+      target: data.weeklySummary.planned.tss,
+      percentage:
+        data.weeklySummary.planned.tss > 0
+          ? Math.min(
+              100,
+              Math.round(
+                (data.weeklySummary.actual.tss /
+                  data.weeklySummary.planned.tss) *
+                  100,
+              ),
+            )
+          : 0,
+      unit: "TSS",
     };
-  }, [data?.stats]);
+  }, [data?.weeklySummary]);
 
-  // Training readiness calculation based on CTL, ATL, and TSB
+  // Training Readiness (Derived from Real TSB)
   const trainingReadiness = useMemo(() => {
     const ctl = formStatus.ctl || 0;
     const atl = formStatus.atl || 0;
     const tsb = formStatus.tsb || 0;
 
-    // Calculate readiness percentage based on TSB and CTL
-    // TSB positive = fresh, TSB negative = fatigued
-    // Higher CTL = better fitness base
-    const percentage = Math.min(100, Math.max(0, 50 + tsb * 2 + ctl / 2));
+    // Calculate readiness
+    const percentage = Math.min(100, Math.max(0, 50 + tsb * 2));
 
-    // Determine status based on percentage
     let status = "Moderate";
     if (percentage >= 85) status = "Prime";
     else if (percentage >= 70) status = "Good";
-    else if (percentage < 50) status = "Fatigued";
+    else if (percentage < 40) status = "Fatigued";
 
-    // Helper functions for metric status
-    const getCtlStatus = (ctl: number) => {
-      if (ctl === 0) return "Low";
-      if (ctl < 30) return "Building";
-      if (ctl < 60) return "Steady";
-      return "Strong";
-    };
-
-    const getAtlStatus = (atl: number) => {
-      if (atl === 0) return "Low";
-      if (atl < 30) return "Low";
-      if (atl > 50) return "High";
-      return "Moderate";
-    };
-
-    const getTsbStatus = (tsb: number) => {
-      if (tsb > 15) return "Fresh";
-      if (tsb < -15) return "Tired";
-      return "Neutral";
-    };
+    const getCtlStatus = (val: number) =>
+      val < 30 ? "Building" : val < 60 ? "Steady" : "Strong";
+    const getAtlStatus = (val: number) =>
+      val > 80 ? "High" : val > 40 ? "Moderate" : "Low";
+    const getTsbStatus = (val: number) =>
+      val > 15 ? "Fresh" : val < -15 ? "Tired" : "Neutral";
 
     return {
       percentage: Math.round(percentage),
@@ -226,9 +179,9 @@ export function useHomeData() {
   }, [formStatus]);
 
   const hasData = !!(
-    data?.plan ||
+    data?.activePlan ||
     data?.todaysActivity ||
-    data?.upcomingActivities?.length
+    data?.schedule?.length
   );
 
   return {
@@ -242,5 +195,13 @@ export function useHomeData() {
     isLoading,
     hasData,
     refetch,
+    // Expose raw new data for new components
+    trends: data?.trends || [],
+    projectedFitness: data?.projectedFitness || [],
+    idealFitnessCurve: data?.idealFitnessCurve || [],
+    goalMetrics: data?.goalMetrics || null,
+    consistency: data?.consistency || { streak: 0, weeklyCount: 0 },
+    schedule: data?.schedule || [],
+    weeklySummary: data?.weeklySummary,
   };
 }

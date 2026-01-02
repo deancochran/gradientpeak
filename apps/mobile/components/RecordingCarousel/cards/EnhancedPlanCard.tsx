@@ -1,4 +1,5 @@
 import { CARD_STYLES } from "@/components/RecordingCarousel/constants";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
@@ -18,6 +19,7 @@ import {
   AlertTriangle,
   Calendar,
   CheckCircle2,
+  ChevronRight,
   Clock,
   Heart,
   Target,
@@ -343,6 +345,8 @@ interface CurrentIntervalViewProps {
   nextTargets?: IntensityTargetV2[];
   nextName?: string;
   profile: ProfileMetrics;
+  canAdvance: boolean;
+  onSkip?: () => void;
 }
 
 const CurrentIntervalView = memo<CurrentIntervalViewProps>(
@@ -363,6 +367,8 @@ const CurrentIntervalView = memo<CurrentIntervalViewProps>(
     nextTargets,
     nextName,
     profile,
+    canAdvance,
+    onSkip,
   }) => {
     if (!hasPlan || !name) {
       return (
@@ -460,6 +466,14 @@ const CurrentIntervalView = memo<CurrentIntervalViewProps>(
             </View>
           )}
         </View>
+
+        {/* Skip Interval Button - Only show if not pending and can advance */}
+        {!isPending && canAdvance && onSkip && (
+          <Button variant="outline" size="sm" onPress={onSkip} className="mt-3">
+            <Icon as={ChevronRight} size={16} />
+            <Text className="ml-1 text-sm font-medium">Skip Interval</Text>
+          </Button>
+        )}
       </View>
     );
   },
@@ -680,6 +694,11 @@ export const EnhancedPlanCard = memo<EnhancedPlanCardProps>(
                 nextName={nextStepName}
                 hasNextStep={hasNextStep}
                 profile={profile}
+                canAdvance={plan.canAdvance}
+                onSkip={() => {
+                  // Skip to next interval
+                  service?.advanceStep();
+                }}
               />
             </View>
           </CardContent>

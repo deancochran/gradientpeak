@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { ROUTES } from "@/lib/constants/routes";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { trpc } from "@/lib/trpc";
@@ -27,7 +28,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Switch,
   View,
 } from "react-native";
 
@@ -58,15 +58,11 @@ export default function TrainingPlanSettings() {
   const [editedName, setEditedName] = useState("");
   const [editedDescription, setEditedDescription] = useState("");
 
-  // Pause state (stored in is_active field)
-  const [isPaused, setIsPaused] = useState(false);
-
   // Initialize edit fields when plan loads
   React.useEffect(() => {
     if (plan && !isEditingBasic) {
       setEditedName(plan.name);
       setEditedDescription(plan.description || "");
-      setIsPaused(!plan.is_active);
     }
   }, [plan, isEditingBasic]);
 
@@ -136,27 +132,26 @@ export default function TrainingPlanSettings() {
     });
   };
 
-  // Handle pause/resume
-  const handleTogglePause = async () => {
+  // Handle activate/deactivate
+  const handleToggleActive = async () => {
     if (!plan) return;
 
-    const newPauseState = !isPaused;
+    const newActiveState = !plan.is_active;
 
     Alert.alert(
-      newPauseState ? "Pause Training Plan?" : "Resume Training Plan?",
-      newPauseState
-        ? "Your plan will be paused. Activities will remain scheduled but won't count toward progress."
-        : "Your plan will be resumed. New activities can be scheduled.",
+      newActiveState ? "Set as Active Plan?" : "Deactivate Plan?",
+      newActiveState
+        ? "This plan will become your active training plan. Any other active plan will be deactivated."
+        : "This plan will be deactivated. You can reactivate it anytime from the plans list.",
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: newPauseState ? "Pause" : "Resume",
+          text: newActiveState ? "Set Active" : "Deactivate",
           onPress: async () => {
             await updateMutation.mutateAsync({
               id: plan.id,
-              is_active: !newPauseState,
+              is_active: newActiveState,
             });
-            setIsPaused(newPauseState);
           },
         },
       ],
@@ -215,7 +210,7 @@ export default function TrainingPlanSettings() {
         <Text className="text-muted-foreground text-center mb-6">
           Create a training plan to access settings
         </Text>
-        <Button onPress={() => router.push(ROUTES.PLAN.TRAINING_PLAN.CREATE)}>
+        <Button onPress={() => router.push(ROUTES.PLAN.TRAINING_PLAN.WIZARD)}>
           <Text className="text-primary-foreground font-semibold">
             Create Plan
           </Text>
@@ -243,22 +238,22 @@ export default function TrainingPlanSettings() {
                 <View className="flex-row items-center justify-between">
                   <View className="flex-1">
                     <Text className="font-semibold mb-1">
-                      {isPaused ? "Paused" : "Active"}
+                      {plan.is_active ? "Active" : "Inactive"}
                     </Text>
                     <Text className="text-sm text-muted-foreground">
-                      {isPaused
-                        ? "Plan is paused. Activities won't count toward progress."
-                        : "Plan is active. Track your fitness and complete scheduled activities."}
+                      {plan.is_active
+                        ? "This is your active training plan. It guides your current training and tracks metrics."
+                        : "This plan is inactive. Set it as active to use it for training guidance."}
                     </Text>
                   </View>
                   <Switch
-                    checked={!isPaused}
-                    onCheckedChange={handleTogglePause}
+                    checked={plan.is_active}
+                    onCheckedChange={handleToggleActive}
                     disabled={updateMutation.isPending}
                   />
                 </View>
 
-                {status && (
+                {status && plan.is_active && (
                   <>
                     <View className="h-px bg-border" />
                     <View className="flex-row items-center justify-between">

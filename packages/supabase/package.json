@@ -11,7 +11,8 @@
     "update-types": "npm run generate-types && npm run generate-schemas",
     "generate-types": "supabase gen types typescript --local > database.types.ts",
     "generate-schemas": "supazod -i database.types.ts -o supazod/schemas.ts -t supazod/schemas.types.ts -s public,schema_a,schema_b",
-    "seed-templates": "tsx scripts/seed-templates.ts"
+    "seed-templates": "tsx scripts/seed-templates.ts",
+    "seed-training-plans": "tsx scripts/seed-training-plan-templates.ts"
   },
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",

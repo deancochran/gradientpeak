@@ -1,6 +1,8 @@
 // apps/mobile/app/(internal)/(tabs)/trends/components/charts/index.ts
 
 export { IntensityDistributionChart } from "./IntensityDistributionChart";
+export { PlanVsActualChart } from "./PlanVsActualChart";
+export { FitnessProjectionChart } from "./FitnessProjectionChart";
 export { TrainingLoadChart } from "./TrainingLoadChart";
 export { WeeklyProgressChart } from "./WeeklyProgressChart";
 export { VolumeTrendsChart } from "./VolumeTrendsChart";
@@ -10,6 +12,13 @@ export { ConsistencyHeatmap } from "./ConsistencyHeatmap";
 
 // Export types for external use
 export type { IntensityDistributionChartProps } from "./IntensityDistributionChart";
+
+export type {
+  PlanVsActualChartProps,
+  FitnessDataPoint,
+} from "./PlanVsActualChart";
+
+export type { FitnessProjectionChartProps } from "./FitnessProjectionChart";
 
 export type {
   TrainingLoadChartProps,

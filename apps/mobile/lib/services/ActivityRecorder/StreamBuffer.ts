@@ -46,6 +46,7 @@ export class StreamBuffer {
     Array<{ value: number; timestamp: number }>
   > = new Map();
   private locations: LocationReading[] = [];
+  private allLocations: LocationReading[] = []; // Keep ALL locations for GPS path display
   private chunkIndex = 0;
   private lastFlushTime: Date;
   private sessionId: string;
@@ -93,13 +94,15 @@ export class StreamBuffer {
    * Add a location reading to the buffer
    */
   addLocation(location: LocationReading): void {
-    this.locations.push({
+    const locationData = {
       latitude: location.latitude,
       longitude: location.longitude,
       altitude: location.altitude,
       accuracy: location.accuracy,
       timestamp: location.timestamp,
-    });
+    };
+    this.locations.push(locationData);
+    this.allLocations.push(locationData); // Also keep in persistent array for GPS path
   }
 
   /**
@@ -408,11 +411,20 @@ export class StreamBuffer {
   }
 
   /**
+   * Get all recorded locations for GPS path display
+   * This persists throughout the recording session
+   */
+  getAllLocations(): LocationReading[] {
+    return this.allLocations;
+  }
+
+  /**
    * Clear all accumulated data without writing
    */
   clear(): void {
     this.readings.clear();
     this.locations = [];
+    this.allLocations = [];
   }
 
   /**

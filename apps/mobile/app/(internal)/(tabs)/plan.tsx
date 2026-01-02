@@ -5,9 +5,17 @@ import { WeeklyLedger } from "@/components/plan/WeeklyLedger";
 import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
 import { AppHeader, PlanCalendarSkeleton } from "@/components/shared";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { TrainingPlanAdjustmentAlert } from "@/components/training-plan/TrainingPlanAdjustmentAlert";
+import { FitnessProgressCard } from "@/components/home/FitnessProgressCard";
+import WeeklySnapshot from "@/components/home/WeeklySnapshot";
+import { DetailChartModal } from "@/components/shared/DetailChartModal";
+import { PlanVsActualChart } from "@/components/charts/PlanVsActualChart";
+import { TrainingLoadChart } from "@/components/charts/TrainingLoadChart";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
+import { ROUTES } from "@/lib/constants/routes";
+import { useSmartSuggestions } from "@/lib/hooks/useSmartSuggestions";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import { trpc } from "@/lib/trpc";
 import {
@@ -18,8 +26,16 @@ import {
 import { ActivityPayload } from "@repo/core";
 import { format } from "date-fns";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Play, Plus } from "lucide-react-native";
-import React, { useMemo, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  CalendarDays,
+  List,
+  Play,
+  Settings,
+  Shuffle,
+  Sliders,
+} from "lucide-react-native";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   RefreshControl,
   ScrollView,
@@ -40,6 +56,12 @@ function PlanScreen() {
   const [scheduleModalDate, setScheduleModalDate] = useState<
     string | undefined
   >();
+  const [showAdjustSheet, setShowAdjustSheet] = useState(false);
+  const [dismissedSuggestion, setDismissedSuggestion] = useState<string | null>(
+    null,
+  );
+  const [trainingStatusModalVisible, setTrainingStatusModalVisible] =
+    useState(false);
 
   // Calculate week dates based on offset
   const weekDates = useMemo(() => {
@@ -72,6 +94,188 @@ function PlanScreen() {
 
   const { data: weeklyScheduled = 0, refetch: refetchWeekCount } =
     trpc.plannedActivities.getWeekCount.useQuery();
+
+  // Get weekly totals for ledger
+  const { data: weeklyTotals, refetch: refetchWeeklyTotals } =
+    trpc.trainingPlans.getWeeklyTotals.useQuery({
+      weekStartDate: weekDates[0]?.toISOString().split("T")[0],
+    });
+
+  // Get weekly summaries for smart suggestions (last 4 weeks)
+  const { data: weeklySummaries } =
+    trpc.trainingPlans.getWeeklySummary.useQuery(
+      {
+        training_plan_id: plan?.id || "",
+        weeks_back: 4,
+      },
+      {
+        enabled: !!plan?.id,
+      },
+    );
+
+  // Calculate date ranges for fitness data
+  const today = useMemo(() => new Date(), []);
+  const thirtyDaysAgo = useMemo(() => {
+    const date = new Date(today);
+    date.setDate(today.getDate() - 30);
+    return date;
+  }, [today]);
+  const fourteenDaysAhead = useMemo(() => {
+    const date = new Date(today);
+    date.setDate(today.getDate() + 14);
+    return date;
+  }, [today]);
+
+  // Get actual fitness curve (last 30 days)
+  const { data: actualCurveData, refetch: refetchFitnessHistory } =
+    trpc.trainingPlans.getActualCurve.useQuery(
+      {
+        start_date: thirtyDaysAgo.toISOString().split("T")[0]!,
+        end_date: today.toISOString().split("T")[0]!,
+      },
+      { enabled: !!plan },
+    );
+
+  // Get ideal fitness curve from training plan (if exists)
+  const { data: idealCurveData } = trpc.trainingPlans.getIdealCurve.useQuery(
+    {
+      id: plan?.id || "",
+      start_date: thirtyDaysAgo.toISOString().split("T")[0]!,
+      end_date: fourteenDaysAhead.toISOString().split("T")[0]!,
+    },
+    {
+      enabled: !!plan?.id,
+    },
+  );
+
+  // Extract data from API responses
+  const fitnessHistory = useMemo(
+    () => actualCurveData?.dataPoints || [],
+    [actualCurveData],
+  );
+  const idealFitnessCurve = useMemo(
+    () => idealCurveData?.dataPoints || [],
+    [idealCurveData],
+  );
+  const projectedFitness = useMemo(() => {
+    // Extract future dates from ideal curve (after today)
+    if (!idealCurveData?.dataPoints) return [];
+    const todayStr = today.toISOString().split("T")[0];
+    return idealCurveData.dataPoints.filter((d) => d.date > todayStr);
+  }, [idealCurveData, today]);
+
+  // Calculate smart suggestions
+  const smartSuggestion = useSmartSuggestions({
+    plan,
+    status,
+    weeklySummaries,
+  });
+
+  // Load dismissed suggestion from storage
+  useEffect(() => {
+    const loadDismissedSuggestion = async () => {
+      try {
+        const dismissed = await AsyncStorage.getItem("dismissedSuggestion");
+        if (dismissed) {
+          const { reason, timestamp } = JSON.parse(dismissed);
+          // Auto-expire after 3 days
+          const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000;
+          if (timestamp > threeDaysAgo) {
+            setDismissedSuggestion(reason);
+          } else {
+            await AsyncStorage.removeItem("dismissedSuggestion");
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load dismissed suggestion:", error);
+      }
+    };
+    loadDismissedSuggestion();
+  }, []);
+
+  // Check if current suggestion is dismissed
+  const shouldShowAlert =
+    smartSuggestion && smartSuggestion.reason !== dismissedSuggestion;
+
+  // Prepare 7-day rolling window: 3 days back + today + 3 days forward
+  const fitnessChartData = useMemo(() => {
+    if (!fitnessHistory || fitnessHistory.length === 0) return undefined;
+
+    const todayStr = today.toISOString().split("T")[0];
+
+    // Create array of dates: -3, -2, -1, 0 (today), +1, +2, +3
+    const dates: string[] = [];
+    for (let i = -3; i <= 3; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+      dates.push(date.toISOString().split("T")[0]!);
+    }
+
+    // Map to actual CTL values, or null for future dates
+    const ctlValues = dates.map((dateStr) => {
+      const dataPoint = fitnessHistory.find((d) => d.date === dateStr);
+      return dataPoint ? dataPoint.ctl : null;
+    });
+
+    // Only return if we have at least today's data
+    const hasData = ctlValues.some((v) => v !== null);
+    return hasData ? ctlValues.map((v) => v || 0) : undefined;
+  }, [fitnessHistory, today]);
+
+  // Prepare ideal fitness trend data for the same 7-day window
+  const idealChartData = useMemo(() => {
+    if (!idealFitnessCurve || idealFitnessCurve.length === 0) {
+      return undefined;
+    }
+
+    // Create array of dates: -3, -2, -1, 0 (today), +1, +2, +3
+    const dates: string[] = [];
+    for (let i = -3; i <= 3; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+      dates.push(date.toISOString().split("T")[0]!);
+    }
+
+    // Map to ideal CTL values
+    const idealValues = dates.map((dateStr) => {
+      const idealPoint = idealFitnessCurve.find((d) => d.date === dateStr);
+      return idealPoint ? idealPoint.ctl : null;
+    });
+
+    // Only return if we have meaningful data
+    const hasData = idealValues.some((v) => v !== null);
+    return hasData ? idealValues.map((v) => v || 0) : undefined;
+  }, [idealFitnessCurve, today]);
+
+  // Get current CTL value
+  const currentCTL = useMemo(() => {
+    if (!fitnessHistory || fitnessHistory.length === 0) return 0;
+    return Math.round(fitnessHistory[fitnessHistory.length - 1]?.ctl || 0);
+  }, [fitnessHistory]);
+
+  // Calculate ideal CTL for today
+  const idealCTLToday = useMemo(() => {
+    if (!idealFitnessCurve || idealFitnessCurve.length === 0) return undefined;
+    const today = new Date().toISOString().split("T")[0];
+    const todayData = idealFitnessCurve.find((d) => d.date === today);
+    return todayData ? Math.round(todayData.ctl) : undefined;
+  }, [idealFitnessCurve]);
+
+  // Calculate how far behind/ahead of plan
+  const behindSchedule = useMemo(() => {
+    if (idealCTLToday === undefined) return undefined;
+    return Math.round(currentCTL - idealCTLToday);
+  }, [currentCTL, idealCTLToday]);
+
+  // Get goal metrics from ideal curve data
+  const goalMetrics = useMemo(() => {
+    if (!idealCurveData) return undefined;
+    return {
+      targetCTL: idealCurveData.targetCTL,
+      targetDate: idealCurveData.targetDate,
+      description: `Target: ${idealCurveData.targetCTL} CTL by ${new Date(idealCurveData.targetDate).toLocaleDateString()}`,
+    };
+  }, [idealCurveData]);
 
   // Get activities for the selected date
   const selectedDayActivities = useMemo(() => {
@@ -140,37 +344,6 @@ function PlanScreen() {
     return futureDays.slice(0, 3); // Limit to 3 days
   }, [allPlannedActivities]);
 
-  // Calculate weekly totals for ledger
-  const weeklyTotals = useMemo(() => {
-    if (!status?.weekProgress) {
-      return { distance: 0, time: 0, count: 0 };
-    }
-
-    // Calculate from completed activities in the current week
-    const startOfWeek = weekDates[0];
-    const endOfWeek = weekDates[6];
-
-    const completedThisWeek =
-      allPlannedActivities?.items.filter((activity) => {
-        const activityDate = new Date(activity.scheduled_date);
-        return (
-          isActivityCompleted(activity) &&
-          activityDate >= startOfWeek &&
-          activityDate <= endOfWeek
-        );
-      }) || [];
-
-    // For now, use placeholder values (in production, fetch from completed activities)
-    const totalDistance = 0; // Would sum actual distance from completed_activity
-    const totalTime = 0; // Would sum actual time from completed_activity
-
-    return {
-      distance: totalDistance,
-      time: totalTime,
-      count: completedThisWeek.length,
-    };
-  }, [status, allPlannedActivities, weekDates]);
-
   // Navigation handlers
   const handlePreviousWeek = () => {
     setWeekOffset((prev) => prev - 1);
@@ -210,7 +383,28 @@ function PlanScreen() {
   };
 
   const handleViewTrainingPlan = () => {
-    router.push("/training-plan" as any);
+    router.push(ROUTES.PLAN.TRAINING_PLAN.INDEX);
+  };
+
+  const handleOpenAdjustSheet = () => {
+    router.push(ROUTES.PLAN.TRAINING_PLAN.ADJUST);
+  };
+
+  const handleDismissSuggestion = async () => {
+    if (!smartSuggestion) return;
+
+    try {
+      await AsyncStorage.setItem(
+        "dismissedSuggestion",
+        JSON.stringify({
+          reason: smartSuggestion.reason,
+          timestamp: Date.now(),
+        }),
+      );
+      setDismissedSuggestion(smartSuggestion.reason);
+    } catch (error) {
+      console.error("Failed to dismiss suggestion:", error);
+    }
   };
 
   // Calculate plan progress if we have a plan with target date
@@ -264,6 +458,8 @@ function PlanScreen() {
       refetchStatus(),
       refetchActivities(),
       refetchWeekCount(),
+      refetchWeeklyTotals(),
+      refetchFitnessHistory(),
     ]);
     setRefreshing(false);
   };
@@ -291,70 +487,226 @@ function PlanScreen() {
         }
       >
         <View className="px-4 py-4">
+          {/* Smart Suggestion Alert */}
+          {shouldShowAlert && plan && (
+            <TrainingPlanAdjustmentAlert
+              suggestion={smartSuggestion}
+              onPress={handleOpenAdjustSheet}
+              onDismiss={handleDismissSuggestion}
+            />
+          )}
+
           {/* 1. Active Plan Summary or Placeholder */}
           <View className="mb-4">
             {plan && planProgress ? (
-              <TouchableOpacity
-                onPress={handleViewTrainingPlan}
-                className="bg-card border border-border rounded-lg p-4"
-                activeOpacity={0.7}
-              >
-                <View className="flex-row items-center justify-between">
-                  <View className="flex-1">
-                    <Text className="font-semibold text-base">
-                      {planProgress.planName}
-                    </Text>
-                    {"daysRemaining" in planProgress ? (
-                      <Text className="text-sm text-muted-foreground mt-1">
-                        {planProgress.daysRemaining} days remaining •{" "}
-                        {adherenceRate}% adherence
+              <View className="bg-card border border-border rounded-lg overflow-hidden">
+                <TouchableOpacity
+                  onPress={handleViewTrainingPlan}
+                  className="p-4"
+                  activeOpacity={0.7}
+                >
+                  <View className="flex-row items-start justify-between mb-3">
+                    <View className="flex-1">
+                      <Text className="font-semibold text-lg mb-1">
+                        {planProgress.planName}
                       </Text>
-                    ) : "weeksActive" in planProgress ? (
-                      <Text className="text-sm text-muted-foreground mt-1">
-                        Week {planProgress.weeksActive} • {adherenceRate}%
-                        adherence
+                      <Text className="text-xs text-muted-foreground">
+                        {plan.is_active ? "Active" : "Paused"} • Started{" "}
+                        {new Date(plan.created_at).toLocaleDateString()}
                       </Text>
-                    ) : null}
+                    </View>
                   </View>
-                  <Icon
-                    as={Plus}
-                    size={20}
-                    className="text-muted-foreground rotate-45"
-                  />
-                </View>
-                {planProgress.progress > 0 && (
-                  <View className="mt-3">
-                    <View className="w-full bg-muted rounded-full h-2 overflow-hidden">
+
+                  {/* Metadata Row */}
+                  <View className="flex-row gap-3 mb-3">
+                    <View className="flex-1 bg-muted/50 rounded-lg p-2.5">
+                      <Text className="text-xs text-muted-foreground mb-0.5">
+                        Progress
+                      </Text>
+                      {"daysRemaining" in planProgress ? (
+                        <Text className="text-sm font-semibold">
+                          {planProgress.daysRemaining}d left
+                        </Text>
+                      ) : "weeksActive" in planProgress ? (
+                        <Text className="text-sm font-semibold">
+                          Week {planProgress.weeksActive}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <View className="flex-1 bg-muted/50 rounded-lg p-2.5">
+                      <Text className="text-xs text-muted-foreground mb-0.5">
+                        Adherence
+                      </Text>
+                      <Text className="text-sm font-semibold">
+                        {adherenceRate}%
+                      </Text>
+                    </View>
+                    {status && (
+                      <View className="flex-1 bg-muted/50 rounded-lg p-2.5">
+                        <Text className="text-xs text-muted-foreground mb-0.5">
+                          Fitness
+                        </Text>
+                        <Text className="text-sm font-semibold">
+                          {status.ctl} CTL
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Progress Bar */}
+                  {planProgress.progress > 0 && (
+                    <View className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
                       <View
                         className="bg-primary h-full rounded-full"
                         style={{ width: `${planProgress.progress}%` }}
                       />
                     </View>
-                  </View>
-                )}
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                onPress={handleViewTrainingPlan}
-                className="bg-card border-2 border-dashed border-border rounded-lg p-6"
-                activeOpacity={0.7}
-              >
-                <View className="items-center">
-                  <View className="bg-primary/10 rounded-full p-3 mb-3">
-                    <Icon as={Plus} size={32} className="text-primary" />
-                  </View>
-                  <Text className="font-semibold text-base mb-1">
-                    No Training Plan
-                  </Text>
-                  <Text className="text-sm text-muted-foreground text-center">
-                    Create a plan to track fitness and structure your training
-                  </Text>
+                  )}
+                </TouchableOpacity>
+
+                {/* Action Buttons Row */}
+                <View className="flex-row border-t border-border">
+                  <TouchableOpacity
+                    onPress={() =>
+                      router.push(ROUTES.PLAN.TRAINING_PLAN.SETTINGS)
+                    }
+                    className="flex-1 flex-row items-center justify-center py-3 border-r border-border"
+                    activeOpacity={0.7}
+                  >
+                    <Icon
+                      as={Settings}
+                      size={16}
+                      className="text-primary mr-1.5"
+                    />
+                    <Text className="text-xs font-medium text-primary">
+                      Settings
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => router.push(ROUTES.PLAN.TRAINING_PLAN.LIST)}
+                    className="flex-1 flex-row items-center justify-center py-3 border-r border-border"
+                    activeOpacity={0.7}
+                  >
+                    <Icon as={List} size={16} className="text-primary mr-1.5" />
+                    <Text className="text-xs font-medium text-primary">
+                      Switch
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleOpenAdjustSheet}
+                    className="flex-1 flex-row items-center justify-center py-3 border-r border-border relative"
+                    activeOpacity={0.7}
+                  >
+                    <Icon
+                      as={Sliders}
+                      size={16}
+                      className="text-primary mr-1.5"
+                    />
+                    <Text className="text-xs font-medium text-primary">
+                      Adjust
+                    </Text>
+                    {shouldShowAlert && (
+                      <View className="absolute top-2 right-2 w-2 h-2 bg-destructive rounded-full" />
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => router.push(ROUTES.WORKOUTS_REORDER)}
+                    className="flex-1 flex-row items-center justify-center py-3"
+                    activeOpacity={0.7}
+                  >
+                    <Icon
+                      as={Shuffle}
+                      size={16}
+                      className="text-primary mr-1.5"
+                    />
+                    <Text className="text-xs font-medium text-primary">
+                      Reorder
+                    </Text>
+                  </TouchableOpacity>
                 </View>
-              </TouchableOpacity>
+              </View>
+            ) : (
+              <View className="bg-card border border-border rounded-lg overflow-hidden">
+                <TouchableOpacity
+                  onPress={() => router.push(ROUTES.PLAN.TRAINING_PLAN.LIST)}
+                  className="p-6"
+                  activeOpacity={0.7}
+                >
+                  <View className="items-center">
+                    <View className="bg-primary/10 rounded-full p-3 mb-3">
+                      <Icon
+                        as={CalendarDays}
+                        size={32}
+                        className="text-primary"
+                      />
+                    </View>
+                    <Text className="font-semibold text-base mb-1">
+                      No Training Plan
+                    </Text>
+                    <Text className="text-sm text-muted-foreground text-center mb-2">
+                      Select an existing plan or create a new one
+                    </Text>
+                    <Text className="text-xs text-primary font-medium">
+                      Tap to view plans
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
             )}
           </View>
 
-          {/* 2. Week Strip with Day Selector */}
+          {/* 2. Fitness Progress Card */}
+          {plan && fitnessHistory && fitnessHistory.length > 0 && (
+            <View className="mb-4">
+              <Text className="text-sm font-semibold text-muted-foreground mb-2">
+                Fitness Progress
+              </Text>
+              <FitnessProgressCard
+                currentCTL={currentCTL}
+                projectedCTL={idealCTLToday}
+                goalCTL={goalMetrics?.targetCTL}
+                trendData={fitnessChartData}
+                idealTrendData={idealChartData}
+                behindSchedule={behindSchedule}
+                onPress={() => router.push(ROUTES.PLAN.TRAINING_PLAN.INDEX)}
+              />
+              {!idealCurveData && (
+                <TouchableOpacity
+                  onPress={() =>
+                    router.push(ROUTES.PLAN.TRAINING_PLAN.SETTINGS)
+                  }
+                  className="mt-2 bg-orange-500/10 border border-orange-500/30 rounded-lg p-3"
+                  activeOpacity={0.7}
+                >
+                  <Text className="text-xs font-medium text-orange-600 text-center">
+                    Add periodization to see fitness projection • Tap to
+                    configure
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {/* 3. This Week Card */}
+          {weeklyTotals && (
+            <View className="mb-4">
+              <Text className="text-sm font-semibold text-muted-foreground mb-2">
+                This Week
+              </Text>
+              <WeeklySnapshot
+                distance={parseFloat(
+                  (weeklyTotals.distance * 0.621371).toFixed(1),
+                )}
+                workouts={weeklyTotals.count}
+                totalTSS={Math.round(status?.weekProgress?.completedTSS || 0)}
+                plannedTSS={status?.weekProgress?.plannedTSS}
+                plannedWorkouts={status?.weekProgress?.totalPlannedActivities}
+                onPress={() => setTrainingStatusModalVisible(true)}
+              />
+            </View>
+          )}
+
+          {/* 4. Week Strip with Day Selector */}
           <View className="mb-6">
             <WeekStrip
               weekDates={weekDates}
@@ -366,7 +718,7 @@ function PlanScreen() {
             />
           </View>
 
-          {/* 3. Selected Day Activities */}
+          {/* 5. Selected Day Activities */}
           <View className="mb-6">
             {/* Date Label */}
             <Text className="text-lg font-semibold mb-4">
@@ -375,8 +727,11 @@ function PlanScreen() {
 
             {/* Hero Content (Scenarios A, B, C, or D) */}
             {selectedDayActivities.length === 0 ? (
-              // Scenario D: Empty/Casual - Ghost Card
-              <GhostCard onPress={handleScheduleActivity} />
+              // Scenario D: Empty/Casual - Simpler Ghost Card
+              <GhostCard
+                onPress={handleScheduleActivity}
+                message="Nothing scheduled"
+              />
             ) : selectedDayActivities.length === 1 ? (
               // Scenario A or B: Single Activity - Hero Card
               <View>
@@ -440,7 +795,7 @@ function PlanScreen() {
             )}
           </View>
 
-          {/* 3. THE HORIZON (Bottom 30% - Forecast) */}
+          {/* 6. THE HORIZON (Bottom 30% - Forecast) */}
           {upcomingActivities.length > 0 && (
             <View className="mb-6">
               <Text className="text-base font-semibold mb-3">Up Next</Text>
@@ -476,34 +831,18 @@ function PlanScreen() {
             </View>
           )}
 
-          {/* 4. THE LEDGER (Footer - Collapsible Insight) */}
-          <WeeklyLedger
-            totalDistance={weeklyTotals.distance}
-            totalTime={weeklyTotals.time}
-            activityCount={weeklyTotals.count}
-            unit="mi"
-            defaultCollapsed={true}
-          />
+          {/* 7. THE LEDGER (Footer - Collapsible Insight) */}
+          {weeklyTotals && (
+            <WeeklyLedger
+              totalDistance={weeklyTotals.distance}
+              totalTime={weeklyTotals.time}
+              activityCount={weeklyTotals.count}
+              unit="mi"
+              defaultCollapsed={true}
+            />
+          )}
         </View>
       </ScrollView>
-
-      {/* Floating Action Button for Scheduling */}
-      <View className="absolute bottom-6 right-6">
-        <TouchableOpacity
-          onPress={handleScheduleActivity}
-          className="w-14 h-14 rounded-full bg-primary shadow-lg items-center justify-center"
-          activeOpacity={0.8}
-          style={{
-            elevation: 8,
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3,
-            shadowRadius: 4.65,
-          }}
-        >
-          <Icon as={Plus} size={28} className="text-primary-foreground" />
-        </TouchableOpacity>
-      </View>
 
       {/* Schedule Activity Modal */}
       {showScheduleModal && scheduleModalDate && (
@@ -517,6 +856,38 @@ function PlanScreen() {
           onSuccess={handleRefresh}
         />
       )}
+
+      {/* Training Status Detail Modal */}
+      <DetailChartModal
+        visible={trainingStatusModalVisible}
+        onClose={() => setTrainingStatusModalVisible(false)}
+        title="Training Load"
+        defaultDateRange="30d"
+      >
+        {(dateRange) => {
+          const days =
+            dateRange === "7d"
+              ? 7
+              : dateRange === "30d"
+                ? 30
+                : dateRange === "90d"
+                  ? 90
+                  : fitnessHistory?.length || 30;
+          const filteredData = (fitnessHistory || []).slice(-days);
+
+          return (
+            <TrainingLoadChart
+              data={filteredData.map((t) => ({
+                date: t.date,
+                ctl: t.ctl,
+                atl: t.atl || 0,
+                tsb: t.tsb || 0,
+              }))}
+              height={400}
+            />
+          );
+        }}
+      </DetailChartModal>
     </View>
   );
 }

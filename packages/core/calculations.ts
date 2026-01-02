@@ -1135,6 +1135,98 @@ export function getFormStatusColor(tsb: number): string {
 }
 
 /**
+ * Calculate projected CTL over time based on planned training
+ * Useful for visualizing fitness progression in training plan creation
+ *
+ * @param config - Configuration object with training plan parameters
+ * @param config.startingCTL - Starting CTL value (typically user's current CTL)
+ * @param config.targetCTL - Goal CTL to reach
+ * @param config.weeklyTSSAvg - Average weekly TSS from plan
+ * @param config.mesocycles - Array of training mesocycles with phases and multipliers
+ * @param config.recoveryWeekFrequency - Insert recovery week every N weeks (default: 3)
+ * @param config.recoveryWeekReduction - TSS reduction for recovery weeks (0.5 = 50% reduction)
+ * @returns Array of projected CTL values by week
+ */
+export function calculateCTLProjection(config: {
+  startingCTL: number;
+  targetCTL: number;
+  weeklyTSSAvg: number;
+  mesocycles: Array<{
+    duration_weeks: number;
+    tss_multiplier: number;
+  }>;
+  recoveryWeekFrequency?: number;
+  recoveryWeekReduction?: number;
+}): Array<{ week: number; ctl: number; date: string }> {
+  const {
+    startingCTL,
+    targetCTL,
+    weeklyTSSAvg,
+    mesocycles,
+    recoveryWeekFrequency = 3,
+    recoveryWeekReduction = 0.5,
+  } = config;
+
+  let currentCTL = startingCTL;
+  const points: Array<{ week: number; ctl: number; date: string }> = [];
+  let weekCounter = 0;
+
+  // Add starting point
+  const startDate = new Date();
+  points.push({
+    week: 0,
+    ctl: startingCTL,
+    date: startDate.toISOString().split("T")[0]!,
+  });
+
+  // Iterate through mesocycles
+  for (const meso of mesocycles) {
+    for (let week = 0; week < meso.duration_weeks; week++) {
+      weekCounter++;
+
+      // Check if this is a recovery week
+      const isRecoveryWeek = weekCounter % recoveryWeekFrequency === 0;
+
+      if (isRecoveryWeek) {
+        // Recovery week: reduce CTL slightly
+        // Simulate lower training load for the week
+        const recoveryWeeklyTSS = weeklyTSSAvg * recoveryWeekReduction;
+        const dailyTSS = recoveryWeeklyTSS / 7;
+
+        // Apply CTL formula for each day of the recovery week
+        for (let day = 0; day < 7; day++) {
+          currentCTL = calculateCTL(currentCTL, dailyTSS);
+        }
+      } else {
+        // Normal training week: apply mesocycle TSS multiplier
+        const adjustedWeeklyTSS = weeklyTSSAvg * meso.tss_multiplier;
+        const dailyTSS = adjustedWeeklyTSS / 7;
+
+        // Apply CTL formula for each day of the week
+        for (let day = 0; day < 7; day++) {
+          currentCTL = calculateCTL(currentCTL, dailyTSS);
+        }
+      }
+
+      // Cap at target CTL (can't exceed goal)
+      currentCTL = Math.min(currentCTL, targetCTL);
+
+      // Calculate date for this week
+      const weekDate = new Date(startDate);
+      weekDate.setDate(startDate.getDate() + weekCounter * 7);
+
+      points.push({
+        week: weekCounter,
+        ctl: Math.round(currentCTL * 10) / 10, // Round to 1 decimal
+        date: weekDate.toISOString().split("T")[0]!,
+      });
+    }
+  }
+
+  return points;
+}
+
+/**
  * Calculate Intensity Factor (IF) from normalized power/pace and threshold
  * IF = NP / FTP (for cycling) or similar for running
  *

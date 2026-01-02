@@ -10,6 +10,7 @@ import {
   CheckCircle,
   TrendingUp,
   Calendar as CalendarIcon,
+  Lock,
 } from "lucide-react-native";
 import React from "react";
 import { View, Platform } from "react-native";
@@ -26,19 +27,21 @@ interface PeriodizationFormProps {
   data: PeriodizationTemplate | null | undefined;
   onChange: (data: PeriodizationTemplate | null) => void;
   errors: Record<string, string>;
+  currentCTL?: number; // Current CTL from API (read-only)
 }
 
 export function PeriodizationForm({
   data,
   onChange,
   errors,
+  currentCTL = 0, // Default to 0 for new users
 }: PeriodizationFormProps) {
   const [isEnabled, setIsEnabled] = React.useState(!!data);
   const [showDatePicker, setShowDatePicker] = React.useState(false);
 
-  const [startingCtlText, setStartingCtlText] = React.useState(
-    data?.starting_ctl?.toString() || "45",
-  );
+  // Use currentCTL as starting point (not editable)
+  const startingCtl = currentCTL;
+
   const [targetCtlText, setTargetCtlText] = React.useState(
     data?.target_ctl?.toString() || "85",
   );
@@ -53,7 +56,7 @@ export function PeriodizationForm({
 
   // Calculate progression preview
   const progressionPreview = React.useMemo(() => {
-    const startCtl = parseInt(startingCtlText) || 0;
+    const startCtl = startingCtl;
     const targetCtl = parseInt(targetCtlText) || 0;
     const rampRate = (parseInt(rampRateText) || 5) / 100;
 
@@ -81,7 +84,7 @@ export function PeriodizationForm({
       weeklyGain:
         weeksToTarget > 0 ? (targetCtl - startCtl) / weeksToTarget : 0,
     };
-  }, [startingCtlText, targetCtlText, rampRateText, targetDate]);
+  }, [startingCtl, targetCtlText, rampRateText, targetDate]);
 
   const handleToggle = (enabled: boolean) => {
     setIsEnabled(enabled);
@@ -89,20 +92,7 @@ export function PeriodizationForm({
       onChange(null);
     } else {
       onChange({
-        starting_ctl: parseInt(startingCtlText) || 45,
-        target_ctl: parseInt(targetCtlText) || 85,
-        ramp_rate: (parseInt(rampRateText) || 5) / 100,
-        target_date: targetDate.toISOString().split("T")[0] || "",
-      });
-    }
-  };
-
-  const handleStartingCtlChange = (text: string) => {
-    setStartingCtlText(text);
-    const value = parseInt(text);
-    if (!isNaN(value) && isEnabled) {
-      onChange({
-        starting_ctl: value,
+        starting_ctl: startingCtl,
         target_ctl: parseInt(targetCtlText) || 85,
         ramp_rate: (parseInt(rampRateText) || 5) / 100,
         target_date: targetDate.toISOString().split("T")[0] || "",
@@ -115,7 +105,7 @@ export function PeriodizationForm({
     const value = parseInt(text);
     if (!isNaN(value) && isEnabled) {
       onChange({
-        starting_ctl: parseInt(startingCtlText) || 45,
+        starting_ctl: startingCtl,
         target_ctl: value,
         ramp_rate: (parseInt(rampRateText) || 5) / 100,
         target_date: targetDate.toISOString().split("T")[0] || "",
@@ -128,7 +118,7 @@ export function PeriodizationForm({
     const value = parseInt(text);
     if (!isNaN(value) && isEnabled) {
       onChange({
-        starting_ctl: parseInt(startingCtlText) || 45,
+        starting_ctl: startingCtl,
         target_ctl: parseInt(targetCtlText) || 85,
         ramp_rate: value / 100,
         target_date: targetDate.toISOString().split("T")[0] || "",
@@ -142,7 +132,7 @@ export function PeriodizationForm({
       setTargetDate(selectedDate);
       if (isEnabled) {
         onChange({
-          starting_ctl: parseInt(startingCtlText) || 45,
+          starting_ctl: startingCtl,
           target_ctl: parseInt(targetCtlText) || 85,
           ramp_rate: (parseInt(rampRateText) || 5) / 100,
           target_date: selectedDate.toISOString().split("T")[0] || "",
@@ -183,27 +173,42 @@ export function PeriodizationForm({
       {/* Periodization Form (only shown when enabled) */}
       {isEnabled && (
         <>
-          {/* Starting CTL */}
+          {/* Current CTL (Read-Only) */}
           <View className="gap-3">
             <Label className="text-base font-semibold">
-              Starting CTL (Chronic Training Load)
+              Your Current Fitness
             </Label>
-            <Text className="text-sm text-muted-foreground">
-              Your current fitness level. Check your trends page for your
-              current CTL.
-            </Text>
-            <Input
-              value={startingCtlText}
-              onChangeText={handleStartingCtlChange}
-              keyboardType="numeric"
-              placeholder="45"
-              className={errors.starting_ctl ? "border-destructive" : ""}
-            />
-            {errors.starting_ctl && (
-              <Text className="text-destructive text-xs">
-                {errors.starting_ctl}
-              </Text>
-            )}
+            <Card className="bg-muted/50 border-muted">
+              <CardContent className="p-4">
+                <View className="flex-row items-center justify-between">
+                  <View className="flex-1">
+                    <View className="flex-row items-center gap-2 mb-1">
+                      <Icon
+                        as={Lock}
+                        size={16}
+                        className="text-muted-foreground"
+                      />
+                      <Text className="text-sm text-muted-foreground font-medium">
+                        Starting CTL
+                      </Text>
+                    </View>
+                    <Text className="text-3xl font-bold text-foreground">
+                      {startingCtl} CTL
+                    </Text>
+                    {startingCtl === 0 ? (
+                      <Text className="text-xs text-muted-foreground mt-2">
+                        Your fitness will update as you sync activities from
+                        connected services
+                      </Text>
+                    ) : (
+                      <Text className="text-xs text-muted-foreground mt-2">
+                        Calculated from your last 42 days of training
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              </CardContent>
+            </Card>
           </View>
 
           {/* Target CTL */}
@@ -285,7 +290,7 @@ export function PeriodizationForm({
           </View>
 
           {/* Progression Preview */}
-          {parseInt(startingCtlText) > 0 &&
+          {startingCtl > 0 &&
             parseInt(targetCtlText) > 0 &&
             parseInt(rampRateText) > 0 && (
               <Card className="bg-primary/5 border-primary/20">
@@ -303,7 +308,7 @@ export function PeriodizationForm({
                         CTL increase:
                       </Text>
                       <Text className="font-semibold">
-                        +{progressionPreview.ctlIncrease} ({startingCtlText} →{" "}
+                        +{progressionPreview.ctlIncrease} ({startingCtl} →{" "}
                         {targetCtlText})
                       </Text>
                     </View>

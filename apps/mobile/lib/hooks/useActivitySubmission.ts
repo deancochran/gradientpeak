@@ -573,6 +573,9 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         aggregatedStreams,
       );
 
+      // 3a. Get activity_plan_id from the activityPlan if it exists
+      const activityPlanId: string | null = metadata.activityPlan?.id || null;
+
       const activity: PublicActivitiesInsert = {
         profile_id: metadata.profileId,
         started_at: metadata.startedAt,
@@ -589,7 +592,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         profile_snapshot: calculatedMetrics.profileSnapshot
           ? JSON.parse(JSON.stringify(calculatedMetrics.profileSnapshot))
           : undefined,
-        planned_activity_id: metadata.plannedActivityId || null,
+        activity_plan_id: activityPlanId, // Use activity_plan_id instead of planned_activity_id
         route_id: null, // Will be set if route is attached
       };
 

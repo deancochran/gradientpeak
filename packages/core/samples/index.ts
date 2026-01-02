@@ -7,6 +7,7 @@ import { SAMPLE_TREADMILL_ACTIVITIES } from "./indoor-treadmill";
 import { SAMPLE_OTHER_ACTIVITIES } from "./other-activity";
 import { SAMPLE_OUTDOOR_BIKE_ACTIVITIES } from "./outdoor-bike";
 import { SAMPLE_OUTDOOR_RUN_ACTIVITIES } from "./outdoor-run";
+import { ALL_SAMPLE_PLANS } from "./training-plans";
 
 // Export individual activity type modules
 export * from "./dev";
@@ -17,6 +18,9 @@ export * from "./indoor-treadmill";
 export * from "./other-activity";
 export * from "./outdoor-bike";
 export * from "./outdoor-run";
+
+// Export training plan samples
+export * from "./training-plans";
 
 // Combined sample activities array with all activity types
 export const SAMPLE_ACTIVITIES = [
@@ -151,3 +155,12 @@ export function getTemplatesByCategory(
 export function getTemplateByName(name: string): SystemTemplate | undefined {
   return SYSTEM_TEMPLATES.find((t) => t.name === name);
 }
+
+// ============================================================================
+// TRAINING PLAN SYSTEM TEMPLATES
+// ============================================================================
+
+/**
+ * Total count of sample training plans
+ */
+export const TOTAL_SAMPLE_TRAINING_PLANS = ALL_SAMPLE_PLANS.length;

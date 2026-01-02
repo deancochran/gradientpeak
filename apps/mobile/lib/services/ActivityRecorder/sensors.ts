@@ -965,8 +965,9 @@ export class SensorsManager {
             (view.getUint8(offset + 2) << 16);
           offset += 3;
 
-          // Distance is cumulative, not used directly as a reading
-          // but could be tracked for validation
+          console.log(
+            `[SensorsManager] FTMS Total Distance: ${totalDistance}m`,
+          );
         }
       }
 
@@ -975,7 +976,10 @@ export class SensorsManager {
         if (data.byteLength >= offset + 2) {
           const resistanceLevel = view.getInt16(offset, true);
           offset += 2;
-          // Resistance level is not a standard metric we track currently
+
+          console.log(
+            `[SensorsManager] FTMS Resistance Level: ${resistanceLevel}`,
+          );
         }
       }
 
@@ -1002,15 +1006,87 @@ export class SensorsManager {
           const avgPower = view.getInt16(offset, true);
           offset += 2;
           // We prioritize instantaneous power over average
+          console.log(`[SensorsManager] FTMS Average Power: ${avgPower}W`);
         }
       }
 
-      // Additional fields exist (bits 8-13) but are less commonly used:
-      // - Expended Energy (Total/Per Hour/Per Minute)
-      // - Heart Rate
-      // - Metabolic Equivalent
-      // - Elapsed Time
-      // - Remaining Time
+      // Bit 8-9: Expended Energy present (uint16, total/per hour/per minute)
+      if (flags & 0x100) {
+        if (data.byteLength >= offset + 2) {
+          const totalEnergy = view.getUint16(offset, true); // kcal
+          offset += 2;
+          console.log(
+            `[SensorsManager] FTMS Total Energy: ${totalEnergy} kcal`,
+          );
+        }
+        if (data.byteLength >= offset + 2) {
+          const energyPerHour = view.getUint16(offset, true); // kcal/h
+          offset += 2;
+          console.log(
+            `[SensorsManager] FTMS Energy/Hour: ${energyPerHour} kcal/h`,
+          );
+        }
+        if (data.byteLength >= offset + 1) {
+          const energyPerMinute = view.getUint8(offset); // kcal/min
+          offset += 1;
+          console.log(
+            `[SensorsManager] FTMS Energy/Min: ${energyPerMinute} kcal/min`,
+          );
+        }
+      }
+
+      // Bit 10: Heart Rate present (uint8, bpm)
+      if (flags & 0x200) {
+        if (data.byteLength >= offset + 1) {
+          const heartRate = view.getUint8(offset);
+          offset += 1;
+
+          const reading = this.validateSensorReading({
+            metric: "heartrate",
+            dataType: "float",
+            value: heartRate,
+            timestamp,
+            metadata: { deviceId, source: "ftms_indoor_bike" },
+          });
+          if (reading) {
+            readings.push(reading);
+            console.log(
+              `[SensorsManager] Parsed heart rate from FTMS: ${heartRate} bpm`,
+            );
+          }
+        }
+      }
+
+      // Bit 11: Metabolic Equivalent present (uint8, resolution 0.1)
+      if (flags & 0x400) {
+        if (data.byteLength >= offset + 1) {
+          const metabolicEquivalent = view.getUint8(offset) * 0.1;
+          offset += 1;
+          console.log(
+            `[SensorsManager] FTMS Metabolic Equivalent: ${metabolicEquivalent.toFixed(1)}`,
+          );
+        }
+      }
+
+      // Bit 12: Elapsed Time present (uint16, seconds)
+      if (flags & 0x800) {
+        if (data.byteLength >= offset + 2) {
+          const elapsedTime = view.getUint16(offset, true);
+          offset += 2;
+          console.log(`[SensorsManager] FTMS Elapsed Time: ${elapsedTime}s`);
+        }
+      }
+
+      // Bit 13: Remaining Time present (uint16, seconds)
+      if (flags & 0x1000) {
+        if (data.byteLength >= offset + 2) {
+          const remainingTime = view.getUint16(offset, true);
+          offset += 2;
+          console.log(
+            `[SensorsManager] FTMS Remaining Time: ${remainingTime}s`,
+          );
+        }
+      }
 
       return readings;
     } catch (error) {

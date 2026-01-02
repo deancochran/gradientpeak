@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
-import { ROUTES } from "@/lib/constants/routes";
+import { buildPlanRoute, ROUTES } from "@/lib/constants/routes";
 import { useActivityPlanForm } from "@/lib/hooks/forms/useActivityPlanForm";
 import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
 import { formatDuration } from "@/lib/utils/dates";
@@ -44,15 +44,14 @@ export default function CreateActivityPlanScreen() {
           text: "Schedule Now",
           onPress: () => {
             router.push({
-              pathname: ROUTES.PLAN.SCHEDULE_ACTIVITY,
-              params: { activityPlanId: planId },
+              ...buildPlanRoute(planId, "schedule"),
             });
           },
         },
         {
-          text: "Done",
+          text: "View Plan",
           onPress: () => {
-            router.back();
+            router.push({ pathname: ROUTES.PLAN.PLAN_DETAIL(planId) });
           },
         },
       ]);

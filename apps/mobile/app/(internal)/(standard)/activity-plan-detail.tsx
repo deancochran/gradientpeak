@@ -1,3 +1,4 @@
+import { format } from "date-fns";
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
 import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   Calendar,
+  CalendarCheck,
   Clock,
   Copy,
   MapPin,
@@ -212,6 +214,18 @@ export default function ActivityPlanDetailPage() {
       {/* Scrollable Content */}
       <ScrollView className="flex-1">
         <View className="p-4">
+          {/* Title */}
+          <Text className="text-3xl font-bold mb-2">{activityPlan.name}</Text>
+          <View className="flex-row items-center gap-2 mb-6">
+            <Text className="text-sm text-muted-foreground capitalize">
+              {activityPlan.activity_category}
+            </Text>
+            <Text className="text-sm text-muted-foreground">•</Text>
+            <Text className="text-sm text-muted-foreground capitalize">
+              {activityPlan.activity_location}
+            </Text>
+          </View>
+
           {/* Scheduled Date Banner */}
           {isScheduled && scheduledDate && (
             <View className="bg-primary/10 border border-primary/20 rounded-xl p-4 mb-6 flex-row items-center">

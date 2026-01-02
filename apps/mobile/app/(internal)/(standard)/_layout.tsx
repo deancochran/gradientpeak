@@ -157,6 +157,24 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
+        name="training-plan-method-selector"
+        options={{
+          title: "Create Training Plan",
+        }}
+      />
+      <Stack.Screen
+        name="training-plan-wizard"
+        options={{
+          title: "Training Plan Wizard",
+        }}
+      />
+      <Stack.Screen
+        name="training-plan-review"
+        options={{
+          title: "Review Plan",
+        }}
+      />
+      <Stack.Screen
         name="training-plan-settings"
         options={{
           title: "Training Plan Settings",

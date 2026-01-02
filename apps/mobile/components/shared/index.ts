@@ -3,6 +3,7 @@ export {
   type ActivityPlanCardData,
 } from "./ActivityPlanCard";
 export { AppHeader } from "./AppHeader";
+export { DetailChartModal, type DateRange } from "./DetailChartModal";
 export { EmptyStateCard } from "./EmptyStateCard";
 export {
   ErrorMessage,

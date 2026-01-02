@@ -29,6 +29,7 @@ import {
   ChevronRight,
   Dumbbell,
   Footprints,
+  MapPin,
   Pause,
   Play,
   Square,
@@ -498,7 +499,8 @@ function RecordScreen() {
       >
         <View className="flex-row gap-3">
           {/* Activity Type Icon Button - Opens selection modal */}
-          {state === "pending" && (
+          {/* Only show if no plan is selected (activity type is locked when plan is selected) */}
+          {state === "pending" && !plan.hasPlan && (
             <Button
               size="icon"
               variant="outline"
@@ -506,6 +508,37 @@ function RecordScreen() {
               onPress={() => setActivityModalVisible(true)}
             >
               <Icon as={ActivityIcon} size={24} />
+            </Button>
+          )}
+
+          {/* Activity Type Icon (locked) - Show when plan is selected */}
+          {state === "pending" && plan.hasPlan && (
+            <View className="h-14 w-14 rounded-xl border-2 border-border bg-muted items-center justify-center">
+              <Icon
+                as={ActivityIcon}
+                size={24}
+                className="text-muted-foreground"
+              />
+            </View>
+          )}
+
+          {/* Location Toggle Button - Show when plan is selected to allow location changes */}
+          {state === "pending" && plan.hasPlan && (
+            <Button
+              size="icon"
+              variant="outline"
+              className="h-14 w-14 rounded-xl"
+              onPress={() => {
+                // Toggle between indoor and outdoor
+                const newLocation =
+                  activityLocation === "indoor" ? "outdoor" : "indoor";
+                service?.updateActivityConfiguration(
+                  activityCategory,
+                  newLocation,
+                );
+              }}
+            >
+              <Icon as={MapPin} size={20} />
             </Button>
           )}
 

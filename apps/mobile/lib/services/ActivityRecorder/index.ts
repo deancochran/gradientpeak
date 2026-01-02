@@ -333,11 +333,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   get recordedGpsPath(): Array<{ latitude: number; longitude: number }> {
     if (!this.liveMetricsManager?.streamBuffer) return [];
 
-    // Get locations from StreamBuffer's in-memory buffer
-    const locations =
-      (this.liveMetricsManager.streamBuffer as any).locations || [];
+    // Get all locations from StreamBuffer's persistent array (not cleared on flush)
+    const allLocations =
+      (this.liveMetricsManager.streamBuffer as any).getAllLocations?.() || [];
 
-    return locations.map((loc: any) => ({
+    return allLocations.map((loc: any) => ({
       latitude: loc.latitude,
       longitude: loc.longitude,
     }));

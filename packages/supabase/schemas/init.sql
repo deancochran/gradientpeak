@@ -87,23 +87,45 @@ create trigger update_profiles_updated_at
 -- ============================================================================
 -- TRAINING PLANS
 -- ============================================================================
+-- Training Plans Table
+-- Supports both user-created plans and system templates:
+-- 1. User plans: profile_id set, is_system_template = false
+-- 2. System templates: profile_id = null, is_system_template = true
 create table if not exists public.training_plans (
     id uuid primary key default uuid_generate_v4(),
     idx serial unique not null,
-    profile_id uuid not null references public.profiles(id) on delete cascade,
+    profile_id uuid references public.profiles(id) on delete cascade,
+    is_system_template boolean not null default false,
     name text not null,
     description text,
     is_active boolean not null default true,
     structure jsonb not null,
     created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now()
+    updated_at timestamptz not null default now(),
+
+    -- Constraint: system templates must have null profile_id, user plans must have profile_id
+    constraint training_plans_template_profile_check check (
+        (is_system_template = true and profile_id is null) or
+        (is_system_template = false and profile_id is not null)
+    )
 );
 
 create index if not exists idx_training_plans_profile_id
     on public.training_plans(profile_id);
 
+create index if not exists idx_training_plans_is_system_template
+    on public.training_plans(is_system_template)
+    where is_system_template = true;
+
 create index if not exists idx_training_plans_is_active
-    on public.training_plans(is_active) where is_active = true;
+    on public.training_plans(profile_id) where is_active = true;
+
+-- Ensure only one active training plan per user
+create unique index if not exists unique_active_training_plan_per_user
+    on public.training_plans(profile_id) where is_active = true;
+
+create index if not exists idx_training_plans_name
+    on public.training_plans(name);
 
 create trigger update_training_plans_updated_at
     before update on public.training_plans
@@ -424,13 +446,9 @@ create index if not exists idx_activities_location
 create index if not exists idx_activities_started
     on public.activities(started_at desc);
 
-create index if not exists idx_activities_planned
-    on public.activities(planned_activity_id)
-    where planned_activity_id is not null;
-
-create index if not exists idx_activities_route
-    on public.activities(route_id)
-    where route_id is not null;
+create index if not exists idx_activities_activity_plan
+    on public.activities(activity_plan_id)
+    where activity_plan_id is not null;
 
 create index if not exists idx_activities_external
     on public.activities(provider, external_id)

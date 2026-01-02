@@ -4,8 +4,10 @@
  * Validates that user profile has required metrics for plan execution
  */
 
-import type { PublicProfilesRow } from "@repo/core";
-import type { RecordingServiceActivityPlan } from "./types";
+import type {
+  PublicProfilesRow,
+  RecordingServiceActivityPlan,
+} from "@repo/core";
 
 export interface PlanValidationResult {
   isValid: boolean;

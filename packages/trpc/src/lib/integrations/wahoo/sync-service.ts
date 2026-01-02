@@ -340,7 +340,7 @@ export class WahooSyncService {
     // Store sync record (only workout_id, not plan_id)
     await this.supabase.from("synced_planned_activities").insert({
       profile_id: profileId,
-      planned_activity_id: planned.id,
+      planned_activity_id: planned.id, // This is correct - links to planned_activities table
       provider: "wahoo",
       external_id: workout.id.toString(),
       synced_at: new Date().toISOString(),

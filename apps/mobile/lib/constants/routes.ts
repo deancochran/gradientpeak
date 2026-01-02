@@ -17,7 +17,12 @@ export const ROUTES = {
     TRAINING_PLAN: {
       INDEX: "/training-plan" as const,
       CREATE: "/training-plan-create" as const,
+      METHOD_SELECTOR: "/training-plan-method-selector" as const,
+      WIZARD: "/training-plan-wizard" as const,
+      REVIEW: "/training-plan-review" as const,
       SETTINGS: "/training-plan-settings" as const,
+      LIST: "/training-plans-list" as const,
+      ADJUST: "/training-plan-adjust" as const,
     },
 
     // Create Activity Plan Routes
@@ -61,6 +66,9 @@ export const ROUTES = {
 
   // Activity Recording
   RECORD: "/record" as const,
+
+  // Workout Management
+  WORKOUTS_REORDER: "/workouts-reorder" as const,
 } as const;
 
 /**

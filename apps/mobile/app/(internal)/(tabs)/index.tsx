@@ -1,11 +1,14 @@
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import {
+  ScheduleStrip,
   TodaysTrainingCard,
   TrainingReadinessCard,
-  WeeklySnapshot,
 } from "@/components/home";
+import { TrainingLoadChart } from "@/components/charts/TrainingLoadChart";
 import { AppHeader } from "@/components/shared";
+import { DetailChartModal } from "@/components/shared/DetailChartModal";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Text } from "@/components/ui/text";
 import { useHomeData } from "@/lib/hooks/useHomeData";
 import { useRouter } from "expo-router";
 import React from "react";
@@ -14,6 +17,8 @@ import { RefreshControl, ScrollView, View } from "react-native";
 function HomeScreen() {
   const router = useRouter();
   const [refreshing, setRefreshing] = React.useState(false);
+  const [trainingStatusModalVisible, setTrainingStatusModalVisible] =
+    React.useState(false);
 
   const {
     plan,
@@ -22,6 +27,14 @@ function HomeScreen() {
     trainingReadiness,
     isLoading,
     refetch,
+    trends,
+    projectedFitness,
+    idealFitnessCurve,
+    goalMetrics,
+    consistency,
+    schedule,
+    weeklyGoal,
+    weeklySummary,
   } = useHomeData();
 
   const handleRefresh = async () => {
@@ -42,6 +55,13 @@ function HomeScreen() {
 
   const handleViewPlan = () => {
     router.push("/(internal)/(tabs)/plan");
+  };
+
+  const handlePressActivity = (activityId: string) => {
+    router.push({
+      pathname: "/(internal)/(tabs)/plan",
+      params: { activityId },
+    } as any);
   };
 
   if (isLoading) {
@@ -72,23 +92,29 @@ function HomeScreen() {
         }
         testID="home-screen"
       >
-        {/* Training Readiness Indicator */}
-        <TrainingReadinessCard
-          ctl={trainingReadiness.ctl}
-          atl={trainingReadiness.atl}
-          tsb={trainingReadiness.tsb}
-          form={
-            trainingReadiness.tsb > 15
-              ? "fresh"
-              : trainingReadiness.tsb > 5
-                ? "optimal"
-                : trainingReadiness.tsb > -10
-                  ? "neutral"
-                  : trainingReadiness.tsb > -20
-                    ? "tired"
-                    : "overreaching"
-          }
-        />
+        {/* Training Status Section */}
+        <View className="gap-2">
+          <Text className="text-sm font-medium text-muted-foreground px-1">
+            Training Status
+          </Text>
+          <TrainingReadinessCard
+            ctl={trainingReadiness.ctl}
+            atl={trainingReadiness.atl}
+            tsb={trainingReadiness.tsb}
+            form={
+              trainingReadiness.tsb > 15
+                ? "fresh"
+                : trainingReadiness.tsb > 5
+                  ? "optimal"
+                  : trainingReadiness.tsb > -10
+                    ? "neutral"
+                    : trainingReadiness.tsb > -20
+                      ? "tired"
+                      : "overreaching"
+            }
+            onPress={() => setTrainingStatusModalVisible(true)}
+          />
+        </View>
 
         {/* Today's Training Card - Most Important */}
         <TodaysTrainingCard
@@ -97,13 +123,55 @@ function HomeScreen() {
           onViewPlan={handleViewPlan}
         />
 
-        {/* Weekly Snapshot */}
-        <WeeklySnapshot
-          distance={parseFloat((weeklyStats.volume * 0.621371).toFixed(1))}
-          workouts={weeklyStats.activitiesCompleted}
-          totalTSS={weeklyStats.totalTSS}
-        />
+        {/* Upcoming Schedule */}
+        {schedule && schedule.length > 0 && (
+          <ScheduleStrip
+            schedule={schedule.map((s) => ({
+              id: s.id,
+              date: s.date,
+              activityName: s.activityName,
+              activityType: s.activityType,
+              estimatedDuration: s.estimatedDuration,
+              estimatedTSS: s.estimatedTSS,
+              isCompleted: s.isCompleted,
+            }))}
+            onPressActivity={handlePressActivity}
+          />
+        )}
       </ScrollView>
+
+      {/* Training Status Modal */}
+      <DetailChartModal
+        visible={trainingStatusModalVisible}
+        onClose={() => setTrainingStatusModalVisible(false)}
+        title="Training Load"
+        defaultDateRange="30d"
+      >
+        {(dateRange) => {
+          // Filter data based on date range
+          const days =
+            dateRange === "7d"
+              ? 7
+              : dateRange === "30d"
+                ? 30
+                : dateRange === "90d"
+                  ? 90
+                  : trends.length;
+          const filteredData = trends.slice(-days);
+
+          return (
+            <TrainingLoadChart
+              data={filteredData.map((t) => ({
+                date: t.date,
+                ctl: t.ctl,
+                atl: t.atl || 0,
+                tsb: t.tsb || 0,
+              }))}
+              height={400}
+            />
+          );
+        }}
+      </DetailChartModal>
     </View>
   );
 }

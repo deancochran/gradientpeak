@@ -1,8 +1,7 @@
-// apps/mobile/app/(internal)/(tabs)/trends/components/charts/TrainingLoadChart.tsx
-
 import { Text } from "@/components/ui/text";
-import { View } from "react-native";
-import { CartesianChart, Line } from "victory-native";
+import { View, Dimensions } from "react-native";
+import { LineChart } from "react-native-chart-kit";
+import { useColorScheme } from "nativewind";
 
 export interface TrainingLoadData {
   date: string;
@@ -20,19 +19,38 @@ export function TrainingLoadChart({
   data,
   height = 250,
 }: TrainingLoadChartProps) {
+  const screenWidth = Dimensions.get("window").width;
+  const chartWidth = screenWidth - 48;
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === "dark";
+
   const isEmpty = !data || data.length === 0;
 
   // Prepare data for chart - show last 30 days max for readability
   const recentData = isEmpty ? [] : data.slice(-30);
 
-  // Transform data for victory-native
-  const chartData = recentData.map((d, index) => ({
-    index,
-    ctl: d.ctl,
-    atl: d.atl,
-    tsb: d.tsb,
-    date: d.date,
-  }));
+  // Extract datasets
+  const ctlData = recentData.map((d) => d.ctl);
+  const atlData = recentData.map((d) => d.atl);
+  const tsbData = recentData.map((d) => d.tsb);
+
+  const datasets = [
+    {
+      data: ctlData.length > 0 ? ctlData : [0],
+      color: () => `rgba(59, 130, 246, 1)`, // Blue for CTL
+      strokeWidth: 3,
+    },
+    {
+      data: atlData.length > 0 ? atlData : [0],
+      color: () => `rgba(245, 158, 11, 1)`, // Orange for ATL
+      strokeWidth: 3,
+    },
+    {
+      data: tsbData.length > 0 ? tsbData : [0],
+      color: () => `rgba(16, 185, 129, 1)`, // Green for TSB
+      strokeWidth: 2,
+    },
+  ];
 
   return (
     <View className="bg-card rounded-lg border border-border p-4">
@@ -55,22 +73,44 @@ export function TrainingLoadChart({
             </Text>
           </View>
         ) : (
-          <CartesianChart
-            data={chartData}
-            xKey="index"
-            yKeys={["ctl", "atl", "tsb"]}
-          >
-            {({ points }) => (
-              <>
-                {/* CTL line (blue) */}
-                <Line points={points.ctl} color="#3b82f6" strokeWidth={3} />
-                {/* ATL line (orange) */}
-                <Line points={points.atl} color="#f59e0b" strokeWidth={3} />
-                {/* TSB line (green/red based on value) */}
-                <Line points={points.tsb} color="#10b981" strokeWidth={2} />
-              </>
-            )}
-          </CartesianChart>
+          <LineChart
+            data={{
+              labels: [],
+              datasets,
+            }}
+            width={chartWidth}
+            height={height - 100}
+            withDots={false}
+            withInnerLines={true}
+            withOuterLines={true}
+            withVerticalLines={false}
+            withHorizontalLines={true}
+            chartConfig={{
+              backgroundColor: isDark ? "#0a0a0a" : "#ffffff",
+              backgroundGradientFrom: isDark ? "#0a0a0a" : "#ffffff",
+              backgroundGradientTo: isDark ? "#0a0a0a" : "#ffffff",
+              decimalPlaces: 0,
+              color: (opacity = 1) =>
+                isDark
+                  ? `rgba(250, 250, 250, ${opacity})`
+                  : `rgba(10, 10, 10, ${opacity})`,
+              labelColor: (opacity = 1) =>
+                isDark
+                  ? `rgba(163, 163, 163, ${opacity})`
+                  : `rgba(115, 115, 115, ${opacity})`,
+              strokeWidth: 2,
+              propsForBackgroundLines: {
+                strokeWidth: 1,
+                stroke: isDark
+                  ? "rgba(38, 38, 38, 0.5)"
+                  : "rgba(228, 228, 228, 0.5)",
+              },
+            }}
+            bezier
+            style={{
+              paddingRight: 16,
+            }}
+          />
         )}
       </View>
 
@@ -96,13 +136,13 @@ export function TrainingLoadChart({
           <View className="items-center">
             <Text className="text-xs text-muted-foreground">Current CTL</Text>
             <Text className="text-sm font-semibold text-blue-600">
-              {recentData[recentData.length - 1]!.ctl}
+              {Math.round(recentData[recentData.length - 1]!.ctl)}
             </Text>
           </View>
           <View className="items-center">
             <Text className="text-xs text-muted-foreground">Current ATL</Text>
             <Text className="text-sm font-semibold text-yellow-600">
-              {recentData[recentData.length - 1]!.atl}
+              {Math.round(recentData[recentData.length - 1]!.atl)}
             </Text>
           </View>
           <View className="items-center">
@@ -115,7 +155,7 @@ export function TrainingLoadChart({
               }`}
             >
               {recentData[recentData.length - 1]!.tsb > 0 ? "+" : ""}
-              {recentData[recentData.length - 1]!.tsb}
+              {Math.round(recentData[recentData.length - 1]!.tsb)}
             </Text>
           </View>
         </View>

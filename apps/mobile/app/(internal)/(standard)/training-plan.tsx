@@ -1,13 +1,14 @@
 import { CurrentStatusCard } from "@/components/training-plan/CurrentStatusCard";
 import { UpcomingActivitiesCard } from "@/components/training-plan/UpcomingActivitiesCard";
 import { WeeklyProgressCard } from "@/components/training-plan/WeeklyProgressCard";
+import { PlanVsActualChart } from "@/components/charts/PlanVsActualChart";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { ROUTES } from "@/lib/constants/routes";
 import { trpc } from "@/lib/trpc";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import {
   Activity,
   Calendar,
@@ -18,6 +19,7 @@ import {
 import React, { useMemo } from "react";
 import {
   ActivityIndicator,
+  Alert,
   RefreshControl,
   ScrollView,
   TouchableOpacity,
@@ -27,16 +29,77 @@ import {
 export default function TrainingPlanOverview() {
   const router = useRouter();
   const utils = trpc.useUtils();
+  const { id } = useLocalSearchParams<{ id?: string }>();
 
-  // Get training plan
+  // Get training plan - if ID is provided, get specific plan, otherwise get active plan
   const { data: plan, isLoading: loadingPlan } =
-    trpc.trainingPlans.get.useQuery();
+    trpc.trainingPlans.get.useQuery(id ? { id } : undefined);
 
   // Get current status (CTL/ATL/TSB)
   const { data: status, isLoading: loadingStatus } =
     trpc.trainingPlans.getCurrentStatus.useQuery(undefined, {
       enabled: !!plan,
     });
+
+  // Calculate date ranges for fitness data
+  const today = useMemo(() => new Date(), []);
+  const thirtyDaysAgo = useMemo(() => {
+    const date = new Date(today);
+    date.setDate(today.getDate() - 30);
+    return date;
+  }, [today]);
+  const fourteenDaysAhead = useMemo(() => {
+    const date = new Date(today);
+    date.setDate(today.getDate() + 14);
+    return date;
+  }, [today]);
+
+  // Get actual fitness curve (last 30 days)
+  const { data: actualCurveData } = trpc.trainingPlans.getActualCurve.useQuery(
+    {
+      start_date: thirtyDaysAgo.toISOString().split("T")[0]!,
+      end_date: today.toISOString().split("T")[0]!,
+    },
+    { enabled: !!plan },
+  );
+
+  // Get ideal fitness curve from training plan (if exists)
+  const { data: idealCurveData } = trpc.trainingPlans.getIdealCurve.useQuery(
+    {
+      id: plan?.id || "",
+      start_date: thirtyDaysAgo.toISOString().split("T")[0]!,
+      end_date: fourteenDaysAhead.toISOString().split("T")[0]!,
+    },
+    {
+      enabled: !!plan?.id,
+    },
+  );
+
+  // Extract data from API responses
+  const fitnessHistory = useMemo(
+    () => actualCurveData?.dataPoints || [],
+    [actualCurveData],
+  );
+  const idealFitnessCurve = useMemo(
+    () => idealCurveData?.dataPoints || [],
+    [idealCurveData],
+  );
+  const projectedFitness = useMemo(() => {
+    // Extract future dates from ideal curve (after today)
+    if (!idealCurveData?.dataPoints) return [];
+    const todayStr = today.toISOString().split("T")[0];
+    return idealCurveData.dataPoints.filter((d) => d.date > todayStr);
+  }, [idealCurveData, today]);
+
+  // Get goal metrics from ideal curve data
+  const goalMetrics = useMemo(() => {
+    if (!idealCurveData) return undefined;
+    return {
+      targetCTL: idealCurveData.targetCTL,
+      targetDate: idealCurveData.targetDate,
+      description: `Target: ${idealCurveData.targetCTL} CTL by ${new Date(idealCurveData.targetDate).toLocaleDateString()}`,
+    };
+  }, [idealCurveData]);
 
   const [refreshing, setRefreshing] = React.useState(false);
 
@@ -50,15 +113,7 @@ export default function TrainingPlanOverview() {
   };
 
   const handleCreatePlan = () => {
-    router.push(ROUTES.PLAN.TRAINING_PLAN.CREATE);
-  };
-
-  const handleViewCalendar = () => {
-    router.push(ROUTES.PLAN.INDEX);
-  };
-
-  const handleViewTrends = () => {
-    router.push(ROUTES.DISCOVER);
+    router.push(ROUTES.PLAN.TRAINING_PLAN.METHOD_SELECTOR);
   };
 
   // Derive plan progress
@@ -192,14 +247,34 @@ export default function TrainingPlanOverview() {
       <View className="flex-1 p-4 gap-4">
         {/* Header with Plan Name and Actions */}
         <View className="mb-4">
-          <View className="flex-row items-start justify-between mb-2">
+          <View className="flex-row items-start justify-between mb-3">
             <View className="flex-1">
-              <Text className="text-2xl font-bold mb-1">{plan.name}</Text>
+              <Text className="text-2xl font-bold mb-2">{plan.name}</Text>
               {plan.description && (
-                <Text className="text-base text-muted-foreground">
+                <Text className="text-base text-muted-foreground mb-3">
                   {plan.description}
                 </Text>
               )}
+
+              {/* High-level Plan Info */}
+              <View className="flex-row items-center gap-4 mb-2">
+                <View className="flex-row items-center gap-1.5">
+                  <View
+                    className={`w-2 h-2 rounded-full ${plan.is_active ? "bg-green-500" : "bg-orange-500"}`}
+                  />
+                  <Text className="text-sm text-muted-foreground">
+                    {plan.is_active ? "Active" : "Inactive"}
+                  </Text>
+                </View>
+                <Text className="text-sm text-muted-foreground">
+                  Started{" "}
+                  {new Date(plan.created_at).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+                </Text>
+              </View>
             </View>
             <TouchableOpacity
               onPress={() => router.push(ROUTES.PLAN.TRAINING_PLAN.SETTINGS)}
@@ -212,18 +287,12 @@ export default function TrainingPlanOverview() {
           </View>
 
           {/* Quick Stats Row */}
-          <View className="flex-row gap-3 mt-3">
+          <View className="flex-row gap-3">
             <View className="flex-1 bg-card border border-border rounded-lg p-3">
               <Text className="text-xs text-muted-foreground mb-1">
                 Week Progress
               </Text>
               <Text className="text-lg font-bold">{planProgress.week}</Text>
-            </View>
-            <View className="flex-1 bg-card border border-border rounded-lg p-3">
-              <Text className="text-xs text-muted-foreground mb-1">Status</Text>
-              <Text className="text-lg font-bold">
-                {plan.is_active ? "Active" : "Paused"}
-              </Text>
             </View>
             <View className="flex-1 bg-card border border-border rounded-lg p-3">
               <Text className="text-xs text-muted-foreground mb-1">
@@ -234,8 +303,94 @@ export default function TrainingPlanOverview() {
                 {status?.weekProgress?.totalPlannedActivities || 0}
               </Text>
             </View>
+            {status && (
+              <View className="flex-1 bg-card border border-border rounded-lg p-3">
+                <Text className="text-xs text-muted-foreground mb-1">
+                  Fitness
+                </Text>
+                <Text className="text-lg font-bold">{status.ctl} CTL</Text>
+              </View>
+            )}
           </View>
         </View>
+
+        {/* Fitness Progress Chart - Plan vs Actual */}
+        {fitnessHistory.length > 0 ? (
+          <View>
+            <PlanVsActualChart
+              actualData={fitnessHistory}
+              projectedData={projectedFitness}
+              idealData={idealFitnessCurve}
+              goalMetrics={goalMetrics}
+              height={300}
+              showLegend={true}
+            />
+            {!idealCurveData && plan && (
+              <Card className="border-primary/50 bg-primary/5 mt-4">
+                <CardContent className="p-4">
+                  <View className="gap-3">
+                    <View>
+                      <Text className="font-semibold text-primary mb-1">
+                        Add Fitness Projection
+                      </Text>
+                      <Text className="text-sm text-muted-foreground">
+                        Enable periodization to see your planned fitness
+                        progression and track if you're on pace to reach your
+                        goals.
+                      </Text>
+                    </View>
+                    <Button
+                      onPress={async () => {
+                        try {
+                          await utils.client.trainingPlans.autoAddPeriodization.mutate(
+                            { id: plan.id },
+                          );
+                          await utils.trainingPlans.invalidate();
+                          Alert.alert(
+                            "Success!",
+                            "Periodization has been automatically configured based on your plan. You can customize it in Settings.",
+                          );
+                        } catch (error: any) {
+                          Alert.alert(
+                            "Error",
+                            error.message || "Failed to add periodization",
+                          );
+                        }
+                      }}
+                    >
+                      <Text className="text-primary-foreground font-semibold">
+                        Auto-Configure Periodization
+                      </Text>
+                    </Button>
+                    <TouchableOpacity
+                      onPress={() =>
+                        router.push(ROUTES.PLAN.TRAINING_PLAN.SETTINGS)
+                      }
+                      className="items-center py-2"
+                    >
+                      <Text className="text-xs text-primary">
+                        Or customize manually in Settings →
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </CardContent>
+              </Card>
+            )}
+          </View>
+        ) : (
+          <Card className="border-border">
+            <CardContent className="p-6">
+              <View className="items-center">
+                <Text className="font-semibold text-muted-foreground mb-2">
+                  No Fitness Data Yet
+                </Text>
+                <Text className="text-sm text-muted-foreground text-center">
+                  Complete some activities to see your fitness progression
+                </Text>
+              </View>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Current Status Card - CTL/ATL/TSB */}
         {loadingStatus ? (
@@ -305,11 +460,11 @@ export default function TrainingPlanOverview() {
                 </View>
                 <View className="flex-1">
                   <Text className="font-semibold text-orange-600 mb-1">
-                    Plan Paused
+                    Plan Inactive
                   </Text>
                   <Text className="text-sm text-muted-foreground">
-                    Your training plan is currently paused. Activities won't
-                    count toward progress.
+                    This training plan is currently inactive. Go to settings to
+                    activate it.
                   </Text>
                 </View>
               </View>
@@ -317,34 +472,10 @@ export default function TrainingPlanOverview() {
           </Card>
         )}
 
-        {/* Action Buttons */}
-        <View className="gap-3 mt-2">
-          <Button
-            size="lg"
-            onPress={handleViewCalendar}
-            className="flex-row items-center justify-center gap-2"
-          >
-            <Icon as={Calendar} size={20} className="text-primary-foreground" />
-            <Text className="text-primary-foreground font-semibold">
-              View Calendar
-            </Text>
-          </Button>
-
-          <Button
-            variant="outline"
-            size="lg"
-            onPress={handleViewTrends}
-            className="flex-row items-center justify-center gap-2"
-          >
-            <Icon as={TrendingUp} size={20} className="text-foreground" />
-            <Text className="text-foreground font-semibold">View Trends</Text>
-          </Button>
-        </View>
-
-        {/* Quick Info */}
+        {/* Training Plan Structure */}
         <Card>
           <CardHeader>
-            <CardTitle>Training Plan Details</CardTitle>
+            <CardTitle>Training Plan Structure</CardTitle>
           </CardHeader>
           <CardContent>
             <View className="gap-3">
@@ -371,12 +502,58 @@ export default function TrainingPlanOverview() {
                   <View className="h-px bg-border" />
                   <View className="flex-row justify-between items-center">
                     <Text className="text-muted-foreground">
-                      Rest Days per Week
+                      Max Consecutive Days
+                    </Text>
+                    <Text className="font-semibold">
+                      {(plan.structure as any).max_consecutive_days}
+                    </Text>
+                  </View>
+                  <View className="h-px bg-border" />
+                  <View className="flex-row justify-between items-center">
+                    <Text className="text-muted-foreground">
+                      Min Rest Days per Week
                     </Text>
                     <Text className="font-semibold">
                       {(plan.structure as any).min_rest_days_per_week}
                     </Text>
                   </View>
+                  {(plan.structure as any).periodization_template && (
+                    <>
+                      <View className="h-px bg-border" />
+                      <View className="flex-row justify-between items-center">
+                        <Text className="text-muted-foreground">
+                          Periodization
+                        </Text>
+                        <Text className="font-semibold">
+                          {
+                            (plan.structure as any).periodization_template
+                              .starting_ctl
+                          }{" "}
+                          →{" "}
+                          {
+                            (plan.structure as any).periodization_template
+                              .target_ctl
+                          }{" "}
+                          CTL
+                        </Text>
+                      </View>
+                      <View className="flex-row justify-between items-center">
+                        <Text className="text-muted-foreground">
+                          Target Date
+                        </Text>
+                        <Text className="font-semibold">
+                          {new Date(
+                            (plan.structure as any).periodization_template
+                              .target_date,
+                          ).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })}
+                        </Text>
+                      </View>
+                    </>
+                  )}
                 </>
               )}
             </View>

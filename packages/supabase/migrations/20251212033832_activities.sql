@@ -204,8 +204,6 @@ alter table "public"."activities" add column "power_zone_seconds" integer[];
 
 alter table "public"."activities" add column "profile_snapshot" jsonb;
 
-alter table "public"."activities" add column "route_id" uuid;
-
 alter table "public"."activities" add column "type" text not null;
 
 CREATE INDEX idx_activities_external ON public.activities USING btree (provider, external_id) WHERE (provider IS NOT NULL);
@@ -230,8 +228,6 @@ CREATE INDEX idx_activities_power_zones ON public.activities USING gin (power_zo
 
 CREATE INDEX idx_activities_profile_started ON public.activities USING btree (profile_id, started_at DESC);
 
-CREATE INDEX idx_activities_route ON public.activities USING btree (route_id) WHERE (route_id IS NOT NULL);
-
 CREATE INDEX idx_activities_started ON public.activities USING btree (started_at DESC);
 
 CREATE INDEX idx_activities_type ON public.activities USING btree (type);
@@ -248,12 +244,6 @@ alter table "public"."activities" add constraint "activities_moving_seconds_chec
 
 alter table "public"."activities" validate constraint "activities_moving_seconds_check";
 
-alter table "public"."activities" add constraint "activities_route_id_fkey" FOREIGN KEY (route_id) REFERENCES activity_routes(id) ON DELETE SET NULL not valid;
-
-alter table "public"."activities" validate constraint "activities_route_id_fkey";
-
 alter table "public"."activities" add constraint "chk_moving_time" CHECK (((moving_seconds >= 0) AND (moving_seconds <= duration_seconds))) not valid;
 
 alter table "public"."activities" validate constraint "chk_moving_time";
-
-

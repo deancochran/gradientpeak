@@ -1,13 +1,14 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
 import React from "react";
-import { View } from "react-native";
+import { TouchableOpacity, View } from "react-native";
 
 interface TrainingReadinessCardProps {
   ctl: number;
   atl: number;
   tsb: number;
   form: "fresh" | "optimal" | "neutral" | "tired" | "overreaching";
+  onPress?: () => void;
 }
 
 export function TrainingReadinessCard({
@@ -15,13 +16,47 @@ export function TrainingReadinessCard({
   atl,
   tsb,
   form,
+  onPress,
 }: TrainingReadinessCardProps) {
+  const getFormStatusText = (formStatus: string): string => {
+    switch (formStatus) {
+      case "fresh":
+        return "Fresh";
+      case "optimal":
+        return "Optimal";
+      case "neutral":
+        return "Neutral";
+      case "tired":
+        return "Tired";
+      case "overreaching":
+        return "Overreaching";
+      default:
+        return "Unknown";
+    }
+  };
+
+  const getReadinessText = (formStatus: string): string => {
+    switch (formStatus) {
+      case "fresh":
+        return "Ready";
+      case "optimal":
+        return "Ready";
+      case "neutral":
+        return "Moderate";
+      case "tired":
+        return "Fatigued";
+      case "overreaching":
+        return "Rest";
+      default:
+        return "";
+    }
+  };
+
   const getFormStatusColor = (formStatus: string): string => {
     switch (formStatus) {
       case "fresh":
-        return "text-green-600";
       case "optimal":
-        return "text-blue-600";
+        return "text-foreground";
       case "neutral":
         return "text-muted-foreground";
       case "tired":
@@ -33,118 +68,65 @@ export function TrainingReadinessCard({
     }
   };
 
-  const getFormEmoji = (formStatus: string): string => {
-    switch (formStatus) {
-      case "fresh":
-        return "🌟";
-      case "optimal":
-        return "💪";
-      case "neutral":
-        return "➡️";
-      case "tired":
-        return "😓";
-      case "overreaching":
-        return "⚠️";
-      default:
-        return "📊";
-    }
-  };
-
-  const getFormDescription = (formStatus: string): string => {
-    switch (formStatus) {
-      case "fresh":
-        return "Well rested, ready to race";
-      case "optimal":
-        return "Peak performance zone";
-      case "neutral":
-        return "Balanced training state";
-      case "tired":
-        return "Productive fatigue, recovery needed";
-      case "overreaching":
-        return "High fatigue, risk of overtraining";
-      default:
-        return "";
-    }
-  };
+  const CardWrapper = onPress ? TouchableOpacity : View;
 
   return (
-    <Card className="bg-card border-border">
-      <CardHeader>
-        <CardTitle className="w-full flex flex-row items-center justify-between">
-          <Text className="text-lg text-muted-foreground">Training Status</Text>
-          <Text className="text-2xl">{getFormEmoji(form)}</Text>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Form Status Display */}
-        <View className="items-center py-2">
-          <Text
-            className={`text-4xl font-bold capitalize ${getFormStatusColor(form)}`}
-          >
-            {form}
-          </Text>
-          <Text className="text-sm text-muted-foreground mt-1 text-center">
-            {getFormDescription(form)}
-          </Text>
-        </View>
+    <CardWrapper onPress={onPress} activeOpacity={0.7}>
+      <Card className="bg-card border-border">
+        <CardContent className="space-y-3">
+          {/* Metrics Grid - Compact 3 columns */}
+          <View className="flex-row items-center justify-between">
+            {/* CTL - Fitness */}
+            <View className="items-center flex-1">
+              <Text className="text-2xl font-semibold text-foreground">
+                {ctl}
+              </Text>
+              <Text className="text-xs text-muted-foreground mt-0.5">
+                Fitness
+              </Text>
+              <Text className="text-[10px] text-muted-foreground">CTL</Text>
+            </View>
 
-        {/* Metrics Grid */}
-        <View className="flex-row items-stretch gap-2">
-          {/* CTL - Fitness */}
-          <View className="flex-1 bg-blue-500/10 rounded-lg p-3 border border-blue-500/20">
-            <Text className="text-2xl font-bold text-blue-600">{ctl}</Text>
-            <Text className="text-xs text-muted-foreground mt-1">
-              Fitness (CTL)
-            </Text>
-            <Text className="text-xs text-muted-foreground">42-day avg</Text>
+            {/* Divider */}
+            <View className="h-12 w-px bg-border" />
+
+            {/* ATL - Fatigue */}
+            <View className="items-center flex-1">
+              <Text className="text-2xl font-semibold text-foreground">
+                {atl}
+              </Text>
+              <Text className="text-xs text-muted-foreground mt-0.5">
+                Fatigue
+              </Text>
+              <Text className="text-[10px] text-muted-foreground">ATL</Text>
+            </View>
+
+            {/* Divider */}
+            <View className="h-12 w-px bg-border" />
+
+            {/* TSB - Form */}
+            <View className="items-center flex-1">
+              <Text className="text-2xl font-semibold text-foreground">
+                {tsb > 0 ? "+" : ""}
+                {tsb}
+              </Text>
+              <Text className="text-xs text-muted-foreground mt-0.5">Form</Text>
+              <Text className="text-[10px] text-muted-foreground">TSB</Text>
+            </View>
           </View>
 
-          {/* ATL - Fatigue */}
-          <View className="flex-1 bg-orange-500/10 rounded-lg p-3 border border-orange-500/20">
-            <Text className="text-2xl font-bold text-orange-600">{atl}</Text>
-            <Text className="text-xs text-muted-foreground mt-1">
-              Fatigue (ATL)
+          {/* Status Line - Minimalist */}
+          <View className="pt-2 border-t border-border">
+            <Text className="text-xs text-center text-muted-foreground">
+              <Text className={getFormStatusColor(form)}>
+                {getFormStatusText(form)}
+              </Text>
+              {" · "}
+              {getReadinessText(form)}
             </Text>
-            <Text className="text-xs text-muted-foreground">7-day avg</Text>
           </View>
-
-          {/* TSB - Form */}
-          <View
-            className={`flex-1 rounded-lg p-3 border ${
-              tsb > 15
-                ? "bg-green-500/10 border-green-500/20"
-                : tsb > 5
-                  ? "bg-blue-500/10 border-blue-500/20"
-                  : tsb > -10
-                    ? "bg-gray-500/10 border-gray-500/20"
-                    : tsb > -20
-                      ? "bg-orange-500/10 border-orange-500/20"
-                      : "bg-red-500/10 border-red-500/20"
-            }`}
-          >
-            <Text
-              className={`text-2xl font-bold ${
-                tsb > 15
-                  ? "text-green-600"
-                  : tsb > 5
-                    ? "text-blue-600"
-                    : tsb > -10
-                      ? "text-gray-600"
-                      : tsb > -20
-                        ? "text-orange-600"
-                        : "text-red-600"
-              }`}
-            >
-              {tsb > 0 ? "+" : ""}
-              {tsb}
-            </Text>
-            <Text className="text-xs text-muted-foreground mt-1">
-              Form (TSB)
-            </Text>
-            <Text className="text-xs text-muted-foreground">CTL - ATL</Text>
-          </View>
-        </View>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </CardWrapper>
   );
 }

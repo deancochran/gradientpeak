@@ -7,7 +7,8 @@ import {
   getFormStatus,
   getTrainingIntensityZone,
   trainingPlanCreateInputSchema,
-  trainingPlanStructureSchema,
+  trainingPlanCreateSchema,
+  trainingPlanSchema,
   trainingPlanUpdateInputSchema,
 } from "@repo/core";
 import { TRPCError } from "@trpc/server";
@@ -17,9 +18,154 @@ import { addEstimationToPlans } from "../utils/estimation-helpers";
 
 export const trainingPlansRouter = createTRPCRouter({
   // ------------------------------
-  // Get the user's training plan (only 1 per user)
+  // Get a training plan (by ID or active plan)
   // ------------------------------
-  get: protectedProcedure.query(async ({ ctx }) => {
+  get: protectedProcedure
+    .input(z.object({ id: z.string() }).optional())
+    .query(async ({ ctx, input }) => {
+      // If ID provided, get specific plan
+      if (input?.id) {
+        const { data, error } = await ctx.supabase
+          .from("training_plans")
+          .select(
+            `
+          id,
+          idx,
+          name,
+          description,
+          structure,
+          is_active,
+          created_at,
+          updated_at,
+          profile_id
+        `,
+          )
+          .eq("id", input.id)
+          .eq("profile_id", ctx.session.user.id)
+          .single();
+
+        if (error) {
+          if (error.code === "PGRST116") {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Training plan not found",
+            });
+          }
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: error.message,
+          });
+        }
+
+        // Validate structure
+        try {
+          if (data.structure) {
+            trainingPlanSchema.parse(data.structure);
+          }
+        } catch (validationError) {
+          console.error(
+            "Invalid structure in database for training plan",
+            data.id,
+            validationError,
+          );
+        }
+
+        return data;
+      }
+
+      // Otherwise, get active plan
+      // Query for all active plans (in case there are multiple)
+      const { data: activePlans, error } = await ctx.supabase
+        .from("training_plans")
+        .select(
+          `
+        id,
+        idx,
+        name,
+        description,
+        structure,
+        is_active,
+        created_at,
+        updated_at,
+        profile_id
+      `,
+        )
+        .eq("profile_id", ctx.session.user.id)
+        .eq("is_active", true)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error.message,
+        });
+      }
+
+      // If no active plans, return null
+      if (!activePlans || activePlans.length === 0) {
+        return null;
+      }
+
+      // If multiple active plans exist (shouldn't happen, but handle it gracefully)
+      if (activePlans.length > 1) {
+        console.warn(
+          `User ${ctx.session.user.id} has ${activePlans.length} active training plans. Deactivating older ones.`,
+        );
+
+        // Keep the most recent, deactivate the rest
+        const mostRecentPlan = activePlans[0]!;
+        const olderPlanIds = activePlans.slice(1).map((p) => p.id);
+
+        // Deactivate older plans
+        await ctx.supabase
+          .from("training_plans")
+          .update({ is_active: false })
+          .in("id", olderPlanIds);
+
+        // Return the most recent active plan
+        const data = mostRecentPlan;
+
+        // Validate structure on read (defensive programming)
+        try {
+          if (data.structure) {
+            trainingPlanSchema.parse(data.structure);
+          }
+        } catch (validationError) {
+          console.error(
+            "Invalid structure in database for training plan",
+            data.id,
+            validationError,
+          );
+          // Don't fail the query, but log the issue
+        }
+
+        return data;
+      }
+
+      // Single active plan - normal case
+      const data = activePlans[0]!;
+
+      // Validate structure on read (defensive programming)
+      try {
+        if (data.structure) {
+          trainingPlanSchema.parse(data.structure);
+        }
+      } catch (validationError) {
+        console.error(
+          "Invalid structure in database for training plan",
+          data.id,
+          validationError,
+        );
+        // Don't fail the query, but log the issue
+      }
+
+      return data;
+    }),
+
+  // ------------------------------
+  // List all training plans for the user
+  // ------------------------------
+  list: protectedProcedure.query(async ({ ctx }) => {
     const { data, error } = await ctx.supabase
       .from("training_plans")
       .select(
@@ -36,34 +182,16 @@ export const trainingPlansRouter = createTRPCRouter({
       `,
       )
       .eq("profile_id", ctx.session.user.id)
-      .single();
+      .order("created_at", { ascending: false });
 
     if (error) {
-      // If no training plan exists, return null instead of throwing error
-      if (error.code === "PGRST116") {
-        return null;
-      }
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
         message: error.message,
       });
     }
 
-    // Validate structure on read (defensive programming)
-    try {
-      if (data.structure) {
-        trainingPlanStructureSchema.parse(data.structure);
-      }
-    } catch (validationError) {
-      console.error(
-        "Invalid structure in database for training plan",
-        data.id,
-        validationError,
-      );
-      // Don't fail the query, but log the issue
-    }
-
-    return data;
+    return data || [];
   }),
 
   // ------------------------------
@@ -87,34 +215,64 @@ export const trainingPlansRouter = createTRPCRouter({
 
   // ------------------------------
   // Create new training plan
-  // Only allowed if user doesn't have one already
+  // Can create multiple plans; if is_active, deactivates others
   // ------------------------------
   create: protectedProcedure
     .input(trainingPlanCreateInputSchema)
     .mutation(async ({ ctx, input }) => {
-      // First check if user already has a training plan
-      const { count } = await ctx.supabase
-        .from("training_plans")
-        .select("id", { count: "exact", head: true })
-        .eq("profile_id", ctx.session.user.id);
+      // Note: input.structure is already validated by trainingPlanCreateInputSchema
+      // which uses trainingPlanCreateSchema (no ID required)
 
-      if (count && count > 0) {
+      // Generate a unique UUID for this plan structure
+      // Each plan gets its own unique ID, even if created from a template
+      const planId = crypto.randomUUID();
+      const structureWithId = {
+        ...input.structure,
+        id: planId,
+      };
+
+      // Final validation with ID to ensure complete structure is valid
+      try {
+        trainingPlanSchema.parse(structureWithId);
+      } catch (validationError) {
+        console.error("Training plan validation error:", validationError);
+
+        // Extract more meaningful error message from Zod validation
+        let errorMessage = "Invalid training plan structure";
+        const errorDetails: string[] = [];
+
+        if (validationError && typeof validationError === "object") {
+          const zodError = validationError as any;
+          if (zodError.errors && Array.isArray(zodError.errors)) {
+            // Collect all errors, not just the first one
+            for (const err of zodError.errors) {
+              const path = err.path ? err.path.join(".") : "unknown";
+              const message = err.message || "validation failed";
+              errorDetails.push(`${path}: ${message}`);
+            }
+
+            if (errorDetails.length > 0) {
+              errorMessage = `Training plan validation failed:\n${errorDetails.join("\n")}`;
+            }
+          } else if (zodError.message) {
+            errorMessage = zodError.message;
+          }
+        }
+
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message:
-            "You already have a training plan. Please delete your existing plan before creating a new one.",
+          message: errorMessage,
+          cause: validationError,
         });
       }
 
-      // Validate the structure before saving to database
-      try {
-        trainingPlanStructureSchema.parse(input.structure);
-      } catch (validationError) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Invalid training plan structure",
-          cause: validationError,
-        });
+      // If creating as active, deactivate any existing active plans
+      if (input.is_active) {
+        await ctx.supabase
+          .from("training_plans")
+          .update({ is_active: false })
+          .eq("profile_id", ctx.session.user.id)
+          .eq("is_active", true);
       }
 
       const { data, error } = await ctx.supabase
@@ -122,8 +280,8 @@ export const trainingPlansRouter = createTRPCRouter({
         .insert({
           name: input.name,
           description: input.description ?? null,
-          structure: input.structure,
-          is_active: true,
+          structure: structureWithId as any, // Cast to satisfy Supabase Json type
+          is_active: input.is_active ?? true,
           profile_id: ctx.session.user.id,
         })
         .select(
@@ -142,14 +300,6 @@ export const trainingPlansRouter = createTRPCRouter({
         .single();
 
       if (error) {
-        // Check if it's a unique constraint violation
-        if (error.code === "23505") {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message:
-              "You already have a training plan. Please delete your existing plan before creating a new one.",
-          });
-        }
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: error.message,
@@ -194,7 +344,7 @@ export const trainingPlansRouter = createTRPCRouter({
       // Validate structure if provided
       if (updates.structure) {
         try {
-          trainingPlanStructureSchema.parse(updates.structure);
+          trainingPlanSchema.parse(updates.structure);
         } catch (validationError) {
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -204,12 +354,23 @@ export const trainingPlansRouter = createTRPCRouter({
         }
       }
 
+      // If setting as active, deactivate other plans
+      if (updates.is_active === true) {
+        await ctx.supabase
+          .from("training_plans")
+          .update({ is_active: false })
+          .eq("profile_id", ctx.session.user.id)
+          .eq("is_active", true)
+          .neq("id", id);
+      }
+
       const { data, error } = await ctx.supabase
         .from("training_plans")
         .update({
           name: updates.name as string | undefined,
           description: updates.description as string | null | undefined,
           structure: updates.structure as any,
+          is_active: updates.is_active as boolean | undefined,
         })
         .eq("id", id)
         .select(
@@ -235,6 +396,56 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       return data;
+    }),
+
+  // ------------------------------
+  // Activate a training plan (deactivates all others)
+  // ------------------------------
+  activate: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      // Check ownership
+      const { data: existing } = await ctx.supabase
+        .from("training_plans")
+        .select("id, profile_id, is_active")
+        .eq("id", input.id)
+        .eq("profile_id", ctx.session.user.id)
+        .single();
+
+      if (!existing) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message:
+            "Training plan not found or you don't have permission to activate it",
+        });
+      }
+
+      if (existing.is_active) {
+        // Already active, no-op
+        return { success: true, message: "Plan is already active" };
+      }
+
+      // Deactivate all other plans for this user
+      await ctx.supabase
+        .from("training_plans")
+        .update({ is_active: false })
+        .eq("profile_id", ctx.session.user.id)
+        .eq("is_active", true);
+
+      // Activate this plan
+      const { error } = await ctx.supabase
+        .from("training_plans")
+        .update({ is_active: true })
+        .eq("id", input.id);
+
+      if (error) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: error.message,
+        });
+      }
+
+      return { success: true, message: "Plan activated successfully" };
     }),
 
   // ------------------------------
@@ -322,7 +533,7 @@ export const trainingPlansRouter = createTRPCRouter({
       // Validate structure on read
       try {
         if (data.structure) {
-          trainingPlanStructureSchema.parse(data.structure);
+          trainingPlanSchema.parse(data.structure);
         }
       } catch (validationError) {
         console.error(
@@ -503,9 +714,30 @@ export const trainingPlansRouter = createTRPCRouter({
           : null,
       })) || [];
 
-    // Get target TSS from training plan structure
+    // Get target TSS from current block in training plan structure
     const structure = plan.structure as any;
-    const targetTSS = structure?.target_weekly_tss_max || plannedWeeklyTSS;
+    let targetTSS = plannedWeeklyTSS;
+
+    // For periodized plans, find the current block
+    if (structure?.plan_type === "periodized" && structure?.blocks) {
+      const todayStr = today.toISOString().split("T")[0] || "";
+      const currentBlock = structure.blocks.find((block: any) => {
+        return (
+          todayStr && block.start_date <= todayStr && block.end_date >= todayStr
+        );
+      });
+
+      if (currentBlock?.target_weekly_tss_range) {
+        // Use the max of the range as the target
+        targetTSS = currentBlock.target_weekly_tss_range.max;
+      }
+    } else if (
+      structure?.plan_type === "maintenance" &&
+      structure?.target_weekly_tss_range
+    ) {
+      // For maintenance plans, use the target range
+      targetTSS = structure.target_weekly_tss_range.max;
+    }
 
     return {
       ctl: Math.round(ctl * 10) / 10,
@@ -551,17 +783,21 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       const structure = plan.structure as any;
-      const periodization = structure.periodization_template;
 
-      if (!periodization) {
-        // No periodization template, return null
+      // Only periodized plans have fitness progression
+      if (
+        structure?.plan_type !== "periodized" ||
+        !structure?.fitness_progression
+      ) {
         return null;
       }
 
-      // Generate ideal CTL/ATL curve based on periodization template
+      const fitnessProgression = structure.fitness_progression;
+      const blocks = structure.blocks || [];
+
+      // Generate ideal CTL/ATL curve based on fitness progression
       const startDate = new Date(input.start_date);
       const endDate = new Date(input.end_date);
-      const targetDate = new Date(periodization.target_date);
 
       const daysDiff = Math.floor(
         (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24),
@@ -575,25 +811,39 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       const dataPoints = [];
-      let currentCTL = periodization.starting_ctl;
-      const rampRate = periodization.ramp_rate;
-      const targetCTL = periodization.target_ctl;
+      let currentCTL = fitnessProgression.starting_ctl;
+      const rampRate = fitnessProgression.weekly_ramp_rate;
+      const targetCTL = fitnessProgression.target_ctl;
+      const peakDate = fitnessProgression.peak_date
+        ? new Date(fitnessProgression.peak_date)
+        : endDate;
 
       for (let i = 0; i <= daysDiff; i++) {
         const date = new Date(startDate.getTime());
         date.setDate(startDate.getDate() + i);
+        const dateStr = date.toISOString().split("T")[0];
 
-        // Project CTL with ramp rate
-        if (date <= targetDate && currentCTL < targetCTL) {
+        // Find which block this date falls in
+        const currentBlock = blocks.find((block: any) => {
+          return (
+            dateStr && block.start_date <= dateStr && block.end_date >= dateStr
+          );
+        });
+
+        // Project CTL with ramp rate up to peak date
+        if (date <= peakDate && currentCTL < targetCTL) {
           const weeklyIncrease = currentCTL * rampRate;
           currentCTL += weeklyIncrease / 7; // Daily increase
           currentCTL = Math.min(currentCTL, targetCTL);
+        } else if (currentBlock?.phase === "taper") {
+          // During taper, CTL naturally declines
+          const taperRate = 0.95; // 5% weekly reduction
+          currentCTL *= Math.pow(taperRate, 1 / 7); // Daily taper
         }
 
         // ATL follows CTL with typical ratio
         const idealATL = currentCTL * 0.7; // Typical ATL/CTL ratio
 
-        const dateStr = date.toISOString().split("T")[0];
         if (dateStr) {
           dataPoints.push({
             date: dateStr,
@@ -606,9 +856,9 @@ export const trainingPlansRouter = createTRPCRouter({
 
       return {
         dataPoints,
-        startCTL: periodization.starting_ctl,
-        targetCTL: periodization.target_ctl,
-        targetDate: periodization.target_date,
+        startCTL: fitnessProgression.starting_ctl,
+        targetCTL: fitnessProgression.target_ctl,
+        targetDate: fitnessProgression.peak_date,
       };
     }),
 
@@ -706,6 +956,76 @@ export const trainingPlansRouter = createTRPCRouter({
     }),
 
   // ------------------------------
+  // Apply quick adjustment to training plan
+  // ------------------------------
+  applyQuickAdjustment: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        adjustedStructure: z.any(), // Will be validated by trainingPlanSchema
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Check ownership
+      const { data: existing } = await ctx.supabase
+        .from("training_plans")
+        .select("id, profile_id")
+        .eq("id", input.id)
+        .eq("profile_id", ctx.session.user.id)
+        .single();
+
+      if (!existing) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message:
+            "Training plan not found or you don't have permission to edit it",
+        });
+      }
+
+      // Validate the adjusted structure
+      try {
+        trainingPlanSchema.parse(input.adjustedStructure);
+      } catch (validationError) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Invalid adjusted structure",
+          cause: validationError,
+        });
+      }
+
+      // Apply the adjustment
+      const { data, error } = await ctx.supabase
+        .from("training_plans")
+        .update({
+          structure: input.adjustedStructure,
+        })
+        .eq("id", input.id)
+        .select(
+          `
+          id,
+          idx,
+          name,
+          description,
+          structure,
+          is_active,
+          created_at,
+          updated_at,
+          profile_id
+        `,
+        )
+        .single();
+
+      if (error) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: error.message,
+        });
+      }
+
+      return data;
+    }),
+
+  // ------------------------------
   // Get weekly summary (planned vs actual)
   // ------------------------------
   getWeeklySummary: protectedProcedure
@@ -732,8 +1052,7 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       const structure = plan.structure as any;
-      const targetWeeklyTSS = structure.target_weekly_tss_max || 0;
-      const targetActivities = structure.target_activities_per_week || 0;
+      const blocks = structure.blocks || [];
 
       // Calculate date range
       const today = new Date();
@@ -827,6 +1146,32 @@ export const trainingPlansRouter = createTRPCRouter({
           (sum, act) => sum + ((act.metrics as any)?.tss || 0),
           0,
         );
+
+        // Find the block for this week (use week start date)
+        const weekStartStr = weekStart.toISOString().split("T")[0];
+        const weekBlock = blocks.find((block: any) => {
+          return (
+            weekStartStr &&
+            block.start_date <= weekStartStr &&
+            block.end_date >= weekStartStr
+          );
+        });
+
+        // Get target TSS and activities from the block
+        let targetWeeklyTSS = 0;
+        let targetActivities = 0;
+
+        if (weekBlock?.target_weekly_tss_range) {
+          targetWeeklyTSS = weekBlock.target_weekly_tss_range.max;
+        }
+
+        if (weekBlock?.target_sessions_per_week_range) {
+          targetActivities = weekBlock.target_sessions_per_week_range.max;
+        } else if (structure?.constraints?.available_days_per_week) {
+          // Fallback to constraints if no block-specific target
+          targetActivities =
+            structure.constraints.available_days_per_week.length;
+        }
 
         // Calculate completion percentage
         const tssPercentage =
@@ -1226,5 +1571,186 @@ export const trainingPlansRouter = createTRPCRouter({
         hardActivityCount: activities?.length || 0,
         hasViolations: violations.length > 0,
       };
+    }),
+
+  // ------------------------------
+  // Get weekly totals (distance, time, count) for current week
+  // ------------------------------
+  getWeeklyTotals: protectedProcedure
+    .input(
+      z
+        .object({
+          weekStartDate: z.string().optional(),
+        })
+        .optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      // Calculate week boundaries (Sunday to Saturday)
+      const today = new Date();
+      const weekStart = input?.weekStartDate
+        ? new Date(input.weekStartDate)
+        : new Date(today);
+
+      // Set to start of week (Sunday)
+      if (!input?.weekStartDate) {
+        weekStart.setDate(today.getDate() - today.getDay());
+      }
+      weekStart.setHours(0, 0, 0, 0);
+
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 7);
+
+      // Get completed activities for this week
+      const { data: activities, error } = await ctx.supabase
+        .from("activities")
+        .select("distance_meters, duration_seconds")
+        .eq("profile_id", ctx.session.user.id)
+        .gte("started_at", weekStart.toISOString())
+        .lt("started_at", weekEnd.toISOString());
+
+      if (error) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error.message,
+        });
+      }
+
+      // Sum totals
+      let totalDistance = 0;
+      let totalTime = 0;
+      const count = activities?.length || 0;
+
+      if (activities && activities.length > 0) {
+        for (const activity of activities) {
+          totalDistance += activity.distance_meters || 0;
+          totalTime += activity.duration_seconds || 0;
+        }
+      }
+
+      return {
+        distance: Math.round(totalDistance * 100) / 100, // meters
+        time: Math.round(totalTime), // seconds
+        count,
+      };
+    }),
+
+  // ------------------------------
+  // List training plan templates
+  // ------------------------------
+  listTemplates: protectedProcedure
+    .input(
+      z
+        .object({
+          sport: z.string().optional(),
+          experience_level: z
+            .enum(["beginner", "intermediate", "advanced"])
+            .optional(),
+          min_weeks: z.number().int().min(1).max(52).optional(),
+          max_weeks: z.number().int().min(1).max(52).optional(),
+        })
+        .optional(),
+    )
+    .query(async ({ input }) => {
+      // Import PLAN_TEMPLATES from core package
+      const { PLAN_TEMPLATES } = await import("@repo/core");
+
+      // Convert to array and filter
+      let templates = Object.entries(PLAN_TEMPLATES).map(([id, template]) => ({
+        id,
+        ...template,
+      }));
+
+      if (input?.sport) {
+        templates = templates.filter((t) =>
+          t.sport.includes(input.sport as any),
+        );
+      }
+
+      if (input?.experience_level) {
+        templates = templates.filter((t) =>
+          t.experienceLevel.includes(input.experience_level!),
+        );
+      }
+
+      if (input?.min_weeks) {
+        templates = templates.filter(
+          (t) => t.durationWeeks.recommended >= input.min_weeks!,
+        );
+      }
+
+      if (input?.max_weeks) {
+        templates = templates.filter(
+          (t) => t.durationWeeks.recommended <= input.max_weeks!,
+        );
+      }
+
+      return templates;
+    }),
+
+  // ------------------------------
+  // Get single training plan template
+  // ------------------------------
+  getTemplate: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ input }) => {
+      const { PLAN_TEMPLATES } = await import("@repo/core");
+
+      const template = PLAN_TEMPLATES[input.id];
+
+      if (!template) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Template not found",
+        });
+      }
+
+      return {
+        id: input.id,
+        ...template,
+      };
+    }),
+
+  // ------------------------------
+  // Auto-add periodization to existing plan
+  // ------------------------------
+  autoAddPeriodization: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      // Check ownership
+      const { data: existing, error: fetchError } = await ctx.supabase
+        .from("training_plans")
+        .select("id, profile_id, structure")
+        .eq("id", input.id)
+        .eq("profile_id", ctx.session.user.id)
+        .single();
+
+      if (fetchError || !existing) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message:
+            "Training plan not found or you don't have permission to edit it",
+        });
+      }
+
+      const structure = existing.structure as any;
+
+      // Check if already periodized
+      if (
+        structure?.plan_type === "periodized" &&
+        structure?.fitness_progression
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This plan already has periodization configured",
+        });
+      }
+
+      // For now, return a message that this feature is under development
+      // In the future, this could automatically generate blocks and fitness progression
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          "Auto-periodization is not yet implemented. Please create a new periodized training plan or manually configure periodization in settings.",
+      });
     }),
 });

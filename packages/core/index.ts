@@ -41,6 +41,7 @@ export {
   calculateAverageSpeed,
   calculateCalories,
   calculateCTL,
+  calculateCTLProjection,
   calculateDecoupling,
   calculateDistance,
   calculateEfficiencyFactor,

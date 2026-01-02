@@ -17,14 +17,14 @@ export interface WahooPlanData {
   name: string;
   description: string;
   activityType: ActivityType;
-  externalId: string; // Your planned_activity_id or activity_plan_id
+  externalId: string; // Your activity_plan_id (from activity_plans table)
 }
 
 export interface WahooWorkoutData {
   planId: number;
   name: string;
   scheduledDate: string; // ISO date string
-  externalId: string; // Your planned_activity_id
+  externalId: string; // Your planned_activity_id (from planned_activities table)
   routeId?: number; // Optional route_id to attach to workout
 }
 

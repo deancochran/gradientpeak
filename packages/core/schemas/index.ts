@@ -1,6 +1,7 @@
 import type { PublicActivityPlansInsert } from "@repo/supabase";
 import { z } from "zod";
 import type { ActivityPlanStructureV2 } from "./activity_plan_v2";
+import { trainingPlanCreateSchema } from "./training_plan_structure";
 
 // Export from activity_payload (includes ActivityType)
 export * from "./activity_payload";
@@ -113,7 +114,8 @@ export const trainingPlanCreateInputSchema = z.object({
     .max(1000, "Description is too long")
     .optional()
     .nullable(),
-  structure: z.any(), // Will be validated by trainingPlanStructureSchema
+  structure: trainingPlanCreateSchema, // Validates structure without ID requirement
+  is_active: z.boolean().optional(),
 });
 
 export const trainingPlanUpdateInputSchema =
