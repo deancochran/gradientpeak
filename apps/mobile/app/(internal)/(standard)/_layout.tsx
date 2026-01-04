@@ -44,7 +44,6 @@ import { Stack } from "expo-router";
  * - settings - App settings
  * - integrations - Connected services
  * - notifications - Notification preferences
- * - permissions - App permissions
  * - profile-edit - Edit user profile
  *
  * OTHER:
@@ -199,13 +198,6 @@ export default function StandardLayout() {
         name="notifications"
         options={{
           title: "Notifications",
-        }}
-      />
-      <Stack.Screen
-        name="permissions"
-        options={{
-          title: "Permissions",
-          headerShown: false, // Has custom header
         }}
       />
       <Stack.Screen

@@ -62,7 +62,6 @@ export const ROUTES = {
   PROFILE_EDIT: "/profile-edit" as const,
   INTEGRATIONS: "/integrations" as const,
   NOTIFICATIONS: "/notifications" as const,
-  PERMISSIONS: "/permissions" as const,
 
   // Activity Recording
   RECORD: "/record" as const,

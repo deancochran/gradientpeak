@@ -1,4 +1,3 @@
-import { format } from "date-fns";
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
 import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
 import { Button } from "@/components/ui/button";
@@ -11,24 +10,25 @@ import { getDurationMs } from "@/lib/utils/durationConversion";
 import {
   ActivityPayload,
   buildEstimationContext,
+  decodePolyline,
   estimateActivity,
   getStepIntensityColor,
   IntervalStepV2,
 } from "@repo/core";
+import { format } from "date-fns";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   Calendar,
   CalendarCheck,
-  Clock,
   Copy,
-  MapPin,
+  Edit,
   Share2,
   Smartphone,
-  TrendingUp,
-  Zap,
+  Trash2,
 } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
-import { ActivityIndicator, ScrollView, View } from "react-native";
+import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
+import MapView, { Polyline, PROVIDER_DEFAULT } from "react-native-maps";
 
 export default function ActivityPlanDetailPage() {
   const router = useRouter();
@@ -37,6 +37,8 @@ export default function ActivityPlanDetailPage() {
   const planId = params.planId as string | undefined;
   const plannedActivityId = params.plannedActivityId as string | undefined;
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+
+  const utils = trpc.useUtils();
 
   // Fetch plan from database if planId is provided
   const { data: fetchedPlan, isLoading: loadingPlan } =
@@ -48,6 +50,14 @@ export default function ActivityPlanDetailPage() {
       { id: plannedActivityId! },
       { enabled: !!plannedActivityId },
     );
+
+  // Fetch route if plan has one
+  const routeId =
+    fetchedPlan?.route_id || plannedActivity?.activity_plan?.route_id;
+  const { data: route } = trpc.routes.get.useQuery(
+    { id: routeId! },
+    { enabled: !!routeId },
+  );
 
   // Parse activity plan from params
   // This can be either a template from discover page, a database activity_plan record, or from a planned activity
@@ -182,6 +192,53 @@ export default function ActivityPlanDetailPage() {
     console.log("Share activity");
   };
 
+  const handleEdit = () => {
+    if (!activityPlan) return;
+    // Navigate to edit screen (using create flow with existing data)
+    router.push({
+      pathname: "/create-activity-plan" as any,
+      params: { planId: planId || activityPlan.id },
+    });
+  };
+
+  // Delete mutation
+  const deleteMutation = trpc.activityPlans.delete.useMutation({
+    onSuccess: async () => {
+      // Invalidate queries
+      await utils.activityPlans.list.invalidate();
+      await utils.activityPlans.getUserPlansCount.invalidate();
+
+      Alert.alert("Success", "Activity plan deleted successfully");
+      router.back();
+    },
+    onError: (error) => {
+      Alert.alert(
+        "Error",
+        error.message ||
+          "Failed to delete activity plan. It may be used in scheduled activities.",
+      );
+    },
+  });
+
+  const handleDelete = () => {
+    if (!activityPlan || !planId) return;
+
+    Alert.alert(
+      "Delete Activity Plan",
+      `Are you sure you want to delete "${activityPlan.name}"? This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            deleteMutation.mutate({ id: planId });
+          },
+        },
+      ],
+    );
+  };
+
   if (loadingPlan || loadingPlannedActivity) {
     return (
       <View className="flex-1 bg-background items-center justify-center">
@@ -209,6 +266,15 @@ export default function ActivityPlanDetailPage() {
     : activityPlan.estimated_tss;
   const intensityFactor = estimates?.intensityFactor;
 
+  // Check if user owns this plan for edit permission
+  // Database uses profile_id field, not user_id
+  const isOwnedByUser = activityPlan.profile_id === profile?.id;
+
+  // Decode route coordinates if available
+  const routeCoordinates = route?.polyline
+    ? decodePolyline(route.polyline)
+    : null;
+
   return (
     <View className="flex-1 bg-background">
       {/* Scrollable Content */}
@@ -216,7 +282,7 @@ export default function ActivityPlanDetailPage() {
         <View className="p-4">
           {/* Title */}
           <Text className="text-3xl font-bold mb-2">{activityPlan.name}</Text>
-          <View className="flex-row items-center gap-2 mb-6">
+          <View className="flex-row items-center gap-2 mb-3">
             <Text className="text-sm text-muted-foreground capitalize">
               {activityPlan.activity_category}
             </Text>
@@ -224,6 +290,87 @@ export default function ActivityPlanDetailPage() {
             <Text className="text-sm text-muted-foreground capitalize">
               {activityPlan.activity_location}
             </Text>
+          </View>
+
+          {/* Action Buttons - Two Rows */}
+          <View className="gap-2 mb-6">
+            {/* Primary Actions Row */}
+            <View className="flex-row gap-2">
+              <Button
+                onPress={handleRecordNow}
+                size="sm"
+                className="flex-1 flex-row items-center justify-center gap-1.5"
+              >
+                <Icon
+                  as={Smartphone}
+                  size={16}
+                  className="text-primary-foreground"
+                />
+                <Text className="text-primary-foreground text-sm font-semibold">
+                  Record Now
+                </Text>
+              </Button>
+
+              <Button
+                onPress={handleSchedule}
+                variant="outline"
+                size="sm"
+                className="flex-1 flex-row items-center justify-center gap-1.5"
+              >
+                <Icon as={Calendar} size={16} className="text-foreground" />
+                <Text className="text-foreground text-sm">Schedule</Text>
+              </Button>
+            </View>
+
+            {/* Secondary Actions Row */}
+            <View className="flex-row gap-2">
+              {isOwnedByUser && (
+                <>
+                  <Button
+                    onPress={handleEdit}
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 flex-row items-center justify-center gap-1.5"
+                  >
+                    <Icon as={Edit} size={16} className="text-foreground" />
+                    <Text className="text-foreground text-sm">Edit</Text>
+                  </Button>
+
+                  <Button
+                    onPress={handleDelete}
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 flex-row items-center justify-center gap-1.5"
+                    disabled={deleteMutation.isPending}
+                  >
+                    <Icon as={Trash2} size={16} className="text-destructive" />
+                    <Text className="text-destructive text-sm">
+                      {deleteMutation.isPending ? "Deleting..." : "Delete"}
+                    </Text>
+                  </Button>
+                </>
+              )}
+
+              <Button
+                onPress={handleDuplicate}
+                variant="outline"
+                size="sm"
+                className="flex-1 flex-row items-center justify-center gap-1.5"
+              >
+                <Icon as={Copy} size={16} className="text-foreground" />
+                <Text className="text-foreground text-sm">Duplicate</Text>
+              </Button>
+
+              <Button
+                onPress={handleShare}
+                variant="outline"
+                size="sm"
+                className="flex-1 flex-row items-center justify-center gap-1.5"
+              >
+                <Icon as={Share2} size={16} className="text-foreground" />
+                <Text className="text-foreground text-sm">Share</Text>
+              </Button>
+            </View>
           </View>
 
           {/* Scheduled Date Banner */}
@@ -248,48 +395,108 @@ export default function ActivityPlanDetailPage() {
             </View>
           )}
 
-          {/* Stats Cards */}
-          <View className="flex-row gap-3 mb-6">
-            {durationMinutes && (
-              <View className="flex-1 bg-card border border-border rounded-xl p-4 items-center">
-                <Icon
-                  as={Clock}
-                  size={24}
-                  className="text-muted-foreground mb-2"
-                />
-                <Text className="text-2xl font-bold">
-                  {formatDuration(durationMinutes * 60)}
-                </Text>
-                <Text className="text-xs text-muted-foreground">Duration</Text>
+          {/* GPX Route Map Preview */}
+          {routeCoordinates && routeCoordinates.length > 0 && (
+            <View className="bg-card border border-border rounded-xl overflow-hidden mb-6">
+              <View className="h-64">
+                <MapView
+                  style={{ flex: 1 }}
+                  provider={PROVIDER_DEFAULT}
+                  initialRegion={{
+                    latitude:
+                      routeCoordinates[Math.floor(routeCoordinates.length / 2)]
+                        .latitude,
+                    longitude:
+                      routeCoordinates[Math.floor(routeCoordinates.length / 2)]
+                        .longitude,
+                    latitudeDelta: 0.05,
+                    longitudeDelta: 0.05,
+                  }}
+                  scrollEnabled={true}
+                  zoomEnabled={true}
+                  pitchEnabled={false}
+                  rotateEnabled={false}
+                >
+                  <Polyline
+                    coordinates={routeCoordinates}
+                    strokeColor="#3b82f6"
+                    strokeWidth={4}
+                    lineCap="round"
+                    lineJoin="round"
+                  />
+                </MapView>
               </View>
-            )}
+              {route && (
+                <View className="p-3 border-t border-border">
+                  <Text className="font-medium mb-1">{route.name}</Text>
+                  <View className="flex-row gap-3">
+                    <Text className="text-xs text-muted-foreground">
+                      {(route.total_distance / 1000).toFixed(1)} km
+                    </Text>
+                    {route.total_ascent != null && route.total_ascent > 0 && (
+                      <Text className="text-xs text-muted-foreground">
+                        ↑ {route.total_ascent}m
+                      </Text>
+                    )}
+                    {route.total_descent != null && route.total_descent > 0 && (
+                      <Text className="text-xs text-muted-foreground">
+                        ↓ {route.total_descent}m
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              )}
+            </View>
+          )}
 
-            {tss && (
-              <View className="flex-1 bg-card border border-border rounded-xl p-4 items-center">
-                <Icon
-                  as={Zap}
-                  size={24}
-                  className="text-muted-foreground mb-2"
-                />
-                <Text className="text-2xl font-bold">{tss}</Text>
-                <Text className="text-xs text-muted-foreground">TSS</Text>
+          {/* Intensity Timeline Chart with Stats */}
+          {activityPlan.structure && steps.length > 0 && (
+            <View className="bg-card border border-border rounded-xl p-4 mb-6">
+              {/* Stats Row Above Chart */}
+              <View className="flex-row justify-around mb-4 pb-3 border-b border-border">
+                {durationMinutes && (
+                  <View className="items-center">
+                    <Text className="text-xs text-muted-foreground mb-1">
+                      Duration
+                    </Text>
+                    <Text className="text-lg font-bold">
+                      {formatDuration(durationMinutes * 60)}
+                    </Text>
+                  </View>
+                )}
+                {tss && (
+                  <View className="items-center">
+                    <Text className="text-xs text-muted-foreground mb-1">
+                      TSS
+                    </Text>
+                    <Text className="text-lg font-bold">{tss}</Text>
+                  </View>
+                )}
+                {intensityFactor && (
+                  <View className="items-center">
+                    <Text className="text-xs text-muted-foreground mb-1">
+                      IF
+                    </Text>
+                    <Text className="text-lg font-bold">
+                      {intensityFactor.toFixed(2)}
+                    </Text>
+                  </View>
+                )}
+                <View className="items-center">
+                  <Text className="text-xs text-muted-foreground mb-1">
+                    Steps
+                  </Text>
+                  <Text className="text-lg font-bold">{steps.length}</Text>
+                </View>
               </View>
-            )}
 
-            {intensityFactor && (
-              <View className="flex-1 bg-card border border-border rounded-xl p-4 items-center">
-                <Icon
-                  as={TrendingUp}
-                  size={24}
-                  className="text-muted-foreground mb-2"
-                />
-                <Text className="text-2xl font-bold">
-                  {intensityFactor.toFixed(2)}
-                </Text>
-                <Text className="text-xs text-muted-foreground">IF</Text>
-              </View>
-            )}
-          </View>
+              {/* Intensity Chart */}
+              <Text className="text-sm font-semibold mb-3">
+                Intensity Profile
+              </Text>
+              <TimelineChart structure={activityPlan.structure} height={140} />
+            </View>
+          )}
 
           {/* Description */}
           {activityPlan.description && (
@@ -301,16 +508,6 @@ export default function ActivityPlanDetailPage() {
             </View>
           )}
 
-          {/* Intensity Timeline Chart */}
-          {activityPlan.structure && steps.length > 0 && (
-            <View className="bg-card border border-border rounded-xl p-4 mb-6">
-              <Text className="text-sm font-semibold mb-3">
-                Intensity Profile
-              </Text>
-              <TimelineChart structure={activityPlan.structure} height={140} />
-            </View>
-          )}
-
           {/* Notes */}
           {activityPlan.notes && (
             <View className="bg-card border border-border rounded-xl p-4 mb-6">
@@ -318,24 +515,6 @@ export default function ActivityPlanDetailPage() {
               <Text className="text-sm text-muted-foreground leading-5">
                 {activityPlan.notes}
               </Text>
-            </View>
-          )}
-
-          {/* Route Information (if available) */}
-          {activityPlan.route_id && (
-            <View className="bg-card border border-border rounded-xl p-4 mb-6">
-              <View className="flex-row items-center mb-2">
-                <Icon
-                  as={MapPin}
-                  size={16}
-                  className="text-muted-foreground mr-2"
-                />
-                <Text className="text-sm font-semibold">Route</Text>
-              </View>
-              <Text className="text-sm text-muted-foreground">
-                Route attached (preview not available)
-              </Text>
-              {/* TODO: Add route map preview and elevation profile */}
             </View>
           )}
 
@@ -399,53 +578,6 @@ export default function ActivityPlanDetailPage() {
             )}
         </View>
       </ScrollView>
-
-      {/* Action Bar */}
-      <View className="border-t border-border bg-background px-4 py-3">
-        {/* Primary Action */}
-        <Button
-          onPress={handleRecordNow}
-          className="w-full flex-row items-center justify-center gap-2 mb-2"
-        >
-          <Icon as={Smartphone} size={18} className="text-primary-foreground" />
-          <Text className="text-primary-foreground font-semibold">
-            Record Now
-          </Text>
-        </Button>
-
-        {/* Secondary Actions */}
-        <View className="flex-row gap-2">
-          <Button
-            onPress={handleSchedule}
-            variant="outline"
-            size="sm"
-            className="flex-1 flex-row items-center justify-center gap-1.5"
-          >
-            <Icon as={Calendar} size={16} className="text-foreground" />
-            <Text className="text-foreground text-sm">Schedule</Text>
-          </Button>
-
-          <Button
-            onPress={handleDuplicate}
-            variant="outline"
-            size="sm"
-            className="flex-1 flex-row items-center justify-center gap-1.5"
-          >
-            <Icon as={Copy} size={16} className="text-foreground" />
-            <Text className="text-foreground text-sm">Duplicate</Text>
-          </Button>
-
-          <Button
-            onPress={handleShare}
-            variant="outline"
-            size="sm"
-            className="flex-1 flex-row items-center justify-center gap-1.5"
-          >
-            <Icon as={Share2} size={16} className="text-foreground" />
-            <Text className="text-foreground text-sm">Share</Text>
-          </Button>
-        </View>
-      </View>
 
       {/* Schedule Modal */}
       {activityPlan && (

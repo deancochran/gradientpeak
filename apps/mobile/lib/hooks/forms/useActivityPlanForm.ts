@@ -99,13 +99,20 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     },
   });
 
-  // Load existing plan data into form
+  // Load existing plan data into form when in edit mode
   useEffect(() => {
     if (existingPlan && isEditMode) {
+      // First reset the store to clear any previous data
+      reset();
+
+      // Then load the existing plan data
       setName(existingPlan.name);
       setDescription(existingPlan.description || "");
       setActivityLocation(existingPlan.activity_location);
       setActivityCategory(existingPlan.activity_category);
+      setRouteId(existingPlan.route_id || null);
+      setNotes(existingPlan.notes || "");
+
       if (existingPlan.structure) {
         // Structure should already be in the correct format
         useActivityPlanCreationStore.setState({
@@ -120,6 +127,9 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     setDescription,
     setActivityLocation,
     setActivityCategory,
+    setRouteId,
+    setNotes,
+    reset,
   ]);
 
   // Calculate metrics from V2 structure

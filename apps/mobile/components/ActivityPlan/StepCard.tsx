@@ -8,7 +8,7 @@ import {
   getStepIntensityColor,
 } from "@repo/core";
 import * as Haptics from "expo-haptics";
-import { Edit3, GripVertical, Trash2 } from "lucide-react-native";
+import { Copy, Edit3, GripVertical, Trash2 } from "lucide-react-native";
 import { memo } from "react";
 import { View } from "react-native";
 
@@ -18,6 +18,7 @@ interface StepCardProps {
   isActive?: boolean;
   onPress?: () => void;
   onLongPress?: () => void;
+  onCopy?: () => void;
   onDelete?: () => void;
   onEdit?: () => void;
   isDraggable?: boolean;
@@ -37,6 +38,7 @@ export const StepCard = memo<StepCardProps>(function StepCard({
   isActive = false,
   onPress,
   onLongPress,
+  onCopy,
   onDelete,
   onEdit,
   isDraggable = true,
@@ -53,6 +55,11 @@ export const StepCard = memo<StepCardProps>(function StepCard({
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       onLongPress?.();
     }
+  };
+
+  const handleCopy = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onCopy?.();
   };
 
   const handleDelete = () => {
@@ -127,6 +134,16 @@ export const StepCard = memo<StepCardProps>(function StepCard({
               className="p-2 min-h-0 h-auto w-auto"
             >
               <Icon as={Edit3} size={16} className="text-muted-foreground" />
+            </Button>
+          )}
+          {onCopy && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onPress={handleCopy}
+              className="p-2 min-h-0 h-auto w-auto"
+            >
+              <Icon as={Copy} size={16} className="text-muted-foreground" />
             </Button>
           )}
           {onDelete && (

@@ -31,6 +31,7 @@ interface ActivityPlanCreationState {
   updateInterval: (intervalId: string, interval: IntervalV2) => void;
   removeInterval: (intervalId: string) => void;
   reorderIntervals: (intervals: IntervalV2[]) => void;
+  copyInterval: (intervalId: string) => void;
 
   // Step management within intervals
   addStepToInterval: (intervalId: string, step: IntervalStepV2) => void;
@@ -41,6 +42,7 @@ interface ActivityPlanCreationState {
   ) => void;
   removeStepFromInterval: (intervalId: string, stepId: string) => void;
   reorderStepsInInterval: (intervalId: string, steps: IntervalStepV2[]) => void;
+  copyStepInInterval: (intervalId: string, stepId: string) => void;
 
   // Reset
   reset: () => void;
@@ -120,6 +122,32 @@ export const useActivityPlanCreationStore = create<ActivityPlanCreationState>(
     reorderIntervals: (intervals) =>
       set({ structure: { version: 2, intervals } }),
 
+    copyInterval: (intervalId) =>
+      set((state) => {
+        const interval = state.structure.intervals.find(
+          (i) => i.id === intervalId,
+        );
+        if (!interval) return state;
+
+        // Create a deep copy with new IDs
+        const copiedInterval: IntervalV2 = {
+          ...interval,
+          id: crypto.randomUUID(),
+          name: `${interval.name} (Copy)`,
+          steps: interval.steps.map((step) => ({
+            ...step,
+            id: crypto.randomUUID(),
+          })),
+        };
+
+        return {
+          structure: {
+            version: 2,
+            intervals: [...state.structure.intervals, copiedInterval],
+          },
+        };
+      }),
+
     // Step management within intervals
     addStepToInterval: (intervalId, step) =>
       set((state) => ({
@@ -174,6 +202,35 @@ export const useActivityPlanCreationStore = create<ActivityPlanCreationState>(
           ),
         },
       })),
+
+    copyStepInInterval: (intervalId, stepId) =>
+      set((state) => {
+        const interval = state.structure.intervals.find(
+          (i) => i.id === intervalId,
+        );
+        if (!interval) return state;
+
+        const step = interval.steps.find((s) => s.id === stepId);
+        if (!step) return state;
+
+        // Create a copy with new ID
+        const copiedStep: IntervalStepV2 = {
+          ...step,
+          id: crypto.randomUUID(),
+          name: `${step.name} (Copy)`,
+        };
+
+        return {
+          structure: {
+            version: 2,
+            intervals: state.structure.intervals.map((i) =>
+              i.id === intervalId
+                ? { ...i, steps: [...i.steps, copiedStep] }
+                : i,
+            ),
+          },
+        };
+      }),
 
     reset: () =>
       set({

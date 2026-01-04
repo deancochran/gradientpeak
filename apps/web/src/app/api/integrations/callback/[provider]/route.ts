@@ -153,12 +153,38 @@ export async function GET(
 
     // Extract external user ID from token response
     // Different providers return this in different fields
-    const externalId =
+    let externalId =
       tokens.athlete?.id?.toString() || // Strava
-      tokens.user?.id?.toString() || // Wahoo, TrainingPeaks
+      tokens.user?.id?.toString() || // TrainingPeaks
       tokens.userId?.toString() || // Generic
       tokens.id?.toString() || // Fallback
-      "unknown";
+      null;
+
+    // For Wahoo, the token response doesn't include the user ID
+    // We need to fetch it from the /v1/user endpoint
+    if (provider === "wahoo" && !externalId) {
+      try {
+        const userResponse = await fetch("https://api.wahooligan.com/v1/user", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${tokens.access_token}`,
+            "Content-Type": "application/json",
+          },
+        });
+
+        if (userResponse.ok) {
+          const userData = (await userResponse.json()) as { id: number };
+          externalId = userData.id.toString();
+        }
+      } catch (userError) {
+        console.error("Failed to fetch Wahoo user profile:", userError);
+      }
+    }
+
+    // Fallback if we still don't have an external ID
+    if (!externalId) {
+      externalId = "unknown";
+    }
 
     // Store integration using tRPC
     await caller.integrations.storeIntegration({

@@ -5,7 +5,6 @@ import type { CarouselCardType } from "types/carousel";
 import { AnalysisCard } from "./cards/AnalysisCard";
 import { DashboardCard } from "./cards/DashboardCard";
 import { ElevationCard } from "./cards/ElevationCard";
-import { EnhancedPlanCard } from "./cards/EnhancedPlanCard";
 import { HeartRateCard } from "./cards/HeartRateCard";
 import { MapCard } from "./cards/MapCard";
 import { PowerCard } from "./cards/PowerCard";
@@ -38,11 +37,6 @@ export const CarouselCard = memo(
 
       case "map":
         return <MapCard service={service} screenWidth={SCREEN_WIDTH} />;
-
-      case "plan":
-        return (
-          <EnhancedPlanCard service={service} screenWidth={SCREEN_WIDTH} />
-        );
 
       case "trainer":
         return (

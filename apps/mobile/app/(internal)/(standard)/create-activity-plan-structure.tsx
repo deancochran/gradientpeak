@@ -19,7 +19,9 @@ import { getDurationMs } from "@/lib/utils/durationConversion";
 import {
   type IntervalV2,
   type IntervalStepV2,
-} from "@repo/core/schemas/activity_plan_v2";
+  type ActivityPlanStructureV2,
+  calculateActivityStatsV2,
+} from "@repo/core";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { Menu, Plus, TrendingUp } from "lucide-react-native";
@@ -28,8 +30,10 @@ import { Alert, Pressable, ScrollView, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { randomUUID } from "expo-crypto";
+import { useNavigation } from "expo-router";
 
 export default function StructureEditScreen() {
+  const navigation = useNavigation();
   const [editingIntervalId, setEditingIntervalId] = useState<string | null>(
     null,
   );
@@ -53,9 +57,11 @@ export default function StructureEditScreen() {
     addInterval,
     updateInterval,
     removeInterval,
+    copyInterval,
     addStepToInterval,
     updateStepInInterval,
     removeStepFromInterval,
+    copyStepInInterval,
   } = useActivityPlanCreationStore();
 
   const intervals = useMemo(
@@ -63,7 +69,7 @@ export default function StructureEditScreen() {
     [structure.intervals],
   );
 
-  // Calculate metrics from structure
+  // Calculate metrics from structure with TSS and IF
   const metrics = useMemo(() => {
     let totalSteps = 0;
     let durationMs = 0;
@@ -75,10 +81,19 @@ export default function StructureEditScreen() {
       }
     }
 
+    // Calculate TSS and IF using the activity stats calculator
+    const structureV2: ActivityPlanStructureV2 = {
+      version: 2,
+      intervals,
+    };
+    const stats = calculateActivityStatsV2(structureV2);
+
     return {
       stepCount: totalSteps,
       duration: durationMs,
       durationFormatted: formatDuration(durationMs),
+      tss: Math.round(stats.estimatedTSS),
+      if: (stats.avgPower / 100).toFixed(2), // Convert %FTP to IF
     };
   }, [intervals]);
 
@@ -134,6 +149,14 @@ export default function StructureEditScreen() {
     setRenamingIntervalId(null);
     setRenameValue("");
   }, [renamingIntervalId, renameValue, intervals, updateInterval]);
+
+  const handleCopyInterval = useCallback(
+    (intervalId: string) => {
+      copyInterval(intervalId);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    },
+    [copyInterval],
+  );
 
   const handleDeleteInterval = useCallback(
     (intervalId: string) => {
@@ -226,6 +249,16 @@ export default function StructureEditScreen() {
     [addInterval],
   );
 
+  const handleCopyStep = useCallback(
+    (intervalId: string, stepId: string) => {
+      copyStepInInterval(intervalId, stepId);
+      if (isMountedRef.current) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    },
+    [copyStepInInterval],
+  );
+
   const handleDeleteStep = useCallback(
     (intervalId: string, stepId: string) => {
       const interval = intervals.find((i) => i.id === intervalId);
@@ -265,52 +298,62 @@ export default function StructureEditScreen() {
     return interval?.steps.find((s) => s.id === editingStepId);
   }, [editingIntervalId, editingStepId, intervals]);
 
+  // Configure stack header with plus icon
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <Pressable
+          onPress={() => setAddMenuOpen(true)}
+          hitSlop={10}
+          className="active:opacity-50 mr-2"
+        >
+          <View className="flex-row items-center gap-1">
+            <Plus size={24} className="text-primary" />
+            <Text className="text-primary font-medium">Add</Text>
+          </View>
+        </Pressable>
+      ),
+    });
+  }, [navigation]);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaView className="flex-1 bg-background">
-        {/* Header */}
-        <View className="border-b border-border">
-          <View className="flex-row items-center justify-between px-4 py-3">
-            <Pressable onPress={handleBack} hitSlop={10}>
-              <Text className="text-lg text-primary">Back</Text>
-            </Pressable>
-
-            <Text className="text-lg font-semibold">Structure</Text>
-
-            <Pressable
-              onPress={() => setAddMenuOpen(true)}
-              hitSlop={10}
-              className="active:opacity-50"
-            >
-              <Plus size={24} className="text-primary" />
-            </Pressable>
-          </View>
-
-          {/* Metrics Bar */}
-          <View className="flex-row items-center justify-around px-4 py-3 bg-muted/50">
-            <View className="items-center">
-              <Text className="text-xs text-muted-foreground">Steps</Text>
-              <Text className="text-lg font-semibold">{metrics.stepCount}</Text>
+      <View className="flex-1 bg-background">
+        {/* Intensity Chart with Estimates Above */}
+        {intervals.length > 0 ? (
+          <View className="border-b border-border bg-card">
+            {/* Estimates Row */}
+            <View className="flex-row items-center justify-around px-4 py-3 border-b border-border">
+              <View className="items-center">
+                <Text className="text-xs text-muted-foreground mb-1">
+                  Duration
+                </Text>
+                <Text className="text-lg font-bold">
+                  {metrics.durationFormatted}
+                </Text>
+              </View>
+              <View className="items-center">
+                <Text className="text-xs text-muted-foreground mb-1">TSS</Text>
+                <Text className="text-lg font-bold">{metrics.tss}</Text>
+              </View>
+              <View className="items-center">
+                <Text className="text-xs text-muted-foreground mb-1">IF</Text>
+                <Text className="text-lg font-bold">{metrics.if}</Text>
+              </View>
+              <View className="items-center">
+                <Text className="text-xs text-muted-foreground mb-1">
+                  Steps
+                </Text>
+                <Text className="text-lg font-bold">{metrics.stepCount}</Text>
+              </View>
             </View>
-            <View className="items-center">
-              <Text className="text-xs text-muted-foreground">Duration</Text>
-              <Text className="text-lg font-semibold">
-                {metrics.durationFormatted}
-              </Text>
-            </View>
-            <View className="items-center">
-              <Text className="text-xs text-muted-foreground">Intervals</Text>
-              <Text className="text-lg font-semibold">{intervals.length}</Text>
-            </View>
-          </View>
-        </View>
 
-        {/* Timeline Preview */}
-        {intervals.length > 0 && (
-          <View className="px-4 py-3 border-b border-border">
-            <TimelineChart structure={structure} compact />
+            {/* Timeline Chart */}
+            <View className="px-4 py-3">
+              <TimelineChart structure={structure} compact />
+            </View>
           </View>
-        )}
+        ) : null}
 
         {/* Content */}
         <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
@@ -348,6 +391,7 @@ export default function StructureEditScreen() {
                       onRename={() =>
                         handleRenameInterval(interval.id, interval.name)
                       }
+                      onCopy={() => handleCopyInterval(interval.id)}
                       onDelete={() => handleDeleteInterval(interval.id)}
                     />
 
@@ -363,6 +407,9 @@ export default function StructureEditScreen() {
                               }
                               onEdit={() =>
                                 handleEditStep(interval.id, step.id)
+                              }
+                              onCopy={() =>
+                                handleCopyStep(interval.id, step.id)
                               }
                               onDelete={() =>
                                 handleDeleteStep(interval.id, step.id)
@@ -468,7 +515,7 @@ export default function StructureEditScreen() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </SafeAreaView>
+      </View>
     </GestureHandlerRootView>
   );
 }

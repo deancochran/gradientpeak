@@ -423,12 +423,14 @@ function buildOAuthUrl(
       authUrl: "https://api.wahooligan.com/oauth/authorize",
       clientId: process.env.WAHOO_CLIENT_ID!,
       scopes: [
-        "user_read",
-        "plans_write",
+        "power_zones_read",
         "workouts_read",
         "workouts_write",
-        "offline_data",
+        "plans_read",
+        "plans_write",
+        "routes_read",
         "routes_write",
+        "user_read",
       ],
     },
     trainingpeaks: {

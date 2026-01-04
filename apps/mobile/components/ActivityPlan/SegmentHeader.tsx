@@ -5,6 +5,7 @@ import * as Haptics from "expo-haptics";
 import {
   ChevronDown,
   ChevronRight,
+  Copy,
   Edit2,
   MoreVertical,
   Trash2,
@@ -19,6 +20,7 @@ interface SegmentHeaderProps {
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   onRename?: () => void;
+  onCopy?: () => void;
   onDelete?: () => void;
 }
 
@@ -29,6 +31,7 @@ export function SegmentHeader({
   isCollapsed,
   onToggleCollapse,
   onRename,
+  onCopy,
   onDelete,
 }: SegmentHeaderProps) {
   const [showActions, setShowActions] = useState(false);
@@ -69,6 +72,12 @@ export function SegmentHeader({
     setShowActions(false);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onRename?.();
+  };
+
+  const handleCopy = () => {
+    setShowActions(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onCopy?.();
   };
 
   const handleDelete = () => {
@@ -130,7 +139,7 @@ export function SegmentHeader({
         </Pressable>
 
         {/* Actions Menu */}
-        {(onRename || onDelete) && (
+        {(onRename || onCopy || onDelete) && (
           <View>
             <Button
               variant="ghost"
@@ -153,21 +162,34 @@ export function SegmentHeader({
                     className="flex-row items-center px-4 py-3 active:bg-muted"
                   >
                     <Edit2 size={16} className="text-foreground mr-3" />
-                    <Text className="text-sm">Rename Interval</Text>
+                    <Text className="text-sm">Rename</Text>
                   </Pressable>
+                )}
+
+                {onCopy && (
+                  <>
+                    {onRename && <View className="h-px bg-border mx-2" />}
+                    <Pressable
+                      onPress={handleCopy}
+                      className="flex-row items-center px-4 py-3 active:bg-muted"
+                    >
+                      <Copy size={16} className="text-foreground mr-3" />
+                      <Text className="text-sm">Copy</Text>
+                    </Pressable>
+                  </>
                 )}
 
                 {onDelete && (
                   <>
-                    {onRename && <View className="h-px bg-border mx-2" />}
+                    {(onRename || onCopy) && (
+                      <View className="h-px bg-border mx-2" />
+                    )}
                     <Pressable
                       onPress={handleDelete}
                       className="flex-row items-center px-4 py-3 active:bg-muted"
                     >
                       <Trash2 size={16} className="text-destructive mr-3" />
-                      <Text className="text-sm text-destructive">
-                        Delete Interval
-                      </Text>
+                      <Text className="text-sm text-destructive">Delete</Text>
                     </Pressable>
                   </>
                 )}

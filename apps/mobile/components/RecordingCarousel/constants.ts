@@ -56,3 +56,38 @@ export const ZONE_CHART_CONFIG = {
   minBarHeight: 12,
   gap: 2,
 };
+
+// Dashboard-specific styles
+export const DASHBOARD_STYLES = {
+  // Adaptive header - takes 1/4 of available space
+  adaptiveHeader: "w-full mb-4",
+  adaptiveHeaderHeight: 0.25, // 25% of available card height
+
+  // Interval progress section
+  intervalProgress: "flex-col gap-2 w-full",
+  countdownTimer: "text-lg font-semibold text-center mb-1",
+  progressBarContainer:
+    "w-full bg-muted/20 rounded-full h-3 border-2 border-muted overflow-hidden",
+  progressBarFill: "h-full rounded-full transition-all duration-300",
+  nextStepPreview: "text-xs text-center text-muted-foreground mt-1",
+
+  // Session timer (free-form)
+  sessionTimerLarge: "text-6xl font-bold text-center",
+  sessionTimerContainer: "items-center justify-center",
+
+  // Unified metric card
+  metricCardUnified: "flex-col p-3 bg-muted/10 rounded-lg border-2",
+  metricCardDefault: "border-transparent",
+  metricCardTargeted: "border-primary",
+  metricCardBelow: "border-orange-500",
+  metricCardAbove: "border-red-500",
+
+  metricTitle: "text-xs text-muted-foreground mb-1 uppercase tracking-wide",
+  metricValue: "text-3xl font-bold",
+  metricUnit: "text-xs text-muted-foreground mt-0.5",
+  metricTarget: "text-xs text-muted-foreground mt-1",
+
+  // Metrics grid
+  metricsGrid: "flex-1 flex-row flex-wrap gap-3 overflow-hidden",
+  metricContainer: "flex-1 min-w-[45%]", // Ensures 2 per row minimum
+};

@@ -220,13 +220,7 @@ function RecordScreen() {
             Alert.alert(
               "Permissions Required",
               "This app requires Bluetooth, Location, and Background Location permissions to record activities. Please enable them in your device settings.",
-              [
-                { text: "Cancel", style: "cancel" },
-                {
-                  text: "Open Settings",
-                  onPress: () => router.push("/permissions"),
-                },
-              ],
+              [{ text: "OK", style: "cancel" }],
             );
             return;
           }
@@ -336,27 +330,25 @@ function RecordScreen() {
   // Get recording capabilities - determines what UI to show
   const capabilities = useRecordingCapabilities(service);
 
-  // Fixed cards configuration - always show these 4 cards in order
+  // Fixed cards configuration - always show these 3 cards in order
   const cardsConfig = useMemo((): Record<
     CarouselCardType,
     CarouselCardConfig
   > => {
     const config = createDefaultCardsConfig();
 
-    // Always show these 4 cards in this specific order:
+    // Always show these 3 cards in this specific order:
     config.dashboard.enabled = true;
     config.dashboard.order = 0;
 
     config.map.enabled = true;
     config.map.order = 1;
 
-    config.plan.enabled = true;
-    config.plan.order = 2;
-
     config.trainer.enabled = true;
-    config.trainer.order = 3;
+    config.trainer.order = 2;
 
-    // Disable all other cards
+    // Disable all other cards (plan is now merged into dashboard)
+    config.plan.enabled = false;
     config.power.enabled = false;
     config.heartrate.enabled = false;
     config.analysis.enabled = false;
