@@ -57,7 +57,7 @@ Each machine type must have:
   - Treadmills: Max speed limits, incline range
   - Ellipticals: Resistance range, stride rate targets
 
-**Implementation Note:** The FTMS Control Modal must dynamically adapt its UI based on the connected machine type, showing only relevant controls for that device category.
+**Implementation Note:** The FTMS Control Screen must dynamically adapt its UI based on the connected machine type, showing only relevant controls for that device category.
 
 ### 2. Documentation: Focus Modes & Record Page Behavior
 
@@ -140,9 +140,11 @@ All configuration interfaces must follow consistent sheet-based patterns:
 **Sheet Types:**
 - **Route Picker Sheet:** List of saved GPX routes with search/filter
 - **Plan Picker Sheet:** List of workout plans with preview
-- **FTMS Control Sheet:** Machine controls with mode switching
 - **Activity Selection Sheet:** Category and location picker (pre-start only)
-- **Sensors Sheet:** Full navigation screen (exception to sheet pattern)
+
+**Full Navigation Screens (Not Sheets):**
+- **Sensors Screen:** Full navigation screen at `/record/sensors` with back gesture enabled
+- **FTMS Control Screen:** Full navigation screen (like Sensors) at `/record/ftms` with back gesture enabled
 
 #### Gesture Standardization
 Consistent gesture behavior across all sheets and screens:
@@ -159,12 +161,13 @@ Consistent gesture behavior across all sheets and screens:
 - Users must explicitly tap "Back" button to dismiss sheets
 - Implementation: Set `enablePanDownToClose={false}` on all bottom sheets
 
-**Sensors Page Exception:**
-The Sensors page (`/record/sensors`) is a full navigation screen (not a sheet) and follows standard navigation patterns:
+**Full Navigation Screen Exceptions:**
+The Sensors page (`/record/sensors`) and FTMS Control screen (`/record/ftms`) are full navigation screens (not sheets) and follow standard navigation patterns:
 - Left-to-right swipe gesture: ✅ ENABLED
 - Back button in header: ✅ Visible
 - Returns to recording screen on back
-- This is the ONLY screen in the recording flow that uses navigation instead of sheets
+- Recording continues seamlessly in background
+- These are the ONLY screens in the recording flow that use navigation instead of sheets
 
 #### Footer Label Simplification
 The footer configuration items must use simplified, generic labels:
@@ -468,6 +471,7 @@ There is an **Activity Category/Location Selection Button**:
      - Remove the active plan
    - **Quick Action:** If plan is active, shows "Skip Step" button inline
    - **Note:** Creating or editing plans is NOT part of this functionality
+   - **Category Matching Requirement:** The selected activity plan must always match the active/chosen activity category. The system must prevent users from selecting or updating to an activity plan that belongs to a different category than the current activity. For example, if the user is recording a Run activity, only running plans should be available in the plan picker. If the user is recording a Bike activity, only cycling plans should be shown. This validation must be enforced both at plan selection time and when switching plans mid-workout.
 
 3. **Sensor Management**
    - Icon: Bluetooth
@@ -481,8 +485,8 @@ There is an **Activity Category/Location Selection Button**:
    - Icon: Zap
    - Label: "Smart Trainer"
    - **Conditional Visibility:** Only shows when one or more FTMS trainers are connected
-   - OnPress: Opens **FTMS Control Modal**
-   - **Modal Structure:**
+   - OnPress: Navigates to **FTMS Control Screen** (full page, like `/record/sensors`)
+   - **Screen Structure:**
      - Horizontal scrollable tab list showing all connected FTMS machines
      - Defaults to first available machine
      - Each tab displays:
@@ -619,7 +623,7 @@ Z-Index Layer Stack:
 │ 5. Configuration Modals (z-index: 30)               │
 │    - Route picker modal                             │
 │    - Plan picker modal                              │
-│    - FTMS control modal                             │
+│    - FTMS control screen                             │
 │    - Activity selection modal (before start)        │
 ├─────────────────────────────────────────────────────┤
 │ 6. System Overlays (z-index: 40-50)                 │
@@ -983,7 +987,7 @@ All other configuration uses modals to avoid navigation:
 - **Route Picker:** Modal overlay (no navigation)
 - **Plan Picker:** Modal overlay (no navigation)
 - **Activity Selection:** Modal overlay (ActivitySelectionModal - existing component)
-- **FTMS Control:** Modal overlay (new component)
+- **FTMS Control:** Full navigation screen at `/record/ftms` (follows sensors page pattern)
 
 **Rationale:** Modals maintain visual context and eliminate navigation transitions, providing faster access and clearer user intent.
 
@@ -1655,7 +1659,7 @@ if (plan.hasPlan && !manualOverride) {
 
 **Manual Mode (Plan Active but Overridden):**
 ```typescript
-// User toggled manual override in FTMS control modal
+// User toggled manual override in FTMS control screen
 if (plan.hasPlan && manualOverride) {
   // User manually controls resistance
   // Trainer does NOT automatically adjust to plan targets
@@ -1703,9 +1707,16 @@ if (!plan.hasPlan) {
 }
 ```
 
-### FTMS Control Modal Interface (MVP Updated)
+### FTMS Control Screen Interface (MVP Updated)
 
-The FTMS Control Modal must **dynamically adapt** its UI based on the connected machine type. Each machine category has specific controls and parameters.
+The FTMS Control Screen follows the same pattern as the Sensors page (`/record/sensors`) - it is a **full navigation screen** (not a vertically swipeable sheet). The screen must **dynamically adapt** its UI based on the connected machine type. Each machine category has specific controls and parameters.
+
+**Navigation Pattern:**
+- Accessed via navigation (router.push) rather than modal/sheet
+- Full-screen view with standard back button in header
+- Left-to-right swipe gesture enabled for intuitive navigation
+- Recording process continues seamlessly in background (never paused)
+- Returns to recording screen when user navigates back
 
 #### Machine-Specific Configurations
 
@@ -1830,7 +1841,7 @@ The FTMS Control Modal must **dynamically adapt** its UI based on the connected 
 - **Target Cadence:** Strides per minute (if plan specifies)
 - **Power Display:** Shows estimated power output (read-only)
 
-#### Universal Modal Behavior
+#### Universal Screen Behavior
 
 **When Plan is Active (All Machine Types):**
 - Auto/Manual toggle is visible
@@ -1843,11 +1854,13 @@ The FTMS Control Modal must **dynamically adapt** its UI based on the connected 
 - All controls are active
 - User has full control over all parameters
 
-**MVP Requirements:**
-- ✅ Sheet includes "< Back" button in top-left corner
-- ❌ Swipe-down-to-dismiss is DISABLED (`enablePanDownToClose={false}`)
-- ✅ Tapping outside sheet bounds dismisses sheet
-- ✅ Sheet adapts dynamically based on machine type detected via FTMS service
+**MVP Requirements (Sensors Page Pattern):**
+- ✅ Full navigation screen with standard back button in header
+- ✅ Left-to-right swipe gesture ENABLED for back navigation
+- ❌ NOT a vertically swipeable sheet (uses standard navigation instead)
+- ✅ Recording process continues uninterrupted in background
+- ✅ Screen adapts dynamically based on machine type detected via FTMS service
+- ✅ Follows same navigation pattern as `/record/sensors` screen
 
 ### Plan Target Conversion (FTP-Based)
 
@@ -1893,7 +1906,7 @@ const calculateGradeResistance = (grade: number, weight: number): number => {
 
 **Connecting Multiple FTMS Trainers:**
 - Scenario: User has multiple trainers (e.g., bike trainer + rowing machine)
-- FTMS control modal shows horizontal tabs for each trainer
+- FTMS control screen shows horizontal tabs for each trainer
 - Each trainer can have independent mode and settings
 - Only ONE trainer is typically active during a recording (based on activity type)
 
@@ -1904,7 +1917,7 @@ const getActiveTrainer = (): FTMSDevice | null => {
   if (trainers.length === 0) return null
 
   // Return first trainer by default
-  // User can switch via tabs in FTMS control modal
+  // User can switch via tabs in FTMS control screen
   return trainers[0]
 }
 ```
@@ -2736,7 +2749,7 @@ The result of this design is a fluid, reactive experience that adapts to context
 8. As warmup completes → Zone B animates to show next interval, trainer adjusts to 250W
 9. User wants to see power in detail → Taps Zone A (Power Graph) → Expands to full screen
 10. User taps minimize button → Returns to three-zone view
-11. User swipes up footer → Taps "Smart Trainer" → Opens FTMS modal
+11. User swipes up footer → Taps "Smart Trainer" → Opens FTMS screen
 12. User switches to Manual mode and adjusts resistance → Closes modal → Workout continues with manual control
 
 ### Journey 3: Outdoor Workout with Planned Route
@@ -3068,12 +3081,14 @@ const getMetricOrder = (planTargets: PlanTargets | null) => {
 
 ---
 
-### Phase 6: FTMS Control Modal (2-3 days)
+### Phase 6: FTMS Control Screen (2-3 days)
 
-**6.1: Create FTMS Control Modal Component**
-- Modal overlay (not navigation)
+**6.1: Create FTMS Control Screen Component**
+- Full navigation screen at `/record/ftms` (not a modal)
+- Follows same pattern as `/record/sensors` screen
 - Horizontal tabs for multiple trainers (if applicable)
 - Mode selector: ERG / SIM / Resistance
+- Back button in header with left-to-right swipe gesture enabled
 
 **6.2: Implement Control Logic**
 - ERG mode: Power target slider with +/- buttons
@@ -3090,7 +3105,7 @@ const getMetricOrder = (planTargets: PlanTargets | null) => {
 - Show current power output, cadence, resistance level
 - Update every second
 
-**Deliverable:** FTMS control modal with full trainer control capability.
+**Deliverable:** FTMS control screen with full trainer control capability, following sensors page navigation pattern.
 
 ---
 
@@ -3213,7 +3228,7 @@ const getMetricOrder = (planTargets: PlanTargets | null) => {
 - Phase 3: Zone A Implementation (4-6 days)
 - Phase 4: Zone B Implementation (3-4 days)
 - Phase 5: Zone C Implementation (3-4 days)
-- Phase 6: FTMS Control Modal (2-3 days)
+- Phase 6: FTMS Control Screen (2-3 days)
 - Phase 7: Route & Plan Picker Modals (2-3 days)
 - Phase 8: Recording Continuity (2-3 days)
 - Phase 9: Animations & Polish (2-3 days)
@@ -3256,7 +3271,7 @@ const getMetricOrder = (planTargets: PlanTargets | null) => {
 - ✅ Left-to-right swipe enabled only on Sensors screen
 - ✅ Left-to-right swipe disabled on Record screen
 - ✅ Footer shows simplified labels ("Edit Plan" vs "VO2 Max Intervals")
-- ✅ FTMS modal adapts to machine type (Bikes, Rowers, Treadmills, Ellipticals)
+- ✅ FTMS screen adapts to machine type (Bikes, Rowers, Treadmills, Ellipticals)
 - ✅ Dynamic plan/route attach/detach works mid-workout
 - ✅ Focus Modes (Map, Plan, Metrics) all functional
 
