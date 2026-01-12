@@ -3126,9 +3126,6 @@ const getMetricOrder = (planTargets: PlanTargets | null) => {
 
 **8.2: Implement Interval Transition Notifications**
 ❌ **REMOVED FROM MVP** - Toast notifications are out of scope
-~~- Show toast notification when interval changes (even when modal is open)~~
-~~- Use `react-native-toast-message` or similar~~
-~~- Display for 3 seconds, auto-dismiss~~
 - **MVP:** User sees interval changes directly in Zone B (no notification needed)
 
 **8.3: Implement Sensor Disconnection Alerts (MVP MODIFIED)**
@@ -3155,51 +3152,28 @@ const getMetricOrder = (planTargets: PlanTargets | null) => {
 ### Phase 9: Animations & Polish (2-3 days)
 
 **9.1: Refine Zone Transition Animations**
-- Zone focus/minimize: Spring animation (damping 0.8, stiffness 100)
-- Zone mount/unmount: Fade + slide (300ms ease-out)
+- Zone focus/minimize: Spring animation 
+- Zone mount/unmount: Fade + slide (ease-out)
 - Ensure 60fps during animations
 
 **9.2: Implement Focus Mode + Footer Mutual Exclusivity**
 - Enforce sequential animations (collapse one before expanding other)
 - Smooth transitions with proper timing
 
-**9.3: Add Haptic Feedback**
-❌ **REMOVED FROM MVP** - Haptic feedback is out of scope
-~~- Start/Pause/Finish: Medium impact~~
-~~- Lap button: Light impact~~
-~~- Interval transitions: Success pattern~~
-~~- Sensor disconnections: Warning pattern~~
-
-**9.4: Accessibility Improvements (MVP MODIFIED)**
-- ✅ VoiceOver announcements for zone transitions (iOS accessibility feature)
-- ✅ Larger touch targets (48x48dp minimum)
-- ✅ High contrast mode support
+**9.3: Add Accessibility Improvements and Features**
+- ❌ **REMOVED FROM MVP** - Haptic feedback is out of scope
 - ❌ **REMOVED:** Voice control commands (custom voice features out of scope)
-- Standard iOS/Android accessibility features remain supported
-
-**Deliverable:** Polished animations and core accessibility features (haptic/voice commands deferred).
 
 ---
 
 ### Phase 10: Testing & Validation (3-5 days)
 
-**10.1: Unit Tests**
-- Zone conditional rendering tests (all 8 combinations)
-- Metric ordering logic tests
-- Virtual position calculation tests
-- FTMS mode logic tests
-
-**10.2: Integration Tests**
+**10.2: Manual Integration Tests**
 - Complete workout flows (outdoor structured, indoor virtual, etc.)
 - Mid-workout configuration changes
 - Modal interactions during recording
 
-**10.3: Performance Tests**
-- Frame rate during animations (target: 60fps)
-- Memory usage during long recordings (target: < 150MB)
-- Battery consumption (outdoor: < 5%/hr, indoor: < 2%/hr)
-
-**10.4: Edge Case Tests**
+**10.3: Edge Case Tests**
 - GPS signal loss and recovery
 - Sensor disconnection during workout
 - App backgrounding/foregrounding
@@ -3208,9 +3182,6 @@ const getMetricOrder = (planTargets: PlanTargets | null) => {
 
 **10.5: Manual QA Testing**
 - Test on multiple device sizes (iPhone SE, iPhone 15 Pro Max, iPad)
-- Test on Android devices (various screen sizes)
-- Test with real sensors and trainers
-- Test all user journeys from section 5
 
 **Deliverable:** Comprehensive test coverage with all tests passing.
 
@@ -3224,44 +3195,10 @@ const getMetricOrder = (planTargets: PlanTargets | null) => {
 - Clean up unused carousel types
 
 **11.2: Update Related Screens**
-- Ensure `/record/sensors` still works with new layout
 - Ensure `/record/submit` receives correct data
 
-**11.3: Documentation**
-- Update code comments with design rationale
-- Document component architecture
-- Create developer guide for adding new metrics/zones
-
-**11.4: Performance Profiling**
-- Run final performance audit
-- Identify any bottlenecks
-- Optimize as needed
 
 **Deliverable:** Clean codebase with old carousel code removed and documentation updated.
-
----
-
-### Phase 12: Beta Testing & Iteration (Ongoing)
-
-**12.1: Internal Beta**
-- Deploy to internal testers
-- Gather feedback on usability
-- Monitor crash reports and errors
-
-**12.2: Iteration Based on Feedback**
-- Adjust zone sizing if needed
-- Refine animations if too slow/fast
-- Fix any discovered bugs
-
-**12.3: Public Beta (Optional)**
-- Deploy to limited set of users
-- Monitor usage patterns
-- Iterate based on real-world usage
-
-**12.4: Production Release**
-- Final QA pass
-- Deploy to production
-- Monitor error rates and performance metrics
 
 ---
 
