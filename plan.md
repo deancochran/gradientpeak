@@ -32,6 +32,226 @@ This design specification defines the User Interface (UI) and User Experience (U
 
 ---
 
+## MVP Scope & Requirements
+
+This section defines the specific requirements and scope limitations for the upcoming MVP release.
+
+### 1. FTMS Logic: Machine-Specific Configurations
+
+The Adjust tab must define specific configurations for each FTMS machine type to ensure proper resistance and control mapping.
+
+#### Supported Machine Types:
+- **Rowers:** Damper/resistance level mapping, stroke rate targets
+- **Bikes (Trainers):** ERG mode power control, SIM mode grade simulation, resistance levels
+- **Treadmills:** Speed control, incline/grade control
+- **Ellipticals:** Resistance level control, cadence targets
+
+#### Adjust Tab Configuration Requirements:
+Each machine type must have:
+- **Control Mode Selection:** Auto (follows plan) vs Manual override
+- **Resistance Mapping:** Define how plan targets translate to machine resistance
+- **Quick Adjustment Controls:** +/- buttons for manual fine-tuning
+- **Machine-Specific Parameters:**
+  - Rowers: Damper setting (1-10), drag factor display
+  - Bikes: FTP-based power zones, weight for gradient simulation
+  - Treadmills: Max speed limits, incline range
+  - Ellipticals: Resistance range, stride rate targets
+
+**Implementation Note:** The FTMS Control Modal must dynamically adapt its UI based on the connected machine type, showing only relevant controls for that device category.
+
+### 2. Documentation: Focus Modes & Record Page Behavior
+
+#### Focus Modes (Map, Plan, Metrics)
+The recording interface supports three distinct Focus Modes that allow users to expand specific zones for detailed viewing:
+
+**Map Focus Mode:**
+- Expands Zone A (Context Layer) to full screen minus footer
+- Available when: GPS map (outdoor) or virtual route map (indoor) is active
+- Gesture: Tap on map to expand, tap Minimize button or tap map again to collapse
+- Use case: Detailed route navigation, checking upcoming terrain
+
+**Plan Focus Mode:**
+- Expands Zone B (Guidance Layer) to emphasize workout structure
+- Available when: Activity plan is attached
+- Gesture: Tap on plan card to expand, tap Minimize button to collapse
+- Use case: Reviewing upcoming intervals, checking workout structure
+
+**Metrics Focus Mode:**
+- Expands Zone C (Data Layer) to show all available metrics in grid layout
+- Always available (Zone C always renders)
+- Gesture: Tap on metrics area to expand, tap Minimize button to collapse
+- Use case: Detailed analysis of all sensor data simultaneously
+
+**Focus Mode Rules:**
+- Only ONE zone can be in Focus Mode at a time
+- Focus Mode and expanded footer are mutually exclusive (cannot both be active)
+- When a zone is in Focus Mode, footer automatically collapses
+- When footer is expanded, all zones return to normal size
+- Minimize button appears in top-right corner of focused zone
+
+#### Record Page Behavior: Dynamic Attach/Detach
+
+Users can dynamically attach or detach plans and routes during an active recording. The UI must react immediately to these changes:
+
+**Attaching a Plan Mid-Workout:**
+1. User swipes up footer → taps "Plan" configuration item
+2. Plan picker modal opens (shows list of available workout plans)
+3. User selects a plan → modal dismisses
+4. Zone B **smoothly animates into view** (300ms slide-in from bottom)
+5. Plan immediately begins from first interval
+6. Metrics in Zone C reorder to prioritize plan target metrics
+
+**Detaching a Plan Mid-Workout:**
+1. User swipes up footer → taps "Plan" → selects "Remove Plan"
+2. Zone B **smoothly animates out of view** (300ms slide-out to bottom)
+3. Zone A and Zone C expand to fill available space
+4. Metrics remain visible but plan-specific ordering is removed
+5. Recording continues as free-form workout
+
+**Attaching a Route Mid-Workout:**
+- Outdoor activity: Route overlay appears on existing GPS map
+- Indoor activity: Map with virtual route polyline mounts in Zone A
+- Route progress calculation begins from current distance/time
+- If FTMS connected (indoor): Grade updates begin controlling resistance
+
+**Detaching a Route Mid-Workout:**
+- Outdoor activity: Route overlay disappears, breadcrumb trail remains
+- Indoor activity: Map unmounts if no other reason to show it
+- FTMS control reverts to plan targets only (no grade adjustment)
+
+**Critical Rules:**
+- Recording NEVER pauses during attach/detach operations
+- All sensor data continues collecting seamlessly
+- Changes take effect immediately (no confirmation dialogs needed)
+- Activity type (category/location) CANNOT be changed once recording starts
+
+### 3. UI Standardization
+
+#### Modals as Sheets with Standard Navigation
+All configuration interfaces must follow consistent sheet-based patterns:
+
+**Sheet Structure:**
+- All modals render as bottom sheets (using `@gorhom/bottom-sheet`)
+- **Standard Back Button:** Every sheet includes a "Back" button in top-left corner
+- Back button style: `< Back` text with chevron icon
+- Tapping Back button dismisses sheet and returns to previous view
+- No "X" close buttons or alternative dismiss patterns
+
+**Sheet Types:**
+- **Route Picker Sheet:** List of saved GPX routes with search/filter
+- **Plan Picker Sheet:** List of workout plans with preview
+- **FTMS Control Sheet:** Machine controls with mode switching
+- **Activity Selection Sheet:** Category and location picker (pre-start only)
+- **Sensors Sheet:** Full navigation screen (exception to sheet pattern)
+
+#### Gesture Standardization
+Consistent gesture behavior across all sheets and screens:
+
+**Left-to-Right Swipe (Back Gesture):**
+- ✅ **ENABLED** on Sensors screen (`/record/sensors`)
+- ❌ **DISABLED** on main recording screen (`/record/index`)
+- Rationale: Prevents accidental back swipes during active workout
+- Implementation: Use `gestureEnabled={false}` on recording screen navigator
+
+**Swipe-Down Gesture:**
+- ❌ **DISABLED** on all sheets and recording screen
+- Prevents accidental dismissals during workout
+- Users must explicitly tap "Back" button to dismiss sheets
+- Implementation: Set `enablePanDownToClose={false}` on all bottom sheets
+
+**Sensors Page Exception:**
+The Sensors page (`/record/sensors`) is a full navigation screen (not a sheet) and follows standard navigation patterns:
+- Left-to-right swipe gesture: ✅ ENABLED
+- Back button in header: ✅ Visible
+- Returns to recording screen on back
+- This is the ONLY screen in the recording flow that uses navigation instead of sheets
+
+#### Footer Label Simplification
+The footer configuration items must use simplified, generic labels:
+
+**Current (Verbose):**
+```
+Route: "Mountain Loop" (14.2 mi)
+Plan: "VO2 Max Intervals" (45 min)
+```
+
+**MVP (Simplified):**
+```
+Edit Route
+Edit Plan
+```
+
+**Rules:**
+- Hide specific route/plan names in footer
+- Show only generic action labels: "Edit Route" / "Edit Plan"
+- If no route attached: "Add Route"
+- If no plan attached: "Add Plan"
+- Specific names/details shown only inside the picker sheets
+- Rationale: Reduces visual clutter, keeps footer concise
+
+### 4. Scope Reductions (Removed from MVP)
+
+The following features are explicitly OUT OF SCOPE for the MVP release and should be removed or disabled:
+
+#### ❌ Notification Banners
+- Remove all system notification banners (GPS lost, sensor disconnected, etc.)
+- Exception: Android foreground service notification (required for background recording)
+- Use subtle in-UI indicators instead of intrusive banners
+- Example: Show "GPS Searching..." text overlay on map instead of banner
+
+#### ❌ System Overlays
+- Remove modal overlays for system events
+- Remove "Sensor Disconnected" overlay cards
+- Remove "GPS Signal Lost" persistent banners
+- Use icon badges or text labels for status instead
+
+#### ❌ HR/Power Graphs (Zone A)
+- Remove Heart Rate graph visualization from Zone A
+- Remove Power graph visualization from Zone A
+- Zone A is ONLY for GPS map or route visualization
+- HR and Power metrics remain in Zone C as numeric values
+
+**Impact:** When user has plan but no route:
+- Old behavior: Zone A shows HR or Power graph
+- New behavior: Zone A does NOT render (Zone B and C expand to fill space)
+
+#### ❌ Voice Feedback
+- Remove all audio cues for interval transitions
+- Remove text-to-speech announcements
+- Remove audio alerts for sensor disconnections
+- Silent operation only (visual feedback only)
+
+#### ❌ Haptic Feedback
+- Remove haptic feedback for button presses
+- Remove haptic patterns for interval transitions
+- Remove vibration alerts for sensor events
+- No haptic feedback in MVP release
+
+**Code Cleanup Required:**
+- Remove or comment out haptic feedback calls (`Haptics.impactAsync()`)
+- Remove voice/audio manager integration
+- Remove notification banner components
+- Simplify Zone A rendering logic (map-only, no graphs)
+
+### MVP Summary
+
+**IN SCOPE:**
+- ✅ FTMS machine-specific configurations (Rowers, Bikes, Treadmills, Ellipticals)
+- ✅ Focus Modes (Map, Plan, Metrics) with clear documentation
+- ✅ Dynamic plan/route attach/detach during recording
+- ✅ Standardized sheet UI with Back buttons
+- ✅ Gesture consistency (left-to-right on Sensors only, no swipe-down)
+- ✅ Simplified footer labels (hide specific names)
+
+**OUT OF SCOPE:**
+- ❌ Notification banners (except Android foreground service)
+- ❌ System overlays for events
+- ❌ HR/Power graphs in Zone A
+- ❌ Voice feedback and audio cues
+- ❌ Haptic feedback for all interactions
+
+---
+
 ## 1. The Visual Hierarchy: The Three-Tier Dynamic Stack
 
 The main recording view is constructed as a vertical stack divided into three logical zones. These zones are fluid; they mount, unmount, and resize based on the active configuration.
@@ -63,8 +283,18 @@ The top section of the screen is reserved for spatial and environmental context.
    - Grade from route elevation updates FTMS machine resistance (unless manually overridden)
    - User can visually track progress along the route path during indoor activity
 
+4. **Indoor + No Route**
+   - ❌ **DO NOT RENDER** — Zone A completely unmounts
+   - Behavior: Zone B and Zone C expand to fill the available space
+   - Rationale: Without GPS or route data, there is no spatial context to display
 
-**Summary:** Zone A only fully mounts when it has meaningful data to display. 
+**MVP Scope Change:**
+- ❌ **REMOVED:** HR/Power graph visualizations in Zone A
+- Previous design showed Heart Rate or Power graphs when no route was present
+- MVP version: Zone A is **map-only** (GPS or virtual route visualization)
+- HR and Power remain available as numeric metrics in Zone C
+
+**Summary:** Zone A only renders when displaying GPS map (outdoor) or virtual route map (indoor). All other scenarios result in Zone A unmounting completely. 
 
 ### Zone B: The Guidance Layer (Middle Tier) — **CONDITIONAL**
 
@@ -210,11 +440,13 @@ There is an **Activity Category/Location Selection Button**:
 
 1. **Route Management**
    - Icon: Map
-   - Label: "Route"
+   - **Label (MVP Simplified):**
+     - If route attached: "Edit Route"
+     - If no route: "Add Route"
    - Chevron: Right arrow
-   - OnPress: Opens route picker modal (shows list of saved GPX routes)
+   - OnPress: Opens route picker sheet (shows list of saved GPX routes)
    - **Conditional Visibility:** Always available
-   - Current Route Display: Shows route name if attached, "No route selected" if none
+   - **MVP:** Hide specific route name in footer (shown only inside picker sheet)
    - **Functionality:** Allows user to:
      - Add a route to an activity that doesn't have one
      - Switch to a different route
@@ -223,11 +455,13 @@ There is an **Activity Category/Location Selection Button**:
 
 2. **Plan Management**
    - Icon: Calendar/Target
-   - Label: "Plan"
+   - **Label (MVP Simplified):**
+     - If plan attached: "Edit Plan"
+     - If no plan: "Add Plan"
    - Chevron: Right arrow
-   - OnPress: Opens workout plan picker modal
+   - OnPress: Opens workout plan picker sheet
    - **Conditional Visibility:** Always available
-   - Current Plan Display: Shows plan name if attached, "Free-form workout" if none
+   - **MVP:** Hide specific plan name in footer (shown only inside picker sheet)
    - **Functionality:** Allows user to:
      - Add a plan to an activity that doesn't have one
      - Switch to a different plan
@@ -300,25 +534,30 @@ There is an **Activity Category/Location Selection Button**:
 - Zone A map/graph: Position updates accumulate (visible after modal dismissal)
 - Footer controls: Remain accessible and functional at top of expanded sheet
 
-### User Feedback During Modals
+### User Feedback During Modals (MVP Updated)
 
 **Interval Transition Notifications:**
-- If plan step changes while modal is open: Show system toast notification
-- Toast appears on top of modal with interval name and target
-- Example: "Next: 3min @ 250W" appears as dismissible banner
-- User can continue configuring without interruption
+❌ **REMOVED FROM MVP** - Toast notifications and banners are out of scope
+~~- If plan step changes while modal is open: Show system toast notification~~
+~~- Toast appears on top of modal with interval name and target~~
+~~- Example: "Next: 3min @ 250W" appears as dismissible banner~~
+- **MVP Alternative:** User sees interval change visually in Zone B (no notification)
 
 **Sensor Disconnection Alerts:**
-- If sensor disconnects while modal is open: Show system notification
-- Does NOT auto-dismiss the modal (user maintains context)
-- Notification includes "Reconnect" action button
-- Status updates in footer badge (e.g., "2/5" sensors connected)
+❌ **REMOVED FROM MVP** - System notification banners are out of scope
+~~- If sensor disconnects while modal is open: Show system notification~~
+~~- Does NOT auto-dismiss the modal (user maintains context)~~
+~~- Notification includes "Reconnect" action button~~
+- **MVP Alternative:** Status icon badge in footer shows sensor count (e.g., "2/5")
+- Sensor status visible when footer is expanded
 
 **GPS Signal Loss (Outdoor Activities):**
-- If GPS is lost while modal is open: Show persistent warning banner
-- Banner appears at top of screen, above modal
-- Does NOT block modal interaction
-- Automatically dismisses when signal is restored
+❌ **REMOVED FROM MVP** - Persistent warning banners are out of scope
+~~- If GPS is lost while modal is open: Show persistent warning banner~~
+~~- Banner appears at top of screen, above modal~~
+~~- Does NOT block modal interaction~~
+- **MVP Alternative:** Text overlay on map shows "GPS Searching..." status
+- No intrusive banner overlay
 
 ### Safety Controls
 
@@ -328,11 +567,13 @@ There is an **Activity Category/Location Selection Button**:
 - Users can pause recording from ANY modal or configuration screen
 - Emergency controls are NEVER obscured by UI elements
 
-**Modal Dismissal:**
-- All modals support swipe-down-to-dismiss gesture
-- Tapping outside modal bounds dismisses modal (returns to recording view)
-- Back button (Android) dismisses topmost modal without affecting recording
-- No confirmation needed for modal dismissal (changes are applied immediately)
+**Modal Dismissal (MVP Updated):**
+- ❌ **Swipe-down gesture DISABLED** (prevents accidental dismissals during workout)
+- ✅ **Back button required:** All sheets include a "< Back" button in top-left corner
+- ✅ **Tapping outside sheet bounds** dismisses sheet (returns to recording view)
+- ✅ **Android back button** dismisses topmost sheet without affecting recording
+- No confirmation needed for sheet dismissal (changes are applied immediately)
+- Implementation: Set `enablePanDownToClose={false}` on all `@gorhom/bottom-sheet` instances
 
 ### Implementation Requirements
 
@@ -557,9 +798,10 @@ RecordingScreen (index.tsx)
 ### 4.4 Edge Case Handling
 
 **Scenario: GPS signal lost mid-workout (outdoor mode)**
-- Solution: Keep showing map with last known position + "GPS Signal Lost" banner
+- Solution: Keep showing map with last known position + "GPS Searching..." text overlay
 - Zone A continues to display map, but position marker stops updating
 - Breadcrumb trail remains visible showing historical path
+- **MVP:** No banner overlay—use subtle text label on map instead
 
 **Scenario: User attaches route mid-workout (indoor activity)**
 - Solution: Zone A switches to map view with route polyline
@@ -578,18 +820,21 @@ RecordingScreen (index.tsx)
 - Metrics transition from "Lap" to "Session" mode
 
 **Scenario: Sensor disconnects during workout**
-- Solution:
-  - If in Zone A (Power Graph or HR Graph), do NOT unmount the graph
-  - Show "Sensor Disconnected" overlay on graph
-  - Keep historical data visible
-  - When sensor reconnects, overlay fades out
+- **MVP:** Zone A no longer shows Power/HR graphs (map-only)
+- Solution for metrics in Zone C:
+  - Metric value shows last known reading with faded appearance
+  - Small icon indicator next to metric (not a full overlay)
+  - When sensor reconnects, metric returns to normal appearance
+  - No system notification banner
 
 **Scenario: FTMS trainer disconnects during indoor workout**
+- **MVP:** No notification banner shown
 - Solution:
-  - Show "Trainer Disconnected" notification
+  - FTMS control button in footer shows "Disconnected" badge
   - If route is active, virtual position continues updating from speed/cadence sensors (if available)
   - User can continue workout without trainer control
-  - When trainer reconnects, show notification and resume control
+  - When trainer reconnects, badge updates to show connected status
+  - No pop-up notifications
 
 ### 4.5 Layout Calculations
 
@@ -648,19 +893,21 @@ RecordingScreen (index.tsx)
 - Metrics text: Minimum 16sp font size with bold weight for primary values
 
 **Voice Control Support (iOS/Android):**
-- "Start recording" - Activates Start button
-- "Pause recording" / "Resume recording" - Toggles pause state
-- "New lap" / "Mark lap" - Triggers lap button
-- "Show map" / "Show plan" - Expands respective zone to focus mode
-- "Open settings" / "Show settings" - Expands footer to configuration view
-- "Close" / "Minimize" - Collapses expanded elements
+❌ **REMOVED FROM MVP** - Voice control and audio cues are out of scope
+~~- "Start recording" - Activates Start button~~
+~~- "Pause recording" / "Resume recording" - Toggles pause state~~
+~~- "New lap" / "Mark lap" - Triggers lap button~~
+~~- "Show map" / "Show plan" - Expands respective zone to focus mode~~
+~~- "Open settings" / "Show settings" - Expands footer to configuration view~~
+~~- "Close" / "Minimize" - Collapses expanded elements~~
 
 **Haptic Feedback:**
-- Start/Pause/Finish buttons: Medium impact haptic
-- Lap button: Light impact haptic
-- Interval transitions: Success haptic pattern (da-dum)
-- Sensor disconnection: Warning haptic pattern (vibrate twice)
-- Zone expansion: Light haptic feedback on tap
+❌ **REMOVED FROM MVP** - Haptic feedback is out of scope for MVP release
+~~- Start/Pause/Finish buttons: Medium impact haptic~~
+~~- Lap button: Light impact haptic~~
+~~- Interval transitions: Success haptic pattern (da-dum)~~
+~~- Sensor disconnection: Warning haptic pattern (vibrate twice)~~
+~~- Zone expansion: Light haptic feedback on tap~~
 
 ---
 
@@ -715,10 +962,20 @@ Record Screen (index.tsx)
 - Plan progression continues (time-based advancement)
 - User returns to exact same UI state (zones remain configured)
 
-**Gesture Navigation:**
-- Sensors screen: Gesture navigation ENABLED (user can swipe back)
-- Record screen: Gesture navigation DISABLED (prevents accidental exits)
-- Submit screen: Gesture navigation DISABLED (prevents data loss)
+**Gesture Navigation (MVP Requirements):**
+- **Sensors screen (`/record/sensors`):**
+  - ✅ Left-to-right swipe gesture: **ENABLED**
+  - ✅ Back button in header: Visible
+  - Allows intuitive swipe-back to recording screen
+
+- **Record screen (`/record/index`):**
+  - ❌ Left-to-right swipe gesture: **DISABLED**
+  - Prevents accidental back swipes during active workout
+  - Implementation: `gestureEnabled={false}` on navigator
+
+- **Submit screen (`/record/submit`):**
+  - ❌ Gesture navigation: **DISABLED**
+  - Prevents accidental data loss during submission
 
 ### Modal-Based Configuration (Preferred Pattern)
 
@@ -1079,20 +1336,26 @@ mapRef.current?.animateToRegion({
 - Velocity threshold: 50px/s (determines snap target)
 - Overscroll: Rubber-band effect at snap points
 
-**Modal Dismiss Swipe:**
+**Modal Dismiss Gesture (MVP Updated):**
 ```typescript
-// Standard modal swipe-down gesture
-<Modal
-  presentationStyle="pageSheet"
-  animationType="slide"
-  onRequestClose={handleDismiss}
+// Bottom sheet with disabled swipe-down
+<BottomSheetModal
+  ref={bottomSheetRef}
+  snapPoints={snapPoints}
+  enablePanDownToClose={false}  // MVP: DISABLED
+  onDismiss={handleDismiss}
 >
-  {/* Modal content */}
-</Modal>
+  {/* Sheet header with Back button */}
+  <SheetHeader>
+    <BackButton onPress={handleDismiss}>< Back</BackButton>
+  </SheetHeader>
+  {/* Sheet content */}
+</BottomSheetModal>
 ```
-- Gesture type: Swipe down from top
-- Velocity threshold: 50px/s minimum
-- Also dismissible by tapping outside modal bounds
+- ❌ **Swipe-down gesture: DISABLED** (prevents accidental dismissals)
+- ✅ **Back button required:** "< Back" button in top-left corner
+- ✅ **Tap outside bounds:** Dismisses sheet
+- ✅ **Android back button:** Dismisses sheet
 
 **Map Pan Gesture (Does Not Trigger Focus):**
 - Map panning is handled by react-native-maps internal gestures
@@ -1440,12 +1703,16 @@ if (!plan.hasPlan) {
 }
 ```
 
-### FTMS Control Modal Interface
+### FTMS Control Modal Interface (MVP Updated)
 
-**Modal Structure (Opened from Footer Configuration):**
+The FTMS Control Modal must **dynamically adapt** its UI based on the connected machine type. Each machine category has specific controls and parameters.
+
+#### Machine-Specific Configurations
+
+**1. Bikes (Smart Trainers):**
 ```
 ┌───────────────────────────────────────────────────┐
-│ Smart Trainer Control                     [Close] │
+│ < Back            Smart Trainer                   │
 ├───────────────────────────────────────────────────┤
 │ [Trainer 1] [Trainer 2]  ← Horizontal tabs        │
 ├───────────────────────────────────────────────────┤
@@ -1459,22 +1726,128 @@ if (!plan.hasPlan) {
 │    (Following workout plan)                       │
 │ [Switch to Manual]                                │
 │                                                   │
+│ Weight for Grade Simulation: 75 kg                │
+│ FTP: 280 W                                        │
+│                                                   │
 │ Current Output: 248 W                             │
 │ Current Cadence: 87 rpm                           │
 │ Resistance Level: 12/20                           │
 └───────────────────────────────────────────────────┘
 ```
 
-**When Plan is Active:**
-- Auto/Manual toggle is visible
-- If Auto: Target power shows plan target (disabled/grayed slider)
-- If Manual: Target power is user-adjustable (active slider)
-- Mode selector: ERG is pre-selected and locked in auto mode
+**Controls:**
+- **Mode Selector:** ERG (power target) / SIM (grade simulation) / Resistance (manual level)
+- **Target Power:** Adjustable via slider and +/- buttons
+- **Weight Parameter:** Used for grade-to-power conversion in SIM mode
+- **FTP Display:** Shows user's Functional Threshold Power for reference
 
-**When No Plan:**
+**2. Rowers (Smart Rowing Machines):**
+```
+┌───────────────────────────────────────────────────┐
+│ < Back            Rowing Machine                  │
+├───────────────────────────────────────────────────┤
+│ Damper Setting: 5                                 │
+│ [1]  [2]  [3]  [4]  [5]  [6]  [7]  [8]  [9]  [10] │
+│                                                   │
+│ Resistance Level: Medium                          │
+│ [−−−−−−●−−−−−−−−] ← Slider (1-10)                 │
+│                                                   │
+│ 🔒 Auto Mode: ON                                  │
+│    (Following workout plan)                       │
+│ [Switch to Manual]                                │
+│                                                   │
+│ Target Stroke Rate: 24 spm                        │
+│                                                   │
+│ Current Power: 185 W                              │
+│ Current Stroke Rate: 23 spm                       │
+│ Drag Factor: 115                                  │
+└───────────────────────────────────────────────────┘
+```
+
+**Controls:**
+- **Damper Setting:** 1-10 scale (adjusts air flow resistance)
+- **Resistance Level:** Fine-tune overall difficulty
+- **Target Stroke Rate:** Strokes per minute target (if plan specifies)
+- **Drag Factor Display:** Shows actual resistance metric (read-only)
+
+**3. Treadmills (Smart Treadmills):**
+```
+┌───────────────────────────────────────────────────┐
+│ < Back            Treadmill                       │
+├───────────────────────────────────────────────────┤
+│ Speed Control                                     │
+│ Target Speed: 10.5 km/h                           │
+│ [−−−−−−−−●−−−−−−−] ← Slider                       │
+│ [-1.0]  [-0.5]  [+0.5]  [+1.0] ← km/h adjustments│
+│                                                   │
+│ Incline Control                                   │
+│ Target Incline: 3.5%                              │
+│ [−−−−−●−−−−−−−−−] ← Slider                        │
+│ [-2%]  [-0.5%]  [+0.5%]  [+2%] ← Quick adjust     │
+│                                                   │
+│ 🔒 Auto Mode: ON                                  │
+│    (Following workout plan)                       │
+│ [Switch to Manual]                                │
+│                                                   │
+│ Max Speed Limit: 16.0 km/h (Safety)               │
+│ Incline Range: 0% - 15%                           │
+│                                                   │
+│ Current Speed: 10.3 km/h                          │
+│ Current Incline: 3.5%                             │
+└───────────────────────────────────────────────────┘
+```
+
+**Controls:**
+- **Speed Control:** Target speed with safety limits
+- **Incline Control:** Grade/incline percentage
+- **Safety Limits:** Display max speed and incline range
+- **Dual Sliders:** Separate controls for speed and grade
+
+**4. Ellipticals (Smart Elliptical Trainers):**
+```
+┌───────────────────────────────────────────────────┐
+│ < Back            Elliptical                      │
+├───────────────────────────────────────────────────┤
+│ Resistance Level: 12                              │
+│ [−−−−−−−−●−−−−−−−] ← Slider (1-20)                │
+│ [-5]  [-1]  [+1]  [+5] ← Quick adjustments        │
+│                                                   │
+│ 🔒 Auto Mode: ON                                  │
+│    (Following workout plan)                       │
+│ [Switch to Manual]                                │
+│                                                   │
+│ Target Cadence: 60 spm                            │
+│ (Strides per minute)                              │
+│                                                   │
+│ Current Resistance: 12/20                         │
+│ Current Cadence: 58 spm                           │
+│ Current Power: 145 W                              │
+└───────────────────────────────────────────────────┘
+```
+
+**Controls:**
+- **Resistance Level:** 1-20 scale (machine-dependent range)
+- **Target Cadence:** Strides per minute (if plan specifies)
+- **Power Display:** Shows estimated power output (read-only)
+
+#### Universal Modal Behavior
+
+**When Plan is Active (All Machine Types):**
+- Auto/Manual toggle is visible
+- If Auto: Targets follow plan (controls disabled/grayed)
+- If Manual: User has full control (all sliders active)
+- Mode/controls adapt to plan target type
+
+**When No Plan (All Machine Types):**
 - No Auto/Manual toggle (always manual control)
 - All controls are active
-- User can switch between ERG / SIM / Resistance modes freely
+- User has full control over all parameters
+
+**MVP Requirements:**
+- ✅ Sheet includes "< Back" button in top-left corner
+- ❌ Swipe-down-to-dismiss is DISABLED (`enablePanDownToClose={false}`)
+- ✅ Tapping outside sheet bounds dismisses sheet
+- ✅ Sheet adapts dynamically based on machine type detected via FTMS service
 
 ### Plan Target Conversion (FTP-Based)
 
@@ -2752,19 +3125,23 @@ const getMetricOrder = (planTargets: PlanTargets | null) => {
 - Test that plan step progression continues
 
 **8.2: Implement Interval Transition Notifications**
-- Show toast notification when interval changes (even when modal is open)
-- Use `react-native-toast-message` or similar
-- Display for 3 seconds, auto-dismiss
+❌ **REMOVED FROM MVP** - Toast notifications are out of scope
+~~- Show toast notification when interval changes (even when modal is open)~~
+~~- Use `react-native-toast-message` or similar~~
+~~- Display for 3 seconds, auto-dismiss~~
+- **MVP:** User sees interval changes directly in Zone B (no notification needed)
 
-**8.3: Implement Sensor Disconnection Alerts**
-- Show system notification when sensor disconnects
-- Do not auto-dismiss modals
-- Update footer badge ("2/5 sensors")
+**8.3: Implement Sensor Disconnection Alerts (MVP MODIFIED)**
+- ❌ **REMOVED:** System notification banners
+- ✅ **MVP:** Update footer badge ("2/5 sensors")
+- ✅ **MVP:** Show icon indicator next to affected metric in Zone C
+- Metrics show last known value with faded appearance
 
-**8.4: Implement GPS Signal Loss Warning**
-- Show persistent banner at top of screen (outdoor activities)
-- Do not block modal interactions
-- Auto-dismiss when signal restored
+**8.4: Implement GPS Signal Loss Warning (MVP MODIFIED)**
+- ❌ **REMOVED:** Persistent banner overlays
+- ✅ **MVP:** Show "GPS Searching..." text overlay directly on map
+- Subtle in-UI indicator (no intrusive banner)
+- Map continues showing last known position
 
 **8.5: Background/Foreground Handling**
 - Test that recording continues when app is backgrounded
@@ -2787,18 +3164,20 @@ const getMetricOrder = (planTargets: PlanTargets | null) => {
 - Smooth transitions with proper timing
 
 **9.3: Add Haptic Feedback**
-- Start/Pause/Finish: Medium impact
-- Lap button: Light impact
-- Interval transitions: Success pattern
-- Sensor disconnections: Warning pattern
+❌ **REMOVED FROM MVP** - Haptic feedback is out of scope
+~~- Start/Pause/Finish: Medium impact~~
+~~- Lap button: Light impact~~
+~~- Interval transitions: Success pattern~~
+~~- Sensor disconnections: Warning pattern~~
 
-**9.4: Accessibility Improvements**
-- VoiceOver announcements for zone transitions
-- Larger touch targets (48x48dp minimum)
-- High contrast mode support
-- Voice control commands
+**9.4: Accessibility Improvements (MVP MODIFIED)**
+- ✅ VoiceOver announcements for zone transitions (iOS accessibility feature)
+- ✅ Larger touch targets (48x48dp minimum)
+- ✅ High contrast mode support
+- ❌ **REMOVED:** Voice control commands (custom voice features out of scope)
+- Standard iOS/Android accessibility features remain supported
 
-**Deliverable:** Polished animations, haptic feedback, and accessibility features.
+**Deliverable:** Polished animations and core accessibility features (haptic/voice commands deferred).
 
 ---
 
@@ -2912,6 +3291,16 @@ const getMetricOrder = (planTargets: PlanTargets | null) => {
 - If Zone A map performance is poor: Implement simplified map view with lower detail
 - If FTMS integration is complex: Defer Phase 6 to post-MVP
 
+**MVP Scope Reductions (Already Applied):**
+- ❌ HR/Power graphs in Zone A (map-only)
+- ❌ Notification banners and system overlays
+- ❌ Haptic feedback for all interactions
+- ❌ Voice feedback and audio cues
+- ✅ Simplified footer labels (hide specific names)
+- ✅ Swipe-down gestures disabled on all sheets
+- ✅ Left-to-right swipe only on Sensors screen
+- ✅ FTMS machine-specific configurations (Bikes, Rowers, Treadmills, Ellipticals)
+
 ---
 
 ## Success Criteria
@@ -2923,6 +3312,22 @@ const getMetricOrder = (planTargets: PlanTargets | null) => {
 - ✅ Footer expands/collapses smoothly
 - ✅ FTMS trainer responds to plan targets in auto mode
 - ✅ Virtual route following works for indoor activities
+- ✅ Zone A shows map-only (no HR/Power graphs)
+
+**MVP UI/UX Requirements:**
+- ✅ All sheets have "< Back" button (no swipe-down dismiss)
+- ✅ Left-to-right swipe enabled only on Sensors screen
+- ✅ Left-to-right swipe disabled on Record screen
+- ✅ Footer shows simplified labels ("Edit Plan" vs "VO2 Max Intervals")
+- ✅ FTMS modal adapts to machine type (Bikes, Rowers, Treadmills, Ellipticals)
+- ✅ Dynamic plan/route attach/detach works mid-workout
+- ✅ Focus Modes (Map, Plan, Metrics) all functional
+
+**MVP Scope Exclusions (Verified):**
+- ❌ No notification banners or system overlays
+- ❌ No haptic feedback
+- ❌ No voice feedback or audio cues
+- ❌ No HR/Power graphs in Zone A
 
 **Performance Requirements:**
 - ✅ 60fps during animations (minimum 30fps acceptable)
