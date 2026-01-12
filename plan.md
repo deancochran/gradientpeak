@@ -1,14 +1,12 @@
 # Design Specification: The Reactive Recording Interface
 
-**Project:** ChainLinkSRM Mobile Application
+**Project:** GradientPeak Mobile Application
 **Module:** Activity Recording & Real-Time Dashboard
 **Design Philosophy:** Context-Aware Reactivity & Single-Screen Immersion
 
-## Introduction: The Shift from Navigation to Context
+## Introduction
 
-Traditional fitness tracking applications often suffer from "carousel fatigue," forcing users to swipe horizontally through multiple pages to access a map, then a music player, then data metrics. This creates friction during high-intensity effort. The new User Interface (UI) and User Experience (UX) design for the ChainLinkSRM recording screen eliminates this pagination entirely.
-
-Instead, we are adopting a **Single Vertical Stack Architecture**. This interface is "reactive," meaning the UI is not a static template but a living layout that automatically configures itself based on the user’s immediate environment (Indoors vs. Outdoors), their intent (Structured Training vs. Free Riding), and their equipment (Bluetooth Sensors vs. GPS). The goal is to provide a single, engaging screen that provides the right information at the right time, anchored by a persistent, swipeable command center.
+This design specification defines the User Interface (UI) and User Experience (UX) for the GradientPeak recording screen. The interface adopts a **Single Vertical Stack Architecture** that is "reactive"—the UI automatically configures itself based on the user's immediate environment (Indoors vs. Outdoors), their intent (Structured Training vs. Free Riding), and their equipment (Bluetooth Sensors vs. GPS). The goal is to provide a single, engaging screen that provides the right information at the right time, anchored by a persistent, swipeable command center.
 
 ---
 
@@ -24,46 +22,37 @@ The top section of the screen is reserved for spatial and environmental context.
 
 #### Rendering Decision Logic:
 
-1. **Outdoor + GPS Available + Has Route**
+**Note:** Outdoor activities always have GPS enabled. Indoor activities never use GPS, but can display virtual route following.
+
+1. **Outdoor + Has Route**
    - ✅ **Render:** GPS Map with route overlay (blue polyline) and breadcrumb trail (red polyline)
    - Displays: User position marker, route progress percentage, grade overlay
 
-2. **Outdoor + GPS Available + No Route**
+2. **Outdoor + No Route**
    - ✅ **Render:** GPS Map with breadcrumb trail only (no route overlay)
    - Displays: User position marker, live heading, grade overlay
 
-3. **Outdoor + GPS Unavailable + Has Route**
-   - ✅ **Render:** "Acquiring GPS" overlay on map with route preview
-   - User sees planned route while waiting for GPS lock
+3. **Indoor + Has Route**
+   - ✅ **Render:** GPS Map with route polyline (virtual activity)
+   - Displays: Route path as polyline, virtual progress indicator that advances along route
+   - Progress calculated from: Distance/speed data to show virtual position on route
+   - Grade from route elevation updates FTMS machine resistance (unless manually overridden)
+   - User can visually track progress along the route path during indoor activity
 
-4. **Outdoor + GPS Unavailable + No Route**
-   - ✅ **Render:** "Acquiring GPS" message on default map location
-   - Falls back to default coordinates until GPS acquired
-
-5. **Indoor + Has Route + No Power Sensor**
-   - ✅ **Render:** Elevation Profile of route
-   - Displays: Route elevation chart with virtual progress indicator
-   - User sees where they are on the route's elevation profile
-
-6. **Indoor + Has Route + Has Power Sensor**
-   - ✅ **Render:** Power Graph with route context
-   - Displays: Real-time power curve (last 60s) with route grade overlay
-   - Allows user to see power output in context of route terrain
-
-7. **Indoor + No Route + Has Power Sensor**
+4. **Indoor + No Route + Has Power Sensor**
    - ✅ **Render:** Power Graph (full screen in zone)
-   - Displays: Real-time power curve, 3s/10s/30s average lines, current FTP zones
+   - Displays: Real-time power curve (last 60s), 3s/10s/30s average lines, current FTP zones
 
-8. **Indoor + No Route + No Power Sensor + Has Heart Rate Sensor**
+5. **Indoor + No Route + No Power Sensor + Has Heart Rate Sensor**
    - ✅ **Render:** Heart Rate Graph
    - Displays: Real-time HR curve, current HR zone, threshold markers
 
-9. **Indoor + No Route + No Sensors**
+6. **Indoor + No Route + No Sensors**
    - ⚠️ **Render:** Compact empty state message
    - Message: "Connect sensors or load a route to visualize your workout"
    - This zone takes minimal space (~15% of screen), allowing Zone C to expand
 
-**Summary:** Zone A only fully mounts when it has meaningful data to display. The priority order is: Map (outdoor) > Route Elevation > Power Graph > Heart Rate Graph > Minimal Empty State.
+**Summary:** Zone A only fully mounts when it has meaningful data to display. The priority order is: Map (outdoor/indoor with route) > Power Graph > Heart Rate Graph > Minimal Empty State.
 
 ### Zone B: The Guidance Layer (Middle Tier) — **STRICTLY CONDITIONAL**
 
@@ -123,25 +112,24 @@ This table provides a complete decision matrix for implementers:
 
 | Configuration | Zone A | Zone B | Zone C |
 |--------------|--------|--------|--------|
-| Outdoor + GPS + Route + Plan | GPS Map w/ Route | Plan Card | Lap Metrics |
-| Outdoor + GPS + Route + No Plan | GPS Map w/ Route | ❌ Hidden | Session Metrics |
-| Outdoor + GPS + No Route + Plan | GPS Map (trail only) | Plan Card | Lap Metrics |
-| Outdoor + GPS + No Route + No Plan | GPS Map (trail only) | ❌ Hidden | Session Metrics |
-| Outdoor + No GPS + Route + Plan | GPS Acquiring + Route Preview | Plan Card | Lap Metrics |
-| Outdoor + No GPS + No Route + Plan | GPS Acquiring Message | Plan Card | Lap Metrics |
-| Indoor + Route + Power + Plan | Power Graph w/ Route Elevation | Plan Card | Lap Metrics |
-| Indoor + Route + Power + No Plan | Power Graph w/ Route Elevation | ❌ Hidden | Session Metrics |
-| Indoor + Route + No Power + Plan | Elevation Profile | Plan Card | Lap Metrics |
-| Indoor + Route + No Power + No Plan | Elevation Profile | ❌ Hidden | Session Metrics |
+| Outdoor + Route + Plan | GPS Map w/ Route | Plan Card | Lap Metrics |
+| Outdoor + Route + No Plan | GPS Map w/ Route | ❌ Hidden | Session Metrics |
+| Outdoor + No Route + Plan | GPS Map (trail only) | Plan Card | Lap Metrics |
+| Outdoor + No Route + No Plan | GPS Map (trail only) | ❌ Hidden | Session Metrics |
+| Indoor + Route + Plan | Map w/ Route (virtual) | Plan Card | Lap Metrics |
+| Indoor + Route + No Plan | Map w/ Route (virtual) | ❌ Hidden | Session Metrics |
 | Indoor + No Route + Power + Plan | Power Graph | Plan Card | Lap Metrics |
 | Indoor + No Route + Power + No Plan | Power Graph | ❌ Hidden | Session Metrics |
-| Indoor + No Route + No Power + Plan | Minimal Empty State | Plan Card | Lap Metrics |
-| Indoor + No Route + No Power + No Plan | Minimal Empty State | ❌ Hidden | Session Metrics |
+| Indoor + No Route + HR + Plan | Heart Rate Graph | Plan Card | Lap Metrics |
+| Indoor + No Route + HR + No Plan | Heart Rate Graph | ❌ Hidden | Session Metrics |
+| Indoor + No Route + No Sensors + Plan | Minimal Empty State | Plan Card | Lap Metrics |
+| Indoor + No Route + No Sensors + No Plan | Minimal Empty State | ❌ Hidden | Session Metrics |
 
 **Key Observations:**
 - Zone B rendering is **only** dependent on whether a plan exists (binary decision)
-- Zone A rendering follows a priority waterfall (GPS Map > Elevation > Power > HR > Empty)
+- Zone A rendering follows a priority waterfall (Map with route > Power Graph > HR Graph > Empty)
 - Zone C is **always** visible but changes content based on Zone B state
+- Outdoor activities always have GPS enabled; indoor activities can show virtual route following
 - The interface gracefully handles any combination of missing data
 
 ---
@@ -156,9 +144,21 @@ Mobile screens offer limited real estate. To solve this, we introduce an "Expand
 
 ---
 
-## 3. The Anchor: The Swipeable Control Footer
+## 3. The Anchor: The Swipeable Control Footer & Activity Selection
 
 The footer is the most persistent element of the application. It acts as a split-level bottom sheet that manages both the recording state and the configuration settings. This component uses `@gorhom/bottom-sheet` or a similar library to provide smooth, native-feeling swipe interactions.
+
+### Activity Category & Location Selection
+
+Before the footer, there is an **Activity Category/Location Selection Button** positioned above the footer. This button:
+
+* **Placement:** Fixed position above the collapsed footer
+* **Visibility:** Only visible **before recording starts**. Once recording begins, this button disappears entirely
+* **Coverage:** When the footer is expanded (dragged up), the expanded sheet covers this button. When collapsed, the button reappears
+* **Function:** Opens a modal that allows the user to:
+  - Select activity category (Run, Bike, Swim, etc.)
+  - Select location (Indoor/Outdoor)
+  - These selections must be made before starting the recording
 
 ### State 1: Collapsed (The Dashboard View)
 
@@ -166,43 +166,55 @@ In its default state, the footer sits at the bottom of the screen with a fixed h
 
 #### Layout:
 * **Drag Handle:** Centered pill indicator (40px wide, 4px tall) at top of sheet
-* **Primary Controls Row:**
-  - **Activity Type Icon** (left, 56px): Shows current activity icon (run/bike/swim), opens activity selector modal
-  - **Start/Pause/Resume Button** (center, flex-grow): Large tap target (minimum 56px height), prominent primary color
-  - **Lap Button** (right, 56px): Only visible when recording is active
-  - **Sensors Button** (right, 56px): Bluetooth icon, badge shows connected sensor count
+* **Primary Controls Row:** Recording controls that change based on recording state
 
 #### Behavior:
-* **Before Recording Starts:** Shows Activity Type Icon + Start Button + Sensors Button
-* **While Recording:** Shows Lap Button + Pause Button + Sensors Button (Activity Type Icon hidden to prevent accidental changes)
-* **While Paused:** Shows Resume Button + Finish Button + Sensors Button
+* **Before Recording Starts (Not Recording):**
+  - Shows: **Start Button** only (centered, full width)
+
+* **While Recording:**
+  - Shows: **Pause Button** (left/center) + **Lap Button** (right)
+  - Activity Category/Location button is hidden
+
+* **While Paused:**
+  - Shows: **Resume Button** (left/center) + **Finish Button** (right)
 
 ### State 2: Expanded (The Configuration View)
 
 When the user swipes up on the footer, the sheet smoothly animates to **50-60% of screen height**. The sheet has defined snap points at [Collapsed, Expanded].
 
 #### Layout:
-* **Pinned Controls (Top):** The Start/Pause/Lap/Sensors buttons remain visible and pinned to the top of the expanded sheet
+* **Pinned Controls (Top):** The recording control buttons (Start/Pause/Resume/Lap/Finish) remain visible and pinned to the top of the expanded sheet
 * **Scrollable Configuration Menu (Below):**
 
 **Configuration Options (List Items):**
 
 1. **Route Management**
    - Icon: Map
-   - Label: "Attach/Change Route"
+   - Label: "Route"
    - Chevron: Right arrow
    - OnPress: Opens route picker modal (shows list of saved GPX routes)
    - **Conditional Visibility:** Always available
    - Current Route Display: Shows route name if attached, "No route selected" if none
+   - **Functionality:** Allows user to:
+     - Add a route to an activity that doesn't have one
+     - Switch to a different route
+     - Remove the active route
+   - **Note:** Creating or editing routes is NOT part of this functionality
 
 2. **Plan Management**
    - Icon: Calendar/Target
-   - Label: "Attach/Edit Plan"
+   - Label: "Plan"
    - Chevron: Right arrow
    - OnPress: Opens workout plan picker modal
    - **Conditional Visibility:** Always available
    - Current Plan Display: Shows plan name if attached, "Free-form workout" if none
+   - **Functionality:** Allows user to:
+     - Add a plan to an activity that doesn't have one
+     - Switch to a different plan
+     - Remove the active plan
    - **Quick Action:** If plan is active, shows "Skip Step" button inline
+   - **Note:** Creating or editing plans is NOT part of this functionality
 
 3. **Sensor Management**
    - Icon: Bluetooth
@@ -212,36 +224,39 @@ When the user swipes up on the footer, the sheet smoothly animates to **50-60% o
    - **Badge:** Shows count of connected/total sensors (e.g., "3/5")
    - **Inline Status:** Shows brief status: "All connected" (green), "1 disconnected" (yellow), "None connected" (gray)
 
-4. **Smart Trainer Control** *(Indoor Mode Only)*
+4. **Smart Trainer Control** *(When FTMS Trainer Connected)*
    - Icon: Zap
    - Label: "Smart Trainer"
-   - **Conditional Visibility:** Only shows when controllable trainer is connected
-   - **Inline Controls:**
-     - Mode selector: ERG / SIM / Resistance (segmented control)
-     - Target adjustment: +/- buttons with current value
-     - Auto/Manual toggle (when plan is active)
-   - **Expanded View:** If user needs fine-tuned control, tapping opens dedicated trainer control modal
-
-5. **Location Toggle** *(Plan Active Only)*
-   - Icon: MapPin
-   - Label: "Indoor/Outdoor Mode"
-   - **Conditional Visibility:** Only shows when workout plan is attached (allows switching between indoor/outdoor without changing activity type)
-   - Toggle Switch: Indoor ↔ Outdoor
-   - **Purpose:** Allows user to take a planned workout (e.g., "Threshold Intervals") and do it either on a trainer (indoor) or outside (outdoor)
+   - **Conditional Visibility:** Only shows when one or more FTMS trainers are connected
+   - OnPress: Opens **FTMS Control Modal**
+   - **Modal Structure:**
+     - Horizontal scrollable tab list showing all connected FTMS machines
+     - Defaults to first available machine
+     - Each tab displays:
+       - Machine name/identifier
+       - Current mode (ERG / SIM / Resistance)
+       - Current target value
+     - **Controls per machine:**
+       - Mode selector: ERG / SIM / Resistance (segmented control)
+       - Target adjustment: +/- buttons with current value input
+       - Auto/Manual toggle (when plan is active)
+       - Live resistance/power readout
 
 #### Behavior:
 * **Swipe Down:** Returns to collapsed state
 * **Tap Outside Sheet:** Does nothing (sheet requires explicit swipe or button press to dismiss, preventing accidental closes during workout)
-* **Navigation:** Tapping configuration items opens modals/sheets **on top** of the recording screen, never navigating away
+* **Navigation:** Tapping configuration items opens modals/sheets **on top** of the recording screen, never navigating away (except for Sensor Management, which navigates to /record/sensors)
 * **Control Persistence:** Recording controls always remain accessible at the top of the sheet
+* **Activity Category/Location Button:** When footer is expanded, it covers the Activity Category/Location Selection button
 
 ### State Management Considerations:
 
 * **Sheet State:** Managed by `BottomSheetModal` from `@gorhom/bottom-sheet` (preferred) or React Native Reanimated
 * **Configuration Changes:** All changes made in the footer immediately trigger re-renders of Zone A/B/C
 * **Real-time Updates:** Sensor connection status, trainer status, and plan progress update in real-time even when sheet is expanded
+* **Activity Selection:** Activity category and location must be selected before recording starts. Once recording begins, these cannot be changed
 
-**Critical Constraint:** This "Sheet" architecture means the user never navigates *away* from the recording screen. They simply peek at settings, make an adjustment, and swipe the sheet back down. All modals and pickers are presented **on top** of the recording screen, maintaining context.
+**Critical Constraint:** This "Sheet" architecture means the user never navigates *away* from the recording screen (except for sensor management). They simply peek at settings, make an adjustment, and swipe the sheet back down. All modals and pickers are presented **on top** of the recording screen, maintaining context.
 
 ---
 
@@ -254,12 +269,16 @@ This section outlines the technical requirements and constraints to ensure the d
 The ActivityRecorderService must expose the following reactive properties:
 
 ```typescript
-// Zone A Decision Inputs
+// Activity Configuration (set before recording starts)
+- activityCategory: 'run' | 'bike' | 'swim' | 'other'
 - activityLocation: 'indoor' | 'outdoor'
-- hasGPS: boolean
-- currentPosition: { lat, lng, altitude, heading } | null
+  // Note: outdoor = GPS enabled, indoor = GPS disabled
+
+// Zone A Decision Inputs
+- currentPosition: { lat, lng, altitude, heading } | null (outdoor only)
 - currentRoute: Route | null
 - hasRoute: boolean
+- virtualProgress: { distance: number, position: LatLng } | null (indoor + route)
 - connectedSensors: Sensor[]
 - hasPowerSensor: boolean
 - hasHeartRateSensor: boolean
@@ -275,6 +294,10 @@ The ActivityRecorderService must expose the following reactive properties:
 - sessionStats: { duration, distance, calories, avgPower, avgHR }
 - currentReadings: { power, heartRate, cadence, speed }
 - recordingState: 'pending' | 'recording' | 'paused' | 'finished'
+
+// FTMS Control
+- ftmsDevices: FTMSDevice[]
+- activeFTMSDevice: FTMSDevice | null
 ```
 
 ### 4.2 Component Architecture
@@ -282,10 +305,9 @@ The ActivityRecorderService must expose the following reactive properties:
 ```
 RecordingScreen (index.tsx)
 ├── ZoneA (ContextLayer.tsx) - Conditional wrapper
-│   ├── MapCard (outdoor)
-│   ├── ElevationCard (indoor + route)
-│   ├── PowerGraphCard (indoor + power sensor)
-│   ├── HeartRateGraphCard (indoor + HR sensor)
+│   ├── MapCard (outdoor, or indoor + route for virtual following)
+│   ├── PowerGraphCard (indoor + power sensor, no route)
+│   ├── HeartRateGraphCard (indoor + HR sensor, no route/power)
 │   └── EmptyStateMessage (fallback)
 ├── ZoneB (PlanCard.tsx) - Conditionally mounted
 │   ├── DonutVisualization
@@ -294,9 +316,15 @@ RecordingScreen (index.tsx)
 │   └── NextStepPreview
 ├── ZoneC (MetricsGrid.tsx) - Always mounted
 │   └── MetricCard[] (dynamically filtered)
+├── ActivitySelectionButton - Positioned above footer
+│   └── Visible only before recording starts
 └── SwipeableFooter (BottomSheet)
-    ├── CollapsedControls
+    ├── CollapsedControls (recording state dependent)
     └── ExpandedConfiguration
+        ├── RouteManagement
+        ├── PlanManagement
+        ├── SensorManagement
+        └── FTMSControl (conditional)
 ```
 
 ### 4.3 Performance Considerations
@@ -318,15 +346,16 @@ RecordingScreen (index.tsx)
 
 ### 4.4 Edge Case Handling
 
-**Scenario: User starts outdoor workout, then goes inside**
-- Solution: Do NOT automatically switch to indoor mode
-- Rationale: GPS still works for short periods indoors; auto-switching would be jarring
-- User Control: User can manually toggle indoor/outdoor from expanded footer
-
 **Scenario: GPS signal lost mid-workout (outdoor mode)**
 - Solution: Keep showing map with last known position + "GPS Signal Lost" banner
 - Zone A continues to display map, but position marker stops updating
 - Breadcrumb trail remains visible showing historical path
+
+**Scenario: User attaches route mid-workout (indoor activity)**
+- Solution: Zone A switches to map view with route polyline
+- Virtual position indicator appears and begins tracking from current distance/speed
+- Route grade begins updating FTMS machine (if connected and in auto mode)
+- Smooth animated transition (300ms ease-out)
 
 **Scenario: User attaches plan mid-workout**
 - Solution: Zone B smoothly animates into view (slide down from top of Zone C)
@@ -340,10 +369,17 @@ RecordingScreen (index.tsx)
 
 **Scenario: Sensor disconnects during workout**
 - Solution:
-  - If in Zone A (Power Graph), do NOT unmount the graph
+  - If in Zone A (Power Graph or HR Graph), do NOT unmount the graph
   - Show "Sensor Disconnected" overlay on graph
   - Keep historical data visible
   - When sensor reconnects, overlay fades out
+
+**Scenario: FTMS trainer disconnects during indoor workout**
+- Solution:
+  - Show "Trainer Disconnected" notification
+  - If route is active, virtual position continues updating from speed/cadence sensors (if available)
+  - User can continue workout without trainer control
+  - When trainer reconnects, show notification and resume control
 
 ### 4.5 Layout Calculations
 
@@ -352,13 +388,19 @@ RecordingScreen (index.tsx)
 - Zone A: 35% of available height
 - Zone B: 25% of available height (only when mounted)
 - Zone C: 25% of available height (expands to 50% when Zone B hidden)
+- Activity Selection Button: 56-64px (only visible before recording starts)
 - Footer (Collapsed): 120-140px fixed
 - Safe Area Bottom: 20-34px (device dependent)
 
 **Focus Mode Calculations:**
-- Expanded Zone: 100% of available height minus (Status Bar + Footer Collapsed + Safe Area)
+- Expanded Zone: 100% of available height minus (Status Bar + Activity Selection Button [if visible] + Footer Collapsed + Safe Area)
 - Non-expanded zones: Hidden (height: 0, opacity: 0)
 - Transition: 400ms spring animation (damping: 0.8, stiffness: 100)
+
+**Footer Expanded Calculations:**
+- Expanded Footer: 50-60% of screen height
+- When expanded, footer covers Activity Selection Button (if present)
+- Zones A, B, C remain visible above the expanded footer
 
 ### 4.6 Accessibility Requirements
 
@@ -374,55 +416,72 @@ RecordingScreen (index.tsx)
 The result of this design is a fluid, reactive experience that adapts to context.
 
 ### Journey 1: Outdoor Unstructured Run
-**Configuration:** Outdoor + GPS + No Route + No Plan
+**Configuration:** Outdoor + No Route + No Plan
 
-1. User opens recording screen → Sees **GPS Map (Zone A)** + **Session Metrics (Zone C)**
-2. User taps "Start" → Recording begins, map shows live position and breadcrumb trail
-3. User swipes up footer → Sees configuration options, decides not to attach plan
-4. User swipes down footer → Continues running, focusing on map and metrics
-5. Throughout workout: **Zone B never appears** (clean, uncluttered interface)
+1. User opens recording screen → Sees **Activity Category/Location Selection Button** above footer
+2. User taps button → Modal opens, selects "Run" and "Outdoor" → Modal closes
+3. Screen shows: **GPS Map (Zone A)** + **Session Metrics (Zone C)** + **Activity Selection Button** + **Start Button** in footer
+4. User taps "Start" → Activity Selection Button disappears, recording begins
+5. Map shows live GPS position and breadcrumb trail
+6. User swipes up footer → Sees configuration options (Route, Plan, Sensors), decides not to attach anything
+7. User swipes down footer → Continues running, focusing on map and metrics
+8. Throughout workout: **Zone B never appears** (clean, uncluttered interface)
 
 ### Journey 2: Indoor Structured Trainer Workout
 **Configuration:** Indoor + No Route + Power Sensor + Plan
 
-1. User opens recording screen with pre-selected plan → Sees **Power Graph (Zone A)** + **Plan Card (Zone B)** + **Lap Metrics (Zone C)**
-2. Zone B shows: "5min Warmup @ 120W, Next: 3min @ 250W"
-3. User taps "Start" → Plan begins, trainer automatically sets to 120W (ERG mode)
-4. As warmup completes → Zone B animates to show next interval, trainer adjusts to 250W
-5. User wants to see power in detail → Taps Zone A (Power Graph) → Expands to full screen
-6. User taps minimize → Returns to three-zone view
-7. User swipes up footer → Adjusts trainer resistance manually (switches to Manual mode)
+1. User opens recording screen → Selects "Bike" and "Indoor" from Activity Selection Button modal
+2. User swipes up footer → Taps "Plan" → Selects "VO2 Max Intervals" → Swipes footer down
+3. Screen shows: **Power Graph (Zone A)** + **Plan Card (Zone B)** + **Lap Metrics (Zone C)** + **Activity Selection Button** + **Start Button**
+4. Zone B shows: "5min Warmup @ 120W, Next: 3min @ 250W"
+5. User taps "Start" → Activity Selection Button disappears, plan begins
+6. FTMS trainer (if connected) automatically sets to 120W (ERG mode)
+7. As warmup completes → Zone B animates to show next interval, trainer adjusts to 250W
+8. User wants to see power in detail → Taps Zone A (Power Graph) → Expands to full screen
+9. User taps minimize → Returns to three-zone view
+10. User swipes up footer → Taps "Smart Trainer" → Opens FTMS modal
+11. User switches to Manual mode and adjusts resistance → Closes modal
 
 ### Journey 3: Outdoor Workout with Planned Route
-**Configuration:** Outdoor + GPS + Route + No Plan
+**Configuration:** Outdoor + Route + No Plan
 
-1. User opens recording screen with pre-loaded GPX route → Sees **GPS Map with Route Overlay (Zone A)** + **Session Metrics (Zone C)**
-2. User starts recording → Map shows blue route line, user's red breadcrumb trail, and position marker
-3. Halfway through route → User taps map → Expands to full screen for better navigation
-4. User approaches steep hill → Grade overlay shows "8.5%" in real-time
-5. Throughout workout: **Zone B never appears** (user is following route, not interval plan)
+1. User opens recording screen → Selects "Bike" and "Outdoor" from Activity Selection Button modal
+2. User swipes up footer → Taps "Route" → Selects "Mountain Loop" GPX route → Swipes footer down
+3. Screen shows: **GPS Map with Route Overlay (Zone A)** + **Session Metrics (Zone C)** + **Activity Selection Button** + **Start Button**
+4. Map displays blue route polyline overlaid on map
+5. User taps "Start" → Activity Selection Button disappears, recording begins
+6. Map shows blue route line, user's red breadcrumb trail, and position marker
+7. Halfway through route → User taps map → Expands to full screen for better navigation
+8. User approaches steep hill → Grade overlay shows "8.5%" in real-time
+9. Throughout workout: **Zone B never appears** (user is following route, not interval plan)
 
 ### Journey 4: Mid-Workout Configuration Change
 **Configuration:** Starts as Indoor + No Route + No Plan → Adds Plan Mid-Workout
 
-1. User starts free-form indoor bike → Sees **Minimal Empty State (Zone A)** + **Session Metrics (Zone C)**
-2. 10 minutes in, user decides to do intervals → Swipes up footer
-3. User taps "Attach Plan" → Selects "VO2 Max Intervals"
-4. **Zone B smoothly animates into view** (300ms transition)
-5. Power Graph appears in Zone A (replaces empty state)
-6. Zone C metrics switch from "Session" to "Lap" mode
+1. User selects "Bike" and "Indoor" → Taps "Start" → Activity Selection Button disappears
+2. User starts free-form indoor bike with power meter → Sees **Power Graph (Zone A)** + **Session Metrics (Zone C)**
+3. 10 minutes in, user decides to do intervals → Swipes up footer
+4. User taps "Plan" → Selects "VO2 Max Intervals" → Modal closes
+5. **Zone B smoothly animates into view** (300ms transition)
+6. Power Graph remains in Zone A, Zone C metrics switch from "Session" to "Lap" mode
 7. Plan begins immediately from current time, user continues workout with structure
+8. FTMS trainer (if connected) switches to ERG mode and begins following plan targets
 
-### Journey 5: Mixed Data Scenario
-**Configuration:** Indoor + Route + No Power Sensor + Plan
+### Journey 5: Indoor Virtual Route Riding
+**Configuration:** Indoor + Route + Power Sensor + Plan
 
-1. User loads virtual route (e.g., "Alpe d'Huez") and interval plan
-2. Sees **Elevation Profile (Zone A)** + **Plan Card (Zone B)** + **Lap Metrics (Zone C)**
-3. Zone A shows elevation chart with current position marker
-4. Zone B shows interval targets: "10min @ 85% FTP"
-5. Zone C shows: HR, Cadence, Speed, Duration (no Power, since no sensor)
-6. As user progresses → Virtual position marker moves up elevation profile in sync with distance
+1. User selects "Bike" and "Indoor" from Activity Selection Button modal
+2. User swipes up footer → Taps "Route" → Selects "Alpe d'Huez" GPX route
+3. User taps "Plan" → Selects "Steady State Climb" interval plan → Swipes footer down
+4. Screen shows: **Map with Route Polyline (Zone A)** + **Plan Card (Zone B)** + **Lap Metrics (Zone C)** + **Activity Selection Button** + **Start Button**
+5. Zone A displays the route path as a polyline on map (virtual activity visualization)
+6. Zone B shows interval targets: "10min @ 85% FTP, Next: 5min @ 200W"
+7. User taps "Start" → Activity Selection Button disappears, recording begins
+8. As user rides and accumulates distance/speed → Virtual position indicator moves along route polyline
+9. Route grade updates FTMS trainer resistance automatically (ERG mode follows plan + grade adjustments)
+10. User can see exactly where they are on the virtual route throughout the workout
+11. Zone C shows: Power, HR, Cadence, Speed, Duration (lap-focused metrics)
 
-**Common Thread:** In every journey, the **Pause Button** remains accessible at the exact same location. Users never navigate away from the recording screen. The interface adapts to their equipment and intent, showing only relevant information.
+**Common Thread:** In every journey, the recording controls (Pause/Lap/Resume/Finish) remain accessible at the exact same location. Users never navigate away from the recording screen (except to manage sensors). The interface adapts to their equipment and intent, showing only relevant information.
 
 This is a UI that adapts to the athlete, rather than forcing the athlete to adapt to the UI.
