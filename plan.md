@@ -6,7 +6,7 @@
 
 ## Introduction
 
-This design specification defines the User Interface (UI) and User Experience (UX) for the GradientPeak recording screen. The interface adopts a **Single Vertical Stack Architecture** that is "reactive"—the UI automatically configures itself based on the user's immediate environment (Indoors vs. Outdoors), their intent (Structured Training vs. Free Riding), and their equipment (Bluetooth Sensors vs. GPS). The goal is to provide a single, engaging screen that provides the right information at the right time, anchored by a persistent, swipeable command center.
+This design specification defines the User Interface (UI) and User Experience (UX) for the GradientPeak recording screen. The interface adopts a **Single Vertical Stack Architecture** that is "reactive"—the UI automatically configures itself based on the user's immediate environment (Indoors vs. Outdoors), their intent (Structured Training, Attached GPX Routes, 'Free Riding' Quick Start), and their equipment (Bluetooth Sensors and FTMS). The goal is to provide a single, engaging screen that provides the right information at the right time, anchored by a persistent, swipeable command center.
 
 ---
 
@@ -15,6 +15,8 @@ This design specification defines the User Interface (UI) and User Experience (U
 The main recording view is constructed as a vertical stack divided into three logical zones. These zones are fluid; they mount, unmount, and resize based on the active configuration.
 
 **Critical Principle:** Components only render when their required data is present. Empty or placeholder screens are avoided; instead, zones intelligently hide themselves or substitute alternative visualizations.
+
+> Note: that users can optionally configure an activity recording prior to the start of the recording. i.e. a user can start with a Quick Start activity, or they can select a planned activity or actiivyt plan or route to preconfigure a recording. Once initialized the recording screen should update, and if the user makes last minute adujstments on the recroding screen they should be allowed to to this, and the screenshould reactiviely update
 
 ### Zone A: The Context Layer (Top Tier) — **CONDITIONAL**
 
@@ -39,34 +41,17 @@ The top section of the screen is reserved for spatial and environmental context.
    - Grade from route elevation updates FTMS machine resistance (unless manually overridden)
    - User can visually track progress along the route path during indoor activity
 
-4. **Indoor + No Route + Has Power Sensor**
-   - ✅ **Render:** Power Graph (full screen in zone)
-   - Displays: Real-time power curve (last 60s), 3s/10s/30s average lines, current FTP zones
 
-5. **Indoor + No Route + No Power Sensor + Has Heart Rate Sensor**
-   - ✅ **Render:** Heart Rate Graph
-   - Displays: Real-time HR curve, current HR zone, threshold markers
+**Summary:** Zone A only fully mounts when it has meaningful data to display. 
 
-6. **Indoor + No Route + No Sensors**
-   - ⚠️ **Render:** Compact empty state message
-   - Message: "Connect sensors or load a route to visualize your workout"
-   - This zone takes minimal space (~15% of screen), allowing Zone C to expand
-
-**Summary:** Zone A only fully mounts when it has meaningful data to display. The priority order is: Map (outdoor/indoor with route) > Power Graph > Heart Rate Graph > Minimal Empty State.
-
-### Zone B: The Guidance Layer (Middle Tier) — **STRICTLY CONDITIONAL**
+### Zone B: The Guidance Layer (Middle Tier) — **CONDITIONAL**
 
 This is the heart of the "Interval" functionality. This component is **only rendered when a workout plan is active**.
 
 #### Rendering Decision Logic:
 
 1. **Has Workout Plan (ActivityPlan)**
-   - ✅ **Render:** Full Interval Card
-   - Components:
-     - **Donut Visualization:** Shows current step progress (circular progress ring)
-     - **Current Step Display:** Target intensity (e.g., "200W" or "85% FTP"), duration remaining
-     - **Next Step Preview:** Text showing "Up Next: 2min @ 150W"
-     - **Workout Graph:** Horizontal bar visualization of entire workout with current step highlighted
+   - ✅ **Render:** Full Interval Card. This has a activity plan title, a title left counter, a activity intensity chart that updates as the user progresses, text for the current simplified and formated string, a prgress bar fo rht ecompletion of the current step and next step text
 
 2. **No Workout Plan**
    - ❌ **DO NOT RENDER** — Zone B completely unmounts
@@ -75,7 +60,7 @@ This is the heart of the "Interval" functionality. This component is **only rend
 
 **Critical Rule:** Zone B has no fallback state. It either renders fully or not at all. This binary behavior ensures the interface stays clean for unstructured activities.
 
-### Zone C: The Data Layer (Bottom Tier) — **ALWAYS VISIBLE**
+### Zone C: The Data Layer — **ALWAYS VISIBLE**
 
 The bottom section, sitting just above the footer, is the metric dashboard. This zone **always renders** regardless of configuration, as it displays real-time session data.
 
@@ -83,24 +68,15 @@ The bottom section, sitting just above the footer, is the metric dashboard. This
 
 - **Always Mounted:** This zone never unmounts
 - **Dynamic Content:** The metrics displayed adapt based on:
-  - Zone B State (Plan active vs. no plan)
-  - Available Sensors (power, HR, cadence, speed)
-  - Activity Type (run, bike, swim)
+  - Zone B State (active plan targets)
 
 #### Metric Display Rules:
 
-1. **When Zone B is Active (Plan Exists):**
-   - Display: Lap/Step-focused metrics
-   - Metrics: Lap Duration, Lap Distance, Current Power (3s avg), Current HR, Lap Pace
-   - Targeted metrics highlight in zone colors (green = in range, red = out of range)
+- always display time, lap time, speed, distance, heartrate, power, cadence, grade, calories
+- the listing shuold dynamically adujst and reorder based on which metrics are active plan targets (the listing of active plan targets should reactively update to the active interval and user progress)
 
-2. **When Zone B is Hidden (No Plan):**
-   - Display: Session-total metrics
-   - Metrics: Total Duration, Total Distance, Avg Power, Avg HR, Avg Pace, Calories
-
-3. **Metric Availability:**
-   - If a sensor is not connected, show "--" placeholder
-   - If activity type doesn't support metric (e.g., Power for running), hide that metric card entirely
+**Metric Availability:**
+   - If a sensor data or no device data can be found, show "--" placeholder
 
 **Adaptive Grid:** The metrics grid uses a 2-column flexbox layout that automatically reflows based on the number of available metrics (6-9 metrics typical).
 
@@ -112,23 +88,18 @@ This table provides a complete decision matrix for implementers:
 
 | Configuration | Zone A | Zone B | Zone C |
 |--------------|--------|--------|--------|
-| Outdoor + Route + Plan | GPS Map w/ Route | Plan Card | Lap Metrics |
-| Outdoor + Route + No Plan | GPS Map w/ Route | ❌ Hidden | Session Metrics |
-| Outdoor + No Route + Plan | GPS Map (trail only) | Plan Card | Lap Metrics |
-| Outdoor + No Route + No Plan | GPS Map (trail only) | ❌ Hidden | Session Metrics |
-| Indoor + Route + Plan | Map w/ Route (virtual) | Plan Card | Lap Metrics |
-| Indoor + Route + No Plan | Map w/ Route (virtual) | ❌ Hidden | Session Metrics |
-| Indoor + No Route + Power + Plan | Power Graph | Plan Card | Lap Metrics |
-| Indoor + No Route + Power + No Plan | Power Graph | ❌ Hidden | Session Metrics |
-| Indoor + No Route + HR + Plan | Heart Rate Graph | Plan Card | Lap Metrics |
-| Indoor + No Route + HR + No Plan | Heart Rate Graph | ❌ Hidden | Session Metrics |
-| Indoor + No Route + No Sensors + Plan | Minimal Empty State | Plan Card | Lap Metrics |
-| Indoor + No Route + No Sensors + No Plan | Minimal Empty State | ❌ Hidden | Session Metrics |
+| Outdoor + Route + Plan | GPS Map w/ Route | Plan Card | Metrics |
+| Outdoor + Route + No Plan | GPS Map w/ Route | ❌ Hidden | Metrics |
+| Outdoor + No Route + Plan | GPS Map (trail only) | Plan Card | Metrics |
+| Outdoor + No Route + No Plan | GPS Map (trail only) | ❌ Hidden | Metrics |
+| Indoor + Route + Plan | Map w/ Route (virtual) | Plan Card | Metrics |
+| Indoor + Route + No Plan | Map w/ Route (virtual) | ❌ Hidden | Metrics |
+| Indoor + No Route + Plan | ❌ Hidden | Plan Card | Metrics |
+| Indoor + No Route + No Plan | ❌ Hidden | ❌ Hidden | Metrics |
 
 **Key Observations:**
 - Zone B rendering is **only** dependent on whether a plan exists (binary decision)
-- Zone A rendering follows a priority waterfall (Map with route > Power Graph > HR Graph > Empty)
-- Zone C is **always** visible but changes content based on Zone B state
+- Zone C is **always** visible but changes content based on the current targets if provided by zone B
 - Outdoor activities always have GPS enabled; indoor activities can show virtual route following
 - The interface gracefully handles any combination of missing data
 
@@ -139,7 +110,7 @@ This table provides a complete decision matrix for implementers:
 Mobile screens offer limited real estate. To solve this, we introduce an "Expand to Focus" interaction model that allows the user to prioritize specific data without leaving the screen.
 
 * **The Expansion:** If the user taps the **Map (Zone A)** or the **Interval Card (Zone B)**, that specific component smoothly animates to fill the majority of the screen.
-* **The Constraint:** Crucially, this expansion **never covers the Control Footer**. The expanded view stops exactly at the top edge of the footer. This ensures that safety-critical controls (Pause/Lap) are never hidden behind a UI layer.
+* **The Constraint:** Crucially, this expansion **never covers the Control Footer** beauces the footer overlays the recording content. This ensures that safety-critical controls (Pause/Lap) are never hidden behind a UI layer.
 * **The Return:** When in "Focus Mode," a small, semi-transparent **Minimize Button** appears in the corner of the component. Tapping this (or the component itself) reverses the animation, shrinking the component back to its original slot in the three-tier stack.
 
 ---
@@ -148,17 +119,6 @@ Mobile screens offer limited real estate. To solve this, we introduce an "Expand
 
 The footer is the most persistent element of the application. It acts as a split-level bottom sheet that manages both the recording state and the configuration settings. This component uses `@gorhom/bottom-sheet` or a similar library to provide smooth, native-feeling swipe interactions.
 
-### Activity Category & Location Selection
-
-Before the footer, there is an **Activity Category/Location Selection Button** positioned above the footer. This button:
-
-* **Placement:** Fixed position above the collapsed footer
-* **Visibility:** Only visible **before recording starts**. Once recording begins, this button disappears entirely
-* **Coverage:** When the footer is expanded (dragged up), the expanded sheet covers this button. When collapsed, the button reappears
-* **Function:** Opens a modal that allows the user to:
-  - Select activity category (Run, Bike, Swim, etc.)
-  - Select location (Indoor/Outdoor)
-  - These selections must be made before starting the recording
 
 ### State 1: Collapsed (The Dashboard View)
 
@@ -185,7 +145,18 @@ When the user swipes up on the footer, the sheet smoothly animates to **50-60% o
 
 #### Layout:
 * **Pinned Controls (Top):** The recording control buttons (Start/Pause/Resume/Lap/Finish) remain visible and pinned to the top of the expanded sheet
+* **Activity Selection Detail**: A button indicating the activity category and location specified by the user (available for adjustment prior to start)
 * **Scrollable Configuration Menu (Below):**
+
+### Activity Category & Location Selection
+
+There is an **Activity Category/Location Selection Button**:
+
+* **Visibility:** Only clickable **before recording starts**. Once recording begins, this button is disabled, whilst displaying the decsion
+* **Function:** Opens a modal that allows the user to:
+  - Select activity category (Run, Bike, Swim, etc.)
+  - Select location (Indoor/Outdoor)
+  - The seelciton is always defaulted to running outdoors, but can be adujsted prior to start. This reactively updates the configuration of the recording page
 
 **Configuration Options (List Items):**
 
