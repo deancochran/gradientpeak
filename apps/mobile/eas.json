@@ -1,10 +1,10 @@
 {
   "cli": {
     "version": ">= 16.26.0",
-    "appVersionSource": "remote"
+    "appVersionSource": "remote",
+    "requireCommit": true
   },
   "build": {
-    "requireCommit": true,
     "development": {
       "developmentClient": true,
       "distribution": "internal",
