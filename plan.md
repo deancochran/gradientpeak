@@ -150,24 +150,23 @@ All configuration interfaces must follow consistent sheet-based patterns:
 Consistent gesture behavior across all sheets and screens:
 
 **Left-to-Right Swipe (Back Gesture):**
-- ✅ **ENABLED** on Sensors screen (`/record/sensors`)
+- ✅ **ENABLED** on all sub pages (`/record/*`)
 - ❌ **DISABLED** on main recording screen (`/record/index`)
 - Rationale: Prevents accidental back swipes during active workout
 - Implementation: Use `gestureEnabled={false}` on recording screen navigator
 
 **Swipe-Down Gesture:**
-- ❌ **DISABLED** on all sheets and recording screen
+- ❌ **DISABLED** on all sub pages and main recording screen
 - Prevents accidental dismissals during workout
 - Users must explicitly tap "Back" button to dismiss sheets
 - Implementation: Set `enablePanDownToClose={false}` on all bottom sheets
 
 **Full Navigation Screen Exceptions:**
-The Sensors page (`/record/sensors`) and FTMS Control screen (`/record/ftms`) are full navigation screens (not sheets) and follow standard navigation patterns:
+The Sensors page (`/record/sensors`) and FTMS Control screen, Plan edit, and route edit screen are full navigation screens (not sheets) and follow standard navigation patterns:
 - Left-to-right swipe gesture: ✅ ENABLED
 - Back button in header: ✅ Visible
 - Returns to recording screen on back
 - Recording continues seamlessly in background
-- These are the ONLY screens in the recording flow that use navigation instead of sheets
 
 #### Footer Label Simplification
 The footer configuration items must use simplified, generic labels:
@@ -187,71 +186,8 @@ Edit Plan
 **Rules:**
 - Hide specific route/plan names in footer
 - Show only generic action labels: "Edit Route" / "Edit Plan"
-- If no route attached: "Add Route"
-- If no plan attached: "Add Plan"
 - Specific names/details shown only inside the picker sheets
 - Rationale: Reduces visual clutter, keeps footer concise
-
-### 4. Scope Reductions (Removed from MVP)
-
-The following features are explicitly OUT OF SCOPE for the MVP release and should be removed or disabled:
-
-#### ❌ Notification Banners
-- Remove all system notification banners (GPS lost, sensor disconnected, etc.)
-- Exception: Android foreground service notification (required for background recording)
-- Use subtle in-UI indicators instead of intrusive banners
-- Example: Show "GPS Searching..." text overlay on map instead of banner
-
-#### ❌ System Overlays
-- Remove modal overlays for system events
-- Remove "Sensor Disconnected" overlay cards
-- Remove "GPS Signal Lost" persistent banners
-- Use icon badges or text labels for status instead
-
-#### ❌ HR/Power Graphs (Zone A)
-- Remove Heart Rate graph visualization from Zone A
-- Remove Power graph visualization from Zone A
-- Zone A is ONLY for GPS map or route visualization
-- HR and Power metrics remain in Zone C as numeric values
-
-**Impact:** When user has plan but no route:
-- Old behavior: Zone A shows HR or Power graph
-- New behavior: Zone A does NOT render (Zone B and C expand to fill space)
-
-#### ❌ Voice Feedback
-- Remove all audio cues for interval transitions
-- Remove text-to-speech announcements
-- Remove audio alerts for sensor disconnections
-- Silent operation only (visual feedback only)
-
-#### ❌ Haptic Feedback
-- Remove haptic feedback for button presses
-- Remove haptic patterns for interval transitions
-- Remove vibration alerts for sensor events
-- No haptic feedback in MVP release
-
-**Code Cleanup Required:**
-- Remove or comment out haptic feedback calls (`Haptics.impactAsync()`)
-- Remove voice/audio manager integration
-- Remove notification banner components
-- Simplify Zone A rendering logic (map-only, no graphs)
-
-### MVP Summary
-
-**IN SCOPE:**
-- ✅ FTMS machine-specific configurations (Rowers, Bikes, Treadmills, Ellipticals)
-- ✅ Focus Modes (Map, Plan, Metrics) with clear documentation
-- ✅ Dynamic plan/route attach/detach during recording
-- ✅ Standardized sheet UI with Back buttons
-- ✅ Gesture consistency (left-to-right on Sensors only, no swipe-down)
-- ✅ Simplified footer labels (hide specific names)
-
-**OUT OF SCOPE:**
-- ❌ Notification banners (except Android foreground service)
-- ❌ System overlays for events
-- ❌ HR/Power graphs in Zone A
-- ❌ Voice feedback and audio cues
-- ❌ Haptic feedback for all interactions
 
 ---
 
@@ -290,12 +226,6 @@ The top section of the screen is reserved for spatial and environmental context.
    - ❌ **DO NOT RENDER** — Zone A completely unmounts
    - Behavior: Zone B and Zone C expand to fill the available space
    - Rationale: Without GPS or route data, there is no spatial context to display
-
-**MVP Scope Change:**
-- ❌ **REMOVED:** HR/Power graph visualizations in Zone A
-- Previous design showed Heart Rate or Power graphs when no route was present
-- MVP version: Zone A is **map-only** (GPS or virtual route visualization)
-- HR and Power remain available as numeric metrics in Zone C
 
 **Summary:** Zone A only renders when displaying GPS map (outdoor) or virtual route map (indoor). All other scenarios result in Zone A unmounting completely. 
 
@@ -445,7 +375,6 @@ There is an **Activity Category/Location Selection Button**:
    - Icon: Map
    - **Label (MVP Simplified):**
      - If route attached: "Edit Route"
-     - If no route: "Add Route"
    - Chevron: Right arrow
    - OnPress: Opens route picker sheet (shows list of saved GPX routes)
    - **Conditional Visibility:** Always available
@@ -458,8 +387,8 @@ There is an **Activity Category/Location Selection Button**:
 
 2. **Plan Management**
    - Icon: Calendar/Target
-   - **Label (MVP Simplified):**
-     - If plan attached: "Edit Plan"
+   - **Label (MVP Simplified):** "Edit Plan"
+     - If plan attached: 
      - If no plan: "Add Plan"
    - Chevron: Right arrow
    - OnPress: Opens workout plan picker sheet
@@ -469,7 +398,6 @@ There is an **Activity Category/Location Selection Button**:
      - Add a plan to an activity that doesn't have one
      - Switch to a different plan
      - Remove the active plan
-   - **Quick Action:** If plan is active, shows "Skip Step" button inline
    - **Note:** Creating or editing plans is NOT part of this functionality
    - **Category Matching Requirement:** The selected activity plan must always match the active/chosen activity category. The system must prevent users from selecting or updating to an activity plan that belongs to a different category than the current activity. For example, if the user is recording a Run activity, only running plans should be available in the plan picker. If the user is recording a Bike activity, only cycling plans should be shown. This validation must be enforced both at plan selection time and when switching plans mid-workout.
 
@@ -485,7 +413,6 @@ There is an **Activity Category/Location Selection Button**:
    - Icon: Zap
    - Label: "Smart Trainer"
    - **Conditional Visibility:** Only shows when one or more FTMS trainers are connected
-   - OnPress: Navigates to **FTMS Control Screen** (full page, like `/record/sensors`)
    - **Screen Structure:**
      - Horizontal scrollable tab list showing all connected FTMS machines
      - Defaults to first available machine
@@ -538,29 +465,17 @@ There is an **Activity Category/Location Selection Button**:
 - Zone A map/graph: Position updates accumulate (visible after modal dismissal)
 - Footer controls: Remain accessible and functional at top of expanded sheet
 
-### User Feedback During Modals (MVP Updated)
+### User Feedback During Modals
 
 **Interval Transition Notifications:**
-❌ **REMOVED FROM MVP** - Toast notifications and banners are out of scope
-~~- If plan step changes while modal is open: Show system toast notification~~
-~~- Toast appears on top of modal with interval name and target~~
-~~- Example: "Next: 3min @ 250W" appears as dismissible banner~~
-- **MVP Alternative:** User sees interval change visually in Zone B (no notification)
+- User sees interval change visually in Zone B (no notification)
 
 **Sensor Disconnection Alerts:**
-❌ **REMOVED FROM MVP** - System notification banners are out of scope
-~~- If sensor disconnects while modal is open: Show system notification~~
-~~- Does NOT auto-dismiss the modal (user maintains context)~~
-~~- Notification includes "Reconnect" action button~~
-- **MVP Alternative:** Status icon badge in footer shows sensor count (e.g., "2/5")
+- Status icon badge in footer shows sensor count (e.g., "2/5")
 - Sensor status visible when footer is expanded
 
 **GPS Signal Loss (Outdoor Activities):**
-❌ **REMOVED FROM MVP** - Persistent warning banners are out of scope
-~~- If GPS is lost while modal is open: Show persistent warning banner~~
-~~- Banner appears at top of screen, above modal~~
-~~- Does NOT block modal interaction~~
-- **MVP Alternative:** Text overlay on map shows "GPS Searching..." status
+- Text overlay on map shows "GPS Searching..." status
 - No intrusive banner overlay
 
 ### Safety Controls
@@ -895,23 +810,6 @@ RecordingScreen (index.tsx)
 - Target zones in plan card: Use both color AND pattern indicators (stripes/dots)
 - Map markers: High contrast borders (white + black outline)
 - Metrics text: Minimum 16sp font size with bold weight for primary values
-
-**Voice Control Support (iOS/Android):**
-❌ **REMOVED FROM MVP** - Voice control and audio cues are out of scope
-~~- "Start recording" - Activates Start button~~
-~~- "Pause recording" / "Resume recording" - Toggles pause state~~
-~~- "New lap" / "Mark lap" - Triggers lap button~~
-~~- "Show map" / "Show plan" - Expands respective zone to focus mode~~
-~~- "Open settings" / "Show settings" - Expands footer to configuration view~~
-~~- "Close" / "Minimize" - Collapses expanded elements~~
-
-**Haptic Feedback:**
-❌ **REMOVED FROM MVP** - Haptic feedback is out of scope for MVP release
-~~- Start/Pause/Finish buttons: Medium impact haptic~~
-~~- Lap button: Light impact haptic~~
-~~- Interval transitions: Success haptic pattern (da-dum)~~
-~~- Sensor disconnection: Warning haptic pattern (vibrate twice)~~
-~~- Zone expansion: Light haptic feedback on tap~~
 
 ---
 
@@ -3139,19 +3037,13 @@ const getMetricOrder = (planTargets: PlanTargets | null) => {
 - Test that sensor readings continue
 - Test that plan step progression continues
 
-**8.2: Implement Interval Transition Notifications**
-❌ **REMOVED FROM MVP** - Toast notifications are out of scope
-- **MVP:** User sees interval changes directly in Zone B (no notification needed)
-
-**8.3: Implement Sensor Disconnection Alerts (MVP MODIFIED)**
-- ❌ **REMOVED:** System notification banners
-- ✅ **MVP:** Update footer badge ("2/5 sensors")
-- ✅ **MVP:** Show icon indicator next to affected metric in Zone C
+**8.3: Implement Sensor Disconnection Alerts**
+- Update footer badge ("2/5 sensors")
+- Show icon indicator next to affected metric in Zone C
 - Metrics show last known value with faded appearance
 
-**8.4: Implement GPS Signal Loss Warning (MVP MODIFIED)**
-- ❌ **REMOVED:** Persistent banner overlays
-- ✅ **MVP:** Show "GPS Searching..." text overlay directly on map
+**8.4: Implement GPS Signal Loss Warning**
+- Show "GPS Searching..." text overlay directly on map
 - Subtle in-UI indicator (no intrusive banner)
 - Map continues showing last known position
 
@@ -3174,10 +3066,6 @@ const getMetricOrder = (planTargets: PlanTargets | null) => {
 **9.2: Implement Focus Mode + Footer Mutual Exclusivity**
 - Enforce sequential animations (collapse one before expanding other)
 - Smooth transitions with proper timing
-
-**9.3: Add Accessibility Improvements and Features**
-- ❌ **REMOVED FROM MVP** - Haptic feedback is out of scope
-- ❌ **REMOVED:** Voice control commands (custom voice features out of scope)
 
 ---
 
@@ -3243,16 +3131,6 @@ const getMetricOrder = (planTargets: PlanTargets | null) => {
 - If Zone A map performance is poor: Implement simplified map view with lower detail
 - If FTMS integration is complex: Defer Phase 6 to post-MVP
 
-**MVP Scope Reductions (Already Applied):**
-- ❌ HR/Power graphs in Zone A (map-only)
-- ❌ Notification banners and system overlays
-- ❌ Haptic feedback for all interactions
-- ❌ Voice feedback and audio cues
-- ✅ Simplified footer labels (hide specific names)
-- ✅ Swipe-down gestures disabled on all sheets
-- ✅ Left-to-right swipe only on Sensors screen
-- ✅ FTMS machine-specific configurations (Bikes, Rowers, Treadmills, Ellipticals)
-
 ---
 
 ## Success Criteria
@@ -3274,12 +3152,6 @@ const getMetricOrder = (planTargets: PlanTargets | null) => {
 - ✅ FTMS screen adapts to machine type (Bikes, Rowers, Treadmills, Ellipticals)
 - ✅ Dynamic plan/route attach/detach works mid-workout
 - ✅ Focus Modes (Map, Plan, Metrics) all functional
-
-**MVP Scope Exclusions (Verified):**
-- ❌ No notification banners or system overlays
-- ❌ No haptic feedback
-- ❌ No voice feedback or audio cues
-- ❌ No HR/Power graphs in Zone A
 
 **Performance Requirements:**
 - ✅ 60fps during animations (minimum 30fps acceptable)
