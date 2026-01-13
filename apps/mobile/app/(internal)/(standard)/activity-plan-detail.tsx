@@ -212,6 +212,12 @@ export default function ActivityPlanDetailPage() {
       router.back();
     },
     onError: (error) => {
+      console.error("Delete error:", {
+        message: error.message,
+        code: error.data?.code,
+        cause: error.cause,
+        fullError: error,
+      });
       Alert.alert(
         "Error",
         error.message ||
@@ -221,7 +227,24 @@ export default function ActivityPlanDetailPage() {
   });
 
   const handleDelete = () => {
-    if (!activityPlan || !planId) return;
+    if (!activityPlan) return;
+
+    // Get the actual plan ID - could be from planId param or activityPlan.id
+    const actualPlanId = planId || activityPlan.id;
+
+    if (!actualPlanId) {
+      Alert.alert("Error", "Cannot delete this activity plan - no ID found");
+      return;
+    }
+
+    // Check ownership before allowing delete
+    if (activityPlan.profile_id !== profile?.id) {
+      Alert.alert(
+        "Error",
+        "You don't have permission to delete this activity plan",
+      );
+      return;
+    }
 
     Alert.alert(
       "Delete Activity Plan",
@@ -232,7 +255,12 @@ export default function ActivityPlanDetailPage() {
           text: "Delete",
           style: "destructive",
           onPress: () => {
-            deleteMutation.mutate({ id: planId });
+            console.log("Deleting activity plan:", {
+              actualPlanId,
+              profileId: profile?.id,
+              planProfileId: activityPlan.profile_id,
+            });
+            deleteMutation.mutate({ id: actualPlanId });
           },
         },
       ],

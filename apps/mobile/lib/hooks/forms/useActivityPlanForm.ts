@@ -223,12 +223,13 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     try {
       const payload = {
         name,
-        description: description || "", // Empty string instead of null
+        description:
+          description && description.trim() !== "" ? description : null,
         activity_location: activityLocation as any,
         activity_category: activityCategory as any,
         structure,
         route_id: routeId || null,
-        notes: notes || null,
+        notes: notes && notes.trim() !== "" ? notes : null,
         // estimated_duration and estimated_tss are now calculated server-side
       };
 

@@ -1,9 +1,11 @@
 import { ActivitySelectionModal } from "@/components/ActivitySelectionModal";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import { RecordingCarousel } from "@/components/RecordingCarousel";
+import { RecordingFooter } from "@/components/recording/footer";
+import { RecordingZones, ZoneFocusOverlay } from "@/components/recording/zones";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
+import type { RecordingState } from "@repo/core";
 import {
   useActivityStatus,
   usePlan,
@@ -38,13 +40,8 @@ import {
   Zap,
 } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Pressable, View } from "react-native";
+import { Alert, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  type CarouselCardConfig,
-  type CarouselCardType,
-  createDefaultCardsConfig,
-} from "types/carousel";
 
 // Helper function to resolve power target
 function resolvePowerTarget(target: any, profile: any): number | null {
@@ -55,6 +52,16 @@ function resolvePowerTarget(target: any, profile: any): number | null {
   }
   if (target.type === "watts") return Math.round(target.intensity || 0);
   return null;
+}
+
+// Helper function to map service state to RecordingState
+function mapServiceStateToRecordingState(
+  serviceState: string,
+): RecordingState {
+  if (serviceState === "pending") return "not_started";
+  if (serviceState === "recording") return "recording";
+  if (serviceState === "paused") return "paused";
+  return "not_started"; // fallback
 }
 
 function RecordScreen() {
@@ -319,6 +326,37 @@ function RecordScreen() {
     router.push("/record/submit");
   }, [finish, router]);
 
+  // Handle discard action - cancel recording and go back
+  const handleDiscard = useCallback(() => {
+    console.log("[RecordModal] Discard clicked, cancelling recording");
+
+    Alert.alert(
+      "Discard Recording?",
+      "Are you sure you want to discard this recording? This cannot be undone.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Discard",
+          style: "destructive",
+          onPress: () => {
+            // TODO: Add service.discard() method when available
+            console.log("[RecordModal] Recording discarded");
+            router.back();
+          },
+        },
+      ],
+    );
+  }, [router]);
+
+  // Handle lap action
+  const handleLap = useCallback(() => {
+    console.log("[RecordModal] Lap clicked");
+    // TODO: Add service.recordLap() method when available
+  }, []);
+
   // Debug: Track activity status changes
   useEffect(() => {
     console.log("[RecordModal] Activity status changed:", {
@@ -330,32 +368,12 @@ function RecordScreen() {
   // Get recording capabilities - determines what UI to show
   const capabilities = useRecordingCapabilities(service);
 
-  // Fixed cards configuration - always show these 3 cards in order
-  const cardsConfig = useMemo((): Record<
-    CarouselCardType,
-    CarouselCardConfig
-  > => {
-    const config = createDefaultCardsConfig();
-
-    // Always show these 3 cards in this specific order:
-    config.dashboard.enabled = true;
-    config.dashboard.order = 0;
-
-    config.map.enabled = true;
-    config.map.order = 1;
-
-    config.trainer.enabled = true;
-    config.trainer.order = 2;
-
-    // Disable all other cards (plan is now merged into dashboard)
-    config.plan.enabled = false;
-    config.power.enabled = false;
-    config.heartrate.enabled = false;
-    config.analysis.enabled = false;
-    config.elevation.enabled = false;
-
-    return config;
-  }, []); // No dependencies - cards never change
+  // Determine if activity has a route (for zone rendering)
+  const hasRoute = useMemo(() => {
+    // TODO: Check if plan has a route_id or if route is attached
+    // For now, return false - will be implemented when route attachment is added
+    return false;
+  }, []);
 
   // Show loading state while initializing
   if (!isInitialized) {
@@ -476,120 +494,41 @@ function RecordScreen() {
         );
       })()}
 
-      {/* Carousel - Now takes full height */}
-      <RecordingCarousel
-        cardsConfig={cardsConfig}
+      {/* Recording Zones - Vertical 3-zone stack */}
+      <ScrollView className="flex-1" bounces={false}>
+        <RecordingZones
+          service={service}
+          category={activityCategory}
+          location={activityLocation}
+          hasPlan={plan.hasPlan}
+          hasRoute={hasRoute}
+        />
+      </ScrollView>
+
+      {/* Focused Zone Overlay - Renders outside ScrollView */}
+      <ZoneFocusOverlay
         service={service}
-        onCardChange={(cardId) => {
-          console.log("[RecordModal] User switched to card:", cardId);
-        }}
+        category={activityCategory}
+        location={activityLocation}
+        hasPlan={plan.hasPlan}
+        hasRoute={hasRoute}
       />
-      {/* Footer */}
-      <View
-        className="bg-background px-4"
-        style={{ paddingBottom: Math.max(insets.bottom, 16) }}
-      >
-        <View className="flex-row gap-3">
-          {/* Activity Type Icon Button - Opens selection modal */}
-          {/* Only show if no plan is selected (activity type is locked when plan is selected) */}
-          {state === "pending" && !plan.hasPlan && (
-            <Button
-              size="icon"
-              variant="outline"
-              className="h-14 w-14 rounded-xl"
-              onPress={() => setActivityModalVisible(true)}
-            >
-              <Icon as={ActivityIcon} size={24} />
-            </Button>
-          )}
 
-          {/* Activity Type Icon (locked) - Show when plan is selected */}
-          {state === "pending" && plan.hasPlan && (
-            <View className="h-14 w-14 rounded-xl border-2 border-border bg-muted items-center justify-center">
-              <Icon
-                as={ActivityIcon}
-                size={24}
-                className="text-muted-foreground"
-              />
-            </View>
-          )}
-
-          {/* Location Toggle Button - Show when plan is selected to allow location changes */}
-          {state === "pending" && plan.hasPlan && (
-            <Button
-              size="icon"
-              variant="outline"
-              className="h-14 w-14 rounded-xl"
-              onPress={() => {
-                // Toggle between indoor and outdoor
-                const newLocation =
-                  activityLocation === "indoor" ? "outdoor" : "indoor";
-                service?.updateActivityConfiguration(
-                  activityCategory,
-                  newLocation,
-                );
-              }}
-            >
-              <Icon as={MapPin} size={20} />
-            </Button>
-          )}
-
-          {/* Start Button */}
-          {state === "pending" && (
-            <Button onPress={handleStart} className="flex-1 h-14 rounded-xl">
-              <Icon as={Play} size={24} className="color-background" />
-              <Text className="font-semibold text-lg">Start</Text>
-            </Button>
-          )}
-
-          {state === "recording" && (
-            <Button onPress={pause} className="flex-1 h-14 rounded-xl">
-              <Icon as={Pause} size={24} className="color-background" />
-              <Text className="ml-3 font-semibold text-lg">Pause</Text>
-            </Button>
-          )}
-
-          {state === "recording" && plan.hasPlan && plan.canAdvance && (
-            <Button
-              onPress={plan.advance}
-              variant="outline"
-              className="w-full h-12 rounded-xl"
-            >
-              <Icon as={ChevronRight} size={20} />
-              <Text className="ml-2 font-medium">Next Step</Text>
-            </Button>
-          )}
-          {state === "paused" && (
-            <Button
-              variant="secondary"
-              onPress={resume}
-              className="flex-1 h-14 rounded-xl"
-            >
-              <Icon as={Play} size={24} />
-              <Text className="ml-3 font-semibold">Resume</Text>
-            </Button>
-          )}
-          {state === "paused" && (
-            <Button
-              onPress={handleFinish}
-              variant="secondary"
-              className="flex-1 h-14 rounded-xl"
-            >
-              <Icon as={Square} size={24} />
-              <Text className="ml-3 font-semibold">Finish</Text>
-            </Button>
-          )}
-
-          <Button
-            size="icon"
-            variant="outline"
-            className="h-14 w-14 rounded-xl"
-            onPress={() => router.push("/record/sensors")}
-          >
-            <Icon as={Bluetooth} size={24} />
-          </Button>
-        </View>
-      </View>
+      {/* Recording Footer - Bottom Sheet */}
+      <RecordingFooter
+        service={service}
+        recordingState={mapServiceStateToRecordingState(state)}
+        category={activityCategory}
+        location={activityLocation}
+        hasPlan={plan.hasPlan}
+        hasRoute={hasRoute}
+        onStart={handleStart}
+        onPause={pause}
+        onResume={resume}
+        onLap={handleLap}
+        onFinish={handleFinish}
+        onDiscard={handleDiscard}
+      />
     </View>
   );
 }

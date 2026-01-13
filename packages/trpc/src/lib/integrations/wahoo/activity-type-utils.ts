@@ -142,3 +142,22 @@ export function toSportName(activityType: ActivityType): string {
       return "generic";
   }
 }
+
+/**
+ * Map activity type to Wahoo's workout_type_id
+ * These IDs are used when creating workouts on the calendar
+ */
+export function toWahooWorkoutTypeId(activityType: ActivityType): number | null {
+  switch (activityType) {
+    case "outdoor_bike":
+      return 0;
+    case "outdoor_run":
+      return 1;
+    case "indoor_treadmill":
+      return 5;
+    case "indoor_bike_trainer":
+      return 12;
+    default:
+      return null;
+  }
+}

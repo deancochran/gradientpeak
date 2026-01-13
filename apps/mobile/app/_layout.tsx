@@ -13,6 +13,7 @@ import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "nativewind";
 import * as React from "react";
 import { ActivityIndicator, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 // Initialize Sentry error tracking for production
@@ -96,16 +97,18 @@ function AppContent() {
   );
 
   return (
-    <SafeAreaProvider>
-      <StatusBar style={isDark ? "light" : "dark"} />
-      <SafeAreaView
-        className="flex-1 bg-background"
-        edges={["top", "left", "right"]}
-      >
-        <Slot />
-        <PortalHost />
-      </SafeAreaView>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <StatusBar style={isDark ? "light" : "dark"} />
+        <SafeAreaView
+          className="flex-1 bg-background"
+          edges={["top", "left", "right"]}
+        >
+          <Slot />
+          <PortalHost />
+        </SafeAreaView>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 

@@ -26,6 +26,8 @@ export interface WahooWorkoutData {
   scheduledDate: string; // ISO date string
   externalId: string; // Your planned_activity_id (from planned_activities table)
   routeId?: number; // Optional route_id to attach to workout
+  workoutTypeId: number; // Required: Wahoo workout type ID
+  durationMinutes: number; // Required: Duration in minutes
 }
 
 export interface WahooRouteData {
@@ -184,6 +186,9 @@ export class WahooClient {
         name: workoutData.name,
         starts: workoutData.scheduledDate,
         external_id: workoutData.externalId,
+        workout_token: workoutData.externalId, // Use externalId as token for tracking
+        workout_type_id: workoutData.workoutTypeId,
+        minutes: workoutData.durationMinutes,
       },
     };
 
@@ -192,12 +197,22 @@ export class WahooClient {
       body.workout.route_id = workoutData.routeId;
     }
 
+    console.log("[Wahoo API] Creating workout with payload:", body);
+
     const response = await this.makeRequest<WahooWorkout>("/v1/workouts", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
+    });
+
+    console.log("[Wahoo API] Workout created:", {
+      id: response.id,
+      name: response.name,
+      starts: response.starts,
+      workout_type_id: response.workout_type_id,
+      plan_id: response.plan_id,
     });
 
     return response;
@@ -401,6 +416,7 @@ export class WahooClient {
 
     try {
       const errorData = await response.json();
+      console.error("[Wahoo API] Error response:", errorData);
       if (errorData.error) {
         errorMessage = errorData.error;
       }
@@ -412,11 +428,21 @@ export class WahooClient {
       }
     } catch {
       // Response wasn't JSON, use default message
+      console.error(
+        "[Wahoo API] Non-JSON error response:",
+        response.statusText,
+      );
     }
 
     const error: WahooApiError = new Error(errorMessage);
     error.status = response.status;
     error.code = errorCode;
+
+    console.error("[Wahoo API] Final error:", {
+      message: errorMessage,
+      code: errorCode,
+      status: response.status,
+    });
 
     return error;
   }

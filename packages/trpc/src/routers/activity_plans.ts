@@ -203,6 +203,7 @@ export const activityPlansRouter = createTRPCRouter({
         .from("activity_plans")
         .insert({
           ...input,
+          description: input.description || "",
           profile_id: ctx.session.user.id,
           version: "1.0", // Default version
         })
@@ -271,9 +272,15 @@ export const activityPlansRouter = createTRPCRouter({
         }
       }
 
+      // Handle description field - convert null to empty string if present
+      const sanitizedUpdates: typeof updates & { description?: string } = {
+        ...updates,
+        description: updates.description === null ? "" : updates.description,
+      };
+
       const { data, error } = await ctx.supabase
         .from("activity_plans")
-        .update(updates)
+        .update(sanitizedUpdates)
         .eq("id", id)
         .select("*")
         .single();
@@ -301,21 +308,21 @@ export const activityPlansRouter = createTRPCRouter({
   delete: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      // Check ownership and if there are any planned activities using this plan
-      const { data: existing } = await ctx.supabase
+      // Check ownership first
+      const { data: existing, error: checkError } = await ctx.supabase
         .from("activity_plans")
-        .select(
-          `
-          id,
-          profile_id,
-          planned_activities!activity_plans_id_fkey(count)
-        `,
-        )
+        .select("id, profile_id")
         .eq("id", input.id)
         .eq("profile_id", ctx.session.user.id)
         .single();
 
-      if (!existing) {
+      if (checkError || !existing) {
+        console.error("Delete check error:", {
+          error: checkError,
+          existing,
+          inputId: input.id,
+          userId: ctx.session.user.id,
+        });
         throw new TRPCError({
           code: "NOT_FOUND",
           message:
@@ -323,19 +330,7 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
-      // Check if plan is being used by any planned activities
-      const { count: plannedActivitiesCount } = await ctx.supabase
-        .from("planned_activities")
-        .select("id", { count: "exact", head: true })
-        .eq("activity_plan_id", input.id);
-
-      if (plannedActivitiesCount && plannedActivitiesCount > 0) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Cannot delete activity plan because it is used by ${plannedActivitiesCount} scheduled activity${plannedActivitiesCount > 1 ? "ies" : ""}. Please remove or reschedule those activities first.`,
-        });
-      }
-
+      // Delete the plan - foreign key constraint will set planned_activities.activity_plan_id to null
       const { error } = await ctx.supabase
         .from("activity_plans")
         .delete()

@@ -1420,9 +1420,9 @@ export function wizardInputToPlan(
 
   // Validate start date
   const startDate = new Date(input.start_date);
-  const primaryGoalDate = new Date(input.goals[0].target_date);
+  const primaryGoalDate = new Date(input.goals[0]!.target_date);
   const weeksAvailable = calculateWeeksUntil(
-    input.goals[0].target_date,
+    input.goals[0]!.target_date,
     input.start_date,
   );
 

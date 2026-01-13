@@ -77,13 +77,16 @@ export * from "./training_plan_structure";
 // Export recording config
 export * from "./recording_config";
 
+// Export recording UI types
+export * from "./recording_ui_types";
+
 // tRPC-specific Activity Plans Schemas - use different names to avoid conflicts with supabase exports
 // Note: estimated_duration and estimated_tss are calculated server-side and NOT part of the input
 export const activityPlanCreateSchema = z.object({
   activity_category: z.enum(["run", "bike", "swim", "strength", "other"]),
   activity_location: z.enum(["outdoor", "indoor"]),
   name: z.string().min(1, "Plan name is required"),
-  description: z.string().max(1000),
+  description: z.string().max(1000).nullable().optional(),
   structure: z.any(), // Will be validated by activityPlanStructureSchema
   version: z.string().default("1.0").optional(),
   route_id: z.string().uuid().nullable().optional(),

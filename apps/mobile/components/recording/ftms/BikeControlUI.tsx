@@ -1,0 +1,496 @@
+/**
+ * Bike/Trainer Control UI
+ *
+ * Provides controls for smart bike trainers and indoor bikes.
+ * Supports three control modes:
+ * - ERG Mode (Mode 5): Target power control
+ * - SIM Mode (Mode 1): Terrain simulation (grade + wind)
+ * - Resistance Mode (Mode 4): Manual resistance level
+ *
+ * Features:
+ * - Auto/Manual mode (auto applies plan targets, manual allows user override)
+ * - FTP zones display for power reference
+ * - Target power slider with +/- buttons (ERG mode)
+ * - Grade/wind simulation controls (SIM mode)
+ * - Resistance level control 1-20 (Resistance mode)
+ * - Grayed out controls in Auto mode
+ */
+
+import React, { useEffect, useState, useCallback } from "react";
+import { View, Pressable, TextInput, Alert } from "react-native";
+import { Text } from "@/components/ui/text";
+import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
+import { usePlan } from "@/lib/hooks/useActivityRecorder";
+
+export interface BikeControlUIProps {
+  service: ActivityRecorderService;
+  controlMode: "auto" | "manual";
+  hasPlan: boolean;
+}
+
+type BikeMode = "erg" | "sim" | "resistance";
+
+export function BikeControlUI({
+  service,
+  controlMode,
+  hasPlan,
+}: BikeControlUIProps) {
+  const plan = usePlan(service);
+
+  // Current bike control mode (ERG, SIM, Resistance)
+  const [bikeMode, setBikeMode] = useState<BikeMode>("erg");
+
+  // ERG mode state
+  const [targetPower, setTargetPower] = useState<number>(150);
+
+  // SIM mode state
+  const [grade, setGrade] = useState<number>(0);
+  const [windSpeed, setWindSpeed] = useState<number>(0);
+  const [weight, setWeight] = useState<number>(75); // User weight for grade calculations
+
+  // Resistance mode state
+  const [resistanceLevel, setResistanceLevel] = useState<number>(5);
+
+  // FTP for zone display
+  const [ftp, setFtp] = useState<number>(200);
+
+  // Get trainer features
+  const trainer = service.sensorsManager.getControllableTrainer();
+  const features = trainer?.ftmsFeatures;
+
+  // Detect supported modes
+  const supportsERG = features?.powerTargetSettingSupported ?? false;
+  const supportsSIM = features?.indoorBikeSimulationSupported ?? false;
+  const supportsResistance = features?.resistanceTargetSettingSupported ?? false;
+
+  // Auto-apply plan targets in Auto mode
+  useEffect(() => {
+    if (controlMode === "auto" && plan.hasPlan && plan.currentStep) {
+      applyPlanTargets();
+    }
+  }, [controlMode, plan.currentStep, plan.hasPlan]);
+
+  /**
+   * Apply plan targets to trainer automatically
+   * Converts plan step targets to FTMS commands
+   */
+  const applyPlanTargets = useCallback(async () => {
+    if (!plan.currentStep || !plan.currentStep.targets) return;
+
+    const targets = plan.currentStep.targets;
+
+    // Find power target
+    const powerTarget = targets.find(
+      (t) => t.type === "watts" || t.type === "%FTP"
+    );
+
+    if (powerTarget && supportsERG) {
+      let powerWatts = 0;
+
+      if (powerTarget.type === "watts" && "value" in powerTarget) {
+        powerWatts = powerTarget.value as number;
+      } else if (powerTarget.type === "%FTP" && "min" in powerTarget && "max" in powerTarget) {
+        // Use midpoint of range
+        const percentFTP = ((powerTarget.min as number) + (powerTarget.max as number)) / 2;
+        powerWatts = Math.round((percentFTP / 100) * ftp);
+      }
+
+      if (powerWatts > 0) {
+        setTargetPower(powerWatts);
+        await service.sensorsManager.setPowerTarget(powerWatts);
+        console.log(`[BikeControl] Auto mode: Set power target to ${powerWatts}W`);
+      }
+    }
+  }, [plan.currentStep, ftp, supportsERG]);
+
+  /**
+   * Apply power target in ERG mode
+   */
+  const applyPowerTarget = useCallback(async () => {
+    if (controlMode === "auto") {
+      Alert.alert(
+        "Auto Mode Active",
+        "Switch to Manual mode to adjust trainer settings."
+      );
+      return;
+    }
+
+    const success = await service.sensorsManager.setPowerTarget(targetPower);
+    if (success) {
+      console.log(`[BikeControl] Manual: Set power target to ${targetPower}W`);
+    } else {
+      Alert.alert("Error", "Failed to set power target. Check trainer connection.");
+    }
+  }, [targetPower, controlMode]);
+
+  /**
+   * Apply simulation parameters in SIM mode
+   */
+  const applySimulation = useCallback(async () => {
+    if (controlMode === "auto") {
+      Alert.alert(
+        "Auto Mode Active",
+        "Switch to Manual mode to adjust trainer settings."
+      );
+      return;
+    }
+
+    const success = await service.sensorsManager.setSimulation({
+      grade,
+      windSpeed,
+      crr: 0.005, // Default coefficient of rolling resistance
+      windResistance: 0.51, // Default wind resistance coefficient
+    });
+
+    if (success) {
+      console.log(`[BikeControl] Manual: Set simulation (grade: ${grade}%, wind: ${windSpeed} m/s)`);
+    } else {
+      Alert.alert("Error", "Failed to set simulation. Check trainer connection.");
+    }
+  }, [grade, windSpeed, controlMode]);
+
+  /**
+   * Apply resistance level in Resistance mode
+   */
+  const applyResistance = useCallback(async () => {
+    if (controlMode === "auto") {
+      Alert.alert(
+        "Auto Mode Active",
+        "Switch to Manual mode to adjust trainer settings."
+      );
+      return;
+    }
+
+    const success = await service.sensorsManager.setResistanceTarget(
+      resistanceLevel
+    );
+
+    if (success) {
+      console.log(`[BikeControl] Manual: Set resistance level to ${resistanceLevel}`);
+    } else {
+      Alert.alert("Error", "Failed to set resistance. Check trainer connection.");
+    }
+  }, [resistanceLevel, controlMode]);
+
+  /**
+   * Calculate FTP zones for reference
+   */
+  const getFTPZones = () => {
+    return [
+      { name: "Recovery", min: 0, max: 0.55 * ftp, color: "bg-gray-500" },
+      { name: "Endurance", min: 0.55 * ftp, max: 0.75 * ftp, color: "bg-blue-500" },
+      { name: "Tempo", min: 0.75 * ftp, max: 0.9 * ftp, color: "bg-green-500" },
+      { name: "Threshold", min: 0.9 * ftp, max: 1.05 * ftp, color: "bg-yellow-500" },
+      { name: "VO2 Max", min: 1.05 * ftp, max: 1.2 * ftp, color: "bg-orange-500" },
+      { name: "Anaerobic", min: 1.2 * ftp, max: ftp * 2, color: "bg-red-500" },
+    ];
+  };
+
+  // Determine which controls to show based on available features
+  const availableModes: BikeMode[] = [];
+  if (supportsERG) availableModes.push("erg");
+  if (supportsSIM) availableModes.push("sim");
+  if (supportsResistance) availableModes.push("resistance");
+
+  // Default to first available mode
+  useEffect(() => {
+    if (availableModes.length > 0 && !availableModes.includes(bikeMode)) {
+      setBikeMode(availableModes[0]);
+    }
+  }, []);
+
+  const isDisabled = controlMode === "auto";
+
+  return (
+    <View className="gap-6">
+      {/* Mode Selection */}
+      {availableModes.length > 1 && (
+        <View>
+          <Text className="text-sm font-medium text-muted-foreground mb-2">
+            Control Mode
+          </Text>
+          <View className="flex-row gap-2">
+            {supportsERG && (
+              <ModeButton
+                label="ERG (Power)"
+                active={bikeMode === "erg"}
+                onPress={() => setBikeMode("erg")}
+                disabled={isDisabled}
+              />
+            )}
+            {supportsSIM && (
+              <ModeButton
+                label="SIM (Grade)"
+                active={bikeMode === "sim"}
+                onPress={() => setBikeMode("sim")}
+                disabled={isDisabled}
+              />
+            )}
+            {supportsResistance && (
+              <ModeButton
+                label="Resistance"
+                active={bikeMode === "resistance"}
+                onPress={() => setBikeMode("resistance")}
+                disabled={isDisabled}
+              />
+            )}
+          </View>
+        </View>
+      )}
+
+      {/* ERG Mode Controls */}
+      {bikeMode === "erg" && supportsERG && (
+        <View>
+          <Text className="text-sm font-medium mb-3">Target Power</Text>
+          <View className="flex-row items-center gap-3 mb-3">
+            <Pressable
+              onPress={() => setTargetPower(Math.max(0, targetPower - 10))}
+              disabled={isDisabled}
+              className={`w-12 h-12 items-center justify-center rounded ${
+                isDisabled ? "bg-muted" : "bg-primary"
+              }`}
+            >
+              <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
+                -10
+              </Text>
+            </Pressable>
+
+            <View className="flex-1 items-center">
+              <Text className="text-4xl font-bold">{targetPower}W</Text>
+              <Text className="text-xs text-muted-foreground mt-1">
+                {((targetPower / ftp) * 100).toFixed(0)}% FTP
+              </Text>
+            </View>
+
+            <Pressable
+              onPress={() => setTargetPower(targetPower + 10)}
+              disabled={isDisabled}
+              className={`w-12 h-12 items-center justify-center rounded ${
+                isDisabled ? "bg-muted" : "bg-primary"
+              }`}
+            >
+              <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
+                +10
+              </Text>
+            </Pressable>
+          </View>
+
+          <Pressable
+            onPress={applyPowerTarget}
+            disabled={isDisabled}
+            className={`py-3 rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
+          >
+            <Text className={`text-center font-medium ${
+              isDisabled ? "text-muted-foreground" : "text-primary-foreground"
+            }`}>
+              {isDisabled ? "Auto Mode Active" : "Apply Power Target"}
+            </Text>
+          </Pressable>
+
+          {/* FTP Zones Reference */}
+          <View className="mt-6">
+            <Text className="text-sm font-medium mb-2">FTP Zones</Text>
+            {getFTPZones().map((zone, index) => (
+              <View key={index} className="flex-row items-center gap-2 mb-1">
+                <View className={`w-3 h-3 rounded ${zone.color}`} />
+                <Text className="text-xs flex-1">{zone.name}</Text>
+                <Text className="text-xs text-muted-foreground">
+                  {Math.round(zone.min)}-{Math.round(zone.max)}W
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* SIM Mode Controls */}
+      {bikeMode === "sim" && supportsSIM && (
+        <View>
+          <Text className="text-sm font-medium mb-3">Terrain Simulation</Text>
+
+          {/* Grade Control */}
+          <View className="mb-4">
+            <Text className="text-xs text-muted-foreground mb-2">Grade</Text>
+            <View className="flex-row items-center gap-3">
+              <Pressable
+                onPress={() => setGrade(Math.max(-10, grade - 0.5))}
+                disabled={isDisabled}
+                className={`w-12 h-12 items-center justify-center rounded ${
+                  isDisabled ? "bg-muted" : "bg-primary"
+                }`}
+              >
+                <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
+                  -
+                </Text>
+              </Pressable>
+
+              <View className="flex-1 items-center">
+                <Text className="text-3xl font-bold">{grade.toFixed(1)}%</Text>
+              </View>
+
+              <Pressable
+                onPress={() => setGrade(Math.min(20, grade + 0.5))}
+                disabled={isDisabled}
+                className={`w-12 h-12 items-center justify-center rounded ${
+                  isDisabled ? "bg-muted" : "bg-primary"
+                }`}
+              >
+                <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
+                  +
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Wind Speed Control */}
+          <View className="mb-4">
+            <Text className="text-xs text-muted-foreground mb-2">Wind Speed</Text>
+            <View className="flex-row items-center gap-3">
+              <Pressable
+                onPress={() => setWindSpeed(Math.max(-10, windSpeed - 1))}
+                disabled={isDisabled}
+                className={`w-12 h-12 items-center justify-center rounded ${
+                  isDisabled ? "bg-muted" : "bg-primary"
+                }`}
+              >
+                <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
+                  -
+                </Text>
+              </Pressable>
+
+              <View className="flex-1 items-center">
+                <Text className="text-3xl font-bold">{windSpeed} m/s</Text>
+              </View>
+
+              <Pressable
+                onPress={() => setWindSpeed(Math.min(20, windSpeed + 1))}
+                disabled={isDisabled}
+                className={`w-12 h-12 items-center justify-center rounded ${
+                  isDisabled ? "bg-muted" : "bg-primary"
+                }`}
+              >
+                <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
+                  +
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <Pressable
+            onPress={applySimulation}
+            disabled={isDisabled}
+            className={`py-3 rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
+          >
+            <Text className={`text-center font-medium ${
+              isDisabled ? "text-muted-foreground" : "text-primary-foreground"
+            }`}>
+              {isDisabled ? "Auto Mode Active" : "Apply Simulation"}
+            </Text>
+          </Pressable>
+        </View>
+      )}
+
+      {/* Resistance Mode Controls */}
+      {bikeMode === "resistance" && supportsResistance && (
+        <View>
+          <Text className="text-sm font-medium mb-3">Resistance Level</Text>
+          <View className="flex-row items-center gap-3 mb-3">
+            <Pressable
+              onPress={() => setResistanceLevel(Math.max(1, resistanceLevel - 1))}
+              disabled={isDisabled}
+              className={`w-12 h-12 items-center justify-center rounded ${
+                isDisabled ? "bg-muted" : "bg-primary"
+              }`}
+            >
+              <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
+                -
+              </Text>
+            </Pressable>
+
+            <View className="flex-1 items-center">
+              <Text className="text-4xl font-bold">{resistanceLevel}</Text>
+              <Text className="text-xs text-muted-foreground mt-1">
+                1-20 range
+              </Text>
+            </View>
+
+            <Pressable
+              onPress={() => setResistanceLevel(Math.min(20, resistanceLevel + 1))}
+              disabled={isDisabled}
+              className={`w-12 h-12 items-center justify-center rounded ${
+                isDisabled ? "bg-muted" : "bg-primary"
+              }`}
+            >
+              <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
+                +
+              </Text>
+            </Pressable>
+          </View>
+
+          <Pressable
+            onPress={applyResistance}
+            disabled={isDisabled}
+            className={`py-3 rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
+          >
+            <Text className={`text-center font-medium ${
+              isDisabled ? "text-muted-foreground" : "text-primary-foreground"
+            }`}>
+              {isDisabled ? "Auto Mode Active" : "Apply Resistance"}
+            </Text>
+          </Pressable>
+        </View>
+      )}
+
+      {/* Plan Target Display (when in Auto mode) */}
+      {controlMode === "auto" && plan.hasPlan && plan.currentStep && (
+        <View className="bg-primary/10 p-4 rounded-lg border border-primary/20">
+          <Text className="text-sm font-medium mb-1">Following Plan</Text>
+          <Text className="text-xs text-muted-foreground">
+            Current step: {plan.currentStep.name || "Interval"}
+          </Text>
+          {plan.currentStep.targets && plan.currentStep.targets.length > 0 && (
+            <Text className="text-xs text-muted-foreground mt-1">
+              Target: {plan.currentStep.targets[0].type}{" "}
+              {"min" in plan.currentStep.targets[0] && "max" in plan.currentStep.targets[0] &&
+                `${plan.currentStep.targets[0].min}-${plan.currentStep.targets[0].max}`}
+              {"value" in plan.currentStep.targets[0] &&
+                `${plan.currentStep.targets[0].value}`}
+            </Text>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
+/**
+ * Mode selection button
+ */
+interface ModeButtonProps {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  disabled?: boolean;
+}
+
+function ModeButton({ label, active, onPress, disabled }: ModeButtonProps) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      className={`flex-1 py-2 px-4 rounded border ${
+        active
+          ? "bg-primary border-primary"
+          : "bg-background border-border"
+      } ${disabled ? "opacity-50" : ""}`}
+    >
+      <Text
+        className={`text-center text-xs font-medium ${
+          active ? "text-primary-foreground" : "text-foreground"
+        }`}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}

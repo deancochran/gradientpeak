@@ -449,7 +449,7 @@ export const trainingPlansRouter = createTRPCRouter({
     }),
 
   // ------------------------------
-  // Delete training plan
+  // Delete training plan (cascades to delete planned activities)
   // ------------------------------
   delete: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
@@ -470,19 +470,21 @@ export const trainingPlansRouter = createTRPCRouter({
         });
       }
 
-      // Check if there are any planned activities associated with this plan
-      const { count: plannedActivitiesCount } = await ctx.supabase
+      // Delete all planned activities associated with this training plan first
+      const { error: deleteActivitiesError } = await ctx.supabase
         .from("planned_activities")
-        .select("id", { count: "exact", head: true })
-        .eq("training_plan_id", input.id);
+        .delete()
+        .eq("training_plan_id", input.id)
+        .eq("profile_id", ctx.session.user.id);
 
-      if (plannedActivitiesCount && plannedActivitiesCount > 0) {
+      if (deleteActivitiesError) {
         throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Cannot delete training plan because it has ${plannedActivitiesCount} scheduled activity${plannedActivitiesCount > 1 ? "ies" : ""}. These will be unlinked from the plan when deleted.`,
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Failed to delete planned activities: ${deleteActivitiesError.message}`,
         });
       }
 
+      // Now delete the training plan
       const { error } = await ctx.supabase
         .from("training_plans")
         .delete()
@@ -634,8 +636,9 @@ export const trainingPlansRouter = createTRPCRouter({
       .lt("scheduled_date", endOfWeek.toISOString().split("T")[0]);
 
     // Extract activity plans and add estimations
-    const activityPlans =
-      plannedActivities?.map((pa) => pa.activity_plan).filter(Boolean) || [];
+    const activityPlans = (plannedActivities || [])
+      .map((pa) => pa.activity_plan)
+      .filter((plan): plan is NonNullable<typeof plan> => plan !== null);
 
     const plansWithEstimations =
       activityPlans.length > 0
@@ -681,9 +684,9 @@ export const trainingPlansRouter = createTRPCRouter({
       .limit(5);
 
     // Add estimations to upcoming activity plans
-    const upcomingPlans =
-      upcomingActivitiesRaw?.map((pa) => pa.activity_plan).filter(Boolean) ||
-      [];
+    const upcomingPlans = (upcomingActivitiesRaw || [])
+      .map((pa) => pa.activity_plan)
+      .filter((plan): plan is NonNullable<typeof plan> => plan !== null);
 
     const upcomingPlansWithEstimations =
       upcomingPlans.length > 0
@@ -784,81 +787,98 @@ export const trainingPlansRouter = createTRPCRouter({
 
       const structure = plan.structure as any;
 
-      // Only periodized plans have fitness progression
-      if (
-        structure?.plan_type !== "periodized" ||
-        !structure?.fitness_progression
-      ) {
+      // ✅ FIX: Support both legacy fitness_progression and modern periodization_template
+      const hasPeriodization =
+        structure?.periodization_template?.target_ctl &&
+        structure?.periodization_template?.target_date;
+
+      if (!hasPeriodization && !structure?.fitness_progression) {
         return null;
       }
 
-      const fitnessProgression = structure.fitness_progression;
-      const blocks = structure.blocks || [];
+      // ✅ FIX: Get user's CURRENT CTL (not plan's starting_ctl)
+      const { data: actualCurve } = await ctx.supabase
+        .from("activities")
+        .select("started_at, metrics")
+        .eq("profile_id", ctx.session.user.id)
+        .lte("started_at", new Date().toISOString())
+        .order("started_at", { ascending: false })
+        .limit(42);
 
-      // Generate ideal CTL/ATL curve based on fitness progression
-      const startDate = new Date(input.start_date);
-      const endDate = new Date(input.end_date);
+      let currentCTL = structure?.periodization_template?.starting_ctl || 40;
 
-      const daysDiff = Math.floor(
-        (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24),
-      );
-
-      if (isNaN(daysDiff) || daysDiff < 0) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Invalid date range",
-        });
+      if (actualCurve && actualCurve.length > 0) {
+        const tssData = actualCurve.map((a) => (a.metrics as any)?.tss || 0);
+        const series = calculateTrainingLoadSeries(tssData, 0, 0);
+        currentCTL = series[series.length - 1]?.ctl || currentCTL;
       }
 
-      const dataPoints = [];
-      let currentCTL = fitnessProgression.starting_ctl;
-      const rampRate = fitnessProgression.weekly_ramp_rate;
-      const targetCTL = fitnessProgression.target_ctl;
-      const peakDate = fitnessProgression.peak_date
-        ? new Date(fitnessProgression.peak_date)
-        : endDate;
+      const targetCTL =
+        structure.periodization_template?.target_ctl ||
+        structure.fitness_progression?.target_ctl ||
+        100;
 
-      for (let i = 0; i <= daysDiff; i++) {
-        const date = new Date(startDate.getTime());
-        date.setDate(startDate.getDate() + i);
-        const dateStr = date.toISOString().split("T")[0];
+      const targetDate =
+        structure.periodization_template?.target_date ||
+        structure.fitness_progression?.peak_date ||
+        input.end_date;
 
-        // Find which block this date falls in
-        const currentBlock = blocks.find((block: any) => {
-          return (
-            dateStr && block.start_date <= dateStr && block.end_date >= dateStr
-          );
+      // ✅ FIX: Start projection from TODAY (not query start_date)
+      const projectionStartDate = new Date();
+      const projectionEndDate = new Date(targetDate);
+      const daysToTarget = Math.floor(
+        (projectionEndDate.getTime() - projectionStartDate.getTime()) /
+          (24 * 60 * 60 * 1000),
+      );
+
+      // ✅ FIX: Use plan's target_weekly_tss for projection
+      const weeklyTSS =
+        structure.target_weekly_tss || (targetCTL - currentCTL) * 7;
+      const dailyTSS = weeklyTSS / 7;
+
+      // Build projection curve
+      const curve = [];
+      let ctl = currentCTL;
+
+      for (let day = 0; day <= daysToTarget; day++) {
+        const date = new Date(projectionStartDate);
+        date.setDate(date.getDate() + day);
+
+        // Apply phase multipliers if blocks exist
+        const currentBlock = structure.blocks?.find((block: any) => {
+          const blockStart = new Date(block.start_date);
+          const blockEnd = new Date(block.end_date);
+          return date >= blockStart && date <= blockEnd;
         });
 
-        // Project CTL with ramp rate up to peak date
-        if (date <= peakDate && currentCTL < targetCTL) {
-          const weeklyIncrease = currentCTL * rampRate;
-          currentCTL += weeklyIncrease / 7; // Daily increase
-          currentCTL = Math.min(currentCTL, targetCTL);
-        } else if (currentBlock?.phase === "taper") {
-          // During taper, CTL naturally declines
-          const taperRate = 0.95; // 5% weekly reduction
-          currentCTL *= Math.pow(taperRate, 1 / 7); // Daily taper
-        }
+        const phaseMultipliers: Record<string, number> = {
+          base: 0.8,
+          build: 1.0,
+          peak: 1.2,
+          taper: 0.5,
+          recovery: 0.6,
+        };
 
-        // ATL follows CTL with typical ratio
-        const idealATL = currentCTL * 0.7; // Typical ATL/CTL ratio
+        const multiplier = currentBlock?.phase
+          ? phaseMultipliers[currentBlock.phase] || 1.0
+          : 1.0;
 
-        if (dateStr) {
-          dataPoints.push({
-            date: dateStr,
-            ctl: Math.round(currentCTL * 10) / 10,
-            atl: Math.round(idealATL * 10) / 10,
-            tsb: Math.round((currentCTL - idealATL) * 10) / 10,
-          });
-        }
+        const adjustedDailyTSS = dailyTSS * multiplier;
+
+        // Update CTL (exponentially weighted moving average)
+        ctl = ctl + (adjustedDailyTSS - ctl) / 42;
+
+        curve.push({
+          date: date.toISOString().split("T")[0],
+          ctl: Math.round(ctl),
+        });
       }
 
       return {
-        dataPoints,
-        startCTL: fitnessProgression.starting_ctl,
-        targetCTL: fitnessProgression.target_ctl,
-        targetDate: fitnessProgression.peak_date,
+        dataPoints: curve,
+        startCTL: currentCTL,
+        targetCTL: targetCTL,
+        targetDate: targetDate,
       };
     }),
 
@@ -876,15 +896,39 @@ export const trainingPlansRouter = createTRPCRouter({
       const startDate = new Date(input.start_date);
       const endDate = new Date(input.end_date);
 
-      // Get all activities in the date range plus 42 days before (for CTL calculation)
+      // ✅ FIX: Get baseline CTL from before start_date
       const extendedStart = new Date(startDate);
-      extendedStart.setDate(startDate.getDate() - 42);
+      extendedStart.setDate(startDate.getDate() - 42); // 42 days before
 
+      const { data: baselineActivities } = await ctx.supabase
+        .from("activities")
+        .select("started_at, metrics")
+        .eq("profile_id", ctx.session.user.id)
+        .lt("started_at", startDate.toISOString())
+        .gte("started_at", extendedStart.toISOString())
+        .order("started_at", { ascending: true });
+
+      let initialCTL = 0;
+      let initialATL = 0;
+
+      if (baselineActivities && baselineActivities.length > 0) {
+        const baselineTSS = baselineActivities.map(
+          (a) => (a.metrics as any)?.tss || 0,
+        );
+        const baselineSeries = calculateTrainingLoadSeries(baselineTSS, 0, 0);
+        const last = baselineSeries[baselineSeries.length - 1];
+        if (last) {
+          initialCTL = last.ctl;
+          initialATL = last.atl;
+        }
+      }
+
+      // Get activities in range
       const { data: activities, error: activitiesError } = await ctx.supabase
         .from("activities")
         .select("started_at, metrics")
         .eq("profile_id", ctx.session.user.id)
-        .gte("started_at", extendedStart.toISOString())
+        .gte("started_at", startDate.toISOString())
         .lte("started_at", endDate.toISOString())
         .order("started_at", { ascending: true });
 
@@ -895,7 +939,6 @@ export const trainingPlansRouter = createTRPCRouter({
         });
       }
 
-      // Calculate CTL/ATL/TSB for each day
       const tssData: { date: string; tss: number }[] = [];
       const activitiesByDate = new Map<string, number>();
 
@@ -912,14 +955,14 @@ export const trainingPlansRouter = createTRPCRouter({
         );
       }
 
-      // Create daily TSS array
+      // Create daily TSS array for the requested range
       const daysDiff = Math.floor(
-        (endDate.getTime() - extendedStart.getTime()) / (1000 * 60 * 60 * 24),
+        (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24),
       );
 
       for (let i = 0; i <= daysDiff; i++) {
-        const date = new Date(extendedStart.getTime());
-        date.setDate(extendedStart.getDate() + i);
+        const date = new Date(startDate.getTime());
+        date.setDate(startDate.getDate() + i);
         const dateStr = date.toISOString().split("T")[0];
         if (dateStr) {
           const tss = activitiesByDate.get(dateStr) || 0;
@@ -927,11 +970,11 @@ export const trainingPlansRouter = createTRPCRouter({
         }
       }
 
-      // Calculate training load series
+      // ✅ FIX: Use baseline CTL/ATL
       const series = calculateTrainingLoadSeries(
         tssData.map((d) => d.tss),
-        0,
-        0,
+        initialCTL,
+        initialATL,
       );
 
       // Filter to requested date range and create data points
@@ -1074,9 +1117,9 @@ export const trainingPlansRouter = createTRPCRouter({
         .lte("scheduled_date", today.toISOString().split("T")[0]);
 
       // Extract activity plans and add estimations
-      const activityPlans =
-        plannedActivitiesRaw?.map((pa) => pa.activity_plan).filter(Boolean) ||
-        [];
+      const activityPlans = (plannedActivitiesRaw || [])
+        .map((pa) => pa.activity_plan)
+        .filter((plan): plan is NonNullable<typeof plan> => plan !== null);
 
       const plansWithEstimations =
         activityPlans.length > 0

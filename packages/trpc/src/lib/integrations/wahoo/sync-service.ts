@@ -6,9 +6,10 @@
 import type { ActivityPlanStructureV2 } from "@repo/core";
 import type { Database } from "@repo/supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { toActivityType } from "./activity-type-utils";
+import { toActivityType, toWahooWorkoutTypeId } from "./activity-type-utils";
 import { createWahooClient, supportsRoutes } from "./client";
 import {
+  calculateWorkoutDuration,
   convertToWahooPlan,
   isActivityTypeSupportedByWahoo,
   validateWahooCompatibility,
@@ -99,6 +100,14 @@ export class WahooSyncService {
       }
 
       // 4. Convert activity category + location to activity type
+      if (!planned.activity_plan) {
+        return {
+          success: false,
+          action: "no_change",
+          error: "Activity plan not found for this planned activity.",
+        };
+      }
+
       const activityType = toActivityType(
         planned.activity_plan.activity_category,
         planned.activity_plan.activity_location,
@@ -320,6 +329,9 @@ export class WahooSyncService {
     });
 
     // Create plan in Wahoo's library
+    console.log(
+      `[Wahoo Sync] Creating plan for "${planned.activity_plan.name}"`,
+    );
     const plan = await wahooClient.createPlan({
       structure: wahooPlan,
       name: planned.activity_plan.name,
@@ -327,15 +339,62 @@ export class WahooSyncService {
       activityType: activityType as any,
       externalId: planned.activity_plan.id,
     });
+    console.log(`[Wahoo Sync] Plan created with ID: ${plan.id}`);
+
+    // Get workout type ID and duration
+    const workoutTypeId = toWahooWorkoutTypeId(activityType as any);
+    if (workoutTypeId === null) {
+      return {
+        success: false,
+        action: "no_change",
+        error: `Unable to map activity type '${activityType}' to Wahoo workout type`,
+      };
+    }
+
+    const durationSeconds = calculateWorkoutDuration(structure);
+    const durationMinutes = Math.ceil(durationSeconds / 60);
+
+    const scheduledDate = new Date(planned.scheduled_date);
+    const today = new Date();
+    const daysUntilWorkout = Math.ceil(
+      (scheduledDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+    );
+
+    console.log(`[Wahoo Sync] Workout details:`, {
+      name: planned.activity_plan.name,
+      scheduledDate: scheduledDate.toISOString(),
+      daysUntilWorkout,
+      workoutTypeId,
+      durationMinutes,
+      planId: plan.id,
+      routeId: wahooRouteId,
+    });
+
+    // Warn if workout is outside Wahoo's 6-day window
+    if (daysUntilWorkout > 6) {
+      console.warn(
+        `[Wahoo Sync] WARNING: Workout scheduled ${daysUntilWorkout} days from now. Wahoo only displays workouts scheduled within 6 days on devices.`,
+      );
+      warnings = [
+        ...(warnings || []),
+        `Workout scheduled ${daysUntilWorkout} days from now. It will only appear on your device when within 6 days of the scheduled date.`,
+      ];
+    }
 
     // Create workout on Wahoo's calendar with optional route
     const workout = await wahooClient.createWorkout({
       planId: plan.id,
       name: planned.activity_plan.name,
-      scheduledDate: new Date(planned.scheduled_date).toISOString(),
+      scheduledDate: scheduledDate.toISOString(),
       externalId: planned.id,
       routeId: wahooRouteId,
+      workoutTypeId: workoutTypeId,
+      durationMinutes: durationMinutes,
     });
+
+    console.log(
+      `[Wahoo Sync] Workout created successfully with ID: ${workout.id}`,
+    );
 
     // Store sync record (only workout_id, not plan_id)
     await this.supabase.from("synced_planned_activities").insert({
@@ -416,12 +475,27 @@ export class WahooSyncService {
         externalId: planned.activity_plan.id,
       });
 
+      // Get workout type ID and duration
+      const workoutTypeId = toWahooWorkoutTypeId(activityType as any);
+      if (workoutTypeId === null) {
+        return {
+          success: false,
+          action: "no_change",
+          error: `Unable to map activity type '${activityType}' to Wahoo workout type`,
+        };
+      }
+
+      const durationSeconds = calculateWorkoutDuration(structure);
+      const durationMinutes = Math.ceil(durationSeconds / 60);
+
       // Create new workout
       const workout = await wahooClient.createWorkout({
         planId: plan.id,
         name: planned.activity_plan.name,
         scheduledDate: new Date(planned.scheduled_date).toISOString(),
         externalId: planned.id,
+        workoutTypeId: workoutTypeId,
+        durationMinutes: durationMinutes,
       });
 
       // Delete old workout

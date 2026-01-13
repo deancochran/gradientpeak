@@ -25,6 +25,8 @@ const plannedActivityListSchema = z.object({
   activity_category: z.string().optional(),
   activity_location: z.string().optional(),
   activity_plan_id: z.string().optional(),
+  training_plan_id: z.string().uuid().optional(), // ✅ New filter
+  include_adhoc: z.boolean().default(true), // ✅ Filter for ad-hoc activities
   date_from: z.string().optional(),
   date_to: z.string().optional(),
   limit: z.number().min(1).max(100).default(20),
@@ -110,8 +112,12 @@ export const plannedActivitiesRouter = createTRPCRouter({
 
     // Add estimation to each activity plan
     if (data && data.length > 0) {
+      const plans = data
+        .map((pa) => pa.activity_plan)
+        .filter((plan): plan is NonNullable<typeof plan> => plan !== null);
+
       const plansWithEstimation = await addEstimationToPlans(
-        data.map((pa) => pa.activity_plan).filter(Boolean),
+        plans,
         ctx.supabase,
         ctx.session.user.id,
       );
@@ -179,17 +185,33 @@ export const plannedActivitiesRouter = createTRPCRouter({
         });
       }
 
+      // ✅ FIX: Auto-populate training_plan_id from active plan if not provided
+      let trainingPlanId = input.training_plan_id;
+
+      if (!trainingPlanId) {
+        const { data: activePlan } = await ctx.supabase
+          .from("training_plans")
+          .select("id")
+          .eq("profile_id", ctx.session.user.id)
+          .eq("is_active", true)
+          .single();
+
+        trainingPlanId = activePlan?.id;
+      }
+
       const { data, error } = await ctx.supabase
         .from("planned_activities")
         .insert({
           ...input,
           profile_id: ctx.session.user.id,
+          training_plan_id: trainingPlanId, // ✅ New field
         })
         .select(
           `
           id,
           scheduled_date,
           activity_plan_id,
+          training_plan_id,
           created_at
         `,
         )
@@ -199,31 +221,44 @@ export const plannedActivitiesRouter = createTRPCRouter({
         throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
 
       // Automatically sync to Wahoo if integration is connected
-      // This runs asynchronously and doesn't block the response
-      const syncWahoo = async () => {
-        try {
-          // Check if Wahoo integration exists
-          const { data: integration } = await ctx.supabase
-            .from("integrations")
-            .select("provider")
-            .eq("profile_id", ctx.session.user.id)
-            .eq("provider", "wahoo")
-            .single();
+      // Track sync status to return to user
+      let wahooSyncResult: { success: boolean; error?: string } | null = null;
+      try {
+        // Check if Wahoo integration exists
+        const { data: integration } = await ctx.supabase
+          .from("integrations")
+          .select("provider")
+          .eq("profile_id", ctx.session.user.id)
+          .eq("provider", "wahoo")
+          .single();
 
-          if (integration) {
-            const syncService = new WahooSyncService(ctx.supabase);
-            await syncService.syncPlannedActivity(data.id, ctx.session.user.id);
-          }
-        } catch (error) {
-          // Log error but don't fail the request
-          console.error("Failed to auto-sync to Wahoo:", error);
+        if (integration) {
+          const syncService = new WahooSyncService(ctx.supabase);
+          const result = await syncService.syncPlannedActivity(
+            data.id,
+            ctx.session.user.id,
+          );
+          wahooSyncResult = {
+            success: result.success,
+            error: result.error,
+          };
         }
+      } catch (error) {
+        // Log error but don't fail the request
+        console.error("Failed to auto-sync to Wahoo:", error);
+        wahooSyncResult = {
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unknown error during Wahoo sync",
+        };
+      }
+
+      return {
+        ...data,
+        wahooSync: wahooSyncResult,
       };
-
-      // Trigger sync without awaiting
-      syncWahoo();
-
-      return data;
     }),
 
   // ------------------------------
@@ -292,7 +327,45 @@ export const plannedActivitiesRouter = createTRPCRouter({
       if (error)
         throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
 
-      return data;
+      // Automatically sync to Wahoo if integration is connected
+      // Track sync status to return to user
+      let wahooSyncResult: { success: boolean; error?: string } | null = null;
+      try {
+        // Check if Wahoo integration exists
+        const { data: integration } = await ctx.supabase
+          .from("integrations")
+          .select("provider")
+          .eq("profile_id", ctx.session.user.id)
+          .eq("provider", "wahoo")
+          .single();
+
+        if (integration) {
+          const syncService = new WahooSyncService(ctx.supabase);
+          const result = await syncService.syncPlannedActivity(
+            id,
+            ctx.session.user.id,
+          );
+          wahooSyncResult = {
+            success: result.success,
+            error: result.error,
+          };
+        }
+      } catch (error) {
+        // Log error but don't fail the request
+        console.error("Failed to auto-sync update to Wahoo:", error);
+        wahooSyncResult = {
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unknown error during Wahoo sync",
+        };
+      }
+
+      return {
+        ...data,
+        wahooSync: wahooSyncResult,
+      };
     }),
 
   // ------------------------------
@@ -313,6 +386,33 @@ export const plannedActivitiesRouter = createTRPCRouter({
           code: "NOT_FOUND",
           message: "Planned activity not found",
         });
+
+      // Unsync from Wahoo before deleting (if synced)
+      const unsyncWahoo = async () => {
+        try {
+          // Check if Wahoo integration exists
+          const { data: integration } = await ctx.supabase
+            .from("integrations")
+            .select("provider")
+            .eq("profile_id", ctx.session.user.id)
+            .eq("provider", "wahoo")
+            .single();
+
+          if (integration) {
+            const syncService = new WahooSyncService(ctx.supabase);
+            await syncService.unsyncPlannedActivity(
+              input.id,
+              ctx.session.user.id,
+            );
+          }
+        } catch (error) {
+          // Log error but don't fail the request
+          console.error("Failed to auto-unsync from Wahoo:", error);
+        }
+      };
+
+      // Trigger unsync and await it to ensure it completes before deletion
+      await unsyncWahoo();
 
       const { error } = await ctx.supabase
         .from("planned_activities")
@@ -357,6 +457,13 @@ export const plannedActivitiesRouter = createTRPCRouter({
         query = query.or(
           `scheduled_date.gt.${cursorDate},and(scheduled_date.eq.${cursorDate},id.gt.${cursorId})`,
         );
+      }
+
+      // ✅ Filter by training plan
+      if (input.training_plan_id) {
+        query = query.eq("training_plan_id", input.training_plan_id);
+      } else if (!input.include_adhoc) {
+        query = query.not("training_plan_id", "is", null);
       }
 
       // Apply date filters
@@ -698,8 +805,12 @@ export const plannedActivitiesRouter = createTRPCRouter({
 
       // Add estimation to each activity plan
       if (data && data.length > 0) {
+        const plans = data
+          .map((pa) => pa.activity_plan)
+          .filter((plan): plan is NonNullable<typeof plan> => plan !== null);
+
         const plansWithEstimation = await addEstimationToPlans(
-          data.map((pa) => pa.activity_plan).filter(Boolean),
+          plans,
           ctx.supabase,
           ctx.session.user.id,
         );

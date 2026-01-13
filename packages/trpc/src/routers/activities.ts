@@ -300,6 +300,11 @@ export const activitiesRouter = createTRPCRouter({
               max_value,
               avg_value,
               created_at
+            ),
+            activity_plans (
+              id,
+              name,
+              structure
             )
           `,
         )

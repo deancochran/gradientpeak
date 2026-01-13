@@ -1,4 +1,3 @@
-import { CurrentStatusCard } from "@/components/training-plan/CurrentStatusCard";
 import { UpcomingActivitiesCard } from "@/components/training-plan/UpcomingActivitiesCard";
 import { WeeklyProgressCard } from "@/components/training-plan/WeeklyProgressCard";
 import { PlanVsActualChart } from "@/components/charts/PlanVsActualChart";
@@ -43,32 +42,52 @@ export default function TrainingPlanOverview() {
 
   // Calculate date ranges for fitness data
   const today = useMemo(() => new Date(), []);
-  const thirtyDaysAgo = useMemo(() => {
-    const date = new Date(today);
-    date.setDate(today.getDate() - 30);
-    return date;
-  }, [today]);
-  const fourteenDaysAhead = useMemo(() => {
-    const date = new Date(today);
-    date.setDate(today.getDate() + 14);
-    return date;
-  }, [today]);
 
-  // Get actual fitness curve (last 30 days)
+  // For the actual curve, get data from plan start (or 90 days ago, whichever is earlier)
+  const actualStartDate = useMemo(() => {
+    if (!plan) {
+      const date = new Date(today);
+      date.setDate(today.getDate() - 90);
+      return date;
+    }
+    const planStart = new Date(plan.created_at);
+    const ninetyDaysAgo = new Date(today);
+    ninetyDaysAgo.setDate(today.getDate() - 90);
+    return planStart < ninetyDaysAgo ? planStart : ninetyDaysAgo;
+  }, [plan, today]);
+
+  // For the ideal curve, get the target date from periodization or default to 90 days ahead
+  const idealEndDate = useMemo(() => {
+    if (!plan) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + 90);
+      return date;
+    }
+    const structure = plan.structure as any;
+    const targetDate = structure?.periodization_template?.target_date;
+    if (targetDate) {
+      return new Date(targetDate);
+    }
+    const date = new Date(today);
+    date.setDate(today.getDate() + 90);
+    return date;
+  }, [plan, today]);
+
+  // Get actual fitness curve (from plan start to today)
   const { data: actualCurveData } = trpc.trainingPlans.getActualCurve.useQuery(
     {
-      start_date: thirtyDaysAgo.toISOString().split("T")[0]!,
+      start_date: actualStartDate.toISOString().split("T")[0]!,
       end_date: today.toISOString().split("T")[0]!,
     },
     { enabled: !!plan },
   );
 
-  // Get ideal fitness curve from training plan (if exists)
+  // Get ideal fitness curve from training plan (from plan start to target date)
   const { data: idealCurveData } = trpc.trainingPlans.getIdealCurve.useQuery(
     {
       id: plan?.id || "",
-      start_date: thirtyDaysAgo.toISOString().split("T")[0]!,
-      end_date: fourteenDaysAhead.toISOString().split("T")[0]!,
+      start_date: actualStartDate.toISOString().split("T")[0]!,
+      end_date: idealEndDate.toISOString().split("T")[0]!,
     },
     {
       enabled: !!plan?.id,
@@ -391,27 +410,6 @@ export default function TrainingPlanOverview() {
             </CardContent>
           </Card>
         )}
-
-        {/* Current Status Card - CTL/ATL/TSB */}
-        {loadingStatus ? (
-          <Card>
-            <CardContent className="p-6">
-              <View className="items-center justify-center py-8">
-                <ActivityIndicator size="small" />
-                <Text className="text-sm text-muted-foreground mt-2">
-                  Calculating fitness metrics...
-                </Text>
-              </View>
-            </CardContent>
-          </Card>
-        ) : status ? (
-          <CurrentStatusCard
-            ctl={status.ctl}
-            atl={status.atl}
-            tsb={status.tsb}
-            form={status.form}
-          />
-        ) : null}
 
         {/* Weekly Progress Card */}
         {status?.weekProgress && (

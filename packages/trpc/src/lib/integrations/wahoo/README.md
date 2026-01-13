@@ -335,15 +335,37 @@ curl https://yourdomain.com/api/webhooks/wahoo
 - Logs all errors internally
 - Continues processing even on partial failures
 
+## Recent Fixes (2026-01-09)
+
+### Critical API Field Fix
+Fixed missing required fields in workout creation that were preventing workouts from appearing on Wahoo devices:
+- **Added `workout_token`**: Now uses `external_id` as the tracking token
+- **Added `workout_type_id`**: Properly maps activity types to Wahoo workout type IDs (0=outdoor bike, 1=outdoor run, 5=indoor treadmill, 12=indoor bike)
+- **Added `minutes`**: Calculates total workout duration from plan structure
+
+### Improved Error Reporting
+- Automatic sync now **awaits** the Wahoo sync operation and returns sync status in the response
+- Users receive `wahooSync` field with `success` and `error` details when creating/updating planned activities
+- Errors are no longer silent - sync failures are now visible to the client
+
+### Duration Calculation
+Added `calculateWorkoutDuration()` function that:
+- Correctly handles time-based steps (uses `seconds` field)
+- Estimates duration for distance-based steps (based on reasonable pace)
+- Handles `untilFinished` and `repetitions` duration types
+- Calculates total workout minutes for Wahoo API
+
 ## Future Enhancements
 
-- [ ] UI badges showing sync status on planned activities
-- [ ] Manual sync button for failed syncs
+- [ ] UI badges showing sync status on planned activities (infrastructure now in place)
+- [ ] Manual sync button for failed syncs (tRPC endpoint already exists)
+- [ ] Toast notifications for sync failures in mobile app
 - [ ] Automatic token refresh on 401 responses
 - [ ] Fetch actual workout start time from Wahoo API
 - [ ] Support for workout notes/descriptions
 - [ ] Bi-directional workout updates (edit synced workouts)
 - [x] ~~Route/GPS data sync~~ **COMPLETED** - Routes now sync automatically
+- [x] ~~Required API fields~~ **COMPLETED** - All required fields now included
 - [ ] Power zone sync
 - [ ] Route preview on mobile before sync
 - [ ] Bi-directional route sync (download routes from Wahoo)

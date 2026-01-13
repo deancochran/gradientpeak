@@ -78,11 +78,12 @@ export class WahooActivityImporter {
 
       // 3. Find linked planned activity (if any)
       // Note: This queries synced_planned_activities which links planned_activities to external workouts
+      // The external_id column stores the Wahoo workout ID
       const { data: syncedActivity } = await this.supabase
         .from("synced_planned_activities")
         .select("planned_activity_id")
         .eq("provider", "wahoo")
-        .eq("external_workout_id", summary.workout_id.toString())
+        .eq("external_id", summary.workout_id.toString())
         .eq("profile_id", integration.profile_id)
         .single();
 

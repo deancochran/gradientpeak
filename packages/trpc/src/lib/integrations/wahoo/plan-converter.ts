@@ -51,6 +51,59 @@ export interface ConvertOptions {
 }
 
 /**
+ * Calculate total workout duration in seconds from structure
+ */
+export function calculateWorkoutDuration(
+  structure: ActivityPlanStructureV2,
+): number {
+  if (!structure.intervals || structure.intervals.length === 0) {
+    return 0;
+  }
+
+  let totalSeconds = 0;
+
+  for (const interval of structure.intervals) {
+    const intervalDuration = calculateIntervalDuration(interval);
+    totalSeconds += intervalDuration * interval.repetitions;
+  }
+
+  return totalSeconds;
+}
+
+/**
+ * Calculate duration of a single interval in seconds
+ */
+function calculateIntervalDuration(interval: IntervalV2): number {
+  let seconds = 0;
+
+  for (const step of interval.steps) {
+    seconds += parseDuration(step.duration);
+  }
+
+  return seconds;
+}
+
+/**
+ * Parse duration to seconds
+ */
+function parseDuration(duration: DurationV2): number {
+  if (duration.type === "time") {
+    return duration.seconds;
+  } else if (duration.type === "distance") {
+    // For distance-based steps, estimate ~4 seconds per 100m (reasonable pace)
+    // This is a rough estimate - ideally we'd use pace/speed from user profile
+    return Math.ceil((duration.meters / 100) * 4);
+  } else if (duration.type === "untilFinished") {
+    // Open-ended steps, estimate 60 seconds as fallback
+    return 60;
+  } else if (duration.type === "repetitions") {
+    // Repetitions should be expanded before reaching here, but estimate 10 seconds per rep
+    return duration.count * 10;
+  }
+  return 0;
+}
+
+/**
  * Convert GradientPeak activity plan to Wahoo plan.json format
  */
 export function convertToWahooPlan(

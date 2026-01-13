@@ -36,6 +36,7 @@ export type Database = {
     Tables: {
       activities: {
         Row: {
+          activity_plan_id: string | null
           avg_target_adherence: number | null
           created_at: string
           distance_meters: number
@@ -51,7 +52,6 @@ export type Database = {
           moving_seconds: number
           name: string
           notes: string | null
-          planned_activity_id: string | null
           power_zone_seconds: number[] | null
           profile_id: string
           profile_snapshot: Json | null
@@ -62,6 +62,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          activity_plan_id?: string | null
           avg_target_adherence?: number | null
           created_at?: string
           distance_meters?: number
@@ -77,7 +78,6 @@ export type Database = {
           moving_seconds?: number
           name: string
           notes?: string | null
-          planned_activity_id?: string | null
           power_zone_seconds?: number[] | null
           profile_id: string
           profile_snapshot?: Json | null
@@ -88,6 +88,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          activity_plan_id?: string | null
           avg_target_adherence?: number | null
           created_at?: string
           distance_meters?: number
@@ -103,7 +104,6 @@ export type Database = {
           moving_seconds?: number
           name?: string
           notes?: string | null
-          planned_activity_id?: string | null
           power_zone_seconds?: number[] | null
           profile_id?: string
           profile_snapshot?: Json | null
@@ -115,10 +115,10 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "activities_planned_activity_id_fkey"
-            columns: ["planned_activity_id"]
+            foreignKeyName: "activities_activity_plan_id_fkey"
+            columns: ["activity_plan_id"]
             isOneToOne: false
-            referencedRelation: "planned_activities"
+            referencedRelation: "activity_plans"
             referencedColumns: ["id"]
           },
           {
@@ -414,33 +414,36 @@ export type Database = {
       }
       planned_activities: {
         Row: {
-          activity_plan_id: string
+          activity_plan_id: string | null
           created_at: string
           id: string
           idx: number
           notes: string | null
           profile_id: string
           scheduled_date: string
+          training_plan_id: string | null
           updated_at: string
         }
         Insert: {
-          activity_plan_id: string
+          activity_plan_id?: string | null
           created_at?: string
           id?: string
           idx?: number
           notes?: string | null
           profile_id: string
           scheduled_date: string
+          training_plan_id?: string | null
           updated_at?: string
         }
         Update: {
-          activity_plan_id?: string
+          activity_plan_id?: string | null
           created_at?: string
           id?: string
           idx?: number
           notes?: string | null
           profile_id?: string
           scheduled_date?: string
+          training_plan_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -456,6 +459,13 @@ export type Database = {
             columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "planned_activities_training_plan_id_fkey"
+            columns: ["training_plan_id"]
+            isOneToOne: false
+            referencedRelation: "training_plans"
             referencedColumns: ["id"]
           },
         ]
@@ -569,8 +579,9 @@ export type Database = {
           id: string
           idx: number
           is_active: boolean
+          is_system_template: boolean
           name: string
-          profile_id: string
+          profile_id: string | null
           structure: Json
           updated_at: string
         }
@@ -580,8 +591,9 @@ export type Database = {
           id?: string
           idx?: number
           is_active?: boolean
+          is_system_template?: boolean
           name: string
-          profile_id: string
+          profile_id?: string | null
           structure: Json
           updated_at?: string
         }
@@ -591,8 +603,9 @@ export type Database = {
           id?: string
           idx?: number
           is_active?: boolean
+          is_system_template?: boolean
           name?: string
-          profile_id?: string
+          profile_id?: string | null
           structure?: Json
           updated_at?: string
         }

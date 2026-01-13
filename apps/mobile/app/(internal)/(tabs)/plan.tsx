@@ -1,13 +1,9 @@
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { GhostCard } from "@/components/plan/GhostCard";
-import { WeekStrip } from "@/components/plan/WeekStrip";
-import { WeeklyLedger } from "@/components/plan/WeeklyLedger";
 import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
 import { AppHeader, PlanCalendarSkeleton } from "@/components/shared";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
-import { TrainingPlanAdjustmentAlert } from "@/components/training-plan/TrainingPlanAdjustmentAlert";
 import { FitnessProgressCard } from "@/components/home/FitnessProgressCard";
-import WeeklySnapshot from "@/components/home/WeeklySnapshot";
 import { DetailChartModal } from "@/components/shared/DetailChartModal";
 import { PlanVsActualChart } from "@/components/charts/PlanVsActualChart";
 import { TrainingLoadChart } from "@/components/charts/TrainingLoadChart";
@@ -15,58 +11,57 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { ROUTES } from "@/lib/constants/routes";
-import { useSmartSuggestions } from "@/lib/hooks/useSmartSuggestions";
+
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import { trpc } from "@/lib/trpc";
-import {
-  getWeekDatesArray,
-  isActivityCompleted,
-  normalizeDate,
-} from "@/lib/utils/plan/dateGrouping";
+import { isActivityCompleted } from "@/lib/utils/plan/dateGrouping";
 import { ActivityPayload } from "@repo/core";
 import { format } from "date-fns";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { CalendarDays, Play, Settings } from "lucide-react-native";
+import React, { useMemo, useState } from "react";
 import {
-  CalendarDays,
-  List,
-  Play,
-  Settings,
-  Shuffle,
-  Sliders,
-} from "lucide-react-native";
-import React, { useEffect, useMemo, useState } from "react";
-import {
+  ActivityIndicator,
   RefreshControl,
   ScrollView,
   TouchableOpacity,
   View,
 } from "react-native";
+import { Calendar } from "react-native-calendars";
+import { useColorScheme } from "nativewind";
 
 // No longer need local transform function - ActivityPlanCard handles it internally
 
 function PlanScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === "dark";
 
-  const [weekOffset, setWeekOffset] = useState(0);
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [selectedDate, setSelectedDate] = useState<string>(
+    new Date().toISOString().split("T")[0]!,
+  );
+  const [currentMonth, setCurrentMonth] = useState<string>(
+    new Date().toISOString().split("T")[0]!,
+  );
   const [refreshing, setRefreshing] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [scheduleModalDate, setScheduleModalDate] = useState<
     string | undefined
   >();
-  const [showAdjustSheet, setShowAdjustSheet] = useState(false);
-  const [dismissedSuggestion, setDismissedSuggestion] = useState<string | null>(
-    null,
-  );
   const [trainingStatusModalVisible, setTrainingStatusModalVisible] =
     useState(false);
 
-  // Calculate week dates based on offset
-  const weekDates = useMemo(() => {
-    return getWeekDatesArray(weekOffset);
-  }, [weekOffset]);
+  // Calculate month range for calendar
+  const { startDate, endDate } = useMemo(() => {
+    const date = new Date(currentMonth);
+    const start = new Date(date.getFullYear(), date.getMonth(), 1);
+    const end = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+    return {
+      startDate: start.toISOString().split("T")[0]!,
+      endDate: end.toISOString().split("T")[0]!,
+    };
+  }, [currentMonth]);
 
   // Query for training plan
   const {
@@ -83,35 +78,31 @@ function PlanScreen() {
     enabled: !!plan,
   });
 
-  // Query for all planned activities
+  // Query for activities in the current month
   const {
-    data: allPlannedActivities,
+    data: activitiesData,
     isLoading: loadingAllPlanned,
     refetch: refetchActivities,
   } = trpc.plannedActivities.list.useQuery({
+    date_from: startDate,
+    date_to: endDate,
+    training_plan_id: plan?.id,
+    include_adhoc: true,
     limit: 100,
   });
 
-  const { data: weeklyScheduled = 0, refetch: refetchWeekCount } =
-    trpc.plannedActivities.getWeekCount.useQuery();
+  const allPlannedActivities = { items: activitiesData?.items || [] };
 
-  // Get weekly totals for ledger
-  const { data: weeklyTotals, refetch: refetchWeeklyTotals } =
-    trpc.trainingPlans.getWeeklyTotals.useQuery({
-      weekStartDate: weekDates[0]?.toISOString().split("T")[0],
-    });
-
-  // Get weekly summaries for smart suggestions (last 4 weeks)
-  const { data: weeklySummaries } =
-    trpc.trainingPlans.getWeeklySummary.useQuery(
-      {
-        training_plan_id: plan?.id || "",
-        weeks_back: 4,
-      },
-      {
-        enabled: !!plan?.id,
-      },
-    );
+  // Get completed activities for the month
+  const { data: completedActivities } = trpc.activities.list.useQuery(
+    {
+      date_from: startDate,
+      date_to: endDate,
+    },
+    {
+      enabled: !!startDate && !!endDate,
+    },
+  );
 
   // Calculate date ranges for fitness data
   const today = useMemo(() => new Date(), []);
@@ -163,39 +154,6 @@ function PlanScreen() {
     const todayStr = today.toISOString().split("T")[0];
     return idealCurveData.dataPoints.filter((d) => d.date > todayStr);
   }, [idealCurveData, today]);
-
-  // Calculate smart suggestions
-  const smartSuggestion = useSmartSuggestions({
-    plan,
-    status,
-    weeklySummaries,
-  });
-
-  // Load dismissed suggestion from storage
-  useEffect(() => {
-    const loadDismissedSuggestion = async () => {
-      try {
-        const dismissed = await AsyncStorage.getItem("dismissedSuggestion");
-        if (dismissed) {
-          const { reason, timestamp } = JSON.parse(dismissed);
-          // Auto-expire after 3 days
-          const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000;
-          if (timestamp > threeDaysAgo) {
-            setDismissedSuggestion(reason);
-          } else {
-            await AsyncStorage.removeItem("dismissedSuggestion");
-          }
-        }
-      } catch (error) {
-        console.error("Failed to load dismissed suggestion:", error);
-      }
-    };
-    loadDismissedSuggestion();
-  }, []);
-
-  // Check if current suggestion is dismissed
-  const shouldShowAlert =
-    smartSuggestion && smartSuggestion.reason !== dismissedSuggestion;
 
   // Prepare 7-day rolling window: 3 days back + today + 3 days forward
   const fitnessChartData = useMemo(() => {
@@ -277,38 +235,75 @@ function PlanScreen() {
     };
   }, [idealCurveData]);
 
+  // Build marked dates for calendar
+  const markedDates = useMemo(() => {
+    const marks: Record<string, any> = {};
+    const activities = activitiesData?.items || [];
+
+    // Theme colors for dots
+    const primaryDotColor = isDark ? "#fafafa" : "#171717"; // primary color
+    const mutedDotColor = isDark ? "#737373" : "#a3a3a3"; // muted color for ad-hoc
+    const completedDotColor = "#22c55e"; // green-500 for completed
+
+    // Mark planned activities
+    activities.forEach((activity) => {
+      const date = activity.scheduled_date;
+      const isPlanActivity = !!(activity as any).training_plan_id;
+
+      if (!marks[date]) {
+        marks[date] = {
+          marked: true,
+          dots: [],
+        };
+      }
+
+      marks[date].dots.push({
+        color: isPlanActivity ? primaryDotColor : mutedDotColor,
+        selectedDotColor: isPlanActivity ? primaryDotColor : mutedDotColor,
+      });
+    });
+
+    // Mark completed activities with a different color
+    if (completedActivities && Array.isArray(completedActivities)) {
+      completedActivities.forEach((activity) => {
+        const date = new Date(activity.started_at).toISOString().split("T")[0];
+        if (!date) return;
+
+        if (!marks[date]) {
+          marks[date] = {
+            marked: true,
+            dots: [],
+          };
+        }
+
+        // If already has a planned activity, mark it as completed
+        if (marks[date].dots && marks[date].dots.length > 0) {
+          marks[date].dots[0].color = completedDotColor;
+          marks[date].dots[0].selectedDotColor = completedDotColor;
+        }
+      });
+    }
+
+    // Highlight selected date
+    if (selectedDate) {
+      marks[selectedDate] = {
+        ...marks[selectedDate],
+        selected: true,
+        selectedColor: isDark ? "#fafafa" : "#171717",
+      };
+    }
+
+    return marks;
+  }, [activitiesData, completedActivities, selectedDate, isDark]);
+
   // Get activities for the selected date
   const selectedDayActivities = useMemo(() => {
     if (!allPlannedActivities?.items) return [];
 
     return allPlannedActivities.items.filter((activity) => {
-      const activityDate = normalizeDate(new Date(activity.scheduled_date));
-      return activityDate.getTime() === normalizeDate(selectedDate).getTime();
+      return activity.scheduled_date === selectedDate;
     });
   }, [allPlannedActivities, selectedDate]);
-
-  // Group activities by day for week calendar
-  const weekActivities = useMemo(() => {
-    if (!allPlannedActivities?.items) {
-      return Array(7).fill({ completed: false, type: "rest", count: 0 });
-    }
-
-    return weekDates.map((weekDate) => {
-      const dayActivities = allPlannedActivities.items.filter((activity) => {
-        const activityDate = normalizeDate(new Date(activity.scheduled_date));
-        return activityDate.getTime() === normalizeDate(weekDate).getTime();
-      });
-
-      if (dayActivities.length === 0) {
-        return { completed: false, type: "rest", count: 0 };
-      }
-
-      const completed = dayActivities.every((a) => isActivityCompleted(a));
-      const type =
-        dayActivities[0]?.activity_plan?.activity_category || "other";
-      return { completed, type, count: dayActivities.length };
-    });
-  }, [allPlannedActivities, weekDates]);
 
   // Calculate adherence rate from status.weekProgress
   const adherenceRate = useMemo(() => {
@@ -322,39 +317,34 @@ function PlanScreen() {
   const upcomingActivities = useMemo(() => {
     if (!allPlannedActivities?.items) return [];
 
-    const today = normalizeDate(new Date());
-    const futureDays: { date: Date; activities: any[] }[] = [];
+    const today = new Date().toISOString().split("T")[0]!;
+    const futureDays: { date: string; activities: any[] }[] = [];
 
     // Get next 4 days
     for (let i = 1; i <= 4; i++) {
-      const futureDate = new Date(today);
+      const futureDate = new Date();
       futureDate.setDate(futureDate.getDate() + i);
-      const normalized = normalizeDate(futureDate);
+      const futureDateStr = futureDate.toISOString().split("T")[0]!;
 
       const activities = allPlannedActivities.items.filter((activity) => {
-        const activityDate = normalizeDate(new Date(activity.scheduled_date));
-        return activityDate.getTime() === normalized.getTime();
+        return activity.scheduled_date === futureDateStr;
       });
 
       if (activities.length > 0) {
-        futureDays.push({ date: normalized, activities });
+        futureDays.push({ date: futureDateStr, activities });
       }
     }
 
     return futureDays.slice(0, 3); // Limit to 3 days
   }, [allPlannedActivities]);
 
-  // Navigation handlers
-  const handlePreviousWeek = () => {
-    setWeekOffset((prev) => prev - 1);
+  // Calendar handlers
+  const handleDayPress = (day: any) => {
+    setSelectedDate(day.dateString);
   };
 
-  const handleNextWeek = () => {
-    setWeekOffset((prev) => prev + 1);
-  };
-
-  const handleSelectDay = (index: number) => {
-    setSelectedDate(weekDates[index]);
+  const handleMonthChange = (month: any) => {
+    setCurrentMonth(month.dateString);
   };
 
   const handleSelectPlannedActivity = (id: string) => {
@@ -384,27 +374,6 @@ function PlanScreen() {
 
   const handleViewTrainingPlan = () => {
     router.push(ROUTES.PLAN.TRAINING_PLAN.INDEX);
-  };
-
-  const handleOpenAdjustSheet = () => {
-    router.push(ROUTES.PLAN.TRAINING_PLAN.ADJUST);
-  };
-
-  const handleDismissSuggestion = async () => {
-    if (!smartSuggestion) return;
-
-    try {
-      await AsyncStorage.setItem(
-        "dismissedSuggestion",
-        JSON.stringify({
-          reason: smartSuggestion.reason,
-          timestamp: Date.now(),
-        }),
-      );
-      setDismissedSuggestion(smartSuggestion.reason);
-    } catch (error) {
-      console.error("Failed to dismiss suggestion:", error);
-    }
   };
 
   // Calculate plan progress if we have a plan with target date
@@ -457,8 +426,6 @@ function PlanScreen() {
       refetchPlan(),
       refetchStatus(),
       refetchActivities(),
-      refetchWeekCount(),
-      refetchWeeklyTotals(),
       refetchFitnessHistory(),
     ]);
     setRefreshing(false);
@@ -487,15 +454,6 @@ function PlanScreen() {
         }
       >
         <View className="px-4 py-4">
-          {/* Smart Suggestion Alert */}
-          {shouldShowAlert && plan && (
-            <TrainingPlanAdjustmentAlert
-              suggestion={smartSuggestion}
-              onPress={handleOpenAdjustSheet}
-              onDismiss={handleDismissSuggestion}
-            />
-          )}
-
           {/* 1. Active Plan Summary or Placeholder */}
           <View className="mb-4">
             {plan && planProgress ? (
@@ -555,11 +513,42 @@ function PlanScreen() {
 
                   {/* Progress Bar */}
                   {planProgress.progress > 0 && (
-                    <View className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+                    <View className="w-full bg-muted rounded-full h-1.5 overflow-hidden mb-3">
                       <View
                         className="bg-primary h-full rounded-full"
                         style={{ width: `${planProgress.progress}%` }}
                       />
+                    </View>
+                  )}
+
+                  {/* Fitness Progress Chart */}
+                  {fitnessHistory && fitnessHistory.length > 0 && (
+                    <View className="mb-3">
+                      <FitnessProgressCard
+                        currentCTL={currentCTL}
+                        projectedCTL={idealCTLToday}
+                        goalCTL={goalMetrics?.targetCTL}
+                        trendData={fitnessChartData}
+                        idealTrendData={idealChartData}
+                        behindSchedule={behindSchedule}
+                        onPress={() =>
+                          router.push(ROUTES.PLAN.TRAINING_PLAN.INDEX)
+                        }
+                      />
+                      {!idealCurveData && (
+                        <TouchableOpacity
+                          onPress={() =>
+                            router.push(ROUTES.PLAN.TRAINING_PLAN.SETTINGS)
+                          }
+                          className="mt-2 bg-orange-500/10 border border-orange-500/30 rounded-lg p-3"
+                          activeOpacity={0.7}
+                        >
+                          <Text className="text-xs font-medium text-orange-600 text-center">
+                            Add periodization to see fitness projection • Tap to
+                            configure
+                          </Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                   )}
                 </TouchableOpacity>
@@ -570,7 +559,7 @@ function PlanScreen() {
                     onPress={() =>
                       router.push(ROUTES.PLAN.TRAINING_PLAN.SETTINGS)
                     }
-                    className="flex-1 flex-row items-center justify-center py-3 border-r border-border"
+                    className="flex-1 flex-row items-center justify-center py-3"
                     activeOpacity={0.7}
                   >
                     <Icon
@@ -580,47 +569,6 @@ function PlanScreen() {
                     />
                     <Text className="text-xs font-medium text-primary">
                       Settings
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => router.push(ROUTES.PLAN.TRAINING_PLAN.LIST)}
-                    className="flex-1 flex-row items-center justify-center py-3 border-r border-border"
-                    activeOpacity={0.7}
-                  >
-                    <Icon as={List} size={16} className="text-primary mr-1.5" />
-                    <Text className="text-xs font-medium text-primary">
-                      Switch
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={handleOpenAdjustSheet}
-                    className="flex-1 flex-row items-center justify-center py-3 border-r border-border relative"
-                    activeOpacity={0.7}
-                  >
-                    <Icon
-                      as={Sliders}
-                      size={16}
-                      className="text-primary mr-1.5"
-                    />
-                    <Text className="text-xs font-medium text-primary">
-                      Adjust
-                    </Text>
-                    {shouldShowAlert && (
-                      <View className="absolute top-2 right-2 w-2 h-2 bg-destructive rounded-full" />
-                    )}
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => router.push(ROUTES.WORKOUTS_REORDER)}
-                    className="flex-1 flex-row items-center justify-center py-3"
-                    activeOpacity={0.7}
-                  >
-                    <Icon
-                      as={Shuffle}
-                      size={16}
-                      className="text-primary mr-1.5"
-                    />
-                    <Text className="text-xs font-medium text-primary">
-                      Reorder
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -655,74 +603,45 @@ function PlanScreen() {
             )}
           </View>
 
-          {/* 2. Fitness Progress Card */}
-          {plan && fitnessHistory && fitnessHistory.length > 0 && (
-            <View className="mb-4">
-              <Text className="text-sm font-semibold text-muted-foreground mb-2">
-                Fitness Progress
-              </Text>
-              <FitnessProgressCard
-                currentCTL={currentCTL}
-                projectedCTL={idealCTLToday}
-                goalCTL={goalMetrics?.targetCTL}
-                trendData={fitnessChartData}
-                idealTrendData={idealChartData}
-                behindSchedule={behindSchedule}
-                onPress={() => router.push(ROUTES.PLAN.TRAINING_PLAN.INDEX)}
-              />
-              {!idealCurveData && (
-                <TouchableOpacity
-                  onPress={() =>
-                    router.push(ROUTES.PLAN.TRAINING_PLAN.SETTINGS)
-                  }
-                  className="mt-2 bg-orange-500/10 border border-orange-500/30 rounded-lg p-3"
-                  activeOpacity={0.7}
-                >
-                  <Text className="text-xs font-medium text-orange-600 text-center">
-                    Add periodization to see fitness projection • Tap to
-                    configure
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
-
-          {/* 3. This Week Card */}
-          {weeklyTotals && (
-            <View className="mb-4">
-              <Text className="text-sm font-semibold text-muted-foreground mb-2">
-                This Week
-              </Text>
-              <WeeklySnapshot
-                distance={parseFloat(
-                  (weeklyTotals.distance * 0.621371).toFixed(1),
-                )}
-                workouts={weeklyTotals.count}
-                totalTSS={Math.round(status?.weekProgress?.completedTSS || 0)}
-                plannedTSS={status?.weekProgress?.plannedTSS}
-                plannedWorkouts={status?.weekProgress?.totalPlannedActivities}
-                onPress={() => setTrainingStatusModalVisible(true)}
-              />
-            </View>
-          )}
-
-          {/* 4. Week Strip with Day Selector */}
+          {/* Calendar View */}
           <View className="mb-6">
-            <WeekStrip
-              weekDates={weekDates}
-              weekActivities={weekActivities}
-              selectedDate={selectedDate}
-              onSelectDay={handleSelectDay}
-              onPreviousWeek={handlePreviousWeek}
-              onNextWeek={handleNextWeek}
+            <Calendar
+              current={currentMonth}
+              onDayPress={handleDayPress}
+              onMonthChange={handleMonthChange}
+              markingType={"multi-dot"}
+              markedDates={markedDates}
+              theme={{
+                calendarBackground: isDark ? "#0a0a0a" : "#ffffff",
+                textSectionTitleColor: isDark ? "#a3a3a3" : "#737373",
+                selectedDayBackgroundColor: isDark ? "#fafafa" : "#171717",
+                selectedDayTextColor: isDark ? "#171717" : "#fafafa",
+                todayTextColor: isDark ? "#fafafa" : "#171717",
+                dayTextColor: isDark ? "#fafafa" : "#0a0a0a",
+                textDisabledColor: isDark ? "#404040" : "#e5e5e5",
+                dotColor: isDark ? "#fafafa" : "#171717",
+                selectedDotColor: isDark ? "#171717" : "#fafafa",
+                arrowColor: isDark ? "#fafafa" : "#171717",
+                monthTextColor: isDark ? "#fafafa" : "#0a0a0a",
+                indicatorColor: isDark ? "#fafafa" : "#171717",
+                textDayFontFamily: "System",
+                textMonthFontFamily: "System",
+                textDayHeaderFontFamily: "System",
+                textDayFontWeight: "400",
+                textMonthFontWeight: "600",
+                textDayHeaderFontWeight: "600",
+                textDayFontSize: 14,
+                textMonthFontSize: 16,
+                textDayHeaderFontSize: 12,
+              }}
             />
           </View>
 
-          {/* 5. Selected Day Activities */}
+          {/* Selected Day Activities */}
           <View className="mb-6">
             {/* Date Label */}
             <Text className="text-lg font-semibold mb-4">
-              {format(selectedDate, "EEEE, MMM d")}
+              {format(new Date(selectedDate), "EEEE, MMM d")}
             </Text>
 
             {/* Hero Content (Scenarios A, B, C, or D) */}
@@ -736,7 +655,7 @@ function PlanScreen() {
               // Scenario A or B: Single Activity - Hero Card
               <View>
                 <ActivityPlanCard
-                  plannedActivity={selectedDayActivities[0]}
+                  plannedActivity={selectedDayActivities[0] as any}
                   onPress={() =>
                     handleSelectPlannedActivity(selectedDayActivities[0].id)
                   }
@@ -768,7 +687,7 @@ function PlanScreen() {
                 {selectedDayActivities.map((activity, index) => (
                   <View key={activity.id}>
                     <ActivityPlanCard
-                      plannedActivity={activity}
+                      plannedActivity={activity as any}
                       onPress={() => handleSelectPlannedActivity(activity.id)}
                       variant={index === 0 ? "default" : "compact"}
                       showScheduleInfo={false}
@@ -810,7 +729,7 @@ function PlanScreen() {
                     <View className="flex-row items-center justify-between">
                       <View className="flex-1">
                         <Text className="text-sm font-semibold mb-1">
-                          {format(date, "EEE")}
+                          {format(new Date(date), "EEE")}
                         </Text>
                         <Text className="text-xs text-muted-foreground">
                           {activities[0]?.activity_plan?.name ||
@@ -829,17 +748,6 @@ function PlanScreen() {
                 ))}
               </View>
             </View>
-          )}
-
-          {/* 7. THE LEDGER (Footer - Collapsible Insight) */}
-          {weeklyTotals && (
-            <WeeklyLedger
-              totalDistance={weeklyTotals.distance}
-              totalTime={weeklyTotals.time}
-              activityCount={weeklyTotals.count}
-              unit="mi"
-              defaultCollapsed={true}
-            />
           )}
         </View>
       </ScrollView>

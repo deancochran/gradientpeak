@@ -3,6 +3,7 @@ import {
   type IntervalV2,
   type IntervalStepV2,
 } from "@repo/core/schemas/activity_plan_v2";
+import { randomUUID } from "expo-crypto";
 import { create } from "zustand";
 
 interface ActivityPlanCreationState {
@@ -132,11 +133,11 @@ export const useActivityPlanCreationStore = create<ActivityPlanCreationState>(
         // Create a deep copy with new IDs
         const copiedInterval: IntervalV2 = {
           ...interval,
-          id: crypto.randomUUID(),
+          id: randomUUID(),
           name: `${interval.name} (Copy)`,
           steps: interval.steps.map((step) => ({
             ...step,
-            id: crypto.randomUUID(),
+            id: randomUUID(),
           })),
         };
 
@@ -216,7 +217,7 @@ export const useActivityPlanCreationStore = create<ActivityPlanCreationState>(
         // Create a copy with new ID
         const copiedStep: IntervalStepV2 = {
           ...step,
-          id: crypto.randomUUID(),
+          id: randomUUID(),
           name: `${step.name} (Copy)`,
         };
 

@@ -388,6 +388,38 @@ export const integrationsRouter = createTRPCRouter({
 
         return status;
       }),
+
+    // Test sync with detailed diagnostics
+    testSync: protectedProcedure
+      .input(
+        z.object({
+          plannedActivityId: z.string().uuid(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        const syncService = new WahooSyncService(ctx.supabase);
+
+        console.log(
+          `[Wahoo Test Sync] Starting test sync for planned activity: ${input.plannedActivityId}`,
+        );
+
+        const result = await syncService.syncPlannedActivity(
+          input.plannedActivityId,
+          ctx.session.user.id,
+        );
+
+        console.log("[Wahoo Test Sync] Sync result:", result);
+
+        // Return detailed result including warnings
+        return {
+          success: result.success,
+          action: result.action,
+          workoutId: result.workoutId,
+          error: result.error,
+          warnings: result.warnings,
+          timestamp: new Date().toISOString(),
+        };
+      }),
   }),
 });
 

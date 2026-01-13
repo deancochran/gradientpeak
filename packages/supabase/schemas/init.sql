@@ -231,7 +231,8 @@ create table if not exists public.planned_activities (
     id uuid primary key default uuid_generate_v4(),
     idx serial unique not null,
     profile_id uuid not null references public.profiles(id) on delete cascade,
-    activity_plan_id uuid not null references public.activity_plans(id) on delete cascade,
+    activity_plan_id uuid references public.activity_plans(id) on delete set null,
+    training_plan_id uuid references public.training_plans(id) on delete cascade,
     scheduled_date date not null,
     notes text,
     created_at timestamptz not null default now(),
@@ -244,11 +245,17 @@ create index if not exists idx_planned_activities_profile_id
 create index if not exists idx_planned_activities_activity_plan_id
     on public.planned_activities(activity_plan_id);
 
+create index if not exists idx_planned_activities_training_plan_id
+    on public.planned_activities(training_plan_id);
+
 create index if not exists idx_planned_activities_scheduled_date
     on public.planned_activities(scheduled_date);
 
 create index if not exists idx_planned_activities_plan_date
     on public.planned_activities(activity_plan_id, scheduled_date);
+
+create index if not exists idx_planned_activities_training_plan_date
+    on public.planned_activities(training_plan_id, scheduled_date);
 
 create trigger update_planned_activities_updated_at
     before update on public.planned_activities
@@ -497,9 +504,9 @@ create table if not exists public.activity_streams (
     activity_id uuid not null references public.activities(id) on delete cascade,
     type activity_metric not null,
     data_type activity_metric_data_type not null,
-    -- compressed payloads
-    compressed_values bytea not null,
-    compressed_timestamps bytea not null,
+    -- compressed payloads (base64-encoded gzipped data)
+    compressed_values text not null,
+    compressed_timestamps text not null,
     sample_count integer not null check (sample_count > 0),
     original_size integer not null check (original_size >= 0),
     -- stats

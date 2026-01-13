@@ -4,6 +4,7 @@
     "appVersionSource": "remote"
   },
   "build": {
+    "requireCommit": true,
     "development": {
       "developmentClient": true,
       "distribution": "internal",

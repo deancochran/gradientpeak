@@ -1,7 +1,3 @@
-import {
-  AdvancedConfigSheet,
-  AdvancedConfigData,
-} from "@/components/training-plan/AdvancedConfigSheet";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
@@ -18,8 +14,8 @@ import {
   AlertCircle,
   Edit3,
   Save,
-  Settings2,
   Trash2,
+  Settings2,
 } from "lucide-react-native";
 import React, { useState } from "react";
 import {
@@ -29,6 +25,7 @@ import {
   Platform,
   ScrollView,
   View,
+  TouchableOpacity,
 } from "react-native";
 
 export default function TrainingPlanSettings() {
@@ -52,11 +49,21 @@ export default function TrainingPlanSettings() {
 
   // UI state
   const [isEditingBasic, setIsEditingBasic] = useState(false);
-  const [showAdvancedConfig, setShowAdvancedConfig] = useState(false);
+  const [isEditingStructure, setIsEditingStructure] = useState(false);
 
   // Basic info edit state
   const [editedName, setEditedName] = useState("");
   const [editedDescription, setEditedDescription] = useState("");
+
+  // Structure edit state
+  const [editedWeeklyTSSMin, setEditedWeeklyTSSMin] = useState("");
+  const [editedWeeklyTSSMax, setEditedWeeklyTSSMax] = useState("");
+  const [editedActivitiesPerWeek, setEditedActivitiesPerWeek] = useState("");
+  const [editedMaxConsecutiveDays, setEditedMaxConsecutiveDays] = useState("");
+  const [editedMinRestDays, setEditedMinRestDays] = useState("");
+  const [editedStartingCTL, setEditedStartingCTL] = useState("");
+  const [editedTargetCTL, setEditedTargetCTL] = useState("");
+  const [editedTargetDate, setEditedTargetDate] = useState("");
 
   // Initialize edit fields when plan loads
   React.useEffect(() => {
@@ -66,13 +73,35 @@ export default function TrainingPlanSettings() {
     }
   }, [plan, isEditingBasic]);
 
+  // Initialize structure fields when plan loads
+  React.useEffect(() => {
+    if (plan && !isEditingStructure) {
+      const structure = plan.structure as any;
+      setEditedWeeklyTSSMin(String(structure?.target_weekly_tss_min || ""));
+      setEditedWeeklyTSSMax(String(structure?.target_weekly_tss_max || ""));
+      setEditedActivitiesPerWeek(
+        String(structure?.target_activities_per_week || ""),
+      );
+      setEditedMaxConsecutiveDays(
+        String(structure?.max_consecutive_days || ""),
+      );
+      setEditedMinRestDays(String(structure?.min_rest_days_per_week || ""));
+      setEditedStartingCTL(
+        String(structure?.periodization_template?.starting_ctl || ""),
+      );
+      setEditedTargetCTL(
+        String(structure?.periodization_template?.target_ctl || ""),
+      );
+      setEditedTargetDate(structure?.periodization_template?.target_date || "");
+    }
+  }, [plan, isEditingStructure]);
+
   // Update mutation
   const updateMutation = useReliableMutation(trpc.trainingPlans.update, {
     invalidate: [utils.trainingPlans],
     onSuccess: () => {
       Alert.alert("Success", "Training plan updated successfully");
       setIsEditingBasic(false);
-      setShowAdvancedConfig(false);
       refetchPlan();
     },
     onError: (error) => {
@@ -112,24 +141,100 @@ export default function TrainingPlanSettings() {
     });
   };
 
-  // Handle save advanced config
-  const handleSaveAdvancedConfig = async (data: AdvancedConfigData) => {
+  // Handle save structure
+  const handleSaveStructure = async () => {
     if (!plan) return;
 
-    const structure = plan.structure as any;
+    // Validate inputs
+    const weeklyTSSMin = parseInt(editedWeeklyTSSMin);
+    const weeklyTSSMax = parseInt(editedWeeklyTSSMax);
+    const activitiesPerWeek = parseInt(editedActivitiesPerWeek);
+    const maxConsecutiveDays = parseInt(editedMaxConsecutiveDays);
+    const minRestDays = parseInt(editedMinRestDays);
+
+    if (isNaN(weeklyTSSMin) || weeklyTSSMin < 0) {
+      Alert.alert(
+        "Invalid Input",
+        "Minimum weekly TSS must be a positive number",
+      );
+      return;
+    }
+    if (isNaN(weeklyTSSMax) || weeklyTSSMax < weeklyTSSMin) {
+      Alert.alert(
+        "Invalid Input",
+        "Maximum weekly TSS must be greater than or equal to minimum",
+      );
+      return;
+    }
+    if (
+      isNaN(activitiesPerWeek) ||
+      activitiesPerWeek < 1 ||
+      activitiesPerWeek > 7
+    ) {
+      Alert.alert(
+        "Invalid Input",
+        "Activities per week must be between 1 and 7",
+      );
+      return;
+    }
+    if (
+      isNaN(maxConsecutiveDays) ||
+      maxConsecutiveDays < 1 ||
+      maxConsecutiveDays > 7
+    ) {
+      Alert.alert(
+        "Invalid Input",
+        "Max consecutive days must be between 1 and 7",
+      );
+      return;
+    }
+    if (isNaN(minRestDays) || minRestDays < 0 || minRestDays > 7) {
+      Alert.alert("Invalid Input", "Min rest days must be between 0 and 7");
+      return;
+    }
+
+    // Get current structure and update it
+    const currentStructure = plan.structure as any;
+    const updatedStructure = {
+      ...currentStructure,
+      target_weekly_tss_min: weeklyTSSMin,
+      target_weekly_tss_max: weeklyTSSMax,
+      target_activities_per_week: activitiesPerWeek,
+      max_consecutive_days: maxConsecutiveDays,
+      min_rest_days_per_week: minRestDays,
+    };
+
+    // Update periodization if fields are provided
+    if (editedStartingCTL || editedTargetCTL || editedTargetDate) {
+      const startingCTL = parseInt(editedStartingCTL);
+      const targetCTL = parseInt(editedTargetCTL);
+
+      if (editedStartingCTL && (isNaN(startingCTL) || startingCTL < 0)) {
+        Alert.alert("Invalid Input", "Starting CTL must be a positive number");
+        return;
+      }
+      if (editedTargetCTL && (isNaN(targetCTL) || targetCTL < 0)) {
+        Alert.alert("Invalid Input", "Target CTL must be a positive number");
+        return;
+      }
+      if (editedTargetDate && new Date(editedTargetDate) <= new Date()) {
+        Alert.alert("Invalid Input", "Target date must be in the future");
+        return;
+      }
+
+      updatedStructure.periodization_template = {
+        ...currentStructure.periodization_template,
+        ...(editedStartingCTL && { starting_ctl: startingCTL }),
+        ...(editedTargetCTL && { target_ctl: targetCTL }),
+        ...(editedTargetDate && { target_date: editedTargetDate }),
+      };
+    }
 
     await updateMutation.mutateAsync({
       id: plan.id,
-      structure: {
-        ...structure,
-        target_weekly_tss_min: data.target_weekly_tss_min,
-        target_weekly_tss_max: data.target_weekly_tss_max,
-        target_activities_per_week: data.target_activities_per_week,
-        max_consecutive_days: data.max_consecutive_days,
-        min_rest_days_per_week: data.min_rest_days_per_week,
-        periodization_template: data.periodization_template,
-      },
+      structure: updatedStructure,
     });
+    setIsEditingStructure(false);
   };
 
   // Handle activate/deactivate
@@ -164,7 +269,7 @@ export default function TrainingPlanSettings() {
 
     Alert.alert(
       "Delete Training Plan?",
-      "This action cannot be undone. All scheduled activities will remain but won't be linked to a plan.",
+      "This action cannot be undone. All planned activities associated with this training plan will also be deleted.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -184,6 +289,30 @@ export default function TrainingPlanSettings() {
     if (plan) {
       setEditedName(plan.name);
       setEditedDescription(plan.description || "");
+    }
+  };
+
+  // Handle cancel structure edit
+  const handleCancelStructureEdit = () => {
+    setIsEditingStructure(false);
+    if (plan) {
+      const structure = plan.structure as any;
+      setEditedWeeklyTSSMin(String(structure?.target_weekly_tss_min || ""));
+      setEditedWeeklyTSSMax(String(structure?.target_weekly_tss_max || ""));
+      setEditedActivitiesPerWeek(
+        String(structure?.target_activities_per_week || ""),
+      );
+      setEditedMaxConsecutiveDays(
+        String(structure?.max_consecutive_days || ""),
+      );
+      setEditedMinRestDays(String(structure?.min_rest_days_per_week || ""));
+      setEditedStartingCTL(
+        String(structure?.periodization_template?.starting_ctl || ""),
+      );
+      setEditedTargetCTL(
+        String(structure?.periodization_template?.target_ctl || ""),
+      );
+      setEditedTargetDate(structure?.periodization_template?.target_date || "");
     }
   };
 
@@ -368,70 +497,202 @@ export default function TrainingPlanSettings() {
             </CardContent>
           </Card>
 
-          {/* Advanced Training Configuration Card */}
-          <Card className="border-primary/30">
+          {/* Training Plan Structure Card */}
+          <Card>
             <CardHeader>
-              <CardTitle>Training Configuration</CardTitle>
+              <View className="flex-row items-center justify-between">
+                <CardTitle>Training Plan Structure</CardTitle>
+                {!isEditingStructure && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onPress={() => setIsEditingStructure(true)}
+                  >
+                    <Icon as={Edit3} size={16} className="text-primary" />
+                  </Button>
+                )}
+              </View>
             </CardHeader>
             <CardContent>
               <View className="gap-4">
-                <Text className="text-sm text-muted-foreground">
-                  Configure weekly targets, recovery rules, and periodization
-                  settings to customize your training plan.
-                </Text>
-
-                {/* Quick preview of current settings */}
-                <View className="gap-2 p-3 bg-muted/50 rounded-lg">
-                  <View className="flex-row justify-between">
-                    <Text className="text-sm text-muted-foreground">
-                      Weekly TSS:
+                {/* Weekly TSS Range */}
+                <View>
+                  <Label>Weekly TSS Range</Label>
+                  {isEditingStructure ? (
+                    <View className="flex-row gap-2">
+                      <View className="flex-1">
+                        <Input
+                          value={editedWeeklyTSSMin}
+                          onChangeText={setEditedWeeklyTSSMin}
+                          placeholder="Min"
+                          keyboardType="numeric"
+                        />
+                      </View>
+                      <View className="flex-1">
+                        <Input
+                          value={editedWeeklyTSSMax}
+                          onChangeText={setEditedWeeklyTSSMax}
+                          placeholder="Max"
+                          keyboardType="numeric"
+                        />
+                      </View>
+                    </View>
+                  ) : (
+                    <Text className="text-base">
+                      {(plan.structure as any)?.target_weekly_tss_min || 0} -{" "}
+                      {(plan.structure as any)?.target_weekly_tss_max || 0}
                     </Text>
-                    <Text className="text-sm font-medium">
-                      {structure.target_weekly_tss_min} -{" "}
-                      {structure.target_weekly_tss_max}
-                    </Text>
-                  </View>
-                  <View className="flex-row justify-between">
-                    <Text className="text-sm text-muted-foreground">
-                      Activities/week:
-                    </Text>
-                    <Text className="text-sm font-medium">
-                      {structure.target_activities_per_week}
-                    </Text>
-                  </View>
-                  <View className="flex-row justify-between">
-                    <Text className="text-sm text-muted-foreground">
-                      Rest days/week:
-                    </Text>
-                    <Text className="text-sm font-medium">
-                      {structure.min_rest_days_per_week}
-                    </Text>
-                  </View>
-                  <View className="flex-row justify-between">
-                    <Text className="text-sm text-muted-foreground">
-                      Periodization:
-                    </Text>
-                    <Text className="text-sm font-medium">
-                      {structure.periodization_template
-                        ? "Enabled"
-                        : "Disabled"}
-                    </Text>
-                  </View>
+                  )}
                 </View>
 
-                <Button
-                  onPress={() => setShowAdvancedConfig(true)}
-                  className="flex-row gap-2"
-                >
-                  <Icon
-                    as={Settings2}
-                    size={18}
-                    className="text-primary-foreground"
-                  />
-                  <Text className="text-primary-foreground font-semibold">
-                    Advanced Configuration
-                  </Text>
-                </Button>
+                {/* Activities per Week */}
+                <View>
+                  <Label>Activities per Week</Label>
+                  {isEditingStructure ? (
+                    <Input
+                      value={editedActivitiesPerWeek}
+                      onChangeText={setEditedActivitiesPerWeek}
+                      placeholder="Enter number"
+                      keyboardType="numeric"
+                    />
+                  ) : (
+                    <Text className="text-base">
+                      {(plan.structure as any)?.target_activities_per_week || 0}
+                    </Text>
+                  )}
+                </View>
+
+                {/* Max Consecutive Days */}
+                <View>
+                  <Label>Max Consecutive Training Days</Label>
+                  {isEditingStructure ? (
+                    <Input
+                      value={editedMaxConsecutiveDays}
+                      onChangeText={setEditedMaxConsecutiveDays}
+                      placeholder="Enter number"
+                      keyboardType="numeric"
+                    />
+                  ) : (
+                    <Text className="text-base">
+                      {(plan.structure as any)?.max_consecutive_days || 0}
+                    </Text>
+                  )}
+                </View>
+
+                {/* Min Rest Days */}
+                <View>
+                  <Label>Min Rest Days per Week</Label>
+                  {isEditingStructure ? (
+                    <Input
+                      value={editedMinRestDays}
+                      onChangeText={setEditedMinRestDays}
+                      placeholder="Enter number"
+                      keyboardType="numeric"
+                    />
+                  ) : (
+                    <Text className="text-base">
+                      {(plan.structure as any)?.min_rest_days_per_week || 0}
+                    </Text>
+                  )}
+                </View>
+
+                <View className="h-px bg-border my-2" />
+
+                {/* Periodization Section */}
+                <Text className="text-sm font-semibold text-muted-foreground">
+                  Periodization (Optional)
+                </Text>
+
+                {/* Starting CTL */}
+                <View>
+                  <Label>Starting CTL</Label>
+                  {isEditingStructure ? (
+                    <Input
+                      value={editedStartingCTL}
+                      onChangeText={setEditedStartingCTL}
+                      placeholder="Enter starting CTL"
+                      keyboardType="numeric"
+                    />
+                  ) : (
+                    <Text className="text-base">
+                      {(plan.structure as any)?.periodization_template
+                        ?.starting_ctl || "Not set"}
+                    </Text>
+                  )}
+                </View>
+
+                {/* Target CTL */}
+                <View>
+                  <Label>Target CTL</Label>
+                  {isEditingStructure ? (
+                    <Input
+                      value={editedTargetCTL}
+                      onChangeText={setEditedTargetCTL}
+                      placeholder="Enter target CTL"
+                      keyboardType="numeric"
+                    />
+                  ) : (
+                    <Text className="text-base">
+                      {(plan.structure as any)?.periodization_template
+                        ?.target_ctl || "Not set"}
+                    </Text>
+                  )}
+                </View>
+
+                {/* Target Date */}
+                <View>
+                  <Label>Target Date</Label>
+                  {isEditingStructure ? (
+                    <Input
+                      value={editedTargetDate}
+                      onChangeText={setEditedTargetDate}
+                      placeholder="YYYY-MM-DD"
+                    />
+                  ) : (
+                    <Text className="text-base">
+                      {(plan.structure as any)?.periodization_template
+                        ?.target_date
+                        ? new Date(
+                            (plan.structure as any).periodization_template
+                              .target_date,
+                          ).toLocaleDateString()
+                        : "Not set"}
+                    </Text>
+                  )}
+                </View>
+
+                {/* Save/Cancel buttons */}
+                {isEditingStructure && (
+                  <View className="flex-row gap-3 mt-2">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onPress={handleCancelStructureEdit}
+                    >
+                      <Text className="text-foreground">Cancel</Text>
+                    </Button>
+                    <Button
+                      className="flex-1"
+                      onPress={handleSaveStructure}
+                      disabled={updateMutation.isPending}
+                    >
+                      {updateMutation.isPending ? (
+                        <ActivityIndicator size="small" color="white" />
+                      ) : (
+                        <>
+                          <Icon
+                            as={Save}
+                            size={18}
+                            className="text-primary-foreground mr-2"
+                          />
+                          <Text className="text-primary-foreground font-semibold">
+                            Save
+                          </Text>
+                        </>
+                      )}
+                    </Button>
+                  </View>
+                )}
               </View>
             </CardContent>
           </Card>
@@ -444,9 +705,9 @@ export default function TrainingPlanSettings() {
             <CardContent>
               <View className="gap-3">
                 <Text className="text-sm text-muted-foreground mb-2">
-                  Deleting your plan will remove all training structure.
-                  Scheduled activities will remain but won't be linked to a
-                  plan.
+                  Deleting your training plan will permanently remove all
+                  training structure and all associated planned activities. This
+                  action cannot be undone.
                 </Text>
                 <Button
                   variant="destructive"
@@ -469,22 +730,6 @@ export default function TrainingPlanSettings() {
           </Card>
         </View>
       </ScrollView>
-
-      {/* Advanced Config Sheet */}
-      <AdvancedConfigSheet
-        visible={showAdvancedConfig}
-        onClose={() => setShowAdvancedConfig(false)}
-        initialData={{
-          target_weekly_tss_min: structure.target_weekly_tss_min,
-          target_weekly_tss_max: structure.target_weekly_tss_max,
-          target_activities_per_week: structure.target_activities_per_week,
-          max_consecutive_days: structure.max_consecutive_days,
-          min_rest_days_per_week: structure.min_rest_days_per_week,
-          periodization_template: structure.periodization_template,
-        }}
-        onSave={handleSaveAdvancedConfig}
-        isSaving={updateMutation.isPending}
-      />
     </KeyboardAvoidingView>
   );
 }
