@@ -27,31 +27,15 @@ Ensure required dependencies are installed before starting implementation.
 
 ### 0.1 Dependency Installation
 
-- [ ] Install `@gorhom/bottom-sheet` v4+ in mobile package
+- [ ] Verify `@gorhom/bottom-sheet` v4+ in mobile package
 - [ ] Verify `react-native-reanimated` v3+ is installed
 - [ ] Verify `react-native-gesture-handler` v2+ is installed
-- [ ] Run `npm install` or equivalent package manager command
-- [ ] Verify TypeScript with `tsc --noEmit` passes
 
 ---
 
 ## Phase 1: Database Schema Changes
 
 **Description:** Ensure database schema supports all required recording features. If no schema changes are needed, skip to Phase 2.
-
-### 1.1 Review Existing Schema
-
-- [ ] Review `packages/supabase/schemas/init.sql` for activity recording tables
-- [ ] Check if `activities`, `activity_plans`, `planned_activities`, `routes` tables support current features
-- [ ] Verify sensor data storage schema is adequate
-- [ ] Verify FTMS data storage schema is adequate
-
-### 1.2 Schema Migrations (if needed)
-
-- [ ] Create migration file if changes needed: `packages/supabase/migrations/YYYYMMDD_recording_updates.sql`
-- [ ] Test migration locally
-- [ ] Update `packages/supabase/database.types.ts` with new types
-- [ ] Run `tsc --noEmit` to verify type changes
 
 ---
 
