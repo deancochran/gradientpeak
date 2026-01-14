@@ -326,30 +326,6 @@ function RecordScreen() {
     router.push("/record/submit");
   }, [finish, router]);
 
-  // Handle discard action - cancel recording and go back
-  const handleDiscard = useCallback(() => {
-    console.log("[RecordModal] Discard clicked, cancelling recording");
-
-    Alert.alert(
-      "Discard Recording?",
-      "Are you sure you want to discard this recording? This cannot be undone.",
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "Discard",
-          style: "destructive",
-          onPress: () => {
-            // TODO: Add service.discard() method when available
-            console.log("[RecordModal] Recording discarded");
-            router.back();
-          },
-        },
-      ],
-    );
-  }, [router]);
 
   // Handle lap action
   const handleLap = useCallback(() => {
@@ -388,7 +364,7 @@ function RecordScreen() {
   const needsActivitySelection = !activityCategory;
 
   return (
-    <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
+    <View className="flex-1 bg-background">
       {/* Floating Close Button (only shows before recording starts) */}
       {state === "pending" && (
         <View
@@ -428,7 +404,7 @@ function RecordScreen() {
           return null;
 
         return (
-          <View className="bg-yellow-500/20 px-4 py-2 border-b border-yellow-500/40">
+          <View className="bg-yellow-500/20 px-4 py-2 border-b border-yellow-500/40" style={{ marginTop: insets.top }}>
             <View className="flex-row items-center gap-2">
               <Icon as={AlertTriangle} size={16} className="text-yellow-600" />
               <Text className="text-xs text-yellow-600 font-medium">
@@ -473,7 +449,7 @@ function RecordScreen() {
         }
 
         return (
-          <View className="bg-primary/10 px-4 py-2 border-b border-primary/20">
+          <View className="bg-primary/10 px-4 py-2 border-b border-primary/20" style={{ marginTop: insets.top }}>
             <View className="flex-row items-center gap-2">
               <Icon as={Zap} size={16} className="text-primary" />
               <Text className="text-xs text-primary font-medium">
@@ -494,27 +470,29 @@ function RecordScreen() {
         );
       })()}
 
-      {/* Recording Zones - Vertical 3-zone stack */}
-      <ScrollView className="flex-1" bounces={false}>
-        <RecordingZones
+      {/* Zones Container - Takes remaining space above footer */}
+      <View className="flex-1" style={{ paddingTop: insets.top }}>
+        <ScrollView className="flex-1" bounces={false}>
+          <RecordingZones
+            service={service}
+            category={activityCategory}
+            location={activityLocation}
+            hasPlan={plan.hasPlan}
+            hasRoute={hasRoute}
+          />
+        </ScrollView>
+
+        {/* Focused Zone Overlay - Renders inside zones container */}
+        <ZoneFocusOverlay
           service={service}
           category={activityCategory}
           location={activityLocation}
           hasPlan={plan.hasPlan}
           hasRoute={hasRoute}
         />
-      </ScrollView>
+      </View>
 
-      {/* Focused Zone Overlay - Renders outside ScrollView */}
-      <ZoneFocusOverlay
-        service={service}
-        category={activityCategory}
-        location={activityLocation}
-        hasPlan={plan.hasPlan}
-        hasRoute={hasRoute}
-      />
-
-      {/* Recording Footer - Bottom Sheet */}
+      {/* Recording Footer - Bottom Sheet (positioned at bottom) */}
       <RecordingFooter
         service={service}
         recordingState={mapServiceStateToRecordingState(state)}
@@ -527,7 +505,6 @@ function RecordScreen() {
         onResume={resume}
         onLap={handleLap}
         onFinish={handleFinish}
-        onDiscard={handleDiscard}
       />
     </View>
   );

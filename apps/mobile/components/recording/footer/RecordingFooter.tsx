@@ -2,11 +2,19 @@
  * Recording Footer
  *
  * Main bottom sheet component that orchestrates the footer UI.
- * Uses @gorhom/bottom-sheet with 2 snap points: [120, '60%']
+ * Uses @gorhom/bottom-sheet with 2 snap points: [90, '60%']
  *
  * States:
- * - Collapsed (120px): Recording controls visible
+ * - Collapsed (90px): Recording controls only (minimal, clean)
  * - Expanded (60% screen): Full configuration grid
+ *
+ * Layering Strategy:
+ * - Uses containerStyle with very high zIndex (999999) to ensure always on top
+ * - Focused zones have no z-index, so they stay below bottom sheet naturally
+ *
+ * Independent Operation:
+ * - Zones and bottom sheet can be focused/expanded independently
+ * - No coordination - they don't minimize each other
  *
  * Animation: damping: 80, stiffness: 500, mass: 0.3
  * Swipe-down disabled: enablePanDownToClose={false}
@@ -39,7 +47,6 @@ export interface RecordingFooterProps {
   onResume: () => void;
   onLap: () => void;
   onFinish: () => void;
-  onDiscard: () => void;
 }
 
 export function RecordingFooter({
@@ -54,23 +61,18 @@ export function RecordingFooter({
   onResume,
   onLap,
   onFinish,
-  onDiscard,
 }: RecordingFooterProps) {
-  // Focus mode context for coordination with zones
-  const { focusState, focusFooter, clearFocus, isAnyZoneFocused } =
-    useFocusMode();
+  // Focus mode context
+  const { focusState, focusFooter, clearFocus } = useFocusMode();
 
   // Bottom sheet ref
   const bottomSheetRef = useRef<BottomSheet>(null);
 
-  // Snap points: collapsed (120px) and expanded (60% screen)
-  const snapPoints = useMemo(() => [120, "60%"], []);
+  // Snap points: collapsed (90px - just controls) and expanded (60% screen)
+  const snapPoints = useMemo(() => [90, "60%"], []);
 
   // Track current snap index for conditional rendering
   const [currentSnapIndex, setCurrentSnapIndex] = React.useState(0);
-
-  // Track if we're in the middle of a coordinated animation
-  const [isCoordinating, setIsCoordinating] = React.useState(false);
 
   // Backdrop component for tap-outside-to-collapse
   const renderBackdrop = useCallback(
@@ -103,23 +105,12 @@ export function RecordingFooter({
     [focusFooter, clearFocus, focusState],
   );
 
-  // Listen for zone focus changes - collapse footer if a zone is focused
-  useEffect(() => {
-    if (
-      isAnyZoneFocused() &&
-      currentSnapIndex === 1 &&
-      !isCoordinating
-    ) {
-      // A zone was focused while footer is expanded
-      // Collapse the footer
-      setIsCoordinating(true);
-      bottomSheetRef.current?.snapToIndex(0);
-      // Reset coordinating flag after animation
-      setTimeout(() => setIsCoordinating(false), 300);
-    }
-    // IMPORTANT: Do not include isCoordinating in deps to prevent infinite loop
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusState, currentSnapIndex, isAnyZoneFocused]);
+  // Debug logging
+  React.useEffect(() => {
+    console.log("[RecordingFooter] Mounted with state:", recordingState);
+    console.log("[RecordingFooter] Snap points:", snapPoints);
+    console.log("[RecordingFooter] Current snap index:", currentSnapIndex);
+  }, [recordingState, snapPoints, currentSnapIndex]);
 
   return (
     <BottomSheet
@@ -134,10 +125,15 @@ export function RecordingFooter({
         stiffness: 500,
         mass: 0.3,
       }}
-      style={{ zIndex: 10 }}
+      enableDynamicSizing={false}
+      handleIndicatorStyle={{ backgroundColor: "#888" }}
+      containerStyle={{
+        zIndex: 999999,
+      }}
     >
       <View className="flex-1 bg-background">
-        {currentSnapIndex === 0 ? (
+        {/* Always render both states to avoid render lag, use display style to show/hide */}
+        <View style={{ display: currentSnapIndex === 0 ? "flex" : "none" }}>
           <FooterCollapsed
             service={service}
             recordingState={recordingState}
@@ -147,9 +143,10 @@ export function RecordingFooter({
             onResume={onResume}
             onLap={onLap}
             onFinish={onFinish}
-            onDiscard={onDiscard}
           />
-        ) : (
+        </View>
+
+        <View style={{ display: currentSnapIndex === 1 ? "flex" : "none", flex: 1 }}>
           <FooterExpanded
             service={service}
             recordingState={recordingState}
@@ -162,7 +159,7 @@ export function RecordingFooter({
             onLap={onLap}
             onFinish={onFinish}
           />
-        )}
+        </View>
       </View>
     </BottomSheet>
   );

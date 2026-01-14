@@ -6,8 +6,10 @@
  *
  * Button Layouts:
  * - not_started: Full-width "Start" button (green, 56px)
- * - recording: Pause | Lap | Finish (3-column, 48px)
- * - paused: Resume | Discard | Finish (3-column, 48px)
+ * - recording: Pause | Lap (2-column, 48px)
+ * - paused: Resume | Finish (2-column, 48px)
+ *
+ * Note: Discard is only available on the submit page, not during recording
  */
 
 import React from "react";
@@ -22,7 +24,7 @@ export interface RecordingControlsProps {
   onResume: () => void;
   onLap: () => void;
   onFinish: () => void;
-  onDiscard: () => void;
+  onDiscard?: () => void; // Optional - not used in recording controls
 }
 
 export function RecordingControls({
@@ -46,7 +48,7 @@ export function RecordingControls({
     );
   }
 
-  // Recording: Show Pause | Lap | Finish
+  // Recording: Show Pause | Lap (no Finish while recording)
   if (recordingState === "recording") {
     return (
       <View className="flex-row gap-3">
@@ -59,22 +61,15 @@ export function RecordingControls({
 
         <Pressable
           onPress={onLap}
-          className="h-12 w-12 bg-blue-600 rounded-full items-center justify-center active:opacity-80"
+          className="flex-1 h-12 bg-blue-600 rounded-lg items-center justify-center active:opacity-80"
         >
           <Text className="text-white text-base font-semibold">Lap</Text>
-        </Pressable>
-
-        <Pressable
-          onPress={onFinish}
-          className="flex-1 h-12 bg-red-600 rounded-lg items-center justify-center active:opacity-80"
-        >
-          <Text className="text-white text-base font-semibold">Finish</Text>
         </Pressable>
       </View>
     );
   }
 
-  // Paused: Show Resume | Discard | Finish
+  // Paused: Show Resume | Finish (Discard is on submit page)
   if (recordingState === "paused") {
     return (
       <View className="flex-row gap-3">
@@ -83,13 +78,6 @@ export function RecordingControls({
           className="flex-1 h-12 bg-green-600 rounded-lg items-center justify-center active:opacity-80"
         >
           <Text className="text-white text-base font-semibold">Resume</Text>
-        </Pressable>
-
-        <Pressable
-          onPress={onDiscard}
-          className="flex-1 h-12 bg-gray-600 rounded-lg items-center justify-center active:opacity-80"
-        >
-          <Text className="text-white text-base font-semibold">Discard</Text>
         </Pressable>
 
         <Pressable

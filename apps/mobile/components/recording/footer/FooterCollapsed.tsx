@@ -2,7 +2,7 @@
  * Footer Collapsed State
  *
  * Displays recording controls based on current recording state.
- * Height: 120px
+ * Clean, minimal design - controls only.
  *
  * States:
  * - not_started: "Start" button (full-width green)
@@ -11,14 +11,9 @@
  */
 
 import React from "react";
-import { Pressable, View } from "react-native";
-import { router } from "expo-router";
-import { Text } from "@/components/ui/text";
-import { Icon } from "@/components/ui/icon";
-import { Bluetooth } from "lucide-react-native";
+import { View } from "react-native";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import type { PublicActivityCategory, RecordingState } from "@repo/core";
-import { useSensors } from "@/lib/hooks/useActivityRecorder";
 
 import { RecordingControls } from "./RecordingControls";
 
@@ -31,7 +26,6 @@ export interface FooterCollapsedProps {
   onResume: () => void;
   onLap: () => void;
   onFinish: () => void;
-  onDiscard: () => void;
 }
 
 export function FooterCollapsed({
@@ -43,39 +37,16 @@ export function FooterCollapsed({
   onResume,
   onLap,
   onFinish,
-  onDiscard,
 }: FooterCollapsedProps) {
-  const { sensors, count } = useSensors(service);
-
-  // Calculate total sensor count (hardcoded max for now)
-  // TODO: Make this dynamic based on available sensor types
-  const totalSensors = 5;
-
-  const handleSensorBadgePress = () => {
-    router.push("/record/sensors");
-  };
+  // Debug logging
+  React.useEffect(() => {
+    console.log("[FooterCollapsed] Rendered with state:", recordingState);
+    console.log("[FooterCollapsed] Category:", category);
+  }, [recordingState, category]);
 
   return (
-    <View className="h-[120px] px-4 pt-4 pb-6 bg-background border-t border-border">
-      {/* Activity Type Label with Sensor Badge */}
-      <View className="flex-row items-center justify-between mb-3">
-        <Text className="text-xs text-muted-foreground capitalize">
-          {category.replace("_", " ")} Activity
-        </Text>
-
-        {/* Sensor Badge */}
-        <Pressable
-          onPress={handleSensorBadgePress}
-          className="flex-row items-center gap-1.5 px-2 py-1 rounded bg-card border border-border"
-        >
-          <Icon as={Bluetooth} size={12} className="text-muted-foreground" />
-          <Text className="text-xs font-medium">
-            {count}/{totalSensors}
-          </Text>
-        </Pressable>
-      </View>
-
-      {/* Recording Controls */}
+    <View className="px-4 py-4 bg-background border-t border-border">
+      {/* Recording Controls - Centered and clean */}
       <RecordingControls
         recordingState={recordingState}
         onStart={onStart}
@@ -83,7 +54,6 @@ export function FooterCollapsed({
         onResume={onResume}
         onLap={onLap}
         onFinish={onFinish}
-        onDiscard={onDiscard}
       />
     </View>
   );

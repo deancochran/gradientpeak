@@ -4,11 +4,15 @@
  * Always visible. Shows live metrics during recording.
  * Displays "--" for unavailable sensor data.
  *
+ * Layout:
+ * - Normal state: flex-1 (fills proportional share of available space)
+ * - Focused state: absolute positioned overlay (no z-index needed)
+ *
  * Focus Mode:
- * - Tap to expand metrics to fill screen (except footer)
- * - Spring animation ~400ms (damping: 0.8, stiffness: 100)
+ * - Tap to expand metrics to fill screen (minus footer)
  * - Minimize button (X icon) in top-right corner when focused
- * - Mutually exclusive with other zones and footer expansion
+ * - Operates independently of bottom sheet expansion
+ * - Bottom sheet uses containerStyle.zIndex to stay on top
  * - Enlarged metrics for better visibility when focused
  */
 
@@ -16,12 +20,7 @@ import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Pressable, View, useWindowDimensions } from "react-native";
-import React, { useEffect } from "react";
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-} from "react-native-reanimated";
+import React from "react";
 import { X } from "lucide-react-native";
 import { useFocusMode } from "@/lib/contexts/FocusModeContext";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -36,22 +35,8 @@ import type { IntensityTargetV2 } from "@repo/core";
 
 export interface ZoneCProps {
   service: ActivityRecorderService | null;
+  isFocused: boolean; // Whether this zone is currently focused
 }
-
-/**
- * Spring animation config for focus mode
- * ~400ms duration with natural spring feel
- */
-const SPRING_CONFIG = {
-  damping: 0.8 * 100, // Convert 0.8 to scale (80)
-  stiffness: 100,
-  mass: 1,
-};
-
-/**
- * Normal height when not focused (in pixels)
- */
-const NORMAL_HEIGHT = 200; // Metrics grid needs a bit more space
 
 /**
  * Metric type definition
@@ -140,8 +125,8 @@ function formatTime(seconds: number): string {
   return `${minutes}:${secs.toString().padStart(2, "0")}`;
 }
 
-export function ZoneC({ service }: ZoneCProps) {
-  const { focusState, focusZoneC, clearFocus } = useFocusMode();
+export function ZoneC({ service, isFocused }: ZoneCProps) {
+  const { focusZoneC, clearFocus } = useFocusMode();
   const insets = useSafeAreaInsets();
   const { height: screenHeight } = useWindowDimensions();
   const plan = usePlan(service);
@@ -194,67 +179,34 @@ export function ZoneC({ service }: ZoneCProps) {
     [currentReadings, sessionStats, movingTime],
   );
 
-  // Handle tap with coordination (collapse footer first if needed)
-  const handleTapToExpand = React.useCallback(async () => {
-    if (focusState === "footer") {
-      // Footer is expanded, clear it first
-      clearFocus();
-      // Wait 200ms for footer to collapse
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
-    // Now focus this zone
+  // Handle tap to expand
+  const handleTapToExpand = React.useCallback(() => {
     focusZoneC();
-  }, [focusState, clearFocus, focusZoneC]);
+  }, [focusZoneC]);
 
   // Calculate focused height (full screen minus top inset and footer height)
-  // Footer collapsed height is 120px, so focused zone should be: screenHeight - topInset - 120
-  const focusedHeight = screenHeight - insets.top - 120;
-
-  // Animated height value
-  const height = useSharedValue(NORMAL_HEIGHT);
-
-  // Update height when focus state changes
-  useEffect(() => {
-    if (focusState === "zone-c") {
-      // Expand to focused height
-      height.value = withSpring(focusedHeight, SPRING_CONFIG);
-    } else {
-      // Collapse to normal height
-      height.value = withSpring(NORMAL_HEIGHT, SPRING_CONFIG);
-    }
-    // IMPORTANT: SharedValues (height) don't need to be in deps
-    // focusedHeight changes would cause unnecessary re-runs
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusState]);
-
-  // Animated style for height transition
-  const animatedStyle = useAnimatedStyle(() => {
-    return {
-      height: height.value,
-    };
-  });
-
-  const isFocused = focusState === "zone-c";
-
-  // TODO: Connect to live metrics from service
-  // For now, show placeholder metrics grid
+  // Footer collapsed height is 90px
+  const focusedHeight = screenHeight - insets.top - 90;
 
   return (
-    <Animated.View
-      style={[
-        animatedStyle,
-        {
-          // Use absolute positioning when focused to overlay other zones
-          ...(isFocused && {
-            position: "absolute",
-            top: insets.top,
-            left: 0,
-            right: 0,
-            zIndex: 20, // Above zones (z-1) and footer (z-10)
-          }),
-        },
-      ]}
-      className="bg-card rounded-lg border border-border overflow-hidden"
+    <View
+      style={
+        isFocused
+          ? {
+              // Focused: absolute positioning to overlay other zones
+              position: "absolute",
+              top: insets.top,
+              left: 0,
+              right: 0,
+              height: focusedHeight,
+            }
+          : undefined
+      }
+      className={
+        isFocused
+          ? "bg-card rounded-lg border border-border overflow-hidden"
+          : "flex-1 bg-card rounded-lg border border-border overflow-hidden"
+      }
     >
       {/* Tap to expand (only when not focused) */}
       {!isFocused && (
@@ -317,7 +269,7 @@ export function ZoneC({ service }: ZoneCProps) {
           </View>
         </>
       )}
-    </Animated.View>
+    </View>
   );
 }
 

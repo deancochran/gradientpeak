@@ -2,12 +2,18 @@
  * Recording Zones Container
  *
  * Orchestrates the 3-zone vertical stack with conditional rendering.
- * Handles zone mount/unmount animations.
+ * Uses flexbox to distribute available space proportionally among visible zones.
  *
  * Zone Rendering Logic:
  * - Zone A: Outdoor (always) | Indoor + Route (conditional)
  * - Zone B: Has Plan (conditional)
  * - Zone C: Always visible
+ *
+ * Layout Strategy:
+ * - All zones use flex-1 to proportionally fill available vertical space
+ * - No hard-coded heights - responsive sizing via flexbox
+ * - Gaps managed via Tailwind gap-4 utility
+ * - When focused, zones overlay with absolute positioning
  */
 
 import { View } from "react-native";
@@ -28,12 +34,6 @@ import { ZoneA } from "./ZoneA";
 import { ZoneB } from "./ZoneB";
 import { ZoneC } from "./ZoneC";
 import { RecordingErrorBoundary } from "../RecordingErrorBoundary";
-
-/**
- * Normal height when zones are not focused (in pixels)
- * Must match NORMAL_HEIGHT in individual zone components
- */
-const NORMAL_HEIGHT = 256; // h-64 = 16rem = 256px
 
 export interface RecordingZonesProps {
   service: ActivityRecorderService | null;
@@ -82,80 +82,44 @@ export function RecordingZones({
     return { showZoneA, showZoneB, showZoneC };
   }, [location, hasPlan, hasRoute]);
 
-  // Render zones in normal flow (minimized or when no focus)
-  const renderZoneInFlow = (
-    zoneId: "zone-a" | "zone-b" | "zone-c",
-    content: React.ReactNode,
-  ) => {
-    const isFocused = focusState === zoneId;
-
-    // When focused, render placeholder to maintain space
-    // When not focused, render normally
-    return (
-      <ZoneWrapper isZoneFocused={isFocused}>
-        {!isFocused && content}
-      </ZoneWrapper>
-    );
-  };
-
-  // Render focused zone in overlay (outside normal flow)
-  const renderFocusedZoneOverlay = () => {
-    if (focusState === "none" || focusState === "footer") return null;
-
-    let zoneContent = null;
-
-    if (focusState === "zone-a" && showZoneA) {
-      zoneContent = (
-        <RecordingErrorBoundary componentName="Zone A">
-          <ZoneA service={service} location={location} hasRoute={hasRoute} />
-        </RecordingErrorBoundary>
-      );
-    } else if (focusState === "zone-b" && showZoneB) {
-      zoneContent = (
-        <RecordingErrorBoundary componentName="Zone B">
-          <ZoneB service={service} hasPlan={hasPlan} />
-        </RecordingErrorBoundary>
-      );
-    } else if (focusState === "zone-c" && showZoneC) {
-      zoneContent = (
-        <RecordingErrorBoundary componentName="Zone C">
-          <ZoneC service={service} />
-        </RecordingErrorBoundary>
-      );
-    }
-
-    return zoneContent;
-  };
-
   return (
-    /* Normal zone stack - zones render here when not focused */
+    /* Zone stack - flexbox layout distributes space proportionally */
     <View className="flex-1 px-4 pt-4 gap-4">
       {/* Zone A: Context Layer (Map/Route) */}
-      {showZoneA && renderZoneInFlow(
-        "zone-a",
+      {showZoneA && (
         <AnimatedZoneContainer show={showZoneA}>
           <RecordingErrorBoundary componentName="Zone A">
-            <ZoneA service={service} location={location} hasRoute={hasRoute} />
+            <ZoneA
+              service={service}
+              location={location}
+              hasRoute={hasRoute}
+              isFocused={focusState === "zone-a"}
+            />
           </RecordingErrorBoundary>
         </AnimatedZoneContainer>
       )}
 
       {/* Zone B: Guidance Layer (Plan/Intervals) */}
-      {showZoneB && renderZoneInFlow(
-        "zone-b",
+      {showZoneB && (
         <AnimatedZoneContainer show={showZoneB}>
           <RecordingErrorBoundary componentName="Zone B">
-            <ZoneB service={service} hasPlan={hasPlan} />
+            <ZoneB
+              service={service}
+              hasPlan={hasPlan}
+              isFocused={focusState === "zone-b"}
+            />
           </RecordingErrorBoundary>
         </AnimatedZoneContainer>
       )}
 
       {/* Zone C: Data Layer (Metrics) - Always visible */}
-      {showZoneC && renderZoneInFlow(
-        "zone-c",
+      {showZoneC && (
         <AnimatedZoneContainer show={showZoneC}>
           <RecordingErrorBoundary componentName="Zone C">
-            <ZoneC service={service} />
+            <ZoneC
+              service={service}
+              isFocused={focusState === "zone-c"}
+            />
           </RecordingErrorBoundary>
         </AnimatedZoneContainer>
       )}
@@ -196,19 +160,24 @@ export function ZoneFocusOverlay({
   if (focusState === "zone-a" && showZoneA) {
     zoneContent = (
       <RecordingErrorBoundary componentName="Zone A">
-        <ZoneA service={service} location={location} hasRoute={hasRoute} />
+        <ZoneA
+          service={service}
+          location={location}
+          hasRoute={hasRoute}
+          isFocused={true}
+        />
       </RecordingErrorBoundary>
     );
   } else if (focusState === "zone-b" && showZoneB) {
     zoneContent = (
       <RecordingErrorBoundary componentName="Zone B">
-        <ZoneB service={service} hasPlan={hasPlan} />
+        <ZoneB service={service} hasPlan={hasPlan} isFocused={true} />
       </RecordingErrorBoundary>
     );
   } else if (focusState === "zone-c" && showZoneC) {
     zoneContent = (
       <RecordingErrorBoundary componentName="Zone C">
-        <ZoneC service={service} />
+        <ZoneC service={service} isFocused={true} />
       </RecordingErrorBoundary>
     );
   }
@@ -217,27 +186,9 @@ export function ZoneFocusOverlay({
 }
 
 /**
- * Zone Wrapper
- * Maintains space in the layout when a zone becomes absolutely positioned during focus
- */
-interface ZoneWrapperProps {
-  isZoneFocused: boolean;
-  children: React.ReactNode;
-}
-
-function ZoneWrapper({ isZoneFocused, children }: ZoneWrapperProps) {
-  // When zone is focused (absolute positioned), maintain minimum height to prevent layout collapse
-  // When not focused, allow natural height
-  return (
-    <View style={{ minHeight: isZoneFocused ? NORMAL_HEIGHT : undefined }}>
-      {children}
-    </View>
-  );
-}
-
-/**
  * Animated container for zone mount/unmount transitions
  * Animation: withTiming() 300ms ease-out
+ * Uses flex-1 to allow zones to proportionally fill available space
  */
 interface AnimatedZoneContainerProps {
   show: boolean;
@@ -272,5 +223,9 @@ function AnimatedZoneContainer({
     };
   });
 
-  return <Animated.View style={animatedStyle}>{children}</Animated.View>;
+  return (
+    <Animated.View style={animatedStyle} className="flex-1">
+      {children}
+    </Animated.View>
+  );
 }

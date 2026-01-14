@@ -12,14 +12,12 @@ import {
   requestPermission,
   type AllPermissionsStatus,
 } from "@/lib/services/permissions-check";
-import { useRouter } from "expo-router";
-import { Battery, Bluetooth, RefreshCw, X, Zap } from "lucide-react-native";
+import { Battery, Bluetooth, RefreshCw, Zap } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, View } from "react-native";
 import type { Device } from "react-native-ble-plx";
 
 function SensorsScreen() {
-  const router = useRouter();
 
   const service = useSharedActivityRecorder();
   const { sensors: connectedSensors } = useSensors(service);
@@ -178,22 +176,23 @@ function SensorsScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      {/* Header */}
-      <View className="bg-background border-b border-border px-4 py-3 flex-row items-center justify-between">
-        <Button size="icon" variant="ghost" onPress={() => router.back()}>
-          <Icon as={X} size={24} />
-        </Button>
-        <Text className="text-lg font-semibold">Sensors</Text>
+      {/* Scan Control Banner */}
+      <View className="bg-card border-b border-border px-4 py-3">
         <Button
-          size="icon"
-          variant="ghost"
           onPress={isScanning ? handleStopScan : handleStartScan}
           disabled={!bluetoothGranted}
+          className="w-full"
         >
           {isScanning ? (
-            <ActivityIndicator size="small" />
+            <View className="flex-row items-center gap-2">
+              <ActivityIndicator size="small" color="white" />
+              <Text className="text-primary-foreground">Scanning...</Text>
+            </View>
           ) : (
-            <Icon as={RefreshCw} size={20} />
+            <View className="flex-row items-center gap-2">
+              <Icon as={RefreshCw} size={16} className="text-primary-foreground" />
+              <Text className="text-primary-foreground">Scan for Sensors</Text>
+            </View>
           )}
         </Button>
       </View>

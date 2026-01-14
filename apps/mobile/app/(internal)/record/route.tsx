@@ -6,12 +6,14 @@
  *
  * Features:
  * - Display list of available routes
+ * - Search and filter functionality
  * - "Detach Route" option if route currently attached
+ * - Preview/Confirmation workflow before attaching
  * - Standard back navigation via header
  * - Recording continues in background
  */
 
-import React, { useCallback } from "react";
+import React, { useCallback, useState } from "react";
 import {
   View,
   ScrollView,
@@ -20,29 +22,43 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { Text } from "@/components/ui/text";
+import { Input } from "@/components/ui/input";
 import { Icon } from "@/components/ui/icon";
-import { Check } from "lucide-react-native";
+import { Check, Search } from "lucide-react-native";
 import { trpc } from "@/lib/trpc";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { useRecordingConfiguration } from "@/lib/hooks/useRecordingConfiguration";
+import type { PublicActivityCategory } from "@repo/core";
+
+const CATEGORY_OPTIONS: { value: PublicActivityCategory | "all"; label: string }[] = [
+  { value: "all", label: "All Categories" },
+  { value: "run", label: "Run" },
+  { value: "bike", label: "Bike" },
+  { value: "swim", label: "Swim" },
+  { value: "strength", label: "Strength" },
+  { value: "other", label: "Other" },
+];
 
 export default function RoutePickerPage() {
   const service = useSharedActivityRecorder();
   const { attachRoute, detachRoute } = useRecordingConfiguration(service);
 
-  // Fetch routes (filter by current activity category)
+  // Search and filter state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<PublicActivityCategory | "all">("all");
+
+  // Fetch routes (no category filter in query since we filter client-side)
   const { data: routes, isLoading } = trpc.routes.list.useQuery({
-    activityCategory: service?.selectedActivityCategory,
-    limit: 50,
+    limit: 100,
   });
 
-  // Handle route selection
+  // Handle route selection - Navigate to preview/confirmation screen
   const handleRoutePress = useCallback(
     (routeId: string) => {
-      attachRoute(routeId);
-      router.back();
+      // Navigate to route preview screen with route ID
+      router.push(`/record/route-preview?routeId=${routeId}`);
     },
-    [attachRoute],
+    [],
   );
 
   // Handle detach route
@@ -58,9 +74,77 @@ export default function RoutePickerPage() {
   // Extract routes from paginated response
   const routesList = routes?.routes || [];
 
+  // Filter routes by search and category filter
+  const filteredRoutes = React.useMemo(() => {
+    return routesList.filter((route) => {
+      // Category filter
+      if (categoryFilter !== "all" && route.activity_category !== categoryFilter) {
+        return false;
+      }
+
+      // Search filter (searches name and description)
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
+        const name = route.name?.toLowerCase() || "";
+        const description = route.description?.toLowerCase() || "";
+
+        if (!name.includes(query) && !description.includes(query)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [routesList, searchQuery, categoryFilter]);
+
   return (
     <View className="flex-1 bg-background">
       <ScrollView className="flex-1 px-4 pt-4">
+        {/* Search Input */}
+        <View className="mb-3">
+          <View className="relative">
+            <Icon
+              as={Search}
+              size={18}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground z-10"
+              style={{ top: '50%', transform: [{ translateY: -9 }] }}
+            />
+            <Input
+              placeholder="Search routes..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              className="pl-10"
+            />
+          </View>
+        </View>
+
+        {/* Category Filter Dropdown */}
+        <View className="mb-3">
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="gap-2">
+            <View className="flex-row gap-2">
+              {CATEGORY_OPTIONS.map((option) => (
+                <Pressable
+                  key={option.value}
+                  onPress={() => setCategoryFilter(option.value)}
+                  className="px-3 py-2 rounded-full border border-border"
+                  style={{
+                    backgroundColor: categoryFilter === option.value ? "rgb(34, 197, 94)" : undefined,
+                  }}
+                >
+                  <Text
+                    className="text-sm font-medium"
+                    style={{
+                      color: categoryFilter === option.value ? "white" : undefined,
+                    }}
+                  >
+                    {option.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </ScrollView>
+        </View>
+
         {/* Loading State */}
         {isLoading && (
           <View className="items-center justify-center py-8">
@@ -91,9 +175,9 @@ export default function RoutePickerPage() {
         )}
 
         {/* Routes List */}
-        {!isLoading && routesList.length > 0 ? (
+        {!isLoading && filteredRoutes.length > 0 ? (
           <View className="gap-3 pb-6">
-            {routesList.map((route) => (
+            {filteredRoutes.map((route) => (
               <RouteListItem
                 key={route.id}
                 route={route}
@@ -106,10 +190,14 @@ export default function RoutePickerPage() {
           !isLoading && (
             <View className="items-center justify-center py-8">
               <Text className="text-sm text-muted-foreground">
-                No routes available
+                {searchQuery || categoryFilter !== "all"
+                  ? "No matching routes found"
+                  : "No routes available"}
               </Text>
               <Text className="text-xs text-muted-foreground mt-1">
-                Upload routes from the Library tab
+                {searchQuery || categoryFilter !== "all"
+                  ? "Try adjusting your search or filter"
+                  : "Upload routes from the Library tab"}
               </Text>
             </View>
           )

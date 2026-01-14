@@ -5,8 +5,12 @@
  * Height: 60% of screen
  *
  * Configuration Tiles (2-column grid):
- * - Activity: Category + Location (locked during recording)
- * - Plan: Attach/detach plan mid-workout
+ * - Activity: Category + Location selection
+ *   • Category locked if Activity Plan attached (follows plan's category)
+ *   • Location can always be changed before recording starts
+ *   • Both locked during recording
+ * - Activity Plan: Attach/detach planned activity
+ *   • Shows only activities matching selected category (if category chosen first)
  * - Route: Attach/detach route mid-workout
  * - Sensors: Navigate to /record/sensors
  * - Adjust: FTMS control (navigate to /record/ftms)
@@ -51,8 +55,14 @@ export function FooterExpanded({
   onFinish,
 }: FooterExpandedProps) {
   const handleActivityPress = () => {
-    // Activity is locked during recording
-    console.log("[FooterExpanded] Activity tile pressed (locked)");
+    // Navigate to activity selection if not recording
+    // (Category locked if plan attached, but location can still change)
+    if (recordingState === "not_started") {
+      console.log("[FooterExpanded] Navigating to activity selection");
+      router.push("/record/activity");
+    } else {
+      console.log("[FooterExpanded] Activity tile locked during recording");
+    }
   };
 
   const handlePlanPress = () => {
@@ -97,7 +107,7 @@ export function FooterExpanded({
         </Text>
 
         <View className="flex-row flex-wrap gap-3">
-          {/* Activity Tile (Locked) */}
+          {/* Activity Tile (Locked only during recording) */}
           <ConfigTile
             label="Activity"
             value={`${category.replace("_", " ")} · ${location}`}
@@ -105,10 +115,10 @@ export function FooterExpanded({
             disabled={recordingState !== "not_started"}
           />
 
-          {/* Plan Tile */}
+          {/* Activity Plan Tile */}
           <ConfigTile
-            label="Plan"
-            value={hasPlan ? "Edit Plan" : "Add Plan"}
+            label="Activity Plan"
+            value={hasPlan ? "Change Plan" : "Add Plan"}
             onPress={handlePlanPress}
           />
 

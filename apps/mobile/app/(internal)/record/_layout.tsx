@@ -49,6 +49,13 @@ export default function RecordLayout() {
           }}
         />
         <Stack.Screen
+          name="activity"
+          options={{
+            title: "Select Activity",
+            gestureEnabled: true,
+          }}
+        />
+        <Stack.Screen
           name="sensors"
           options={{
             title: "Sensors",
@@ -65,7 +72,7 @@ export default function RecordLayout() {
         <Stack.Screen
           name="plan"
           options={{
-            title: "Select Plan",
+            title: "Select Activity Plan",
             gestureEnabled: true,
           }}
         />
@@ -73,6 +80,13 @@ export default function RecordLayout() {
           name="route"
           options={{
             title: "Select Route",
+            gestureEnabled: true,
+          }}
+        />
+        <Stack.Screen
+          name="route-preview"
+          options={{
+            title: "Route Preview",
             gestureEnabled: true,
           }}
         />
