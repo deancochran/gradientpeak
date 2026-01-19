@@ -4,7 +4,7 @@ import {
   downsampleGPSRoute,
   downsampleStream,
 } from "@/lib/utils/streamSampling";
-import React, { useMemo, useRef, useEffect } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { View } from "react-native";
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
 
@@ -130,7 +130,7 @@ export function ActivityRouteMap({
   // Fit map to route on mount
   useEffect(() => {
     let isMounted = true;
-    let timeoutId: NodeJS.Timeout | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     if (processedCoordinates.length > 0 && mapRef.current) {
       timeoutId = setTimeout(() => {

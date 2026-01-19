@@ -78,7 +78,10 @@ type Action =
       activity: PublicActivitiesInsert;
       streams: Omit<PublicActivityStreamsInsert, "activity_id">[];
     }
-  | { type: "UPDATE"; updates: { name?: string; notes?: string } }
+  | {
+      type: "UPDATE";
+      updates: { name?: string; notes?: string; is_private?: boolean };
+    }
   | { type: "UPLOADING" }
   | { type: "SUCCESS" }
   | { type: "ERROR"; error: string };
@@ -308,7 +311,8 @@ function calculateActivityMetrics(
       ]
     : null;
 
-  // Build profile snapshot
+  // Build profile snapshot - ONLY performance metrics (historical data)
+  // User identity (username, avatar) should be fetched from profiles table (current data)
   const profileAge = calculateAge(metadata.profile.dob);
   const profileSnapshot: Record<string, unknown> = {};
 
@@ -433,6 +437,19 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         queryClient.invalidateQueries({
           queryKey: queryKeys.plannedActivities.weekCount(),
         });
+        // Invalidate home dashboard to update CTL/ATL/TSB and weekly stats
+        // Use predicate to invalidate all home-related queries
+        queryClient.invalidateQueries({
+          predicate: (query) =>
+            query.queryKey[0] === "home" ||
+            (Array.isArray(query.queryKey) &&
+              query.queryKey[0]?.[0] === "home"),
+        });
+
+        // Invalidate trends to update charts with new activity data
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.trends.all(),
+        });
 
         // Set the new activity in cache
         if (data.id) {
@@ -440,7 +457,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         }
 
         console.log(
-          "[useActivitySubmission] Activity uploaded and cache invalidated",
+          "[useActivitySubmission] Activity uploaded, cache invalidated, and fitness metrics will be recalculated",
         );
       },
       onError: (error) => {

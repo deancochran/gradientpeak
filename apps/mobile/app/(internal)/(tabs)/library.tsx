@@ -1,5 +1,6 @@
 import { AppHeader, ListSkeleton } from "@/components/shared";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { PastActivityCard } from "@/components/PastActivityCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
@@ -27,6 +28,7 @@ import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Pressable,
   RefreshControl,
   ScrollView,
   TextInput,
@@ -49,44 +51,20 @@ const RESOURCE_OPTIONS = [
 ];
 
 // Helper functions extracted outside component to prevent hook violations
-const getActivityIcon = (type: string): string => {
-  const icons: Record<string, string> = {
-    run: "🏃",
-    bike: "🚴",
-    swim: "🏊",
-    strength: "💪",
-    other: "🎯",
-  };
-  return icons[type] || "🎯";
-};
 
-const formatDuration = (seconds: number): string => {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`;
-  }
-  return `${minutes}m`;
-};
-
-const formatDistance = (meters: number): string => {
-  const km = meters / 1000;
-  return `${km.toFixed(2)} km`;
-};
-
-// Separate memoized item components
-const TrainingPlanItem = React.memo(
-  ({
-    item,
-    onPress,
-    onActivate,
-  }: {
-    item: any;
-    onPress: () => void;
-    onActivate?: (id: string) => void;
-  }) => (
+// Item rendering components
+function TrainingPlanItem({
+  item,
+  onPress,
+  onActivate,
+}: {
+  item: any;
+  onPress: () => void;
+  onActivate?: (id: string) => void;
+}) {
+  return (
     <Card className={item.is_active ? "border-primary" : ""}>
-      <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+      <Pressable onPress={onPress}>
         <CardContent className="p-4">
           <View className="flex-row items-start justify-between mb-3">
             <View className="flex-1">
@@ -129,7 +107,7 @@ const TrainingPlanItem = React.memo(
             </View>
           </View>
         </CardContent>
-      </TouchableOpacity>
+      </Pressable>
 
       {/* Action Buttons */}
       {!item.is_active && onActivate && (
@@ -146,168 +124,98 @@ const TrainingPlanItem = React.memo(
         </CardContent>
       )}
     </Card>
-  ),
-);
+  );
+}
 
-const ActivityItem = React.memo(
-  ({ item, onPress }: { item: any; onPress: () => void }) => (
+function ActivityItem({ item, onPress }: { item: any; onPress: () => void }) {
+  return <PastActivityCard activity={item} onPress={onPress} />;
+}
+
+function RouteItem({ item, onPress }: { item: any; onPress: () => void }) {
+  const coordinates = item.polyline ? decodePolyline(item.polyline) : [];
+
+  return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
       <Card>
-        <CardContent className="p-4">
-          <View className="flex-row items-center justify-between">
-            <View className="flex-1">
-              <View className="flex-row items-center gap-2 mb-2">
-                <Text className="text-2xl">{getActivityIcon(item.type)}</Text>
-                <Text
-                  className="text-lg font-semibold flex-1"
-                  numberOfLines={1}
-                >
-                  {item.name}
-                </Text>
-              </View>
-
-              <View className="flex-row items-center gap-1 mb-2">
-                <Icon
-                  as={Calendar}
-                  size={14}
-                  className="text-muted-foreground"
+        <CardContent className="p-0">
+          {coordinates.length > 0 && (
+            <View className="h-32 bg-muted overflow-hidden rounded-t-lg">
+              <MapView
+                style={{ flex: 1 }}
+                scrollEnabled={false}
+                zoomEnabled={false}
+                pitchEnabled={false}
+                rotateEnabled={false}
+                provider={PROVIDER_DEFAULT}
+                initialRegion={{
+                  latitude:
+                    coordinates[Math.floor(coordinates.length / 2)].latitude,
+                  longitude:
+                    coordinates[Math.floor(coordinates.length / 2)].longitude,
+                  latitudeDelta: 0.05,
+                  longitudeDelta: 0.05,
+                }}
+              >
+                <Polyline
+                  coordinates={coordinates}
+                  strokeColor="#3b82f6"
+                  strokeWidth={3}
+                  lineCap="round"
+                  lineJoin="round"
                 />
-                <Text className="text-sm text-muted-foreground">
-                  {format(new Date(item.started_at), "MMM d, yyyy 'at' h:mm a")}
-                </Text>
-              </View>
+              </MapView>
+            </View>
+          )}
 
-              <View className="flex-row items-center gap-4">
-                {item.distance_meters > 0 && (
-                  <Text className="text-sm font-semibold">
-                    {formatDistance(item.distance_meters)}
-                  </Text>
-                )}
-                <Text className="text-sm text-muted-foreground">
-                  {formatDuration(item.duration_seconds)}
-                </Text>
-                {item.metrics?.tss && (
-                  <Text className="text-sm font-medium text-primary">
-                    {item.metrics.tss} TSS
-                  </Text>
-                )}
-              </View>
+          <View className="p-4">
+            <View className="flex-row items-center justify-between mb-2">
+              <Text className="text-lg font-semibold flex-1" numberOfLines={1}>
+                {item.name}
+              </Text>
+              <Icon
+                as={ChevronRight}
+                size={20}
+                className="text-muted-foreground ml-2"
+              />
             </View>
 
-            <Icon
-              as={ChevronRight}
-              size={20}
-              className="text-muted-foreground ml-2"
-            />
+            {item.description && (
+              <Text
+                className="text-sm text-muted-foreground mb-3"
+                numberOfLines={2}
+              >
+                {item.description}
+              </Text>
+            )}
+
+            <View className="flex-row gap-4">
+              <View className="flex-row items-center gap-1">
+                <Icon as={MapPin} size={16} className="text-muted-foreground" />
+                <Text className="text-sm">
+                  {(item.total_distance / 1000).toFixed(1)} km
+                </Text>
+              </View>
+
+              {item.total_ascent > 0 && (
+                <View className="flex-row items-center gap-1">
+                  <Icon as={TrendingUp} size={16} className="text-green-600" />
+                  <Text className="text-sm">{item.total_ascent}m</Text>
+                </View>
+              )}
+
+              {item.total_descent > 0 && (
+                <View className="flex-row items-center gap-1">
+                  <Icon as={TrendingDown} size={16} className="text-red-600" />
+                  <Text className="text-sm">{item.total_descent}m</Text>
+                </View>
+              )}
+            </View>
           </View>
         </CardContent>
       </Card>
     </TouchableOpacity>
-  ),
-);
-
-const RouteItem = React.memo(
-  ({ item, onPress }: { item: any; onPress: () => void }) => {
-    const coordinates = item.polyline ? decodePolyline(item.polyline) : [];
-
-    return (
-      <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
-        <Card>
-          <CardContent className="p-0">
-            {coordinates.length > 0 && (
-              <View className="h-32 bg-muted overflow-hidden rounded-t-lg">
-                <MapView
-                  style={{ flex: 1 }}
-                  scrollEnabled={false}
-                  zoomEnabled={false}
-                  pitchEnabled={false}
-                  rotateEnabled={false}
-                  provider={PROVIDER_DEFAULT}
-                  initialRegion={{
-                    latitude:
-                      coordinates[Math.floor(coordinates.length / 2)].latitude,
-                    longitude:
-                      coordinates[Math.floor(coordinates.length / 2)].longitude,
-                    latitudeDelta: 0.05,
-                    longitudeDelta: 0.05,
-                  }}
-                >
-                  <Polyline
-                    coordinates={coordinates}
-                    strokeColor="#3b82f6"
-                    strokeWidth={3}
-                    lineCap="round"
-                    lineJoin="round"
-                  />
-                </MapView>
-              </View>
-            )}
-
-            <View className="p-4">
-              <View className="flex-row items-center justify-between mb-2">
-                <Text
-                  className="text-lg font-semibold flex-1"
-                  numberOfLines={1}
-                >
-                  {item.name}
-                </Text>
-                <Icon
-                  as={ChevronRight}
-                  size={20}
-                  className="text-muted-foreground ml-2"
-                />
-              </View>
-
-              {item.description && (
-                <Text
-                  className="text-sm text-muted-foreground mb-3"
-                  numberOfLines={2}
-                >
-                  {item.description}
-                </Text>
-              )}
-
-              <View className="flex-row gap-4">
-                <View className="flex-row items-center gap-1">
-                  <Icon
-                    as={MapPin}
-                    size={16}
-                    className="text-muted-foreground"
-                  />
-                  <Text className="text-sm">
-                    {(item.total_distance / 1000).toFixed(1)} km
-                  </Text>
-                </View>
-
-                {item.total_ascent > 0 && (
-                  <View className="flex-row items-center gap-1">
-                    <Icon
-                      as={TrendingUp}
-                      size={16}
-                      className="text-green-600"
-                    />
-                    <Text className="text-sm">{item.total_ascent}m</Text>
-                  </View>
-                )}
-
-                {item.total_descent > 0 && (
-                  <View className="flex-row items-center gap-1">
-                    <Icon
-                      as={TrendingDown}
-                      size={16}
-                      className="text-red-600"
-                    />
-                    <Text className="text-sm">{item.total_descent}m</Text>
-                  </View>
-                )}
-              </View>
-            </View>
-          </CardContent>
-        </Card>
-      </TouchableOpacity>
-    );
-  },
-);
+  );
+}
 
 export default function LibraryScreen() {
   const router = useRouter();
@@ -343,7 +251,7 @@ export default function LibraryScreen() {
   } = trpc.activityPlans.list.useInfiniteQuery(
     {
       includeOwnOnly: true,
-      includeSamples: false,
+      includeSystemTemplates: false,
       limit: 20,
     },
     {

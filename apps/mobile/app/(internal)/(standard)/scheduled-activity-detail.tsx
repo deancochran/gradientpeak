@@ -52,7 +52,7 @@ function PlannedActivityDetailScreen() {
       category: plannedActivity.activity_plan.activity_category,
       location: plannedActivity.activity_plan.activity_location,
       plannedActivityId: plannedActivity.id,
-      plan: plannedActivity.activity_plan,
+      plan: plannedActivity.activity_plan as any,
     };
 
     activitySelectionStore.setSelection(payload);
@@ -192,26 +192,31 @@ function PlannedActivityDetailScreen() {
                 )}
 
                 {/* Estimated metrics */}
-                {(plannedActivity.activity_plan.estimated_duration ||
-                  plannedActivity.activity_plan.estimated_tss) && (
+                {((plannedActivity.activity_plan as any).estimated_duration ||
+                  (plannedActivity.activity_plan as any).estimated_tss) && (
                   <View className="flex-row gap-4 mt-2">
-                    {plannedActivity.activity_plan.estimated_duration && (
+                    {(plannedActivity.activity_plan as any)
+                      .estimated_duration && (
                       <View>
                         <Text className="text-xs text-muted-foreground">
                           Duration
                         </Text>
                         <Text className="font-semibold">
-                          {plannedActivity.activity_plan.estimated_duration} min
+                          {
+                            (plannedActivity.activity_plan as any)
+                              .estimated_duration
+                          }{" "}
+                          min
                         </Text>
                       </View>
                     )}
-                    {plannedActivity.activity_plan.estimated_tss && (
+                    {(plannedActivity.activity_plan as any).estimated_tss && (
                       <View>
                         <Text className="text-xs text-muted-foreground">
                           TSS
                         </Text>
                         <Text className="font-semibold">
-                          {plannedActivity.activity_plan.estimated_tss}
+                          {(plannedActivity.activity_plan as any).estimated_tss}
                         </Text>
                       </View>
                     )}

@@ -12,7 +12,11 @@
  * - Simple data flow: Buffer -> Calculate -> Emit
  */
 
-import { PublicActivityLocation, PublicProfilesRow } from "@repo/core";
+import {
+  PublicActivityCategory,
+  PublicActivityLocation,
+  PublicProfilesRow
+} from "@repo/core";
 import { EventEmitter } from "expo";
 import { MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
 import { DataBuffer } from "./DataBuffer";
@@ -45,6 +49,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private metrics: LiveMetricsState;
   private isActive = false;
   private activityLocation?: PublicActivityLocation; // Track if indoor/outdoor
+  private activityCategory?: PublicActivityCategory; // Track activity type for calorie calculation
 
   // === Core Components ===
   private buffer: DataBuffer; // 60-second rolling window for calculations
@@ -114,6 +119,15 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   public setActivityLocation(location: PublicActivityLocation): void {
     this.activityLocation = location;
     console.log("[LiveMetricsManager] Activity location set to:", location);
+  }
+
+  /**
+   * Set activity category (bike, run, etc.)
+   * Used for improved calorie estimation
+   */
+  public setActivityCategory(category: PublicActivityCategory): void {
+    this.activityCategory = category;
+    console.log("[LiveMetricsManager] Activity category set to:", category);
   }
 
   /**
@@ -550,32 +564,31 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   /**
    * Calculate current speed from buffer or recent GPS data
    * Returns speed in m/s
+   *
+   * Priority: Sensor Speed > GPS Speed (if available) > Indoor estimation from power
    */
   private calculateCurrentSpeed(): number | undefined {
-    // First try to get speed from power meter or sensor
+    // First try to get speed from power meter or sensor (trainer)
     const sensorSpeed = this.buffer.getLatest("speed");
     if (sensorSpeed !== undefined) {
       return sensorSpeed;
     }
 
-    // Calculate from recent GPS data if available (for outdoor activities)
+    // Fallback to GPS speed calculation for outdoor activities
+    // This ensures we always have speed/pace data even without sensors
     if (this.activityLocation === "outdoor" && this.lastLocation) {
-      // Get last 5 seconds of location data to calculate speed
-      const recentLocations = this.buffer.getRecent("latlng", 5);
-      if (recentLocations.length >= 2) {
-        // Use the most recent speed calculation
-        // Speed = distance / time
-        const now = Date.now();
-        const timeSinceLastUpdate = now - this.lastLocation.timestamp;
-
-        // If we have recent movement (within last 3 seconds), use maxSpeed
-        if (timeSinceLastUpdate < 3000 && this.maxSpeed > 0) {
-          return this.maxSpeed;
+      // Calculate speed from recent GPS positions
+      const gpsSpeed = this.calculateGPSSpeed();
+      if (gpsSpeed !== undefined) {
+        // Update max speed from GPS when recording is active
+        if (this.isActive) {
+          this.maxSpeed = Math.max(this.maxSpeed, gpsSpeed);
         }
+        return gpsSpeed;
       }
     }
 
-    // For indoor activities, calculate from virtual distance
+    // For indoor activities, calculate from power if available
     if (this.activityLocation === "indoor" && this.lastPowerValue > 0) {
       // Estimate speed from power using the same physics model
       const powerWatts = this.lastPowerValue;
@@ -605,6 +618,110 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     }
 
     return undefined;
+  }
+
+  /**
+   * Calculate instantaneous speed from recent GPS positions
+   * Uses the last 3-5 seconds of GPS data to smooth out GPS noise
+   * Returns speed in m/s, or undefined if insufficient data
+   */
+  private calculateGPSSpeed(): number | undefined {
+    if (!this.lastLocation) return undefined;
+
+    // Get recent location readings (last 5 seconds)
+    const recentReadings = this.buffer.getRecentReadings("latlng", 5);
+
+    // Need at least 2 points to calculate speed
+    if (recentReadings.length < 2) {
+      return undefined;
+    }
+
+    // Calculate speed using last 3 seconds of movement
+    // This smooths GPS noise while being responsive
+    const cutoffTime = Date.now() - 3000; // 3 seconds ago
+    const recentPoints = recentReadings.filter(r => r.timestamp >= cutoffTime);
+
+    if (recentPoints.length < 2) {
+      // Fall back to using all recent points if not enough in last 3s
+      if (recentReadings.length >= 2) {
+        return this.computeSpeedFromPoints(recentReadings);
+      }
+      return undefined;
+    }
+
+    return this.computeSpeedFromPoints(recentPoints);
+  }
+
+  /**
+   * Compute speed from a series of GPS points
+   * Returns speed in m/s
+   */
+  private computeSpeedFromPoints(
+    points: Array<{ value: [number, number]; timestamp: number }>
+  ): number | undefined {
+    if (points.length < 2) return undefined;
+
+    // Calculate total distance and time between first and last point
+    let totalDistance = 0;
+
+    for (let i = 1; i < points.length; i++) {
+      const [lat1, lon1] = points[i - 1].value;
+      const [lat2, lon2] = points[i].value;
+
+      const distance = this.calculateDistanceFromCoords(lat1, lon1, lat2, lon2);
+
+      // Filter out unreasonable jumps (GPS noise/errors)
+      // Max reasonable speed: 20 m/s (72 km/h) for cycling
+      const timeDelta = (points[i].timestamp - points[i - 1].timestamp) / 1000;
+      if (timeDelta > 0) {
+        const segmentSpeed = distance / timeDelta;
+        if (segmentSpeed < 20) {
+          totalDistance += distance;
+        }
+      }
+    }
+
+    // Calculate time span
+    const totalTime = (points[points.length - 1].timestamp - points[0].timestamp) / 1000;
+
+    // Avoid division by zero and require reasonable time span
+    if (totalTime < 0.5) {
+      return undefined;
+    }
+
+    // Calculate average speed (m/s)
+    const speed = totalDistance / totalTime;
+
+    // Filter out unreasonable speeds
+    if (speed < 0 || speed > 20) {
+      return undefined;
+    }
+
+    return speed;
+  }
+
+  /**
+   * Calculate distance between two GPS coordinates using Haversine formula
+   * Returns distance in meters
+   */
+  private calculateDistanceFromCoords(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number,
+  ): number {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = (lat1 * Math.PI) / 180;
+    const φ2 = (lat2 * Math.PI) / 180;
+    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+    const a =
+      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c;
   }
 
   /**
@@ -822,37 +939,132 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   }
 
   /**
-   * Update calorie estimate
+   * Update calorie estimate using waterfall logic
+   * Priority: Power+HR > Power > HR+Activity > Distance+Activity > Basic fallback
    */
   private updateCalories(): void {
-    // Simple calorie estimation
-    // If we have power data, use that (most accurate)
-    if (this.metrics.avgPower > 0 && this.metrics.movingTime > 0) {
-      // 1 watt for 1 hour = 3.6 kJ
-      // 1 kJ = 0.239 kcal
+    if (this.metrics.movingTime === 0) {
+      this.metrics.calories = 0;
+      return;
+    }
+
+    const hours = this.metrics.movingTime / 3600;
+    const weight = this.profile.weight || 75; // Default 75kg
+
+    // TIER 1: Power + Heart Rate (most accurate)
+    if (this.metrics.avgPower > 0 && this.metrics.avgHeartRate > 0) {
+      // Power-based calculation with HR efficiency adjustment
+      const powerCalories = (this.metrics.avgPower * this.metrics.movingTime * 0.239) / 1000;
+
+      // HR efficiency factor: adjust based on HR intensity
+      const hrEfficiency = this.profile.threshold_hr
+        ? Math.min(1.15, 0.85 + (this.metrics.avgHeartRate / this.profile.threshold_hr) * 0.3)
+        : 1.0;
+
+      this.metrics.calories = Math.round(powerCalories * hrEfficiency);
+      return;
+    }
+
+    // TIER 2: Power only
+    if (this.metrics.avgPower > 0) {
+      // 1 watt × 1 second = 1 joule
+      // 1 kJ = 0.239 kcal (assumes ~25% efficiency)
       const kj = (this.metrics.avgPower * this.metrics.movingTime) / 1000;
       this.metrics.calories = Math.round(kj * 0.239);
+      return;
     }
-    // Otherwise use HR-based estimation if available
-    else if (
-      this.metrics.avgHeartRate > 0 &&
-      this.metrics.movingTime > 0 &&
-      this.profile.weight
-    ) {
-      // Simplified HR-based formula
-      const hours = this.metrics.movingTime / 3600;
-      const age = this.profile.age || 35;
-      const weight = this.profile.weight;
 
-      // Men: Calories = ((-55.0969 + (0.6309 x HR) + (0.1988 x W) + (0.2017 x A)) / 4.184) x T
-      // Simplified version
+    // TIER 3: Heart Rate + Activity Type
+    if (this.metrics.avgHeartRate > 0 && this.activityCategory) {
+      const age = this.profile.age || 35;
+
+      // Activity-specific MET multipliers (at moderate intensity)
+      const activityMETs: Record<string, number> = {
+        run: 9.0,        // Running at moderate pace
+        bike: 7.5,       // Cycling at moderate pace
+        swim: 7.0,       // Swimming at moderate pace
+        walk: 3.5,       // Walking
+        hike: 6.0,       // Hiking
+        row: 7.0,        // Rowing
+        ski: 7.0,        // Cross-country skiing
+        other: 6.0,      // Generic moderate activity
+      };
+
+      const baseMET = activityMETs[this.activityCategory] || 6.0;
+
+      // Adjust MET based on HR intensity
+      let intensityMultiplier = 1.0;
+      if (this.profile.threshold_hr) {
+        const hrPercent = (this.metrics.avgHeartRate / this.profile.threshold_hr) * 100;
+        if (hrPercent < 70) intensityMultiplier = 0.7;      // Easy
+        else if (hrPercent < 85) intensityMultiplier = 0.9; // Moderate
+        else if (hrPercent < 95) intensityMultiplier = 1.1; // Hard
+        else intensityMultiplier = 1.3;                     // Very Hard
+      }
+
+      const adjustedMET = baseMET * intensityMultiplier;
+
+      // Calories = MET × weight(kg) × time(hours)
+      this.metrics.calories = Math.round(adjustedMET * weight * hours);
+      return;
+    }
+
+    // TIER 4: Heart Rate only (no activity type)
+    if (this.metrics.avgHeartRate > 0) {
+      const age = this.profile.age || 35;
+
+      // Simplified HR-based formula (gender-neutral approximation)
+      // Based on ACSM equation
       this.metrics.calories = Math.round(
         ((0.6309 * this.metrics.avgHeartRate + 0.1988 * weight + 0.2017 * age) /
           4.184) *
           hours *
           60,
       );
+      return;
     }
+
+    // TIER 5: Distance + Activity Type
+    if (this.totalDistance > 0 && this.activityCategory) {
+      const distanceKm = this.totalDistance / 1000;
+
+      // Calories per km by activity type
+      const caloriesPerKm: Record<string, number> = {
+        run: weight * 1.0,     // ~1 kcal/kg/km
+        walk: weight * 0.5,    // ~0.5 kcal/kg/km
+        bike: weight * 0.35,   // ~0.35 kcal/kg/km (cycling is more efficient)
+        hike: weight * 0.6,    // ~0.6 kcal/kg/km
+        swim: weight * 1.2,    // Swimming (if distance tracked)
+        other: weight * 0.7,   // Generic
+      };
+
+      const calPerKm = caloriesPerKm[this.activityCategory] || weight * 0.7;
+      this.metrics.calories = Math.round(calPerKm * distanceKm);
+      return;
+    }
+
+    // TIER 6: Time + Activity Type fallback
+    if (this.activityCategory) {
+      // Use moderate MET values as fallback
+      const fallbackMETs: Record<string, number> = {
+        run: 8.0,
+        bike: 7.0,
+        swim: 7.0,
+        walk: 3.5,
+        hike: 6.0,
+        row: 7.0,
+        ski: 7.0,
+        other: 5.0,
+      };
+
+      const met = fallbackMETs[this.activityCategory] || 5.0;
+      this.metrics.calories = Math.round(met * weight * hours);
+      return;
+    }
+
+    // TIER 7: Basic fallback (time only, assume moderate activity)
+    // 5 METs = moderate activity
+    this.metrics.calories = Math.round(5.0 * weight * hours);
   }
 
   /**

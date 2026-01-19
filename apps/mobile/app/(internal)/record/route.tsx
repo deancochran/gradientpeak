@@ -13,24 +13,22 @@
  * - Recording continues in background
  */
 
-import React, { useCallback, useState } from "react";
-import {
-  View,
-  ScrollView,
-  Pressable,
-  ActivityIndicator,
-} from "react-native";
-import { router } from "expo-router";
-import { Text } from "@/components/ui/text";
-import { Input } from "@/components/ui/input";
 import { Icon } from "@/components/ui/icon";
-import { Check, Search } from "lucide-react-native";
-import { trpc } from "@/lib/trpc";
-import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import { Input } from "@/components/ui/input";
+import { Text } from "@/components/ui/text";
 import { useRecordingConfiguration } from "@/lib/hooks/useRecordingConfiguration";
+import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import { trpc } from "@/lib/trpc";
 import type { PublicActivityCategory } from "@repo/core";
+import { router } from "expo-router";
+import { Check, Search } from "lucide-react-native";
+import React, { useCallback, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 
-const CATEGORY_OPTIONS: { value: PublicActivityCategory | "all"; label: string }[] = [
+const CATEGORY_OPTIONS: {
+  value: PublicActivityCategory | "all";
+  label: string;
+}[] = [
   { value: "all", label: "All Categories" },
   { value: "run", label: "Run" },
   { value: "bike", label: "Bike" },
@@ -45,21 +43,25 @@ export default function RoutePickerPage() {
 
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<PublicActivityCategory | "all">("all");
+  const [categoryFilter, setCategoryFilter] = useState<
+    PublicActivityCategory | "all"
+  >("all");
 
   // Fetch routes (no category filter in query since we filter client-side)
-  const { data: routes, isLoading } = trpc.routes.list.useQuery({
-    limit: 100,
-  });
+  const { data: routes, isLoading } = trpc.routes.list.useInfiniteQuery(
+    {
+      limit: 100,
+    },
+    {
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
+    },
+  );
 
   // Handle route selection - Navigate to preview/confirmation screen
-  const handleRoutePress = useCallback(
-    (routeId: string) => {
-      // Navigate to route preview screen with route ID
-      router.push(`/record/route-preview?routeId=${routeId}`);
-    },
-    [],
-  );
+  const handleRoutePress = useCallback((routeId: string) => {
+    // Navigate to route preview screen with route ID
+    router.push(`/record/route-preview?routeId=${routeId}`);
+  }, []);
 
   // Handle detach route
   const handleDetach = useCallback(() => {
@@ -72,13 +74,16 @@ export default function RoutePickerPage() {
   const currentRouteId = null;
 
   // Extract routes from paginated response
-  const routesList = routes?.routes || [];
+  const routesList = routes?.pages.flatMap((page: any) => page.items) || [];
 
   // Filter routes by search and category filter
   const filteredRoutes = React.useMemo(() => {
-    return routesList.filter((route) => {
+    return routesList.filter((route: any) => {
       // Category filter
-      if (categoryFilter !== "all" && route.activity_category !== categoryFilter) {
+      if (
+        categoryFilter !== "all" &&
+        route.activity_category !== categoryFilter
+      ) {
         return false;
       }
 
@@ -107,7 +112,7 @@ export default function RoutePickerPage() {
               as={Search}
               size={18}
               className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground z-10"
-              style={{ top: '50%', transform: [{ translateY: -9 }] }}
+              style={{ top: "50%", transform: [{ translateY: -9 }] }}
             />
             <Input
               placeholder="Search routes..."
@@ -120,7 +125,11 @@ export default function RoutePickerPage() {
 
         {/* Category Filter Dropdown */}
         <View className="mb-3">
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="gap-2">
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            className="gap-2"
+          >
             <View className="flex-row gap-2">
               {CATEGORY_OPTIONS.map((option) => (
                 <Pressable
@@ -128,13 +137,17 @@ export default function RoutePickerPage() {
                   onPress={() => setCategoryFilter(option.value)}
                   className="px-3 py-2 rounded-full border border-border"
                   style={{
-                    backgroundColor: categoryFilter === option.value ? "rgb(34, 197, 94)" : undefined,
+                    backgroundColor:
+                      categoryFilter === option.value
+                        ? "rgb(34, 197, 94)"
+                        : undefined,
                   }}
                 >
                   <Text
                     className="text-sm font-medium"
                     style={{
-                      color: categoryFilter === option.value ? "white" : undefined,
+                      color:
+                        categoryFilter === option.value ? "white" : undefined,
                     }}
                   >
                     {option.label}
@@ -177,7 +190,7 @@ export default function RoutePickerPage() {
         {/* Routes List */}
         {!isLoading && filteredRoutes.length > 0 ? (
           <View className="gap-3 pb-6">
-            {filteredRoutes.map((route) => (
+            {filteredRoutes.map((route: any) => (
               <RouteListItem
                 key={route.id}
                 route={route}

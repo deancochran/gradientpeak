@@ -12,18 +12,18 @@
  * - Recording continues in background
  */
 
-import React, { useEffect, useState } from "react";
-import { View, ScrollView, ActivityIndicator, Alert } from "react-native";
-import { router } from "expo-router";
 import { Text } from "@/components/ui/text";
-import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { usePlan } from "@/lib/hooks/useActivityRecorder";
+import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import React, { useEffect, useState } from "react";
+import { ActivityIndicator, ScrollView, View } from "react-native";
 
 // Machine-specific UIs (to be implemented)
 import { BikeControlUI } from "@/components/recording/ftms/BikeControlUI";
+import { EllipticalControlUI } from "@/components/recording/ftms/EllipticalControlUI";
 import { RowerControlUI } from "@/components/recording/ftms/RowerControlUI";
 import { TreadmillControlUI } from "@/components/recording/ftms/TreadmillControlUI";
-import { EllipticalControlUI } from "@/components/recording/ftms/EllipticalControlUI";
+import { Button } from "@/components/ui/button";
 
 export default function FTMSControlPage() {
   const service = useSharedActivityRecorder();
@@ -32,6 +32,14 @@ export default function FTMSControlPage() {
   const [machineType, setMachineType] = useState<string | null>(null);
   const [isControlMode, setIsControlMode] = useState<"auto" | "manual">("auto");
   const [isLoading, setIsLoading] = useState(true);
+
+  // Get initial control mode from service
+  useEffect(() => {
+    if (service) {
+      const isManual = service.isManualControlActive();
+      setIsControlMode(isManual ? "manual" : "auto");
+    }
+  }, [service]);
 
   // Detect connected FTMS machine type on mount
   useEffect(() => {
@@ -111,22 +119,18 @@ export default function FTMSControlPage() {
    * Manual mode: User controls machine manually (overrides plan)
    */
   const handleToggleControlMode = () => {
+    if (!service) return;
+
     if (isControlMode === "auto") {
       // Switching to manual
-      Alert.alert(
-        "Manual Control",
-        "Plan targets will no longer be applied automatically. You will control the trainer manually.",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Enable Manual",
-            onPress: () => setIsControlMode("manual"),
-          },
-        ]
-      );
+      console.log("[FTMS Page] Switching to Manual mode");
+      setIsControlMode("manual");
+      service.setManualControlMode(true);
     } else {
-      // Switching to auto
+      // Switching to auto - reapply plan targets
+      console.log("[FTMS Page] Switching to Auto mode");
       setIsControlMode("auto");
+      service.setManualControlMode(false);
     }
   };
 
@@ -134,7 +138,9 @@ export default function FTMSControlPage() {
   if (!service) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
-        <Text className="text-muted-foreground">No recording service active</Text>
+        <Text className="text-muted-foreground">
+          No recording service active
+        </Text>
       </View>
     );
   }
@@ -176,30 +182,30 @@ export default function FTMSControlPage() {
             {machineType} Control
           </Text>
 
-          {/* Auto/Manual Mode Toggle (only when plan is active) */}
-          {plan.hasPlan && (
-            <View className="flex-row items-center justify-between bg-card p-4 rounded-lg border border-border mt-3">
-              <View className="flex-1">
-                <Text className="text-sm font-medium">
-                  {isControlMode === "auto" ? "Auto Mode" : "Manual Mode"}
-                </Text>
-                <Text className="text-xs text-muted-foreground mt-1">
-                  {isControlMode === "auto"
+          {/* Auto/Manual Mode Toggle */}
+          <View className="flex-row items-center justify-between bg-card p-4 rounded-lg border border-border mt-3">
+            <View className="flex-1">
+              <Text className="text-sm font-medium">
+                {isControlMode === "auto" ? "Auto Mode" : "Manual Mode"}
+              </Text>
+              <Text className="text-xs text-muted-foreground mt-1">
+                {isControlMode === "auto"
+                  ? plan.hasPlan
                     ? "Following plan targets automatically"
-                    : "Manual control enabled"}
-                </Text>
-              </View>
-              {/* TODO: Add Switch component when available */}
-              <View
-                onTouchEnd={handleToggleControlMode}
-                className="bg-primary px-4 py-2 rounded"
-              >
-                <Text className="text-xs text-primary-foreground">
-                  Toggle
-                </Text>
-              </View>
+                    : "Auto mode (no plan active)"
+                  : "Manual control enabled"}
+              </Text>
             </View>
-          )}
+            <Button
+              onPress={handleToggleControlMode}
+              variant="default"
+              size="sm"
+            >
+              <Text className="text-xs text-primary-foreground font-medium">
+                Switch to {isControlMode === "auto" ? "Manual" : "Auto"}
+              </Text>
+            </Button>
+          </View>
         </View>
 
         {/* Render machine-specific control UI */}

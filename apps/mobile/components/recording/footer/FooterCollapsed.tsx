@@ -12,6 +12,7 @@
 
 import React from "react";
 import { View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import type { PublicActivityCategory, RecordingState } from "@repo/core";
 
@@ -38,6 +39,8 @@ export function FooterCollapsed({
   onLap,
   onFinish,
 }: FooterCollapsedProps) {
+  const insets = useSafeAreaInsets();
+
   // Debug logging
   React.useEffect(() => {
     console.log("[FooterCollapsed] Rendered with state:", recordingState);
@@ -45,7 +48,10 @@ export function FooterCollapsed({
   }, [recordingState, category]);
 
   return (
-    <View className="px-4 py-4 bg-background border-t border-border">
+    <View
+      className="px-4 pt-6 bg-background border-t border-border"
+      style={{ paddingBottom: Math.max(24, insets.bottom + 16) }}
+    >
       {/* Recording Controls - Centered and clean */}
       <RecordingControls
         recordingState={recordingState}

@@ -13,8 +13,9 @@ import {
   TrendingDown,
   TrendingUp,
 } from "lucide-react-native";
+import React, { useEffect, useRef } from "react";
 import { Alert, ScrollView, View } from "react-native";
-import MapView, { Polyline, PROVIDER_GOOGLE } from "react-native-maps";
+import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
 
 const ACTIVITY_CATEGORY_LABELS: Record<string, string> = {
   outdoor_run: "🏃 Outdoor Run",
@@ -27,6 +28,7 @@ export default function RouteDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const utils = trpc.useUtils();
+  const mapRef = useRef<MapView>(null);
 
   const { data: route, isLoading } = trpc.routes.get.useQuery(
     { id: id! },
@@ -86,30 +88,77 @@ export default function RouteDetailScreen() {
     });
   };
 
+  // Fit map to route coordinates on mount
+  useEffect(() => {
+    if (coordinates.length > 0 && mapRef.current) {
+      const timeout = setTimeout(() => {
+        mapRef.current?.fitToCoordinates(coordinates, {
+          edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+          animated: false,
+        });
+      }, 100);
+
+      return () => clearTimeout(timeout);
+    }
+  }, [coordinates]);
+
   return (
     <View className="flex-1 bg-background">
       <ScrollView>
         {/* Map */}
         <View className="h-64 bg-muted">
-          {coordinates.length > 0 && (
+          {coordinates.length > 0 ? (
             <MapView
+              ref={mapRef}
               style={{ flex: 1 }}
-              provider={PROVIDER_GOOGLE}
+              provider={PROVIDER_DEFAULT}
               initialRegion={{
                 latitude:
-                  coordinates[Math.floor(coordinates.length / 2)].latitude,
+                  coordinates[Math.floor(coordinates.length / 2)]?.latitude || 0,
                 longitude:
-                  coordinates[Math.floor(coordinates.length / 2)].longitude,
+                  coordinates[Math.floor(coordinates.length / 2)]?.longitude ||
+                  0,
                 latitudeDelta: 0.05,
                 longitudeDelta: 0.05,
               }}
+              mapType="standard"
+              showsUserLocation={false}
+              showsMyLocationButton={false}
+              showsCompass={true}
+              showsScale={true}
+              toolbarEnabled={false}
             >
+              {/* Route Polyline */}
               <Polyline
                 coordinates={coordinates}
                 strokeColor="#f97316"
                 strokeWidth={4}
+                lineCap="round"
+                lineJoin="round"
               />
+
+              {/* Start Marker */}
+              <Marker
+                coordinate={coordinates[0]}
+                anchor={{ x: 0.5, y: 0.5 }}
+                title="Start"
+              >
+                <View className="w-3 h-3 rounded-full bg-green-500 border-2 border-white" />
+              </Marker>
+
+              {/* End Marker */}
+              <Marker
+                coordinate={coordinates[coordinates.length - 1]}
+                anchor={{ x: 0.5, y: 0.5 }}
+                title="Finish"
+              >
+                <View className="w-3 h-3 rounded-full bg-red-500 border-2 border-white" />
+              </Marker>
             </MapView>
+          ) : (
+            <View className="flex-1 items-center justify-center">
+              <Text className="text-muted-foreground">No GPS data available</Text>
+            </View>
           )}
         </View>
 

@@ -152,6 +152,18 @@ export const queryKeys = {
     all: ["profile"] as const,
     current: () => [...queryKeys.profile.all, "current"] as const,
   },
+
+  // Home dashboard query keys
+  home: {
+    all: ["home"] as const,
+    dashboard: (filters?: Record<string, unknown>) =>
+      [...queryKeys.home.all, "dashboard", filters] as const,
+  },
+
+  // Trends query keys
+  trends: {
+    all: () => ["trends"] as const,
+  },
 } as const;
 
 /**

@@ -1,4 +1,7 @@
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
+import { TouchableOpacity } from "react-native";
+import { Icon } from "@/components/ui/icon";
+import { ChevronLeft } from "lucide-react-native";
 
 /**
  * Standard Internal Pages Layout - Flat Stack Architecture
@@ -50,6 +53,8 @@ import { Stack } from "expo-router";
  * (none currently)
  */
 export default function StandardLayout() {
+  const router = useRouter();
+
   return (
     <Stack
       screenOptions={{
@@ -59,6 +64,14 @@ export default function StandardLayout() {
         gestureEnabled: true,
         gestureDirection: "horizontal",
         presentation: "card",
+        headerLeft: () => (
+          <TouchableOpacity
+            onPress={() => router.back()}
+            className="ml-2 p-2 -ml-2"
+          >
+            <Icon as={ChevronLeft} size={24} className="text-foreground" />
+          </TouchableOpacity>
+        ),
       }}
     >
       {/* ACTIVITIES */}
@@ -144,6 +157,12 @@ export default function StandardLayout() {
 
       {/* TRAINING PLANS */}
       <Stack.Screen
+        name="training-plans-list"
+        options={{
+          title: "Training Plans",
+        }}
+      />
+      <Stack.Screen
         name="training-plan"
         options={{
           title: "Training Plan",
@@ -168,6 +187,12 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
+        name="training-plan-adjust"
+        options={{
+          title: "Adjust Training Plan",
+        }}
+      />
+      <Stack.Screen
         name="training-plan-review"
         options={{
           title: "Review Plan",
@@ -177,6 +202,12 @@ export default function StandardLayout() {
         name="training-plan-settings"
         options={{
           title: "Training Plan Settings",
+        }}
+      />
+      <Stack.Screen
+        name="workouts-reorder"
+        options={{
+          title: "Reorder Workouts",
         }}
       />
 

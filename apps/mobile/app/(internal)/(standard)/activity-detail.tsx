@@ -15,17 +15,18 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Text } from "@/components/ui/text";
 import { useActivityStreams } from "@/lib/hooks/useActivityStreams";
 import { trpc } from "@/lib/trpc";
-import { useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import {
   Clock,
   Heart,
   MapPin,
   Mountain,
+  Trash2,
   TrendingUp,
   Zap,
 } from "lucide-react-native";
 import React, { useMemo } from "react";
-import { ScrollView, View } from "react-native";
+import { Alert, Pressable, ScrollView, View } from "react-native";
 
 function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
@@ -57,6 +58,7 @@ function formatSpeed(metersPerSecond: number): string {
 
 function ActivityDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const queryClient = trpc.useUtils();
 
   const { data: activityData, isLoading } =
     trpc.activities.getActivityWithStreams.useQuery(
@@ -65,6 +67,45 @@ function ActivityDetailScreen() {
     );
 
   const activity = activityData;
+
+  // Delete mutation
+  const deleteMutation = trpc.activities.delete.useMutation({
+    onSuccess: () => {
+      // Invalidate all activity-related queries
+      queryClient.activities.invalidate();
+      queryClient.home.dashboard.invalidate();
+      queryClient.trends.invalidate();
+
+      // Navigate back to activity list
+      router.back();
+    },
+    onError: (error) => {
+      Alert.alert("Error", `Failed to delete activity: ${error.message}`);
+    },
+  });
+
+  // Handle delete with confirmation
+  const handleDelete = () => {
+    if (!activity) return;
+
+    Alert.alert(
+      "Delete Activity",
+      `Are you sure you want to delete "${activity.name}"? This action cannot be undone and will recalculate all your fitness metrics.`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            deleteMutation.mutate({ id: activity.id });
+          },
+        },
+      ]
+    );
+  };
 
   // Decompress and process streams
   const {
@@ -104,8 +145,8 @@ function ActivityDetailScreen() {
   const maxCadence = metrics?.max_cadence;
   const tss = metrics?.tss;
   const intensityFactor = metrics?.intensity_factor || metrics?.if;
-  const totalAscent = metrics?.total_ascent || 0;
-  const totalDescent = metrics?.total_descent || 0;
+  const totalAscent = metrics?.total_ascent;
+  const totalDescent = metrics?.total_descent;
 
   // Memoize zone data to prevent re-renders
   const { hrZones, powerZones, hrColors, powerColors } = useMemo(() => {
@@ -292,7 +333,7 @@ function ActivityDetailScreen() {
           type={activity.type as any}
           name={activity.name}
           startedAt={activity.started_at}
-          notes={activity.notes}
+          notes={activity.notes ?? undefined}
         />
 
         {/* Activity Plan Comparison */}
@@ -329,7 +370,7 @@ function ActivityDetailScreen() {
             <MetricCard
               icon={Heart}
               label="Avg HR"
-              value={avgHeartRate}
+              value={Math.round(avgHeartRate)}
               unit="bpm"
             />
           )}
@@ -337,23 +378,72 @@ function ActivityDetailScreen() {
             <MetricCard
               icon={Zap}
               label="Avg Power"
-              value={avgPower}
+              value={Math.round(avgPower)}
               unit="W"
             />
           )}
         </View>
 
-        {/* GPS Route Map */}
-        {hasGPS && (
-          <ActivityRouteMap
-            coordinates={gpsCoordinates}
-            timestamps={gpsData.timestamps}
-            colorBy="speed"
-            colorData={speedColorData}
-            height={300}
-            showMarkers={true}
-          />
-        )}
+        {/* Empty state when no additional metrics are available */}
+        {!hasGPS &&
+          !hasElevation &&
+          !hasPower &&
+          !hasHeartRate &&
+          !hasSpeed &&
+          !hasCadence &&
+          !tss &&
+          !avgSpeed &&
+          !maxSpeed &&
+          !avgCadence &&
+          !maxCadence &&
+          !totalAscent &&
+          !totalDescent &&
+          hrZones.length === 0 &&
+          powerZones.length === 0 && (
+            <Card className="mt-4">
+              <CardContent className="py-12">
+                <View className="items-center justify-center">
+                  <Icon
+                    as={TrendingUp}
+                    size={48}
+                    className="text-muted-foreground mb-4"
+                  />
+                  <Text className="text-lg font-semibold text-center mb-2">
+                    Limited Metrics Available
+                  </Text>
+                  <Text className="text-sm text-muted-foreground text-center max-w-sm">
+                    This activity has basic duration and distance data. Connect
+                    sensors during recording to capture detailed metrics like
+                    heart rate, power, and pace.
+                  </Text>
+                </View>
+              </CardContent>
+            </Card>
+          )}
+
+        {/* GPS Route Map - Only show if GPS data is meaningful (>10 points with variation) */}
+        {hasGPS &&
+          gpsCoordinates.length > 10 &&
+          (() => {
+            // Check if GPS data has meaningful variation (not all same location)
+            const firstLat = gpsCoordinates[0]?.latitude;
+            const firstLng = gpsCoordinates[0]?.longitude;
+            const hasVariation = gpsCoordinates.some(
+              (coord) =>
+                Math.abs(coord.latitude - firstLat) > 0.0001 ||
+                Math.abs(coord.longitude - firstLng) > 0.0001,
+            );
+            return hasVariation;
+          })() && (
+            <ActivityRouteMap
+              coordinates={gpsCoordinates}
+              timestamps={gpsData.timestamps}
+              colorBy="speed"
+              colorData={speedColorData}
+              height={300}
+              showMarkers={true}
+            />
+          )}
 
         {/* Elevation Profile */}
         {hasElevation && elevationStreamData && (
@@ -374,21 +464,11 @@ function ActivityDetailScreen() {
           />
         )}
 
-        {/* Individual Stream Charts */}
+        {/* Individual Stream Charts - Note: HR is shown in MultiMetricChart above, so we don't duplicate it here */}
         {powerStreamConfig && (
           <StreamChart
             title="Power"
             streams={powerStreamConfig}
-            xAxisType="time"
-            height={250}
-            showLegend={false}
-          />
-        )}
-
-        {hrStreamConfig && (
-          <StreamChart
-            title="Heart Rate"
-            streams={hrStreamConfig}
             xAxisType="time"
             height={250}
             showLegend={false}
@@ -434,7 +514,7 @@ function ActivityDetailScreen() {
                       TSS
                     </Text>
                   </View>
-                  <Text className="text-3xl font-bold">{tss}</Text>
+                  <Text className="text-3xl font-bold">{Math.round(tss)}</Text>
                 </View>
 
                 {intensityFactor && (
@@ -443,7 +523,7 @@ function ActivityDetailScreen() {
                       Intensity Factor
                     </Text>
                     <Text className="text-3xl font-bold">
-                      {(intensityFactor / 100).toFixed(2)}
+                      {intensityFactor.toFixed(2)}
                     </Text>
                   </View>
                 )}
@@ -453,14 +533,15 @@ function ActivityDetailScreen() {
         )}
 
         {/* Elevation Stats */}
-        {(totalAscent > 0 || totalDescent > 0) && (
+        {((totalAscent && totalAscent > 0) ||
+          (totalDescent && totalDescent > 0)) && (
           <Card>
             <CardHeader>
               <CardTitle>Elevation</CardTitle>
             </CardHeader>
             <CardContent>
               <View className="flex-row gap-4">
-                {totalAscent > 0 && (
+                {totalAscent && totalAscent > 0 && (
                   <View className="flex-1">
                     <View className="flex-row items-center gap-2 mb-1">
                       <Icon
@@ -473,19 +554,19 @@ function ActivityDetailScreen() {
                       </Text>
                     </View>
                     <Text className="text-2xl font-bold">
-                      {totalAscent}
+                      {Math.round(totalAscent)}
                       <Text className="text-sm text-muted-foreground"> m</Text>
                     </Text>
                   </View>
                 )}
 
-                {totalDescent > 0 && (
+                {totalDescent && totalDescent > 0 && (
                   <View className="flex-1">
                     <Text className="text-xs text-muted-foreground uppercase mb-1">
                       Descent
                     </Text>
                     <Text className="text-2xl font-bold">
-                      {totalDescent}
+                      {Math.round(totalDescent)}
                       <Text className="text-sm text-muted-foreground"> m</Text>
                     </Text>
                   </View>
@@ -569,7 +650,7 @@ function ActivityDetailScreen() {
                       Average
                     </Text>
                     <Text className="text-2xl font-bold">
-                      {avgCadence}
+                      {Math.round(avgCadence)}
                       <Text className="text-sm text-muted-foreground">
                         {" "}
                         {activity.type === "run" ? "spm" : "rpm"}
@@ -584,7 +665,7 @@ function ActivityDetailScreen() {
                       Maximum
                     </Text>
                     <Text className="text-2xl font-bold">
-                      {maxCadence}
+                      {Math.round(maxCadence)}
                       <Text className="text-sm text-muted-foreground">
                         {" "}
                         {activity.type === "run" ? "spm" : "rpm"}
@@ -596,6 +677,24 @@ function ActivityDetailScreen() {
             </CardContent>
           </Card>
         )}
+
+        {/* Delete Activity Button */}
+        <View className="mt-8 mb-4">
+          <Pressable
+            onPress={handleDelete}
+            disabled={deleteMutation.isPending}
+            className="flex-row items-center justify-center gap-2 p-4 bg-destructive/10 rounded-lg border border-destructive/20"
+          >
+            <Icon
+              as={Trash2}
+              size={20}
+              className={deleteMutation.isPending ? "text-muted-foreground" : "text-destructive"}
+            />
+            <Text className={`font-semibold ${deleteMutation.isPending ? "text-muted-foreground" : "text-destructive"}`}>
+              {deleteMutation.isPending ? "Deleting..." : "Delete Activity"}
+            </Text>
+          </Pressable>
+        </View>
       </View>
     </ScrollView>
   );

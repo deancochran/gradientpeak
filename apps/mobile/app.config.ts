@@ -77,8 +77,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         "android.permission.ACCESS_BACKGROUND_LOCATION",
         "android.permission.ACTIVITY_RECOGNITION",
         "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
         "android.permission.WAKE_LOCK",
         "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+        "android.permission.POST_NOTIFICATIONS",
       ],
       config: {
         googleMaps: {
@@ -113,6 +115,19 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           imageWidth: 200,
           resizeMode: "contain",
           backgroundColor: "#ffffff",
+        },
+      ],
+      [
+        "expo-location",
+        {
+          locationAlwaysAndWhenInUsePermission:
+            "Allow $(PRODUCT_NAME) to use your location to track activities.",
+          locationAlwaysPermission:
+            "Allow $(PRODUCT_NAME) to track your location even when the app is in the background.",
+          locationWhenInUsePermission:
+            "Allow $(PRODUCT_NAME) to use your location to track activities.",
+          isAndroidBackgroundLocationEnabled: true,
+          isAndroidForegroundServiceEnabled: true,
         },
       ],
       [

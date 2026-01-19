@@ -6,10 +6,10 @@ import {
   getSamplingStrategy,
   removeNullValues,
 } from "@/lib/utils/streamSampling";
-import { CartesianChart, Line, useChartPressState } from "victory-native";
 import { Circle, useFont } from "@shopify/react-native-skia";
 import React, { useMemo } from "react";
 import { View } from "react-native";
+import { CartesianChart, Line, useChartPressState } from "victory-native";
 
 interface StreamData {
   type: string;
@@ -184,13 +184,13 @@ export function StreamChart({
                   {isActive && (
                     <>
                       {streams.map((stream) => {
-                        const point = points[stream.type];
+                        const point = (state.y as any)[stream.type];
                         if (!point) return null;
                         return (
                           <Circle
                             key={`active-${stream.type}`}
                             cx={state.x.position}
-                            cy={point.yValue}
+                            cy={point.position}
                             r={6}
                             color={stream.color}
                             opacity={0.8}
@@ -210,7 +210,7 @@ export function StreamChart({
           <View className="mt-2 p-2 bg-muted rounded-lg">
             <View className="flex-row flex-wrap gap-3">
               {streams.map((stream) => {
-                const value = state.y[stream.type]?.value;
+                const value = (state.y as any)[stream.type]?.value;
                 return (
                   <View
                     key={stream.type}

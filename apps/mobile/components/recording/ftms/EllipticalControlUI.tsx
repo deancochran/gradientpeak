@@ -12,11 +12,16 @@
  * - Grayed out controls in Auto mode
  */
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { View, Pressable, Alert } from "react-native";
 import { Text } from "@/components/ui/text";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import { usePlan, useCurrentReadings } from "@/lib/hooks/useActivityRecorder";
+import {
+  usePlan,
+  useCurrentReadings,
+  useRecordingState,
+} from "@/lib/hooks/useActivityRecorder";
+import { PredictiveResistanceCalculator } from "@/lib/services/ActivityRecorder/PredictiveResistanceCalculator";
 
 export interface EllipticalControlUIProps {
   service: ActivityRecorderService;
@@ -32,9 +37,16 @@ export function EllipticalControlUI({
   const plan = usePlan(service);
   const currentReadings = useCurrentReadings(service);
 
+  // Initialize predictive resistance calculator
+  const predictiveCalculator = useMemo(
+    () => new PredictiveResistanceCalculator(),
+    [],
+  );
+
   // Elliptical control state
   const [resistanceLevel, setResistanceLevel] = useState<number>(5); // 1-20
   const [targetCadence, setTargetCadence] = useState<number>(60); // steps per minute
+  const [targetPower, setTargetPower] = useState<number>(150); // Target power in watts
 
   // Get trainer features
   const trainer = service.sensorsManager.getControllableTrainer();
@@ -43,38 +55,172 @@ export function EllipticalControlUI({
   const supportsResistance = features?.resistanceTargetSettingSupported ?? false;
   const supportsCadence = features?.targetedCadenceSupported ?? false;
 
+  // Apply predictive resistance based on current state
+  const applyPredictiveResistance = useCallback(async () => {
+    if (targetPower <= 0 || !supportsResistance) return;
+
+    // Use predictive resistance control based on stride rate
+    const currentStrideRate = currentReadings.cadence ?? 60; // Fallback to 60 strides/min
+    const resistance = predictiveCalculator.calculateResistance(
+      targetPower,
+      currentStrideRate,
+      "elliptical",
+      features,
+    );
+
+    await service.sensorsManager.setResistanceTarget(resistance);
+    console.log(
+      `[EllipticalControl] Predictive: Set resistance to ${resistance.toFixed(1)} (target: ${targetPower}W, stride rate: ${currentStrideRate.toFixed(0)} spm)`,
+    );
+  }, [
+    targetPower,
+    currentReadings.cadence,
+    features,
+    predictiveCalculator,
+    supportsResistance,
+    service,
+  ]);
+
+  // Reset calculator when interval changes to allow quick adaptation to new targets
+  useEffect(() => {
+    if (plan.hasPlan && plan.currentStep) {
+      console.log(
+        "[EllipticalControl] Interval changed, resetting predictive calculator",
+      );
+      predictiveCalculator.reset();
+    }
+  }, [plan.currentStep, plan.hasPlan, predictiveCalculator]);
+
   // Auto-apply plan targets in Auto mode
   useEffect(() => {
     if (controlMode === "auto" && plan.hasPlan && plan.currentStep) {
+      console.log(
+        "[EllipticalControl] Auto mode - applying plan targets immediately",
+      );
       applyPlanTargets();
     }
-  }, [controlMode, plan.currentStep, plan.hasPlan]);
+  }, [controlMode, plan.currentStep, plan.hasPlan, applyPlanTargets]);
+
+  // Auto-start: Initialize ERG when recording starts with a plan
+  const recordingState = useRecordingState(service);
+  useEffect(() => {
+    if (
+      recordingState === "recording" &&
+      controlMode === "auto" &&
+      plan.hasPlan &&
+      plan.currentStep
+    ) {
+      console.log(
+        "[EllipticalControl] Recording started with plan - auto-initializing ERG",
+      );
+      applyPlanTargets();
+    }
+  }, [
+    recordingState,
+    controlMode,
+    plan.hasPlan,
+    plan.currentStep,
+    applyPlanTargets,
+  ]);
+
+  // Periodically update resistance as stride rate changes (every 1.5 seconds)
+  // Works even without a plan if targetPower is set
+  useEffect(() => {
+    if (
+      recordingState === "recording" &&
+      controlMode === "auto" &&
+      targetPower > 0
+    ) {
+      // Periodic updates
+      const interval = setInterval(() => {
+        if (plan.hasPlan && plan.currentStep) {
+          applyPlanTargets();
+        } else {
+          applyPredictiveResistance();
+        }
+      }, 1500);
+
+      return () => clearInterval(interval);
+    }
+  }, [
+    recordingState,
+    controlMode,
+    targetPower,
+    applyPlanTargets,
+    applyPredictiveResistance,
+    plan.hasPlan,
+    plan.currentStep,
+  ]);
 
   /**
-   * Apply plan targets to elliptical automatically
-   * Converts plan step targets to FTMS commands
+   * Apply plan targets to elliptical automatically using predictive resistance
+   * Converts plan step targets to resistance commands based on stride rate
    */
   const applyPlanTargets = useCallback(async () => {
     if (!plan.currentStep || !plan.currentStep.targets) return;
 
     const targets = plan.currentStep.targets;
 
+    // Find power target
+    const powerTarget = targets.find(
+      (t) => t.type === "watts" || t.type === "%FTP",
+    );
+
     // Find cadence target
     const cadenceTarget = targets.find((t) => t.type === "cadence");
 
-    if (cadenceTarget && "min" in cadenceTarget && "max" in cadenceTarget && supportsCadence) {
+    if (
+      cadenceTarget &&
+      "min" in cadenceTarget &&
+      "max" in cadenceTarget &&
+      supportsCadence
+    ) {
       // Use midpoint of range
-      const cadenceSpm = Math.round(((cadenceTarget.min as number) + (cadenceTarget.max as number)) / 2);
+      const cadenceSpm = Math.round(
+        ((cadenceTarget.min as number) + (cadenceTarget.max as number)) / 2,
+      );
       setTargetCadence(cadenceSpm);
       await service.sensorsManager.setTargetCadence(cadenceSpm);
-      console.log(`[EllipticalControl] Auto mode: Set target cadence to ${cadenceSpm} spm`);
+      console.log(
+        `[EllipticalControl] Auto mode: Set target cadence to ${cadenceSpm} spm`,
+      );
     }
 
-    // Apply resistance if supported
-    if (supportsResistance && resistanceLevel > 0) {
-      await service.sensorsManager.setResistanceTarget(resistanceLevel);
+    // Apply predictive resistance if power target exists
+    if (powerTarget && supportsResistance) {
+      let powerWatts = 0;
+
+      if (powerTarget.type === "watts" && "value" in powerTarget) {
+        powerWatts = powerTarget.value as number;
+      }
+
+      if (powerWatts > 0) {
+        setTargetPower(powerWatts);
+
+        // Use predictive resistance control based on stride rate
+        const currentStrideRate = currentReadings.cadence ?? 60; // Fallback to 60 strides/min
+        const resistance = predictiveCalculator.calculateResistance(
+          powerWatts,
+          currentStrideRate,
+          "elliptical",
+          features,
+        );
+
+        await service.sensorsManager.setResistanceTarget(resistance);
+        console.log(
+          `[EllipticalControl] Predictive: Set resistance to ${resistance.toFixed(1)} (target: ${powerWatts}W, stride rate: ${currentStrideRate.toFixed(0)} spm)`,
+        );
+      }
     }
-  }, [plan.currentStep, resistanceLevel, supportsResistance, supportsCadence]);
+  }, [
+    plan.currentStep,
+    supportsResistance,
+    supportsCadence,
+    currentReadings.cadence,
+    features,
+    predictiveCalculator,
+    service,
+  ]);
 
   /**
    * Apply resistance target

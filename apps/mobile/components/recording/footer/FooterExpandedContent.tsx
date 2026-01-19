@@ -16,7 +16,9 @@
  * - Adjust: FTMS control (navigate to /record/ftms)
  */
 
+import { Badge } from "@/components/ui/badge";
 import { Text } from "@/components/ui/text";
+import { useGpsTracking } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import type {
   PublicActivityCategory,
@@ -24,13 +26,14 @@ import type {
   RecordingState,
 } from "@repo/core";
 import { router } from "expo-router";
+import { MapPin, MapPinOff } from "lucide-react-native";
 import React from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, ScrollView, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { RecordingControls } from "./RecordingControls";
 
-export interface FooterExpandedProps {
+export interface FooterExpandedContentProps {
   service: ActivityRecorderService | null;
   recordingState: RecordingState;
   category: PublicActivityCategory;
@@ -44,7 +47,7 @@ export interface FooterExpandedProps {
   onFinish: () => void;
 }
 
-export function FooterExpanded({
+export function FooterExpandedContent({
   service,
   recordingState,
   category,
@@ -56,8 +59,9 @@ export function FooterExpanded({
   onResume,
   onLap,
   onFinish,
-}: FooterExpandedProps) {
+}: FooterExpandedContentProps) {
   const insets = useSafeAreaInsets();
+  const { gpsEnabled, toggleGps } = useGpsTracking(service);
 
   const handleActivityPress = () => {
     // Navigate to activity selection if not recording
@@ -68,6 +72,11 @@ export function FooterExpanded({
     } else {
       console.log("[FooterExpanded] Activity tile locked during recording");
     }
+  };
+
+  const handleGpsToggle = async () => {
+    console.log("[FooterExpanded] Toggling GPS/Location mode");
+    await toggleGps();
   };
 
   const handlePlanPress = () => {
@@ -115,12 +124,19 @@ export function FooterExpanded({
         </Text>
 
         <View className="flex-row flex-wrap gap-3">
-          {/* Activity Tile (Locked only during recording) */}
+          {/* Activity Tile (Category only - Locked during recording) */}
           <ConfigTile
             label="Activity"
-            value={`${category.replace("_", " ")} · ${location}`}
+            value={category.replace("_", " ")}
             onPress={handleActivityPress}
             disabled={recordingState !== "not_started"}
+          />
+
+          {/* GPS Toggle Tile (Indoor/Outdoor Mode) */}
+          <ConfigTile
+            label="GPS"
+            value={gpsEnabled ? "Outdoor" : "Indoor"}
+            onPress={handleGpsToggle}
           />
 
           {/* Activity Plan Tile */}

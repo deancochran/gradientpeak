@@ -3,16 +3,12 @@ import { useState } from "react";
 import { ScrollView, View } from "react-native";
 
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import {
-  SettingItem,
-  SettingItemSeparator,
-  SettingsGroup,
-  TrainingZonesSection,
-} from "@/components/settings";
+import { SettingItem, SettingsGroup } from "@/components/settings";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
+import { Separator } from "@/components/ui/separator";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useTheme } from "@/lib/stores/theme-store";
@@ -23,7 +19,6 @@ function SettingsScreen() {
   const router = useRouter();
   const { user, profile } = useAuth();
   const { theme, setTheme } = useTheme();
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [signoutLoading, setSignoutLoading] = useState(false);
 
   const handleSignOut = async () => {
@@ -37,6 +32,9 @@ function SettingsScreen() {
     }
   };
 
+  const hasFTP = !!profile?.ftp;
+  const hasThresholdHR = !!profile?.threshold_hr;
+
   return (
     <ScrollView
       className="flex-1 bg-background"
@@ -44,7 +42,7 @@ function SettingsScreen() {
       showsVerticalScrollIndicator={false}
       testID="settings-screen"
     >
-      {/* Profile Header */}
+      {/* Profile Header with Training Zones */}
       <Card>
         <CardContent className="p-6">
           <View className="items-center mb-4">
@@ -90,7 +88,8 @@ function SettingsScreen() {
             profile?.dob ||
             profile?.weight_kg ||
             profile?.ftp ||
-            profile?.threshold_hr) && (
+            profile?.threshold_hr ||
+            profile?.preferred_units) && (
             <View className="gap-3 pt-4 border-t border-border">
               {profile.bio && (
                 <View>
@@ -161,16 +160,76 @@ function SettingsScreen() {
               </View>
             </View>
           )}
+
+          {/* Training Zones */}
+          {(hasFTP || hasThresholdHR) && (
+            <>
+              <Separator className="my-4 bg-border" />
+              <View className="gap-4">
+                <Text className="text-sm font-semibold">Training Zones</Text>
+
+                {/* Power Zones */}
+                {hasFTP && (
+                  <View className="gap-2">
+                    <Text className="text-xs text-muted-foreground uppercase">
+                      Power Zones (FTP: {profile.ftp}W)
+                    </Text>
+                    <View className="gap-1.5">
+                      <ZoneRow
+                        label="Recovery"
+                        range={`${Math.round(profile.ftp! * 0.55)}-${Math.round(profile.ftp! * 0.75)}W`}
+                      />
+                      <ZoneRow
+                        label="Tempo"
+                        range={`${Math.round(profile.ftp! * 0.75)}-${Math.round(profile.ftp! * 0.9)}W`}
+                      />
+                      <ZoneRow
+                        label="Threshold"
+                        range={`${Math.round(profile.ftp! * 0.9)}-${Math.round(profile.ftp! * 1.05)}W`}
+                      />
+                      <ZoneRow
+                        label="VO2 Max"
+                        range={`${Math.round(profile.ftp! * 1.05)}-${Math.round(profile.ftp! * 1.2)}W`}
+                      />
+                      <ZoneRow
+                        label="Anaerobic"
+                        range={`${Math.round(profile.ftp! * 1.2)}+W`}
+                      />
+                    </View>
+                  </View>
+                )}
+
+                {/* Heart Rate Zones */}
+                {hasThresholdHR && (
+                  <View className="gap-2">
+                    <Text className="text-xs text-muted-foreground uppercase">
+                      Heart Rate Zones (Threshold: {profile.threshold_hr} bpm)
+                    </Text>
+                    <View className="gap-1.5">
+                      <ZoneRow
+                        label="Recovery"
+                        range={`${Math.round(profile.threshold_hr! * 0.68)}-${Math.round(profile.threshold_hr! * 0.83)} bpm`}
+                      />
+                      <ZoneRow
+                        label="Tempo"
+                        range={`${Math.round(profile.threshold_hr! * 0.83)}-${Math.round(profile.threshold_hr! * 0.94)} bpm`}
+                      />
+                      <ZoneRow
+                        label="Threshold"
+                        range={`${Math.round(profile.threshold_hr! * 0.94)}-${Math.round(profile.threshold_hr! * 1.05)} bpm`}
+                      />
+                      <ZoneRow
+                        label="VO2 Max"
+                        range={`${Math.round(profile.threshold_hr! * 1.05)}+ bpm`}
+                      />
+                    </View>
+                  </View>
+                )}
+              </View>
+            </>
+          )}
         </CardContent>
       </Card>
-
-      {/* Training Zones */}
-      <TrainingZonesSection
-        profile={profile}
-        onUpdateZones={() => {
-          router.push("/profile-edit" as any);
-        }}
-      />
 
       {/* Integrations */}
       <SettingsGroup
@@ -203,60 +262,14 @@ function SettingsScreen() {
           onValueChange={(isChecked) => setTheme(isChecked ? "dark" : "light")}
           testID="dark-mode"
         />
-
-        <SettingItemSeparator />
-
-        <SettingItem
-          type="toggle"
-          label="Notifications"
-          description="Receive activity reminders and updates"
-          value={notificationsEnabled}
-          onValueChange={setNotificationsEnabled}
-          testID="notifications"
-        />
-
-        <SettingItemSeparator />
-
-        <SettingItem
-          type="toggle"
-          label="Auto Sync"
-          description="Automatically sync activities when online"
-          value={true}
-          onValueChange={() => {}}
-          disabled
-          testID="auto-sync"
-        />
       </SettingsGroup>
 
       {/* Account */}
       <SettingsGroup
         title="Account"
-        description="Manage your account and data"
+        description="Manage your account"
         testID="account-section"
       >
-        <SettingItem
-          type="button"
-          label="Change Password"
-          buttonLabel="Update"
-          variant="outline"
-          onPress={() => console.log("Change password - not implemented yet")}
-          testID="change-password"
-        />
-
-        <SettingItemSeparator />
-
-        <SettingItem
-          type="button"
-          label="Export My Data"
-          description="Download all your activity data"
-          buttonLabel="Export"
-          variant="outline"
-          onPress={() => console.log("Export data - not implemented yet")}
-          testID="export-data"
-        />
-
-        <SettingItemSeparator />
-
         <SettingItem
           type="button"
           label="Sign Out"
@@ -280,16 +293,6 @@ function SettingsScreen() {
             <Text className="text-sm font-medium">12345</Text>
           </View>
         </View>
-
-        <SettingItemSeparator />
-
-        <SettingItem
-          type="link"
-          label="Licenses"
-          linkLabel="View"
-          onPress={() => console.log("View licenses - not implemented yet")}
-          testID="licenses"
-        />
       </SettingsGroup>
 
       {/* Debug Info (Development only) */}
@@ -309,6 +312,20 @@ function SettingsScreen() {
         </SettingsGroup>
       )}
     </ScrollView>
+  );
+}
+
+interface ZoneRowProps {
+  label: string;
+  range: string;
+}
+
+function ZoneRow({ label, range }: ZoneRowProps) {
+  return (
+    <View className="flex-row items-center justify-between">
+      <Text className="text-muted-foreground text-xs">{label}</Text>
+      <Text className="text-foreground text-xs font-medium">{range}</Text>
+    </View>
   );
 }
 

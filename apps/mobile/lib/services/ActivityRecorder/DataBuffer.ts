@@ -97,6 +97,19 @@ export class DataBuffer {
   }
 
   /**
+   * Get recent readings (with timestamps) for a specific metric
+   * @param metric - The metric name
+   * @param seconds - How many seconds back to retrieve (default: 30)
+   * @returns Array of readings with values and timestamps
+   */
+  getRecentReadings(metric: string, seconds: number = 30): BufferedReading[] {
+    const cutoff = Date.now() - seconds * 1000;
+    return this.data.filter(
+      (d) => d.metric === metric && d.timestamp > cutoff
+    );
+  }
+
+  /**
    * Get all numeric readings for a specific metric in the entire window
    */
   getAll(metric: string): number[] {

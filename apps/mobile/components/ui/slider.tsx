@@ -1,4 +1,3 @@
-import { cn } from "@/lib/utils";
 import RNSlider from "@react-native-community/slider";
 import * as React from "react";
 import { Platform } from "react-native";
@@ -44,7 +43,7 @@ const Slider = React.forwardRef<RNSlider, SliderProps>(
 
     return (
       <RNSlider
-        ref={ref}
+        ref={ref as any}
         value={value}
         onValueChange={onValueChange}
         onSlidingStart={onSlidingStart}
@@ -54,7 +53,9 @@ const Slider = React.forwardRef<RNSlider, SliderProps>(
         step={step}
         minimumTrackTintColor={defaultMinimumTrackTintColor}
         maximumTrackTintColor={defaultMaximumTrackTintColor}
-        thumbTintColor={Platform.OS === "ios" ? defaultThumbTintColor : undefined}
+        thumbTintColor={
+          Platform.OS === "ios" ? defaultThumbTintColor : undefined
+        }
         disabled={disabled}
         style={{
           opacity: disabled ? 0.5 : 1,

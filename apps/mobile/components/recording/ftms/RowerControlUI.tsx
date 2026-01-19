@@ -13,11 +13,16 @@
  * - Grayed out controls in Auto mode
  */
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { View, Pressable, Alert } from "react-native";
 import { Text } from "@/components/ui/text";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import { usePlan } from "@/lib/hooks/useActivityRecorder";
+import {
+  useCurrentReadings,
+  usePlan,
+  useRecordingState,
+} from "@/lib/hooks/useActivityRecorder";
+import { PredictiveResistanceCalculator } from "@/lib/services/ActivityRecorder/PredictiveResistanceCalculator";
 
 export interface RowerControlUIProps {
   service: ActivityRecorderService;
@@ -31,11 +36,19 @@ export function RowerControlUI({
   hasPlan,
 }: RowerControlUIProps) {
   const plan = usePlan(service);
+  const current = useCurrentReadings(service);
+
+  // Initialize predictive resistance calculator
+  const predictiveCalculator = useMemo(
+    () => new PredictiveResistanceCalculator(),
+    [],
+  );
 
   // Rower control state
   const [damper, setDamper] = useState<number>(5); // 1-10
   const [resistanceLevel, setResistanceLevel] = useState<number>(5); // Variable
   const [targetStrokeRate, setTargetStrokeRate] = useState<number>(20); // strokes per minute
+  const [targetPower, setTargetPower] = useState<number>(150); // Target power in watts
   const [dragFactor, setDragFactor] = useState<number>(120); // Read-only, example value
 
   // Get trainer features
@@ -44,37 +57,163 @@ export function RowerControlUI({
 
   const supportsResistance = features?.resistanceTargetSettingSupported ?? false;
 
+  // Apply predictive resistance based on current state
+  const applyPredictiveResistance = useCallback(async () => {
+    if (targetPower <= 0 || !supportsResistance) return;
+
+    // Use predictive resistance control based on stroke rate
+    const currentStrokeRate = current.cadence ?? 22; // Fallback to 22 spm
+    const resistance = predictiveCalculator.calculateResistance(
+      targetPower,
+      currentStrokeRate,
+      "rower",
+      features,
+    );
+
+    await service.sensorsManager.setResistanceTarget(resistance);
+    console.log(
+      `[RowerControl] Predictive: Set resistance to ${resistance.toFixed(1)} (target: ${targetPower}W, stroke rate: ${currentStrokeRate.toFixed(0)} spm)`,
+    );
+  }, [
+    targetPower,
+    current.cadence,
+    features,
+    predictiveCalculator,
+    supportsResistance,
+    service,
+  ]);
+
+  // Reset calculator when interval changes to allow quick adaptation to new targets
+  useEffect(() => {
+    if (plan.hasPlan && plan.currentStep) {
+      console.log(
+        "[RowerControl] Interval changed, resetting predictive calculator",
+      );
+      predictiveCalculator.reset();
+    }
+  }, [plan.currentStep, plan.hasPlan, predictiveCalculator]);
+
   // Auto-apply plan targets in Auto mode
   useEffect(() => {
     if (controlMode === "auto" && plan.hasPlan && plan.currentStep) {
+      console.log("[RowerControl] Auto mode - applying plan targets immediately");
       applyPlanTargets();
     }
-  }, [controlMode, plan.currentStep, plan.hasPlan]);
+  }, [controlMode, plan.currentStep, plan.hasPlan, applyPlanTargets]);
+
+  // Auto-start: Initialize ERG when recording starts with a plan
+  const recordingState = useRecordingState(service);
+  useEffect(() => {
+    if (
+      recordingState === "recording" &&
+      controlMode === "auto" &&
+      plan.hasPlan &&
+      plan.currentStep
+    ) {
+      console.log(
+        "[RowerControl] Recording started with plan - auto-initializing ERG",
+      );
+      applyPlanTargets();
+    }
+  }, [
+    recordingState,
+    controlMode,
+    plan.hasPlan,
+    plan.currentStep,
+    applyPlanTargets,
+  ]);
+
+  // Periodically update resistance as stroke rate changes (every 1.5 seconds)
+  // Works even without a plan if targetPower is set
+  useEffect(() => {
+    if (
+      recordingState === "recording" &&
+      controlMode === "auto" &&
+      targetPower > 0
+    ) {
+      // Periodic updates
+      const interval = setInterval(() => {
+        if (plan.hasPlan && plan.currentStep) {
+          applyPlanTargets();
+        } else {
+          applyPredictiveResistance();
+        }
+      }, 1500);
+
+      return () => clearInterval(interval);
+    }
+  }, [
+    recordingState,
+    controlMode,
+    targetPower,
+    applyPlanTargets,
+    applyPredictiveResistance,
+    plan.hasPlan,
+    plan.currentStep,
+  ]);
 
   /**
-   * Apply plan targets to rower automatically
-   * Converts plan step targets to FTMS commands
+   * Apply plan targets to rower automatically using predictive resistance
+   * Converts plan step targets to resistance commands based on stroke rate
    */
   const applyPlanTargets = useCallback(async () => {
     if (!plan.currentStep || !plan.currentStep.targets) return;
 
     const targets = plan.currentStep.targets;
 
+    // Find power target
+    const powerTarget = targets.find(
+      (t) => t.type === "watts" || t.type === "%FTP",
+    );
+
     // Find cadence target (stroke rate for rower)
     const cadenceTarget = targets.find((t) => t.type === "cadence");
 
     if (cadenceTarget && "min" in cadenceTarget && "max" in cadenceTarget) {
       // Use midpoint of range
-      const strokeRate = Math.round(((cadenceTarget.min as number) + (cadenceTarget.max as number)) / 2);
+      const strokeRate = Math.round(
+        ((cadenceTarget.min as number) + (cadenceTarget.max as number)) / 2,
+      );
       setTargetStrokeRate(strokeRate);
-      console.log(`[RowerControl] Auto mode: Set target stroke rate to ${strokeRate} spm`);
+      console.log(
+        `[RowerControl] Auto mode: Set target stroke rate to ${strokeRate} spm`,
+      );
     }
 
-    // Apply resistance if supported
-    if (supportsResistance && resistanceLevel > 0) {
-      await service.sensorsManager.setResistanceTarget(resistanceLevel);
+    // Apply predictive resistance if power target exists
+    if (powerTarget && supportsResistance) {
+      let powerWatts = 0;
+
+      if (powerTarget.type === "watts" && "value" in powerTarget) {
+        powerWatts = powerTarget.value as number;
+      }
+
+      if (powerWatts > 0) {
+        setTargetPower(powerWatts);
+
+        // Use predictive resistance control based on stroke rate
+        const currentStrokeRate = current.cadence ?? 22; // Fallback to 22 spm
+        const resistance = predictiveCalculator.calculateResistance(
+          powerWatts,
+          currentStrokeRate,
+          "rower",
+          features,
+        );
+
+        await service.sensorsManager.setResistanceTarget(resistance);
+        console.log(
+          `[RowerControl] Predictive: Set resistance to ${resistance.toFixed(1)} (target: ${powerWatts}W, stroke rate: ${currentStrokeRate.toFixed(0)} spm)`,
+        );
+      }
     }
-  }, [plan.currentStep, resistanceLevel, supportsResistance]);
+  }, [
+    plan.currentStep,
+    supportsResistance,
+    current.cadence,
+    features,
+    predictiveCalculator,
+    service,
+  ]);
 
   /**
    * Apply resistance target

@@ -17,37 +17,80 @@ TaskManager.defineTask(
   BACKGROUND_LOCATION_TASK,
   async ({ data, error }: TaskManager.TaskManagerTaskBody<any>) => {
     if (error) {
-      console.error("Background location task error:", error);
+      console.error("[Background Location Task] Error:", error);
+      // Don't return - continue to process any data that might be present
+    }
+
+    if (!data) {
+      console.warn("[Background Location Task] No data received");
       return;
     }
-    if (data) {
+
+    try {
       const { locations } = data as { locations: Location.LocationObject[] };
+
+      if (!locations || locations.length === 0) {
+        console.warn("[Background Location Task] Empty locations array");
+        return;
+      }
+
+      console.log(
+        `[Background Location Task] Processing ${locations.length} location(s)`,
+      );
 
       // Process each location through callbacks
       for (const location of locations) {
         // Validate location quality
         if (isLocationValid(location)) {
           // Update last location time
-          await AsyncStorage.setItem(
-            "last_location_time",
-            location.timestamp.toString(),
-          );
+          try {
+            await AsyncStorage.setItem(
+              "last_location_time",
+              location.timestamp.toString(),
+            );
+          } catch (storageError) {
+            console.warn(
+              "[Background Location Task] Failed to update last location time:",
+              storageError,
+            );
+          }
 
           // Notify all registered callbacks
-          backgroundLocationCallbacks.forEach((cb) => {
-            try {
-              cb(location);
-            } catch (e) {
-              console.warn("Error in background location callback:", e);
-            }
-          });
+          if (backgroundLocationCallbacks.size > 0) {
+            backgroundLocationCallbacks.forEach((cb) => {
+              try {
+                cb(location);
+              } catch (e) {
+                console.error(
+                  "[Background Location Task] Error in callback:",
+                  e,
+                );
+              }
+            });
+          } else {
+            console.warn(
+              "[Background Location Task] No callbacks registered, buffering location",
+            );
+          }
         } else {
-          console.warn("Received invalid location in background, skipping");
+          console.warn(
+            "[Background Location Task] Invalid location, skipping:",
+            {
+              accuracy: location.coords?.accuracy,
+              lat: location.coords?.latitude,
+              lng: location.coords?.longitude,
+            },
+          );
         }
       }
 
       // Buffer management for offline storage
       await bufferLocations(locations);
+    } catch (taskError) {
+      console.error(
+        "[Background Location Task] Unexpected error:",
+        taskError,
+      );
     }
   },
 );
@@ -105,6 +148,10 @@ export class LocationManager {
   private lastLocationTime = 0;
   private healthCheckInterval: number | null = null;
   private readonly HEALTH_CHECK_INTERVAL = 10000; // 10 seconds
+  private headingSubscription: Location.LocationSubscription | null = null;
+  private headingCallbacks = new Set<
+    (heading: Location.LocationHeadingObject) => void
+  >();
 
   constructor() {
     // Load any existing buffered locations on startup
@@ -193,6 +240,40 @@ export class LocationManager {
     }
   }
 
+  // --- Magnetometer Heading Tracking ---
+  async startHeadingTracking(): Promise<void> {
+    if (this.headingSubscription) {
+      console.log("Heading tracking already active");
+      return;
+    }
+
+    try {
+      this.headingSubscription = await Location.watchHeadingAsync(
+        (headingObject) => {
+          this.headingCallbacks.forEach((cb) => {
+            try {
+              cb(headingObject);
+            } catch (e) {
+              console.warn("Error in heading callback:", e);
+            }
+          });
+        }
+      );
+      console.log("Magnetometer heading tracking started");
+    } catch (error) {
+      console.error("Failed to start heading tracking:", error);
+      throw error;
+    }
+  }
+
+  async stopHeadingTracking(): Promise<void> {
+    if (this.headingSubscription) {
+      this.headingSubscription.remove();
+      this.headingSubscription = null;
+      console.log("Magnetometer heading tracking stopped");
+    }
+  }
+
   // --- Background GPS ---
   async startBackgroundTracking(sessionId?: string): Promise<void> {
     try {
@@ -200,22 +281,39 @@ export class LocationManager {
         await AsyncStorage.setItem("background_location_session_id", sessionId);
       }
 
+      // Check if already running to avoid duplicate starts
+      const isRunning = await Location.hasStartedLocationUpdatesAsync(
+        this.taskName,
+      );
+      if (isRunning) {
+        console.log("Background location tracking already running");
+        return;
+      }
+
       await Location.startLocationUpdatesAsync(this.taskName, {
         accuracy: Location.Accuracy.BestForNavigation,
         timeInterval: 1000,
         distanceInterval: 1,
-        showsBackgroundLocationIndicator: false,
+        showsBackgroundLocationIndicator: true, // Show indicator for transparency
+        deferredUpdatesInterval: 1000, // Process updates every second
+        deferredUpdatesDistance: 1, // Process updates every meter
+        // Foreground service keeps the app running in background on Android
         foregroundService: {
-          notificationTitle: "GradientPeak Recording",
-          notificationBody: "Recording your activity in the background",
-          notificationColor: "#00ff00",
+          notificationTitle: "Recording Activity",
+          notificationBody: "GradientPeak is tracking your workout",
+          notificationColor: "#4CAF50",
+          killServiceOnDestroy: false, // Keep service alive even if notification is dismissed
         },
+        // Enable pausesLocationUpdatesAutomatically only on iOS
+        pausesUpdatesAutomatically: false,
+        // Activity type for better battery management
+        activityType: Location.ActivityType.Fitness,
       });
 
       // Start health monitoring
       this.startHealthCheck();
 
-      console.log("Background location tracking started");
+      console.log("Background location tracking started successfully");
     } catch (error) {
       console.error("Failed to start background location:", error);
       throw error;
@@ -310,6 +408,11 @@ export class LocationManager {
     this.stopHealthCheck();
     // Stop tracking sequentially to avoid race conditions
     try {
+      await this.stopHeadingTracking();
+    } catch (error) {
+      console.warn("Error stopping heading tracking:", error);
+    }
+    try {
       await this.stopForegroundTracking();
     } catch (error) {
       console.warn("Error stopping foreground tracking:", error);
@@ -389,11 +492,29 @@ export class LocationManager {
 
   clearAllCallbacks(): void {
     this.locationCallbacks.clear();
+    this.headingCallbacks.clear();
     // Also clear background callback registry
     backgroundLocationCallbacks.clear();
   }
 
   getCallbackCount(): number {
     return this.locationCallbacks.size;
+  }
+
+  // --- Heading Callback Management ---
+  addHeadingCallback(
+    callback: (heading: Location.LocationHeadingObject) => void
+  ): void {
+    this.headingCallbacks.add(callback);
+  }
+
+  removeHeadingCallback(
+    callback: (heading: Location.LocationHeadingObject) => void
+  ): void {
+    this.headingCallbacks.delete(callback);
+  }
+
+  getHeadingCallbackCount(): number {
+    return this.headingCallbacks.size;
   }
 }

@@ -6,13 +6,7 @@ import { getActivityConfig } from "@/lib/constants/activities";
 import { formatDuration } from "@/lib/utils/dates";
 import type { ActivityPlanStructureV2 } from "@repo/core";
 import { format } from "date-fns";
-import {
-  Calendar,
-  CheckCircle2,
-  Clock,
-  MapPin,
-  Zap,
-} from "lucide-react-native";
+import { Calendar, CheckCircle2 } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
 
 // ============================================
@@ -120,44 +114,43 @@ export function ActivityPlanCard({
       <Card
         className={`${isHero ? "border-2 border-primary" : ""} ${activity.isCompleted ? "opacity-60" : ""}`}
       >
-        <CardContent className={`${isCompact ? "p-3" : "p-4"}`}>
-          {/* Header Row: Icon + Title + Schedule Badge */}
-          <View className="flex-row items-start mb-3">
-            {/* Activity Icon */}
-            <View
-              className={`${isCompact ? "w-10 h-10" : "w-12 h-12"} rounded-full ${config.bgColor} items-center justify-center mr-3 shrink-0`}
-            >
-              <Icon
-                as={config.icon}
-                size={isCompact ? 20 : 24}
-                className={config.color}
-              />
-            </View>
+        <CardContent className="p-2">
+          {/* Header Row: Icon + Title */}
+          <View className="flex-row items-start mb-1">
+            {/* Small Activity Icon */}
+            <Icon
+              as={config.icon}
+              size={14}
+              className="text-muted-foreground mr-1.5 mt-0.5 shrink-0"
+            />
 
-            {/* Title and Type */}
+            {/* Title Column */}
             <View className="flex-1 min-w-0">
-              <Text
-                className={`font-semibold ${isCompact ? "text-sm" : "text-base"} mb-1`}
-                numberOfLines={2}
-              >
+              <Text className="font-semibold text-sm" numberOfLines={1}>
                 {activity.name}
               </Text>
-              <Text className="text-xs text-muted-foreground capitalize">
-                {config.name}
-              </Text>
-            </View>
 
-            {/* Completed Badge */}
-            {activity.isCompleted && (
-              <View className="ml-2 shrink-0">
-                <Icon as={CheckCircle2} size={20} className="text-green-600" />
+              {/* Duration + TSS inline */}
+              <View className="flex-row items-center gap-2 mt-0.5">
+                {activity.estimatedDuration !== undefined &&
+                  activity.estimatedDuration > 0 && (
+                    <Text className="text-xs text-muted-foreground">
+                      {formatDuration(activity.estimatedDuration)}
+                    </Text>
+                  )}
+                {activity.estimatedTss !== undefined &&
+                  activity.estimatedTss > 0 && (
+                    <Text className="text-xs text-muted-foreground">
+                      {Math.round(activity.estimatedTss)} TSS
+                    </Text>
+                  )}
               </View>
-            )}
+            </View>
           </View>
 
           {/* Schedule Info Badge (if scheduled) */}
           {showScheduleInfo && activity.scheduledDate && (
-            <View className="flex-row items-center bg-muted/50 rounded-lg px-2 py-1.5 mb-3">
+            <View className="flex-row items-center mb-1.5">
               <Icon
                 as={Calendar}
                 size={12}
@@ -171,99 +164,37 @@ export function ActivityPlanCard({
 
           {/* Intensity Profile Chart */}
           {hasStructure && !activity.isCompleted && activity.structure && (
-            <View className="mb-3 rounded-lg overflow-hidden bg-muted/20">
+            <View className="mb-1.5 rounded overflow-hidden">
               <TimelineChart
                 structure={activity.structure}
-                height={isHero ? 120 : isCompact ? 60 : 80}
-                compact={!isHero}
+                height={70}
+                compact={true}
               />
             </View>
           )}
 
-          {/* Route Badge (if has route) */}
-          {activity.routeId && (
-            <View className="flex-row items-center bg-blue-50 dark:bg-blue-950 rounded-lg px-2 py-1.5 mb-3">
-              <Icon as={MapPin} size={14} className="text-blue-600 mr-1.5" />
-              <Text
-                className="text-xs text-blue-600 font-medium flex-1"
-                numberOfLines={1}
-              >
-                {activity.routeName || "Route attached"}
-              </Text>
-              {activity.estimatedDistance && (
-                <Text className="text-xs text-blue-600 font-semibold ml-2">
-                  {activity.estimatedDistance.toFixed(1)} km
-                </Text>
-              )}
-            </View>
+          {/* Description (2-line clamp with ellipsis) */}
+          {(activity.notes || activity.structure?.description) && (
+            <Text
+              className="text-xs text-muted-foreground leading-4"
+              numberOfLines={2}
+              ellipsizeMode="tail"
+            >
+              {activity.notes || activity.structure?.description}
+            </Text>
           )}
 
-          {/* Notes (if provided and not compact) */}
-          {activity.notes && !isCompact && (
-            <View className="bg-muted/30 rounded-lg px-3 py-2 mb-3">
-              <Text
-                className="text-xs text-muted-foreground italic"
-                numberOfLines={2}
-              >
-                {activity.notes}
-              </Text>
+          {/* Completed Badge */}
+          {activity.isCompleted && (
+            <View className="flex-row items-center mt-1.5">
+              <Icon
+                as={CheckCircle2}
+                size={12}
+                className="text-green-600 mr-1"
+              />
+              <Text className="text-xs text-green-600">Completed</Text>
             </View>
           )}
-
-          {/* Metadata Row */}
-          <View className="flex-row items-center flex-wrap gap-3">
-            {/* Duration */}
-            {activity.estimatedDuration !== undefined &&
-              activity.estimatedDuration > 0 && (
-                <View className="flex-row items-center">
-                  <Icon
-                    as={Clock}
-                    size={14}
-                    className="text-muted-foreground mr-1"
-                  />
-                  <Text
-                    className={`text-muted-foreground ${isCompact ? "text-xs" : "text-sm"}`}
-                  >
-                    {formatDuration(activity.estimatedDuration)}
-                  </Text>
-                </View>
-              )}
-
-            {/* TSS */}
-            {activity.estimatedTss !== undefined &&
-              activity.estimatedTss > 0 && (
-                <View className="flex-row items-center">
-                  <Icon
-                    as={Zap}
-                    size={14}
-                    className="text-muted-foreground mr-1"
-                  />
-                  <Text
-                    className={`text-muted-foreground ${isCompact ? "text-xs" : "text-sm"}`}
-                  >
-                    {Math.round(activity.estimatedTss)} TSS
-                  </Text>
-                </View>
-              )}
-
-            {/* Distance (if route and not already shown) */}
-            {!activity.routeId &&
-              activity.estimatedDistance &&
-              activity.estimatedDistance > 0 && (
-                <View className="flex-row items-center">
-                  <Icon
-                    as={MapPin}
-                    size={14}
-                    className="text-muted-foreground mr-1"
-                  />
-                  <Text
-                    className={`text-muted-foreground ${isCompact ? "text-xs" : "text-sm"}`}
-                  >
-                    {activity.estimatedDistance.toFixed(1)} km
-                  </Text>
-                </View>
-              )}
-          </View>
         </CardContent>
       </Card>
     </CardWrapper>

@@ -1,39 +1,29 @@
 /**
  * Recording Footer
  *
- * Main bottom sheet component that orchestrates the footer UI.
- * Uses @gorhom/bottom-sheet with 2 snap points: [90, '60%']
+ * Simplified bottom sheet with permanent content layout.
+ * Uses @gorhom/bottom-sheet with 2 snap points: [120, '60%']
  *
  * States:
- * - Collapsed (90px): Recording controls only (minimal, clean)
- * - Expanded (60% screen): Full configuration grid
+ * - Collapsed (120px): Shows top portion of content (controls)
+ * - Expanded (60% screen): Shows full content (controls + configuration)
  *
- * Layering Strategy:
- * - Uses containerStyle with very high zIndex (999999) to ensure always on top
- * - Focused zones have no z-index, so they stay below bottom sheet naturally
- *
- * Independent Operation:
- * - Zones and bottom sheet can be focused/expanded independently
- * - No coordination - they don't minimize each other
- *
- * Animation: damping: 80, stiffness: 500, mass: 0.3
- * Swipe-down disabled: enablePanDownToClose={false}
- * Tap-outside collapses to snap point 0
+ * No transitions or component switching - content is always rendered,
+ * dragging just reveals more or less of it.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
-import { View } from "react-native";
-import BottomSheet, { BottomSheetBackdrop } from "@gorhom/bottom-sheet";
+import { useFocusMode } from "@/lib/contexts/FocusModeContext";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
+import BottomSheet, { BottomSheetBackdrop, SNAP_POINT_TYPE } from "@gorhom/bottom-sheet";
 import type {
   PublicActivityCategory,
   PublicActivityLocation,
   RecordingState,
 } from "@repo/core";
-import { useFocusMode } from "@/lib/contexts/FocusModeContext";
-
-import { FooterCollapsed } from "./FooterCollapsed";
-import { FooterExpanded } from "./FooterExpanded";
+import React, { useCallback, useMemo, useRef } from "react";
+import { View, useColorScheme } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { FooterExpandedContent } from "./FooterExpandedContent";
 
 export interface RecordingFooterProps {
   service: ActivityRecorderService | null;
@@ -49,6 +39,31 @@ export interface RecordingFooterProps {
   onFinish: () => void;
 }
 
+// Theme-aware colors for bottom sheet
+const THEME_COLORS = {
+  light: {
+    background: "#ffffff", // white
+    handleIndicator: "#888888",
+  },
+  dark: {
+    background: "#18181b", // zinc-900
+    handleIndicator: "#888888",
+  },
+} as const;
+
+// Bottom sheet styling constants (non-color styles)
+const BOTTOM_SHEET_BASE_STYLES = {
+  handleIndicator: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+  },
+  container: {
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
+} as const;
+
 export function RecordingFooter({
   service,
   recordingState,
@@ -62,55 +77,60 @@ export function RecordingFooter({
   onLap,
   onFinish,
 }: RecordingFooterProps) {
-  // Focus mode context
-  const { focusState, focusFooter, clearFocus } = useFocusMode();
-
-  // Bottom sheet ref
+  const { focusState, focusFooter, clearFocus, isAnyZoneFocused } = useFocusMode();
   const bottomSheetRef = useRef<BottomSheet>(null);
+  const insets = useSafeAreaInsets();
+  const colorScheme = useColorScheme();
 
-  // Snap points: collapsed (90px - just controls) and expanded (60% screen)
-  const snapPoints = useMemo(() => [90, "60%"], []);
+  // Get theme-aware colors
+  const themeColors = THEME_COLORS[colorScheme === "dark" ? "dark" : "light"];
 
-  // Track current snap index for conditional rendering
-  const [currentSnapIndex, setCurrentSnapIndex] = React.useState(0);
+  // Construct theme-aware styles
+  const bottomSheetStyles = useMemo(() => ({
+    handleIndicator: {
+      ...BOTTOM_SHEET_BASE_STYLES.handleIndicator,
+      backgroundColor: themeColors.handleIndicator,
+    },
+    background: {
+      backgroundColor: themeColors.background,
+    },
+    container: BOTTOM_SHEET_BASE_STYLES.container,
+  }), [themeColors]);
 
-  // Backdrop component for tap-outside-to-collapse
+  // Snap points: collapsed (120px) and expanded (60% screen)
+  // Mixed fixed/percentage snap points are fully supported and recommended
+  const snapPoints = useMemo(() => [120, "60%"], []);
+
+  // Simplified backdrop - the component handles appearance animations internally
   const renderBackdrop = useCallback(
     (props: any) => (
       <BottomSheetBackdrop
         {...props}
-        disappearsOnIndex={0}
         appearsOnIndex={1}
-        opacity={0.3}
+        disappearsOnIndex={0}
+        opacity={0.5}
         pressBehavior="collapse"
       />
     ),
     [],
   );
 
-  // Handle snap point changes
+  // Handle snap point changes for focus mode
+  // Only react to provided snap points to avoid constant updates during drag
   const handleSheetChanges = useCallback(
-    (index: number) => {
-      setCurrentSnapIndex(index);
-
-      // Update focus mode state based on snap index
-      if (index === 1) {
-        // Footer expanded - update focus state
-        focusFooter();
-      } else if (index === 0 && focusState === "footer") {
-        // Footer collapsed - clear focus if it was focused
-        clearFocus();
+    (index: number, position: number, type: SNAP_POINT_TYPE) => {
+      if (type === SNAP_POINT_TYPE.PROVIDED) {
+        if (index === 1) {
+          if (!isAnyZoneFocused()) {
+            focusFooter();
+          }
+        } else if (index === 0 && focusState === "footer") {
+          clearFocus();
+        }
       }
     },
-    [focusFooter, clearFocus, focusState],
+    [focusFooter, clearFocus, focusState, isAnyZoneFocused],
   );
-
-  // Debug logging
-  React.useEffect(() => {
-    console.log("[RecordingFooter] Mounted with state:", recordingState);
-    console.log("[RecordingFooter] Snap points:", snapPoints);
-    console.log("[RecordingFooter] Current snap index:", currentSnapIndex);
-  }, [recordingState, snapPoints, currentSnapIndex]);
 
   return (
     <BottomSheet
@@ -120,47 +140,26 @@ export function RecordingFooter({
       onChange={handleSheetChanges}
       enablePanDownToClose={false}
       backdropComponent={renderBackdrop}
-      animationConfigs={{
-        damping: 80,
-        stiffness: 500,
-        mass: 0.3,
-      }}
       enableDynamicSizing={false}
-      handleIndicatorStyle={{ backgroundColor: "#888" }}
-      containerStyle={{
-        zIndex: 999999,
-      }}
+      bottomInset={insets.bottom}
+      handleIndicatorStyle={bottomSheetStyles.handleIndicator}
+      backgroundStyle={bottomSheetStyles.background}
+      style={bottomSheetStyles.container}
     >
-      <View className="flex-1 bg-background">
-        {/* Always render both states to avoid render lag, use display style to show/hide */}
-        <View style={{ display: currentSnapIndex === 0 ? "flex" : "none" }}>
-          <FooterCollapsed
-            service={service}
-            recordingState={recordingState}
-            category={category}
-            onStart={onStart}
-            onPause={onPause}
-            onResume={onResume}
-            onLap={onLap}
-            onFinish={onFinish}
-          />
-        </View>
-
-        <View style={{ display: currentSnapIndex === 1 ? "flex" : "none", flex: 1 }}>
-          <FooterExpanded
-            service={service}
-            recordingState={recordingState}
-            category={category}
-            location={location}
-            hasPlan={hasPlan}
-            hasRoute={hasRoute}
-            onPause={onPause}
-            onResume={onResume}
-            onLap={onLap}
-            onFinish={onFinish}
-          />
-        </View>
-      </View>
+      {/* Single permanent content - no transitions */}
+      <FooterExpandedContent
+        service={service}
+        recordingState={recordingState}
+        category={category}
+        location={location}
+        hasPlan={hasPlan}
+        hasRoute={hasRoute}
+        onStart={onStart}
+        onPause={onPause}
+        onResume={onResume}
+        onLap={onLap}
+        onFinish={onFinish}
+      />
     </BottomSheet>
   );
 }

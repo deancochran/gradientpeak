@@ -16,6 +16,11 @@
 // Core Interfaces
 // ================================
 
+/**
+ * Speed display format based on velocity
+ */
+export type SpeedDisplayFormat = "pace" | "speed";
+
 export interface SimplifiedMetrics {
   /** Current sensor readings (latest values) */
   current: {
@@ -30,6 +35,13 @@ export interface SimplifiedMetrics {
       alt?: number;
       heading?: number;
     };
+  };
+
+  /** Display format recommendation for speed/pace */
+  display: {
+    format: SpeedDisplayFormat; // "pace" for running, "speed" for cycling
+    value: number; // Either pace (min/km) or speed (km/h)
+    unit: string; // "min/km" or "km/h"
   };
 
   /** Cumulative totals */
@@ -209,6 +221,80 @@ export function getZoneDistribution(
 }
 
 // ================================
+// Speed/Pace Display Utilities
+// ================================
+
+/**
+ * Threshold for switching between pace and speed display
+ * 3.5 m/s = 12.6 km/h (typical running/cycling boundary)
+ */
+const SPEED_PACE_THRESHOLD_MPS = 3.5;
+
+/**
+ * Calculate display format and value based on current speed
+ * @param speedMPS - Speed in meters per second
+ * @returns Display object with format, value, and unit
+ */
+export function getSpeedDisplay(speedMPS: number | undefined): {
+  format: SpeedDisplayFormat;
+  value: number;
+  unit: string;
+} {
+  // Default to speed format if no data
+  if (!speedMPS || speedMPS === 0) {
+    return {
+      format: "speed",
+      value: 0,
+      unit: "km/h",
+    };
+  }
+
+  // Use pace format for running speeds (< 3.5 m/s or 12.6 km/h)
+  if (speedMPS < SPEED_PACE_THRESHOLD_MPS) {
+    const paceMinPerKm = speedMPS > 0 ? 1000 / speedMPS / 60 : 0;
+    return {
+      format: "pace",
+      value: paceMinPerKm,
+      unit: "min/km",
+    };
+  }
+
+  // Use speed format for cycling speeds (>= 3.5 m/s)
+  const speedKmH = speedMPS * 3.6;
+  return {
+    format: "speed",
+    value: speedKmH,
+    unit: "km/h",
+  };
+}
+
+/**
+ * Format pace for display
+ * @param paceMinPerKm - Pace in minutes per kilometer
+ * @returns Formatted string like "5:30"
+ */
+export function formatPace(paceMinPerKm: number): string {
+  if (!paceMinPerKm || paceMinPerKm === 0 || !isFinite(paceMinPerKm)) {
+    return "--:--";
+  }
+  const minutes = Math.floor(paceMinPerKm);
+  const seconds = Math.round((paceMinPerKm - minutes) * 60);
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+/**
+ * Format speed for display
+ * @param speedKmH - Speed in km/h
+ * @returns Formatted string like "25.4"
+ */
+export function formatSpeed(speedKmH: number): string {
+  if (!speedKmH || speedKmH === 0) {
+    return "0.0";
+  }
+  return speedKmH.toFixed(1);
+}
+
+// ================================
 // Conversion Utilities
 // ================================
 
@@ -222,6 +308,9 @@ export function convertToSimplifiedMetrics(
   hasEnoughData: boolean,
   profile?: { ftp?: number; weight_kg?: number },
 ): SimplifiedMetrics {
+  // Calculate dynamic speed/pace display
+  const speedDisplay = getSpeedDisplay(currentReadings.speed);
+
   const metrics: SimplifiedMetrics = {
     current: {
       power: currentReadings.power,
@@ -231,6 +320,7 @@ export function convertToSimplifiedMetrics(
       temperature: currentReadings.temperature,
       position: currentReadings.position,
     },
+    display: speedDisplay,
     totals: {
       elapsed: state.elapsedTime,
       moving: state.movingTime,

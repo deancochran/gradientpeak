@@ -54,6 +54,42 @@ export const profilesRouter = createTRPCRouter({
     }
   }),
 
+  // Get public profile data by ID (for displaying in activity feeds)
+  getPublicById: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      try {
+        const { data: profile, error } = await ctx.supabase
+          .from("profiles")
+          .select("id, username, avatar_url, bio")
+          .eq("id", input.id)
+          .single();
+
+        if (error) {
+          if (error.code === "PGRST116") {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Profile not found",
+            });
+          }
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: error.message,
+          });
+        }
+
+        return profile;
+      } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to fetch public profile",
+        });
+      }
+    }),
+
   update: protectedProcedure
     .input(
       profileQuickUpdateSchema.partial().extend({

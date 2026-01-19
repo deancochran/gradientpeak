@@ -16,6 +16,12 @@ export enum ControlMode {
 }
 
 /**
+ * FTMS Device Type
+ * Used to identify the type of fitness machine for device-specific calculations
+ */
+export type FTMSDeviceType = "bike" | "rower" | "elliptical" | "treadmill";
+
+/**
  * Comprehensive FTMS feature detection
  * Based on FTMS spec Section 4.3.1
  */

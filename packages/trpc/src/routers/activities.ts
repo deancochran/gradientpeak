@@ -58,8 +58,8 @@ export const activitiesRouter = createTRPCRouter({
         .select(
           `
           id, name, type, location,
-          started_at, duration_seconds, distance_meters,
-          metrics
+          started_at, duration_seconds, moving_seconds, distance_meters,
+          metrics, profile_snapshot, route_id, activity_plan_id, profile_id
         `,
           { count: "exact" },
         )
@@ -367,5 +367,38 @@ export const activitiesRouter = createTRPCRouter({
 
       if (error) throw new Error(error.message);
       return data;
+    }),
+
+  // Hard delete activity - permanently removes the record
+  // Activity streams are automatically deleted via cascade
+  delete: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Verify ownership before deletion
+      const { data: activity, error: fetchError } = await ctx.supabase
+        .from("activities")
+        .select("id, profile_id, name")
+        .eq("id", input.id)
+        .eq("profile_id", ctx.session.user.id)
+        .single();
+
+      if (fetchError || !activity) {
+        throw new Error("Activity not found");
+      }
+
+      // Hard delete: remove the record (activity_streams cascade deleted automatically)
+      const { error } = await ctx.supabase
+        .from("activities")
+        .delete()
+        .eq("id", input.id)
+        .eq("profile_id", ctx.session.user.id);
+
+      if (error) throw new Error(error.message);
+
+      return { success: true, deletedActivityId: input.id };
     }),
 });

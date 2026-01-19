@@ -215,7 +215,6 @@ export default function ActivityPlanDetailPage() {
       console.error("Delete error:", {
         message: error.message,
         code: error.data?.code,
-        cause: error.cause,
         fullError: error,
       });
       Alert.alert(

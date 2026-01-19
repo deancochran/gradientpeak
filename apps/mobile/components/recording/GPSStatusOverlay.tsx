@@ -36,9 +36,11 @@ export interface GPSStatusOverlayProps {
 function useGPSStatus(service: ActivityRecorderService | null, isOutdoor: boolean): {
   hasSignal: boolean;
   lastUpdateTime: number | null;
+  lastAccuracy: number | null;
 } {
   const [hasSignal, setHasSignal] = useState(true);
   const [lastUpdateTime, setLastUpdateTime] = useState<number | null>(null);
+  const [lastAccuracy, setLastAccuracy] = useState<number | null>(null);
 
   useEffect(() => {
     if (!service || !isOutdoor) {
@@ -46,28 +48,49 @@ function useGPSStatus(service: ActivityRecorderService | null, isOutdoor: boolea
       return;
     }
 
-    // Initialize last update time on mount
+    // Initialize with current time - assume GPS active on mount
     setLastUpdateTime(Date.now());
+    setHasSignal(true);
 
-    // Check for location updates periodically
+    // Subscribe to location updates from service
+    const handleLocationUpdate = (location: any) => {
+      setLastUpdateTime(Date.now());
+      setLastAccuracy(location?.coords?.accuracy ?? null);
+
+      // Signal is good if accuracy is reasonable
+      const isAccurate = location?.coords?.accuracy !== undefined &&
+                         location?.coords?.accuracy !== null &&
+                         location.coords.accuracy <= 20;
+
+      setHasSignal(isAccurate);
+    };
+
+    service.locationManager.addCallback(handleLocationUpdate);
+
+    // Check for stale GPS data or poor accuracy periodically
     const checkInterval = setInterval(() => {
       try {
-        // Get last location update time
-        // Note: This is a simplified check - in production, you'd check
-        // the LocationManager's last update timestamp and accuracy
+        const now = Date.now();
         setLastUpdateTime((prevTime) => {
-          if (!prevTime) return Date.now();
+          setLastAccuracy((prevAccuracy) => {
+            if (!prevTime) return prevAccuracy;
 
-          const now = Date.now();
-          const timeSinceUpdate = now - prevTime;
+            const timeSinceUpdate = now - prevTime;
 
-          // Consider GPS lost if no update in last 10 seconds
-          if (timeSinceUpdate > 10000) {
-            setHasSignal(false);
-          } else {
-            setHasSignal(true);
-          }
+            // GPS signal is lost if EITHER:
+            // 1. No update in last 5 seconds (staleness)
+            // 2. Accuracy > 20 meters or accuracy is null (poor signal)
+            const isStale = timeSinceUpdate > 5000;
+            const isInaccurate = prevAccuracy === null || prevAccuracy > 20;
 
+            if (isStale || isInaccurate) {
+              setHasSignal(false);
+            } else {
+              setHasSignal(true);
+            }
+
+            return prevAccuracy;
+          });
           return prevTime; // Don't update time in the check interval
         });
       } catch (error) {
@@ -75,23 +98,20 @@ function useGPSStatus(service: ActivityRecorderService | null, isOutdoor: boolea
       }
     }, 2000); // Check every 2 seconds
 
-    // Listen for location updates from service
-    // Note: This would require the service to expose location events
-    // For now, the check interval handles the status monitoring
-
     return () => {
       clearInterval(checkInterval);
+      service.locationManager.removeCallback(handleLocationUpdate);
     };
     // IMPORTANT: Do not include lastUpdateTime in deps to prevent infinite loop
     // The interval checks status periodically without re-creating itself
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [service, isOutdoor]);
 
-  return { hasSignal, lastUpdateTime };
+  return { hasSignal, lastUpdateTime, lastAccuracy };
 }
 
 export function GPSStatusOverlay({ service, isOutdoor }: GPSStatusOverlayProps) {
-  const { hasSignal, lastUpdateTime } = useGPSStatus(service, isOutdoor);
+  const { hasSignal, lastUpdateTime, lastAccuracy } = useGPSStatus(service, isOutdoor);
 
   // Only show overlay for outdoor activities when GPS signal is lost
   if (!isOutdoor || hasSignal) {
@@ -114,6 +134,11 @@ export function GPSStatusOverlay({ service, isOutdoor }: GPSStatusOverlayProps) 
         {lastUpdateTime && (
           <Text className="text-xs text-muted-foreground mt-3">
             Last update: {Math.round((Date.now() - lastUpdateTime) / 1000)}s ago
+          </Text>
+        )}
+        {lastAccuracy !== null && lastAccuracy > 20 && (
+          <Text className="text-xs text-muted-foreground mt-1">
+            Poor accuracy: ±{Math.round(lastAccuracy)}m
           </Text>
         )}
       </View>

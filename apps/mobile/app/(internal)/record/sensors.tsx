@@ -18,7 +18,6 @@ import { ActivityIndicator, ScrollView, View } from "react-native";
 import type { Device } from "react-native-ble-plx";
 
 function SensorsScreen() {
-
   const service = useSharedActivityRecorder();
   const { sensors: connectedSensors } = useSensors(service);
   const {
@@ -38,6 +37,8 @@ function SensorsScreen() {
     new Set(),
   );
   const [isRequestingPermission, setIsRequestingPermission] = useState(false);
+  const [bleState, setBleState] = useState<string>("Unknown");
+  const [scanError, setScanError] = useState<string | null>(null);
 
   // Setup scan subscription to receive devices as they're discovered
   useEffect(() => {
@@ -61,6 +62,15 @@ function SensorsScreen() {
     return unsubscribe;
   }, [service, subscribeScan, connectedSensors]);
 
+  // Remove devices from available list when they become connected
+  useEffect(() => {
+    setAvailableDevices((prev) =>
+      prev.filter(
+        (device) => !connectedSensors.some((sensor) => sensor.id === device.id),
+      ),
+    );
+  }, [connectedSensors]);
+
   // Cleanup: stop scan when component unmounts
   useEffect(() => {
     return () => {
@@ -82,6 +92,24 @@ function SensorsScreen() {
 
     loadPermissions();
   }, []);
+
+  // Monitor BLE state
+  useEffect(() => {
+    if (!service) return;
+
+    const checkBleState = () => {
+      const state = service.sensorsManager.getBleState();
+      setBleState(state);
+    };
+
+    // Check immediately
+    checkBleState();
+
+    // Check periodically
+    const interval = setInterval(checkBleState, 2000);
+
+    return () => clearInterval(interval);
+  }, [service]);
 
   const refreshPermissions = useCallback(async () => {
     try {
@@ -118,14 +146,40 @@ function SensorsScreen() {
       return;
     }
 
+    // Check BLE state before scanning
+    if (bleState === "PoweredOff") {
+      setScanError("Bluetooth is turned off. Please enable Bluetooth in settings.");
+      return;
+    }
+
+    if (bleState === "Unauthorized") {
+      setScanError("Bluetooth access is not authorized. Please enable in settings.");
+      return;
+    }
+
+    if (bleState !== "PoweredOn") {
+      setScanError(`Bluetooth is not ready (${bleState}). Please wait or restart the app.`);
+      return;
+    }
+
+    // Clear any previous errors
+    setScanError(null);
     setIsScanning(true);
     // Clear available devices when starting a new scan
     setAvailableDevices([]);
 
     try {
       await startScan();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Scan failed:", error);
+      const errorMsg = error?.message || String(error);
+      if (errorMsg.toLowerCase().includes("powered off")) {
+        setScanError("Bluetooth is powered off. Please enable Bluetooth in settings.");
+      } else if (errorMsg.toLowerCase().includes("unauthorized")) {
+        setScanError("Bluetooth permission denied. Please enable in settings.");
+      } else {
+        setScanError(`Scan failed: ${errorMsg}`);
+      }
     } finally {
       setIsScanning(false);
     }
@@ -139,13 +193,15 @@ function SensorsScreen() {
   const handleConnectDevice = async (device: Device) => {
     if (connectingDevices.has(device.id)) return;
 
+    // Add to connecting set - device stays in Available list while connecting
     setConnectingDevices((prev) => new Set(prev).add(device.id));
 
     try {
       await connectDevice(device.id);
-      setAvailableDevices((prev) => prev.filter((d) => d.id !== device.id));
+      // Device will be moved to Connected list by the useEffect that watches connectedSensors
     } catch (error) {
       console.error("Connection failed:", error);
+      // Device stays in available list on failure
     } finally {
       setConnectingDevices((prev) => {
         const newSet = new Set(prev);
@@ -160,6 +216,16 @@ function SensorsScreen() {
       await disconnectDevice(deviceId);
     } catch (error) {
       console.error("Disconnection failed:", error);
+    }
+  };
+
+  const handleResetSensors = async () => {
+    if (!service) return;
+    try {
+      await service.sensorsManager.resetAllSensors();
+      console.log("All sensors reset successfully");
+    } catch (error) {
+      console.error("Failed to reset sensors:", error);
     }
   };
 
@@ -180,7 +246,7 @@ function SensorsScreen() {
       <View className="bg-card border-b border-border px-4 py-3">
         <Button
           onPress={isScanning ? handleStopScan : handleStartScan}
-          disabled={!bluetoothGranted}
+          disabled={!bluetoothGranted || (bleState !== "PoweredOn" && bleState !== "Unknown")}
           className="w-full"
         >
           {isScanning ? (
@@ -190,7 +256,11 @@ function SensorsScreen() {
             </View>
           ) : (
             <View className="flex-row items-center gap-2">
-              <Icon as={RefreshCw} size={16} className="text-primary-foreground" />
+              <Icon
+                as={RefreshCw}
+                size={16}
+                className="text-primary-foreground"
+              />
               <Text className="text-primary-foreground">Scan for Sensors</Text>
             </View>
           )}
@@ -226,12 +296,41 @@ function SensorsScreen() {
           </View>
         )}
 
+        {/* BLE State Error Banner */}
+        {scanError && (
+          <View className="px-4 py-4 bg-red-500/10 border-b border-red-500/20">
+            <View className="flex-row items-center gap-3">
+              <Icon as={Bluetooth} size={20} className="text-red-600" />
+              <Text className="text-sm text-red-700 flex-1">{scanError}</Text>
+            </View>
+          </View>
+        )}
+
+        {/* BLE State Indicator (for debugging) */}
+        {bleState !== "PoweredOn" && bleState !== "Unknown" && (
+          <View className="px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/20">
+            <Text className="text-xs text-yellow-700">
+              Bluetooth Status: {bleState}
+            </Text>
+          </View>
+        )}
+
         {/* Connected Devices */}
         {connectedSensors.length > 0 && (
           <View className="px-4 py-4">
-            <Text className="text-xs font-medium text-muted-foreground mb-3 uppercase tracking-wide">
-              Connected ({connectedSensors.length})
-            </Text>
+            <View className="flex-row items-center justify-between mb-3">
+              <Text className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Connected ({connectedSensors.length})
+              </Text>
+              <Button
+                size="sm"
+                variant="ghost"
+                onPress={handleResetSensors}
+                className="h-7 px-2"
+              >
+                <Text className="text-xs text-red-600">Reset All</Text>
+              </Button>
+            </View>
             {connectedSensors.map((sensor) => (
               <View
                 key={sensor.id}

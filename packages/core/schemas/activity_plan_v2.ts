@@ -300,14 +300,16 @@ export function getStepIntensityColor(
 }
 
 /**
- * Format intensity target for display
+ * Format intensity target for display with units
  */
 export function formatIntensityTarget(target: IntensityTargetV2): string {
   switch (target.type) {
     case "%FTP":
+      return `${Math.round(target.intensity)}% FTP`;
     case "%MaxHR":
+      return `${Math.round(target.intensity)}% MaxHR`;
     case "%ThresholdHR":
-      return `${Math.round(target.intensity)}%`;
+      return `${Math.round(target.intensity)}% ThresholdHR`;
     case "watts":
       return `${Math.round(target.intensity)}W`;
     case "bpm":
@@ -317,7 +319,7 @@ export function formatIntensityTarget(target: IntensityTargetV2): string {
     case "cadence":
       return `${Math.round(target.intensity)} rpm`;
     case "RPE":
-      return `${target.intensity}/10`;
+      return `RPE ${target.intensity}/10`;
     default:
       return `No Target Intensity`;
   }

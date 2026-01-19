@@ -1,4 +1,7 @@
-import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import {
+  ActivityPlanCard,
+  ActivityPlanCardData,
+} from "@/components/shared/ActivityPlanCard";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import type {
@@ -120,7 +123,7 @@ export function TemplatesList({ onTemplateSelect }: TemplatesListProps) {
   // If no category selected, show category list
   if (!selectedCategory) {
     return (
-      <View className="gap-3">
+      <View className="gap-2">
         {CATEGORIES.map((category) => {
           const templates = getSampleActivitiesByCategory(
             category.category as any,
@@ -177,7 +180,7 @@ export function TemplatesList({ onTemplateSelect }: TemplatesListProps) {
   );
 
   return (
-    <View className="gap-3">
+    <View className="gap-2">
       {/* Back button */}
       <TouchableOpacity
         onPress={() => setSelectedCategory(null)}

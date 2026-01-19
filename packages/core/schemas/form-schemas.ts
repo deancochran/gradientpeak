@@ -10,6 +10,10 @@
  */
 
 import { z } from "zod";
+import {
+  publicActivitiesInsertSchema,
+  publicActivityPlansInsertSchema,
+} from "@repo/supabase";
 
 // ============================================================================
 // REUSABLE VALIDATION PATTERNS
@@ -484,26 +488,60 @@ export const activityNotesSchema = z.preprocess(
 );
 
 /**
- * Optional activity notes (nullable)
+ * Optional activity notes (nullable and optional)
+ * Handles undefined, null, empty strings, and actual content
  */
-export const optionalActivityNotesSchema = z.preprocess(
-  (val) => trimString(emptyStringToNull(val)),
-  z.string().max(5000, "Notes must be less than 5000 characters").nullable(),
-);
+export const optionalActivityNotesSchema = z
+  .union([
+    z.string().max(5000, "Notes must be less than 5000 characters"),
+    z.literal(""),
+    z.null(),
+  ])
+  .optional()
+  .transform((val) => {
+    // Handle undefined, null, or empty string - normalize to null
+    if (val === undefined || val === null || val === "") return null;
+    // Trim the string
+    const trimmed = val.trim();
+    return trimmed === "" ? null : trimmed;
+  });
 
 /**
  * Activity Submission Form Schema
  * Used when submitting a recorded activity
+ * Picks relevant fields from supazod insert schema and adds form-specific validations
+ *
+ * Fields:
+ * - name: required, 1-100 characters (from supazod: required string)
+ * - notes: optional, max 5000 characters (from supazod: optional nullable string)
+ * - is_private: optional boolean, defaults to false (from supazod: optional boolean)
  */
-export const activitySubmissionFormSchema = z.object({
-  name: activityNameSchema,
-  notes: optionalActivityNotesSchema,
-  is_private: z.boolean().optional().default(false),
-});
+export const activitySubmissionFormSchema = publicActivitiesInsertSchema
+  .pick({
+    name: true,
+    notes: true,
+    is_private: true,
+  })
+  .extend({
+    // Override name with stricter validation
+    name: activityNameSchema,
+    // Override notes with length limit
+    notes: optionalActivityNotesSchema,
+    // Keep is_private as-is from supazod (optional boolean)
+  });
 
 export type ActivitySubmissionFormData = z.infer<
   typeof activitySubmissionFormSchema
 >;
+
+/**
+ * Activity Update Schema (for editing existing activities)
+ * Allows partial updates to name, notes, and privacy
+ * All fields optional since it's for updates
+ */
+export const activityUpdateFormSchema = activitySubmissionFormSchema.partial();
+
+export type ActivityUpdateFormData = z.infer<typeof activityUpdateFormSchema>;
 
 // ============================================================================
 // ACTIVITY PLAN FORM SCHEMAS
@@ -628,23 +666,45 @@ export const activityCategorySchema = z.enum([
 /**
  * Activity Plan Create Form Schema
  * Used when creating a new activity plan
- * Note: estimated_duration and estimated_tss are calculated server-side
+ * Extends supazod insert schema with form-specific validations
  *
- * Structure, route, and description are all optional, but at least ONE must be provided:
+ * Fields from supazod:
+ * - name: required string (enhanced: 1-100 chars)
+ * - description: required string (enhanced: max 1000 chars)
+ * - notes: optional nullable string (enhanced: max 2000 chars)
+ * - activity_location: enum ["outdoor", "indoor"]
+ * - activity_category: enum ["run", "bike", "swim", "strength", "other"]
+ * - route_id: optional nullable UUID
+ * - structure: optional nullable JSON
+ *
+ * Note: Structure, route, and description can be combined:
  * - Structure-only: Structured workout (intervals/steps)
  * - Route-only: Just follow a route
  * - Description-only: Casual activity with no structure
- * - Structure + Route: Structured workout on a specific route
- * - Structure + Description: Structured workout with notes
- * - Route + Description: Route with contextual notes
+ * - Combinations supported
  */
-export const activityPlanCreateFormSchema = z
-  .object({
+export const activityPlanCreateFormSchema = publicActivityPlansInsertSchema
+  .pick({
+    name: true,
+    description: true,
+    notes: true,
+    activity_location: true,
+    activity_category: true,
+    route_id: true,
+    structure: true,
+  })
+  .extend({
+    // Override with stricter validations
     name: activityPlanNameSchema,
-    description: optionalActivityPlanDescriptionSchema,
-    activity_location: activityLocationSchema,
-    activity_category: activityCategorySchema,
-    route_id: z.string().uuid().optional().nullable(),
+    // Description is required by database but can be empty string
+    // Form allows it to be optional, defaulting to empty string
+    description: z.preprocess(
+      trimString,
+      z
+        .string()
+        .max(1000, "Description must be less than 1000 characters")
+        .default(""),
+    ),
     notes: activityPlanNotesSchema,
     structure: z
       .object({
@@ -656,16 +716,12 @@ export const activityPlanCreateFormSchema = z
   })
   .refine(
     (data) => {
-      // At least one of structure, route_id, or description must be provided
-      return (
-        data.structure !== null ||
-        data.route_id !== null ||
-        (data.description !== null && data.description.trim() !== "")
-      );
+      // At least one of structure or route_id must be provided
+      // (description is always provided as it has a default empty string)
+      return data.structure !== null || data.route_id !== null;
     },
     {
-      message:
-        "Activity plan must have at least one of: structure, route, or description",
+      message: "Activity plan must have either a structure or a route",
       path: ["structure"],
     },
   );

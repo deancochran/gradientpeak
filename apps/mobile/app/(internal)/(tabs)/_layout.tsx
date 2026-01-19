@@ -55,7 +55,7 @@ export default function InternalLayout() {
             ),
             tabBarButton: (props) => (
               <TouchableOpacity
-                {...props}
+                {...(props as any)}
                 onPress={() => router.push("/record")}
               />
             ),

@@ -1,4 +1,5 @@
 import { BLE_SERVICE_UUIDS, FTMS_CHARACTERISTICS } from "@repo/core";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Buffer } from "buffer";
 import {
   BleError,
@@ -77,6 +78,16 @@ export const KnownCharacteristics: Record<string, BleMetricType> = {
 /** --- Sensor Data Types (imported from types.ts) --- */
 // SensorReading is now imported from types.ts for consistency
 
+/** --- Storage key for persisted sensors --- */
+const PERSISTED_SENSORS_KEY = "@sensors:persisted_devices";
+
+/** --- Persisted sensor data structure --- */
+export interface PersistedSensor {
+  id: string;
+  name: string;
+  lastConnected: number; // timestamp
+}
+
 /** --- Generic Sports BLE Manager --- */
 export class SensorsManager {
   private bleManager = new BleManager();
@@ -85,8 +96,11 @@ export class SensorsManager {
   private connectionCallbacks: Set<(sensor: ConnectedSensor) => void> =
     new Set();
   private connectionMonitorTimer?: ReturnType<typeof setInterval>;
-  private readonly DISCONNECT_TIMEOUT_MS = 30000; // 30 seconds
-  private readonly HEALTH_CHECK_INTERVAL_MS = 10000; // 10 seconds
+  private readonly DISCONNECT_TIMEOUT_MS = 60000; // 60 seconds (increased from 30s for better stability)
+  private readonly HEALTH_CHECK_INTERVAL_MS = 15000; // 15 seconds (increased from 10s to reduce battery drain)
+
+  // BLE state tracking
+  private bleState: string = "Unknown";
 
   // Track controllable trainer
   private controllableTrainer?: ConnectedSensor;
@@ -95,8 +109,12 @@ export class SensorsManager {
   private reconnectionAttempts: Map<string, number> = new Map();
   private reconnectionTimers: Map<string, ReturnType<typeof setTimeout>> =
     new Map();
-  private readonly MAX_RECONNECTION_ATTEMPTS = 5;
-  private readonly RECONNECTION_BACKOFF_BASE_MS = 500;
+  private readonly MAX_RECONNECTION_ATTEMPTS = 8; // Increased from 5 for better reliability
+  private readonly RECONNECTION_BACKOFF_BASE_MS = 1000; // Increased from 500ms to 1s
+
+  // Sensor persistence
+  private persistedSensors: Map<string, PersistedSensor> = new Map();
+  private persistenceInitialized: boolean = false;
 
   // State transition debouncing
   private stateTransitionTimers: Map<string, ReturnType<typeof setTimeout>> =
@@ -106,14 +124,31 @@ export class SensorsManager {
   constructor() {
     this.initialize();
     this.startConnectionMonitoring();
+    // Load persisted sensors and attempt auto-reconnection
+    this.loadPersistedSensors();
   }
 
   /** Initialize BLE manager */
   private initialize() {
     this.bleManager.onStateChange((state) => {
-      if (state === "PoweredOn") console.log("BLE ready");
-      if (state === "PoweredOff" || state === "Unauthorized")
+      // Track BLE state for UI
+      this.bleState = state;
+      console.log(`[SensorsManager] BLE state changed: ${state}`);
+
+      if (state === "PoweredOn") {
+        console.log("BLE ready");
+        // Attempt to reconnect to persisted sensors when BLE is ready
+        if (this.persistenceInitialized && this.persistedSensors.size > 0) {
+          console.log(
+            `[SensorsManager] BLE powered on, attempting to reconnect ${this.persistedSensors.size} persisted sensors`,
+          );
+          this.reconnectPersistedSensors();
+        }
+      }
+      if (state === "PoweredOff" || state === "Unauthorized") {
+        console.log(`[SensorsManager] BLE ${state}, disconnecting all sensors`);
         this.disconnectAll();
+      }
     }, true);
   }
 
@@ -199,6 +234,148 @@ export class SensorsManager {
 
     // Notify connection callbacks
     this.connectionCallbacks.forEach((cb) => cb(sensor));
+  }
+
+  /**
+   * Load persisted sensors from AsyncStorage
+   */
+  private async loadPersistedSensors(): Promise<void> {
+    try {
+      const data = await AsyncStorage.getItem(PERSISTED_SENSORS_KEY);
+      if (data) {
+        const sensors: PersistedSensor[] = JSON.parse(data);
+        this.persistedSensors = new Map(sensors.map((s) => [s.id, s]));
+        console.log(
+          `[SensorsManager] Loaded ${sensors.length} persisted sensors`,
+        );
+      }
+    } catch (error) {
+      console.warn(
+        "[SensorsManager] Failed to load persisted sensors:",
+        error,
+      );
+      this.persistedSensors = new Map();
+    } finally {
+      this.persistenceInitialized = true;
+    }
+  }
+
+  /**
+   * Save persisted sensors to AsyncStorage
+   */
+  private async savePersistedSensors(): Promise<void> {
+    try {
+      const sensors = Array.from(this.persistedSensors.values());
+      await AsyncStorage.setItem(PERSISTED_SENSORS_KEY, JSON.stringify(sensors));
+      console.log(
+        `[SensorsManager] Saved ${sensors.length} persisted sensors`,
+      );
+    } catch (error) {
+      console.warn(
+        "[SensorsManager] Failed to save persisted sensors:",
+        error,
+      );
+    }
+  }
+
+  /**
+   * Add sensor to persistence
+   */
+  private async addPersistedSensor(
+    id: string,
+    name: string,
+  ): Promise<void> {
+    this.persistedSensors.set(id, {
+      id,
+      name,
+      lastConnected: Date.now(),
+    });
+    await this.savePersistedSensors();
+  }
+
+  /**
+   * Remove sensor from persistence
+   */
+  private async removePersistedSensor(id: string): Promise<void> {
+    this.persistedSensors.delete(id);
+    await this.savePersistedSensors();
+  }
+
+  /**
+   * Attempt to reconnect all persisted sensors
+   * Called on BLE power on or app initialization
+   */
+  private async reconnectPersistedSensors(): Promise<void> {
+    console.log(
+      `[SensorsManager] Attempting to reconnect ${this.persistedSensors.size} persisted sensors`,
+    );
+
+    for (const [id, sensorData] of this.persistedSensors) {
+      // Skip if already connected
+      const existing = this.connectedSensors.get(id);
+      if (existing && existing.connectionState === "connected") {
+        console.log(
+          `[SensorsManager] Sensor ${sensorData.name} already connected, skipping`,
+        );
+        continue;
+      }
+
+      console.log(
+        `[SensorsManager] Attempting to reconnect persisted sensor: ${sensorData.name}`,
+      );
+
+      // Attempt connection without blocking
+      this.connectSensor(id).catch((error) => {
+        console.log(
+          `[SensorsManager] Failed to reconnect ${sensorData.name}:`,
+          error.message || error,
+        );
+      });
+    }
+  }
+
+  /**
+   * Get current BLE state
+   * Used by UI to display BLE status and errors
+   */
+  getBleState(): string {
+    return this.bleState;
+  }
+
+  /**
+   * Clear all persisted sensors
+   * Useful for "reset" functionality or when user wants to forget all devices
+   * Does NOT disconnect currently connected sensors
+   */
+  async clearPersistedSensors(): Promise<void> {
+    console.log(
+      `[SensorsManager] Clearing ${this.persistedSensors.size} persisted sensors`,
+    );
+    this.persistedSensors.clear();
+    try {
+      await AsyncStorage.removeItem(PERSISTED_SENSORS_KEY);
+      console.log("[SensorsManager] Persisted sensors cleared successfully");
+    } catch (error) {
+      console.warn("[SensorsManager] Failed to clear persisted sensors:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Clear persisted sensors and disconnect all
+   * Complete reset of sensor connections
+   */
+  async resetAllSensors(): Promise<void> {
+    console.log("[SensorsManager] Resetting all sensors");
+    await this.disconnectAll();
+    await this.clearPersistedSensors();
+  }
+
+  /**
+   * Public method to get list of persisted sensors (for UI display)
+   */
+  public getPersistedSensors(): PersistedSensor[] {
+    return Array.from(this.persistedSensors.values());
   }
 
   /** Start monitoring sensor connection health */
@@ -488,6 +665,10 @@ export class SensorsManager {
       console.log(
         `Connected to ${connectedSensor.name} with ${services.length} services`,
       );
+
+      // Persist sensor for auto-reconnection in future sessions
+      await this.addPersistedSensor(connectedSensor.id, connectedSensor.name);
+
       this.connectionCallbacks.forEach((cb) => cb(connectedSensor));
       return connectedSensor;
     } catch (err) {
@@ -547,6 +728,12 @@ export class SensorsManager {
 
     // Remove from connected sensors map
     this.connectedSensors.delete(deviceId);
+
+    // Remove from persistence - user manually disconnected
+    console.log(
+      `[SensorsManager] Removing ${sensor.name} from persisted sensors (manual disconnect)`,
+    );
+    await this.removePersistedSensor(deviceId);
   }
 
   /** Disconnect all devices */
@@ -619,7 +806,10 @@ export class SensorsManager {
   }
 
   getConnectedSensors(): ConnectedSensor[] {
-    return Array.from(this.connectedSensors.values());
+    // Only return sensors that are fully connected, not in "connecting" state
+    return Array.from(this.connectedSensors.values()).filter(
+      (sensor) => sensor.connectionState === "connected",
+    );
   }
 
   /** Monitor known characteristics */
@@ -645,14 +835,24 @@ export class SensorsManager {
         error: BleError | null,
         char: Characteristic | null,
       ) => {
+        // Check if sensor is still in the connected sensors map
+        // If not, it was disconnected intentionally - stop monitoring
+        const stillConnected = this.connectedSensors.has(sensor.id);
+        if (!stillConnected) {
+          return;
+        }
+
         if (error) {
-          console.warn(`Error monitoring ${metricType}:`, error);
-          if (retries < maxRetries) {
-            retries++;
-            console.log(
-              `Retrying monitor for ${metricType} (${retries}/${maxRetries})`,
-            );
-            characteristic.monitor(monitorCallback);
+          // Only log and retry if sensor is still connected
+          if (sensor.connectionState === "connected") {
+            console.warn(`Error monitoring ${metricType}:`, error);
+            if (retries < maxRetries) {
+              retries++;
+              console.log(
+                `Retrying monitor for ${metricType} (${retries}/${maxRetries})`,
+              );
+              characteristic.monitor(monitorCallback);
+            }
           }
           return;
         }
@@ -730,9 +930,11 @@ export class SensorsManager {
       // Monitor for changes (some devices support notifications)
       characteristic.monitor((error, char) => {
         if (error) {
-          console.warn(
-            `[SensorsManager] Battery monitoring error for ${sensor.name}:`,
-            error,
+          // Battery monitoring errors are non-critical - sensor will continue to work
+          // Only log as debug info, don't treat as error
+          console.log(
+            `[SensorsManager] Battery monitoring error for ${sensor.name} (non-critical):`,
+            error.message || error,
           );
           return;
         }
@@ -748,9 +950,10 @@ export class SensorsManager {
         this.handleBatteryUpdate(sensor.id, sensor.name, batteryLevel);
       });
     } catch (error) {
-      console.error(
-        `[SensorsManager] Failed to monitor battery for ${sensor.name}:`,
-        error,
+      // Battery monitoring errors are non-critical - sensor continues to provide data
+      // Log as info rather than error to avoid alerting error tracking systems
+      console.log(
+        `[SensorsManager] Battery monitoring unavailable for ${sensor.name} (non-critical)`,
       );
     }
   }
@@ -1304,6 +1507,20 @@ export class SensorsManager {
     }
 
     return await this.controllableTrainer.ftmsController.setPowerTarget(watts);
+  }
+
+  /**
+   * Set resistance target level
+   */
+  async setResistanceTarget(level: number): Promise<boolean> {
+    if (!this.controllableTrainer?.ftmsController) {
+      console.warn("[SensorsManager] No controllable trainer connected");
+      return false;
+    }
+
+    return await this.controllableTrainer.ftmsController.setResistanceTarget(
+      level,
+    );
   }
 
   /**

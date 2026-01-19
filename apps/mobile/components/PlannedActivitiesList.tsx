@@ -76,7 +76,7 @@ export function PlannedActivitiesList({
   }
 
   return (
-    <View className="gap-3">
+    <View className="gap-2">
       <Text className="text-sm text-muted-foreground mb-2">
         {plannedActivities.length} activity
         {plannedActivities.length !== 1 ? "ies" : ""} scheduled for today
@@ -85,7 +85,7 @@ export function PlannedActivitiesList({
       {plannedActivities.map((activity) => (
         <View key={activity.id} className="relative">
           <ActivityPlanCard
-            plannedActivity={activity}
+            plannedActivity={activity as any}
             onPress={() => handleNavigateToDetail(activity)}
             variant="default"
             showScheduleInfo={true}

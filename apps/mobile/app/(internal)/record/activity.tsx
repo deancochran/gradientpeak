@@ -1,12 +1,13 @@
 /**
  * Activity Selection Screen
  *
- * Allows users to change activity category and location before recording starts.
+ * Allows users to change activity category before recording starts.
  *
  * Restrictions:
  * - Only accessible if no Activity Plan is attached
  * - Once an Activity Plan is attached, category is locked to the plan's category
- * - Location can be changed at any time before recording starts
+ *
+ * Note: Location (indoor/outdoor) is now controlled via the GPS toggle button in the footer
  */
 
 import React, { useState } from "react";
@@ -42,43 +43,31 @@ const ACTIVITY_CATEGORIES: {
   { value: "other", label: "Other", icon: Activity },
 ];
 
-const ACTIVITY_LOCATIONS: {
-  value: PublicActivityLocation;
-  label: string;
-}[] = [
-  { value: "outdoor", label: "Outdoor" },
-  { value: "indoor", label: "Indoor" },
-];
-
 export default function ActivitySelectionScreen() {
   const service = useSharedActivityRecorder();
   const { activityCategory, activityLocation } = useActivityStatus(service);
 
   // Check if a plan is attached (category should be locked)
-  const hasPlan = !!service?.recordingMetadata?.plannedActivityId;
+  const hasPlan = service?.hasPlan ?? false;
 
   const [selectedCategory, setSelectedCategory] =
     useState<PublicActivityCategory>(activityCategory);
-  const [selectedLocation, setSelectedLocation] =
-    useState<PublicActivityLocation>(activityLocation);
 
   const handleSave = () => {
     if (!service) return;
 
-    // Update the activity category and location
-    // If a plan is attached, only location changes (category is locked)
+    // Update the activity category only (location is controlled by GPS button)
+    // The service will preserve any existing plan automatically
     service.selectActivityFromPayload({
       category: selectedCategory,
-      location: selectedLocation,
+      location: activityLocation, // Keep current location
     });
 
     router.back();
   };
 
-  // Check if there are any changes (location can change even with plan attached)
-  const hasChanges =
-    selectedCategory !== activityCategory ||
-    selectedLocation !== activityLocation;
+  // Check if there are any changes
+  const hasChanges = selectedCategory !== activityCategory;
 
   return (
     <View className="flex-1 bg-background">
@@ -91,6 +80,13 @@ export default function ActivitySelectionScreen() {
             </Text>
           </View>
         )}
+
+        {/* Info Banner - Location Control */}
+        <View className="bg-muted/50 p-3 rounded-lg mb-4 border border-border">
+          <Text className="text-xs text-muted-foreground">
+            Use the GPS toggle button in the footer to switch between Indoor and Outdoor modes.
+          </Text>
+        </View>
 
         {/* Category Section */}
         <View className="mb-6">
@@ -119,36 +115,6 @@ export default function ActivitySelectionScreen() {
                     <Text className="text-base font-medium">{cat.label}</Text>
                   </View>
                   {selectedCategory === cat.value && (
-                    <Icon as={Check} size={20} className="text-green-500" />
-                  )}
-                </View>
-              </Pressable>
-            ))}
-          </View>
-        </View>
-
-        {/* Location Section */}
-        <View className="mb-6">
-          <Text className="text-sm font-medium text-muted-foreground mb-3">
-            Activity Location
-          </Text>
-          <View className="gap-3">
-            {ACTIVITY_LOCATIONS.map((loc) => (
-              <Pressable
-                key={loc.value}
-                onPress={() => setSelectedLocation(loc.value)}
-                className="bg-card p-4 rounded-lg border border-border"
-                style={{
-                  borderColor:
-                    selectedLocation === loc.value
-                      ? "rgb(34, 197, 94)"
-                      : undefined,
-                  borderWidth: selectedLocation === loc.value ? 2 : 1,
-                }}
-              >
-                <View className="flex-row items-center justify-between">
-                  <Text className="text-base font-medium">{loc.label}</Text>
-                  {selectedLocation === loc.value && (
                     <Icon as={Check} size={20} className="text-green-500" />
                   )}
                 </View>

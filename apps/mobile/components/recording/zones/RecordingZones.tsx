@@ -2,7 +2,7 @@
  * Recording Zones Container
  *
  * Orchestrates the 3-zone vertical stack with conditional rendering.
- * Uses flexbox to distribute available space proportionally among visible zones.
+ * Uses flexbox to distribute available space equally among visible zones.
  *
  * Zone Rendering Logic:
  * - Zone A: Outdoor (always) | Indoor + Route (conditional)
@@ -10,8 +10,10 @@
  * - Zone C: Always visible
  *
  * Layout Strategy:
- * - All zones use flex-1 to proportionally fill available vertical space
- * - No hard-coded heights - responsive sizing via flexbox
+ * - All zones use flex: 1 for equal height distribution
+ * - 3 zones visible: 33.33% each
+ * - 2 zones visible: 50% each
+ * - 1 zone visible: 100%
  * - Gaps managed via Tailwind gap-4 utility
  * - When focused, zones overlay with absolute positioning
  */
@@ -82,12 +84,15 @@ export function RecordingZones({
     return { showZoneA, showZoneB, showZoneC };
   }, [location, hasPlan, hasRoute]);
 
+  // Hide regular zones when any zone is focused
+  const isAnyZoneFocused = focusState === "zone-a" || focusState === "zone-b" || focusState === "zone-c";
+
   return (
-    /* Zone stack - flexbox layout distributes space proportionally */
-    <View className="flex-1 px-4 pt-4 gap-4">
+    /* Zone stack - flexbox layout with gap, no padding */
+    <View className="flex-1 gap-4" style={{ opacity: isAnyZoneFocused ? 0 : 1 }}>
       {/* Zone A: Context Layer (Map/Route) */}
       {showZoneA && (
-        <AnimatedZoneContainer show={showZoneA}>
+        <AnimatedZoneContainer show={showZoneA} useFlex={true}>
           <RecordingErrorBoundary componentName="Zone A">
             <ZoneA
               service={service}
@@ -101,7 +106,7 @@ export function RecordingZones({
 
       {/* Zone B: Guidance Layer (Plan/Intervals) */}
       {showZoneB && (
-        <AnimatedZoneContainer show={showZoneB}>
+        <AnimatedZoneContainer show={showZoneB} useFlex={true}>
           <RecordingErrorBoundary componentName="Zone B">
             <ZoneB
               service={service}
@@ -114,7 +119,7 @@ export function RecordingZones({
 
       {/* Zone C: Data Layer (Metrics) - Always visible */}
       {showZoneC && (
-        <AnimatedZoneContainer show={showZoneC}>
+        <AnimatedZoneContainer show={showZoneC} useFlex={true}>
           <RecordingErrorBoundary componentName="Zone C">
             <ZoneC
               service={service}
@@ -123,6 +128,9 @@ export function RecordingZones({
           </RecordingErrorBoundary>
         </AnimatedZoneContainer>
       )}
+
+      {/* Footer spacer - prevents content from being overlaid by footer */}
+      <View style={{ height: 120 }} />
     </View>
   );
 }
@@ -188,43 +196,66 @@ export function ZoneFocusOverlay({
 /**
  * Animated container for zone mount/unmount transitions
  * Animation: withTiming() 300ms ease-out
- * Uses flex-1 to allow zones to proportionally fill available space
+ * Uses flex-1 to allow zones to proportionally fill available space (optional)
  */
 interface AnimatedZoneContainerProps {
   show: boolean;
   children: React.ReactNode;
+  useFlex?: boolean; // If true, uses flex: 1; if false, sizes based on content
 }
 
 function AnimatedZoneContainer({
   show,
   children,
+  useFlex = true,
 }: AnimatedZoneContainerProps) {
   // Initialize shared values - start from hidden state for mount animation
   const opacity = useSharedValue(0);
   const scale = useSharedValue(0.95);
+  const height = useSharedValue(0);
 
-  // Animate opacity and scale when visibility changes
+  // Animate opacity, scale, and height when visibility changes
   React.useEffect(() => {
     if (show) {
       // Animate to visible
       opacity.value = withTiming(1, { duration: 300 });
       scale.value = withTiming(1, { duration: 300 });
+      height.value = withTiming(1, { duration: 300 });
     } else {
       // Animate to hidden
       opacity.value = withTiming(0, { duration: 300 });
       scale.value = withTiming(0.95, { duration: 300 });
+      height.value = withTiming(0, { duration: 300 });
     }
-  }, [show, opacity, scale]);
+    // Note: Shared values (opacity, scale, height) should NOT be in dependency array
+    // They don't trigger re-renders and including them can cause unnecessary effect runs
+  }, [show]);
 
   const animatedStyle = useAnimatedStyle(() => {
-    return {
-      opacity: opacity.value,
-      transform: [{ scale: scale.value }],
-    };
+    if (useFlex) {
+      return {
+        opacity: opacity.value,
+        transform: [{ scale: scale.value }],
+        flex: height.value, // Animate flex value from 0 to 1
+        overflow: 'hidden',
+      };
+    } else {
+      // Content-based sizing: don't use flex, just scale opacity
+      return {
+        opacity: opacity.value,
+        transform: [{ scale: scale.value }],
+        overflow: 'hidden',
+      };
+    }
   });
 
+  // Don't render at all when hidden (after animation completes)
+  if (!show && opacity.value === 0) {
+    return null;
+  }
+
   return (
-    <Animated.View style={animatedStyle} className="flex-1">
+    <Animated.View style={animatedStyle}>
       {children}
     </Animated.View>
   );

@@ -72,6 +72,7 @@
  * ```
  */
 
+import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
@@ -86,7 +87,7 @@ import {
   type PlannedActivityScheduleFormData,
 } from "@repo/core";
 import { format } from "date-fns";
-import { Calendar, X } from "lucide-react-native";
+import { Calendar, Clock, TrendingUp, X } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import {
@@ -203,7 +204,7 @@ export function ScheduleActivityModal({
 
   // Load existing activity data (edit mode)
   useEffect(() => {
-    if (existingActivity) {
+    if (existingActivity && existingActivity.activity_plan) {
       setValue("activity_plan_id", existingActivity.activity_plan.id);
       setValue("scheduled_date", existingActivity.scheduled_date);
       setValue("notes", existingActivity.notes || null);
@@ -329,17 +330,18 @@ export function ScheduleActivityModal({
               </View>
             ) : displayPlan ? (
               <>
-                {/* Activity Plan Card */}
+                {/* Activity Plan Preview Card */}
                 <Card>
                   <CardContent className="p-4">
-                    <View className="flex-row items-start">
+                    {/* Header Row */}
+                    <View className="flex-row items-start mb-3">
                       <View className="mr-3 items-center justify-center w-12 h-12 rounded-full bg-muted">
                         <Text className="text-2xl">
                           {getActivityTypeIcon(displayPlan.activity_category)}
                         </Text>
                       </View>
                       <View className="flex-1">
-                        <Text className="font-semibold text-base">
+                        <Text className="font-semibold text-lg">
                           {displayPlan.name}
                         </Text>
                         {displayPlan.description && (
@@ -350,21 +352,51 @@ export function ScheduleActivityModal({
                             {displayPlan.description}
                           </Text>
                         )}
-                        <View className="flex-row mt-2 gap-4">
-                          {displayPlan.estimated_duration && (
-                            <Text className="text-sm text-muted-foreground">
-                              ⏱️{" "}
-                              {formatDuration(displayPlan.estimated_duration)}
-                            </Text>
-                          )}
-                          {displayPlan.estimated_tss && (
-                            <Text className="text-sm text-muted-foreground">
-                              📊 {Math.round(displayPlan.estimated_tss)} TSS
-                            </Text>
-                          )}
-                        </View>
                       </View>
                     </View>
+
+                    {/* Metrics Row */}
+                    <View className="flex-row gap-4 mb-3">
+                      {displayPlan.estimated_duration && (
+                        <View className="flex-row items-center gap-1.5">
+                          <Icon
+                            as={Clock}
+                            size={16}
+                            className="text-muted-foreground"
+                          />
+                          <Text className="text-sm font-medium">
+                            {formatDuration(displayPlan.estimated_duration)}
+                          </Text>
+                        </View>
+                      )}
+                      {displayPlan.estimated_tss && (
+                        <View className="flex-row items-center gap-1.5">
+                          <Icon
+                            as={TrendingUp}
+                            size={16}
+                            className="text-muted-foreground"
+                          />
+                          <Text className="text-sm font-medium">
+                            {Math.round(displayPlan.estimated_tss)} TSS
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Intensity Profile Chart */}
+                    {displayPlan.structure?.intervals &&
+                      displayPlan.structure.intervals.length > 0 && (
+                        <View className="mt-2 rounded-lg overflow-hidden">
+                          <Text className="text-xs text-muted-foreground mb-2">
+                            Intensity Profile
+                          </Text>
+                          <TimelineChart
+                            structure={displayPlan.structure}
+                            height={80}
+                            compact={true}
+                          />
+                        </View>
+                      )}
                   </CardContent>
                 </Card>
 

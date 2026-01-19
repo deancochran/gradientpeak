@@ -113,6 +113,9 @@ export interface ServiceEvents {
   // Error events
   error: (message: string) => void;
 
+  // GPS tracking events
+  gpsTrackingChanged: (enabled: boolean) => void;
+
   // Index signature for EventsMap
   [key: string]: (...args: any[]) => void;
 }
@@ -151,6 +154,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // === GPS Availability Cache ===
   private _gpsAvailable: boolean = false;
 
+  // === GPS Tracking Control ===
+  private _gpsTrackingEnabled: boolean = true;
+
   // === Route State ===
   private _currentRoute: any | null = null; // Full route data with coordinates
   private _routeDistance: number = 0; // Total route distance in meters
@@ -169,6 +175,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private lastPauseTime?: number;
   private elapsedTimeInterval?: number;
 
+  // === Lap Tracking ===
+  private laps: number[] = []; // Array of lap times (moving time in seconds)
+  private lastLapTime: number = 0; // Moving time when last lap was recorded
+
   // === Profile ===
   private profile: PublicProfilesRow;
 
@@ -183,8 +193,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.locationManager = new LocationManager();
     this.sensorsManager = new SensorsManager();
 
-    // Start location tracking immediately for map preview
-    this.startEarlyLocationTracking();
+    // Note: Location tracking is now started conditionally when activity is selected
+    // (only for outdoor activities) rather than immediately in constructor
 
     // Check permissions on initialization
     this.checkPermissions();
@@ -295,6 +305,14 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   get currentStep(): IntervalStepV2 | undefined {
     return this._steps[this._stepIndex];
+  }
+
+  get nextStep(): IntervalStepV2 | undefined {
+    return this._steps[this._stepIndex + 1];
+  }
+
+  get allSteps(): IntervalStepV2[] {
+    return this._steps;
   }
 
   get isFinished(): boolean {
@@ -522,8 +540,21 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     // Initialize to step 0 (first step)
     this._stepIndex = 0;
     this._stepStartMovingTime = 0; // Will be set when recording starts
+
+    const previousLocation = this.selectedActivityLocation;
     this.selectedActivityCategory = plan.activity_category;
     this.selectedActivityLocation = plan.activity_location || "indoor";
+
+    // Handle location tracking changes
+    if (previousLocation !== this.selectedActivityLocation) {
+      if (this.selectedActivityLocation === "outdoor") {
+        // Switching to outdoor - start early location tracking
+        this.startEarlyLocationTracking();
+      } else if (previousLocation === "outdoor") {
+        // Switching from outdoor to indoor - stop location tracking
+        this.stopEarlyLocationTracking();
+      }
+    }
 
     this.emit("planSelected", { plan, plannedId });
 
@@ -718,10 +749,21 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   /**
    * Start GPS location tracking early (before recording starts)
    * This allows the map to show the user's location in pending state
+   * Only starts tracking for outdoor activities
    */
   private async startEarlyLocationTracking(): Promise<void> {
+    // Only track location for outdoor activities
+    if (this.selectedActivityLocation !== "outdoor") {
+      console.log(
+        "[Service] Skipping early location tracking for indoor activity",
+      );
+      return;
+    }
+
     try {
-      console.log("[Service] Starting early location tracking for map preview");
+      console.log(
+        "[Service] Starting early location tracking for outdoor map preview",
+      );
       await this.locationManager.startForegroundTracking();
       this._gpsAvailable = true;
       console.log("[Service] Early location tracking started successfully");
@@ -731,6 +773,20 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         error,
       );
       // Don't throw - this is a nice-to-have for map preview
+    }
+  }
+
+  /**
+   * Stop early GPS location tracking
+   * Called when switching from outdoor to indoor or on cleanup
+   */
+  private async stopEarlyLocationTracking(): Promise<void> {
+    try {
+      await this.locationManager.stopForegroundTracking();
+      this._gpsAvailable = false;
+      console.log("[Service] Early location tracking stopped");
+    } catch (error) {
+      console.error("[Service] Failed to stop early location tracking:", error);
     }
   }
 
@@ -767,6 +823,121 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     if (this.isFinished) {
       console.log("[Service] Plan completed!");
       this.emit("planCompleted");
+    }
+  }
+
+  // ================================
+  // GPS Tracking Control
+  // ================================
+
+  /**
+   * Check if GPS tracking is currently enabled
+   * Independent of whether recording is active
+   */
+  public isGpsTrackingEnabled(): boolean {
+    return this._gpsTrackingEnabled;
+  }
+
+  /**
+   * Enable GPS tracking - switches to outdoor mode
+   * Preserves existing GPS data and starts collecting new data
+   */
+  public async enableGpsTracking(): Promise<void> {
+    if (this._gpsTrackingEnabled) {
+      console.log("[Service] GPS tracking already enabled");
+      return;
+    }
+
+    console.log("[Service] Enabling GPS tracking - switching to outdoor mode");
+    const previousLocation = this.selectedActivityLocation;
+    this._gpsTrackingEnabled = true;
+    this.selectedActivityLocation = "outdoor";
+
+    this.emit("gpsTrackingChanged", true);
+    this.emit("activitySelected", {
+      category: this.selectedActivityCategory,
+      location: "outdoor",
+    });
+
+    // Start location tracking if not recording yet (early tracking for preview)
+    if (this.state === "pending" || this.state === "ready") {
+      await this.startEarlyLocationTracking();
+    }
+
+    // Start GPS if currently recording
+    if (this.state === "recording") {
+      try {
+        await this.locationManager.startForegroundTracking();
+        await this.locationManager.startBackgroundTracking();
+        await this.locationManager.startHeadingTracking();
+        this._gpsAvailable = true;
+        console.log("[Service] GPS tracking started successfully");
+      } catch (error) {
+        console.error("[Service] Failed to start GPS tracking:", error);
+        // Revert state on error
+        this._gpsTrackingEnabled = false;
+        this.selectedActivityLocation = previousLocation;
+        this.emit("gpsTrackingChanged", false);
+        this.emit("activitySelected", {
+          category: this.selectedActivityCategory,
+          location: previousLocation,
+        });
+        throw error;
+      }
+    }
+  }
+
+  /**
+   * Disable GPS tracking - switches to indoor mode
+   * Preserves existing GPS data but stops collecting new data
+   */
+  public async disableGpsTracking(): Promise<void> {
+    if (!this._gpsTrackingEnabled) {
+      console.log("[Service] GPS tracking already disabled");
+      return;
+    }
+
+    console.log("[Service] Disabling GPS tracking - switching to indoor mode");
+    this._gpsTrackingEnabled = false;
+    this.selectedActivityLocation = "indoor";
+
+    this.emit("gpsTrackingChanged", false);
+    this.emit("activitySelected", {
+      category: this.selectedActivityCategory,
+      location: "indoor",
+    });
+
+    // Stop GPS tracking if currently active
+    if (this._gpsAvailable) {
+      try {
+        await this.locationManager.stopHeadingTracking();
+        await this.locationManager.stopForegroundTracking();
+        await this.locationManager.stopBackgroundTracking();
+        this._gpsAvailable = false;
+        console.log("[Service] GPS tracking stopped successfully");
+      } catch (error) {
+        console.error("[Service] Failed to stop GPS tracking:", error);
+        // Continue anyway - we've updated the flag
+      }
+    }
+
+    // Stop early location tracking if in pending/ready state
+    if (this.state === "pending" || this.state === "ready") {
+      await this.stopEarlyLocationTracking();
+    }
+  }
+
+  /**
+   * Toggle GPS tracking on/off (indoor/outdoor mode)
+   * User-facing action for the GPS toggle button
+   * ON (Outdoor) = GPS enabled, location data collected
+   * OFF (Indoor) = GPS disabled, no location data
+   */
+  public async toggleGpsTracking(): Promise<void> {
+    if (this._gpsTrackingEnabled) {
+      await this.disableGpsTracking();
+    } else {
+      await this.enableGpsTracking();
     }
   }
 
@@ -826,8 +997,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     this.state = "recording";
 
-    // Configure LiveMetricsManager with activity location before starting
+    // Configure LiveMetricsManager with activity location and category before starting
     this.liveMetricsManager.setActivityLocation(this.selectedActivityLocation);
+    this.liveMetricsManager.setActivityCategory(this.selectedActivityCategory);
 
     // Start LiveMetricsManager (initializes StreamBuffer)
     await this.liveMetricsManager.startRecording();
@@ -851,10 +1023,22 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     this.startElapsedTimeUpdates();
 
-    // Start location tracking
-    await this.locationManager.startForegroundTracking();
-    await this.locationManager.startBackgroundTracking();
-    this._gpsAvailable = true;
+    // Start location tracking - only for outdoor activities and if GPS tracking is enabled
+    if (
+      this.selectedActivityLocation === "outdoor" &&
+      this._gpsTrackingEnabled
+    ) {
+      console.log("[Service] Starting GPS tracking for outdoor activity");
+      await this.locationManager.startForegroundTracking();
+      await this.locationManager.startBackgroundTracking();
+      await this.locationManager.startHeadingTracking();
+      this._gpsAvailable = true;
+    } else {
+      console.log(
+        "[Service] Skipping GPS tracking (indoor activity or GPS disabled)",
+      );
+      this._gpsAvailable = false;
+    }
 
     // Start foreground service notification
     const activityName =
@@ -964,8 +1148,22 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       category,
       location,
     );
+
+    const previousLocation = this.selectedActivityLocation;
     this.selectedActivityCategory = category;
     this.selectedActivityLocation = location;
+
+    // Handle location tracking changes
+    if (previousLocation !== location) {
+      if (location === "outdoor") {
+        // Switching to outdoor - start early location tracking
+        this.startEarlyLocationTracking();
+      } else if (previousLocation === "outdoor") {
+        // Switching from outdoor to indoor - stop location tracking
+        this.stopEarlyLocationTracking();
+      }
+    }
+
     // Don't clear plan - preserve any existing plan/route
     this.emit("activitySelected", { category, location });
   }
@@ -979,9 +1177,23 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     location: PublicActivityLocation,
   ): void {
     console.log("[Service] Selected unplanned activity:", category, location);
+
+    const previousLocation = this.selectedActivityLocation;
     this.selectedActivityCategory = category;
     this.selectedActivityLocation = location;
     this.clearPlan();
+
+    // Handle location tracking changes
+    if (previousLocation !== location) {
+      if (location === "outdoor") {
+        // Switching to outdoor - start early location tracking
+        this.startEarlyLocationTracking();
+      } else if (previousLocation === "outdoor") {
+        // Switching from outdoor to indoor - stop location tracking
+        this.stopEarlyLocationTracking();
+      }
+    }
+
     this.emit("activitySelected", { category, location });
   }
 
@@ -1011,10 +1223,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         console.log("[Service] Selecting plan from payload:", plan.name);
         this.selectPlan(plan, payload.plannedActivityId);
       } else {
-        // Quick start activity - only clear plan if this is initial setup
-        // If state is 'pending', this is initial setup, so clear any existing plan
-        // Otherwise, just update configuration to preserve user's setup
-        if (this.state === "pending") {
+        // Quick start activity - only clear plan if this is truly initial setup
+        // Check if there's an existing plan to determine if this is initial setup
+        // If there's already a plan attached, preserve it and just update configuration
+        if (this.state === "pending" && !this.hasPlan) {
+          // True initial setup: no plan exists, state is pending
           console.log(
             "[Service] Selecting unplanned activity from payload (initial):",
             payload.category,
@@ -1022,10 +1235,13 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
           );
           this.selectUnplannedActivity(payload.category, payload.location);
         } else {
+          // Plan exists OR recording has started: preserve plan and just update config
           console.log(
             "[Service] Updating activity configuration from payload:",
             payload.category,
             payload.location,
+            "hasPlan:",
+            this.hasPlan,
           );
           this.updateActivityConfiguration(payload.category, payload.location);
         }
@@ -1254,9 +1470,17 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   private handleLocationData(location: LocationObject) {
+    // Skip location processing for indoor activities or if GPS tracking is disabled
+    if (
+      this.selectedActivityLocation !== "outdoor" ||
+      !this._gpsTrackingEnabled
+    ) {
+      return;
+    }
+
     const timestamp = location.timestamp || Date.now();
 
-    // Always ingest location data for real-time display (even in pending state for map preview)
+    // Ingest location data for real-time display (even in pending state for map preview)
     // The LiveMetricsManager will only persist data when recording is active
     this.liveMetricsManager.ingestLocationData({
       latitude: location.coords.latitude,
@@ -1305,10 +1529,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private updateElapsedTime() {
     if (!this.startTime) return;
 
-    // Emit time update for UI
+    // Emit time update for UI (convert milliseconds to seconds)
     this.emit("timeUpdated", {
-      elapsed: this.getElapsedTime(),
-      moving: this.getMovingTime(),
+      elapsed: Math.floor(this.getElapsedTime() / 1000),
+      moving: Math.floor(this.getMovingTime() / 1000),
     });
 
     // Auto-advance plan steps when recording
@@ -1348,6 +1572,49 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     }
 
     return Math.max(0, elapsed - totalPaused);
+  }
+
+  /**
+   * Record a lap at the current moving time
+   * Returns the lap time in seconds
+   */
+  public recordLap(): number {
+    const metrics = this.liveMetricsManager.getMetrics();
+    const currentMovingTime = metrics.movingTime;
+
+    // Calculate lap time (time since last lap)
+    const lapTime = currentMovingTime - this.lastLapTime;
+
+    // Record the lap
+    this.laps.push(lapTime);
+    this.lastLapTime = currentMovingTime;
+
+    // Emit lap recorded event
+    this.emit("lapRecorded", {
+      lapNumber: this.laps.length,
+      lapTime,
+      totalLaps: this.laps.length,
+    });
+
+    return lapTime;
+  }
+
+  /**
+   * Get current lap time (time since last lap)
+   * Returns time in seconds
+   */
+  public getLapTime(): number {
+    const metrics = this.liveMetricsManager.getMetrics();
+    const currentMovingTime = metrics.movingTime;
+    return currentMovingTime - this.lastLapTime;
+  }
+
+  /**
+   * Get all recorded laps
+   * Returns array of lap times in seconds
+   */
+  public getLaps(): number[] {
+    return [...this.laps];
   }
 
   /**

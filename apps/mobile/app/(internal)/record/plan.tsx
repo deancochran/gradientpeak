@@ -13,25 +13,23 @@
  * - Recording continues in background
  */
 
-import React, { useCallback, useState } from "react";
-import {
-  View,
-  ScrollView,
-  Pressable,
-  ActivityIndicator,
-} from "react-native";
-import { router } from "expo-router";
-import { Text } from "@/components/ui/text";
-import { Input } from "@/components/ui/input";
 import { Icon } from "@/components/ui/icon";
-import { Check, Search, Filter } from "lucide-react-native";
-import { trpc } from "@/lib/trpc";
-import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import { Input } from "@/components/ui/input";
+import { Text } from "@/components/ui/text";
+import { useActivityStatus, usePlan } from "@/lib/hooks/useActivityRecorder";
 import { useRecordingConfiguration } from "@/lib/hooks/useRecordingConfiguration";
-import { usePlan, useActivityStatus } from "@/lib/hooks/useActivityRecorder";
+import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import { trpc } from "@/lib/trpc";
 import type { PublicActivityCategory } from "@repo/core";
+import { router } from "expo-router";
+import { Check, Search } from "lucide-react-native";
+import React, { useCallback, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 
-const CATEGORY_OPTIONS: { value: PublicActivityCategory | "all"; label: string }[] = [
+const CATEGORY_OPTIONS: {
+  value: PublicActivityCategory | "all";
+  label: string;
+}[] = [
   { value: "all", label: "All Categories" },
   { value: "run", label: "Run" },
   { value: "bike", label: "Bike" },
@@ -48,10 +46,13 @@ export default function PlanPickerPage() {
 
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<PublicActivityCategory | "all">("all");
+  const [categoryFilter, setCategoryFilter] = useState<
+    PublicActivityCategory | "all"
+  >("all");
 
   // Fetch today's planned activities
-  const { data: plannedActivities, isLoading } = trpc.plannedActivities.getToday.useQuery();
+  const { data: plannedActivities, isLoading } =
+    trpc.plannedActivities.getToday.useQuery();
 
   // Filter planned activities by search and category filter
   const filteredPlannedActivities = React.useMemo(() => {
@@ -59,7 +60,10 @@ export default function PlanPickerPage() {
 
     return plannedActivities.filter((pa) => {
       // Category filter
-      if (categoryFilter !== "all" && pa.activity_plan?.activity_category !== categoryFilter) {
+      if (
+        categoryFilter !== "all" &&
+        pa.activity_plan?.activity_category !== categoryFilter
+      ) {
         return false;
       }
 
@@ -80,11 +84,15 @@ export default function PlanPickerPage() {
 
   // Handle planned activity selection
   const handlePlanPress = useCallback(
-    (plannedActivityId: string, planCategory: PublicActivityCategory, planLocation: string) => {
+    (
+      plannedActivityId: string,
+      planCategory: PublicActivityCategory,
+      planLocation: string,
+    ) => {
       // If plan's category differs from current category, update category first
       if (service && planCategory !== activityCategory) {
         console.log(
-          `[PlanPicker] Plan category (${planCategory}) differs from current (${activityCategory}). Updating category.`
+          `[PlanPicker] Plan category (${planCategory}) differs from current (${activityCategory}). Updating category.`,
         );
         service.selectActivityFromPayload({
           category: planCategory,
@@ -104,7 +112,8 @@ export default function PlanPickerPage() {
     router.back();
   }, [detachPlan]);
 
-  const currentPlannedActivityId = service?.recordingMetadata?.plannedActivityId;
+  const currentPlannedActivityId =
+    service?.recordingMetadata?.plannedActivityId;
 
   return (
     <View className="flex-1 bg-background">
@@ -116,7 +125,7 @@ export default function PlanPickerPage() {
               as={Search}
               size={18}
               className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground z-10"
-              style={{ top: '50%', transform: [{ translateY: -9 }] }}
+              style={{ top: "50%", transform: [{ translateY: -9 }] }}
             />
             <Input
               placeholder="Search plans..."
@@ -129,7 +138,11 @@ export default function PlanPickerPage() {
 
         {/* Category Filter Dropdown */}
         <View className="mb-3">
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="gap-2">
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            className="gap-2"
+          >
             <View className="flex-row gap-2">
               {CATEGORY_OPTIONS.map((option) => (
                 <Pressable
@@ -137,13 +150,17 @@ export default function PlanPickerPage() {
                   onPress={() => setCategoryFilter(option.value)}
                   className="px-3 py-2 rounded-full border border-border"
                   style={{
-                    backgroundColor: categoryFilter === option.value ? "rgb(34, 197, 94)" : undefined,
+                    backgroundColor:
+                      categoryFilter === option.value
+                        ? "rgb(34, 197, 94)"
+                        : undefined,
                   }}
                 >
                   <Text
                     className="text-sm font-medium"
                     style={{
-                      color: categoryFilter === option.value ? "white" : undefined,
+                      color:
+                        categoryFilter === option.value ? "white" : undefined,
                     }}
                   >
                     {option.label}
@@ -184,18 +201,22 @@ export default function PlanPickerPage() {
         )}
 
         {/* Planned Activities List */}
-        {!isLoading && filteredPlannedActivities && filteredPlannedActivities.length > 0 ? (
+        {!isLoading &&
+        filteredPlannedActivities &&
+        filteredPlannedActivities.length > 0 ? (
           <View className="gap-3 pb-6">
             {filteredPlannedActivities.map((plannedActivity) => (
               <PlannedActivityListItem
                 key={plannedActivity.id}
-                plannedActivity={plannedActivity}
+                plannedActivity={plannedActivity as any}
                 isSelected={plannedActivity.id === currentPlannedActivityId}
                 onPress={() =>
                   handlePlanPress(
                     plannedActivity.id,
-                    plannedActivity.activity_plan?.activity_category as PublicActivityCategory,
-                    plannedActivity.activity_plan?.activity_location || "indoor"
+                    plannedActivity.activity_plan
+                      ?.activity_category as PublicActivityCategory,
+                    plannedActivity.activity_plan?.activity_location ||
+                      "indoor",
                   )
                 }
               />
@@ -241,13 +262,19 @@ interface PlannedActivityListItemProps {
   onPress: () => void;
 }
 
-function PlannedActivityListItem({ plannedActivity, isSelected, onPress }: PlannedActivityListItemProps) {
+function PlannedActivityListItem({
+  plannedActivity,
+  isSelected,
+  onPress,
+}: PlannedActivityListItemProps) {
   const activityPlan = plannedActivity.activity_plan;
 
   // Format the scheduled time
-  const scheduledTime = new Date(plannedActivity.scheduled_date).toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
+  const scheduledTime = new Date(
+    plannedActivity.scheduled_date,
+  ).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
     hour12: true,
   });
 
@@ -263,12 +290,15 @@ function PlannedActivityListItem({ plannedActivity, isSelected, onPress }: Plann
       <View className="flex-row items-center justify-between">
         <View className="flex-1">
           <View className="flex-row items-center gap-2 mb-1">
-            <Text className="text-xs text-muted-foreground">{scheduledTime}</Text>
+            <Text className="text-xs text-muted-foreground">
+              {scheduledTime}
+            </Text>
             {activityPlan && (
               <>
                 <Text className="text-xs text-muted-foreground">•</Text>
                 <Text className="text-xs text-muted-foreground capitalize">
-                  {activityPlan.activity_category} · {activityPlan.activity_location}
+                  {activityPlan.activity_category} ·{" "}
+                  {activityPlan.activity_location}
                 </Text>
               </>
             )}

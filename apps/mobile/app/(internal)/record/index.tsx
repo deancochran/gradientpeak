@@ -5,7 +5,6 @@ import { RecordingZones, ZoneFocusOverlay } from "@/components/recording/zones";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import type { RecordingState } from "@repo/core";
 import {
   useActivityStatus,
   usePlan,
@@ -21,26 +20,20 @@ import type {
   ActivityPayload,
   PublicActivityCategory,
   PublicActivityLocation,
+  RecordingState,
 } from "@repo/core";
 import { useRouter } from "expo-router";
 import {
   Activity,
   AlertTriangle,
   Bike,
-  Bluetooth,
-  ChevronRight,
+  ChevronLeft,
   Dumbbell,
   Footprints,
-  MapPin,
-  Pause,
-  Play,
-  Square,
   Waves,
-  X,
-  Zap,
 } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Pressable, ScrollView, View } from "react-native";
+import { Alert, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // Helper function to resolve power target
@@ -55,9 +48,7 @@ function resolvePowerTarget(target: any, profile: any): number | null {
 }
 
 // Helper function to map service state to RecordingState
-function mapServiceStateToRecordingState(
-  serviceState: string,
-): RecordingState {
+function mapServiceStateToRecordingState(serviceState: string): RecordingState {
   if (serviceState === "pending") return "not_started";
   if (serviceState === "recording") return "recording";
   if (serviceState === "paused") return "paused";
@@ -67,8 +58,6 @@ function mapServiceStateToRecordingState(
 function RecordScreen() {
   const router = useRouter();
   const [isInitialized, setIsInitialized] = useState(false);
-  const [trainerNotificationDismissed, setTrainerNotificationDismissed] =
-    useState(false);
   const [activityModalVisible, setActivityModalVisible] = useState(false);
   const insets = useSafeAreaInsets();
 
@@ -162,13 +151,24 @@ function RecordScreen() {
         location,
       });
 
+      // When changing location/category, DO NOT include the plan in the payload
+      // This allows selectActivityFromPayload to call updateActivityConfiguration
+      // which preserves the plan and only updates the location/category
       const payload: ActivityPayload = {
         category,
         location,
+        // Note: We intentionally DO NOT include the plan here
+        // The plan should remain untouched when just changing location/category
       };
 
-      // Initialize the service with quick start
-      // Note: Modal handles closing itself, no need to set state here
+      console.log("[RecordModal] Updating activity configuration:", {
+        category,
+        location,
+        hasPlan: !!service.plan,
+      });
+
+      // This will call updateActivityConfiguration (if state !== 'pending')
+      // which preserves the existing plan and only updates location/category
       service.selectActivityFromPayload(payload);
     },
     [service],
@@ -326,12 +326,13 @@ function RecordScreen() {
     router.push("/record/submit");
   }, [finish, router]);
 
-
   // Handle lap action
   const handleLap = useCallback(() => {
-    console.log("[RecordModal] Lap clicked");
-    // TODO: Add service.recordLap() method when available
-  }, []);
+    if (!service) return;
+
+    const lapTime = service.recordLap();
+    console.log("[RecordModal] Lap recorded:", lapTime);
+  }, [service]);
 
   // Debug: Track activity status changes
   useEffect(() => {
@@ -345,11 +346,10 @@ function RecordScreen() {
   const capabilities = useRecordingCapabilities(service);
 
   // Determine if activity has a route (for zone rendering)
+  // Check if the plan has a route_id or if a route is directly attached to the service
   const hasRoute = useMemo(() => {
-    // TODO: Check if plan has a route_id or if route is attached
-    // For now, return false - will be implemented when route attachment is added
-    return false;
-  }, []);
+    return !!service?.plan?.route_id || !!service?.currentRoute;
+  }, [service?.plan?.route_id, service?.currentRoute]);
 
   // Show loading state while initializing
   if (!isInitialized) {
@@ -380,7 +380,7 @@ function RecordScreen() {
             }}
             className="h-10 w-10 rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-lg"
           >
-            <Icon as={X} size={20} />
+            <Icon as={ChevronLeft} size={20} />
           </Button>
         </View>
       )}
@@ -404,7 +404,10 @@ function RecordScreen() {
           return null;
 
         return (
-          <View className="bg-yellow-500/20 px-4 py-2 border-b border-yellow-500/40" style={{ marginTop: insets.top }}>
+          <View
+            className="bg-yellow-500/20 px-4 py-2 border-b border-yellow-500/40"
+            style={{ marginTop: insets.top }}
+          >
             <View className="flex-row items-center gap-2">
               <Icon as={AlertTriangle} size={16} className="text-yellow-600" />
               <Text className="text-xs text-yellow-600 font-medium">
@@ -419,68 +422,15 @@ function RecordScreen() {
         );
       })()}
 
-      {/* Trainer Control Notification (Dismissible) */}
-      {(() => {
-        const trainer = service?.sensorsManager.getControllableTrainer();
-        const currentStep = service?.currentStep;
-
-        if (!trainer || !trainer.isControllable || trainerNotificationDismissed)
-          return null;
-
-        let targetDisplay = "Connected";
-        const powerTargetIndex = currentStep?.targets?.findIndex(
-          (target) => target.type === "%FTP",
-        );
-        if (powerTargetIndex && Array.isArray(currentStep?.targets)) {
-          const powerTarget = resolvePowerTarget(
-            currentStep?.targets?.[powerTargetIndex]?.intensity,
-            service?.recordingMetadata?.profile,
-          );
-          if (powerTarget) {
-            targetDisplay = `Target: ${powerTarget}W`;
-          }
-        } else if (
-          currentStep?.targets &&
-          typeof currentStep.targets === "object" &&
-          "grade" in currentStep.targets &&
-          currentStep.targets.grade !== undefined
-        ) {
-          targetDisplay = `Target: ${(currentStep.targets as { grade: number }).grade}%`;
-        }
-
-        return (
-          <View className="bg-primary/10 px-4 py-2 border-b border-primary/20" style={{ marginTop: insets.top }}>
-            <View className="flex-row items-center gap-2">
-              <Icon as={Zap} size={16} className="text-primary" />
-              <Text className="text-xs text-primary font-medium">
-                Trainer Control Active
-              </Text>
-              <Text className="text-xs text-primary ml-auto mr-2">
-                {targetDisplay}
-              </Text>
-              <Pressable
-                onPress={() => setTrainerNotificationDismissed(true)}
-                className="p-1 -mr-1"
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Icon as={X} size={14} className="text-primary/60" />
-              </Pressable>
-            </View>
-          </View>
-        );
-      })()}
-
       {/* Zones Container - Takes remaining space above footer */}
       <View className="flex-1" style={{ paddingTop: insets.top }}>
-        <ScrollView className="flex-1" bounces={false}>
-          <RecordingZones
-            service={service}
-            category={activityCategory}
-            location={activityLocation}
-            hasPlan={plan.hasPlan}
-            hasRoute={hasRoute}
-          />
-        </ScrollView>
+        <RecordingZones
+          service={service}
+          category={activityCategory}
+          location={activityLocation}
+          hasPlan={plan.hasPlan}
+          hasRoute={hasRoute}
+        />
 
         {/* Focused Zone Overlay - Renders inside zones container */}
         <ZoneFocusOverlay

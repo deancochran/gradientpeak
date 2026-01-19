@@ -11,15 +11,15 @@
  * - Cancel button to go back
  */
 
-import React from "react";
-import { View, ScrollView, ActivityIndicator } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
-import { Text } from "@/components/ui/text";
-import { Button } from "@/components/ui/button";
 import { ActivityRouteMap } from "@/components/activity/maps/ActivityRouteMap";
-import { trpc } from "@/lib/trpc";
-import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import { Button } from "@/components/ui/button";
+import { Text } from "@/components/ui/text";
 import { useRecordingConfiguration } from "@/lib/hooks/useRecordingConfiguration";
+import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import { trpc } from "@/lib/trpc";
+import { router, useLocalSearchParams } from "expo-router";
+import React from "react";
+import { ActivityIndicator, ScrollView, View } from "react-native";
 
 export default function RoutePreviewPage() {
   const { routeId } = useLocalSearchParams<{ routeId: string }>();
@@ -27,10 +27,11 @@ export default function RoutePreviewPage() {
   const { attachRoute } = useRecordingConfiguration(service);
 
   // Fetch full route data including coordinates
-  const { data: routeData, isLoading, error } = trpc.routes.loadFull.useQuery(
-    { id: routeId! },
-    { enabled: !!routeId }
-  );
+  const {
+    data: routeData,
+    isLoading,
+    error,
+  } = trpc.routes.loadFull.useQuery({ id: routeId! }, { enabled: !!routeId });
 
   const handleConfirm = () => {
     if (routeId) {
@@ -74,8 +75,8 @@ export default function RoutePreviewPage() {
 
   // Convert coordinates to map format
   const mapCoordinates = routeData.coordinates.map((coord) => ({
-    latitude: coord.lat,
-    longitude: coord.lng,
+    latitude: coord.latitude,
+    longitude: coord.longitude,
   }));
 
   return (
@@ -84,22 +85,17 @@ export default function RoutePreviewPage() {
         {/* Route Details */}
         <View className="mb-4">
           <Text className="text-2xl font-bold mb-2">{routeData.name}</Text>
-          {routeData.description && (
-            <Text className="text-base text-muted-foreground mb-2">
-              {routeData.description}
-            </Text>
-          )}
           <View className="flex-row gap-4 mt-2">
             <View>
               <Text className="text-xs text-muted-foreground">Distance</Text>
               <Text className="text-base font-medium">
-                {(routeData.total_distance / 1000).toFixed(2)} km
+                {(routeData.totalDistance / 1000).toFixed(2)} km
               </Text>
             </View>
             <View>
               <Text className="text-xs text-muted-foreground">Category</Text>
               <Text className="text-base font-medium capitalize">
-                {routeData.activity_category}
+                {routeData.activityCategory}
               </Text>
             </View>
           </View>
@@ -126,17 +122,10 @@ export default function RoutePreviewPage() {
 
       {/* Action Buttons */}
       <View className="p-4 border-t border-border flex-row gap-3">
-        <Button
-          onPress={handleCancel}
-          variant="outline"
-          className="flex-1"
-        >
+        <Button onPress={handleCancel} variant="outline" className="flex-1">
           <Text>Cancel</Text>
         </Button>
-        <Button
-          onPress={handleConfirm}
-          className="flex-1"
-        >
+        <Button onPress={handleConfirm} className="flex-1">
           <Text className="text-primary-foreground">Confirm & Attach</Text>
         </Button>
       </View>

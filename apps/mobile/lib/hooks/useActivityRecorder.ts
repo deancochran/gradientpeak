@@ -313,11 +313,13 @@ export function usePlan(service: ActivityRecorderService | null) {
     const sub1 = service.addListener("stepChanged", handleUpdate);
     const sub2 = service.addListener("planCleared", handleUpdate);
     const sub3 = service.addListener("timeUpdated", handleUpdate);
+    const sub4 = service.addListener("planSelected", handleUpdate);
 
     return () => {
       sub1.remove();
       sub2.remove();
       sub3.remove();
+      sub4.remove();
     };
   }, [service]);
 
@@ -403,6 +405,39 @@ export function useMovingTime(service: ActivityRecorderService | null): number {
 
   return time;
 }
+
+/**
+ * Hook to track current lap time (time since last lap)
+ * Updates on time updates and lap recordings
+ */
+export function useLapTime(service: ActivityRecorderService | null): number {
+  const [lapTime, setLapTime] = useState(0);
+
+  useEffect(() => {
+    if (!service) return;
+
+    // Update lap time on time updates
+    const handleTimeUpdate = () => {
+      setLapTime(service.getLapTime());
+    };
+
+    // Reset lap time display when a lap is recorded
+    const handleLapRecorded = () => {
+      setLapTime(0);
+    };
+
+    const timeSubscription = service.addListener("timeUpdated", handleTimeUpdate);
+    const lapSubscription = service.addListener("lapRecorded", handleLapRecorded);
+
+    return () => {
+      timeSubscription.remove();
+      lapSubscription.remove();
+    };
+  }, [service]);
+
+  return lapTime;
+}
+
 // ================================
 // 7. useActivityStatus - Card Visibility Flags
 // ================================
@@ -437,6 +472,77 @@ export function useActivityStatus(service: ActivityRecorderService | null): {
     isOutdoorActivity: activityLocation === "outdoor",
     activityCategory,
     activityLocation,
+  };
+}
+
+// ================================
+// GPS Tracking Control
+// ================================
+
+/**
+ * Subscribe to GPS tracking state changes and provide toggle control.
+ *
+ * @param service - ActivityRecorderService instance
+ * @returns GPS tracking state and control functions
+ *
+ * @example
+ * ```tsx
+ * const { gpsEnabled, toggleGps, enableGps, disableGps } = useGpsTracking(service);
+ *
+ * return (
+ *   <Button onPress={toggleGps}>
+ *     GPS: {gpsEnabled ? 'ON' : 'OFF'}
+ *   </Button>
+ * );
+ * ```
+ */
+export function useGpsTracking(service: ActivityRecorderService | null) {
+  const [gpsEnabled, setGpsEnabled] = useState(
+    service?.isGpsTrackingEnabled() ?? true
+  );
+
+  useEffect(() => {
+    if (!service) return;
+
+    // Initialize with current state
+    setGpsEnabled(service.isGpsTrackingEnabled());
+
+    // Subscribe to GPS tracking changes
+    const handleGpsTrackingChange = (enabled: boolean) => {
+      console.log("[useGpsTracking] GPS tracking changed:", enabled);
+      setGpsEnabled(enabled);
+    };
+
+    const subscription = service.addListener(
+      "gpsTrackingChanged",
+      handleGpsTrackingChange
+    );
+
+    return () => {
+      subscription.remove();
+    };
+  }, [service]);
+
+  const toggleGps = useCallback(async () => {
+    if (!service) return;
+    await service.toggleGpsTracking();
+  }, [service]);
+
+  const enableGps = useCallback(async () => {
+    if (!service) return;
+    await service.enableGpsTracking();
+  }, [service]);
+
+  const disableGps = useCallback(async () => {
+    if (!service) return;
+    await service.disableGpsTracking();
+  }, [service]);
+
+  return {
+    gpsEnabled,
+    toggleGps,
+    enableGps,
+    disableGps,
   };
 }
 

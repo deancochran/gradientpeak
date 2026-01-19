@@ -153,7 +153,7 @@ export default function DiscoverPage() {
 
   return (
     <View className="flex-1 bg-background">
-      <AppHeader title="Discover" showBack={false} />
+      <AppHeader title="Discover" />
 
       {/* Header with Search and Filters */}
       <View className="px-4 pt-4 pb-4 border-b border-border bg-background">
@@ -237,7 +237,7 @@ export default function DiscoverPage() {
               }
               renderItem={({ item }) => (
                 <ActivityPlanCard
-                  activityPlan={item}
+                  activityPlan={item as any}
                   onPress={() => handleTemplatePress(item)}
                   variant="default"
                 />

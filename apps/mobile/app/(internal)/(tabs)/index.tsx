@@ -1,17 +1,20 @@
+import { TrainingLoadChart } from "@/components/charts/TrainingLoadChart";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import {
   ScheduleStrip,
   TodaysTrainingCard,
   TrainingReadinessCard,
+  WeeklyGoalCard,
+  WeeklySnapshot,
 } from "@/components/home";
-import { TrainingLoadChart } from "@/components/charts/TrainingLoadChart";
 import { AppHeader } from "@/components/shared";
 import { DetailChartModal } from "@/components/shared/DetailChartModal";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Text } from "@/components/ui/text";
 import { useHomeData } from "@/lib/hooks/useHomeData";
+import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
-import React from "react";
+import React, { useCallback } from "react";
 import { RefreshControl, ScrollView, View } from "react-native";
 
 function HomeScreen() {
@@ -42,6 +45,13 @@ function HomeScreen() {
     await refetch?.();
     setRefreshing(false);
   };
+
+  // Refetch data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      refetch?.();
+    }, [refetch]),
+  );
 
   const handleStartActivity = () => {
     if (!todaysActivity) return;
@@ -138,6 +148,28 @@ function HomeScreen() {
             onPressActivity={handlePressActivity}
           />
         )}
+
+        {/* Weekly Progress Section */}
+        <View className="gap-2">
+          <Text className="text-sm font-medium text-muted-foreground px-1">
+            This Week
+          </Text>
+          <WeeklySnapshot
+            distance={weeklyStats.volume}
+            workouts={weeklyStats.activitiesCompleted}
+            totalTSS={weeklyStats.totalTSS}
+            plannedTSS={weeklySummary?.planned.tss}
+            plannedDistance={
+              weeklySummary?.planned.distance
+                ? weeklySummary.planned.distance / 1000
+                : undefined
+            }
+            plannedWorkouts={weeklySummary?.planned.count}
+          />
+        </View>
+
+        {/* Weekly Goal Progress */}
+        {weeklyGoal.target > 0 && <WeeklyGoalCard weeklyGoal={weeklyGoal} />}
       </ScrollView>
 
       {/* Training Status Modal */}
