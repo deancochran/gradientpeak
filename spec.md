@@ -4,11 +4,12 @@
 
 **Feature Name:** Performance Capability Tracking System (MVP)
 
-**Purpose:** Enable sophisticated training load analysis and performance progression tracking by maintaining a time-series log of user performance capabilities (power, pace, heart rate) across effort durations.
+**Purpose:** Track athlete performance capabilities (power, pace, heart rate) over time to enable training load analysis and performance progression tracking.
 
-**Target Users:** Intermediate to advanced endurance athletes who understand performance metrics and want data-driven training insights.
+**Target Users:** Intermediate to advanced endurance athletes who want data-driven training insights.
 
 **MVP Scope:**
+
 - **Single table:** `profile_performance_metric_logs` - Time-series performance capability data
 - **Dynamic computation:** All analytics, goals, and progression computed from existing app data
 - **Integration:** Leverage existing activities, training plans, and planned activities
@@ -18,1035 +19,881 @@
 
 ---
 
-## Table of Contents
-
-1. [Technical Architecture](#1-technical-architecture)
-2. [Database Schema](#2-database-schema)
-3. [Core Package (Business Logic)](#3-core-package-business-logic)
-4. [tRPC API Layer](#4-trpc-api-layer)
-5. [Data Flow & Integration](#5-data-flow--integration)
-6. [Implementation Phases](#6-implementation-phases)
-
----
-
 ## 1. Technical Architecture
 
 ### System Overview
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    User Interface Layer                      │
-├──────────────────────────┬──────────────────────────────────┤
-│  Mobile App (RN)         │  Web Dashboard (Next.js)         │
-│  - Manual entry          │  - Advanced analytics            │
-│  - Capability charts     │  - Progression tracking          │
-│  - Post-activity review  │  - Training load analysis        │
-└──────────────┬───────────┴───────────┬──────────────────────┘
-               │                       │
-               └───────────┬───────────┘
-                           │
-               ┌───────────▼───────────┐
-               │   tRPC API Layer      │
-               │  - CRUD operations    │
-               │  - Query capabilities │
-               │  - Analytics queries  │
-               └───────────┬───────────┘
-                           │
-          ┌────────────────┼────────────────┐
-          │                │                │
-┌─────────▼────────┐ ┌─────▼──────┐ ┌──────▼─────────┐
-│  Supabase DB     │ │ Core Pkg   │ │ Existing Data  │
-│  - Metric logs   │ │ - Calcs    │ │ - Activities   │
-│                  │ │ - Analysis │ │ - Plans        │
-│                  │ │ - Types    │ │ - Profile      │
-└──────────────────┘ └────────────┘ └────────────────┘
-```
+The system uses a layered architecture:
+
+- **User Interface Layer:** Mobile app (manual entry, charts) and web dashboard (advanced analytics)
+- **tRPC API Layer:** Handles CRUD operations, queries, and analytics
+- **Data Layer:** Supabase database for metric logs, core package for calculations, integration with existing activities/plans/profile data
 
 ### Key Principles
 
-1. **Single Source of Truth:** `profile_performance_metric_logs` tracks all performance capabilities over time
-2. **Dynamic Computation:** Training load (CTL/ATL/TSB), goals, and zones computed on-demand from logs + activities
-3. **Type Safety:** Core package uses Supabase-generated types, extending them as needed
-4. **Local-First:** Existing architecture maintained - logs synced like activities
-5. **Leverage Existing Data:** Use completed activities and training plans for context
+1. **Single Source of Truth:** Metric logs tables (performance + profile) track all athlete data over time
+2. **No Data Duplication:** Activities reference profile_id, not snapshots (enables retroactive recalculation)
+3. **Pre-calculated Metrics:** TSS/IF calculated once and stored, not computed on every query
+4. **Type Safety:** Core package uses Supabase-generated types, extending them as needed
+5. **Local-First:** Existing architecture maintained - logs synced like activities
+6. **Leverage Existing Data:** Use completed activities and training plans for context
+
+### Architectural Benefits
+
+**1. Retroactive Recalculation (Key Innovation):**
+```
+User realizes FTP was actually 260W in March (not 250W)
+↓
+Create new performance metric log with created_at = 2024-03-01
+↓
+Background job queries all activities in affected date range
+↓
+Recalculates TSS/IF for each activity using corrected FTP
+↓
+Updates activity metrics JSONB with new values
+↓
+CTL/ATL/TSB charts automatically reflect corrected data
+```
+
+**2. Efficient Training Load Queries:**
+```
+OLD APPROACH (with profile snapshots):
+- Query 1000 activities with profile_snapshot
+- For each activity: calculate TSS = (NP * duration * IF) / (FTP * 3600) * 100
+- Aggregate TSS values for CTL/ATL/TSB calculation
+- Time: ~500-1000ms for 1000 activities
+
+NEW APPROACH (with metric logs):
+- Query 1000 activities (TSS already in metrics JSONB)
+- Aggregate pre-calculated TSS values
+- Time: ~10-50ms for 1000 activities (10-100x faster)
+```
+
+**3. Third-Party Integration Efficiency:**
+```
+Strava webhook receives activity data:
+- Power stream, HR stream, GPS track
+- NO profile data included
+
+OLD: How do we calculate TSS? Need to store profile snapshot with activity
+NEW: Query user's performance metric logs for FTP at activity date → Calculate TSS
+
+Benefits:
+- No profile data duplication
+- Accurate calculations even if user updates FTP later
+- Cleaner integration code
+```
+
+**4. Single Source of Truth for All Metrics:**
+```
+Before: Profile data scattered across:
+- profiles table (current values)
+- activity profile_snapshot (historical snapshots)
+- planned_activities (target values)
+
+After: All temporal data in metric logs:
+- profile_performance_metric_logs (FTP, pace, threshold HR over time)
+- profile_metric_logs (weight, sleep, HRV over time)
+- profiles table (current summary only)
+```
 
 ### Data Flow Patterns
 
-**Pattern 1: Manual Entry**
-```
-User → Mobile Form → Validation → tRPC Mutation → DB Insert → Invalidate Queries → UI Update
-```
+**Manual Entry (Metric Logs):** User → Mobile Form → Validation → tRPC Mutation → DB Insert → UI Update
 
-**Pattern 2: Auto-Generation from Activity (Future)**
-```
-Activity Completed → Background Analysis → Detect Test Effort →
-Calculate Metric → tRPC Mutation → DB Insert → Update Charts
-```
+**Activity Recording & Submission (NEW APPROACH):**
+1. User completes activity recording
+2. Mobile app submits activity data with `profile_id` only (NO profile snapshot)
+3. Activity stored in database referencing profile
+4. TSS/IF calculation: Query performance metric logs (FTP at activity date) + activity data
+5. Background job computes TSS/IF and stores in activity metrics JSONB
 
-**Pattern 3: Training Load Analysis**
-```
-Query Activities + Metric Logs → Core Package (compute CTL/ATL/TSB) →
-Return Time Series → Render Charts
-```
+**Third-Party Integration (Strava, Wahoo, Garmin):**
+1. Webhook receives activity data from third-party
+2. Create activity record with `profile_id` and source metadata
+3. Query performance metric logs for user's FTP/threshold at activity date
+4. Calculate TSS/IF using core package
+5. Store calculated metrics in activity
 
-**Pattern 4: Progression Tracking**
-```
-Query Metric Logs (filtered by category/type/duration) → Core Package (analyze trends) →
-Return Progression Data → Display Insights
-```
+**Training Load Analysis:**
+1. Query all activities with date range
+2. For each activity, get TSS from activity metrics (pre-calculated)
+3. Query current performance metric logs for latest FTP (for zone calculations)
+4. Core package computes CTL/ATL/TSB time series
+5. Return results → Render charts
+
+**Retroactive Recalculation (Key Benefit):**
+1. User updates historical FTP (e.g., realizes FTP was higher in March)
+2. Create new performance metric log entry with backdated `created_at`
+3. Background job triggers recalculation of affected activities
+4. All TSS/IF scores updated automatically
+5. CTL/ATL/TSB charts refresh with corrected data
+
+**Progression Tracking:** Query Metric Logs → Core Package (analyze trends) → Return Progression Data → Display Insights
 
 ---
 
 ## 2. Database Schema
 
-### 2.1 Single Table: `profile_performance_metric_logs`
+### Table 1: `profile_performance_metric_logs`
 
-This is the **ONLY** new table needed for MVP. Everything else is computed dynamically.
+**Purpose:** Track athlete performance capabilities over time for creating performance curves and calculating training zones.
 
+**Core Fields:**
+
+- Identity: id, profile_id
+- Metrics: category (bike/run/swim/row/other), type (power/pace/speed/heart_rate), value, unit, duration_seconds
+- Provenance: source (manual/test/race/calculated/estimated/adjusted), confidence_score, reference_activity_id, calculation_method
+- Context: environmental_conditions (JSONB), notes
+- Lifecycle: is_active, superseded_by, valid_until
+- Metadata: created_at, updated_at
+
+**Key Constraints:**
+
+- Value must be positive
+- Duration must be positive
+- Confidence score between 0-1
+- Source limited to predefined options
+- Profile foreign key with cascade delete
+
+**Indexes for Performance:**
+
+- Active logs by profile
+- Metric lookup by profile/category/type/duration
+- Reference activity lookup
+- Environmental conditions (GIN)
+
+**Example Data:**
+- FTP progression (bike, power, 60min): 240W → 250W → 255W
+- 5K pace (run, pace, 1200s): 4:30/km → 4:20/km
+- Threshold heart rate (bike, heart_rate, 60min): 165 bpm → 168 bpm
+
+### Table 2: `profile_metric_logs` (NEW)
+
+**Purpose:** Track biometric and lifestyle metrics that influence training but can't be used for performance curves.
+
+**Core Fields:**
+
+- Identity: id, profile_id, metric_type, value, unit
+- Types: weight_kg, resting_hr_bpm, sleep_hours, hrv_ms, vo2_max, body_fat_pct, hydration_level, stress_score, soreness_level
+- Provenance: source (manual/device/calculated), reference_activity_id (optional), notes
+- Lifecycle: recorded_at (timestamp for the metric), created_at, updated_at
+
+**Key Constraints:**
+
+- Value must be appropriate for metric type (positive, within ranges)
+- Metric type limited to predefined options
+- Profile foreign key with cascade delete
+- Recorded_at allows backdating entries
+
+**Indexes for Performance:**
+
+- Logs by profile and metric type
+- Logs by recorded_at for time-series queries
+- Reference activity lookup (optional)
+
+**Example Data:**
+- weight_kg: 75.0 → 74.5 → 74.8
+- sleep_hours: 7.5 → 8.0 → 6.5
+- resting_hr_bpm: 52 → 50 → 51
+- hrv_ms: 65 → 68 → 62
+
+**SQL Schema:**
 ```sql
-CREATE TABLE profile_performance_metric_logs (
-  -- Identity
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-
-  -- Core Metrics
-  category TEXT NOT NULL CHECK (category IN ('bike', 'run', 'swim', 'row', 'other')),
-  type TEXT NOT NULL CHECK (type IN ('power', 'pace', 'speed', 'heart_rate')),
-  value NUMERIC(10, 2) NOT NULL CHECK (value > 0),
-  unit TEXT NOT NULL, -- 'watts', 'watts_per_kg', 'min_per_km', 'min_per_mi', 'min_per_100m', 'bpm', 'm_per_s'
-  duration_seconds INTEGER NOT NULL CHECK (duration_seconds > 0),
-
-  -- Provenance (how this value was determined)
-  source TEXT NOT NULL CHECK (source IN (
-    'manual',      -- User manually entered
-    'test',        -- Formal test (FTP test, ramp test, etc.)
-    'race',        -- Race performance
-    'calculated',  -- Derived from activity data
-    'estimated',   -- Algorithmic estimation
-    'adjusted'     -- User adjusted previous value
-  )),
-  confidence_score NUMERIC(3, 2) CHECK (confidence_score BETWEEN 0 AND 1), -- 0.00 to 1.00
-  reference_activity_id UUID REFERENCES activities(id) ON DELETE SET NULL,
-  calculation_method TEXT, -- 'ftp_20min_0.95', 'ramp_test_0.75', 'critical_power_model', etc.
-
-  -- Environmental Context (optional, for advanced analysis)
-  conditions JSONB, -- { indoor: true, altitude: 2000, temperature: 25, surface: 'trainer' }
-
-  -- Lifecycle Management
-  is_active BOOLEAN NOT NULL DEFAULT true,
-  superseded_by UUID REFERENCES profile_performance_metric_logs(id) ON DELETE SET NULL,
-  valid_until TIMESTAMP WITH TIME ZONE, -- NULL = indefinite
-
-  -- Metadata
-  notes TEXT,
-  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+CREATE TYPE profile_metric_type AS ENUM (
+  'weight_kg',
+  'resting_hr_bpm',
+  'sleep_hours',
+  'hrv_ms',
+  'vo2_max',
+  'body_fat_pct',
+  'hydration_level',
+  'stress_score',
+  'soreness_level',
+  'wellness_score'
 );
 
--- Indexes for efficient querying
-CREATE INDEX idx_metric_logs_profile_active
-  ON profile_performance_metric_logs(profile_id, is_active)
-  WHERE is_active = true;
+CREATE TYPE metric_source AS ENUM (
+  'manual',
+  'device',
+  'calculated',
+  'estimated'
+);
 
-CREATE INDEX idx_metric_logs_lookup
-  ON profile_performance_metric_logs(profile_id, category, type, duration_seconds, created_at DESC);
+CREATE TABLE profile_metric_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  metric_type profile_metric_type NOT NULL,
+  value NUMERIC NOT NULL CHECK (value >= 0),
+  unit TEXT NOT NULL,
+  source metric_source NOT NULL DEFAULT 'manual',
+  reference_activity_id UUID REFERENCES activities(id) ON DELETE SET NULL,
+  notes TEXT,
+  recorded_at TIMESTAMPTZ NOT NULL, -- When the metric was measured
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
-CREATE INDEX idx_metric_logs_reference
-  ON profile_performance_metric_logs(reference_activity_id)
+-- Indexes for performance
+CREATE INDEX idx_profile_metric_logs_profile_type_date
+  ON profile_metric_logs(profile_id, metric_type, recorded_at DESC);
+CREATE INDEX idx_profile_metric_logs_recorded_at
+  ON profile_metric_logs(recorded_at DESC);
+CREATE INDEX idx_profile_metric_logs_reference_activity
+  ON profile_metric_logs(reference_activity_id)
   WHERE reference_activity_id IS NOT NULL;
 
-CREATE INDEX idx_metric_logs_conditions
-  ON profile_performance_metric_logs USING GIN(conditions);
+-- RLS policies
+ALTER TABLE profile_metric_logs ENABLE ROW LEVEL SECURITY;
 
--- Trigger for updated_at
-CREATE TRIGGER update_metric_logs_updated_at
-  BEFORE UPDATE ON profile_performance_metric_logs
-  FOR EACH ROW
-  EXECUTE FUNCTION update_updated_at_column();
+CREATE POLICY "Users can view their own metric logs"
+  ON profile_metric_logs FOR SELECT
+  USING (auth.uid() IN (SELECT id FROM profiles WHERE id = profile_id));
+
+CREATE POLICY "Users can insert their own metric logs"
+  ON profile_metric_logs FOR INSERT
+  WITH CHECK (auth.uid() IN (SELECT id FROM profiles WHERE id = profile_id));
+
+CREATE POLICY "Users can update their own metric logs"
+  ON profile_metric_logs FOR UPDATE
+  USING (auth.uid() IN (SELECT id FROM profiles WHERE id = profile_id));
+
+CREATE POLICY "Users can delete their own metric logs"
+  ON profile_metric_logs FOR DELETE
+  USING (auth.uid() IN (SELECT id FROM profiles WHERE id = profile_id));
 ```
 
-### 2.2 Example Data
+**Metric Type Specifications:**
+- `weight_kg`: Body weight in kilograms (40-300)
+- `resting_hr_bpm`: Resting heart rate in beats per minute (30-120)
+- `sleep_hours`: Hours of sleep (0-24, decimal)
+- `hrv_ms`: Heart rate variability in milliseconds (0-300)
+- `vo2_max`: VO2 max in ml/kg/min (20-90)
+- `body_fat_pct`: Body fat percentage (3-60)
+- `hydration_level`: Hydration level 1-10 scale
+- `stress_score`: Stress level 1-10 scale
+- `soreness_level`: Muscle soreness 1-10 scale
+- `wellness_score`: Overall wellness 1-10 scale
+
+### Migration: Remove Profile Snapshots from Activities
+
+**Current State:** Activities store `profile_snapshot` JSONB with FTP, weight_kg, threshold_hr, age at time of activity.
+
+**New Approach:** Activities reference `profile_id` and query metric logs for calculations.
+
+**Benefits:**
+
+1. **Retroactive Recalculation:** Update historical FTP → recalculate all TSS/IF scores automatically
+2. **Single Source of Truth:** Profile and biometric data in one place, not duplicated across activities
+3. **Efficient Third-Party Integrations:** Strava/Wahoo imports only store activity data, not profile snapshots
+4. **Temporal Queries:** "What was my FTP on 2024-03-15?" → query performance metric logs
+5. **Reduced Storage:** No duplicate profile data per activity
+
+**Migration Strategy:**
+
+1. **Phase 1:** Create both metric log tables
+2. **Phase 2:** Seed initial data from current profile values
+3. **Phase 3:** Backfill from activity `profile_snapshot` fields (one-time migration)
+4. **Phase 4:** Update activity submission to use profile_id only
+5. **Phase 5:** Deprecate `profile_snapshot` field (keep for backward compatibility initially)
+
+### Metric Log Queries for Activity Calculations
+
+**Scenario:** Calculate TSS for activity completed on 2024-03-15
 
 ```sql
--- User's FTP progression over time
-INSERT INTO profile_performance_metric_logs
-  (profile_id, category, type, value, unit, duration_seconds, source, confidence_score, calculation_method, created_at)
-VALUES
-  ('user-id', 'bike', 'power', 250, 'watts', 3600, 'test', 0.95, 'ftp_20min_0.95', '2024-01-01'),
-  ('user-id', 'bike', 'power', 265, 'watts', 3600, 'test', 0.95, 'ftp_20min_0.95', '2024-02-15'),
-  ('user-id', 'bike', 'power', 275, 'watts', 3600, 'test', 0.95, 'ftp_20min_0.95', '2024-04-01');
+-- Get FTP at time of activity
+SELECT value
+FROM profile_performance_metric_logs
+WHERE profile_id = $1
+  AND category = 'bike'
+  AND type = 'power'
+  AND duration_seconds = 3600
+  AND created_at <= '2024-03-15'
+  AND is_active = true
+ORDER BY created_at DESC
+LIMIT 1;
 
--- User's 5K running pace progression
-INSERT INTO profile_performance_metric_logs
-  (profile_id, category, type, value, unit, duration_seconds, source, reference_activity_id, created_at)
-VALUES
-  ('user-id', 'run', 'pace', 4.2, 'min_per_km', 1200, 'race', 'activity-123', '2024-03-15'),
-  ('user-id', 'run', 'pace', 4.05, 'min_per_km', 1200, 'race', 'activity-456', '2024-06-20');
+-- Get weight at time of activity
+SELECT value
+FROM profile_metric_logs
+WHERE profile_id = $1
+  AND metric_type = 'weight_kg'
+  AND recorded_at <= '2024-03-15'
+ORDER BY recorded_at DESC
+LIMIT 1;
+
+-- Calculate TSS using core package with these values
 ```
 
-### 2.3 Environmental Conditions (JSONB)
-
-Optional context for advanced analysis - helps understand performance variations.
-
-```typescript
-// Example conditions structure
-{
-  environment: 'indoor' | 'outdoor',
-  altitude?: number,          // meters above sea level
-  temperature?: number,       // celsius
-  surface?: 'road' | 'track' | 'trail' | 'treadmill' | 'trainer',
-  equipment?: {
-    bike?: 'road' | 'tt' | 'gravel' | 'mountain',
-    wheels?: 'standard' | 'aero',
-    position?: 'hoods' | 'drops' | 'aero_bars'
-  },
-  notes?: string
-}
-```
+**Fallback Strategy:** If no metric logs exist for activity date, use current profile values.
 
 ---
 
 ## 3. Core Package (Business Logic)
 
-### 3.1 Location: `packages/core/`
+### Location: `packages/core/`
 
 **CRITICAL:** All calculation logic lives in `@repo/core` - database-independent, pure functions.
 
-### 3.2 Schemas
+### Schemas
 
-The core package should **leverage and extend** Supabase-generated types rather than duplicate them.
+The core package leverages and extends Supabase-generated types rather than duplicating them. Includes:
 
-**File:** `packages/core/schemas/performance_metrics.ts`
+- Database type re-exports
+- Zod schemas for validation (runtime safety)
+- Enums for categories, types, units, sources
+- Form schemas for user input
+- Standard durations (hardcoded constants)
 
-```typescript
-import { z } from 'zod';
-import type { Database } from '@repo/supabase/database.types';
+### Key Calculations
 
-// Re-export database types
-export type ProfilePerformanceMetricLog =
-  Database['public']['Tables']['profile_performance_metric_logs']['Row'];
+**Training Load Analysis:**
 
-export type ProfilePerformanceMetricLogInsert =
-  Database['public']['Tables']['profile_performance_metric_logs']['Insert'];
+- CTL (Chronic Training Load) = Fitness (42-day exponentially weighted moving average of TSS)
+- ATL (Acute Training Load) = Fatigue (7-day exponentially weighted moving average of TSS)
+- TSB (Training Stress Balance) = CTL - ATL (Form)
+- **Efficient calculation** using pre-calculated TSS from activities
+- No per-activity FTP lookups needed for CTL/ATL/TSB
 
-export type ProfilePerformanceMetricLogUpdate =
-  Database['public']['Tables']['profile_performance_metric_logs']['Update'];
+**TSS/IF Calculation (NEW - uses metric logs):**
 
-// Zod schemas for validation (runtime safety)
-export const performanceMetricCategorySchema = z.enum([
-  'bike',
-  'run',
-  'swim',
-  'row',
-  'other',
-]);
+- Calculate TSS using activity power data + FTP from performance metric logs
+- Calculate IF (Intensity Factor) = Normalized Power / FTP
+- Calculate VI (Variability Index) = Normalized Power / Average Power
+- Supports weight-adjusted calculations using profile metric logs
+- **Input:** Activity data + profile_id + activity date
+- **Output:** TSS, IF, VI for storage in activity metrics
 
-export const performanceMetricTypeSchema = z.enum([
-  'power',
-  'pace',
-  'speed',
-  'heart_rate',
-]);
+**Temporal Metric Lookup (NEW):**
 
-export const metricUnitSchema = z.enum([
-  'watts',
-  'watts_per_kg',
-  'min_per_km',
-  'min_per_mi',
-  'min_per_100m',
-  'bpm',
-  'm_per_s',
-]);
+- `getPerformanceMetricAtDate()` - Get FTP/pace/HR at specific date
+- `getProfileMetricAtDate()` - Get weight/sleep/HRV at specific date
+- Handles missing data with fallbacks (interpolation, current profile, null)
+- Used for activity calculations and historical analysis
 
-export const metricSourceSchema = z.enum([
-  'manual',
-  'test',
-  'race',
-  'calculated',
-  'estimated',
-  'adjusted',
-]);
+**Current Capability:**
 
-export const environmentalConditionsSchema = z.object({
-  environment: z.enum(['indoor', 'outdoor']).optional(),
-  altitude: z.number().min(0).max(9000).optional(),
-  temperature: z.number().min(-40).max(60).optional(),
-  surface: z.enum(['road', 'track', 'trail', 'treadmill', 'trainer']).optional(),
-  equipment: z.record(z.string()).optional(),
-  notes: z.string().optional(),
-}).optional();
+- Returns most recent active log for given parameters
+- Used for zone calculations, training plan targets
+- Fast lookup with indexed queries
 
-// Form schemas for user input
-export const createMetricLogSchema = z.object({
-  category: performanceMetricCategorySchema,
-  type: performanceMetricTypeSchema,
-  value: z.number().positive(),
-  unit: metricUnitSchema,
-  duration_seconds: z.number().int().positive(),
-  source: metricSourceSchema,
-  confidence_score: z.number().min(0).max(1).optional(),
-  reference_activity_id: z.string().uuid().optional(),
-  calculation_method: z.string().optional(),
-  conditions: environmentalConditionsSchema,
-  notes: z.string().optional(),
-});
+**Progression Analysis:**
 
-export type CreateMetricLogInput = z.infer<typeof createMetricLogSchema>;
+- Analyzes trends over specified timeframe
+- Calculates change, percentage change, trend direction
+- Projects future performance based on current rate
+- Returns improvement/decline indicators
+- Works with both performance and profile metrics
 
-// Standard durations (hardcoded - no DB table needed)
-export const STANDARD_DURATIONS = [
-  { seconds: 5, label: '5s Sprint', description: 'Neuromuscular power' },
-  { seconds: 30, label: '30s Anaerobic', description: 'Anaerobic capacity' },
-  { seconds: 60, label: '1min Anaerobic', description: 'Sustained anaerobic' },
-  { seconds: 120, label: '2min VO2max', description: 'High aerobic capacity' },
-  { seconds: 300, label: '5min VO2max', description: 'VO2max power/pace' },
-  { seconds: 1200, label: '20min Test', description: 'FTP test duration' },
-  { seconds: 3600, label: '60min FTP', description: 'Functional threshold' },
-  { seconds: 7200, label: '2hr Tempo', description: 'Sustained endurance' },
-] as const;
+**Power Curve:**
 
-export type StandardDuration = typeof STANDARD_DURATIONS[number];
-```
+- Interpolates power values for standard durations
+- Uses actual logged values when available
+- Estimates missing durations using mathematical models
+- Supports power-based training zones
+- **Critical durations:** 5s, 1min, 5min, 20min, 60min (FTP)
 
-### 3.3 Calculations
+**Confidence Scoring:**
 
-**File:** `packages/core/calculations/performance_analysis.ts`
+- Calculates reliability based on source type
+- Factors in recency (confidence decays over time)
+- Bonus for reference activity linkage
+- Returns score between 0-1
+- Used to prioritize which metric to use for calculations
 
-```typescript
-import type { ProfilePerformanceMetricLog } from '../schemas/performance_metrics';
-import type { Database } from '@repo/supabase/database.types';
+**FTP Estimation:**
 
-type Activity = Database['public']['Tables']['activities']['Row'];
+- From 20-minute test result (multiply by 0.95)
+- From ramp test (75% of max 1-minute power)
+- From activity power analysis (heuristic detection)
+- Validates input values
 
-/**
- * Calculate training load metrics (CTL, ATL, TSB) from activities and performance logs.
- *
- * CTL (Chronic Training Load) = Fitness (42-day exponentially weighted moving average of TSS)
- * ATL (Acute Training Load) = Fatigue (7-day exponentially weighted moving average of TSS)
- * TSB (Training Stress Balance) = CTL - ATL (Form)
- *
- * This function integrates completed activities with current performance metrics
- * to provide accurate training load assessment.
- */
-export function calculateTrainingLoad(params: {
-  activities: Activity[];
-  metricLogs: ProfilePerformanceMetricLog[];
-  currentFTP?: number;
-  analysisDate?: Date;
-}): {
-  ctl: number;
-  atl: number;
-  tsb: number;
-  trend: 'improving' | 'maintaining' | 'detraining';
-} {
-  // Implementation: compute from activities using current FTP from metric logs
-  // This is where we integrate existing activity data with new metric logs
+**Weight-Adjusted Metrics (NEW):**
 
-  const { activities, metricLogs, currentFTP, analysisDate = new Date() } = params;
-
-  // Get current FTP from metric logs if not provided
-  const ftp = currentFTP ?? getCurrentFTP(metricLogs, 'bike');
-
-  // Calculate TSS for each activity using current FTP
-  // Use existing TSS calculation from core package
-
-  // Apply exponentially weighted moving averages
-  // CTL: 42-day EWMA
-  // ATL: 7-day EWMA
-
-  // Return computed metrics
-  return {
-    ctl: 0, // TODO: implement
-    atl: 0,
-    tsb: 0,
-    trend: 'maintaining',
-  };
-}
-
-/**
- * Get current capability value for a specific metric.
- * Returns the most recent active log for the given parameters.
- */
-export function getCurrentCapability(params: {
-  logs: ProfilePerformanceMetricLog[];
-  category: string;
-  type: string;
-  duration_seconds?: number;
-}): ProfilePerformanceMetricLog | null {
-  const { logs, category, type, duration_seconds } = params;
-
-  const filtered = logs
-    .filter(log =>
-      log.is_active &&
-      log.category === category &&
-      log.type === type &&
-      (!duration_seconds || log.duration_seconds === duration_seconds)
-    )
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-  return filtered[0] ?? null;
-}
-
-/**
- * Helper to get current FTP from metric logs.
- */
-export function getCurrentFTP(
-  logs: ProfilePerformanceMetricLog[],
-  category: 'bike' | 'run' = 'bike'
-): number | null {
-  const ftpLog = getCurrentCapability({
-    logs,
-    category,
-    type: 'power',
-    duration_seconds: 3600, // 60-minute power = FTP
-  });
-
-  return ftpLog?.value ?? null;
-}
-
-/**
- * Analyze progression for a specific capability over time.
- * Returns trend analysis, rate of improvement, and projection.
- */
-export function analyzeProgression(params: {
-  logs: ProfilePerformanceMetricLog[];
-  category: string;
-  type: string;
-  duration_seconds?: number;
-  timeframe_days?: number;
-}): {
-  current: number | null;
-  baseline: number | null;
-  change: number;
-  changePercent: number;
-  trend: 'improving' | 'stable' | 'declining';
-  ratePerWeek: number;
-  projection30Days: number | null;
-} {
-  const { logs, category, type, duration_seconds, timeframe_days = 90 } = params;
-
-  // Filter logs for specified metric
-  const filtered = logs
-    .filter(log =>
-      log.is_active &&
-      log.category === category &&
-      log.type === type &&
-      (!duration_seconds || log.duration_seconds === duration_seconds)
-    )
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-  if (filtered.length === 0) {
-    return {
-      current: null,
-      baseline: null,
-      change: 0,
-      changePercent: 0,
-      trend: 'stable',
-      ratePerWeek: 0,
-      projection30Days: null,
-    };
-  }
-
-  const current = filtered[0].value;
-
-  // Get baseline from timeframe_days ago
-  const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - timeframe_days);
-
-  const historicalLogs = filtered.filter(
-    log => new Date(log.created_at) <= cutoffDate
-  );
-
-  const baseline = historicalLogs[0]?.value ?? current;
-
-  const change = current - baseline;
-  const changePercent = baseline > 0 ? (change / baseline) * 100 : 0;
-
-  // Determine trend
-  let trend: 'improving' | 'stable' | 'declining' = 'stable';
-  if (changePercent > 2) trend = 'improving';
-  if (changePercent < -2) trend = 'declining';
-
-  // Calculate rate of change per week
-  const daysElapsed = timeframe_days;
-  const weeksElapsed = daysElapsed / 7;
-  const ratePerWeek = weeksElapsed > 0 ? change / weeksElapsed : 0;
-
-  // Project 30 days forward
-  const projection30Days = current + (ratePerWeek * (30 / 7));
-
-  return {
-    current,
-    baseline,
-    change,
-    changePercent,
-    trend,
-    ratePerWeek,
-    projection30Days,
-  };
-}
-
-/**
- * Calculate power curve from metric logs.
- * Returns interpolated power values for standard durations.
- */
-export function calculatePowerCurve(params: {
-  logs: ProfilePerformanceMetricLog[];
-  category: string;
-  durations?: number[];
-}): Record<number, number> {
-  const { logs, category, durations = [5, 60, 300, 1200, 3600] } = params;
-
-  const powerLogs = logs
-    .filter(log =>
-      log.is_active &&
-      log.category === category &&
-      log.type === 'power'
-    )
-    .sort((a, b) => a.duration_seconds - b.duration_seconds);
-
-  const curve: Record<number, number> = {};
-
-  // Interpolate or use actual values
-  for (const duration of durations) {
-    const exactMatch = powerLogs.find(log => log.duration_seconds === duration);
-    if (exactMatch) {
-      curve[duration] = exactMatch.value;
-    } else {
-      // Interpolate between nearest values
-      const lower = powerLogs
-        .filter(log => log.duration_seconds < duration)
-        .sort((a, b) => b.duration_seconds - a.duration_seconds)[0];
-      const upper = powerLogs
-        .filter(log => log.duration_seconds > duration)
-        .sort((a, b) => a.duration_seconds - b.duration_seconds)[0];
-
-      if (lower && upper) {
-        // Linear interpolation
-        const ratio = (duration - lower.duration_seconds) /
-                     (upper.duration_seconds - lower.duration_seconds);
-        curve[duration] = lower.value + (upper.value - lower.value) * ratio;
-      } else if (lower) {
-        // Extrapolate down from lower (power decreases for longer durations)
-        const hourlyDecay = 0.95; // Assume 5% decay per hour
-        const hours = (duration - lower.duration_seconds) / 3600;
-        curve[duration] = lower.value * Math.pow(hourlyDecay, hours);
-      } else if (upper) {
-        // Extrapolate up from upper (power increases for shorter durations)
-        const hourlyIncrease = 1.2; // Simplified model
-        const hours = (upper.duration_seconds - duration) / 3600;
-        curve[duration] = upper.value * Math.pow(hourlyIncrease, hours);
-      }
-    }
-  }
-
-  return curve;
-}
-
-/**
- * Estimate FTP from 20-minute test result.
- */
-export function estimateFTPFrom20MinTest(twentyMinPower: number): number {
-  if (twentyMinPower <= 0) throw new Error('Invalid power value');
-  return Math.round(twentyMinPower * 0.95);
-}
-
-/**
- * Estimate FTP from ramp test (75% of max 1-minute power).
- */
-export function estimateFTPFromRampTest(maxOneMinPower: number): number {
-  if (maxOneMinPower <= 0) throw new Error('Invalid power value');
-  return Math.round(maxOneMinPower * 0.75);
-}
-
-/**
- * Calculate confidence score for a metric log based on source and recency.
- */
-export function calculateConfidenceScore(params: {
-  source: string;
-  daysSinceCreated: number;
-  hasReferenceActivity: boolean;
-}): number {
-  const { source, daysSinceCreated, hasReferenceActivity } = params;
-
-  // Source reliability weights
-  const sourceWeights: Record<string, number> = {
-    test: 0.95,
-    race: 0.90,
-    calculated: 0.85,
-    manual: 0.70,
-    estimated: 0.60,
-    adjusted: 0.65,
-  };
-
-  let confidence = sourceWeights[source] ?? 0.5;
-
-  // Decay confidence over time (10% per 30 days)
-  const decayRate = 0.10 / 30;
-  const recencyFactor = Math.max(0.5, 1 - (daysSinceCreated * decayRate));
-  confidence *= recencyFactor;
-
-  // Bonus for reference activity
-  if (hasReferenceActivity) {
-    confidence = Math.min(1.0, confidence * 1.1);
-  }
-
-  return Math.round(confidence * 100) / 100;
-}
-```
+- Power-to-weight ratio (W/kg)
+- Normalized power per kg
+- VAM (Vertical Ascent Meters) per kg
+- Requires weight from profile metric logs at activity date
 
 ---
 
 ## 4. tRPC API Layer
 
-**File:** `packages/trpc/src/routers/performance_metrics.ts`
+### Key Procedures
 
-```typescript
-import { z } from 'zod';
-import { router, protectedProcedure } from '../trpc';
-import {
-  createMetricLogSchema,
-  performanceMetricCategorySchema,
-  performanceMetricTypeSchema,
-} from '@repo/core/schemas/performance_metrics';
-import {
-  analyzeProgression,
-  calculatePowerCurve,
-  calculateTrainingLoad,
-  getCurrentCapability,
-} from '@repo/core/calculations/performance_analysis';
+**Performance Metric Logs CRUD:**
 
-export const performanceMetricsRouter = router({
-  /**
-   * List all metric logs for the current user with filtering.
-   */
-  list: protectedProcedure
-    .input(
-      z.object({
-        category: performanceMetricCategorySchema.optional(),
-        type: performanceMetricTypeSchema.optional(),
-        duration_seconds: z.number().optional(),
-        limit: z.number().min(1).max(100).default(50),
-        offset: z.number().min(0).default(0),
-      })
-    )
-    .query(async ({ input, ctx }) => {
-      const { supabase, user } = ctx;
+- `profilePerformanceMetrics.list` - Get all performance logs with filtering
+- `profilePerformanceMetrics.getById` - Retrieve specific log
+- `profilePerformanceMetrics.create` - Add new performance log
+- `profilePerformanceMetrics.update` - Modify existing log
+- `profilePerformanceMetrics.deactivate` - Soft delete
 
-      let query = supabase
-        .from('profile_performance_metric_logs')
-        .select('*')
-        .eq('profile_id', user.id)
-        .eq('is_active', true)
-        .order('created_at', { ascending: false })
-        .range(input.offset, input.offset + input.limit - 1);
+**Profile Metric Logs CRUD (NEW):**
 
-      if (input.category) {
-        query = query.eq('category', input.category);
-      }
-      if (input.type) {
-        query = query.eq('type', input.type);
-      }
-      if (input.duration_seconds) {
-        query = query.eq('duration_seconds', input.duration_seconds);
-      }
+- `profileMetrics.list` - Get all profile logs (weight, sleep, HRV, etc.)
+- `profileMetrics.getById` - Retrieve specific log
+- `profileMetrics.create` - Add new profile metric log
+- `profileMetrics.update` - Modify existing log
+- `profileMetrics.delete` - Hard delete (biometric data can be removed)
 
-      const { data, error } = await query;
+**Temporal Queries (NEW - Critical for Activity Calculations):**
 
-      if (error) throw new Error(`Failed to fetch metrics: ${error.message}`);
+- `profilePerformanceMetrics.getAtDate` - Get FTP/pace/HR at specific date
+- `profileMetrics.getAtDate` - Get weight/sleep at specific date
+- `profilePerformanceMetrics.getForDateRange` - Get all metrics in date range
+- `profileMetrics.getForDateRange` - Get all biometrics in date range
 
-      return data ?? [];
-    }),
+**Analytics Procedures:**
 
-  /**
-   * Get a specific metric log by ID.
-   */
-  getById: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
-    .query(async ({ input, ctx }) => {
-      const { supabase, user } = ctx;
+- `profilePerformanceMetrics.getCurrent` - Most recent capability
+- `profilePerformanceMetrics.analyzeProgression` - Trend analysis
+- `profilePerformanceMetrics.getPowerCurve` - Calculate power curve
+- `activities.getTrainingLoad` - CTL/ATL/TSB (uses pre-calculated TSS)
 
-      const { data, error } = await supabase
-        .from('profile_performance_metric_logs')
-        .select('*')
-        .eq('id', input.id)
-        .eq('profile_id', user.id)
-        .single();
+**Activity Integration (UPDATED):**
 
-      if (error) throw new Error(`Failed to fetch metric: ${error.message}`);
-      if (!data) throw new Error('Metric not found');
+- `activities.create` - Store activity with profile_id (NO snapshot)
+- `activities.calculateMetrics` - Background job to calculate TSS/IF
+- `activities.recalculateMetrics` - Triggered when performance metrics updated
+- `activities.recalculateForDateRange` - Batch recalculation
 
-      return data;
-    }),
+**Input Validation:**
 
-  /**
-   * Create a new metric log.
-   */
-  create: protectedProcedure
-    .input(createMetricLogSchema)
-    .mutation(async ({ input, ctx }) => {
-      const { supabase, user } = ctx;
+- Uses Zod schemas from core package
+- Type-safe parameters and returns
+- Proper error handling and user feedback
+- Validates metric types and value ranges
 
-      const { data, error } = await supabase
-        .from('profile_performance_metric_logs')
-        .insert({
-          profile_id: user.id,
-          ...input,
-        })
-        .select()
-        .single();
+**Integration Points:**
 
-      if (error) throw new Error(`Failed to create metric: ${error.message}`);
-
-      return data;
-    }),
-
-  /**
-   * Update an existing metric log.
-   */
-  update: protectedProcedure
-    .input(
-      z.object({
-        id: z.string().uuid(),
-        data: createMetricLogSchema.partial(),
-      })
-    )
-    .mutation(async ({ input, ctx }) => {
-      const { supabase, user } = ctx;
-
-      const { data, error } = await supabase
-        .from('profile_performance_metric_logs')
-        .update(input.data)
-        .eq('id', input.id)
-        .eq('profile_id', user.id)
-        .select()
-        .single();
-
-      if (error) throw new Error(`Failed to update metric: ${error.message}`);
-
-      return data;
-    }),
-
-  /**
-   * Mark a metric log as inactive (soft delete).
-   */
-  deactivate: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
-    .mutation(async ({ input, ctx }) => {
-      const { supabase, user } = ctx;
-
-      const { error } = await supabase
-        .from('profile_performance_metric_logs')
-        .update({ is_active: false })
-        .eq('id', input.id)
-        .eq('profile_id', user.id);
-
-      if (error) throw new Error(`Failed to deactivate metric: ${error.message}`);
-
-      return { success: true };
-    }),
-
-  /**
-   * Get current capability (most recent active log) for a metric.
-   */
-  getCurrent: protectedProcedure
-    .input(
-      z.object({
-        category: performanceMetricCategorySchema,
-        type: performanceMetricTypeSchema,
-        duration_seconds: z.number().optional(),
-      })
-    )
-    .query(async ({ input, ctx }) => {
-      const { supabase, user } = ctx;
-
-      let query = supabase
-        .from('profile_performance_metric_logs')
-        .select('*')
-        .eq('profile_id', user.id)
-        .eq('category', input.category)
-        .eq('type', input.type)
-        .eq('is_active', true)
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-      if (input.duration_seconds) {
-        query = query.eq('duration_seconds', input.duration_seconds);
-      }
-
-      const { data, error } = await query;
-
-      if (error) throw new Error(`Failed to fetch current metric: ${error.message}`);
-
-      return data?.[0] ?? null;
-    }),
-
-  /**
-   * Analyze progression for a specific metric over time.
-   */
-  analyzeProgression: protectedProcedure
-    .input(
-      z.object({
-        category: performanceMetricCategorySchema,
-        type: performanceMetricTypeSchema,
-        duration_seconds: z.number().optional(),
-        timeframe_days: z.number().min(7).max(365).default(90),
-      })
-    )
-    .query(async ({ input, ctx }) => {
-      const { supabase, user } = ctx;
-
-      // Fetch all logs for this metric
-      let query = supabase
-        .from('profile_performance_metric_logs')
-        .select('*')
-        .eq('profile_id', user.id)
-        .eq('category', input.category)
-        .eq('type', input.type)
-        .eq('is_active', true)
-        .order('created_at', { ascending: false });
-
-      if (input.duration_seconds) {
-        query = query.eq('duration_seconds', input.duration_seconds);
-      }
-
-      const { data: logs, error } = await query;
-
-      if (error) throw new Error(`Failed to fetch logs: ${error.message}`);
-
-      // Use core package to analyze progression
-      return analyzeProgression({
-        logs: logs ?? [],
-        category: input.category,
-        type: input.type,
-        duration_seconds: input.duration_seconds,
-        timeframe_days: input.timeframe_days,
-      });
-    }),
-
-  /**
-   * Calculate power curve from logs.
-   */
-  getPowerCurve: protectedProcedure
-    .input(
-      z.object({
-        category: performanceMetricCategorySchema,
-        durations: z.array(z.number()).optional(),
-      })
-    )
-    .query(async ({ input, ctx }) => {
-      const { supabase, user } = ctx;
-
-      const { data: logs, error } = await supabase
-        .from('profile_performance_metric_logs')
-        .select('*')
-        .eq('profile_id', user.id)
-        .eq('category', input.category)
-        .eq('type', 'power')
-        .eq('is_active', true);
-
-      if (error) throw new Error(`Failed to fetch power logs: ${error.message}`);
-
-      return calculatePowerCurve({
-        logs: logs ?? [],
-        category: input.category,
-        durations: input.durations,
-      });
-    }),
-
-  /**
-   * Calculate training load (CTL/ATL/TSB) using activities + metric logs.
-   */
-  getTrainingLoad: protectedProcedure
-    .input(
-      z.object({
-        analysisDate: z.date().optional(),
-      })
-    )
-    .query(async ({ input, ctx }) => {
-      const { supabase, user } = ctx;
-
-      // Fetch recent activities (last 42 days for CTL)
-      const fortyTwoDaysAgo = new Date();
-      fortyTwoDaysAgo.setDate(fortyTwoDaysAgo.getDate() - 42);
-
-      const { data: activities, error: activitiesError } = await supabase
-        .from('activities')
-        .select('*')
-        .eq('profile_id', user.id)
-        .gte('started_at', fortyTwoDaysAgo.toISOString())
-        .order('started_at', { ascending: false });
-
-      if (activitiesError) {
-        throw new Error(`Failed to fetch activities: ${activitiesError.message}`);
-      }
-
-      // Fetch all active metric logs
-      const { data: metricLogs, error: logsError } = await supabase
-        .from('profile_performance_metric_logs')
-        .select('*')
-        .eq('profile_id', user.id)
-        .eq('is_active', true);
-
-      if (logsError) {
-        throw new Error(`Failed to fetch metric logs: ${logsError.message}`);
-      }
-
-      // Use core package to calculate training load
-      return calculateTrainingLoad({
-        activities: activities ?? [],
-        metricLogs: metricLogs ?? [],
-        analysisDate: input.analysisDate,
-      });
-    }),
-});
-```
+- Activity submission queries metric logs for TSS calculation
+- Third-party webhooks query metric logs for user's FTP
+- Background jobs recalculate metrics when logs updated
+- Profile sync updates from most recent metric logs
 
 ---
 
 ## 5. Data Flow & Integration
 
-### 5.1 Integration with Existing Features
+### Integration with Existing Features
 
-**Activities:**
-- Completed activities can reference metric logs via `reference_activity_id`
-- Training load analysis uses both activities (TSS from workouts) and metric logs (current FTP)
-- Post-activity review can suggest creating metric logs from test efforts
+**Activities (UPDATED APPROACH):**
+
+- **No more profile snapshots** - Activities only store `profile_id`
+- TSS/IF calculated by querying performance metric logs at activity date
+- Weight-adjusted metrics use profile metric logs (weight_kg at activity date)
+- Post-activity review suggests creating metric logs from test efforts
+- Background recalculation when performance metrics updated
 
 **Training Plans:**
-- Training plan structure (already exists) references target zones
-- Zones computed dynamically from current metric logs
+
+- Zones computed dynamically from current performance metric logs
 - Progressive plans adjust based on capability improvements
+- Plan adherence uses metric logs for target validation
 
 **Planned Activities:**
-- Scheduled workouts use metric logs to set appropriate targets
-- Post-workout adherence calculated using current capabilities
+
+- Scheduled workouts use performance metric logs for appropriate targets
+- Post-workout adherence calculated using capabilities at activity date
+- Structured workout targets reference current FTP/pace from logs
 
 **Profile:**
-- Profile FTP/threshold HR can be synced from metric logs
+
+- Profile table stores current summary values (latest FTP, weight, etc.)
+- Profile values auto-sync from most recent metric logs
 - Profile acts as fallback when no metric logs exist
-- Migration path: seed initial metric logs from profile data
+- Migration path: seed initial logs from profile data
 
-### 5.2 Dynamic Computation Examples
+**Third-Party Integrations (Strava, Wahoo, Garmin):**
 
-**Example 1: Current FTP**
+- Webhook receives raw activity data (power, HR, distance, time)
+- Query user's performance metric logs for FTP/threshold at activity date
+- Calculate TSS/IF using core package with queried metrics
+- Store activity with `profile_id` reference only
+- **No need to sync profile data** from third-party services
+- Efficient: only activity data stored, metrics calculated on-demand
+
+### Dynamic Computation Examples
+
+**Current FTP:** Query performance metric logs for latest 60-minute power value, use for zone calculations and training targets.
+
+**Activity TSS Calculation (NEW):**
 ```typescript
-// No need for separate "goals" table - compute current capability on-demand
-const currentFTP = await trpc.performanceMetrics.getCurrent.query({
-  category: 'bike',
-  type: 'power',
-  duration_seconds: 3600,
+// OLD: Used profile snapshot stored in activity
+const tss = calculateTSS({
+  normalizedPower: activity.metrics.normalized_power,
+  duration: activity.duration_seconds,
+  ftp: activity.profile_snapshot.ftp, // ❌ Snapshot could be stale
 });
 
-// Use this for zone calculations, training plan targets, etc.
-```
-
-**Example 2: Training Load**
-```typescript
-// Compute CTL/ATL/TSB from activities + metric logs
-const trainingLoad = await trpc.performanceMetrics.getTrainingLoad.query({});
-
-// Returns: { ctl: 85, atl: 92, tsb: -7, trend: 'improving' }
-// All computed dynamically - no separate storage needed
-```
-
-**Example 3: Progression Analysis**
-```typescript
-// Analyze FTP progression over last 90 days
-const progression = await trpc.performanceMetrics.analyzeProgression.query({
+// NEW: Query performance metric logs at activity date
+const ftp = await getPerformanceMetricAtDate({
+  profileId: activity.profile_id,
   category: 'bike',
   type: 'power',
-  duration_seconds: 3600,
-  timeframe_days: 90,
+  duration: 3600,
+  date: activity.started_at,
 });
 
-// Returns: {
-//   current: 275,
-//   baseline: 250,
-//   change: +25,
-//   changePercent: +10%,
-//   trend: 'improving',
-//   ratePerWeek: +2.8,
-//   projection30Days: 287
-// }
+const tss = calculateTSS({
+  normalizedPower: activity.metrics.normalized_power,
+  duration: activity.duration_seconds,
+  ftp: ftp.value, // ✅ Accurate FTP at activity date
+});
 ```
 
-### 5.3 Migration Strategy
+**Training Load (CTL/ATL/TSB Efficiency):**
+- **OLD:** Query all activities with profile snapshots, calculate TSS for each, compute CTL/ATL/TSB
+- **NEW:** Activities store pre-calculated TSS in metrics JSONB, direct aggregation for CTL/ATL/TSB
+- **Benefit:** 10-100x faster queries for training load charts (no per-activity calculation)
+- **Recalculation:** Background job updates TSS when performance metrics change
 
-1. **Seed initial data** from existing profile FTP/threshold HR
-2. **Backfill historical data** from activity analysis (optional)
-3. **Gradual adoption** - features work with or without metric logs
-4. **Graceful fallback** - use profile values if no logs exist
+**Weight-Adjusted Power:**
+```typescript
+// Query weight at activity date from profile metric logs
+const weight = await getProfileMetricAtDate({
+  profileId: activity.profile_id,
+  metricType: 'weight_kg',
+  date: activity.started_at,
+});
+
+const powerToWeight = activity.metrics.normalized_power / weight.value;
+```
+
+**Progression Analysis:** Analyze metric changes over time, calculate improvement rates, project future performance.
+
+**Zone Calculations:** Use most recent performance metric logs for current zones, historical logs for zone distribution analysis.
+
+### Migration Strategy
+
+1. **Create tables** - `profile_performance_metric_logs` and `profile_metric_logs`
+2. **Seed initial data** from existing profile FTP/threshold HR/weight
+3. **Backfill from activities** - Extract profile_snapshot data into metric logs (one-time)
+4. **Update activity submission** - Remove profile snapshot, use profile_id only
+5. **Background job** - Calculate TSS/IF for all activities using metric logs
+6. **Gradual deprecation** - Keep profile_snapshot field for backward compatibility
+7. **Graceful fallback** - Use current profile values if no logs exist for date range
+
+### Performance Optimization Strategy
+
+**Pre-calculate and Cache:**
+- TSS/IF stored in activity metrics JSONB after calculation
+- Recalculated only when performance metrics updated
+- CTL/ATL/TSB queries become simple aggregations
+
+**Indexed Queries:**
+- Profile metric logs indexed by (profile_id, metric_type, recorded_at)
+- Performance metric logs indexed by (profile_id, category, type, duration_seconds, created_at)
+- Fast temporal lookups: "What was FTP on this date?"
+
+**Background Processing:**
+- Activity submission stores raw data immediately
+- Background job calculates TSS/IF using metric logs
+- User sees activity instantly, metrics appear within seconds
+- Third-party integrations processed in batches
 
 ---
 
 ## 6. Implementation Phases
 
-### Phase 1: Foundation (Week 1-2)
-- [ ] Create database migration for `profile_performance_metric_logs`
-- [ ] Update Supabase types (`pnpm run supabase:gen-types`)
-- [ ] Create core package schemas (leveraging Supabase types)
-- [ ] Implement basic CRUD in tRPC router
-- [ ] Test with manual entries
+### Phase 1: Foundation & Migration (Week 1-2)
 
-### Phase 2: Core Calculations (Week 2-3)
-- [ ] Implement progression analysis in core package
-- [ ] Implement power curve calculation
-- [ ] Implement training load calculation (CTL/ATL/TSB)
-- [ ] Add confidence score calculation
-- [ ] Write comprehensive tests for calculations
+**Database:**
+- Create migration for `profile_performance_metric_logs` table
+- Create migration for `profile_metric_logs` table (NEW)
+- Add indexes for temporal queries
+- Update Supabase types
 
-### Phase 3: Mobile UI (Week 3-4)
-- [ ] Manual entry form (modal)
-- [ ] Capability overview screen (list current capabilities)
-- [ ] Progression charts (per metric)
-- [ ] Post-activity: suggest creating metric logs
-- [ ] Integration with activity detail screen
+**Core Package:**
+- Create schemas leveraging Supabase types
+- Add temporal lookup functions (getMetricAtDate)
+- Add TSS/IF calculation with metric log inputs
+- Write comprehensive tests
 
-### Phase 4: Web Dashboard (Week 4-5)
-- [ ] Advanced analytics views
-- [ ] Power curve visualization
-- [ ] Training load charts (CTL/ATL/TSB over time)
-- [ ] Historical progression analysis
-- [ ] Export capabilities
+**tRPC API:**
+- Implement CRUD for both metric log tables
+- Implement temporal query procedures (getAtDate)
+- Test with manual entries
 
-### Phase 5: Auto-Detection (Week 5-6) - Optional
-- [ ] Background job to detect test efforts in activities
-- [ ] Suggest metric log creation from detected tests
-- [ ] User approval flow before creating logs
-- [ ] Confidence scoring for auto-detected values
+**Migration:**
+- Seed initial performance logs from profile (FTP, threshold_hr)
+- Seed initial profile logs from profile (weight_kg)
+- Backfill from activity profile_snapshot fields (one-time script)
 
-### Phase 6: Polish & Optimization
-- [ ] Performance optimization
-- [ ] Error handling & edge cases
-- [ ] User feedback & iteration
-- [ ] Documentation
+### Phase 2: Activity Integration (Week 2-3)
+
+**Update Activity Submission:**
+- Remove profile snapshot from activity upload schema
+- Store profile_id reference only
+- Create background job for TSS/IF calculation
+- Query performance metrics at activity date for calculations
+- Query profile metrics for weight-adjusted calculations
+
+**Background Jobs:**
+- TSS/IF calculator using metric logs
+- Batch processor for third-party activities
+- Recalculation trigger when metrics updated
+
+**Core Package:**
+- Implement progression analysis
+- Implement power curve calculation
+- Add confidence score calculation
+- Add weight-adjusted metric calculations
+
+### Phase 3: Training Load Optimization (Week 3)
+
+**Efficient CTL/ATL/TSB:**
+- Use pre-calculated TSS from activities (no per-activity lookups)
+- Optimize queries with proper indexes
+- Implement caching for frequently accessed data
+- Background updates when metrics change
+
+**Testing:**
+- Performance benchmarks (1000+ activities)
+- Validate recalculation accuracy
+- Test fallback scenarios (missing metrics)
+
+### Phase 4: Mobile UI (Week 3-4)
+
+**Metric Entry:**
+- Manual entry form for performance metrics (modal)
+- Manual entry form for profile metrics (weight, sleep, HRV)
+- Capability overview screen (list current capabilities)
+- Progression charts (per metric)
+
+**Activity Integration:**
+- Post-activity: suggest creating metric logs from test efforts
+- Activity detail: show metrics used for TSS calculation
+- Activity detail: show weight at time of activity
+
+### Phase 5: Web Dashboard (Week 4-5)
+
+**Analytics:**
+- Advanced analytics views
+- Power curve visualization
+- Training load charts (CTL/ATL/TSB over time)
+- Historical progression analysis
+- Biometric trends (weight, sleep, HRV over time)
+
+**Data Management:**
+- Bulk import/export capabilities
+- Metric log history viewer
+- Recalculation tools for admins
+- Data integrity checks
+
+### Phase 6: Auto-Detection (Week 5-6) - Optional
+
+**Activity Analysis:**
+- Background job to detect test efforts (20min power, 5K pace)
+- Suggest metric log creation from detected tests
+- User approval flow before creating logs
+- Confidence scoring for auto-detected values
+
+**Third-Party Integration:**
+- Automatic metric calculation for Strava/Wahoo uploads
+- Batch processing for historical imports
+- Webhook handlers query metric logs efficiently
+
+### Phase 7: Polish & Optimization (Week 6)
+
+**Performance:**
+- Query optimization and caching
+- Background job monitoring
+- Database index tuning
+
+**User Experience:**
+- Error handling & edge cases
+- Fallback strategies (missing metrics)
+- User feedback & iteration
+- Documentation and help guides
+
+**Deprecation:**
+- Mark profile_snapshot field as deprecated
+- Keep for backward compatibility (read-only)
+- Plan removal for v2.0
 
 ---
 
 ## Success Criteria
 
 ### MVP Success Metrics
-- [ ] Users can manually log performance metrics
-- [ ] Users can view current capabilities across standard durations
-- [ ] Users can track progression over time with charts
-- [ ] Training load (CTL/ATL/TSB) computed from activities + logs
-- [ ] Core package has 100% test coverage for calculations
-- [ ] Mobile and web UIs functional and intuitive
+
+**User Features:**
+- Users can manually log performance metrics (FTP, pace, threshold HR)
+- Users can manually log profile metrics (weight, sleep, HRV, resting HR)
+- Users can view current capabilities across standard durations
+- Users can track progression over time with charts
+- Activities no longer store profile snapshots (use profile_id reference)
+- Training load (CTL/ATL/TSB) computed efficiently from pre-calculated TSS
+
+**Integration Features:**
+- Third-party activities (Strava, Wahoo) calculate TSS using metric logs
+- User-uploaded activities calculate TSS accurately
+- Retroactive recalculation works when metrics updated
+- Automatic profile sync from latest metric logs
+
+**Performance:**
+- CTL/ATL/TSB queries complete in <100ms (1000+ activities)
+- Activity submission completes instantly (background TSS calculation)
+- Metric log queries optimized with proper indexes
 
 ### Technical Success Criteria
-- [ ] Single table implementation (no unnecessary complexity)
-- [ ] Core package fully database-independent
-- [ ] Supabase types properly leveraged
-- [ ] Dynamic computation working correctly
-- [ ] Integration with existing features seamless
+
+**Architecture:**
+- Two-table implementation (performance + profile metrics)
+- Core package fully database-independent
+- Supabase types properly leveraged
+- Temporal queries work correctly (metric at specific date)
+- Fallback strategies for missing metrics
+
+**Data Integrity:**
+- No duplicate profile data across activities
+- Single source of truth for all metrics
+- Migration from profile_snapshot successful
+- Backward compatibility maintained during transition
+
+**Testing:**
+- Core package has 100% test coverage for calculations
+- Integration tests for temporal queries
+- Performance benchmarks meet targets
+- Recalculation accuracy validated
 
 ---
+
+## 7. Key Design Decisions
+
+### Why Two Tables?
+
+**`profile_performance_metric_logs` (performance curves):**
+- Multi-dimensional: category × type × duration
+- Example: bike + power + 60min = FTP
+- Used for: Zone calculations, performance curves, TSS/IF calculation
+- Complex queries: "Give me all power metrics for bike at standard durations"
+
+**`profile_metric_logs` (biometric data):**
+- Simple: metric_type × value
+- Example: weight_kg = 75.0
+- Used for: Weight-adjusted metrics, wellness tracking, trend analysis
+- Simple queries: "Give me weight on this date"
+
+**Why not combine?** Different query patterns, different use cases, cleaner schema.
+
+### Why Remove Profile Snapshots?
+
+**Problems with profile snapshots:**
+1. **Data duplication** - Same FTP stored in 100+ activities
+2. **No retroactive updates** - Can't fix historical mistakes
+3. **Integration complexity** - Third-party services don't provide profile data
+4. **Storage waste** - Redundant data across activities
+5. **Inconsistency risk** - Profile vs snapshot values diverge
+
+**Benefits of metric logs:**
+1. **Single source of truth** - One place for all temporal metrics
+2. **Retroactive accuracy** - Update FTP, recalculate all TSS automatically
+3. **Clean integrations** - Query metrics separately from activity data
+4. **Storage efficiency** - No redundant profile data per activity
+5. **Better analytics** - Track metric progression over time
+
+### Why Pre-calculate TSS?
+
+**Calculation Frequency:**
+- CTL/ATL/TSB charts queried frequently (dashboard, mobile app)
+- Each query needs TSS for 42-100+ activities
+- Calculating TSS on-demand = 100+ calculations per page load
+
+**Pre-calculation Strategy:**
+- Calculate TSS once when activity submitted (or in background)
+- Store in activity metrics JSONB
+- Recalculate only when performance metrics updated
+- Result: 10-100x faster training load queries
+
+### Transition Strategy
+
+**Phase 1: Additive (No Breaking Changes)**
+- Create new metric log tables
+- Activities still have profile_snapshot field
+- New activities optionally use metric logs
+- Both systems work in parallel
+
+**Phase 2: Migration (One-time)**
+- Seed metric logs from profile values
+- Backfill from activity profile_snapshot fields
+- Validate data integrity
+- Test recalculation accuracy
+
+**Phase 3: Deprecation (Gradual)**
+- New activities use metric logs only
+- Mark profile_snapshot as deprecated
+- Keep field for backward compatibility (read-only)
+- Plan removal for v2.0
+
+**Fallback Strategy:**
+- If no metric log for date → use current profile value
+- If no profile value → skip calculation or return null
+- Graceful degradation ensures system always works
+
+## 8. Implementation Notes
+
+### Critical Requirements
+
+**Database:**
+- Both metric log tables must have proper indexes for temporal queries
+- RLS policies must secure user data (users can only access own logs)
+- CASCADE DELETE on profile ensures data cleanup
+
+**Core Package:**
+- All calculation functions must handle missing metrics gracefully
+- Temporal lookup functions must support date ranges and fallbacks
+- 100% test coverage for TSS/IF calculation with metric logs
+
+**tRPC API:**
+- Temporal query procedures must be performant (<50ms)
+- Background jobs for TSS calculation must be reliable
+- Recalculation triggers must handle large batches efficiently
+
+**Mobile/Web:**
+- Activity submission must work immediately (async TSS calculation)
+- User sees activity right away, metrics appear within seconds
+- Charts must handle missing data gracefully
+
+### Performance Targets
+
+- **Metric log query** (single metric at date): <10ms
+- **Activity TSS calculation** (with metric lookup): <50ms
+- **CTL/ATL/TSB query** (100 activities): <50ms
+- **Recalculation batch** (1000 activities): <5 seconds
+- **Third-party webhook** (process activity): <200ms
+
+### Testing Strategy
+
+**Unit Tests:**
+- Core package: TSS calculation with metric logs
+- Core package: Temporal metric lookup (edge cases)
+- Core package: Fallback strategies
+
+**Integration Tests:**
+- tRPC: Create activity → calculate TSS using metric logs
+- tRPC: Update metric log → trigger recalculation
+- tRPC: Third-party webhook → query metrics → calculate TSS
+
+**Performance Tests:**
+- Benchmark CTL/ATL/TSB queries (1000+ activities)
+- Benchmark recalculation batches (100+ activities)
+- Validate index effectiveness
+
+**Migration Tests:**
+- Seed from profile values
+- Backfill from profile_snapshot fields
+- Validate data integrity
+- Compare old vs new TSS calculations
 
 ## Notes
 
 - **No goals table needed:** Goals can be computed as "target metric logs" or handled in UI state
-- **No standard durations table needed:** Hardcoded constants in core package
+- **No standard durations table needed:** Hardcoded constants in core package (5s, 1min, 5min, 20min, 60min)
 - **Leverage existing data:** Activities, training plans, and profile provide rich context
 - **Type safety:** Core package uses Supabase-generated types + Zod for validation
-- **Keep it simple:** MVP focuses on single table + dynamic computation for maximum flexibility
+- **Keep it simple:** Two tables + pre-calculated metrics = maximum flexibility and performance
+- **Backward compatible:** Profile snapshot field kept during transition for safety
