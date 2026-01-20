@@ -1,9 +1,9 @@
-# File Migration Implementation Plan - Updated
+# File Migration Implementation Plan - Updated & Corrected
 **GradientPeak Real-Time Recording Architecture**
 
 ## Document Overview
 
-This implementation plan details the migration of GradientPeak's activity recording system from compressed JSON streams to industry-standard FIT (Flexible and Interoperable Data Transfer) files using the **official Garmin FIT SDK**. The migration leverages GradientPeak's existing Supabase infrastructure, maintaining the local-first, JSON-centric philosophy while adopting the FIT binary standard for enhanced interoperability with major fitness platforms (Garmin Connect, Strava, Wahoo).
+This implementation plan details the migration of GradientPeak's activity recording system from compressed JSON streams stored in PostgreSQL to industry-standard FIT (Flexible and Interoperable Data Transfer) files stored in Supabase Storage using the **official Garmin FIT SDK**. The migration maintains GradientPeak's local-first recording philosophy while adopting the FIT binary standard for enhanced interoperability with major fitness platforms (Garmin Connect, Strava, Wahoo).
 
 ### Key Architectural Principles
 
@@ -13,31 +13,34 @@ This implementation plan details the migration of GradientPeak's activity record
 **Supabase Storage Integration**: FIT files stored in Supabase Storage buckets with row-level security
 **Asynchronous Processing**: Database records derived from parsed FIT files via background workers
 **Crash Recovery**: Periodic FIT file checkpoints enable resumption after app crashes
-**Single Source of Truth**: FIT files replace compressed JSON as the authoritative activity data source
+**Single Source of Truth**: FIT files replace compressed JSON streams as the authoritative activity data source
+**Profile Metrics Integration**: Temporal queries for historical FTP/weight values ensure accurate historical calculations
 
 ---
 
 ## 1. Executive Summary
 
-### Current Architecture (JSON-Based)
+### Current Architecture (Compressed JSON Streams in PostgreSQL)
 
 GradientPeak currently implements a local-first recording architecture where:
 
 1. **Mobile Recording**: `ActivityRecorderService` buffers sensor data (HR, power, cadence, GPS) in memory
-2. **Local Persistence**: Chunked JSON files written every 100 samples to Expo SQLite for fault tolerance
-3. **Compression**: Upon recording completion, chunks are aggregated and compressed using gzip/pako into base64 payloads
-4. **Cloud Upload**: Compressed streams submitted via tRPC to Supabase PostgreSQL `activity_streams` table
-5. **Server Processing**: Background workers decompress streams, fetch performance metrics (FTP, LTHR), calculate advanced metrics (TSS, IF, NP), and update activity records
+2. **Local Persistence**: File-based `StreamBuffer` writes chunks to Expo FileSystem every 60 seconds for fault tolerance
+3. **Compression**: Upon recording completion, chunks are read from files, aggregated, and compressed using gzip/pako into base64 payloads
+4. **Direct Database Upload**: Compressed streams submitted via tRPC directly to PostgreSQL `activity_streams` table
+5. **On-Demand Processing**: Server-side decompression happens on-demand when streams are requested (no background workers)
+6. **Profile Metrics**: Temporal queries to `profile_metric_logs` and `profile_performance_metric_logs` for historical FTP/weight values
 
-### Proposed Architecture (FIT-Based)
+### Proposed Architecture (FIT-Based with Supabase Storage)
 
-The new system eliminates JSON compression and replaces it with real-time FIT encoding:
+The new system introduces Supabase Storage and background workers:
 
 1. **Real-Time FIT Encoding**: Mobile app writes FIT messages incrementally during recording using official Garmin FIT JavaScript SDK with proper message sequencing
-2. **Checkpoint Strategy**: Flush FIT encoder buffer to device storage every 100 samples or 60 seconds for crash recovery
-3. **Direct Upload**: Upon recording finish, upload complete FIT file to Supabase Storage bucket via signed URL
-4. **Asynchronous Processing**: Background worker parses FIT using Garmin SDK, creates activity record, computes all metrics
-5. **Database as Cache**: Activity table records are derived views of FIT file data, not primary storage
+2. **Checkpoint Strategy**: Flush FIT encoder buffer to device storage every 60 seconds (matching current flush cycle) for crash recovery
+3. **Supabase Storage Upload**: Upon recording finish, upload complete FIT file to Supabase Storage bucket via signed URL
+4. **Background Workers**: New BullMQ worker processes FIT files asynchronously, creating activity records and computing metrics
+5. **Profile Metrics Integration**: Workers query `profile_performance_metric_logs` and `profile_metric_logs` at activity date for accurate historical calculations
+6. **Database as Cache**: Activity table records are derived views of FIT file data, not primary storage
 
 ### Migration Benefits
 
@@ -48,18 +51,19 @@ The new system eliminates JSON compression and replaces it with real-time FIT en
 | **Best Practice Compliance** | Follows Garmin's recommended message sequencing and field requirements |
 | **Data Richness** | FIT supports 100+ native message types beyond basic sensor data |
 | **Crash Safety** | Incremental checkpoints preserve partial recordings on app crashes |
-| **Simplified Architecture** | Eliminates custom compression/decompression logic |
 | **Storage Efficiency** | Binary FIT format comparable to gzipped JSON (~200 KB/hour) |
 | **Vendor Independence** | Open format prevents lock-in to proprietary JSON schema |
+| **Historical Accuracy** | Profile metrics integration ensures TSS/IF calculations use correct historical FTP |
 
 ### In-Scope Requirements
 
 - ✅ Real-time FIT recording with proper message sequencing (Summary Last pattern)
 - ✅ Timer Start/Stop events following Garmin best practices
-- ✅ Checkpoint-based crash recovery (100 samples or 60 seconds)
+- ✅ Checkpoint-based crash recovery (60 seconds, matching current flush cycle)
 - ✅ Supabase Storage integration with signed URLs
-- ✅ Background worker for FIT parsing using Garmin SDK
+- ✅ Background worker (BullMQ) for FIT parsing using Garmin SDK
 - ✅ Database schema updates for async-first architecture
+- ✅ Profile metrics integration for temporal FTP/weight lookups
 - ✅ Mobile UI updates for processing state visibility
 - ✅ One-time migration script for historical JSON activities
 
@@ -111,7 +115,7 @@ Start                Recording                            Stop
 
 Message Write Order:
 1. File ID          ← First message (required)
-2. User Profile     ← Optional but recommended
+2. User Profile     ← Optional but recommended (includes current FTP/weight)
 3. Device Info      ← Best practice
 4. Event (Start)    ← Timer start (BEFORE first Record)
 5. Record           ← Real-time sensor data
@@ -163,15 +167,20 @@ File: `apps/mobile/lib/services/fit/StreamingFitEncoder.ts`
 ```typescript
 /**
  * StreamingFitEncoder - Real-Time FIT Recording with Garmin SDK
- * 
+ *
  * Implements Garmin's "Summary Last" message sequencing pattern:
  * - File ID (first message)
- * - User Profile, Device Info (metadata)
+ * - User Profile, Device Info (metadata with current FTP/weight)
  * - Timer Start Event (before first Record)
  * - Record messages (real-time sensor data)
  * - Timer Stop Event (after last Record)
  * - Lap, Session, Activity (summary messages at end)
- * 
+ *
+ * Integrates with GradientPeak's profile metrics system:
+ * - UserProfileMesg includes current FTP/weight at recording start
+ * - Background worker queries historical values at activity date
+ * - Ensures accurate TSS/IF calculations for historical activities
+ *
  * Reference: https://developer.garmin.com/fit/cookbook/encoding-activity-files/
  */
 
@@ -202,7 +211,7 @@ export interface UserProfile {
   weight_kg: number;
   age: number;
   gender: 'male' | 'female';
-  ftp?: number;
+  ftp?: number;               // Current FTP (for reference)
   max_heart_rate?: number;
 }
 
@@ -211,21 +220,21 @@ export class StreamingFitEncoder {
   private recordingId: string | null = null;
   private fitFilePath: string | null = null;
   private metaFilePath: string | null = null;
-  
+
   private sampleCount = 0;
   private lastCheckpoint = Date.now();
   private startTime: Date | null = null;
   private lastRecordTime: Date | null = null;
   private metadata: ActivityMetadata | null = null;
-  
+
   private samples: SensorSample[] = []; // For session summary calculation
   private timerPaused = false;
-  
+
   constructor(private profile: UserProfile) {}
-  
+
   /**
    * Step 1-4: Initialize FIT file with required initial messages
-   * 
+   *
    * Following Garmin's 7-step encoding process:
    * 1. Create output stream ✓
    * 2. Create Encode instance ✓
@@ -239,22 +248,22 @@ export class StreamingFitEncoder {
     this.recordingId = uuid();
     this.startTime = new Date();
     this.metadata = metadata;
-    
-    // Create recording directory
+
+    // Create recording directory (matches current StreamBuffer location)
     const recordingsDir = `${FileSystem.cacheDirectory}recordings`;
     await FileSystem.makeDirectoryAsync(recordingsDir, { intermediates: true });
-    
+
     // File paths
     this.fitFilePath = `${recordingsDir}/${this.recordingId}.fit`;
     this.metaFilePath = `${recordingsDir}/${this.recordingId}.meta.json`;
-    
+
     // Step 2: Create Encode instance with Protocol V2.0
     this.encoder = new Fit.Encode(Fit.ProtocolVersion.V20);
-    
+
     // Note: For JavaScript SDK, we accumulate messages in memory
     // and write to file during checkpoints. The encoder.Close()
     // will finalize with CRC and data size.
-    
+
     // Step 4: Write File ID Message (REQUIRED - MUST BE FIRST)
     const fileIdMesg = new Fit.FileIdMesg();
     fileIdMesg.setType(Fit.File.ACTIVITY);
@@ -263,8 +272,10 @@ export class StreamingFitEncoder {
     fileIdMesg.setSerialNumber(Math.floor(Math.random() * 1000000));
     fileIdMesg.setTimeCreated(this.dateToFitTimestamp(this.startTime));
     this.encoder.write(fileIdMesg);
-    
+
     // Write User Profile Message (recommended for metric calculations)
+    // IMPORTANT: This captures CURRENT profile state at recording time
+    // Background worker will query HISTORICAL values at activity date
     const userProfileMesg = new Fit.UserProfileMesg();
     userProfileMesg.setWeight(this.profile.weight_kg);
     userProfileMesg.setAge(this.profile.age);
@@ -278,17 +289,15 @@ export class StreamingFitEncoder {
       userProfileMesg.setMaxHeartRate(this.profile.max_heart_rate);
     }
     this.encoder.write(userProfileMesg);
-    
+
     // Write Device Info Message (best practice)
     const deviceInfoMesg = new Fit.DeviceInfoMesg();
     deviceInfoMesg.setTimestamp(this.dateToFitTimestamp(this.startTime));
     deviceInfoMesg.setManufacturer(Fit.Manufacturer.DEVELOPMENT);
     deviceInfoMesg.setProduct(0);
     deviceInfoMesg.setSerialNumber(Math.floor(Math.random() * 1000000));
-    // Optional: Add software version
-    // deviceInfoMesg.setSoftwareVersion(1.0);
     this.encoder.write(deviceInfoMesg);
-    
+
     // CRITICAL: Timer Start Event BEFORE first Record message
     // This indicates the device is recording data
     const timerStartEvent = new Fit.EventMesg();
@@ -296,17 +305,17 @@ export class StreamingFitEncoder {
     timerStartEvent.setEvent(Fit.Event.TIMER);
     timerStartEvent.setEventType(Fit.EventType.START);
     this.encoder.write(timerStartEvent);
-    
+
     // Write initial checkpoint
     await this.writeCheckpointMeta();
-    
+
     console.log(`📹 FIT Recording started: ${this.recordingId}`);
     console.log(`   Sport: ${metadata.sport}, Indoor: ${metadata.indoor}`);
   }
-  
+
   /**
    * Step 5: Add sensor sample as Record message
-   * 
+   *
    * Record messages are written in real-time as sensor data arrives.
    * They should NOT be written when the timer is paused.
    */
@@ -316,21 +325,21 @@ export class StreamingFitEncoder {
       console.warn('Cannot add sample while timer is paused');
       return;
     }
-    
+
     // Store for summary calculation
     this.samples.push(sample);
     this.lastRecordTime = sample.timestamp;
-    
+
     // Create Record Message
     const recordMesg = new Fit.RecordMesg();
     recordMesg.setTimestamp(this.dateToFitTimestamp(sample.timestamp));
-    
+
     // GPS coordinates (converted to semicircles as per FIT spec)
     if (sample.position_lat !== undefined && sample.position_long !== undefined) {
       recordMesg.setPositionLat(this.degreesToSemicircles(sample.position_lat));
       recordMesg.setPositionLong(this.degreesToSemicircles(sample.position_long));
     }
-    
+
     // Sensor data
     if (sample.distance !== undefined) {
       recordMesg.setDistance(sample.distance);
@@ -353,79 +362,80 @@ export class StreamingFitEncoder {
     if (sample.temperature !== undefined) {
       recordMesg.setTemperature(sample.temperature);
     }
-    
+
     // Write to encoder
     this.encoder.write(recordMesg);
     this.sampleCount++;
-    
-    // Checkpoint every 100 samples OR every 60 seconds
+
+    // Checkpoint every 100 samples OR every 60 seconds (matches current StreamBuffer flush)
     const now = Date.now();
     if (this.sampleCount % 100 === 0 || now - this.lastCheckpoint > 60000) {
       await this.checkpoint();
     }
   }
-  
+
   /**
    * Pause timer (stops writing Record messages)
    * Used when user pauses activity recording
    */
   async pauseTimer(): Promise<void> {
     if (!this.encoder || this.timerPaused) return;
-    
+
     const pauseTime = new Date();
-    
+
     // Write Timer Stop Event
     const timerStopEvent = new Fit.EventMesg();
     timerStopEvent.setTimestamp(this.dateToFitTimestamp(pauseTime));
     timerStopEvent.setEvent(Fit.Event.TIMER);
     timerStopEvent.setEventType(Fit.EventType.STOP_ALL);
     this.encoder.write(timerStopEvent);
-    
+
     this.timerPaused = true;
     await this.checkpoint();
-    
+
     console.log('⏸️ Timer paused');
   }
-  
+
   /**
    * Resume timer (resumes writing Record messages)
    * Used when user resumes activity recording
    */
   async resumeTimer(): Promise<void> {
     if (!this.encoder || !this.timerPaused) return;
-    
+
     const resumeTime = new Date();
-    
+
     // Write Timer Start Event
     const timerStartEvent = new Fit.EventMesg();
     timerStartEvent.setTimestamp(this.dateToFitTimestamp(resumeTime));
     timerStartEvent.setEvent(Fit.Event.TIMER);
     timerStartEvent.setEventType(Fit.EventType.START);
     this.encoder.write(timerStartEvent);
-    
+
     this.timerPaused = false;
-    
+
     console.log('▶️ Timer resumed');
   }
-  
+
   /**
    * Checkpoint: Flush encoder buffer to device storage
    * Enables crash recovery by persisting partial FIT data
+   * Matches current StreamBuffer 60-second flush cycle
    */
   private async checkpoint(): Promise<void> {
     if (!this.encoder || !this.fitFilePath || !this.metaFilePath) return;
-    
+
     try {
       // Get encoded bytes from encoder
       // Note: Garmin SDK's getBytes() returns partial encoding
       const fitBytes = this.encoder.getBytes();
-      
+
       // Write to device storage as base64
       const base64Data = this.arrayBufferToBase64(fitBytes);
       await FileSystem.writeAsStringAsync(this.fitFilePath, base64Data, {
         encoding: FileSystem.EncodingType.Base64
       });
-      
+
       // Update checkpoint metadata
       const lastSample = this.samples[this.samples.length - 1];
       await FileSystem.writeAsStringAsync(
@@ -440,7 +450,7 @@ export class StreamingFitEncoder {
           timerPaused: this.timerPaused
         })
       );
-      
+
       this.lastCheckpoint = Date.now();
       console.log(`✅ Checkpoint: ${this.sampleCount} samples`);
     } catch (error) {
@@ -448,10 +458,10 @@ export class StreamingFitEncoder {
       // Don't throw - continue recording
     }
   }
-  
+
   /**
    * Step 5 (final): Write summary messages and finalize FIT file
-   * 
+   *
    * Summary Last pattern: Lap, Session, Activity written at end
    * Step 6: Call encoder.Close() to finalize with CRC
    * Step 7: Close/save output stream
@@ -460,9 +470,9 @@ export class StreamingFitEncoder {
     if (!this.encoder || !this.fitFilePath) {
       throw new Error('Recording not started');
     }
-    
+
     const endTime = this.lastRecordTime || new Date();
-    
+
     // Write Timer Stop Event (if not already paused)
     if (!this.timerPaused) {
       const timerStopEvent = new Fit.EventMesg();
@@ -471,10 +481,10 @@ export class StreamingFitEncoder {
       timerStopEvent.setEventType(Fit.EventType.STOP_ALL);
       this.encoder.write(timerStopEvent);
     }
-    
+
     // Calculate summary metrics
     const summary = this.calculateSessionSummary(endTime);
-    
+
     // Write Lap Message (REQUIRED for Activity files)
     const lapMesg = new Fit.LapMesg();
     lapMesg.setMessageIndex(0); // First lap
@@ -482,7 +492,7 @@ export class StreamingFitEncoder {
     lapMesg.setTimestamp(this.dateToFitTimestamp(endTime));
     lapMesg.setTotalElapsedTime(summary.totalElapsedTime);
     lapMesg.setTotalTimerTime(summary.totalTimerTime);
-    
+
     if (summary.totalDistance) {
       lapMesg.setTotalDistance(summary.totalDistance);
     }
@@ -507,15 +517,15 @@ export class StreamingFitEncoder {
     if (summary.totalDescent) {
       lapMesg.setTotalDescent(summary.totalDescent);
     }
-    
+
     this.encoder.write(lapMesg);
-    
+
     // Write Session Message (REQUIRED for Activity files)
     const sessionMesg = new Fit.SessionMesg();
     sessionMesg.setMessageIndex(0); // First session
     sessionMesg.setStartTime(this.dateToFitTimestamp(this.startTime!));
     sessionMesg.setTimestamp(this.dateToFitTimestamp(endTime));
-    
+
     // Sport type (required)
     const sportMap: Record<string, any> = {
       cycling: Fit.Sport.CYCLING,
@@ -524,17 +534,11 @@ export class StreamingFitEncoder {
       generic: Fit.Sport.GENERIC
     };
     sessionMesg.setSport(sportMap[this.metadata!.sport] || Fit.Sport.GENERIC);
-    
-    // Sub-sport (optional)
-    if (this.metadata!.subSport) {
-      // Map sub-sport types as needed
-      // sessionMesg.setSubSport(Fit.SubSport.ROAD);
-    }
-    
+
     // Time fields (required)
     sessionMesg.setTotalElapsedTime(summary.totalElapsedTime);
     sessionMesg.setTotalTimerTime(summary.totalTimerTime);
-    
+
     // Distance, elevation, HR, power, cadence
     if (summary.totalDistance) {
       sessionMesg.setTotalDistance(summary.totalDistance);
@@ -563,13 +567,13 @@ export class StreamingFitEncoder {
     if (summary.totalCalories) {
       sessionMesg.setTotalCalories(summary.totalCalories);
     }
-    
+
     // Lap indices
     sessionMesg.setFirstLapIndex(0);
     sessionMesg.setNumLaps(1);
-    
+
     this.encoder.write(sessionMesg);
-    
+
     // Write Activity Message (REQUIRED - final summary)
     const activityMesg = new Fit.ActivityMesg();
     activityMesg.setTimestamp(this.dateToFitTimestamp(endTime));
@@ -578,36 +582,31 @@ export class StreamingFitEncoder {
     activityMesg.setType(Fit.Activity.MANUAL); // or AUTO
     activityMesg.setEvent(Fit.Event.ACTIVITY);
     activityMesg.setEventType(Fit.EventType.STOP);
-    
+
     this.encoder.write(activityMesg);
-    
-    // Step 6: Close encoder (finalizes with CRC and data size)
-    // Note: JavaScript SDK may handle this differently
-    // The Close() method updates the file header with actual data size
-    // and appends the CRC checksum
-    
-    // Get final encoded bytes
+
+    // Step 6: Get final encoded bytes (includes CRC and data size)
     const fitBytes = this.encoder.getBytes();
-    
+
     // Step 7: Write final FIT file to device storage
     const base64Data = this.arrayBufferToBase64(fitBytes);
     await FileSystem.writeAsStringAsync(this.fitFilePath, base64Data, {
       encoding: FileSystem.EncodingType.Base64
     });
-    
+
     // Delete checkpoint metadata
     if (this.metaFilePath) {
       await FileSystem.deleteAsync(this.metaFilePath, { idempotent: true });
     }
-    
+
     console.log(`✅ FIT Recording finished: ${this.fitFilePath}`);
     console.log(`   Duration: ${(summary.totalElapsedTime / 60).toFixed(1)} min`);
     console.log(`   Distance: ${((summary.totalDistance || 0) / 1000).toFixed(2)} km`);
     console.log(`   Samples: ${this.sampleCount}`);
-    
+
     return this.fitFilePath;
   }
-  
+
   /**
    * Calculate session summary metrics from recorded samples
    */
@@ -621,16 +620,16 @@ export class StreamingFitEncoder {
     const cadenceSamples = this.samples
       .map(s => s.cadence)
       .filter((c): c is number => c !== undefined);
-    
+
     const lastSample = this.samples[this.samples.length - 1];
     const firstSample = this.samples[0];
-    
+
     // Calculate moving time (samples where speed > 0.5 m/s threshold)
-    const movingSamples = this.samples.filter(s => 
+    const movingSamples = this.samples.filter(s =>
       s.speed && s.speed > 0.5
     );
     const movingTime = movingSamples.length; // Approximate seconds (assumes ~1Hz)
-    
+
     // Calculate elevation gain/loss
     let totalAscent = 0;
     let totalDescent = 0;
@@ -643,38 +642,38 @@ export class StreamingFitEncoder {
         else totalDescent += Math.abs(diff);
       }
     }
-    
+
     // Estimate calories (very rough approximation)
     const totalCalories = powerSamples.length > 0
-      ? Math.round((powerSamples.reduce((a, b) => a + b, 0) / powerSamples.length) * 
+      ? Math.round((powerSamples.reduce((a, b) => a + b, 0) / powerSamples.length) *
           (movingTime / 3600) * 3.6) // Rough estimate: avg watts * hours * 3.6
       : undefined;
-    
+
     return {
       totalElapsedTime: (endTime.getTime() - this.startTime!.getTime()) / 1000,
       totalTimerTime: movingTime,
       totalDistance: lastSample?.distance || firstSample?.distance,
-      avgHeartRate: hrSamples.length > 0 
-        ? Math.round(hrSamples.reduce((a, b) => a + b, 0) / hrSamples.length) 
+      avgHeartRate: hrSamples.length > 0
+        ? Math.round(hrSamples.reduce((a, b) => a + b, 0) / hrSamples.length)
         : undefined,
-      maxHeartRate: hrSamples.length > 0 
-        ? Math.max(...hrSamples) 
+      maxHeartRate: hrSamples.length > 0
+        ? Math.max(...hrSamples)
         : undefined,
-      avgPower: powerSamples.length > 0 
-        ? Math.round(powerSamples.reduce((a, b) => a + b, 0) / powerSamples.length) 
+      avgPower: powerSamples.length > 0
+        ? Math.round(powerSamples.reduce((a, b) => a + b, 0) / powerSamples.length)
         : undefined,
-      maxPower: powerSamples.length > 0 
-        ? Math.max(...powerSamples) 
+      maxPower: powerSamples.length > 0
+        ? Math.max(...powerSamples)
         : undefined,
-      avgCadence: cadenceSamples.length > 0 
-        ? Math.round(cadenceSamples.reduce((a, b) => a + b, 0) / cadenceSamples.length) 
+      avgCadence: cadenceSamples.length > 0
+        ? Math.round(cadenceSamples.reduce((a, b) => a + b, 0) / cadenceSamples.length)
         : undefined,
       totalAscent: totalAscent > 0 ? Math.round(totalAscent) : undefined,
       totalDescent: totalDescent > 0 ? Math.round(totalDescent) : undefined,
       totalCalories
     };
   }
-  
+
   /**
    * Convert JavaScript Date to FIT timestamp
    * FIT epoch: 1989-12-31 00:00:00 UTC (631065600 seconds after Unix epoch)
@@ -683,7 +682,7 @@ export class StreamingFitEncoder {
     const FIT_EPOCH_OFFSET = 631065600;
     return Math.floor(date.getTime() / 1000) - FIT_EPOCH_OFFSET;
   }
-  
+
   /**
    * Convert degrees to semicircles (FIT format for lat/lng)
    * Semicircles = degrees × (2^31 / 180)
@@ -691,7 +690,7 @@ export class StreamingFitEncoder {
   private degreesToSemicircles(degrees: number): number {
     return Math.round(degrees * (Math.pow(2, 31) / 180));
   }
-  
+
   /**
    * Convert ArrayBuffer to base64 string for file storage
    */
@@ -703,13 +702,13 @@ export class StreamingFitEncoder {
     }
     return btoa(binary);
   }
-  
+
   /**
    * Write checkpoint metadata for crash recovery
    */
   private async writeCheckpointMeta(): Promise<void> {
     if (!this.metaFilePath) return;
-    
+
     await FileSystem.writeAsStringAsync(
       this.metaFilePath,
       JSON.stringify({
@@ -733,7 +732,7 @@ File: `apps/mobile/lib/services/fit/FitUploader.ts`
 ```typescript
 /**
  * FitUploader - Handles FIT file upload to Supabase Storage
- * 
+ *
  * Workflow:
  * 1. Request signed upload URL from API
  * 2. Upload FIT file directly to Supabase Storage
@@ -747,28 +746,28 @@ import { trpc } from '@/lib/trpc';
 export class FitUploader {
   /**
    * Upload completed FIT file to Supabase Storage
-   * 
+   *
    * @param fitFilePath - Local device path to FIT file
    * @returns activityId - UUID of created activity
    */
   async uploadActivity(fitFilePath: string): Promise<string> {
     try {
       // 1. Request signed upload URL from API
-      const { uploadUrl, storagePath, activityId} = 
+      const { uploadUrl, storagePath, activityId} =
         await trpc.activities.requestFitUploadUrl.mutate({
           filename: `${new Date().toISOString()}.fit`
         });
-      
+
       console.log(`📤 Uploading FIT file to: ${storagePath}`);
-      
+
       // 2. Read FIT file from device storage
       const fitData = await FileSystem.readAsStringAsync(fitFilePath, {
         encoding: FileSystem.EncodingType.Base64
       });
-      
+
       // Convert base64 to binary
       const fitBytes = this.base64ToArrayBuffer(fitData);
-      
+
       // 3. Upload to Supabase Storage via signed URL
       const uploadResponse = await fetch(uploadUrl, {
         method: 'PUT',
@@ -778,27 +777,27 @@ export class FitUploader {
         },
         body: fitBytes
       });
-      
+
       if (!uploadResponse.ok) {
         throw new Error(`Upload failed: ${uploadResponse.statusText}`);
       }
-      
+
       console.log(`✅ Upload complete: ${activityId}`);
-      
+
       // 4. Finalize upload (triggers background processing)
       await trpc.activities.finalizeUpload.mutate({ activityId });
-      
+
       // 5. Delete local FIT file
       await FileSystem.deleteAsync(fitFilePath, { idempotent: true });
-      
+
       return activityId;
-      
+
     } catch (error) {
       console.error('FIT upload failed:', error);
       throw error;
     }
   }
-  
+
   /**
    * Convert base64 string to ArrayBuffer for binary upload
    */
@@ -820,23 +819,25 @@ File: `packages/workers/src/jobs/analyzeFit.ts`
 ```typescript
 /**
  * Background job: analyze-fit
- * 
+ *
  * Processes uploaded FIT files using Garmin FIT SDK Decoder:
  * 1. Fetch FIT file from Supabase Storage
  * 2. Decode using Garmin SDK (validates CRC, extracts messages)
- * 3. Calculate performance metrics using @repo/core
- * 4. Update activity record with all fields
+ * 3. Query profile metrics at activity date for historical accuracy
+ * 4. Calculate performance metrics using @repo/core
+ * 5. Build profile_snapshot with historical values
+ * 6. Update activity record with all fields
  */
 
 import { Job } from 'bullmq';
 import { createClient } from '@supabase/supabase-js';
 import Fit from '@/lib/fit-sdk/fit'; // Garmin FIT SDK
-import { 
-  calculateNormalizedPower, 
-  calculateTSS, 
+import {
+  calculateNormalizedPower,
+  calculateTSS,
   calculateIntensityFactor,
   calculateHrZones,
-  calculatePowerZones 
+  calculatePowerZones
 } from '@repo/core';
 import polyline from '@mapbox/polyline';
 
@@ -851,54 +852,54 @@ interface AnalyzeFitPayload {
 
 export async function analyzeFit(job: Job<AnalyzeFitPayload>) {
   const { activityId } = job.data;
-  
+
   try {
     // Update status to PROCESSING
     await updateStatus(activityId, 'PROCESSING');
-    
+
     // 1. Fetch activity to get fit_file_path
     const { data: activity, error: fetchError } = await supabase
       .from('activities')
       .select('fit_file_path, profile_id')
       .eq('id', activityId)
       .single();
-    
+
     if (fetchError || !activity) {
       throw new Error(`Activity not found: ${activityId}`);
     }
-    
+
     if (!activity.fit_file_path) {
       throw new Error('No FIT file path in activity record');
     }
-    
+
     // 2. Download FIT file from Supabase Storage
     const { data: fitData, error: storageError } = await supabase.storage
       .from('activity-files')
       .download(activity.fit_file_path);
-    
+
     if (storageError || !fitData) {
       throw new Error(`Failed to download FIT file: ${storageError?.message}`);
     }
-    
+
     // 3. Decode FIT file using Garmin SDK
     const fitBuffer = await fitData.arrayBuffer();
     const fitBytes = new Uint8Array(fitBuffer);
-    
+
     // Create Decoder instance
     const decoder = new Fit.Decode();
-    
+
     // Validate FIT file integrity
     if (!decoder.isFit(fitBytes)) {
       throw new Error('Invalid FIT file format');
     }
-    
+
     if (!decoder.checkIntegrity(fitBytes)) {
       throw new Error('FIT file integrity check failed (CRC mismatch)');
     }
-    
+
     // Decode FIT messages
     const decodedFit = decoder.decode(fitBytes);
-    
+
     // Extract messages by type
     const fileIdMessages = decodedFit.messages.filter(
       (m: any) => m.name === 'file_id'
@@ -915,7 +916,7 @@ export async function analyzeFit(job: Job<AnalyzeFitPayload>) {
     const activityMessages = decodedFit.messages.filter(
       (m: any) => m.name === 'activity'
     );
-    
+
     // Validate required messages
     if (sessionMessages.length === 0) {
       throw new Error('No session message found in FIT file (required)');
@@ -923,30 +924,75 @@ export async function analyzeFit(job: Job<AnalyzeFitPayload>) {
     if (recordMessages.length === 0) {
       throw new Error('No record messages found in FIT file');
     }
-    
+
     const session = sessionMessages[0];
     const fileId = fileIdMessages[0];
-    
-    // 4. Fetch user profile for metric calculations
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('ftp, threshold_hr, max_heart_rate, weight_kg')
-      .eq('id', activity.profile_id)
+
+    // 4. Get activity date for temporal profile metrics queries
+    const activityDate = fitTimestampToDate(session.start_time);
+
+    // 5. Query HISTORICAL profile metrics at activity date
+    // This ensures accurate TSS/IF calculations even if FTP changed later
+    const { data: ftpMetric } = await supabase
+      .from('profile_performance_metric_logs')
+      .select('value')
+      .eq('profile_id', activity.profile_id)
+      .eq('category', 'bike') // TODO: Map based on activity type
+      .eq('type', 'ftp')
+      .lte('recorded_at', activityDate.toISOString())
+      .not('notes', 'like', '[INACTIVE]%') // Filter out inactive metrics
+      .order('recorded_at', { ascending: false })
+      .limit(1)
       .single();
-    
-    if (profileError || !profile) {
-      throw new Error('Profile not found');
-    }
-    
-    const userFTP = profile.ftp || 200;
-    const userMaxHR = profile.max_heart_rate || 190;
-    const userThresholdHR = profile.threshold_hr || 170;
-    
-    // 5. Extract sensor data from Record messages
+
+    const { data: lthrMetric } = await supabase
+      .from('profile_performance_metric_logs')
+      .select('value')
+      .eq('profile_id', activity.profile_id)
+      .eq('category', 'bike')
+      .eq('type', 'lthr')
+      .lte('recorded_at', activityDate.toISOString())
+      .not('notes', 'like', '[INACTIVE]%')
+      .order('recorded_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    const { data: maxHrMetric } = await supabase
+      .from('profile_performance_metric_logs')
+      .select('value')
+      .eq('profile_id', activity.profile_id)
+      .eq('category', 'bike')
+      .eq('type', 'max_hr')
+      .lte('recorded_at', activityDate.toISOString())
+      .not('notes', 'like', '[INACTIVE]%')
+      .order('recorded_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    const { data: weightMetric } = await supabase
+      .from('profile_metric_logs')
+      .select('value')
+      .eq('profile_id', activity.profile_id)
+      .eq('metric_type', 'weight')
+      .lte('recorded_at', activityDate.toISOString())
+      .order('recorded_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    // Use historical values (or fallback to defaults)
+    const userFTP = ftpMetric?.value || 200;
+    const userMaxHR = maxHrMetric?.value || 190;
+    const userThresholdHR = lthrMetric?.value || 170;
+    const userWeight = weightMetric?.value || 75;
+
+    console.log(`📊 Historical metrics at ${activityDate.toISOString()}:`);
+    console.log(`   FTP: ${userFTP}W, LTHR: ${userThresholdHR}bpm, Weight: ${userWeight}kg`);
+
+    // 6. Extract sensor data from Record messages
     const powerSamples: number[] = [];
     const hrSamples: number[] = [];
     const gpsPoints: [number, number][] = [];
-    
+
     recordMessages.forEach((record: any) => {
       if (record.power !== undefined) {
         powerSamples.push(record.power);
@@ -961,38 +1007,35 @@ export async function analyzeFit(job: Job<AnalyzeFitPayload>) {
         ]);
       }
     });
-    
-    // 6. Calculate performance metrics
-    // Normalized Power (30-second rolling average, 4th power)
+
+    // 7. Calculate performance metrics using HISTORICAL FTP/weight
     const normalizedPower = powerSamples.length > 0
       ? calculateNormalizedPower(powerSamples, 30)
       : 0;
-    
-    // Intensity Factor = NP / FTP
+
     const intensityFactor = normalizedPower > 0
       ? calculateIntensityFactor(normalizedPower, userFTP)
       : 0;
-    
-    // TSS = (duration × NP × IF) / (FTP × 3600) × 100
+
     const duration = session.total_elapsed_time || 0;
     const tss = normalizedPower > 0 && duration > 0
       ? calculateTSS(duration, normalizedPower, intensityFactor, userFTP)
       : 0;
-    
-    // Zone distributions
+
+    // Zone distributions using historical LTHR
     const hrZones = hrSamples.length > 0
       ? calculateHrZones(hrSamples, userThresholdHR, userMaxHR)
       : null;
     const powerZones = powerSamples.length > 0
       ? calculatePowerZones(powerSamples, userFTP)
       : null;
-    
-    // 7. Generate polyline from GPS coordinates
-    const encodedPolyline = gpsPoints.length > 0 
-      ? polyline.encode(gpsPoints) 
+
+    // 8. Generate polyline from GPS coordinates
+    const encodedPolyline = gpsPoints.length > 0
+      ? polyline.encode(gpsPoints)
       : null;
-    
-    // 8. Map FIT sport type to activity type string
+
+    // 9. Map FIT sport type to activity type string
     const sportMap: Record<number, string> = {
       [Fit.Sport.CYCLING]: 'cycling',
       [Fit.Sport.RUNNING]: 'running',
@@ -1002,16 +1045,25 @@ export async function analyzeFit(job: Job<AnalyzeFitPayload>) {
     const activityType = session.sport !== undefined
       ? (sportMap[session.sport] || 'other')
       : 'other';
-    
-    // 9. Extract start/end times from session
-    const startTime = session.start_time 
+
+    // 10. Extract start/end times from session
+    const startTime = session.start_time
       ? fitTimestampToIso(session.start_time)
       : null;
     const endTime = session.timestamp
       ? fitTimestampToIso(session.timestamp)
       : null;
-    
-    // 10. Update activity record with ALL fields (atomic transaction)
+
+    // 11. Build profile snapshot with HISTORICAL values
+    const profileSnapshot = {
+      ftp: userFTP,
+      lthr: userThresholdHR,
+      max_heart_rate: userMaxHR,
+      weight_kg: userWeight,
+      // Include any other profile fields needed for historical reference
+    };
+
+    // 12. Update activity record with ALL fields (atomic transaction)
     const { error: updateError } = await supabase
       .from('activities')
       .update({
@@ -1037,27 +1089,28 @@ export async function analyzeFit(job: Job<AnalyzeFitPayload>) {
         },
         hr_zone_seconds: hrZones,
         power_zone_seconds: powerZones,
+        profile_snapshot: profileSnapshot, // Store historical profile state
         processing_status: 'COMPLETED',
         updated_at: new Date().toISOString()
       })
       .eq('id', activityId);
-    
+
     if (updateError) {
       throw new Error(`Failed to update activity: ${updateError.message}`);
     }
-    
+
     console.log(`✅ Activity processed successfully: ${activityId}`);
     console.log(`   Type: ${activityType}`);
     console.log(`   Duration: ${Math.round(duration / 60)} min`);
     console.log(`   Distance: ${((session.total_distance || 0) / 1000).toFixed(2)} km`);
-    console.log(`   TSS: ${tss.toFixed(0)}`);
-    
+    console.log(`   TSS: ${tss.toFixed(0)} (calculated with FTP ${userFTP}W)`);
+
   } catch (error) {
     console.error(`❌ Activity processing failed: ${activityId}`, error);
-    
+
     // Update status to FAILED
     await updateStatus(activityId, 'FAILED');
-    
+
     // Rethrow to trigger BullMQ retry mechanism
     throw error;
   }
@@ -1067,12 +1120,12 @@ export async function analyzeFit(job: Job<AnalyzeFitPayload>) {
  * Helper: Update activity processing status
  */
 async function updateStatus(
-  activityId: string, 
+  activityId: string,
   status: 'PROCESSING' | 'COMPLETED' | 'FAILED'
 ): Promise<void> {
   await supabase
     .from('activities')
-    .update({ 
+    .update({
       processing_status: status,
       updated_at: new Date().toISOString()
     })
@@ -1090,6 +1143,15 @@ function fitTimestampToIso(fitTimestamp: number): string {
 }
 
 /**
+ * Helper: Convert FIT timestamp to Date
+ */
+function fitTimestampToDate(fitTimestamp: number): Date {
+  const FIT_EPOCH_OFFSET = 631065600;
+  const unixTimestamp = (fitTimestamp + FIT_EPOCH_OFFSET) * 1000;
+  return new Date(unixTimestamp);
+}
+
+/**
  * Helper: Convert semicircles to degrees
  * Degrees = semicircles × (180 / 2^31)
  */
@@ -1100,132 +1162,124 @@ function semicirclesToDegrees(semicircles: number): number {
 
 ---
 
-## 4. Key Changes from Original Plan
+## 4. Profile Metrics Integration
 
-### 4.1 Proper Message Sequencing
+### 4.1 Why Profile Metrics Matter
 
-**Before (Incorrect):**
-- Messages written without specific order
-- No distinction between real-time and summary messages
+GradientPeak maintains two critical tables for temporal profile data:
 
-**After (Garmin Best Practice):**
-```
-Timeline Order:
-1. File ID (first message - required)
-2. User Profile (recommended for metrics)
-3. Device Info (best practice)
-4. Timer Start Event (BEFORE first Record)
-5. Record messages (real-time sensor data)
-6. Timer Stop Event (AFTER last Record)
-7. Lap (summary - written at end)
-8. Session (summary - written at end)
-9. Activity (final summary)
-```
+1. **`profile_metric_logs`** - Biometric data (weight, resting HR, HRV, sleep duration)
+2. **`profile_performance_metric_logs`** - Performance thresholds (FTP, LTHR, threshold pace, max HR)
 
-### 4.2 Timer Events
+These enable **historical accuracy** for metrics calculations:
 
-**Added:**
-- Timer Start event before first Record message
-- Timer Stop event after last Record message
-- Pause/Resume support with Timer Stop/Start events
-- Prevents ambiguity between recording rate and pauses
+**Scenario:** User's FTP changes from 250W to 260W on Jan 20, 2026
 
-**Why Important:**
-- Platforms expect timer events to understand when data was being recorded
-- Helps distinguish between stopped recording vs. slow movement
-- Critical for accurate moving time calculations
+- Activity on Jan 15 → Uses FTP 250W for TSS calculation
+- Activity on Jan 25 → Uses FTP 260W for TSS calculation
 
-### 4.3 Required vs. Optional Messages
+Without temporal queries, all historical activities would be recalculated with the new FTP, making TSS values inaccurate.
 
-**Required Messages (per Garmin):**
-- File ID ✓
-- Record ✓
-- Lap ✓
-- Session ✓
-- Activity ✓
+### 4.2 Temporal Queries in Background Worker
 
-**Best Practice Messages (strongly recommended):**
-- Device Info ✓
-- Event (timer start/stop) ✓
-- User Profile ✓
-
-### 4.4 CRC and Data Size Handling
-
-**Garmin SDK Encoder Pattern:**
 ```typescript
-// Step 1: Create output stream with Read/Write access
-const stream = new FileStream(path, FileMode.Create, FileAccess.ReadWrite);
+// Query FTP at activity date (not current FTP)
+const { data: ftpMetric } = await supabase
+  .from('profile_performance_metric_logs')
+  .select('value')
+  .eq('profile_id', profileId)
+  .eq('category', 'bike')
+  .eq('type', 'ftp')
+  .lte('recorded_at', activityDate.toISOString()) // At or before activity date
+  .not('notes', 'like', '[INACTIVE]%') // Filter out inactive metrics
+  .order('recorded_at', { ascending: false })
+  .limit(1)
+  .single();
 
-// Step 2: Create Encode instance
-const encoder = new Fit.Encode(ProtocolVersion.V20);
+const historicalFTP = ftpMetric?.value || 250; // Fallback to default
 
-// Step 3: Open encoder (writes header with data size = 0)
-encoder.Open(stream);
-
-// Step 4-5: Write messages
-encoder.Write(fileIdMesg);
-encoder.Write(recordMesg);
-// ...
-
-// Step 6: Close encoder (updates data size, appends CRC)
-encoder.Close();
-
-// Step 7: Close stream
-stream.Close();
+// Calculate TSS with HISTORICAL FTP
+const tss = calculateTSS(duration, normalizedPower, intensityFactor, historicalFTP);
 ```
 
-**For JavaScript (modified for mobile):**
-- Encoder accumulates bytes in memory
-- `getBytes()` returns partial encoding during checkpoints
-- Final `getBytes()` includes proper CRC and data size
-- Write to file system when ready to persist
+### 4.3 Profile Snapshot Strategy
 
-### 4.5 Field Requirements
+The `profile_snapshot` JSONB field stores a snapshot of the user's profile at activity time:
 
-**Session Message (from documentation):**
-- start_time (required)
-- timestamp (required)
-- sport (required)
-- total_elapsed_time (required)
-- total_timer_time (required)
-- first_lap_index (if laps present)
-- num_laps (if laps present)
-
-**Lap Message:**
-- start_time (required)
-- timestamp (required)
-- total_elapsed_time (required)
-- total_timer_time (required)
-
-### 4.6 SDK Integration Notes
-
-**Download Official SDK:**
-```bash
-# Visit https://developer.garmin.com/fit/download/
-# Download "FIT SDK" (not FitCSVTool)
-# Extract JavaScript files from /sdk/javascript/
+```json
+{
+  "ftp": 250,
+  "lthr": 170,
+  "max_heart_rate": 190,
+  "weight_kg": 75,
+  "resting_hr": 48
+}
 ```
 
-**SDK Structure:**
+This ensures:
+- Historical TSS calculations remain consistent even if profile changes
+- Activity analytics can be recomputed with original profile state
+- Audit trail of profile state at activity time
+
+### 4.4 Inactive Metrics Handling
+
+Performance metrics can be marked as inactive using `[INACTIVE]` prefix in notes:
+
+```sql
+-- Mark old FTP as inactive
+UPDATE profile_performance_metric_logs
+SET notes = '[INACTIVE] Replaced by new FTP test'
+WHERE id = 'old-ftp-id';
 ```
-FIT SDK/
-├── c/              # C implementation
-├── cpp/            # C++ implementation  
-├── cs/             # C# implementation
-├── java/           # Java implementation
-├── javascript/     # JavaScript implementation ← USE THIS
-│   ├── fit.js      # Main SDK file
-│   └── examples/   # Example code
-├── objc/           # Objective-C implementation
-├── python/         # Python implementation
-└── swift/          # Swift implementation
+
+Temporal queries automatically filter these out:
+```typescript
+.not('notes', 'like', '[INACTIVE]%')
 ```
 
 ---
 
-## 5. Testing & Validation
+## 5. Key Changes from Original Plan
 
-### 5.1 FIT File Validation
+### 5.1 Current Architecture Corrections
+
+**Before (Incorrect Assumption):**
+- "Chunked JSON files written to Expo SQLite"
+- "JSON uploaded to Supabase Storage as source of truth"
+- "Background workers decompress streams"
+
+**After (Actual Implementation):**
+- File-based `StreamBuffer` writes to Expo FileSystem (not SQLite)
+- Compressed streams stored directly in PostgreSQL `activity_streams` table (no Supabase Storage currently)
+- On-demand decompression when streams requested (no background workers currently)
+
+### 5.2 New Components Required
+
+| Component | Status | Action Required |
+|-----------|--------|-----------------|
+| **Supabase Storage Bucket** | ❌ Does not exist | Create `activity-files` bucket with RLS policies |
+| **Background Workers** | ❌ Does not exist | Create `packages/workers/` with BullMQ |
+| **Profile Metrics Integration** | ✅ Exists (tables) | Integrate temporal queries in worker |
+| **FIT SDK** | ❌ Not installed | Download from Garmin developer site |
+
+### 5.3 File Paths Updated
+
+| Component | Correct Path |
+|-----------|-------------|
+| Recording Service | `apps/mobile/lib/services/ActivityRecorder/index.ts` |
+| Live Metrics | `apps/mobile/lib/services/ActivityRecorder/LiveMetricsManager.ts` |
+| Stream Buffer | `apps/mobile/lib/services/ActivityRecorder/StreamBuffer.ts` |
+| Activities Router | `packages/trpc/src/routers/activities.ts` |
+| Profile Metrics Router | `packages/trpc/src/routers/profile-metrics.ts` |
+| Performance Metrics Router | `packages/trpc/src/routers/profile-performance-metrics.ts` |
+| Stream Decompression (Server) | `packages/core/utils/streamDecompression.ts` |
+| Stream Decompression (Client) | `apps/mobile/lib/utils/streamDecompression.ts` |
+
+---
+
+## 6. Testing & Validation
+
+### 6.1 FIT File Validation
 
 **Use Garmin's FIT File Tools:**
 ```bash
@@ -1244,7 +1298,7 @@ java -jar FitCSVTool.jar input.fit
 # - Required field validation
 ```
 
-### 5.2 Platform Compatibility Testing
+### 6.2 Platform Compatibility Testing
 
 **Test FIT files with:**
 1. **Garmin Connect** - Upload via web interface
@@ -1259,94 +1313,81 @@ java -jar FitCSVTool.jar input.fit
 - GPS route renders properly
 - Time/distance/elevation match
 
-### 5.3 Unit Tests
+### 6.3 Profile Metrics Validation
+
+**Test temporal queries:**
+
+```typescript
+// Set up test data
+await createProfileMetric({
+  profile_id: testUserId,
+  type: 'ftp',
+  value: 250,
+  recorded_at: '2026-01-10',
+});
+
+await createProfileMetric({
+  profile_id: testUserId,
+  type: 'ftp',
+  value: 260,
+  recorded_at: '2026-01-20',
+});
+
+// Test query at Jan 15 (should return 250W)
+const ftpAtJan15 = await queryFtpAtDate('2026-01-15');
+expect(ftpAtJan15).toBe(250);
+
+// Test query at Jan 25 (should return 260W)
+const ftpAtJan25 = await queryFtpAtDate('2026-01-25');
+expect(ftpAtJan25).toBe(260);
+```
+
+### 6.4 Unit Tests
 
 ```typescript
 describe('StreamingFitEncoder - Message Sequencing', () => {
   it('should write File ID as first message', async () => {
     const encoder = new StreamingFitEncoder(mockProfile);
     await encoder.start(mockMetadata);
-    
+
     const messages = extractMessages(encoder);
     expect(messages[0].name).toBe('file_id');
   });
-  
+
   it('should write Timer Start before first Record', async () => {
     const encoder = new StreamingFitEncoder(mockProfile);
     await encoder.start(mockMetadata);
     await encoder.addSample(mockSample);
-    
+
     const messages = extractMessages(encoder);
-    const timerStartIndex = messages.findIndex(m => 
+    const timerStartIndex = messages.findIndex(m =>
       m.name === 'event' && m.event === Fit.Event.TIMER
     );
-    const firstRecordIndex = messages.findIndex(m => 
+    const firstRecordIndex = messages.findIndex(m =>
       m.name === 'record'
     );
-    
+
     expect(timerStartIndex).toBeLessThan(firstRecordIndex);
   });
-  
+
   it('should write summary messages (Lap, Session, Activity) at end', async () => {
     const encoder = new StreamingFitEncoder(mockProfile);
     await encoder.start(mockMetadata);
     await encoder.addSample(mockSample1);
     await encoder.addSample(mockSample2);
     const filePath = await encoder.finish();
-    
+
     const messages = extractMessages(filePath);
     const lastMessages = messages.slice(-3);
-    
+
     expect(lastMessages.map(m => m.name)).toEqual([
       'lap',
-      'session', 
+      'session',
       'activity'
     ]);
   });
 });
 ```
-
----
-
-## 6. Migration from Original Plan
-
-### 6.1 Code Changes Required
-
-**StreamingFitEncoder.ts:**
-- ✅ Add proper message sequencing (File ID first)
-- ✅ Add Timer Start event before first Record
-- ✅ Add Timer Stop event in finish()
-- ✅ Add Device Info message
-- ✅ Write Lap message before Session
-- ✅ Write Activity message as final summary
-- ✅ Add pause/resume timer support
-- ✅ Implement proper CRC handling via SDK
-
-**analyzeFit.ts:**
-- ✅ Use Garmin Decode class instead of generic parser
-- ✅ Add CRC validation (decoder.checkIntegrity())
-- ✅ Add FIT file format validation (decoder.isFit())
-- ✅ Handle all message types from SDK
-- ✅ Extract fields using SDK's type-safe accessors
-
-### 6.2 New Dependencies
-
-```json
-{
-  "dependencies": {
-    "uuid": "^9.0.0"
-  },
-  "devDependencies": {
-    "@types/node": "^20.0.0"
-  }
-}
-```
-
-**Manual SDK Installation:**
-1. Download from https://developer.garmin.com/fit/download/
-2. Extract `javascript/fit.js`
-3. Place in `apps/mobile/lib/fit-sdk/fit.js`
-4. Add TypeScript declarations if needed
 
 ---
 
@@ -1439,17 +1480,40 @@ const SUB_SPORT_MAP = {
 };
 ```
 
+### 8.3 Database Schema Updates
+
+**Migration: Add FIT File Support**
+
+```sql
+-- Add FIT file path and processing status
+ALTER TABLE activities
+ADD COLUMN fit_file_path TEXT,
+ADD COLUMN processing_status TEXT DEFAULT 'COMPLETED'
+  CHECK (processing_status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED'));
+
+-- Create index for processing queue
+CREATE INDEX idx_activities_processing_status
+ON activities(processing_status, created_at)
+WHERE processing_status IN ('PENDING', 'PROCESSING');
+
+-- Mark activity_streams table as deprecated
+COMMENT ON TABLE activity_streams IS 'DEPRECATED: Used for legacy compressed JSON streams. New activities use FIT files. Keep for historical data.';
+```
+
 ---
 
 ## Summary
 
-This updated implementation plan aligns with **Garmin's official FIT SDK** and **best practices** for encoding Activity files. Key improvements include:
+This updated implementation plan aligns with **Garmin's official FIT SDK**, **GradientPeak's actual codebase architecture**, and **best practices** for encoding Activity files. Key improvements include:
 
-1. **Proper Message Sequencing**: Following the "Summary Last" pattern with File ID first, Timer events properly placed, and summary messages at the end
-2. **SDK Compliance**: Using official Garmin Encode/Decode classes instead of third-party libraries
-3. **Timer Events**: Adding Start/Stop events to indicate recording status
-4. **CRC Validation**: Proper file integrity checking via SDK methods
-5. **Required Fields**: Ensuring all required message types and fields are included
-6. **Platform Compatibility**: Following patterns that work with Garmin Connect, Strava, etc.
+1. **Corrected Architecture** - Accurately describes current file-based StreamBuffer and PostgreSQL storage
+2. **Profile Metrics Integration** - Temporal queries for historical FTP/weight ensure accurate TSS calculations
+3. **Proper Message Sequencing** - Following the "Summary Last" pattern with File ID first, Timer events properly placed, and summary messages at the end
+4. **SDK Compliance** - Using official Garmin Encode/Decode classes instead of third-party libraries
+5. **Timer Events** - Adding Start/Stop events to indicate recording status
+6. **CRC Validation** - Proper file integrity checking via SDK methods
+7. **Required Fields** - Ensuring all required message types and fields are included
+8. **Platform Compatibility** - Following patterns that work with Garmin Connect, Strava, etc.
+9. **Checkpoint Strategy** - Matching current 60-second flush cycle for consistency
 
-The system maintains GradientPeak's local-first architecture while adopting industry-standard FIT format with guaranteed compatibility across all major fitness platforms.
+The system maintains GradientPeak's local-first architecture while adopting industry-standard FIT format with guaranteed compatibility across all major fitness platforms and accurate historical metrics tracking through profile snapshots.
