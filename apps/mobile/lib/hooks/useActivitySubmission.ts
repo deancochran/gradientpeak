@@ -138,7 +138,6 @@ function calculateActivityMetrics(
   metrics: Record<string, unknown>;
   hrZoneSeconds: number[] | null;
   powerZoneSeconds: number[] | null;
-  profileSnapshot: Record<string, unknown> | null;
   location: "indoor" | "outdoor" | null;
 } {
   if (!metadata.startedAt || !metadata.endedAt) {
@@ -190,19 +189,11 @@ function calculateActivityMetrics(
     : undefined;
 
   // Power-derived metrics
+  // NOTE: Advanced metrics (TSS, IF, zones) will be calculated on server
+  // using historical metrics from profile_performance_metric_logs table
   const normalized_power = calculateNormalizedPower(powerStream);
-  const intensity_factor = calculateIntensityFactor(
-    powerStream,
-    metadata.profile.ftp,
-  );
-  const tss = Math.round(
-    calculateTSS(
-      metadata.startedAt,
-      metadata.endedAt,
-      powerStream,
-      metadata.profile,
-    ) || 0,
-  );
+  const intensity_factor = undefined; // requires FTP from metric logs
+  const tss = undefined; // requires FTP from metric logs
   const vi = Math.round(
     calculateVariabilityIndex(powerStream, normalized_power) || 0,
   );
@@ -210,9 +201,9 @@ function calculateActivityMetrics(
     calculateTotalWork(powerStream, duration_seconds) || 0,
   );
 
-  // Zone calculations
-  const hr_zones = calculateHRZones(hrStream, metadata.profile.threshold_hr);
-  const power_zones = calculatePowerZones(powerStream, metadata.profile.ftp);
+  // Zone calculations - will be recalculated on server with historical metrics
+  const hr_zones = null; // calculateHRZones requires threshold_hr from metric logs
+  const power_zones = null; // calculatePowerZones requires ftp from metric logs
 
   // Multi-stream advanced metrics
   const ef = Math.round(calculateEfficiencyFactor(powerStream, hrStream) || 0);
@@ -220,10 +211,8 @@ function calculateActivityMetrics(
     calculateDecoupling(powerStream, hrStream) || 0,
   );
   const power_hr_ratio = calculatePowerHeartRateRatio(powerStream, hrStream);
-  const power_weight_ratio = calculatePowerWeightRatio(
-    powerStream,
-    metadata.profile.weight_kg,
-  );
+  // power_weight_ratio requires weight from metric logs - calculated on server
+  const power_weight_ratio = undefined;
 
   // Elevation calculations
   const { totalAscent, totalDescent } =
@@ -236,22 +225,11 @@ function calculateActivityMetrics(
     distanceStream,
   );
 
-  // Calories
-  const calories = Math.round(
-    calculateCalories(
-      metadata.startedAt,
-      metadata.endedAt,
-      metadata.profile,
-      powerStream,
-      hrStream,
-    ) || 0,
-  );
+  // Calories - will be calculated on server with weight from metric logs
+  const calories = undefined;
 
-  // Calculate max HR percentage of threshold (if threshold exists)
-  const max_hr_pct_threshold =
-    max_hr && metadata.profile.threshold_hr
-      ? Math.round((max_hr / metadata.profile.threshold_hr) * 100)
-      : undefined;
+  // Max HR percentage of threshold - will be calculated on server
+  const max_hr_pct_threshold = undefined;
 
   // Build metrics JSONB object
   const metrics: Record<string, unknown> = {};
@@ -285,46 +263,11 @@ function calculateActivityMetrics(
   if (power_hr_ratio !== undefined) metrics.power_hr_ratio = power_hr_ratio;
   if (decoupling !== undefined) metrics.decoupling = decoupling;
 
-  // Build HR zone seconds array (5 zones)
-  // Using zone arrays that match the database schema
-  const hrZoneSeconds = hr_zones
-    ? [
-        Math.round(hr_zones.zone1 || 0),
-        Math.round(hr_zones.zone2 || 0),
-        Math.round(hr_zones.zone3 || 0),
-        Math.round(hr_zones.zone4 || 0),
-        Math.round(hr_zones.zone5 || 0),
-      ]
-    : null;
+  // Build HR zone seconds array (5 zones) - will be calculated on server
+  const hrZoneSeconds = null;
 
-  // Build power zone seconds array (7 zones)
-  // Using zone arrays that match the database schema
-  const powerZoneSeconds = power_zones
-    ? [
-        Math.round(power_zones.zone1 || 0),
-        Math.round(power_zones.zone2 || 0),
-        Math.round(power_zones.zone3 || 0),
-        Math.round(power_zones.zone4 || 0),
-        Math.round(power_zones.zone5 || 0),
-        Math.round(power_zones.zone6 || 0),
-        Math.round(power_zones.zone7 || 0),
-      ]
-    : null;
-
-  // Build profile snapshot - ONLY performance metrics (historical data)
-  // User identity (username, avatar) should be fetched from profiles table (current data)
-  const profileAge = calculateAge(metadata.profile.dob);
-  const profileSnapshot: Record<string, unknown> = {};
-
-  if (metadata.profile.ftp !== undefined)
-    profileSnapshot.ftp = metadata.profile.ftp;
-  if (metadata.profile.weight_kg !== undefined)
-    profileSnapshot.weight_kg = metadata.profile.weight_kg;
-  if (metadata.profile.threshold_hr !== undefined)
-    profileSnapshot.threshold_hr = metadata.profile.threshold_hr;
-  if (profileAge !== undefined) profileSnapshot.age = profileAge;
-  // Note: recovery_time and training_load would come from profile if available
-  // For now, we'll omit them if not present
+  // Build power zone seconds array (7 zones) - will be calculated on server
+  const powerZoneSeconds = null;
 
   // Get location from metadata
   const location = metadata.activityLocation;
@@ -336,8 +279,6 @@ function calculateActivityMetrics(
     metrics,
     hrZoneSeconds,
     powerZoneSeconds,
-    profileSnapshot:
-      Object.keys(profileSnapshot).length > 0 ? profileSnapshot : null,
     location,
   };
 }
@@ -424,9 +365,13 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     error: null,
   });
 
+  // Mutation for calculating activity metrics (TSS, zones, curves, test detection)
+  const calculateMetricsMutation =
+    trpc.activities.calculateMetrics.useMutation();
+
   const createActivityWithStreamsMutation =
     trpc.activities.createWithStreams.useMutation({
-      onSuccess: (data) => {
+      onSuccess: async (data) => {
         // Invalidate relevant queries after successful upload
         queryClient.invalidateQueries({
           queryKey: queryKeys.activities.lists(),
@@ -457,8 +402,34 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         }
 
         console.log(
-          "[useActivitySubmission] Activity uploaded, cache invalidated, and fitness metrics will be recalculated",
+          "[useActivitySubmission] Activity uploaded successfully. Triggering metrics calculation...",
         );
+
+        // Trigger async metrics calculation (TSS, zones, curves, test detection)
+        // This uses temporal metric lookup from profile_performance_metric_logs
+        // and profile_metric_logs tables with intelligent defaults
+        if (data.id) {
+          try {
+            await calculateMetricsMutation.mutateAsync({
+              activityId: data.id,
+            });
+            console.log(
+              "[useActivitySubmission] Metrics calculated successfully",
+            );
+
+            // Invalidate activity detail to show updated metrics
+            queryClient.invalidateQueries({
+              queryKey: queryKeys.activities.detail(data.id),
+            });
+          } catch (error) {
+            console.error(
+              "[useActivitySubmission] Failed to calculate metrics:",
+              error,
+            );
+            // Don't fail the whole upload if metrics calculation fails
+            // User can manually recalculate later
+          }
+        }
       },
       onError: (error) => {
         console.error("[useActivitySubmission] Upload failed:", error);
@@ -606,9 +577,6 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         metrics: calculatedMetrics.metrics as any, // JSONB metrics object
         hr_zone_seconds: calculatedMetrics.hrZoneSeconds ?? undefined,
         power_zone_seconds: calculatedMetrics.powerZoneSeconds ?? undefined,
-        profile_snapshot: calculatedMetrics.profileSnapshot
-          ? JSON.parse(JSON.stringify(calculatedMetrics.profileSnapshot))
-          : undefined,
         activity_plan_id: activityPlanId, // Use activity_plan_id instead of planned_activity_id
         route_id: null, // Will be set if route is attached
       };

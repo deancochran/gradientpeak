@@ -76,7 +76,7 @@ export const activitiesRouter = createTRPCRouter({
           `
           id, name, type, location,
           started_at, duration_seconds, moving_seconds, distance_meters,
-          metrics, profile_snapshot, route_id, activity_plan_id, profile_id
+          metrics, route_id, activity_plan_id, profile_id
         `,
           { count: "exact" },
         )
@@ -208,7 +208,6 @@ export const activitiesRouter = createTRPCRouter({
           metrics: z.any().optional(),
           hr_zone_seconds: z.array(z.number()).nullable().optional(),
           power_zone_seconds: z.array(z.number()).nullable().optional(),
-          profile_snapshot: z.any().nullable().optional(),
           activity_plan_id: z.string().nullable().optional(),
           notes: z.string().nullable().optional(),
           is_private: z.boolean().optional(),

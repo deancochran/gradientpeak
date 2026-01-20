@@ -59,7 +59,6 @@ interface PastActivityCardProps {
     activity_plan_id?: string | null;
     metrics?: any;
     profile_id: string;
-    profile_snapshot?: any;
   };
   onPress?: () => void;
 }
@@ -111,9 +110,6 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
       avatar_url: profile?.avatar_url || null,
     };
   }, [profile]);
-
-  // Note: profile_snapshot contains performance metrics (FTP, weight, threshold_hr)
-  // at the time of recording. These are used for calculations, not for display.
 
   // Fetch route data if route_id exists (pre-planned route)
   const { data: route } = trpc.routes.get.useQuery(
