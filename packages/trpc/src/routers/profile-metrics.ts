@@ -130,9 +130,8 @@ export const profileMetricsRouter = createTRPCRouter({
           metric_type: input.metric_type,
           value: input.value,
           unit: input.unit,
-          source: input.source,
-          reference_activity_id: input.reference_activity_id,
-          notes: input.notes,
+          reference_activity_id: input.reference_activity_id || null,
+          notes: input.notes || null,
           recorded_at: input.recorded_at || new Date().toISOString(),
         })
         .select()

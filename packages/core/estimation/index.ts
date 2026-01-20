@@ -29,6 +29,18 @@ import type {
 // Re-export types
 export * from "./types";
 
+// Re-export default estimation functions
+export {
+  estimateFTPFromWeight,
+  estimateFTPFromRecentActivities,
+  estimateMaxHR,
+  estimateLTHR,
+  estimateLTHRFromRecentActivities,
+  estimateThresholdPaceFromFitnessLevel,
+  estimateThresholdPaceFromRecentRuns,
+  estimateCriticalVelocity,
+} from "./defaults";
+
 // Re-export functions
 export {
   estimateMetricsInternal as estimateMetrics,

@@ -30,3 +30,9 @@ export * from "./dates";
 
 // Export date grouping utilities
 export * from "./date-grouping";
+
+// Export temporal metrics utilities
+export * from "./temporal-metrics";
+
+// Export stream decompression utilities
+export * from "./streamDecompression";

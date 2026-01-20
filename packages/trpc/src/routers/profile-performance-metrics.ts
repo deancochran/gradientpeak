@@ -24,7 +24,7 @@ export const profilePerformanceMetricsRouter = createTRPCRouter({
       z.object({
         category: performanceMetricCategorySchema.optional(),
         type: performanceMetricTypeSchema.optional(),
-        is_active: z.boolean().optional(),
+        exclude_inactive: z.boolean().default(true), // Filter out [INACTIVE] metrics
         limit: z.number().min(1).max(100).default(50),
         offset: z.number().min(0).default(0),
       })
@@ -48,17 +48,20 @@ export const profilePerformanceMetricsRouter = createTRPCRouter({
         query = query.eq('type', input.type);
       }
 
-      if (input.is_active !== undefined) {
-        query = query.eq('is_active', input.is_active);
-      }
-
-      const { data, error, count } = await query;
+      // TODO: Once is_active column exists, use: query.eq('is_active', true)
+      // For now, filter in memory
+      const { data: allData, error, count } = await query;
 
       if (error) throw new Error(error.message);
 
+      const data = input.exclude_inactive
+        ? allData?.filter(item => !item.notes?.startsWith('[INACTIVE]'))
+        : allData;
+
+
       return {
         items: data || [],
-        total: count || 0,
+        total: data?.length || 0,
       };
     }),
 
@@ -90,10 +93,9 @@ export const profilePerformanceMetricsRouter = createTRPCRouter({
         .eq('profile_id', profileId)
         .eq('category', input.category)
         .eq('type', input.type)
-        .eq('is_active', true)
         .lte('recorded_at', input.date.toISOString())
         .order('recorded_at', { ascending: false })
-        .limit(1);
+        .limit(10); // Get more to filter out inactive ones
 
       if (input.duration_seconds) {
         query = query.eq('duration_seconds', input.duration_seconds);
@@ -103,7 +105,9 @@ export const profilePerformanceMetricsRouter = createTRPCRouter({
 
       if (error) throw new Error(error.message);
 
-      return data?.[0] || null;
+      // Filter out inactive metrics (marked with [INACTIVE] in notes)
+      const activeMetrics = data?.filter(item => !item.notes?.startsWith('[INACTIVE]'));
+      return activeMetrics?.[0] || null;
     }),
 
   /**
@@ -127,7 +131,6 @@ export const profilePerformanceMetricsRouter = createTRPCRouter({
         .from('profile_performance_metric_logs')
         .select('*')
         .eq('profile_id', profileId)
-        .eq('is_active', true)
         .gte('recorded_at', input.start_date.toISOString())
         .lte('recorded_at', input.end_date.toISOString())
         .order('recorded_at', { ascending: false });
@@ -139,7 +142,9 @@ export const profilePerformanceMetricsRouter = createTRPCRouter({
 
       if (error) throw new Error(error.message);
 
-      return data || [];
+      // Filter out inactive metrics
+      const activeMetrics = data?.filter(item => !item.notes?.startsWith('[INACTIVE]'));
+      return activeMetrics || [];
     }),
 
   /**
@@ -184,11 +189,9 @@ export const profilePerformanceMetricsRouter = createTRPCRouter({
           type: input.type,
           value: input.value,
           unit: input.unit,
-          duration_seconds: input.duration_seconds,
-          source: input.source,
-          reference_activity_id: input.reference_activity_id,
-          environmental_conditions: input.environmental_conditions,
-          notes: input.notes,
+          duration_seconds: input.duration_seconds || null,
+          reference_activity_id: input.reference_activity_id || null,
+          notes: input.notes || null,
           recorded_at: input.recorded_at || new Date().toISOString(),
         })
         .select()
@@ -212,8 +215,7 @@ export const profilePerformanceMetricsRouter = createTRPCRouter({
         .update({
           value: input.value,
           unit: input.unit,
-          notes: input.notes,
-          environmental_conditions: input.environmental_conditions,
+          notes: input.notes || null,
           recorded_at: input.recorded_at,
         })
         .eq('id', input.id)
@@ -227,17 +229,20 @@ export const profilePerformanceMetricsRouter = createTRPCRouter({
     }),
 
   /**
-   * Deactivate a metric (soft delete).
-   * Keeps metric in database for historical reference but excludes from lookups.
+   * Deactivate a metric (soft delete via notes).
+   * Marks metric as inactive in notes field for historical reference.
+   * TODO: Add is_active column to database schema for proper soft delete.
    */
   deactivate: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const { supabase, session } = ctx;
 
+      // For now, mark as inactive via notes
+      // TODO: Add is_active column to table
       const { data, error } = await supabase
         .from('profile_performance_metric_logs')
-        .update({ is_active: false })
+        .update({ notes: '[INACTIVE] ' + ((await supabase.from('profile_performance_metric_logs').select('notes').eq('id', input.id).single()).data?.notes || '') })
         .eq('id', input.id)
         .eq('profile_id', session.user.id)
         .select()

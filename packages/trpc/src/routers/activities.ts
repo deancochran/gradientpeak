@@ -11,17 +11,16 @@ import {
   calculatePaceCurve,
   analyzePaceCurve,
   calculateHRCurve,
-} from "@repo/core/calculations";
-import {
   detectPowerTestEfforts,
   detectRunningTestEfforts,
   detectHRTestEfforts,
-} from "@repo/core/detection";
-import {
   estimateFTPFromWeight,
   estimateMaxHR,
   estimateLTHR,
-} from "@repo/core/estimation/defaults";
+  decompressAllStreams,
+  extractNumericStream,
+  calculateAge,
+} from "@repo/core";
 
 export const activitiesRouter = createTRPCRouter({
   // List activities by date range (legacy - for trends/analytics)
@@ -468,25 +467,49 @@ export const activitiesRouter = createTRPCRouter({
       }
 
       const activityDate = new Date(activity.started_at);
-      const activityCategory = activity.type || "other"; // bike, run, swim, etc.
+      const activityCategory = (activity.type ||
+        "other") as "run" | "bike" | "swim" | "strength" | "other";
 
       // ==========================================
-      // 2. Extract Streams (decompression would happen here in real implementation)
+      // 2. Extract and Decompress Streams
       // ==========================================
-      // For now, we'll extract basic stream data from activity_streams
-      // In a full implementation, you'd decompress the compressed_values
-      const powerStream: number[] | undefined = undefined; // TODO: Decompress power stream
-      const hrStream: number[] | undefined = undefined; // TODO: Decompress HR stream
-      const paceStream: number[] | undefined = undefined; // TODO: Decompress pace stream
-      const elevationStream: number[] | undefined = undefined; // TODO: Decompress elevation
-      const timestamps: number[] | undefined = undefined; // TODO: Decompress timestamps
-      const distanceStream: number[] | undefined = undefined; // TODO: Decompress distance
+      const streamData = decompressAllStreams(
+        (activity.activity_streams || []) as Array<{
+          type: string;
+          data_type: "float" | "latlng" | "boolean";
+          compressed_values: string;
+          compressed_timestamps: string;
+        }>
+      );
 
-      // For safety, only proceed if we have timestamps
+      // Extract numeric streams for calculations
+      const powerStream = extractNumericStream(streamData, "power");
+      const hrStream = extractNumericStream(streamData, "heartrate");
+      const speedStream = extractNumericStream(streamData, "speed");
+      const elevationStream = extractNumericStream(streamData, "altitude");
+      const distanceStream = extractNumericStream(streamData, "distance");
+
+      // Get timestamps from any available stream (all streams share timestamps)
+      const timestamps =
+        streamData.get("power")?.timestamps ||
+        streamData.get("heartrate")?.timestamps ||
+        streamData.get("speed")?.timestamps;
+
+      // Verify we have timestamp data
       if (!timestamps || timestamps.length === 0) {
         throw new Error(
           "Cannot calculate metrics: No timestamp data available"
         );
+      }
+
+      // Calculate pace stream from speed if available
+      let paceStream: number[] | undefined;
+      if (speedStream && speedStream.length > 0) {
+        // Convert speed (m/s) to pace (sec/km)
+        paceStream = speedStream.map((speed) => {
+          if (speed <= 0) return 0;
+          return 1000 / speed; // seconds per km
+        });
       }
 
       // ==========================================
@@ -537,7 +560,7 @@ export const activitiesRouter = createTRPCRouter({
             notes: `Estimated from weight (${weight}kg)`,
             recorded_at: activityDate.toISOString(),
           });
-        } else {
+        } else if (ftpMetric[0]) {
           ftp = ftpMetric[0].value;
         }
       }
@@ -579,8 +602,14 @@ export const activitiesRouter = createTRPCRouter({
 
         // Estimate if missing
         if (!maxHR) {
-          // Get age from profile or estimate
-          const age = 30; // TODO: Get from profile
+          // Get age from profile
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("dob")
+            .eq("id", session.user.id)
+            .single();
+
+          const age = calculateAge(profile?.dob || null) || 30; // Default to 30 if no DOB
           const estimatedMaxHR = estimateMaxHR(age);
           maxHR = estimatedMaxHR.value;
 
@@ -719,13 +748,16 @@ export const activitiesRouter = createTRPCRouter({
         const powerTests = detectPowerTestEfforts(powerStream, timestamps);
         suggestions.push(...powerTests);
 
-        // TODO: Create metric suggestions in database
-        // for (const test of powerTests) {
-        //   await supabase.from('metric_suggestions').insert({...});
-        // }
+        // TODO: Store metric suggestions in database when metric_suggestions table is created
+        // For now, suggestions are returned in the mutation result for UI display
       }
 
-      if (paceStream && timestamps && distanceStream && activityCategory === "run") {
+      if (
+        paceStream &&
+        timestamps &&
+        distanceStream &&
+        activityCategory === "run"
+      ) {
         const runningTests = detectRunningTestEfforts(
           paceStream,
           timestamps,
@@ -742,38 +774,47 @@ export const activitiesRouter = createTRPCRouter({
       // ==========================================
       // 10. Update Activity with Calculated Metrics
       // ==========================================
+      // Extract TSS value (HRSSResult uses 'hrss', others use 'tss')
+      const tssValue =
+        "tss" in tssResult ? tssResult.tss : tssResult.hrss;
+
+      const metricsPayload = {
+        tss: tssValue,
+        tss_source: tssResult.source,
+        tss_confidence: tssResult.confidence,
+        normalized_power:
+          "normalizedPower" in tssResult
+            ? tssResult.normalizedPower
+            : null,
+        intensity_factor:
+          "intensityFactor" in tssResult
+            ? tssResult.intensityFactor
+            : null,
+        variability_index:
+          "variabilityIndex" in tssResult
+            ? tssResult.variabilityIndex
+            : null,
+        hrss: "hrss" in tssResult ? tssResult.hrss : null,
+        avg_hr: "avgHR" in tssResult ? tssResult.avgHR : null,
+        normalized_pace:
+          "normalizedPace" in tssResult ? tssResult.normalizedPace : null,
+        curves,
+      };
+
       const { error: updateError } = await supabase
         .from("activities")
         .update({
-          metrics: {
-            tss: tssResult.tss,
-            tss_source: tssResult.source,
-            tss_confidence: tssResult.confidence,
-            normalized_power:
-              "normalizedPower" in tssResult
-                ? tssResult.normalizedPower
-                : null,
-            intensity_factor:
-              "intensityFactor" in tssResult
-                ? tssResult.intensityFactor
-                : null,
-            variability_index:
-              "variabilityIndex" in tssResult
-                ? tssResult.variabilityIndex
-                : null,
-            hrss: "hrss" in tssResult ? tssResult.hrss : null,
-            avg_hr: "avgHR" in tssResult ? tssResult.avgHR : null,
-            normalized_pace:
-              "normalizedPace" in tssResult ? tssResult.normalizedPace : null,
-            curves,
-          },
+          metrics: metricsPayload as any, // Cast to Json type for Supabase
         })
         .eq("id", input.activityId);
 
       if (updateError) throw new Error(updateError.message);
 
       return {
-        metrics: tssResult,
+        metrics: {
+          tss: tssValue,
+          ...tssResult,
+        },
         curves,
         suggestions,
         calculationSource: tssResult.source,
