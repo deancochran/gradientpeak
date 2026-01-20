@@ -85,6 +85,9 @@ packages/*/lib/
 .aider*
 .claude
 *.claude
+.opencode
+*opencode*
+*.opencode
 CLAUDE.md
 .rules
 *.rules

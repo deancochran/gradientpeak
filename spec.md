@@ -1,165 +1,80 @@
-# Profile Performance Metric Logs - MVP Specification
+# Performance Metrics Platform - Technical Specification
 
-## Executive Summary
+## Vision
 
-**Feature Name:** Performance Capability Tracking System (MVP)
+We are building an independent performance metrics platform that serves as the central intelligence layer for athlete training data. This platform stands as its own service, capable of tracking and managing athletic performance metrics across multiple sports while seamlessly integrating with major third-party providers like Garmin, Wahoo, Strava, and TrainingPeaks.
 
-**Purpose:** Track athlete performance capabilities (power, pace, heart rate) over time to enable training load analysis and performance progression tracking.
+The platform receives training data from multiple sources—our mobile application, third-party integrations, and direct API connections—and intelligently processes this information to track athlete progression, calculate training load, and provide actionable insights. It operates as a communication hub, actively pushing updates back to our application whenever performance metrics change or new insights are discovered.
 
-**Target Users:** Intermediate to advanced endurance athletes who want data-driven training insights.
+## Problem Statement
 
-**MVP Scope:**
+Our current architecture treats athlete capabilities as static snapshots embedded within each activity record. When an athlete completes a workout, we copy their entire profile—FTP, weight, heart rate thresholds—directly into that activity's data. This creates several critical issues:
+- Data duplication across hundreds of activities per athlete
+- Performance bottlenecks in training load calculations
+- No separation between activity data and athlete capabilities
+- Inability to integrate with third-party services that don't provide profile data
+- No retroactive recalculation when athlete discovers metric errors
 
-- **Single table:** `profile_performance_metric_logs` - Time-series performance capability data
-- **Dynamic computation:** All analytics, goals, and progression computed from existing app data
-- **Integration:** Leverage existing activities, training plans, and planned activities
-- **Core package:** Database-independent business logic using Supabase-generated types
+## Platform Architecture
 
-**Development Timeline:** 4-6 weeks MVP implementation
+### Core Principle
 
----
+The platform operates on a fundamental separation of concerns: **activities record what happened during training; metrics define who the athlete is.**
 
-## 1. Technical Architecture
+By decoupling these two concepts, we create a system that can track athletic evolution over time, intelligently default missing information, and serve as a single source of truth for performance data across multiple applications and integrations.
 
-### System Overview
+### Platform Capabilities
 
-The system uses a layered architecture:
+**Independent Service Operation**
+The metrics platform runs as a standalone service with its own database, business logic, and API layer. It can operate independently of our main application, receiving data from any authorized source and serving metrics to any authorized consumer.
 
-- **User Interface Layer:** Mobile app (manual entry, charts) and web dashboard (advanced analytics)
-- **tRPC API Layer:** Handles CRUD operations, queries, and analytics
-- **Data Layer:** Supabase database for metric logs, core package for calculations, integration with existing activities/plans/profile data
+**Multi-Source Data Ingestion**
+The platform accepts training data from:
+- Our mobile application (direct activity uploads)
+- Third-party services via webhook integrations (Strava, Garmin, TrainingPeaks, Wahoo)
+- Direct API calls from external applications
+- Manual entry through web interfaces
 
-### Key Principles
+**Intelligent Metric Management**
+When the platform receives activity data, it automatically determines which performance metrics to use, generates intelligent defaults when metrics are missing, and analyzes the activity to detect potential performance improvements.
 
-1. **Single Source of Truth:** Metric logs tables (performance + profile) track all athlete data over time
-2. **No Data Duplication:** Activities reference profile_id, not snapshots (enables retroactive recalculation)
-3. **Pre-calculated Metrics:** TSS/IF calculated once and stored, not computed on every query
-4. **Type Safety:** Core package uses Supabase-generated types, extending them as needed
-5. **Local-First:** Existing architecture maintained - logs synced like activities
-6. **Leverage Existing Data:** Use completed activities and training plans for context
-
-### Architectural Benefits
-
-**1. Retroactive Recalculation (Key Innovation):**
-```
-User realizes FTP was actually 260W in March (not 250W)
-↓
-Create new performance metric log with created_at = 2024-03-01
-↓
-Background job queries all activities in affected date range
-↓
-Recalculates TSS/IF for each activity using corrected FTP
-↓
-Updates activity metrics JSONB with new values
-↓
-CTL/ATL/TSB charts automatically reflect corrected data
-```
-
-**2. Efficient Training Load Queries:**
-```
-OLD APPROACH (with profile snapshots):
-- Query 1000 activities with profile_snapshot
-- For each activity: calculate TSS = (NP * duration * IF) / (FTP * 3600) * 100
-- Aggregate TSS values for CTL/ATL/TSB calculation
-- Time: ~500-1000ms for 1000 activities
-
-NEW APPROACH (with metric logs):
-- Query 1000 activities (TSS already in metrics JSONB)
-- Aggregate pre-calculated TSS values
-- Time: ~10-50ms for 1000 activities (10-100x faster)
-```
-
-**3. Third-Party Integration Efficiency:**
-```
-Strava webhook receives activity data:
-- Power stream, HR stream, GPS track
-- NO profile data included
-
-OLD: How do we calculate TSS? Need to store profile snapshot with activity
-NEW: Query user's performance metric logs for FTP at activity date → Calculate TSS
-
-Benefits:
-- No profile data duplication
-- Accurate calculations even if user updates FTP later
-- Cleaner integration code
-```
-
-**4. Single Source of Truth for All Metrics:**
-```
-Before: Profile data scattered across:
-- profiles table (current values)
-- activity profile_snapshot (historical snapshots)
-- planned_activities (target values)
-
-After: All temporal data in metric logs:
-- profile_performance_metric_logs (FTP, pace, threshold HR over time)
-- profile_metric_logs (weight, sleep, HRV over time)
-- profiles table (current summary only)
-```
-
-### Data Flow Patterns
-
-**Manual Entry (Metric Logs):** User → Mobile Form → Validation → tRPC Mutation → DB Insert → UI Update
-
-**Activity Recording & Submission (NEW APPROACH):**
-1. User completes activity recording
-2. Mobile app submits activity data with `profile_id` only (NO profile snapshot)
-3. Activity stored in database referencing profile
-4. TSS/IF calculation: Query performance metric logs (FTP at activity date) + activity data
-5. Background job computes TSS/IF and stores in activity metrics JSONB
-
-**Third-Party Integration (Strava, Wahoo, Garmin):**
-1. Webhook receives activity data from third-party
-2. Create activity record with `profile_id` and source metadata
-3. Query performance metric logs for user's FTP/threshold at activity date
-4. Calculate TSS/IF using core package
-5. Store calculated metrics in activity
-
-**Training Load Analysis:**
-1. Query all activities with date range
-2. For each activity, get TSS from activity metrics (pre-calculated)
-3. Query current performance metric logs for latest FTP (for zone calculations)
-4. Core package computes CTL/ATL/TSB time series
-5. Return results → Render charts
-
-**Retroactive Recalculation (Key Benefit):**
-1. User updates historical FTP (e.g., realizes FTP was higher in March)
-2. Create new performance metric log entry with backdated `created_at`
-3. Background job triggers recalculation of affected activities
-4. All TSS/IF scores updated automatically
-5. CTL/ATL/TSB charts refresh with corrected data
-
-**Progression Tracking:** Query Metric Logs → Core Package (analyze trends) → Return Progression Data → Display Insights
+**Active Communication**
+The platform doesn't wait to be queried. When it discovers new insights—a detected FTP improvement, a suspicious training load pattern, or a suggested metric update—it actively communicates back to our application through webhooks or message queues, ensuring the athlete's training dashboard reflects the most current information.
 
 ---
 
-## 2. Database Schema
+## Data Model
 
-### Table 1: `profile_performance_metric_logs`
+### Performance Metrics Storage
+
+The platform maintains a historical record of each athlete's capabilities. This includes power thresholds for cycling (FTP at various durations), pace thresholds for running (threshold pace for different distances), and heart rate zones across all sports.
+
+Each metric entry captures not just the value itself, but also important context: when it was recorded, where it came from (manual entry, detected from activity, imported from third-party service, or system-generated estimate).
+
+The platform indexes this data to quickly answer questions like "What was this athlete's FTP when they completed this ride three months ago?" or "What are their current running pace zones?"
+
+#### Table: `profile_performance_metric_logs`
 
 **Purpose:** Track athlete performance capabilities over time for creating performance curves and calculating training zones.
 
 **Core Fields:**
-
-- Identity: id, profile_id
-- Metrics: category (bike/run/swim/row/other), type (power/pace/speed/heart_rate), value, unit, duration_seconds
-- Provenance: source (manual/test/race/calculated/estimated/adjusted), confidence_score, reference_activity_id, calculation_method
-- Context: environmental_conditions (JSONB), notes
-- Lifecycle: is_active, superseded_by, valid_until
-- Metadata: created_at, updated_at
+- **Identity:** id, profile_id
+- **Metrics:** category (bike/run/swim/row/other), type (power/pace/speed/heart_rate), value, unit, duration_seconds
+- **Provenance:** source (manual/test/race/calculated/estimated/adjusted), reference_activity_id, calculation_method
+- **Context:** environmental_conditions (JSONB), notes
+- **Lifecycle:** is_active, superseded_by, valid_until
+- **Metadata:** created_at, updated_at
 
 **Key Constraints:**
-
 - Value must be positive
 - Duration must be positive
-- Confidence score between 0-1
 - Source limited to predefined options
 - Profile foreign key with cascade delete
 
 **Indexes for Performance:**
-
 - Active logs by profile
 - Metric lookup by profile/category/type/duration
+- Temporal queries by created_at
 - Reference activity lookup
 - Environmental conditions (GIN)
 
@@ -168,26 +83,27 @@ After: All temporal data in metric logs:
 - 5K pace (run, pace, 1200s): 4:30/km → 4:20/km
 - Threshold heart rate (bike, heart_rate, 60min): 165 bpm → 168 bpm
 
-### Table 2: `profile_metric_logs` (NEW)
+### Profile Metrics Storage
+
+Separate from performance capabilities, the platform tracks biometric and lifestyle factors: body weight, resting heart rate, sleep duration, heart rate variability, stress levels, and muscle soreness. These metrics provide context for training decisions and recovery recommendations but don't directly determine training zones.
+
+#### Table: `profile_metric_logs`
 
 **Purpose:** Track biometric and lifestyle metrics that influence training but can't be used for performance curves.
 
 **Core Fields:**
-
-- Identity: id, profile_id, metric_type, value, unit
-- Types: weight_kg, resting_hr_bpm, sleep_hours, hrv_ms, vo2_max, body_fat_pct, hydration_level, stress_score, soreness_level
-- Provenance: source (manual/device/calculated), reference_activity_id (optional), notes
-- Lifecycle: recorded_at (timestamp for the metric), created_at, updated_at
+- **Identity:** id, profile_id, metric_type, value, unit
+- **Types:** weight_kg, resting_hr_bpm, sleep_hours, hrv_ms, vo2_max, body_fat_pct, hydration_level, stress_score, soreness_level
+- **Provenance:** source (manual/device/calculated), reference_activity_id (optional), notes
+- **Lifecycle:** recorded_at (timestamp for the metric), created_at, updated_at
 
 **Key Constraints:**
-
 - Value must be appropriate for metric type (positive, within ranges)
 - Metric type limited to predefined options
 - Profile foreign key with cascade delete
 - Recorded_at allows backdating entries
 
 **Indexes for Performance:**
-
 - Logs by profile and metric type
 - Logs by recorded_at for time-series queries
 - Reference activity lookup (optional)
@@ -275,89 +191,52 @@ CREATE POLICY "Users can delete their own metric logs"
 - `soreness_level`: Muscle soreness 1-10 scale
 - `wellness_score`: Overall wellness 1-10 scale
 
-### Migration: Remove Profile Snapshots from Activities
+### Activity Data Structure
+
+Activities in the platform are simplified to contain only the essential training data: what sport was performed, how long it lasted, distance covered, and the raw data streams (power output over time, heart rate progression, pace variations).
+
+Critically, activities no longer duplicate profile information. Instead, they maintain a simple reference to which profile performed the activity. They also store pre-calculated training metrics—Training Stress Score, Intensity Factor, Normalized Power—computed once when the activity is uploaded and saved for efficient future queries.
+
+The platform remembers which performance metric values were used to calculate these training metrics, allowing it to understand the context of historical workouts even as the athlete's capabilities evolve.
+
+**Migration: Remove Profile Snapshots from Activities**
 
 **Current State:** Activities store `profile_snapshot` JSONB with FTP, weight_kg, threshold_hr, age at time of activity.
 
 **New Approach:** Activities reference `profile_id` and query metric logs for calculations.
 
 **Benefits:**
-
 1. **Retroactive Recalculation:** Update historical FTP → recalculate all TSS/IF scores automatically
 2. **Single Source of Truth:** Profile and biometric data in one place, not duplicated across activities
 3. **Efficient Third-Party Integrations:** Strava/Wahoo imports only store activity data, not profile snapshots
 4. **Temporal Queries:** "What was my FTP on 2024-03-15?" → query performance metric logs
 5. **Reduced Storage:** No duplicate profile data per activity
 
-**Migration Strategy:**
-
-1. **Phase 1:** Create both metric log tables
-2. **Phase 2:** Seed initial data from current profile values
-3. **Phase 3:** Backfill from activity `profile_snapshot` fields (one-time migration)
-4. **Phase 4:** Update activity submission to use profile_id only
-5. **Phase 5:** Deprecate `profile_snapshot` field (keep for backward compatibility initially)
-
-### Metric Log Queries for Activity Calculations
-
-**Scenario:** Calculate TSS for activity completed on 2024-03-15
-
-```sql
--- Get FTP at time of activity
-SELECT value
-FROM profile_performance_metric_logs
-WHERE profile_id = $1
-  AND category = 'bike'
-  AND type = 'power'
-  AND duration_seconds = 3600
-  AND created_at <= '2024-03-15'
-  AND is_active = true
-ORDER BY created_at DESC
-LIMIT 1;
-
--- Get weight at time of activity
-SELECT value
-FROM profile_metric_logs
-WHERE profile_id = $1
-  AND metric_type = 'weight_kg'
-  AND recorded_at <= '2024-03-15'
-ORDER BY recorded_at DESC
-LIMIT 1;
-
--- Calculate TSS using core package with these values
-```
-
-**Fallback Strategy:** If no metric logs exist for activity date, use current profile values.
-
 ---
 
-## 3. Core Package (Business Logic)
+## Intelligence Layer
 
-### Location: `packages/core/`
+### Calculation Engine
 
-**CRITICAL:** All calculation logic lives in `@repo/core` - database-independent, pure functions.
+The platform contains a centralized calculation engine responsible for all metric-related computations. This engine operates independently of any specific database or storage mechanism, making it portable and testable.
 
-### Schemas
+**Location:** `packages/core/`
 
-The core package leverages and extends Supabase-generated types rather than duplicating them. Includes:
+The engine handles:
+- Generating sensible default values when an athlete hasn't provided specific metrics
+- Computing Training Stress Score and related training load metrics from activity data
+- Calculating training zones (power zones, pace zones, heart rate zones) from threshold values
+- Analyzing activity data streams to detect significant efforts that might indicate performance improvements
 
-- Database type re-exports
-- Zod schemas for validation (runtime safety)
-- Enums for categories, types, units, sources
-- Form schemas for user input
-- Standard durations (hardcoded constants)
-
-### Key Calculations
+**Key Calculations:**
 
 **Training Load Analysis:**
-
 - CTL (Chronic Training Load) = Fitness (42-day exponentially weighted moving average of TSS)
 - ATL (Acute Training Load) = Fatigue (7-day exponentially weighted moving average of TSS)
 - TSB (Training Stress Balance) = CTL - ATL (Form)
 - **Efficient calculation** using pre-calculated TSS from activities
-- No per-activity FTP lookups needed for CTL/ATL/TSB
 
-**TSS/IF Calculation (NEW - uses metric logs):**
-
+**TSS/IF Calculation (uses metric logs):**
 - Calculate TSS using activity power data + FTP from performance metric logs
 - Calculate IF (Intensity Factor) = Normalized Power / FTP
 - Calculate VI (Variability Index) = Normalized Power / Average Power
@@ -365,21 +244,13 @@ The core package leverages and extends Supabase-generated types rather than dupl
 - **Input:** Activity data + profile_id + activity date
 - **Output:** TSS, IF, VI for storage in activity metrics
 
-**Temporal Metric Lookup (NEW):**
-
+**Temporal Metric Lookup:**
 - `getPerformanceMetricAtDate()` - Get FTP/pace/HR at specific date
 - `getProfileMetricAtDate()` - Get weight/sleep/HRV at specific date
 - Handles missing data with fallbacks (interpolation, current profile, null)
 - Used for activity calculations and historical analysis
 
-**Current Capability:**
-
-- Returns most recent active log for given parameters
-- Used for zone calculations, training plan targets
-- Fast lookup with indexed queries
-
 **Progression Analysis:**
-
 - Analyzes trends over specified timeframe
 - Calculates change, percentage change, trend direction
 - Projects future performance based on current rate
@@ -387,228 +258,476 @@ The core package leverages and extends Supabase-generated types rather than dupl
 - Works with both performance and profile metrics
 
 **Power Curve:**
-
 - Interpolates power values for standard durations
 - Uses actual logged values when available
 - Estimates missing durations using mathematical models
 - Supports power-based training zones
 - **Critical durations:** 5s, 1min, 5min, 20min, 60min (FTP)
 
-**Confidence Scoring:**
+### Metric Resolution Strategy
 
-- Calculates reliability based on source type
-- Factors in recency (confidence decays over time)
-- Bonus for reference activity linkage
-- Returns score between 0-1
-- Used to prioritize which metric to use for calculations
+When the platform needs to determine an athlete's capabilities for calculating training zones or processing an activity, it follows a simple strategy: look up the most recent metric values for that athlete and sport.
 
-**FTP Estimation:**
+If no metrics exist—perhaps this is a brand new athlete who just signed up—the platform generates intelligent defaults based on whatever information is available (typically body weight and age). These defaults are marked as estimates rather than verified data.
 
-- From 20-minute test result (multiply by 0.95)
-- From ramp test (75% of max 1-minute power)
-- From activity power analysis (heuristic detection)
-- Validates input values
+The platform never looks backward in time to find historical metrics. It always uses current values for new activities, maintaining a forward-looking perspective that reflects the athlete's present capabilities.
 
-**Weight-Adjusted Metrics (NEW):**
+### Intelligent Defaults
 
-- Power-to-weight ratio (W/kg)
-- Normalized power per kg
-- VAM (Vertical Ascent Meters) per kg
-- Requires weight from profile metric logs at activity date
+The platform excels at working with incomplete information. When an athlete first joins and hasn't provided detailed performance data, the platform makes educated guesses based on standard physiological relationships.
+
+**Power Threshold Estimation**
+For cycling, the platform estimates Functional Threshold Power (FTP) using the athlete's body weight and an assumed power-to-weight ratio typical of recreational cyclists (2.5 watts per kilogram). A 75-kilogram athlete would receive an initial FTP estimate of 188 watts—conservative but reasonable for someone starting their training journey.
+
+**Heart Rate Threshold Estimation**
+Using the classic maximum heart rate formula based on age, the platform calculates a threshold heart rate suitable for tempo training. This gives new athletes immediate access to heart rate zones even before they've completed any threshold tests.
+
+**Pace Threshold Estimation**
+For runners, the platform uses the athlete's indicated fitness level (beginner, intermediate, or advanced) to assign conservative pace estimates. A beginner might start at six minutes per kilometer, while an advanced runner might begin at four minutes per kilometer.
+
+**Source Attribution**
+Every metric—whether provided by the athlete, detected from training data, imported from a third-party service, or estimated by the system—carries source attribution. This helps the platform choose the best available information and informs the athlete about data quality through the interface.
+
+**Implementation in Core Package:**
+```typescript
+/**
+ * Generates intelligent default FTP based on athlete weight.
+ * Uses conservative 2.5 W/kg for recreational cyclists.
+ */
+export function estimateFTPFromWeight(weightKg: number): {
+  value: number;
+  source: 'estimated';
+} {
+  return {
+    value: Math.round(weightKg * 2.5),
+    source: 'estimated',
+  };
+}
+
+/**
+ * Estimates threshold heart rate from age.
+ * Uses standard 220 - age formula, then 85% for threshold.
+ */
+export function estimateThresholdHR(age: number): {
+  value: number;
+  source: 'estimated';
+} {
+  const maxHR = 220 - age;
+  const thresholdHR = Math.round(maxHR * 0.85);
+  return {
+    value: thresholdHR,
+    source: 'estimated',
+  };
+}
+
+/**
+ * Estimates threshold pace based on fitness level.
+ */
+export function estimateThresholdPace(fitnessLevel: 'beginner' | 'intermediate' | 'advanced'): {
+  value: number; // seconds per km
+  source: 'estimated';
+} {
+  const paceMap = {
+    beginner: 360, // 6:00/km
+    intermediate: 300, // 5:00/km
+    advanced: 240, // 4:00/km
+  };
+
+  return {
+    value: paceMap[fitnessLevel],
+    source: 'estimated',
+  };
+}
+```
 
 ---
 
-## 4. tRPC API Layer
+## Athlete Onboarding Experience
 
-### Key Procedures
+### Minimal Required Information
+
+The platform requires only the bare essentials during initial signup: the athlete's body weight and age. These two data points enable the generation of reasonable performance estimates across all sports, ensuring athletes can immediately begin recording training without extensive form-filling.
+
+### Optional Athletic Profile
+
+Following basic registration, the platform offers athletes the opportunity to provide known performance metrics. This step is entirely optional—the platform works whether they provide detailed information or skip it entirely.
+
+For cyclists, the platform asks about current FTP and threshold heart rate. For runners, it asks about recent race paces and threshold heart rate. For all athletes, it inquires about typical sleep patterns, resting heart rate, and self-assessed fitness level.
+
+### Adaptive Platform Behavior
+
+When an athlete provides specific metrics during onboarding, the platform stores these values and marks them as manually entered. The athlete immediately benefits from accurate training zones and personalized workout targets.
+
+When an athlete skips the optional onboarding, the platform generates defaults on their first activity upload. These defaults are marked as system estimates. The athlete can still record workouts, view training metrics, and track progress—the experience simply indicates that metric accuracy will improve as they provide more information or complete more training sessions.
+
+---
+
+## Platform Integration Points
+
+### Metric Management Endpoints
+
+The platform exposes RESTful endpoints for creating, reading, updating, and managing both performance and profile metrics. Applications can submit new metric values (for example, when an athlete manually updates their FTP), retrieve current metric values for calculating training zones, or query metric history to visualize progression over time.
+
+Each metric submission includes the metric type (FTP, threshold pace, weight, resting heart rate), the recorded value, the unit of measurement, and when the measurement was taken. The platform automatically tracks data sources.
+
+**tRPC API Procedures:**
 
 **Performance Metric Logs CRUD:**
-
 - `profilePerformanceMetrics.list` - Get all performance logs with filtering
 - `profilePerformanceMetrics.getById` - Retrieve specific log
 - `profilePerformanceMetrics.create` - Add new performance log
 - `profilePerformanceMetrics.update` - Modify existing log
 - `profilePerformanceMetrics.deactivate` - Soft delete
 
-**Profile Metric Logs CRUD (NEW):**
-
+**Profile Metric Logs CRUD:**
 - `profileMetrics.list` - Get all profile logs (weight, sleep, HRV, etc.)
 - `profileMetrics.getById` - Retrieve specific log
 - `profileMetrics.create` - Add new profile metric log
 - `profileMetrics.update` - Modify existing log
 - `profileMetrics.delete` - Hard delete (biometric data can be removed)
 
-**Temporal Queries (NEW - Critical for Activity Calculations):**
-
+**Temporal Queries (Critical for Activity Calculations):**
 - `profilePerformanceMetrics.getAtDate` - Get FTP/pace/HR at specific date
 - `profileMetrics.getAtDate` - Get weight/sleep at specific date
 - `profilePerformanceMetrics.getForDateRange` - Get all metrics in date range
 - `profileMetrics.getForDateRange` - Get all biometrics in date range
 
-**Analytics Procedures:**
+### Activity Ingestion Flow
 
-- `profilePerformanceMetrics.getCurrent` - Most recent capability
-- `profilePerformanceMetrics.analyzeProgression` - Trend analysis
-- `profilePerformanceMetrics.getPowerCurve` - Calculate power curve
-- `activities.getTrainingLoad` - CTL/ATL/TSB (uses pre-calculated TSS)
+When the platform receives an activity—whether from our mobile app, a third-party integration, or a direct API call—it follows a consistent processing pipeline:
 
-**Activity Integration (UPDATED):**
+**Step 1: Validate and Store Raw Activity Data**
+Duration, distance, sport type, and detailed data streams showing how power, heart rate, and pace varied throughout the session.
 
-- `activities.create` - Store activity with profile_id (NO snapshot)
-- `activities.calculateMetrics` - Background job to calculate TSS/IF
-- `activities.recalculateMetrics` - Triggered when performance metrics updated
-- `activities.recalculateForDateRange` - Batch recalculation
+**Step 2: Query Athlete's Current Performance Metrics**
+Query the athlete's current performance metrics for the relevant sport. If metrics are missing, generate intelligent defaults and store them for future use.
 
-**Input Validation:**
+**Step 3: Calculate Training Metrics**
+Calculate training metrics using the retrieved or generated performance values. Training Stress Score, Intensity Factor, and Normalized Power are computed and stored directly with the activity for efficient future queries.
 
-- Uses Zod schemas from core package
-- Type-safe parameters and returns
-- Proper error handling and user feedback
-- Validates metric types and value ranges
+**Step 4: Analyze Activity for Significant Efforts**
+Analyze the activity's data streams looking for significant efforts—sustained power outputs, fast pace segments, or other indicators of performance capability. These detected efforts become suggested metric updates.
 
-**Integration Points:**
+**Step 5: Return Processed Activity**
+Return the processed activity to the requesting application along with any metric suggestions, allowing the athlete to review and approve potential performance improvements.
 
-- Activity submission queries metric logs for TSS calculation
-- Third-party webhooks query metric logs for user's FTP
-- Background jobs recalculate metrics when logs updated
-- Profile sync updates from most recent metric logs
+**Implementation Flow:**
+```typescript
+// Activity submission (mobile app or webhook)
+1. User completes activity recording
+2. Mobile app submits activity data with `profile_id` only (NO profile snapshot)
+3. Activity stored in database referencing profile
+4. Background job queries performance metric logs for FTP at activity date
+5. Calculate TSS/IF and store in activity metrics JSONB
+6. Analyze activity for test efforts (optional)
+7. Create metric suggestions if improvements detected
+8. Push notification to mobile app if suggestions created
+```
+
+### Metric Suggestions and Approvals
+
+When the platform detects a significant effort during activity analysis, it creates a suggestion rather than automatically updating metrics. The platform exposes endpoints for retrieving these suggestions and for athletes to explicitly approve or reject them.
+
+This approval workflow keeps athletes in control of their performance data while reducing manual entry—the platform does the analytical work of detecting improvements, but the athlete makes the final decision about updating their capabilities.
+
+**Suggestion Workflow:**
+```typescript
+// After activity processing
+1. Detect 20-minute max effort at 215W
+2. Calculate implied FTP: 215 * 0.95 = 204W
+3. Compare to current FTP from metric logs (188W)
+4. Create suggestion: "New FTP: 204W (8.5% improvement)"
+5. Store suggestion with reference to activity
+6. Push notification to mobile app
+7. User reviews suggestion in app
+8. User approves → Create new performance metric log
+9. Trigger recalculation of activities after this date
+```
 
 ---
 
-## 5. Data Flow & Integration
+## Third-Party Service Integration
 
-### Integration with Existing Features
+### Universal Data Ingestion
 
-**Activities (UPDATED APPROACH):**
+The platform is designed from the ground up to accept training data from any source. Whether an athlete uses Strava to track rides, Garmin devices for runs, TrainingPeaks for structured workouts, or Wahoo for indoor training, the platform seamlessly ingests their data.
 
-- **No more profile snapshots** - Activities only store `profile_id`
-- TSS/IF calculated by querying performance metric logs at activity date
-- Weight-adjusted metrics use profile metric logs (weight_kg at activity date)
-- Post-activity review suggests creating metric logs from test efforts
-- Background recalculation when performance metrics updated
+Third-party services connect through webhook integrations—when an athlete completes a workout in Strava, Strava sends that activity data directly to our platform. The platform parses the incoming data format (which varies by service), extracts the relevant information, and processes it through the same pipeline used for activities uploaded through our mobile application.
 
-**Training Plans:**
+### Data Harmonization
 
-- Zones computed dynamically from current performance metric logs
-- Progressive plans adjust based on capability improvements
-- Plan adherence uses metric logs for target validation
+Each third-party service structures its data differently. Strava provides average power and heart rate along with detailed stream data. Garmin includes lap information and device-specific metrics. TrainingPeaks focuses on planned versus actual workout comparison.
 
-**Planned Activities:**
+The platform's integration layer handles these differences, mapping each service's data format to our internal structure. Power data becomes power data regardless of whether it came from a Wahoo bike computer, a Garmin Edge, or a Strava upload. Heart rate is heart rate whether tracked by an Apple Watch or a Polar chest strap.
 
-- Scheduled workouts use performance metric logs for appropriate targets
-- Post-workout adherence calculated using capabilities at activity date
-- Structured workout targets reference current FTP/pace from logs
-
-**Profile:**
-
-- Profile table stores current summary values (latest FTP, weight, etc.)
-- Profile values auto-sync from most recent metric logs
-- Profile acts as fallback when no metric logs exist
-- Migration path: seed initial logs from profile data
-
-**Third-Party Integrations (Strava, Wahoo, Garmin):**
-
-- Webhook receives raw activity data (power, HR, distance, time)
-- Query user's performance metric logs for FTP/threshold at activity date
-- Calculate TSS/IF using core package with queried metrics
-- Store activity with `profile_id` reference only
-- **No need to sync profile data** from third-party services
-- Efficient: only activity data stored, metrics calculated on-demand
-
-### Dynamic Computation Examples
-
-**Current FTP:** Query performance metric logs for latest 60-minute power value, use for zone calculations and training targets.
-
-**Activity TSS Calculation (NEW):**
+**Third-Party Integration Flow:**
 ```typescript
-// OLD: Used profile snapshot stored in activity
-const tss = calculateTSS({
-  normalizedPower: activity.metrics.normalized_power,
-  duration: activity.duration_seconds,
-  ftp: activity.profile_snapshot.ftp, // ❌ Snapshot could be stale
-});
-
-// NEW: Query performance metric logs at activity date
-const ftp = await getPerformanceMetricAtDate({
-  profileId: activity.profile_id,
-  category: 'bike',
-  type: 'power',
-  duration: 3600,
-  date: activity.started_at,
-});
-
-const tss = calculateTSS({
-  normalizedPower: activity.metrics.normalized_power,
-  duration: activity.duration_seconds,
-  ftp: ftp.value, // ✅ Accurate FTP at activity date
-});
+// Strava webhook example
+1. Strava webhook receives activity completion
+2. Platform receives webhook with activity data (power stream, HR stream, GPS)
+3. NO profile data included from Strava
+4. Create activity record with profile_id and source metadata
+5. Query performance metric logs for user's FTP at activity date
+6. Calculate TSS/IF using core package with queried metrics
+7. Store calculated metrics in activity
+8. Analyze for test efforts → create suggestions
+9. Push notification to mobile app with new activity + suggestions
 ```
 
-**Training Load (CTL/ATL/TSB Efficiency):**
-- **OLD:** Query all activities with profile snapshots, calculate TSS for each, compute CTL/ATL/TSB
-- **NEW:** Activities store pre-calculated TSS in metrics JSONB, direct aggregation for CTL/ATL/TSB
-- **Benefit:** 10-100x faster queries for training load charts (no per-activity calculation)
-- **Recalculation:** Background job updates TSS when performance metrics change
+**Benefits:**
+- No profile data duplication
+- Accurate calculations even if user updates FTP later
+- Cleaner integration code
+- Consistent processing regardless of data source
 
-**Weight-Adjusted Power:**
-```typescript
-// Query weight at activity date from profile metric logs
-const weight = await getProfileMetricAtDate({
-  profileId: activity.profile_id,
-  metricType: 'weight_kg',
-  date: activity.started_at,
-});
+### Metric Import and Enhancement
 
-const powerToWeight = activity.metrics.normalized_power / weight.value;
-```
+When third-party services provide their own metric calculations—for example, if Garmin Connect includes an FTP estimate or TrainingPeaks reports threshold pace—the platform imports these values and marks them with appropriate source attribution.
 
-**Progression Analysis:** Analyze metric changes over time, calculate improvement rates, project future performance.
+These imported metrics enhance the platform's understanding of athlete capabilities, especially for new athletes who haven't yet provided manual metrics or completed enough training for the platform to detect thresholds through activity analysis.
 
-**Zone Calculations:** Use most recent performance metric logs for current zones, historical logs for zone distribution analysis.
+### Bidirectional Communication
 
-### Migration Strategy
-
-1. **Create tables** - `profile_performance_metric_logs` and `profile_metric_logs`
-2. **Seed initial data** from existing profile FTP/threshold HR/weight
-3. **Backfill from activities** - Extract profile_snapshot data into metric logs (one-time)
-4. **Update activity submission** - Remove profile snapshot, use profile_id only
-5. **Background job** - Calculate TSS/IF for all activities using metric logs
-6. **Gradual deprecation** - Keep profile_snapshot field for backward compatibility
-7. **Graceful fallback** - Use current profile values if no logs exist for date range
-
-### Performance Optimization Strategy
-
-**Pre-calculate and Cache:**
-- TSS/IF stored in activity metrics JSONB after calculation
-- Recalculated only when performance metrics updated
-- CTL/ATL/TSB queries become simple aggregations
-
-**Indexed Queries:**
-- Profile metric logs indexed by (profile_id, metric_type, recorded_at)
-- Performance metric logs indexed by (profile_id, category, type, duration_seconds, created_at)
-- Fast temporal lookups: "What was FTP on this date?"
-
-**Background Processing:**
-- Activity submission stores raw data immediately
-- Background job calculates TSS/IF using metric logs
-- User sees activity instantly, metrics appear within seconds
-- Third-party integrations processed in batches
+The platform's integration architecture supports not just receiving data from third-party services, but also potentially pushing calculated metrics back to them. An FTP value detected through our platform's analysis could be shared back to TrainingPeaks to update an athlete's training zones across all their connected applications, creating a truly unified training ecosystem.
 
 ---
 
-## 6. Implementation Phases
+## Performance Detection Intelligence
+
+### Automatic Effort Recognition
+
+One of the platform's most valuable capabilities is its ability to recognize when an athlete has completed a significant effort that might indicate improved performance. Rather than requiring athletes to manually record every fitness test or threshold update, the platform constantly monitors incoming activities for telltale signs of capability changes.
+
+**Power-Based Detection**
+When analyzing cycling activities, the platform searches for sustained high-power efforts. A 20-minute interval at maximum sustainable power is a classic FTP test. The platform detects this effort, calculates an implied FTP based on established physiological relationships (typically multiplying the 20-minute power by 0.95), and suggests the athlete update their threshold.
+
+Similarly, 5-minute maximum efforts indicate VO2max power, and 1-minute efforts reveal anaerobic capacity. Each of these detected efforts becomes a potential metric update, presented to the athlete for review.
+
+**Pace-Based Detection**
+For running activities, the platform identifies best efforts across common race distances. A hard 5-kilometer segment during a workout suggests threshold pace capabilities. A strong 10-kilometer effort provides another data point for calibrating training zones.
+
+The platform calculates suggested threshold pace values from these efforts using standard running physiology relationships, then presents them to the athlete as potential metric updates.
+
+**Implementation in Core Package:**
+```typescript
+/**
+ * Analyzes activity power stream to detect test efforts.
+ * Returns suggested FTP values.
+ */
+export function detectPowerTestEfforts(
+  powerStream: number[],
+  timestamps: number[]
+): TestEffortSuggestion[] {
+  const suggestions: TestEffortSuggestion[] = [];
+
+  // Detect 20-minute max effort
+  const twentyMinMax = findMaxAveragePower(powerStream, timestamps, 1200);
+  if (twentyMinMax && twentyMinMax.avgPower > 150) {
+    suggestions.push({
+      type: 'ftp',
+      value: Math.round(twentyMinMax.avgPower * 0.95),
+      source: 'calculated',
+      duration: 1200,
+      detectionMethod: '20min test',
+    });
+  }
+
+  // Detect 5-minute max effort (VO2max power)
+  const fiveMinMax = findMaxAveragePower(powerStream, timestamps, 300);
+  if (fiveMinMax && fiveMinMax.avgPower > 200) {
+    suggestions.push({
+      type: 'vo2max_power',
+      value: Math.round(fiveMinMax.avgPower),
+      source: 'calculated',
+      duration: 300,
+      detectionMethod: '5min max effort',
+    });
+  }
+
+  return suggestions;
+}
+```
+
+### Profile-Controlled Updates
+
+The platform never assumes it knows better than the athlete. All detected efforts create suggestions, not automatic changes. After an activity, the athlete sees clear communication: "We detected a 20-minute effort at 215 watts. This suggests an FTP of 204 watts, which is higher than your current 188-watt setting. Would you like to update your FTP?"
+
+This keeps the athlete in control while dramatically reducing the friction of keeping performance metrics current. The platform does the analytical work; the athlete makes the decisions.
+
+---
+
+## Training Zone Intelligence
+
+### Dynamic Zone Calculation
+
+The platform continuously calculates training zones based on each athlete's current performance metrics. When displaying zones or providing workout targets, the platform queries the athlete's most recent threshold values and applies standard zone calculation formulas.
+
+For cycling, power zones are expressed as percentages of FTP: recovery efforts below 55% of threshold, endurance training between 56-75%, tempo work at 76-90%, threshold intervals at 91-105%, and VO2max efforts above 106%.
+
+For running, pace zones are calculated relative to threshold pace: easy runs at 60-90 seconds per kilometer slower than threshold, tempo runs 15-30 seconds slower, threshold intervals at pace, and VO2max efforts 15-30 seconds faster.
+
+For all sports, heart rate zones are calculated from threshold heart rate, with each zone representing a specific percentage range appropriate for different training adaptations.
+
+### Data Quality Communication
+
+The platform transparently communicates data quality to athletes through the interface. When zones are calculated from metrics the athlete manually entered or that were detected from high-quality threshold tests, the interface indicates this with clear visual markers.
+
+When zones are based on system estimates or imported data, the interface shows appropriate indicators and encourages the athlete to update their metrics for more accurate training guidance.
+
+This transparency helps athletes understand when their training zones are reliable and when they should invest time in proper testing to improve data quality.
+
+---
+
+## Training Load Analytics
+
+### Efficient Metric Pre-Calculation
+
+The platform calculates Training Stress Score and related metrics once when an activity is uploaded, then stores these values for efficient future queries. This design decision dramatically improves performance when displaying training load charts or analyzing fitness trends.
+
+For cycling activities, the platform computes Normalized Power (a power-duration weighted average that better represents physiological stress than simple average power), Intensity Factor (the ratio of effort to threshold capability), and Training Stress Score (a composite metric representing overall training load).
+
+For running activities, the platform calculates equivalent metrics based on pace and duration, using threshold pace as the reference point for intensity.
+
+These pre-calculated values are stored directly with the activity. When the athlete views a training load chart spanning hundreds of workouts, the platform simply aggregates the stored TSS values rather than recomputing them from raw data—a 10 to 100 times performance improvement.
+
+### Fitness and Fatigue Modeling
+
+Using the pre-calculated TSS values, the platform efficiently computes sophisticated training load metrics that help athletes understand their current form:
+
+**Chronic Training Load (Fitness)**
+A 42-day exponentially weighted average of daily training stress, representing the athlete's accumulated fitness adaptations. This metric trends slowly upward during consistent training and slowly downward during rest periods.
+
+**Acute Training Load (Fatigue)**
+A 7-day exponentially weighted average representing recent training stress and current fatigue levels. This metric responds quickly to hard training blocks and recovery days.
+
+**Training Stress Balance (Form)**
+The difference between fitness and fatigue, indicating whether the athlete is fresh and ready for hard efforts or accumulated fatigue and needing recovery. The platform monitors this balance to help athletes avoid overtraining while maintaining productive stress levels.
+
+These calculations power the platform's training insights, helping athletes and coaches understand whether current training loads are sustainable, whether recovery is adequate, and when the athlete is likely to be in peak form.
+
+---
+
+## Transitioning from Current Architecture
+
+### One-Time Migration Process
+
+Moving from the current snapshot-based architecture to the new metrics platform requires a carefully orchestrated one-time data migration. This migration transforms embedded profile data into the new separated metric structure while preserving all historical training information.
+
+**Phase One: Data Extraction**
+The migration begins by reading every existing activity record and extracting the embedded profile snapshots. Since many activities contain identical profile data (an athlete's FTP doesn't change every workout), the process deduplicates these snapshots to identify unique metric values and when they were in effect.
+
+**Phase Two: Metric Creation**
+For each athlete, the migration creates initial metric entries in the new performance metrics table. These entries capture the most recent known values for FTP, threshold pace, threshold heart rate, and other performance indicators. The migration timestamps these metrics to the athlete's account creation date and marks them as migrated data.
+
+**Phase Three: Activity Recalculation**
+With the new metrics table populated, the migration recalculates training metrics for all historical activities. Each activity's Training Stress Score, Intensity Factor, and Normalized Power are recomputed using the migrated metric values and stored in the new calculated metrics structure.
+
+**Phase Four: Validation**
+Before completing the migration, the process validates data integrity by comparing recalculated training metrics against original values. Any significant discrepancies trigger investigation to ensure the migration preserved accuracy.
+
+**Phase Five: Architecture Cleanup**
+Once validation confirms the migration's success, the old embedded profile snapshot fields are removed from the activities table, completing the transition to the new architecture.
+
+### Risk Management
+
+The migration includes comprehensive safety measures. Complete database backups are taken immediately before beginning the process, allowing rollback if critical issues emerge. The migration can be executed incrementally—processing accounts in batches rather than all at once—to enable early detection of edge cases without affecting all athletes simultaneously.
+
+Clear communication with athletes explains the enhancement to their data and sets expectations about any temporary service interruptions during the migration window.
+
+**Migration Strategy:**
+1. **Phase 1:** Create both metric log tables
+2. **Phase 2:** Seed initial data from current profile values
+3. **Phase 3:** Backfill from activity `profile_snapshot` fields (one-time migration)
+4. **Phase 4:** Update activity submission to use profile_id only
+5. **Phase 5:** Deprecate `profile_snapshot` field (keep for backward compatibility initially)
+
+**Fallback Strategy:**
+- If no metric log for date → use current profile value
+- If no profile value → use intelligent defaults
+- Graceful degradation ensures system always works
+
+---
+
+## Success Criteria
+
+### Performance Benchmarks
+
+The platform is designed for speed and efficiency. Metric lookups—finding an athlete's current FTP or threshold pace—complete in under 10 milliseconds. Processing an activity, including metric retrieval and training metric calculation, finishes in under 50 milliseconds. Training load charts displaying data from hundreds of activities render in under 50 milliseconds thanks to pre-calculated metrics.
+
+**Performance Targets:**
+- **Metric log query** (single metric at date): <10ms
+- **Activity TSS calculation** (with metric lookup): <50ms
+- **CTL/ATL/TSB query** (100 activities): <50ms
+- **Recalculation batch** (1000 activities): <5 seconds
+- **Third-party webhook** (process activity): <200ms
+
+### Data Quality Targets
+
+Within 30 days of an athlete joining the platform, at least 80% of active athletes should have performance metrics from manual entry, detected thresholds from completed workouts, or imported data from third-party services.
+
+The platform's intelligent defaults should be reasonably accurate. When comparing system-estimated values against later verified metrics, estimates should fall within 15% of actual values at least 70% of the time.
+
+### Data Integrity Standards
+
+The platform enforces sensible validation rules to prevent data quality issues. FTP values must fall between 50 and 500 watts for cycling. Threshold heart rates must be between 100 and 200 beats per minute. Threshold pace must be between 3:00 and 8:00 per kilometer for running. Body weight must be between 40 and 150 kilograms.
+
+These validation rules prevent accidental data entry errors while accommodating the full range of human athletic performance.
+
+---
+
+## Platform Vision Summary
+
+### Core Capabilities Delivered
+
+This platform establishes itself as an independent performance metrics service with several defining characteristics:
+
+**Separated Data Architecture**
+Activities and athlete capabilities are maintained as distinct concepts. Activities record training history; metrics define current athlete capabilities. This separation enables proper tracking of athletic progression and eliminates data duplication.
+
+**Intelligent Operation**
+The platform works effectively with incomplete information through intelligent defaults, progressively improves data quality through automatic effort detection, and transparently communicates data quality to athletes.
+
+**Universal Integration**
+The platform seamlessly accepts data from our mobile application, major third-party services (Strava, Garmin, TrainingPeaks, Wahoo), and direct API connections. It harmonizes different data formats into a unified internal structure.
+
+**Active Communication**
+Rather than passively waiting for queries, the platform actively pushes updates and insights back to our main application when it detects metric improvements, identifies concerning training load patterns, or generates valuable suggestions.
+
+**Performance at Scale**
+Pre-calculated training metrics enable fast aggregation across hundreds of activities. Optimized database indexing ensures rapid metric lookups. The architecture supports thousands of concurrent athletes without performance degradation.
+
+### Explicitly Out of Scope
+
+To maintain focus on the core platform capabilities, several features are deliberately excluded from this initial implementation:
+
+Historical metric updates and activity recalculation are not supported—the platform operates with a forward-looking perspective where new activities always use current metrics.
+
+Advanced training plan adaptation, performance projection, machine learning features, and comparative analytics represent future enhancements beyond the current scope.
+
+Automatic wearable device synchronization is not included, though manual API integration with wearable platforms is supported through the standard integration endpoints.
+
+### Architectural Foundation
+
+This platform establishes the fundamental infrastructure for sophisticated training intelligence. By separating athlete capabilities from training history, implementing intelligent defaults, and creating a robust integration layer, we enable future capabilities like adaptive training plans, predictive performance modeling, and personalized recovery recommendations.
+
+The platform operates as a standalone service with clear boundaries and well-defined interfaces, making it a reusable component that can serve multiple applications while maintaining a single source of truth for athlete performance data.
+
+---
+
+## Implementation Phases
 
 ### Phase 1: Foundation & Migration (Week 1-2)
 
 **Database:**
 - Create migration for `profile_performance_metric_logs` table
-- Create migration for `profile_metric_logs` table (NEW)
+- Create migration for `profile_metric_logs` table
 - Add indexes for temporal queries
 - Update Supabase types
 
 **Core Package:**
 - Create schemas leveraging Supabase types
 - Add temporal lookup functions (getMetricAtDate)
+- Add intelligent default generation functions
 - Add TSS/IF calculation with metric log inputs
 - Write comprehensive tests
 
@@ -639,10 +758,49 @@ const powerToWeight = activity.metrics.normalized_power / weight.value;
 **Core Package:**
 - Implement progression analysis
 - Implement power curve calculation
-- Add confidence score calculation
 - Add weight-adjusted metric calculations
+- Add test effort detection algorithms
 
-### Phase 3: Training Load Optimization (Week 3)
+### Phase 3: Intelligence & Detection (Week 3-4)
+
+**Effort Detection:**
+- Implement power-based test detection (20min, 5min)
+- Implement pace-based test detection (5K, 10K)
+- Create suggestion workflow
+- Add approval endpoints
+
+**Intelligent Defaults:**
+- FTP estimation from weight
+- Threshold HR estimation from age
+- Threshold pace estimation from fitness level
+
+**Mobile UI:**
+- Onboarding flow (minimal + optional)
+- Manual entry forms (performance + profile metrics)
+- Suggestion approval interface
+- Capability overview screen
+
+### Phase 4: Third-Party Integration (Week 4-5)
+
+**Webhook Handlers:**
+- Strava webhook integration
+- Garmin webhook integration
+- Wahoo webhook integration
+- TrainingPeaks webhook integration (future)
+
+**Data Harmonization:**
+- Parse different data formats
+- Map to internal structure
+- Query metrics for calculations
+- Store with source metadata
+
+**Active Communication:**
+- Push notifications for new activities
+- Push notifications for suggestions
+- Webhook callbacks to mobile app
+- Real-time updates
+
+### Phase 5: Training Load Optimization (Week 5)
 
 **Efficient CTL/ATL/TSB:**
 - Use pre-calculated TSS from activities (no per-activity lookups)
@@ -650,53 +808,7 @@ const powerToWeight = activity.metrics.normalized_power / weight.value;
 - Implement caching for frequently accessed data
 - Background updates when metrics change
 
-**Testing:**
-- Performance benchmarks (1000+ activities)
-- Validate recalculation accuracy
-- Test fallback scenarios (missing metrics)
-
-### Phase 4: Mobile UI (Week 3-4)
-
-**Metric Entry:**
-- Manual entry form for performance metrics (modal)
-- Manual entry form for profile metrics (weight, sleep, HRV)
-- Capability overview screen (list current capabilities)
-- Progression charts (per metric)
-
-**Activity Integration:**
-- Post-activity: suggest creating metric logs from test efforts
-- Activity detail: show metrics used for TSS calculation
-- Activity detail: show weight at time of activity
-
-### Phase 5: Web Dashboard (Week 4-5)
-
-**Analytics:**
-- Advanced analytics views
-- Power curve visualization
-- Training load charts (CTL/ATL/TSB over time)
-- Historical progression analysis
-- Biometric trends (weight, sleep, HRV over time)
-
-**Data Management:**
-- Bulk import/export capabilities
-- Metric log history viewer
-- Recalculation tools for admins
-- Data integrity checks
-
-### Phase 6: Auto-Detection (Week 5-6) - Optional
-
-**Activity Analysis:**
-- Background job to detect test efforts (20min power, 5K pace)
-- Suggest metric log creation from detected tests
-- User approval flow before creating logs
-- Confidence scoring for auto-detected values
-
-**Third-Party Integration:**
-- Automatic metric calculation for Strava/Wahoo uploads
-- Batch processing for historical imports
-- Webhook handlers query metric logs efficiently
-
-### Phase 7: Polish & Optimization (Week 6)
+### Phase 6: Polish & Optimization (Week 6)
 
 **Performance:**
 - Query optimization and caching
@@ -712,129 +824,38 @@ const powerToWeight = activity.metrics.normalized_power / weight.value;
 **Deprecation:**
 - Mark profile_snapshot field as deprecated
 - Keep for backward compatibility (read-only)
-- Plan removal for v2.0
+- Add deprecation warnings to API documentation
+- Update client applications to stop using deprecated fields
+
+### Phase 7: Profile Snapshot Removal (Week 7-8)
+
+**Preparation:**
+- Audit all codebases for profile_snapshot usage
+- Verify 100% of activity submissions use profile_id only
+- Confirm all historical data has been migrated to metric logs
+- Document final state of migration for stakeholders
+
+**Database Cleanup:**
+- Create migration to drop profile_snapshot column from activities table
+- Remove any remaining profile_snapshot references from database
+- Clean up migration scripts that referenced old architecture
+- Update database documentation to reflect new schema
+
+**Code Cleanup:**
+- Remove all profile_snapshot handling code from API endpoints
+- Remove profile_snapshot types from schema definitions
+- Remove profile_snapshot serialization/deserialization logic
+- Update API documentation to remove deprecated endpoints
+
+**Verification:**
+- Verify all existing functionality works without profile_snapshot
+- Confirm no runtime errors from removed code
+- Validate data integrity across all athlete accounts
+- Monitor system performance post-removal
 
 ---
 
-## Success Criteria
-
-### MVP Success Metrics
-
-**User Features:**
-- Users can manually log performance metrics (FTP, pace, threshold HR)
-- Users can manually log profile metrics (weight, sleep, HRV, resting HR)
-- Users can view current capabilities across standard durations
-- Users can track progression over time with charts
-- Activities no longer store profile snapshots (use profile_id reference)
-- Training load (CTL/ATL/TSB) computed efficiently from pre-calculated TSS
-
-**Integration Features:**
-- Third-party activities (Strava, Wahoo) calculate TSS using metric logs
-- User-uploaded activities calculate TSS accurately
-- Retroactive recalculation works when metrics updated
-- Automatic profile sync from latest metric logs
-
-**Performance:**
-- CTL/ATL/TSB queries complete in <100ms (1000+ activities)
-- Activity submission completes instantly (background TSS calculation)
-- Metric log queries optimized with proper indexes
-
-### Technical Success Criteria
-
-**Architecture:**
-- Two-table implementation (performance + profile metrics)
-- Core package fully database-independent
-- Supabase types properly leveraged
-- Temporal queries work correctly (metric at specific date)
-- Fallback strategies for missing metrics
-
-**Data Integrity:**
-- No duplicate profile data across activities
-- Single source of truth for all metrics
-- Migration from profile_snapshot successful
-- Backward compatibility maintained during transition
-
-**Testing:**
-- Core package has 100% test coverage for calculations
-- Integration tests for temporal queries
-- Performance benchmarks meet targets
-- Recalculation accuracy validated
-
----
-
-## 7. Key Design Decisions
-
-### Why Two Tables?
-
-**`profile_performance_metric_logs` (performance curves):**
-- Multi-dimensional: category × type × duration
-- Example: bike + power + 60min = FTP
-- Used for: Zone calculations, performance curves, TSS/IF calculation
-- Complex queries: "Give me all power metrics for bike at standard durations"
-
-**`profile_metric_logs` (biometric data):**
-- Simple: metric_type × value
-- Example: weight_kg = 75.0
-- Used for: Weight-adjusted metrics, wellness tracking, trend analysis
-- Simple queries: "Give me weight on this date"
-
-**Why not combine?** Different query patterns, different use cases, cleaner schema.
-
-### Why Remove Profile Snapshots?
-
-**Problems with profile snapshots:**
-1. **Data duplication** - Same FTP stored in 100+ activities
-2. **No retroactive updates** - Can't fix historical mistakes
-3. **Integration complexity** - Third-party services don't provide profile data
-4. **Storage waste** - Redundant data across activities
-5. **Inconsistency risk** - Profile vs snapshot values diverge
-
-**Benefits of metric logs:**
-1. **Single source of truth** - One place for all temporal metrics
-2. **Retroactive accuracy** - Update FTP, recalculate all TSS automatically
-3. **Clean integrations** - Query metrics separately from activity data
-4. **Storage efficiency** - No redundant profile data per activity
-5. **Better analytics** - Track metric progression over time
-
-### Why Pre-calculate TSS?
-
-**Calculation Frequency:**
-- CTL/ATL/TSB charts queried frequently (dashboard, mobile app)
-- Each query needs TSS for 42-100+ activities
-- Calculating TSS on-demand = 100+ calculations per page load
-
-**Pre-calculation Strategy:**
-- Calculate TSS once when activity submitted (or in background)
-- Store in activity metrics JSONB
-- Recalculate only when performance metrics updated
-- Result: 10-100x faster training load queries
-
-### Transition Strategy
-
-**Phase 1: Additive (No Breaking Changes)**
-- Create new metric log tables
-- Activities still have profile_snapshot field
-- New activities optionally use metric logs
-- Both systems work in parallel
-
-**Phase 2: Migration (One-time)**
-- Seed metric logs from profile values
-- Backfill from activity profile_snapshot fields
-- Validate data integrity
-- Test recalculation accuracy
-
-**Phase 3: Deprecation (Gradual)**
-- New activities use metric logs only
-- Mark profile_snapshot as deprecated
-- Keep field for backward compatibility (read-only)
-- Plan removal for v2.0
-
-**Fallback Strategy:**
-- If no metric log for date → use current profile value
-- If no profile value → skip calculation or return null
-- Graceful degradation ensures system always works
-
-## 8. Implementation Notes
+## Technical Notes
 
 ### Critical Requirements
 
@@ -846,54 +867,33 @@ const powerToWeight = activity.metrics.normalized_power / weight.value;
 **Core Package:**
 - All calculation functions must handle missing metrics gracefully
 - Temporal lookup functions must support date ranges and fallbacks
-- 100% test coverage for TSS/IF calculation with metric logs
+- All calculation logic is database-independent (pure functions)
 
 **tRPC API:**
 - Temporal query procedures must be performant (<50ms)
 - Background jobs for TSS calculation must be reliable
 - Recalculation triggers must handle large batches efficiently
 
-**Mobile/Web:**
+**Mobile:**
 - Activity submission must work immediately (async TSS calculation)
 - User sees activity right away, metrics appear within seconds
 - Charts must handle missing data gracefully
 
-### Performance Targets
+### Key Design Decisions
 
-- **Metric log query** (single metric at date): <10ms
-- **Activity TSS calculation** (with metric lookup): <50ms
-- **CTL/ATL/TSB query** (100 activities): <50ms
-- **Recalculation batch** (1000 activities): <5 seconds
-- **Third-party webhook** (process activity): <200ms
+**Why Two Tables?**
+- `profile_performance_metric_logs`: Multi-dimensional (category × type × duration), used for zone calculations and performance curves
+- `profile_metric_logs`: Simple (metric_type × value), used for biometric tracking and weight-adjusted metrics
+- Different query patterns, different use cases, cleaner schema
 
-### Testing Strategy
+**Why Remove Profile Snapshots?**
+- Eliminates data duplication across activities
+- Enables retroactive recalculation when metrics updated
+- Simplifies third-party integrations (no profile data needed)
+- Creates single source of truth for all temporal metrics
 
-**Unit Tests:**
-- Core package: TSS calculation with metric logs
-- Core package: Temporal metric lookup (edge cases)
-- Core package: Fallback strategies
-
-**Integration Tests:**
-- tRPC: Create activity → calculate TSS using metric logs
-- tRPC: Update metric log → trigger recalculation
-- tRPC: Third-party webhook → query metrics → calculate TSS
-
-**Performance Tests:**
-- Benchmark CTL/ATL/TSB queries (1000+ activities)
-- Benchmark recalculation batches (100+ activities)
-- Validate index effectiveness
-
-**Migration Tests:**
-- Seed from profile values
-- Backfill from profile_snapshot fields
-- Validate data integrity
-- Compare old vs new TSS calculations
-
-## Notes
-
-- **No goals table needed:** Goals can be computed as "target metric logs" or handled in UI state
-- **No standard durations table needed:** Hardcoded constants in core package (5s, 1min, 5min, 20min, 60min)
-- **Leverage existing data:** Activities, training plans, and profile provide rich context
-- **Type safety:** Core package uses Supabase-generated types + Zod for validation
-- **Keep it simple:** Two tables + pre-calculated metrics = maximum flexibility and performance
-- **Backward compatible:** Profile snapshot field kept during transition for safety
+**Why Pre-calculate TSS?**
+- Training load queries are frequent (dashboard, mobile app)
+- Calculating on-demand = 100+ calculations per page load
+- Pre-calculation = 10-100x faster queries
+- Recalculate only when performance metrics updated
