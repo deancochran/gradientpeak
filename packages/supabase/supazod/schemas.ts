@@ -46,6 +46,26 @@ export const publicIntegrationProviderSchema = z.enum([
   "zwift",
 ]);
 
+export const publicPerformanceMetricTypeSchema = z.enum([
+  "power",
+  "pace",
+  "speed",
+  "heart_rate",
+]);
+
+export const publicProfileMetricTypeSchema = z.enum([
+  "weight_kg",
+  "resting_hr_bpm",
+  "sleep_hours",
+  "hrv_ms",
+  "vo2_max",
+  "body_fat_pct",
+  "hydration_level",
+  "stress_score",
+  "soreness_level",
+  "wellness_score",
+]);
+
 export const jsonSchema: z.ZodSchema<Json> = z.lazy(() =>
   z
     .union([
@@ -79,7 +99,6 @@ export const publicActivitiesRowSchema = z.object({
   profile_id: z.string(),
   profile_snapshot: jsonSchema.nullable(),
   provider: publicIntegrationProviderSchema.nullable(),
-  route_id: z.string().nullable(),
   started_at: z.string(),
   type: z.string(),
   updated_at: z.string(),
@@ -106,7 +125,6 @@ export const publicActivitiesInsertSchema = z.object({
   profile_id: z.string(),
   profile_snapshot: jsonSchema.optional().nullable(),
   provider: publicIntegrationProviderSchema.optional().nullable(),
-  route_id: z.string().optional().nullable(),
   started_at: z.string(),
   type: z.string(),
   updated_at: z.string().optional(),
@@ -133,7 +151,6 @@ export const publicActivitiesUpdateSchema = z.object({
   profile_id: z.string().optional(),
   profile_snapshot: jsonSchema.optional().nullable(),
   provider: publicIntegrationProviderSchema.optional().nullable(),
-  route_id: z.string().optional().nullable(),
   started_at: z.string().optional(),
   type: z.string().optional(),
   updated_at: z.string().optional(),
@@ -152,13 +169,6 @@ export const publicActivitiesRelationshipsSchema = z.tuple([
     columns: z.tuple([z.literal("profile_id")]),
     isOneToOne: z.literal(false),
     referencedRelation: z.literal("profiles"),
-    referencedColumns: z.tuple([z.literal("id")]),
-  }),
-  z.object({
-    foreignKeyName: z.literal("activities_route_id_fkey"),
-    columns: z.tuple([z.literal("route_id")]),
-    isOneToOne: z.literal(false),
-    referencedRelation: z.literal("activity_routes"),
     referencedColumns: z.tuple([z.literal("id")]),
   }),
 ]);
@@ -508,21 +518,146 @@ export const publicPlannedActivitiesRelationshipsSchema = z.tuple([
   }),
 ]);
 
+export const publicProfileMetricLogsRowSchema = z.object({
+  created_at: z.string(),
+  id: z.string(),
+  idx: z.number(),
+  metric_type: publicProfileMetricTypeSchema,
+  notes: z.string().nullable(),
+  profile_id: z.string(),
+  recorded_at: z.string(),
+  reference_activity_id: z.string().nullable(),
+  unit: z.string(),
+  updated_at: z.string(),
+  value: z.number(),
+});
+
+export const publicProfileMetricLogsInsertSchema = z.object({
+  created_at: z.string().optional(),
+  id: z.string().optional(),
+  idx: z.number().optional(),
+  metric_type: publicProfileMetricTypeSchema,
+  notes: z.string().optional().nullable(),
+  profile_id: z.string(),
+  recorded_at: z.string(),
+  reference_activity_id: z.string().optional().nullable(),
+  unit: z.string(),
+  updated_at: z.string().optional(),
+  value: z.number(),
+});
+
+export const publicProfileMetricLogsUpdateSchema = z.object({
+  created_at: z.string().optional(),
+  id: z.string().optional(),
+  idx: z.number().optional(),
+  metric_type: publicProfileMetricTypeSchema.optional(),
+  notes: z.string().optional().nullable(),
+  profile_id: z.string().optional(),
+  recorded_at: z.string().optional(),
+  reference_activity_id: z.string().optional().nullable(),
+  unit: z.string().optional(),
+  updated_at: z.string().optional(),
+  value: z.number().optional(),
+});
+
+export const publicProfileMetricLogsRelationshipsSchema = z.tuple([
+  z.object({
+    foreignKeyName: z.literal("profile_metric_logs_profile_id_fkey"),
+    columns: z.tuple([z.literal("profile_id")]),
+    isOneToOne: z.literal(false),
+    referencedRelation: z.literal("profiles"),
+    referencedColumns: z.tuple([z.literal("id")]),
+  }),
+  z.object({
+    foreignKeyName: z.literal("profile_metric_logs_reference_activity_id_fkey"),
+    columns: z.tuple([z.literal("reference_activity_id")]),
+    isOneToOne: z.literal(false),
+    referencedRelation: z.literal("activities"),
+    referencedColumns: z.tuple([z.literal("id")]),
+  }),
+]);
+
+export const publicProfilePerformanceMetricLogsRowSchema = z.object({
+  category: publicActivityCategorySchema,
+  created_at: z.string(),
+  duration_seconds: z.number().nullable(),
+  id: z.string(),
+  idx: z.number(),
+  notes: z.string().nullable(),
+  profile_id: z.string(),
+  recorded_at: z.string(),
+  reference_activity_id: z.string().nullable(),
+  type: publicPerformanceMetricTypeSchema,
+  unit: z.string(),
+  updated_at: z.string(),
+  value: z.number(),
+});
+
+export const publicProfilePerformanceMetricLogsInsertSchema = z.object({
+  category: publicActivityCategorySchema,
+  created_at: z.string().optional(),
+  duration_seconds: z.number().optional().nullable(),
+  id: z.string().optional(),
+  idx: z.number().optional(),
+  notes: z.string().optional().nullable(),
+  profile_id: z.string(),
+  recorded_at: z.string().optional(),
+  reference_activity_id: z.string().optional().nullable(),
+  type: publicPerformanceMetricTypeSchema,
+  unit: z.string(),
+  updated_at: z.string().optional(),
+  value: z.number(),
+});
+
+export const publicProfilePerformanceMetricLogsUpdateSchema = z.object({
+  category: publicActivityCategorySchema.optional(),
+  created_at: z.string().optional(),
+  duration_seconds: z.number().optional().nullable(),
+  id: z.string().optional(),
+  idx: z.number().optional(),
+  notes: z.string().optional().nullable(),
+  profile_id: z.string().optional(),
+  recorded_at: z.string().optional(),
+  reference_activity_id: z.string().optional().nullable(),
+  type: publicPerformanceMetricTypeSchema.optional(),
+  unit: z.string().optional(),
+  updated_at: z.string().optional(),
+  value: z.number().optional(),
+});
+
+export const publicProfilePerformanceMetricLogsRelationshipsSchema = z.tuple([
+  z.object({
+    foreignKeyName: z.literal(
+      "profile_performance_metric_logs_profile_id_fkey",
+    ),
+    columns: z.tuple([z.literal("profile_id")]),
+    isOneToOne: z.literal(false),
+    referencedRelation: z.literal("profiles"),
+    referencedColumns: z.tuple([z.literal("id")]),
+  }),
+  z.object({
+    foreignKeyName: z.literal(
+      "profile_performance_metric_logs_reference_activity_id_fkey",
+    ),
+    columns: z.tuple([z.literal("reference_activity_id")]),
+    isOneToOne: z.literal(false),
+    referencedRelation: z.literal("activities"),
+    referencedColumns: z.tuple([z.literal("id")]),
+  }),
+]);
+
 export const publicProfilesRowSchema = z.object({
   avatar_url: z.string().nullable(),
   bio: z.string().nullable(),
   created_at: z.string(),
   dob: z.string().nullable(),
-  ftp: z.number().nullable(),
   id: z.string(),
   idx: z.number(),
   language: z.string().nullable(),
   onboarded: z.boolean().nullable(),
   preferred_units: z.string().nullable(),
-  threshold_hr: z.number().nullable(),
   updated_at: z.string(),
   username: z.string().nullable(),
-  weight_kg: z.number().nullable(),
 });
 
 export const publicProfilesInsertSchema = z.object({
@@ -530,16 +665,13 @@ export const publicProfilesInsertSchema = z.object({
   bio: z.string().optional().nullable(),
   created_at: z.string().optional(),
   dob: z.string().optional().nullable(),
-  ftp: z.number().optional().nullable(),
   id: z.string(),
   idx: z.number().optional(),
   language: z.string().optional().nullable(),
   onboarded: z.boolean().optional().nullable(),
   preferred_units: z.string().optional().nullable(),
-  threshold_hr: z.number().optional().nullable(),
   updated_at: z.string().optional(),
   username: z.string().optional().nullable(),
-  weight_kg: z.number().optional().nullable(),
 });
 
 export const publicProfilesUpdateSchema = z.object({
@@ -547,16 +679,13 @@ export const publicProfilesUpdateSchema = z.object({
   bio: z.string().optional().nullable(),
   created_at: z.string().optional(),
   dob: z.string().optional().nullable(),
-  ftp: z.number().optional().nullable(),
   id: z.string().optional(),
   idx: z.number().optional(),
   language: z.string().optional().nullable(),
   onboarded: z.boolean().optional().nullable(),
   preferred_units: z.string().optional().nullable(),
-  threshold_hr: z.number().optional().nullable(),
   updated_at: z.string().optional(),
   username: z.string().optional().nullable(),
-  weight_kg: z.number().optional().nullable(),
 });
 
 export const publicSyncedPlannedActivitiesRowSchema = z.object({

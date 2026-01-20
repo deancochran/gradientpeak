@@ -56,7 +56,6 @@ export type Database = {
           profile_id: string
           profile_snapshot: Json | null
           provider: Database["public"]["Enums"]["integration_provider"] | null
-          route_id: string | null
           started_at: string
           type: string
           updated_at: string
@@ -82,7 +81,6 @@ export type Database = {
           profile_id: string
           profile_snapshot?: Json | null
           provider?: Database["public"]["Enums"]["integration_provider"] | null
-          route_id?: string | null
           started_at: string
           type: string
           updated_at?: string
@@ -108,7 +106,6 @@ export type Database = {
           profile_id?: string
           profile_snapshot?: Json | null
           provider?: Database["public"]["Enums"]["integration_provider"] | null
-          route_id?: string | null
           started_at?: string
           type?: string
           updated_at?: string
@@ -126,13 +123,6 @@ export type Database = {
             columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activities_route_id_fkey"
-            columns: ["route_id"]
-            isOneToOne: false
-            referencedRelation: "activity_routes"
             referencedColumns: ["id"]
           },
         ]
@@ -470,54 +460,165 @@ export type Database = {
           },
         ]
       }
+      profile_metric_logs: {
+        Row: {
+          created_at: string
+          id: string
+          idx: number
+          metric_type: Database["public"]["Enums"]["profile_metric_type"]
+          notes: string | null
+          profile_id: string
+          recorded_at: string
+          reference_activity_id: string | null
+          unit: string
+          updated_at: string
+          value: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          idx?: number
+          metric_type: Database["public"]["Enums"]["profile_metric_type"]
+          notes?: string | null
+          profile_id: string
+          recorded_at: string
+          reference_activity_id?: string | null
+          unit: string
+          updated_at?: string
+          value: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          idx?: number
+          metric_type?: Database["public"]["Enums"]["profile_metric_type"]
+          notes?: string | null
+          profile_id?: string
+          recorded_at?: string
+          reference_activity_id?: string | null
+          unit?: string
+          updated_at?: string
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_metric_logs_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profile_metric_logs_reference_activity_id_fkey"
+            columns: ["reference_activity_id"]
+            isOneToOne: false
+            referencedRelation: "activities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profile_performance_metric_logs: {
+        Row: {
+          category: Database["public"]["Enums"]["activity_category"]
+          created_at: string
+          duration_seconds: number | null
+          id: string
+          idx: number
+          notes: string | null
+          profile_id: string
+          recorded_at: string
+          reference_activity_id: string | null
+          type: Database["public"]["Enums"]["performance_metric_type"]
+          unit: string
+          updated_at: string
+          value: number
+        }
+        Insert: {
+          category: Database["public"]["Enums"]["activity_category"]
+          created_at?: string
+          duration_seconds?: number | null
+          id?: string
+          idx?: number
+          notes?: string | null
+          profile_id: string
+          recorded_at?: string
+          reference_activity_id?: string | null
+          type: Database["public"]["Enums"]["performance_metric_type"]
+          unit: string
+          updated_at?: string
+          value: number
+        }
+        Update: {
+          category?: Database["public"]["Enums"]["activity_category"]
+          created_at?: string
+          duration_seconds?: number | null
+          id?: string
+          idx?: number
+          notes?: string | null
+          profile_id?: string
+          recorded_at?: string
+          reference_activity_id?: string | null
+          type?: Database["public"]["Enums"]["performance_metric_type"]
+          unit?: string
+          updated_at?: string
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_performance_metric_logs_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profile_performance_metric_logs_reference_activity_id_fkey"
+            columns: ["reference_activity_id"]
+            isOneToOne: false
+            referencedRelation: "activities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
           bio: string | null
           created_at: string
           dob: string | null
-          ftp: number | null
           id: string
           idx: number
           language: string | null
           onboarded: boolean | null
           preferred_units: string | null
-          threshold_hr: number | null
           updated_at: string
           username: string | null
-          weight_kg: number | null
         }
         Insert: {
           avatar_url?: string | null
           bio?: string | null
           created_at?: string
           dob?: string | null
-          ftp?: number | null
           id: string
           idx?: number
           language?: string | null
           onboarded?: boolean | null
           preferred_units?: string | null
-          threshold_hr?: number | null
           updated_at?: string
           username?: string | null
-          weight_kg?: number | null
         }
         Update: {
           avatar_url?: string | null
           bio?: string | null
           created_at?: string
           dob?: string | null
-          ftp?: number | null
           id?: string
           idx?: number
           language?: string | null
           onboarded?: boolean | null
           preferred_units?: string | null
-          threshold_hr?: number | null
           updated_at?: string
           username?: string | null
-          weight_kg?: number | null
         }
         Relationships: []
       }
@@ -649,6 +750,18 @@ export type Database = {
         | "trainingpeaks"
         | "garmin"
         | "zwift"
+      performance_metric_type: "power" | "pace" | "speed" | "heart_rate"
+      profile_metric_type:
+        | "weight_kg"
+        | "resting_hr_bpm"
+        | "sleep_hours"
+        | "hrv_ms"
+        | "vo2_max"
+        | "body_fat_pct"
+        | "hydration_level"
+        | "stress_score"
+        | "soreness_level"
+        | "wellness_score"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -802,6 +915,19 @@ export const Constants = {
         "trainingpeaks",
         "garmin",
         "zwift",
+      ],
+      performance_metric_type: ["power", "pace", "speed", "heart_rate"],
+      profile_metric_type: [
+        "weight_kg",
+        "resting_hr_bpm",
+        "sleep_hours",
+        "hrv_ms",
+        "vo2_max",
+        "body_fat_pct",
+        "hydration_level",
+        "stress_score",
+        "soreness_level",
+        "wellness_score",
       ],
     },
   },

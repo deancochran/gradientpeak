@@ -21,6 +21,12 @@ export type PublicActivityMetricDataType = z.infer<
 export type PublicIntegrationProvider = z.infer<
   typeof generated.publicIntegrationProviderSchema
 >;
+export type PublicPerformanceMetricType = z.infer<
+  typeof generated.publicPerformanceMetricTypeSchema
+>;
+export type PublicProfileMetricType = z.infer<
+  typeof generated.publicProfileMetricTypeSchema
+>;
 export type Json = z.infer<typeof generated.jsonSchema>;
 export type PublicActivitiesRow = z.infer<
   typeof generated.publicActivitiesRowSchema
@@ -105,6 +111,30 @@ export type PublicPlannedActivitiesUpdate = z.infer<
 >;
 export type PublicPlannedActivitiesRelationships = z.infer<
   typeof generated.publicPlannedActivitiesRelationshipsSchema
+>;
+export type PublicProfileMetricLogsRow = z.infer<
+  typeof generated.publicProfileMetricLogsRowSchema
+>;
+export type PublicProfileMetricLogsInsert = z.infer<
+  typeof generated.publicProfileMetricLogsInsertSchema
+>;
+export type PublicProfileMetricLogsUpdate = z.infer<
+  typeof generated.publicProfileMetricLogsUpdateSchema
+>;
+export type PublicProfileMetricLogsRelationships = z.infer<
+  typeof generated.publicProfileMetricLogsRelationshipsSchema
+>;
+export type PublicProfilePerformanceMetricLogsRow = z.infer<
+  typeof generated.publicProfilePerformanceMetricLogsRowSchema
+>;
+export type PublicProfilePerformanceMetricLogsInsert = z.infer<
+  typeof generated.publicProfilePerformanceMetricLogsInsertSchema
+>;
+export type PublicProfilePerformanceMetricLogsUpdate = z.infer<
+  typeof generated.publicProfilePerformanceMetricLogsUpdateSchema
+>;
+export type PublicProfilePerformanceMetricLogsRelationships = z.infer<
+  typeof generated.publicProfilePerformanceMetricLogsRelationshipsSchema
 >;
 export type PublicProfilesRow = z.infer<
   typeof generated.publicProfilesRowSchema
