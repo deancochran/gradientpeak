@@ -169,6 +169,27 @@ export * from "./schemas"; // Zod schemas and types (includes formatDuration for
 export * from "./utils"; // Utility functions
 
 // ============================================================================
+// Performance Metrics Calculations
+// ============================================================================
+// Multi-modal TSS calculations (power, heart rate, pace)
+export * from "./calculations/tss";
+
+// Performance curves (power, pace, HR)
+export * from "./calculations/curves";
+
+// ============================================================================
+// Test Effort Detection
+// ============================================================================
+// Power test detection
+export * from "./detection/power-tests";
+
+// Running test detection
+export * from "./detection/pace-tests";
+
+// Heart rate test detection
+export * from "./detection/hr-tests";
+
+// ============================================================================
 // Namespace Exports - For organized imports
 // ============================================================================
 // Allows consumers to import as: import { Calculations } from '@repo/core'
