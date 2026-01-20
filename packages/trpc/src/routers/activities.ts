@@ -4,6 +4,24 @@ import {
 } from "@repo/supabase";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import {
+  calculateTSSFromAvailableData,
+  calculatePowerCurve,
+  analyzePowerCurve,
+  calculatePaceCurve,
+  analyzePaceCurve,
+  calculateHRCurve,
+} from "@repo/core/calculations";
+import {
+  detectPowerTestEfforts,
+  detectRunningTestEfforts,
+  detectHRTestEfforts,
+} from "@repo/core/detection";
+import {
+  estimateFTPFromWeight,
+  estimateMaxHR,
+  estimateLTHR,
+} from "@repo/core/estimation/defaults";
 
 export const activitiesRouter = createTRPCRouter({
   // List activities by date range (legacy - for trends/analytics)
@@ -400,5 +418,365 @@ export const activitiesRouter = createTRPCRouter({
       if (error) throw new Error(error.message);
 
       return { success: true, deletedActivityId: input.id };
+    }),
+
+  /**
+   * Calculate TSS, IF, and other metrics for an activity.
+   *
+   * This is the core mutation for enhancing TSS/IF calculations with:
+   * - Temporal metric lookups (FTP/LTHR/pace at activity date)
+   * - Multi-modal calculation (power → HR → pace fallback)
+   * - Intelligent defaults for missing metrics
+   * - Test effort detection
+   * - Performance curve analysis
+   *
+   * Called after activity upload (user-recorded or third-party import).
+   */
+  calculateMetrics: protectedProcedure
+    .input(z.object({ activityId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { supabase, session } = ctx;
+
+      // ==========================================
+      // 1. Fetch Activity and Streams
+      // ==========================================
+      const { data: activity, error: activityError } = await supabase
+        .from("activities")
+        .select(
+          `
+          *,
+          activity_streams (
+            type,
+            data_type,
+            compressed_values,
+            compressed_timestamps,
+            sample_count,
+            min_value,
+            max_value,
+            avg_value
+          )
+        `
+        )
+        .eq("id", input.activityId)
+        .eq("profile_id", session.user.id)
+        .single();
+
+      if (activityError || !activity) {
+        throw new Error(
+          `Activity not found: ${activityError?.message || "Unknown error"}`
+        );
+      }
+
+      const activityDate = new Date(activity.started_at);
+      const activityCategory = activity.type || "other"; // bike, run, swim, etc.
+
+      // ==========================================
+      // 2. Extract Streams (decompression would happen here in real implementation)
+      // ==========================================
+      // For now, we'll extract basic stream data from activity_streams
+      // In a full implementation, you'd decompress the compressed_values
+      const powerStream: number[] | undefined = undefined; // TODO: Decompress power stream
+      const hrStream: number[] | undefined = undefined; // TODO: Decompress HR stream
+      const paceStream: number[] | undefined = undefined; // TODO: Decompress pace stream
+      const elevationStream: number[] | undefined = undefined; // TODO: Decompress elevation
+      const timestamps: number[] | undefined = undefined; // TODO: Decompress timestamps
+      const distanceStream: number[] | undefined = undefined; // TODO: Decompress distance
+
+      // For safety, only proceed if we have timestamps
+      if (!timestamps || timestamps.length === 0) {
+        throw new Error(
+          "Cannot calculate metrics: No timestamp data available"
+        );
+      }
+
+      // ==========================================
+      // 3. Get Weight (for weight-adjusted calculations)
+      // ==========================================
+      const { data: weightMetric } = await supabase
+        .from("profile_metric_logs")
+        .select("*")
+        .eq("profile_id", session.user.id)
+        .eq("metric_type", "weight_kg")
+        .lte("recorded_at", activityDate.toISOString())
+        .order("recorded_at", { ascending: false })
+        .limit(1);
+
+      const weight = weightMetric?.[0]?.value || 75; // Default 75kg
+
+      // ==========================================
+      // 4. Get or Estimate Power Metrics (FTP)
+      // ==========================================
+      let ftp: number | undefined;
+      if (powerStream && powerStream.length > 0) {
+        const { data: ftpMetric } = await supabase
+          .from("profile_performance_metric_logs")
+          .select("*")
+          .eq("profile_id", session.user.id)
+          .eq("category", activityCategory)
+          .eq("type", "power")
+          .eq("duration_seconds", 3600)
+          .eq("is_active", true)
+          .lte("recorded_at", activityDate.toISOString())
+          .order("recorded_at", { ascending: false })
+          .limit(1);
+
+        if (!ftpMetric || ftpMetric.length === 0) {
+          // Estimate FTP from weight
+          const estimatedFTP = estimateFTPFromWeight(weight);
+          ftp = estimatedFTP.value;
+
+          // Store estimated FTP for future use
+          await supabase.from("profile_performance_metric_logs").insert({
+            profile_id: session.user.id,
+            category: activityCategory,
+            type: "power",
+            value: ftp,
+            unit: "watts",
+            duration_seconds: 3600,
+            source: "estimated",
+            notes: `Estimated from weight (${weight}kg)`,
+            recorded_at: activityDate.toISOString(),
+          });
+        } else {
+          ftp = ftpMetric[0].value;
+        }
+      }
+
+      // ==========================================
+      // 5. Get or Estimate Heart Rate Metrics
+      // ==========================================
+      let lthr: number | undefined;
+      let maxHR: number | undefined;
+      if (hrStream && hrStream.length > 0) {
+        // Get LTHR
+        const { data: lthrMetric } = await supabase
+          .from("profile_performance_metric_logs")
+          .select("*")
+          .eq("profile_id", session.user.id)
+          .eq("category", activityCategory)
+          .eq("type", "heart_rate")
+          .eq("duration_seconds", 3600)
+          .eq("is_active", true)
+          .lte("recorded_at", activityDate.toISOString())
+          .order("recorded_at", { ascending: false })
+          .limit(1);
+
+        // Get Max HR
+        const { data: maxHRMetric } = await supabase
+          .from("profile_performance_metric_logs")
+          .select("*")
+          .eq("profile_id", session.user.id)
+          .eq("category", activityCategory)
+          .eq("type", "heart_rate")
+          .eq("duration_seconds", 0)
+          .eq("is_active", true)
+          .lte("recorded_at", activityDate.toISOString())
+          .order("recorded_at", { ascending: false })
+          .limit(1);
+
+        lthr = lthrMetric?.[0]?.value;
+        maxHR = maxHRMetric?.[0]?.value;
+
+        // Estimate if missing
+        if (!maxHR) {
+          // Get age from profile or estimate
+          const age = 30; // TODO: Get from profile
+          const estimatedMaxHR = estimateMaxHR(age);
+          maxHR = estimatedMaxHR.value;
+
+          await supabase.from("profile_performance_metric_logs").insert({
+            profile_id: session.user.id,
+            category: activityCategory,
+            type: "heart_rate",
+            value: maxHR,
+            unit: "bpm",
+            duration_seconds: 0,
+            source: "estimated",
+            notes: `Estimated from age (${age})`,
+            recorded_at: activityDate.toISOString(),
+          });
+        }
+
+        if (!lthr && maxHR) {
+          const estimatedLTHR = estimateLTHR(maxHR);
+          lthr = estimatedLTHR.value;
+
+          await supabase.from("profile_performance_metric_logs").insert({
+            profile_id: session.user.id,
+            category: activityCategory,
+            type: "heart_rate",
+            value: lthr,
+            unit: "bpm",
+            duration_seconds: 3600,
+            source: "estimated",
+            notes: `Estimated from max HR (${maxHR} bpm)`,
+            recorded_at: activityDate.toISOString(),
+          });
+        }
+      }
+
+      // ==========================================
+      // 6. Get or Estimate Pace Metrics (Running)
+      // ==========================================
+      let thresholdPace: number | undefined;
+      if (paceStream && paceStream.length > 0 && activityCategory === "run") {
+        const { data: paceMetric } = await supabase
+          .from("profile_performance_metric_logs")
+          .select("*")
+          .eq("profile_id", session.user.id)
+          .eq("category", "run")
+          .eq("type", "pace")
+          .eq("duration_seconds", 3600)
+          .eq("is_active", true)
+          .lte("recorded_at", activityDate.toISOString())
+          .order("recorded_at", { ascending: false })
+          .limit(1);
+
+        thresholdPace = paceMetric?.[0]?.value;
+
+        // Estimate if missing (default 5:00 min/km)
+        if (!thresholdPace) {
+          thresholdPace = 300; // 5:00 min/km
+
+          await supabase.from("profile_performance_metric_logs").insert({
+            profile_id: session.user.id,
+            category: "run",
+            type: "pace",
+            value: thresholdPace,
+            unit: "sec/km",
+            duration_seconds: 3600,
+            source: "estimated",
+            notes: "Default threshold pace",
+            recorded_at: activityDate.toISOString(),
+          });
+        }
+      }
+
+      // ==========================================
+      // 7. Calculate TSS (Multi-Modal)
+      // ==========================================
+      const tssResult = calculateTSSFromAvailableData({
+        powerStream,
+        hrStream,
+        paceStream,
+        elevationStream,
+        timestamps,
+        ftp,
+        lthr,
+        maxHR,
+        thresholdPace,
+        distance: activity.distance_meters || 0,
+        weight,
+      });
+
+      if (!tssResult) {
+        throw new Error("Unable to calculate TSS - insufficient data");
+      }
+
+      // ==========================================
+      // 8. Calculate Performance Curves
+      // ==========================================
+      const curves: Record<string, unknown> = {};
+
+      if (powerStream && powerStream.length > 0 && timestamps) {
+        const powerCurvePoints = calculatePowerCurve(powerStream, timestamps);
+        const powerCurveAnalysis = analyzePowerCurve(powerCurvePoints);
+        curves.power = powerCurveAnalysis;
+      }
+
+      if (
+        paceStream &&
+        paceStream.length > 0 &&
+        timestamps &&
+        distanceStream &&
+        activityCategory === "run"
+      ) {
+        const paceCurvePoints = calculatePaceCurve(
+          paceStream,
+          timestamps,
+          distanceStream
+        );
+        const paceCurveAnalysis = analyzePaceCurve(paceCurvePoints);
+        curves.pace = paceCurveAnalysis;
+      }
+
+      if (hrStream && hrStream.length > 0 && timestamps) {
+        const hrCurvePoints = calculateHRCurve(hrStream, timestamps);
+        curves.heartRate = { points: hrCurvePoints };
+      }
+
+      // ==========================================
+      // 9. Detect Test Efforts
+      // ==========================================
+      const suggestions: Array<{
+        type: string;
+        value: number;
+        confidence: string;
+        detectionMethod: string;
+      }> = [];
+
+      if (powerStream && timestamps) {
+        const powerTests = detectPowerTestEfforts(powerStream, timestamps);
+        suggestions.push(...powerTests);
+
+        // TODO: Create metric suggestions in database
+        // for (const test of powerTests) {
+        //   await supabase.from('metric_suggestions').insert({...});
+        // }
+      }
+
+      if (paceStream && timestamps && distanceStream && activityCategory === "run") {
+        const runningTests = detectRunningTestEfforts(
+          paceStream,
+          timestamps,
+          distanceStream
+        );
+        suggestions.push(...runningTests);
+      }
+
+      if (hrStream && timestamps) {
+        const hrTests = detectHRTestEfforts(hrStream, timestamps);
+        suggestions.push(...hrTests);
+      }
+
+      // ==========================================
+      // 10. Update Activity with Calculated Metrics
+      // ==========================================
+      const { error: updateError } = await supabase
+        .from("activities")
+        .update({
+          metrics: {
+            tss: tssResult.tss,
+            tss_source: tssResult.source,
+            tss_confidence: tssResult.confidence,
+            normalized_power:
+              "normalizedPower" in tssResult
+                ? tssResult.normalizedPower
+                : null,
+            intensity_factor:
+              "intensityFactor" in tssResult
+                ? tssResult.intensityFactor
+                : null,
+            variability_index:
+              "variabilityIndex" in tssResult
+                ? tssResult.variabilityIndex
+                : null,
+            hrss: "hrss" in tssResult ? tssResult.hrss : null,
+            avg_hr: "avgHR" in tssResult ? tssResult.avgHR : null,
+            normalized_pace:
+              "normalizedPace" in tssResult ? tssResult.normalizedPace : null,
+            curves,
+          },
+        })
+        .eq("id", input.activityId);
+
+      if (updateError) throw new Error(updateError.message);
+
+      return {
+        metrics: tssResult,
+        curves,
+        suggestions,
+        calculationSource: tssResult.source,
+      };
     }),
 });

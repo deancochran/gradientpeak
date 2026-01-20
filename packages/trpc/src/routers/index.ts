@@ -7,6 +7,8 @@ import { homeRouter } from "./home";
 import { integrationsRouter } from "./integrations";
 import { plannedActivitiesRouter } from "./planned_activities";
 import { profilesRouter } from "./profiles";
+import { profilePerformanceMetricsRouter } from "./profile-performance-metrics";
+import { profileMetricsRouter } from "./profile-metrics";
 import { routesRouter } from "./routes";
 import { storageRouter } from "./storage";
 import { trainingPlansRouter } from "./training_plans";
@@ -15,6 +17,8 @@ import { trendsRouter } from "./trends";
 export const appRouter = createTRPCRouter({
   auth: authRouter,
   profiles: profilesRouter,
+  profilePerformanceMetrics: profilePerformanceMetricsRouter,
+  profileMetrics: profileMetricsRouter,
   activities: activitiesRouter,
   activityPlans: activityPlansRouter,
   plannedActivities: plannedActivitiesRouter,
