@@ -1649,9 +1649,16 @@ export const appRouter = router({
 
 ## Phase 4: Data Migration
 
-### 4.1 Seed Initial Metrics from Current Profile
+### 4.1 Seed Initial Metrics from Activity Snapshots
 
-**File:** `scripts/seed-initial-metrics.ts`
+**Note:** Since `ftp`, `threshold_hr`, and `weight_kg` columns have been removed from the `profiles` table, we cannot seed initial metrics from there. Instead, we extract historical metric values from `profile_snapshot` JSONB fields in activities (see Phase 4.2 below).
+
+**Alternative for New Users:**
+- Users will enter their current metrics during onboarding (Phase 5.3)
+- Or manually update metrics in settings (Phase 5.7)
+- System will generate intelligent defaults if no metrics exist
+
+**File:** `scripts/seed-initial-metrics.ts` (DEPRECATED - Use Phase 4.2 instead)
 
 ```typescript
 import { createClient } from '@supabase/supabase-js';
@@ -1662,94 +1669,37 @@ const supabase = createClient(
 );
 
 async function seedInitialMetrics() {
-  console.log('Seeding initial performance metrics from profiles...');
+  console.log('Seeding initial performance metrics from activity snapshots...');
+  console.log('NOTE: This script is deprecated. Use backfill-from-snapshots.ts instead.');
+  console.log('Profiles table no longer contains ftp, threshold_hr, or weight_kg columns.');
 
-  // Fetch all profiles
-  const { data: profiles, error } = await supabase
-    .from('profiles')
-    .select('id, ftp, threshold_hr, weight_kg, created_at');
-
-  if (error) throw error;
-
-  for (const profile of profiles) {
-    const metricsToInsert = [];
-
-    // Create FTP metric if exists
-    if (profile.ftp) {
-      metricsToInsert.push({
-        profile_id: profile.id,
-        category: 'bike',
-        type: 'power',
-        value: profile.ftp,
-        unit: 'watts',
-        duration_seconds: 3600,
-        source: 'manual',
-        notes: 'Migrated from profile.ftp',
-        created_at: profile.created_at,
-      });
-    }
-
-    // Create threshold HR metric if exists
-    if (profile.threshold_hr) {
-      metricsToInsert.push({
-        profile_id: profile.id,
-        category: 'bike',
-        type: 'heart_rate',
-        value: profile.threshold_hr,
-        unit: 'bpm',
-        duration_seconds: 3600,
-        source: 'manual',
-        notes: 'Migrated from profile.threshold_hr',
-        created_at: profile.created_at,
-      });
-    }
-
-    if (metricsToInsert.length > 0) {
-      const { error: insertError } = await supabase
-        .from('profile_performance_metric_logs')
-        .insert(metricsToInsert);
-
-      if (insertError) {
-        console.error(`Error seeding metrics for profile ${profile.id}:`, insertError);
-      }
-    }
-
-    // Create weight metric if exists
-    if (profile.weight_kg) {
-      const { error: weightError } = await supabase
-        .from('profile_metric_logs')
-        .insert({
-          profile_id: profile.id,
-          metric_type: 'weight_kg',
-          value: profile.weight_kg,
-          unit: 'kg',
-          source: 'manual',
-          notes: 'Migrated from profile.weight_kg',
-          recorded_at: profile.created_at,
-        });
-
-      if (weightError) {
-        console.error(`Error seeding weight for profile ${profile.id}:`, weightError);
-      }
-    }
-  }
-
-  console.log(`Seeded metrics for ${profiles.length} profiles`);
+  // Historical metrics will be extracted from activity profile_snapshot fields
+  // See Phase 4.2: Backfill from Activity Profile Snapshots
 }
 
 seedInitialMetrics().catch(console.error);
 ```
 
-**Run migration:**
-```bash
-tsx scripts/seed-initial-metrics.ts
-```
+**Migration Strategy:**
+1. Skip this phase (columns don't exist in profiles table anymore)
+2. Use Phase 4.2 to backfill from activity `profile_snapshot` fields
+3. New users enter metrics during onboarding
+4. Existing users update metrics in settings
 
-### 4.2 Backfill from Activity Profile Snapshots
+### 4.2 Backfill from Activity Profile Snapshots (PRIMARY MIGRATION STRATEGY)
+
+**Purpose:** Extract historical metric values from `profile_snapshot` JSONB fields in activities to populate the new metric tables.
 
 **File:** `scripts/backfill-from-snapshots.ts`
 
 ```typescript
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
 // One-time script to extract unique metric values from activity profile_snapshot fields
 async function backfillFromSnapshots() {
   console.log('Backfilling metrics from activity profile_snapshot fields...');
@@ -1759,6 +1709,11 @@ async function backfillFromSnapshots() {
     .select('id, profile_id, profile_snapshot, start_time')
     .not('profile_snapshot', 'is', null)
     .order('start_time', { ascending: true });
+
+  if (!activities || activities.length === 0) {
+    console.log('No activities with profile_snapshot found.');
+    return;
+  }
 
   const metricsByProfile = new Map();
 
@@ -1771,7 +1726,7 @@ async function backfillFromSnapshots() {
       metricsByProfile.set(profileId, []);
     }
 
-    // Extract FTP if changed
+    // Extract FTP if exists and changed
     if (snapshot.ftp) {
       const existing = metricsByProfile.get(profileId).find(
         (m) => m.type === 'ftp' && m.value === snapshot.ftp
@@ -1788,7 +1743,24 @@ async function backfillFromSnapshots() {
       }
     }
 
-    // Extract weight if changed
+    // Extract threshold_hr if exists and changed
+    if (snapshot.threshold_hr) {
+      const existing = metricsByProfile.get(profileId).find(
+        (m) => m.type === 'threshold_hr' && m.value === snapshot.threshold_hr
+      );
+
+      if (!existing) {
+        metricsByProfile.get(profileId).push({
+          type: 'threshold_hr',
+          value: snapshot.threshold_hr,
+          date: activityDate,
+          category: 'bike',
+          metricType: 'heart_rate',
+        });
+      }
+    }
+
+    // Extract weight_kg if exists and changed
     if (snapshot.weight_kg) {
       const existing = metricsByProfile.get(profileId).find(
         (m) => m.type === 'weight_kg' && m.value === snapshot.weight_kg
@@ -1805,37 +1777,71 @@ async function backfillFromSnapshots() {
   }
 
   // Insert deduplicated metrics
+  let performanceMetricsInserted = 0;
+  let profileMetricsInserted = 0;
+
   for (const [profileId, metrics] of metricsByProfile) {
     for (const metric of metrics) {
       if (metric.type === 'ftp') {
-        await supabase.from('profile_performance_metric_logs').insert({
+        const { error } = await supabase.from('profile_performance_metric_logs').insert({
           profile_id: profileId,
           category: metric.category,
           type: metric.metricType,
           value: metric.value,
           unit: 'watts',
           duration_seconds: 3600,
-          source: 'manual',
           notes: 'Backfilled from activity snapshot',
-          created_at: metric.date,
+          recorded_at: metric.date,
         });
+
+        if (!error) performanceMetricsInserted++;
+      } else if (metric.type === 'threshold_hr') {
+        const { error } = await supabase.from('profile_performance_metric_logs').insert({
+          profile_id: profileId,
+          category: metric.category,
+          type: metric.metricType,
+          value: metric.value,
+          unit: 'bpm',
+          duration_seconds: 3600,
+          notes: 'Backfilled from activity snapshot',
+          recorded_at: metric.date,
+        });
+
+        if (!error) performanceMetricsInserted++;
       } else if (metric.type === 'weight_kg') {
-        await supabase.from('profile_metric_logs').insert({
+        const { error } = await supabase.from('profile_metric_logs').insert({
           profile_id: profileId,
           metric_type: 'weight_kg',
           value: metric.value,
           unit: 'kg',
-          source: 'manual',
           notes: 'Backfilled from activity snapshot',
           recorded_at: metric.date,
         });
+
+        if (!error) profileMetricsInserted++;
       }
     }
   }
 
-  console.log('Backfill complete');
+  console.log('Backfill complete!');
+  console.log(`Performance metrics inserted: ${performanceMetricsInserted}`);
+  console.log(`Profile metrics inserted: ${profileMetricsInserted}`);
+  console.log(`Profiles processed: ${metricsByProfile.size}`);
 }
+
+backfillFromSnapshots().catch(console.error);
 ```
+
+**Run migration:**
+```bash
+tsx scripts/backfill-from-snapshots.ts
+```
+
+**Expected Results:**
+- Extracts unique FTP, threshold_hr, and weight_kg values from all historical activities
+- Deduplicates by value (same value = same metric, only stored once)
+- Sets `recorded_at` to activity start_time (earliest occurrence of that metric value)
+- Creates temporal history of metric changes over time
 
 ---
 

@@ -62,6 +62,9 @@ $$ language plpgsql;
 -- ============================================================================
 -- PROFILES
 -- ============================================================================
+-- Note: Performance metrics (FTP, threshold HR, weight) removed in Phase 1
+-- These are now tracked temporally in profile_performance_metric_logs and
+-- profile_metric_logs tables for better historical tracking and flexibility
 create table public.profiles (
     id uuid primary key references auth.users(id) on delete cascade,
     idx serial unique,
@@ -72,9 +75,6 @@ create table public.profiles (
     avatar_url text,
     bio text,
     onboarded boolean default false,
-    threshold_hr integer,
-    ftp integer,
-    weight_kg integer,
     created_at timestamp not null default now(),
     updated_at timestamptz not null default now()
 );
