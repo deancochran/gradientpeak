@@ -400,44 +400,42 @@ export const createPerformanceMetricInputSchema = performanceMetricLogSchema
 
 ## Phase 4: Data Migration
 
-### 4.1 Seed Initial Metrics from Profiles (Multi-Modal)
-- [ ] Create `scripts/seed-initial-metrics.ts`
-- [ ] Use Supabase service role key for admin access
-- [ ] Query all profiles with `ftp`, `threshold_hr`, `lthr`, `max_hr`, `threshold_pace`, `weight_kg`, `age`
-- [ ] For each profile:
-  - [ ] **Power Metrics:**
-    - [ ] Create FTP metric (if exists) - duration: 3600s
-    - [ ] Set category based on primary sport
-  - [ ] **Heart Rate Metrics:**
-    - [ ] Create threshold HR / LTHR metric (if exists) - duration: 3600s
-    - [ ] Create max HR metric (if exists) - duration: 0s (max)
-    - [ ] If missing, estimate from age
-  - [ ] **Pace Metrics:**
-    - [ ] Create threshold pace metric (if exists) - duration: 3600s
-    - [ ] Set category to 'run'
-  - [ ] **Profile Metrics:**
-    - [ ] Create weight metric (if exists)
-    - [ ] Create age metric (if exists)
-  - [ ] Set `recorded_at` to profile.created_at
-  - [ ] Set `source` to 'manual'
-  - [ ] Add note: "Migrated from profile.{field}"
-- [ ] **Generate Curves from Historical Data:**
-  - [ ] For users with >10 activities, calculate initial curves
-  - [ ] Store best efforts for each duration/distance
-- [ ] Log progress and errors
-- [ ] Run script: `tsx scripts/seed-initial-metrics.ts`
-- [ ] Verify data in database
+### 4.1 Seed Initial Metrics from Profiles (DEPRECATED - Skip this phase)
+- [x] **DEPRECATED:** This phase is no longer applicable
+- [x] **Reason:** Columns `ftp`, `threshold_hr`, and `weight_kg` have been removed from `profiles` table
+- [x] **Migration Strategy Changed:**
+  - Use Phase 4.2 (Backfill from Activity Snapshots) instead to extract historical metrics
+  - New users will enter metrics during onboarding (Phase 5.3)
+  - Existing users can update metrics in settings (Phase 5.7)
+  - System will generate intelligent defaults if no metrics exist
+- [x] **Note:** Skip directly to Phase 4.2 for data migration
 
-### 4.2 Backfill from Activity Profile Snapshots (Optional)
+### 4.2 Backfill from Activity Profile Snapshots (PRIMARY MIGRATION STRATEGY)
 - [ ] Create `scripts/backfill-from-snapshots.ts`
-- [ ] Query all activities with `profile_snapshot` field
-- [ ] Extract unique metric values per profile over time
-- [ ] Deduplicate metrics (same value = same metric)
-- [ ] Insert deduplicated metrics into metric logs tables
-- [ ] Set `recorded_at` to activity.start_time
-- [ ] Add note: "Backfilled from activity snapshot"
+- [ ] Use Supabase service role key for admin access
+- [ ] Query all activities with `profile_snapshot` field (where not null)
+- [ ] For each activity's `profile_snapshot`:
+  - [ ] Extract `ftp` if exists → create performance metric (category: bike, type: power, duration: 3600s)
+  - [ ] Extract `threshold_hr` if exists → create performance metric (category: bike, type: heart_rate, duration: 3600s)
+  - [ ] Extract `weight_kg` if exists → create profile metric (metric_type: weight_kg)
+- [ ] **Deduplication Logic:**
+  - [ ] Track unique metric values per profile (same value = same metric)
+  - [ ] Only insert if metric value has changed from previous entry
+  - [ ] Use earliest occurrence date as `recorded_at`
+- [ ] **Insertion:**
+  - [ ] Insert into `profile_performance_metric_logs` for FTP and threshold_hr
+  - [ ] Insert into `profile_metric_logs` for weight_kg
+  - [ ] Set `recorded_at` to activity.start_time (temporal history)
+  - [ ] Set `notes` to "Backfilled from activity snapshot"
+- [ ] **Logging:**
+  - [ ] Log progress: "Processing activity X of Y"
+  - [ ] Log summary: "Performance metrics inserted: N, Profile metrics inserted: M, Profiles processed: P"
+  - [ ] Log errors for debugging
 - [ ] Run script: `tsx scripts/backfill-from-snapshots.ts`
-- [ ] Verify data in database
+- [ ] Verify data in database:
+  - [ ] Check `profile_performance_metric_logs` has historical FTP/threshold_hr entries
+  - [ ] Check `profile_metric_logs` has historical weight entries
+  - [ ] Verify temporal ordering (older activities = older recorded_at dates)
 
 ---
 
