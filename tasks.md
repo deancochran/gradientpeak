@@ -39,34 +39,55 @@
 - [ ] Enable RLS
 - [ ] Create RLS policies (SELECT, INSERT, UPDATE, DELETE for own profile)
 
-### 1.3 Update Supabase Types
+### 1.3 Update Supabase Types & Generate SupaZod Schemas
 - [ ] Run migration: `cd packages/supabase && pnpm run supabase migration up`
-- [ ] Generate types: `pnpm run generate-types`
+- [ ] **Generate types and SupaZod schemas:** `pnpm run update:types`
+  - [ ] This automatically generates:
+    - [ ] TypeScript types in `packages/supabase/types/database.ts`
+    - [ ] Zod schemas in `packages/supabase/supazod/` (auto-generated from database)
 - [ ] Verify new types in `packages/supabase/types/database.ts`
+- [ ] Verify new SupaZod schemas in `packages/supabase/supazod/`
 - [ ] Export types from `packages/supabase/index.ts`
+- [ ] **NOTE:** Core package schemas (Phase 2.1, 2.2) will extend/reference these auto-generated schemas
 
 ---
 
 ## Phase 2: Core Package Implementation
 
+**IMPORTANT:** This phase builds on auto-generated SupaZod schemas from Phase 1.3. The `pnpm run update:types` command in the supabase package automatically generates Zod schemas from your database tables. Core package schemas should **extend** or **reference** these auto-generated schemas rather than redefining them.
+
+**Pattern:**
+```typescript
+// Import auto-generated SupaZod schemas
+import { performanceMetricLogSchema } from '@repo/supabase/supazod';
+
+// Extend with custom validation or input schemas
+export const createPerformanceMetricInputSchema = performanceMetricLogSchema
+  .omit({ id: true, created_at: true, updated_at: true })
+  .extend({
+    // Add custom validation
+    value: z.number().positive('Value must be positive'),
+  });
+```
+
 ### 2.1 Performance Metric Schemas
 - [ ] Create `packages/core/schemas/performance-metrics.ts`
-- [ ] Define Zod schemas:
-  - [ ] `performanceMetricCategorySchema` (bike, run, swim, row, other)
-  - [ ] `performanceMetricTypeSchema` (power, pace, heart_rate)
-  - [ ] `performanceMetricSourceSchema` (manual, calculated, estimated)
-  - [ ] `performanceMetricLogSchema` (full object)
-  - [ ] `createPerformanceMetricInputSchema` (for API input)
+- [ ] **NOTE**: `pnpm run update:types` in supabase package automatically generates SupaZod schemas from database
+- [ ] Import base schemas from `@repo/supabase/supazod` (auto-generated)
+- [ ] Extend or reference SupaZod schemas:
+  - [ ] Use generated `performanceMetricCategorySchema`, `performanceMetricTypeSchema`, `performanceMetricSourceSchema`
+  - [ ] Extend with `createPerformanceMetricInputSchema` for API input validation
+  - [ ] Add custom validation rules (e.g., value > 0, duration > 0)
 - [ ] Infer TypeScript types from schemas
 - [ ] Export schemas and types
 
 ### 2.2 Profile Metric Schemas
 - [ ] Create `packages/core/schemas/profile-metrics.ts`
-- [ ] Define Zod schemas:
-  - [ ] `profileMetricTypeSchema` (weight_kg, resting_hr_bpm, sleep_hours, hrv_ms, etc.)
-  - [ ] `metricSourceSchema` (manual, device, calculated, estimated)
-  - [ ] `profileMetricLogSchema` (full object)
-  - [ ] `createProfileMetricInputSchema` (for API input)
+- [ ] **NOTE**: Import base schemas from auto-generated SupaZod (`@repo/supabase/supazod`)
+- [ ] Extend SupaZod schemas:
+  - [ ] Use generated `profileMetricTypeSchema`, `metricSourceSchema`
+  - [ ] Extend with `createProfileMetricInputSchema` for API input
+  - [ ] Add custom validation rules (e.g., weight > 0, age >= 0)
 - [ ] Infer TypeScript types from schemas
 - [ ] Export schemas and types
 
@@ -452,15 +473,56 @@
 - [ ] Use `trpc.profileMetrics.create.useMutation()`
 - [ ] Show success toast on save
 
-### 5.3 Onboarding Flow
+### 5.3 Comprehensive Onboarding Flow
 - [ ] Create onboarding screen: `apps/mobile/app/(auth)/onboarding.tsx`
-- [ ] Step 1: Collect required info (weight, age)
-- [ ] Step 2: Optional metrics entry
-  - [ ] Show PerformanceMetricForm
-  - [ ] Show ProfileMetricForm
-  - [ ] Allow skip
-- [ ] On completion, navigate to main app
-- [ ] Store onboarding completion flag
+- [ ] **Step 1: Basic Profile Information (Required)**
+  - [ ] Date of Birth (DOB) - date picker
+  - [ ] Weight (kg or lbs) - number input with unit toggle
+  - [ ] Gender - select (male/female/other) - for HR/power estimation
+  - [ ] Primary sport - select (cycling/running/swimming/triathlon/other)
+- [ ] **Step 2: Heart Rate Metrics (Optional but Recommended)**
+  - [ ] Max Heart Rate (bpm) - number input
+    - [ ] Show "Estimate" button → calculates 220 - age
+    - [ ] Show explanation: "Your max HR during hardest effort"
+  - [ ] Resting Heart Rate (bpm) - number input
+    - [ ] Show tip: "Measure first thing in the morning"
+  - [ ] Lactate Threshold HR (LTHR) - number input
+    - [ ] Show "Estimate" button → calculates 85% of max HR
+    - [ ] Show explanation: "HR you can sustain for ~1 hour"
+- [ ] **Step 3: Sport-Specific Performance Metrics (Optional)**
+  - [ ] **If cyclist/triathlete:**
+    - [ ] FTP (Functional Threshold Power) - number input (watts)
+      - [ ] Show "Estimate" button → 2.5 W/kg × weight
+      - [ ] Show explanation: "Power you can sustain for ~1 hour"
+    - [ ] VO2max - number input (ml/kg/min) - optional
+  - [ ] **If runner:**
+    - [ ] Threshold Pace - time input (min/km or min/mi)
+      - [ ] Show "Estimate" button based on fitness level
+      - [ ] Show explanation: "Pace you can sustain for ~1 hour"
+    - [ ] VO2max - number input (ml/kg/min) - optional
+  - [ ] **If swimmer:**
+    - [ ] Threshold Pace - time input (min/100m)
+      - [ ] Show explanation: "Pace you can sustain for ~1 hour"
+- [ ] **Step 4: Activity & Equipment (Optional)**
+  - [ ] Training frequency - select (1-2, 3-4, 5-6, 7+ days/week)
+  - [ ] Equipment - multi-select (power meter, heart rate monitor, GPS watch, etc.)
+  - [ ] Goals - multi-select (improve fitness, lose weight, race performance, etc.)
+- [ ] **UI/UX:**
+  - [ ] Multi-step wizard with progress indicator
+  - [ ] "Skip" button on all optional steps
+  - [ ] "Back" button for navigation
+  - [ ] Real-time validation with helpful error messages
+  - [ ] Info tooltips explaining each metric
+  - [ ] "Estimate" buttons with clear formulas shown
+- [ ] **On Completion:**
+  - [ ] Create initial profile metrics in database (all entered values)
+  - [ ] Mark onboarding as complete
+  - [ ] Navigate to main app (activity feed or dashboard)
+  - [ ] Show welcome message with next steps
+- [ ] **Skip Handling:**
+  - [ ] If user skips all optional steps, use intelligent defaults
+  - [ ] Show in-app prompts to complete profile later
+  - [ ] Highlight incomplete metrics in settings
 
 ### 5.4 Metric Suggestions UI
 - [ ] Create `apps/mobile/components/metrics/MetricSuggestions.tsx`
@@ -524,7 +586,106 @@
   - [ ] Highlight significant changes
   - [ ] Filter by sport category
 
-### 5.7 Mobile Testing
+### 5.7 Settings & Profile Management Page
+- [ ] Create `apps/mobile/app/(internal)/(tabs)/profile/settings.tsx`
+- [ ] **Profile Information Section:**
+  - [ ] Display current DOB, weight, gender, primary sport
+  - [ ] Edit button → opens profile edit form
+  - [ ] Show profile completion percentage
+  - [ ] Highlight missing recommended metrics
+- [ ] **Heart Rate Metrics Section:**
+  - [ ] **Max Heart Rate:**
+    - [ ] Display current value with last updated date
+    - [ ] Mini line chart showing historical values (last 6 months)
+    - [ ] Edit button → manual entry form
+    - [ ] Source badge (manual/test/estimated)
+  - [ ] **Resting Heart Rate:**
+    - [ ] Display current value with trend indicator (↑↓→)
+    - [ ] Sparkline chart showing last 30 days
+    - [ ] Edit button → manual entry form
+  - [ ] **Lactate Threshold HR (LTHR):**
+    - [ ] Display current value with % of max HR
+    - [ ] Chart showing LTHR over time
+    - [ ] Edit button → manual entry form
+    - [ ] "Test" button → start LTHR test activity
+- [ ] **Power Metrics Section (Cyclists):**
+  - [ ] **FTP:**
+    - [ ] Display current value (watts + W/kg)
+    - [ ] Line chart showing FTP progression over time
+    - [ ] Edit button → manual entry form
+    - [ ] "Test" button → start FTP test activity
+    - [ ] Show last test date and result
+  - [ ] **Power Curve:**
+    - [ ] Full power curve chart (5s to 60min)
+    - [ ] Athlete phenotype badge (Sprinter/TT/All-Rounder)
+    - [ ] Critical Power (CP) and W' display
+    - [ ] Comparison to previous best efforts
+    - [ ] "Recalculate" button → refresh from recent activities
+  - [ ] **VO2max Power:**
+    - [ ] Display current value with chart
+    - [ ] Edit button → manual entry
+- [ ] **Pace Metrics Section (Runners):**
+  - [ ] **Threshold Pace:**
+    - [ ] Display current value (min/km or min/mi)
+    - [ ] Line chart showing threshold pace over time
+    - [ ] Edit button → manual entry form
+    - [ ] "Test" button → start threshold pace test run
+  - [ ] **Pace Curve:**
+    - [ ] Full pace curve chart (400m to half-marathon)
+    - [ ] Runner type badge (Sprinter/Middle-Distance/Endurance)
+    - [ ] Critical Velocity display
+    - [ ] Predicted race times (5k, 10k, half, marathon)
+    - [ ] Riegel exponent display
+    - [ ] "Recalculate" button → refresh from recent runs
+  - [ ] **VO2max (Running):**
+    - [ ] Display estimated VO2max from recent runs
+    - [ ] Chart showing VO2max progression
+- [ ] **Biometric Metrics Section:**
+  - [ ] **Weight:**
+    - [ ] Display current weight with BMI
+    - [ ] Line chart showing weight trend (last 90 days)
+    - [ ] Add weight entry button
+    - [ ] Unit toggle (kg/lbs)
+  - [ ] **Sleep & Recovery:**
+    - [ ] Average sleep hours (last 7 days)
+    - [ ] Sleep trend chart
+    - [ ] Add sleep entry button
+  - [ ] **HRV (Heart Rate Variability):**
+    - [ ] Current HRV with 7-day average
+    - [ ] Chart showing HRV trend
+    - [ ] Add HRV entry button
+    - [ ] Recovery status indicator (high/normal/low)
+- [ ] **Training Zones Section:**
+  - [ ] **Heart Rate Zones:**
+    - [ ] Display 5 HR zones with ranges
+    - [ ] Color-coded zone bars
+    - [ ] Edit button to customize zones (% or manual bpm)
+    - [ ] Zone calculation method selector (Coggan/Polarized)
+  - [ ] **Power Zones:**
+    - [ ] Display 7 power zones (Coggan model)
+    - [ ] Color-coded zone bars
+    - [ ] Edit button to customize zones
+  - [ ] **Pace Zones:**
+    - [ ] Display pace zones for running
+    - [ ] Color-coded zone bars
+    - [ ] Edit button to customize zones
+- [ ] **Data Management Section:**
+  - [ ] "Recalculate All Metrics" button
+    - [ ] Confirmation dialog
+    - [ ] Progress indicator
+    - [ ] Success/error toast
+  - [ ] "Export Metrics" button → CSV download
+  - [ ] "Import from Device" button → sync from Garmin/Wahoo/etc.
+  - [ ] Last sync timestamp display
+- [ ] **UI Components:**
+  - [ ] Use React Native Reusables components for consistency
+  - [ ] Collapsible sections for better organization
+  - [ ] Skeleton loaders while fetching data
+  - [ ] Pull-to-refresh for metrics update
+  - [ ] Optimistic updates for manual entries
+  - [ ] Error boundaries for chart rendering failures
+
+### 5.8 Mobile Testing
 - [ ] Test activity submission without profile_snapshot
 - [ ] Test TSS calculation triggered after upload
 - [ ] Test manual metric entry (performance and profile)
@@ -639,14 +800,17 @@
 
 **Week 3:**
 7. Phase 5.1-5.2: Mobile App (activity submission, manual entry)
-8. Phase 5.4: Metric Suggestions UI
+8. Phase 5.3: Comprehensive Onboarding Flow
 9. Phase 6.1-6.2: Core & tRPC Testing
 
 **Week 4:**
-10. Phase 5.3: Onboarding Flow
-11. Phase 5.5: Capability Overview Screen
-12. Phase 6.3-6.4: Mobile E2E & Performance Testing
-13. Phase 7: Documentation
+10. Phase 5.4: Metric Suggestions UI
+11. Phase 5.5-5.6: Capability Overview & Performance Curve Components
+12. Phase 5.7: Settings & Profile Management Page
+13. Phase 6.3-6.4: Mobile E2E & Performance Testing
+
+**Week 5:**
+14. Phase 7: Documentation & Cleanup
 
 ---
 
