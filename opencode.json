@@ -12,5 +12,76 @@
         }
       }
     }
+  },
+  "agent": {
+    "build": {
+      "mode": "primary",
+      "description": "Default agent for development work with all tools enabled"
+    },
+    "plan": {
+      "mode": "primary",
+      "description": "Planning agent for analysis without making changes",
+      "tools": {
+        "write": false,
+        "edit": false,
+        "bash": false
+      }
+    },
+    "coordinator": {
+      "mode": "subagent",
+      "description": "Research Director & Implementation Orchestrator",
+      "hidden": false,
+      "temperature": 0.2
+    },
+    "code-improvement-reviewer": {
+      "mode": "subagent",
+      "description": "Reviews code for readability, performance, and best-practice issues",
+      "tools": {
+        "write": false,
+        "edit": false
+      },
+      "temperature": 0.1
+    },
+    "mobile-component-generator": {
+      "mode": "subagent",
+      "description": "Generates React Native components following GradientPeak mobile patterns"
+    },
+    "web-page-generator": {
+      "mode": "subagent",
+      "description": "Generates Next.js pages with proper Server/Client component split"
+    },
+    "trpc-router-generator": {
+      "mode": "subagent",
+      "description": "Generates tRPC routers with procedures and input validation"
+    },
+    "core-logic-assistant": {
+      "mode": "subagent",
+      "description": "Helps with calculations, schemas, and business logic in @repo/core"
+    },
+    "api-integration-assistant": {
+      "mode": "subagent",
+      "description": "Helps integrate third-party APIs with proper OAuth and error handling"
+    },
+    "database-migration-assistant": {
+      "mode": "subagent",
+      "description": "Generates and manages Supabase database schema migrations"
+    },
+    "performance-optimizer": {
+      "mode": "subagent",
+      "description": "Analyzes and optimizes slow components and queries"
+    },
+    "accessibility-auditor": {
+      "mode": "subagent",
+      "description": "Reviews components for WCAG compliance and screen reader support",
+      "tools": {
+        "write": false,
+        "edit": false
+      }
+    }
+  },
+  "permission": {
+    "skill": {
+      "*": "allow"
+    }
   }
 }
