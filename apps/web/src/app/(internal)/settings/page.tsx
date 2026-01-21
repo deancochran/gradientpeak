@@ -176,9 +176,6 @@ export default function SettingsPage() {
     try {
       await updateProfileMutation.mutateAsync({
         username: values.username,
-        weight_kg: profile?.weight_kg ?? null,
-        ftp: profile?.ftp ?? null,
-        threshold_hr: profile?.threshold_hr ?? null,
       });
     } catch {
       // Error handling is done in mutation onError
@@ -231,9 +228,6 @@ export default function SettingsPage() {
       // Update profile with new avatar path
       await updateProfileMutation.mutateAsync({
         username: profile?.username || "",
-        weight_kg: profile?.weight_kg ?? null,
-        ftp: profile?.ftp ?? null,
-        threshold_hr: profile?.threshold_hr ?? null,
         avatar_url: filePath,
       });
 

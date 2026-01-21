@@ -89,11 +89,11 @@ export function calculateTSS(
   startedAt: Date | string,
   endedAt: Date | string,
   powerStream: AggregatedStream | undefined,
-  profile: PublicProfilesRow,
+  ftp?: number | null,
 ): number | undefined {
-  if (!profile.ftp) return undefined;
+  if (!ftp) return undefined;
   const np = calculateNormalizedPower(powerStream);
-  const if_ = calculateIntensityFactor(powerStream, profile.ftp);
+  const if_ = calculateIntensityFactor(powerStream, ftp);
   if (!np || !if_) return undefined;
 
   const durationHours = calculateElapsedTime(startedAt, endedAt) / 3600;
@@ -351,7 +351,7 @@ export function calculateCalories(
   startedAt: Date | string,
   endedAt: Date | string,
   profile: PublicProfilesRow,
-
+  weightKg?: number | null,
   powerStream?: AggregatedStream,
   hrStream?: AggregatedStream,
 ): number {
@@ -361,16 +361,15 @@ export function calculateCalories(
     return Math.round(powerStream.avgValue * durationHours * 3.6);
   }
   const age = calculateAge(profile.dob);
-  const weight = profile.weight_kg;
 
   // Otherwise use HR-based estimation
-  if (hrStream?.avgValue && profile && profile.ftp && age && weight) {
+  if (hrStream?.avgValue && weightKg && age) {
     const duration = calculateElapsedTime(startedAt, endedAt) / 60; // minutes
     const avgHR = hrStream.avgValue;
 
     // Gender-specific calorie estimation (assuming male, adjust if you have gender data)
     const calories =
-      ((age * 0.2017 + weight * 0.1988 + avgHR * 0.6309 - 55.0969) * duration) /
+      ((age * 0.2017 + weightKg * 0.1988 + avgHR * 0.6309 - 55.0969) * duration) /
       4.184;
     return Math.round(calories);
   }

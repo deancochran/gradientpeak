@@ -1551,20 +1551,6 @@ export class SensorsManager {
   }
 
   /**
-   * Set resistance level
-   */
-  async setResistanceTarget(level: number): Promise<boolean> {
-    if (!this.controllableTrainer?.ftmsController) {
-      console.warn("[SensorsManager] No controllable trainer connected");
-      return false;
-    }
-
-    return await this.controllableTrainer.ftmsController.setResistanceTarget(
-      level,
-    );
-  }
-
-  /**
    * Set target speed
    */
   async setTargetSpeed(speedKph: number): Promise<boolean> {

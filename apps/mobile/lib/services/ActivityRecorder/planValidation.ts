@@ -28,6 +28,7 @@ export interface MissingMetric {
 export function validatePlanRequirements(
   plan: RecordingServiceActivityPlan,
   profile: PublicProfilesRow,
+  metrics?: { ftp?: number; thresholdHr?: number; weightKg?: number },
 ): PlanValidationResult {
   const missingMetrics: MissingMetric[] = [];
   const warnings: string[] = [];
@@ -52,7 +53,7 @@ export function validatePlanRequirements(
   }
 
   // Check if FTP is required but missing
-  if (allTargetTypes.has("%FTP") && !profile.ftp) {
+  if (allTargetTypes.has("%FTP") && !metrics?.ftp) {
     missingMetrics.push({
       name: "FTP (Functional Threshold Power)",
       description:
@@ -62,7 +63,7 @@ export function validatePlanRequirements(
   }
 
   // Check if threshold HR is required but missing
-  if (allTargetTypes.has("%ThresholdHR") && !profile.threshold_hr) {
+  if (allTargetTypes.has("%ThresholdHR") && !metrics?.thresholdHr) {
     missingMetrics.push({
       name: "Threshold Heart Rate",
       description:
@@ -80,7 +81,7 @@ export function validatePlanRequirements(
 
   // Generate additional warnings based on activity type and targets
   if (allTargetTypes.has("%FTP") || allTargetTypes.has("watts")) {
-    if (!profile.ftp && !warnings.length) {
+    if (!metrics?.ftp && !warnings.length) {
       warnings.push(
         "Consider setting your FTP for more accurate power-based training.",
       );

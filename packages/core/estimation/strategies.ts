@@ -85,7 +85,7 @@ function calculateStepIntensityFactor(
 export function estimateFromStructure(
   context: EstimationContext,
 ): EstimationResult {
-  const { structure, profile, activityCategory } = context;
+  const { structure, profile, activityCategory, ftp, thresholdHr } = context;
 
   if (!structure?.intervals || structure.intervals.length === 0) {
     throw new Error("Structure-based estimation requires intervals");
@@ -93,8 +93,8 @@ export function estimateFromStructure(
 
   const intervals = structure.intervals;
   const userSettings: UserSettings = {
-    ftp: profile.ftp ?? null,
-    thresholdHR: profile.threshold_hr ?? null,
+    ftp: ftp ?? null,
+    thresholdHR: thresholdHr ?? null,
     restingHR: 60, // Default resting HR - not in current schema
   };
 
@@ -135,23 +135,23 @@ export function estimateFromStructure(
   const warnings: string[] = [];
   const factors = ["structure-based"];
 
-  if (!profile.ftp && activityCategory === "bike") {
+  if (!ftp && activityCategory === "bike") {
     warnings.push(
       "Missing FTP - using estimated values. Add FTP for better accuracy.",
     );
     factors.push("default-ftp");
-  } else if (profile.ftp) {
+  } else if (ftp) {
     factors.push("user-ftp");
   }
 
   if (
-    !profile.threshold_hr &&
+    !thresholdHr &&
     (activityCategory === "run" || activityCategory === "bike")
   ) {
     warnings.push(
       "Missing Threshold HR - heart rate estimates may be less accurate.",
     );
-  } else if (profile.threshold_hr) {
+  } else if (thresholdHr) {
     factors.push("user-threshold-hr");
   }
 
@@ -161,8 +161,8 @@ export function estimateFromStructure(
     intensityFactor: Math.round(avgIF * 100) / 100,
     estimatedHRZones: hrZones.map(Math.round),
     estimatedPowerZones: powerZones.map(Math.round),
-    confidence: profile.ftp || profile.threshold_hr ? "high" : "medium",
-    confidenceScore: profile.ftp ? 95 : profile.threshold_hr ? 85 : 75,
+    confidence: ftp || thresholdHr ? "high" : "medium",
+    confidenceScore: ftp ? 95 : thresholdHr ? 85 : 75,
     factors,
     warnings: warnings.length > 0 ? warnings : undefined,
   };
@@ -265,7 +265,7 @@ function getHRZoneIndex(thresholdPercent: number): number {
 export function estimateFromRoute(
   context: EstimationContext,
 ): EstimationResult {
-  const { route, profile, activityCategory, fitnessState } = context;
+  const { route, profile, activityCategory, fitnessState, ftp, weightKg } = context;
 
   if (!route) {
     throw new Error("Route-based estimation requires route data");
@@ -285,15 +285,15 @@ export function estimateFromRoute(
   const avgPower = estimatePowerFromElevation(
     route.totalAscent,
     route.distanceMeters,
-    profile.weight_kg || 70,
-    profile.ftp,
+    weightKg || 70,
+    ftp,
     activityCategory,
   );
 
   // Calculate IF and TSS
   let IF = 0.75; // Default moderate effort
-  if (profile.ftp && avgPower && activityCategory === "bike") {
-    IF = avgPower / profile.ftp;
+  if (ftp && avgPower && activityCategory === "bike") {
+    IF = avgPower / ftp;
   } else if (activityCategory === "run") {
     // Running IF estimation based on route difficulty
     const climbingFactor = route.totalAscent / route.distanceMeters;
@@ -305,15 +305,15 @@ export function estimateFromRoute(
   const warnings: string[] = [];
   const factors = ["route-based", "terrain-adjusted"];
 
-  if (!profile.ftp && activityCategory === "bike") {
+  if (!ftp && activityCategory === "bike") {
     warnings.push("Missing FTP - using estimated effort level.");
   }
-  if (!profile.weight_kg) {
+  if (!weightKg) {
     warnings.push("Missing weight - using default 70kg for calculations.");
   }
 
-  if (profile.ftp) factors.push("user-ftp");
-  if (profile.weight_kg) factors.push("user-weight");
+  if (ftp) factors.push("user-ftp");
+  if (weightKg) factors.push("user-weight");
   if (fitnessState) factors.push("fitness-adjusted");
 
   return {

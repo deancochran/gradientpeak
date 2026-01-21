@@ -26,6 +26,9 @@ export function estimateMetrics(
     intensityFactor,
     tss,
     profile,
+    context.ftp,
+    context.thresholdHr,
+    context.weightKg,
     activityCategory,
     activityLocation,
   );
@@ -41,12 +44,12 @@ export function estimateMetrics(
 
   // Estimate average power
   const avgPower =
-    profile.ftp && activityCategory === "bike"
-      ? Math.round(profile.ftp * intensityFactor)
+    context.ftp && activityCategory === "bike"
+      ? Math.round(context.ftp * intensityFactor)
       : undefined;
 
   // Estimate average heart rate
-  const avgHeartRate = estimateAvgHR(intensityFactor, profile);
+  const avgHeartRate = estimateAvgHR(intensityFactor, context.thresholdHr);
 
   // Estimate average speed
   const avgSpeed = distance ? distance / duration : undefined;
@@ -77,12 +80,15 @@ function estimateCalories(
   intensityFactor: number,
   tss: number,
   profile: PublicProfilesRow,
-  activityCategory: PublicActivityCategory,
-  activityLocation: PublicActivityLocation,
+  ftp?: number | null,
+  thresholdHr?: number | null,
+  weightKg?: number | null,
+  activityCategory: PublicActivityCategory = "other",
+  activityLocation: PublicActivityLocation = "outdoor",
 ): number {
   // Method 1: Power-based (most accurate for cycling)
-  if (profile.ftp && activityCategory === "bike") {
-    const avgPower = profile.ftp * intensityFactor;
+  if (ftp && activityCategory === "bike") {
+    const avgPower = ftp * intensityFactor;
     const durationHours = duration / 3600;
     // kJ = watts * seconds / 1000, roughly 1 kJ = 1 kcal for cycling
     return (avgPower * duration) / 1000;
@@ -92,10 +98,10 @@ function estimateCalories(
   // Note: Need to calculate age from dob
   // Calculate age from date of birth
   const age = profile.dob ? calculateAgeFromDOB(profile.dob) : undefined;
-  if (profile.threshold_hr && profile.weight_kg && age) {
-    const avgHR = estimateAvgHR(intensityFactor, profile);
+  if (thresholdHr && weightKg && age) {
+    const avgHR = estimateAvgHR(intensityFactor, thresholdHr);
     if (avgHR) {
-      return estimateCaloriesFromHR(duration, avgHR, profile.weight_kg, age);
+      return estimateCaloriesFromHR(duration, avgHR, weightKg, age);
     }
   }
 
@@ -133,19 +139,17 @@ function estimateCaloriesFromHR(
  */
 export function estimateAvgHR(
   intensityFactor: number,
-  profile: PublicProfilesRow,
+  thresholdHR?: number | null,
 ): number | undefined {
-  const thresholdHR = profile.threshold_hr;
+  if (!thresholdHR) return undefined;
+
   // Note: max_hr and resting_hr are not in current schema
   // Using estimated values based on threshold_hr
-  const maxHR = thresholdHR ? Math.round(thresholdHR / 0.9) : undefined;
+  const maxHR = Math.round(thresholdHR / 0.9);
   const restingHR = 60; // Default resting HR
 
-  if (!thresholdHR && !maxHR) return undefined;
-
-  // Use threshold HR if available, otherwise estimate from max HR
-  const lthr = thresholdHR || (maxHR ? maxHR * 0.9 : undefined);
-  if (!lthr) return undefined;
+  // Use threshold HR
+  const lthr = thresholdHR;
 
   // IF to HR mapping (approximate)
   // IF 0.0 = resting HR

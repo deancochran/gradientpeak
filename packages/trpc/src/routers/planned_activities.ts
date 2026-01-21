@@ -602,9 +602,49 @@ export const plannedActivitiesRouter = createTRPCRouter({
       // Get user profile for TSS estimation
       const { data: profile } = await ctx.supabase
         .from("profiles")
-        .select("ftp, threshold_hr, weight_kg, dob")
+        .select("dob")
         .eq("id", ctx.session.user.id)
         .single();
+
+      // Fetch latest FTP from performance metrics
+      const { data: ftpMetrics } = await ctx.supabase
+        .from("profile_performance_metric_logs")
+        .select("value")
+        .eq("profile_id", ctx.session.user.id)
+        .eq("type", "power")
+        .eq("category", "bike")
+        .gte("duration_seconds", 3000)
+        .order("recorded_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      // Fetch latest threshold HR from performance metrics
+      const { data: thresholdHrMetrics } = await ctx.supabase
+        .from("profile_performance_metric_logs")
+        .select("value")
+        .eq("profile_id", ctx.session.user.id)
+        .eq("type", "heart_rate")
+        .gte("duration_seconds", 3000)
+        .order("recorded_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      // Fetch latest weight from profile metrics
+      const { data: weightMetrics } = await ctx.supabase
+        .from("profile_metric_logs")
+        .select("value")
+        .eq("profile_id", ctx.session.user.id)
+        .eq("metric_type", "weight_kg")
+        .order("recorded_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const userMetrics = {
+        ftp: ftpMetrics?.value,
+        threshold_hr: thresholdHrMetrics?.value,
+        weight_kg: weightMetrics?.value,
+        dob: profile?.dob,
+      };
 
       // Calculate TSS for current week's activities
       const { estimateActivity, buildEstimationContext } =
@@ -614,7 +654,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
         if (!pa.activity_plan) return sum;
 
         const context = buildEstimationContext({
-          userProfile: profile || {},
+          userProfile: userMetrics,
           activityPlan: {
             ...pa.activity_plan,
             route_id: pa.activity_plan.route_id || undefined,
@@ -626,7 +666,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
 
       // Calculate TSS for the new activity
       const context = buildEstimationContext({
-        userProfile: profile || {},
+        userProfile: userMetrics,
         activityPlan: {
           ...activityPlan,
           route_id: activityPlan.route_id || undefined,

@@ -222,74 +222,87 @@ export const profilesRouter = createTRPCRouter({
 
   getZones: protectedProcedure.query(async ({ ctx }) => {
     try {
-      const { data: profile, error } = await ctx.supabase
-        .from("profiles")
-        .select("threshold_hr, ftp")
-        .eq("id", ctx.session.user.id)
-        .single();
+      // Fetch latest threshold HR from performance metrics
+      const { data: thresholdHrMetrics } = await ctx.supabase
+        .from("profile_performance_metric_logs")
+        .select("value")
+        .eq("profile_id", ctx.session.user.id)
+        .eq("type", "heart_rate")
+        .gte("duration_seconds", 3000) // Threshold HR is for longer durations
+        .order("recorded_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      if (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
-        });
-      }
+      // Fetch latest FTP from performance metrics
+      const { data: ftpMetrics } = await ctx.supabase
+        .from("profile_performance_metric_logs")
+        .select("value")
+        .eq("profile_id", ctx.session.user.id)
+        .eq("type", "power")
+        .eq("category", "bike")
+        .gte("duration_seconds", 3000) // FTP is for longer durations
+        .order("recorded_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const threshold_hr = thresholdHrMetrics?.value;
+      const ftp = ftpMetrics?.value;
 
       // Calculate heart rate zones based on threshold HR
       // Threshold HR is typically at the top of Zone 3 (~85-90% of max HR)
-      const heartRateZones = profile.threshold_hr
+      const heartRateZones = threshold_hr
         ? {
             // Estimate max HR from threshold (assuming threshold is ~87% of max)
-            maxHR: Math.round(profile.threshold_hr / 0.87),
+            maxHR: Math.round(threshold_hr / 0.87),
 
             zone1: {
-              min: Math.round(profile.threshold_hr * 0.55), // ~50-60% max HR
-              max: Math.round(profile.threshold_hr * 0.75), // ~65% max HR
+              min: Math.round(threshold_hr * 0.55), // ~50-60% max HR
+              max: Math.round(threshold_hr * 0.75), // ~65% max HR
             },
             zone2: {
-              min: Math.round(profile.threshold_hr * 0.75), // ~65% max HR
-              max: Math.round(profile.threshold_hr * 0.87), // ~75% max HR
+              min: Math.round(threshold_hr * 0.75), // ~65% max HR
+              max: Math.round(threshold_hr * 0.87), // ~75% max HR
             },
             zone3: {
-              min: Math.round(profile.threshold_hr * 0.87), // ~75% max HR
-              max: Math.round(profile.threshold_hr * 0.98), // ~85% max HR (at threshold)
+              min: Math.round(threshold_hr * 0.87), // ~75% max HR
+              max: Math.round(threshold_hr * 0.98), // ~85% max HR (at threshold)
             },
             zone4: {
-              min: Math.round(profile.threshold_hr * 0.98), // ~85% max HR
-              max: Math.round(profile.threshold_hr * 1.06), // ~92% max HR
+              min: Math.round(threshold_hr * 0.98), // ~85% max HR
+              max: Math.round(threshold_hr * 1.06), // ~92% max HR
             },
             zone5: {
-              min: Math.round(profile.threshold_hr * 1.06), // ~92% max HR
-              max: Math.round(profile.threshold_hr / 0.87), // ~100% max HR
+              min: Math.round(threshold_hr * 1.06), // ~92% max HR
+              max: Math.round(threshold_hr / 0.87), // ~100% max HR
             },
           }
         : null;
 
       // Calculate power zones (basic 7-zone model based on FTP)
-      const powerZones = profile.ftp
+      const powerZones = ftp
         ? {
-            zone1: { min: 0, max: Math.round(profile.ftp * 0.55) },
+            zone1: { min: 0, max: Math.round(ftp * 0.55) },
             zone2: {
-              min: Math.round(profile.ftp * 0.55),
-              max: Math.round(profile.ftp * 0.75),
+              min: Math.round(ftp * 0.55),
+              max: Math.round(ftp * 0.75),
             },
             zone3: {
-              min: Math.round(profile.ftp * 0.75),
-              max: Math.round(profile.ftp * 0.9),
+              min: Math.round(ftp * 0.75),
+              max: Math.round(ftp * 0.9),
             },
             zone4: {
-              min: Math.round(profile.ftp * 0.9),
-              max: Math.round(profile.ftp * 1.05),
+              min: Math.round(ftp * 0.9),
+              max: Math.round(ftp * 1.05),
             },
             zone5: {
-              min: Math.round(profile.ftp * 1.05),
-              max: Math.round(profile.ftp * 1.2),
+              min: Math.round(ftp * 1.05),
+              max: Math.round(ftp * 1.2),
             },
             zone6: {
-              min: Math.round(profile.ftp * 1.2),
-              max: Math.round(profile.ftp * 1.5),
+              min: Math.round(ftp * 1.2),
+              max: Math.round(ftp * 1.5),
             },
-            zone7: { min: Math.round(profile.ftp * 1.5), max: null },
+            zone7: { min: Math.round(ftp * 1.5), max: null },
           }
         : null;
 
@@ -297,8 +310,8 @@ export const profilesRouter = createTRPCRouter({
         heartRateZones,
         powerZones,
         profile: {
-          threshold_hr: profile.threshold_hr,
-          ftp: profile.ftp,
+          threshold_hr: threshold_hr,
+          ftp: ftp,
         },
       };
     } catch (error) {

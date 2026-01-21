@@ -3,9 +3,13 @@
  *
  * Supports gzip-compressed float32, latlng, and boolean streams.
  * Uses Node.js built-in zlib for decompression.
+ *
+ * IMPORTANT: This file contains SERVER-ONLY implementations that use Node.js built-ins.
+ * These functions will throw errors if called in React Native.
+ * Mobile app has its own implementation in: apps/mobile/lib/utils/streamDecompression.ts
+ *
+ * For server-side usage (Next.js, tRPC), import the actual implementations from the tRPC package.
  */
-
-import { gunzipSync } from "zlib";
 
 export interface DecompressedStream {
   type: string;
@@ -18,7 +22,10 @@ export interface DecompressedStream {
 /**
  * Convert base64 string to Buffer (Node.js server-side)
  */
-export function base64ToBuffer(base64: string): Buffer {
+export function base64ToBuffer(base64: string): any {
+  if (!Buffer) {
+    throw new Error('Buffer is not available in this environment. Use server-side only.');
+  }
   return Buffer.from(base64, "base64");
 }
 
@@ -37,6 +44,10 @@ export function decompressStream(
   dataType: "float" | "latlng" | "boolean",
   streamType: string
 ): DecompressedStream {
+  if (!gunzipSync) {
+    throw new Error('gunzipSync is not available in this environment. Use server-side only.');
+  }
+
   try {
     // Decompress values
     const valuesBuffer = base64ToBuffer(compressedValues);

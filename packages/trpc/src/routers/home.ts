@@ -140,7 +140,7 @@ export const homeRouter = createTRPCRouter({
       const tssByDate = new Map<string, number>();
       activities?.forEach((a) => {
         if (!a.started_at) return;
-        const dateStr = a.started_at.split("T")[0];
+        const dateStr = a.started_at.split("T")[0]!; // Non-null assertion after check
         const tss = (a.metrics as any)?.tss || 0;
         tssByDate.set(dateStr, (tssByDate.get(dateStr) || 0) + tss);
       });
@@ -158,7 +158,7 @@ export const homeRouter = createTRPCRouter({
       for (let i = 0; i <= dayCount; i++) {
         const date = new Date(historyStart);
         date.setDate(historyStart.getDate() + i);
-        const dateStr = date.toISOString().split("T")[0];
+        const dateStr = date.toISOString().split("T")[0]!;
 
         const tss = tssByDate.get(dateStr) || 0;
         currentCTL = calculateCTL(currentCTL, tss);
@@ -262,7 +262,7 @@ export const homeRouter = createTRPCRouter({
       };
 
       // --- 9. Schedule (Future) ---
-      const todayStr = today.toISOString().split("T")[0];
+      const todayStr = today.toISOString().split("T")[0]!;
 
       // Check which planned activities have been completed by matching with actual activities
       const completedActivityMap = new Map<string, boolean>();
@@ -286,7 +286,7 @@ export const homeRouter = createTRPCRouter({
         .map((pa) => ({
           id: pa.id,
           date: pa.scheduled_date,
-          isToday: pa.scheduled_date.startsWith(todayStr),
+          isToday: pa.scheduled_date?.startsWith(todayStr) || false,
           isCompleted: completedActivityMap.get(pa.id) || false,
           activityName: pa.activity_plan?.name || "Activity",
           activityType: pa.activity_plan?.activity_category || "generic",
@@ -352,7 +352,7 @@ export const homeRouter = createTRPCRouter({
       const futureTssByDate = new Map<string, number>();
       futureWithEstimations.forEach((pa) => {
         if (!pa.scheduled_date) return;
-        const dateStr = pa.scheduled_date.split("T")[0];
+        const dateStr = pa.scheduled_date.split("T")[0]!; // Non-null assertion after check
         const tss = (pa.activity_plan as any)?.estimated_tss || 0;
         futureTssByDate.set(dateStr, (futureTssByDate.get(dateStr) || 0) + tss);
       });
@@ -361,7 +361,7 @@ export const homeRouter = createTRPCRouter({
       for (let i = 1; i <= projectionDays; i++) {
         const date = new Date(today);
         date.setDate(today.getDate() + i);
-        const dateStr = date.toISOString().split("T")[0];
+        const dateStr = date.toISOString().split("T")[0]!;
 
         const plannedTss = futureTssByDate.get(dateStr) || 0;
         projectedCTL = calculateCTL(projectedCTL, plannedTss);
@@ -422,7 +422,7 @@ export const homeRouter = createTRPCRouter({
               ) {
                 const date = new Date(curveStart);
                 date.setDate(curveStart.getDate() + i);
-                const dateStr = date.toISOString().split("T")[0];
+                const dateStr = date.toISOString().split("T")[0]!;
 
                 // Calculate ideal CTL progression using exponential growth
                 // CTL should increase by rampRate per week

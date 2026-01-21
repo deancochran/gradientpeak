@@ -148,19 +148,35 @@ export default function OnboardingScreen() {
     try {
       console.log("[Onboarding] Submitting profile data:", data);
 
+      // Helper to map sport types to database category
+      const mapSportToCategory = (
+        sport: "cycling" | "running" | "swimming" | "triathlon" | "other" | null
+      ): "run" | "bike" | "swim" | "strength" | "other" => {
+        switch (sport) {
+          case "running":
+            return "run";
+          case "cycling":
+            return "bike";
+          case "swimming":
+            return "swim";
+          case "triathlon":
+            return "run"; // Default to run for triathlon
+          default:
+            return "other";
+        }
+      };
+
       // 1. Update profile with basic info
       await updateProfileMutation.mutateAsync({
         dob: data.dob || undefined,
-        onboarded: true,
       });
 
       // 2. Create profile metrics (weight)
       if (data.weight_kg) {
         await createProfileMetricsMutation.mutateAsync({
-          metric_type: "weight",
+          metric_type: "weight_kg",
           value: data.weight_kg,
           unit: "kg",
-          source: "user_input",
           recorded_at: new Date().toISOString(),
         });
       }
@@ -171,12 +187,11 @@ export default function OnboardingScreen() {
       // Heart rate metrics
       if (data.max_hr && data.primary_sport) {
         await createPerformanceMetricsMutation.mutateAsync({
-          category: data.primary_sport,
+          category: mapSportToCategory(data.primary_sport),
           type: "heart_rate",
           value: data.max_hr,
           unit: "bpm",
           duration_seconds: 0,
-          source: "user_input",
           recorded_at: recordedAt,
           notes: "Max heart rate from onboarding",
         });
@@ -184,12 +199,11 @@ export default function OnboardingScreen() {
 
       if (data.lthr && data.primary_sport) {
         await createPerformanceMetricsMutation.mutateAsync({
-          category: data.primary_sport,
+          category: mapSportToCategory(data.primary_sport),
           type: "heart_rate",
           value: data.lthr,
           unit: "bpm",
           duration_seconds: 3600, // 1 hour threshold
-          source: "user_input",
           recorded_at: recordedAt,
           notes: "Lactate threshold HR from onboarding",
         });
@@ -203,7 +217,6 @@ export default function OnboardingScreen() {
           value: data.ftp,
           unit: "watts",
           duration_seconds: 3600, // 1 hour FTP
-          source: "user_input",
           recorded_at: recordedAt,
           notes: "FTP from onboarding",
         });
@@ -220,7 +233,6 @@ export default function OnboardingScreen() {
           value: data.threshold_pace,
           unit: "seconds_per_km",
           duration_seconds: 3600, // 1 hour threshold
-          source: "user_input",
           recorded_at: recordedAt,
           notes: "Threshold pace from onboarding",
         });

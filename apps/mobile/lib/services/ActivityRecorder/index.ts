@@ -181,15 +181,24 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   // === Profile ===
   private profile: PublicProfilesRow;
+  private ftp?: number;
+  private thresholdHr?: number;
+  private weightKg?: number;
 
-  constructor(profile: PublicProfilesRow) {
+  constructor(
+    profile: PublicProfilesRow,
+    metrics?: { ftp?: number; thresholdHr?: number; weightKg?: number }
+  ) {
     super();
     // Note: expo-modules-core EventEmitter doesn't have setMaxListeners
     // If you need more listeners, consider using Node.js EventEmitter instead
     this.profile = profile;
+    this.ftp = metrics?.ftp;
+    this.thresholdHr = metrics?.thresholdHr;
+    this.weightKg = metrics?.weightKg;
 
     // Initialize managers
-    this.liveMetricsManager = new LiveMetricsManager(profile);
+    this.liveMetricsManager = new LiveMetricsManager(profile, metrics);
     this.locationManager = new LocationManager();
     this.sensorsManager = new SensorsManager();
 
@@ -1411,7 +1420,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   ): number | null {
     // Handle percentage of FTP
     if (target.type === "%FTP") {
-      if (!this.profile.ftp) {
+      if (!this.ftp) {
         console.warn(
           "[Service] Cannot apply %FTP target - no FTP value in profile. User should set FTP in settings.",
         );
@@ -1422,9 +1431,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         return null;
       }
       const percentage = target.intensity;
-      const watts = Math.round((percentage / 100) * this.profile.ftp);
+      const watts = Math.round((percentage / 100) * this.ftp);
       console.log(
-        `[Service] Resolved %FTP target: ${percentage}% of ${this.profile.ftp}W = ${watts}W`,
+        `[Service] Resolved %FTP target: ${percentage}% of ${this.ftp}W = ${watts}W`,
       );
       return watts;
     }

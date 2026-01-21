@@ -578,7 +578,6 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         hr_zone_seconds: calculatedMetrics.hrZoneSeconds ?? undefined,
         power_zone_seconds: calculatedMetrics.powerZoneSeconds ?? undefined,
         activity_plan_id: activityPlanId, // Use activity_plan_id instead of planned_activity_id
-        route_id: null, // Will be set if route is attached
       };
 
       console.log("[useActivitySubmission] Activity processed successfully");

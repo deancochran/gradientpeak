@@ -32,6 +32,13 @@ export interface EstimationContext {
   // User profile data
   profile: PublicProfilesRow;
 
+  // Performance metrics (from profile_performance_metric_logs)
+  ftp?: number | null; // Functional Threshold Power (watts)
+  thresholdHr?: number | null; // Threshold Heart Rate (bpm)
+
+  // Profile metrics (from profile_metric_logs)
+  weightKg?: number | null; // Weight in kilograms
+
   // Current fitness state
   fitnessState?: FitnessState;
 

@@ -56,7 +56,6 @@ function SubmitScreen() {
       submission.update({
         name: data.name,
         notes: data.notes ?? undefined,
-        is_private: data.is_private,
       });
       await submission.submit();
       if (service) {

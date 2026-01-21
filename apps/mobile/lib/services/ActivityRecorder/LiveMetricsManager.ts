@@ -19,7 +19,7 @@ import {
 } from "@repo/core";
 import { EventEmitter } from "expo";
 import { MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
-import { DataBuffer } from "./DataBuffer";
+import { DataBuffer, type LatLngBufferedReading } from "./DataBuffer";
 import {
   convertToSimplifiedMetrics,
   getSensorModel,
@@ -93,11 +93,14 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private hrZoneTimes = [0, 0, 0, 0, 0]; // 5 zones
   private powerZoneTimes = [0, 0, 0, 0, 0, 0, 0]; // 7 zones
 
-  constructor(profile: PublicProfilesRow) {
+  constructor(
+    profile: PublicProfilesRow,
+    metrics?: { ftp?: number; thresholdHr?: number; weightKg?: number }
+  ) {
     super();
     // Note: expo-modules-core EventEmitter doesn't have setMaxListeners
     // If you need more listeners, consider using Node.js EventEmitter instead
-    this.profile = this.extractProfileMetrics(profile);
+    this.profile = this.extractProfileMetrics(profile, metrics);
     this.zones = this.calculateZones(this.profile);
     this.metrics = this.createInitialMetrics();
     this.buffer = new DataBuffer(RECORDING_CONFIG.BUFFER_WINDOW_SECONDS);
@@ -639,12 +642,12 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     // Calculate speed using last 3 seconds of movement
     // This smooths GPS noise while being responsive
     const cutoffTime = Date.now() - 3000; // 3 seconds ago
-    const recentPoints = recentReadings.filter(r => r.timestamp >= cutoffTime);
+    const recentPoints = recentReadings.filter(r => r.timestamp >= cutoffTime) as LatLngBufferedReading[];
 
     if (recentPoints.length < 2) {
       // Fall back to using all recent points if not enough in last 3s
       if (recentReadings.length >= 2) {
-        return this.computeSpeedFromPoints(recentReadings);
+        return this.computeSpeedFromPoints(recentReadings as LatLngBufferedReading[]);
       }
       return undefined;
     }
@@ -1316,11 +1319,14 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   /**
    * Extract profile metrics
    */
-  private extractProfileMetrics(profile: PublicProfilesRow): ProfileMetrics {
+  private extractProfileMetrics(
+    profile: PublicProfilesRow,
+    metrics?: { ftp?: number; thresholdHr?: number; weightKg?: number }
+  ): ProfileMetrics {
     return {
-      ftp: profile.ftp ?? undefined,
-      threshold_hr: profile.threshold_hr ?? undefined,
-      weight: profile.weight_kg ?? undefined,
+      ftp: metrics?.ftp ?? undefined,
+      threshold_hr: metrics?.thresholdHr ?? undefined,
+      weight: metrics?.weightKg ?? undefined,
       age: undefined, // Age calculation from DOB would go here if needed
     };
   }
