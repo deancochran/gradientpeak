@@ -1,0 +1,318 @@
+# Backend Skill
+
+**Last Updated**: 2026-01-21
+**Version**: 1.0.0
+**Maintained By**: Skill Creator Agent
+
+## Core Principles
+
+1. **Validate All Inputs** - Every procedure uses Zod schema validation
+2. **Protect Endpoints** - Use protectedProcedure for auth-required operations
+3. **Verify Ownership** - Always check user owns resource before mutation
+4. **Handle Errors Gracefully** - Convert Supabase errors to TRPCError
+5. **Use Core for Logic** - Business calculations go in @repo/core
+6. **Type-Safe Everywhere** - Leverage tRPC + TypeScript end-to-end
+
+## Patterns to Follow
+
+### Pattern 1: Protected Procedure with Input Validation
+
+```typescript
+export const activitiesRouter = createTRPCRouter({
+  create: protectedProcedure
+    .input(
+      z.object({
+        name: z.string().min(1),
+        type: z.enum(['run', 'bike', 'swim', 'other']),
+        distance: z.number().nonnegative().optional(),
+        duration: z.number().int().positive(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data, error } = await ctx.supabase
+        .from('activities')
+        .insert({
+          ...input,
+          profile_id: ctx.session.user.id, // Add user ID
+        })
+        .select()
+        .single();
+
+      if (error) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to create activity',
+        });
+      }
+
+      return data;
+    }),
+});
+```
+
+### Pattern 2: Ownership Verification Before Mutation
+
+```typescript
+delete: protectedProcedure
+  .input(z.object({ id: z.string().uuid() }))
+  .mutation(async ({ ctx, input }) => {
+    // Verify ownership FIRST
+    const { data: activity } = await ctx.supabase
+      .from('activities')
+      .select('id, profile_id')
+      .eq('id', input.id)
+      .eq('profile_id', ctx.session.user.id)
+      .single();
+
+    if (!activity) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Activity not found',
+      });
+    }
+
+    // Delete with double-check
+    const { error } = await ctx.supabase
+      .from('activities')
+      .delete()
+      .eq('id', input.id)
+      .eq('profile_id', ctx.session.user.id);
+
+    if (error) throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: error.message,
+    });
+
+    return { success: true };
+  }),
+```
+
+### Pattern 3: Complex Query with Filters
+
+```typescript
+list: protectedProcedure
+  .input(
+    z.object({
+      limit: z.number().min(1).max(100).default(20),
+      offset: z.number().min(0).default(0),
+      type: z.enum(['run', 'bike', 'swim']).optional(),
+      dateFrom: z.string().optional(),
+      sortBy: z.enum(['date', 'distance']).default('date'),
+    })
+  )
+  .query(async ({ ctx, input }) => {
+    let query = ctx.supabase
+      .from('activities')
+      .select('*', { count: 'exact' })
+      .eq('profile_id', ctx.session.user.id);
+
+    // Apply filters conditionally
+    if (input.type) {
+      query = query.eq('type', input.type);
+    }
+    if (input.dateFrom) {
+      query = query.gte('started_at', input.dateFrom);
+    }
+
+    // Apply sorting
+    query = query.order(
+      input.sortBy === 'date' ? 'started_at' : 'distance_meters',
+      { ascending: false }
+    );
+
+    // Apply pagination
+    query = query.range(input.offset, input.offset + input.limit - 1);
+
+    const { data, error, count } = await query;
+
+    if (error) throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: error.message,
+    });
+
+    return {
+      items: data || [],
+      total: count || 0,
+      hasMore: (count || 0) > input.offset + input.limit,
+    };
+  }),
+```
+
+### Pattern 4: Manual Transaction with Rollback
+
+```typescript
+createWithStreams: protectedProcedure
+  .input(
+    z.object({
+      activity: activitySchema,
+      streams: z.array(streamSchema),
+    })
+  )
+  .mutation(async ({ ctx, input }) => {
+    // 1. Create activity
+    const { data: activity, error: activityError } = await ctx.supabase
+      .from('activities')
+      .insert(input.activity)
+      .select()
+      .single();
+
+    if (activityError) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: `Failed to create activity: ${activityError.message}`,
+      });
+    }
+
+    // 2. Create streams
+    if (input.streams.length > 0) {
+      const streamsWithActivityId = input.streams.map(stream => ({
+        ...stream,
+        activity_id: activity.id,
+      }));
+
+      const { error: streamsError } = await ctx.supabase
+        .from('activity_streams')
+        .insert(streamsWithActivityId);
+
+      if (streamsError) {
+        // ROLLBACK: Delete created activity
+        await ctx.supabase
+          .from('activities')
+          .delete()
+          .eq('id', activity.id);
+
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Failed to create streams: ${streamsError.message}`,
+        });
+      }
+    }
+
+    return activity;
+  }),
+```
+
+### Pattern 5: Use Core Package for Business Logic
+
+```typescript
+calculateMetrics: protectedProcedure
+  .input(z.object({ activityId: z.string().uuid() }))
+  .mutation(async ({ ctx, input }) => {
+    // Fetch data from database
+    const { data: activity } = await ctx.supabase
+      .from('activities')
+      .select('*, activity_streams(*)')
+      .eq('id', input.activityId)
+      .single();
+
+    // Use core package for calculations
+    import { calculateTSS, decompressStreams } from '@repo/core';
+
+    const streams = decompressStreams(activity.activity_streams);
+    const tss = calculateTSS({
+      powerStream: streams.power,
+      duration: activity.duration_seconds,
+      ftp: activity.profile.ftp,
+    });
+
+    // Update database with results
+    await ctx.supabase
+      .from('activities')
+      .update({ metrics: { tss } })
+      .eq('id', input.activityId);
+
+    return { tss };
+  }),
+```
+
+## Anti-Patterns to Avoid
+
+### Anti-Pattern 1: Missing Auth on Protected Routes
+
+```typescript
+// ❌ BAD
+.query(async ({ ctx, input }) => {
+  // No auth check - anyone can access
+  const { data } = await ctx.supabase.from('users').select('*');
+})
+
+// ✅ CORRECT
+protectedProcedure
+  .query(async ({ ctx, input }) => {
+    // Auth enforced by middleware
+    const { data } = await ctx.supabase
+      .from('activities')
+      .eq('profile_id', ctx.session.user.id);
+  })
+```
+
+### Anti-Pattern 2: Missing Input Validation
+
+```typescript
+// ❌ BAD
+.mutation(async ({ ctx, input }) => {
+  await ctx.supabase.from('activities').insert(input);
+})
+
+// ✅ CORRECT
+.input(activitySchema)
+.mutation(async ({ ctx, input }) => {
+  await ctx.supabase.from('activities').insert(input);
+})
+```
+
+### Anti-Pattern 3: Silently Ignoring Errors
+
+```typescript
+// ❌ BAD
+const { data, error } = await ctx.supabase.from('activities').select('*');
+return data || [];
+
+// ✅ CORRECT
+const { data, error } = await ctx.supabase.from('activities').select('*');
+if (error) {
+  throw new TRPCError({
+    code: 'INTERNAL_SERVER_ERROR',
+    message: error.message,
+  });
+}
+return data || [];
+```
+
+## File Organization
+
+```
+packages/trpc/src/
+├── routers/
+│   ├── index.ts          # Aggregate all routers
+│   ├── activities.ts     # Activity CRUD
+│   ├── profiles.ts       # Profile management
+│   └── auth.ts           # Authentication
+├── context.ts            # tRPC context (session, supabase)
+└── trpc.ts               # tRPC initialization
+```
+
+## Checklist
+
+- [ ] All inputs validated with Zod
+- [ ] Protected procedures for auth-required operations
+- [ ] Ownership verified before mutations
+- [ ] Errors converted to TRPCError
+- [ ] Business logic in @repo/core
+- [ ] Cache invalidation handled client-side
+- [ ] Pagination for large datasets
+- [ ] Proper error codes (UNAUTHORIZED, NOT_FOUND, etc.)
+
+## Related Skills
+
+- [Core Package Skill](./core-package-skill.md) - Business logic
+- [Web Frontend Skill](./web-frontend-skill.md) - tRPC client
+- [Mobile Frontend Skill](./mobile-frontend-skill.md) - tRPC mobile
+
+## Version History
+
+- **1.0.0** (2026-01-21): Initial version
+
+---
+
+**Next Review**: 2026-02-21

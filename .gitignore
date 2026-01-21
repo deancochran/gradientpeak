@@ -83,13 +83,17 @@ packages/*/lib/
 .idea/
 *.log
 .aider*
-.claude
-*.claude
-.opencode
-*opencode*
-*.opencode
-CLAUDE.md
-.rules
-*.rules
-rules/
-context.json
+
+# OpenCode (IDE tool) - ignore all config/state files
+.opencode/
+opencode.json
+
+# Claude Code - ignore only temporary/active task files
+.claude/task/active/
+.claude/.temp/
+
+# Allow these Claude files to be tracked:
+# - .claude/rules/ (project rules)
+# - .claude/research/ (persistent knowledge base)
+# - .claude/task/completed/ (audit trail)
+# - CLAUDE.md (project documentation)
