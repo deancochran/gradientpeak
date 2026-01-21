@@ -28,5 +28,18 @@
     ".claude/rules/core-package.md",
     ".claude/rules/typescript-standards.md"
   ],
-  "autoupdate": true
+  "autoupdate": true,
+   "provider": {
+    "ollama": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama (local)",
+      "options": {
+        "baseURL": "http://localhost:11434/v1"
+      },
+      "models": {
+        "nemotron-3-nano:latest": {
+          "name": "nemotron"
+        }
+      }
+    }
 }
