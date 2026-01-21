@@ -84,16 +84,26 @@ packages/*/lib/
 *.log
 .aider*
 
-# OpenCode (IDE tool) - ignore all config/state files
-.opencode/
-opencode.json
+# OpenCode - ignore temporary/state files but allow config
+.opencode/temp/
+.opencode/state/
+.opencode/logs/
 
 # Claude Code - ignore only temporary/active task files
 .claude/task/active/
 .claude/.temp/
+.claude/settings.local.json
 
-# Allow these Claude files to be tracked:
+# Allow these to be tracked (valuable project assets):
+# OpenCode:
+# - .opencode/agents/ (agent definitions)
+# - .opencode/skills/ (reusable skills)
+# - .opencode/commands/ (custom commands)
+# - opencode.json (agent config)
+# Claude Code:
 # - .claude/rules/ (project rules)
 # - .claude/research/ (persistent knowledge base)
 # - .claude/task/completed/ (audit trail)
+# - .claude/agents/ (agent definitions)
+# - .claude/skills/ (skill definitions)
 # - CLAUDE.md (project documentation)
