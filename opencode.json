@@ -1,45 +1,16 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "anthropic/claude-sonnet-4-5",
-
-  "mcp": {
-    "context7": {
-      "type": "remote",
-      "url": "https://mcp.context7.com/mcp"
-    },
-    "gh_grep": {
-      "type": "remote",
-      "url": "https://mcp.grep.app"
-    }
-  },
-
-  "permission": {
-    "bash": "ask",
-    "read": "allow",
-    "write": "ask",
-    "edit": "ask"
-  },
-
-  "instructions": [
-    ".claude/rules/context7.md",
-    ".claude/rules/monorepo-structure.md",
-    ".claude/rules/mobile-development.md",
-    ".claude/rules/web-development.md",
-    ".claude/rules/core-package.md",
-    ".claude/rules/typescript-standards.md"
-  ],
-  "autoupdate": true,
-   "provider": {
+  "provider": {
     "ollama": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "Ollama (local)",
       "options": {
         "baseURL": "http://localhost:11434/v1"
       },
       "models": {
         "nemotron-3-nano:latest": {
-          "name": "nemotron"
+          "tools": true
         }
       }
     }
+  }
 }
