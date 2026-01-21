@@ -169,6 +169,12 @@ export * from "./schemas"; // Zod schemas and types (includes formatDuration for
 export * from "./utils"; // Utility functions
 
 // ============================================================================
+// FIT File Parsing Module
+// ============================================================================
+export * from "./lib/fit-parser";
+export * from "./lib/fit-sdk-parser";
+
+// ============================================================================
 // Performance Metrics Calculations
 // ============================================================================
 // Multi-modal TSS calculations (power, heart rate, pace)

@@ -17,6 +17,7 @@
     "watch": "concurrently \"tsc --noEmit --watch --preserveWatchOutput\" \"chokidar '**/*.{ts,tsx,js,jsx}' -c 'eslint .'\""
   },
   "dependencies": {
+    "@garmin/fitsdk": "^21.188.0",
     "@mapbox/polyline": "^1.2.1",
     "zod": "^4.2.1"
   },

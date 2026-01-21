@@ -7,7 +7,11 @@
     ".": "./index.ts"
   },
   "scripts": {
-    "dev": "supabase start",
+    "dev": "run-p dev:supabase dev:functions",
+    "dev:supabase": "supabase start",
+    "dev:functions": "supabase functions serve",
+    "functions:deploy": "supabase functions deploy",
+    "functions:new": "supabase functions new",
     "update-types": "npm run generate-types && npm run generate-schemas",
     "generate-types": "supabase gen types typescript --local > database.types.ts",
     "generate-schemas": "supazod -i database.types.ts -o supazod/schemas.ts -t supazod/schemas.types.ts -s public,schema_a,schema_b",
@@ -15,11 +19,7 @@
     "seed-training-plans": "tsx scripts/seed-training-plan-templates.ts"
   },
   "devDependencies": {
-    "@repo/typescript-config": "workspace:*",
-    "supazod": "^4.5.0",
-    "tsx": "^4.21.0"
-  },
-  "peerDependencies": {
-    "typescript": "^5.0.0"
+    "npm-run-all": "^4.1.5",
+    "supabase": "^1.0.0"
   }
 }

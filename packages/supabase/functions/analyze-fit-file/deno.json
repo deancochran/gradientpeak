@@ -1,0 +1,7 @@
+{
+  "imports": {
+    "@supabase/functions-js": "jsr:@supabase/functions-js@^2.4.1",
+    "@mapbox/polyline": "npm:@mapbox/polyline@^1.2.1",
+    "supabase": "npm:supabase@2"
+  }
+}
