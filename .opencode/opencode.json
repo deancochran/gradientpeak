@@ -71,9 +71,17 @@
       "mode": "subagent",
       "description": "Specialized agent for ActivityRecorder service development. Helps with sensor integration, metrics tracking, and recording UI."
     },
-    "mobile-form-assistant": {
+    "react-native-reusables-expert": {
       "mode": "subagent",
-      "description": "Generates forms, modals, and mutations for mobile app with proper error handling and validation."
+      "description": "Expert in React Native Reusables UI components. Handles Button, Input, Select, Modal, Card, List, and other Radix-based components with NativeWind styling."
+    },
+    "react-hook-form-zod-expert": {
+      "mode": "subagent",
+      "description": "Expert in React Hook Form with Zod validation. Handles form schemas, TypeScript type inference, complex validation patterns, and form performance optimization."
+    },
+    "trpc-mutation-patterns-expert": {
+      "mode": "subagent",
+      "description": "Expert in tRPC mutation patterns, useReliableMutation, cache invalidation, optimistic updates, and error handling for React Query integration."
     },
     "web-page-generator": {
       "mode": "subagent",
@@ -87,9 +95,9 @@
       "mode": "subagent",
       "description": "Helps with calculations, schemas, and business logic in @repo/core"
     },
-    "api-integration-assistant": {
+    "strava-api-expert": {
       "mode": "subagent",
-      "description": "Helps integrate third-party APIs with proper OAuth and error handling"
+      "description": "Expert in Strava API integration for activity data, athlete profiles, and webhook handling. Handles OAuth flows, activity sync, and Strava-specific data mapping."
     },
     "database-migration-assistant": {
       "mode": "subagent",
