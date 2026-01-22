@@ -58,34 +58,36 @@ This specification defines FIT file processing for GradientPeak using a **single
 
 ## Part 2: Database Schema
 
-### Existing Tables (No Changes Needed)
+### Database Schema Simplification
 
-The database already has everything required:
+We will **remove the `activity_streams` table** and store all data directly in the `activities` table to simplify the architecture.
 
 ```sql
 -- activities table already has these columns:
 -- - id, user_id, name, notes, activity_type
--- - fit_file_path (NEW - add this column)
--- - processing_status (NEW - add this column)
 -- - metrics (JSONB)
 -- - start_time, created_at, updated_at
 
--- activity_streams table already supports:
--- - activity_id, stream_type (power, heart_rate, pace, etc.)
--- - data (compressed bytea)
--- - original_length
+-- activity_streams table - TO BE REMOVED
+-- All stream data will be stored in activities.metrics.streams
 ```
 
 ### Required Schema Changes
 
-**Only add these columns to `activities` table:**
+**Add these columns to `activities` table:**
 
 ```sql
 ALTER TABLE activities ADD COLUMN fit_file_path TEXT;
 ALTER TABLE activities ADD COLUMN processing_status TEXT DEFAULT 'pending';
 ```
 
-**Note:** All other columns (duration, distance, calories, heart_rate, power, etc.) already exist in the `metrics` JSONB column.
+**Remove the activity_streams table:**
+
+```sql
+DROP TABLE IF EXISTS activity_streams;
+```
+
+**Note:** All stream data (GPS points, power, heart rate, pace, etc.) will be stored in the `metrics` JSONB column under a `streams` sub-object. This eliminates the need for a separate table and simplifies queries.
 
 ---
 
@@ -123,9 +125,9 @@ import {
 
 // Import existing utilities from @repo/core
 import {
-  decompressAllStreams,
-  compressStream,
   extractNumericStream,
+  compressStreamsForStorage,
+  decompressStreamsFromStorage,
 } from "@repo/core";
 
 export const fitFilesRouter = createTRPCRouter({
@@ -170,19 +172,30 @@ export const fitFilesRouter = createTRPCRouter({
       // ===== STEP 3: Extract activity summary using @repo/core =====
       const summary = extractActivitySummary(parseResult.data);
 
-      // ===== STEP 4: Decompress streams using @repo/core =====
-      const streams = await decompressAllStreams(records);
+      // ===== STEP 4: Extract streams from FIT records =====
+      const rawStreams = {
+        power: extractNumericStream(records, "power"),
+        heart_rate: extractNumericStream(records, "heart_rate"),
+        pace: extractNumericStream(records, "pace"),
+        cadence: extractNumericStream(records, "cadence"),
+        altitude: extractNumericStream(records, "altitude"),
+        speed: extractNumericStream(records, "speed"),
+        gps_points: records
+          .filter((r) => r.position_lat && r.position_long)
+          .map((r) => ({
+            lat: r.position_lat,
+            lng: r.position_long,
+            altitude: r.altitude || null,
+            timestamp: r.timestamp,
+          })),
+      };
 
       // ===== STEP 5: Calculate metrics using existing @repo/core functions =====
 
       // Power metrics (if power data exists)
-      const powerStream = extractNumericStream(streams, "power");
       const normalizedPower =
-        powerStream.length > 0 ? calculateNormalizedPower(powerStream) : null;
-
-      const intensityFactor =
-        normalizedPower && summary.ftp
-          ? calculateIntensityFactor(normalizedPower, summary.ftp)
+        rawStreams.power.length > 0
+          ? calculateNormalizedPower(rawStreams.power)
           : null;
 
       // TSS calculation using universal function
@@ -197,44 +210,50 @@ export const fitFilesRouter = createTRPCRouter({
           : null;
 
       // Heart rate zones using @repo/core
-      const hrStream = extractNumericStream(streams, "heart_rate");
       const hrZones =
-        hrStream.length > 0 ? extractHeartRateZones(hrStream) : null;
+        rawStreams.heart_rate.length > 0
+          ? extractHeartRateZones(rawStreams.heart_rate)
+          : null;
 
       // Power zones using @repo/core
       const powerZones =
-        powerStream.length > 0 ? extractPowerZones(powerStream) : null;
+        rawStreams.power.length > 0
+          ? extractPowerZones(rawStreams.power)
+          : null;
 
       // ===== STEP 6: Detect test efforts using @repo/core =====
 
       const powerTestEfforts = detectPowerTestEfforts({
-        powerStream,
+        powerStream: rawStreams.power,
         duration: summary.duration,
         activityType: input.activityType,
       });
 
       const runningTestEfforts = detectRunningTestEfforts({
-        paceStream: extractNumericStream(streams, "pace"),
+        paceStream: rawStreams.pace,
         distance: summary.distance,
         duration: summary.duration,
       });
 
       const hrTestEfforts = detectHRTestEfforts({
-        hrStream,
+        hrStream: rawStreams.heart_rate,
         duration: summary.duration,
       });
 
       // ===== STEP 7: Calculate performance curves using @repo/core =====
 
       const powerCurve =
-        powerStream.length > 0 ? calculatePowerCurve(powerStream) : null;
+        rawStreams.power.length > 0
+          ? calculatePowerCurve(rawStreams.power)
+          : null;
 
-      const hrCurve = hrStream.length > 0 ? calculateHRCurve(hrStream) : null;
+      const hrCurve =
+        rawStreams.heart_rate.length > 0
+          ? calculateHRCurve(rawStreams.heart_rate)
+          : null;
 
       const paceCurve =
-        extractNumericStream(streams, "pace").length > 0
-          ? calculatePaceCurve(extractNumericStream(streams, "pace"))
-          : null;
+        rawStreams.pace.length > 0 ? calculatePaceCurve(rawStreams.pace) : null;
 
       // ===== STEP 8: Create activity record =====
 
@@ -280,6 +299,9 @@ export const fitFilesRouter = createTRPCRouter({
           powerCurve,
           hrCurve,
           paceCurve,
+
+          // Raw stream data (compressed for storage)
+          streams: compressStreamsForStorage(rawStreams),
         },
       };
 
@@ -302,26 +324,8 @@ export const fitFilesRouter = createTRPCRouter({
         });
       }
 
-      // ===== STEP 9: Store compressed streams =====
-
-      const streamRecords = Object.entries(streams).map(
-        ([streamType, data]) => ({
-          activity_id: createdActivity.id,
-          stream_type: streamType,
-          data: compressStream(data),
-          original_length: data.length,
-        }),
-      );
-
-      if (streamRecords.length > 0) {
-        const { error: streamsError } = await ctx.supabase
-          .from("activity_streams")
-          .insert(streamRecords);
-
-        if (streamsError) {
-          // Log error but don't fail - streams are supplementary
-          console.error("Failed to store activity streams:", streamsError);
-        }
+      // ===== STEP 9: No separate stream storage needed =====
+      // All stream data is already stored in activity.metrics.streams
       }
 
       // ===== STEP 10: Return result =====
@@ -403,6 +407,22 @@ export interface ActivityMetrics {
   powerCurve?: ReturnType<typeof calculatePowerCurve>;
   hrCurve?: ReturnType<typeof calculateHRCurve>;
   paceCurve?: ReturnType<typeof calculatePaceCurve>;
+
+  // Raw stream data (compressed)
+  streams?: {
+    gps_points?: Array<{
+      lat: number;
+      lng: number;
+      altitude: number | null;
+      timestamp: Date;
+    }>;
+    power?: number[];
+    heart_rate?: number[];
+    pace?: number[];
+    cadence?: number[];
+    altitude?: number[];
+    speed?: number[];
+  };
 }
 ```
 
@@ -456,11 +476,11 @@ import {
 } from "@repo/core/calculations/curves.ts";
 
 // Stream Utilities
-import {
-  decompressAllStreams,
-  compressStream,
-} from "@repo/core/utils/compression.ts";
 import { extractNumericStream } from "@repo/core/utils/extract-streams.ts";
+import {
+  compressStreamsForStorage,
+  decompressStreamsFromStorage,
+} from "@repo/core/utils/compression.ts";
 
 // Formatting (if needed)
 import {
@@ -475,11 +495,8 @@ import {
 **DO NOT define new schemas - import from `@repo/supabase`:**
 
 ```typescript
-import {
-  publicActivitiesInsertSchema,
-  publicActivityStreamsInsertSchema,
-  activityTypeEnum,
-} from "@repo/supabase";
+import { publicActivitiesInsertSchema, activityTypeEnum } from "@repo/supabase";
+// Note: publicActivityStreamsInsertSchema removed - streams stored in activities.metrics
 ```
 
 ---
@@ -589,11 +606,13 @@ describe("fitFilesRouter", () => {
       // Upload mock FIT file
       // Process with mutation
       // Assert activity created with metrics
+      // Assert GPS points stored in activity.metrics.streams.gps_points
     });
 
     it("should handle missing power data gracefully", async () => {
       // Upload FIT file without power
       // Assert tss is null, no errors
+      // Assert other metrics still calculated
     });
 
     it("should cleanup file on database failure", async () => {
@@ -604,6 +623,12 @@ describe("fitFilesRouter", () => {
     it("should detect FTP test efforts from power data", async () => {
       // Upload FIT with sustained threshold effort
       // Assert powerTestEfforts contains FTP test
+    });
+
+    it("should compress stream data for efficient storage", async () => {
+      // Upload FIT file with long recording
+      // Assert streams are compressed in activity.metrics.streams
+      // Assert decompression yields original data
     });
   });
 });
@@ -630,12 +655,12 @@ describe("fitFilesRouter", () => {
 1. **Downloads** FIT file from Supabase Storage
 2. **Parses** using existing `parseFitFileWithSDK()` from `@repo/core`
 3. **Extracts** activity summary using existing `extractActivitySummary()` from `@repo/core`
-4. **Decompresses** streams using existing `decompressAllStreams()` from `@repo/core`
+4. **Extracts** raw streams from FIT records
 5. **Calculates** TSS using existing `calculateTSSFromAvailableData()` from `@repo/core`
 6. **Detects** test efforts using existing `detectPowerTestEfforts()` from `@repo/core`
-7. **Creates** activity record with all metrics in `activities` table
-8. **Stores** compressed streams in `activity_streams` table
-9. **Returns** complete activity with all computed metrics
+7. **Creates** activity record with all metrics including compressed streams in `activities.metrics.streams`
+8. **Returns** complete activity with all computed metrics
+9. **Simplifies** architecture by removing the need for a separate `activity_streams` table
 
 ### What Already Exists (No Implementation Needed)
 
@@ -645,5 +670,28 @@ describe("fitFilesRouter", () => {
 - ✅ Test detection (`@repo/core/detection/`)
 - ✅ Performance curves (`@repo/core/calculations/curves.ts`)
 - ✅ Stream utilities (`@repo/core/utils/`)
-- ✅ Database schema (`packages/supabase/schemas/init.sql`)
+- ✅ Database schema (`packages/supabase/schemas/init.sql`) - with modifications
 - ✅ Zod schemas (`@repo/supabase`)
+
+### What's Different (Simplification)
+
+- ❌ **Removed:** `activity_streams` table
+- ✅ **Added:** Stream data stored directly in `activities.metrics.streams`
+- ✅ **Benefit:** Single table per activity, simpler queries, no JOINs needed
+- ✅ **Benefit:** Stream data compressed for efficient storage
+- ✅ **Benefit:** GPS points and all streams accessible with single activity query
+
+---
+
+## Part 8: Implementation Checklist
+
+- [ ] Add `fit_file_path` column to `activities` table
+- [ ] Add `processing_status` column to `activities` table
+- [ ] **Remove** `activity_streams` table (DROP TABLE)
+- [ ] Create `packages/trpc/src/routers/fit-files.ts`
+- [ ] Register `fitFilesRouter` in root router
+- [ ] Add `uploadAndProcessFitFile` helper to mobile app
+- [ ] Write unit tests for FIT file processing
+- [ ] Test with real FIT files from various devices
+- [ ] Verify stream compression/decompression works correctly
+- [ ] Update any existing queries that reference activity_streams table
