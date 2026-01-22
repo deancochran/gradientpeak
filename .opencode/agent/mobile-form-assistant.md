@@ -21,6 +21,9 @@ permissions:
     "*": allow
   glob:
     "*": allow
+  skill:
+    "mobile-frontend": "allow"
+    "schema-validator": "allow"
 ---
 
 # Mobile Form Assistant

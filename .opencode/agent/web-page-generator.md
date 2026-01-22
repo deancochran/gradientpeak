@@ -19,6 +19,10 @@ permissions:
     "*": allow
   glob:
     "*": allow
+  skill:
+    "web-frontend": "allow"
+    "web-trpc-setup": "allow"
+    "schema-validator": "allow"
 ---
 
 # Web Page Generator

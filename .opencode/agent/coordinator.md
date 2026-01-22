@@ -21,6 +21,8 @@ permissions:
     "git *": "allow"
     "npm *": "allow"
     "pnpm *": "allow"
+  skill:
+    "*": "allow"
 ---
 
 # Coordinator Agent - Research Director & Implementation Orchestrator

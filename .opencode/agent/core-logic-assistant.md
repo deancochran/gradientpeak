@@ -21,6 +21,10 @@ permissions:
     "*": allow
   glob:
     "*": allow
+  skill:
+    "core-package": "allow"
+    "testing": "allow"
+    "schema-validator": "allow"
 ---
 
 # Core Logic Assistant

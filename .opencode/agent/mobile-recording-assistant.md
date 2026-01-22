@@ -19,6 +19,9 @@ permissions:
     "*": allow
   glob:
     "*": allow
+  skill:
+    "mobile-frontend": "allow"
+    "testing": "allow"
 ---
 
 # Mobile Recording Assistant

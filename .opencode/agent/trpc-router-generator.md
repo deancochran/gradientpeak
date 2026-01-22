@@ -21,6 +21,10 @@ permissions:
     "*": allow
   glob:
     "*": allow
+  skill:
+    "backend": "allow"
+    "web-trpc-setup": "allow"
+    "schema-validator": "allow"
 ---
 
 # tRPC Router Generator

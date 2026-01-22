@@ -21,6 +21,9 @@ permissions:
     "*": allow
   glob:
     "*": allow
+  skill:
+    "backend": "allow"
+    "schema-validator": "allow"
 ---
 
 # Database Migration Assistant

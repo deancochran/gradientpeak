@@ -21,6 +21,10 @@ permissions:
     "*": allow
   glob:
     "*": allow
+  skill:
+    "web-frontend": "allow"
+    "mobile-frontend": "allow"
+    "testing": "allow"
 ---
 
 # Performance Optimizer

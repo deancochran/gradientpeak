@@ -19,6 +19,8 @@ permissions:
     "*": allow
   glob:
     "*": allow
+  skill:
+    "*": "allow"
 ---
 
 # Code Improvement Reviewer
