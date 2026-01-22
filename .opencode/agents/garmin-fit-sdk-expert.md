@@ -1,8 +1,6 @@
 ---
 description: Expert in Garmin FIT SDK for JavaScript. Handles FIT file encoding, decoding, developer data fields, custom profile generation with FitGen, and advanced SDK configuration for activity, course, and workout files.
 mode: subagent
-model: anthropic/claude-3-5-sonnet-20241022
-temperature: 0.3
 tools:
   read: true
   write: true

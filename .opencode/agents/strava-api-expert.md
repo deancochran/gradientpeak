@@ -1,8 +1,6 @@
 ---
 description: Expert in Strava API integration for activity data, athlete profiles, and webhook handling. Handles OAuth flows, activity sync, and Strava-specific data mapping.
 mode: subagent
-model: anthropic/claude-3-5-sonnet-20241022
-temperature: 0.3
 tools:
   read: true
   write: true

@@ -1,8 +1,6 @@
 ---
 description: Expert in React Hook Form with Zod validation. Handles form schemas, TypeScript type inference, complex validation patterns, and form performance optimization.
 mode: subagent
-model: anthropic/claude-3-5-sonnet-20241022
-temperature: 0.3
 tools:
   read: true
   write: true

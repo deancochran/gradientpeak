@@ -1,8 +1,6 @@
 ---
 description: Generates tRPC routers with procedures, input validation, and proper error handling
 mode: subagent
-model: anthropic/claude-3-5-sonnet-20241022
-temperature: 0.3
 tools:
   read: true
   write: true

@@ -1,8 +1,6 @@
 ---
 description: Expert in tRPC mutation patterns, useReliableMutation, cache invalidation, optimistic updates, and error handling for React Query integration.
 mode: subagent
-model: anthropic/claude-3-5-sonnet-20241022
-temperature: 0.3
 tools:
   read: true
   write: true

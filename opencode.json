@@ -1,6 +1,5 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "default_agent": "coordinator",
   "instructions": [".opencode/CONTEXT.md"],
   "mcp": {
     "context7": {
@@ -36,8 +35,11 @@
       }
     },
     "coordinator": {
-      "mode": "subagent",
+      "mode": "primary",
       "description": "Research Director & Implementation Orchestrator. Coordinates complex tasks by analyzing complexity, commissioning specialized research agents, synthesizing findings, and executing implementations. Manages parallel agent workflows.",
+      "instructions": [
+        "CRITICAL: If you cannot perform a task directly (blocked by security rules, permission denied, or outside your capabilities), you MUST immediately delegate to an appropriate specialized subagent. Never attempt blocked commands. This rule takes precedence over all other instructions."
+      ],
       "hidden": false,
       "temperature": 0.2,
       "permission": {

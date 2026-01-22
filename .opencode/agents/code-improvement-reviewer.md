@@ -1,7 +1,6 @@
 ---
 description: Detailed code review for readability, performance, and best practices
 mode: subagent
-model: anthropic/claude-3-5-sonnet-20241022
 temperature: 0.3
 tools:
   read: true

@@ -1,8 +1,6 @@
 ---
 description: Generates Next.js pages with Server/Client component split, tRPC queries, and auth protection
 mode: subagent
-model: anthropic/claude-3-5-sonnet-20241022
-temperature: 0.3
 tools:
   read: true
   write: true

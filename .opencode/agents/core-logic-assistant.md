@@ -1,7 +1,6 @@
 ---
 description: Helps with calculations, schemas, and business logic in database-independent @repo/core package
 mode: subagent
-model: anthropic/claude-3-5-sonnet-20241022
 temperature: 0.2
 tools:
   read: true

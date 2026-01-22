@@ -1,8 +1,6 @@
 ---
 description: Audits components for WCAG compliance and screen reader support.
 mode: subagent
-model: anthropic/claude-3-5-sonnet-20241022
-temperature: 0.2
 tools:
   read: true
   write: true

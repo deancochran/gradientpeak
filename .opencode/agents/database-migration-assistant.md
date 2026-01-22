@@ -1,8 +1,6 @@
 ---
 description: Generates and manages Supabase database schema migrations, RLS policies, and type updates
 mode: subagent
-model: anthropic/claude-3-5-sonnet-20241022
-temperature: 0.2
 tools:
   read: true
   write: true

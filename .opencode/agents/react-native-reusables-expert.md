@@ -1,8 +1,6 @@
 ---
 description: Expert in React Native Reusables UI component library. Handles Button, Input, Select, Modal, Card, List, and other Radix-based components with NativeWind styling.
 mode: subagent
-model: anthropic/claude-3-5-sonnet-20241022
-temperature: 0.3
 tools:
   read: true
   write: true

@@ -1,8 +1,6 @@
 ---
 description: Specialized agent for ActivityRecorder service - sensor integration, metrics tracking, and recording UI
 mode: subagent
-model: anthropic/claude-3-5-sonnet-20241022
-temperature: 0.2
 tools:
   read: true
   write: true
