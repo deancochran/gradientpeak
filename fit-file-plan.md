@@ -83,6 +83,10 @@ Only `listFitFiles` is incomplete.
 
 ## 1. Database Schema
 
+### **ARCHITECTURAL SIMPLIFICATION**
+
+**MAJOR CHANGE:** The `activity_streams` table is **REMOVED**. All stream data (GPS points, power, heart rate, pace, cadence, altitude, speed) is now stored in `activities.metrics.streams` as compressed data.
+
 ### Current Activities Table (from init.sql)
 
 ```sql
@@ -115,24 +119,37 @@ create table if not exists public.activities (
 );
 ```
 
-### Columns to Add
+### Schema Changes Required
 
 ```sql
 -- Migration: packages/supabase/migrations/20260121_add_fit_file_support.sql
 
+-- Add FIT file support columns
 ALTER TABLE activities ADD COLUMN fit_file_path TEXT;
 ALTER TABLE activities ADD COLUMN processing_status TEXT DEFAULT 'PENDING'
   CHECK (processing_status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED'));
 ALTER TABLE activities ADD COLUMN processing_error TEXT;
 ALTER TABLE activities ADD COLUMN fit_file_size INTEGER;
 
+-- REMOVE activity_streams table - data now in activities.metrics.streams
+DROP TABLE IF EXISTS activity_streams;
+
+-- Indexes for performance
 CREATE INDEX idx_activities_processing_status ON activities(processing_status);
 CREATE INDEX idx_activities_fit_path ON activities(fit_file_path) WHERE fit_file_path IS NOT NULL;
 ```
 
+### **Benefits of Simplified Architecture**
+
+✅ **Single table per activity** - All data accessible via one query  
+✅ **No JOIN operations needed** - Stream data in `activities.metrics.streams`  
+✅ **Better performance** - Eliminates complex multi-table queries  
+✅ **Easier maintenance** - Single source of truth for activity data  
+✅ **Simplified data model** - Stream data compressed for efficient storage
+
 ### Storage Bucket (already exists)
 
-The `fit-files` bucket already exists in seed.sql. Structure:
+The `activity-files` bucket already exists. Structure:
 
 - Path: `{userId}/{activityId}.fit`
 - Max Size: 50MB
@@ -640,89 +657,144 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
 
 ## 5. tRPC Router Changes
 
-### Activities Router - Add createWithFitFile
+### **NEW** FitFiles Router - Simplified Single Table Architecture
 
 ```typescript
-// packages/trpc/src/routers/activities.ts
+// packages/trpc/src/routers/fit-files.ts
 
-export const activitiesRouter = createTRPCRouter({
-  // ... existing procedures ...
+import { z } from "zod";
+import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { TRPCError } from "@trpc/server";
 
-  createWithFitFile: protectedProcedure
+// Import existing schemas from @repo/supabase
+import { publicActivitiesInsertSchema } from "@repo/supabase";
+
+// Import existing functions from @repo/core
+import {
+  parseFitFileWithSDK,
+  extractActivitySummary,
+  extractHeartRateZones,
+  extractPowerZones,
+  calculateTSSFromAvailableData,
+  calculateNormalizedPower,
+  detectPowerTestEfforts,
+  compressStreamsForStorage,
+} from "@repo/core";
+
+export const fitFilesRouter = createTRPCRouter({
+  processFitFile: protectedProcedure
     .input(
       z.object({
-        activity: publicActivitiesInsertSchema.omit({
-          id: true,
-          idx: true,
-          created_at: true,
-        }),
-        activity_streams: z
-          .array(
-            z.object({
-              type: z.enum([
-                /* stream types */
-              ]),
-              data_type: z.enum(["float", "latlng", "boolean"]),
-              compressed_values: z.string(),
-              compressed_timestamps: z.string(),
-              sample_count: z.number(),
-              original_size: z.number(),
-              min_value: z.number().optional(),
-              max_value: z.number().optional(),
-              avg_value: z.number().optional(),
-            }),
-          )
-          .optional(),
-        fit_file_path: z.string(),
-        fit_file_size: z.number().optional(),
+        fitFilePath: z.string(),
+        name: z.string().min(1).max(100),
+        notes: z.string().max(1000).optional(),
+        activityType: z.enum(["run", "bike", "swim", "walk", "hike"]),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { activity, activity_streams, fit_file_path, fit_file_size } =
-        input;
+      const userId = ctx.session.user.id;
 
-      // Create activity with FIT file reference
-      const { data, error } = await ctx.supabase
+      // ===== STEP 1: Download FIT file from Supabase Storage =====
+      const { data: fitFile, error: downloadError } = await ctx.supabase.storage
+        .from("activity-files")
+        .download(input.fitFilePath);
+
+      if (downloadError || !fitFile) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to download FIT file from storage",
+        });
+      }
+
+      // ===== STEP 2: Parse FIT file using existing @repo/core function =====
+      const arrayBuffer = await fitFile.arrayBuffer();
+      const parseResult = await parseFitFileWithSDK(arrayBuffer);
+
+      if (!parseResult.success || !parseResult.data) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: parseResult.error || "Failed to parse FIT file",
+        });
+      }
+
+      // ===== STEP 3: Extract streams and compress for storage =====
+      const rawStreams = {
+        power: extractNumericStream(records, "power"),
+        heart_rate: extractNumericStream(records, "heart_rate"),
+        pace: extractNumericStream(records, "pace"),
+        cadence: extractNumericStream(records, "cadence"),
+        altitude: extractNumericStream(records, "altitude"),
+        speed: extractNumericStream(records, "speed"),
+        gps_points: records
+          .filter((r) => r.position_lat && r.position_long)
+          .map((r) => ({
+            lat: r.position_lat,
+            lng: r.position_long,
+            altitude: r.altitude || null,
+            timestamp: r.timestamp,
+          })),
+      };
+
+      // ===== STEP 4: Create activity with ALL data in single table =====
+      const activityData = {
+        user_id: userId,
+        name: input.name,
+        notes: input.notes,
+        activity_type: input.activityType,
+        fit_file_path: input.fitFilePath,
+        processing_status: "completed",
+        start_time: new Date(summary.startTime),
+        metrics: {
+          // Basic metrics from FIT file
+          duration: summary.duration,
+          distance: summary.distance,
+          calories: summary.calories,
+          avgHeartRate: summary.avgHeartRate,
+          maxHeartRate: summary.maxHeartRate,
+          avgPower: summary.avgPower,
+          maxPower: summary.maxPower,
+
+          // Power metrics
+          normalizedPower,
+          tss,
+
+          // All stream data compressed in activities.metrics.streams
+          streams: compressStreamsForStorage(rawStreams),
+        },
+      };
+
+      const { data: createdActivity, error: insertError } = await ctx.supabase
         .from("activities")
-        .insert({
-          ...activity,
-          fit_file_path,
-          fit_file_size,
-          processing_status: "PENDING",
-        })
+        .insert(activityData)
         .select()
         .single();
 
-      if (error) {
-        throw new Error(`Failed to create activity: ${error.message}`);
+      if (insertError || !createdActivity) {
+        // Cleanup: Delete uploaded file if activity creation fails
+        await ctx.supabase.storage
+          .from("activity-files")
+          .remove([input.fitFilePath]);
+
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to create activity record",
+        });
       }
 
-      // Create streams if provided
-      if (activity_streams && activity_streams.length > 0) {
-        const streamsWithActivityId = activity_streams.map((s) => ({
-          ...s,
-          activity_id: data.id,
-        }));
-
-        const { error: streamsError } = await ctx.supabase
-          .from("activity_streams")
-          .insert(streamsWithActivityId);
-
-        if (streamsError) {
-          await ctx.supabase.from("activities").delete().eq("id", data.id);
-          throw new Error(`Failed to create streams: ${streamsError.message}`);
-        }
-      }
-
-      // Trigger FIT processing
-      await ctx.supabase.functions.invoke("process-activity-fit", {
-        body: { activityId: data.id },
-      });
-
-      return data;
+      return {
+        success: true,
+        activity: createdActivity,
+      };
     }),
 });
 ```
+
+### **REMOVED** - No Longer Needed
+
+❌ **createWithFitFile** in activities router - replaced by `processFitFile`  
+❌ **activity_streams table operations** - streams now in `activities.metrics.streams`  
+❌ **Edge function triggers** - processing now synchronous in tRPC mutation  
+❌ **Complex stream management** - single table simplifies everything
 
 ---
 
@@ -851,17 +923,25 @@ PENDING → PROCESSING → COMPLETED
 
 ---
 
-## 13. Timeline
+## 13. Timeline (UPDATED)
 
 | Phase                         | Duration | Total     |
 | ----------------------------- | -------- | --------- |
-| Phase 1: Infrastructure       | 1-2 days | Day 1-2   |
-| Phase 2: Mobile Recording     | 3-5 days | Day 3-7   |
-| Phase 3: Automatic Processing | 4-5 days | Day 8-12  |
-| Phase 4: User Interface       | 2 days   | Day 13-14 |
-| Phase 5: Data Migration       | 2-3 days | Day 15-17 |
+| Phase 1: Infrastructure       | 1 days   | Day 1     |
+| Phase 2: Mobile Recording     | 3-4 days | Day 2-5   |
+| Phase 3: Automatic Processing | 3-4 days | Day 6-9   |
+| Phase 4: User Interface       | 2 days   | Day 10-11 |
+| Phase 5: Data Migration       | 1-2 days | Day 12-13 |
 
-**Total:** 12-17 days (approximately 2-3 weeks)
+**Total:** 10-13 days (approximately 2 weeks)  
+**Reduced complexity due to simplified architecture:** -3-4 days from original estimate
+
+### Timeline Reduction Reasons
+
+- **No activity_streams table management** - Eliminated complex stream storage logic
+- **Single activity query** - No JOIN operations needed for stream data
+- **Simplified data model** - All stream data in `activities.metrics.streams`
+- **Reduced testing complexity** - Fewer database interactions to test
 
 ---
 
@@ -870,10 +950,11 @@ PENDING → PROCESSING → COMPLETED
 ### Phase 1: Infrastructure Setup
 
 - [ ] Apply/create database migration for FIT columns
+- [ ] **REMOVE** activity_streams table (DROP TABLE)
 - [ ] Regenerate TypeScript types (supabase generate-types)
 - [ ] Regenerate Zod schemas (supazod)
-- [ ] Create process-activity-fit Edge Function
-- [ ] Add Edge Function config to config.toml
+- [ ] Create fit-files tRPC router (simpler than Edge Function)
+- [ ] Register fitFilesRouter in root router
 
 ### Phase 2: Mobile Recording
 
@@ -886,11 +967,12 @@ PENDING → PROCESSING → COMPLETED
 
 ### Phase 3: Automatic Processing
 
-- [ ] Implement real FIT file decoding in Edge Function
-- [ ] Implement metrics calculation (TSS, IF, NP)
-- [ ] Implement GPS polyline generation
-- [ ] Implement activity record update
-- [ ] Add error handling and retries
+- [ ] Implement real FIT file decoding in tRPC mutation (simpler than Edge Function)
+- [ ] Implement stream compression for activities.metrics.streams storage
+- [ ] Leverage existing @repo/core functions for metrics calculation (TSS, IF, NP)
+- [ ] Implement GPS polyline generation using @repo/core utilities
+- [ ] Implement single activity record update (no separate streams table)
+- [ ] Add error handling and file cleanup on failure
 
 ### Phase 4: User Interface
 
@@ -908,14 +990,33 @@ PENDING → PROCESSING → COMPLETED
 
 ---
 
-## 15. Key Decisions
+## 15. Key Decisions (UPDATED)
 
-| Decision               | Options                                       | Recommendation          |
-| ---------------------- | --------------------------------------------- | ----------------------- |
-| **Encoding Location**  | Mobile (fit-encoder-js) vs Server-side (Deno) | Mobile (true real-time) |
-| **FIT Parser**         | Use core package fit-sdk-parser               | Leverage existing code  |
-| **Processing Trigger** | Database trigger vs tRPC mutation             | tRPC mutation           |
-| **Status Column**      | Use existing migration or create new          | Apply existing          |
+| Decision                | Options                                       | Recommendation          |
+| ----------------------- | --------------------------------------------- | ----------------------- |
+| **Stream Storage**      | activity_streams table vs activities.metrics  | activities.metrics      |
+| **Data Architecture**   | Multi-table JOIN vs Single Table              | Single Table            |
+| **Processing Location** | Edge Function vs tRPC mutation                | tRPC mutation           |
+| **FIT Parser**          | Use core package fit-sdk-parser               | Leverage existing code  |
+| **Encoding Location**   | Mobile (fit-encoder-js) vs Server-side (Deno) | Mobile (true real-time) |
+
+### **Major Architectural Decision: Single Table Architecture**
+
+**Chosen:** `activities.metrics.streams` instead of `activity_streams` table
+
+**Benefits:**
+
+- ✅ Single query retrieves all activity data + streams
+- ✅ No JOIN operations needed for better performance
+- ✅ Simplified data model and maintenance
+- ✅ Stream data compressed for efficient storage
+- ✅ All data accessible via `activities` table query
+- ✅ Easier testing and debugging
+
+**Trade-offs:**
+
+- Larger JSONB payloads (mitigated by compression)
+- Less granular access control (acceptable for this use case)
 
 ---
 
@@ -940,6 +1041,18 @@ PENDING → PROCESSING → COMPLETED
 
 ## 17. Deprecations to Note
 
+### **REMOVED: activity_streams Table**
+
+**DO NOT recreate** - All stream data now stored in `activities.metrics.streams`:
+
+```sql
+-- REMOVED:
+DROP TABLE IF EXISTS activity_streams;
+
+-- REPLACED BY:
+-- activities.metrics.streams (JSONB with compressed data)
+```
+
 ### Removed Columns (do NOT recreate)
 
 These were removed in migration `20260120135511_removing_redundant_columns`:
@@ -956,11 +1069,42 @@ ALTER TABLE activities ADD COLUMN new_metric FLOAT;
 
 // Use:
 -- activity.metrics already supports any JSON
-// Just update the metrics object
+-- Just update the metrics object
+
+// For streams:
+activities.metrics.streams = {
+  gps_points: [...], // compressed
+  power: [...],      // compressed
+  heart_rate: [...], // compressed
+  // etc.
+}
+```
+
+### **Schema Migration Required**
+
+Any existing code referencing `activity_streams` table must be updated:
+
+```sql
+-- OLD QUERY (no longer works):
+SELECT a.*, s.* FROM activities a
+JOIN activity_streams s ON s.activity_id = a.id;
+
+-- NEW QUERY (simplified):
+SELECT * FROM activities WHERE id = $1;
+-- All stream data in activities.metrics.streams
 ```
 
 ---
 
-**Document Version:** 3.0 - Fact-Checked Edition  
+**Document Version:** 4.0 - Simplified Architecture Edition  
 **Created:** 2026-01-21  
-**Next Review:** Before starting Phase 2
+**Updated:** 2026-01-22  
+**Next Review:** Before starting Phase 1
+
+### **Major Changes in v4.0**
+
+- ✅ **Removed:** `activity_streams` table
+- ✅ **Simplified:** All stream data in `activities.metrics.streams`
+- ✅ **Reduced:** Timeline from 12-17 days to 10-13 days
+- ✅ **Improved:** Single-table architecture for better performance
+- ✅ **Updated:** Implementation approach to leverage @repo/core functions

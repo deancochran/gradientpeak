@@ -6,9 +6,10 @@ Quick task tracker and changelog.
 
 New tasks are automatically added here when created in `specs/`.
 
-| Date | Topic | Status |
-| ---- | ----- | ------ |
-|      |       |        |
+| Date       | Topic                             | Status |
+| ---------- | --------------------------------- | ------ |
+| 2026-01-22 | FIT File Implementation (Updated) | Ready  |
+|            |                                   |        |
 
 ## Task Format
 

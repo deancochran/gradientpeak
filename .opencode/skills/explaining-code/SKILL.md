@@ -79,8 +79,8 @@ Data Flow: Activity Recording -> Sync
    └─ References Storage URL
 
 4. Generate Streams
-   └─ Time-series data extracted from JSON
-   └─ Stored in activity_streams table
+   └─ Time-series data compressed and embedded
+   └─ Stored in activities.metrics.streams
 
 5. Calculate Analytics
    └─ @repo/core processes metrics

@@ -4,7 +4,7 @@ drop policy "Users can manage their own activity plans" on "public"."activity_pl
 
 drop policy "Users can manage their own routes" on "public"."activity_routes";
 
-drop policy "Users can manage their own activity streams" on "public"."activity_streams";
+-- Policy removed: activity_streams table no longer exists
 
 drop policy "Users can manage their own integrations" on "public"."integrations";
 
@@ -26,7 +26,7 @@ alter table "public"."activity_plans" disable row level security;
 
 alter table "public"."activity_routes" disable row level security;
 
-alter table "public"."activity_streams" disable row level security;
+-- Table removed: activity_streams table no longer exists
 
 alter table "public"."integrations" disable row level security;
 

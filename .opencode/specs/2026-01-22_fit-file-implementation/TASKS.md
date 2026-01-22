@@ -2,7 +2,7 @@
 
 ## Task List by Phase
 
-This document provides a granular checklist for implementing FIT file support in GradientPeak.
+This document provides a granular checklist for implementing FIT file support in GradientPeak using a **simplified architecture** with all stream data stored in `activities.metrics.streams` (activity_streams table removed).
 
 ---
 
@@ -21,6 +21,11 @@ This document provides a granular checklist for implementing FIT file support in
   - Add columns to `packages/supabase/schemas/init.sql`
   - Add indexes for `processing_status` and `fit_file_path`
 
+- [ ] **T-102.1** **Remove activity_streams table**
+  - Execute: `DROP TABLE IF EXISTS activity_streams;`
+  - All stream data will be stored in `activities.metrics.streams`
+  - Verify no existing code references activity_streams table
+
 - [ ] **T-103** Generate TypeScript types
 
   ```bash
@@ -30,6 +35,7 @@ This document provides a granular checklist for implementing FIT file support in
 - [ ] **T-104** Update Zod schemas
   - Add FIT columns to `publicActivitiesInsertSchema`
   - Add processing_status enum
+  - Remove references to `publicActivityStreamsInsertSchema` (no longer needed)
 
 ### Edge Function Setup
 
@@ -191,7 +197,7 @@ This document provides a granular checklist for implementing FIT file support in
 
 ### Activity Submission Update
 
-- [ ] **T-211** Update useActivitySubmission hook
+- [ ] **T-211** Update useActivitySubmission hook to use new tRPC approach
 
   ```typescript
   const processRecording = useCallback(async () => {
@@ -203,19 +209,41 @@ This document provides a granular checklist for implementing FIT file support in
 
     if (fitBuffer && fitPath) {
       // Upload FIT file to storage
-      const { filePath, size } = await trpc.fitFiles.uploadFitFile.mutate({
-        fileName: `${activityId}.fit`,
-        fileSize: fitBuffer.length,
-        fileType: "application/octet-stream",
-        fileData: uint8ArrayToBase64(fitBuffer),
+      const fileName = `${userId}/${Date.now()}.fit`;
+      const blob = base64ToBlob(
+        uint8ArrayToBase64(fitBuffer),
+        "application/fit",
+      );
+
+      const { error: uploadError } = await supabase.storage
+        .from("activity-files")
+        .upload(fileName, blob, {
+          contentType: "application/fit",
+          upsert: false,
+        });
+
+      if (uploadError) {
+        throw new Error(`Upload failed: ${uploadError.message}`);
+      }
+
+      // Call tRPC mutation to process FIT file
+      const client = api.fitFiles.processFitFile.useClient();
+      const result = await client.mutate({
+        fitFilePath: fileName,
+        name: activityName,
+        notes: activityNotes,
+        activityType: activityType,
       });
 
-      activity.fit_file_path = filePath;
-      activity.processing_status = "PENDING";
-    }
+      if (!result.success) {
+        // Cleanup uploaded file on failure
+        await supabase.storage.from("activity-files").remove([fileName]);
+        throw new Error(result.error.message);
+      }
 
-    // ... rest of processing ...
-  }, [service, createActivityWithStreamsMutation]);
+      return result.activity;
+    }
+  }, [service, userId]);
   ```
 
 ### Performance Testing
@@ -245,223 +273,261 @@ This document provides a granular checklist for implementing FIT file support in
 
 ---
 
-## Phase 3: Automatic Processing
+## Phase 3: tRPC Mutation Implementation
 
-**Duration:** 4-5 days  
-**Goal:** Implement real FIT file parsing and metrics calculation in Edge Function
+**Duration:** 3-4 days  
+**Goal:** Implement FIT file processing using synchronous tRPC mutation with simplified storage
 
-### FIT File Download
+### tRPC Router Setup
 
-- [ ] **T-301** Implement file download from storage
+- [ ] **T-301** Create `packages/trpc/src/routers/fit-files.ts`
+  - Implement `processFitFile` protected procedure
+  - Import existing functions from `@repo/core` (no duplication)
+  - Use `publicActivitiesInsertSchema` from `@repo/supabase`
+
+- [ ] **T-302** Implement file download from storage
 
   ```typescript
-  const { data: fileData, error: downloadError } = await supabase.storage
-    .from("fit-files")
-    .download(activity.fit_file_path);
+  const { data: fitFile, error: downloadError } = await ctx.supabase.storage
+    .from("activity-files")
+    .download(input.fitFilePath);
   ```
 
-- [ ] **T-302** Handle download errors
+- [ ] **T-303** Handle download errors
   - Invalid file path
   - Permission errors
   - File not found
 
-### FIT Parsing
+### FIT Parsing with @repo/core
 
-- [ ] **T-303** Integrate @garmin/fitsdk decode
+- [ ] **T-304** Use existing FIT parser from @repo/core
 
   ```typescript
-  import { decode } from "@garmin/fitsdk";
+  import { parseFitFileWithSDK } from "@repo/core/lib/fit-sdk-parser.ts";
 
-  const arrayBuffer = await fileData.arrayBuffer();
-  const fitData = decode(new Uint8Array(arrayBuffer));
-  const records = fitData.records as FitRecord[];
-  const session = fitData.sessions?.[0] as FitSession;
+  const arrayBuffer = await fitFile.arrayBuffer();
+  const parseResult = await parseFitFileWithSDK(arrayBuffer);
   ```
 
-- [ ] **T-304** Handle parsing errors
+- [ ] **T-305** Handle parsing errors using existing validation
   - Invalid FIT format
   - Corrupted data
   - Missing required messages
 
-- [ ] **T-305** Validate parsed data
-  - Check for required messages
-  - Validate data ranges
-  - Handle edge cases
-
-### Metrics Calculation
-
-- [ ] **T-306** Calculate TSS (Training Stress Score)
+- [ ] **T-306** Extract activity summary using existing @repo/core function
 
   ```typescript
-  function calculateTSS(
-    avgPower: number,
-    np: number,
-    duration: number,
-    ftp: number,
-  ): number {
-    const intensityFactor = avgPower > 0 ? np / ftp : 0;
-    return Math.round(
-      intensityFactor * intensityFactor * (duration / 3600) * 100,
-    );
-  }
+  import { extractActivitySummary } from "@repo/core/lib/extract-activity-summary.ts";
+  const summary = extractActivitySummary(parseResult.data);
   ```
 
-- [ ] **T-307** Calculate IF (Intensity Factor)
+### Metrics Calculation with @repo/core
+
+- [ ] **T-307** Extract streams using existing @repo/core utility
 
   ```typescript
-  function calculateIF(np: number, ftp: number): number {
-    return ftp > 0 ? Math.round((np / ftp) * 100) / 100 : 0;
-  }
+  import { extractNumericStream } from "@repo/core/utils/extract-streams.ts";
+
+  const rawStreams = {
+    power: extractNumericStream(records, "power"),
+    heart_rate: extractNumericStream(records, "heart_rate"),
+    pace: extractNumericStream(records, "pace"),
+    cadence: extractNumericStream(records, "cadence"),
+    altitude: extractNumericStream(records, "altitude"),
+    speed: extractNumericStream(records, "speed"),
+    gps_points: records
+      .filter((r) => r.position_lat && r.position_long)
+      .map((r) => ({
+        lat: r.position_lat,
+        lng: r.position_long,
+        altitude: r.altitude || null,
+        timestamp: r.timestamp,
+      })),
+  };
   ```
 
-- [ ] **T-308** Calculate NP (Normalized Power)
+- [ ] **T-308** Calculate TSS using existing @repo/core function
 
   ```typescript
-  function calculateNormalizedPower(powerReadings: number[]): number {
-    if (powerReadings.length === 0) return 0;
-    const fourthPowerSum = powerReadings.reduce(
-      (sum, p) => sum + Math.pow(p, 4),
-      0,
-    );
-    return Math.round(Math.pow(fourthPowerSum / powerReadings.length, 0.25));
-  }
+  import { calculateTSSFromAvailableData } from "@repo/core/calculations/tss.ts";
+
+  const tss = calculateTSSFromAvailableData({
+    normalizedPower,
+    ftp: summary.ftp,
+    duration: summary.duration,
+    activityType: input.activityType,
+  });
   ```
 
-- [ ] **T-309** Calculate HR Zones
+- [ ] **T-309** Calculate power metrics using existing @repo/core functions
 
   ```typescript
-  function calculateHRZones(hrReadings: number[], maxHR?: number) {
-    const zones = [0, 0, 0, 0, 0];
-    if (hrReadings.length === 0) return zones;
-    const actualMax = maxHR || Math.max(...hrReadings);
-    hrReadings.forEach((hr) => {
-      const pct = hr / actualMax;
-      if (pct < 0.5) zones[0]++;
-      else if (pct < 0.6) zones[1]++;
-      else if (pct < 0.7) zones[2]++;
-      else if (pct < 0.8) zones[3]++;
-      else zones[4]++;
-    });
-    return zones;
-  }
+  import {
+    calculateNormalizedPower,
+    calculateIntensityFactor,
+    calculateVariabilityIndex,
+  } from "@repo/core/calculations.ts";
   ```
 
-- [ ] **T-310** Calculate Power Zones
+- [ ] **T-310** Extract zones using existing @repo/core functions
+
   ```typescript
-  function calculatePowerZones(powerReadings: number[], ftp: number) {
-    const zones = [0, 0, 0, 0, 0, 0, 0];
-    if (powerReadings.length === 0 || ftp === 0) return zones;
-    powerReadings.forEach((power) => {
-      const pct = power / ftp;
-      if (pct < 0.55) zones[0]++;
-      else if (pct < 0.75) zones[1]++;
-      else if (pct < 0.9) zones[2]++;
-      else if (pct < 1.05) zones[3]++;
-      else if (pct < 1.2) zones[4]++;
-      else if (pct < 1.5) zones[5]++;
-      else zones[6]++;
-    });
-    return zones;
-  }
+  import {
+    extractHeartRateZones,
+    extractPowerZones,
+  } from "@repo/core/lib/extract-zones.ts";
   ```
 
-### GPS Polyline
-
-- [ ] **T-311** Implement semicircles to degrees conversion
+- [ ] **T-311** Detect test efforts using existing @repo/core functions
 
   ```typescript
-  function semicirclesToDegrees(semicircles: number): number {
-    return semicircles * (180 / Math.pow(2, 31));
-  }
+  import {
+    detectPowerTestEfforts,
+    detectRunningTestEfforts,
+    detectHRTestEfforts,
+  } from "@repo/core/detection/";
   ```
 
-- [ ] **T-312** Generate GPS polyline
+- [ ] **T-312** Calculate performance curves using existing @repo/core functions
 
   ```typescript
-  import { polyline } from "npm:@mapbox/polyline@^1.2.1";
-
-  function generatePolyline(records: FitRecord[]): string | null {
-    const gpsPoints = records
-      .filter(
-        (r) => r.position_lat !== undefined && r.position_long !== undefined,
-      )
-      .map((r) => [
-        semicirclesToDegrees(r.position_lat!),
-        semicirclesToDegrees(r.position_long!),
-      ]);
-    return gpsPoints.length > 0 ? polyline.encode(gpsPoints) : null;
-  }
+  import {
+    calculatePowerCurve,
+    calculateHRCurve,
+    calculatePaceCurve,
+  } from "@repo/core/calculations/curves.ts";
   ```
 
-### Activity Update
+### Stream Storage Compression
 
-- [ ] **T-313** Update activity with results
+- [ ] **T-313** Compress streams for storage using existing @repo/core utility
+
   ```typescript
-  await supabase
+  import { compressStreamsForStorage } from "@repo/core/utils/compression.ts";
+
+  // Compress all streams for efficient storage
+  const compressedStreams = compressStreamsForStorage(rawStreams);
+  ```
+
+### Activity Creation with Stream Storage
+
+- [ ] **T-314** Create activity record with all metrics and streams
+
+  ```typescript
+  const activityData = {
+    user_id: userId,
+    name: input.name,
+    notes: input.notes,
+    activity_type: input.activityType,
+    fit_file_path: input.fitFilePath,
+    processing_status: "completed",
+    start_time: new Date(summary.startTime),
+    metrics: {
+      // Basic metrics
+      duration: summary.duration,
+      distance: summary.distance,
+      calories: summary.calories,
+      // ... all other metrics
+
+      // Compressed stream data stored in activities.metrics.streams
+      streams: compressStreamsForStorage(rawStreams),
+    },
+  };
+
+  const { data: createdActivity, error: insertError } = await ctx.supabase
     .from("activities")
-    .update({
-      processing_status: "COMPLETED",
-      metrics: metrics,
-      distance_meters: session?.total_distance || 0,
-      duration_seconds: session?.total_elapsed_time || 0,
-      hr_zone_seconds: metrics.hrZones,
-      power_zone_seconds: metrics.powerZones,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", activityId);
+    .insert(activityData)
+    .select()
+    .single();
   ```
 
-### Error Handling
-
-- [ ] **T-314** Update processing status at start
+- [ ] **T-315** Handle database errors with file cleanup
 
   ```typescript
-  await supabase
-    .from("activities")
-    .update({ processing_status: "PROCESSING" })
-    .eq("id", activityId);
-  ```
+  if (insertError || !createdActivity) {
+    // Cleanup: Delete uploaded file if activity creation fails
+    await ctx.supabase.storage
+      .from("activity-files")
+      .remove([input.fitFilePath]);
 
-- [ ] **T-315** Handle errors gracefully
-
-  ```typescript
-  catch (error) {
-    console.error("Processing error:", error);
-
-    try {
-      await supabase
-        .from("activities")
-        .update({
-          processing_status: "FAILED",
-          processing_error: error.message,
-        })
-        .eq("id", activityId);
-    } catch {}
-
-    return new Response(
-      JSON.stringify({ success: false, error: error.message }),
-      { status: 500 },
-    );
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Failed to create activity record",
+      cause: insertError,
+    });
   }
   ```
 
-### Testing
+### tRPC Router Registration and Error Handling
 
-- [ ] **T-316** Test with Garmin FIT files
-- [ ] **T-317** Test with Wahoo FIT files
-- [ ] **T-318** Test with COROS FIT files
-- [ ] **T-319** Test with corrupted files
-- [ ] **T-320** Test with incomplete files
-- [ ] **T-321** Verify metrics accuracy
-- [ ] **T-322** Measure processing time
+- [ ] **T-316** Register fitFilesRouter in root router
+
+  ```typescript
+  // packages/trpc/src/root.ts
+  import { fitFilesRouter } from "./routers/fit-files";
+
+  export const appRouter = createTRPCRouter({
+    // ... existing routers
+    fitFiles: fitFilesRouter,
+  });
+  ```
+
+- [ ] **T-317** Handle errors with proper TRPCError types
+
+  ```typescript
+  if (downloadError || !fitFile) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Failed to download FIT file from storage",
+      cause: downloadError,
+    });
+  }
+
+  if (!parseResult.success || !parseResult.data) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: parseResult.error || "Failed to parse FIT file",
+    });
+  }
+  ```
+
+### Testing and Validation
+
+- [ ] **T-318** Test tRPC mutation with various FIT files
+  - Garmin FIT files
+  - Wahoo FIT files
+  - COROS FIT files
+
+- [ ] **T-319** Test edge cases
+  - Corrupted files
+  - Incomplete files
+  - Files without power data
+  - Files without GPS data
+
+- [ ] **T-320** Verify metrics accuracy
+  - Spot check TSS calculations
+  - Verify zone distributions
+  - Check test effort detection
+  - Validate stream compression/decompression
+
+- [ ] **T-321** Measure processing performance
+  - Processing time per file
+  - Memory usage during processing
+  - Database query performance
+
+- [ ] **T-322** Verify stream storage in activities.metrics.streams
+  - Test GPS points stored correctly
+  - Test all stream types compressed/decompressed properly
+  - Verify no JOIN operations needed for activity data
 
 ### Processing Deliverables
 
-- [ ] Edge Function fully implemented
-- [ ] All metrics calculated correctly
-- [ ] GPS polyline generation working
-- [ ] Error handling implemented
-- [ ] Testing complete
+- [ ] tRPC fitFilesRouter fully implemented
+- [ ] All metrics calculated using @repo/core functions
+- [ ] Stream data compressed and stored in activities.metrics.streams
+- [ ] No JOIN operations needed for activity queries
+- [ ] Error handling implemented with proper TRPCError types
+- [ ] Testing complete with simplified architecture
 
 ---
 
@@ -650,13 +716,13 @@ This document provides a granular checklist for implementing FIT file support in
 
 ## Task Summary
 
-| Phase                         | Tasks          | Status  |
-| ----------------------------- | -------------- | ------- |
-| Phase 1: Infrastructure       | T-101 to T-110 | Pending |
-| Phase 2: Mobile Recording     | T-201 to T-214 | Pending |
-| Phase 3: Automatic Processing | T-301 to T-322 | Pending |
-| Phase 4: User Interface       | T-401 to T-407 | Pending |
-| Phase 5: Data Migration       | T-501 to T-516 | Pending |
+| Phase                                 | Tasks          | Status  |
+| ------------------------------------- | -------------- | ------- |
+| Phase 1: Infrastructure Setup         | T-101 to T-110 | Pending |
+| Phase 2: Mobile Recording Integration | T-201 to T-214 | Pending |
+| Phase 3: tRPC Mutation Implementation | T-301 to T-322 | Pending |
+| Phase 4: User Interface               | T-401 to T-407 | Pending |
+| Phase 5: Data Migration               | T-501 to T-516 | Pending |
 
 ---
 
@@ -666,11 +732,23 @@ This document provides a granular checklist for implementing FIT file support in
 
 1. **Database migration not applied**
    - Blocks: TypeScript types, Zod schemas
-   - Resolution: Apply migration to init.sql
+   - Resolution: Apply migration to init.sql and remove activity_streams table
 
-2. **Edge Function configuration**
-   - Blocks: Edge Function deployment
-   - Resolution: Update config.toml
+2. **tRPC router configuration**
+   - Blocks: FIT file processing
+   - Resolution: Create fitFilesRouter and register in root router
+
+### Architecture Simplifications
+
+1. **No activity_streams table needed**
+   - All stream data stored in activities.metrics.streams
+   - Eliminates JOIN operations
+   - Simplifies database queries
+
+2. **No Edge Functions needed**
+   - Single synchronous tRPC mutation handles all processing
+   - Uses existing @repo/core functions (no code duplication)
+   - Reduced implementation complexity
 
 ### Dependencies Between Phases
 

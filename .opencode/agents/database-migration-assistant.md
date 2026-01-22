@@ -199,20 +199,15 @@ DROP CONSTRAINT IF EXISTS check_positive_duration;
 ### Task 4: Create Relationship
 
 ```sql
--- Create related table
-CREATE TABLE IF NOT EXISTS activity_streams (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  activity_id UUID NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
-  type TEXT NOT NULL CHECK (type IN ('heartRate', 'power', 'cadence')),
-  data JSONB NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+-- Stream data is now stored in activities.metrics.streams as compressed data
+-- No need for separate activity_streams table
+-- Example of updating activities table to include stream data:
 
--- Create index on foreign key
-CREATE INDEX idx_activity_streams_activity_id ON activity_streams(activity_id);
+ALTER TABLE activities
+ADD COLUMN IF NOT EXISTS metrics JSONB DEFAULT '{}'::jsonb;
 
--- Create composite index for queries
-CREATE INDEX idx_activity_streams_activity_type ON activity_streams(activity_id, type);
+-- Create index for efficient querying of stream data
+CREATE INDEX IF NOT EXISTS idx_activities_metrics_gin ON activities USING GIN (metrics);
 ```
 
 ### Task 5: Update RLS Policies
@@ -377,9 +372,8 @@ CHECK (end_time > start_time);
 ALTER TABLE profiles
 ADD CONSTRAINT unique_email UNIQUE (email);
 
--- Composite unique
-ALTER TABLE activity_streams
-ADD CONSTRAINT unique_activity_type UNIQUE (activity_id, type);
+-- Stream data stored in activities.metrics.streams (compressed format)
+-- No composite unique constraints needed for activity streams
 ```
 
 ## Common Functions

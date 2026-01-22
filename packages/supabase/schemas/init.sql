@@ -17,26 +17,7 @@ create type public.activity_category as enum (
     'other'
 );
 
-create type public.activity_metric as enum (
-    'heartrate',
-    'power',
-    'speed',
-    'cadence',
-    'distance',
-    'latlng',
-    'moving',
-    'altitude',
-    'elevation',
-    'temperature',
-    'gradient',
-    'heading'
-);
 
-create type public.activity_metric_data_type as enum (
-    'float',     -- default for numeric streams (hr, power, cadence, etc.)
-    'latlng',    -- flattened float pairs
-    'boolean'    -- stored as float 0/1 in compression
-);
 
 create type public.integration_provider as enum (
     'strava',
@@ -427,6 +408,12 @@ create table if not exists public.activities (
     external_id text,
 
     -- ============================================================================
+    -- FIT file processing
+    -- ============================================================================
+    fit_file_path text,
+    processing_status text default 'pending' check (processing_status IN ('pending', 'processing', 'completed', 'failed')),
+
+    -- ============================================================================
     -- Audit timestamps
     -- ============================================================================
     created_at timestamptz not null default now(),
@@ -465,6 +452,10 @@ create unique index if not exists idx_activities_external_unique
     on public.activities(provider, external_id)
     where external_id is not null and provider is not null;
 
+create index if not exists idx_activities_processing_status
+    on public.activities(processing_status)
+    where processing_status is not null;
+
 -- JSONB GIN indexes for common metric queries
 create index if not exists idx_activities_metrics_power
     on public.activities using gin ((metrics -> 'avg_power'));
@@ -495,35 +486,7 @@ create trigger update_activities_updated_at
     for each row
     execute function update_updated_at_column();
 
--- ============================================================================
--- ACTIVITY STREAMS
--- ============================================================================
-create table if not exists public.activity_streams (
-    id uuid primary key default uuid_generate_v4(),
-    idx serial unique not null,
-    activity_id uuid not null references public.activities(id) on delete cascade,
-    type activity_metric not null,
-    data_type activity_metric_data_type not null,
-    -- compressed payloads (base64-encoded gzipped data)
-    compressed_values text not null,
-    compressed_timestamps text not null,
-    sample_count integer not null check (sample_count > 0),
-    original_size integer not null check (original_size >= 0),
-    -- stats
-    min_value numeric(10,4),
-    max_value numeric(10,4),
-    avg_value numeric(10,4),
-    -- audit
-    created_at timestamptz not null default now(),
-    -- constraints
-    constraint unique_activity_type unique (activity_id, type)
-);
 
-create index if not exists idx_activity_streams_activity_id
-    on public.activity_streams(activity_id);
-
-create index if not exists idx_activity_streams_type
-    on public.activity_streams(type);
 
 -- ============================================================================
 -- PERFORMANCE METRICS PLATFORM - PHASE 1
@@ -721,7 +684,7 @@ create trigger update_profile_metric_logs_updated_at
 alter table public.activities disable row level security;
 alter table public.activity_plans disable row level security;
 alter table public.activity_routes disable row level security;
-alter table public.activity_streams disable row level security;
+
 alter table public.integrations disable row level security;
 alter table public.oauth_states disable row level security;
 alter table public.planned_activities disable row level security;

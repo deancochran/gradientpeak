@@ -17,27 +17,6 @@ export const publicActivityCategorySchema = z.enum([
 
 export const publicActivityLocationSchema = z.enum(["outdoor", "indoor"]);
 
-export const publicActivityMetricSchema = z.enum([
-  "heartrate",
-  "power",
-  "speed",
-  "cadence",
-  "distance",
-  "latlng",
-  "moving",
-  "altitude",
-  "elevation",
-  "temperature",
-  "gradient",
-  "heading",
-]);
-
-export const publicActivityMetricDataTypeSchema = z.enum([
-  "float",
-  "latlng",
-  "boolean",
-]);
-
 export const publicIntegrationProviderSchema = z.enum([
   "strava",
   "wahoo",
@@ -86,6 +65,7 @@ export const publicActivitiesRowSchema = z.object({
   duration_seconds: z.number(),
   external_id: z.string().nullable(),
   finished_at: z.string(),
+  fit_file_path: z.string().nullable(),
   hr_zone_seconds: z.array(z.number()).nullable(),
   id: z.string(),
   idx: z.number(),
@@ -96,6 +76,7 @@ export const publicActivitiesRowSchema = z.object({
   name: z.string(),
   notes: z.string().nullable(),
   power_zone_seconds: z.array(z.number()).nullable(),
+  processing_status: z.string().nullable(),
   profile_id: z.string(),
   profile_snapshot: jsonSchema.nullable(),
   provider: publicIntegrationProviderSchema.nullable(),
@@ -112,6 +93,7 @@ export const publicActivitiesInsertSchema = z.object({
   duration_seconds: z.number().optional(),
   external_id: z.string().optional().nullable(),
   finished_at: z.string(),
+  fit_file_path: z.string().optional().nullable(),
   hr_zone_seconds: z.array(z.number()).optional().nullable(),
   id: z.string().optional(),
   idx: z.number().optional(),
@@ -122,6 +104,7 @@ export const publicActivitiesInsertSchema = z.object({
   name: z.string(),
   notes: z.string().optional().nullable(),
   power_zone_seconds: z.array(z.number()).optional().nullable(),
+  processing_status: z.string().optional().nullable(),
   profile_id: z.string(),
   profile_snapshot: jsonSchema.optional().nullable(),
   provider: publicIntegrationProviderSchema.optional().nullable(),
@@ -138,6 +121,7 @@ export const publicActivitiesUpdateSchema = z.object({
   duration_seconds: z.number().optional(),
   external_id: z.string().optional().nullable(),
   finished_at: z.string().optional(),
+  fit_file_path: z.string().optional().nullable(),
   hr_zone_seconds: z.array(z.number()).optional().nullable(),
   id: z.string().optional(),
   idx: z.number().optional(),
@@ -148,6 +132,7 @@ export const publicActivitiesUpdateSchema = z.object({
   name: z.string().optional(),
   notes: z.string().optional().nullable(),
   power_zone_seconds: z.array(z.number()).optional().nullable(),
+  processing_status: z.string().optional().nullable(),
   profile_id: z.string().optional(),
   profile_snapshot: jsonSchema.optional().nullable(),
   provider: publicIntegrationProviderSchema.optional().nullable(),
@@ -301,64 +286,6 @@ export const publicActivityRoutesRelationshipsSchema = z.tuple([
     columns: z.tuple([z.literal("profile_id")]),
     isOneToOne: z.literal(false),
     referencedRelation: z.literal("profiles"),
-    referencedColumns: z.tuple([z.literal("id")]),
-  }),
-]);
-
-export const publicActivityStreamsRowSchema = z.object({
-  activity_id: z.string(),
-  avg_value: z.number().nullable(),
-  compressed_timestamps: z.string(),
-  compressed_values: z.string(),
-  created_at: z.string(),
-  data_type: publicActivityMetricDataTypeSchema,
-  id: z.string(),
-  idx: z.number(),
-  max_value: z.number().nullable(),
-  min_value: z.number().nullable(),
-  original_size: z.number(),
-  sample_count: z.number(),
-  type: publicActivityMetricSchema,
-});
-
-export const publicActivityStreamsInsertSchema = z.object({
-  activity_id: z.string(),
-  avg_value: z.number().optional().nullable(),
-  compressed_timestamps: z.string(),
-  compressed_values: z.string(),
-  created_at: z.string().optional(),
-  data_type: publicActivityMetricDataTypeSchema,
-  id: z.string().optional(),
-  idx: z.number().optional(),
-  max_value: z.number().optional().nullable(),
-  min_value: z.number().optional().nullable(),
-  original_size: z.number(),
-  sample_count: z.number(),
-  type: publicActivityMetricSchema,
-});
-
-export const publicActivityStreamsUpdateSchema = z.object({
-  activity_id: z.string().optional(),
-  avg_value: z.number().optional().nullable(),
-  compressed_timestamps: z.string().optional(),
-  compressed_values: z.string().optional(),
-  created_at: z.string().optional(),
-  data_type: publicActivityMetricDataTypeSchema.optional(),
-  id: z.string().optional(),
-  idx: z.number().optional(),
-  max_value: z.number().optional().nullable(),
-  min_value: z.number().optional().nullable(),
-  original_size: z.number().optional(),
-  sample_count: z.number().optional(),
-  type: publicActivityMetricSchema.optional(),
-});
-
-export const publicActivityStreamsRelationshipsSchema = z.tuple([
-  z.object({
-    foreignKeyName: z.literal("activity_streams_activity_id_fkey"),
-    columns: z.tuple([z.literal("activity_id")]),
-    isOneToOne: z.literal(false),
-    referencedRelation: z.literal("activities"),
     referencedColumns: z.tuple([z.literal("id")]),
   }),
 ]);

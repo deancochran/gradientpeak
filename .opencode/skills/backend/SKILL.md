@@ -144,47 +144,40 @@ createWithStreams: protectedProcedure
   .input(
     z.object({
       activity: activitySchema,
-      streams: z.array(streamSchema),
+      streams: z.object({
+        gps: z.array(z.object({lat: z.number(), lng: z.number(), timestamp: z.number()})).optional(),
+        power: z.array(z.number()).optional(),
+        heartRate: z.array(z.number()).optional(),
+        cadence: z.array(z.number()).optional(),
+        pace: z.array(z.number()).optional(),
+        altitude: z.array(z.number()).optional(),
+        speed: z.array(z.number()).optional(),
+      }),
     })
   )
   .mutation(async ({ ctx, input }) => {
-    // 1. Create activity
-    const { data: activity, error: activityError } = await ctx.supabase
+    import { compressStreams } from '@repo/core';
+
+    // 1. Compress stream data
+    const compressedStreams = compressStreams(input.streams);
+
+    // 2. Create activity with embedded stream data
+    const { data: activity, error } = await ctx.supabase
       .from('activities')
-      .insert(input.activity)
+      .insert({
+        ...input.activity,
+        metrics: {
+          streams: compressedStreams,
+        },
+      })
       .select()
       .single();
 
-    if (activityError) {
+    if (error) {
       throw new TRPCError({
         code: 'INTERNAL_SERVER_ERROR',
-        message: `Failed to create activity: ${activityError.message}`,
+        message: `Failed to create activity: ${error.message}`,
       });
-    }
-
-    // 2. Create streams
-    if (input.streams.length > 0) {
-      const streamsWithActivityId = input.streams.map(stream => ({
-        ...stream,
-        activity_id: activity.id,
-      }));
-
-      const { error: streamsError } = await ctx.supabase
-        .from('activity_streams')
-        .insert(streamsWithActivityId);
-
-      if (streamsError) {
-        // ROLLBACK: Delete created activity
-        await ctx.supabase
-          .from('activities')
-          .delete()
-          .eq('id', activity.id);
-
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: `Failed to create streams: ${streamsError.message}`,
-        });
-      }
     }
 
     return activity;
@@ -200,14 +193,14 @@ calculateMetrics: protectedProcedure
     // Fetch data from database
     const { data: activity } = await ctx.supabase
       .from('activities')
-      .select('*, activity_streams(*)')
+      .select('*, metrics')
       .eq('id', input.activityId)
       .single();
 
     // Use core package for calculations
     import { calculateTSS, decompressStreams } from '@repo/core';
 
-    const streams = decompressStreams(activity.activity_streams);
+    const streams = decompressStreams(activity.metrics.streams);
     const tss = calculateTSS({
       powerStream: streams.power,
       duration: activity.duration_seconds,
@@ -217,7 +210,12 @@ calculateMetrics: protectedProcedure
     // Update database with results
     await ctx.supabase
       .from('activities')
-      .update({ metrics: { tss } })
+      .update({
+        metrics: {
+          ...activity.metrics,
+          tss
+        }
+      })
       .eq('id', input.activityId);
 
     return { tss };

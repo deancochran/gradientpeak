@@ -2,9 +2,14 @@
 
 ## Overview
 
-This implementation plan covers the integration of FIT file support for GradientPeak, including mobile recording encoding, server-side processing, and user interface components.
+This implementation plan covers the integration of FIT file support for GradientPeak using a **simplified architecture** with tRPC mutations and @repo/core integration. Key changes from previous versions:
 
-**Timeline:** 12-17 days (2-3 weeks)  
+- **activity_streams table removed** - all data in activities.metrics.streams
+- **Single synchronous tRPC mutation** - no Edge Functions needed
+- **All calculations use existing @repo/core functions** - no code duplication
+- **No JOIN operations** - simplified database queries
+
+**Timeline:** 10-14 days (2-3 weeks)  
 **Phases:** 5
 
 ---
@@ -22,6 +27,7 @@ This implementation plan covers the integration of FIT file support for Gradient
   - Location: `packages/supabase/migrations/20260121_add_fit_file_support.sql`
   - Columns: `fit_file_path`, `processing_status`, `processing_error`, `fit_file_size`
   - Indexes: `idx_activities_processing_status`, `idx_activities_fit_path`
+  - **Remove activity_streams table** - `DROP TABLE IF EXISTS activity_streams;`
 
 - [ ] **1.2** Regenerate TypeScript types
 
@@ -35,40 +41,25 @@ This implementation plan covers the integration of FIT file support for Gradient
   cd packages/supabase && supazod generate
   ```
 
-- [ ] **1.4** Create `process-activity-fit` Edge Function directory
-  - Location: `packages/supabase/functions/process-activity-fit/`
+- [ ] **1.4** Create tRPC router for FIT files
+  - Location: `packages/trpc/src/routers/fit-files.ts`
+  - Implement processFitFile protected procedure
 
-- [ ] **1.5** Create Edge Function deno.json
+- [ ] **1.5** Register fitFilesRouter in root router
+  - Location: `packages/trpc/src/root.ts`
+  - Add fitFiles: fitFilesRouter to router configuration
 
-  ```json
-  {
-    "imports": {
-      "@garmin/fitsdk": "npm:@garmin/fitsdk@^21.188.0",
-      "@mapbox/polyline": "npm:@mapbox/polyline@^1.2.1",
-      "@supabase/functions-js": "jsr:@supabase/functions-js@^2.4.1",
-      "supabase": "npm:supabase@^2.0.0"
-    }
-  }
-  ```
-
-- [ ] **1.6** Implement basic Edge Function skeleton
-  - Handle CORS
-  - Validate activityId
-  - Connect to Supabase
-
-- [ ] **1.7** Add Edge Function config to config.toml
-  ```toml
-  [functions.process-activity-fit]
-    uri = "packages/supabase/functions/process-activity-fit/index.ts"
-  ```
+- [ ] **1.6** No Edge Function needed
+  - Simplified architecture uses single tRPC mutation
+  - All processing happens synchronously in the mutation
 
 #### Deliverables
 
-- [ ] Database migration applied
+- [ ] Database migration applied (including activity_streams table removal)
 - [ ] TypeScript types regenerated
-- [ ] Zod schemas regenerated
-- [ ] Edge Function skeleton implemented
-- [ ] Configuration updated
+- [ ] Zod schemas regenerated (removing activity_streams references)
+- [ ] tRPC fitFilesRouter created and registered
+- [ ] No Edge Function configuration needed
 
 ---
 
@@ -205,100 +196,55 @@ This implementation plan covers the integration of FIT file support for Gradient
 
 ---
 
-### Phase 3: Automatic Processing
+### Phase 3: tRPC Mutation Implementation
 
-**Duration:** 4-5 days  
-**Goal:** Implement real FIT file parsing and metrics calculation in Edge Function
+**Duration:** 3-4 days  
+**Goal:** Implement FIT file processing using synchronous tRPC mutation with @repo/core integration
 
 #### Tasks
 
-- [ ] **3.1** Implement FIT file download from storage
+- [ ] **3.1** Implement processFitFile tRPC mutation
+  - Download FIT file from Supabase Storage
+  - Parse using existing `parseFitFileWithSDK()` from @repo/core
+  - Extract activity summary using `extractActivitySummary()` from @repo/core
 
-  ```typescript
-  const { data: fileData, error: downloadError } = await supabase.storage
-    .from("fit-files")
-    .download(activity.fit_file_path);
-  ```
+- [ ] **3.2** Use existing @repo/core functions (no implementation needed)
+  - `calculateTSSFromAvailableData()` for TSS calculation
+  - `calculateNormalizedPower()` and `calculateIntensityFactor()` for power metrics
+  - `extractHeartRateZones()` and `extractPowerZones()` for zones
+  - `detectPowerTestEfforts()`, `detectRunningTestEfforts()` for test detection
+  - `calculatePowerCurve()`, `calculateHRCurve()`, `calculatePaceCurve()` for curves
 
-- [ ] **3.2** Integrate `@garmin/fitsdk` decode function
+- [ ] **3.3** Implement stream extraction and compression
+  - Use `extractNumericStream()` from @repo/core for all stream types
+  - Store GPS points and all streams in activities.metrics.streams
+  - Use `compressStreamsForStorage()` from @repo/core for efficient storage
 
-  ```typescript
-  import { decode } from "@garmin/fitsdk";
+- [ ] **3.4** Create activity record with all data
+  - Single INSERT into activities table
+  - All metrics in JSONB metrics column
+  - All stream data in metrics.streams sub-object
+  - No activity_streams table needed
 
-  const arrayBuffer = await fileData.arrayBuffer();
-  const fitData = decode(new Uint8Array(arrayBuffer));
-  const records = fitData.records as FitRecord[];
-  const session = fitData.sessions?.[0] as FitSession;
-  ```
+- [ ] **3.5** Add proper error handling with TRPCError
+  - Download errors
+  - Parsing errors
+  - Database errors with file cleanup
 
-- [ ] **3.3** Implement metrics calculation
-  - TSS (Training Stress Score)
-  - IF (Intensity Factor)
-  - NP (Normalized Power)
-  - HR Zones (5 zones)
-  - Power Zones (7 zones)
-
-- [ ] **3.4** Implement GPS polyline generation
-
-  ```typescript
-  import { polyline } from "npm:@mapbox/polyline@^1.2.1";
-
-  function generatePolyline(records: FitRecord[]): string | null {
-    const gpsPoints = records
-      .filter(
-        (r) => r.position_lat !== undefined && r.position_long !== undefined,
-      )
-      .map((r) => [
-        semicirclesToDegrees(r.position_lat!),
-        semicirclesToDegrees(r.position_long!),
-      ]);
-    return gpsPoints.length > 0 ? polyline.encode(gpsPoints) : null;
-  }
-
-  function semicirclesToDegrees(semicircles: number): number {
-    return semicircles * (180 / Math.pow(2, 31));
-  }
-  ```
-
-- [ ] **3.5** Implement activity record update
-
-  ```typescript
-  await supabase
-    .from("activities")
-    .update({
-      processing_status: "COMPLETED",
-      metrics: metrics,
-      distance_meters: session?.total_distance || 0,
-      duration_seconds: session?.total_elapsed_time || 0,
-      hr_zone_seconds: metrics.hrZones,
-      power_zone_seconds: metrics.powerZones,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", activityId);
-  ```
-
-- [ ] **3.6** Add error handling and status updates
-  - Update `processing_status` to 'PROCESSING' at start
-  - Update to 'COMPLETED' on success
-  - Update to 'FAILED' with error message on failure
-
-- [ ] **3.7** Implement retry endpoint
-  - Reset `processing_status` to 'PENDING'
-  - Re-trigger edge function
-
-- [ ] **3.8** Test edge function with various FIT files
-  - Garmin files
-  - Wahoo files
-  - COROS files
-  - Edge cases (corrupted, incomplete)
+- [ ] **3.6** Test tRPC mutation with various FIT files
+  - Garmin, Wahoo, COROS files
+  - Edge cases (corrupted, incomplete, missing data types)
+  - Verify stream compression/decompression works correctly
+  - Confirm no JOIN operations needed for activity queries
 
 #### Deliverables
 
-- [ ] Edge Function fully implemented
-- [ ] All metrics calculated correctly
-- [ ] GPS polyline generation working
-- [ ] Error handling implemented
-- [ ] Retry functionality working
+- [ ] tRPC fitFilesRouter fully implemented
+- [ ] All metrics calculated using existing @repo/core functions
+- [ ] Stream data stored in activities.metrics.streams (no activity_streams table)
+- [ ] Error handling implemented with proper TRPCError types
+- [ ] No JOIN operations needed for activity data retrieval
+- [ ] Stream compression/decompression verified working
 
 ---
 
@@ -465,15 +411,15 @@ This implementation plan covers the integration of FIT file support for Gradient
 
 ## Timeline Summary
 
-| Phase                         | Duration | Total Days |
-| ----------------------------- | -------- | ---------- |
-| Phase 1: Infrastructure       | 1-2 days | Day 1-2    |
-| Phase 2: Mobile Recording     | 3-5 days | Day 3-7    |
-| Phase 3: Automatic Processing | 4-5 days | Day 8-12   |
-| Phase 4: User Interface       | 2 days   | Day 13-14  |
-| Phase 5: Data Migration       | 2-3 days | Day 15-17  |
+| Phase                                 | Duration | Total Days |
+| ------------------------------------- | -------- | ---------- |
+| Phase 1: Infrastructure Setup         | 1-2 days | Day 1-2    |
+| Phase 2: Mobile Recording Integration | 3-5 days | Day 3-7    |
+| Phase 3: tRPC Mutation Implementation | 3-4 days | Day 8-11   |
+| Phase 4: User Interface               | 2 days   | Day 12-13  |
+| Phase 5: Data Migration               | 2-3 days | Day 14-16  |
 
-**Total:** 12-17 days (approximately 2-3 weeks)
+**Total:** 10-14 days (approximately 2-3 weeks)
 
 ---
 
@@ -490,18 +436,9 @@ This implementation plan covers the integration of FIT file support for Gradient
 }
 ```
 
-### Deno Dependencies
+### No Deno Dependencies Needed
 
-```json
-{
-  "imports": {
-    "@garmin/fitsdk": "npm:@garmin/fitsdk@^21.188.0",
-    "@mapbox/polyline": "npm:@mapbox/polyline@^1.2.1",
-    "@supabase/functions-js": "jsr:@supabase/functions-js@^2.4.1",
-    "supabase": "npm:supabase@^2.0.0"
-  }
-}
-```
+Simplified architecture uses tRPC mutations instead of Edge Functions. All processing uses existing @repo/core functions.
 
 ### Build Dependencies
 
@@ -513,14 +450,15 @@ This implementation plan covers the integration of FIT file support for Gradient
 
 ## Risks and Mitigations
 
-| Risk                                 | Impact | Mitigation                            |
-| ------------------------------------ | ------ | ------------------------------------- |
-| SDK bundle size increases mobile app | High   | Use only needed classes, lazy loading |
-| Large file memory on mobile          | High   | Memory guards, chunked processing     |
-| FIT profile changes breaking parsing | Medium | SDK updates via npm, version pinning  |
-| Processing time exceeding SLA        | Medium | Async processing, progress tracking   |
-| Migration affecting production       | High   | Test on staging, have rollback plan   |
-| Real-time encoding impacting battery | Medium | Benchmarking, optimization            |
+| Risk                                     | Impact | Mitigation                                        |
+| ---------------------------------------- | ------ | ------------------------------------------------- |
+| SDK bundle size increases mobile app     | High   | Use only needed classes, lazy loading             |
+| Large file memory on mobile              | High   | Memory guards, chunked processing                 |
+| FIT profile changes breaking parsing     | Medium | SDK updates via npm, version pinning              |
+| Processing time exceeding SLA            | Low    | Synchronous tRPC mutation is faster than async    |
+| Migration affecting production           | Medium | Simified migration (just remove activity_streams) |
+| Real-time encoding impacting battery     | Medium | Benchmarking, optimization                        |
+| Stream compression affecting performance | Low    | Existing @repo/core compression utilities tested  |
 
 ---
 
@@ -528,15 +466,15 @@ This implementation plan covers the integration of FIT file support for Gradient
 
 ### Technical Criteria
 
-| Metric                        | Target                   |
-| ----------------------------- | ------------------------ |
-| FIT file integrity            | 100% validated by SDK    |
-| Upload success rate           | >95%                     |
-| Processing success rate       | >98%                     |
-| Processing time               | <30 seconds per activity |
-| Error Recovery Success        | >99%                     |
-| Retry Success Rate            | >95%                     |
-| Large File Processing (<50MB) | <60 seconds              |
+| Metric                        | Target                               |
+| ----------------------------- | ------------------------------------ |
+| FIT file integrity            | 100% validated by @repo/core SDK     |
+| Upload success rate           | >95%                                 |
+| Processing success rate       | >98%                                 |
+| Processing time               | <15 seconds per activity (tRPC sync) |
+| Error Recovery Success        | >99%                                 |
+| Stream compression efficiency | >80% size reduction                  |
+| Query performance             | Single activity query (no JOINs)     |
 
 ### Testing Criteria
 
@@ -570,8 +508,7 @@ apps/mobile/lib/services/fit/StreamingFitEncoder.ts
 apps/mobile/lib/services/fit/FitUploader.ts
 apps/mobile/lib/services/fit/index.ts
 apps/mobile/components/fit/ProcessingStatusBadge.tsx
-packages/supabase/functions/process-activity-fit/index.ts
-packages/supabase/functions/process-activity-fit/deno.json
+packages/trpc/src/routers/fit-files.ts  # NEW: tRPC router for FIT processing
 ```
 
 ### Files to Modify
@@ -582,16 +519,16 @@ apps/mobile/lib/hooks/useActivitySubmission.ts
 apps/mobile/components/PastActivityCard.tsx
 apps/mobile/app/(internal)/(standard)/activity-detail.tsx
 packages/trpc/src/routers/activities.ts
-packages/trpc/src/routers/fit-files.ts
-packages/supabase/supazod/schemas.ts
+packages/trpc/src/root.ts              # Register fitFilesRouter
+packages/supabase/supazod/schemas.ts   # Remove activity_streams references
 packages/supabase/database.types.ts
-packages/supabase/config.toml
 ```
 
 ### Deprecated Files
 
 ```
-packages/supabase/functions/analyze-fit-file/index.ts  # Replace with process-activity-fit
+packages/supabase/functions/process-activity-fit/  # Not needed - use tRPC
+activity_streams table                              # Removed - data in activities.metrics.streams
 ```
 
 ---
