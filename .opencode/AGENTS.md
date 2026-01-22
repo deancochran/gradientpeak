@@ -113,6 +113,27 @@ Add lessons when significant errors occur:
 - `.opencode/AGENTS.md` - This file (custom instructions)
 - `.opencode/tasks/index.md` - Quick task tracker
 - `.opencode/tasks/` - Detailed task folders with research/implementation
+- `.opencode/specs/` - Agent design and planning documents
+
+### Agent Configuration Structure
+
+All agent design and planning documents live within `.opencode/specs/`:
+
+```
+.opencode/specs/
+└── {date}-{topicname}/
+    ├── design.md    # High-level document explaining the what and why
+    ├── plan.md      # Technical document breaking work into phases and steps
+    └── tasks.md     # Granular checklist of individual tasks
+```
+
+**Example:**
+
+- `2026-01-22-user-authentication-flow/design.md`
+- `2026-01-22-user-authentication-flow/plan.md`
+- `2026-01-22-user-authentication-flow/tasks.md`
+
+Contextual files (JSON examples, notes, research) can be included in topic folders.
 
 ### Multi-Agent Research
 
@@ -333,6 +354,9 @@ The mobile app provides **7 granular hooks** for interacting with the recording 
 - Hooks: `apps/mobile/lib/hooks/`
 - Services: `apps/mobile/lib/services/`
 - Stores: `apps/mobile/lib/stores/`
+- Constants: `apps/mobile/lib/constants/`
+- Contexts: `apps/mobile/lib/contexts/`
+- Providers: `apps/mobile/lib/providers/`
 
 ### File System Storage
 
@@ -361,9 +385,9 @@ Activities recorded locally use **Expo FileSystem** with JSON storage:
 
 **Location:**
 
-- App routes: `apps/web/app/`
-- Components: `apps/web/components/`
-- Server actions: `apps/web/lib/actions/`
+- App routes: `apps/web/src/app/`
+- Components: `apps/web/src/components/`
+- Lib utilities: `apps/web/src/lib/`
 
 ## tRPC API Layer
 

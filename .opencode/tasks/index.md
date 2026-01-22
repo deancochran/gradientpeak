@@ -4,44 +4,74 @@ Quick task tracker and changelog.
 
 ## Changelog
 
-New tasks are automatically added here when created in `tasks/active/`.
+New tasks are automatically added here when created in `specs/`.
 
-| Date | Task ID | Task Name | Status |
-| ---- | ------- | --------- | ------ |
-|      |         |           |        |
+| Date | Topic | Status |
+| ---- | ----- | ------ |
+|      |       |        |
 
 ## Task Format
 
-When adding a new task, create a folder with this structure:
+When adding a new task, create a folder in `.opencode/specs/` with this structure:
 
 ```
-.opencode/tasks/active/[YYYYMMDD-HHMMSS]_task-name/
-└── PLAN.md
+.opencode/specs/{YYYY-MM-DD}_task-name/
+├── design.md    # What and why
+├── plan.md      # Phases and steps
+└── tasks.md     # Granular checklist
 ```
 
-**PLAN.md template:**
+**design.md template:**
 
 ```markdown
-# Task: Task name
+# Design: Task name
 
-- **Complexity**: low | medium | high
-- **Subtasks**:
-  - [ ] subtask 1
-  - [ ] subtask 2
-- **Blockers**: None or description
+## Overview
 
-## Research
+Brief description of what and why.
 
-[Research findings]
+## Goals
 
-## Design
+- Goal 1
+- Goal 2
 
-[Implementation design]
+## Non-Goals
 
-## Progress
+- What we're not solving
 
-- [ ] subtask 1
-- [ ] subtask 2
+## Background
+
+Context and motivation
+```
+
+**plan.md template:**
+
+```markdown
+# Plan: Task name
+
+## Phases
+
+1. Phase 1: Description
+2. Phase 2: Description
+
+## Steps
+
+### Phase 1
+
+- [ ] Step 1
+- [ ] Step 2
+```
+
+**tasks.md template:**
+
+```markdown
+# Tasks: Task name
+
+## Task List
+
+- [ ] Task 1
+- [ ] Task 2
+- [ ] Task 3
 ```
 
 ## Active Tasks
@@ -54,10 +84,9 @@ _(Task summaries moved here when completed)_
 
 ## Quick Reference
 
-| Phase               | Action                                               |
-| ------------------- | ---------------------------------------------------- |
-| **Session Start**   | Read this file for task overview                     |
-| **Add Task**        | Create folder in `tasks/active/` with PLAN.md        |
-| **Update Progress** | Edit subtask status in PLAN.md                       |
-| **Complete Task**   | Move folder to `tasks/completed/`, create SUMMARY.md |
-| **Reference**       | Link to task folder from `.opencode/AGENTS.md`       |
+| Phase               | Action                                |
+| ------------------- | ------------------------------------- |
+| **Session Start**   | Read this file for task overview      |
+| **Add Task**        | Create folder in `.opencode/specs/`   |
+| **Update Progress** | Edit status in `tasks.md`             |
+| **Complete Task**   | Document lessons learned in `plan.md` |
