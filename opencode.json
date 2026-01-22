@@ -1,5 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "default_agent": "coordinator",
   "provider": {
     "ollama": {
       "npm": "@ai-sdk/openai-compatible",
@@ -7,8 +8,9 @@
         "baseURL": "http://localhost:11434/v1"
       },
       "models": {
-        "nemotron-3-nano:latest": {
-          "tools": true
+        "qwen3-coder:latest": {
+          "tools": true,
+          "temperature": 0.2
         }
       }
     }
@@ -29,7 +31,7 @@
     },
     "coordinator": {
       "mode": "subagent",
-      "description": "Research Director & Implementation Orchestrator",
+      "description": "Research Director & Implementation Orchestrator. Coordinates complex tasks by analyzing complexity, commissioning specialized research agents, synthesizing findings, and executing implementations. Manages parallel agent workflows.",
       "hidden": false,
       "temperature": 0.2
     },
@@ -45,6 +47,14 @@
     "mobile-component-generator": {
       "mode": "subagent",
       "description": "Generates React Native components following GradientPeak mobile patterns"
+    },
+    "mobile-recording-assistant": {
+      "mode": "subagent",
+      "description": "Specialized agent for ActivityRecorder service development. Helps with sensor integration, metrics tracking, and recording UI."
+    },
+    "mobile-form-assistant": {
+      "mode": "subagent",
+      "description": "Generates forms, modals, and mutations for mobile app with proper error handling and validation."
     },
     "web-page-generator": {
       "mode": "subagent",
@@ -76,6 +86,69 @@
       "tools": {
         "write": false,
         "edit": false
+      }
+    },
+    "architecture-research-expert": {
+      "mode": "subagent",
+      "description": "Research expert for system design and component placement decisions",
+      "tools": {
+        "write": false,
+        "edit": false,
+        "bash": false
+      }
+    },
+    "technology-research-expert": {
+      "mode": "subagent",
+      "description": "Research expert for library selection, API analysis, and feasibility studies",
+      "tools": {
+        "write": false,
+        "edit": false,
+        "bash": false
+      }
+    },
+    "quality-assurance-advisor": {
+      "mode": "subagent",
+      "description": "Research advisor for testing strategies, coverage requirements, and quality standards",
+      "tools": {
+        "write": false,
+        "edit": false,
+        "bash": false
+      }
+    },
+    "integration-analyst": {
+      "mode": "subagent",
+      "description": "Research analyst for third-party APIs, OAuth flows, and data synchronization",
+      "tools": {
+        "write": false,
+        "edit": false,
+        "bash": false
+      }
+    },
+    "performance-specialist": {
+      "mode": "subagent",
+      "description": "Research specialist for performance bottlenecks and optimization strategies",
+      "tools": {
+        "write": false,
+        "edit": false,
+        "bash": false
+      }
+    },
+    "documentation-strategist": {
+      "mode": "subagent",
+      "description": "Research strategist for documentation planning and JSDoc specifications",
+      "tools": {
+        "write": false,
+        "edit": false,
+        "bash": false
+      }
+    },
+    "skill-creator-agent": {
+      "mode": "subagent",
+      "description": "Agent for pattern extraction and skill file generation",
+      "tools": {
+        "write": false,
+        "edit": false,
+        "bash": false
       }
     }
   },
