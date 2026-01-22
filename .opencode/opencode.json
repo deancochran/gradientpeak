@@ -161,6 +161,16 @@
         "bash": false
       }
     },
+    "agent-creator": {
+      "mode": "subagent",
+      "description": "Creates new specialized agents for any domain. Generates agent files with documentation, references, and patterns.",
+      "temperature": 0.3
+    },
+    "garmin-fit-sdk-expert": {
+      "mode": "subagent",
+      "description": "Expert in Garmin FIT SDK for JavaScript. Handles FIT file encoding, decoding, developer data fields, custom profiles with FitGen, and data mapping to activity schemas.",
+      "temperature": 0.3
+    },
     "skill-creator-agent": {
       "mode": "subagent",
       "description": "Agent for pattern extraction and skill file generation",
