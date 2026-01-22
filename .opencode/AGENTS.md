@@ -30,19 +30,14 @@ GradientPeak uses a **task-managed, error-resistant agentic workflow**.
 
 ### Task Structure
 
-Complex tasks use the `.opencode/tasks/` folder:
+Complex tasks use the `.opencode/specs/` folder:
 
 ```
-.opencode/tasks/
-├── index.md              # Master task index
-├── active/               # Current tasks
-│   └── [task-id]/
-│       ├── PLAN.md       # Research and design
-│       ├── IMPLEMENT.md  # Implementation notes
-│       └── findings.md   # Agent findings
-└── completed/            # Archived tasks
-    └── [task-id]/
-        └── SUMMARY.md    # What was done, lessons learned
+.opencode/specs/
+└── {date}-{topicname}/
+    ├── design.md    # What and why
+    ├── plan.md      # Phases and steps
+    └── tasks.md     # Granular checklist
 ```
 
 ### Error Recovery
@@ -112,7 +107,7 @@ Add lessons when significant errors occur:
 
 - `.opencode/AGENTS.md` - This file (custom instructions)
 - `.opencode/tasks/index.md` - Quick task tracker
-- `.opencode/tasks/` - Detailed task folders with research/implementation
+- `.opencode/specs/` - Detailed task folders with research/implementation
 - `.opencode/specs/` - Agent design and planning documents
 
 ### Agent Configuration Structure
@@ -145,7 +140,7 @@ For complex features, commission specialized agents:
 - **Integration Analyst** - Third-party APIs
 - **Performance Specialist** - Optimization
 
-Task research saves to `.opencode/tasks/active/[task-id]/`.
+Task research saves to `.opencode/specs/{topic}/`.
 
 ---
 
@@ -169,7 +164,7 @@ Task research saves to `.opencode/tasks/active/[task-id]/`.
 **Start of Session:**
 
 1. Read `.opencode/tasks/index.md`
-2. Review active task context in `.opencode/tasks/`
+2. Review active task context in `.opencode/specs/`
 3. Continue with next subtask
 
 **During Session:**
@@ -646,25 +641,21 @@ _Automatic research trigger:_
 
 **What Happens:**
 
-1. Research agents investigate and save to `.opencode/tasks/active/[task-id]/`
+1. Research agents investigate and save to `.opencode/specs/{topic}/`
 2. Coordinator synthesizes findings
 3. Tasks decomposed into subtasks
 4. Agents implement following research
 5. Tests validate each subtask
 6. Lessons learned documented
 
-**Task Folder Structure:** `.opencode/tasks/`
+**Task Folder Structure:** `.opencode/specs/`
 
 ```
-.opencode/tasks/
-├── index.md              # Master task list
-├── active/
-│   └── [task-id]/
-│       ├── PLAN.md       # Research and design
-│       └── findings.md   # Agent findings
-└── completed/
-    └── [task-id]/
-        └── SUMMARY.md    # What was done
+.opencode/specs/
+└── {date}-{topicname}/
+    ├── design.md    # What and why
+    ├── plan.md      # Phases and steps
+    └── tasks.md     # Granular checklist
 ```
 
 ---
@@ -672,7 +663,7 @@ _Automatic research trigger:_
 ## Getting Help
 
 - **Workflow**: This file (AGENTS.md)
-- **Tasks**: `.opencode/tasks/index.md` + `.opencode/tasks/`
+- **Tasks**: `.opencode/tasks/index.md` + `.opencode/specs/`
 - **Mobile App**: `apps/mobile/README.md`
 - **Web Dashboard**: `apps/web/README.md`
 
