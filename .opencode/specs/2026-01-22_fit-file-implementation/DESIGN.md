@@ -49,20 +49,72 @@ This specification defines FIT file processing for GradientPeak using a **single
 
 ### Third-Party Data Import Flow (Encoding)
 
+We utilize a **"Universal FIT File" strategy**. All activities, regardless of source, are stored as FIT files. This ensures a single, unified processing pipeline for calculations and analysis.
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                    THIRD-PARTY DATA IMPORT FLOW                             │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
-│  1. External Source (API/JSON) provides activity data                       │
-│  2. System maps data to Standard Activity Format                            │
-│  3. `encodeFitFile()` in @repo/core converts data to FIT binary             │
-│  4. Generated FIT file uploaded to Supabase Storage                         │
-│  5. Activity record created referencing the new FIT file                    │
+│  PATH A: Direct FIT (Garmin, Wahoo)                                         │
+│  1. Receive Webhook -> Fetch "Original File" URL                            │
+│  2. Download FIT file                                                       │
+│  3. Upload to Supabase Storage                                              │
+│  4. Process via `fitFiles.processFitFile`                                   │
 │                                                                              │
-│  NOTE: Ensures all activities, regardless of source, have a valid FIT file  │
+│  PATH B: Transcoding (Strava, Apple Health, Google Fit)                     │
+│  1. Receive Webhook/Query -> Fetch Activity Streams (JSON)                  │
+│  2. Normalize to `StandardActivity` interface                               │
+│  3. Encode to FIT binary using `encodeFitFile()` in @repo/core              │
+│  4. Upload generated FIT to Supabase Storage                                │
+│  5. Process via `fitFiles.processFitFile`                                   │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Standard Activity Interface (Normalization Layer)
+
+To support Path B, we define a normalized interface that all JSON-based sources must map to before encoding.
+
+```typescript
+// packages/core/types/normalization.ts
+
+export interface StandardActivity {
+  metadata: {
+    sourceId: string; // e.g., "strava_12345"
+    sourceName: string; // e.g., "Strava", "Apple Health"
+    startTime: Date;
+    sport: "running" | "cycling" | "swimming" | "other";
+    subSport?: string; // e.g., "indoor_cycling"
+    deviceName?: string; // e.g., "Apple Watch Ultra"
+  };
+
+  // Summary data for SESSION and LAP messages
+  summary: {
+    totalTime: number; // seconds
+    totalDistance: number; // meters
+    totalAscent?: number; // meters
+    avgHeartRate?: number; // bpm
+    maxHeartRate?: number; // bpm
+    avgPower?: number; // watts
+    maxPower?: number; // watts
+    calories?: number;
+  };
+
+  // Time-series data for RECORD messages
+  // Arrays must be equal length
+  streams: {
+    timeOffsets: number[]; // Seconds from startTime
+    latitude?: number[]; // Degrees
+    longitude?: number[]; // Degrees
+    altitude?: number[]; // Meters
+    heartRate?: number[]; // BPM
+    cadence?: number[]; // RPM
+    power?: number[]; // Watts
+    speed?: number[]; // m/s
+    distance?: number[]; // Cumulative meters
+  };
+}
 ```
 
 ### Asynchronous Stream Parsing (Activity Detail View)

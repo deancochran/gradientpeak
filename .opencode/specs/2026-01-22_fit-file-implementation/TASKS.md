@@ -28,21 +28,35 @@ This document provides a granular checklist for implementing FIT file support in
 
 ### Core Encoding & Decoding (NEW)
 
-- [ ] **T-103** Implement FIT Encoder in `@repo/core`
+- [ ] **T-103** Define Standard Activity Interface
+  - Create `packages/core/types/normalization.ts`
+  - Define `StandardActivity` interface (metadata, summary, streams)
+
+- [ ] **T-103.1** Implement FIT Encoder in `@repo/core`
   - Create `packages/core/lib/fit-sdk-encoder.ts`
   - Implement `encodeFitFile` function using `@garmin/fitsdk`
-  - Support converting standard JSON activity data to FIT binary
-  - Handle FileId, Session, Lap, Record, and Event messages
+  - **Conversion Logic**:
+    - Timestamp: Unix ms -> Seconds since Dec 31, 1989
+    - Location: Degrees -> Semicircles (`deg * (2^31 / 180)`)
+    - Speed: m/s -> mm/s (or scaled float)
+    - Altitude: Meters -> Scaled meters
+  - **Message Generation**:
+    - `FILE_ID`: Required first message
+    - `DEVICE_INFO`: Optional, from metadata
+    - `RECORD`: Loop through streams
+    - `LAP`: Synthetic lap from summary (if no laps provided)
+    - `SESSION`: From summary
+    - `ACTIVITY`: Final wrapper
 
-- [ ] **T-103.1** Verify FIT Decoder Robustness
+- [ ] **T-103.2** Verify FIT Decoder Robustness
   - Review `packages/core/lib/fit-sdk-parser.ts`
   - Ensure it handles various FIT file versions and manufacturer quirks
   - Verify it can decode files stored in the storage bucket (Garmin, Wahoo, etc.)
 
-- [ ] **T-103.2** Unit Tests for Encoder/Decoder
+- [ ] **T-103.3** Unit Tests for Encoder/Decoder
   - Create `packages/core/lib/__tests__/fit-sdk.test.ts`
-  - Test round-trip: Encode data -> Decode data -> Verify match
-  - Test encoding third-party data structures
+  - Test round-trip: Encode `StandardActivity` -> Decode -> Verify match
+  - Test encoding third-party data structures (simulated Strava stream)
 
 ### Type Generation
 

@@ -31,15 +31,19 @@ This implementation plan covers the integration of FIT file support for Gradient
 
 - [ ] **1.2** Implement FIT Encoder in `@repo/core`
   - Location: `packages/core/lib/fit-sdk-encoder.ts`
-  - Implement `encodeFitFile(data: ActivityData): Uint8Array`
+  - Define `StandardActivity` interface in `packages/core/types/normalization.ts`
+  - Implement `encodeFitFile(data: StandardActivity): Uint8Array`
+  - Logic:
+    - Convert JS Dates to FIT Timestamps (seconds since 1989)
+    - Convert Degrees to Semicircles for GPS
+    - Generate synthetic `LAP` and `SESSION` messages from summary data
+    - Write `RECORD` messages from streams
   - Use `@garmin/fitsdk` for encoding
-  - Support standard fields (timestamp, lat/lon, heart_rate, power, cadence, speed)
-  - Support session and lap messages
 
 - [ ] **1.3** Verify FIT Decoder in `@repo/core`
-  - Location: `packages/core/lib/fit-sdk-parser.ts`
-  - Ensure `parseFitFileWithSDK` handles all standard FIT files
-  - Verify compatibility with files from Storage bucket (Garmin, Wahoo, etc.)
+- Location: `packages/core/lib/fit-sdk-parser.ts`
+- Ensure `parseFitFileWithSDK` handles all standard FIT files
+- Verify compatibility with files from Storage bucket (Garmin, Wahoo, etc.)
 
 - [ ] **1.4** Regenerate TypeScript types
 
