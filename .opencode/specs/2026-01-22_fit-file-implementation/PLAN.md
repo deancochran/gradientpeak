@@ -16,10 +16,10 @@ This implementation plan covers the integration of FIT file support for Gradient
 
 ## Phases
 
-### Phase 1: Infrastructure Setup
+### Phase 1: Infrastructure & Core Encoding
 
-**Duration:** 1-2 days  
-**Goal:** Set up database schema, types, and edge function foundation
+**Duration:** 2-3 days  
+ **Goal:** Set up database schema, types, and implement core FIT encoding/decoding capabilities
 
 #### Tasks
 
@@ -29,33 +29,47 @@ This implementation plan covers the integration of FIT file support for Gradient
   - Indexes: `idx_activities_processing_status`, `idx_activities_fit_path`
   - **Remove activity_streams table** - `DROP TABLE IF EXISTS activity_streams;`
 
-- [ ] **1.2** Regenerate TypeScript types
+- [ ] **1.2** Implement FIT Encoder in `@repo/core`
+  - Location: `packages/core/lib/fit-sdk-encoder.ts`
+  - Implement `encodeFitFile(data: ActivityData): Uint8Array`
+  - Use `@garmin/fitsdk` for encoding
+  - Support standard fields (timestamp, lat/lon, heart_rate, power, cadence, speed)
+  - Support session and lap messages
+
+- [ ] **1.3** Verify FIT Decoder in `@repo/core`
+  - Location: `packages/core/lib/fit-sdk-parser.ts`
+  - Ensure `parseFitFileWithSDK` handles all standard FIT files
+  - Verify compatibility with files from Storage bucket (Garmin, Wahoo, etc.)
+
+- [ ] **1.4** Regenerate TypeScript types
 
   ```bash
   cd packages/supabase && supabase generate-types
   ```
 
-- [ ] **1.3** Regenerate Zod schemas
+- [ ] **1.5** Regenerate Zod schemas
 
   ```bash
   cd packages/supabase && supazod generate
   ```
 
-- [ ] **1.4** Create tRPC router for FIT files
+- [ ] **1.6** Create tRPC router for FIT files
   - Location: `packages/trpc/src/routers/fit-files.ts`
   - Implement processFitFile protected procedure
 
-- [ ] **1.5** Register fitFilesRouter in root router
+- [ ] **1.7** Register fitFilesRouter in root router
   - Location: `packages/trpc/src/root.ts`
   - Add fitFiles: fitFilesRouter to router configuration
 
-- [ ] **1.6** No Edge Function needed
+- [ ] **1.8** No Edge Function needed
   - Simplified architecture uses single tRPC mutation
   - All processing happens synchronously in the mutation
 
 #### Deliverables
 
 - [ ] Database migration applied (including activity_streams table removal)
+- [ ] **FIT Encoder implemented in `@repo/core`**
+- [ ] **FIT Decoder verified for storage bucket compatibility**
 - [ ] TypeScript types regenerated
 - [ ] Zod schemas regenerated (removing activity_streams references)
 - [ ] tRPC fitFilesRouter created and registered
@@ -463,6 +477,7 @@ Stream data remains in the raw FIT file in Supabase Storage, eliminating the nee
 | Metric                  | Target                               |
 | ----------------------- | ------------------------------------ |
 | FIT file integrity      | 100% validated by @repo/core SDK     |
+| **Encoding Accuracy**   | **100% round-trip fidelity**         |
 | Upload success rate     | >95%                                 |
 | Processing success rate | >98%                                 |
 | Processing time         | <15 seconds per activity (tRPC sync) |
@@ -496,6 +511,7 @@ Stream data remains in the raw FIT file in Supabase Storage, eliminating the nee
 
 ```
 packages/supabase/migrations/20260121_add_fit_file_support.sql
+packages/core/lib/fit-sdk-encoder.ts    # NEW: Core FIT encoder
 apps/mobile/lib/services/fit/types.ts
 apps/mobile/lib/services/fit/StreamingFitEncoder.ts
 apps/mobile/lib/services/fit/FitUploader.ts
@@ -530,6 +546,7 @@ packages/supabase/functions/process-activity-fit/  # Not needed - use tRPC
 | Decision                | Options                           | Recommendation                   |
 | ----------------------- | --------------------------------- | -------------------------------- |
 | **Encoding Library**    | fit-encoder-js vs @garmin/fitsdk  | Use @garmin/fitsdk Encoder class |
+| **Core Encoding**       | None vs @repo/core implementation | **Implement in @repo/core**      |
 | **Processing Location** | Mobile vs Server                  | Mobile encoding, Server parsing  |
 | **Processing Trigger**  | Database trigger vs tRPC mutation | tRPC mutation                    |
 | **Status Column**       | Use existing migration            | Apply existing migration         |

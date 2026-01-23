@@ -10,17 +10,18 @@
 
 ## Executive Summary
 
-This specification defines FIT file processing for GradientPeak using a **single synchronous tRPC mutation** that leverages all pre-existing `@repo/core` functions. No code duplication - only integration.
+This specification defines FIT file processing for GradientPeak using a **single synchronous tRPC mutation** that leverages all pre-existing `@repo/core` functions. It also establishes `@repo/core` as the central hub for both **decoding** (parsing) and **encoding** (generating) FIT files using the Garmin SDK.
 
-| Decision         | Choice                             | Rationale                                                       |
-| ---------------- | ---------------------------------- | --------------------------------------------------------------- |
-| **FIT Parser**   | `@repo/core/lib/fit-sdk-parser.ts` | Existing production parser using Garmin SDK                     |
-| **Calculations** | `@repo/core` functions             | TSS, power curves, test detection all exist                     |
-| **Processing**   | Next.js/tRPC mutation              | Single synchronous request                                      |
-| **Database**     | Supabase client                    | Uses existing `activities` table with individual metric columns |
-| **Stream Data**  | Raw FIT file in Supabase Storage   | Stream data remains only in the original FIT file               |
+| Decision         | Choice                              | Rationale                                                       |
+| ---------------- | ----------------------------------- | --------------------------------------------------------------- |
+| **FIT Parser**   | `@repo/core/lib/fit-sdk-parser.ts`  | Existing production parser using Garmin SDK                     |
+| **FIT Encoder**  | `@repo/core/lib/fit-sdk-encoder.ts` | **NEW:** Centralized encoding logic for third-party data        |
+| **Calculations** | `@repo/core` functions              | TSS, power curves, test detection all exist                     |
+| **Processing**   | Next.js/tRPC mutation               | Single synchronous request                                      |
+| **Database**     | Supabase client                     | Uses existing `activities` table with individual metric columns |
+| **Stream Data**  | Raw FIT file in Supabase Storage    | Stream data remains only in the original FIT file               |
 
-**Key Finding:** All 50+ calculation, parsing, and detection functions already exist in `@repo/core`. This spec only defines the integration layer.
+**Key Finding:** All 50+ calculation, parsing, and detection functions already exist in `@repo/core`. This spec only defines the integration layer and the new encoding capability.
 
 **Key Schema Change:** All metrics stored as individual typed columns (NOT JSONB) for type safety and query performance.
 
@@ -42,6 +43,24 @@ This specification defines FIT file processing for GradientPeak using a **single
 │  5. Mutation calculates metrics using existing @repo/core functions         │
 │  6. Mutation creates activity with individual metric columns                │
 │  7. Mutation returns activity with all computed metrics                     │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Third-Party Data Import Flow (Encoding)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    THIRD-PARTY DATA IMPORT FLOW                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. External Source (API/JSON) provides activity data                       │
+│  2. System maps data to Standard Activity Format                            │
+│  3. `encodeFitFile()` in @repo/core converts data to FIT binary             │
+│  4. Generated FIT file uploaded to Supabase Storage                         │
+│  5. Activity record created referencing the new FIT file                    │
+│                                                                              │
+│  NOTE: Ensures all activities, regardless of source, have a valid FIT file  │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -75,6 +94,14 @@ This specification defines FIT file processing for GradientPeak using a **single
 | Power Curves    | `@repo/core/calculations/curves.ts`  | ✅ `calculatePowerCurve()`                |
 | Test Detection  | `@repo/core/detection/`              | ✅ `detectPowerTestEfforts()`             |
 | Database Schema | `packages/supabase/schemas/init.sql` | ✅ `activities` table with metric columns |
+
+### What to Implement
+
+| Component       | Location                                  | Description                                |
+| --------------- | ----------------------------------------- | ------------------------------------------ |
+| FIT Encoder     | `@repo/core/lib/fit-sdk-encoder.ts`       | **NEW:** Encode JSON/Objects to FIT binary |
+| tRPC Router     | `packages/trpc/src/routers/fit-files.ts`  | Integration layer                          |
+| Mobile Uploader | `apps/mobile/src/utils/fit-processing.ts` | Mobile upload logic                        |
 
 **Note:** `activity_streams` table removed. Stream data remains only in raw FIT file.
 
@@ -447,6 +474,9 @@ export interface ActivityMetrics {
 // FIT Parsing
 import { parseFitFileWithSDK } from "@repo/core/lib/fit-sdk-parser.ts";
 import { extractActivitySummary } from "@repo/core/lib/extract-activity-summary.ts";
+
+// FIT Encoding (NEW)
+import { encodeFitFile } from "@repo/core/lib/fit-sdk-encoder.ts";
 
 // TSS and Power Calculations
 import { calculateTSSFromAvailableData } from "@repo/core/calculations/tss.ts";
@@ -845,6 +875,7 @@ describe("fitFilesRouter", () => {
 6. **Stores** stream data only in raw FIT file (not in database)
 7. **Returns** complete activity with all computed metrics
 8. **Supports** on-demand stream parsing for activity detail view
+9. **Provides** encoding capability in `@repo/core` for third-party data integration
 
 ### What Already Exists (No Implementation Needed)
 
@@ -858,6 +889,7 @@ describe("fitFilesRouter", () => {
 
 ### What's Different (VP Feedback Incorporated)
 
+- ✅ **Added:** Centralized FIT Encoding in `@repo/core` for third-party data
 - ✅ **Removed:** `metrics` JSONB column
 - ✅ **Removed:** `activity_streams` table
 - ✅ **Added:** 20 individual typed metric columns for type safety
@@ -867,3 +899,4 @@ describe("fitFilesRouter", () => {
 - ✅ **Benefit:** No data duplication - streams stay in original FIT file
 - ✅ **Benefit:** Smaller database footprint
 - ✅ **Benefit:** Always have original source for re-processing
+- ✅ **Benefit:** Unified encoding/decoding logic in core package

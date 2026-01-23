@@ -6,10 +6,10 @@ This document provides a granular checklist for implementing FIT file support in
 
 ---
 
-## Phase 1: Infrastructure Setup
+## Phase 1: Infrastructure & Core Encoding
 
-**Duration:** 1-2 days  
-**Goal:** Set up database schema, types, and edge function foundation
+**Duration:** 2-3 days  
+**Goal:** Set up database schema, types, and implement core FIT encoding/decoding capabilities
 
 ### Database Setup
 
@@ -26,22 +26,44 @@ This document provides a granular checklist for implementing FIT file support in
   - Raw FIT files will be stored in Supabase Storage
   - Verify no existing code references activity_streams table
 
-- [x] **T-103** Generate TypeScript types
+### Core Encoding & Decoding (NEW)
+
+- [ ] **T-103** Implement FIT Encoder in `@repo/core`
+  - Create `packages/core/lib/fit-sdk-encoder.ts`
+  - Implement `encodeFitFile` function using `@garmin/fitsdk`
+  - Support converting standard JSON activity data to FIT binary
+  - Handle FileId, Session, Lap, Record, and Event messages
+
+- [ ] **T-103.1** Verify FIT Decoder Robustness
+  - Review `packages/core/lib/fit-sdk-parser.ts`
+  - Ensure it handles various FIT file versions and manufacturer quirks
+  - Verify it can decode files stored in the storage bucket (Garmin, Wahoo, etc.)
+
+- [ ] **T-103.2** Unit Tests for Encoder/Decoder
+  - Create `packages/core/lib/__tests__/fit-sdk.test.ts`
+  - Test round-trip: Encode data -> Decode data -> Verify match
+  - Test encoding third-party data structures
+
+### Type Generation
+
+- [x] **T-104** Generate TypeScript types
 
   ```bash
   cd packages/supabase && supabase generate-types
   ```
 
-- [x] **T-104** Update Zod schemas
+- [x] **T-105** Update Zod schemas
   - Add FIT columns to `publicActivitiesInsertSchema`
   - Add processing_status enum
   - Remove references to `publicActivityStreamsInsertSchema` (no longer needed)
 
 ### Infrastructure Deliverables
 
-- [X] Database migration applied
-- [X] TypeScript types generated
-- [X] Zod schemas updated
+- [x] Database migration applied
+- [ ] **FIT Encoder implemented and tested**
+- [ ] **FIT Decoder verified**
+- [x] TypeScript types generated
+- [x] Zod schemas updated
 
 ---
 
@@ -52,7 +74,7 @@ This document provides a granular checklist for implementing FIT file support in
 
 ### Dependencies
 
-- [X] **T-201** Install @garmin/fitsdk on mobile
+- [x] **T-201** Install @garmin/fitsdk on mobile
   ```bash
   cd apps/mobile && npm install @garmin/fitsdk@^21.188.0
   ```
@@ -208,15 +230,13 @@ This document provides a granular checklist for implementing FIT file support in
 
 ### Recovery Testing
 
-
 - [ ] **T-213** Test crash recovery
   - manually close app during recording
   - Verify checkpoint recovery
 
-
 ### Mobile Deliverables
 
-- [X] @garmin/fitsdk installed
+- [x] @garmin/fitsdk installed
 - [ ] FIT encoder integrated into ActivityRecorder
 - [ ] FitUploader created/updated
 - [ ] useActivitySubmission updated
@@ -654,13 +674,13 @@ This document provides a granular checklist for implementing FIT file support in
 
 ## Task Summary
 
-| Phase                                 | Tasks          | Status  |
-| ------------------------------------- | -------------- | ------- |
-| Phase 1: Infrastructure Setup         | T-101 to T-104 | Pending |
-| Phase 2: Mobile Recording Integration | T-201 to T-214 | Pending |
-| Phase 3: tRPC Mutation Implementation | T-301 to T-321 | Pending |
-| Phase 4: User Interface               | T-401 to T-407 | Pending |
-| Phase 5: Data Migration               | T-501 to T-516 | Pending |
+| Phase                                   | Tasks          | Status  |
+| --------------------------------------- | -------------- | ------- |
+| Phase 1: Infrastructure & Core Encoding | T-101 to T-105 | Pending |
+| Phase 2: Mobile Recording Integration   | T-201 to T-214 | Pending |
+| Phase 3: tRPC Mutation Implementation   | T-301 to T-321 | Pending |
+| Phase 4: User Interface                 | T-401 to T-407 | Pending |
+| Phase 5: Data Migration                 | T-501 to T-516 | Pending |
 
 ---
 
@@ -668,11 +688,15 @@ This document provides a granular checklist for implementing FIT file support in
 
 ### Current Blockers
 
-1. **Database migration not applied**
+1. **FIT Encoder Implementation**
+   - Blocks: Third-party data import
+   - Resolution: Implement `encodeFitFile` in `@repo/core`
+
+2. **Database migration not applied**
    - Blocks: TypeScript types, Zod schemas
    - Resolution: Apply migration to init.sql and remove activity_streams table
 
-2. **tRPC router configuration**
+3. **tRPC router configuration**
    - Blocks: FIT file processing
    - Resolution: Create fitFilesRouter and register in root router
 
@@ -707,6 +731,7 @@ This document provides a granular checklist for implementing FIT file support in
 ### Unit Tests
 
 - [ ] FIT parsing tests
+- [ ] **FIT encoding tests (round-trip)**
 - [ ] Metrics calculation tests
 - [ ] GPS polyline tests
 - [ ] Error handling tests

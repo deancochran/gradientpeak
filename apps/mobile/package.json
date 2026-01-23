@@ -14,6 +14,7 @@
     "watch": "concurrently \"tsc --noEmit --watch --preserveWatchOutput\" \"chokidar '**/*.{ts,tsx,js,jsx}' -c 'expo lint'\""
   },
   "dependencies": {
+    "@garmin/fitsdk": "^21.188.0",
     "@gorhom/bottom-sheet": "^5.2.8",
     "@hookform/resolvers": "^5.2.2",
     "@react-native-async-storage/async-storage": "^2.2.0",
