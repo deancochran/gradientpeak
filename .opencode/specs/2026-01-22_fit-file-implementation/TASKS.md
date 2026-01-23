@@ -39,9 +39,9 @@ This document provides a granular checklist for implementing FIT file support in
 
 ### Infrastructure Deliverables
 
-- [ ] Database migration applied
-- [ ] TypeScript types generated
-- [ ] Zod schemas updated
+- [X] Database migration applied
+- [X] TypeScript types generated
+- [X] Zod schemas updated
 
 ---
 
@@ -52,7 +52,7 @@ This document provides a granular checklist for implementing FIT file support in
 
 ### Dependencies
 
-- [ ] **T-201** Install @garmin/fitsdk on mobile
+- [X] **T-201** Install @garmin/fitsdk on mobile
   ```bash
   cd apps/mobile && npm install @garmin/fitsdk@^21.188.0
   ```
@@ -206,30 +206,21 @@ This document provides a granular checklist for implementing FIT file support in
   }, [service, userId]);
   ```
 
-### Performance Testing
+### Recovery Testing
 
-- [ ] **T-212** Test real-time encoding performance
-  - Monitor memory usage
-  - Measure CPU impact
-  - Check battery impact
 
 - [ ] **T-213** Test crash recovery
-  - Simulate crash during recording
+  - manually close app during recording
   - Verify checkpoint recovery
-  - Test FIT file integrity after recovery
 
-- [ ] **T-214** Test with long recordings
-  - 1+ hour activity
-  - Verify file integrity
-  - Check file size growth
 
 ### Mobile Deliverables
 
-- [ ] @garmin/fitsdk installed
+- [X] @garmin/fitsdk installed
 - [ ] FIT encoder integrated into ActivityRecorder
 - [ ] FitUploader created/updated
 - [ ] useActivitySubmission updated
-- [ ] Performance testing complete
+- [ ] Recovery testing complete
 
 ---
 
