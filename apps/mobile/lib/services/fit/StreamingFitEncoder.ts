@@ -12,6 +12,7 @@
  */
 
 import * as FileSystem from "expo-file-system";
+import { Paths } from "expo-file-system";
 import { Buffer } from "buffer";
 
 export interface FitRecord {
@@ -100,8 +101,7 @@ export class StreamingFitEncoder {
     this.recordingId = recordingId;
     this.userId = userId;
     this.config = { ...DEFAULT_CONFIG, ...config };
-    const baseDir =
-      FileSystem.cacheDirectory || FileSystem.documentDirectory || "";
+    const baseDir = Paths.cache.uri || Paths.document.uri || "";
     this.storageUri = `${baseDir}fit_encoding_${recordingId}/`;
     this.fitFilePath = `${this.storageUri}activity.fit`;
     this.crcTable = this.generateCrcTable();
@@ -284,7 +284,7 @@ export class StreamingFitEncoder {
    */
   static async cleanupOrphanedRecordings(): Promise<void> {
     try {
-      const baseDir = FileSystem.cacheDirectory || FileSystem.documentDirectory;
+      const baseDir = Paths.cache.uri || Paths.document.uri;
       if (!baseDir) return;
 
       const contents = await FileSystem.readDirectoryAsync(baseDir);

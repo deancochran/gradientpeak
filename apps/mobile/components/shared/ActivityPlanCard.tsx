@@ -174,13 +174,13 @@ export function ActivityPlanCard({
           )}
 
           {/* Description (2-line clamp with ellipsis) */}
-          {(activity.notes || activity.structure?.description) && (
+          {activity.notes && (
             <Text
               className="text-xs text-muted-foreground leading-4"
               numberOfLines={2}
               ellipsizeMode="tail"
             >
-              {activity.notes || activity.structure?.description}
+              {activity.notes}
             </Text>
           )}
 

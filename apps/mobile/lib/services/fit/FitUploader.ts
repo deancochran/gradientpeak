@@ -14,7 +14,6 @@ import {
   SupabaseClientOptions,
 } from "@supabase/supabase-js";
 import * as FileSystem from "expo-file-system";
-import { FileSystemUploadType } from "expo-file-system";
 
 export interface UploadProgress {
   loaded: number;
@@ -36,6 +35,8 @@ export interface UploadConfig {
   chunkSize: number;
   timeoutMs: number;
 }
+
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB in bytes
 
 const DEFAULT_CONFIG: UploadConfig = {
   maxRetries: 3,
@@ -110,6 +111,13 @@ export class FitUploader {
         throw new Error("File not found");
       }
 
+      // Validate file size before upload
+      if (fileInfo.size && fileInfo.size > MAX_FILE_SIZE) {
+        throw new Error(
+          `FIT file size (${(fileInfo.size / (1024 * 1024)).toFixed(2)}MB) exceeds maximum allowed size of 50MB`,
+        );
+      }
+
       const fileName = this.generateFileName(userId, activityId);
 
       for (let attempt = 1; attempt <= this.config.maxRetries + 1; attempt++) {
@@ -179,18 +187,22 @@ export class FitUploader {
         "x-upsert": "true",
         apikey: this.supabaseKey,
       },
-      uploadType: FileSystemUploadType.MULTIPART,
     });
 
-    uploadTask.addProgressListener((progress) => {
-      this.uploadState.progress = {
-        loaded: progress.totalBytesSent,
-        total: progress.totalBytesExpectedToSend,
-        percentage: Math.round(
-          (progress.totalBytesSent / progress.totalBytesExpectedToSend) * 100,
-        ),
-      };
-    });
+    uploadTask.addProgressListener(
+      (progress: {
+        totalBytesSent: number;
+        totalBytesExpectedToSend: number;
+      }) => {
+        this.uploadState.progress = {
+          loaded: progress.totalBytesSent,
+          total: progress.totalBytesExpectedToSend,
+          percentage: Math.round(
+            (progress.totalBytesSent / progress.totalBytesExpectedToSend) * 100,
+          ),
+        };
+      },
+    );
 
     const result = await uploadTask.promise();
 
@@ -230,6 +242,13 @@ export class FitUploader {
       const fileInfo = await FileSystem.getInfoAsync(filePath);
       if (!fileInfo.exists) {
         throw new Error("File not found");
+      }
+
+      // Validate file size before upload
+      if (fileInfo.size && fileInfo.size > MAX_FILE_SIZE) {
+        throw new Error(
+          `FIT file size (${(fileInfo.size / (1024 * 1024)).toFixed(2)}MB) exceeds maximum allowed size of 50MB`,
+        );
       }
 
       const fileName = this.generateFileName(userId, activityId);

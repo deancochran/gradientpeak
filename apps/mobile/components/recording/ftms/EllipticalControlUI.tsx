@@ -52,7 +52,8 @@ export function EllipticalControlUI({
   const trainer = service.sensorsManager.getControllableTrainer();
   const features = trainer?.ftmsFeatures;
 
-  const supportsResistance = features?.resistanceTargetSettingSupported ?? false;
+  const supportsResistance =
+    features?.resistanceTargetSettingSupported ?? false;
   const supportsCadence = features?.targetedCadenceSupported ?? false;
 
   // Apply predictive resistance based on current state
@@ -78,6 +79,76 @@ export function EllipticalControlUI({
     features,
     predictiveCalculator,
     supportsResistance,
+    service,
+  ]);
+
+  /**
+   * Apply plan targets to elliptical automatically using predictive resistance
+   * Converts plan step targets to resistance commands based on stride rate
+   */
+  const applyPlanTargets = useCallback(async () => {
+    if (!plan.currentStep || !plan.currentStep.targets) return;
+
+    const targets = plan.currentStep.targets;
+
+    // Find power target
+    const powerTarget = targets.find(
+      (t) => t.type === "watts" || t.type === "%FTP",
+    );
+
+    // Find cadence target
+    const cadenceTarget = targets.find((t) => t.type === "cadence");
+
+    if (
+      cadenceTarget &&
+      "min" in cadenceTarget &&
+      "max" in cadenceTarget &&
+      supportsCadence
+    ) {
+      // Use midpoint of range
+      const cadenceSpm = Math.round(
+        ((cadenceTarget.min as number) + (cadenceTarget.max as number)) / 2,
+      );
+      setTargetCadence(cadenceSpm);
+      await service.sensorsManager.setTargetCadence(cadenceSpm);
+      console.log(
+        `[EllipticalControl] Auto mode: Set target cadence to ${cadenceSpm} spm`,
+      );
+    }
+
+    // Apply predictive resistance if power target exists
+    if (powerTarget && supportsResistance) {
+      let powerWatts = 0;
+
+      if (powerTarget.type === "watts" && "value" in powerTarget) {
+        powerWatts = powerTarget.value as number;
+      }
+
+      if (powerWatts > 0) {
+        setTargetPower(powerWatts);
+
+        // Use predictive resistance control based on stride rate
+        const currentStrideRate = currentReadings.cadence ?? 60; // Fallback to 60 strides/min
+        const resistance = predictiveCalculator.calculateResistance(
+          powerWatts,
+          currentStrideRate,
+          "elliptical",
+          features,
+        );
+
+        await service.sensorsManager.setResistanceTarget(resistance);
+        console.log(
+          `[EllipticalControl] Predictive: Set resistance to ${resistance.toFixed(1)} (target: ${powerWatts}W, stride rate: ${currentStrideRate.toFixed(0)} spm)`,
+        );
+      }
+    }
+  }, [
+    plan.currentStep,
+    supportsResistance,
+    supportsCadence,
+    currentReadings.cadence,
+    features,
+    predictiveCalculator,
     service,
   ]);
 
@@ -153,100 +224,37 @@ export function EllipticalControlUI({
   ]);
 
   /**
-   * Apply plan targets to elliptical automatically using predictive resistance
-   * Converts plan step targets to resistance commands based on stride rate
-   */
-  const applyPlanTargets = useCallback(async () => {
-    if (!plan.currentStep || !plan.currentStep.targets) return;
-
-    const targets = plan.currentStep.targets;
-
-    // Find power target
-    const powerTarget = targets.find(
-      (t) => t.type === "watts" || t.type === "%FTP",
-    );
-
-    // Find cadence target
-    const cadenceTarget = targets.find((t) => t.type === "cadence");
-
-    if (
-      cadenceTarget &&
-      "min" in cadenceTarget &&
-      "max" in cadenceTarget &&
-      supportsCadence
-    ) {
-      // Use midpoint of range
-      const cadenceSpm = Math.round(
-        ((cadenceTarget.min as number) + (cadenceTarget.max as number)) / 2,
-      );
-      setTargetCadence(cadenceSpm);
-      await service.sensorsManager.setTargetCadence(cadenceSpm);
-      console.log(
-        `[EllipticalControl] Auto mode: Set target cadence to ${cadenceSpm} spm`,
-      );
-    }
-
-    // Apply predictive resistance if power target exists
-    if (powerTarget && supportsResistance) {
-      let powerWatts = 0;
-
-      if (powerTarget.type === "watts" && "value" in powerTarget) {
-        powerWatts = powerTarget.value as number;
-      }
-
-      if (powerWatts > 0) {
-        setTargetPower(powerWatts);
-
-        // Use predictive resistance control based on stride rate
-        const currentStrideRate = currentReadings.cadence ?? 60; // Fallback to 60 strides/min
-        const resistance = predictiveCalculator.calculateResistance(
-          powerWatts,
-          currentStrideRate,
-          "elliptical",
-          features,
-        );
-
-        await service.sensorsManager.setResistanceTarget(resistance);
-        console.log(
-          `[EllipticalControl] Predictive: Set resistance to ${resistance.toFixed(1)} (target: ${powerWatts}W, stride rate: ${currentStrideRate.toFixed(0)} spm)`,
-        );
-      }
-    }
-  }, [
-    plan.currentStep,
-    supportsResistance,
-    supportsCadence,
-    currentReadings.cadence,
-    features,
-    predictiveCalculator,
-    service,
-  ]);
-
-  /**
    * Apply resistance target
    */
   const applyResistance = useCallback(async () => {
     if (controlMode === "auto") {
       Alert.alert(
         "Auto Mode Active",
-        "Switch to Manual mode to adjust elliptical settings."
+        "Switch to Manual mode to adjust elliptical settings.",
       );
       return;
     }
 
     if (!supportsResistance) {
-      Alert.alert("Not Supported", "Elliptical does not support resistance control.");
+      Alert.alert(
+        "Not Supported",
+        "Elliptical does not support resistance control.",
+      );
       return;
     }
 
-    const success = await service.sensorsManager.setResistanceTarget(
-      resistanceLevel
-    );
+    const success =
+      await service.sensorsManager.setResistanceTarget(resistanceLevel);
 
     if (success) {
-      console.log(`[EllipticalControl] Manual: Set resistance level to ${resistanceLevel}`);
+      console.log(
+        `[EllipticalControl] Manual: Set resistance level to ${resistanceLevel}`,
+      );
     } else {
-      Alert.alert("Error", "Failed to set resistance. Check elliptical connection.");
+      Alert.alert(
+        "Error",
+        "Failed to set resistance. Check elliptical connection.",
+      );
     }
   }, [resistanceLevel, controlMode, supportsResistance]);
 
@@ -257,22 +265,31 @@ export function EllipticalControlUI({
     if (controlMode === "auto") {
       Alert.alert(
         "Auto Mode Active",
-        "Switch to Manual mode to adjust elliptical settings."
+        "Switch to Manual mode to adjust elliptical settings.",
       );
       return;
     }
 
     if (!supportsCadence) {
-      Alert.alert("Not Supported", "Elliptical does not support cadence target.");
+      Alert.alert(
+        "Not Supported",
+        "Elliptical does not support cadence target.",
+      );
       return;
     }
 
-    const success = await service.sensorsManager.setTargetCadence(targetCadence);
+    const success =
+      await service.sensorsManager.setTargetCadence(targetCadence);
 
     if (success) {
-      console.log(`[EllipticalControl] Manual: Set target cadence to ${targetCadence} spm`);
+      console.log(
+        `[EllipticalControl] Manual: Set target cadence to ${targetCadence} spm`,
+      );
     } else {
-      Alert.alert("Error", "Failed to set cadence. Check elliptical connection.");
+      Alert.alert(
+        "Error",
+        "Failed to set cadence. Check elliptical connection.",
+      );
     }
   }, [targetCadence, controlMode, supportsCadence]);
 
@@ -291,13 +308,21 @@ export function EllipticalControlUI({
           <Text className="text-sm font-medium mb-3">Resistance Level</Text>
           <View className="flex-row items-center gap-3 mb-3">
             <Pressable
-              onPress={() => setResistanceLevel(Math.max(1, resistanceLevel - 1))}
+              onPress={() =>
+                setResistanceLevel(Math.max(1, resistanceLevel - 1))
+              }
               disabled={isDisabled}
               className={`w-12 h-12 items-center justify-center rounded ${
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
             >
-              <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
+              <Text
+                className={
+                  isDisabled
+                    ? "text-muted-foreground"
+                    : "text-primary-foreground"
+                }
+              >
                 -
               </Text>
             </Pressable>
@@ -310,13 +335,21 @@ export function EllipticalControlUI({
             </View>
 
             <Pressable
-              onPress={() => setResistanceLevel(Math.min(20, resistanceLevel + 1))}
+              onPress={() =>
+                setResistanceLevel(Math.min(20, resistanceLevel + 1))
+              }
               disabled={isDisabled}
               className={`w-12 h-12 items-center justify-center rounded ${
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
             >
-              <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
+              <Text
+                className={
+                  isDisabled
+                    ? "text-muted-foreground"
+                    : "text-primary-foreground"
+                }
+              >
                 +
               </Text>
             </Pressable>
@@ -327,9 +360,11 @@ export function EllipticalControlUI({
             disabled={isDisabled}
             className={`py-3 rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
           >
-            <Text className={`text-center font-medium ${
-              isDisabled ? "text-muted-foreground" : "text-primary-foreground"
-            }`}>
+            <Text
+              className={`text-center font-medium ${
+                isDisabled ? "text-muted-foreground" : "text-primary-foreground"
+              }`}
+            >
               {isDisabled ? "Auto Mode Active" : "Apply Resistance"}
             </Text>
           </Pressable>
@@ -348,7 +383,13 @@ export function EllipticalControlUI({
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
             >
-              <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
+              <Text
+                className={
+                  isDisabled
+                    ? "text-muted-foreground"
+                    : "text-primary-foreground"
+                }
+              >
                 -
               </Text>
             </Pressable>
@@ -367,7 +408,13 @@ export function EllipticalControlUI({
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
             >
-              <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
+              <Text
+                className={
+                  isDisabled
+                    ? "text-muted-foreground"
+                    : "text-primary-foreground"
+                }
+              >
                 +
               </Text>
             </Pressable>
@@ -378,9 +425,11 @@ export function EllipticalControlUI({
             disabled={isDisabled}
             className={`py-3 rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
           >
-            <Text className={`text-center font-medium ${
-              isDisabled ? "text-muted-foreground" : "text-primary-foreground"
-            }`}>
+            <Text
+              className={`text-center font-medium ${
+                isDisabled ? "text-muted-foreground" : "text-primary-foreground"
+              }`}
+            >
               {isDisabled ? "Auto Mode Active" : "Apply Cadence Target"}
             </Text>
           </Pressable>
@@ -389,7 +438,9 @@ export function EllipticalControlUI({
 
       {/* Power Display (Read-only) */}
       <View className="bg-card p-4 rounded-lg border border-border">
-        <Text className="text-xs text-muted-foreground mb-1">Current Power</Text>
+        <Text className="text-xs text-muted-foreground mb-1">
+          Current Power
+        </Text>
         <Text className="text-3xl font-bold">
           {currentPower !== null ? `${currentPower} W` : "--"}
         </Text>
@@ -408,7 +459,8 @@ export function EllipticalControlUI({
           {plan.currentStep.targets && plan.currentStep.targets.length > 0 && (
             <Text className="text-xs text-muted-foreground mt-1">
               Target: {plan.currentStep.targets[0].type}{" "}
-              {"min" in plan.currentStep.targets[0] && "max" in plan.currentStep.targets[0] &&
+              {"min" in plan.currentStep.targets[0] &&
+                "max" in plan.currentStep.targets[0] &&
                 `${plan.currentStep.targets[0].min}-${plan.currentStep.targets[0].max}`}
               {"value" in plan.currentStep.targets[0] &&
                 `${plan.currentStep.targets[0].value}`}
@@ -420,8 +472,9 @@ export function EllipticalControlUI({
       {/* Info Note */}
       <View className="bg-muted/30 p-3 rounded-lg">
         <Text className="text-xs text-muted-foreground">
-          <Text className="font-medium">Tip:</Text> Higher resistance increases power output
-          at the same cadence. Target cadence helps maintain consistent stride rate.
+          <Text className="font-medium">Tip:</Text> Higher resistance increases
+          power output at the same cadence. Target cadence helps maintain
+          consistent stride rate.
         </Text>
       </View>
     </View>

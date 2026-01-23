@@ -281,66 +281,6 @@ export default function OnboardingScreen() {
         });
       }
 
-      // 3. Create performance metrics
-      const recordedAt = new Date().toISOString();
-
-      // Heart rate metrics
-      if (data.max_hr && data.primary_sport) {
-        await createPerformanceMetricsMutation.mutateAsync({
-          category: mapSportToCategory(data.primary_sport),
-          type: "heart_rate",
-          value: data.max_hr,
-          unit: "bpm",
-          duration_seconds: 0,
-          recorded_at: recordedAt,
-          notes: "Max heart rate from onboarding",
-        });
-      }
-
-      if (data.lthr && data.primary_sport) {
-        await createPerformanceMetricsMutation.mutateAsync({
-          category: mapSportToCategory(data.primary_sport),
-          type: "heart_rate",
-          value: data.lthr,
-          unit: "bpm",
-          duration_seconds: 3600, // 1 hour threshold
-          recorded_at: recordedAt,
-          notes: "Lactate threshold HR from onboarding",
-        });
-      }
-
-      // Power metrics (cycling)
-      if (
-        data.ftp &&
-        (data.primary_sport === "cycling" || data.primary_sport === "triathlon")
-      ) {
-        await createPerformanceMetricsMutation.mutateAsync({
-          category: "bike",
-          type: "power",
-          value: data.ftp,
-          unit: "watts",
-          duration_seconds: 3600, // 1 hour FTP
-          recorded_at: recordedAt,
-          notes: "FTP from onboarding",
-        });
-      }
-
-      // Pace metrics (running)
-      if (
-        data.threshold_pace &&
-        (data.primary_sport === "running" || data.primary_sport === "triathlon")
-      ) {
-        await createPerformanceMetricsMutation.mutateAsync({
-          category: "run",
-          type: "pace",
-          value: data.threshold_pace,
-          unit: "seconds_per_km",
-          duration_seconds: 3600, // 1 hour threshold
-          recorded_at: recordedAt,
-          notes: "Threshold pace from onboarding",
-        });
-      }
-
       // Navigate to main app
       console.log("[Onboarding] Profile setup complete");
       Alert.alert(
@@ -349,7 +289,7 @@ export default function OnboardingScreen() {
         [
           {
             text: "Get Started",
-            onPress: () => router.replace("/(internal)/(tabs)/home"),
+            onPress: () => router.replace("/(internal)/(tabs)/home" as any),
           },
         ],
       );

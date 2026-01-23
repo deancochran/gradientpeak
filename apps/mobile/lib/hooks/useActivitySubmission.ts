@@ -465,8 +465,25 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
           | number
           | undefined,
         intensity_factor: calculatedMetrics.metrics.if as number | undefined,
-        hr_zone_seconds: calculatedMetrics.hrZoneSeconds ?? undefined,
-        power_zone_seconds: calculatedMetrics.powerZoneSeconds ?? undefined,
+        hr_zone_1_seconds: calculatedMetrics.hrZoneSeconds?.[0] ?? undefined,
+        hr_zone_2_seconds: calculatedMetrics.hrZoneSeconds?.[1] ?? undefined,
+        hr_zone_3_seconds: calculatedMetrics.hrZoneSeconds?.[2] ?? undefined,
+        hr_zone_4_seconds: calculatedMetrics.hrZoneSeconds?.[3] ?? undefined,
+        hr_zone_5_seconds: calculatedMetrics.hrZoneSeconds?.[4] ?? undefined,
+        power_zone_1_seconds:
+          calculatedMetrics.powerZoneSeconds?.[0] ?? undefined,
+        power_zone_2_seconds:
+          calculatedMetrics.powerZoneSeconds?.[1] ?? undefined,
+        power_zone_3_seconds:
+          calculatedMetrics.powerZoneSeconds?.[2] ?? undefined,
+        power_zone_4_seconds:
+          calculatedMetrics.powerZoneSeconds?.[3] ?? undefined,
+        power_zone_5_seconds:
+          calculatedMetrics.powerZoneSeconds?.[4] ?? undefined,
+        power_zone_6_seconds:
+          calculatedMetrics.powerZoneSeconds?.[5] ?? undefined,
+        power_zone_7_seconds:
+          calculatedMetrics.powerZoneSeconds?.[6] ?? undefined,
         activity_plan_id: activityPlanId, // Use activity_plan_id instead of planned_activity_id
       };
 

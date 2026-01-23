@@ -106,6 +106,65 @@ export function BikeControlUI({
     service,
   ]);
 
+  /**
+   * Apply plan targets to trainer automatically using predictive resistance
+   * Converts plan step targets to resistance commands based on cadence
+   */
+  const applyPlanTargets = useCallback(async () => {
+    if (!plan.currentStep || !plan.currentStep.targets) return;
+
+    const targets = plan.currentStep.targets;
+
+    // Find power target
+    const powerTarget = targets.find(
+      (t) => t.type === "watts" || t.type === "%FTP",
+    );
+
+    if (powerTarget && (supportsERG || supportsResistance)) {
+      let powerWatts = 0;
+
+      if (powerTarget.type === "watts" && "value" in powerTarget) {
+        powerWatts = powerTarget.value as number;
+      } else if (
+        powerTarget.type === "%FTP" &&
+        "min" in powerTarget &&
+        "max" in powerTarget
+      ) {
+        // Use midpoint of range
+        const percentFTP =
+          ((powerTarget.min as number) + (powerTarget.max as number)) / 2;
+        powerWatts = Math.round((percentFTP / 100) * ftp);
+      }
+
+      if (powerWatts > 0) {
+        setTargetPower(powerWatts);
+
+        // Use predictive resistance control
+        const currentCadence = current.cadence ?? 85; // Fallback to 85 rpm
+        const resistance = predictiveCalculator.calculateResistance(
+          powerWatts,
+          currentCadence,
+          "bike",
+          features,
+        );
+
+        await service.sensorsManager.setResistanceTarget(resistance);
+        console.log(
+          `[BikeControl] Predictive: Set resistance to ${resistance.toFixed(1)} (target: ${powerWatts}W, cadence: ${currentCadence.toFixed(0)} rpm)`,
+        );
+      }
+    }
+  }, [
+    plan.currentStep,
+    ftp,
+    supportsERG,
+    supportsResistance,
+    current.cadence,
+    features,
+    predictiveCalculator,
+    service,
+  ]);
+
   // Reset calculator when interval changes to allow quick adaptation to new targets
   useEffect(() => {
     if (plan.hasPlan && plan.currentStep) {
@@ -119,7 +178,9 @@ export function BikeControlUI({
   // Auto-apply plan targets in Auto mode
   useEffect(() => {
     if (controlMode === "auto" && plan.hasPlan && plan.currentStep) {
-      console.log("[BikeControl] Auto mode - applying plan targets immediately");
+      console.log(
+        "[BikeControl] Auto mode - applying plan targets immediately",
+      );
       applyPlanTargets();
     }
   }, [controlMode, plan.currentStep, plan.hasPlan, applyPlanTargets]);
@@ -177,64 +238,6 @@ export function BikeControlUI({
     applyPredictiveResistance,
     plan.hasPlan,
     plan.currentStep,
-  ]);
-
-  /**
-   * Apply plan targets to trainer automatically using predictive resistance
-   * Converts plan step targets to resistance commands based on cadence
-   */
-  const applyPlanTargets = useCallback(async () => {
-    if (!plan.currentStep || !plan.currentStep.targets) return;
-
-    const targets = plan.currentStep.targets;
-
-    // Find power target
-    const powerTarget = targets.find(
-      (t) => t.type === "watts" || t.type === "%FTP",
-    );
-
-    if (powerTarget && (supportsERG || supportsResistance)) {
-      let powerWatts = 0;
-
-      if (powerTarget.type === "watts" && "value" in powerTarget) {
-        powerWatts = powerTarget.value as number;
-      } else if (
-        powerTarget.type === "%FTP" &&
-        "min" in powerTarget &&
-        "max" in powerTarget
-      ) {
-        // Use midpoint of range
-        const percentFTP =
-          ((powerTarget.min as number) + (powerTarget.max as number)) / 2;
-        powerWatts = Math.round((percentFTP / 100) * ftp);
-      }
-
-      if (powerWatts > 0) {
-        setTargetPower(powerWatts);
-
-        // Use predictive resistance control
-        const currentCadence = current.cadence ?? 85; // Fallback to 85 rpm
-        const resistance = predictiveCalculator.calculateResistance(
-          powerWatts,
-          currentCadence,
-          "bike",
-          features,
-        );
-
-        await service.sensorsManager.setResistanceTarget(resistance);
-        console.log(
-          `[BikeControl] Predictive: Set resistance to ${resistance.toFixed(1)} (target: ${powerWatts}W, cadence: ${currentCadence.toFixed(0)} rpm)`,
-        );
-      }
-    }
-  }, [
-    plan.currentStep,
-    ftp,
-    supportsERG,
-    supportsResistance,
-    current.cadence,
-    features,
-    predictiveCalculator,
   ]);
 
   /**
