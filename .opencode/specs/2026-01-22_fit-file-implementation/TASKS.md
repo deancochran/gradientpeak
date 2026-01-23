@@ -716,13 +716,14 @@ This document provides a granular checklist for implementing FIT file support in
 
 ## Task Summary
 
-| Phase                                 | Tasks          | Status  |
-| ------------------------------------- | -------------- | ------- |
-| Phase 1: Infrastructure Setup         | T-101 to T-110 | Pending |
-| Phase 2: Mobile Recording Integration | T-201 to T-214 | Pending |
-| Phase 3: tRPC Mutation Implementation | T-301 to T-322 | Pending |
-| Phase 4: User Interface               | T-401 to T-407 | Pending |
-| Phase 5: Data Migration               | T-501 to T-516 | Pending |
+| Phase                                 | Tasks          | Status      |
+| ------------------------------------- | -------------- | ----------- |
+| Phase 0: Design Corrections (VP)      | T-601 to T-610 | In Progress |
+| Phase 1: Infrastructure Setup         | T-101 to T-110 | Pending     |
+| Phase 2: Mobile Recording Integration | T-201 to T-214 | Pending     |
+| Phase 3: tRPC Mutation Implementation | T-301 to T-322 | Pending     |
+| Phase 4: User Interface               | T-401 to T-407 | Pending     |
+| Phase 5: Data Migration               | T-501 to T-516 | Pending     |
 
 ---
 
@@ -795,6 +796,99 @@ This document provides a granular checklist for implementing FIT file support in
 
 ---
 
-**Document Version:** 2.0.0  
-**Last Updated:** January 22, 2026  
-**Next Review:** Before starting Phase 2
+## Phase 0: Design Corrections (VP Feedback)
+
+**Duration:** 2-3 days  
+**Priority:** HIGH  
+**Goal:** Correct database schema to use individual metric columns instead of JSONB
+
+### Database Schema Corrections
+
+- [ ] **T-601** Update design spec to remove `metrics` JSONB column
+  - Location: `.opencode/specs/2026-01-22_fit-file-implementation/design.md`
+  - Change `metrics` JSONB column to individual metric columns
+  - Document rationale for column-based approach
+
+- [ ] **T-602** Define complete list of 20+ metric columns for activities table
+  - Core metrics: `duration`, `distance`, `calories`, `elevation_gain`, `elevation_loss`
+  - Power metrics: `avg_power`, `max_power`, `normalized_power`, `intensity_factor`, `variability_index`, `tss`
+  - Heart rate metrics: `avg_heart_rate`, `max_heart_rate`, `min_heart_rate`, `heart_rate_recovery`
+  - Pace/running metrics: `avg_pace`, `max_pace`, `avg_cadence`, `max_cadence`
+  - Time metrics: `moving_time`, `elapsed_time`, `pause_duration`
+  - Other: `avg_speed`, `max_speed`, `stream_timestamp`
+
+- [x] **T-603** Create database migration script for individual metric columns
+  - Location: `packages/supabase/migrations/20260123131234_fit-file.sql`
+  - Remove `metrics` JSONB column
+  - Add all 20+ individual metric columns with appropriate types
+  - Add indexes for commonly queried columns
+  - Include rollback script
+
+### TypeScript and Supabase Types
+
+- [ ] **T-604** Add TypeScript interfaces for new metric column structure
+  - Location: `packages/core/src/types/activity-metrics.ts`
+  - Define `ActivityMetrics` interface matching database columns
+  - Add optional fields for activity-type specific metrics
+  - Include Zod schema for validation
+
+- [x] **T-605** Update Supabase types to reflect individual columns vs JSONB
+  - Run `supabase generate-types` after migration
+  - Verify generated types match `ActivityMetrics` interface
+  - Update `packages/supabase/src/types/index.ts`
+
+### tRPC Mutation Updates
+
+- [ ] **T-606** Update tRPC mutation to insert into individual columns instead of JSONB
+  - Location: `packages/trpc/src/routers/fit-files.ts`
+  - Modify `processFitFile` mutation
+  - Map extracted metrics to individual columns
+  - Remove metrics JSONB insert logic
+  - Update Zod input schema
+
+### Frontend Updates
+
+- [ ] **T-607** Update activity detail page to use async FIT file loading pattern
+  - Location: `apps/mobile/src/screens/ActivityDetailScreen.tsx`
+  - Load FIT file data asynchronously when viewing activity
+  - Remove embedded stream data (now stored in separate table or not needed)
+  - Add loading states for FIT file fetch
+
+- [ ] **T-608** Update activity components to use new column structure
+  - Update `ActivityMetricsCard` component
+  - Update `PastActivityCard` for list views
+  - Update any metric display components
+
+### Cleanup Items
+
+- [ ] **T-609** Remove stream compression utilities
+  - Location: `packages/core/src/utils/compression.ts`
+  - Remove `compressStreamsForStorage` function
+  - Remove `decompressStreamsFromStorage` function
+  - Remove related tests
+  - Update imports in tRPC router (T-606)
+
+### Design Documentation Updates
+
+- [ ] **T-610** Update design.md with corrected schema
+  - Document individual column approach
+  - Include ERD diagram update
+  - Document migration strategy
+
+### Phase 0 Deliverables
+
+- [ ] Design spec corrected (metrics JSONB removed)
+- [ ] 20+ metric columns defined and documented
+- [ ] Migration script created and tested
+- [ ] TypeScript interfaces added
+- [ ] Supabase types updated
+- [ ] tRPC mutation updated
+- [ ] Activity detail page updated
+- [ ] Compression utilities removed
+- [ ] Design documentation updated
+
+---
+
+**Document Version:** 2.1.0  
+**Last Updated:** January 23, 2026  
+**Next Review:** Before starting Phase 0

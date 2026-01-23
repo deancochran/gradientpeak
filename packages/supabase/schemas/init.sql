@@ -362,39 +362,49 @@ create table if not exists public.activities (
     distance_meters integer not null default 0 check (distance_meters >= 0),
 
     -- ============================================================================
-    -- All metrics as JSONB (flexible schema for future expansion)
+    -- All metrics as individual typed columns (no JSONB for performance)
     -- ============================================================================
-    -- Structure:
-    -- {
-    --   "avg_power": 250, "max_power": 450, "normalized_power": 265,
-    --   "avg_hr": 145, "max_hr": 178, "max_hr_pct_threshold": 0.92,
-    --   "avg_cadence": 90, "max_cadence": 110,
-    --   "avg_speed": 8.5, "max_speed": 15.2,
-    --   "total_work": 900000, "calories": 625,
-    --   "total_ascent": 450, "total_descent": 430,
-    --   "avg_grade": 2.3, "elevation_gain_per_km": 45,
-    --   "avg_temperature": 22.5, "max_temperature": 24.0, "weather_condition": "sunny",
-    --   "tss": 85, "if": 0.82, "vi": 1.06, "ef": 1.72,
-    --   "power_weight_ratio": 3.33, "power_hr_ratio": 1.72, "decoupling": 3.5
-    -- }
-    metrics jsonb not null default '{}'::jsonb,
+    -- Basic metrics (calories - duration/distance already defined above)
+    calories integer,
 
-    -- ============================================================================
-    -- Zone times as arrays (much cleaner than individual columns)
-    -- ============================================================================
-    hr_zone_seconds integer[5], -- [z1, z2, z3, z4, z5]
-    power_zone_seconds integer[7], -- [z1, z2, z3, z4, z5, z6, z7]
+    -- Elevation metrics
+    elevation_gain_meters numeric(10,2),
+    elevation_loss_meters numeric(10,2),
 
-    -- ============================================================================
-    -- Profile snapshot as JSONB (instead of 6 separate columns)
-    -- ============================================================================
-    -- Structure: { "ftp": 250, "weight_kg": 75, "threshold_hr": 165, "age": 32, "recovery_time": 48, "training_load": 150 }
-    profile_snapshot jsonb,
+    -- Heart rate metrics
+    avg_heart_rate integer,
+    max_heart_rate integer,
 
-    -- ============================================================================
-    -- Planned workout adherence
-    -- ============================================================================
-    avg_target_adherence numeric(5,2) check (avg_target_adherence >= 0 and avg_target_adherence <= 100),
+    -- Power metrics (cycling)
+    avg_power integer,
+    max_power integer,
+    normalized_power integer,
+    intensity_factor numeric(4,3),
+    training_stress_score integer,
+
+    -- Cadence metrics
+    avg_cadence integer,
+    max_cadence integer,
+
+    -- Speed metrics
+    avg_speed_mps numeric(6,2),
+    max_speed_mps numeric(6,2),
+
+    -- Zone times as individual columns (for efficient queries)
+    hr_zone_1_seconds integer,
+    hr_zone_2_seconds integer,
+    hr_zone_3_seconds integer,
+    hr_zone_4_seconds integer,
+    hr_zone_5_seconds integer,
+
+    power_zone_1_seconds integer,
+    power_zone_2_seconds integer,
+    power_zone_3_seconds integer,
+    power_zone_4_seconds integer,
+    power_zone_5_seconds integer,
+    power_zone_6_seconds integer,
+    power_zone_7_seconds integer,
+
 
     -- ============================================================================
     -- References
@@ -411,7 +421,9 @@ create table if not exists public.activities (
     -- FIT file processing
     -- ============================================================================
     fit_file_path text,
+    fit_file_size integer,
     processing_status text default 'pending' check (processing_status IN ('pending', 'processing', 'completed', 'failed')),
+    processing_error text,
 
     -- ============================================================================
     -- Audit timestamps
@@ -456,25 +468,71 @@ create index if not exists idx_activities_processing_status
     on public.activities(processing_status)
     where processing_status is not null;
 
--- JSONB GIN indexes for common metric queries
-create index if not exists idx_activities_metrics_power
-    on public.activities using gin ((metrics -> 'avg_power'));
+-- Metric column indexes for filtering and sorting
+create index if not exists idx_activities_tss
+    on public.activities(training_stress_score desc)
+    where training_stress_score is not null;
 
-create index if not exists idx_activities_metrics_hr
-    on public.activities using gin ((metrics -> 'avg_hr'));
+create index if not exists idx_activities_duration
+    on public.activities(duration_seconds desc);
 
-create index if not exists idx_activities_metrics_tss
-    on public.activities using gin ((metrics -> 'tss'));
+create index if not exists idx_activities_distance
+    on public.activities(distance_meters desc);
 
-create index if not exists idx_activities_metrics_all
-    on public.activities using gin (metrics jsonb_path_ops);
+create index if not exists idx_activities_avg_heart_rate
+    on public.activities(avg_heart_rate desc)
+    where avg_heart_rate is not null;
 
--- Array GIN indexes for zone queries
-create index if not exists idx_activities_hr_zones
-    on public.activities using gin (hr_zone_seconds);
+create index if not exists idx_activities_max_heart_rate
+    on public.activities(max_heart_rate desc)
+    where max_heart_rate is not null;
 
-create index if not exists idx_activities_power_zones
-    on public.activities using gin (power_zone_seconds);
+create index if not exists idx_activities_avg_power
+    on public.activities(avg_power desc)
+    where avg_power is not null;
+
+create index if not exists idx_activities_max_power
+    on public.activities(max_power desc)
+    where max_power is not null;
+
+create index if not exists idx_activities_normalized_power
+    on public.activities(normalized_power desc)
+    where normalized_power is not null;
+
+create index if not exists idx_activities_intensity_factor
+    on public.activities(intensity_factor desc)
+    where intensity_factor is not null;
+
+create index if not exists idx_activities_avg_cadence
+    on public.activities(avg_cadence desc)
+    where avg_cadence is not null;
+
+create index if not exists idx_activities_avg_speed
+    on public.activities(avg_speed_mps desc)
+    where avg_speed_mps is not null;
+
+create index if not exists idx_activities_elevation_gain
+    on public.activities(elevation_gain_meters desc)
+    where elevation_gain_meters is not null;
+
+create index if not exists idx_activities_calories
+    on public.activities(calories desc)
+    where calories is not null;
+
+-- Composite indexes for user activity lists
+create index if not exists idx_activities_profile_tss
+    on public.activities(profile_id, training_stress_score desc)
+    where training_stress_score is not null;
+
+create index if not exists idx_activities_profile_duration
+    on public.activities(profile_id, duration_seconds desc);
+
+create index if not exists idx_activities_profile_distance
+    on public.activities(profile_id, distance_meters desc);
+
+create index if not exists idx_activities_profile_power
+    on public.activities(profile_id, avg_power desc)
+    where avg_power is not null;
 
 -- Full-text search on activity names
 create index if not exists idx_activities_name_search
