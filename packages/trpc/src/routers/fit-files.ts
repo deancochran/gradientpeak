@@ -37,7 +37,14 @@ const analyzeFitFileInput = z.object({
   bucketName: z.string().default("fit-files"),
 });
 
-export const fitFileRouter = createTRPCRouter({
+export const fitFilesRouter = createTRPCRouter({
+  processFitFile: protectedProcedure
+    .input(z.object({ filePath: z.string() }))
+    .mutation(async () => {
+      // Placeholder implementation for Phase 3
+      return { success: true };
+    }),
+
   /**
    * Upload a FIT file to Supabase Storage
    */
@@ -151,9 +158,9 @@ export const fitFileRouter = createTRPCRouter({
       try {
         const { data, error } = await supabase
           .from("activities")
-          .select("id, name, type, start_time")
+          .select("id, name, type, started_at")
           .eq("id", activityId)
-          .eq("user_id", userId)
+          .eq("profile_id", userId)
           .single();
 
         if (error) {
@@ -203,11 +210,11 @@ export const fitFileRouter = createTRPCRouter({
             id,
             name,
             type,
-            start_time,
+            started_at,
             created_at
           `,
           )
-          .eq("user_id", userId)
+          .eq("profile_id", userId)
           .order("created_at", { ascending: false })
           .limit(pageSize);
 

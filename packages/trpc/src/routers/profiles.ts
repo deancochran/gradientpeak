@@ -174,7 +174,7 @@ export const profilesRouter = createTRPCRouter({
         const { data: activities, error } = await ctx.supabase
           .from("activities")
           .select(
-            "duration_seconds, distance_meters, metrics, type, location, started_at",
+            "duration_seconds, distance_meters, training_stress_score, type, location, started_at",
           )
           .eq("profile_id", ctx.session.user.id)
           .gte("started_at", startDate.toISOString())
@@ -196,8 +196,7 @@ export const profilesRouter = createTRPCRouter({
           0;
         const totalTSS =
           activities?.reduce((sum, a) => {
-            const metrics = (a.metrics as Record<string, any>) || {};
-            return sum + (metrics.tss || 0);
+            return sum + (a.training_stress_score || 0);
           }, 0) || 0;
 
         return {

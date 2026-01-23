@@ -249,11 +249,8 @@ function ActivitiesScreen() {
                               {formatDuration(activity.duration_seconds)}
                             </Text>
                           </View>
-                          {activity.metrics &&
-                            typeof activity.metrics === "object" &&
-                            !Array.isArray(activity.metrics) &&
-                            "tss" in activity.metrics &&
-                            typeof activity.metrics.tss === "number" && (
+                          {activity.training_stress_score !== null &&
+                            activity.training_stress_score !== undefined && (
                               <View className="flex-row items-center gap-1">
                                 <Icon
                                   as={TrendingUp}
@@ -261,7 +258,7 @@ function ActivitiesScreen() {
                                   className="text-primary"
                                 />
                                 <Text className="text-sm font-medium text-primary">
-                                  {activity.metrics.tss} TSS
+                                  {activity.training_stress_score} TSS
                                 </Text>
                               </View>
                             )}

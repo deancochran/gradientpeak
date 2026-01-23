@@ -1,8 +1,7 @@
-import type {
-  PublicActivityMetric,
-  PublicActivityMetricDataType,
-  PublicProfilesRow,
-} from "@repo/supabase";
+import type { PublicProfilesRow } from "@repo/supabase";
+
+export type PublicActivityMetric = string;
+export type PublicActivityMetricDataType = "float" | "latlng" | "boolean";
 
 // Aggregated stream data
 export interface AggregatedStream {
@@ -369,7 +368,8 @@ export function calculateCalories(
 
     // Gender-specific calorie estimation (assuming male, adjust if you have gender data)
     const calories =
-      ((age * 0.2017 + weightKg * 0.1988 + avgHR * 0.6309 - 55.0969) * duration) /
+      ((age * 0.2017 + weightKg * 0.1988 + avgHR * 0.6309 - 55.0969) *
+        duration) /
       4.184;
     return Math.round(calories);
   }

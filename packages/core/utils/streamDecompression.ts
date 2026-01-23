@@ -1,3 +1,6 @@
+import { gunzipSync } from "node:zlib";
+import { Buffer } from "node:buffer";
+
 /**
  * Server-side stream decompression utilities for activity streams.
  *
@@ -24,7 +27,9 @@ export interface DecompressedStream {
  */
 export function base64ToBuffer(base64: string): any {
   if (!Buffer) {
-    throw new Error('Buffer is not available in this environment. Use server-side only.');
+    throw new Error(
+      "Buffer is not available in this environment. Use server-side only.",
+    );
   }
   return Buffer.from(base64, "base64");
 }
@@ -42,10 +47,12 @@ export function decompressStream(
   compressedValues: string,
   compressedTimestamps: string,
   dataType: "float" | "latlng" | "boolean",
-  streamType: string
+  streamType: string,
 ): DecompressedStream {
   if (!gunzipSync) {
-    throw new Error('gunzipSync is not available in this environment. Use server-side only.');
+    throw new Error(
+      "gunzipSync is not available in this environment. Use server-side only.",
+    );
   }
 
   try {
@@ -68,7 +75,7 @@ export function decompressStream(
       const float32Array = new Float32Array(
         decompressedValues.buffer,
         decompressedValues.byteOffset,
-        decompressedValues.byteLength / 4
+        decompressedValues.byteLength / 4,
       );
       const numericValues = Array.from(float32Array);
 
@@ -84,7 +91,7 @@ export function decompressStream(
     const timestampsArray = new Float32Array(
       decompressedTimestamps.buffer,
       decompressedTimestamps.byteOffset,
-      decompressedTimestamps.byteLength / 4
+      decompressedTimestamps.byteLength / 4,
     );
     const timestamps = Array.from(timestampsArray);
 
@@ -113,7 +120,7 @@ export function decompressAllStreams(
     data_type: "float" | "latlng" | "boolean";
     compressed_values: string;
     compressed_timestamps: string;
-  }>
+  }>,
 ): Map<string, DecompressedStream> {
   const streams = new Map<string, DecompressedStream>();
 
@@ -123,7 +130,7 @@ export function decompressAllStreams(
         stream.compressed_values,
         stream.compressed_timestamps,
         stream.data_type,
-        stream.type
+        stream.type,
       );
       streams.set(stream.type, decompressed);
     } catch (error) {
@@ -141,7 +148,7 @@ export function decompressAllStreams(
  */
 export function extractNumericStream(
   streams: Map<string, DecompressedStream>,
-  streamType: string
+  streamType: string,
 ): number[] | undefined {
   const stream = streams.get(streamType);
   if (!stream || stream.dataType === "latlng") {

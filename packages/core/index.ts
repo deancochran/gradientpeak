@@ -108,7 +108,11 @@ export {
   projectCTL,
   startOfDay,
 } from "./calculations";
-export type { AggregatedStream } from "./calculations";
+export type {
+  AggregatedStream,
+  PublicActivityMetric,
+  PublicActivityMetricDataType,
+} from "./calculations";
 
 // V2 Calculations (for ActivityPlanStructureV2)
 export {

@@ -16,34 +16,6 @@ import {
   ScrollView,
 } from "react-native";
 import MapView, { Polyline, PROVIDER_DEFAULT } from "react-native-maps";
-import pako from "pako";
-
-// Helper function to decompress latlng stream data
-function decompressLatlngStream(compressedBase64: string): Array<{ latitude: number; longitude: number }> {
-  try {
-    // Decode base64 to binary
-    const binaryString = atob(compressedBase64);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-
-    // Decompress with pako
-    const decompressed = pako.ungzip(bytes, { to: "string" });
-
-    // Parse JSON array of [lat, lng] tuples
-    const latlngArray = JSON.parse(decompressed) as Array<[number, number]>;
-
-    // Convert to {latitude, longitude} objects
-    return latlngArray.map(([lat, lng]) => ({
-      latitude: lat,
-      longitude: lng,
-    }));
-  } catch (error) {
-    console.error("Error decompressing latlng stream:", error);
-    return [];
-  }
-}
 
 interface PastActivityCardProps {
   activity: {
@@ -85,7 +57,7 @@ function formatDistance(meters: number): string {
 
 function calculatePace(meters: number, seconds: number): string {
   if (meters === 0 || seconds === 0) return "--";
-  const minutesPerKm = (seconds / 60) / (meters / 1000);
+  const minutesPerKm = seconds / 60 / (meters / 1000);
   const mins = Math.floor(minutesPerKm);
   const secs = Math.round((minutesPerKm - mins) * 60);
   return `${mins}:${secs.toString().padStart(2, "0")} /km`;
@@ -100,7 +72,7 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
     {
       staleTime: 5 * 60 * 1000, // Cache for 5 minutes
       enabled: !!activity.profile_id,
-    }
+    },
   );
 
   // Use profile data with fallback
@@ -114,22 +86,13 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
   // Fetch route data if route_id exists (pre-planned route)
   const { data: route } = trpc.routes.get.useQuery(
     { id: activity.route_id! },
-    { enabled: !!activity.route_id }
-  );
-
-  // Fetch GPS track from activity_streams if no route_id (recorded activity)
-  const { data: activityWithStreams } = trpc.activities.getActivityWithStreams.useQuery(
-    { id: activity.id },
-    {
-      enabled: !activity.route_id, // Only fetch if no pre-planned route
-      staleTime: Infinity, // Activity streams never change
-    }
+    { enabled: !!activity.route_id },
   );
 
   // Fetch activity plan data if activity_plan_id exists
   const { data: activityPlan } = trpc.activityPlans.getById.useQuery(
     { id: activity.activity_plan_id! },
-    { enabled: !!activity.activity_plan_id }
+    { enabled: !!activity.activity_plan_id },
   );
 
   // Get coordinates from either route polyline OR activity streams
@@ -139,37 +102,20 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
       return decodePolyline(route.polyline);
     }
 
-    // Priority 2: Recorded GPS track from activity_streams
-    if (activityWithStreams?.activity_streams) {
-      const latlngStream = activityWithStreams.activity_streams.find(
-        (s: any) => s.type === "latlng"
-      );
-
-      if (latlngStream?.compressed_values) {
-        try {
-          // Decompress the latlng data
-          const decompressed = decompressLatlngStream(latlngStream.compressed_values);
-          return decompressed;
-        } catch (error) {
-          console.error("Failed to decompress latlng stream:", error);
-          return [];
-        }
-      }
-    }
-
     return [];
-  }, [route?.polyline, activityWithStreams?.activity_streams]);
+  }, [route?.polyline]);
 
   // Determine visual assets
   const hasRoute = coordinates.length > 0;
   const hasPlan = !!(
-    activityPlan?.structure?.intervals &&
-    activityPlan.structure.intervals.length > 0
+    (activityPlan?.structure as any)?.intervals &&
+    (activityPlan?.structure as any).intervals.length > 0
   );
   const visualAssets = [
-    ...(hasRoute ? ["route"] as const : []),
-    ...(hasPlan ? ["plan"] as const : []),
+    ...(hasRoute ? (["route"] as const) : []),
+    ...(hasPlan ? (["plan"] as const) : []),
   ];
+
   const hasVisuals = visualAssets.length > 0;
 
   // Calculate pace
@@ -197,7 +143,10 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
           {/* Header: Avatar + User Info */}
           <View className="flex-row items-start gap-3 mb-3">
             {/* User Avatar */}
-            <Avatar className="w-10 h-10">
+            <Avatar
+              className="w-10 h-10"
+              alt={profileData.username || "User Avatar"}
+            >
               {profileData.avatar_url && (
                 <AvatarImage source={{ uri: profileData.avatar_url }} />
               )}
@@ -218,7 +167,10 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
               {/* Date/Time + Location */}
               <View className="flex-row items-center gap-1 mt-0.5">
                 <Text className="text-xs text-muted-foreground">
-                  {format(new Date(activity.started_at), "MMM d, yyyy 'at' h:mm a")}
+                  {format(
+                    new Date(activity.started_at),
+                    "MMM d, yyyy 'at' h:mm a",
+                  )}
                 </Text>
                 {locationString && (
                   <>
@@ -315,10 +267,7 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
                     scrollEventThrottle={16}
                   >
                     {visualAssets.map((asset, index) => (
-                      <View
-                        key={index}
-                        style={{ width: SCREEN_WIDTH - 32 }}
-                      >
+                      <View key={index} style={{ width: SCREEN_WIDTH - 32 }}>
                         {asset === "route" ? (
                           <RoutePreview coordinates={coordinates} />
                         ) : (

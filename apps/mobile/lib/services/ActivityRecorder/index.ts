@@ -28,6 +28,7 @@ import {
   type AllPermissionsStatus,
 } from "../permissions-check";
 import { LiveMetricsManager } from "./LiveMetricsManager";
+import { StreamingFitEncoder, FitRecord } from "../fit/StreamingFitEncoder";
 import { LocationManager } from "./location";
 import { NotificationsManager } from "./notification";
 import { PlanManager } from "./plan";
@@ -164,6 +165,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   // === Private Managers ===
   private notificationsManager?: NotificationsManager;
+  private fitEncoder?: StreamingFitEncoder;
 
   // === App State Management ===
   private appState: AppStateStatus = AppState.currentState;
@@ -187,7 +189,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   constructor(
     profile: PublicProfilesRow,
-    metrics?: { ftp?: number; thresholdHr?: number; weightKg?: number }
+    metrics?: { ftp?: number; thresholdHr?: number; weightKg?: number },
   ) {
     super();
     // Note: expo-modules-core EventEmitter doesn't have setMaxListeners
@@ -1056,6 +1058,19 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.notificationsManager = new NotificationsManager(activityName);
     await this.notificationsManager.startForegroundService();
 
+    // Initialize FIT Encoder
+    try {
+      this.fitEncoder = new StreamingFitEncoder(
+        `${Date.now()}`,
+        this.profile.id,
+      );
+      await this.fitEncoder.initialize();
+      console.log("[Service] FIT encoder initialized");
+    } catch (error) {
+      console.error("[Service] Failed to initialize FIT encoder:", error);
+      // Don't fail the whole recording if FIT encoding fails
+    }
+
     // Emit initial sensor state
     this.emit("sensorsChanged", this.sensorsManager.getConnectedSensors());
     this.emit("stateChanged", this.state);
@@ -1116,6 +1131,37 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     try {
       // Finish LiveMetricsManager (flushes final data to files)
       await this.liveMetricsManager.finishRecording();
+
+      // Finalize FIT file
+      if (this.fitEncoder) {
+        try {
+          const stats = this.liveMetricsManager.getSessionStats();
+          await this.fitEncoder.finalize({
+            startTime: this.startTime || Date.now(),
+            totalTime: stats.duration,
+            distance: stats.distance,
+            avgSpeed: stats.avgSpeed,
+            maxSpeed: stats.maxSpeed,
+            avgPower: stats.avgPower,
+            maxPower: stats.maxPower,
+            avgHeartRate: stats.avgHeartRate,
+            maxHeartRate: stats.maxHeartRate,
+            avgCadence: stats.avgCadence,
+            totalAscent: stats.ascent,
+            totalDescent: stats.descent,
+            calories: stats.calories,
+          });
+
+          // Add file path to metadata
+          this.recordingMetadata.fitFilePath = this.fitEncoder.getFilePath();
+          console.log(
+            "[Service] FIT file finalized:",
+            this.recordingMetadata.fitFilePath,
+          );
+        } catch (error) {
+          console.error("[Service] Failed to finalize FIT file:", error);
+        }
+      }
 
       // Update recording metadata with end time
       this.recordingMetadata.endedAt = new Date().toISOString();
@@ -1545,15 +1591,53 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     });
 
     // Auto-advance plan steps when recording
-    if (this.state === "recording" && this.hasPlan && this.currentStep) {
-      const progress = this.stepProgress;
-      if (
-        progress &&
-        !progress.requiresManualAdvance &&
-        progress.progress >= 1
-      ) {
-        this.advanceStep();
+    if (this.state === "recording") {
+      // Update FIT recording every second
+      this.updateFitRecording();
+
+      if (this.hasPlan && this.currentStep) {
+        const progress = this.stepProgress;
+        if (
+          progress &&
+          !progress.requiresManualAdvance &&
+          progress.progress >= 1
+        ) {
+          this.advanceStep();
+        }
       }
+    }
+  }
+
+  /**
+   * Update FIT recording with current data
+   * Called every second by updateElapsedTime
+   */
+  private async updateFitRecording() {
+    if (!this.fitEncoder) return;
+
+    try {
+      const readings = this.liveMetricsManager.getCurrentReadings();
+      const stats = this.liveMetricsManager.getSessionStats();
+
+      const record: FitRecord = {
+        timestamp: Date.now(),
+        distance: stats.distance,
+        speed: readings.speed,
+        heartRate: readings.heartRate,
+        cadence: readings.cadence,
+        power: readings.power,
+        temperature: readings.temperature,
+      };
+
+      if (readings.position) {
+        record.latitude = readings.position.lat;
+        record.longitude = readings.position.lng;
+        record.altitude = readings.position.altitude;
+      }
+
+      await this.fitEncoder.addRecord(record);
+    } catch (error) {
+      console.warn("[Service] Failed to add FIT record:", error);
     }
   }
 

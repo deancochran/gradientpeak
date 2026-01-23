@@ -147,7 +147,7 @@ export const trendsRouter = createTRPCRouter({
       let query = ctx.supabase
         .from("activities")
         .select(
-          "id, name, started_at, distance_meters, moving_seconds, metrics, type",
+          "id, name, started_at, distance_meters, moving_seconds, avg_speed_mps, avg_power, avg_heart_rate, type",
         )
         .eq("profile_id", ctx.session.user.id)
         .gte("started_at", input.start_date)
@@ -172,14 +172,13 @@ export const trendsRouter = createTRPCRouter({
       }
 
       const dataPoints = activities.map((activity) => {
-        const metrics = (activity.metrics as Record<string, any>) || {};
         return {
           date: activity.started_at,
           activityId: activity.id,
           activityName: activity.name,
-          avgSpeed: metrics.avg_speed || null,
-          avgPower: metrics.avg_power || null,
-          avgHeartRate: metrics.avg_heart_rate || null,
+          avgSpeed: activity.avg_speed_mps || null,
+          avgPower: activity.avg_power || null,
+          avgHeartRate: activity.avg_heart_rate || null,
           distance: activity.distance_meters || 0,
           duration: activity.moving_seconds || 0,
         };
@@ -203,7 +202,7 @@ export const trendsRouter = createTRPCRouter({
 
       const { data: activities, error: activitiesError } = await ctx.supabase
         .from("activities")
-        .select("started_at, metrics")
+        .select("started_at, training_stress_score")
         .eq("profile_id", ctx.session.user.id)
         .gte("started_at", extendedStart.toISOString())
         .lte("started_at", endDate.toISOString())
@@ -230,8 +229,7 @@ export const trendsRouter = createTRPCRouter({
           .toISOString()
           .split("T")[0];
         if (!dateStr) continue;
-        const metrics = (activity.metrics as Record<string, any>) || {};
-        const tss = metrics.tss || 0;
+        const tss = activity.training_stress_score || 0;
         activitiesByDate.set(
           dateStr,
           (activitiesByDate.get(dateStr) || 0) + tss,
@@ -321,7 +319,7 @@ export const trendsRouter = createTRPCRouter({
       // Get activities with intensity factor and TSS
       const { data: activities, error } = await ctx.supabase
         .from("activities")
-        .select("id, started_at, metrics")
+        .select("id, started_at, intensity_factor, training_stress_score")
         .eq("profile_id", ctx.session.user.id)
         .gte("started_at", input.start_date)
         .lte("started_at", input.end_date)
@@ -358,9 +356,8 @@ export const trendsRouter = createTRPCRouter({
       >();
 
       for (const activity of activities) {
-        const metrics = (activity.metrics as Record<string, any>) || {};
-        const intensityFactor = metrics.if || null;
-        const tss = metrics.tss || null;
+        const intensityFactor = activity.intensity_factor || null;
+        const tss = activity.training_stress_score || null;
 
         // Skip activities without both IF and TSS
         if (!intensityFactor || !tss) continue;
@@ -560,7 +557,7 @@ export const trendsRouter = createTRPCRouter({
       let query = ctx.supabase
         .from("activities")
         .select(
-          "id, name, started_at, distance_meters, moving_seconds, metrics, type",
+          "id, name, started_at, distance_meters, moving_seconds, avg_speed_mps, avg_power, training_stress_score, type",
         )
         .eq("profile_id", ctx.session.user.id);
 
@@ -582,10 +579,19 @@ export const trendsRouter = createTRPCRouter({
             .not("moving_seconds", "is", null);
           break;
         case "speed":
+          query = query
+            .order("avg_speed_mps", { ascending: false })
+            .not("avg_speed_mps", "is", null);
+          break;
         case "power":
+          query = query
+            .order("avg_power", { ascending: false })
+            .not("avg_power", "is", null);
+          break;
         case "tss":
-          // These are in JSONB, can't order in DB efficiently
-          // Will sort after fetching
+          query = query
+            .order("training_stress_score", { ascending: false })
+            .not("training_stress_score", "is", null);
           break;
       }
 
@@ -612,7 +618,6 @@ export const trendsRouter = createTRPCRouter({
       // Map activities to performances with extracted values
       const allPerformances = activities
         .map((activity) => {
-          const metrics = (activity.metrics as Record<string, any>) || {};
           let value: number | null = null;
           let unit = "";
 
@@ -622,11 +627,11 @@ export const trendsRouter = createTRPCRouter({
               unit = "m";
               break;
             case "speed":
-              value = metrics.avg_speed;
+              value = activity.avg_speed_mps;
               unit = "m/s";
               break;
             case "power":
-              value = metrics.avg_power;
+              value = activity.avg_power;
               unit = "W";
               break;
             case "duration":
@@ -634,7 +639,7 @@ export const trendsRouter = createTRPCRouter({
               unit = "s";
               break;
             case "tss":
-              value = metrics.tss;
+              value = activity.training_stress_score;
               unit = "TSS";
               break;
           }

@@ -1,11 +1,7 @@
 import {
   ActivityHeader,
   ActivityPlanComparison,
-  ActivityRouteMap,
-  ElevationProfileChart,
   MetricCard,
-  MultiMetricChart,
-  StreamChart,
   ZoneDistributionCard,
 } from "@/components/activity";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
@@ -13,7 +9,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Text } from "@/components/ui/text";
-import { useActivityStreams } from "@/lib/hooks/useActivityStreams";
 import { trpc } from "@/lib/trpc";
 import { router, useLocalSearchParams } from "expo-router";
 import {
@@ -60,11 +55,10 @@ function ActivityDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const queryClient = trpc.useUtils();
 
-  const { data: activityData, isLoading } =
-    trpc.activities.getActivityWithStreams.useQuery(
-      { id: id! },
-      { enabled: !!id },
-    );
+  const { data: activityData, isLoading } = trpc.activities.getById.useQuery(
+    { id: id! },
+    { enabled: !!id },
+  );
 
   const activity = activityData;
 
@@ -73,7 +67,7 @@ function ActivityDetailScreen() {
     onSuccess: () => {
       // Invalidate all activity-related queries
       queryClient.activities.invalidate();
-      queryClient.home.dashboard.invalidate();
+      queryClient.home.getDashboard.invalidate();
       queryClient.trends.invalidate();
 
       // Navigate back to activity list
@@ -90,7 +84,7 @@ function ActivityDetailScreen() {
 
     Alert.alert(
       "Delete Activity",
-      `Are you sure you want to delete "${activity.name}"? This action cannot be undone and will recalculate all your fitness metrics.`,
+      `Are you sure you want to delete "${activity.name}"? This action cannot be undone.`,
       [
         {
           text: "Cancel",
@@ -103,113 +97,105 @@ function ActivityDetailScreen() {
             deleteMutation.mutate({ id: activity.id });
           },
         },
-      ]
+      ],
     );
   };
 
-  // Decompress and process streams
-  const {
-    streams,
-    hasGPS,
-    hasHeartRate,
-    hasPower,
-    hasSpeed,
-    hasElevation,
-    hasCadence,
-    getGPSCoordinates,
-    getGPSCoordinatesWithTimestamps,
-    getElevationStream,
-  } = useActivityStreams(activity?.activity_streams);
-
-  // Extract metrics from JSONB field
-  const metrics = activity?.metrics as {
-    avg_power?: number;
-    avg_heart_rate?: number;
-    avg_speed?: number;
-    max_speed?: number;
-    avg_cadence?: number;
-    max_cadence?: number;
-    tss?: number;
-    intensity_factor?: number;
-    if?: number;
-    total_ascent?: number;
-    total_descent?: number;
-    adherence_score?: number;
-  } | null;
-
-  const avgPower = metrics?.avg_power;
-  const avgHeartRate = metrics?.avg_heart_rate;
-  const avgSpeed = metrics?.avg_speed;
-  const maxSpeed = metrics?.max_speed;
-  const avgCadence = metrics?.avg_cadence;
-  const maxCadence = metrics?.max_cadence;
-  const tss = metrics?.tss;
-  const intensityFactor = metrics?.intensity_factor || metrics?.if;
-  const totalAscent = metrics?.total_ascent;
-  const totalDescent = metrics?.total_descent;
+  const avgPower = activity?.avg_power;
+  const avgHeartRate = activity?.avg_heart_rate;
+  const avgSpeed = activity?.avg_speed_mps;
+  const maxSpeed = activity?.max_speed_mps;
+  const avgCadence = activity?.avg_cadence;
+  const maxCadence = activity?.max_cadence;
+  const tss = activity?.training_stress_score;
+  const intensityFactor = activity?.intensity_factor;
+  const totalAscent = activity?.elevation_gain_meters;
+  const totalDescent = activity?.elevation_loss_meters;
 
   // Memoize zone data to prevent re-renders
   const { hrZones, powerZones, hrColors, powerColors } = useMemo(() => {
-    const hrZoneSeconds = activity?.hr_zone_seconds || [];
-    const powerZoneSeconds = activity?.power_zone_seconds || [];
+    const hrZone1 = activity?.hr_zone_1_seconds || 0;
+    const hrZone2 = activity?.hr_zone_2_seconds || 0;
+    const hrZone3 = activity?.hr_zone_3_seconds || 0;
+    const hrZone4 = activity?.hr_zone_4_seconds || 0;
+    const hrZone5 = activity?.hr_zone_5_seconds || 0;
+
+    const powerZone1 = activity?.power_zone_1_seconds || 0;
+    const powerZone2 = activity?.power_zone_2_seconds || 0;
+    const powerZone3 = activity?.power_zone_3_seconds || 0;
+    const powerZone4 = activity?.power_zone_4_seconds || 0;
+    const powerZone5 = activity?.power_zone_5_seconds || 0;
+    const powerZone6 = activity?.power_zone_6_seconds || 0;
+    const powerZone7 = activity?.power_zone_7_seconds || 0;
+
+    const hasHrZones =
+      hrZone1 > 0 || hrZone2 > 0 || hrZone3 > 0 || hrZone4 > 0 || hrZone5 > 0;
+    const hasPowerZones =
+      powerZone1 > 0 ||
+      powerZone2 > 0 ||
+      powerZone3 > 0 ||
+      powerZone4 > 0 ||
+      powerZone5 > 0 ||
+      powerZone6 > 0 ||
+      powerZone7 > 0;
 
     return {
-      hrZones: hrZoneSeconds.some((time) => time > 0)
+      hrZones: hasHrZones
         ? [
             {
               zone: 1,
-              time: hrZoneSeconds[0] || 0,
+              time: hrZone1,
               label: "Zone 1 (Recovery)",
             },
             {
               zone: 2,
-              time: hrZoneSeconds[1] || 0,
+              time: hrZone2,
               label: "Zone 2 (Endurance)",
             },
-            { zone: 3, time: hrZoneSeconds[2] || 0, label: "Zone 3 (Tempo)" },
+            { zone: 3, time: hrZone3, label: "Zone 3 (Tempo)" },
             {
               zone: 4,
-              time: hrZoneSeconds[3] || 0,
+              time: hrZone4,
               label: "Zone 4 (Threshold)",
             },
-            { zone: 5, time: hrZoneSeconds[4] || 0, label: "Zone 5 (VO2 Max)" },
+            { zone: 5, time: hrZone5, label: "Zone 5 (VO2 Max)" },
           ]
         : [],
-      powerZones: powerZoneSeconds.some((time) => time > 0)
+      powerZones: hasPowerZones
         ? [
             {
               zone: 1,
-              time: powerZoneSeconds[0] || 0,
+              time: powerZone1,
               label: "Zone 1 (Active Recovery)",
             },
             {
               zone: 2,
-              time: powerZoneSeconds[1] || 0,
+              time: powerZone2,
               label: "Zone 2 (Endurance)",
             },
             {
               zone: 3,
-              time: powerZoneSeconds[2] || 0,
+              time: powerZone3,
               label: "Zone 3 (Tempo)",
             },
             {
               zone: 4,
-              time: powerZoneSeconds[3] || 0,
+              time: powerZone4,
               label: "Zone 4 (Threshold)",
             },
             {
               zone: 5,
-              time: powerZoneSeconds[4] || 0,
+              time: powerZone5,
               label: "Zone 5 (VO2 Max)",
             },
             {
               zone: 6,
-              time: powerZoneSeconds[5] || 0,
+              time: powerZone6,
               label: "Zone 6 (Anaerobic)",
             },
             {
               zone: 7,
-              time: powerZoneSeconds[6] || 0,
+              time: powerZone7,
               label: "Zone 7 (Neuromuscular)",
             },
           ]
@@ -231,83 +217,7 @@ function ActivityDetailScreen() {
         "bg-purple-400",
       ],
     };
-  }, [activity?.hr_zone_seconds, activity?.power_zone_seconds]);
-
-  // Get stream data (already memoized by the hook, no need for additional useMemo)
-  const gpsCoordinates = getGPSCoordinates();
-  const gpsData = getGPSCoordinatesWithTimestamps();
-  const speedStream = streams.get("speed");
-  const speedColorData = speedStream?.values as number[] | undefined;
-  const elevationStreamData = getElevationStream();
-  const distanceStream = streams.get("distance");
-  const powerStream = streams.get("power");
-  const heartRateStream = streams.get("heartrate");
-  const cadenceStream = streams.get("cadence");
-
-  // Memoize individual stream configurations
-  const powerStreamConfig = useMemo(
-    () =>
-      hasPower && powerStream
-        ? [
-            {
-              type: "power" as const,
-              stream: powerStream,
-              color: "#eab308",
-              label: "Power",
-              unit: "W",
-            },
-          ]
-        : null,
-    [hasPower, powerStream],
-  );
-
-  const hrStreamConfig = useMemo(
-    () =>
-      hasHeartRate && heartRateStream
-        ? [
-            {
-              type: "heartrate" as const,
-              stream: heartRateStream,
-              color: "#ef4444",
-              label: "Heart Rate",
-              unit: "bpm",
-            },
-          ]
-        : null,
-    [hasHeartRate, heartRateStream],
-  );
-
-  const speedStreamConfig = useMemo(
-    () =>
-      hasSpeed && speedStream
-        ? [
-            {
-              type: "speed" as const,
-              stream: speedStream,
-              color: "#3b82f6",
-              label: activity?.type === "run" ? "Pace" : "Speed",
-              unit: activity?.type === "run" ? "min/km" : "km/h",
-            },
-          ]
-        : null,
-    [hasSpeed, speedStream, activity?.type],
-  );
-
-  const cadenceStreamConfig = useMemo(
-    () =>
-      hasCadence && cadenceStream
-        ? [
-            {
-              type: "cadence" as const,
-              stream: cadenceStream,
-              color: "#8b5cf6",
-              label: "Cadence",
-              unit: activity?.type === "run" ? "spm" : "rpm",
-            },
-          ]
-        : null,
-    [hasCadence, cadenceStream, activity?.type],
-  );
+  }, [activity]);
 
   // Show loading state after all hooks
   if (isLoading || !activity) {
@@ -342,9 +252,9 @@ function ActivityDetailScreen() {
             activityPlan={activity.activity_plans as any}
             actualMetrics={{
               duration: activity.duration_seconds,
-              tss: metrics?.tss,
-              intensity_factor: intensityFactor,
-              adherence_score: metrics?.adherence_score,
+              tss: tss ?? undefined,
+              intensity_factor: intensityFactor ?? undefined,
+              adherence_score: undefined,
             }}
           />
         )}
@@ -385,13 +295,7 @@ function ActivityDetailScreen() {
         </View>
 
         {/* Empty state when no additional metrics are available */}
-        {!hasGPS &&
-          !hasElevation &&
-          !hasPower &&
-          !hasHeartRate &&
-          !hasSpeed &&
-          !hasCadence &&
-          !tss &&
+        {!tss &&
           !avgSpeed &&
           !maxSpeed &&
           !avgCadence &&
@@ -420,80 +324,6 @@ function ActivityDetailScreen() {
               </CardContent>
             </Card>
           )}
-
-        {/* GPS Route Map - Only show if GPS data is meaningful (>10 points with variation) */}
-        {hasGPS &&
-          gpsCoordinates.length > 10 &&
-          (() => {
-            // Check if GPS data has meaningful variation (not all same location)
-            const firstLat = gpsCoordinates[0]?.latitude;
-            const firstLng = gpsCoordinates[0]?.longitude;
-            const hasVariation = gpsCoordinates.some(
-              (coord) =>
-                Math.abs(coord.latitude - firstLat) > 0.0001 ||
-                Math.abs(coord.longitude - firstLng) > 0.0001,
-            );
-            return hasVariation;
-          })() && (
-            <ActivityRouteMap
-              coordinates={gpsCoordinates}
-              timestamps={gpsData.timestamps}
-              colorBy="speed"
-              colorData={speedColorData}
-              height={300}
-              showMarkers={true}
-            />
-          )}
-
-        {/* Elevation Profile */}
-        {hasElevation && elevationStreamData && (
-          <ElevationProfileChart
-            elevationStream={elevationStreamData}
-            distanceStream={distanceStream}
-            height={200}
-            showStats={true}
-          />
-        )}
-
-        {/* Multi-Metric Chart */}
-        {(hasPower || hasHeartRate || hasSpeed) && (
-          <MultiMetricChart
-            activityType={activity.type as any}
-            streams={streams}
-            height={300}
-          />
-        )}
-
-        {/* Individual Stream Charts - Note: HR is shown in MultiMetricChart above, so we don't duplicate it here */}
-        {powerStreamConfig && (
-          <StreamChart
-            title="Power"
-            streams={powerStreamConfig}
-            xAxisType="time"
-            height={250}
-            showLegend={false}
-          />
-        )}
-
-        {speedStreamConfig && (
-          <StreamChart
-            title={activity.type === "run" ? "Pace" : "Speed"}
-            streams={speedStreamConfig}
-            xAxisType="time"
-            height={250}
-            showLegend={false}
-          />
-        )}
-
-        {cadenceStreamConfig && (
-          <StreamChart
-            title="Cadence"
-            streams={cadenceStreamConfig}
-            xAxisType="time"
-            height={250}
-            showLegend={false}
-          />
-        )}
 
         {/* Training Load */}
         {tss && (
@@ -688,9 +518,15 @@ function ActivityDetailScreen() {
             <Icon
               as={Trash2}
               size={20}
-              className={deleteMutation.isPending ? "text-muted-foreground" : "text-destructive"}
+              className={
+                deleteMutation.isPending
+                  ? "text-muted-foreground"
+                  : "text-destructive"
+              }
             />
-            <Text className={`font-semibold ${deleteMutation.isPending ? "text-muted-foreground" : "text-destructive"}`}>
+            <Text
+              className={`font-semibold ${deleteMutation.isPending ? "text-muted-foreground" : "text-destructive"}`}
+            >
               {deleteMutation.isPending ? "Deleting..." : "Delete Activity"}
             </Text>
           </Pressable>
