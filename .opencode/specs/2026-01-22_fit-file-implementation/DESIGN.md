@@ -1,10 +1,10 @@
 # FIT File Implementation Specification
 
-**Version:** 6.1.0  
-**Created:** January 22, 2026  
-**Last Updated:** January 22, 2026  
-**Status:** Ready for Implementation  
-**Notes:** Version 6.1.0 incorporates VP feedback - metrics now use individual typed columns instead of JSONB
+**Version:** 6.1.1
+**Created:** January 22, 2026
+**Last Updated:** January 23, 2026
+**Status:** Ready for Implementation
+**Notes:** Version 6.1.1 incorporates final corrections: explicit note on no activity_streams table, compression utilities removal, verification checklist for activity_streams references, and new compression utilities added to "What NOT to Implement"
 
 ---
 
@@ -147,6 +147,8 @@ ALTER TABLE activities ADD COLUMN max_speed_mps DECIMAL(6,3);
 ---
 
 ## Part 3: tRPC Router Implementation
+
+**Explicit Note:** No `activity_streams` table exists. All stream data remains exclusively in the raw FIT file stored in Supabase Storage. There are no database tables or schemas for stream data - streams are parsed on-demand when viewing activity details.
 
 ### FitFiles Router
 
@@ -491,6 +493,8 @@ import {
   formatDistance,
   formatPace,
 } from "@repo/core/utils/format.ts";
+
+// Compression utilities (DO NOT IMPLEMENT - not needed, streams stay in FIT file)
 ```
 
 ### Zod Schemas Already in `@repo/supabase`
@@ -505,7 +509,7 @@ import { publicActivitiesInsertSchema, activityTypeEnum } from "@repo/supabase";
 
 - ❌ `activity_streams` table - stream data remains only in raw FIT file
 - ❌ `metrics` JSONB column - all metrics stored as individual columns
-- ❌ Stream compression utilities - no longer needed
+- ❌ Stream compression utilities removal - no longer needed as streams stay in FIT file
 - ❌ `publicActivityStreamsInsertSchema` - schema removed
 
 ---
@@ -817,6 +821,15 @@ describe("fitFilesRouter", () => {
 - [ ] Test with real FIT files from various devices (Garmin, Wahoo, COROS)
 - [ ] Verify all metric columns populate correctly
 - [ ] Verify stream parsing works on-demand
+
+### Verification Checklist for No activity_streams References
+
+- [ ] Search entire codebase for any references to `activity_streams` table or schema
+- [ ] Verify no imports of compression utilities (e.g., `@repo/core/utils/compression`)
+- [ ] Confirm database migration does not create `activity_streams` table
+- [ ] Ensure all stream data access uses `parseFitFileWithSDK()` on-demand
+- [ ] Check that Supabase Storage is the only storage for FIT files and streams
+- [ ] Validate that activity detail pages load streams asynchronously from FIT files only
 
 ---
 

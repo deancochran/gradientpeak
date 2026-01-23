@@ -4,12 +4,12 @@
 
 This implementation plan covers the integration of FIT file support for GradientPeak using a **simplified architecture** with tRPC mutations and @repo/core integration. Key changes from previous versions:
 
-- **activity_streams table removed** - all data in activities.metrics.streams
+- **activity_streams table removed** - Stream data remains only in raw FIT file in Supabase Storage
 - **Single synchronous tRPC mutation** - no Edge Functions needed
 - **All calculations use existing @repo/core functions** - no code duplication
 - **No JOIN operations** - simplified database queries
 
-**Timeline:** 10-14 days (2-3 weeks)  
+**Timeline:** 8-12 days (2 weeks)  
 **Phases:** 5
 
 ---
@@ -215,16 +215,9 @@ This implementation plan covers the integration of FIT file support for Gradient
   - `detectPowerTestEfforts()`, `detectRunningTestEfforts()` for test detection
   - `calculatePowerCurve()`, `calculateHRCurve()`, `calculatePaceCurve()` for curves
 
-- [ ] **3.3** Implement stream extraction and compression
-  - Use `extractNumericStream()` from @repo/core for all stream types
-  - Store GPS points and all streams in activities.metrics.streams
-  - Use `compressStreamsForStorage()` from @repo/core for efficient storage
-
-- [ ] **3.4** Create activity record with all data
+- [ ] **3.3** Create activity record with all data
   - Single INSERT into activities table
-  - All metrics in JSONB metrics column
-  - All stream data in metrics.streams sub-object
-  - No activity_streams table needed
+  - All metrics in individual columns
 
 - [ ] **3.5** Add proper error handling with TRPCError
   - Download errors
@@ -234,17 +227,14 @@ This implementation plan covers the integration of FIT file support for Gradient
 - [ ] **3.6** Test tRPC mutation with various FIT files
   - Garmin, Wahoo, COROS files
   - Edge cases (corrupted, incomplete, missing data types)
-  - Verify stream compression/decompression works correctly
   - Confirm no JOIN operations needed for activity queries
 
 #### Deliverables
 
 - [ ] tRPC fitFilesRouter fully implemented
 - [ ] All metrics calculated using existing @repo/core functions
-- [ ] Stream data stored in activities.metrics.streams (no activity_streams table)
 - [ ] Error handling implemented with proper TRPCError types
 - [ ] No JOIN operations needed for activity data retrieval
-- [ ] Stream compression/decompression verified working
 
 ---
 
@@ -321,7 +311,7 @@ This implementation plan covers the integration of FIT file support for Gradient
 
 - [ ] **4.4** Implement retry button functionality
   - Call tRPC mutation to reset processing status
-  - Re-trigger edge function processing
+  - Re-trigger tRPC mutation processing
 
 - [ ] **4.5** Add loading state for processing
   - Show spinner while processing
@@ -415,11 +405,11 @@ This implementation plan covers the integration of FIT file support for Gradient
 | ------------------------------------- | -------- | ---------- |
 | Phase 1: Infrastructure Setup         | 1-2 days | Day 1-2    |
 | Phase 2: Mobile Recording Integration | 3-5 days | Day 3-7    |
-| Phase 3: tRPC Mutation Implementation | 3-4 days | Day 8-11   |
-| Phase 4: User Interface               | 2 days   | Day 12-13  |
-| Phase 5: Data Migration               | 2-3 days | Day 14-16  |
+| Phase 3: tRPC Mutation Implementation | 2-3 days | Day 8-10   |
+| Phase 4: User Interface               | 2 days   | Day 11-12  |
+| Phase 5: Data Migration               | 2-3 days | Day 13-15  |
 
-**Total:** 10-14 days (approximately 2-3 weeks)
+**Total:** 8-12 days (approximately 2 weeks)
 
 ---
 
@@ -440,6 +430,10 @@ This implementation plan covers the integration of FIT file support for Gradient
 
 Simplified architecture uses tRPC mutations instead of Edge Functions. All processing uses existing @repo/core functions.
 
+### Stream Storage Simplification
+
+Stream data remains in the raw FIT file in Supabase Storage, eliminating the need for database storage of stream data. This simplifies the architecture by removing compression, decompression, and storage logic for streams.
+
 ### Build Dependencies
 
 - TypeScript configuration updates
@@ -450,15 +444,15 @@ Simplified architecture uses tRPC mutations instead of Edge Functions. All proce
 
 ## Risks and Mitigations
 
-| Risk                                     | Impact | Mitigation                                        |
-| ---------------------------------------- | ------ | ------------------------------------------------- |
-| SDK bundle size increases mobile app     | High   | Use only needed classes, lazy loading             |
-| Large file memory on mobile              | High   | Memory guards, chunked processing                 |
-| FIT profile changes breaking parsing     | Medium | SDK updates via npm, version pinning              |
-| Processing time exceeding SLA            | Low    | Synchronous tRPC mutation is faster than async    |
-| Migration affecting production           | Medium | Simified migration (just remove activity_streams) |
-| Real-time encoding impacting battery     | Medium | Benchmarking, optimization                        |
-| Stream compression affecting performance | Low    | Existing @repo/core compression utilities tested  |
+| Risk                                     | Impact | Mitigation                                          |
+| ---------------------------------------- | ------ | --------------------------------------------------- |
+| SDK bundle size increases mobile app     | High   | Use only needed classes, lazy loading               |
+| Large file memory on mobile              | High   | Memory guards, chunked processing                   |
+| FIT profile changes breaking parsing     | Medium | SDK updates via npm, version pinning                |
+| Processing time exceeding SLA            | Low    | Synchronous tRPC mutation is faster than async      |
+| Migration affecting production           | Medium | Simplified migration (just remove activity_streams) |
+| Real-time encoding impacting battery     | Medium | Benchmarking, optimization                          |
+| Stream compression affecting performance | Low    | Existing @repo/core compression utilities tested    |
 
 ---
 
@@ -466,15 +460,14 @@ Simplified architecture uses tRPC mutations instead of Edge Functions. All proce
 
 ### Technical Criteria
 
-| Metric                        | Target                               |
-| ----------------------------- | ------------------------------------ |
-| FIT file integrity            | 100% validated by @repo/core SDK     |
-| Upload success rate           | >95%                                 |
-| Processing success rate       | >98%                                 |
-| Processing time               | <15 seconds per activity (tRPC sync) |
-| Error Recovery Success        | >99%                                 |
-| Stream compression efficiency | >80% size reduction                  |
-| Query performance             | Single activity query (no JOINs)     |
+| Metric                  | Target                               |
+| ----------------------- | ------------------------------------ |
+| FIT file integrity      | 100% validated by @repo/core SDK     |
+| Upload success rate     | >95%                                 |
+| Processing success rate | >98%                                 |
+| Processing time         | <15 seconds per activity (tRPC sync) |
+| Error Recovery Success  | >99%                                 |
+| Query performance       | Single activity query (no JOINs)     |
 
 ### Testing Criteria
 
@@ -528,7 +521,6 @@ packages/supabase/database.types.ts
 
 ```
 packages/supabase/functions/process-activity-fit/  # Not needed - use tRPC
-activity_streams table                              # Removed - data in activities.metrics.streams
 ```
 
 ---
@@ -541,7 +533,7 @@ activity_streams table                              # Removed - data in activiti
 | **Processing Location** | Mobile vs Server                  | Mobile encoding, Server parsing  |
 | **Processing Trigger**  | Database trigger vs tRPC mutation | tRPC mutation                    |
 | **Status Column**       | Use existing migration            | Apply existing migration         |
-| **Metrics Storage**     | Individual columns vs JSONB       | Use JSONB (metrics column)       |
+| **Metrics Storage**     | Individual columns vs JSONB       | Use individual columns           |
 
 ---
 

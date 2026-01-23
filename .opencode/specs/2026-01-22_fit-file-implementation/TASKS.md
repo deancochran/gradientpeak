@@ -2,7 +2,7 @@
 
 ## Task List by Phase
 
-This document provides a granular checklist for implementing FIT file support in GradientPeak using a **simplified architecture** with all stream data stored in `activities.metrics.streams` (activity_streams table removed).
+This document provides a granular checklist for implementing FIT file support in GradientPeak using a **simplified architecture** with raw FIT files stored in Supabase Storage.
 
 ---
 
@@ -13,75 +13,35 @@ This document provides a granular checklist for implementing FIT file support in
 
 ### Database Setup
 
-- [X] **T-101** Review existing migration file
+- [x] **T-101** Review existing migration file
   - Location: `packages/supabase/migrations/20240120_add_fit_file_support.sql`
   - Verify columns: `fit_file_path`, `processing_status`, `processing_error`, `fit_file_size`
 
-- [X] **T-102** Apply migration to init.sql
+- [x] **T-102** Apply migration to init.sql
   - Add columns to `packages/supabase/schemas/init.sql`
   - Add indexes for `processing_status` and `fit_file_path`
 
-- [X] **T-102.1** **Remove activity_streams table**
+- [x] **T-102.1** **Remove activity_streams table**
   - Execute: `DROP TABLE IF EXISTS activity_streams;`
-  - All stream data will be stored in `activities.metrics.streams`
+  - Raw FIT files will be stored in Supabase Storage
   - Verify no existing code references activity_streams table
 
-- [X] **T-103** Generate TypeScript types
+- [x] **T-103** Generate TypeScript types
 
   ```bash
   cd packages/supabase && supabase generate-types
   ```
 
-- [X] **T-104** Update Zod schemas
+- [x] **T-104** Update Zod schemas
   - Add FIT columns to `publicActivitiesInsertSchema`
   - Add processing_status enum
   - Remove references to `publicActivityStreamsInsertSchema` (no longer needed)
-
-### Edge Function Setup
-
-- [ ] **T-105** Create process-activity-fit directory
-  - Location: `packages/supabase/functions/process-activity-fit/`
-
-- [ ] **T-106** Create deno.json
-
-  ```json
-  {
-    "imports": {
-      "@garmin/fitsdk": "npm:@garmin/fitsdk@^21.188.0",
-      "@mapbox/polyline": "npm:@mapbox/polyline@^1.2.1",
-      "@supabase/functions-js": "jsr:@supabase/functions-js@^2.4.1",
-      "supabase": "npm:supabase@^2.0.0"
-    }
-  }
-  ```
-
-- [ ] **T-107** Implement Edge Function skeleton
-  - Handle CORS preflight requests
-  - Validate request method (POST only)
-  - Validate activityId parameter
-
-- [ ] **T-108** Connect to Supabase
-  - Initialize Supabase client
-  - Verify connection
-
-- [ ] **T-109** Add Edge Function to config.toml
-
-  ```toml
-  [functions.process-activity-fit]
-    uri = "packages/supabase/functions/process-activity-fit/index.ts"
-  ```
-
-- [ ] **T-110** Test Edge Function deployment
-  - Deploy to staging
-  - Verify function is accessible
 
 ### Infrastructure Deliverables
 
 - [ ] Database migration applied
 - [ ] TypeScript types generated
 - [ ] Zod schemas updated
-- [ ] Edge Function skeleton working
-- [ ] Configuration updated
 
 ---
 
@@ -398,20 +358,9 @@ This document provides a granular checklist for implementing FIT file support in
   } from "@repo/core/calculations/curves.ts";
   ```
 
-### Stream Storage Compression
+### Activity Creation with Individual Metric Columns
 
-- [ ] **T-313** Compress streams for storage using existing @repo/core utility
-
-  ```typescript
-  import { compressStreamsForStorage } from "@repo/core/utils/compression.ts";
-
-  // Compress all streams for efficient storage
-  const compressedStreams = compressStreamsForStorage(rawStreams);
-  ```
-
-### Activity Creation with Stream Storage
-
-- [ ] **T-314** Create activity record with all metrics and streams
+- [ ] **T-313** Create activity record with individual metric columns
 
   ```typescript
   const activityData = {
@@ -422,16 +371,14 @@ This document provides a granular checklist for implementing FIT file support in
     fit_file_path: input.fitFilePath,
     processing_status: "completed",
     start_time: new Date(summary.startTime),
-    metrics: {
-      // Basic metrics
-      duration: summary.duration,
-      distance: summary.distance,
-      calories: summary.calories,
-      // ... all other metrics
-
-      // Compressed stream data stored in activities.metrics.streams
-      streams: compressStreamsForStorage(rawStreams),
-    },
+    // Individual metric columns
+    duration: summary.duration,
+    distance: summary.distance,
+    calories: summary.calories,
+    elevation_gain: summary.elevationGain,
+    avg_power: powerMetrics?.avgPower,
+    normalized_power: powerMetrics?.normalizedPower,
+    // ... all other individual metric columns
   };
 
   const { data: createdActivity, error: insertError } = await ctx.supabase
@@ -441,7 +388,7 @@ This document provides a granular checklist for implementing FIT file support in
     .single();
   ```
 
-- [ ] **T-315** Handle database errors with file cleanup
+- [ ] **T-314** Handle database errors with file cleanup
 
   ```typescript
   if (insertError || !createdActivity) {
@@ -460,7 +407,7 @@ This document provides a granular checklist for implementing FIT file support in
 
 ### tRPC Router Registration and Error Handling
 
-- [ ] **T-316** Register fitFilesRouter in root router
+- [ ] **T-315** Register fitFilesRouter in root router
 
   ```typescript
   // packages/trpc/src/root.ts
@@ -472,7 +419,7 @@ This document provides a granular checklist for implementing FIT file support in
   });
   ```
 
-- [ ] **T-317** Handle errors with proper TRPCError types
+- [ ] **T-316** Handle errors with proper TRPCError types
 
   ```typescript
   if (downloadError || !fitFile) {
@@ -493,41 +440,41 @@ This document provides a granular checklist for implementing FIT file support in
 
 ### Testing and Validation
 
-- [ ] **T-318** Test tRPC mutation with various FIT files
+- [ ] **T-317** Test tRPC mutation with various FIT files
   - Garmin FIT files
   - Wahoo FIT files
   - COROS FIT files
 
-- [ ] **T-319** Test edge cases
+- [ ] **T-318** Test edge cases
   - Corrupted files
   - Incomplete files
   - Files without power data
   - Files without GPS data
 
-- [ ] **T-320** Verify metrics accuracy
+- [ ] **T-319** Verify metrics accuracy
   - Spot check TSS calculations
   - Verify zone distributions
   - Check test effort detection
   - Validate stream compression/decompression
 
-- [ ] **T-321** Measure processing performance
+- [ ] **T-320** Measure processing performance
   - Processing time per file
   - Memory usage during processing
   - Database query performance
 
-- [ ] **T-322** Verify stream storage in activities.metrics.streams
-  - Test GPS points stored correctly
-  - Test all stream types compressed/decompressed properly
-  - Verify no JOIN operations needed for activity data
+- [ ] **T-321** Verify FIT file storage in Supabase Storage
+  - Test FIT files uploaded correctly
+  - Test FIT files can be downloaded and parsed
+  - Verify metrics accessible without JOINs
 
 ### Processing Deliverables
 
 - [ ] tRPC fitFilesRouter fully implemented
 - [ ] All metrics calculated using @repo/core functions
-- [ ] Stream data compressed and stored in activities.metrics.streams
-- [ ] No JOIN operations needed for activity queries
+- [ ] Metrics stored in individual columns
+- [ ] Raw FIT files stored in Supabase Storage
 - [ ] Error handling implemented with proper TRPCError types
-- [ ] Testing complete with simplified architecture
+- [ ] Testing complete with FIT-file-only approach
 
 ---
 
@@ -716,14 +663,13 @@ This document provides a granular checklist for implementing FIT file support in
 
 ## Task Summary
 
-| Phase                                 | Tasks          | Status      |
-| ------------------------------------- | -------------- | ----------- |
-| Phase 0: Design Corrections (VP)      | T-601 to T-610 | In Progress |
-| Phase 1: Infrastructure Setup         | T-101 to T-110 | Pending     |
-| Phase 2: Mobile Recording Integration | T-201 to T-214 | Pending     |
-| Phase 3: tRPC Mutation Implementation | T-301 to T-322 | Pending     |
-| Phase 4: User Interface               | T-401 to T-407 | Pending     |
-| Phase 5: Data Migration               | T-501 to T-516 | Pending     |
+| Phase                                 | Tasks          | Status  |
+| ------------------------------------- | -------------- | ------- |
+| Phase 1: Infrastructure Setup         | T-101 to T-104 | Pending |
+| Phase 2: Mobile Recording Integration | T-201 to T-214 | Pending |
+| Phase 3: tRPC Mutation Implementation | T-301 to T-321 | Pending |
+| Phase 4: User Interface               | T-401 to T-407 | Pending |
+| Phase 5: Data Migration               | T-501 to T-516 | Pending |
 
 ---
 
@@ -742,9 +688,9 @@ This document provides a granular checklist for implementing FIT file support in
 ### Architecture Simplifications
 
 1. **No activity_streams table needed**
-   - All stream data stored in activities.metrics.streams
-   - Eliminates JOIN operations
-   - Simplifies database queries
+   - Raw FIT files stored in Supabase Storage
+   - Metrics stored in individual columns
+   - Simplifies database schema
 
 2. **No Edge Functions needed**
    - Single synchronous tRPC mutation handles all processing
@@ -796,99 +742,6 @@ This document provides a granular checklist for implementing FIT file support in
 
 ---
 
-## Phase 0: Design Corrections (VP Feedback)
-
-**Duration:** 2-3 days  
-**Priority:** HIGH  
-**Goal:** Correct database schema to use individual metric columns instead of JSONB
-
-### Database Schema Corrections
-
-- [ ] **T-601** Update design spec to remove `metrics` JSONB column
-  - Location: `.opencode/specs/2026-01-22_fit-file-implementation/design.md`
-  - Change `metrics` JSONB column to individual metric columns
-  - Document rationale for column-based approach
-
-- [ ] **T-602** Define complete list of 20+ metric columns for activities table
-  - Core metrics: `duration`, `distance`, `calories`, `elevation_gain`, `elevation_loss`
-  - Power metrics: `avg_power`, `max_power`, `normalized_power`, `intensity_factor`, `variability_index`, `tss`
-  - Heart rate metrics: `avg_heart_rate`, `max_heart_rate`, `min_heart_rate`, `heart_rate_recovery`
-  - Pace/running metrics: `avg_pace`, `max_pace`, `avg_cadence`, `max_cadence`
-  - Time metrics: `moving_time`, `elapsed_time`, `pause_duration`
-  - Other: `avg_speed`, `max_speed`, `stream_timestamp`
-
-- [x] **T-603** Create database migration script for individual metric columns
-  - Location: `packages/supabase/migrations/20260123131234_fit-file.sql`
-  - Remove `metrics` JSONB column
-  - Add all 20+ individual metric columns with appropriate types
-  - Add indexes for commonly queried columns
-  - Include rollback script
-
-### TypeScript and Supabase Types
-
-- [ ] **T-604** Add TypeScript interfaces for new metric column structure
-  - Location: `packages/core/src/types/activity-metrics.ts`
-  - Define `ActivityMetrics` interface matching database columns
-  - Add optional fields for activity-type specific metrics
-  - Include Zod schema for validation
-
-- [x] **T-605** Update Supabase types to reflect individual columns vs JSONB
-  - Run `supabase generate-types` after migration
-  - Verify generated types match `ActivityMetrics` interface
-  - Update `packages/supabase/src/types/index.ts`
-
-### tRPC Mutation Updates
-
-- [ ] **T-606** Update tRPC mutation to insert into individual columns instead of JSONB
-  - Location: `packages/trpc/src/routers/fit-files.ts`
-  - Modify `processFitFile` mutation
-  - Map extracted metrics to individual columns
-  - Remove metrics JSONB insert logic
-  - Update Zod input schema
-
-### Frontend Updates
-
-- [ ] **T-607** Update activity detail page to use async FIT file loading pattern
-  - Location: `apps/mobile/src/screens/ActivityDetailScreen.tsx`
-  - Load FIT file data asynchronously when viewing activity
-  - Remove embedded stream data (now stored in separate table or not needed)
-  - Add loading states for FIT file fetch
-
-- [ ] **T-608** Update activity components to use new column structure
-  - Update `ActivityMetricsCard` component
-  - Update `PastActivityCard` for list views
-  - Update any metric display components
-
-### Cleanup Items
-
-- [ ] **T-609** Remove stream compression utilities
-  - Location: `packages/core/src/utils/compression.ts`
-  - Remove `compressStreamsForStorage` function
-  - Remove `decompressStreamsFromStorage` function
-  - Remove related tests
-  - Update imports in tRPC router (T-606)
-
-### Design Documentation Updates
-
-- [ ] **T-610** Update design.md with corrected schema
-  - Document individual column approach
-  - Include ERD diagram update
-  - Document migration strategy
-
-### Phase 0 Deliverables
-
-- [ ] Design spec corrected (metrics JSONB removed)
-- [ ] 20+ metric columns defined and documented
-- [ ] Migration script created and tested
-- [ ] TypeScript interfaces added
-- [ ] Supabase types updated
-- [ ] tRPC mutation updated
-- [ ] Activity detail page updated
-- [ ] Compression utilities removed
-- [ ] Design documentation updated
-
----
-
 **Document Version:** 2.1.0  
 **Last Updated:** January 23, 2026  
-**Next Review:** Before starting Phase 0
+**Next Review:** Implementation Ready
