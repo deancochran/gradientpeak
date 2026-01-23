@@ -13,26 +13,26 @@ This document provides a granular checklist for implementing FIT file support in
 
 ### Database Setup
 
-- [ ] **T-101** Review existing migration file
+- [X] **T-101** Review existing migration file
   - Location: `packages/supabase/migrations/20240120_add_fit_file_support.sql`
   - Verify columns: `fit_file_path`, `processing_status`, `processing_error`, `fit_file_size`
 
-- [ ] **T-102** Apply migration to init.sql
+- [X] **T-102** Apply migration to init.sql
   - Add columns to `packages/supabase/schemas/init.sql`
   - Add indexes for `processing_status` and `fit_file_path`
 
-- [ ] **T-102.1** **Remove activity_streams table**
+- [X] **T-102.1** **Remove activity_streams table**
   - Execute: `DROP TABLE IF EXISTS activity_streams;`
   - All stream data will be stored in `activities.metrics.streams`
   - Verify no existing code references activity_streams table
 
-- [ ] **T-103** Generate TypeScript types
+- [X] **T-103** Generate TypeScript types
 
   ```bash
   cd packages/supabase && supabase generate-types
   ```
 
-- [ ] **T-104** Update Zod schemas
+- [X] **T-104** Update Zod schemas
   - Add FIT columns to `publicActivitiesInsertSchema`
   - Add processing_status enum
   - Remove references to `publicActivityStreamsInsertSchema` (no longer needed)
