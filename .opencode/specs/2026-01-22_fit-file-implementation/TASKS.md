@@ -28,7 +28,7 @@ This document provides a granular checklist for implementing FIT file support in
 
 ### Core Encoding & Decoding (NEW)
 
-- [ ] **T-103** Define Standard Activity Interface
+- [x] **T-103** Define Standard Activity Interface
   - Create `packages/core/types/normalization.ts`
   - Define `StandardActivity` interface (metadata, summary, streams)
 
@@ -95,12 +95,12 @@ This document provides a granular checklist for implementing FIT file support in
 
 ### ActivityRecorder Integration
 
-- [ ] **T-202** Review existing StreamingFitEncoder
+- [x] **T-202** Review existing StreamingFitEncoder
   - Verify crash recovery implementation
   - Verify checkpoint mechanism (60s intervals)
   - Check memory usage during encoding
 
-- [ ] **T-203** Add FIT encoder properties to ActivityRecorder
+- [x] **T-203** Add FIT encoder properties to ActivityRecorder
 
   ```typescript
   export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
@@ -111,7 +111,7 @@ This document provides a granular checklist for implementing FIT file support in
   }
   ```
 
-- [ ] **T-204** Initialize FIT encoder in startRecording()
+- [x] **T-204** Initialize FIT encoder in startRecording()
 
   ```typescript
   async startRecording(): Promise<void> {
@@ -129,7 +129,7 @@ This document provides a granular checklist for implementing FIT file support in
   }
   ```
 
-- [ ] **T-205** Feed sensor readings to FIT encoder
+- [x] **T-205** Feed sensor readings to FIT encoder
 
   ```typescript
   private handleSensorReading(reading: SensorReading): void {
@@ -147,7 +147,7 @@ This document provides a granular checklist for implementing FIT file support in
   }
   ```
 
-- [ ] **T-206** Feed location updates to FIT encoder
+- [x] **T-206** Feed location updates to FIT encoder
 
   ```typescript
   private handleLocationUpdate(location: LocationReading): void {
@@ -162,7 +162,7 @@ This document provides a granular checklist for implementing FIT file support in
   }
   ```
 
-- [ ] **T-207** Finalize FIT file in finishRecording()
+- [x] **T-207** Finalize FIT file in finishRecording()
 
   ```typescript
   async finishRecording(): Promise<void> {
@@ -177,23 +177,23 @@ This document provides a granular checklist for implementing FIT file support in
 
 ### FIT Upload Service
 
-- [ ] **T-208** Create FitUploader service
+- [x] **T-208** Create FitUploader service
   - Location: `apps/mobile/lib/services/fit/FitUploader.ts`
   - Reuse existing upload logic
   - Upload to `fit-files` bucket
   - Implement retry logic with exponential backoff
 
-- [ ] **T-209** Add progress tracking to FitUploader
+- [x] **T-209** Add progress tracking to FitUploader
   - Report upload progress
   - Handle upload errors
 
-- [ ] **T-210** Add file size validation
+- [x] **T-210** Add file size validation
   - Maximum: 50MB
   - Reject oversized files
 
 ### Activity Submission Update
 
-- [ ] **T-211** Update useActivitySubmission hook to use new tRPC approach
+- [x] **T-211** Update useActivitySubmission hook to use new tRPC approach
 
   ```typescript
   const processRecording = useCallback(async () => {
@@ -251,9 +251,9 @@ This document provides a granular checklist for implementing FIT file support in
 ### Mobile Deliverables
 
 - [x] @garmin/fitsdk installed
-- [ ] FIT encoder integrated into ActivityRecorder
-- [ ] FitUploader created/updated
-- [ ] useActivitySubmission updated
+- [x] FIT encoder integrated into ActivityRecorder
+- [x] FitUploader created/updated
+- [x] useActivitySubmission updated
 - [ ] Recovery testing complete
 
 ---
@@ -265,7 +265,7 @@ This document provides a granular checklist for implementing FIT file support in
 
 ### tRPC Router Setup
 
-- [ ] **T-301** Create `packages/trpc/src/routers/fit-files.ts`
+- [x] **T-301** Create `packages/trpc/src/routers/fit-files.ts`
   - Implement `processFitFile` protected procedure
   - Import existing functions from `@repo/core` (no duplication)
   - Use `publicActivitiesInsertSchema` from `@repo/supabase`
