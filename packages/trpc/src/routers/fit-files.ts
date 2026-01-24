@@ -396,9 +396,11 @@ export const fitFilesRouter = createTRPCRouter({
           avg_cadence: avgCadence ? Math.round(avgCadence) : null,
           max_cadence: maxCadence ? Math.round(maxCadence) : null,
 
-          // Speed metrics (calculate from distance and duration if not available)
-          avg_speed_mps: distance && duration ? distance / duration : null,
-          max_speed_mps: null, // Would need to calculate from speed stream
+          // Speed metrics
+          avg_speed_mps:
+            summary.avgSpeed ??
+            (distance && duration ? distance / duration : null),
+          max_speed_mps: summary.maxSpeed ?? null,
 
           // Heart rate zones (seconds in each zone)
           hr_zone_1_seconds: hrZones?.zone1 || null,
