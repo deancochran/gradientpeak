@@ -175,7 +175,7 @@ export * from "./utils"; // Utility functions
 // ============================================================================
 // FIT File Parsing and Encoding Module
 // ============================================================================
-export * from "./lib/fit-parser";
+
 export * from "./lib/fit-sdk-parser";
 export * from "./lib/fit-sdk-encoder";
 export type { StandardActivity } from "./types/normalization";

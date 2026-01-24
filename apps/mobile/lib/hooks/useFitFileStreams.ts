@@ -44,9 +44,10 @@ export function useFitFileStreams() {
 
       // Parse FIT file
       const arrayBuffer = await fitFile.arrayBuffer();
-      const parseResult = await parseFitFileWithSDK(arrayBuffer);
+      const buffer = Buffer.from(arrayBuffer);
+      const parseResult = parseFitFileWithSDK(buffer);
 
-      if (!parseResult.session && parseResult.records.length === 0) {
+      if (!parseResult.summary && parseResult.records.length === 0) {
         throw new Error(
           "Failed to parse FIT file - no session or records found",
         );
