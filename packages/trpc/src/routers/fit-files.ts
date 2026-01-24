@@ -10,7 +10,12 @@ import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import type { Context } from "../context";
 import type { StandardActivity } from "@repo/core";
-import { parseFitFileWithSDK, calculateTSSFromAvailableData } from "@repo/core";
+import {
+  parseFitFileWithSDK,
+  calculateTSSFromAvailableData,
+  extractHeartRateZones,
+  extractPowerZones,
+} from "@repo/core";
 
 const FIT_FILE_SIZE_LIMIT = 50 * 1024 * 1024; // 50MB
 const FIT_FILE_TYPES = [".fit"];
@@ -336,6 +341,17 @@ export const fitFilesRouter = createTRPCRouter({
         }
 
         // ========================================================================
+        // T-310: Extract zones using @repo/core
+        // ========================================================================
+        let hrZones: ReturnType<typeof extractHeartRateZones> | undefined;
+        let powerZones: ReturnType<typeof extractPowerZones> | undefined;
+
+        if (records.length > 0) {
+          hrZones = extractHeartRateZones(records);
+          powerZones = extractPowerZones(records);
+        }
+
+        // ========================================================================
         // T-313, T-314: Create activity record
         // ========================================================================
         const endTime = new Date(startTime.getTime() + duration * 1000);
@@ -383,6 +399,21 @@ export const fitFilesRouter = createTRPCRouter({
           // Speed metrics (calculate from distance and duration if not available)
           avg_speed_mps: distance && duration ? distance / duration : null,
           max_speed_mps: null, // Would need to calculate from speed stream
+
+          // Heart rate zones (seconds in each zone)
+          hr_zone_1_seconds: hrZones?.zone1 || null,
+          hr_zone_2_seconds: hrZones?.zone2 || null,
+          hr_zone_3_seconds: hrZones?.zone3 || null,
+          hr_zone_4_seconds: hrZones?.zone4 || null,
+          hr_zone_5_seconds: hrZones?.zone5 || null,
+
+          // Power zones (seconds in each zone)
+          power_zone_1_seconds: powerZones?.zone1 || null,
+          power_zone_2_seconds: powerZones?.zone2 || null,
+          power_zone_3_seconds: powerZones?.zone3 || null,
+          power_zone_4_seconds: powerZones?.zone4 || null,
+          power_zone_5_seconds: powerZones?.zone5 || null,
+          power_zone_6_seconds: powerZones?.zone6 || null,
         };
 
         const { data: createdActivity, error: insertError } = await supabase

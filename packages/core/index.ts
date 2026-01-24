@@ -178,6 +178,7 @@ export * from "./utils"; // Utility functions
 
 export * from "./lib/fit-sdk-parser";
 export * from "./lib/fit-sdk-encoder";
+export { extractHeartRateZones, extractPowerZones } from "./lib/fit-sdk-parser";
 export type { StandardActivity } from "./types/normalization";
 
 // ============================================================================
