@@ -31,7 +31,7 @@ export function useFitFileStreams() {
 
       // Download FIT file from storage
       const { data: fitFile, error: downloadError } = await supabase.storage
-        .from("activity-files")
+        .from("fit-files")
         .download(fitFilePath);
 
       if (downloadError || !fitFile) {

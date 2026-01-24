@@ -199,12 +199,17 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    */
   public async finishRecording(): Promise<LiveMetricsState> {
     this.stopTimers();
-    this.isActive = false;
-    this.metrics.finishedAt = Date.now();
+    
     this.calculateAndEmitMetrics();
 
-    // Final flush to files
-    await this.persistAndCleanup();
+    // Final flush to files BEFORE setting isActive = false
+    // Emergency flush using hasPendingData()
+    if (this.streamBuffer.hasPendingData()) {
+      await this.persistAndCleanup();
+    }
+
+    this.isActive = false;
+    this.metrics.finishedAt = Date.now();
 
     console.log("[LiveMetricsManager] Finished recording");
     return this.metrics;

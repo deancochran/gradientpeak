@@ -383,6 +383,13 @@ export class StreamBuffer {
   /**
    * Get current buffer status
    */
+  /**
+   * Check if there is any data pending flush
+   */
+  hasPendingData(): boolean {
+    return this.readings.size > 0 || this.locations.length > 0;
+  }
+
   getBufferStatus(): {
     readingCount: number;
     locationCount: number;

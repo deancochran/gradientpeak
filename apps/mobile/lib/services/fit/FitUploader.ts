@@ -13,7 +13,7 @@ import {
   SupabaseClient,
   SupabaseClientOptions,
 } from "@supabase/supabase-js";
-import * as FileSystem from "expo-file-system";
+import { File } from "expo-file-system";
 
 export interface UploadProgress {
   loaded: number;
@@ -88,10 +88,12 @@ export class FitUploader {
   /**
    * Upload a FIT file to Supabase Storage
    */
-  async uploadFile(
+  /**
+   * Upload a file to a specific presigned URL
+   */
+  async uploadToSignedUrl(
     filePath: string,
-    userId: string,
-    activityId: string,
+    signedUrl: string,
   ): Promise<UploadResult> {
     if (this.uploadState.isUploading) {
       return {
@@ -106,29 +108,27 @@ export class FitUploader {
     this.uploadState.attempts = 0;
 
     try {
-      const fileInfo = await FileSystem.getInfoAsync(filePath);
-      if (!fileInfo.exists) {
+      const file = new File(filePath);
+      if (!file.exists) {
         throw new Error("File not found");
       }
 
-      // Validate file size before upload
-      if (fileInfo.size && fileInfo.size > MAX_FILE_SIZE) {
+      const size = file.size ?? 0;
+      if (size > MAX_FILE_SIZE) {
         throw new Error(
-          `FIT file size (${(fileInfo.size / (1024 * 1024)).toFixed(2)}MB) exceeds maximum allowed size of 50MB`,
+          `FIT file size (${(size / (1024 * 1024)).toFixed(2)}MB) exceeds maximum allowed size of 50MB`,
         );
       }
-
-      const fileName = this.generateFileName(userId, activityId);
 
       for (let attempt = 1; attempt <= this.config.maxRetries + 1; attempt++) {
         this.uploadState.attempts = attempt;
 
         try {
-          const result = await this.uploadWithRetry(
-            fileName,
-            filePath,
-            fileInfo.size || 0,
-          );
+          // Use PUT for signed URLs (standard for S3/Supabase signed uploads)
+          const result = await this.performUpload(signedUrl, filePath, "PUT", {
+            "Content-Type": "application/octet-stream",
+            // No Authorization header needed for signed URLs (it's in the query params)
+          });
 
           if (result.success) {
             this.uploadState.isUploading = false;
@@ -138,15 +138,11 @@ export class FitUploader {
 
           if (attempt <= this.config.maxRetries) {
             const delay = this.calculateRetryDelay(attempt);
-            console.log(
-              `[FitUploader] Retrying in ${delay}ms (attempt ${attempt + 1})`,
-            );
             await this.sleep(delay);
           }
         } catch (error) {
           if (attempt <= this.config.maxRetries) {
             const delay = this.calculateRetryDelay(attempt);
-            console.log(`[FitUploader] Error, retrying in ${delay}ms:`, error);
             await this.sleep(delay);
           } else {
             throw error;
@@ -169,52 +165,189 @@ export class FitUploader {
   }
 
   /**
+   * Legacy method: Upload using file path construction (requires auth token)
+   * @deprecated Use uploadToSignedUrl instead
+   */
+  async uploadFile(
+    filePath: string,
+    userId: string,
+    activityId: string,
+    accessToken?: string,
+  ): Promise<UploadResult> {
+    const fileName = this.generateFileName(userId, activityId);
+    const storagePath = `${this.bucketName}/${fileName}`;
+    const uploadUrl = `${this.supabaseUrl}/storage/v1/object/${storagePath}`;
+
+    // ... logic delegated to performUpload ...
+    // For backward compatibility, we'll keep the full implementation logic here or refactor
+    // Refactoring to use the shared helper:
+
+    if (this.uploadState.isUploading) {
+      return {
+        success: false,
+        error: "Upload already in progress",
+        attempts: 0,
+      };
+    }
+
+    this.uploadState.isUploading = true;
+    this.uploadState.lastError = null;
+    this.uploadState.attempts = 0;
+
+    try {
+      const file = new File(filePath);
+      if (!file.exists) throw new Error("File not found");
+      const size = file.size ?? 0;
+      if (size > MAX_FILE_SIZE) throw new Error("File too large");
+
+      const authHeader = accessToken
+        ? `Bearer ${accessToken}`
+        : `Bearer ${this.supabaseKey}`;
+
+      for (let attempt = 1; attempt <= this.config.maxRetries + 1; attempt++) {
+        this.uploadState.attempts = attempt;
+        try {
+          const result = await this.performUpload(uploadUrl, filePath, "POST", {
+            Authorization: authHeader,
+            "Content-Type": "application/octet-stream",
+            "x-upsert": "true",
+            apikey: this.supabaseKey,
+          });
+
+          if (result.success) {
+            this.uploadState.isUploading = false;
+            this.uploadState.progress = null;
+            return result;
+          }
+
+          if (attempt <= this.config.maxRetries)
+            await this.sleep(this.calculateRetryDelay(attempt));
+        } catch (error) {
+          if (attempt <= this.config.maxRetries)
+            await this.sleep(this.calculateRetryDelay(attempt));
+          else throw error;
+        }
+      }
+      throw new Error("Max retries exceeded");
+    } catch (error) {
+      this.uploadState.isUploading = false;
+      this.uploadState.lastError =
+        error instanceof Error ? error.message : "Unknown error";
+      return {
+        success: false,
+        error: this.uploadState.lastError,
+        attempts: this.uploadState.attempts,
+      };
+    }
+  }
+
+  /**
+   * Shared upload logic using expo-file-system
+   */
+  private async performUpload(
+    url: string,
+    filePath: string,
+    method: "POST" | "PUT",
+    headers: Record<string, string>,
+  ): Promise<UploadResult> {
+    try {
+      const file = new File(filePath);
+      if (!file.exists) {
+        throw new Error("File not found");
+      }
+
+      // Convert to Blob to ensure binary streaming works with fetch
+      // Expo fetch can read from local URIs to create a Blob
+      const fileResponse = await fetch(file.uri);
+      const blob = await fileResponse.blob();
+
+      console.log(
+        `[FitUploader] Uploading ${blob.size} bytes via Blob to ${url}`,
+      );
+
+      const response = await fetch(url, {
+        method: method,
+        headers: headers,
+        body: blob,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Upload failed with status ${response.status}`);
+      }
+
+      // Simulate progress complete
+      if (this.uploadState.progress) {
+        this.uploadState.progress = {
+          loaded: blob.size,
+          total: blob.size,
+          percentage: 100,
+        };
+      }
+
+      console.log(`[FitUploader] Upload successful`);
+
+      return {
+        success: true,
+        fileUrl: url, // Caller should know the path they requested
+        attempts: this.uploadState.attempts,
+      };
+    } catch (error) {
+      throw new Error(
+        `Upload failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  /**
    * Upload file with progress tracking using expo-file-system upload API
+   * @deprecated Internal use only for legacy uploadFile
    */
   private async uploadWithRetry(
     fileName: string,
     filePath: string,
     totalSize: number,
+    accessToken?: string,
   ): Promise<UploadResult> {
     const storagePath = `${this.bucketName}/${fileName}`;
     const uploadUrl = `${this.supabaseUrl}/storage/v1/object/${storagePath}`;
 
-    const uploadTask = FileSystem.createUploadTask(uploadUrl, filePath, {
-      httpMethod: "POST",
-      headers: {
-        Authorization: `Bearer ${this.supabaseKey}`,
-        "Content-Type": "application/octet-stream",
-        "x-upsert": "true",
-        apikey: this.supabaseKey,
-      },
-    });
+    // Use access token if provided, otherwise fallback to anon key (which may fail for RLS)
+    const authHeader = accessToken
+      ? `Bearer ${accessToken}`
+      : `Bearer ${this.supabaseKey}`;
 
-    uploadTask.addProgressListener(
-      (progress: {
-        totalBytesSent: number;
-        totalBytesExpectedToSend: number;
-      }) => {
-        this.uploadState.progress = {
-          loaded: progress.totalBytesSent,
-          total: progress.totalBytesExpectedToSend,
-          percentage: Math.round(
-            (progress.totalBytesSent / progress.totalBytesExpectedToSend) * 100,
-          ),
+    // Note: Use fetch for modern upload
+    try {
+      const file = new File(filePath);
+      if (!file.exists) throw new Error("File not found");
+
+      // Convert to Blob
+      const fileResponse = await fetch(file.uri);
+      const blob = await fileResponse.blob();
+
+      const response = await fetch(uploadUrl, {
+        method: "POST",
+        headers: {
+          Authorization: authHeader,
+          "Content-Type": "application/octet-stream",
+          "x-upsert": "true",
+          apikey: this.supabaseKey,
+        },
+        body: blob,
+      });
+
+      if (response.ok) {
+        const publicUrl = `${this.supabaseUrl}/storage/v1/object/public/${storagePath}`;
+        return {
+          success: true,
+          fileUrl: publicUrl,
+          attempts: this.uploadState.attempts,
         };
-      },
-    );
-
-    const result = await uploadTask.promise();
-
-    if (result.statusCode >= 200 && result.statusCode < 300) {
-      const publicUrl = `${this.supabaseUrl}/storage/v1/object/public/${storagePath}`;
-      return {
-        success: true,
-        fileUrl: publicUrl,
-        attempts: this.uploadState.attempts,
-      };
-    } else {
-      throw new Error(`Upload failed with status ${result.statusCode}`);
+      } else {
+        throw new Error(`Upload failed with status ${response.status}`);
+      }
+    } catch (error) {
+      throw error;
     }
   }
 
@@ -239,28 +372,26 @@ export class FitUploader {
     this.uploadState.attempts = 0;
 
     try {
-      const fileInfo = await FileSystem.getInfoAsync(filePath);
-      if (!fileInfo.exists) {
+      const file = new File(filePath);
+      if (!file.exists) {
         throw new Error("File not found");
       }
 
+      const size = file.size ?? 0;
       // Validate file size before upload
-      if (fileInfo.size && fileInfo.size > MAX_FILE_SIZE) {
+      if (size > MAX_FILE_SIZE) {
         throw new Error(
-          `FIT file size (${(fileInfo.size / (1024 * 1024)).toFixed(2)}MB) exceeds maximum allowed size of 50MB`,
+          `FIT file size (${(size / (1024 * 1024)).toFixed(2)}MB) exceeds maximum allowed size of 50MB`,
         );
       }
 
       const fileName = this.generateFileName(userId, activityId);
+      const fileContent = file.base64();
 
       for (let attempt = 1; attempt <= this.config.maxRetries + 1; attempt++) {
         this.uploadState.attempts = attempt;
 
         try {
-          const fileContent = await FileSystem.readAsStringAsync(filePath, {
-            encoding: "base64",
-          });
-
           const supabase = this.getSupabaseClient();
           const result = await supabase.storage
             .from(this.bucketName)

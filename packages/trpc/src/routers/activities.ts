@@ -191,16 +191,35 @@ export const activitiesRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      // Verify ownership before deletion
+      // Verify ownership and get FIT file path before deletion
       const { data: activity, error: fetchError } = await ctx.supabase
         .from("activities")
-        .select("id, profile_id, name")
+        .select("id, profile_id, name, fit_file_path")
         .eq("id", input.id)
         .eq("profile_id", ctx.session.user.id)
         .single();
 
       if (fetchError || !activity) {
-        throw new Error("Activity not found");
+        throw new Error(
+          "Activity not found or you do not have permission to delete it.",
+        );
+      }
+
+      // If there's an associated FIT file, delete it from storage
+      if (activity.fit_file_path) {
+        const { error: storageError } = await ctx.supabase.storage
+          .from("fit-files")
+          .remove([activity.fit_file_path]);
+
+        if (storageError) {
+          // Log the error but still attempt to delete the activity record
+          console.error(
+            `Failed to delete FIT file '${activity.fit_file_path}':`,
+            storageError.message,
+          );
+          // Optionally, you could throw an error here to prevent deletion if the file can't be removed
+          // For now, we'll proceed to delete the activity record anyway
+        }
       }
 
       // Hard delete: remove the record (activity_streams cascade deleted automatically)

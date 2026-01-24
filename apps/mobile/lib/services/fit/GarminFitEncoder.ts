@@ -385,8 +385,15 @@ export class GarminFitEncoder {
       const uint8Array = this.encoder.close();
 
       // Write final FIT file
+      // Use standard File.write() which accepts Uint8Array directly in SDK 54+
+      // This ensures binary data is written correctly.
       const file = new File(this.fitFilePath);
-      file.write(Buffer.from(uint8Array).toString("base64"));
+      file.write(uint8Array);
+
+      // Verify write by checking file size
+      console.log(
+        `[GarminFitEncoder] Wrote ${file.size ?? 0} bytes to ${this.fitFilePath}`,
+      );
 
       await this.clearCheckpoint();
 

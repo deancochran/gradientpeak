@@ -9,12 +9,8 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import type { Context } from "../context";
-import {
-  parseFitFileWithSDK,
-  extractHeartRateZones,
-  extractPowerZones,
-  calculateTSSFromPower,
-} from "@repo/core";
+import type { StandardActivity } from "@repo/core";
+import { parseFitFileWithSDK, calculateTSSFromAvailableData } from "@repo/core";
 
 const FIT_FILE_SIZE_LIMIT = 50 * 1024 * 1024; // 50MB
 const FIT_FILE_TYPES = [".fit"];
@@ -52,6 +48,65 @@ const processFitFileInput = z.object({
 });
 
 export const fitFilesRouter = createTRPCRouter({
+  /**
+   * Get a signed URL for uploading a FIT file
+   * This allows the client to upload directly to storage without passing the session token
+   */
+  getSignedUploadUrl: protectedProcedure
+    .input(
+      z.object({
+        fileName: z.string().min(1),
+        fileSize: z.number().max(FIT_FILE_SIZE_LIMIT),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { fileName, fileSize } = input;
+      const userId = ctx.session?.user?.id;
+      const supabase = ctx.supabase;
+
+      if (!userId) {
+        throw new Error("User not authenticated");
+      }
+
+      try {
+        // Validate file extension
+        if (!fileName.toLowerCase().endsWith(".fit")) {
+          throw new Error("Only .fit files are supported");
+        }
+
+        // Generate a unique path: activities/userId/pending_timestamp/filename
+        // We use a temporary uploads folder
+        const timestamp = Date.now();
+        const filePath = `activities/${userId}/uploads/${timestamp}_${fileName}`;
+
+        // Create signed upload URL
+        const { data, error } = await supabase.storage
+          .from("fit-files")
+          .createSignedUploadUrl(filePath);
+
+        if (error) {
+          throw new Error(
+            `Failed to create signed upload URL: ${error.message}`,
+          );
+        }
+
+        return {
+          signedUrl: data.signedUrl,
+          token: data.token,
+          path: data.path,
+          filePath: filePath, // Return the full path so the client knows where it went
+        };
+      } catch (error) {
+        console.error("Get signed upload URL error:", error);
+        throw new Error(
+          `Failed to generate upload URL: ${(error as Error).message}`,
+        );
+      }
+    }),
+
+  /**
+   * Process a FIT file that has been uploaded to storage
+   */
   processFitFile: protectedProcedure
     .input(processFitFileInput)
     .mutation(async ({ ctx, input }) => {
@@ -71,7 +126,7 @@ export const fitFilesRouter = createTRPCRouter({
         // T-302, T-303: Download FIT file from storage
         // ========================================================================
         const { data: fitFile, error: downloadError } = await supabase.storage
-          .from("activity-files")
+          .from("fit-files")
           .download(fitFilePath);
 
         if (downloadError || !fitFile) {
@@ -80,7 +135,7 @@ export const fitFilesRouter = createTRPCRouter({
           // TODO: Send notification to admin/monitoring system
 
           // Remove the invalid FIT file from storage
-          await supabase.storage.from("activity-files").remove([fitFilePath]);
+          await supabase.storage.from("fit-files").remove([fitFilePath]);
 
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
@@ -92,18 +147,17 @@ export const fitFilesRouter = createTRPCRouter({
         // ========================================================================
         // T-304, T-305: Parse FIT file using @repo/core
         // ========================================================================
-        const arrayBuffer = await fitFile.arrayBuffer();
-
-        let parsedData: Awaited<ReturnType<typeof parseFitFileWithSDK>>;
+        let parsedData: StandardActivity;
         try {
-          parsedData = await parseFitFileWithSDK(arrayBuffer);
+          const buffer = Buffer.from(await fitFile.arrayBuffer());
+          parsedData = parseFitFileWithSDK(buffer);
         } catch (parseError) {
           // Log error and notify admins
           console.error("Failed to parse FIT file:", parseError);
           // TODO: Send notification to admin/monitoring system
 
           // Remove the invalid FIT file from storage
-          await supabase.storage.from("activity-files").remove([fitFilePath]);
+          await supabase.storage.from("fit-files").remove([fitFilePath]);
 
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -111,40 +165,34 @@ export const fitFilesRouter = createTRPCRouter({
           });
         }
 
-        const { session, records } = parsedData;
-
-        if (!session) {
-          // Log error and notify admins
-          console.error("FIT file does not contain a valid session");
-          // TODO: Send notification to admin/monitoring system
-
-          // Remove the invalid FIT file from storage
-          await supabase.storage.from("activity-files").remove([fitFilePath]);
-
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "FIT file does not contain a valid session",
-          });
-        }
+        const { summary, records } = parsedData;
 
         // ========================================================================
         // T-306: Extract activity summary
         // ========================================================================
-        const startTime = session.start_time
-          ? new Date((session.start_time + 631065600) * 1000) // Convert FIT timestamp to Date
-          : new Date();
+        const startTime = parsedData.metadata.startTime;
+        const duration = summary.totalTime;
 
-        const duration =
-          session.total_timer_time || session.total_elapsed_time || 0;
-        const distance = session.total_distance || 0;
-        const calories = session.total_calories || 0;
-        const elevationGain = session.total_ascent || 0;
-        const avgHeartRate = session.avg_heart_rate;
-        const maxHeartRate = session.max_heart_rate;
-        const avgPower = session.avg_power;
-        const maxPower = session.max_power;
-        const avgCadence = session.avg_cadence;
-        const maxCadence = session.max_cadence;
+        if (duration <= 0) {
+          console.error(
+            `[processFitFile] Invalid FIT file: duration is ${duration}. Deleting file: ${fitFilePath}`,
+          );
+          await supabase.storage.from("fit-files").remove([fitFilePath]);
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Activity has zero duration and cannot be processed.",
+          });
+        }
+
+        const distance = summary.totalDistance || 0;
+        const calories = summary.calories || 0;
+        const elevationGain = summary.totalAscent || 0;
+        const avgHeartRate = summary.avgHeartRate;
+        const maxHeartRate = summary.maxHeartRate;
+        const avgPower = summary.avgPower;
+        const maxPower = summary.maxPower;
+        const avgCadence = summary.avgCadence;
+        const maxCadence = summary.maxCadence;
 
         // ========================================================================
         // T-307: Extract streams for calculations
@@ -158,13 +206,13 @@ export const fitFilesRouter = createTRPCRouter({
 
         for (const record of records) {
           if (record.timestamp !== undefined) {
-            timestamps.push(record.timestamp);
+            timestamps.push(record.timestamp.getTime() / 1000);
           }
           if (record.power !== undefined) {
             powerStream.push(record.power);
           }
-          if (record.heart_rate !== undefined) {
-            hrStream.push(record.heart_rate);
+          if (record.heartRate !== undefined) {
+            hrStream.push(record.heartRate);
           }
           if (record.cadence !== undefined) {
             cadenceStream.push(record.cadence);
@@ -178,7 +226,7 @@ export const fitFilesRouter = createTRPCRouter({
         }
 
         // ========================================================================
-        // T-308: Fetch User Performance Metrics
+        // T-308: Fetch User Performance Metrics (with Cold Start Defaults)
         // ========================================================================
         // Fetch FTP for cycling activities (1-hour power)
         const { data: ftpMetric } = await supabase
@@ -193,7 +241,8 @@ export const fitFilesRouter = createTRPCRouter({
           .limit(1)
           .maybeSingle();
 
-        const ftp = ftpMetric?.value ? Number(ftpMetric.value) : undefined;
+        // Cold Start: Default to 200W if no FTP found
+        const ftp = ftpMetric?.value ? Number(ftpMetric.value) : 200;
 
         // Fetch LTHR (Lactate Threshold Heart Rate) for all activities
         const { data: lthrMetric } = await supabase
@@ -206,7 +255,8 @@ export const fitFilesRouter = createTRPCRouter({
           .limit(1)
           .maybeSingle();
 
-        const lthr = lthrMetric?.value ? Number(lthrMetric.value) : undefined;
+        // Cold Start: Default to 170bpm if no LTHR found
+        const lthr = lthrMetric?.value ? Number(lthrMetric.value) : 170;
 
         // Fetch Max HR for all activities
         const { data: maxHRMetric } = await supabase
@@ -221,68 +271,69 @@ export const fitFilesRouter = createTRPCRouter({
 
         // Note: We're using maxHeartRate from session data if available,
         // but in the future we could use a stored max_hr metric
+        // Cold Start: Default to 190bpm if no Max HR found
         const maxHR =
           maxHeartRate ||
-          (maxHRMetric?.value ? Number(maxHRMetric.value) : undefined);
+          (maxHRMetric?.value ? Number(maxHRMetric.value) : 190);
 
-        // Log when metrics are missing for debugging
-        if (powerStream.length > 0 && !ftp) {
+        // Log when metrics are missing for debugging (but proceed with defaults)
+        if (powerStream.length > 0 && !ftpMetric?.value) {
           console.log(
-            `No FTP found for user ${userId} on ${startTime.toISOString()} - skipping TSS calculation`,
+            `No FTP found for user ${userId} - using default 200W for TSS calculation`,
           );
         }
 
         // ========================================================================
-        // T-308: Calculate TSS using @repo/core
+        // T-308: Calculate TSS using @repo/core (Universal Method)
         // ========================================================================
         let tss: number | undefined;
         let normalizedPower: number | undefined;
         let intensityFactor: number | undefined;
 
-        // Calculate TSS from power data if available
-        if (powerStream.length > 0 && timestamps.length > 0 && ftp) {
-          try {
-            const tssResult = calculateTSSFromPower({
-              powerStream,
-              timestamps,
-              ftp,
-            });
-            tss = tssResult.tss;
-            normalizedPower = tssResult.normalizedPower;
-            intensityFactor = tssResult.intensityFactor;
+        // Calculate TSS using whatever data is available (Power > HR > Pace)
+        try {
+          const tssResult = calculateTSSFromAvailableData({
+            powerStream,
+            hrStream,
+            timestamps,
+            ftp,
+            lthr,
+            maxHR,
+            // Estimate threshold pace if needed (e.g. 5:00/km = 300s/km)
+            thresholdPace: 300,
+            distance,
+            activityType: activityType as any,
+          });
+
+          if (tssResult) {
+            // Normalize the result based on the source
+            if ("tss" in tssResult) {
+              // Power, Running, or Swimming TSS
+              tss = tssResult.tss;
+              intensityFactor = tssResult.intensityFactor;
+            } else if ("hrss" in tssResult) {
+              // Heart Rate TSS
+              tss = tssResult.hrss;
+              // Estimate IF for HR: AvgHR / LTHR (rough approximation)
+              if (lthr && tssResult.avgHR) {
+                intensityFactor =
+                  Math.round((tssResult.avgHR / lthr) * 100) / 100;
+              }
+            }
+
+            // Only set NP if it was a power-based calculation
+            if ("normalizedPower" in tssResult) {
+              normalizedPower = tssResult.normalizedPower;
+            }
 
             console.log(
-              `TSS calculated for activity: ${tss} (NP: ${normalizedPower}, IF: ${intensityFactor})`,
+              `TSS calculated (${tssResult.source}): ${tss} (IF: ${intensityFactor})`,
             );
-          } catch (error) {
-            console.error("Failed to calculate TSS from power:", error);
-            // Don't fail the mutation, just skip TSS calculation
           }
+        } catch (error) {
+          console.error("Failed to calculate TSS:", error);
+          // Don't fail the mutation, just skip TSS calculation
         }
-
-        // ========================================================================
-        // T-309: Calculate power metrics using @repo/core
-        // ========================================================================
-        // These are extracted from session above (avg_power, max_power)
-        // Normalized power calculated in TSS section
-
-        // ========================================================================
-        // T-310: Extract zones using @repo/core
-        // ========================================================================
-        let hrZones: ReturnType<typeof extractHeartRateZones> | undefined;
-        let powerZones: ReturnType<typeof extractPowerZones> | undefined;
-
-        if (records.length > 0) {
-          hrZones = extractHeartRateZones(records);
-          powerZones = extractPowerZones(records);
-        }
-
-        // ========================================================================
-        // T-311, T-312: Calculate performance curves and detect test efforts
-        // ========================================================================
-        // These are computationally expensive and may be better suited for
-        // background processing or on-demand calculation
-        // Skipping for now to keep mutation fast
 
         // ========================================================================
         // T-313, T-314: Create activity record
@@ -332,21 +383,6 @@ export const fitFilesRouter = createTRPCRouter({
           // Speed metrics (calculate from distance and duration if not available)
           avg_speed_mps: distance && duration ? distance / duration : null,
           max_speed_mps: null, // Would need to calculate from speed stream
-
-          // Heart rate zones (seconds in each zone)
-          hr_zone_1_seconds: hrZones?.zone1 || null,
-          hr_zone_2_seconds: hrZones?.zone2 || null,
-          hr_zone_3_seconds: hrZones?.zone3 || null,
-          hr_zone_4_seconds: hrZones?.zone4 || null,
-          hr_zone_5_seconds: hrZones?.zone5 || null,
-
-          // Power zones (seconds in each zone)
-          power_zone_1_seconds: powerZones?.zone1 || null,
-          power_zone_2_seconds: powerZones?.zone2 || null,
-          power_zone_3_seconds: powerZones?.zone3 || null,
-          power_zone_4_seconds: powerZones?.zone4 || null,
-          power_zone_5_seconds: powerZones?.zone5 || null,
-          power_zone_6_seconds: powerZones?.zone6 || null,
         };
 
         const { data: createdActivity, error: insertError } = await supabase
@@ -357,7 +393,7 @@ export const fitFilesRouter = createTRPCRouter({
 
         if (insertError || !createdActivity) {
           // T-316: Cleanup uploaded file on failure
-          await supabase.storage.from("activity-files").remove([fitFilePath]);
+          await supabase.storage.from("fit-files").remove([fitFilePath]);
 
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
@@ -378,7 +414,7 @@ export const fitFilesRouter = createTRPCRouter({
 
         // Cleanup file on unexpected errors
         try {
-          await supabase.storage.from("activity-files").remove([fitFilePath]);
+          await supabase.storage.from("fit-files").remove([fitFilePath]);
         } catch (cleanupError) {
           console.error("Failed to cleanup file after error:", cleanupError);
         }

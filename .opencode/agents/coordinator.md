@@ -104,6 +104,7 @@ You are the **Delegating Agent** from the GradientPeak multi-agent hierarchy. Yo
 - **web-page-generator** - Next.js pages
 - **trpc-router-generator** - tRPC routers
 - **database-migration-assistant** - Supabase migrations
+- **supabase-expert** - Database inspection & log analysis
 - **api-integration-assistant** - Third-party integrations
 - **code-improvement-reviewer** - Code quality analysis
 - **performance-optimizer** - Performance improvements

@@ -32,6 +32,7 @@ import { trpc } from "@/lib/trpc";
 import { queryKeys } from "@repo/trpc/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Alert } from "react-native";
+import { File } from "expo-file-system";
 
 import {
   AggregatedStream,
@@ -59,6 +60,8 @@ import { useCallback, useEffect, useReducer } from "react";
 
 import { FitUploader } from "@/lib/services/fit/FitUploader";
 
+import { useAuth } from "@/lib/hooks/useAuth";
+
 // ================================
 // Types
 // ================================
@@ -69,12 +72,14 @@ interface SubmissionState {
   phase: SubmissionPhase;
   activity: PublicActivitiesInsert | null;
   error: string | null;
+  hasStreams: boolean;
 }
 
 type Action =
   | {
       type: "READY";
       activity: PublicActivitiesInsert;
+      hasStreams: boolean;
     }
   | {
       type: "UPDATE";
@@ -98,6 +103,7 @@ function submissionReducer(
         phase: "ready",
         activity: action.activity,
         error: null,
+        hasStreams: action.hasStreams,
       };
 
     case "UPDATE":
@@ -318,11 +324,13 @@ function uint8ArrayToBase64(bytes: Uint8Array): string {
 
 export function useActivitySubmission(service: ActivityRecorderService | null) {
   const queryClient = useQueryClient();
+  const { session } = useAuth();
 
   const [state, dispatch] = useReducer(submissionReducer, {
     phase: "loading",
     activity: null,
     error: null,
+    hasStreams: false,
   });
 
   const createActivityMutation = trpc.activities.create.useMutation({
@@ -407,9 +415,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
       const aggregatedStreams =
         await service.liveMetricsManager.streamBuffer.aggregateAllChunks();
 
-      if (aggregatedStreams.size === 0) {
-        throw new Error("No stream data found for recording");
-      }
+      const hasStreams = aggregatedStreams.size > 0;
 
       console.log(
         `[useActivitySubmission] Aggregated ${aggregatedStreams.size} metrics`,
@@ -488,7 +494,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
       };
 
       console.log("[useActivitySubmission] Activity processed successfully");
-      dispatch({ type: "READY", activity });
+      dispatch({ type: "READY", activity, hasStreams });
     } catch (err) {
       console.error("[useActivitySubmission] Processing failed:", err);
       dispatch({
@@ -576,6 +582,8 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     },
   });
 
+  const getSignedUrlMutation = trpc.fitFiles.getSignedUploadUrl.useMutation();
+
   const submit = useCallback(async () => {
     if (!state.activity || !service) {
       throw new Error("No data to submit");
@@ -593,46 +601,52 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
           metadata.fitFilePath,
         );
 
+        // Get file size
+        const file = new File(metadata.fitFilePath);
+        if (!file.exists) {
+          throw new Error("Generated FIT file not found on device");
+        }
+        const fileSize = file.size ?? 0;
+        const fileName = `${Date.now()}.fit`;
+
+        // 1. Get signed upload URL from backend
+        console.log("[useActivitySubmission] Requesting signed upload URL...");
+        const signedUrlData = await getSignedUrlMutation.mutateAsync({
+          fileName,
+          fileSize,
+        });
+
+        console.log(
+          "[useActivitySubmission] Got signed URL for path:",
+          signedUrlData.filePath,
+        );
+
         const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
         const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 
         const uploader = new FitUploader(
           supabaseUrl,
           supabaseAnonKey,
-          "activity-files", // Use activity-files bucket as per spec
+          "fit-files",
         );
 
-        // Use a temporary ID for the activity since we haven't created it yet
-        const tempActivityId = `pending_${Date.now()}`;
-
-        const uploadResult = await uploader.uploadFile(
+        // 2. Upload to signed URL
+        const uploadResult = await uploader.uploadToSignedUrl(
           metadata.fitFilePath,
-          metadata.profileId,
-          tempActivityId,
+          signedUrlData.signedUrl,
         );
 
-        if (uploadResult.success && uploadResult.fileUrl) {
-          console.log(
-            "[useActivitySubmission] FIT file uploaded:",
-            uploadResult.fileUrl,
-          );
+        if (uploadResult.success) {
+          console.log("[useActivitySubmission] FIT file uploaded successfully");
 
-          // Extract the storage path from the URL
-          // FitUploader returns full public URL: .../activity-files/activities/...
-          // We need just the path: activities/...
-          const storagePath =
-            uploadResult.fileUrl.split("/activity-files/")[1] ||
-            `activities/${metadata.profileId}/${tempActivityId}/${Date.now()}.fit`;
-
+          // 3. Process the uploaded file
           console.log(
             "[useActivitySubmission] Calling tRPC processFitFile with path:",
-            storagePath,
+            signedUrlData.filePath,
           );
 
-          // Call tRPC mutation to process FIT file
-          // Server will parse FIT, calculate metrics, and create activity
           const result = await processFitFileMutation.mutateAsync({
-            fitFilePath: storagePath,
+            fitFilePath: signedUrlData.filePath,
             name: state.activity.name || "Untitled Activity",
             notes: state.activity.notes || undefined,
             activityType: state.activity.type,
@@ -646,19 +660,16 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
           await service.liveMetricsManager.streamBuffer.cleanup();
 
           // Clean up local FIT file
-          if (metadata.fitFilePath) {
-            try {
-              const FileSystem = await import("expo-file-system");
-              await FileSystem.deleteAsync(metadata.fitFilePath, {
-                idempotent: true,
-              });
-              console.log("[useActivitySubmission] Local FIT file deleted");
-            } catch (cleanupError) {
-              console.warn(
-                "[useActivitySubmission] Failed to delete local FIT file:",
-                cleanupError,
-              );
+          try {
+            if (file.exists) {
+              file.delete();
             }
+            console.log("[useActivitySubmission] Local FIT file deleted");
+          } catch (cleanupError) {
+            console.warn(
+              "[useActivitySubmission] Failed to delete local FIT file:",
+              cleanupError,
+            );
           }
 
           console.log(
@@ -686,7 +697,13 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
           throw new Error(errorMessage);
         }
       } else {
-        throw new Error("No FIT file found in recording metadata");
+        // No FIT file found
+        console.error(
+          "[useActivitySubmission] No FIT file found in recording metadata",
+        );
+        throw new Error(
+          "No activity file generated. Please try recording again.",
+        );
       }
     } catch (err) {
       console.error("[useActivitySubmission] Upload failed:", err);
@@ -709,7 +726,8 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         type: "ERROR",
         error: errorMessage,
       });
-      throw err;
+      // Do not throw here, allow user to retry
+      // throw err;
     }
   }, [state.activity, service, processFitFileMutation, queryClient]);
 

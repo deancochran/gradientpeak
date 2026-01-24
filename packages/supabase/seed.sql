@@ -102,7 +102,7 @@ values (
   'fit-files',
   'fit-files',
   false,  -- keep private by default
-  10485760,  -- 10MB limit
+  52428800,  -- 50MB limit
   array['application/fit', 'application/octet-stream']::text[]
 ) on conflict (id) do nothing;
 
