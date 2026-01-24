@@ -76,8 +76,6 @@ export type Database = {
           power_zone_5_seconds: number | null
           power_zone_6_seconds: number | null
           power_zone_7_seconds: number | null
-          processing_error: string | null
-          processing_status: string | null
           profile_id: string
           provider: Database["public"]["Enums"]["integration_provider"] | null
           started_at: string
@@ -126,8 +124,6 @@ export type Database = {
           power_zone_5_seconds?: number | null
           power_zone_6_seconds?: number | null
           power_zone_7_seconds?: number | null
-          processing_error?: string | null
-          processing_status?: string | null
           profile_id: string
           provider?: Database["public"]["Enums"]["integration_provider"] | null
           started_at: string
@@ -176,8 +172,6 @@ export type Database = {
           power_zone_5_seconds?: number | null
           power_zone_6_seconds?: number | null
           power_zone_7_seconds?: number | null
-          processing_error?: string | null
-          processing_status?: string | null
           profile_id?: string
           provider?: Database["public"]["Enums"]["integration_provider"] | null
           started_at?: string

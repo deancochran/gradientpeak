@@ -75,6 +75,13 @@ export const fitFilesRouter = createTRPCRouter({
           .download(fitFilePath);
 
         if (downloadError || !fitFile) {
+          // Log error and notify admins
+          console.error("Failed to download FIT file:", downloadError);
+          // TODO: Send notification to admin/monitoring system
+
+          // Remove the invalid FIT file from storage
+          await supabase.storage.from("activity-files").remove([fitFilePath]);
+
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
             message: "Failed to download FIT file from storage",
@@ -91,6 +98,13 @@ export const fitFilesRouter = createTRPCRouter({
         try {
           parsedData = await parseFitFileWithSDK(arrayBuffer);
         } catch (parseError) {
+          // Log error and notify admins
+          console.error("Failed to parse FIT file:", parseError);
+          // TODO: Send notification to admin/monitoring system
+
+          // Remove the invalid FIT file from storage
+          await supabase.storage.from("activity-files").remove([fitFilePath]);
+
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: `Failed to parse FIT file: ${(parseError as Error).message}`,
@@ -100,6 +114,13 @@ export const fitFilesRouter = createTRPCRouter({
         const { session, records } = parsedData;
 
         if (!session) {
+          // Log error and notify admins
+          console.error("FIT file does not contain a valid session");
+          // TODO: Send notification to admin/monitoring system
+
+          // Remove the invalid FIT file from storage
+          await supabase.storage.from("activity-files").remove([fitFilePath]);
+
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "FIT file does not contain a valid session",
@@ -217,7 +238,6 @@ export const fitFilesRouter = createTRPCRouter({
         let tss: number | undefined;
         let normalizedPower: number | undefined;
         let intensityFactor: number | undefined;
-        let variabilityIndex: number | undefined;
 
         // Calculate TSS from power data if available
         if (powerStream.length > 0 && timestamps.length > 0 && ftp) {
@@ -230,10 +250,9 @@ export const fitFilesRouter = createTRPCRouter({
             tss = tssResult.tss;
             normalizedPower = tssResult.normalizedPower;
             intensityFactor = tssResult.intensityFactor;
-            variabilityIndex = tssResult.variabilityIndex;
 
             console.log(
-              `TSS calculated for activity: ${tss} (NP: ${normalizedPower}, IF: ${intensityFactor}, VI: ${variabilityIndex})`,
+              `TSS calculated for activity: ${tss} (NP: ${normalizedPower}, IF: ${intensityFactor})`,
             );
           } catch (error) {
             console.error("Failed to calculate TSS from power:", error);
@@ -286,8 +305,6 @@ export const fitFilesRouter = createTRPCRouter({
           // FIT file metadata
           fit_file_path: fitFilePath,
           fit_file_size: fitFile.size,
-          processing_status: "completed",
-          processing_error: null,
 
           // Basic metrics
           calories: calories ? Math.round(calories) : null,
@@ -306,7 +323,6 @@ export const fitFilesRouter = createTRPCRouter({
             ? Math.round(normalizedPower)
             : null,
           intensity_factor: intensityFactor || null,
-          variability_index: variabilityIndex || null,
           training_stress_score: tss ? Math.round(tss) : null,
 
           // Cadence metrics

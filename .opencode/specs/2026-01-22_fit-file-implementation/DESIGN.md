@@ -1,10 +1,10 @@
 # FIT File Implementation Specification
 
-**Version:** 6.1.1
+**Version:** 6.2.0
 **Created:** January 22, 2026
 **Last Updated:** January 23, 2026
 **Status:** Ready for Implementation
-**Notes:** Version 6.1.1 incorporates final corrections: explicit note on no activity_streams table, compression utilities removal, verification checklist for activity_streams references, and new compression utilities added to "What NOT to Implement"
+**Notes:** Version 6.2.0 removes processing_status and processing_error columns. Activities are only created if FIT file is successfully stored and parsed. Parse failures result in silent errors with logging/notifications. No retry logic. Phase 5 (migration) removed - hard cut with no backward compatibility.
 
 ---
 
@@ -175,8 +175,6 @@ All metrics stored as individual typed columns for type safety and query perform
 -- FIT file tracking
 ALTER TABLE activities ADD COLUMN fit_file_path TEXT;
 ALTER TABLE activities ADD COLUMN fit_file_size BIGINT;
-ALTER TABLE activities ADD COLUMN processing_status TEXT DEFAULT 'pending';
-ALTER TABLE activities ADD COLUMN processing_error TEXT;
 
 -- Core metrics (duration, distance, elevation)
 ALTER TABLE activities ADD COLUMN duration_seconds INTEGER;
@@ -278,6 +276,15 @@ export const fitFilesRouter = createTRPCRouter({
         .download(input.fitFilePath);
 
       if (downloadError || !fitFile) {
+        // Log error and notify admins
+        console.error("Failed to download FIT file:", downloadError);
+        // TODO: Send notification to admin/monitoring system
+
+        // Remove the invalid FIT file from storage
+        await ctx.supabase.storage
+          .from("activity-files")
+          .remove([input.fitFilePath]);
+
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to download FIT file from storage",
@@ -290,6 +297,15 @@ export const fitFilesRouter = createTRPCRouter({
       const parseResult = await parseFitFileWithSDK(arrayBuffer);
 
       if (!parseResult.success || !parseResult.data) {
+        // Log error and notify admins
+        console.error("Failed to parse FIT file:", parseResult.error);
+        // TODO: Send notification to admin/monitoring system
+
+        // Remove the invalid FIT file from storage
+        await ctx.supabase.storage
+          .from("activity-files")
+          .remove([input.fitFilePath]);
+
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: parseResult.error || "Failed to parse FIT file",
@@ -374,7 +390,6 @@ export const fitFilesRouter = createTRPCRouter({
         activity_type: input.activityType,
         fit_file_path: input.fitFilePath,
         fit_file_size: fitFile.size || null,
-        processing_status: "completed",
         start_time: new Date(summary.startTime),
 
         // Core metrics - individual columns

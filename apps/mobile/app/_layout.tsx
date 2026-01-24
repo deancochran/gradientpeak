@@ -1,4 +1,5 @@
 // apps/native/app/_layout.tsx
+import "../polyfills";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import "@/global.css";

@@ -28,7 +28,7 @@ import {
   type AllPermissionsStatus,
 } from "../permissions-check";
 import { LiveMetricsManager } from "./LiveMetricsManager";
-import { StreamingFitEncoder, FitRecord } from "../fit/StreamingFitEncoder";
+import { GarminFitEncoder, FitRecord } from "../fit/GarminFitEncoder";
 import { LocationManager } from "./location";
 import { NotificationsManager } from "./notification";
 import { PlanManager } from "./plan";
@@ -165,7 +165,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   // === Private Managers ===
   private notificationsManager?: NotificationsManager;
-  private fitEncoder?: StreamingFitEncoder;
+  private fitEncoder?: GarminFitEncoder;
 
   // === App State Management ===
   private appState: AppStateStatus = AppState.currentState;
@@ -1060,10 +1060,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     // Initialize FIT Encoder
     try {
-      this.fitEncoder = new StreamingFitEncoder(
-        `${Date.now()}`,
-        this.profile.id,
-      );
+      this.fitEncoder = new GarminFitEncoder(`${Date.now()}`, this.profile.id);
       await this.fitEncoder.initialize();
       console.log("[Service] FIT encoder initialized");
     } catch (error) {

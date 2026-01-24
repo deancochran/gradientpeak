@@ -422,8 +422,6 @@ create table if not exists public.activities (
     -- ============================================================================
     fit_file_path text,
     fit_file_size integer,
-    processing_status text default 'pending' check (processing_status IN ('pending', 'processing', 'completed', 'failed')),
-    processing_error text,
 
     -- ============================================================================
     -- Audit timestamps
@@ -463,10 +461,6 @@ create index if not exists idx_activities_external
 create unique index if not exists idx_activities_external_unique
     on public.activities(provider, external_id)
     where external_id is not null and provider is not null;
-
-create index if not exists idx_activities_processing_status
-    on public.activities(processing_status)
-    where processing_status is not null;
 
 -- Metric column indexes for filtering and sorting
 create index if not exists idx_activities_tss

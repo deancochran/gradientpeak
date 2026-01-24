@@ -533,6 +533,49 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     dispatch({ type: "UPDATE", updates });
   }, []);
 
+  const processFitFileMutation = trpc.fitFiles.processFitFile.useMutation({
+    onSuccess: async (data) => {
+      // Invalidate relevant queries after successful processing
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.activities.lists(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.trainingPlans.status(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.plannedActivities.weekCount(),
+      });
+      queryClient.invalidateQueries({
+        predicate: (query) =>
+          query.queryKey[0] === "home" ||
+          (Array.isArray(query.queryKey) && query.queryKey[0]?.[0] === "home"),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.trends.all(),
+      });
+
+      // Set the new activity in cache
+      if (data.activity?.id) {
+        queryClient.setQueryData(
+          queryKeys.activities.detail(data.activity.id),
+          data.activity,
+        );
+      }
+
+      console.log(
+        "[useActivitySubmission] Activity processed successfully via FIT file.",
+      );
+    },
+    onError: (error) => {
+      console.error("[useActivitySubmission] Processing failed:", error);
+      Alert.alert(
+        "Processing Failed",
+        error.message ||
+          "Failed to process activity from FIT file. Please try again.",
+      );
+    },
+  });
+
   const submit = useCallback(async () => {
     if (!state.activity || !service) {
       throw new Error("No data to submit");
@@ -543,7 +586,6 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     try {
       // Check if we have a FIT file to upload
       const metadata = service.getRecordingMetadata();
-      let fitFilePath: string | undefined;
 
       if (metadata?.fitFilePath) {
         console.log(
@@ -554,10 +596,13 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
         const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 
-        const uploader = new FitUploader(supabaseUrl, supabaseAnonKey);
+        const uploader = new FitUploader(
+          supabaseUrl,
+          supabaseAnonKey,
+          "activity-files", // Use activity-files bucket as per spec
+        );
 
         // Use a temporary ID for the activity since we haven't created it yet
-        // The server function will move/rename it or we just keep it organized by date
         const tempActivityId = `pending_${Date.now()}`;
 
         const uploadResult = await uploader.uploadFile(
@@ -571,60 +616,102 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
             "[useActivitySubmission] FIT file uploaded:",
             uploadResult.fileUrl,
           );
-          // Extract the path relative to bucket from the URL or return result
-          // FitUploader returns full public URL.
-          // We assume the server expects the path or URL.
-          // Let's pass the public URL as fit_file_path for now, or extract the path.
-          // The bucket is "fit-files". URL is .../fit-files/activities/...
-          // If the DB column is fit_file_path, it usually expects "activities/..."
 
-          const relativePath = `activities/${metadata.profileId}/${tempActivityId}/${metadata.fitFilePath.split("/").pop()}`;
-          // Wait, FitUploader generates the name internally using generateFileName.
-          // I should update FitUploader to return the storage path, or reconstruct it.
-          // FitUploader.uploadFile returns fileUrl.
+          // Extract the storage path from the URL
+          // FitUploader returns full public URL: .../activity-files/activities/...
+          // We need just the path: activities/...
+          const storagePath =
+            uploadResult.fileUrl.split("/activity-files/")[1] ||
+            `activities/${metadata.profileId}/${tempActivityId}/${Date.now()}.fit`;
 
-          // Let's assume for now we pass the fileUrl.
-          // Or better, let's update state.activity with fit_file_path if the type supports it.
-          // I need to check PublicActivitiesInsert type definition if possible, but I can't easily.
-          // I'll cast it for now.
-
-          // Update activity with FIT file info
-          (state.activity as any).fit_file_path = uploadResult.fileUrl;
-        } else {
-          console.warn(
-            "[useActivitySubmission] FIT upload failed:",
-            uploadResult.error,
+          console.log(
+            "[useActivitySubmission] Calling tRPC processFitFile with path:",
+            storagePath,
           );
-          // We continue without the FIT file? Or fail?
-          // Let's continue but log error.
+
+          // Call tRPC mutation to process FIT file
+          // Server will parse FIT, calculate metrics, and create activity
+          const result = await processFitFileMutation.mutateAsync({
+            fitFilePath: storagePath,
+            name: state.activity.name || "Untitled Activity",
+            notes: state.activity.notes || undefined,
+            activityType: state.activity.type,
+          });
+
+          if (!result.success) {
+            throw new Error("FIT file processing failed");
+          }
+
+          // Clean up stream files after successful processing
+          await service.liveMetricsManager.streamBuffer.cleanup();
+
+          // Clean up local FIT file
+          if (metadata.fitFilePath) {
+            try {
+              const FileSystem = await import("expo-file-system");
+              await FileSystem.deleteAsync(metadata.fitFilePath, {
+                idempotent: true,
+              });
+              console.log("[useActivitySubmission] Local FIT file deleted");
+            } catch (cleanupError) {
+              console.warn(
+                "[useActivitySubmission] Failed to delete local FIT file:",
+                cleanupError,
+              );
+            }
+          }
+
+          console.log(
+            "[useActivitySubmission] Activity processed, cache invalidated, and local files deleted",
+          );
+          dispatch({ type: "SUCCESS" });
+        } else {
+          // FIT file upload failed - throw error
+          const errorMessage =
+            uploadResult.error || "Failed to upload FIT file";
+          console.error(
+            "[useActivitySubmission] FIT upload failed:",
+            errorMessage,
+          );
+
+          Alert.alert(
+            "Upload Failed",
+            "Failed to upload activity file. Please check your connection and try again.",
+          );
+
+          dispatch({
+            type: "ERROR",
+            error: errorMessage,
+          });
+          throw new Error(errorMessage);
         }
+      } else {
+        throw new Error("No FIT file found in recording metadata");
       }
-
-      await createActivityMutation.mutateAsync(state.activity);
-
-      // Clean up stream files after successful upload
-      await service.liveMetricsManager.streamBuffer.cleanup();
-
-      // Clean up FIT file
-      if (metadata?.fitFilePath) {
-        // We can optionally delete the local FIT file here
-        // import * as FileSystem from 'expo-file-system';
-        // await FileSystem.deleteAsync(metadata.fitFilePath, { idempotent: true });
-      }
-
-      console.log(
-        "[useActivitySubmission] Activity uploaded, cache invalidated, and local files deleted",
-      );
-      dispatch({ type: "SUCCESS" });
     } catch (err) {
       console.error("[useActivitySubmission] Upload failed:", err);
+
+      // Show user-friendly error message
+      const errorMessage = err instanceof Error ? err.message : "Upload failed";
+
+      // Don't show duplicate alert if we already showed one
+      if (
+        !errorMessage.includes("upload") &&
+        !errorMessage.includes("process")
+      ) {
+        Alert.alert(
+          "Upload Failed",
+          "Failed to save your activity. Please try again.",
+        );
+      }
+
       dispatch({
         type: "ERROR",
-        error: err instanceof Error ? err.message : "Upload failed",
+        error: errorMessage,
       });
       throw err;
     }
-  }, [state.activity, service, createActivityMutation]);
+  }, [state.activity, service, processFitFileMutation, queryClient]);
 
   // ================================
   // Return Clean API

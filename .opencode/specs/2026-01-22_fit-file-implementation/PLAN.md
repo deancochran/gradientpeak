@@ -9,8 +9,8 @@ This implementation plan covers the integration of FIT file support for Gradient
 - **All calculations use existing @repo/core functions** - no code duplication
 - **No JOIN operations** - simplified database queries
 
-**Timeline:** 8-12 days (2 weeks)  
-**Phases:** 5
+**Timeline:** 6-9 days (1.5 weeks)  
+**Phases:** 4 (Phase 5 removed - hard cut with no backward compatibility)
 
 ---
 
@@ -24,10 +24,11 @@ This implementation plan covers the integration of FIT file support for Gradient
 #### Tasks
 
 - [ ] **1.1** Apply database migration for FIT columns
-  - Location: `packages/supabase/migrations/20260121_add_fit_file_support.sql`
-  - Columns: `fit_file_path`, `processing_status`, `processing_error`, `fit_file_size`
-  - Indexes: `idx_activities_processing_status`, `idx_activities_fit_path`
+  - Location: `packages/supabase/migrations/20260123131234_fit-file.sql`
+  - Columns: `fit_file_path`, `fit_file_size`
+  - Indexes: `idx_activities_fit_path`
   - **Remove activity_streams table** - `DROP TABLE IF EXISTS activity_streams;`
+  - **Note:** No processing_status or processing_error columns - activities only created if FIT file successfully parsed
 
 - [ ] **1.2** Implement FIT Encoder in `@repo/core`
   - Location: `packages/core/lib/fit-sdk-encoder.ts`
@@ -71,12 +72,12 @@ This implementation plan covers the integration of FIT file support for Gradient
 
 #### Deliverables
 
-- [ ] Database migration applied (including activity_streams table removal)
+- [ ] Database migration applied (including activity_streams table removal, no processing_status columns)
 - [ ] **FIT Encoder implemented in `@repo/core`**
 - [ ] **FIT Decoder verified for storage bucket compatibility**
 - [ ] TypeScript types regenerated
-- [ ] Zod schemas regenerated (removing activity_streams references)
-- [ ] tRPC fitFilesRouter created and registered
+- [ ] Zod schemas regenerated (removing activity_streams and processing_status references)
+- [ ] tRPC fitFilesRouter created and registered with error logging/notification
 - [ ] No Edge Function configuration needed
 
 ---
@@ -258,162 +259,54 @@ This implementation plan covers the integration of FIT file support for Gradient
 
 ### Phase 4: User Interface
 
-**Duration:** 2 days  
-**Goal:** Add processing status display and retry functionality
+**Duration:** 1 day  
+**Goal:** Update activity submission UI to handle FIT file upload errors gracefully
 
 #### Tasks
 
-- [ ] **4.1** Create ProcessingStatusBadge component
+- [ ] **4.1** Update activity submission error handling
+  - Location: `apps/mobile/lib/hooks/useActivitySubmission.ts`
+  - Show user-friendly error messages when FIT upload/processing fails
+  - Clear error state on retry
+  - Log errors for debugging
 
-  ```tsx
-  // apps/mobile/components/fit/ProcessingStatusBadge.tsx
+- [ ] **4.2** Add loading states during FIT upload
+  - Show spinner while uploading FIT file
+  - Show progress indicator if possible
+  - Disable submit button during upload
 
-  import { View, Text, Pressable } from "react-native";
-  import { CheckCircle2, AlertCircle, RefreshCw } from "lucide-react-native";
-
-  type ProcessingStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
-
-  interface ProcessingStatusBadgeProps {
-    status: ProcessingStatus;
-    error?: string;
-    onRetry?: () => void;
-  }
-
-  export function ProcessingStatusBadge({
-    status,
-    error,
-    onRetry,
-  }: ProcessingStatusBadgeProps) {
-    // Implementation from DESIGN.md
-  }
-  ```
-
-- [ ] **4.2** Add status badges to PastActivityCard
-
-  ```tsx
-  import { ProcessingStatusBadge } from "./fit/ProcessingStatusBadge";
-
-  export function PastActivityCard({
-    activity,
-    onPress,
-  }: PastActivityCardProps) {
-    return (
-      <Card>
-        <CardContent>
-          <View className="flex-row items-start justify-between">
-            <View className="flex-1">
-              <Text className="text-lg font-semibold">{activity.name}</Text>
-              <Text className="text-sm text-muted-foreground">
-                {formatDate(activity.started_at)}
-              </Text>
-            </View>
-            {activity.processing_status && (
-              <ProcessingStatusBadge
-                status={activity.processing_status}
-                error={activity.processing_error}
-              />
-            )}
-          </View>
-          {/* ... rest of component */}
-        </CardContent>
-      </Card>
-    );
-  }
-  ```
-
-- [ ] **4.3** Add status display to ActivityDetailScreen
+- [ ] **4.3** Update ActivityDetailScreen for on-demand stream loading
   - Location: `apps/mobile/app/(internal)/(standard)/activity-detail.tsx`
-  - Show processing status badge
-  - Show error message if failed
-  - Show retry button if failed
+  - Load stream data asynchronously when user views charts/maps
+  - Show loading state while parsing FIT file
+  - Handle parsing errors gracefully
 
-- [ ] **4.4** Implement retry button functionality
-  - Call tRPC mutation to reset processing status
-  - Re-trigger tRPC mutation processing
-
-- [ ] **4.5** Add loading state for processing
-  - Show spinner while processing
-  - Disable retry button during processing
-
-- [ ] **4.6** Style status components
+- [ ] **4.4** Style loading and error states
   - Use consistent color scheme
   - Match app design language
   - Responsive to different screen sizes
 
 #### Deliverables
 
-- [ ] ProcessingStatusBadge component created
-- [ ] Status badges visible on activity cards
-- [ ] Status display on activity detail screen
-- [ ] Retry button functional
-- [ ] Loading states implemented
+- [ ] Error handling updated in activity submission
+- [ ] Loading states implemented for FIT upload
+- [ ] On-demand stream loading working in activity detail
+- [ ] User-friendly error messages displayed
+
+**Note:** No retry logic or processing status badges needed - activities only created if FIT file successfully parsed
 
 ---
 
-### Phase 5: Data Migration
+### ~~Phase 5: Data Migration~~ (REMOVED)
 
-**Duration:** 2-3 days  
-**Goal:** Migrate existing activities and verify system
+**Status:** NOT IMPLEMENTED - Hard cut with no backward compatibility
 
-#### Tasks
+**Rationale:**
 
-- [ ] **5.1** Create migration script for existing activities
-
-  ```typescript
-  // Migration script to backfill processing_status
-  const { data: activities } = await supabase
-    .from("activities")
-    .select("id")
-    .is("processing_status", null);
-
-  for (const activity of activities) {
-    await supabase
-      .from("activities")
-      .update({ processing_status: "COMPLETED" })
-      .eq("id", activity.id);
-  }
-  ```
-
-- [ ] **5.2** Test migration on staging data
-  - Run migration on staging database
-  - Verify all activities processed correctly
-  - Check for performance issues
-
-- [ ] **5.3** Run migration on production data
-  - Schedule during low-traffic period
-  - Monitor system performance
-  - Have rollback plan ready
-
-- [ ] **5.4** Verify all metrics calculate correctly
-  - Spot check TSS calculations
-  - Verify HR zone distributions
-  - Check power zone accuracy
-  - Validate GPS polyline encoding
-
-- [ ] **5.5** End-to-end testing
-  - Record new activity with FIT encoding
-  - Upload to server
-  - Verify processing completes
-  - Check metrics in UI
-
-- [ ] **5.6** Performance testing
-  - Test with large FIT files (>30MB)
-  - Measure processing time
-  - Monitor server resource usage
-
-- [ ] **5.7** Documentation update
-  - Update API documentation
-  - Add troubleshooting guide
-  - Document known limitations
-
-#### Deliverables
-
-- [ ] Migration script tested
-- [ ] Staging migration complete
-- [ ] Production migration complete
-- [ ] Metrics verified
-- [ ] E2E tests passing
-- [ ] Documentation updated
+- No processing_status column means no migration needed
+- Activities are only created if FIT file is successfully stored and parsed
+- Existing activities without FIT files remain unchanged
+- New activities must have valid FIT files from the start
 
 ---
 
@@ -424,10 +317,11 @@ This implementation plan covers the integration of FIT file support for Gradient
 | Phase 1: Infrastructure Setup         | 1-2 days | Day 1-2    |
 | Phase 2: Mobile Recording Integration | 3-5 days | Day 3-7    |
 | Phase 3: tRPC Mutation Implementation | 2-3 days | Day 8-10   |
-| Phase 4: User Interface               | 2 days   | Day 11-12  |
-| Phase 5: Data Migration               | 2-3 days | Day 13-15  |
+| Phase 4: User Interface               | 1 day    | Day 11     |
 
-**Total:** 8-12 days (approximately 2 weeks)
+**Total:** 6-9 days (approximately 1.5 weeks)
+
+**Note:** Phase 5 (Data Migration) removed - hard cut with no backward compatibility
 
 ---
 

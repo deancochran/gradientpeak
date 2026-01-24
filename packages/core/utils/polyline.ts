@@ -1,4 +1,4 @@
-import polyline from "@mapbox/polyline";
+import * as polyline from "@mapbox/polyline";
 
 export interface LatLng {
   latitude: number;

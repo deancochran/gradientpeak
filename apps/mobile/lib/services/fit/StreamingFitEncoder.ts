@@ -11,8 +11,7 @@
  * - Integration with LiveMetricsManager
  */
 
-import * as FileSystem from "expo-file-system";
-import { Paths } from "expo-file-system";
+import { File, Directory, Paths } from "expo-file-system";
 import { Buffer } from "buffer";
 
 export interface FitRecord {
@@ -112,17 +111,15 @@ export class StreamingFitEncoder {
    */
   async initialize(): Promise<void> {
     try {
-      const dirInfo = await FileSystem.getInfoAsync(this.storageUri);
-      if (!dirInfo.exists) {
-        await FileSystem.makeDirectoryAsync(this.storageUri, {
-          intermediates: true,
-        });
+      const directory = new Directory(this.storageUri);
+      if (!directory.exists) {
+        directory.create({ intermediates: true });
       }
 
       const checkpointPath = `${this.storageUri}checkpoint.json`;
-      const checkpointInfo = await FileSystem.getInfoAsync(checkpointPath);
+      const checkpointFile = new File(checkpointPath);
 
-      if (checkpointInfo.exists) {
+      if (checkpointFile.exists) {
         console.log(
           `[StreamingFitEncoder] Found existing checkpoint, recovering...`,
         );
@@ -235,9 +232,8 @@ export class StreamingFitEncoder {
       throw new Error("File not finalized");
     }
 
-    const content = await FileSystem.readAsStringAsync(this.fitFilePath, {
-      encoding: "base64",
-    });
+    const file = new File(this.fitFilePath);
+    const content = file.base64();
 
     return new Uint8Array(Buffer.from(content, "base64"));
   }
@@ -273,9 +269,9 @@ export class StreamingFitEncoder {
    * Clean up resources
    */
   async cleanup(): Promise<void> {
-    const dirInfo = await FileSystem.getInfoAsync(this.storageUri);
-    if (dirInfo.exists) {
-      await FileSystem.deleteAsync(this.storageUri);
+    const directory = new Directory(this.storageUri);
+    if (directory.exists) {
+      directory.delete();
     }
   }
 
@@ -287,14 +283,18 @@ export class StreamingFitEncoder {
       const baseDir = Paths.cache.uri || Paths.document.uri;
       if (!baseDir) return;
 
-      const contents = await FileSystem.readDirectoryAsync(baseDir);
-      const orphanedDirs = contents.filter((name) =>
-        name.startsWith("fit_encoding_"),
+      const directory = new Directory(baseDir);
+      const contents = directory.list();
+      const orphanedDirs = contents.filter(
+        (item) =>
+          item instanceof Directory && item.uri.includes("fit_encoding_"),
       );
 
       for (const dir of orphanedDirs) {
         try {
-          await FileSystem.deleteAsync(`${baseDir}${dir}`);
+          if (dir.exists) {
+            dir.delete();
+          }
         } catch (error) {
           console.warn(
             `[StreamingFitEncoder] Failed to delete orphaned directory:`,
@@ -318,13 +318,8 @@ export class StreamingFitEncoder {
 
   private async createFitFile(): Promise<void> {
     const header = this.createFitHeader();
-    await FileSystem.writeAsStringAsync(
-      this.fitFilePath,
-      Buffer.from(header).toString("base64"),
-      {
-        encoding: "base64",
-      },
-    );
+    const file = new File(this.fitFilePath);
+    file.write(Buffer.from(header).toString("base64"));
     this.dataBuffer = new Uint8Array(this.config.bufferSize);
     this.bufferOffset = 0;
   }
@@ -560,25 +555,15 @@ export class StreamingFitEncoder {
     const dataToWrite = this.dataBuffer.slice(0, this.bufferOffset);
 
     try {
-      const currentContent = await FileSystem.readAsStringAsync(
-        this.fitFilePath,
-        {
-          encoding: "base64",
-        },
-      );
+      const file = new File(this.fitFilePath);
+      const currentContent = file.base64();
 
       const combinedBuffer = Buffer.concat([
         Buffer.from(currentContent, "base64"),
         Buffer.from(dataToWrite),
       ]);
 
-      await FileSystem.writeAsStringAsync(
-        this.fitFilePath,
-        combinedBuffer.toString("base64"),
-        {
-          encoding: "base64",
-        },
-      );
+      file.write(combinedBuffer.toString("base64"));
 
       this.bufferOffset = 0;
     } catch (error) {
@@ -614,18 +599,12 @@ export class StreamingFitEncoder {
 
     try {
       const checkpointPath = `${this.storageUri}checkpoint.json`;
-      await FileSystem.writeAsStringAsync(
-        checkpointPath,
-        JSON.stringify(checkpoint),
-        {
-          encoding: "utf8",
-        },
-      );
+      const checkpointFile = new File(checkpointPath);
+      checkpointFile.write(JSON.stringify(checkpoint));
 
       const markerPath = `${this.storageUri}checkpoint_${Date.now()}.marker`;
-      await FileSystem.writeAsStringAsync(markerPath, "1", {
-        encoding: "utf8",
-      });
+      const markerFile = new File(markerPath);
+      markerFile.write("1");
     } catch (error) {
       console.error(`[StreamingFitEncoder] Failed to write checkpoint:`, error);
     }
@@ -633,13 +612,12 @@ export class StreamingFitEncoder {
 
   private async recoverFromCheckpoint(checkpointPath: string): Promise<void> {
     try {
-      const content = await FileSystem.readAsStringAsync(checkpointPath, {
-        encoding: "utf8",
-      });
+      const checkpointFile = new File(checkpointPath);
+      const content = checkpointFile.textSync();
       const checkpoint = JSON.parse(content);
 
-      const fileInfo = await FileSystem.getInfoAsync(checkpoint.filePath);
-      if (!fileInfo.exists || (fileInfo.size || 0) < 12) {
+      const fitFile = new File(checkpoint.filePath);
+      if (!fitFile.exists || (fitFile.size || 0) < 12) {
         console.warn(`[StreamingFitEncoder] FIT file invalid, starting fresh`);
         await this.createFitFile();
         await this.writeFileId();
@@ -670,15 +648,20 @@ export class StreamingFitEncoder {
   private async clearCheckpoint(): Promise<void> {
     try {
       const checkpointPath = `${this.storageUri}checkpoint.json`;
-      const checkpointInfo = await FileSystem.getInfoAsync(checkpointPath);
-      if (checkpointInfo.exists) {
-        await FileSystem.deleteAsync(checkpointPath);
+      const checkpointFile = new File(checkpointPath);
+      if (checkpointFile.exists) {
+        checkpointFile.delete();
       }
 
-      const contents = await FileSystem.readDirectoryAsync(this.storageUri);
-      for (const file of contents) {
-        if (file.startsWith("checkpoint_") && file.endsWith(".marker")) {
-          await FileSystem.deleteAsync(`${this.storageUri}${file}`);
+      const directory = new Directory(this.storageUri);
+      const contents = directory.list();
+      for (const item of contents) {
+        if (
+          item instanceof File &&
+          item.uri.includes("checkpoint_") &&
+          item.uri.endsWith(".marker")
+        ) {
+          item.delete();
         }
       }
     } catch (error) {
