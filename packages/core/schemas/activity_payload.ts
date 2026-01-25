@@ -99,6 +99,12 @@ export const ActivityMetricsSchema = z.object({
   power_weight_ratio: z.number().optional(),
   power_hr_ratio: z.number().optional(),
   decoupling: z.number().optional(),
+
+  // Swim metrics
+  total_strokes: z.number().optional(),
+  avg_swolf: z.number().optional(),
+  pool_length: z.number().optional(),
+  pool_length_unit: z.string().optional(),
 });
 
 export type ActivityMetrics = z.infer<typeof ActivityMetricsSchema>;
@@ -146,6 +152,19 @@ export const ActivityUploadSchema = z.object({
   profileSnapshot: ProfileSnapshotSchema.optional().nullable(),
   plannedActivityId: z.string().uuid().optional().nullable(),
   routeId: z.string().uuid().optional().nullable(),
+  polyline: z.string().optional().nullable(),
+  mapBounds: z
+    .object({
+      minLat: z.number(),
+      maxLat: z.number(),
+      minLng: z.number(),
+      maxLng: z.number(),
+    })
+    .optional()
+    .nullable(),
+  laps: z.array(z.record(z.string(), z.any())).optional().nullable(),
+  powerCurve: z.record(z.string(), z.number()).optional().nullable(),
+  deviceName: z.string().optional().nullable(),
 });
 
 export type ActivityUpload = z.infer<typeof ActivityUploadSchema>;

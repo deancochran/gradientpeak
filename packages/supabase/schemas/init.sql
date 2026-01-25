@@ -424,6 +424,18 @@ create table if not exists public.activities (
     fit_file_size integer,
 
     -- ============================================================================
+    -- Extended Metadata (Maps, Laps, Device)
+    -- ============================================================================
+    polyline text,
+    map_bounds jsonb,
+    laps jsonb,
+    total_strokes integer,
+    avg_swolf numeric,
+    pool_length numeric,
+    device_manufacturer text,
+    device_product text,
+
+    -- ============================================================================
     -- Audit timestamps
     -- ============================================================================
     created_at timestamptz not null default now(),

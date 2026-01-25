@@ -15,6 +15,9 @@ import {
   calculateTSSFromAvailableData,
   extractHeartRateZones,
   extractPowerZones,
+  encodePolyline,
+  calculateBounds,
+  findMaxAveragePower,
 } from "@repo/core";
 
 const FIT_FILE_SIZE_LIMIT = 50 * 1024 * 1024; // 50MB
@@ -208,6 +211,7 @@ export const fitFilesRouter = createTRPCRouter({
         const cadenceStream: number[] = [];
         const altitudeStream: number[] = [];
         const speedStream: number[] = [];
+        const coords: { latitude: number; longitude: number }[] = [];
 
         for (const record of records) {
           if (record.timestamp !== undefined) {
@@ -227,6 +231,60 @@ export const fitFilesRouter = createTRPCRouter({
           }
           if (record.speed !== undefined) {
             speedStream.push(record.speed);
+          }
+          // Collect valid coordinates for polyline
+          if (
+            record.positionLat !== undefined &&
+            record.positionLong !== undefined &&
+            Math.abs(record.positionLat) <= 90 &&
+            Math.abs(record.positionLong) <= 180 &&
+            !(record.positionLat === 0 && record.positionLong === 0)
+          ) {
+            coords.push({
+              latitude: record.positionLat,
+              longitude: record.positionLong,
+            });
+          }
+        }
+
+        // ========================================================================
+        // New: Calculate Polyline and Bounds
+        // ========================================================================
+        let polyline: string | null = null;
+        let mapBounds: any = null;
+
+        if (coords.length > 0) {
+          polyline = encodePolyline(coords);
+          const bounds = calculateBounds(coords);
+          mapBounds = {
+            min_lat: bounds.minLat,
+            max_lat: bounds.maxLat,
+            min_lng: bounds.minLng,
+            max_lng: bounds.maxLng,
+          };
+        }
+
+        // ========================================================================
+        // New: Calculate Swim Metrics
+        // ========================================================================
+        let avgSwolf: number | null = null;
+        const totalStrokes = summary.totalStrokes || null;
+        const poolLength = summary.poolLength || null;
+
+        if (
+          activityType === "swim" &&
+          summary.totalDistance &&
+          summary.totalTime &&
+          totalStrokes &&
+          poolLength
+        ) {
+          // SWOLF = Time + Strokes per length
+          // Avg SWOLF = (Total Time + Total Strokes) / (Total Distance / Pool Length)
+          const numLengths = summary.totalDistance / poolLength;
+          if (numLengths > 0) {
+            avgSwolf =
+              (summary.totalTime + totalStrokes) / Math.round(numLengths);
+            avgSwolf = Math.round(avgSwolf * 10) / 10; // Round to 1 decimal
           }
         }
 
@@ -439,6 +497,18 @@ export const fitFilesRouter = createTRPCRouter({
           power_zone_4_seconds: powerZones?.zone4 || null,
           power_zone_5_seconds: powerZones?.zone5 || null,
           power_zone_6_seconds: powerZones?.zone6 || null,
+
+          // ========================================================================
+          // New: Extended Metadata
+          // ========================================================================
+          polyline,
+          map_bounds: mapBounds,
+          laps: parsedData.laps || null,
+          total_strokes: totalStrokes,
+          pool_length: poolLength,
+          avg_swolf: avgSwolf,
+          device_manufacturer: parsedData.metadata.manufacturer || null,
+          device_product: parsedData.metadata.product || null,
         };
 
         const { data: createdActivity, error: insertError } = await supabase
@@ -765,6 +835,71 @@ export const fitFilesRouter = createTRPCRouter({
         throw new Error(
           `FIT file deletion failed: ${(error as Error).message}`,
         );
+      }
+    }),
+
+  /**
+   * Get parsed streams from a FIT file
+   * Used for visualizing activity data (charts, maps) without storing streams in DB
+   */
+  getStreams: protectedProcedure
+    .input(
+      z.object({
+        fitFilePath: z.string().min(1, "File path is required"),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const { fitFilePath } = input;
+      const userId = ctx.session?.user?.id;
+      const supabase = ctx.supabase;
+
+      if (!userId) {
+        throw new Error("User not authenticated");
+      }
+
+      try {
+        // Verify user owns this file (check file path starts with user ID)
+        // Note: fitFilePath usually looks like "userId/timestamp-filename.fit"
+        if (!fitFilePath.startsWith(`${userId}/`)) {
+          // Allow access if it's in the activities/{userId} folder too (legacy or different structure)
+          if (!fitFilePath.includes(userId)) {
+            throw new Error(
+              "Access denied: You can only access your own files",
+            );
+          }
+        }
+
+        // Download FIT file from storage
+        const { data: fitFile, error: downloadError } = await supabase.storage
+          .from("fit-files")
+          .download(fitFilePath);
+
+        if (downloadError || !fitFile) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "FIT file not found",
+            cause: downloadError,
+          });
+        }
+
+        // Parse FIT file
+        const buffer = Buffer.from(await fitFile.arrayBuffer());
+        const parsedData = parseFitFileWithSDK(buffer);
+
+        // Extract streams in a format suitable for frontend charting
+        // We return the raw records, the frontend can map them to arrays
+        return {
+          records: parsedData.records,
+          laps: parsedData.laps,
+          lengths: parsedData.lengths,
+          summary: parsedData.summary,
+        };
+      } catch (error) {
+        console.error("Get streams error:", error);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Failed to retrieve streams: ${(error as Error).message}`,
+        });
       }
     }),
 });

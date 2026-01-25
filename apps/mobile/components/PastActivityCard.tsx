@@ -1,4 +1,5 @@
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
+import { ActivityHeader } from "@/components/activity/shared/ActivityHeader";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
@@ -31,6 +32,12 @@ interface PastActivityCardProps {
     activity_plan_id?: string | null;
     metrics?: any;
     profile_id: string;
+    polyline?: string | null;
+    total_strokes?: number | null;
+    avg_swolf?: number | null;
+    pool_length?: number | null;
+    device_manufacturer?: string | null;
+    device_product?: string | null;
   };
   onPress?: () => void;
 }
@@ -97,13 +104,18 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
 
   // Get coordinates from either route polyline OR activity streams
   const coordinates = useMemo(() => {
-    // Priority 1: Pre-planned route polyline
+    // Priority 1: Activity Polyline (Actual recorded path)
+    if (activity.polyline) {
+      return decodePolyline(activity.polyline);
+    }
+
+    // Priority 2: Pre-planned route polyline
     if (route?.polyline) {
       return decodePolyline(route.polyline);
     }
 
     return [];
-  }, [route?.polyline]);
+  }, [route?.polyline, activity.polyline]);
 
   // Determine visual assets
   const hasRoute = coordinates.length > 0;
@@ -122,6 +134,15 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
   const pace = useMemo(() => {
     if (activity.type === "run" || activity.type === "bike") {
       return calculatePace(activity.distance_meters, activity.moving_seconds);
+    } else if (activity.type === "swim") {
+      // Swim pace: min/100m
+      if (activity.distance_meters === 0 || activity.moving_seconds === 0)
+        return "--";
+      const secondsPer100m =
+        activity.moving_seconds / (activity.distance_meters / 100);
+      const mins = Math.floor(secondsPer100m / 60);
+      const secs = Math.round(secondsPer100m % 60);
+      return `${mins}:${secs.toString().padStart(2, "0")} /100m`;
     }
     return null;
   }, [activity.type, activity.distance_meters, activity.moving_seconds]);
@@ -141,54 +162,19 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
       <Card>
         <CardContent className="p-4">
           {/* Header: Avatar + User Info */}
-          <View className="flex-row items-start gap-3 mb-3">
-            {/* User Avatar */}
-            <Avatar
-              className="w-10 h-10"
-              alt={profileData.username || "User Avatar"}
-            >
-              {profileData.avatar_url && (
-                <AvatarImage source={{ uri: profileData.avatar_url }} />
-              )}
-              <AvatarFallback>
-                <Text className="text-sm font-semibold">
-                  {profileData.username?.[0]?.toUpperCase() || "?"}
-                </Text>
-              </AvatarFallback>
-            </Avatar>
-
-            {/* Metadata Column */}
-            <View className="flex-1">
-              {/* User Name */}
-              <Text className="text-sm font-semibold text-foreground">
-                {profileData.username}
-              </Text>
-
-              {/* Date/Time + Location */}
-              <View className="flex-row items-center gap-1 mt-0.5">
-                <Text className="text-xs text-muted-foreground">
-                  {format(
-                    new Date(activity.started_at),
-                    "MMM d, yyyy 'at' h:mm a",
-                  )}
-                </Text>
-                {locationString && (
-                  <>
-                    <Text className="text-xs text-muted-foreground">•</Text>
-                    <View className="flex-row items-center gap-0.5">
-                      <Icon
-                        as={MapPin}
-                        size={10}
-                        className="text-muted-foreground"
-                      />
-                      <Text className="text-xs text-muted-foreground">
-                        {locationString}
-                      </Text>
-                    </View>
-                  </>
-                )}
-              </View>
-            </View>
+          <View className="mb-3">
+            <ActivityHeader
+              user={profileData}
+              activity={{
+                type: activity.type,
+                name: activity.name,
+                startedAt: activity.started_at,
+                device_manufacturer: activity.device_manufacturer,
+                device_product: activity.device_product,
+                location: locationString,
+              }}
+              variant="embedded"
+            />
           </View>
 
           {/* Key Metrics Row */}
@@ -237,6 +223,32 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
                   {Math.round(activity.metrics.tss)}
                 </Text>
               </View>
+            )}
+
+            {/* Swim Metrics */}
+            {activity.type === "swim" && (
+              <>
+                {activity.avg_swolf && (
+                  <View>
+                    <Text className="text-xs text-muted-foreground uppercase mb-0.5">
+                      SWOLF
+                    </Text>
+                    <Text className="text-base font-bold">
+                      {activity.avg_swolf}
+                    </Text>
+                  </View>
+                )}
+                {activity.total_strokes && (
+                  <View>
+                    <Text className="text-xs text-muted-foreground uppercase mb-0.5">
+                      Strokes
+                    </Text>
+                    <Text className="text-base font-bold">
+                      {activity.total_strokes}
+                    </Text>
+                  </View>
+                )}
+              </>
             )}
           </View>
 
