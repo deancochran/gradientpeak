@@ -185,6 +185,7 @@ export type { StandardActivity } from "./types/normalization";
 // Performance Metrics Calculations
 // ============================================================================
 // Multi-modal TSS calculations (power, heart rate, pace)
+export * from "./calculations/duration";
 export * from "./calculations/tss";
 
 // Performance curves (power, pace, HR)

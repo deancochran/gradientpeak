@@ -1,4 +1,4 @@
-import { publicActivitiesInsertSchema } from "@repo/supabase";
+import { ActivityUploadSchema } from "@repo/core";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import {
@@ -110,16 +110,48 @@ export const activitiesRouter = createTRPCRouter({
   // Simplified: Just create the activity first
   create: protectedProcedure
     .input(
-      publicActivitiesInsertSchema.omit({
-        id: true,
-        idx: true,
-        created_at: true,
-      }),
+      ActivityUploadSchema.extend({
+        profile_id: z.string(),
+      }).refine(
+        (data) => new Date(data.finishedAt) > new Date(data.startedAt),
+        {
+          message: "finishedAt must be after startedAt",
+          path: ["finishedAt"],
+        },
+      ),
     )
     .mutation(async ({ input, ctx }) => {
+      const duration_seconds =
+        (new Date(input.finishedAt).getTime() -
+          new Date(input.startedAt).getTime()) /
+        1000;
+
+      if (duration_seconds <= 0) {
+        throw new Error("Activity duration must be positive.");
+      }
+
+      const newActivity = {
+        profile_id: input.profile_id,
+        name: input.name,
+        notes: input.notes,
+        type: input.type,
+        location: input.location,
+        started_at: input.startedAt,
+        finished_at: input.finishedAt,
+        duration_seconds,
+        moving_seconds: input.movingSeconds,
+        distance_meters: input.distanceMeters,
+        activity_plan_id: input.plannedActivityId,
+        // Metrics - will be updated later
+        training_stress_score: input.metrics.tss,
+        intensity_factor: input.metrics.if,
+        normalized_power: input.metrics.normalized_power,
+        // Note: hr and power zones need to be mapped to individual columns
+      };
+
       const { data, error } = await ctx.supabase
         .from("activities")
-        .insert(input)
+        .insert(newActivity)
         .select()
         .single();
 

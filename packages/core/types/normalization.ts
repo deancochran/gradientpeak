@@ -1,3 +1,24 @@
+export interface ActivityLap {
+  startTime: Date;
+  totalTime: number;
+  totalDistance: number;
+  avgSpeed?: number;
+  avgHeartRate?: number;
+  avgCadence?: number;
+  avgPower?: number;
+}
+export interface ActivityRecord {
+  timestamp: Date;
+  positionLat?: number; // degrees
+  positionLong?: number; // degrees
+  distance?: number; // meters
+  altitude?: number; // meters
+  speed?: number; // m/s
+  heartRate?: number; // bpm
+  cadence?: number; // rpm
+  power?: number; // watts
+  temperature?: number; // celsius
+}
 export interface StandardActivity {
   metadata: {
     activityId?: string;
@@ -25,25 +46,6 @@ export interface StandardActivity {
     avgPower?: number; // watts
     calories?: number; // kcal
   };
-  laps?: Array<{
-    startTime: Date;
-    totalTime: number;
-    totalDistance: number;
-    avgSpeed?: number;
-    avgHeartRate?: number;
-    avgCadence?: number;
-    avgPower?: number;
-  }>;
-  records: Array<{
-    timestamp: Date;
-    positionLat?: number; // degrees
-    positionLong?: number; // degrees
-    distance?: number; // meters
-    altitude?: number; // meters
-    speed?: number; // m/s
-    heartRate?: number; // bpm
-    cadence?: number; // rpm
-    power?: number; // watts
-    temperature?: number; // celsius
-  }>;
+  laps?: ActivityLap[];
+  records: ActivityRecord[];
 }
