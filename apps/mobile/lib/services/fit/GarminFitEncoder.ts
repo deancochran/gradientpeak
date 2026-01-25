@@ -18,6 +18,35 @@ import { Encoder, Profile, Utils } from "@garmin/fitsdk";
 import { File, Directory, Paths } from "expo-file-system";
 import { Buffer } from "buffer";
 
+// ==================== Types ====================
+
+export interface SwimLengthData {
+  lengthIndex: number;
+  startTime: Date;
+  movingTime: number;
+  strokeType: string;
+  averageSpeed: number;
+  strokeCount: number;
+  totalActivityDistance: number;
+}
+
+export interface SwimLapData {
+  lapIndex: number;
+  startTime: Date;
+  movingTime: number;
+  firstLengthIndex: number;
+  numberOfLengths: number;
+  totalDistance: number;
+  averageSpeed: number;
+  dominantStroke: string;
+}
+
+export interface DrillData {
+  lengthIndex: number;
+  startTime: Date;
+  totalActivityDistance: number;
+}
+
 /**
  * Convert degrees to semicircles (FIT format for GPS coordinates)
  * Formula: semicircles = degrees × (2³¹ / 180)
@@ -62,6 +91,8 @@ export interface FitSessionData {
   totalAscent?: number;
   totalDescent?: number;
   calories?: number;
+  sport: string;
+  subSport: string;
 }
 
 export interface FitLapData {
@@ -161,33 +192,40 @@ export class GarminFitEncoder {
     // Reset encoder
     this.encoder = new Encoder();
 
-    // Write FILE_ID message (required first message)
+    const now = new Date();
+    const fitNow = Utils.convertDateToDateTime(now);
+
+    // 1. FILE_ID Message (Required, exactly one)
     this.encoder.writeMesg({
       mesgNum: Profile.MesgNum.FILE_ID,
       type: "activity",
-      manufacturer: "development",
-      product: 0,
-      serialNumber: parseInt(this.userId.replace(/\D/g, "").slice(0, 8)) || 1,
-      timeCreated: Utils.convertDateToDateTime(new Date()),
+      manufacturer: "gradientpeak",
+      product: 1,
+      timeCreated: fitNow,
+      serialNumber: this.userId,
     });
 
-    // Write DEVICE_INFO message
+    // 2. DEVICE_INFO Message (Best Practice)
     this.encoder.writeMesg({
       mesgNum: Profile.MesgNum.DEVICE_INFO,
-      deviceIndex: 0,
-      manufacturer: "development",
-      product: 0,
-      softwareVersion: 100,
-      timestamp: Utils.convertDateToDateTime(new Date()),
+      deviceIndex: "creator",
+      manufacturer: "gradientpeak",
+      product: 1,
+      productName: "GradientPeak Mobile",
+      softwareVersion: 1.0,
+      timestamp: fitNow,
     });
 
-    // Write USER_PROFILE message
+    // 3. EVENT Message (Timer Start) (Required for valid activities)
     this.encoder.writeMesg({
-      mesgNum: Profile.MesgNum.USER_PROFILE,
-      messageIndex: 0,
-      friendlyName: "GradientPeak User",
+      mesgNum: Profile.MesgNum.EVENT,
+      timestamp: fitNow,
+      event: "timer",
+      eventType: "start",
     });
   }
+
+  // ==================== Public Methods ====================
 
   /**
    * Add a single record to the FIT file
@@ -213,17 +251,17 @@ export class GarminFitEncoder {
         fields.power = Math.round(record.power);
       }
       if (record.speed !== undefined) {
-        fields.speed = record.speed; // m/s (SDK handles conversion)
+        fields.enhancedSpeed = record.speed; // m/s
       }
       if (record.distance !== undefined) {
-        fields.distance = record.distance; // meters (SDK handles conversion)
+        fields.distance = record.distance; // meters
       }
       if (record.latitude !== undefined && record.longitude !== undefined) {
         fields.positionLat = degreesToSemicircles(record.latitude);
         fields.positionLong = degreesToSemicircles(record.longitude);
       }
       if (record.altitude !== undefined) {
-        fields.altitude = record.altitude; // meters (SDK handles conversion)
+        fields.altitude = record.altitude; // meters
       }
       if (record.grade !== undefined) {
         fields.grade = record.grade;
@@ -264,6 +302,109 @@ export class GarminFitEncoder {
   }
 
   /**
+   * Add a swim length and its corresponding record message
+   */
+  async addSwimLength(lengthData: SwimLengthData): Promise<void> {
+    const lengthEndTime = new Date();
+    const fitLengthEndTime = Utils.convertDateToDateTime(lengthEndTime);
+
+    // 1. Write the LENGTH message
+    this.encoder.writeMesg({
+      mesgNum: Profile.MesgNum.LENGTH,
+      messageIndex: lengthData.lengthIndex,
+      timestamp: fitLengthEndTime,
+      startTime: Utils.convertDateToDateTime(lengthData.startTime),
+      totalElapsedTime:
+        (lengthEndTime.getTime() - lengthData.startTime.getTime()) / 1000,
+      totalTimerTime: lengthData.movingTime,
+      lengthType: "active",
+      swimStroke: lengthData.strokeType,
+      avgSpeed: lengthData.averageSpeed,
+      totalStrokes: lengthData.strokeCount,
+    });
+
+    // 2. Write the corresponding RECORD message
+    this.encoder.writeMesg({
+      mesgNum: Profile.MesgNum.RECORD,
+      timestamp: fitLengthEndTime,
+      distance: lengthData.totalActivityDistance,
+    });
+  }
+
+  /**
+   * Add a swim lap (a summary of a set of lengths)
+   */
+  async addSwimLap(lapData: SwimLapData): Promise<void> {
+    const lapEndTime = new Date();
+    const fitLapEndTime = Utils.convertDateToDateTime(lapEndTime);
+
+    this.encoder.writeMesg({
+      mesgNum: Profile.MesgNum.LAP,
+      messageIndex: lapData.lapIndex,
+      timestamp: fitLapEndTime,
+      startTime: Utils.convertDateToDateTime(lapData.startTime),
+      totalElapsedTime:
+        (lapEndTime.getTime() - lapData.startTime.getTime()) / 1000,
+      totalTimerTime: lapData.movingTime,
+      firstLengthIndex: lapData.firstLengthIndex,
+      numLengths: lapData.numberOfLengths,
+      totalDistance: lapData.totalDistance,
+      avgSpeed: lapData.averageSpeed,
+      swimStroke: lapData.dominantStroke,
+    });
+  }
+
+  /**
+   * Add a drill length for swim activities
+   */
+  async addDrillLength(drillData: DrillData): Promise<void> {
+    const drillEndTime = new Date();
+    const fitDrillEndTime = Utils.convertDateToDateTime(drillEndTime);
+
+    this.encoder.writeMesg({
+      mesgNum: Profile.MesgNum.LENGTH,
+      messageIndex: drillData.lengthIndex,
+      timestamp: fitDrillEndTime,
+      startTime: Utils.convertDateToDateTime(drillData.startTime),
+      totalElapsedTime:
+        (drillEndTime.getTime() - drillData.startTime.getTime()) / 1000,
+      totalTimerTime:
+        (drillEndTime.getTime() - drillData.startTime.getTime()) / 1000,
+      lengthType: "drill",
+    });
+
+    this.encoder.writeMesg({
+      mesgNum: Profile.MesgNum.RECORD,
+      timestamp: fitDrillEndTime,
+      distance: drillData.totalActivityDistance,
+    });
+  }
+
+  /**
+   * Pause the recording timer
+   */
+  async pause(): Promise<void> {
+    this.encoder.writeMesg({
+      mesgNum: Profile.MesgNum.EVENT,
+      timestamp: Utils.convertDateToDateTime(new Date()),
+      event: "timer",
+      eventType: "stop",
+    });
+  }
+
+  /**
+   * Resume the recording timer
+   */
+  async resume(): Promise<void> {
+    this.encoder.writeMesg({
+      mesgNum: Profile.MesgNum.EVENT,
+      timestamp: Utils.convertDateToDateTime(new Date()),
+      event: "timer",
+      eventType: "start",
+    });
+  }
+
+  /**
    * Flush the internal buffer and create a checkpoint
    * Note: Since encoder.close() is destructive, we only save checkpoint metadata
    * The actual FIT file will be written on finalize()
@@ -299,10 +440,23 @@ export class GarminFitEncoder {
     try {
       console.log(`[GarminFitEncoder] Finalizing with ${laps.length} laps...`);
 
-      // Write LAP messages
+      const endTime = new Date();
+      const fitEndTime = Utils.convertDateToDateTime(endTime);
+
+      // 1. EVENT Message (Timer Stop)
+      this.encoder.writeMesg({
+        mesgNum: Profile.MesgNum.EVENT,
+        timestamp: fitEndTime,
+        event: "timer",
+        eventType: "stop_all",
+      });
+
+      // 2. LAP Messages
       for (const lap of laps) {
         const lapFields: Record<string, any> = {
-          timestamp: Utils.convertDateToDateTime(new Date(lap.startTime)),
+          timestamp: Utils.convertDateToDateTime(
+            new Date(lap.startTime + lap.totalTime),
+          ),
           startTime: Utils.convertDateToDateTime(new Date(lap.startTime)),
           totalElapsedTime: lap.totalTime / 1000, // Convert ms to seconds
           totalTimerTime: lap.totalTime / 1000,
@@ -325,17 +479,17 @@ export class GarminFitEncoder {
         });
       }
 
-      // Write SESSION message
+      // 3. SESSION Message
       const sessionFields: Record<string, any> = {
-        timestamp: Utils.convertDateToDateTime(new Date(sessionData.startTime)),
+        timestamp: fitEndTime,
         startTime: Utils.convertDateToDateTime(new Date(sessionData.startTime)),
         totalElapsedTime: sessionData.totalTime / 1000, // Convert ms to seconds
         totalTimerTime: sessionData.totalTime / 1000,
         totalDistance: sessionData.distance,
         avgSpeed: sessionData.avgSpeed,
         maxSpeed: sessionData.maxSpeed,
-        sport: "cycling", // Default to cycling
-        subSport: "generic",
+        sport: sessionData.sport,
+        subSport: sessionData.subSport,
         firstLapIndex: 0,
         numLaps: laps.length,
       };
@@ -356,10 +510,10 @@ export class GarminFitEncoder {
         sessionFields.avgCadence = Math.round(sessionData.avgCadence);
       }
       if (sessionData.totalAscent !== undefined) {
-        sessionFields.totalAscent = Math.round(sessionData.totalAscent);
+        sessionFields.totalAscent = sessionData.totalAscent;
       }
       if (sessionData.totalDescent !== undefined) {
-        sessionFields.totalDescent = Math.round(sessionData.totalDescent);
+        sessionFields.totalDescent = sessionData.totalDescent;
       }
       if (sessionData.calories !== undefined) {
         sessionFields.totalCalories = Math.round(sessionData.calories);
@@ -370,27 +524,22 @@ export class GarminFitEncoder {
         ...sessionFields,
       });
 
-      // Write ACTIVITY message (summary)
+      // 4. ACTIVITY Message
+      const localTimestampOffset = endTime.getTimezoneOffset() * -60;
       this.encoder.writeMesg({
         mesgNum: Profile.MesgNum.ACTIVITY,
-        timestamp: Utils.convertDateToDateTime(new Date()),
+        timestamp: fitEndTime,
         totalTimerTime: sessionData.totalTime / 1000,
         numSessions: 1,
-        type: "manual",
-        event: "activity",
-        eventType: "stop",
+        localTimestamp: fitEndTime + localTimestampOffset,
       });
 
       // Close encoder and get final data
       const uint8Array = this.encoder.close();
 
-      // Write final FIT file
-      // Use standard File.write() which accepts Uint8Array directly in SDK 54+
-      // This ensures binary data is written correctly.
       const file = new File(this.fitFilePath);
       file.write(uint8Array);
 
-      // Verify write by checking file size
       console.log(
         `[GarminFitEncoder] Wrote ${file.size ?? 0} bytes to ${this.fitFilePath}`,
       );

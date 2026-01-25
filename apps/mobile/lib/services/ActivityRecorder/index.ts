@@ -730,9 +730,30 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     }
   }
 
+  private getFitSport(
+    category: PublicActivityCategory,
+    location: PublicActivityLocation,
+  ): { sport: string; subSport: string } {
+    switch (category) {
+      case "bike":
+        return {
+          sport: "cycling",
+          subSport: location === "indoor" ? "indoor_cycling" : "road",
+        };
+      case "run":
+        return {
+          sport: "running",
+          subSport: location === "indoor" ? "treadmill" : "road",
+        };
+      case "swim":
+        return { sport: "swimming", subSport: "lap_swimming" };
+      default:
+        return { sport: "generic", subSport: "generic" };
+    }
+  }
+
   /**
-   * Apply current route grade to FTMS trainer as resistance
-   * For indoor training with outdoor routes (virtual route riding)
+   * Clean up resources when service is destroyed
    */
   private async applyRouteGradeToTrainer(): Promise<void> {
     const trainer = this.sensorsManager.getControllableTrainer();
@@ -1088,6 +1109,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     // Pause LiveMetricsManager
     this.liveMetricsManager.pauseRecording();
 
+    // Pause FIT encoder timer
+    if (this.fitEncoder) {
+      await this.fitEncoder.pause();
+    }
+
     this.stopElapsedTimeUpdates();
 
     this.emit("stateChanged", this.state);
@@ -1113,6 +1139,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       this.lastPauseTime = undefined;
     }
 
+    // Resume FIT encoder timer
+    if (this.fitEncoder) {
+      await this.fitEncoder.resume();
+    }
+
     this.startElapsedTimeUpdates();
 
     this.emit("stateChanged", this.state);
@@ -1133,6 +1164,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       if (this.fitEncoder) {
         try {
           const stats = this.liveMetricsManager.getSessionStats();
+          const { sport, subSport } = this.getFitSport(
+            this.selectedActivityCategory,
+            this.selectedActivityLocation,
+          );
           await this.fitEncoder.finalize({
             startTime: this.startTime || Date.now(),
             totalTime: stats.duration,
@@ -1147,6 +1182,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
             totalAscent: stats.ascent,
             totalDescent: stats.descent,
             calories: stats.calories,
+            sport,
+            subSport,
           });
 
           // Add file path to metadata
@@ -1610,241 +1647,108 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
    * Called every second by updateElapsedTime
    */
   private async updateFitRecording() {
-    if (!this.fitEncoder) return;
+    if (!this.fitEncoder || this.state !== "recording") return;
 
     try {
-      const readings = this.liveMetricsManager.getCurrentReadings();
-      const stats = this.liveMetricsManager.getSessionStats();
+      if (this.selectedActivityCategory === "swim") {
+        // TODO: Implement swim logic
+      } else {
+        // Time-based activities
+        const readings = this.liveMetricsManager.getCurrentReadings();
+        const stats = this.liveMetricsManager.getSessionStats();
 
-      const record: FitRecord = {
-        timestamp: Date.now(),
-        distance: stats.distance,
-        speed: readings.speed,
-        heartRate: readings.heartRate,
-        cadence: readings.cadence,
-        power: readings.power,
-        temperature: readings.temperature,
-      };
+        const record: FitRecord = {
+          timestamp: Date.now(),
+          distance: stats.distance,
+          speed: readings.speed,
+          heartRate: readings.heartRate,
+          cadence: readings.cadence,
+          power: readings.power,
+          temperature: readings.temperature,
+        };
 
-      if (readings.position) {
-        record.latitude = readings.position.lat;
-        record.longitude = readings.position.lng;
-        record.altitude = readings.position.altitude;
+        if (readings.position) {
+          record.latitude = readings.position.lat;
+          record.longitude = readings.position.lng;
+          record.altitude = readings.position.alt;
+        }
+
+        await this.fitEncoder.addRecord(record);
       }
-
-      await this.fitEncoder.addRecord(record);
     } catch (error) {
-      console.warn("[Service] Failed to add FIT record:", error);
+      console.error("[Service] Failed to update FIT recording:", error);
     }
   }
 
-  public getElapsedTime(): number {
-    const metrics = this.liveMetricsManager.getMetrics();
-    return metrics.elapsedTime;
-  }
-
   /**
-   * Get total moving time (excluding paused time)
-   * This is the time used for plan step progression
-   * Returns time in milliseconds
+   * Get elapsed time in milliseconds
    */
-  public getMovingTime(): number {
+  getElapsedTime(): number {
     if (!this.startTime) return 0;
-
-    const now = Date.now();
-    const elapsed = now - this.startTime;
-
-    // Calculate total paused time
-    let totalPaused = this.pausedTime;
     if (this.state === "paused" && this.lastPauseTime) {
-      // Add current pause duration
-      totalPaused += now - this.lastPauseTime;
+      return this.lastPauseTime - this.startTime;
     }
-
-    return Math.max(0, elapsed - totalPaused);
+    return Date.now() - this.startTime;
   }
 
   /**
-   * Record a lap at the current moving time
-   * Returns the lap time in seconds
+   * Get moving time in milliseconds (excludes paused time)
    */
-  public recordLap(): number {
-    const metrics = this.liveMetricsManager.getMetrics();
-    const currentMovingTime = metrics.movingTime;
+  getMovingTime(): number {
+    if (!this.startTime) return 0;
+    const elapsed = this.getElapsedTime();
+    return elapsed - this.pausedTime;
+  }
 
-    // Calculate lap time (time since last lap)
-    const lapTime = currentMovingTime - this.lastLapTime;
+  /**
+   * Get current lap time in milliseconds
+   */
+  getLapTime(): number {
+    return this.getMovingTime() - this.lastLapTime;
+  }
 
-    // Record the lap
+  /**
+   * Record a new lap
+   */
+  recordLap(): void {
+    if (this.state !== "recording") return;
+
+    const movingTime = this.getMovingTime();
+    const lapTime = movingTime - this.lastLapTime;
     this.laps.push(lapTime);
-    this.lastLapTime = currentMovingTime;
+    this.lastLapTime = movingTime;
 
-    // Emit lap recorded event
-    this.emit("lapRecorded", {
-      lapNumber: this.laps.length,
-      lapTime,
-      totalLaps: this.laps.length,
-    });
-
-    return lapTime;
-  }
-
-  /**
-   * Get current lap time (time since last lap)
-   * Returns time in seconds
-   */
-  public getLapTime(): number {
-    const metrics = this.liveMetricsManager.getMetrics();
-    const currentMovingTime = metrics.movingTime;
-    return currentMovingTime - this.lastLapTime;
+    this.emit("lapRecorded" as any);
   }
 
   /**
    * Get all recorded laps
-   * Returns array of lap times in seconds
    */
-  public getLaps(): number[] {
-    return [...this.laps];
-  }
-
-  /**
-   * Get recording metadata for processing
-   */
-  getRecordingMetadata(): RecordingMetadata | undefined {
-    return this.recordingMetadata;
-  }
-
-  /**
-   * Get metrics in simplified format
-   * This is the recommended way to access metrics for UI components
-   */
-  getSimplifiedMetrics(): SimplifiedMetrics {
-    return this.liveMetricsManager.getSimplifiedMetrics();
-  }
-
-  /**
-   * Get recording configuration - what features should be available/shown
-   */
-  getRecordingConfiguration(): import("@repo/core").RecordingConfiguration {
-    const { RecordingConfigResolver } = require("@repo/core");
-
-    const ftmsDevice = this.sensorsManager.getControllableTrainer();
-
-    // Determine if we're in planned mode - check both _plan and _plannedActivityId
-    // This ensures we show planned mode UI even if structure parsing failed
-    const isPlannedMode = !!(this._plan || this._plannedActivityId);
-
-    console.log("[Service] getRecordingConfiguration:", {
-      isPlannedMode,
-      hasPlan: !!this._plan,
-      hasPlannedId: !!this._plannedActivityId,
-      stepsLength: this._steps.length,
-      activityCategory: this.selectedActivityCategory,
-      activityLocation: this.selectedActivityLocation,
-    });
-
-    return RecordingConfigResolver.resolve({
-      activityCategory: this.selectedActivityCategory,
-      activityLocation: this.selectedActivityLocation,
-      mode: isPlannedMode ? "planned" : "unplanned",
-      plan: this._plan
-        ? {
-            hasStructure: this._steps.length > 0,
-            hasRoute: false, // TODO: Check if plan has route when route support is added
-            stepCount: this._steps.length,
-            requiresManualAdvance: this._steps.some(
-              (step) => step.duration.type === "untilFinished",
-            ),
-          }
-        : undefined,
-      devices: {
-        ftmsTrainer: ftmsDevice
-          ? {
-              deviceId: ftmsDevice.id,
-              features: ftmsDevice.ftmsFeatures || {},
-              autoControlEnabled: !this.manualControlOverride,
-            }
-          : undefined,
-        hasPowerMeter: this.sensorsManager
-          .getConnectedSensors()
-          .some((s) => s.services.includes(BLE_SERVICE_UUIDS.CYCLING_POWER)),
-        hasHeartRateMonitor: this.sensorsManager
-          .getConnectedSensors()
-          .some((s) => s.services.includes(BLE_SERVICE_UUIDS.HEART_RATE)),
-        hasCadenceSensor: this.sensorsManager
-          .getConnectedSensors()
-          .some((s) =>
-            s.services.includes(BLE_SERVICE_UUIDS.CYCLING_SPEED_AND_CADENCE),
-          ),
-      },
-      gpsAvailable: this._gpsAvailable,
-    });
+  getLaps(): number[] {
+    return this.laps;
   }
 
   // ================================
   // Cleanup
   // ================================
 
-  async cleanup() {
-    console.log("[Service] Cleaning up");
+  /**
+   * Clean up all resources
+   */
+  cleanup() {
+    console.log("[Service] Cleaning up...");
 
-    // Stop any active recording
-    if (this.state === "recording" || this.state === "paused") {
-      await this.finishRecording();
-    }
-
-    // Cleanup LiveMetricsManager
-    if (this.liveMetricsManager) {
-      await this.liveMetricsManager.cleanup();
-    }
-
-    // Stop all background processes
     this.stopElapsedTimeUpdates();
-    this.appStateSubscription?.remove();
-
-    // Cleanup managers
-    await this.locationManager.cleanup();
-    await this.sensorsManager.disconnectAll();
-
-    // Reset GPS availability
-    this._gpsAvailable = false;
-
-    // Stop foreground service
+    this.locationManager.cleanup();
+    this.sensorsManager.cleanup();
     if (this.notificationsManager) {
-      await this.notificationsManager.stopForegroundService();
+      this.notificationsManager.stopForegroundService().catch(console.error);
     }
-
-    // Clear plan state
-    this.clearPlan();
-
-    // Clear recording metadata
-    this.recordingMetadata = undefined;
-
-    // Remove all listeners for each event type
-    this.removeAllListeners("stateChanged");
-    this.removeAllListeners("recordingComplete");
-    this.removeAllListeners("activitySelected");
-    this.removeAllListeners("payloadProcessed");
-    this.removeAllListeners("sensorsChanged");
-    this.removeAllListeners("planSelected");
-    this.removeAllListeners("stepChanged");
-    this.removeAllListeners("planCleared");
-    this.removeAllListeners("planCompleted");
-    this.removeAllListeners("timeUpdated");
-    this.removeAllListeners("error");
-
-    console.log("[Service] Cleanup complete");
+    if (this.fitEncoder) {
+      this.fitEncoder.cleanup().catch(console.error);
+    }
+    if (this.appStateSubscription) {
+      this.appStateSubscription.remove();
+    }
   }
 }
-
-// ================================
-// Re-exports for convenience
-// ================================
-export {
-  getHRZone,
-  getPowerZone,
-  getZoneDistribution,
-  HR_ZONE_NAMES,
-  POWER_ZONE_NAMES,
-} from "./SimplifiedMetrics";
-export type { SimplifiedMetrics } from "./SimplifiedMetrics";

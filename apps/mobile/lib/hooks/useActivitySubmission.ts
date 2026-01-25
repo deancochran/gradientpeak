@@ -392,7 +392,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
       return;
     }
 
-    const metadata = service.getRecordingMetadata();
+    const metadata = service.recordingMetadata;
     if (!metadata) {
       dispatch({ type: "ERROR", error: "No recording metadata found" });
       return;
@@ -519,7 +519,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     );
 
     // Also check if already finished (in case event was missed)
-    if (service.state === "finished" && service.getRecordingMetadata()) {
+    if (service.state === "finished" && service.recordingMetadata) {
       console.log(
         "[useActivitySubmission] Recording already finished, processing...",
       );
@@ -593,7 +593,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
 
     try {
       // Check if we have a FIT file to upload
-      const metadata = service.getRecordingMetadata();
+      const metadata = service.recordingMetadata;
 
       if (metadata?.fitFilePath) {
         console.log(

@@ -426,8 +426,14 @@ export function useLapTime(service: ActivityRecorderService | null): number {
       setLapTime(0);
     };
 
-    const timeSubscription = service.addListener("timeUpdated", handleTimeUpdate);
-    const lapSubscription = service.addListener("lapRecorded", handleLapRecorded);
+    const timeSubscription = service.addListener(
+      "timeUpdated",
+      handleTimeUpdate,
+    );
+    const lapSubscription = service.addListener(
+      "lapRecorded",
+      handleLapRecorded,
+    );
 
     return () => {
       timeSubscription.remove();
@@ -498,7 +504,7 @@ export function useActivityStatus(service: ActivityRecorderService | null): {
  */
 export function useGpsTracking(service: ActivityRecorderService | null) {
   const [gpsEnabled, setGpsEnabled] = useState(
-    service?.isGpsTrackingEnabled() ?? true
+    service?.isGpsTrackingEnabled() ?? true,
   );
 
   useEffect(() => {
@@ -515,7 +521,7 @@ export function useGpsTracking(service: ActivityRecorderService | null) {
 
     const subscription = service.addListener(
       "gpsTrackingChanged",
-      handleGpsTrackingChange
+      handleGpsTrackingChange,
     );
 
     return () => {

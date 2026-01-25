@@ -230,6 +230,27 @@ export const fitFilesRouter = createTRPCRouter({
           }
         }
 
+        // Calculate pace stream from speed stream
+        const paceStream: number[] = [];
+        if (speedStream.length > 0) {
+          for (const speed of speedStream) {
+            if (speed > 0) {
+              if (activityType === "swim") {
+                // Swim pace: seconds per 100m
+                paceStream.push(100 / speed);
+              } else if (activityType === "run") {
+                // Run pace: seconds per km
+                paceStream.push(1000 / speed);
+              } else {
+                // Default to seconds per km for other activities
+                paceStream.push(1000 / speed);
+              }
+            } else {
+              paceStream.push(0);
+            }
+          }
+        }
+
         // ========================================================================
         // T-308: Fetch User Performance Metrics (with Cold Start Defaults)
         // ========================================================================
@@ -300,12 +321,14 @@ export const fitFilesRouter = createTRPCRouter({
           const tssResult = calculateTSSFromAvailableData({
             powerStream,
             hrStream,
+            paceStream, // Pass calculated pace stream
             timestamps,
             ftp,
             lthr,
             maxHR,
             // Estimate threshold pace if needed (e.g. 5:00/km = 300s/km)
-            thresholdPace: 300,
+            // TODO: Fetch threshold pace from user metrics if available
+            thresholdPace: activityType === "swim" ? 120 : 300, // 2:00/100m for swim, 5:00/km for run
             distance,
             activityType: activityType as any,
           });

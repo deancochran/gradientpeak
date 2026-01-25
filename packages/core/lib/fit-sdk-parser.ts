@@ -127,6 +127,7 @@ export function parseFitFileWithSDK(
   const activityInfo = messages.activityMesgs?.[0];
   const session = messages.sessionMesgs?.[0];
   const laps = messages.lapMesgs || [];
+  const lengths = messages.lengthMesgs || [];
   const records = messages.recordMesgs || [];
 
   if (!session) {
@@ -169,6 +170,10 @@ export function parseFitFileWithSDK(
       maxPower: session.maxPower,
       avgPower: session.avgPower,
       calories: activityInfo?.totalCalories ?? session.totalCalories,
+      poolLength: session.poolLength,
+      poolLengthUnit: session.poolLengthUnit,
+      totalStrokes: session.totalStrokes,
+      avgStrokeDistance: session.avgStrokeDistance,
     },
     laps: laps.map((lap: any) => ({
       startTime: toDate(lap.startTime),
@@ -178,6 +183,17 @@ export function parseFitFileWithSDK(
       avgHeartRate: lap.avgHeartRate,
       avgCadence: lap.avgCadence,
       avgPower: lap.avgPower,
+    })),
+    lengths: lengths.map((length: any) => ({
+      startTime: toDate(length.startTime),
+      totalElapsedTime: length.totalElapsedTime,
+      totalTimerTime: length.totalTimerTime,
+      totalStrokes: length.totalStrokes,
+      avgSpeed: length.avgSpeed,
+      swimStroke: length.swimStroke,
+      avgSwimmingCadence: length.avgSwimmingCadence,
+      event: length.event,
+      eventType: length.eventType,
     })),
     records: records.map((record: any) => ({
       timestamp: toDate(record.timestamp),

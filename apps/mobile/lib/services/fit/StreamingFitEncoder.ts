@@ -14,6 +14,34 @@
 import { File, Directory, Paths } from "expo-file-system";
 import { Buffer } from "buffer";
 
+export enum SwimStroke {
+  FREESTYLE = 0,
+  BACKSTROKE = 1,
+  BREASTSTROKE = 2,
+  BUTTERFLY = 3,
+  DRILL = 4,
+  MIXED = 5,
+  IM = 6,
+}
+
+export enum LengthType {
+  IDLE = 0,
+  ACTIVE = 1,
+}
+
+export interface FitLengthData {
+  messageIndex: number;
+  startTime: number;
+  totalElapsedTime: number;
+  totalTimerTime: number;
+  timestamp: number;
+  lengthType: LengthType;
+  swimStroke?: SwimStroke;
+  avgSpeed?: number;
+  strokeCount?: number;
+  strokesPerMinute?: number;
+}
+
 export interface FitRecord {
   timestamp: number;
   heartRate?: number;
@@ -42,6 +70,8 @@ export interface FitSessionData {
   totalAscent?: number;
   totalDescent?: number;
   calories?: number;
+  poolLength?: number;
+  poolLengthUnit?: number; // 0 = metric, 1 = statute
 }
 
 export interface FitLapData {
@@ -89,6 +119,7 @@ export class StreamingFitEncoder {
   private fileIdWritten: boolean = false;
   private deviceInfoWritten: boolean = false;
   private userProfileWritten: boolean = false;
+  private isPaused: boolean = false;
   private currentCrc: number = 0x00000000;
   private crcTable: Uint32Array;
 
@@ -150,11 +181,54 @@ export class StreamingFitEncoder {
       throw new Error("Encoder not initialized or already finalized");
     }
 
+    if (this.isPaused) {
+      return;
+    }
+
     const fitRecord = this.createRecordMessage(record);
     await this.writeMessage(fitRecord);
     this.recordCount++;
 
     await this.checkCheckpoint();
+  }
+
+  /**
+   * Add a length record (for swimming)
+   */
+  async addLength(lengthData: FitLengthData): Promise<void> {
+    if (!this.isInitialized || this.isFinalized) {
+      throw new Error("Encoder not initialized or already finalized");
+    }
+
+    const lengthMessage = this.createLengthMessage(lengthData);
+    await this.writeMessage(lengthMessage);
+  }
+
+  /**
+   * Add a timer event
+   */
+  async addEvent(
+    eventType: "start" | "stop" | "pause" | "resume",
+    timestamp: number = Date.now(),
+  ): Promise<void> {
+    if (!this.isInitialized || this.isFinalized) {
+      throw new Error("Encoder not initialized or already finalized");
+    }
+
+    let typeValue = 0; // start
+    if (eventType === "stop" || eventType === "pause") {
+      typeValue = 0; // stop (using stop_disable or just stop? usually stop_all=4 is for activity end, stop=1 is for pause)
+      // Actually standard: start=0, stop=1 (timer stop).
+      // Let's use start=0, stop=1.
+      typeValue = 1;
+      this.isPaused = true;
+    } else {
+      typeValue = 0; // start
+      this.isPaused = false;
+    }
+
+    const eventMessage = this.createEventMessage(typeValue, timestamp);
+    await this.writeMessage(eventMessage);
   }
 
   /**
@@ -203,12 +277,12 @@ export class StreamingFitEncoder {
         `[StreamingFitEncoder] Finalizing with ${laps.length} laps...`,
       );
 
-      await this.writeSessionMessage(sessionData);
-      await this.writeActivityMessage(sessionData);
-
       for (const lap of laps) {
         await this.writeLapMessage(lap);
       }
+
+      await this.writeSessionMessage(sessionData);
+      await this.writeActivityMessage(sessionData);
 
       await this.flushBuffer();
       await this.writeFileChecksum();
@@ -449,6 +523,51 @@ export class StreamingFitEncoder {
     return this.createMessage(20, 0, fields);
   }
 
+  private createLengthMessage(lengthData: FitLengthData): Uint8Array {
+    const fields: Array<{ index: number; value: number }> = [
+      {
+        index: 253,
+        value: Math.floor((lengthData.timestamp - this.startTime) / 1000),
+      },
+      { index: 254, value: lengthData.messageIndex },
+      {
+        index: 2,
+        value: Math.floor((lengthData.startTime - this.startTime) / 1000),
+      },
+      { index: 3, value: Math.round(lengthData.totalElapsedTime * 1000) },
+      { index: 4, value: Math.round(lengthData.totalTimerTime * 1000) },
+      { index: 12, value: lengthData.lengthType },
+    ];
+
+    if (lengthData.avgSpeed !== undefined) {
+      fields.push({ index: 6, value: Math.round(lengthData.avgSpeed * 1000) });
+    }
+    if (lengthData.swimStroke !== undefined) {
+      fields.push({ index: 7, value: lengthData.swimStroke });
+    }
+    if (lengthData.strokeCount !== undefined) {
+      fields.push({ index: 5, value: lengthData.strokeCount });
+    }
+    // Note: strokesPerMinute isn't a direct field in Length message in standard SDK typically,
+    // but avg_cadence (11) is often used for strokes/min in swimming.
+    if (lengthData.strokesPerMinute !== undefined) {
+      fields.push({ index: 11, value: lengthData.strokesPerMinute });
+    }
+
+    return this.createMessage(101, 0, fields);
+  }
+
+  private createEventMessage(eventType: number, timestamp: number): Uint8Array {
+    const fields: Array<{ index: number; value: number }> = [
+      { index: 253, value: Math.floor((timestamp - this.startTime) / 1000) },
+      { index: 0, value: 0 }, // event: timer
+      { index: 1, value: eventType }, // event_type
+      { index: 3, value: 0 }, // event_group
+    ];
+
+    return this.createMessage(21, 0, fields);
+  }
+
   private async writeSessionMessage(
     sessionData: FitSessionData,
   ): Promise<void> {
@@ -467,6 +586,16 @@ export class StreamingFitEncoder {
       { index: 14, value: Math.floor(sessionData.totalDescent || 0) },
       { index: 19, value: Math.floor(sessionData.calories || 0) },
     ];
+
+    if (sessionData.poolLength !== undefined) {
+      fields.push({
+        index: 33,
+        value: Math.round(sessionData.poolLength * 100),
+      });
+    }
+    if (sessionData.poolLengthUnit !== undefined) {
+      fields.push({ index: 46, value: sessionData.poolLengthUnit });
+    }
 
     const message = this.createMessage(18, 0, fields);
     await this.writeMessage(message);

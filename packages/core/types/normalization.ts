@@ -7,6 +7,17 @@ export interface ActivityLap {
   avgCadence?: number;
   avgPower?: number;
 }
+export interface ActivityLength {
+  startTime?: Date;
+  totalElapsedTime?: number;
+  totalTimerTime?: number;
+  totalStrokes?: number;
+  avgSpeed?: number;
+  swimStroke?: string;
+  avgSwimmingCadence?: number;
+  event?: string;
+  eventType?: string;
+}
 export interface ActivityRecord {
   timestamp: Date;
   positionLat?: number; // degrees
@@ -45,7 +56,12 @@ export interface StandardActivity {
     maxPower?: number; // watts
     avgPower?: number; // watts
     calories?: number; // kcal
+    poolLength?: number; // meters or yards
+    poolLengthUnit?: string;
+    totalStrokes?: number;
+    avgStrokeDistance?: number;
   };
   laps?: ActivityLap[];
+  lengths?: ActivityLength[];
   records: ActivityRecord[];
 }
