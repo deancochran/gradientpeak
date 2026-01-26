@@ -61,7 +61,7 @@ export const profilesRouter = createTRPCRouter({
       try {
         const { data: profile, error } = await ctx.supabase
           .from("profiles")
-          .select("id, username, avatar_url, bio")
+          .select("*")
           .eq("id", input.id)
           .single();
 
@@ -134,7 +134,7 @@ export const profilesRouter = createTRPCRouter({
       try {
         let query = ctx.supabase
           .from("profiles")
-          .select("id, username, avatar_url, bio, created_at")
+          .select("*")
           .range(input.offset, input.offset + input.limit - 1);
 
         if (input.username) {
@@ -173,9 +173,7 @@ export const profilesRouter = createTRPCRouter({
 
         const { data: activities, error } = await ctx.supabase
           .from("activities")
-          .select(
-            "duration_seconds, distance_meters, training_stress_score, type, location, started_at",
-          )
+          .select("*")
           .eq("profile_id", ctx.session.user.id)
           .gte("started_at", startDate.toISOString())
           .lte("started_at", endDate.toISOString());
@@ -224,7 +222,7 @@ export const profilesRouter = createTRPCRouter({
       // Fetch latest threshold HR from performance metrics
       const { data: thresholdHrMetrics } = await ctx.supabase
         .from("profile_performance_metric_logs")
-        .select("value")
+        .select("*")
         .eq("profile_id", ctx.session.user.id)
         .eq("type", "heart_rate")
         .gte("duration_seconds", 3000) // Threshold HR is for longer durations
@@ -235,7 +233,7 @@ export const profilesRouter = createTRPCRouter({
       // Fetch latest FTP from performance metrics
       const { data: ftpMetrics } = await ctx.supabase
         .from("profile_performance_metric_logs")
-        .select("value")
+        .select("*")
         .eq("profile_id", ctx.session.user.id)
         .eq("type", "power")
         .eq("category", "bike")

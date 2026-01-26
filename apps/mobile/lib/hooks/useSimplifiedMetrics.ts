@@ -22,8 +22,12 @@
  * ```
  */
 
-import type { ActivityRecorderService, SimplifiedMetrics } from "@/lib/services/ActivityRecorder";
+import type {
+  ActivityRecorderService,
+  SimplifiedMetrics,
+} from "@/lib/services/ActivityRecorder";
 import { useEffect, useState } from "react";
+import { isEqual } from "lodash";
 
 /**
  * Hook to get simplified metrics from ActivityRecorderService
@@ -49,7 +53,11 @@ export function useSimplifiedMetrics(
       "statsUpdate",
       () => {
         const updatedMetrics = service.getSimplifiedMetrics();
-        setMetrics(updatedMetrics);
+        setMetrics((prev) => {
+          // Deep comparison to prevent unnecessary re-renders
+          if (isEqual(prev, updatedMetrics)) return prev;
+          return updatedMetrics;
+        });
       },
     );
 

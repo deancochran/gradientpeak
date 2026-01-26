@@ -5,20 +5,16 @@
  * Integrates with the analyze-fit-file edge function.
  */
 
-import { z } from "zod";
-import { TRPCError } from "@trpc/server";
-import { createTRPCRouter, protectedProcedure } from "../trpc";
-import type { Context } from "../context";
 import type { StandardActivity } from "@repo/core";
 import {
-  parseFitFileWithSDK,
   calculateTSSFromAvailableData,
   extractHeartRateZones,
   extractPowerZones,
-  encodePolyline,
-  calculateBounds,
-  findMaxAveragePower,
+  parseFitFileWithSDK,
 } from "@repo/core";
+import { TRPCError } from "@trpc/server";
+import { z } from "zod";
+import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 const FIT_FILE_SIZE_LIMIT = 50 * 1024 * 1024; // 50MB
 const FIT_FILE_TYPES = [".fit"];
@@ -130,16 +126,33 @@ export const fitFilesRouter = createTRPCRouter({
       }
 
       try {
+        console.log("[processFitFile] Starting FIT file processing:", {
+          fitFilePath,
+          userId,
+          name,
+          activityType,
+        });
+
         // ========================================================================
         // T-302, T-303: Download FIT file from storage
         // ========================================================================
+        console.log(
+          "[processFitFile] Downloading FIT file from storage:",
+          fitFilePath,
+        );
+
         const { data: fitFile, error: downloadError } = await supabase.storage
           .from("fit-files")
           .download(fitFilePath);
 
         if (downloadError || !fitFile) {
           // Log error and notify admins
-          console.error("Failed to download FIT file:", downloadError);
+          console.error("[processFitFile] Failed to download FIT file:", {
+            error: downloadError,
+            errorMessage: downloadError?.message,
+            fitFilePath,
+            userId,
+          });
           // TODO: Send notification to admin/monitoring system
 
           // Remove the invalid FIT file from storage
@@ -147,21 +160,40 @@ export const fitFilesRouter = createTRPCRouter({
 
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
-            message: "Failed to download FIT file from storage",
+            message: `Failed to download FIT file from storage: ${downloadError?.message || "Unknown error"}`,
             cause: downloadError,
           });
         }
+
+        console.log("[processFitFile] FIT file downloaded successfully:", {
+          size: fitFile.size,
+          type: fitFile.type,
+        });
 
         // ========================================================================
         // T-304, T-305: Parse FIT file using @repo/core
         // ========================================================================
         let parsedData: StandardActivity;
         try {
+          console.log("[processFitFile] Parsing FIT file with SDK...");
           const buffer = Buffer.from(await fitFile.arrayBuffer());
           parsedData = parseFitFileWithSDK(buffer);
+          console.log("[processFitFile] FIT file parsed successfully:", {
+            sport: parsedData.metadata.type,
+            duration: parsedData.summary.totalTime,
+            distance: parsedData.summary.totalDistance,
+            recordCount: parsedData.records.length,
+            lapCount: parsedData.laps?.length,
+          });
         } catch (parseError) {
           // Log error and notify admins
-          console.error("Failed to parse FIT file:", parseError);
+          console.error("[processFitFile] Failed to parse FIT file:", {
+            error: parseError,
+            errorMessage: (parseError as Error).message,
+            errorStack: (parseError as Error).stack,
+            fitFilePath,
+            fileSize: fitFile.size,
+          });
           // TODO: Send notification to admin/monitoring system
 
           // Remove the invalid FIT file from storage
@@ -180,6 +212,14 @@ export const fitFilesRouter = createTRPCRouter({
         // ========================================================================
         const startTime = parsedData.metadata.startTime;
         const duration = summary.totalTime;
+
+        console.log("[processFitFile] Activity summary extracted:", {
+          startTime: startTime.toISOString(),
+          duration,
+          distance: summary.totalDistance,
+          avgHeartRate: summary.avgHeartRate,
+          avgPower: summary.avgPower,
+        });
 
         if (duration <= 0) {
           console.error(
@@ -248,21 +288,21 @@ export const fitFilesRouter = createTRPCRouter({
         }
 
         // ========================================================================
-        // New: Calculate Polyline and Bounds
+        // Calculate Polyline and Bounds (commented out until migration is applied)
         // ========================================================================
-        let polyline: string | null = null;
-        let mapBounds: any = null;
-
-        if (coords.length > 0) {
-          polyline = encodePolyline(coords);
-          const bounds = calculateBounds(coords);
-          mapBounds = {
-            min_lat: bounds.minLat,
-            max_lat: bounds.maxLat,
-            min_lng: bounds.minLng,
-            max_lng: bounds.maxLng,
-          };
-        }
+        // let polyline: string | null = null;
+        // let mapBounds: any = null;
+        //
+        // if (coords.length > 0) {
+        //   polyline = encodePolyline(coords);
+        //   const bounds = calculateBounds(coords);
+        //   mapBounds = {
+        //     min_lat: bounds.minLat,
+        //     max_lat: bounds.maxLat,
+        //     min_lng: bounds.minLng,
+        //     max_lng: bounds.maxLng,
+        //   };
+        // }
 
         // ========================================================================
         // New: Calculate Swim Metrics
@@ -499,17 +539,20 @@ export const fitFilesRouter = createTRPCRouter({
           power_zone_6_seconds: powerZones?.zone6 || null,
 
           // ========================================================================
-          // New: Extended Metadata
+          // Extended Metadata (only fields that exist in current schema)
+          // Note: polyline, map_bounds, laps, total_strokes, pool_length, avg_swolf,
+          // device_manufacturer, device_product will be added in future migration
           // ========================================================================
-          polyline,
-          map_bounds: mapBounds,
-          laps: parsedData.laps || null,
-          total_strokes: totalStrokes,
-          pool_length: poolLength,
-          avg_swolf: avgSwolf,
-          device_manufacturer: parsedData.metadata.manufacturer || null,
-          device_product: parsedData.metadata.product || null,
         };
+
+        console.log("[processFitFile] Attempting to insert activity record:", {
+          profile_id: userId,
+          name,
+          type: activityType,
+          duration: Math.round(duration),
+          distance: Math.round(distance),
+          fit_file_path: fitFilePath,
+        });
 
         const { data: createdActivity, error: insertError } = await supabase
           .from("activities")
@@ -519,14 +562,36 @@ export const fitFilesRouter = createTRPCRouter({
 
         if (insertError || !createdActivity) {
           // T-316: Cleanup uploaded file on failure
+          console.error("[processFitFile] Failed to insert activity record:", {
+            error: insertError,
+            errorMessage: insertError?.message,
+            errorDetails: insertError?.details,
+            errorHint: insertError?.hint,
+            errorCode: insertError?.code,
+            activityData: {
+              profile_id: userId,
+              name,
+              type: activityType,
+              started_at: startTime.toISOString(),
+              finished_at: endTime.toISOString(),
+              duration_seconds: Math.round(duration),
+              distance_meters: Math.round(distance),
+            },
+          });
+
           await supabase.storage.from("fit-files").remove([fitFilePath]);
 
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
-            message: "Failed to create activity record",
+            message: `Failed to create activity record: ${insertError?.message || "Unknown error"}. Details: ${insertError?.details || "None"}. Hint: ${insertError?.hint || "None"}`,
             cause: insertError,
           });
         }
+
+        console.log(
+          "[processFitFile] Activity record created successfully:",
+          createdActivity.id,
+        );
 
         return {
           success: true,
@@ -535,19 +600,44 @@ export const fitFilesRouter = createTRPCRouter({
       } catch (error) {
         // T-316: Handle errors with proper TRPCError types
         if (error instanceof TRPCError) {
+          console.error("[processFitFile] TRPCError caught:", {
+            code: error.code,
+            message: error.message,
+            cause: error.cause,
+          });
           throw error;
         }
+
+        // Log unexpected errors with full context
+        console.error("[processFitFile] Unexpected error:", {
+          error,
+          errorMessage: (error as Error).message,
+          errorStack: (error as Error).stack,
+          errorName: (error as Error).name,
+          fitFilePath,
+          userId,
+          name,
+          activityType,
+        });
 
         // Cleanup file on unexpected errors
         try {
           await supabase.storage.from("fit-files").remove([fitFilePath]);
+          console.log(
+            "[processFitFile] Cleaned up FIT file after error:",
+            fitFilePath,
+          );
         } catch (cleanupError) {
-          console.error("Failed to cleanup file after error:", cleanupError);
+          console.error(
+            "[processFitFile] Failed to cleanup file after error:",
+            cleanupError,
+          );
         }
 
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: `FIT file processing failed: ${(error as Error).message}`,
+          cause: error,
         });
       }
     }),

@@ -14,26 +14,22 @@ import { Text } from "@/components/ui/text";
 import { trpc } from "@/lib/trpc";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 import { decodePolyline } from "@repo/core";
-import { router, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   Activity,
-  ArrowDown,
-  ArrowUp,
   Clock,
   Heart,
   MapPin,
-  Mountain,
   Timer,
   Trash2,
   TrendingUp,
   Waves,
   Zap,
 } from "lucide-react-native";
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import {
+  ActivityIndicator,
   Alert,
-  Dimensions,
-  Platform,
   Pressable,
   ScrollView,
   View,
@@ -108,15 +104,12 @@ function getStreamStats(values: number[]) {
 
 function ActivityDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
   const queryClient = trpc.useUtils();
-  const [activeTab, setActiveTab] = useState<"overview" | "analysis" | "laps">(
-    "overview",
-  );
 
-  const { data: activityData, isLoading } = trpc.activities.getById.useQuery(
-    { id: id! },
-    { enabled: !!id },
-  );
+  // Fetch activity data
+  const { data: activityData, isLoading: isLoadingActivity } =
+    trpc.activities.getById.useQuery({ id: id! }, { enabled: !!id });
 
   const activity = activityData as any;
 
@@ -127,11 +120,18 @@ function ActivityDetailScreen() {
   );
 
   // Fetch streams if fit file exists
-  const { data: streamsData, isLoading: isLoadingStreams } =
-    trpc.fitFiles.getStreams.useQuery(
-      { fitFilePath: activity?.fit_file_path! },
-      { enabled: !!activity?.fit_file_path },
-    );
+  const {
+    data: streamsData,
+    isLoading: isLoadingStreams,
+    error: streamsError,
+  } = trpc.fitFiles.getStreams.useQuery(
+    { fitFilePath: activity?.fit_file_path! },
+    {
+      enabled: !!activity?.fit_file_path,
+      staleTime: 5 * 60 * 1000,
+      retry: 2,
+    },
+  );
 
   // Delete mutation
   const deleteMutation = trpc.activities.delete.useMutation({
@@ -168,7 +168,7 @@ function ActivityDetailScreen() {
     const bounds = activity.map_bounds as any;
     const midLat = (bounds.min_lat + bounds.max_lat) / 2;
     const midLng = (bounds.min_lng + bounds.max_lng) / 2;
-    const deltaLat = Math.abs(bounds.max_lat - bounds.min_lat) * 1.1; // 10% padding
+    const deltaLat = Math.abs(bounds.max_lat - bounds.min_lat) * 1.1;
     const deltaLng = Math.abs(bounds.max_lng - bounds.min_lng) * 1.1;
 
     return {
@@ -203,10 +203,8 @@ function ActivityDetailScreen() {
       if (r.power !== undefined) powerData.push({ val: r.power, ts });
 
       if (r.speed !== undefined) {
-        // Logic for speed/pace
-        let val = r.speed * 3.6; // Default km/h
+        let val = r.speed * 3.6;
         if (activity?.type === "run") {
-          // Calculate Pace (min/km)
           val = r.speed > 0.1 ? 1000 / r.speed / 60 : 0;
         }
         speedData.push({ val, ts });
@@ -350,7 +348,11 @@ function ActivityDetailScreen() {
     };
   }, [activity]);
 
-  if (isLoading || !activity) {
+  // Get laps
+  const laps = streamsData?.laps || (activity as any)?.laps;
+
+  // Loading skeleton
+  if (isLoadingActivity || !activity) {
     return (
       <ScrollView className="flex-1 bg-background">
         <View className="p-4 gap-4">
@@ -364,413 +366,6 @@ function ActivityDetailScreen() {
       </ScrollView>
     );
   }
-
-  const renderOverview = () => (
-    <View className="gap-4">
-      {/* Map Section */}
-      {routeCoordinates.length > 0 && mapRegion && (
-        <Card className="overflow-hidden">
-          <View className="h-64 w-full">
-            <MapView
-              style={{ flex: 1 }}
-              region={mapRegion}
-              scrollEnabled={false}
-              zoomEnabled={false}
-              pitchEnabled={false}
-              rotateEnabled={false}
-            >
-              <MapPolyline
-                coordinates={routeCoordinates}
-                strokeWidth={3}
-                strokeColor="#2563eb"
-              />
-            </MapView>
-            <Pressable
-              onPress={() => setActiveTab("analysis")}
-              className="absolute bottom-2 right-2 bg-background/90 px-3 py-1 rounded-full border border-border"
-            >
-              <Text className="text-xs font-medium">View Analysis</Text>
-            </Pressable>
-          </View>
-        </Card>
-      )}
-
-      {/* Activity Plan Comparison */}
-      {activity.activity_plan_id && activity.activity_plans && (
-        <ActivityPlanComparison
-          activityPlan={activity.activity_plans as any}
-          actualMetrics={{
-            duration: activity.duration_seconds,
-            tss: activity.training_stress_score ?? undefined,
-            intensity_factor: activity.intensity_factor ?? undefined,
-            adherence_score: undefined,
-          }}
-        />
-      )}
-
-      {/* Key Stats Grid */}
-      <View className="flex-row flex-wrap gap-2">
-        {/* Row 1 */}
-        <View className="flex-row gap-2 w-full">
-          <MetricCard
-            icon={MapPin}
-            label="Distance"
-            value={formatDistance(activity.distance_meters)}
-          />
-          <MetricCard
-            icon={Clock}
-            label="Duration"
-            value={formatDuration(activity.duration_seconds)}
-          />
-        </View>
-
-        {/* Row 2 */}
-        <View className="flex-row gap-2 w-full">
-          {activity.avg_heart_rate && (
-            <MetricCard
-              icon={Heart}
-              label="Avg HR"
-              value={Math.round(activity.avg_heart_rate)}
-              unit="bpm"
-            />
-          )}
-          {activity.avg_power && (
-            <MetricCard
-              icon={Zap}
-              label="Avg Power"
-              value={Math.round(activity.avg_power)}
-              unit="W"
-            />
-          )}
-          {!activity.avg_power && activity.avg_speed_mps && (
-            <MetricCard
-              icon={Timer}
-              label={
-                activity.type === "run"
-                  ? "Avg Pace"
-                  : activity.type === "swim"
-                    ? "Avg Pace"
-                    : "Avg Speed"
-              }
-              value={
-                activity.type === "run"
-                  ? formatPace(activity.avg_speed_mps).split(" ")[0]
-                  : activity.type === "swim"
-                    ? formatSwimPace(activity.avg_speed_mps).split(" ")[0]
-                    : formatSpeed(activity.avg_speed_mps).split(" ")[0]
-              }
-              unit={
-                activity.type === "run"
-                  ? "/km"
-                  : activity.type === "swim"
-                    ? "/100m"
-                    : "km/h"
-              }
-            />
-          )}
-        </View>
-
-        {/* Row 3 - If we have both Power and Speed, show Speed here */}
-        {activity.avg_power && activity.avg_speed_mps && (
-          <View className="flex-row gap-2 w-full">
-            <MetricCard
-              icon={Timer}
-              label={
-                activity.type === "run"
-                  ? "Avg Pace"
-                  : activity.type === "swim"
-                    ? "Avg Pace"
-                    : "Avg Speed"
-              }
-              value={
-                activity.type === "run"
-                  ? formatPace(activity.avg_speed_mps).split(" ")[0]
-                  : activity.type === "swim"
-                    ? formatSwimPace(activity.avg_speed_mps).split(" ")[0]
-                    : formatSpeed(activity.avg_speed_mps).split(" ")[0]
-              }
-              unit={
-                activity.type === "run"
-                  ? "/km"
-                  : activity.type === "swim"
-                    ? "/100m"
-                    : "km/h"
-              }
-            />
-            {/* Spacer to keep alignment if single item */}
-            <View className="flex-1" />
-          </View>
-        )}
-      </View>
-
-      {/* Swim Specifics - Pool & Strokes */}
-      {activity.type === "swim" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex-row items-center gap-2">
-              <Icon as={Waves} size={20} className="text-blue-500" />
-              Swim Metrics
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <View className="flex-row justify-between">
-              <View className="items-center">
-                <Text className="text-2xl font-bold">
-                  {activity.pool_length ?? "--"}
-                </Text>
-                <Text className="text-xs text-muted-foreground uppercase">
-                  Pool (m)
-                </Text>
-              </View>
-              <View className="items-center">
-                <Text className="text-2xl font-bold">
-                  {activity.total_strokes ?? "--"}
-                </Text>
-                <Text className="text-xs text-muted-foreground uppercase">
-                  Strokes
-                </Text>
-              </View>
-              <View className="items-center">
-                <Text className="text-2xl font-bold">
-                  {activity.avg_swolf ?? "--"}
-                </Text>
-                <Text className="text-xs text-muted-foreground uppercase">
-                  Swolf
-                </Text>
-              </View>
-            </View>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Training Load */}
-      {activity.training_stress_score && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Training Load</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <View className="flex-row gap-4">
-              <View className="flex-1">
-                <View className="flex-row items-center gap-2 mb-1">
-                  <Icon
-                    as={TrendingUp}
-                    size={16}
-                    className="text-muted-foreground"
-                  />
-                  <Text className="text-xs text-muted-foreground uppercase">
-                    TSS
-                  </Text>
-                </View>
-                <Text className="text-3xl font-bold">
-                  {Math.round(activity.training_stress_score)}
-                </Text>
-              </View>
-
-              {activity.intensity_factor && (
-                <View className="flex-1">
-                  <Text className="text-xs text-muted-foreground uppercase mb-1">
-                    Intensity Factor
-                  </Text>
-                  <Text className="text-3xl font-bold">
-                    {activity.intensity_factor.toFixed(2)}
-                  </Text>
-                </View>
-              )}
-            </View>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Zones */}
-      {hrZones.length > 0 && (
-        <ZoneDistributionCard
-          title="Heart Rate Zones"
-          zones={hrZones}
-          colors={hrColors}
-          showToggle={true}
-        />
-      )}
-      {powerZones.length > 0 && (
-        <ZoneDistributionCard
-          title="Power Zones"
-          zones={powerZones}
-          colors={powerColors}
-          showToggle={true}
-        />
-      )}
-    </View>
-  );
-
-  const renderAnalysis = () => {
-    if (isLoadingStreams) {
-      return (
-        <View className="gap-4">
-          <Skeleton className="h-48 w-full bg-muted" />
-          <Skeleton className="h-48 w-full bg-muted" />
-          <Skeleton className="h-48 w-full bg-muted" />
-        </View>
-      );
-    }
-
-    if (chartStreams.length === 0 && !elevationStream) {
-      return (
-        <Card className="mt-4">
-          <CardContent className="py-12">
-            <View className="items-center justify-center">
-              <Icon
-                as={Activity}
-                size={48}
-                className="text-muted-foreground mb-4"
-              />
-              <Text className="text-lg font-semibold text-center mb-2">
-                No Detailed Analysis
-              </Text>
-              <Text className="text-sm text-muted-foreground text-center max-w-sm">
-                Detailed stream data (HR, Power, etc.) is not available for this
-                activity.
-              </Text>
-            </View>
-          </CardContent>
-        </Card>
-      );
-    }
-
-    return (
-      <View className="gap-6">
-        {/* Map (Expanded) */}
-        {routeCoordinates.length > 0 && mapRegion && (
-          <View className="h-80 w-full rounded-lg overflow-hidden border border-border">
-            <MapView
-              style={{ flex: 1 }}
-              region={mapRegion}
-              showsUserLocation={false}
-            >
-              <MapPolyline
-                coordinates={routeCoordinates}
-                strokeWidth={4}
-                strokeColor="#2563eb"
-              />
-            </MapView>
-          </View>
-        )}
-
-        {/* Charts */}
-        {chartStreams.map((s) => {
-          const stats = getStreamStats(s.stream.values as number[]);
-          return (
-            <View key={s.type}>
-              <StreamChart
-                title={s.label}
-                streams={[s]}
-                xAxisType="time"
-                height={200}
-                showLegend={false}
-              />
-              {/* Stats Row */}
-              <View className="flex-row justify-between px-2 mt-2">
-                <View className="items-center">
-                  <Text className="text-xs text-muted-foreground">Max</Text>
-                  <Text className="font-semibold">
-                    {Math.round(stats.max)} {s.unit}
-                  </Text>
-                </View>
-                <View className="items-center">
-                  <Text className="text-xs text-muted-foreground">Avg</Text>
-                  <Text className="font-semibold">
-                    {Math.round(stats.avg)} {s.unit}
-                  </Text>
-                </View>
-                <View className="items-center">
-                  <Text className="text-xs text-muted-foreground">Min</Text>
-                  <Text className="font-semibold">
-                    {Math.round(stats.min)} {s.unit}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          );
-        })}
-
-        {/* Elevation Profile */}
-        {elevationStream && (
-          <View>
-            <ElevationProfileChart
-              elevationStream={elevationStream}
-              distanceStream={distanceStream || undefined}
-              title="Elevation Profile"
-              height={200}
-            />
-          </View>
-        )}
-      </View>
-    );
-  };
-
-  const renderLaps = () => {
-    // We need laps from streams query or activity object.
-    // Fit files getStreams returns laps in summary.
-    const laps = streamsData?.laps || (activity as any).laps;
-
-    if (!laps || laps.length === 0) {
-      return (
-        <Card className="mt-4">
-          <CardContent className="py-12">
-            <Text className="text-center text-muted-foreground">
-              No lap data available.
-            </Text>
-          </CardContent>
-        </Card>
-      );
-    }
-
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Laps</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <View className="gap-2">
-            {/* Header Row */}
-            <View className="flex-row border-b border-border pb-2 mb-2">
-              <Text className="w-8 font-semibold text-xs text-muted-foreground">
-                #
-              </Text>
-              <Text className="flex-1 font-semibold text-xs text-muted-foreground">
-                Time
-              </Text>
-              <Text className="flex-1 font-semibold text-xs text-muted-foreground">
-                Dist
-              </Text>
-              <Text className="flex-1 font-semibold text-xs text-muted-foreground text-right">
-                Avg Pace
-              </Text>
-            </View>
-            {/* Rows */}
-            {laps.map((lap: any, index: number) => (
-              <View
-                key={index}
-                className="flex-row py-2 border-b border-border/50"
-              >
-                <Text className="w-8 font-medium text-sm">{index + 1}</Text>
-                <Text className="flex-1 text-sm">
-                  {formatDuration(lap.totalTime)}
-                </Text>
-                <Text className="flex-1 text-sm">
-                  {Math.round(lap.totalDistance)}m
-                </Text>
-                <Text className="flex-1 text-sm text-right">
-                  {activity?.type === "swim"
-                    ? formatDuration(lap.totalTime) // Swim usually wants time per length or lap
-                    : formatPace(lap.avgSpeed)}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </CardContent>
-      </Card>
-    );
-  };
 
   return (
     <ScrollView className="flex-1 bg-background">
@@ -792,38 +387,383 @@ function ActivityDetailScreen() {
           notes={activity.notes ?? undefined}
         />
 
-        {/* Tab Switcher */}
-        <View className="flex-row bg-muted/50 p-1 rounded-lg">
-          {(["overview", "analysis", "laps"] as const).map((tab) => (
-            <Pressable
-              key={tab}
-              onPress={() => setActiveTab(tab)}
-              className={`flex-1 py-2 rounded-md items-center justify-center ${
-                activeTab === tab ? "bg-background shadow-sm" : ""
-              }`}
-            >
-              <Text
-                className={`font-medium capitalize ${activeTab === tab ? "text-foreground" : "text-muted-foreground"}`}
+        {/* Map */}
+        {routeCoordinates.length > 0 && mapRegion && (
+          <Card className="overflow-hidden">
+            <View className="h-64 w-full">
+              <MapView
+                style={{ flex: 1 }}
+                region={mapRegion}
+                scrollEnabled={false}
+                zoomEnabled={false}
+                pitchEnabled={false}
+                rotateEnabled={false}
               >
-                {tab}
-              </Text>
-            </Pressable>
-          ))}
+                <MapPolyline
+                  coordinates={routeCoordinates}
+                  strokeWidth={3}
+                  strokeColor="#2563eb"
+                />
+              </MapView>
+            </View>
+          </Card>
+        )}
+
+        {/* Activity Plan Comparison */}
+        {activity.activity_plan_id && activity.activity_plans && (
+          <ActivityPlanComparison
+            activityPlan={activity.activity_plans as any}
+            actualMetrics={{
+              duration: activity.duration_seconds,
+              tss: activity.training_stress_score ?? undefined,
+              intensity_factor: activity.intensity_factor ?? undefined,
+              adherence_score: undefined,
+            }}
+          />
+        )}
+
+        {/* Key Stats */}
+        <View className="flex-row flex-wrap gap-2">
+          <View className="flex-row gap-2 w-full">
+            <MetricCard
+              icon={MapPin}
+              label="Distance"
+              value={formatDistance(activity.distance_meters)}
+            />
+            <MetricCard
+              icon={Clock}
+              label="Duration"
+              value={formatDuration(activity.duration_seconds)}
+            />
+          </View>
+
+          <View className="flex-row gap-2 w-full">
+            {activity.avg_heart_rate && (
+              <MetricCard
+                icon={Heart}
+                label="Avg HR"
+                value={Math.round(activity.avg_heart_rate)}
+                unit="bpm"
+              />
+            )}
+            {activity.avg_power && (
+              <MetricCard
+                icon={Zap}
+                label="Avg Power"
+                value={Math.round(activity.avg_power)}
+                unit="W"
+              />
+            )}
+            {!activity.avg_power && activity.avg_speed_mps && (
+              <MetricCard
+                icon={Timer}
+                label={
+                  activity.type === "run"
+                    ? "Avg Pace"
+                    : activity.type === "swim"
+                      ? "Avg Pace"
+                      : "Avg Speed"
+                }
+                value={
+                  activity.type === "run"
+                    ? formatPace(activity.avg_speed_mps).split(" ")[0]
+                    : activity.type === "swim"
+                      ? formatSwimPace(activity.avg_speed_mps).split(" ")[0]
+                      : formatSpeed(activity.avg_speed_mps).split(" ")[0]
+                }
+                unit={
+                  activity.type === "run"
+                    ? "/km"
+                    : activity.type === "swim"
+                      ? "/100m"
+                      : "km/h"
+                }
+              />
+            )}
+          </View>
+
+          {activity.avg_power && activity.avg_speed_mps && (
+            <View className="flex-row gap-2 w-full">
+              <MetricCard
+                icon={Timer}
+                label={
+                  activity.type === "run"
+                    ? "Avg Pace"
+                    : activity.type === "swim"
+                      ? "Avg Pace"
+                      : "Avg Speed"
+                }
+                value={
+                  activity.type === "run"
+                    ? formatPace(activity.avg_speed_mps).split(" ")[0]
+                    : activity.type === "swim"
+                      ? formatSwimPace(activity.avg_speed_mps).split(" ")[0]
+                      : formatSpeed(activity.avg_speed_mps).split(" ")[0]
+                }
+                unit={
+                  activity.type === "run"
+                    ? "/km"
+                    : activity.type === "swim"
+                      ? "/100m"
+                      : "km/h"
+                }
+              />
+              <View className="flex-1" />
+            </View>
+          )}
         </View>
 
-        {/* Content */}
-        <View>
-          {activeTab === "overview" && renderOverview()}
-          {activeTab === "analysis" && renderAnalysis()}
-          {activeTab === "laps" && renderLaps()}
-        </View>
+        {/* Swim Metrics */}
+        {activity.type === "swim" && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex-row items-center gap-2">
+                <Icon as={Waves} size={20} className="text-blue-500" />
+                Swim Metrics
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <View className="flex-row justify-between">
+                <View className="items-center">
+                  <Text className="text-2xl font-bold">
+                    {activity.pool_length ?? "--"}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground uppercase">
+                    Pool (m)
+                  </Text>
+                </View>
+                <View className="items-center">
+                  <Text className="text-2xl font-bold">
+                    {activity.total_strokes ?? "--"}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground uppercase">
+                    Strokes
+                  </Text>
+                </View>
+                <View className="items-center">
+                  <Text className="text-2xl font-bold">
+                    {activity.avg_swolf ?? "--"}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground uppercase">
+                    Swolf
+                  </Text>
+                </View>
+              </View>
+            </CardContent>
+          </Card>
+        )}
 
-        {/* Footer Actions */}
-        <View className="mt-8 mb-4">
+        {/* Training Load */}
+        {activity.training_stress_score && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Training Load</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <View className="flex-row gap-4">
+                <View className="flex-1">
+                  <View className="flex-row items-center gap-2 mb-1">
+                    <Icon
+                      as={TrendingUp}
+                      size={16}
+                      className="text-muted-foreground"
+                    />
+                    <Text className="text-xs text-muted-foreground uppercase">
+                      TSS
+                    </Text>
+                  </View>
+                  <Text className="text-3xl font-bold">
+                    {Math.round(activity.training_stress_score)}
+                  </Text>
+                </View>
+
+                {activity.intensity_factor && (
+                  <View className="flex-1">
+                    <Text className="text-xs text-muted-foreground uppercase mb-1">
+                      Intensity Factor
+                    </Text>
+                    <Text className="text-3xl font-bold">
+                      {activity.intensity_factor.toFixed(2)}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Zones */}
+        {hrZones.length > 0 && (
+          <ZoneDistributionCard
+            title="Heart Rate Zones"
+            zones={hrZones}
+            colors={hrColors}
+            showToggle={true}
+          />
+        )}
+        {powerZones.length > 0 && (
+          <ZoneDistributionCard
+            title="Power Zones"
+            zones={powerZones}
+            colors={powerColors}
+            showToggle={true}
+          />
+        )}
+
+        {/* Analysis Charts */}
+        {activity.fit_file_path && (
+          <>
+            {isLoadingStreams ? (
+              <Card>
+                <CardContent className="py-8">
+                  <View className="items-center gap-3">
+                    <ActivityIndicator size="small" className="text-primary" />
+                    <Text className="text-sm text-muted-foreground">
+                      Loading detailed analysis...
+                    </Text>
+                  </View>
+                </CardContent>
+              </Card>
+            ) : streamsError ? (
+              <Card>
+                <CardContent className="py-8">
+                  <View className="items-center gap-3">
+                    <Icon
+                      as={Activity}
+                      size={32}
+                      className="text-destructive/50"
+                    />
+                    <Text className="text-sm text-center text-muted-foreground">
+                      Failed to load analysis: {streamsError.message}
+                    </Text>
+                  </View>
+                </CardContent>
+              </Card>
+            ) : (
+              <>
+                {chartStreams.map((s) => {
+                  const stats = getStreamStats(s.stream.values as number[]);
+                  return (
+                    <View key={s.type}>
+                      <StreamChart
+                        title={s.label}
+                        streams={[s]}
+                        xAxisType="time"
+                        height={200}
+                        showLegend={false}
+                      />
+                      <View className="flex-row justify-between px-2 mt-2 mb-4">
+                        <View className="items-center">
+                          <Text className="text-xs text-muted-foreground">
+                            Max
+                          </Text>
+                          <Text className="font-semibold">
+                            {Math.round(stats.max)} {s.unit}
+                          </Text>
+                        </View>
+                        <View className="items-center">
+                          <Text className="text-xs text-muted-foreground">
+                            Avg
+                          </Text>
+                          <Text className="font-semibold">
+                            {Math.round(stats.avg)} {s.unit}
+                          </Text>
+                        </View>
+                        <View className="items-center">
+                          <Text className="text-xs text-muted-foreground">
+                            Min
+                          </Text>
+                          <Text className="font-semibold">
+                            {Math.round(stats.min)} {s.unit}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })}
+
+                {elevationStream && (
+                  <ElevationProfileChart
+                    elevationStream={elevationStream}
+                    distanceStream={distanceStream || undefined}
+                    title="Elevation Profile"
+                    height={200}
+                  />
+                )}
+              </>
+            )}
+          </>
+        )}
+
+        {/* Laps */}
+        {laps && laps.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Laps ({laps.length})</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <View className="gap-2">
+                <View className="flex-row border-b border-border pb-2 mb-2">
+                  <Text className="w-10 font-semibold text-xs text-muted-foreground">
+                    #
+                  </Text>
+                  <Text className="flex-1 font-semibold text-xs text-muted-foreground">
+                    Time
+                  </Text>
+                  <Text className="flex-1 font-semibold text-xs text-muted-foreground">
+                    Distance
+                  </Text>
+                  <Text className="flex-1 font-semibold text-xs text-muted-foreground text-right">
+                    {activity.type === "swim" ? "Time" : "Pace"}
+                  </Text>
+                </View>
+
+                {laps.map((lap: any, index: number) => {
+                  const lapDistance = lap.totalDistance || lap.distance || 0;
+                  const lapTime = lap.totalTime || lap.totalTimerTime || 0;
+                  const lapSpeed =
+                    lap.avgSpeed ||
+                    (lapDistance > 0 && lapTime > 0
+                      ? lapDistance / lapTime
+                      : 0);
+
+                  return (
+                    <View
+                      key={index}
+                      className="flex-row py-2 border-b border-border/50 last:border-0"
+                    >
+                      <Text className="w-10 font-medium text-sm">
+                        {index + 1}
+                      </Text>
+                      <Text className="flex-1 text-sm">
+                        {formatDuration(lapTime)}
+                      </Text>
+                      <Text className="flex-1 text-sm">
+                        {lapDistance >= 1000
+                          ? `${(lapDistance / 1000).toFixed(2)} km`
+                          : `${Math.round(lapDistance)} m`}
+                      </Text>
+                      <Text className="flex-1 text-sm text-right">
+                        {activity.type === "swim"
+                          ? formatDuration(lapTime)
+                          : lapSpeed > 0
+                            ? formatPace(lapSpeed)
+                            : "--"}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Delete Button */}
+        <View className="mt-4 mb-4">
           <Pressable
             onPress={handleDelete}
             disabled={deleteMutation.isPending}
-            className="flex-row items-center justify-center gap-2 p-4 bg-destructive/10 rounded-lg border border-destructive/20"
+            className="flex-row items-center justify-center gap-2 p-4 bg-destructive/10 rounded-lg border border-destructive/20 active:bg-destructive/20"
           >
             <Icon
               as={Trash2}

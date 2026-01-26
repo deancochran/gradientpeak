@@ -386,7 +386,7 @@ export class FitUploader {
       }
 
       const fileName = this.generateFileName(userId, activityId);
-      const fileContent = file.base64();
+      const fileContent = await file.base64();
 
       for (let attempt = 1; attempt <= this.config.maxRetries + 1; attempt++) {
         this.uploadState.attempts = attempt;

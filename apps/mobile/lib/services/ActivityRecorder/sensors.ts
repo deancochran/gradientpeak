@@ -65,6 +65,7 @@ export enum BleMetricType {
   Power = "power",
   Cadence = "cadence",
   Speed = "speed",
+  Battery = "battery",
 }
 
 /** --- Standard BLE Characteristics --- */
@@ -73,6 +74,7 @@ export const KnownCharacteristics: Record<string, BleMetricType> = {
   "00002a63-0000-1000-8000-00805f9b34fb": BleMetricType.Power,
   "00002a5b-0000-1000-8000-00805f9b34fb": BleMetricType.Cadence, // CSC: Cycling Speed and Cadence
   "00002a53-0000-1000-8000-00805f9b34fb": BleMetricType.Speed, // RSC: Running Speed and Cadence
+  "00002a19-0000-1000-8000-00805f9b34fb": BleMetricType.Battery,
 };
 
 /** --- Sensor Data Types (imported from types.ts) --- */

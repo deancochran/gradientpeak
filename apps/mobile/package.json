@@ -122,6 +122,7 @@
     "@expo/metro-config": "~54.0.8",
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
+    "@types/lodash": "^4.17.23",
     "@types/pako": "^2.0.4",
     "@types/react": "~19.2.7",
     "babel-preset-expo": "^54.0.6",

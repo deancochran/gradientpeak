@@ -169,7 +169,7 @@ export const activityPlansRouter = createTRPCRouter({
   getUserPlansCount: protectedProcedure.query(async ({ ctx }) => {
     const { count, error } = await ctx.supabase
       .from("activity_plans")
-      .select("id", { count: "exact", head: true })
+      .select("*", { count: "exact", head: true })
       .eq("profile_id", ctx.session.user.id);
 
     if (error) {
@@ -246,7 +246,7 @@ export const activityPlansRouter = createTRPCRouter({
       // Check ownership
       const { data: existing } = await ctx.supabase
         .from("activity_plans")
-        .select("id, profile_id")
+        .select("*")
         .eq("id", id)
         .eq("profile_id", ctx.session.user.id)
         .single();
@@ -311,7 +311,7 @@ export const activityPlansRouter = createTRPCRouter({
       // Check ownership first
       const { data: existing, error: checkError } = await ctx.supabase
         .from("activity_plans")
-        .select("id, profile_id")
+        .select("*")
         .eq("id", input.id)
         .eq("profile_id", ctx.session.user.id)
         .single();
@@ -360,17 +360,7 @@ export const activityPlansRouter = createTRPCRouter({
       // Get the original plan
       const { data: originalPlan, error: fetchError } = await ctx.supabase
         .from("activity_plans")
-        .select(
-          `
-          name,
-          description,
-          activity_category,
-          activity_location,
-          structure,
-          version,
-          route_id
-        `,
-        )
+        .select("*")
         .eq("id", input.id)
         .or(`profile_id.eq.${ctx.session.user.id},is_system_template.eq.true`) // Allow user's plans or system templates
         .single();

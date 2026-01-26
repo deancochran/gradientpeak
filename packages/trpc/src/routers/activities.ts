@@ -20,17 +20,7 @@ export const activitiesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const { data, error } = await ctx.supabase
         .from("activities")
-        .select(
-          `
-          id, name, type, location,
-          started_at, finished_at,
-          duration_seconds, moving_seconds, distance_meters,
-          training_stress_score, intensity_factor, normalized_power,
-          hr_zone_1_seconds, hr_zone_2_seconds, hr_zone_3_seconds, hr_zone_4_seconds, hr_zone_5_seconds,
-          power_zone_1_seconds, power_zone_2_seconds, power_zone_3_seconds, power_zone_4_seconds, power_zone_5_seconds, power_zone_6_seconds, power_zone_7_seconds,
-          activity_plan_id
-        `,
-        )
+        .select("*")
         .eq("profile_id", ctx.session.user.id)
         .gte("started_at", input.date_from)
         .lte("started_at", input.date_to)
@@ -60,15 +50,7 @@ export const activitiesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       let query = ctx.supabase
         .from("activities")
-        .select(
-          `
-          id, name, type, location,
-          started_at, duration_seconds, moving_seconds, distance_meters,
-          training_stress_score, activity_plan_id, profile_id,
-          device_manufacturer, device_product
-        `,
-          { count: "exact" },
-        )
+        .select("*", { count: "exact" })
         .eq("profile_id", ctx.session.user.id);
 
       // Apply filters
@@ -153,7 +135,7 @@ export const activitiesRouter = createTRPCRouter({
       const { data, error } = await ctx.supabase
         .from("activities")
         .insert(newActivity)
-        .select()
+        .select("*")
         .single();
 
       if (error) throw new Error(error.message);
@@ -172,11 +154,7 @@ export const activitiesRouter = createTRPCRouter({
         .select(
           `
             *,
-            activity_plans (
-              id,
-              name,
-              structure
-            )
+            activity_plans (*)
           `,
         )
         .eq("id", input.id)
@@ -208,7 +186,7 @@ export const activitiesRouter = createTRPCRouter({
         .update(updates)
         .eq("id", id)
         .eq("profile_id", ctx.session.user.id)
-        .select()
+        .select("*")
         .single();
 
       if (error) throw new Error(error.message);
@@ -227,7 +205,7 @@ export const activitiesRouter = createTRPCRouter({
       // Verify ownership and get FIT file path before deletion
       const { data: activity, error: fetchError } = await ctx.supabase
         .from("activities")
-        .select("id, profile_id, name, fit_file_path")
+        .select("*")
         .eq("id", input.id)
         .eq("profile_id", ctx.session.user.id)
         .single();

@@ -46,11 +46,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
         .from("planned_activities")
         .select(
           `
-          id,
-          scheduled_date,
-          profile_id,
-          created_at,
-          notes,
+          *,
           activity_plan:activity_plans (*)
         `,
         )
@@ -93,8 +89,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
       .from("planned_activities")
       .select(
         `
-        id,
-        scheduled_date,
+        *,
         activity_plan:activity_plans (*)
       `,
       )
@@ -149,7 +144,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
 
     const { count, error } = await ctx.supabase
       .from("planned_activities")
-      .select("id", { count: "exact", head: true })
+      .select("*", { count: "exact", head: true })
       .eq("profile_id", ctx.session.user.id)
       .gte("scheduled_date", startOfWeek.toISOString())
       .lt("scheduled_date", endOfWeek.toISOString());
@@ -173,7 +168,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
       // Verify the activity plan exists and user has access to it
       const { data: activityPlan, error: planError } = await ctx.supabase
         .from("activity_plans")
-        .select("id, profile_id")
+        .select("*")
         .eq("id", input.activity_plan_id)
         .or(`profile_id.eq.${ctx.session.user.id},is_system_template.eq.true`) // Allow user's plans or system templates
         .single();
@@ -191,7 +186,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
       if (!trainingPlanId) {
         const { data: activePlan } = await ctx.supabase
           .from("training_plans")
-          .select("id")
+          .select("*")
           .eq("profile_id", ctx.session.user.id)
           .eq("is_active", true)
           .single();
@@ -206,15 +201,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
           profile_id: ctx.session.user.id,
           training_plan_id: trainingPlanId, // ✅ New field
         })
-        .select(
-          `
-          id,
-          scheduled_date,
-          activity_plan_id,
-          training_plan_id,
-          created_at
-        `,
-        )
+        .select("*")
         .single();
 
       if (error)
@@ -280,7 +267,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
       // Check ownership
       const { data: existing } = await ctx.supabase
         .from("planned_activities")
-        .select("id")
+        .select("*")
         .eq("id", id)
         .eq("profile_id", ctx.session.user.id)
         .single();
@@ -295,7 +282,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
       if (updates.activity_plan_id) {
         const { data: activityPlan, error: planError } = await ctx.supabase
           .from("activity_plans")
-          .select("id, profile_id")
+          .select("*")
           .eq("id", updates.activity_plan_id as string)
           .or(`profile_id.eq.${ctx.session.user.id},is_system_template.eq.true`)
           .single();
@@ -314,14 +301,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
           ...updates,
         })
         .eq("id", id)
-        .select(
-          `
-          id,
-          scheduled_date,
-          activity_plan_id,
-          created_at
-        `,
-        )
+        .select("*")
         .single();
 
       if (error)
@@ -376,7 +356,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const { data: existing } = await ctx.supabase
         .from("planned_activities")
-        .select("id")
+        .select("*")
         .eq("id", input.id)
         .eq("profile_id", ctx.session.user.id)
         .single();
@@ -393,8 +373,9 @@ export const plannedActivitiesRouter = createTRPCRouter({
           // Check if Wahoo integration exists
           const { data: integration } = await ctx.supabase
             .from("integrations")
-            .select("provider")
+            .select("*")
             .eq("profile_id", ctx.session.user.id)
+
             .eq("provider", "wahoo")
             .single();
 
@@ -437,12 +418,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
         .from("planned_activities")
         .select(
           `
-          id,
-          idx,
-          profile_id,
-          activity_plan_id,
-          scheduled_date,
-          created_at,
+          *,
           activity_plan:activity_plans (*)
         `,
         )
@@ -544,7 +520,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
       // Get the training plan
       const { data: plan, error: planError } = await ctx.supabase
         .from("training_plans")
-        .select("id, structure")
+        .select("*")
         .eq("id", input.training_plan_id)
         .eq("profile_id", ctx.session.user.id)
         .single();
@@ -560,9 +536,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
       const { data: activityPlan, error: activityPlanError } =
         await ctx.supabase
           .from("activity_plans")
-          .select(
-            "id, activity_category, activity_location, structure, route_id",
-          )
+          .select("*")
           .eq("id", input.activity_plan_id)
           .or(`profile_id.eq.${ctx.session.user.id},is_system_template.eq.true`)
           .single();
@@ -590,8 +564,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
         .from("planned_activities")
         .select(
           `
-          id,
-          scheduled_date,
+          *,
           activity_plan:activity_plans (*)
         `,
         )
@@ -602,14 +575,14 @@ export const plannedActivitiesRouter = createTRPCRouter({
       // Get user profile for TSS estimation
       const { data: profile } = await ctx.supabase
         .from("profiles")
-        .select("dob")
+        .select("*")
         .eq("id", ctx.session.user.id)
         .single();
 
       // Fetch latest FTP from performance metrics
       const { data: ftpMetrics } = await ctx.supabase
         .from("profile_performance_metric_logs")
-        .select("value")
+        .select("*")
         .eq("profile_id", ctx.session.user.id)
         .eq("type", "power")
         .eq("category", "bike")
@@ -621,7 +594,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
       // Fetch latest threshold HR from performance metrics
       const { data: thresholdHrMetrics } = await ctx.supabase
         .from("profile_performance_metric_logs")
-        .select("value")
+        .select("*")
         .eq("profile_id", ctx.session.user.id)
         .eq("type", "heart_rate")
         .gte("duration_seconds", 3000)
@@ -632,7 +605,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
       // Fetch latest weight from profile metrics
       const { data: weightMetrics } = await ctx.supabase
         .from("profile_metric_logs")
-        .select("value")
+        .select("*")
         .eq("profile_id", ctx.session.user.id)
         .eq("metric_type", "weight_kg")
         .order("recorded_at", { ascending: false })
@@ -706,7 +679,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
 
       const { data: nearbyActivities } = await ctx.supabase
         .from("planned_activities")
-        .select("scheduled_date")
+        .select("*")
         .eq("profile_id", ctx.session.user.id)
         .gte("scheduled_date", threeDaysBefore.toISOString().split("T")[0])
         .lte("scheduled_date", threeDaysAfter.toISOString().split("T")[0])
@@ -821,12 +794,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
         .from("planned_activities")
         .select(
           `
-          id,
-          idx,
-          profile_id,
-          activity_plan_id,
-          scheduled_date,
-          created_at,
+          *,
           activity_plan:activity_plans (*)
         `,
         )

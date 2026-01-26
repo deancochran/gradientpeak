@@ -14,21 +14,22 @@
  */
 
 import {
-  BLE_SERVICE_UUIDS,
   PublicActivityCategory,
   PublicActivityLocation,
   PublicProfilesRow,
   RecordingServiceActivityPlan,
   type IntervalStepV2,
+  type RecordingCapabilities,
+  type RecordingConfiguration,
 } from "@repo/core";
 
+import { FitRecord, GarminFitEncoder } from "../fit/GarminFitEncoder";
 import {
   areAllPermissionsGranted,
   checkAllPermissions,
   type AllPermissionsStatus,
 } from "../permissions-check";
 import { LiveMetricsManager } from "./LiveMetricsManager";
-import { GarminFitEncoder, FitRecord } from "../fit/GarminFitEncoder";
 import { LocationManager } from "./location";
 import { NotificationsManager } from "./notification";
 import { PlanManager } from "./plan";
@@ -43,6 +44,7 @@ import {
   validatePlanRequirements,
   type PlanValidationResult,
 } from "./planValidation";
+export { SimplifiedMetrics };
 
 // ================================
 // Types
@@ -263,6 +265,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   async refreshAndCheckAllPermissions(): Promise<boolean> {
     await this.checkPermissions(true); // Force refresh
     return await areAllPermissionsGranted();
+  }
+
+  public getSimplifiedMetrics(): SimplifiedMetrics {
+    return this.liveMetricsManager.getSimplifiedMetrics();
   }
 
   // ================================
@@ -989,6 +995,109 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return validatePlanRequirements(this._plan, this.profile);
   }
 
+  // ================================
+  // Configuration
+  // ================================
+
+  /**
+   * Get the current recording configuration based on state and sensors
+   */
+  public getRecordingConfiguration(): RecordingConfiguration {
+    const connectedSensors = this.sensorsManager.getConnectedSensors();
+    const ftmsTrainer = this.sensorsManager.getControllableTrainer();
+
+    // Check for specific sensor capabilities
+    // Note: This checks for dedicated sensors or FTMS trainers providing these metrics
+    const hasHeartRate = connectedSensors.some((s) =>
+      s.characteristics.has("00002a37-0000-1000-8000-00805f9b34fb"),
+    );
+
+    // Power: dedicated power meter (0x2A63) or FTMS Indoor Bike Data (0x2AD2)
+    const hasPower = connectedSensors.some(
+      (s) =>
+        s.characteristics.has("00002a63-0000-1000-8000-00805f9b34fb") ||
+        s.characteristics.has("00002ad2-0000-1000-8000-00805f9b34fb"),
+    );
+
+    // Cadence: CSC (0x2A5B), RSC (0x2A53), or FTMS Indoor Bike Data (0x2AD2)
+    const hasCadence = connectedSensors.some(
+      (s) =>
+        s.characteristics.has("00002a5b-0000-1000-8000-00805f9b34fb") ||
+        s.characteristics.has("00002a53-0000-1000-8000-00805f9b34fb") ||
+        s.characteristics.has("00002ad2-0000-1000-8000-00805f9b34fb"),
+    );
+
+    // Plan validation
+    const validation = this.validatePlanRequirements();
+
+    // Construct Input
+    const input: RecordingConfiguration["input"] = {
+      activityCategory: this.selectedActivityCategory,
+      activityLocation: this.selectedActivityLocation,
+      mode: this.hasPlan ? "planned" : "unplanned",
+      plan: this.hasPlan
+        ? {
+            hasStructure: this.stepCount > 0,
+            hasRoute: !!this._plan?.route_id || this.hasRoute,
+            stepCount: this.stepCount,
+            requiresManualAdvance: this._steps.some(
+              (s) => s.duration.type === "untilFinished",
+            ),
+          }
+        : undefined,
+      devices: {
+        ftmsTrainer: ftmsTrainer
+          ? {
+              deviceId: ftmsTrainer.id,
+              features: ftmsTrainer.ftmsFeatures as any,
+              autoControlEnabled: !this.manualControlOverride,
+            }
+          : undefined,
+        hasPowerMeter: hasPower,
+        hasHeartRateMonitor: hasHeartRate,
+        hasCadenceSensor: hasCadence,
+      },
+      gpsAvailable:
+        this._gpsAvailable || this.selectedActivityLocation === "outdoor",
+    };
+
+    // Construct Capabilities
+    const capabilities: RecordingCapabilities = {
+      // Data collection
+      canTrackLocation:
+        input.activityLocation === "outdoor" && input.gpsAvailable,
+      canTrackPower: input.devices.hasPowerMeter,
+      canTrackHeartRate: input.devices.hasHeartRateMonitor,
+      canTrackCadence: input.devices.hasCadenceSensor,
+
+      // UI features
+      shouldShowMap: input.activityLocation === "outdoor",
+      shouldShowSteps: !!input.plan?.hasStructure,
+      shouldShowRouteOverlay: !!input.plan?.hasRoute,
+      shouldShowTurnByTurn: false, // Not implemented yet
+      shouldShowFollowAlong: false, // Not implemented yet
+      shouldShowTrainerControl: !!input.devices.ftmsTrainer,
+
+      // Automation
+      canAutoAdvanceSteps:
+        !!input.plan?.hasStructure && !input.plan.requiresManualAdvance,
+      shouldAutoFollowTargets:
+        !!input.plan?.hasStructure &&
+        !!input.devices.ftmsTrainer &&
+        input.devices.ftmsTrainer.autoControlEnabled,
+
+      // Primary metric
+      primaryMetric: input.activityLocation === "outdoor" ? "distance" : "time",
+
+      // Validation
+      isValid: validation?.isValid ?? true,
+      errors: validation?.missingMetrics.map((m) => m.name) ?? [],
+      warnings: validation?.warnings ?? [],
+    };
+
+    return { input, capabilities };
+  }
+
   async startRecording() {
     console.log("[Service] Starting recording");
 
@@ -1081,9 +1190,15 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     // Initialize FIT Encoder
     try {
-      this.fitEncoder = new GarminFitEncoder(`${Date.now()}`, this.profile.id);
-      await this.fitEncoder.initialize();
+      const encoder = new GarminFitEncoder(`${Date.now()}`, this.profile.id);
+      await encoder.initialize(this.sensorsManager.getConnectedSensors());
+      this.fitEncoder = encoder;
       console.log("[Service] FIT encoder initialized");
+
+      // Write initial FIT record immediately to ensure file has data
+      // This prevents "No data recorded" errors for very short recordings
+      await this.updateFitRecording();
+      console.log("[Service] Initial FIT record written");
     } catch (error) {
       console.error("[Service] Failed to initialize FIT encoder:", error);
       // Don't fail the whole recording if FIT encoding fails
@@ -1160,17 +1275,42 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       // Finish LiveMetricsManager (flushes final data to files)
       await this.liveMetricsManager.finishRecording();
 
+      // Check StreamBuffer status before finalizing
+      const bufferStatus =
+        this.liveMetricsManager.streamBuffer.getBufferStatus();
+      console.log("[Service] StreamBuffer status:", bufferStatus);
+
       // Finalize FIT file
       if (this.fitEncoder) {
         try {
           const stats = this.liveMetricsManager.getSessionStats();
+
+          // VALIDATION: Ensure minimum recording duration (at least 3 seconds)
+          if (stats.duration < 3) {
+            throw new Error(
+              `Recording too short: ${stats.duration.toFixed(1)}s. Minimum 3 seconds required. Please record for longer before finishing.`,
+            );
+          }
+
+          // VALIDATION: Ensure we have some data
+          const status = this.fitEncoder.getStatus();
+          if (status.recordCount === 0) {
+            throw new Error(
+              "No data recorded. FIT file would be invalid without any records. Please ensure sensors are connected and recording for at least a few seconds.",
+            );
+          }
+
+          console.log(
+            `[Service] Finalizing FIT file with ${status.recordCount} records, ${stats.duration}s duration`,
+          );
+
           const { sport, subSport } = this.getFitSport(
             this.selectedActivityCategory,
             this.selectedActivityLocation,
           );
           await this.fitEncoder.finalize({
             startTime: this.startTime || Date.now(),
-            totalTime: stats.duration,
+            totalTime: stats.duration * 1000, // Convert to milliseconds
             distance: stats.distance,
             avgSpeed: stats.avgSpeed,
             maxSpeed: stats.maxSpeed,
@@ -1194,6 +1334,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
           );
         } catch (error) {
           console.error("[Service] Failed to finalize FIT file:", error);
+          // Re-throw so UI can show proper error
+          throw new Error(
+            `FIT file creation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+          );
         }
       }
 
@@ -1674,6 +1818,14 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         }
 
         await this.fitEncoder.addRecord(record);
+
+        // Log periodically (every 10 seconds) to track recording progress
+        const status = this.fitEncoder.getStatus();
+        if (status.recordCount % 10 === 0 && status.recordCount > 0) {
+          console.log(
+            `[Service] FIT recording progress: ${status.recordCount} records`,
+          );
+        }
       }
     } catch (error) {
       console.error("[Service] Failed to update FIT recording:", error);

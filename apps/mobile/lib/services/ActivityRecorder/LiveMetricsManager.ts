@@ -15,7 +15,7 @@
 import {
   PublicActivityCategory,
   PublicActivityLocation,
-  PublicProfilesRow
+  PublicProfilesRow,
 } from "@repo/core";
 import { EventEmitter } from "expo";
 import { MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
@@ -95,7 +95,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
   constructor(
     profile: PublicProfilesRow,
-    metrics?: { ftp?: number; thresholdHr?: number; weightKg?: number }
+    metrics?: { ftp?: number; thresholdHr?: number; weightKg?: number },
   ) {
     super();
     // Note: expo-modules-core EventEmitter doesn't have setMaxListeners
@@ -199,7 +199,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    */
   public async finishRecording(): Promise<LiveMetricsState> {
     this.stopTimers();
-    
+
     this.calculateAndEmitMetrics();
 
     // Final flush to files BEFORE setting isActive = false
@@ -647,12 +647,16 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     // Calculate speed using last 3 seconds of movement
     // This smooths GPS noise while being responsive
     const cutoffTime = Date.now() - 3000; // 3 seconds ago
-    const recentPoints = recentReadings.filter(r => r.timestamp >= cutoffTime) as LatLngBufferedReading[];
+    const recentPoints = recentReadings.filter(
+      (r) => r.timestamp >= cutoffTime,
+    ) as LatLngBufferedReading[];
 
     if (recentPoints.length < 2) {
       // Fall back to using all recent points if not enough in last 3s
       if (recentReadings.length >= 2) {
-        return this.computeSpeedFromPoints(recentReadings as LatLngBufferedReading[]);
+        return this.computeSpeedFromPoints(
+          recentReadings as LatLngBufferedReading[],
+        );
       }
       return undefined;
     }
@@ -665,7 +669,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    * Returns speed in m/s
    */
   private computeSpeedFromPoints(
-    points: Array<{ value: [number, number]; timestamp: number }>
+    points: Array<{ value: [number, number]; timestamp: number }>,
   ): number | undefined {
     if (points.length < 2) return undefined;
 
@@ -690,7 +694,8 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     }
 
     // Calculate time span
-    const totalTime = (points[points.length - 1].timestamp - points[0].timestamp) / 1000;
+    const totalTime =
+      (points[points.length - 1].timestamp - points[0].timestamp) / 1000;
 
     // Avoid division by zero and require reasonable time span
     if (totalTime < 0.5) {
@@ -962,11 +967,16 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     // TIER 1: Power + Heart Rate (most accurate)
     if (this.metrics.avgPower > 0 && this.metrics.avgHeartRate > 0) {
       // Power-based calculation with HR efficiency adjustment
-      const powerCalories = (this.metrics.avgPower * this.metrics.movingTime * 0.239) / 1000;
+      const powerCalories =
+        (this.metrics.avgPower * this.metrics.movingTime * 0.239) / 1000;
 
       // HR efficiency factor: adjust based on HR intensity
       const hrEfficiency = this.profile.threshold_hr
-        ? Math.min(1.15, 0.85 + (this.metrics.avgHeartRate / this.profile.threshold_hr) * 0.3)
+        ? Math.min(
+            1.15,
+            0.85 +
+              (this.metrics.avgHeartRate / this.profile.threshold_hr) * 0.3,
+          )
         : 1.0;
 
       this.metrics.calories = Math.round(powerCalories * hrEfficiency);
@@ -988,14 +998,14 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
       // Activity-specific MET multipliers (at moderate intensity)
       const activityMETs: Record<string, number> = {
-        run: 9.0,        // Running at moderate pace
-        bike: 7.5,       // Cycling at moderate pace
-        swim: 7.0,       // Swimming at moderate pace
-        walk: 3.5,       // Walking
-        hike: 6.0,       // Hiking
-        row: 7.0,        // Rowing
-        ski: 7.0,        // Cross-country skiing
-        other: 6.0,      // Generic moderate activity
+        run: 9.0, // Running at moderate pace
+        bike: 7.5, // Cycling at moderate pace
+        swim: 7.0, // Swimming at moderate pace
+        walk: 3.5, // Walking
+        hike: 6.0, // Hiking
+        row: 7.0, // Rowing
+        ski: 7.0, // Cross-country skiing
+        other: 6.0, // Generic moderate activity
       };
 
       const baseMET = activityMETs[this.activityCategory] || 6.0;
@@ -1003,11 +1013,15 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       // Adjust MET based on HR intensity
       let intensityMultiplier = 1.0;
       if (this.profile.threshold_hr) {
-        const hrPercent = (this.metrics.avgHeartRate / this.profile.threshold_hr) * 100;
-        if (hrPercent < 70) intensityMultiplier = 0.7;      // Easy
-        else if (hrPercent < 85) intensityMultiplier = 0.9; // Moderate
-        else if (hrPercent < 95) intensityMultiplier = 1.1; // Hard
-        else intensityMultiplier = 1.3;                     // Very Hard
+        const hrPercent =
+          (this.metrics.avgHeartRate / this.profile.threshold_hr) * 100;
+        if (hrPercent < 70)
+          intensityMultiplier = 0.7; // Easy
+        else if (hrPercent < 85)
+          intensityMultiplier = 0.9; // Moderate
+        else if (hrPercent < 95)
+          intensityMultiplier = 1.1; // Hard
+        else intensityMultiplier = 1.3; // Very Hard
       }
 
       const adjustedMET = baseMET * intensityMultiplier;
@@ -1038,12 +1052,12 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
       // Calories per km by activity type
       const caloriesPerKm: Record<string, number> = {
-        run: weight * 1.0,     // ~1 kcal/kg/km
-        walk: weight * 0.5,    // ~0.5 kcal/kg/km
-        bike: weight * 0.35,   // ~0.35 kcal/kg/km (cycling is more efficient)
-        hike: weight * 0.6,    // ~0.6 kcal/kg/km
-        swim: weight * 1.2,    // Swimming (if distance tracked)
-        other: weight * 0.7,   // Generic
+        run: weight * 1.0, // ~1 kcal/kg/km
+        walk: weight * 0.5, // ~0.5 kcal/kg/km
+        bike: weight * 0.35, // ~0.35 kcal/kg/km (cycling is more efficient)
+        hike: weight * 0.6, // ~0.6 kcal/kg/km
+        swim: weight * 1.2, // Swimming (if distance tracked)
+        other: weight * 0.7, // Generic
       };
 
       const calPerKm = caloriesPerKm[this.activityCategory] || weight * 0.7;
@@ -1247,27 +1261,29 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     const bikeWeightKg = 8; // Typical bike weight
     const totalMassKg = riderWeightKg + bikeWeightKg;
 
-    // Solve for speed iteratively
+    // Solve for speed iteratively using Binary Search (O(log N))
     // Power equation: P = (CRR * m * g * v) + (0.5 * ρ * CDA * v³)
-    // Where: P = power, m = mass, g = gravity, v = velocity, ρ = air density
 
-    let speed = 0; // m/s
+    let min = 0;
+    let max = 25; // 25 m/s = 90 km/h (reasonable max)
+    let speed = 0;
 
-    // Iterate to find speed that matches the power output
-    // Start from 0 and increment by 0.1 m/s until we exceed the power
-    for (let v = 0; v < 20; v += 0.1) {
-      // 20 m/s = 72 km/h max speed for iteration
-      const rollingResistance = CRR * totalMassKg * 9.81 * v;
-      const airResistance = 0.5 * AIR_DENSITY * CDA * Math.pow(v, 3);
+    // 10 iterations gives precision < 0.025 m/s
+    for (let i = 0; i < 10; i++) {
+      speed = (min + max) / 2;
+
+      const rollingResistance = CRR * totalMassKg * 9.81 * speed;
+      const airResistance = 0.5 * AIR_DENSITY * CDA * Math.pow(speed, 3);
       const requiredPower = rollingResistance + airResistance;
 
-      if (requiredPower >= effectivePower) {
-        speed = v;
-        break;
+      if (requiredPower < effectivePower) {
+        min = speed;
+      } else {
+        max = speed;
       }
     }
 
-    // If no power (coasting), speed is 0
+    // If no power (coasting), speed is 0 (handled by binary search converging to 0 if power is 0)
     if (powerWatts <= 0) {
       speed = 0;
     }
@@ -1326,7 +1342,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    */
   private extractProfileMetrics(
     profile: PublicProfilesRow,
-    metrics?: { ftp?: number; thresholdHr?: number; weightKg?: number }
+    metrics?: { ftp?: number; thresholdHr?: number; weightKg?: number },
   ): ProfileMetrics {
     return {
       ftp: metrics?.ftp ?? undefined,

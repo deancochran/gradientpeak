@@ -44,9 +44,7 @@ export const trendsRouter = createTRPCRouter({
       // Build query
       let query = ctx.supabase
         .from("activities")
-        .select(
-          "started_at, distance_meters, moving_seconds, duration_seconds, type",
-        )
+        .select("*")
         .eq("profile_id", ctx.session.user.id)
         .gte("started_at", input.start_date)
         .lte("started_at", input.end_date)
@@ -146,9 +144,7 @@ export const trendsRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       let query = ctx.supabase
         .from("activities")
-        .select(
-          "id, name, started_at, distance_meters, moving_seconds, avg_speed_mps, avg_power, avg_heart_rate, type",
-        )
+        .select("*")
         .eq("profile_id", ctx.session.user.id)
         .gte("started_at", input.start_date)
         .lte("started_at", input.end_date)
@@ -202,7 +198,7 @@ export const trendsRouter = createTRPCRouter({
 
       const { data: activities, error: activitiesError } = await ctx.supabase
         .from("activities")
-        .select("started_at, training_stress_score")
+        .select("*")
         .eq("profile_id", ctx.session.user.id)
         .gte("started_at", extendedStart.toISOString())
         .lte("started_at", endDate.toISOString())
@@ -319,7 +315,7 @@ export const trendsRouter = createTRPCRouter({
       // Get activities with intensity factor and TSS
       const { data: activities, error } = await ctx.supabase
         .from("activities")
-        .select("id, started_at, intensity_factor, training_stress_score")
+        .select("*")
         .eq("profile_id", ctx.session.user.id)
         .gte("started_at", input.start_date)
         .lte("started_at", input.end_date)
@@ -437,7 +433,7 @@ export const trendsRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const { data: activities, error } = await ctx.supabase
         .from("activities")
-        .select("started_at")
+        .select("*")
         .eq("profile_id", ctx.session.user.id)
         .gte("started_at", input.start_date)
         .lte("started_at", input.end_date)
@@ -556,9 +552,7 @@ export const trendsRouter = createTRPCRouter({
       // Build query
       let query = ctx.supabase
         .from("activities")
-        .select(
-          "id, name, started_at, distance_meters, moving_seconds, avg_speed_mps, avg_power, training_stress_score, type",
-        )
+        .select("*")
         .eq("profile_id", ctx.session.user.id);
 
       if (input.type) {
