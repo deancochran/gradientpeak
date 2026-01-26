@@ -50,7 +50,8 @@ function isLatLngReading(
 }
 
 export class DataBuffer {
-  private data: BufferedReading[] = [];
+  // Store readings by metric for O(1) access to specific streams
+  private stores = new Map<string, BufferedReading[]>();
   private windowMs: number;
 
   constructor(windowSeconds: number = RECORDING_CONFIG.BUFFER_WINDOW_SECONDS) {
@@ -61,7 +62,10 @@ export class DataBuffer {
    * Add a sensor reading to the buffer
    */
   add(reading: BufferedReading): void {
-    this.data.push(reading);
+    if (!this.stores.has(reading.metric)) {
+      this.stores.set(reading.metric, []);
+    }
+    this.stores.get(reading.metric)!.push(reading);
   }
 
   /**
@@ -71,11 +75,16 @@ export class DataBuffer {
    * @returns Array of numeric values
    */
   getRecent(metric: string, seconds: number = 30): number[] {
+    const readings = this.stores.get(metric);
+    if (!readings) return [];
+
     const cutoff = Date.now() - seconds * 1000;
-    return this.data
+    // Optimization: Binary search for start index could be added here if arrays get very large
+    // For now, filter is O(M) where M is readings for this metric, much better than O(N)
+    return readings
       .filter(
         (d): d is NumericBufferedReading =>
-          d.metric === metric && d.timestamp > cutoff && isNumericReading(d),
+          d.timestamp > cutoff && isNumericReading(d),
       )
       .map((d) => d.value);
   }
@@ -87,11 +96,14 @@ export class DataBuffer {
    * @returns Array of [lat, lng] tuples
    */
   getRecentLatLng(metric: string, seconds: number = 30): [number, number][] {
+    const readings = this.stores.get(metric);
+    if (!readings) return [];
+
     const cutoff = Date.now() - seconds * 1000;
-    return this.data
+    return readings
       .filter(
         (d): d is LatLngBufferedReading =>
-          d.metric === metric && d.timestamp > cutoff && isLatLngReading(d),
+          d.timestamp > cutoff && isLatLngReading(d),
       )
       .map((d) => d.value);
   }
@@ -103,21 +115,22 @@ export class DataBuffer {
    * @returns Array of readings with values and timestamps
    */
   getRecentReadings(metric: string, seconds: number = 30): BufferedReading[] {
+    const readings = this.stores.get(metric);
+    if (!readings) return [];
+
     const cutoff = Date.now() - seconds * 1000;
-    return this.data.filter(
-      (d) => d.metric === metric && d.timestamp > cutoff
-    );
+    return readings.filter((d) => d.timestamp > cutoff);
   }
 
   /**
    * Get all numeric readings for a specific metric in the entire window
    */
   getAll(metric: string): number[] {
-    return this.data
-      .filter(
-        (d): d is NumericBufferedReading =>
-          d.metric === metric && isNumericReading(d),
-      )
+    const readings = this.stores.get(metric);
+    if (!readings) return [];
+
+    return readings
+      .filter((d): d is NumericBufferedReading => isNumericReading(d))
       .map((d) => d.value);
   }
 
@@ -125,11 +138,11 @@ export class DataBuffer {
    * Get all lat/lng readings for a specific metric in the entire window
    */
   getAllLatLng(metric: string): [number, number][] {
-    return this.data
-      .filter(
-        (d): d is LatLngBufferedReading =>
-          d.metric === metric && isLatLngReading(d),
-      )
+    const readings = this.stores.get(metric);
+    if (!readings) return [];
+
+    return readings
+      .filter((d): d is LatLngBufferedReading => isLatLngReading(d))
       .map((d) => d.value);
   }
 
@@ -138,9 +151,13 @@ export class DataBuffer {
    * Returns number for numeric metrics, undefined for non-numeric
    */
   getLatest(metric: string): number | undefined {
-    for (let i = this.data.length - 1; i >= 0; i--) {
-      const reading = this.data[i];
-      if (reading.metric === metric && isNumericReading(reading)) {
+    const readings = this.stores.get(metric);
+    if (!readings || readings.length === 0) return undefined;
+
+    // Iterate backwards to find last numeric reading
+    for (let i = readings.length - 1; i >= 0; i--) {
+      const reading = readings[i];
+      if (isNumericReading(reading)) {
         return reading.value;
       }
     }
@@ -152,9 +169,12 @@ export class DataBuffer {
    * Returns [lat, lng] tuple or undefined
    */
   getLatestLatLng(metric: string): [number, number] | undefined {
-    for (let i = this.data.length - 1; i >= 0; i--) {
-      const reading = this.data[i];
-      if (reading.metric === metric && isLatLngReading(reading)) {
+    const readings = this.stores.get(metric);
+    if (!readings || readings.length === 0) return undefined;
+
+    for (let i = readings.length - 1; i >= 0; i--) {
+      const reading = readings[i];
+      if (isLatLngReading(reading)) {
         return reading.value;
       }
     }
@@ -166,12 +186,9 @@ export class DataBuffer {
    * Returns the actual BufferedReading object
    */
   getLatestReading(metric: string): BufferedReading | undefined {
-    for (let i = this.data.length - 1; i >= 0; i--) {
-      if (this.data[i].metric === metric) {
-        return this.data[i];
-      }
-    }
-    return undefined;
+    const readings = this.stores.get(metric);
+    if (!readings || readings.length === 0) return undefined;
+    return readings[readings.length - 1];
   }
 
   /**
@@ -207,7 +224,7 @@ export class DataBuffer {
    * Count readings for a metric (both numeric and lat/lng)
    */
   getCount(metric: string): number {
-    return this.data.filter((d) => d.metric === metric).length;
+    return this.stores.get(metric)?.length || 0;
   }
 
   /**
@@ -216,13 +233,49 @@ export class DataBuffer {
    */
   cleanup(): void {
     const cutoff = Date.now() - this.windowMs;
-    const beforeCount = this.data.length;
-    this.data = this.data.filter((d) => d.timestamp > cutoff);
-    const removedCount = beforeCount - this.data.length;
+    let totalRemoved = 0;
+    let totalRemaining = 0;
 
-    if (removedCount > 0) {
+    for (const [metric, readings] of this.stores.entries()) {
+      const beforeCount = readings.length;
+      // Find index of first valid reading (could use binary search for optimization)
+      const firstValidIndex = readings.findIndex((d) => d.timestamp > cutoff);
+
+      if (firstValidIndex === -1) {
+        // All readings are old (or array empty)
+        // If array not empty, all are old -> clear
+        if (
+          readings.length > 0 &&
+          readings[readings.length - 1].timestamp <= cutoff
+        ) {
+          this.stores.set(metric, []);
+          totalRemoved += beforeCount;
+        } else {
+          // Array empty or all valid (findIndex returns -1 if no match, but we need to check if they are all > cutoff or all <= cutoff)
+          // Actually findIndex returns -1 if NO element satisfies condition.
+          // If no element > cutoff, then ALL are <= cutoff (old).
+          // Wait, findIndex returns index of FIRST element that satisfies.
+          // If -1, it means NO element is > cutoff. So all are old.
+          if (readings.length > 0) {
+            this.stores.set(metric, []);
+            totalRemoved += beforeCount;
+          }
+        }
+      } else if (firstValidIndex > 0) {
+        // Remove old readings
+        const newReadings = readings.slice(firstValidIndex);
+        this.stores.set(metric, newReadings);
+        totalRemoved += firstValidIndex;
+        totalRemaining += newReadings.length;
+      } else {
+        // All readings are valid
+        totalRemaining += readings.length;
+      }
+    }
+
+    if (totalRemoved > 0) {
       console.log(
-        `[DataBuffer] Cleaned up ${removedCount} old readings (${this.data.length} remaining)`,
+        `[DataBuffer] Cleaned up ${totalRemoved} old readings (${totalRemaining} remaining)`,
       );
     }
   }
@@ -231,7 +284,7 @@ export class DataBuffer {
    * Clear all data
    */
   clear(): void {
-    this.data = [];
+    this.stores.clear();
   }
 
   /**
@@ -247,25 +300,43 @@ export class DataBuffer {
     metricCounts: Record<string, number>;
   } {
     const metricCounts: Record<string, number> = {};
+    let totalReadings = 0;
     let numericCount = 0;
     let latLngCount = 0;
+    let oldestTimestamp: number | null = null;
+    let newestTimestamp: number | null = null;
 
-    for (const reading of this.data) {
-      metricCounts[reading.metric] = (metricCounts[reading.metric] || 0) + 1;
-      if (isNumericReading(reading)) {
-        numericCount++;
-      } else {
-        latLngCount++;
+    for (const [metric, readings] of this.stores.entries()) {
+      metricCounts[metric] = readings.length;
+      totalReadings += readings.length;
+
+      if (readings.length > 0) {
+        const first = readings[0];
+        const last = readings[readings.length - 1];
+
+        if (oldestTimestamp === null || first.timestamp < oldestTimestamp) {
+          oldestTimestamp = first.timestamp;
+        }
+        if (newestTimestamp === null || last.timestamp > newestTimestamp) {
+          newestTimestamp = last.timestamp;
+        }
+
+        // Rough count of types (checking first one is approximation but fast)
+        if (isNumericReading(first)) {
+          numericCount += readings.length;
+        } else {
+          latLngCount += readings.length;
+        }
       }
     }
 
     return {
-      totalReadings: this.data.length,
+      totalReadings,
       numericReadings: numericCount,
       latLngReadings: latLngCount,
-      oldestTimestamp: this.data[0]?.timestamp ?? null,
-      newestTimestamp: this.data[this.data.length - 1]?.timestamp ?? null,
-      memoryEstimateMB: (this.data.length * 32) / (1024 * 1024), // Rough estimate: 32 bytes per reading
+      oldestTimestamp,
+      newestTimestamp,
+      memoryEstimateMB: (totalReadings * 32) / (1024 * 1024), // Rough estimate: 32 bytes per reading
       metricCounts,
     };
   }
@@ -274,13 +345,17 @@ export class DataBuffer {
    * Get all readings (useful for debugging or advanced analysis)
    */
   getAllReadings(): BufferedReading[] {
-    return [...this.data];
+    const all: BufferedReading[] = [];
+    for (const readings of this.stores.values()) {
+      all.push(...readings);
+    }
+    return all.sort((a, b) => a.timestamp - b.timestamp);
   }
 
   /**
    * Get readings by metric (any type)
    */
   getReadingsByMetric(metric: string): BufferedReading[] {
-    return this.data.filter((d) => d.metric === metric);
+    return this.stores.get(metric) || [];
   }
 }

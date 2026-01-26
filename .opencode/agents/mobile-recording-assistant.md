@@ -1,6 +1,25 @@
 ---
-description: "Specialized agent for ActivityRecorder service development. Helps with sensor integration, metrics tracking, and recording UI."
+description: Specialized agent for ActivityRecorder service - sensor integration, metrics tracking, and recording UI
 mode: subagent
+tools:
+  read: true
+  write: true
+  edit: true
+  bash: false
+  grep: true
+  glob: true
+permissions:
+  edit: ask
+  write: ask
+  bash:
+    "*": deny
+  grep:
+    "*": allow
+  glob:
+    "*": allow
+  skill:
+    "mobile-frontend": "allow"
+    "testing": "allow"
 ---
 
 # Mobile Recording Assistant

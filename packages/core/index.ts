@@ -108,7 +108,11 @@ export {
   projectCTL,
   startOfDay,
 } from "./calculations";
-export type { AggregatedStream } from "./calculations";
+export type {
+  AggregatedStream,
+  PublicActivityMetric,
+  PublicActivityMetricDataType,
+} from "./calculations";
 
 // V2 Calculations (for ActivityPlanStructureV2)
 export {
@@ -169,15 +173,19 @@ export * from "./schemas"; // Zod schemas and types (includes formatDuration for
 export * from "./utils"; // Utility functions
 
 // ============================================================================
-// FIT File Parsing Module
+// FIT File Parsing and Encoding Module
 // ============================================================================
-export * from "./lib/fit-parser";
+
 export * from "./lib/fit-sdk-parser";
+export * from "./lib/fit-sdk-encoder";
+export { extractHeartRateZones, extractPowerZones } from "./lib/fit-sdk-parser";
+export type { StandardActivity } from "./types/normalization";
 
 // ============================================================================
 // Performance Metrics Calculations
 // ============================================================================
 // Multi-modal TSS calculations (power, heart rate, pace)
+export * from "./calculations/duration";
 export * from "./calculations/tss";
 
 // Performance curves (power, pace, HR)

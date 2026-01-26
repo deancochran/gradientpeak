@@ -34,5 +34,7 @@ export * from "./date-grouping";
 // Export temporal metrics utilities
 export * from "./temporal-metrics";
 
-// Export stream decompression utilities
-export * from "./streamDecompression";
+// NOTE: streamDecompression is NOT exported from core package index
+// - Server-side code (tRPC) should import directly: import { decompressStream } from "@repo/core/utils/streamDecompression"
+// - Mobile code should use: apps/mobile/lib/utils/streamDecompression.ts (React Native compatible)
+// This prevents accidental imports of Node.js built-ins (node:zlib, node:buffer) in React Native

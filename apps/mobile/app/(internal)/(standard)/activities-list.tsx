@@ -8,12 +8,7 @@ import { trpc } from "@/lib/trpc";
 import { PublicActivityCategory } from "@repo/core";
 import { format } from "date-fns";
 import { useRouter } from "expo-router";
-import {
-  Activity,
-  Calendar,
-  ChevronRight,
-  TrendingUp,
-} from "lucide-react-native";
+import { Activity, ChevronRight } from "lucide-react-native";
 import React, { useState } from "react";
 import {
   RefreshControl,
@@ -205,66 +200,49 @@ function ActivitiesScreen() {
               >
                 <Card>
                   <CardContent className="p-4">
-                    <View className="flex-row items-center justify-between">
-                      <View className="flex-1">
-                        {/* Activity Name & Type */}
-                        <View className="flex-row items-center gap-2 mb-2">
-                          <Text className="text-2xl">
-                            {getActivityIcon(activity.type)}
-                          </Text>
-                          <Text
-                            className="text-lg font-semibold flex-1"
-                            numberOfLines={1}
-                          >
-                            {activity.name}
-                          </Text>
-                        </View>
+                    {/* Header with avatar, username, metadata */}
+                    <View className="flex-row items-start gap-3 mb-3">
+                      <View className="w-10 h-10 rounded-full bg-primary/10 items-center justify-center">
+                        <Text className="text-xl">
+                          {getActivityIcon(activity.type)}
+                        </Text>
+                      </View>
 
-                        {/* Date */}
-                        <View className="flex-row items-center gap-1 mb-2">
-                          <Icon
-                            as={Calendar}
-                            size={14}
-                            className="text-muted-foreground"
-                          />
-                          <Text className="text-sm text-muted-foreground">
+                      <View className="flex-1">
+                        {/* Username (or user info if available) */}
+                        <Text className="text-sm font-semibold text-foreground">
+                          You
+                        </Text>
+
+                        {/* Metadata Row: Date + Device + Location */}
+                        <View className="flex-row items-center gap-1.5 mt-1 flex-wrap">
+                          <Text className="text-xs text-muted-foreground">
                             {format(
                               new Date(activity.started_at),
-                              "MMM d, yyyy 'at' h:mm a",
+                              "MMM d, yyyy • h:mm a",
                             )}
                           </Text>
-                        </View>
-
-                        {/* Stats Row */}
-                        <View className="flex-row items-center gap-4">
-                          {activity.distance_meters > 0 && (
-                            <View className="flex-row items-center gap-1">
-                              <Text className="text-sm font-semibold">
-                                {formatDistance(activity.distance_meters)}
+                          {activity.device_manufacturer && (
+                            <>
+                              <Text className="text-xs text-muted-foreground">
+                                •
                               </Text>
-                            </View>
+                              <Text className="text-xs text-muted-foreground">
+                                {activity.device_manufacturer}{" "}
+                                {activity.device_product || ""}
+                              </Text>
+                            </>
                           )}
-                          <View className="flex-row items-center gap-1">
-                            <Text className="text-sm text-muted-foreground">
-                              {formatDuration(activity.duration_seconds)}
-                            </Text>
-                          </View>
-                          {activity.metrics &&
-                            typeof activity.metrics === "object" &&
-                            !Array.isArray(activity.metrics) &&
-                            "tss" in activity.metrics &&
-                            typeof activity.metrics.tss === "number" && (
-                              <View className="flex-row items-center gap-1">
-                                <Icon
-                                  as={TrendingUp}
-                                  size={14}
-                                  className="text-primary"
-                                />
-                                <Text className="text-sm font-medium text-primary">
-                                  {activity.metrics.tss} TSS
-                                </Text>
-                              </View>
-                            )}
+                          {activity.location && (
+                            <>
+                              <Text className="text-xs text-muted-foreground">
+                                •
+                              </Text>
+                              <Text className="text-xs text-muted-foreground capitalize">
+                                {activity.location}
+                              </Text>
+                            </>
+                          )}
                         </View>
                       </View>
 
@@ -272,8 +250,76 @@ function ActivitiesScreen() {
                       <Icon
                         as={ChevronRight}
                         size={20}
-                        className="text-muted-foreground ml-2"
+                        className="text-muted-foreground"
                       />
+                    </View>
+
+                    {/* Activity Name */}
+                    <Text className="text-base font-semibold text-foreground mb-1">
+                      {activity.name}
+                    </Text>
+
+                    {/* Notes (if any) */}
+                    {activity.notes && (
+                      <Text
+                        className="text-sm text-muted-foreground mb-3"
+                        numberOfLines={2}
+                      >
+                        {activity.notes}
+                      </Text>
+                    )}
+
+                    {/* Key Metrics */}
+                    <View className="flex-row items-center gap-4 flex-wrap">
+                      {activity.distance_meters > 0 && (
+                        <View>
+                          <Text className="text-xs text-muted-foreground uppercase">
+                            Distance
+                          </Text>
+                          <Text className="text-sm font-semibold">
+                            {formatDistance(activity.distance_meters)}
+                          </Text>
+                        </View>
+                      )}
+                      <View>
+                        <Text className="text-xs text-muted-foreground uppercase">
+                          Duration
+                        </Text>
+                        <Text className="text-sm font-semibold">
+                          {formatDuration(activity.duration_seconds)}
+                        </Text>
+                      </View>
+                      {activity.training_stress_score !== null &&
+                        activity.training_stress_score !== undefined && (
+                          <View>
+                            <Text className="text-xs text-muted-foreground uppercase">
+                              TSS
+                            </Text>
+                            <Text className="text-sm font-semibold text-primary">
+                              {Math.round(activity.training_stress_score)}
+                            </Text>
+                          </View>
+                        )}
+                      {activity.avg_power && (
+                        <View>
+                          <Text className="text-xs text-muted-foreground uppercase">
+                            Avg Power
+                          </Text>
+                          <Text className="text-sm font-semibold">
+                            {Math.round(activity.avg_power)}W
+                          </Text>
+                        </View>
+                      )}
+                      {activity.avg_heart_rate && (
+                        <View>
+                          <Text className="text-xs text-muted-foreground uppercase">
+                            Avg HR
+                          </Text>
+                          <Text className="text-sm font-semibold">
+                            {Math.round(activity.avg_heart_rate)} bpm
+                          </Text>
+                        </View>
+                      )}
                     </View>
                   </CardContent>
                 </Card>

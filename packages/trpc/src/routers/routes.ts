@@ -40,22 +40,7 @@ export const routesRouter = createTRPCRouter({
 
       let query = ctx.supabase
         .from("activity_routes")
-        .select(
-          `
-          id,
-          idx,
-          name,
-          description,
-          activity_category,
-          total_distance,
-          total_ascent,
-          total_descent,
-          polyline,
-          elevation_polyline,
-          source,
-          created_at
-        `,
-        )
+        .select("*")
         .eq("profile_id", ctx.session.user.id)
         .order("created_at", { ascending: false })
         .order("id", { ascending: true })
@@ -107,22 +92,7 @@ export const routesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const { data, error } = await ctx.supabase
         .from("activity_routes")
-        .select(
-          `
-          id,
-          idx,
-          name,
-          description,
-          activity_category,
-          total_distance,
-          total_ascent,
-          total_descent,
-          polyline,
-          elevation_polyline,
-          source,
-          created_at
-        `,
-        )
+        .select("*")
         .eq("id", input.id)
         .eq("profile_id", ctx.session.user.id)
         .single();
@@ -146,17 +116,7 @@ export const routesRouter = createTRPCRouter({
       // Get route metadata from database
       const { data: routeData, error: dbError } = await ctx.supabase
         .from("activity_routes")
-        .select(
-          `
-          id,
-          name,
-          file_path,
-          total_distance,
-          total_ascent,
-          total_descent,
-          activity_category
-        `,
-        )
+        .select("*")
         .eq("id", input.id)
         .eq("profile_id", ctx.session.user.id)
         .single();
@@ -269,22 +229,7 @@ export const routesRouter = createTRPCRouter({
             elevation_polyline: elevationPolyline,
             source: input.source,
           })
-          .select(
-            `
-            id,
-            idx,
-            name,
-            description,
-            activity_category,
-            total_distance,
-            total_ascent,
-            total_descent,
-            polyline,
-            elevation_polyline,
-            source,
-            created_at
-          `,
-          )
+          .select("*")
           .single();
 
         if (dbError) {
@@ -322,7 +267,7 @@ export const routesRouter = createTRPCRouter({
       // Get route details
       const { data: route, error: fetchError } = await ctx.supabase
         .from("activity_routes")
-        .select("id, file_path, profile_id")
+        .select("*")
         .eq("id", input.id)
         .eq("profile_id", ctx.session.user.id)
         .single();
@@ -383,7 +328,7 @@ export const routesRouter = createTRPCRouter({
       // Check ownership
       const { data: existing } = await ctx.supabase
         .from("activity_routes")
-        .select("id")
+        .select("*")
         .eq("id", id)
         .eq("profile_id", ctx.session.user.id)
         .single();
@@ -399,22 +344,7 @@ export const routesRouter = createTRPCRouter({
         .from("activity_routes")
         .update(updates)
         .eq("id", id)
-        .select(
-          `
-          id,
-          idx,
-          name,
-          description,
-          activity_category,
-          total_distance,
-          total_ascent,
-          total_descent,
-          polyline,
-          elevation_polyline,
-          source,
-          created_at
-        `,
-        )
+        .select("*")
         .single();
 
       if (error) {

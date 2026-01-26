@@ -409,6 +409,7 @@ export function useMovingTime(service: ActivityRecorderService | null): number {
 /**
  * Hook to track current lap time (time since last lap)
  * Updates on time updates and lap recordings
+ * Returns time in seconds (consistent with useMovingTime)
  */
 export function useLapTime(service: ActivityRecorderService | null): number {
   const [lapTime, setLapTime] = useState(0);
@@ -418,7 +419,8 @@ export function useLapTime(service: ActivityRecorderService | null): number {
 
     // Update lap time on time updates
     const handleTimeUpdate = () => {
-      setLapTime(service.getLapTime());
+      // Convert milliseconds to seconds for consistency with other time hooks
+      setLapTime(Math.floor(service.getLapTime() / 1000));
     };
 
     // Reset lap time display when a lap is recorded
@@ -426,8 +428,14 @@ export function useLapTime(service: ActivityRecorderService | null): number {
       setLapTime(0);
     };
 
-    const timeSubscription = service.addListener("timeUpdated", handleTimeUpdate);
-    const lapSubscription = service.addListener("lapRecorded", handleLapRecorded);
+    const timeSubscription = service.addListener(
+      "timeUpdated",
+      handleTimeUpdate,
+    );
+    const lapSubscription = service.addListener(
+      "lapRecorded",
+      handleLapRecorded,
+    );
 
     return () => {
       timeSubscription.remove();
@@ -498,7 +506,7 @@ export function useActivityStatus(service: ActivityRecorderService | null): {
  */
 export function useGpsTracking(service: ActivityRecorderService | null) {
   const [gpsEnabled, setGpsEnabled] = useState(
-    service?.isGpsTrackingEnabled() ?? true
+    service?.isGpsTrackingEnabled() ?? true,
   );
 
   useEffect(() => {
@@ -515,7 +523,7 @@ export function useGpsTracking(service: ActivityRecorderService | null) {
 
     const subscription = service.addListener(
       "gpsTrackingChanged",
-      handleGpsTrackingChange
+      handleGpsTrackingChange,
     );
 
     return () => {

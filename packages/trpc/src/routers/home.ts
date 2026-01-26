@@ -71,7 +71,7 @@ export const homeRouter = createTRPCRouter({
       const { data: activities, error: activitiesError } = await ctx.supabase
         .from("activities")
         .select(
-          "id, started_at, duration_seconds, distance_meters, metrics, type",
+          "id, started_at, duration_seconds, distance_meters, training_stress_score, type",
         )
         .eq("profile_id", userId)
         .gte("started_at", historyStart.toISOString())
@@ -141,7 +141,7 @@ export const homeRouter = createTRPCRouter({
       activities?.forEach((a) => {
         if (!a.started_at) return;
         const dateStr = a.started_at.split("T")[0]!; // Non-null assertion after check
-        const tss = (a.metrics as any)?.tss || 0;
+        const tss = a.training_stress_score || 0;
         tssByDate.set(dateStr, (tssByDate.get(dateStr) || 0) + tss);
       });
 
@@ -227,7 +227,7 @@ export const homeRouter = createTRPCRouter({
         ),
         tss: Math.round(
           weeklyActuals.reduce(
-            (sum, a) => sum + ((a.metrics as any)?.tss || 0),
+            (sum, a) => sum + (a.training_stress_score || 0),
             0,
           ),
         ),

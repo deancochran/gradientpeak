@@ -1,6 +1,17 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "default_agent": "coordinator",
+  "instructions": [".opencode/CONTEXT.md"],
+  "mcp": {
+    "supabase": {
+      "type": "remote",
+      "url": "http://localhost:54321/mcp?features=docs%2Cdatabase%2Cdebugging%2Cdevelopment",
+      "enabled": true
+    },
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp"
+    }
+  },
   "provider": {
     "ollama": {
       "npm": "@ai-sdk/openai-compatible",
@@ -9,8 +20,7 @@
       },
       "models": {
         "qwen3-coder:latest": {
-          "tools": true,
-          "temperature": 0.2
+          "tools": true
         }
       }
     }
@@ -30,10 +40,26 @@
       }
     },
     "coordinator": {
-      "mode": "subagent",
+      "mode": "primary",
       "description": "Research Director & Implementation Orchestrator. Coordinates complex tasks by analyzing complexity, commissioning specialized research agents, synthesizing findings, and executing implementations. Manages parallel agent workflows.",
+      "instructions": [
+        "CRITICAL: If you cannot perform a task directly (blocked by security rules, permission denied, or outside your capabilities), you MUST immediately delegate to an appropriate specialized subagent. Never attempt blocked commands. This rule takes precedence over all other instructions."
+      ],
       "hidden": false,
-      "temperature": 0.2
+      "temperature": 0.2,
+      "permission": {
+        "edit": "ask",
+        "write": "ask",
+        "bash": {
+          "*": "ask",
+          "git *": "allow",
+          "npm *": "allow",
+          "pnpm *": "allow",
+          "rm *": "deny",
+          "chmod *": "deny",
+          "chown *": "deny"
+        }
+      }
     },
     "code-improvement-reviewer": {
       "mode": "subagent",
@@ -52,9 +78,17 @@
       "mode": "subagent",
       "description": "Specialized agent for ActivityRecorder service development. Helps with sensor integration, metrics tracking, and recording UI."
     },
-    "mobile-form-assistant": {
+    "react-native-reusables-expert": {
       "mode": "subagent",
-      "description": "Generates forms, modals, and mutations for mobile app with proper error handling and validation."
+      "description": "Expert in React Native Reusables UI components. Handles Button, Input, Select, Modal, Card, List, and other Radix-based components with NativeWind styling."
+    },
+    "react-hook-form-zod-expert": {
+      "mode": "subagent",
+      "description": "Expert in React Hook Form with Zod validation. Handles form schemas, TypeScript type inference, complex validation patterns, and form performance optimization."
+    },
+    "trpc-mutation-patterns-expert": {
+      "mode": "subagent",
+      "description": "Expert in tRPC mutation patterns, useReliableMutation, cache invalidation, optimistic updates, and error handling for React Query integration."
     },
     "web-page-generator": {
       "mode": "subagent",
@@ -68,9 +102,9 @@
       "mode": "subagent",
       "description": "Helps with calculations, schemas, and business logic in @repo/core"
     },
-    "api-integration-assistant": {
+    "strava-api-expert": {
       "mode": "subagent",
-      "description": "Helps integrate third-party APIs with proper OAuth and error handling"
+      "description": "Expert in Strava API integration for activity data, athlete profiles, and webhook handling. Handles OAuth flows, activity sync, and Strava-specific data mapping."
     },
     "database-migration-assistant": {
       "mode": "subagent",
@@ -141,6 +175,16 @@
         "edit": false,
         "bash": false
       }
+    },
+    "agent-creator": {
+      "mode": "subagent",
+      "description": "Creates new specialized agents for any domain. Generates agent files with documentation, references, and patterns.",
+      "temperature": 0.3
+    },
+    "garmin-fit-sdk-expert": {
+      "mode": "subagent",
+      "description": "Expert in Garmin FIT SDK for JavaScript. Handles FIT file encoding, decoding, developer data fields, custom profiles with FitGen, and data mapping to activity schemas.",
+      "temperature": 0.3
     },
     "skill-creator-agent": {
       "mode": "subagent",

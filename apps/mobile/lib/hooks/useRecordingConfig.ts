@@ -4,54 +4,58 @@
  * Provides capability-based feature flags for UI components
  */
 
-import type { RecordingCapabilities, RecordingConfiguration } from '@repo/core'
-import { useEffect, useState } from 'react'
-import type { ActivityRecorderService } from '../services/ActivityRecorder'
+import type { RecordingCapabilities, RecordingConfiguration } from "@repo/core";
+import { useEffect, useState } from "react";
+import type { ActivityRecorderService } from "../services/ActivityRecorder";
+import { isEqual } from "lodash";
 
 /**
  * Get the current recording configuration
  * Automatically recomputes when relevant state changes
  */
 export function useRecordingConfig(
-  service: ActivityRecorderService | null
+  service: ActivityRecorderService | null,
 ): RecordingConfiguration | null {
-  const [config, setConfig] = useState<RecordingConfiguration | null>(null)
+  const [config, setConfig] = useState<RecordingConfiguration | null>(null);
 
   useEffect(() => {
     if (!service) {
-      setConfig(null)
-      return
+      setConfig(null);
+      return;
     }
 
     // Compute initial config
     const updateConfig = () => {
-      const newConfig = service.getRecordingConfiguration()
-      setConfig(newConfig)
-    }
+      const newConfig = service.getRecordingConfiguration();
+      setConfig((prev) => {
+        if (isEqual(prev, newConfig)) return prev;
+        return newConfig;
+      });
+    };
 
-    updateConfig()
+    updateConfig();
 
     // Recompute when these events fire
     const events = [
-      'activitySelected',
-      'planSelected',
-      'planCleared',
-      'sensorsChanged',
-      'stateChanged'
-    ] as const
+      "activitySelected",
+      "planSelected",
+      "planCleared",
+      "sensorsChanged",
+      "stateChanged",
+    ] as const;
 
-    events.forEach(event => {
-      service.addListener(event as any, updateConfig)
-    })
+    events.forEach((event) => {
+      service.addListener(event as any, updateConfig);
+    });
 
     return () => {
-      events.forEach(event => {
-        service.removeListener(event as any, updateConfig)
-      })
-    }
-  }, [service])
+      events.forEach((event) => {
+        service.removeListener(event as any, updateConfig);
+      });
+    };
+  }, [service]);
 
-  return config
+  return config;
 }
 
 /**
@@ -59,10 +63,10 @@ export function useRecordingConfig(
  * This is what most components need
  */
 export function useRecordingCapabilities(
-  service: ActivityRecorderService | null
+  service: ActivityRecorderService | null,
 ): RecordingCapabilities | null {
-  const config = useRecordingConfig(service)
-  return config?.capabilities ?? null
+  const config = useRecordingConfig(service);
+  return config?.capabilities ?? null;
 }
 
 /**
@@ -70,13 +74,13 @@ export function useRecordingCapabilities(
  * Useful for showing pre-recording checks
  */
 export function useRecordingValidation(
-  service: ActivityRecorderService | null
+  service: ActivityRecorderService | null,
 ): { isValid: boolean; errors: string[]; warnings: string[] } {
-  const capabilities = useRecordingCapabilities(service)
+  const capabilities = useRecordingCapabilities(service);
 
   return {
     isValid: capabilities?.isValid ?? true,
     errors: capabilities?.errors ?? [],
-    warnings: capabilities?.warnings ?? []
-  }
+    warnings: capabilities?.warnings ?? [],
+  };
 }

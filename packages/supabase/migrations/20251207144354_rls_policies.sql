@@ -4,7 +4,7 @@ alter table "public"."activity_plans" enable row level security;
 
 alter table "public"."activity_routes" enable row level security;
 
-alter table "public"."activity_streams" enable row level security;
+-- Table removed: activity_streams table no longer exists
 
 alter table "public"."integrations" enable row level security;
 
@@ -49,17 +49,7 @@ with check ((auth.uid() = profile_id));
 
 
 
-  create policy "Users can manage their own activity streams"
-  on "public"."activity_streams"
-  as permissive
-  for all
-  to public
-using ((auth.uid() = ( SELECT activities.profile_id
-   FROM public.activities
-  WHERE (activities.id = activity_streams.activity_id))))
-with check ((auth.uid() = ( SELECT activities.profile_id
-   FROM public.activities
-  WHERE (activities.id = activity_streams.activity_id))));
+-- Policy removed: activity_streams table no longer exists
 
 
 

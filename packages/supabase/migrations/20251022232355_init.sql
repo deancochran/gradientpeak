@@ -1,6 +1,4 @@
-create type "public"."activity_metric" as enum ('heartrate', 'power', 'speed', 'cadence', 'distance', 'latlng', 'moving', 'altitude', 'elevation', 'temperature', 'gradient', 'heading');
 
-create type "public"."activity_metric_data_type" as enum ('float', 'latlng', 'boolean');
 
 create type "public"."activity_type" as enum ('outdoor_run', 'outdoor_bike', 'indoor_run', 'indoor_bike', 'indoor_strength', 'indoor_swim', 'other');
 
@@ -10,7 +8,7 @@ create sequence "public"."activities_idx_seq";
 
 create sequence "public"."activity_plans_idx_seq";
 
-create sequence "public"."activity_streams_idx_seq";
+
 
 create sequence "public"."integrations_idx_seq";
 
@@ -80,6 +78,8 @@ create table "public"."activities" (
     "decoupling" integer,
     "training_stress_score" integer,
     "variability_index" integer,
+    "fit_file_path" text,
+    "processing_status" text default 'pending' check (processing_status IN ('pending', 'processing', 'completed', 'failed')),
     "created_at" timestamp with time zone not null default now()
 );
 
@@ -98,21 +98,7 @@ create table "public"."activity_plans" (
 );
 
 
-create table "public"."activity_streams" (
-    "id" uuid not null default uuid_generate_v4(),
-    "idx" integer not null default nextval('activity_streams_idx_seq'::regclass),
-    "activity_id" uuid not null,
-    "type" activity_metric not null,
-    "data_type" activity_metric_data_type not null,
-    "compressed_values" bytea not null,
-    "compressed_timestamps" bytea not null,
-    "sample_count" integer not null,
-    "original_size" integer not null,
-    "min_value" numeric(10,4),
-    "max_value" numeric(10,4),
-    "avg_value" numeric(10,4),
-    "created_at" timestamp with time zone not null default now()
-);
+
 
 
 create table "public"."integrations" (
@@ -186,7 +172,7 @@ alter sequence "public"."activities_idx_seq" owned by "public"."activities"."idx
 
 alter sequence "public"."activity_plans_idx_seq" owned by "public"."activity_plans"."idx";
 
-alter sequence "public"."activity_streams_idx_seq" owned by "public"."activity_streams"."idx";
+
 
 alter sequence "public"."integrations_idx_seq" owned by "public"."integrations"."idx";
 
@@ -206,9 +192,7 @@ CREATE UNIQUE INDEX activity_plans_idx_key ON public.activity_plans USING btree 
 
 CREATE UNIQUE INDEX activity_plans_pkey ON public.activity_plans USING btree (id);
 
-CREATE UNIQUE INDEX activity_streams_idx_key ON public.activity_streams USING btree (idx);
 
-CREATE UNIQUE INDEX activity_streams_pkey ON public.activity_streams USING btree (id);
 
 CREATE INDEX idx_activities_activity_type ON public.activities USING btree (activity_type);
 
@@ -220,9 +204,7 @@ CREATE INDEX idx_activities_started_at ON public.activities USING btree (started
 
 CREATE INDEX idx_activity_plans_profile_id ON public.activity_plans USING btree (profile_id);
 
-CREATE INDEX idx_activity_streams_activity_id ON public.activity_streams USING btree (activity_id);
 
-CREATE INDEX idx_activity_streams_type ON public.activity_streams USING btree (type);
 
 CREATE INDEX idx_integrations_expires_at ON public.integrations USING btree (expires_at);
 
@@ -260,7 +242,7 @@ CREATE UNIQUE INDEX training_plans_idx_key ON public.training_plans USING btree 
 
 CREATE UNIQUE INDEX training_plans_pkey ON public.training_plans USING btree (id);
 
-CREATE UNIQUE INDEX unique_activity_type ON public.activity_streams USING btree (activity_id, type);
+
 
 CREATE UNIQUE INDEX unique_integration_type ON public.integrations USING btree (profile_id, provider);
 
@@ -270,7 +252,7 @@ alter table "public"."activities" add constraint "activities_pkey" PRIMARY KEY u
 
 alter table "public"."activity_plans" add constraint "activity_plans_pkey" PRIMARY KEY using index "activity_plans_pkey";
 
-alter table "public"."activity_streams" add constraint "activity_streams_pkey" PRIMARY KEY using index "activity_streams_pkey";
+
 
 alter table "public"."integrations" add constraint "integrations_pkey" PRIMARY KEY using index "integrations_pkey";
 
@@ -470,21 +452,7 @@ alter table "public"."activity_plans" add constraint "activity_plans_profile_id_
 
 alter table "public"."activity_plans" validate constraint "activity_plans_profile_id_fkey";
 
-alter table "public"."activity_streams" add constraint "activity_streams_activity_id_fkey" FOREIGN KEY (activity_id) REFERENCES activities(id) ON DELETE CASCADE not valid;
 
-alter table "public"."activity_streams" validate constraint "activity_streams_activity_id_fkey";
-
-alter table "public"."activity_streams" add constraint "activity_streams_idx_key" UNIQUE using index "activity_streams_idx_key";
-
-alter table "public"."activity_streams" add constraint "activity_streams_original_size_check" CHECK ((original_size >= 0)) not valid;
-
-alter table "public"."activity_streams" validate constraint "activity_streams_original_size_check";
-
-alter table "public"."activity_streams" add constraint "activity_streams_sample_count_check" CHECK ((sample_count > 0)) not valid;
-
-alter table "public"."activity_streams" validate constraint "activity_streams_sample_count_check";
-
-alter table "public"."activity_streams" add constraint "unique_activity_type" UNIQUE using index "unique_activity_type";
 
 alter table "public"."integrations" add constraint "integrations_idx_key" UNIQUE using index "integrations_idx_key";
 
@@ -614,47 +582,7 @@ grant truncate on table "public"."activity_plans" to "service_role";
 
 grant update on table "public"."activity_plans" to "service_role";
 
-grant delete on table "public"."activity_streams" to "anon";
 
-grant insert on table "public"."activity_streams" to "anon";
-
-grant references on table "public"."activity_streams" to "anon";
-
-grant select on table "public"."activity_streams" to "anon";
-
-grant trigger on table "public"."activity_streams" to "anon";
-
-grant truncate on table "public"."activity_streams" to "anon";
-
-grant update on table "public"."activity_streams" to "anon";
-
-grant delete on table "public"."activity_streams" to "authenticated";
-
-grant insert on table "public"."activity_streams" to "authenticated";
-
-grant references on table "public"."activity_streams" to "authenticated";
-
-grant select on table "public"."activity_streams" to "authenticated";
-
-grant trigger on table "public"."activity_streams" to "authenticated";
-
-grant truncate on table "public"."activity_streams" to "authenticated";
-
-grant update on table "public"."activity_streams" to "authenticated";
-
-grant delete on table "public"."activity_streams" to "service_role";
-
-grant insert on table "public"."activity_streams" to "service_role";
-
-grant references on table "public"."activity_streams" to "service_role";
-
-grant select on table "public"."activity_streams" to "service_role";
-
-grant trigger on table "public"."activity_streams" to "service_role";
-
-grant truncate on table "public"."activity_streams" to "service_role";
-
-grant update on table "public"."activity_streams" to "service_role";
 
 grant delete on table "public"."integrations" to "anon";
 

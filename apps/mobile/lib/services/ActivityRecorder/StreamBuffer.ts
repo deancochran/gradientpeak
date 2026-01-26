@@ -103,6 +103,17 @@ export class StreamBuffer {
     };
     this.locations.push(locationData);
     this.allLocations.push(locationData); // Also keep in persistent array for GPS path
+
+    // MEMORY LEAK FIX: Cap allLocations at MAX_GPS_PATH_POINTS
+    // This prevents unbounded growth during long recordings
+    const MAX_GPS_PATH_POINTS = 1000;
+    if (this.allLocations.length > MAX_GPS_PATH_POINTS) {
+      // Remove oldest points to maintain rolling window
+      this.allLocations.splice(
+        0,
+        this.allLocations.length - MAX_GPS_PATH_POINTS,
+      );
+    }
   }
 
   /**
@@ -383,6 +394,13 @@ export class StreamBuffer {
   /**
    * Get current buffer status
    */
+  /**
+   * Check if there is any data pending flush
+   */
+  hasPendingData(): boolean {
+    return this.readings.size > 0 || this.locations.length > 0;
+  }
+
   getBufferStatus(): {
     readingCount: number;
     locationCount: number;

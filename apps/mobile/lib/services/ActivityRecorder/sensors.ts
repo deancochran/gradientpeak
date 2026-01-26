@@ -65,6 +65,7 @@ export enum BleMetricType {
   Power = "power",
   Cadence = "cadence",
   Speed = "speed",
+  Battery = "battery",
 }
 
 /** --- Standard BLE Characteristics --- */
@@ -73,6 +74,7 @@ export const KnownCharacteristics: Record<string, BleMetricType> = {
   "00002a63-0000-1000-8000-00805f9b34fb": BleMetricType.Power,
   "00002a5b-0000-1000-8000-00805f9b34fb": BleMetricType.Cadence, // CSC: Cycling Speed and Cadence
   "00002a53-0000-1000-8000-00805f9b34fb": BleMetricType.Speed, // RSC: Running Speed and Cadence
+  "00002a19-0000-1000-8000-00805f9b34fb": BleMetricType.Battery,
 };
 
 /** --- Sensor Data Types (imported from types.ts) --- */
@@ -250,10 +252,7 @@ export class SensorsManager {
         );
       }
     } catch (error) {
-      console.warn(
-        "[SensorsManager] Failed to load persisted sensors:",
-        error,
-      );
+      console.warn("[SensorsManager] Failed to load persisted sensors:", error);
       this.persistedSensors = new Map();
     } finally {
       this.persistenceInitialized = true;
@@ -266,25 +265,20 @@ export class SensorsManager {
   private async savePersistedSensors(): Promise<void> {
     try {
       const sensors = Array.from(this.persistedSensors.values());
-      await AsyncStorage.setItem(PERSISTED_SENSORS_KEY, JSON.stringify(sensors));
-      console.log(
-        `[SensorsManager] Saved ${sensors.length} persisted sensors`,
+      await AsyncStorage.setItem(
+        PERSISTED_SENSORS_KEY,
+        JSON.stringify(sensors),
       );
+      console.log(`[SensorsManager] Saved ${sensors.length} persisted sensors`);
     } catch (error) {
-      console.warn(
-        "[SensorsManager] Failed to save persisted sensors:",
-        error,
-      );
+      console.warn("[SensorsManager] Failed to save persisted sensors:", error);
     }
   }
 
   /**
    * Add sensor to persistence
    */
-  private async addPersistedSensor(
-    id: string,
-    name: string,
-  ): Promise<void> {
+  private async addPersistedSensor(id: string, name: string): Promise<void> {
     this.persistedSensors.set(id, {
       id,
       name,
@@ -356,7 +350,10 @@ export class SensorsManager {
       await AsyncStorage.removeItem(PERSISTED_SENSORS_KEY);
       console.log("[SensorsManager] Persisted sensors cleared successfully");
     } catch (error) {
-      console.warn("[SensorsManager] Failed to clear persisted sensors:", error);
+      console.warn(
+        "[SensorsManager] Failed to clear persisted sensors:",
+        error,
+      );
       throw error;
     }
   }
@@ -1627,6 +1624,11 @@ export class SensorsManager {
       return sensor?.ftmsController;
     }
     return this.controllableTrainer?.ftmsController;
+  }
+
+  public async cleanup(): Promise<void> {
+    this.stopConnectionMonitoring();
+    await this.disconnectAll();
   }
 
   /**

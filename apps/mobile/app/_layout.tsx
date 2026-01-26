@@ -1,10 +1,12 @@
 // apps/native/app/_layout.tsx
+import "../polyfills";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
 import "@/global.css";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
 import { StreamBuffer } from "@/lib/services/ActivityRecorder/StreamBuffer";
+import { GarminFitEncoder } from "@/lib/services/fit/GarminFitEncoder";
 import { initSentry } from "@/lib/services/sentry";
 import { useTheme } from "@/lib/stores/theme-store";
 import { PortalHost } from "@rn-primitives/portal";
@@ -119,6 +121,10 @@ export default function RootLayout() {
   React.useEffect(() => {
     StreamBuffer.cleanupOrphanedRecordings().catch((error) => {
       console.warn("Failed to cleanup orphaned recordings:", error);
+    });
+
+    GarminFitEncoder.cleanupOrphanedRecordings().catch((error) => {
+      console.warn("Failed to cleanup orphaned FIT recordings:", error);
     });
 
     // Note: Sentry is initialized at module level above to catch early errors

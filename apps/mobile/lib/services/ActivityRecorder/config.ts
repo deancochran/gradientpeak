@@ -9,10 +9,13 @@
 export const RECORDING_CONFIG = {
   // === Core Intervals ===
   UPDATE_INTERVAL: 1000, // 1s: Calculate metrics and update UI
-  PERSISTENCE_INTERVAL: 60000, // 60s: Write to database + cleanup old data
+  PERSISTENCE_INTERVAL: 120000, // 2min: Write to database + cleanup old data (optimized from 60s)
 
   // === Data Window ===
   BUFFER_WINDOW_SECONDS: 60, // Keep 60 seconds of data for calculations
+
+  // === GPS Path Display ===
+  MAX_GPS_PATH_POINTS: 1000, // Maximum GPS points to keep for map display (prevents memory leak)
 } as const;
 
 // === Metric Precision (reduce unnecessary re-renders) ===

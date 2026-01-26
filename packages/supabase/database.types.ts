@@ -37,76 +37,145 @@ export type Database = {
       activities: {
         Row: {
           activity_plan_id: string | null
-          avg_target_adherence: number | null
+          avg_cadence: number | null
+          avg_heart_rate: number | null
+          avg_power: number | null
+          avg_speed_mps: number | null
+          calories: number | null
           created_at: string
           distance_meters: number
           duration_seconds: number
+          elevation_gain_meters: number | null
+          elevation_loss_meters: number | null
           external_id: string | null
           finished_at: string
-          hr_zone_seconds: number[] | null
+          fit_file_path: string | null
+          fit_file_size: number | null
+          hr_zone_1_seconds: number | null
+          hr_zone_2_seconds: number | null
+          hr_zone_3_seconds: number | null
+          hr_zone_4_seconds: number | null
+          hr_zone_5_seconds: number | null
           id: string
           idx: number
+          intensity_factor: number | null
           is_private: boolean
           location: string | null
-          metrics: Json
+          max_cadence: number | null
+          max_heart_rate: number | null
+          max_power: number | null
+          max_speed_mps: number | null
           moving_seconds: number
           name: string
+          normalized_power: number | null
           notes: string | null
-          power_zone_seconds: number[] | null
+          power_zone_1_seconds: number | null
+          power_zone_2_seconds: number | null
+          power_zone_3_seconds: number | null
+          power_zone_4_seconds: number | null
+          power_zone_5_seconds: number | null
+          power_zone_6_seconds: number | null
+          power_zone_7_seconds: number | null
           profile_id: string
-          profile_snapshot: Json | null
           provider: Database["public"]["Enums"]["integration_provider"] | null
           started_at: string
+          training_stress_score: number | null
           type: string
           updated_at: string
         }
         Insert: {
           activity_plan_id?: string | null
-          avg_target_adherence?: number | null
+          avg_cadence?: number | null
+          avg_heart_rate?: number | null
+          avg_power?: number | null
+          avg_speed_mps?: number | null
+          calories?: number | null
           created_at?: string
           distance_meters?: number
           duration_seconds?: number
+          elevation_gain_meters?: number | null
+          elevation_loss_meters?: number | null
           external_id?: string | null
           finished_at: string
-          hr_zone_seconds?: number[] | null
+          fit_file_path?: string | null
+          fit_file_size?: number | null
+          hr_zone_1_seconds?: number | null
+          hr_zone_2_seconds?: number | null
+          hr_zone_3_seconds?: number | null
+          hr_zone_4_seconds?: number | null
+          hr_zone_5_seconds?: number | null
           id?: string
           idx?: number
+          intensity_factor?: number | null
           is_private?: boolean
           location?: string | null
-          metrics?: Json
+          max_cadence?: number | null
+          max_heart_rate?: number | null
+          max_power?: number | null
+          max_speed_mps?: number | null
           moving_seconds?: number
           name: string
+          normalized_power?: number | null
           notes?: string | null
-          power_zone_seconds?: number[] | null
+          power_zone_1_seconds?: number | null
+          power_zone_2_seconds?: number | null
+          power_zone_3_seconds?: number | null
+          power_zone_4_seconds?: number | null
+          power_zone_5_seconds?: number | null
+          power_zone_6_seconds?: number | null
+          power_zone_7_seconds?: number | null
           profile_id: string
-          profile_snapshot?: Json | null
           provider?: Database["public"]["Enums"]["integration_provider"] | null
           started_at: string
+          training_stress_score?: number | null
           type: string
           updated_at?: string
         }
         Update: {
           activity_plan_id?: string | null
-          avg_target_adherence?: number | null
+          avg_cadence?: number | null
+          avg_heart_rate?: number | null
+          avg_power?: number | null
+          avg_speed_mps?: number | null
+          calories?: number | null
           created_at?: string
           distance_meters?: number
           duration_seconds?: number
+          elevation_gain_meters?: number | null
+          elevation_loss_meters?: number | null
           external_id?: string | null
           finished_at?: string
-          hr_zone_seconds?: number[] | null
+          fit_file_path?: string | null
+          fit_file_size?: number | null
+          hr_zone_1_seconds?: number | null
+          hr_zone_2_seconds?: number | null
+          hr_zone_3_seconds?: number | null
+          hr_zone_4_seconds?: number | null
+          hr_zone_5_seconds?: number | null
           id?: string
           idx?: number
+          intensity_factor?: number | null
           is_private?: boolean
           location?: string | null
-          metrics?: Json
+          max_cadence?: number | null
+          max_heart_rate?: number | null
+          max_power?: number | null
+          max_speed_mps?: number | null
           moving_seconds?: number
           name?: string
+          normalized_power?: number | null
           notes?: string | null
-          power_zone_seconds?: number[] | null
+          power_zone_1_seconds?: number | null
+          power_zone_2_seconds?: number | null
+          power_zone_3_seconds?: number | null
+          power_zone_4_seconds?: number | null
+          power_zone_5_seconds?: number | null
+          power_zone_6_seconds?: number | null
+          power_zone_7_seconds?: number | null
           profile_id?: string
-          profile_snapshot?: Json | null
           provider?: Database["public"]["Enums"]["integration_provider"] | null
           started_at?: string
+          training_stress_score?: number | null
           type?: string
           updated_at?: string
         }
@@ -251,62 +320,6 @@ export type Database = {
             columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      activity_streams: {
-        Row: {
-          activity_id: string
-          avg_value: number | null
-          compressed_timestamps: string
-          compressed_values: string
-          created_at: string
-          data_type: Database["public"]["Enums"]["activity_metric_data_type"]
-          id: string
-          idx: number
-          max_value: number | null
-          min_value: number | null
-          original_size: number
-          sample_count: number
-          type: Database["public"]["Enums"]["activity_metric"]
-        }
-        Insert: {
-          activity_id: string
-          avg_value?: number | null
-          compressed_timestamps: string
-          compressed_values: string
-          created_at?: string
-          data_type: Database["public"]["Enums"]["activity_metric_data_type"]
-          id?: string
-          idx?: number
-          max_value?: number | null
-          min_value?: number | null
-          original_size: number
-          sample_count: number
-          type: Database["public"]["Enums"]["activity_metric"]
-        }
-        Update: {
-          activity_id?: string
-          avg_value?: number | null
-          compressed_timestamps?: string
-          compressed_values?: string
-          created_at?: string
-          data_type?: Database["public"]["Enums"]["activity_metric_data_type"]
-          id?: string
-          idx?: number
-          max_value?: number | null
-          min_value?: number | null
-          original_size?: number
-          sample_count?: number
-          type?: Database["public"]["Enums"]["activity_metric"]
-        }
-        Relationships: [
-          {
-            foreignKeyName: "activity_streams_activity_id_fkey"
-            columns: ["activity_id"]
-            isOneToOne: false
-            referencedRelation: "activities"
             referencedColumns: ["id"]
           },
         ]
@@ -730,20 +743,6 @@ export type Database = {
     Enums: {
       activity_category: "run" | "bike" | "swim" | "strength" | "other"
       activity_location: "outdoor" | "indoor"
-      activity_metric:
-        | "heartrate"
-        | "power"
-        | "speed"
-        | "cadence"
-        | "distance"
-        | "latlng"
-        | "moving"
-        | "altitude"
-        | "elevation"
-        | "temperature"
-        | "gradient"
-        | "heading"
-      activity_metric_data_type: "float" | "latlng" | "boolean"
       integration_provider:
         | "strava"
         | "wahoo"
@@ -894,21 +893,6 @@ export const Constants = {
     Enums: {
       activity_category: ["run", "bike", "swim", "strength", "other"],
       activity_location: ["outdoor", "indoor"],
-      activity_metric: [
-        "heartrate",
-        "power",
-        "speed",
-        "cadence",
-        "distance",
-        "latlng",
-        "moving",
-        "altitude",
-        "elevation",
-        "temperature",
-        "gradient",
-        "heading",
-      ],
-      activity_metric_data_type: ["float", "latlng", "boolean"],
       integration_provider: [
         "strava",
         "wahoo",

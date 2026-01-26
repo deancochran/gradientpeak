@@ -12,12 +12,6 @@ export type PublicActivityCategory = z.infer<
 export type PublicActivityLocation = z.infer<
   typeof generated.publicActivityLocationSchema
 >;
-export type PublicActivityMetric = z.infer<
-  typeof generated.publicActivityMetricSchema
->;
-export type PublicActivityMetricDataType = z.infer<
-  typeof generated.publicActivityMetricDataTypeSchema
->;
 export type PublicIntegrationProvider = z.infer<
   typeof generated.publicIntegrationProviderSchema
 >;
@@ -63,18 +57,6 @@ export type PublicActivityRoutesUpdate = z.infer<
 >;
 export type PublicActivityRoutesRelationships = z.infer<
   typeof generated.publicActivityRoutesRelationshipsSchema
->;
-export type PublicActivityStreamsRow = z.infer<
-  typeof generated.publicActivityStreamsRowSchema
->;
-export type PublicActivityStreamsInsert = z.infer<
-  typeof generated.publicActivityStreamsInsertSchema
->;
-export type PublicActivityStreamsUpdate = z.infer<
-  typeof generated.publicActivityStreamsUpdateSchema
->;
-export type PublicActivityStreamsRelationships = z.infer<
-  typeof generated.publicActivityStreamsRelationshipsSchema
 >;
 export type PublicIntegrationsRow = z.infer<
   typeof generated.publicIntegrationsRowSchema

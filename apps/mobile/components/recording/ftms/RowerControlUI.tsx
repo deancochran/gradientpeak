@@ -55,7 +55,8 @@ export function RowerControlUI({
   const trainer = service.sensorsManager.getControllableTrainer();
   const features = trainer?.ftmsFeatures;
 
-  const supportsResistance = features?.resistanceTargetSettingSupported ?? false;
+  const supportsResistance =
+    features?.resistanceTargetSettingSupported ?? false;
 
   // Apply predictive resistance based on current state
   const applyPredictiveResistance = useCallback(async () => {
@@ -81,75 +82,6 @@ export function RowerControlUI({
     predictiveCalculator,
     supportsResistance,
     service,
-  ]);
-
-  // Reset calculator when interval changes to allow quick adaptation to new targets
-  useEffect(() => {
-    if (plan.hasPlan && plan.currentStep) {
-      console.log(
-        "[RowerControl] Interval changed, resetting predictive calculator",
-      );
-      predictiveCalculator.reset();
-    }
-  }, [plan.currentStep, plan.hasPlan, predictiveCalculator]);
-
-  // Auto-apply plan targets in Auto mode
-  useEffect(() => {
-    if (controlMode === "auto" && plan.hasPlan && plan.currentStep) {
-      console.log("[RowerControl] Auto mode - applying plan targets immediately");
-      applyPlanTargets();
-    }
-  }, [controlMode, plan.currentStep, plan.hasPlan, applyPlanTargets]);
-
-  // Auto-start: Initialize ERG when recording starts with a plan
-  const recordingState = useRecordingState(service);
-  useEffect(() => {
-    if (
-      recordingState === "recording" &&
-      controlMode === "auto" &&
-      plan.hasPlan &&
-      plan.currentStep
-    ) {
-      console.log(
-        "[RowerControl] Recording started with plan - auto-initializing ERG",
-      );
-      applyPlanTargets();
-    }
-  }, [
-    recordingState,
-    controlMode,
-    plan.hasPlan,
-    plan.currentStep,
-    applyPlanTargets,
-  ]);
-
-  // Periodically update resistance as stroke rate changes (every 1.5 seconds)
-  // Works even without a plan if targetPower is set
-  useEffect(() => {
-    if (
-      recordingState === "recording" &&
-      controlMode === "auto" &&
-      targetPower > 0
-    ) {
-      // Periodic updates
-      const interval = setInterval(() => {
-        if (plan.hasPlan && plan.currentStep) {
-          applyPlanTargets();
-        } else {
-          applyPredictiveResistance();
-        }
-      }, 1500);
-
-      return () => clearInterval(interval);
-    }
-  }, [
-    recordingState,
-    controlMode,
-    targetPower,
-    applyPlanTargets,
-    applyPredictiveResistance,
-    plan.hasPlan,
-    plan.currentStep,
   ]);
 
   /**
@@ -215,6 +147,77 @@ export function RowerControlUI({
     service,
   ]);
 
+  // Reset calculator when interval changes to allow quick adaptation to new targets
+  useEffect(() => {
+    if (plan.hasPlan && plan.currentStep) {
+      console.log(
+        "[RowerControl] Interval changed, resetting predictive calculator",
+      );
+      predictiveCalculator.reset();
+    }
+  }, [plan.currentStep, plan.hasPlan, predictiveCalculator]);
+
+  // Auto-apply plan targets in Auto mode
+  useEffect(() => {
+    if (controlMode === "auto" && plan.hasPlan && plan.currentStep) {
+      console.log(
+        "[RowerControl] Auto mode - applying plan targets immediately",
+      );
+      applyPlanTargets();
+    }
+  }, [controlMode, plan.currentStep, plan.hasPlan, applyPlanTargets]);
+
+  // Auto-start: Initialize ERG when recording starts with a plan
+  const recordingState = useRecordingState(service);
+  useEffect(() => {
+    if (
+      recordingState === "recording" &&
+      controlMode === "auto" &&
+      plan.hasPlan &&
+      plan.currentStep
+    ) {
+      console.log(
+        "[RowerControl] Recording started with plan - auto-initializing ERG",
+      );
+      applyPlanTargets();
+    }
+  }, [
+    recordingState,
+    controlMode,
+    plan.hasPlan,
+    plan.currentStep,
+    applyPlanTargets,
+  ]);
+
+  // Periodically update resistance as stroke rate changes (every 1.5 seconds)
+  // Works even without a plan if targetPower is set
+  useEffect(() => {
+    if (
+      recordingState === "recording" &&
+      controlMode === "auto" &&
+      targetPower > 0
+    ) {
+      // Periodic updates
+      const interval = setInterval(() => {
+        if (plan.hasPlan && plan.currentStep) {
+          applyPlanTargets();
+        } else {
+          applyPredictiveResistance();
+        }
+      }, 1500);
+
+      return () => clearInterval(interval);
+    }
+  }, [
+    recordingState,
+    controlMode,
+    targetPower,
+    applyPlanTargets,
+    applyPredictiveResistance,
+    plan.hasPlan,
+    plan.currentStep,
+  ]);
+
   /**
    * Apply resistance target
    */
@@ -222,22 +225,26 @@ export function RowerControlUI({
     if (controlMode === "auto") {
       Alert.alert(
         "Auto Mode Active",
-        "Switch to Manual mode to adjust rower settings."
+        "Switch to Manual mode to adjust rower settings.",
       );
       return;
     }
 
     if (!supportsResistance) {
-      Alert.alert("Not Supported", "Rower does not support resistance control.");
+      Alert.alert(
+        "Not Supported",
+        "Rower does not support resistance control.",
+      );
       return;
     }
 
-    const success = await service.sensorsManager.setResistanceTarget(
-      resistanceLevel
-    );
+    const success =
+      await service.sensorsManager.setResistanceTarget(resistanceLevel);
 
     if (success) {
-      console.log(`[RowerControl] Manual: Set resistance level to ${resistanceLevel}`);
+      console.log(
+        `[RowerControl] Manual: Set resistance level to ${resistanceLevel}`,
+      );
     } else {
       Alert.alert("Error", "Failed to set resistance. Check rower connection.");
     }
@@ -258,7 +265,11 @@ export function RowerControlUI({
               isDisabled ? "bg-muted" : "bg-primary"
             }`}
           >
-            <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
+            <Text
+              className={
+                isDisabled ? "text-muted-foreground" : "text-primary-foreground"
+              }
+            >
               -
             </Text>
           </Pressable>
@@ -277,7 +288,11 @@ export function RowerControlUI({
               isDisabled ? "bg-muted" : "bg-primary"
             }`}
           >
-            <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
+            <Text
+              className={
+                isDisabled ? "text-muted-foreground" : "text-primary-foreground"
+              }
+            >
               +
             </Text>
           </Pressable>
@@ -290,13 +305,21 @@ export function RowerControlUI({
           <Text className="text-sm font-medium mb-3">Resistance Level</Text>
           <View className="flex-row items-center gap-3 mb-3">
             <Pressable
-              onPress={() => setResistanceLevel(Math.max(1, resistanceLevel - 1))}
+              onPress={() =>
+                setResistanceLevel(Math.max(1, resistanceLevel - 1))
+              }
               disabled={isDisabled}
               className={`w-12 h-12 items-center justify-center rounded ${
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
             >
-              <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
+              <Text
+                className={
+                  isDisabled
+                    ? "text-muted-foreground"
+                    : "text-primary-foreground"
+                }
+              >
                 -
               </Text>
             </Pressable>
@@ -312,7 +335,13 @@ export function RowerControlUI({
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
             >
-              <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
+              <Text
+                className={
+                  isDisabled
+                    ? "text-muted-foreground"
+                    : "text-primary-foreground"
+                }
+              >
                 +
               </Text>
             </Pressable>
@@ -323,9 +352,11 @@ export function RowerControlUI({
             disabled={isDisabled}
             className={`py-3 rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
           >
-            <Text className={`text-center font-medium ${
-              isDisabled ? "text-muted-foreground" : "text-primary-foreground"
-            }`}>
+            <Text
+              className={`text-center font-medium ${
+                isDisabled ? "text-muted-foreground" : "text-primary-foreground"
+              }`}
+            >
               {isDisabled ? "Auto Mode Active" : "Apply Resistance"}
             </Text>
           </Pressable>
@@ -337,13 +368,19 @@ export function RowerControlUI({
         <Text className="text-sm font-medium mb-3">Target Stroke Rate</Text>
         <View className="flex-row items-center gap-3">
           <Pressable
-            onPress={() => setTargetStrokeRate(Math.max(10, targetStrokeRate - 1))}
+            onPress={() =>
+              setTargetStrokeRate(Math.max(10, targetStrokeRate - 1))
+            }
             disabled={isDisabled}
             className={`w-12 h-12 items-center justify-center rounded ${
               isDisabled ? "bg-muted" : "bg-primary"
             }`}
           >
-            <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
+            <Text
+              className={
+                isDisabled ? "text-muted-foreground" : "text-primary-foreground"
+              }
+            >
               -
             </Text>
           </Pressable>
@@ -356,13 +393,19 @@ export function RowerControlUI({
           </View>
 
           <Pressable
-            onPress={() => setTargetStrokeRate(Math.min(40, targetStrokeRate + 1))}
+            onPress={() =>
+              setTargetStrokeRate(Math.min(40, targetStrokeRate + 1))
+            }
             disabled={isDisabled}
             className={`w-12 h-12 items-center justify-center rounded ${
               isDisabled ? "bg-muted" : "bg-primary"
             }`}
           >
-            <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
+            <Text
+              className={
+                isDisabled ? "text-muted-foreground" : "text-primary-foreground"
+              }
+            >
               +
             </Text>
           </Pressable>
@@ -388,7 +431,8 @@ export function RowerControlUI({
           {plan.currentStep.targets && plan.currentStep.targets.length > 0 && (
             <Text className="text-xs text-muted-foreground mt-1">
               Target: {plan.currentStep.targets[0].type}{" "}
-              {"min" in plan.currentStep.targets[0] && "max" in plan.currentStep.targets[0] &&
+              {"min" in plan.currentStep.targets[0] &&
+                "max" in plan.currentStep.targets[0] &&
                 `${plan.currentStep.targets[0].min}-${plan.currentStep.targets[0].max}`}
               {"value" in plan.currentStep.targets[0] &&
                 `${plan.currentStep.targets[0].value}`}
@@ -400,8 +444,9 @@ export function RowerControlUI({
       {/* Info Note */}
       <View className="bg-muted/30 p-3 rounded-lg">
         <Text className="text-xs text-muted-foreground">
-          <Text className="font-medium">Tip:</Text> Adjust damper and resistance to control
-          rowing difficulty. Target stroke rate helps maintain consistent pace.
+          <Text className="font-medium">Tip:</Text> Adjust damper and resistance
+          to control rowing difficulty. Target stroke rate helps maintain
+          consistent pace.
         </Text>
       </View>
     </View>

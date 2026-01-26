@@ -9,7 +9,8 @@
     "./estimation": "./estimation/index.ts",
     "./schemas/*": "./schemas/*.ts",
     "./utils": "./utils/index.ts",
-    "./utils/*": "./utils/*.ts"
+    "./utils/*": "./utils/*.ts",
+    "./ftms-types": "./ftms-types.ts"
   },
   "scripts": {
     "lint": "eslint .",

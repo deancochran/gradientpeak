@@ -32,32 +32,28 @@ import { trpc } from "@/lib/trpc";
 import { queryKeys } from "@repo/trpc/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Alert } from "react-native";
+// import * as FileSystem from "expo-file-system"; // Removed as we use File class now
 
 import {
   AggregatedStream,
-  calculateAge,
   calculateAverageGrade,
-  calculateCalories,
   calculateDecoupling,
   calculateEfficiencyFactor,
   calculateElapsedTime,
   calculateElevationChanges,
   calculateElevationGainPerKm,
-  calculateHRZones,
-  calculateIntensityFactor,
   calculateMovingTime,
   calculateNormalizedPower,
   calculatePowerHeartRateRatio,
-  calculatePowerWeightRatio,
-  calculatePowerZones,
   calculateTotalWork,
-  calculateTSS,
   calculateVariabilityIndex,
   PublicActivitiesInsert,
-  PublicActivityStreamsInsert,
 } from "@repo/core";
-import pako from "pako";
 import { useCallback, useEffect, useReducer } from "react";
+
+import { FitUploader } from "@/lib/services/fit/FitUploader";
+
+import { useAuth } from "@/lib/hooks/useAuth";
 
 // ================================
 // Types
@@ -68,15 +64,15 @@ type SubmissionPhase = "loading" | "ready" | "uploading" | "success" | "error";
 interface SubmissionState {
   phase: SubmissionPhase;
   activity: PublicActivitiesInsert | null;
-  streams: Omit<PublicActivityStreamsInsert, "activity_id">[] | null;
   error: string | null;
+  hasStreams: boolean;
 }
 
 type Action =
   | {
       type: "READY";
       activity: PublicActivitiesInsert;
-      streams: Omit<PublicActivityStreamsInsert, "activity_id">[];
+      hasStreams: boolean;
     }
   | {
       type: "UPDATE";
@@ -99,8 +95,8 @@ function submissionReducer(
       return {
         phase: "ready",
         activity: action.activity,
-        streams: action.streams,
         error: null,
+        hasStreams: action.hasStreams,
       };
 
     case "UPDATE":
@@ -315,130 +311,58 @@ function uint8ArrayToBase64(bytes: Uint8Array): string {
   return result;
 }
 
-async function compressStreamData(
-  aggregated: AggregatedStream,
-): Promise<Omit<PublicActivityStreamsInsert, "activity_id">> {
-  let compressedValues: Uint8Array;
-  let originalSize: number;
-
-  if (aggregated.dataType === "latlng") {
-    // Store nested array directly as JSON
-    const jsonStr = JSON.stringify(aggregated.values);
-    compressedValues = pako.gzip(new TextEncoder().encode(jsonStr));
-    originalSize = jsonStr.length + aggregated.timestamps.length * 4;
-  } else {
-    // For numeric data, use Float32Array
-    const valuesArray = new Float32Array(aggregated.values as number[]);
-    compressedValues = pako.gzip(new Uint8Array(valuesArray.buffer));
-    originalSize = valuesArray.byteLength + aggregated.timestamps.length * 4;
-  }
-
-  const timestampsArray = new Float32Array(aggregated.timestamps);
-  const compressedTimestamps = pako.gzip(
-    new Uint8Array(timestampsArray.buffer),
-  );
-
-  return {
-    type: aggregated.metric,
-    data_type: aggregated.dataType,
-    compressed_values: uint8ArrayToBase64(compressedValues),
-    compressed_timestamps: uint8ArrayToBase64(compressedTimestamps),
-    sample_count: aggregated.sampleCount,
-    original_size: originalSize,
-    min_value: aggregated.minValue,
-    max_value: aggregated.maxValue,
-    avg_value: aggregated.avgValue,
-  };
-}
-
 // ================================
 // Main Hook
 // ================================
 
 export function useActivitySubmission(service: ActivityRecorderService | null) {
   const queryClient = useQueryClient();
+  const { session } = useAuth();
 
   const [state, dispatch] = useReducer(submissionReducer, {
     phase: "loading",
     activity: null,
-    streams: null,
     error: null,
+    hasStreams: false,
   });
 
-  // Mutation for calculating activity metrics (TSS, zones, curves, test detection)
-  const calculateMetricsMutation =
-    trpc.activities.calculateMetrics.useMutation();
+  const createActivityMutation = trpc.activities.create.useMutation({
+    onSuccess: async (data) => {
+      // Invalidate relevant queries after successful upload
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.activities.lists(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.trainingPlans.status(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.plannedActivities.weekCount(),
+      });
+      // Invalidate home dashboard to update CTL/ATL/TSB and weekly stats
+      // Use predicate to invalidate all home-related queries
+      queryClient.invalidateQueries({
+        predicate: (query) =>
+          query.queryKey[0] === "home" ||
+          (Array.isArray(query.queryKey) && query.queryKey[0]?.[0] === "home"),
+      });
 
-  const createActivityWithStreamsMutation =
-    trpc.activities.createWithStreams.useMutation({
-      onSuccess: async (data) => {
-        // Invalidate relevant queries after successful upload
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.activities.lists(),
-        });
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.trainingPlans.status(),
-        });
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.plannedActivities.weekCount(),
-        });
-        // Invalidate home dashboard to update CTL/ATL/TSB and weekly stats
-        // Use predicate to invalidate all home-related queries
-        queryClient.invalidateQueries({
-          predicate: (query) =>
-            query.queryKey[0] === "home" ||
-            (Array.isArray(query.queryKey) &&
-              query.queryKey[0]?.[0] === "home"),
-        });
+      // Invalidate trends to update charts with new activity data
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.trends.all(),
+      });
 
-        // Invalidate trends to update charts with new activity data
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.trends.all(),
-        });
+      // Set the new activity in cache
+      if (data.id) {
+        queryClient.setQueryData(queryKeys.activities.detail(data.id), data);
+      }
 
-        // Set the new activity in cache
-        if (data.id) {
-          queryClient.setQueryData(queryKeys.activities.detail(data.id), data);
-        }
-
-        console.log(
-          "[useActivitySubmission] Activity uploaded successfully. Triggering metrics calculation...",
-        );
-
-        // Trigger async metrics calculation (TSS, zones, curves, test detection)
-        // This uses temporal metric lookup from profile_performance_metric_logs
-        // and profile_metric_logs tables with intelligent defaults
-        if (data.id) {
-          try {
-            await calculateMetricsMutation.mutateAsync({
-              activityId: data.id,
-            });
-            console.log(
-              "[useActivitySubmission] Metrics calculated successfully",
-            );
-
-            // Invalidate activity detail to show updated metrics
-            queryClient.invalidateQueries({
-              queryKey: queryKeys.activities.detail(data.id),
-            });
-          } catch (error) {
-            console.error(
-              "[useActivitySubmission] Failed to calculate metrics:",
-              error,
-            );
-            // Don't fail the whole upload if metrics calculation fails
-            // User can manually recalculate later
-          }
-        }
-      },
-      onError: (error) => {
-        console.error("[useActivitySubmission] Upload failed:", error);
-        Alert.alert(
-          "Upload Failed",
-          error.message || "Failed to upload activity. Please try again.",
-        );
-      },
-    });
+      console.log("[useActivitySubmission] Activity uploaded successfully.");
+    },
+    onError: (error) => {
+      // Don't show Alert here - let submitOnce handle it to avoid duplicate alerts
+      console.error("[useActivitySubmission] Upload failed:", error);
+    },
+  });
 
   // ================================
   // Auto-process recording on recordingComplete event
@@ -458,7 +382,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
       return;
     }
 
-    const metadata = service.getRecordingMetadata();
+    const metadata = service.recordingMetadata;
     if (!metadata) {
       dispatch({ type: "ERROR", error: "No recording metadata found" });
       return;
@@ -481,79 +405,11 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
       const aggregatedStreams =
         await service.liveMetricsManager.streamBuffer.aggregateAllChunks();
 
-      if (aggregatedStreams.size === 0) {
-        throw new Error("No stream data found for recording");
-      }
+      const hasStreams = aggregatedStreams.size > 0;
 
       console.log(
         `[useActivitySubmission] Aggregated ${aggregatedStreams.size} metrics`,
       );
-
-      // 2. Compress streams with error handling
-      const compressedStreams: Omit<
-        PublicActivityStreamsInsert,
-        "activity_id"
-      >[] = [];
-      const compressionErrors: Array<{ stream: string; error: Error }> = [];
-
-      for (const [key, aggregated] of aggregatedStreams.entries()) {
-        try {
-          const compressed = await compressStreamData(aggregated);
-          compressedStreams.push(compressed);
-          console.log(
-            `[useActivitySubmission] Successfully compressed stream: ${key}`,
-          );
-        } catch (error) {
-          console.error(
-            `[useActivitySubmission] Failed to compress stream ${key}:`,
-            error,
-          );
-          compressionErrors.push({
-            stream: key,
-            error: error instanceof Error ? error : new Error(String(error)),
-          });
-
-          // Store uncompressed data as fallback
-          // This prevents complete data loss
-          console.warn(
-            `[useActivitySubmission] Storing ${key} as uncompressed fallback`,
-          );
-
-          // Create a fallback stream entry with raw data
-          const fallbackStream: Omit<
-            PublicActivityStreamsInsert,
-            "activity_id"
-          > = {
-            type: aggregated.metric,
-            data_type: aggregated.dataType,
-            compressed_values: JSON.stringify(aggregated.values),
-            compressed_timestamps: JSON.stringify(aggregated.timestamps),
-            sample_count: aggregated.sampleCount,
-            original_size:
-              aggregated.values.length * 8 + aggregated.timestamps.length * 4,
-            min_value: aggregated.minValue,
-            max_value: aggregated.maxValue,
-            avg_value: aggregated.avgValue,
-          };
-          compressedStreams.push(fallbackStream);
-        }
-      }
-
-      // Warn user if compression failed for any streams
-      if (compressionErrors.length > 0) {
-        const streamNames = compressionErrors.map((e) => e.stream).join(", ");
-        console.warn(
-          `[useActivitySubmission] ${compressionErrors.length} stream(s) failed compression: ${streamNames}`,
-        );
-
-        // Note: Alert shown but processing continues
-        // Data is saved with larger file size rather than lost
-        Alert.alert(
-          "Compression Warning",
-          `Some activity data (${streamNames}) couldn't be compressed. Your activity will be uploaded with a larger file size. All data is preserved.`,
-          [{ text: "OK" }],
-        );
-      }
 
       // 3. Build final activity object
       const calculatedMetrics = calculateActivityMetrics(
@@ -574,14 +430,61 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         duration_seconds: calculatedMetrics.durationSeconds,
         moving_seconds: calculatedMetrics.movingSeconds,
         distance_meters: calculatedMetrics.distanceMeters,
-        metrics: calculatedMetrics.metrics as any, // JSONB metrics object
-        hr_zone_seconds: calculatedMetrics.hrZoneSeconds ?? undefined,
-        power_zone_seconds: calculatedMetrics.powerZoneSeconds ?? undefined,
+        // Map individual metrics
+        avg_power: calculatedMetrics.metrics.avg_power as number | undefined,
+        max_power: calculatedMetrics.metrics.max_power as number | undefined,
+        normalized_power: calculatedMetrics.metrics.normalized_power as
+          | number
+          | undefined,
+        avg_heart_rate: calculatedMetrics.metrics.avg_hr as number | undefined,
+        max_heart_rate: calculatedMetrics.metrics.max_hr as number | undefined,
+        avg_cadence: calculatedMetrics.metrics.avg_cadence as
+          | number
+          | undefined,
+        max_cadence: calculatedMetrics.metrics.max_cadence as
+          | number
+          | undefined,
+        avg_speed_mps: calculatedMetrics.metrics.avg_speed as
+          | number
+          | undefined,
+        max_speed_mps: calculatedMetrics.metrics.max_speed as
+          | number
+          | undefined,
+        calories: calculatedMetrics.metrics.calories as number | undefined,
+        elevation_gain_meters: calculatedMetrics.metrics.total_ascent as
+          | number
+          | undefined,
+        elevation_loss_meters: calculatedMetrics.metrics.total_descent as
+          | number
+          | undefined,
+        training_stress_score: calculatedMetrics.metrics.tss as
+          | number
+          | undefined,
+        intensity_factor: calculatedMetrics.metrics.if as number | undefined,
+        hr_zone_1_seconds: calculatedMetrics.hrZoneSeconds?.[0] ?? undefined,
+        hr_zone_2_seconds: calculatedMetrics.hrZoneSeconds?.[1] ?? undefined,
+        hr_zone_3_seconds: calculatedMetrics.hrZoneSeconds?.[2] ?? undefined,
+        hr_zone_4_seconds: calculatedMetrics.hrZoneSeconds?.[3] ?? undefined,
+        hr_zone_5_seconds: calculatedMetrics.hrZoneSeconds?.[4] ?? undefined,
+        power_zone_1_seconds:
+          calculatedMetrics.powerZoneSeconds?.[0] ?? undefined,
+        power_zone_2_seconds:
+          calculatedMetrics.powerZoneSeconds?.[1] ?? undefined,
+        power_zone_3_seconds:
+          calculatedMetrics.powerZoneSeconds?.[2] ?? undefined,
+        power_zone_4_seconds:
+          calculatedMetrics.powerZoneSeconds?.[3] ?? undefined,
+        power_zone_5_seconds:
+          calculatedMetrics.powerZoneSeconds?.[4] ?? undefined,
+        power_zone_6_seconds:
+          calculatedMetrics.powerZoneSeconds?.[5] ?? undefined,
+        power_zone_7_seconds:
+          calculatedMetrics.powerZoneSeconds?.[6] ?? undefined,
         activity_plan_id: activityPlanId, // Use activity_plan_id instead of planned_activity_id
       };
 
       console.log("[useActivitySubmission] Activity processed successfully");
-      dispatch({ type: "READY", activity, streams: compressedStreams });
+      dispatch({ type: "READY", activity, hasStreams });
     } catch (err) {
       console.error("[useActivitySubmission] Processing failed:", err);
       dispatch({
@@ -606,7 +509,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     );
 
     // Also check if already finished (in case event was missed)
-    if (service.state === "finished" && service.getRecordingMetadata()) {
+    if (service.state === "finished" && service.recordingMetadata) {
       console.log(
         "[useActivitySubmission] Recording already finished, processing...",
       );
@@ -626,40 +529,245 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     dispatch({ type: "UPDATE", updates });
   }, []);
 
+  const processFitFileMutation = trpc.fitFiles.processFitFile.useMutation({
+    onSuccess: async (data) => {
+      // Invalidate relevant queries after successful processing
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.activities.lists(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.trainingPlans.status(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.plannedActivities.weekCount(),
+      });
+      queryClient.invalidateQueries({
+        predicate: (query) =>
+          query.queryKey[0] === "home" ||
+          (Array.isArray(query.queryKey) && query.queryKey[0]?.[0] === "home"),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.trends.all(),
+      });
+
+      // Set the new activity in cache
+      if (data.activity?.id) {
+        queryClient.setQueryData(
+          queryKeys.activities.detail(data.activity.id),
+          data.activity,
+        );
+      }
+
+      console.log(
+        "[useActivitySubmission] Activity processed successfully via FIT file.",
+      );
+    },
+    onError: (error) => {
+      // Don't show Alert here - let submitOnce handle it to avoid duplicate alerts
+      console.error("[useActivitySubmission] Processing failed:", error);
+    },
+  });
+
+  const getSignedUrlMutation = trpc.fitFiles.getSignedUploadUrl.useMutation();
+
   const submit = useCallback(async () => {
-    if (!state.activity || !state.streams || !service) {
+    if (!state.activity || !service) {
       throw new Error("No data to submit");
     }
 
     dispatch({ type: "UPLOADING" });
 
     try {
-      await createActivityWithStreamsMutation.mutateAsync({
-        activity: state.activity,
-        activity_streams: state.streams,
-      });
+      // Check if we have a FIT file to upload
+      const metadata = service.recordingMetadata;
 
-      // Clean up stream files after successful upload
-      await service.liveMetricsManager.streamBuffer.cleanup();
-
-      console.log(
-        "[useActivitySubmission] Activity uploaded, cache invalidated, and local files deleted",
-      );
-      dispatch({ type: "SUCCESS" });
+      if (metadata?.fitFilePath) {
+        await submitOnce(
+          { ...metadata, fitFilePath: metadata.fitFilePath },
+          { ...state.activity, notes: state.activity.notes || undefined },
+        );
+      } else {
+        // No FIT file found
+        console.error(
+          "[useActivitySubmission] No FIT file found in recording metadata",
+        );
+        throw new Error(
+          "No activity file generated. Please try recording again.",
+        );
+      }
     } catch (err) {
       console.error("[useActivitySubmission] Upload failed:", err);
-      dispatch({
-        type: "ERROR",
-        error: err instanceof Error ? err.message : "Upload failed",
-      });
-      throw err;
+
+      // Error state is already set by submitOnce
+      // Don't throw - keep the submission page available for manual retry
     }
-  }, [
-    state.activity,
-    state.streams,
-    service,
-    createActivityWithStreamsMutation,
-  ]);
+  }, [state.activity, service, submitOnce]);
+
+  // ================================
+  // Single Upload Attempt (No Automatic Retry)
+  // ================================
+
+  const submitOnce = useCallback(
+    async (
+      metadata: { fitFilePath: string; [key: string]: any },
+      activity: {
+        name?: string;
+        notes?: string;
+        type: string;
+        [key: string]: any;
+      },
+    ) => {
+      try {
+        console.log(
+          `[useActivitySubmission] Uploading FIT file:`,
+          metadata.fitFilePath,
+        );
+
+        // Simple file verification
+        const { File } = await import("expo-file-system");
+        const file = new File(metadata.fitFilePath);
+
+        if (!file.exists) {
+          throw new Error("FIT file does not exist");
+        }
+
+        const fileSize = file.size ?? 0;
+
+        if (fileSize === 0) {
+          throw new Error("FIT file is empty");
+        }
+
+        console.log(
+          `[useActivitySubmission] File verification successful: ${fileSize} bytes`,
+        );
+        const fileName = `${Date.now()}.fit`;
+
+        // 1. Get signed upload URL from backend
+        console.log("[useActivitySubmission] Requesting signed upload URL...");
+        const signedUrlData = await getSignedUrlMutation.mutateAsync({
+          fileName,
+          fileSize,
+        });
+
+        console.log(
+          "[useActivitySubmission] Got signed URL for path:",
+          signedUrlData.filePath,
+        );
+
+        const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+        const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+
+        const uploader = new FitUploader(
+          supabaseUrl,
+          supabaseAnonKey,
+          "fit-files",
+        );
+
+        // 2. Upload to signed URL
+        const uploadResult = await uploader.uploadToSignedUrl(
+          metadata.fitFilePath,
+          signedUrlData.signedUrl,
+        );
+
+        if (!uploadResult.success) {
+          throw new Error(uploadResult.error || "Failed to upload FIT file");
+        }
+
+        console.log("[useActivitySubmission] FIT file uploaded successfully");
+
+        // CRITICAL: Wait for storage to sync (especially on iOS/Supabase)
+        // This prevents "Failed to download" errors when processing immediately after upload
+        const syncDelay = 1000; // 1 second should be sufficient
+        console.log(
+          `[useActivitySubmission] Waiting ${syncDelay}ms for storage to sync...`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, syncDelay));
+
+        // 3. Process the uploaded file
+        console.log(
+          "[useActivitySubmission] Calling tRPC processFitFile with path:",
+          signedUrlData.filePath,
+        );
+
+        const result = await processFitFileMutation.mutateAsync({
+          fitFilePath: signedUrlData.filePath,
+          name: activity.name || "Untitled Activity",
+          notes: activity.notes || undefined,
+          activityType: activity.type,
+        });
+
+        if (!result.success) {
+          throw new Error("FIT file processing failed");
+        }
+
+        // Clean up stream files after successful processing
+        if (service?.liveMetricsManager?.streamBuffer?.cleanup) {
+          await service.liveMetricsManager.streamBuffer.cleanup();
+        }
+
+        // Clean up local FIT file
+        try {
+          const fileToDelete = new File(metadata.fitFilePath);
+          if (fileToDelete.exists) {
+            fileToDelete.delete();
+          }
+          console.log("[useActivitySubmission] Local FIT file deleted");
+        } catch (cleanupError) {
+          console.warn(
+            "[useActivitySubmission] Failed to delete local FIT file:",
+            cleanupError,
+          );
+        }
+
+        console.log(
+          "[useActivitySubmission] Activity processed, cache invalidated, and local files deleted",
+        );
+        dispatch({ type: "SUCCESS" });
+      } catch (err) {
+        console.error(`[useActivitySubmission] Upload failed:`, err);
+
+        const errorMessage = err instanceof Error ? err.message : String(err);
+
+        // Extract user-friendly error message
+        let userMessage =
+          "Failed to upload your activity. Please check your connection and try again.";
+
+        // Check for specific error patterns
+        if (errorMessage.includes("Failed to create activity record")) {
+          userMessage =
+            "Failed to save activity to database. This may be a temporary issue. Please try again.";
+        } else if (errorMessage.includes("Failed to download FIT file")) {
+          userMessage =
+            "Upload succeeded but processing failed. The file may not have synchronized yet. Please try again in a moment.";
+        } else if (errorMessage.includes("Failed to parse FIT file")) {
+          userMessage =
+            "The activity file appears to be corrupted. Please try recording the activity again.";
+        } else if (errorMessage.includes("FIT file does not exist")) {
+          userMessage =
+            "Activity file not found. Please try recording the activity again.";
+        } else if (
+          errorMessage.includes("zero duration") ||
+          errorMessage.includes("empty")
+        ) {
+          userMessage =
+            "Activity has no data or zero duration. Please ensure the recording completed properly.";
+        }
+
+        // Show single user-friendly error message
+        Alert.alert("Upload Failed", userMessage);
+
+        // Set error state but keep the submission page available for retry
+        dispatch({
+          type: "ERROR",
+          error: errorMessage,
+        });
+
+        // Re-throw to allow caller to handle
+        throw err;
+      }
+    },
+    [getSignedUrlMutation, processFitFileMutation, service],
+  );
 
   // ================================
   // Return Clean API
@@ -675,7 +783,6 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
 
     // Data (null-safe access)
     activity: state.activity,
-    streams: state.streams,
     error: state.error,
 
     // Actions

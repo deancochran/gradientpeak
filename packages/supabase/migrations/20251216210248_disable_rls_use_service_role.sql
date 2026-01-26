@@ -7,7 +7,7 @@ drop policy if exists "Users can manage their own profile" on public.profiles;
 drop policy if exists "Users can manage their own activities" on public.activities;
 drop policy if exists "Users can manage their own activity plans" on public.activity_plans;
 drop policy if exists "Users can manage their own routes" on public.activity_routes;
-drop policy if exists "Users can manage their own activity streams" on public.activity_streams;
+-- Policy removed: activity_streams table no longer exists
 drop policy if exists "Users can manage their own integrations" on public.integrations;
 drop policy if exists "Users can manage their own oauth states" on public.oauth_states;
 drop policy if exists "Users can manage their own planned activities" on public.planned_activities;
@@ -18,7 +18,7 @@ drop policy if exists "Users can manage their own training plans" on public.trai
 alter table public.activities disable row level security;
 alter table public.activity_plans disable row level security;
 alter table public.activity_routes disable row level security;
-alter table public.activity_streams disable row level security;
+-- Table removed: activity_streams table no longer exists
 alter table public.integrations disable row level security;
 alter table public.oauth_states disable row level security;
 alter table public.planned_activities disable row level security;

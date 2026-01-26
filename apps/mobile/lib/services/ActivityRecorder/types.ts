@@ -418,6 +418,7 @@ export interface RecordingMetadata {
   profile: PublicProfilesRow;
   plannedActivityId?: string;
   activityPlan?: RecordingServiceActivityPlan;
+  fitFilePath?: string;
 }
 
 // ================================
