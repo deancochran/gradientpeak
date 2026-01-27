@@ -20,7 +20,7 @@ This plan outlines the implementation of "Smart Performance Metrics" for Gradien
 
 ### 2.1. Missing Table: `profile_performance_models`
 
-We need to create the `profile_performance_models` table to store computed mathematical models (e.g., Critical Power, W'). This table was defined in the spec but is missing from the current database.
+We need to create the `profile_performance_models` table to store computed mathematical models (e.g., Critical Power, W'). This table uses a "Slim" schema for the MVP, focusing on essential curve parameters and provenance for validity checks.
 
 ```sql
 CREATE TABLE IF NOT EXISTS public.profile_performance_models (
@@ -34,26 +34,15 @@ CREATE TABLE IF NOT EXISTS public.profile_performance_models (
   -- Model parameters (The "Curve")
   critical_value NUMERIC NOT NULL,          -- CP (Watts) or CS (m/s)
   capacity_value NUMERIC NOT NULL,          -- W' (Joules) or D' (Meters)
-  critical_unit TEXT NOT NULL,              -- 'watts', 'm/s'
-  capacity_unit TEXT NOT NULL,              -- 'joules', 'meters'
 
-  -- Model Quality (Placeholders for future AI/ML)
-  r_squared NUMERIC,
-  standard_error NUMERIC,
-  confidence_level TEXT,                    -- 'high', 'medium', 'low'
-
-  -- Provenance
-  source_metric_ids UUID[],                 -- Array of metric log IDs used to compute this
-  effort_count INTEGER NOT NULL,            -- How many data points used?
-  date_range TSTZRANGE,                     -- Date range of input data
+  -- Provenance & Quality
+  effort_count INTEGER NOT NULL,            -- Number of data points used (detects low data)
+  max_effort_duration INTEGER,              -- Max duration used (detects lack of endurance data)
 
   -- Temporal Validity
   computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  valid_from TIMESTAMPTZ NOT NULL,          -- Usually the date of the latest input metric
-  valid_until TIMESTAMPTZ,                  -- Null = currently valid
-
-  -- Metadata
-  metadata JSONB DEFAULT '{}'
+  valid_from TIMESTAMPTZ NOT NULL,          -- Date of the *latest* data point used (Freshness)
+  valid_until TIMESTAMPTZ                   -- Null = currently valid
 );
 
 -- Indexes
@@ -82,7 +71,7 @@ We will use **tRPC Procedures** for the calculation logic to keep business logic
 
 **Constraint:** The `profile_performance_models` table is strictly **read-only** for client APIs. Users cannot manually edit the curves; they are only updated via the recalculation trigger described below.
 
-### 3.2. Data Flow: Metric Updates
+### 3.2. Data Flow: Metric Updates & Rolling Window
 
 When a user manually enters a new FTP or Weight, or when an integration (Strava) provides new bests:
 
@@ -91,10 +80,14 @@ When a user manually enters a new FTP or Weight, or when an integration (Strava)
     - Insert row into `profile_performance_metric_logs`.
     - **Trigger:** Call an internal helper `recalculatePerformanceModel(profileId, category)`.
 3.  **Recalculation Logic (`recalculatePerformanceModel`):**
-    - Fetch relevant "best" metrics from `profile_performance_metric_logs` (e.g., best 3 efforts between 3min and 20min for CP).
-    - Compute Critical Power (CP) and W' using a standard regression model (e.g., 1/time vs power).
-    - Insert a new row into `profile_performance_models`.
-    - Update `valid_until` of the previous model to `NOW()`.
+    - **Rolling Window:** Fetch "best" metrics from `profile_performance_metric_logs` where `recorded_at > NOW() - 90 DAYS`.
+    - **Decay Handling:** By strictly filtering for the last 90 days, old high-performance efforts naturally "expire" and are excluded from the calculation. This results in a lower CP/W' if the user has not performed recently.
+    - **Compute:** Calculate Critical Power (CP) and W' using a standard regression model.
+    - **Validation:** Check `effort_count`. If `< 3` or `max_effort_duration` is too short, flag as low confidence (or skip update if strictly enforcing quality).
+    - **Update:**
+      - Insert a new row into `profile_performance_models`.
+      - Set `valid_from` to the `recorded_at` of the _most recent_ metric used (this serves as the "Freshness Date").
+      - Update `valid_until` of the previous model to `NOW()`.
 
 ### 3.3. Data Flow: Activity Analysis (Future Integration)
 

@@ -106,38 +106,33 @@ CREATE TABLE profile_performance_metric_logs (
 
 **Purpose**: Store mathematical models derived from performance data.
 
+**MVP Schema Strategy**:
+This table uses a "Slim" schema focused on the essential curve parameters. It relies on a **Rolling Window Strategy** (e.g., best efforts from the last 90 days) to handle performance decay.
+
+- **Freshness**: `valid_from` represents the date of the _most recent_ activity used in the model. If this is old, the model is stale.
+- **Decay**: As high-performance efforts slide out of the rolling window, new models are calculated using only recent data, naturally reflecting decreased capabilities.
+
 ```sql
 CREATE TABLE profile_performance_models (
-  id UUID PRIMARY KEY,
-  profile_id UUID NOT NULL REFERENCES profiles(id),
+  id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
+  profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
 
   -- Model type
   category activity_category NOT NULL,
   model_type TEXT NOT NULL,  -- 'critical_power', 'critical_speed'
 
   -- Model parameters
-  critical_value NUMERIC NOT NULL,    -- CP or CS
-  capacity_value NUMERIC NOT NULL,    -- W' or D'
-  critical_unit TEXT NOT NULL,        -- 'watts', 'm/s'
-  capacity_unit TEXT NOT NULL,        -- 'joules', 'meters'
+  critical_value NUMERIC NOT NULL,    -- CP (Watts) or CS (m/s)
+  capacity_value NUMERIC NOT NULL,    -- W' (Joules) or D' (Meters)
 
-  -- Model quality
-  r_squared NUMERIC,
-  standard_error NUMERIC,
-  confidence_level TEXT,  -- 'high', 'medium', 'low'
-
-  -- Source data
-  source_metric_ids UUID[],  -- Array of metric log IDs used
-  effort_count INTEGER NOT NULL,
-  date_range TSTZRANGE,  -- Date range of source data
+  -- Provenance & Quality
+  effort_count INTEGER NOT NULL,      -- Number of data points used (detects low data)
+  max_effort_duration INTEGER,        -- Max duration used (detects lack of endurance data)
 
   -- Temporal
   computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  valid_from TIMESTAMPTZ NOT NULL,  -- Model is valid from this date
-  valid_until TIMESTAMPTZ,          -- Model is valid until this date (nullable = current)
-
-  -- Metadata
-  metadata JSONB DEFAULT '{}'
+  valid_from TIMESTAMPTZ NOT NULL,  -- Date of the *latest* data point used (Freshness)
+  valid_until TIMESTAMPTZ           -- Model is valid until this date (nullable = current)
 );
 
 CREATE INDEX idx_perf_models_profile_current
@@ -152,10 +147,8 @@ CREATE UNIQUE INDEX idx_perf_models_current_unique
 
 **Examples of Data:**
 
-- ✅ CP models (CP=279W, W'=20kJ, R²=0.963)
-- ✅ CS models (CS=4.5m/s, D'=180m, R²=0.951)
-- ✅ Model quality metrics
-- ✅ References to source metric logs
+- ✅ CP models (CP=279W, W'=20kJ, 5 efforts used)
+- ✅ CS models (CS=4.5m/s, D'=180m, 3 efforts used)
 
 ## Data Flow
 
