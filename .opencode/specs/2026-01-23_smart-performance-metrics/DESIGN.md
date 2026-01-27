@@ -112,7 +112,7 @@ This table uses a "Slim" schema focused on the essential curve parameters. It re
 - **Freshness**: `valid_from` represents the date of the _most recent_ activity used in the model. If this is old, the model is stale.
 - **Decay**: As high-performance efforts slide out of the rolling window, new models are calculated using only recent data, naturally reflecting decreased capabilities.
 
-```sql
+````sql
 CREATE TABLE profile_performance_models (
   id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
   profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -143,7 +143,39 @@ CREATE INDEX idx_perf_models_profile_current
 CREATE UNIQUE INDEX idx_perf_models_current_unique
   ON profile_performance_models(profile_id, category, model_type)
   WHERE valid_until IS NULL;
-```
+
+### 4. profile_performance_proposals (Autonomous Detection)
+
+**Purpose**: Store detected performance improvements from activity analysis that require user confirmation before being applied. This prevents "bad data" (e.g., driving in a car) from corrupting the model.
+
+```sql
+CREATE TYPE proposal_status AS ENUM ('pending', 'accepted', 'rejected', 'ignored');
+
+CREATE TABLE profile_performance_proposals (
+  id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
+  profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+
+  -- Source
+  activity_id UUID REFERENCES activities(id) ON DELETE SET NULL,
+
+  -- The Proposal
+  metrics JSONB NOT NULL,       -- e.g., { "5min_power": 350, "20min_power": 280 }
+  reason TEXT NOT NULL,         -- e.g., "New 20min Power Record detected (+15W)"
+
+  -- Workflow
+  status proposal_status NOT NULL DEFAULT 'pending',
+
+  -- Temporal
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  reviewed_at TIMESTAMPTZ
+);
+````
+
+**Examples of Data:**
+
+- ✅ Pending Proposal: "New 5min Power Record: 350W" (derived from Activity #123)
+
+````
 
 **Examples of Data:**
 
@@ -167,6 +199,9 @@ graph TD
     PerfMetrics -->|Provides historical data| Features
     Models -->|Used for predictions/suggestions| Features
 
+    Analysis[Activity Analysis] -->|Detects Improvements| Proposals[profile_performance_proposals]
+    Proposals -->|User Accepts| PerfMetrics
+
     subgraph "Table 1: Input State"
     Biometrics
     end
@@ -179,10 +214,14 @@ graph TD
     Models
     end
 
+    subgraph "Table 4: Proposals"
+    Proposals
+    end
+
     subgraph "Application"
     Features
     end
-```
+````
 
 ### Application Features
 

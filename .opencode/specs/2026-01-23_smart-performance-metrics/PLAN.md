@@ -56,7 +56,24 @@ CREATE UNIQUE INDEX idx_perf_models_current_unique
   WHERE valid_until IS NULL;
 ```
 
-### 2.2. Verification
+### 2.2. New Table: `profile_performance_proposals`
+
+We need a staging area for detected improvements. This prevents automatic updates from bad data (e.g., GPS errors, driving).
+
+```sql
+CREATE TABLE IF NOT EXISTS public.profile_performance_proposals (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  profile_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  activity_id UUID REFERENCES public.activities(id) ON DELETE SET NULL,
+  metrics JSONB NOT NULL,
+  reason TEXT NOT NULL,
+  status proposal_status NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  reviewed_at TIMESTAMPTZ
+);
+```
+
+### 2.3. Verification
 
 - Verify `profile_metric_logs` and `profile_performance_metric_logs` exist (confirmed in recent migrations).
 - Ensure RLS policies are set (or disabled) consistent with the project standards.
@@ -89,14 +106,28 @@ When a user manually enters a new FTP or Weight, or when an integration (Strava)
       - Set `valid_from` to the `recorded_at` of the _most recent_ metric used (this serves as the "Freshness Date").
       - Update `valid_until` of the previous model to `NOW()`.
 
-### 3.3. Data Flow: Activity Analysis (Future Integration)
+### 3.3. Data Flow: Activity Analysis & Autonomous Detection
 
 When a FIT file is analyzed (via `analyze-fit-file` Edge Function):
 
-1.  Extract "Mean Max Power" curve.
-2.  Compare against current `profile_performance_metric_logs`.
-3.  **Suggestion:** If a new best is found (e.g., new 5-min power record), create a "Pending" metric log (or notify user to accept it).
-4.  _Note: For Phase 1, we will rely on manual entry or simple extraction._
+1.  **Analysis:** Extract "Mean Max Power" (MMP) curve and Peak Pace values from the file.
+2.  **Comparison:** Compare these values against the user's current `profile_performance_models` and recent `profile_performance_metric_logs`.
+3.  **Detection:** Identify significant improvements (e.g., "New 20min Power Record: 250W (+10W)").
+4.  **Proposal:**
+    - If an improvement is found, create a row in `profile_performance_proposals` with `status = 'pending'`.
+    - **Do NOT** automatically update the logs or models.
+5.  **Notification:** Trigger a push notification or in-app badge: "New Performance Detected!".
+
+### 3.4. Data Flow: Proposal Acceptance
+
+When a user accepts a proposal via the UI:
+
+1.  **Action:** Client calls `profilePerformanceProposals.accept(proposalId)`.
+2.  **Transaction:**
+    - Update `profile_performance_proposals.status` to `'accepted'`.
+    - Insert the metrics from the proposal into `profile_performance_metric_logs`.
+    - Trigger `recalculatePerformanceModel(profileId, category)`.
+3.  **Result:** The model is updated with the new high-quality data point, and the curve shifts upwards.
 
 ---
 
@@ -120,6 +151,10 @@ When a FIT file is analyzed (via `analyze-fit-file` Edge Function):
 **Location:** `apps/mobile/app/(internal)/performance/index.tsx` (New Route)
 **Features:**
 
+- **Pending Proposals Card:**
+  - **Visibility:** Only appears if there are `pending` proposals.
+  - **Content:** "New 20min Power Record: 250W detected in 'Morning Ride'. Accept?"
+  - **Actions:** "Accept" (Green check) / "Reject" (Red X).
 - **Tabs/Segments:** "Body" (Weight, etc.) vs "Performance" (FTP, Pace).
 - **List View:** Show history of metrics (using `profilePerformanceMetrics.list`).
 - **Add Button:** FAB to add a new manual entry (Weight, FTP test result, etc.).
