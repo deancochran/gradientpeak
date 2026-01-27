@@ -13,6 +13,15 @@ By leveraging these datasets together, we can provide:
 - **Predictions**: Race performance predictions adjusted for current weight and stress.
 - **Intentional Decisions**: Training recommendations that respect the athlete's current capacity.
 
+## User Interaction Rules
+
+To maintain data integrity and model accuracy, the following strict rules apply:
+
+1.  **Strict Update Restrictions**: Users can _only_ manually update their information (metrics) in the **Settings** page or during **Onboarding**. Random editing elsewhere is prohibited.
+2.  **No Direct Curve Manipulation**: Users cannot manually edit the `profile_performance_models` (the computed curves). These are read-only for the user and are computed automatically based on logged inputs.
+3.  **Allowed Inputs**: Users _can_ log new "Bests" (FTP, Pace, Weight, Stress, etc.) as inputs. These inputs trigger the model update logic.
+4.  **Onboarding Gate**: The `profiles.onboarded` boolean flag is used to explicitly gate access. It must be set to `true` only after initial metrics are successfully gathered.
+
 ## Database Schema
 
 ### 1. profile_metric_logs (Biometrics/Health)
@@ -183,6 +192,8 @@ graph TD
 ```
 
 ### Application Features
+
+_Note: The following features utilize the computed models for **visualization** and **prediction**. Users do not manually tweak the model parameters directly._
 
 - Power curve visualization
 - FTP suggestions
