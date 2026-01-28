@@ -12,62 +12,12 @@ Auto-track fitness across all activity types, predict capabilities, and adapt wo
 
 Pre-computed metadata from uploaded activity files for fast queries.
 
-#### SQL Schema
+#### Schema Additions
 
 ```sql
-create table public.activities (
-    -- Core Identity
-    id uuid primary key default uuid_generate_v4(),
-    profile_id uuid not null references public.profiles(id) on delete cascade,
-
-    -- Core Metadata
-    name text not null,
-    notes text,
-    type text not null, -- e.g., 'bike', 'run', 'swim'
-    started_at timestamptz not null,
-    fit_file_path text not null, -- Path to the source of truth file
-
-    -- Core Metrics (pre-computed for performance)
-    duration_seconds integer not null default 0,
-    moving_seconds integer not null default 0,
-    distance_meters integer not null default 0,
-    calories integer,
-
-    -- Elevation Metrics
-    elevation_gain_meters numeric(10,2),
-    elevation_loss_meters numeric(10,2),
-
-    -- Heart Rate Metrics
-    avg_heart_rate integer,
-    max_heart_rate integer,
-
-    -- Power Metrics (Cycling)
-    avg_power integer,
-    max_power integer,
-    normalized_power integer,
-
-    -- Speed Metrics (stored as m/s for efficiency)
-    avg_speed_mps numeric(6,2),
-    max_speed_mps numeric(6,2),
-    grade_adjusted_speed_mps numeric(6,2), -- Grade Adjusted Speed (meters per second)
-
-    -- Cadence Metrics
-    avg_cadence integer,
-    max_cadence integer,
-
-    -- Performance Scores
-    intensity_factor numeric(4,3),
-    training_stress_score integer,
-
-    -- Optional Metrics
-    temperature numeric,
-
-    -- Audit Timestamps
-    created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now()
-);
-
-create index idx_activities_profile_started on public.activities(profile_id, started_at desc);
+alter table public.activities
+    add column grade_adjusted_speed_mps numeric(6,2), -- Grade Adjusted Speed (meters per second)
+    add column temperature numeric;
 ```
 
 ### 2. `activity_efforts`
@@ -91,7 +41,7 @@ create table public.activity_efforts (
     value numeric not null,
     unit text not null, -- 'watts' or 'meters_per_second'
     start_offset integer, -- Optional: seconds from activity start
-    recorded_at timestamptz not null
+    recorded_at timestam_ptz not null
 );
 
 create index idx_activity_efforts_lookup on public.activity_efforts(profile_id, effort_type, duration_seconds, recorded_at desc);
