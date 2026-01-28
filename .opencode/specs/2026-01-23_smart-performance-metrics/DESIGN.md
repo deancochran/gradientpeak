@@ -6,7 +6,7 @@ Auto-track fitness across all activity types, predict capabilities, and adapt wo
 
 ---
 
-## Database Tables & Schemas
+## Database Tables & Schemas Updates
 
 ### 1. `activities`
 
@@ -83,7 +83,7 @@ create table public.profile_metrics (
 create index idx_profile_metrics_lookup on public.profile_metrics(profile_id, metric_type, recorded_at desc);
 ```
 
-### 4. `notifications` (Planned)
+### 4. `notifications`
 
 System-generated alerts for auto-detected achievements (new personal records, fitness changes, recovery alerts).
 
