@@ -55,12 +55,21 @@ Tracks weight, sleep, HRV, resting heart rate for recovery and power-to-weight c
 
 ```sql
 create type public.profile_metric_type as enum (
-    'weight_kg',
-    'resting_hr_bpm',
-    'sleep_seconds',
-    'hrv_ms',
-    'max_hr_bpm'
+    'hrv_rmssd',           -- Heart Rate Variability (Root Mean Square of Successive Differences)
+    'resting_hr',          -- Resting Heart Rate
+    'sleep_duration',      -- Total time asleep
+    'sleep_score',         -- A composite score of sleep quality (e.g., from a device)
+    'respiratory_rate',    -- Breaths per minute, usually during sleep
+    'weight',              -- Body weight
+    'body_fat_percentage', -- Body fat as a percentage of total weight
+    'bmi',                 -- Body Mass Index (useful, but less precise than body fat)
+    'max_hr',              -- Maximum observed Heart Rate
+    'vo2_max',             -- Estimated maximal oxygen consumption
+    'mood',                -- Overall feeling or mood rating (e.g., 1-5)
+    'muscle_soreness'      -- Delayed Onset Muscle Soreness rating (e.g., 1-5)
 );
+
+
 
 create table public.profile_metrics (
     id uuid primary key default uuid_generate_v4(),
