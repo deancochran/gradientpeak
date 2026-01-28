@@ -1,44 +1,68 @@
 # Performance Tracking System: Design Document
 
-## 1. Core Concept & Architectural Impact
+## Core Concept
 
-This system is designed to auto-track fitness, predict capabilities, and adapt workouts using activity files (FIT/GPX/TCX) as the single source of truth. The architecture is founded on a key principle: **decoupling raw activity data from derived, query-optimized performance metrics.**
-
-This approach provides significant advantages in scalability, performance, and maintainability.
-
-### Architectural Benefits
-
-- **Scalability:** Separating `activities` from `activity_efforts` allows for decoupled workloads. The `activities` table handles high-frequency, simple queries (like a user's activity feed), while `activity_efforts` supports complex, analytical queries (like power curves). This separation allows for independent optimization and prevents analytical workloads from slowing down the user experience. It also enables a scalable, asynchronous processing pipeline where background workers can handle CPU-intensive calculations without blocking user-facing services.
-
-- **Performance:** The design prioritizes a responsive user experience by pre-computing metadata into the `activities` table. This avoids slow, on-the-fly parsing of large activity files for common queries. The `activity_efforts` table acts as a pre-computed cache for performance data, allowing for sub-second responses to analytical queries that would otherwise be prohibitively slow.
-
-- **Maintainability & Extensibility:** The decoupled design makes the system easy to evolve. New performance metrics can be added without altering the core `activities` schema. New activity file types can be supported by extending only the parsing logic, with no changes needed for the UI or notification systems. If calculation logic improves, the `activity_efforts` table can be rebuilt from the raw files without downtime.
-
-- **Data Integrity:** Using the raw activity file as the immutable source of truth makes the system highly resilient. The database tables are treated as a materialized view of the data in these files. If a bug leads to data corruption, the tables can be cleared and rebuilt by re-processing the original files, ensuring no data is permanently lost.
+Auto-track fitness across all activity types, predict capabilities, and adapt workouts. Activity files (FIT/GPX/TCX) are the source of truth. Pre-compute metadata for fast queries, calculate performance metrics on-demand.
 
 ---
 
-## 2. Database Tables & Schemas
+## Database Tables & Schemas
 
-### 2.1. `activities`
+### 1. `activities`
 
-Stores pre-computed metadata from uploaded activity files for fast queries. This table answers the question: "What did the user do?"
+Pre-computed metadata from uploaded activity files for fast queries.
 
 #### SQL Schema
 
 ```sql
 create table public.activities (
+    -- Core Identity
     id uuid primary key default uuid_generate_v4(),
     profile_id uuid not null references public.profiles(id) on delete cascade,
+
+    -- Core Metadata
     name text not null,
     notes text,
     type text not null, -- e.g., 'bike', 'run', 'swim'
     started_at timestamptz not null,
+    fit_file_path text not null, -- Path to the source of truth file
+
+    -- Core Metrics (pre-computed for performance)
     duration_seconds integer not null default 0,
     moving_seconds integer not null default 0,
     distance_meters integer not null default 0,
-    temperature numeric, -- Optional temperature reading
-    fit_file_path text not null, -- Path to the source of truth file
+    calories integer,
+
+    -- Elevation Metrics
+    elevation_gain_meters numeric(10,2),
+    elevation_loss_meters numeric(10,2),
+
+    -- Heart Rate Metrics
+    avg_heart_rate integer,
+    max_heart_rate integer,
+
+    -- Power Metrics (Cycling)
+    avg_power integer,
+    max_power integer,
+    normalized_power integer,
+
+    -- Speed Metrics (stored as m/s for efficiency)
+    avg_speed_mps numeric(6,2),
+    max_speed_mps numeric(6,2),
+    grade_adjusted_speed_mps numeric(6,2), -- Grade Adjusted Speed (meters per second)
+
+    -- Cadence Metrics
+    avg_cadence integer,
+    max_cadence integer,
+
+    -- Performance Scores
+    intensity_factor numeric(4,3),
+    training_stress_score integer,
+
+    -- Optional Metrics
+    temperature numeric,
+
+    -- Audit Timestamps
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
@@ -46,17 +70,16 @@ create table public.activities (
 create index idx_activities_profile_started on public.activities(profile_id, started_at desc);
 ```
 
-### 2.2. `activity_efforts`
+### 2. `activity_efforts`
 
-Tracks athlete performance capabilities over time (power curves, speed records, etc.) derived from activities. This table answers the question: "How well did the user perform?"
+Tracks athlete performance capabilities over time (power curves, speed records, etc.) across all activity types.
 
 #### SQL Schema
 
 ```sql
 create type public.effort_type as enum (
     'power',
-    'speed',
-    'pace'
+    'speed'
 );
 
 create table public.activity_efforts (
@@ -66,7 +89,7 @@ create table public.activity_efforts (
     duration_seconds integer not null,
     effort_type effort_type not null,
     value numeric not null,
-    unit text not null,
+    unit text not null, -- 'watts' or 'meters_per_second'
     start_offset integer, -- Optional: seconds from activity start
     recorded_at timestamptz not null
 );
@@ -74,9 +97,9 @@ create table public.activity_efforts (
 create index idx_activity_efforts_lookup on public.activity_efforts(profile_id, effort_type, duration_seconds, recorded_at desc);
 ```
 
-### 2.3. `profile_metrics`
+### 3. `profile_metrics`
 
-Tracks weight, sleep, HRV, and resting heart rate to provide context for recovery and power-to-weight ratio.
+Tracks weight, sleep, HRV, resting heart rate for recovery and power-to-weight context.
 
 #### SQL Schema
 
@@ -100,9 +123,9 @@ create table public.profile_metrics (
 create index idx_profile_metrics_lookup on public.profile_metrics(profile_id, metric_type, recorded_at desc);
 ```
 
-### 2.4. `notifications` (Planned)
+### 4. `notifications` (Planned)
 
-System-generated alerts for auto-detected achievements like new personal records, fitness changes, and recovery alerts.
+System-generated alerts for auto-detected achievements (new personal records, fitness changes, recovery alerts).
 
 #### SQL Schema
 
@@ -129,19 +152,32 @@ create index idx_notifications_profile_created_at on public.notifications(profil
 
 ---
 
-## 3. How It Works
+## Effort Types by Sport
 
-### When an Activity File is Uploaded:
+- **Power-based sports** (Cycling, Rowing): Power (watts) for standard durations
+- **Speed-based sports** (Running, Swimming, Hiking): Speed (meters/second) for standard durations
+  - _Note: Speed stored as meters/second for computational efficiency; convert to pace for display_
 
-1.  **Parse & Pre-compute:** Parse the file and extract key metadata.
-2.  **Determine Sport:** Identify the sport category (e.g., power-based vs. speed-based).
-3.  **Save Activity:** Save the pre-computed metadata to the `activities` table.
-4.  **Extract Efforts:** Calculate the best efforts for standard durations based on the sport (e.g., best 5-minute power, best 1-mile pace).
-5.  **Save Efforts:** Save these derived metrics to the `activity_efforts` table.
-6.  **Store Source File:** Archive the original activity file as the source of truth.
-7.  **Detect Achievements:** Compare the new efforts to recent bests (e.g., last 90 days) and create notifications for any significant improvements.
+---
+
+## How It Works
+
+### When Activity File Uploaded:
+
+1. Parse file and extract metadata
+1. Determine sport category
+1. Save to `activities` table
+1. Extract best efforts for standard durations based on sport
+1. Save to `activity_efforts`
+1. Store source file
+1. Compare to recent bests and create notifications if improvements detected
+
+### Auto-Detection:
+
+- Compare new efforts to recent bests (last 90 days)
+- If significant improvement detected, create notification with details
 
 ### Performance Queries:
 
-- **Threshold Calculation:** Use recent best efforts from `activity_efforts` to fit sport-specific models (e.g., Critical Power for cycling, Critical Speed for running).
-- **Fitness Progression:** Compare current vs. historical data to track fitness progression over time.
+- **Threshold calculation:** Use recent best efforts to fit sport-specific models (e.g., Critical Power for cycling, Critical Speed for running)
+- **Fitness progression:** Compare current vs historical CTL and key effort metrics
