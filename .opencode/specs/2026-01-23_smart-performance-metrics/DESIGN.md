@@ -115,3 +115,6 @@ create table public.notifications (
 1. Store source file
 1. Compare to recent bests and create notifications if improvements detected
 
+### When User Metric is logged or collected from thirdparty
+- store metric in `profile_metrics` table
+
