@@ -125,4 +125,4 @@ The fit file analysis pipeline should be updated to include the following logic:
 
 Detect New Max Heart Rate: When parsing an activity file, the system should identify the peak heart rate from the data. This value can then be compared to the user's existing max_hr stored in the profile_metrics table. If the new value is higher, a new max_hr entry should be created.
 
-Calculate VO2 Max: The system should trigger a VO2 Max recalculation whenever a new max_hr or resting_hr is recorded in the profile_metrics table. This ensures the user's estimated VO2 Max is always up-to-date with the latest physiological data.
+Calculate VO2 Max: The system should trigger a VO2 Max recalculation whenever a new max_hr or resting_hr is recorded in the profile_metrics table. This ensures the user's estimated VO2 Max is always up-to-date with the latest physiological data. VO2 max = 15.3 * (Maximum Heart Rate / Resting Heart Rate).
