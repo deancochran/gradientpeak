@@ -1,234 +1,149 @@
-# Smart Performance & Health Metrics Design
+# Minimalist Performance Tracking System: Design Document (Final)
 
-## Vision
+## Core Philosophy
 
-The "Grander Ideal" is to create a holistic view of the athlete by combining:
+**Goal:** Auto-track fitness across all activity types, predict capabilities, adapt workouts - with minimal schema and maximum computation.
 
-1.  **Performance Output**: What the athlete can do (Power, Pace).
-2.  **Biometric State**: The athlete's current physical state (Weight, HRV, Sleep, Stress).
+**Principle:** FIT files (or GPS files) are ground truth. Activities table holds pre-computed metadata. Compute performance state on-demand for any sport.
 
-By leveraging these datasets together, we can provide:
+-----
 
-- **Estimations**: More accurate W' or CP calculations based on freshness.
-- **Predictions**: Race performance predictions adjusted for current weight and stress.
-- **Intentional Decisions**: Training recommendations that respect the athlete's current capacity.
+## Database Schema (Minimal & Universal)
 
-## User Interaction Rules
+### 1. `activities` (Existing)
 
-To maintain data integrity and model accuracy, the following strict rules apply:
+**What:** Pre-computed metadata from activity files (FIT, GPX, TCX, etc.)
+**Purpose:** Fast queries without re-parsing source files
+**Key fields:**
+- `training_stress_score` (TSS)
+- `elapsed_time` / `moving_time`
+- `activity_type` (ENUM) -> category
+- `avg_power`, `normalized_power`
+- `avg_speed`, `max_speed`
+- `avg_heart_rate`
+- `source_file_url` (fit_file_path)
 
-1.  **Strict Update Restrictions**: Users can _only_ manually update their information (metrics) in the **Settings** page or during **Onboarding**. Random editing elsewhere is prohibited.
-2.  **No Direct Curve Manipulation**: Users cannot manually edit the `profile_performance_models` (the computed curves). These are read-only for the user and are computed automatically based on logged inputs.
-3.  **Allowed Inputs**: Users _can_ log new "Bests" (FTP, Pace, Weight, Stress, etc.) as inputs. These inputs trigger the model update logic.
-4.  **Onboarding Gate**: The `profiles.onboarded` boolean flag is used to explicitly gate access. It must be set to `true` only after initial metrics are successfully gathered.
+### 2. `activity_efforts` (Renamed from `profile_performance_metric_logs`)
 
-## Database Schema
+**What:** Pre-extracted best efforts from activity file analysis
+**Purpose:** Universal performance tracking across all activity types
+**Key fields:**
 
-### 1. profile_metric_logs (Biometrics/Health)
+- `id` - UUID
+- `activity_id` - Foreign key to `activities`
+- `profile_id` - Foreign key to `profiles`
+- `duration_seconds` - Effort duration (1, 5, 60, 300, 1200, 3600, etc.)
+- `effort_type` - ENUM: ‘power’, ‘pace’, ‘speed’, ‘stroke_rate’, ‘heart_rate’, ‘elevation_gain_rate’
+- `value` - The value (max power, max pace, etc.)
+- `unit` - 'watts', 'm/s', 'spm', 'bpm', 'm/h'
+- `start_offset` - When in activity it occurred (seconds from start)
+- `recorded_at` - Timestamp (inherited from activity)
 
-**Purpose**: Store health, body composition, and recovery metrics.
+**Universal:** Works for cycling (power), running (pace), swimming (pace), rowing (power + stroke rate), etc.
 
-```sql
-CREATE TYPE profile_metric_type AS ENUM (
-  'weight_kg',
-  'resting_hr_bpm',
-  'sleep_hours',
-  'hrv_ms',
-  'vo2_max',
-  'body_fat_pct',
-  'hydration_level',
-  'stress_score',
-  'soreness_level',
-  'wellness_score'
-);
+### 3. `profile_body_metrics` (Renamed from `profile_metric_logs`)
 
-CREATE TABLE profile_metric_logs (
-  id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
-  profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+**What:** Weight, sleep, HRV, resting HR over time
+**Purpose:** Context for power-to-weight, recovery capacity (universal across sports)
+**Key fields:**
+- `profile_id`
+- `metric_type` (weight_kg, hrv_ms, etc.)
+- `value`
+- `unit`
+- `recorded_at`
+- `source` (manual, apple_health, etc.)
 
-  -- What was measured
-  metric_type profile_metric_type NOT NULL,
-  value NUMERIC NOT NULL,
-  unit TEXT NOT NULL,
+### 4. `notifications` (New - Replaces Proposals)
 
-  -- Provenance
-  reference_activity_id UUID REFERENCES activities(id) ON DELETE SET NULL,
-  notes TEXT,
+**What:** System generated alerts for the user.
+**Purpose:** Inform users of auto-detected achievements or required actions without blocking the data flow.
+**Key fields:**
+- `id` - UUID
+- `profile_id` - Foreign key
+- `type` - ENUM: 'new_best_effort', 'fitness_decay', 'recovery_alert', 'system'
+- `title` - e.g., "New 20min Power Record!"
+- `message` - e.g., "You hit 265W for 20 mins (+6%). Great job!"
+- `data` - JSONB (store the detected effort details here for UI context)
+- `is_read` - Boolean
+- `created_at` - Timestamp
 
-  -- Temporal
-  recorded_at TIMESTAMPTZ NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+-----
+
+## Universal Effort Types by Sport
+
+**Cycling:**
+- effort_type=‘power’ (watts) → Best power for durations
+- effort_type=‘heart_rate’ (bpm) → HR at those efforts
+
+**Running:**
+- effort_type=‘pace’ (meters/second or min/km) → Best pace for distances
+- effort_type=‘speed’ (meters/second) → Best speed for durations
+- effort_type=‘heart_rate’ (bpm) → HR at those efforts
+
+**Swimming:**
+- effort_type=‘pace’ (meters/second or min/100m) → Best pace for distances
+- effort_type=‘stroke_rate’ (strokes/min) → Efficiency metric
+
+**Rowing:**
+- effort_type=‘power’ (watts) → Best power for durations
+- effort_type=‘stroke_rate’ (strokes/min) → Efficiency
+- effort_type=‘pace’ (split time per 500m) → Standard rowing metric
+
+**Hiking/Walking:**
+- effort_type=‘pace’ (meters/second) → Best sustained pace
+- effort_type=‘elevation_gain_rate’ (meters/hour) → Climbing speed
+
+-----
+
+## How It Works (Sport-Agnostic)
+
+### On Activity File Upload (Edge Function)
+
+```
+1. Parse activity file (FIT/GPX/TCX) → Extract metadata
+2. Determine category (bike/run/swim/row/ski/hike)
+3. Insert into activities (TSS, duration, averages, etc.)
+4. Extract best efforts for standard durations based on category:
+   - Power sports (bike/row): 1s, 5s, 10s, 30s, 60s, 120s, 300s, 600s, 1200s, 2400s, 3600s, 5400s
+   - Pace sports (run/swim/ski): 100m, 200m, 400m, 800m, 1000m, 1500m, 3000m, 5000m, 10000m, 21097m, 42195m
+5. Insert into activity_efforts (duration, effort_type, value, start_offset)
+6. Store source file in object storage (source_file_url)
+7. Trigger auto-detection (compare to recent bests for this category)
 ```
 
-**Examples of Data:**
+### Auto-Detection & Notification Flow
 
-- ✅ Daily weight (72.5 kg)
-- ✅ Morning HRV (45 ms)
-- ✅ Sleep duration (7.5 hours)
-- ✅ Stress score (High/Low or numeric)
+**On activity file processing:**
 
-### 2. profile_performance_metric_logs (Performance Measurements)
+1. Extract best efforts → Insert into `activity_efforts`
+2. Query recent bests (last 90 days) for this category
+3. For each duration/distance: Compare new vs best
+4. If improvement > X% AND confidence > Y%:
+   - **Action:** Insert into `notifications`
+   - **Content:** "New 20min Power PR: 265W (+6%)"
+   - **Data:** `{ "old_value": 250, "new_value": 265, "improvement": 0.06, "duration": 1200 }`
 
-**Purpose**: Store point-in-time performance outputs (what the athlete _did_).
+### Query: “What’s my current threshold?” (Universal)
 
-```sql
-CREATE TABLE profile_performance_metric_logs (
-  id UUID PRIMARY KEY,
-  profile_id UUID NOT NULL REFERENCES profiles(id),
-
-  -- What was measured
-  category activity_category NOT NULL,
-  type performance_metric_type NOT NULL,  -- 'power', 'pace', 'heart_rate'
-  duration_seconds INTEGER NOT NULL,      -- Required for metrics
-  value NUMERIC NOT NULL,
-  unit TEXT NOT NULL,
-
-  -- Provenance
-  source TEXT DEFAULT 'manual',  -- 'manual', 'activity_detection'
-  reference_activity_id UUID REFERENCES activities(id),
-  notes TEXT,
-
-  -- Temporal
-  recorded_at TIMESTAMPTZ NOT NULL,  -- When measurement was made
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+**Cycling (FTP):**
+```
+1. Query activity_efforts WHERE effort_type='power' for 1200s, 480s (last 90 days)
+2. Fit critical power model → CP
+3. FTP = CP × 0.95
 ```
 
-**Examples of Data:**
+**Running (Threshold Pace):**
+```
+1. Query activity_efforts WHERE effort_type='pace' for 5000m, 10000m (last 90 days)
+2. Fit critical speed model → CS
+3. Threshold Pace = CS × 1.02
+```
 
-- ✅ FTP test results (265W @ 60min on Jan 23)
-- ✅ Activity bests (450W @ 5min detected in ride #123)
-- ✅ Manual entries (LTHR = 165 bpm)
+### Query: “Am I getting fitter?” (Universal)
 
-### 3. profile_performance_models (Computed Models)
-
-**Purpose**: Store mathematical models derived from performance data.
-
-**MVP Schema Strategy**:
-This table uses a "Slim" schema focused on the essential curve parameters. It relies on a **Rolling Window Strategy** (e.g., best efforts from the last 90 days) to handle performance decay.
-
-- **Freshness**: `valid_from` represents the date of the _most recent_ activity used in the model. If this is old, the model is stale.
-- **Decay**: As high-performance efforts slide out of the rolling window, new models are calculated using only recent data, naturally reflecting decreased capabilities.
-
-````sql
-CREATE TABLE profile_performance_models (
-  id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
-  profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-
-  -- Model type
-  category activity_category NOT NULL,
-  model_type TEXT NOT NULL,  -- 'critical_power', 'critical_speed'
-
-  -- Model parameters
-  critical_value NUMERIC NOT NULL,    -- CP (Watts) or CS (m/s)
-  capacity_value NUMERIC NOT NULL,    -- W' (Joules) or D' (Meters)
-
-  -- Provenance & Quality
-  effort_count INTEGER NOT NULL,      -- Number of data points used (detects low data)
-  max_effort_duration INTEGER,        -- Max duration used (detects lack of endurance data)
-
-  -- Temporal
-  computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  valid_from TIMESTAMPTZ NOT NULL,  -- Date of the *latest* data point used (Freshness)
-  valid_until TIMESTAMPTZ           -- Model is valid until this date (nullable = current)
-);
-
-CREATE INDEX idx_perf_models_profile_current
-  ON profile_performance_models(profile_id, category, model_type, valid_from DESC)
-  WHERE valid_until IS NULL;
-
--- Ensure only one "current" model per profile+category+type
-CREATE UNIQUE INDEX idx_perf_models_current_unique
-  ON profile_performance_models(profile_id, category, model_type)
-  WHERE valid_until IS NULL;
-
-### 4. profile_performance_proposals (Autonomous Detection)
-
-**Purpose**: Store detected performance improvements from activity analysis that require user confirmation before being applied. This prevents "bad data" (e.g., driving in a car) from corrupting the model.
-
-```sql
-CREATE TYPE proposal_status AS ENUM ('pending', 'accepted', 'rejected', 'ignored');
-
-CREATE TABLE profile_performance_proposals (
-  id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
-  profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-
-  -- Source
-  activity_id UUID REFERENCES activities(id) ON DELETE SET NULL,
-
-  -- The Proposal
-  metrics JSONB NOT NULL,       -- e.g., { "5min_power": 350, "20min_power": 280 }
-  reason TEXT NOT NULL,         -- e.g., "New 20min Power Record detected (+15W)"
-
-  -- Workflow
-  status proposal_status NOT NULL DEFAULT 'pending',
-
-  -- Temporal
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  reviewed_at TIMESTAMPTZ
-);
-````
-
-**Examples of Data:**
-
-- ✅ Pending Proposal: "New 5min Power Record: 350W" (derived from Activity #123)
-
-````
-
-**Examples of Data:**
-
-- ✅ CP models (CP=279W, W'=20kJ, 5 efforts used)
-- ✅ CS models (CS=4.5m/s, D'=180m, 3 efforts used)
-
-## Data Flow
-
-```mermaid
-graph TD
-    UserInput[User Input / Integrations]
-    Biometrics[profile_metric_logs <br/>(Health/State)]
-    PerfMetrics[profile_performance_metric_logs <br/>(Performance Output)]
-    Models[profile_performance_models <br/>(Mathematical Models)]
-    Features[Application Features]
-
-    UserInput -->|Creates| Biometrics
-    UserInput -->|Creates| PerfMetrics
-    PerfMetrics -->|Used by model computation| Models
-    Biometrics -->|Provides context/freshness| Features
-    PerfMetrics -->|Provides historical data| Features
-    Models -->|Used for predictions/suggestions| Features
-
-    Analysis[Activity Analysis] -->|Detects Improvements| Proposals[profile_performance_proposals]
-    Proposals -->|User Accepts| PerfMetrics
-
-    subgraph "Table 1: Input State"
-    Biometrics
-    end
-
-    subgraph "Table 2: Performance Output"
-    PerfMetrics
-    end
-
-    subgraph "Table 3: Computed Models"
-    Models
-    end
-
-    subgraph "Table 4: Proposals"
-    Proposals
-    end
-
-    subgraph "Application"
-    Features
-    end
-````
-
-### Application Features
-
-_Note: The following features utilize the computed models for **visualization** and **prediction**. Users do not manually tweak the model parameters directly._
-
-- Power curve visualization
-- FTP suggestions
-- Training zones
-- Race predictions (adjusted by weight/stress)
-- Workout generation (adjusted by freshness)
+```
+1. Calculate CTL today from activities.TSS (last 42 days)
+2. Calculate CTL 30 days ago
+3. Compare
+4. Query activity_efforts: Compare key duration/distance for this sport (e.g. 5min Power or 5k Pace)
+```
