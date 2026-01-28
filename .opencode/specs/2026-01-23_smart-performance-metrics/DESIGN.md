@@ -6,7 +6,7 @@
 
 **Principle:** FIT files (or GPS files) are ground truth. Activities table holds pre-computed metadata. Compute performance state on-demand for any sport.
 
------
+---
 
 ## Database Schema (Minimal & Universal)
 
@@ -14,50 +14,55 @@
 
 **What:** Pre-computed metadata from activity files (FIT, GPX, TCX, etc.)
 **Purpose:** Fast queries without re-parsing source files
-**Key fields:**
-- `training_stress_score` (TSS)
-- `elapsed_time` / `moving_time`
-- `activity_type` (ENUM) -> category
-- `avg_power`, `normalized_power`
-- `avg_speed`, `max_speed`
-- `avg_heart_rate`
-- `source_file_url` (fit_file_path)
+**Key fields from `init.sql`:**
 
-### 2. `activity_efforts` (Renamed from `profile_performance_metric_logs`)
+- `name`, `notes`, `type`, `location`
+- `started_at`, `finished_at`, `duration_seconds`, `moving_seconds`
+- `distance_meters`
+- `calories`
+- `elevation_gain_meters`, `elevation_loss_meters`
+- `avg_heart_rate`, `max_heart_rate`
+- `avg_power`, `max_power`, `normalized_power`
+- `intensity_factor`, `training_stress_score`
+- `avg_cadence`, `max_cadence`
+- `avg_speed_mps`, `max_speed_mps`
+- `fit_file_path` (Note: Design goal is to rename to `source_file_url`)
+- `temperature` (Note: To be added)
 
-**What:** Pre-extracted best efforts from activity file analysis
-**Purpose:** Universal performance tracking across all activity types
-**Key fields:**
+### 2. `profile_performance_metric_logs` (Existing)
 
-- `id` - UUID
-- `activity_id` - Foreign key to `activities`
-- `profile_id` - Foreign key to `profiles`
-- `duration_seconds` - Effort duration (1, 5, 60, 300, 1200, 3600, etc.)
-- `effort_type` - ENUM: ‘power’, ‘pace’, ‘speed’, ‘stroke_rate’, ‘heart_rate’, ‘elevation_gain_rate’
-- `value` - The value (max power, max pace, etc.)
-- `unit` - 'watts', 'm/s', 'spm', 'bpm', 'm/h'
-- `start_offset` - When in activity it occurred (seconds from start)
-- `recorded_at` - Timestamp (inherited from activity)
+**What:** Tracks athlete performance capabilities over time (e.g., power curves).
+**Purpose:** Universal performance tracking across all activity types.
+**Key fields from `init.sql`:**
 
-**Universal:** Works for cycling (power), running (pace), swimming (pace), rowing (power + stroke rate), etc.
+- `profile_id`
+- `category` (e.g., 'run', 'bike')
+- `type` (e.g., 'power', 'pace', 'speed', 'heart_rate')
+- `value`
+- `unit`
+- `duration_seconds`
+- `reference_activity_id`
+- `recorded_at`
 
-### 3. `profile_body_metrics` (Renamed from `profile_metric_logs`)
+### 3. `profile_metric_logs` (Existing)
 
 **What:** Weight, sleep, HRV, resting HR over time
 **Purpose:** Context for power-to-weight, recovery capacity (universal across sports)
-**Key fields:**
+**Key fields from `init.sql`:**
+
 - `profile_id`
-- `metric_type` (weight_kg, hrv_ms, etc.)
+- `metric_type` (e.g., 'weight_kg', 'hrv_ms')
 - `value`
 - `unit`
 - `recorded_at`
-- `source` (manual, apple_health, etc.)
+- `reference_activity_id`
 
-### 4. `notifications` (New - Replaces Proposals)
+### 4. `notifications` (Planned - Not yet in `init.sql`)
 
 **What:** System generated alerts for the user.
 **Purpose:** Inform users of auto-detected achievements or required actions without blocking the data flow.
 **Key fields:**
+
 - `id` - UUID
 - `profile_id` - Foreign key
 - `type` - ENUM: 'new_best_effort', 'fitness_decay', 'recovery_alert', 'system'
@@ -67,33 +72,33 @@
 - `is_read` - Boolean
 - `created_at` - Timestamp
 
------
+---
 
 ## Universal Effort Types by Sport
 
 **Cycling:**
+
 - effort_type=‘power’ (watts) → Best power for durations
-- effort_type=‘heart_rate’ (bpm) → HR at those efforts
 
 **Running:**
+
 - effort_type=‘pace’ (meters/second or min/km) → Best pace for distances
 - effort_type=‘speed’ (meters/second) → Best speed for durations
-- effort_type=‘heart_rate’ (bpm) → HR at those efforts
 
 **Swimming:**
+
 - effort_type=‘pace’ (meters/second or min/100m) → Best pace for distances
-- effort_type=‘stroke_rate’ (strokes/min) → Efficiency metric
 
 **Rowing:**
+
 - effort_type=‘power’ (watts) → Best power for durations
-- effort_type=‘stroke_rate’ (strokes/min) → Efficiency
 - effort_type=‘pace’ (split time per 500m) → Standard rowing metric
 
 **Hiking/Walking:**
-- effort_type=‘pace’ (meters/second) → Best sustained pace
-- effort_type=‘elevation_gain_rate’ (meters/hour) → Climbing speed
 
------
+- effort_type=‘pace’ (meters/second) → Best sustained pace
+
+---
 
 ## How It Works (Sport-Agnostic)
 
@@ -126,6 +131,7 @@
 ### Query: “What’s my current threshold?” (Universal)
 
 **Cycling (FTP):**
+
 ```
 1. Query activity_efforts WHERE effort_type='power' for 1200s, 480s (last 90 days)
 2. Fit critical power model → CP
@@ -133,6 +139,7 @@
 ```
 
 **Running (Threshold Pace):**
+
 ```
 1. Query activity_efforts WHERE effort_type='pace' for 5000m, 10000m (last 90 days)
 2. Fit critical speed model → CS
