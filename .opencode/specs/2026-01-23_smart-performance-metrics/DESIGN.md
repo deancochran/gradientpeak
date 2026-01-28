@@ -2,7 +2,7 @@
 
 ## Core Concept
 
-Auto-track fitness across all activity types, predict capabilities, and adapt workouts. Activity files (FIT/GPX/TCX) are the source of truth. Pre-compute metadata for fast queries, calculate performance metrics on-demand.
+Auto-track fitness across all activity types, predict capabilities, and adapt workouts. Activity files (FIT) are the source of truth. Pre-compute metadata for fast queries, calculate performance metrics, training load, and compute estimates on-demand.
 
 ---
 
@@ -16,7 +16,7 @@ Pre-computed metadata from uploaded activity files for fast queries.
 
 ```sql
 alter table public.activities
-    add column grade_adjusted_speed_mps numeric(6,2), -- Grade Adjusted Speed (meters per second)
+    add column normalized_speed_mps numeric(6,2), -- Moving Time Adjusted Speed (meters per second)
     add column temperature numeric;
 ```
 
@@ -36,6 +36,7 @@ create table public.activity_efforts (
     id uuid primary key default uuid_generate_v4(),
     activity_id uuid not null references public.activities(id) on delete cascade,
     profile_id uuid not null references public.profiles(id) on delete cascade,
+    activity_category activity_category not null,
     duration_seconds integer not null,
     effort_type effort_type not null,
     value numeric not null,
@@ -44,7 +45,6 @@ create table public.activity_efforts (
     recorded_at timestam_ptz not null
 );
 
-create index idx_activity_efforts_lookup on public.activity_efforts(profile_id, effort_type, duration_seconds, recorded_at desc);
 ```
 
 ### 3. `profile_metrics`
@@ -57,8 +57,9 @@ Tracks weight, sleep, HRV, resting heart rate for recovery and power-to-weight c
 create type public.profile_metric_type as enum (
     'weight_kg',
     'resting_hr_bpm',
-    'sleep_hours',
-    'hrv_ms'
+    'sleep_seconds',
+    'hrv_ms',
+    'max_hr_bpm'
 );
 
 create table public.profile_metrics (
@@ -80,34 +81,17 @@ System-generated alerts for auto-detected achievements (new personal records, fi
 #### SQL Schema
 
 ```sql
-create type public.notification_type as enum (
-    'personal_record',
-    'milestone',
-    'recovery_alert'
-);
 
 create table public.notifications (
     id uuid primary key default uuid_generate_v4(),
     profile_id uuid not null references public.profiles(id) on delete cascade,
-    type notification_type not null,
     title text not null,
     message text not null,
-    data jsonb,
     is_read boolean not null default false,
     created_at timestamptz not null default now()
 );
 
-create index idx_notifications_profile_created_at on public.notifications(profile_id, created_at desc);
 ```
-
----
-
-## Effort Types by Sport
-
-- **Power-based sports** (Cycling, Rowing): Power (watts) for standard durations
-- **Speed-based sports** (Running, Swimming, Hiking): Speed (meters/second) for standard durations
-  - _Note: Speed stored as meters/second for computational efficiency; convert to pace for display_
-
 ---
 
 ## How It Works
@@ -122,12 +106,3 @@ create index idx_notifications_profile_created_at on public.notifications(profil
 1. Store source file
 1. Compare to recent bests and create notifications if improvements detected
 
-### Auto-Detection:
-
-- Compare new efforts to recent bests (last 90 days)
-- If significant improvement detected, create notification with details
-
-### Performance Queries:
-
-- **Threshold calculation:** Use recent best efforts to fit sport-specific models (e.g., Critical Power for cycling, Critical Speed for running)
-- **Fitness progression:** Compare current vs historical CTL and key effort metrics
