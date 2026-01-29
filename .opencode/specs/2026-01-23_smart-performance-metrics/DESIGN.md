@@ -102,7 +102,7 @@ This section defines the core metrics and outlines their calculation methods.
 ### `avg_speed_mps` vs. `normalized_speed_mps`
 
 - **`avg_speed_mps`**: This metric represents the average speed calculated over the **total moving time** of the activity.
-  - **Formula:** `total_distance_m / moving_seconds`
+  - **Formula:** `total_distance_m /duration_seconds`
 
 - **`normalized_speed_mps`**: This is an effort-based metric designed to be a more accurate representation of the physiological cost of the activity, primarily for TSS calculations. It is calculated in two steps:
   1.  **Filter for Moving Time:** The calculation only considers data points where the user is moving. This excludes stops and rest periods, providing a more accurate picture of effort.
@@ -110,10 +110,8 @@ This section defines the core metrics and outlines their calculation methods.
 
 ### `avg_power` vs. `normalized_power`
 
-- **`avg_power`**: The average power calculated over the **moving time** of the activity.
-- **`normalized_power`**: An estimate of the power an athlete could have maintained for the same physiological cost if their power output had been perfectly constant. This accounts for variations in intensity and is a better indicator of training load.
-
----
+- **`avg_power`**: The average power is calculated over the total duration of the activity.
+- **`normalized_power`**: the normalized power is calculated over the moving duration of the activity
 
 ## How It Works
 
@@ -122,7 +120,7 @@ This section defines the core metrics and outlines their calculation methods.
 1. Parse file and extract metadata
 2. Determine sport category
 3. **Calculate and save all metrics to `activities` table (Avg, Normalized, EF, Decoupling, etc.)**
-4. Extract best efforts for standard durations based on sport
+4. Extract best efforts for standard durations ranging from short durations 5seconds 10 seconds, 30 seconds, one minute, five minutes. 10 minutes. 20 minutes. 30 minutes. 60 minutes. 90 minutes. Three hours.
 5. Save to `activity_efforts`
 6. **Auto-detect new thresholds (FTP, LTHR) and update `profile_metrics`**
 7. Compare to recent bests and create notifications if improvements detected
@@ -144,3 +142,5 @@ The fit file analysis pipeline should be updated to include the following logic:
 - **Aerobic Decoupling:** Compare the EF of the first half of a long effort to the second half. A high percentage indicates a decline in aerobic endurance.
 - **Training Effect:** Categorize the session as "Aerobic" or "Anaerobic" based on time spent in HR zones relative to detected thresholds.
 - **Validate Payload:** Ensure the final `activities` insert payload is validated against the Zod schema.
+
+note if a new lactate threshold, Hart rate or FTP is analyzed, a new best effort should be added to the best effort table. This should already be inexistencia in my application. However, I would like for this design to verify it's existence, and if not implement the best efforts, analysis, and insertion . 
