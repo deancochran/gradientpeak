@@ -13,39 +13,30 @@
   - New Enums: `effort_type`, `profile_metric_type`.
   - New Tables: `activity_efforts`, `profile_metrics`, `notifications`.
   - Add necessary indexes and foreign key constraints.
-- [ ] **Task 1.2:** Generate the migration file by running:
+- [X] **Task 1.2:** Generate the migration file by running:
   ```bash
-  cd packages/supabase && supabase db diff --use-migra -f smart-performance-metrics
+  cd packages/supabase && supabase db diff -f smart-performance-metrics
   ```
-- [ ] **Task 1.3:** Update Supabase types and Supazod schemas by running:
+- [X] **Task 1.4:** Update database with migration by running:
+  ```bash
+  cd packages/supabase && supabase migration up
+  ```
+  
+- [X] **Task 1.3:** Update Supabase types and Supazod schemas by running:
   ```bash
   cd packages/supabase && pnpm run update-types
   ```
 
 ## Phase 2: Backend Logic Implementation
 
-- [ ] **Task 2.1:** Update the FIT file parsing logic to extract peak heart rate.
+- [ ] **Task 2.1:** Update the FIT file parsing logic to extract max heart rate.
 - [ ] **Task 2.2:** Implement logic to compare peak heart rate with the existing `max_hr` in `profile_metrics` and create a new entry if it's higher.
-- [ ] **Task 2.3:** Implement the VO2 Max calculation logic.
-- [ ] **Task 2.4:** Create a new tRPC procedure or update an existing one to trigger VO2 Max recalculation when a new `max_hr` or `resting_hr` is recorded.
-- [ ] **Task 2.5:** Update the activity file upload process to extract best efforts for standard durations based on the sport.
+- [ ] **Task 2.4:** Create a new tRPC procedure or update an existing one to trigger VO2 Max recalculation when a new `max_hr` or `resting_hr` is recorded and uploaded to the profile_metrics table.
+- [ ] **Task 2.5:** Update the activity file upload process to extract best efforts for standard durations: Short (Sprints)	5s, 10s, 30s Medium (Hard Efforts)	1m, 2m, 5m, 8m, Long (Endurance)	10m, 20m, 30m, 60m, Ultra (Pacing)	90m, 3 hours
+- [ ] **Task 2.5.1** Implement sliding best effort window to ensure the best effort within a time frame is selected, ensuring the first found effort for specified duration isn't evaulated as the best and checks all possible acceptable activity window periods
 - [ ] **Task 2.6:** Implement logic to save the extracted best efforts to the `activity_efforts` table.
 - [ ] **Task 2.7:** Implement logic to compare new efforts with recent bests and create notifications in the `notifications` table if improvements are detected.
-- [ ] **Task 2.8:** Update the zod schema for `PublicActivitiesInsert` to include the new columns.
-- [ ] **Task 2.9:** Ensure the final `activities` insert payload is validated against the updated zod schema.
-- [ ] **Task 2.10:** Create a new tRPC procedure to handle logging of user metrics to the `profile_metrics` table.
+- [ ] **Task 2.9:** Ensure the final `activities` insert payload is validated against the  zod schema.
 
-## Phase 3: API and Frontend Integration (Optional - for initial testing)
 
-- [ ] **Task 3.1:** Create a simple UI on the web or mobile app to upload a FIT file.
-- [ ] **Task 3.2:** Create a UI to display notifications to the user.
-- [ ] **Task 3.3:** Create a UI for users to log their weight, sleep, HRV, and resting heart rate.
-- [ ] **Task 3.4:** Display the calculated performance metrics on the user's profile or activity pages.
-
-## Phase 4: Testing and Validation
-
-- [ ] **Task 4.1:** Write unit tests for the new calculation logic in the `@repo/core` package.
-- [ ] **Task 4.2:** Write integration tests for the tRPC procedures.
-- [ ] **Task 4.3:** Perform end-to-end testing by uploading various FIT files and verifying the data in the database.
-- [ ] **Task 4.4:** Test the notification generation by uploading a FIT file with a new personal record.
-- [ ] **Task 4.5:** Test the VO2 Max recalculation by manually adding new `max_hr` and `resting_hr` data.
+Note: Unit Testing, E2E Testing, and validation of changes will happen later. Use `tsc --noEmit` on the packages and apps that were changed (`core`, `trpc`, `mobile`, `web`). Ensure that the type check / linting pass. Manual testing will be run to ensure the results of the changes are as expected
