@@ -2,16 +2,25 @@
 
 ## Phase 1: Database Schema Setup
 
-- [ ] **Task 1.1:** Create a new Supabase migration script.
-- [ ] **Task 1.2:** Add `normalized_speed_mps` and `temperature` columns to the `activities` table.
-- [ ] **Task 1.3:** Create the `effort_type` enum.
-- [ ] **Task 1.4:** Create the `activity_efforts` table with all specified columns and constraints.
-- [ ] **Task 1.5:** Create the `profile_metric_type` enum.
-- [ ] **Task 1.6:** Create the `profile_metrics` table with all specified columns and constraints.
-- [ ] **Task 1.7:** Create the index `idx_profile_metrics_lookup` on the `profile_metrics` table.
-- [ ] **Task 1.8:** Create the `notifications` table with all specified columns and constraints.
-- [ ] **Task 1.9:** Apply the migration to the local development database.
-- [ ] **Task 1.10:** Verify that all tables, columns, enums, and indexes are created correctly.
+**Strict Workflow:**
+
+1. Modify `packages/supabase/schemas/init.sql` (Declarative Source of Truth).
+2. Generate migration: `supabase db diff --use-migra -f <name>`.
+3. Sync types: `pnpm update-types`.
+
+- [x] **Task 1.1:** Modify `packages/supabase/schemas/init.sql` to include:
+  - New columns for `activities` table: `normalized_speed_mps`, `temperature`.
+  - New Enums: `effort_type`, `profile_metric_type`.
+  - New Tables: `activity_efforts`, `profile_metrics`, `notifications`.
+  - Add necessary indexes and foreign key constraints.
+- [ ] **Task 1.2:** Generate the migration file by running:
+  ```bash
+  cd packages/supabase && supabase db diff --use-migra -f smart-performance-metrics
+  ```
+- [ ] **Task 1.3:** Update Supabase types and Supazod schemas by running:
+  ```bash
+  cd packages/supabase && pnpm run update-types
+  ```
 
 ## Phase 2: Backend Logic Implementation
 

@@ -289,6 +289,14 @@ packages/trpc/src/
 └── trpc.ts               # tRPC initialization
 ```
 
+## Database Workflow (CRITICAL)
+
+1. **No Manual Migrations**: Never manually create migration files.
+2. **Declarative Changes**: Modify `packages/supabase/schemas/init.sql` (or source of truth).
+3. **Generate**: Use `supabase db diff -f <kebab-case-name>` to generate migration files.
+   - Name MUST be lowercase kebab-case (e.g., `add-performance-metrics`).
+4. **Sync**: Run `pnpm update-types` to sync DB types and Zod schemas.
+
 ## Checklist
 
 - [ ] All inputs validated with Zod

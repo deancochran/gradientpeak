@@ -366,6 +366,7 @@ create table if not exists public.activities (
     -- ============================================================================
     -- Basic metrics (calories - duration/distance already defined above)
     calories integer,
+    avg_temperature numeric,
 
     -- Elevation metrics
     elevation_gain_meters numeric(10,2),
@@ -389,6 +390,7 @@ create table if not exists public.activities (
     -- Speed metrics
     avg_speed_mps numeric(6,2),
     max_speed_mps numeric(6,2),
+    normalized_speed_mps numeric(6,2),
 
     -- Zone times as individual columns (for efficient queries)
     hr_zone_1_seconds integer,
@@ -550,6 +552,33 @@ create trigger update_activities_updated_at
     for each row
     execute function update_updated_at_column();
 
+-- ============================================================================
+-- ACTIVITY EFFORTS
+-- ============================================================================
+create type public.effort_type as enum (
+    'power',
+    'speed'
+);
+
+create table public.activity_efforts (
+    id uuid primary key default uuid_generate_v4(),
+    activity_id uuid not null references public.activities(id) on delete cascade,
+    profile_id uuid not null references public.profiles(id) on delete cascade,
+    activity_category activity_category not null,
+    duration_seconds integer not null,
+    effort_type effort_type not null,
+    value numeric not null,
+    unit text not null, -- 'watts' or 'meters_per_second'
+    start_offset integer, -- Optional: seconds from activity start
+    recorded_at timestamptz not null,
+    created_at timestamptz not null default now()
+);
+
+create index if not exists idx_activity_efforts_activity_id
+    on public.activity_efforts(activity_id);
+
+create index if not exists idx_activity_efforts_profile_lookup
+    on public.activity_efforts(profile_id, activity_category, effort_type, duration_seconds, value desc);
 
 
 -- ============================================================================
@@ -575,15 +604,16 @@ create type public.performance_metric_type as enum (
 -- Profile metric types (biometric & lifestyle - simple tracking)
 create type public.profile_metric_type as enum (
     'weight_kg',
-    'resting_hr_bpm',
+    'resting_hr',
     'sleep_hours',
-    'hrv_ms',
+    'hrv_rmssd',
     'vo2_max',
-    'body_fat_pct',
+    'body_fat_percentage',
     'hydration_level',
     'stress_score',
     'soreness_level',
-    'wellness_score'
+    'wellness_score',
+    'max_hr'
 );
 
 -- ============================================================================
@@ -662,7 +692,7 @@ create trigger update_profile_performance_metric_logs_updated_at
     execute function update_updated_at_column();
 
 -- ============================================================================
--- PROFILE METRIC LOGS
+-- PROFILE METRICS
 -- ============================================================================
 -- Purpose: Track biometric and lifestyle metrics that influence training
 -- but can't be used for performance curves
@@ -673,7 +703,7 @@ create trigger update_profile_performance_metric_logs_updated_at
 -- - HRV: 65ms → 68ms → 62ms
 -- - Resting HR: 52bpm → 50bpm → 51bpm
 -- ============================================================================
-create table if not exists public.profile_metric_logs (
+create table if not exists public.profile_metrics (
     -- ============================================================================
     -- Identity
     -- ============================================================================
@@ -703,30 +733,48 @@ create table if not exists public.profile_metric_logs (
 );
 
 -- ============================================================================
--- INDEXES - PROFILE METRIC LOGS
+-- INDEXES - PROFILE METRICS
 -- ============================================================================
 -- Critical for temporal queries: "What was weight on 2024-03-15?"
-create index if not exists idx_profile_metric_logs_temporal_lookup
-    on public.profile_metric_logs(profile_id, metric_type, recorded_at desc);
+create index if not exists idx_profile_metrics_temporal_lookup
+    on public.profile_metrics(profile_id, metric_type, recorded_at desc);
 
 -- Profile metrics list
-create index if not exists idx_profile_metric_logs_profile
-    on public.profile_metric_logs(profile_id, recorded_at desc);
+create index if not exists idx_profile_metrics_profile
+    on public.profile_metrics(profile_id, recorded_at desc);
 
 -- Time-series queries
-create index if not exists idx_profile_metric_logs_recorded_at
-    on public.profile_metric_logs(recorded_at desc);
+create index if not exists idx_profile_metrics_recorded_at
+    on public.profile_metrics(recorded_at desc);
 
 -- Reference activity lookup
-create index if not exists idx_profile_metric_logs_reference_activity
-    on public.profile_metric_logs(reference_activity_id)
+create index if not exists idx_profile_metrics_reference_activity
+    on public.profile_metrics(reference_activity_id)
     where reference_activity_id is not null;
 
 -- Trigger for auto-updating updated_at timestamp
-create trigger update_profile_metric_logs_updated_at
-    before update on public.profile_metric_logs
+create trigger update_profile_metrics_updated_at
+    before update on public.profile_metrics
     for each row
     execute function update_updated_at_column();
+
+-- ============================================================================
+-- NOTIFICATIONS
+-- ============================================================================
+create table public.notifications (
+    id uuid primary key default uuid_generate_v4(),
+    profile_id uuid not null references public.profiles(id) on delete cascade,
+    title text not null,
+    message text not null,
+    is_read boolean not null default false,
+    created_at timestamptz not null default now()
+);
+
+create index if not exists idx_notifications_profile_id
+    on public.notifications(profile_id);
+
+create index if not exists idx_notifications_is_read
+    on public.notifications(is_read);
 
 -- ============================================================================
 -- ROW LEVEL SECURITY
@@ -746,14 +794,16 @@ create trigger update_profile_metric_logs_updated_at
 -- integrations), enable it per table and add appropriate policies.
 
 alter table public.activities disable row level security;
+alter table public.activity_efforts disable row level security;
 alter table public.activity_plans disable row level security;
 alter table public.activity_routes disable row level security;
 
 alter table public.integrations disable row level security;
+alter table public.notifications disable row level security;
 alter table public.oauth_states disable row level security;
 alter table public.planned_activities disable row level security;
 alter table public.profiles disable row level security;
-alter table public.profile_metric_logs disable row level security;
+alter table public.profile_metrics disable row level security;
 alter table public.profile_performance_metric_logs disable row level security;
 alter table public.synced_planned_activities disable row level security;
 alter table public.training_plans disable row level security;
