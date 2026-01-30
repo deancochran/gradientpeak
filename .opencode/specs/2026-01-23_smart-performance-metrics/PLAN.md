@@ -107,8 +107,8 @@ Phase 2 focuses on the backend logic for processing activity data to extract adv
 - **Step 6.2: Profile Metrics Updates (Auto-Detection)**
   - **Max HR:** If `fit.maxHeartRate > current.maxHeartRate`, update `profile_metrics`.
   - **VO2 Max:** Recalculate and update if Max HR or Resting HR changes.
-  - **LTHR:** Use `analyzeHRCurve` from `curves.ts`. If detected LTHR > current, update `profile_metrics` (using `lthr` enum) AND insert into `profile_performance_metric_logs`.
-  - **FTP:** Use `analyzePowerCurve` from `curves.ts`. If detected CP > current FTP, update `profile_metrics` (using `ftp` enum) AND insert into `profile_performance_metric_logs`.
+  - **LTHR:** Use `analyzeHRCurve` from `curves.ts`. If detected LTHR > current, update `profile_metrics` (using `lthr` enum).
+  - **FTP:** Use `analyzePowerCurve` from `curves.ts`. If detected CP > current FTP, log as a Best Effort in `activity_efforts` (e.g. 60m Power).
 
 - **Step 6.3: Activity Efforts (Fault Tolerance)**
   - Call `calculateBestEfforts`.

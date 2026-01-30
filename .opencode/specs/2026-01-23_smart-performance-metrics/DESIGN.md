@@ -72,8 +72,7 @@ create type public.profile_metric_type as enum (
     'body_fat_percentage', -- Body fat as a percentage of total weight
     'max_hr',              -- Maximum observed Heart Rate
     'vo2_max',             -- Estimated maximal oxygen consumption
-    'lthr',                -- Lactate Threshold Heart Rate
-    'ftp'                  -- Functional Threshold Power
+    'lthr'                 -- Lactate Threshold Heart Rate
 );
 
 create table public.profile_metrics (
@@ -145,7 +144,7 @@ The fit file analysis pipeline should be updated to include the following logic:
 
 - **Detect New Max Heart Rate:** Identify the peak heart rate from the data. If the new value is higher than the existing `max_hr` in `profile_metrics`, create a new entry.
 - **Calculate VO2 Max:** Trigger a VO2 Max recalculation whenever a new `max_hr` or `resting_hr` is recorded. Formula: `VO2 max = 15.3 * (Max HR / Resting HR)`.
-- **Auto-Detect LTHR & FTP:** Analyze sustained, high-intensity efforts to detect the deflection point for LTHR or calculate FTP. If a new, higher value is found, update `profile_metrics`.
+- **Auto-Detect LTHR & FTP:** Analyze sustained, high-intensity efforts to detect the deflection point for LTHR or calculate FTP. If a new, higher value is found, update `profile_metrics` (LTHR). For FTP, improvements are tracked as Best Efforts in `activity_efforts`.
 - **Efficiency Factor (EF):** Calculate `Normalized Power / Average Heart Rate` (or `Normalized Graded Speed / Avg HR` for runs).
 - **Aerobic Decoupling:** Compare the EF of the first half of a long effort to the second half. A high percentage indicates a decline in aerobic endurance.
 - **Training Effect:** Categorize the session as "Aerobic" or "Anaerobic" based on time spent in HR zones relative to detected thresholds.
