@@ -9,7 +9,7 @@
 3. Sync types: `pnpm update-types`.
 
 - [ ] **Task 1.1:** Modify `packages/supabase/schemas/init.sql` to include:
-  - New columns for `activities` table: `normalized_speed_mps`, `avg_temperature`, `efficiency_factor`, `aerobic_decoupling`, `training_effect` (enum).
+  - New columns for `activities` table: `normalized_speed_mps`, `normalized_graded_speed_mps`, `avg_temperature`, `efficiency_factor`, `aerobic_decoupling`, `training_effect` (enum).
   - New Enums: `effort_type`, `profile_metric_type`, `training_effect_label`.
   - New Tables: `activity_efforts`, `profile_metrics`, `notifications`.
   - Add necessary indexes and foreign key constraints.
@@ -22,16 +22,73 @@
   cd packages/supabase && pnpm run update-types
   ```
 
-## Phase 2: Backend Logic Implementation
+## Phase 2: Core Calculation Functions (`@repo/core`)
 
-- [ ] **Task 2.1:** Update the FIT file parsing logic to extract max heart rate.
-- [ ] **Task 2.2:** Implement logic to compare peak heart rate with the existing `max_hr` in `profile_metrics` and create a new entry if it's higher.
-- [ ] **Task 2.4:** Create a new tRPC procedure or update an existing one to trigger VO2 Max recalculation when a new `max_hr` or `resting_hr` is recorded and uploaded to the profile_metrics table.
-- [ ] **Task 2.5:** Update the activity file upload process to extract best efforts for standard durations: Short (Sprints) 5s, 10s, 30s Medium (Hard Efforts) 1m, 2m, 5m, 8m, Long (Endurance) 10m, 20m, 30m, 60m, Ultra (Pacing) 90m, 3 hours
-- [ ] **Task 2.5.1** Implement sliding best effort window to ensure the best effort within a time frame is selected, ensuring the first found effort for specified duration isn't evaulated as the best and checks all possible acceptable activity window periods
-- [ ] **Task 2.6:** Implement logic to save ALL extracted best efforts to the `activity_efforts` table (for redundancy and fault tolerance), not just personal records.
-- [ ] **Task 2.7:** Implement logic to compare new efforts with recent bests and create notifications in the `notifications` table if improvements are detected.
-- [ ] **Task 2.8:** Implement Weather API integration: Fetch temperature using Google Weather API based on Start/End GPS coordinates if device data is missing, and store the average in `avg_temperature`.
-- [ ] **Task 2.9:** Ensure the final `activities` insert payload is validated against the zod schema.
+Implement pure calculation logic in `packages/core/calculations/`.
 
-Note: Unit Testing, E2E Testing, and validation of changes will happen later. Use `tsc --noEmit` on the packages and apps that were changed (`core`, `trpc`, `mobile`, `web`). Ensure that the type check / linting pass. Manual testing will be run to ensure the results of the changes are as expected
+- [ ] **Task 2.1:** Implement Normalized Graded Pace (NGP) for running.
+  - File: `packages/core/calculations/normalized-graded-pace.ts`
+  - Implement `getCostFactor`, `calculateGradedSpeed`, and `calculateNGP`.
+- [ ] **Task 2.2:** Implement Normalized Power for cycling.
+  - File: `packages/core/calculations/normalized-power.ts`
+  - Implement `calculateNormalizedPower` (30s rolling avg, 4th power algorithm).
+- [ ] **Task 2.3:** Implement Normalized Speed for all activities.
+  - File: `packages/core/calculations/normalized-speed.ts`
+  - Implement `calculateNormalizedSpeed` (Total Distance / Moving Time).
+- [ ] **Task 2.4:** Implement Efficiency Factor & Aerobic Decoupling.
+  - File: `packages/core/calculations/efficiency.ts`
+  - Implement `calculateEfficiencyFactor` (Normalized Metric / Avg HR).
+  - Implement `calculateAerobicDecoupling` (EF1 vs EF2 split).
+- [ ] **Task 2.5:** Implement Training Effect categorization.
+  - File: `packages/core/calculations/training-effect.ts`
+  - Implement `calculateTrainingEffect` based on HR zones and LTHR.
+- [ ] **Task 2.6:** Implement VO2 Max estimation.
+  - File: `packages/core/calculations/vo2max.ts`
+  - Implement `estimateVO2Max` (15.3 \* MaxHR / RestingHR).
+- [ ] **Task 2.7:** Implement Best Effort calculation (Sliding Window).
+  - File: `packages/core/calculations/best-efforts.ts`
+  - Implement `calculateBestEfforts` for standard durations (5s to 3h).
+  - Ensure sliding window logic to find true bests.
+- [ ] **Task 2.8:** Implement LTHR Detection.
+  - File: `packages/core/calculations/threshold-detection.ts`
+  - Implement `detectLTHR` using sustained effort analysis.
+
+## Phase 3: Validation & Schema Updates (`@repo/core`)
+
+- [ ] **Task 3.1:** Update `packages/core/schemas/activity_payload.ts`.
+  - Update `ActivityUploadSchema` to include all new fields (`normalized_speed_mps`, `efficiency_factor`, etc.).
+  - Add `BestEffortSchema`, `ProfileMetricSchema`, `NotificationSchema`.
+
+## Phase 4: Weather Integration (`@repo/trpc`)
+
+- [ ] **Task 4.1:** Implement Weather API integration.
+  - File: `packages/trpc/src/utils/weather.ts`
+  - Implement `fetchActivityTemperature` using Google Weather API (or equivalent) based on start/end coordinates.
+
+## Phase 5: Orchestration & Processing (`@repo/trpc`)
+
+Update `processFitFile` in `packages/trpc/src/routers/fit-files.ts` to coordinate the pipeline.
+
+- [ ] **Task 5.1:** Integrate Normalized Metrics calculation.
+  - Calculate NGP (Run), NP (Bike), and Normalized Speed.
+- [ ] **Task 5.2:** Integrate Advanced Metrics calculation.
+  - Calculate Efficiency Factor, Aerobic Decoupling, and Training Effect.
+- [ ] **Task 5.3:** Integrate Weather Data fetching.
+  - Fetch and store `avg_temperature` if missing.
+- [ ] **Task 5.4:** Integrate Profile Metrics Auto-Detection.
+  - Detect and update Max HR, Resting HR, VO2 Max, and LTHR in `profile_metrics`.
+- [ ] **Task 5.5:** Integrate Best Efforts calculation.
+  - Calculate and bulk insert ALL efforts into `activity_efforts`.
+- [ ] **Task 5.6:** Integrate Notification generation.
+  - Compare new efforts/metrics with history and create `notifications` for improvements.
+- [ ] **Task 5.7:** Finalize `activities` table update.
+  - Ensure all new columns are populated in the final update/insert.
+
+## Phase 6: Testing & Verification
+
+- [ ] **Task 6.1:** Unit Tests for Core Calculations.
+  - Create tests in `packages/core/calculations/__tests__/`.
+  - Verify correctness of NGP, NP, EF, Decoupling, TE, VO2Max, BestEfforts.
+- [ ] **Task 6.2:** Integration Tests for `processFitFile`.
+  - Create tests in `packages/trpc/src/routers/__tests__/fit-files.test.ts`.
+  - Verify end-to-end flow with sample FIT files.
