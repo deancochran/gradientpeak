@@ -19,7 +19,7 @@ alter table public.activities
     add column normalized_speed_mps numeric(6,2), -- Moving Time Adjusted Speed (meters per second)
     add column normalized_graded_speed_mps numeric(6,2), -- Moving Time Adjusted Speed (meters per second)
     add column temperature numeric;
-    add column traing_effect training_effect_type -- "aerobic" | "anaerobic"
+    add column traing_effect training_effect_type -- recorvery base tempo threshold vo2max
 ```
 
 ### 2. `activity_efforts`
