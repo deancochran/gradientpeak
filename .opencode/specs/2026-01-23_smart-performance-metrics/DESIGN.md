@@ -16,7 +16,7 @@ Pre-computed metadata from uploaded activity files for fast queries.
 
 ```sql
 alter table public.activities
-    add column normalized_speed_mps numeric(6,2), -- Normalized Speed (NGP for Run, Avg Moving for Swim)
+    add column normalized_speed_mps numeric(6,2), -- Normalized Speed (NGP for Run, Avg Moving for Swim, there should be a defualt for all activities, including running if elevation data isn't present)
     add column avg_temperature numeric,
     add column efficiency_factor numeric,
     add column aerobic_decoupling numeric,
@@ -114,7 +114,7 @@ This section defines the core metrics and outlines their calculation methods.
 - **`avg_speed_mps`**: The average speed calculated over the total duration of the activity.
 - **`normalized_speed_mps`**: A single column that stores the "physiologically relevant" speed for the activity type.
   - **Running (NGP):** Calculates Grade Adjusted Pace using the Minetti formula (Speed + Grade -> Flat Equivalent Speed). Used for rTSS calculation.
-  - **Swimming:** Calculates Average Moving Speed (excluding rest intervals at the wall). Used for sTSS calculation (vs Critical Swim Speed).
+  - **Swimming:** Calculates Average Moving Speed (excluding rest intervals at the wall). Used for TSS calculation (vs Critical Swim Speed).
   - **Cycling/Power:** If power data exists, `normalized_power` is generally preferred for TSS, but `normalized_speed_mps` will still store the speed metric (likely Moving Average Speed).
 
 ### `avg_power` vs. `normalized_power`
@@ -128,10 +128,10 @@ This section defines the core metrics and outlines their calculation methods.
 
 1. Parse file and extract metadata
 2. Determine sport category
-3. **Calculate and save all metrics to `activities` table (Avg, Normalized, EF, Decoupling, etc.)**
 4. Extract best efforts for standard durations ranging from short durations 5seconds 10 seconds, 30 seconds, one minute, five minutes. 10 minutes. 20 minutes. 30 minutes. 60 minutes. 90 minutes. Three hours.
+3. **Calculate and save all metrics to `activities` table (Avg, Normalized, EF, Decoupling etc.)** -> max/resting hr updates trigger v02max udpate
 5. Save to `activity_efforts`
-6. **Auto-detect new thresholds (FTP, LTHR) and update `profile_metrics`**
+6. **Auto-detect new LTHR and update `profile_metrics`**
 7. Compare to recent bests and create notifications if improvements detected
 
 ### When User Metric is logged or collected from thirdparty
@@ -146,12 +146,11 @@ The fit file analysis pipeline should be updated to include the following logic:
 
 - **Detect New Max Heart Rate:** Identify the peak heart rate from the data. If the new value is higher than the existing `max_hr` in `profile_metrics`, create a new entry.
 - **Calculate VO2 Max:** Trigger a VO2 Max recalculation whenever a new `max_hr` or `resting_hr` is recorded. Formula: `VO2 max = 15.3 * (Max HR / Resting HR)`.
-- **Auto-Detect LTHR & FTP:** Analyze sustained, high-intensity efforts to detect the deflection point for LTHR or calculate FTP. If a new, higher value is found, update `profile_metrics` (LTHR). For FTP, improvements are tracked as Best Efforts in `activity_efforts`.
+- **Auto-Detect LTHR :** Analyze sustained, high-intensity efforts to detect the deflection point for LTHR or calculate FTP. If a new, higher value is found, update `profile_metrics` (LTHR). 
 - **Efficiency Factor (EF):** Calculate `Normalized Power / Average Heart Rate` (or `Normalized Graded Speed / Avg HR` for runs).
 - **Aerobic Decoupling:** Compare the EF of the first half of a long effort to the second half. A high percentage indicates a decline in aerobic endurance.
-- **Training Effect:** Categorize the session as "Aerobic" or "Anaerobic" based on time spent in HR zones relative to detected thresholds.
+- **Training Effect:** Categorize the session as 'recovery','base','tempo','threshold','vo2max' based on time spent in HR zones relative to detected thresholds.
 - **Weather Data:** If the activity file lacks temperature data, use the **Google Weather API** (or equivalent) to fetch temperature based on the start and end GPS coordinates and timestamps. Average the two values.
 - **Activity Efforts (Redundancy):** Calculate and store **all available activity efforts** (best 5s, 1m, 5m, etc.) for the current activity into the `activity_efforts` table, regardless of whether they are all-time personal bests. This ensures fault tolerance and allows for historical analysis or rebuilding of bests if an activity is deleted.
 - **Validate Payload:** Ensure the final `activities` insert payload is validated against the Zod schema.
 
-note if a new lactate threshold, Hart rate or FTP is analyzed, a new best effort should be added to the best effort table. This should already be inexistencia in my application. However, I would like for this design to verify it's existence, and if not implement the best efforts, analysis, and insertion .
