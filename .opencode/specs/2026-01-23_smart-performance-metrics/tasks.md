@@ -9,8 +9,8 @@
 3. Sync types: `pnpm update-types`.
 
 - [ ] **Task 1.1:** Modify `packages/supabase/schemas/init.sql` to include:
-  - New columns for `activities` table: `normalized_speed_mps`, `temperature`.
-  - New Enums: `effort_type`, `profile_metric_type`.
+  - New columns for `activities` table: `normalized_speed_mps`, `avg_temperature`, `efficiency_factor`, `aerobic_decoupling`, `training_effect` (enum).
+  - New Enums: `effort_type`, `profile_metric_type`, `training_effect_label`.
   - New Tables: `activity_efforts`, `profile_metrics`, `notifications`.
   - Add necessary indexes and foreign key constraints.
 - [ ] **Task 1.2:** Generate the migration file by running:
@@ -29,8 +29,9 @@
 - [ ] **Task 2.4:** Create a new tRPC procedure or update an existing one to trigger VO2 Max recalculation when a new `max_hr` or `resting_hr` is recorded and uploaded to the profile_metrics table.
 - [ ] **Task 2.5:** Update the activity file upload process to extract best efforts for standard durations: Short (Sprints) 5s, 10s, 30s Medium (Hard Efforts) 1m, 2m, 5m, 8m, Long (Endurance) 10m, 20m, 30m, 60m, Ultra (Pacing) 90m, 3 hours
 - [ ] **Task 2.5.1** Implement sliding best effort window to ensure the best effort within a time frame is selected, ensuring the first found effort for specified duration isn't evaulated as the best and checks all possible acceptable activity window periods
-- [ ] **Task 2.6:** Implement logic to save the extracted best efforts to the `activity_efforts` table.
+- [ ] **Task 2.6:** Implement logic to save ALL extracted best efforts to the `activity_efforts` table (for redundancy and fault tolerance), not just personal records.
 - [ ] **Task 2.7:** Implement logic to compare new efforts with recent bests and create notifications in the `notifications` table if improvements are detected.
+- [ ] **Task 2.8:** Implement Weather API integration: Fetch temperature using Google Weather API based on Start/End GPS coordinates if device data is missing, and store the average in `avg_temperature`.
 - [ ] **Task 2.9:** Ensure the final `activities` insert payload is validated against the zod schema.
 
 Note: Unit Testing, E2E Testing, and validation of changes will happen later. Use `tsc --noEmit` on the packages and apps that were changed (`core`, `trpc`, `mobile`, `web`). Ensure that the type check / linting pass. Manual testing will be run to ensure the results of the changes are as expected
