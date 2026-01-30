@@ -1,8 +1,8 @@
-# Smart Performance Metrics: Phase 2 Implementation Plan
+# Smart Performance Metrics: Implementation Plan
 
 ## Overview
 
-Phase 2 focuses on the backend logic for processing activity data to extract advanced performance metrics (Best Efforts, VO2 Max, Thresholds, Efficiency Factor, Aerobic Decoupling, Training Effect) and generate notifications.
+focuses on the backend logic for processing activity data to extract advanced performance metrics (Best Efforts, VO2 Max, Thresholds, Efficiency Factor, Aerobic Decoupling, Training Effect) and generate notifications.
 
 **Note:** FIT file parsing (`packages/core/lib/fit-sdk-parser.ts`) and basic activity creation (`packages/trpc/src/routers/fit-files.ts`) are already implemented. This plan builds upon that foundation.
 
