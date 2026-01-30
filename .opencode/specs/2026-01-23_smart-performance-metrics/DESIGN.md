@@ -16,7 +16,8 @@ Pre-computed metadata from uploaded activity files for fast queries.
 
 ```sql
 alter table public.activities
-    add column normalized_speed_mps numeric(6,2), -- Normalized Speed (NGP for Run, Avg Moving for Swim, there should be a defualt for all activities, including running if elevation data isn't present)
+    add column normalized_speed_mps numeric(6,2), -- Normalized Speed
+    add column normalized_graded_speed_mps  numeric(6,2), -- Normalized Graded Speed
     add column avg_temperature numeric,
     add column efficiency_factor numeric,
     add column aerobic_decoupling numeric,
@@ -147,7 +148,7 @@ The fit file analysis pipeline should be updated to include the following logic:
 - **Detect New Max Heart Rate:** Identify the peak heart rate from the data. If the new value is higher than the existing `max_hr` in `profile_metrics`, create a new entry.
 - **Calculate VO2 Max:** Trigger a VO2 Max recalculation whenever a new `max_hr` or `resting_hr` is recorded. Formula: `VO2 max = 15.3 * (Max HR / Resting HR)`.
 - **Auto-Detect LTHR :** Analyze sustained, high-intensity efforts to detect the deflection point for LTHR or calculate FTP. If a new, higher value is found, update `profile_metrics` (LTHR). 
-- **Efficiency Factor (EF):** Calculate `Normalized Power / Average Heart Rate` (or `Normalized Graded Speed / Avg HR` for runs).
+- **Efficiency Factor (EF):** Calculate `Normalized Power / Average Heart Rate` (or `Normalized Graded or UnGraded Speed / Avg HR` for other activities).
 - **Aerobic Decoupling:** Compare the EF of the first half of a long effort to the second half. A high percentage indicates a decline in aerobic endurance.
 - **Training Effect:** Categorize the session as 'recovery','base','tempo','threshold','vo2max' based on time spent in HR zones relative to detected thresholds.
 - **Weather Data:** If the activity file lacks temperature data, use the **Google Weather API** (or equivalent) to fetch temperature based on the start and end GPS coordinates and timestamps. Average the two values.
