@@ -13,8 +13,8 @@ Phase 2 focuses on the backend logic for processing activity data to extract adv
   1.  `processFitFile` receives file path.
   2.  Downloads and parses FIT file (Existing).
   3.  **New:** Calculates Advanced Metrics (EF, Decoupling, Training Effect).
-  4.  **New:** Updates Profile Metrics (Max HR, VO2 Max, LTHR, FTP).
-  5.  **New:** Calculates Best Efforts (Power, Speed).
+  4.  **New:** Updates Profile Metrics id discovered (Max HR, VO2 Max, LTHR), and analyze and find all activity efforts in activity
+  5.  **New:** Determine if activity efforts are "best efforts". Note: Some metrics like LTHR might need to be calculated id so.
   6.  **New:** Checks for improvements and creates Notifications.
 
 ## Implementation Steps
@@ -25,13 +25,14 @@ Phase 2 focuses on the backend logic for processing activity data to extract adv
 
 - **Action:** Modify `packages/supabase/schemas/init.sql`.
 - **Changes:**
-  1.  **Update Enum:** Add `ftp`, `lthr` to `profile_metric_type`.
+  1.  **Update Enum:** Add `lthr` to `profile_metric_type`.
   2.  **Update Table:** Add columns to `activities`:
-      - `efficiency_factor` (numeric)
-      - `aerobic_decoupling` (numeric)
-      - `training_effect_aerobic` (numeric)
-      - `training_effect_anaerobic` (numeric)
-- **Migration:** Generate and apply migration; update types.
+      - `efficiency_factor`
+      - `aerobic_decoupling`
+      - `training_effect`
+      - `temperature`
+      - `normalized_speed_mps`
+      - `normalized_graded_speed_mps`
 
 ### Phase 2: Backend Logic
 
@@ -53,12 +54,7 @@ Phase 2 focuses on the backend logic for processing activity data to extract adv
 **Goal:** Categorize the session based on HR zone distribution.
 
 - **File:** `packages/core/calculations/training-effect.ts` (New)
-- **Function:** `calculateTrainingEffect(timeInZones: number[]): { aerobic: number, anaerobic: number, label: string }`
-  - **Logic:**
-    - **Aerobic:** Based on time in Zones 2, 3, 4.
-    - **Anaerobic:** Based on time in Zone 5 and repeated high-intensity efforts.
-    - **Label:** "Recovery", "Base", "Tempo", "Threshold", "VO2 Max", "Anaerobic".
-
+- **Function:** `calculateTrainingEffect(timeInZones: number[])`
 #### 3. VO2 Max Calculation (`@repo/core`)
 
 **Goal:** Implement the VO2 Max estimation formula.
