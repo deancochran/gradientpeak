@@ -17,7 +17,9 @@ Pre-computed metadata from uploaded activity files for fast queries.
 ```sql
 alter table public.activities
     add column normalized_speed_mps numeric(6,2), -- Moving Time Adjusted Speed (meters per second)
+    add column normalized_graded_speed_mps numeric(6,2), -- Moving Time Adjusted Speed (meters per second)
     add column temperature numeric;
+    add column traing_effect training_effect_type -- "aerobic" | "anaerobic"
 ```
 
 ### 2. `activity_efforts`
@@ -60,7 +62,6 @@ create type public.profile_metric_type as enum (
     'body_fat_percentage', -- Body fat as a percentage of total weight
     'max_hr',              -- Maximum observed Heart Rate
     'vo2_max',             -- Estimated maximal oxygen consumption
-    'ftp',                 -- Functional Threshold Power
     'lthr'                 -- Lactate Threshold Heart Rate
 );
 
@@ -101,12 +102,8 @@ This section defines the core metrics and outlines their calculation methods.
 
 ### `avg_speed_mps` vs. `normalized_speed_mps`
 
-- **`avg_speed_mps`**: This metric represents the average speed calculated over the **total moving time** of the activity.
-  - **Formula:** `total_distance_m /duration_seconds`
-
-- **`normalized_speed_mps`**: This is an effort-based metric designed to be a more accurate representation of the physiological cost of the activity, primarily for TSS calculations. It is calculated in two steps:
-  1.  **Filter for Moving Time:** The calculation only considers data points where the user is moving. This excludes stops and rest periods, providing a more accurate picture of effort.
-  2.  **Grade Adjustment:** The speed is then adjusted for elevation changes (hills). Uphill sections are treated as being faster than they actually were, and downhill sections are adjusted downwards, to reflect the equivalent speed on flat ground for the same effort. If elevation data is not available, this value will be the same as `avg_speed_mps`.
+- **`avg_speed_mps`**: the avg speed is calculated over the total duration of the activity
+- **`normalized_graded_speed_mps`**: the normalized graded speed is calculated over the moving duration, adujsted for the elevation covered during of the activity
 
 ### `avg_power` vs. `normalized_power`
 
@@ -136,11 +133,9 @@ This section defines the core metrics and outlines their calculation methods.
 The fit file analysis pipeline should be updated to include the following logic:
 
 - **Detect New Max Heart Rate:** Identify the peak heart rate from the data. If the new value is higher than the existing `max_hr` in `profile_metrics`, create a new entry.
-- **Calculate VO2 Max:** Trigger a VO2 Max recalculation whenever a new `max_hr` or `resting_hr` is recorded. Formula: `VO2 max = 15.3 * (Max HR / Resting HR)`.
-- **Auto-Detect LTHR & FTP:** Analyze sustained, high-intensity efforts to detect the deflection point for LTHR or calculate FTP. If a new, higher value is found, update `profile_metrics`.
-- **Efficiency Factor (EF):** Calculate `Normalized Power / Average Heart Rate`.
+- **Calculate VO2 Max:** Trigger a VO2 Max recalculation whenever a new `max_hr` or `resting_hr` is added to the `profile_metrics` table. Formula: `VO2 max = 15.3 * (Max HR / Resting HR)`.
+- **Auto-Detect LTHR:** Analyze sustained, high-intensity efforts to detect the deflection point for LTHR. If a new, higher value is found, update `profile_metrics`.
+- **Efficiency Factor (EF):** Calculate `Normalized Effort type / Average Heart Rate` for cycling this would be `normalized power / avg hr` for running this would be `normalized_graded_speed / avg_hr`, where if NGP isn't avilable `normalized_speed` is accepteable
 - **Aerobic Decoupling:** Compare the EF of the first half of a long effort to the second half. A high percentage indicates a decline in aerobic endurance.
 - **Training Effect:** Categorize the session as "Aerobic" or "Anaerobic" based on time spent in HR zones relative to detected thresholds.
 - **Validate Payload:** Ensure the final `activities` insert payload is validated against the Zod schema.
-
-note if a new lactate threshold, Hart rate or FTP is analyzed, a new best effort should be added to the best effort table. This should already be inexistencia in my application. However, I would like for this design to verify it's existence, and if not implement the best efforts, analysis, and insertion . 
