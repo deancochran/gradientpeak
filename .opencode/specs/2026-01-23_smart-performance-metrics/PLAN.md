@@ -12,10 +12,9 @@ Phase 2 focuses on the backend logic for processing activity data to extract adv
 - **Data Flow:**
   1.  `processFitFile` receives file path.
   2.  Downloads and parses FIT file (Existing).
-  3.  **New:** Calculates Advanced Metrics (EF, Decoupling, Training Effect).
-  4.  **New:** Updates Profile Metrics id discovered (Max HR, VO2 Max, LTHR), and analyze and find all activity efforts in activity
-  5.  **New:** Determine if activity efforts are "best efforts". Note: Some metrics like LTHR might need to be calculated id so.
-  6.  **New:** Checks for improvements and creates Notifications.
+  3.  **New:** Calculates Advanced Metrics
+  4.  **New:** Analyze available data and find all activity efforts in activity, update all Profile Metricsid discovered (Max HR), and calculate available metrics (EF, Decoupling, Training Effect, LTHR, etc for activies table) if able
+  5.  Update activty efforts tables and update activities table
 
 ## Implementation Steps
 
@@ -24,17 +23,26 @@ Phase 2 focuses on the backend logic for processing activity data to extract adv
 **Goal:** Add missing columns and enums to support new metrics.
 
 - **Action:** Modify `packages/supabase/schemas/init.sql`.
-- **Changes:**
-  1.  **Update Enum:** Add `lthr` to `profile_metric_type`.
-  2.  **Update Table:** Add columns to `activities`:
-      - `efficiency_factor` (numeric)
-      - `aerobic_decoupling` (numeric)
-      - `training_effect` (enum: recovery, base, tempo, threshold, vo2max)
-      - `normalized_speed_mps` (numeric)
-      - `avg_temperature` (numeric)
-- **Migration:** Generate and apply migration; update types.
+- **Migration:** supabase db diff -f updated-smart-performance-metrics
 
 ### Phase 2: Backend Logic
+How to cacluate NGP can be found here: https://aaron-schroeder.github.io/reverse-engineering/grade-adjusted-pace.html
+1. The Core Calculation Steps Calculate Instantaneous Grade: For every GPS data point, calculate the slope:\(\text{Grade}=\frac{\text{Change\ in\ Elevation}}{\text{Change\ in\ Distance}}\)Apply an Adjustment Factor (\(C\)): Use a cost-of-running function (like Minetti’s).Uphill: Pace must be increased (made faster) because the effort is higher.Downhill: Pace is decreased (made slower) because gravity assists you—until the slope exceeds ~15%, where braking forces make it hard again.Calculate Graded Pace:\(\text{Graded\ Pace}=\text{Actual\ Pace}\div \text{Cost\ Factor}\) 2. A Simplified Linear Approximation While platforms like TrainingPeaks use complex non-linear curves, you can approximate it for your database using this logic for moderate grades (-10% to +10%): For every 1% of positive grade: Add ~3.5% to the speed.For every 1% of negative grade: Subtract ~1.8% from the speed (up to -10%). 3. Scaling to NGP (The "Normalization" Part) Simply calculating "Graded Pace" isn't enough for TSS; you must normalize it to account for intensity fluctuations: Take the Graded Pace for every second.Calculate a 30-second rolling average of those graded paces.Raise each 30-second average to the 4th power.Average those values over the entire workout.Take the 4th root of the result. 4. Implementation Example (Python Logic) If you are coding this into a database, your function for the cost factor (\(C\)) based on grade (\(G\)) would look roughly like this (simplified from Minetti’s Research): pythondef get_cost_factor(grade):
+    # Minetti-based polynomial for metabolic cost
+    # G is grade (e.g., 0.05 for 5%)
+    cost = (155.4 * G**5) - (30.4 * G**4) - (43.3 * G**3) + (46.3 * G**2) + (19.5 * G) + 3.6
+    # 3.6 is the cost of flat running
+    return cost / 3.6
+
+ngp_speed = actual_speed * get_cost_factor(grade)
+
+How to calculate normalized power:
+30-Second Rolling Average: Calculate the average power over 30-second intervals throughout the activity. Raise to the Fourth Power: Take each of these 30-second average power values and raise it to the power of 4 (\(Power^{4}\)). Average the Values: Calculate the average of all the \(Power^{4}\) values from Step 2.  Take the Fourth Root: Find the fourth root (or raise to the power of 1/4) of the average from Step 3 (\(\sqrt{Average}\)).
+
+How to calculate normalized_speed
+get teh avgerage speed divided by the moving time
+
+
 
 #### 1. Efficiency & Decoupling (`@repo/core`)
 
@@ -51,7 +59,7 @@ Phase 2 focuses on the backend logic for processing activity data to extract adv
 
 #### 2. Training Effect (`@repo/core`)
 
-**Goal:** Calculate Aerobic and Anaerobic Training Effect based on HR zones.
+**Goal:** Calculate Training Effect based on HR zones.
 
 - **File:** `packages/core/calculations/training-effect.ts` (New)
 - **Function:** `calculateTrainingEffect(timeInZones: number[]): { aerobic: number, anaerobic: number, label: string }`
