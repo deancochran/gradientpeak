@@ -17,9 +17,9 @@ Pre-computed metadata from uploaded activity files for fast queries.
 ```sql
 alter table public.activities
     add column normalized_speed_mps numeric(6,2), -- Moving Time Adjusted Speed (meters per second)
-    add column normalized_graded_speed_mps numeric(6,2), -- Moving Time Adjusted Speed (meters per second)
+    add column normalized_graded_speed_mps numeric(6,2), -- Moving Time Adjusted Speed (meters per second). GAP formula
     add column temperature numeric;
-    add column traing_effect training_effect_type -- recorvery base tempo threshold vo2max
+    add column training_effect training_effect_type -- recorvery base tempo threshold vo2max
 ```
 
 ### 2. `activity_efforts`
