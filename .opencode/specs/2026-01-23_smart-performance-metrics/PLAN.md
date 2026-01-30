@@ -30,7 +30,7 @@ Phase 2 focuses on the backend logic for processing activity data to extract adv
       - `efficiency_factor` (numeric)
       - `aerobic_decoupling` (numeric)
       - `training_effect` (enum: recovery, base, tempo, threshold, vo2max)
-      - `normalized_graded_speed_mps` (numeric)
+      - `normalized_speed_mps` (numeric)
       - `avg_temperature` (numeric)
 - **Migration:** Generate and apply migration; update types.
 
@@ -43,7 +43,7 @@ Phase 2 focuses on the backend logic for processing activity data to extract adv
 - **File:** `packages/core/calculations/efficiency.ts` (New)
 - **Functions:**
   - `calculateEfficiencyFactor(normalizedPower: number, avgHeartRate: number): number`
-    - Formula: `NP / AvgHR` (or `NGP / AvgHR` for running).
+    - Formula: `NP / AvgHR` (or `normalized_speed_mps / AvgHR` for running).
   - `calculateAerobicDecoupling(powerStream: number[], hrStream: number[], timestamps: number[]): number`
     - Split activity into two halves.
     - Calculate EF for first half (EF1) and second half (EF2).
@@ -101,8 +101,8 @@ Phase 2 focuses on the backend logic for processing activity data to extract adv
 - **Step 6.1: Advanced Metrics (EF, Decoupling, TE, NGP)**
   - Call `calculateEfficiencyFactor` and `calculateAerobicDecoupling`.
   - Call `calculateTrainingEffect`.
-  - Calculate `normalized_graded_speed_mps` (NGP).
-  - **Update Activity:** Save `efficiency_factor`, `aerobic_decoupling`, `training_effect` (enum label), `normalized_graded_speed_mps`, `avg_temperature` to `activities` table.
+  - Calculate `normalized_speed_mps` (NGP for Run, Moving Avg Speed for Swim).
+  - **Update Activity:** Save `efficiency_factor`, `aerobic_decoupling`, `training_effect` (enum label), `normalized_speed_mps`, `avg_temperature` to `activities` table.
 
 - **Step 6.2: Profile Metrics Updates (Auto-Detection)**
   - **Max HR:** If `fit.maxHeartRate > current.maxHeartRate`, update `profile_metrics`.

@@ -16,8 +16,7 @@ Pre-computed metadata from uploaded activity files for fast queries.
 
 ```sql
 alter table public.activities
-    add column normalized_speed_mps numeric(6,2), -- Moving Time Adjusted Speed (meters per second)
-    add column normalized_graded_speed_mps numeric(6,2), -- GAP (Grade Adjusted Pace) Speed
+    add column normalized_speed_mps numeric(6,2), -- Normalized Speed (NGP for Run, Avg Moving for Swim)
     add column avg_temperature numeric,
     add column efficiency_factor numeric,
     add column aerobic_decoupling numeric,
@@ -112,8 +111,11 @@ This section defines the core metrics and outlines their calculation methods.
 
 ### `avg_speed_mps` vs. `normalized_speed_mps`
 
-- **`avg_speed_mps`**: the avg speed is calculated over the total duration of the activity
-- **`normalized_graded_speed_mps`**: the normalized graded speed is calculated over the moving duration, adujsted for the elevation covered during of the activity
+- **`avg_speed_mps`**: The average speed calculated over the total duration of the activity.
+- **`normalized_speed_mps`**: A single column that stores the "physiologically relevant" speed for the activity type.
+  - **Running (NGP):** Calculates Grade Adjusted Pace using the Minetti formula (Speed + Grade -> Flat Equivalent Speed). Used for rTSS calculation.
+  - **Swimming:** Calculates Average Moving Speed (excluding rest intervals at the wall). Used for sTSS calculation (vs Critical Swim Speed).
+  - **Cycling/Power:** If power data exists, `normalized_power` is generally preferred for TSS, but `normalized_speed_mps` will still store the speed metric (likely Moving Average Speed).
 
 ### `avg_power` vs. `normalized_power`
 
