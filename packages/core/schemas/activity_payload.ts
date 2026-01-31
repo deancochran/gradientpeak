@@ -75,6 +75,8 @@ export const ActivityMetricsSchema = z.object({
   // Speed metrics
   avg_speed: z.number().optional(),
   max_speed: z.number().optional(),
+  normalized_speed_mps: z.number().optional(),
+  normalized_graded_speed_mps: z.number().optional(),
 
   // Work and calories
   total_work: z.number().optional(),
@@ -99,6 +101,11 @@ export const ActivityMetricsSchema = z.object({
   power_weight_ratio: z.number().optional(),
   power_hr_ratio: z.number().optional(),
   decoupling: z.number().optional(),
+  efficiency_factor: z.number().optional(),
+  aerobic_decoupling: z.number().optional(),
+  training_effect: z
+    .enum(["recovery", "base", "tempo", "threshold", "vo2max"])
+    .optional(),
 
   // Swim metrics
   total_strokes: z.number().optional(),

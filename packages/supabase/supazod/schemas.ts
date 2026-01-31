@@ -27,13 +27,6 @@ export const publicIntegrationProviderSchema = z.enum([
   "zwift",
 ]);
 
-export const publicPerformanceMetricTypeSchema = z.enum([
-  "power",
-  "pace",
-  "speed",
-  "heart_rate",
-]);
-
 export const publicProfileMetricTypeSchema = z.enum([
   "weight_kg",
   "resting_hr",
@@ -46,6 +39,15 @@ export const publicProfileMetricTypeSchema = z.enum([
   "soreness_level",
   "wellness_score",
   "max_hr",
+  "lthr",
+]);
+
+export const publicTrainingEffectLabelSchema = z.enum([
+  "recovery",
+  "base",
+  "tempo",
+  "threshold",
+  "vo2max",
 ]);
 
 export const jsonSchema: z.ZodSchema<Json> = z.lazy(() =>
@@ -62,6 +64,7 @@ export const jsonSchema: z.ZodSchema<Json> = z.lazy(() =>
 
 export const publicActivitiesRowSchema = z.object({
   activity_plan_id: z.string().nullable(),
+  aerobic_decoupling: z.number().nullable(),
   avg_cadence: z.number().nullable(),
   avg_heart_rate: z.number().nullable(),
   avg_power: z.number().nullable(),
@@ -74,6 +77,7 @@ export const publicActivitiesRowSchema = z.object({
   device_product: z.string().nullable(),
   distance_meters: z.number(),
   duration_seconds: z.number(),
+  efficiency_factor: z.number().nullable(),
   elevation_gain_meters: z.number().nullable(),
   elevation_loss_meters: z.number().nullable(),
   external_id: z.string().nullable(),
@@ -98,6 +102,7 @@ export const publicActivitiesRowSchema = z.object({
   max_speed_mps: z.number().nullable(),
   moving_seconds: z.number(),
   name: z.string(),
+  normalized_graded_speed_mps: z.number().nullable(),
   normalized_power: z.number().nullable(),
   normalized_speed_mps: z.number().nullable(),
   notes: z.string().nullable(),
@@ -114,6 +119,7 @@ export const publicActivitiesRowSchema = z.object({
   provider: publicIntegrationProviderSchema.nullable(),
   started_at: z.string(),
   total_strokes: z.number().nullable(),
+  training_effect: publicTrainingEffectLabelSchema.nullable(),
   training_stress_score: z.number().nullable(),
   type: z.string(),
   updated_at: z.string(),
@@ -121,6 +127,7 @@ export const publicActivitiesRowSchema = z.object({
 
 export const publicActivitiesInsertSchema = z.object({
   activity_plan_id: z.string().optional().nullable(),
+  aerobic_decoupling: z.number().optional().nullable(),
   avg_cadence: z.number().optional().nullable(),
   avg_heart_rate: z.number().optional().nullable(),
   avg_power: z.number().optional().nullable(),
@@ -133,6 +140,7 @@ export const publicActivitiesInsertSchema = z.object({
   device_product: z.string().optional().nullable(),
   distance_meters: z.number().optional(),
   duration_seconds: z.number().optional(),
+  efficiency_factor: z.number().optional().nullable(),
   elevation_gain_meters: z.number().optional().nullable(),
   elevation_loss_meters: z.number().optional().nullable(),
   external_id: z.string().optional().nullable(),
@@ -157,6 +165,7 @@ export const publicActivitiesInsertSchema = z.object({
   max_speed_mps: z.number().optional().nullable(),
   moving_seconds: z.number().optional(),
   name: z.string(),
+  normalized_graded_speed_mps: z.number().optional().nullable(),
   normalized_power: z.number().optional().nullable(),
   normalized_speed_mps: z.number().optional().nullable(),
   notes: z.string().optional().nullable(),
@@ -173,6 +182,7 @@ export const publicActivitiesInsertSchema = z.object({
   provider: publicIntegrationProviderSchema.optional().nullable(),
   started_at: z.string(),
   total_strokes: z.number().optional().nullable(),
+  training_effect: publicTrainingEffectLabelSchema.optional().nullable(),
   training_stress_score: z.number().optional().nullable(),
   type: z.string(),
   updated_at: z.string().optional(),
@@ -180,6 +190,7 @@ export const publicActivitiesInsertSchema = z.object({
 
 export const publicActivitiesUpdateSchema = z.object({
   activity_plan_id: z.string().optional().nullable(),
+  aerobic_decoupling: z.number().optional().nullable(),
   avg_cadence: z.number().optional().nullable(),
   avg_heart_rate: z.number().optional().nullable(),
   avg_power: z.number().optional().nullable(),
@@ -192,6 +203,7 @@ export const publicActivitiesUpdateSchema = z.object({
   device_product: z.string().optional().nullable(),
   distance_meters: z.number().optional(),
   duration_seconds: z.number().optional(),
+  efficiency_factor: z.number().optional().nullable(),
   elevation_gain_meters: z.number().optional().nullable(),
   elevation_loss_meters: z.number().optional().nullable(),
   external_id: z.string().optional().nullable(),
@@ -216,6 +228,7 @@ export const publicActivitiesUpdateSchema = z.object({
   max_speed_mps: z.number().optional().nullable(),
   moving_seconds: z.number().optional(),
   name: z.string().optional(),
+  normalized_graded_speed_mps: z.number().optional().nullable(),
   normalized_power: z.number().optional().nullable(),
   normalized_speed_mps: z.number().optional().nullable(),
   notes: z.string().optional().nullable(),
@@ -232,6 +245,7 @@ export const publicActivitiesUpdateSchema = z.object({
   provider: publicIntegrationProviderSchema.optional().nullable(),
   started_at: z.string().optional(),
   total_strokes: z.number().optional().nullable(),
+  training_effect: publicTrainingEffectLabelSchema.optional().nullable(),
   training_stress_score: z.number().optional().nullable(),
   type: z.string().optional(),
   updated_at: z.string().optional(),
@@ -689,75 +703,6 @@ export const publicProfileMetricsRelationshipsSchema = z.tuple([
   }),
   z.object({
     foreignKeyName: z.literal("profile_metrics_reference_activity_id_fkey"),
-    columns: z.tuple([z.literal("reference_activity_id")]),
-    isOneToOne: z.literal(false),
-    referencedRelation: z.literal("activities"),
-    referencedColumns: z.tuple([z.literal("id")]),
-  }),
-]);
-
-export const publicProfilePerformanceMetricLogsRowSchema = z.object({
-  category: publicActivityCategorySchema,
-  created_at: z.string(),
-  duration_seconds: z.number().nullable(),
-  id: z.string(),
-  idx: z.number(),
-  notes: z.string().nullable(),
-  profile_id: z.string(),
-  recorded_at: z.string(),
-  reference_activity_id: z.string().nullable(),
-  type: publicPerformanceMetricTypeSchema,
-  unit: z.string(),
-  updated_at: z.string(),
-  value: z.number(),
-});
-
-export const publicProfilePerformanceMetricLogsInsertSchema = z.object({
-  category: publicActivityCategorySchema,
-  created_at: z.string().optional(),
-  duration_seconds: z.number().optional().nullable(),
-  id: z.string().optional(),
-  idx: z.number().optional(),
-  notes: z.string().optional().nullable(),
-  profile_id: z.string(),
-  recorded_at: z.string().optional(),
-  reference_activity_id: z.string().optional().nullable(),
-  type: publicPerformanceMetricTypeSchema,
-  unit: z.string(),
-  updated_at: z.string().optional(),
-  value: z.number(),
-});
-
-export const publicProfilePerformanceMetricLogsUpdateSchema = z.object({
-  category: publicActivityCategorySchema.optional(),
-  created_at: z.string().optional(),
-  duration_seconds: z.number().optional().nullable(),
-  id: z.string().optional(),
-  idx: z.number().optional(),
-  notes: z.string().optional().nullable(),
-  profile_id: z.string().optional(),
-  recorded_at: z.string().optional(),
-  reference_activity_id: z.string().optional().nullable(),
-  type: publicPerformanceMetricTypeSchema.optional(),
-  unit: z.string().optional(),
-  updated_at: z.string().optional(),
-  value: z.number().optional(),
-});
-
-export const publicProfilePerformanceMetricLogsRelationshipsSchema = z.tuple([
-  z.object({
-    foreignKeyName: z.literal(
-      "profile_performance_metric_logs_profile_id_fkey",
-    ),
-    columns: z.tuple([z.literal("profile_id")]),
-    isOneToOne: z.literal(false),
-    referencedRelation: z.literal("profiles"),
-    referencedColumns: z.tuple([z.literal("id")]),
-  }),
-  z.object({
-    foreignKeyName: z.literal(
-      "profile_performance_metric_logs_reference_activity_id_fkey",
-    ),
     columns: z.tuple([z.literal("reference_activity_id")]),
     isOneToOne: z.literal(false),
     referencedRelation: z.literal("activities"),

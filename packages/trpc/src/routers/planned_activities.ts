@@ -604,7 +604,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
 
       // Fetch latest weight from profile metrics
       const { data: weightMetrics } = await ctx.supabase
-        .from("profile_metric_logs")
+        .from("profile_metrics")
         .select("*")
         .eq("profile_id", ctx.session.user.id)
         .eq("metric_type", "weight_kg")

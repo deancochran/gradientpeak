@@ -27,6 +27,14 @@ create type public.integration_provider as enum (
     'zwift'
 );
 
+create type public.training_effect_label as enum (
+    'recovery',
+    'base',
+    'tempo',
+    'threshold',
+    'vo2max'
+);
+
 -- ============================================================================
 -- HELPER FUNCTIONS
 -- ============================================================================
@@ -391,6 +399,12 @@ create table if not exists public.activities (
     avg_speed_mps numeric(6,2),
     max_speed_mps numeric(6,2),
     normalized_speed_mps numeric(6,2),
+    normalized_graded_speed_mps numeric(6,2),
+
+    -- Efficiency & Training Effect
+    efficiency_factor numeric,
+    aerobic_decoupling numeric,
+    training_effect training_effect_label,
 
     -- Zone times as individual columns (for efficient queries)
     hr_zone_1_seconds integer,
@@ -593,14 +607,6 @@ create index if not exists idx_activity_efforts_profile_lookup
 -- ENUMS - PERFORMANCE METRICS
 -- ============================================================================
 
--- Performance metric types (multi-dimensional: power/pace/HR at various durations)
-create type public.performance_metric_type as enum (
-    'power',        -- Watts (cycling/rowing)
-    'pace',         -- Seconds per km/mile (running)
-    'speed',        -- Meters per second (swimming)
-    'heart_rate'    -- Beats per minute
-);
-
 -- Profile metric types (biometric & lifestyle - simple tracking)
 create type public.profile_metric_type as enum (
     'weight_kg',
@@ -613,83 +619,9 @@ create type public.profile_metric_type as enum (
     'stress_score',
     'soreness_level',
     'wellness_score',
-    'max_hr'
+    'max_hr',
+    'lthr'
 );
-
--- ============================================================================
--- PROFILE PERFORMANCE METRIC LOGS
--- ============================================================================
--- Purpose: Track athlete performance capabilities over time for creating
--- performance curves (power curves, pace curves, HR thresholds)
---
--- Examples:
--- - FTP progression: 240W → 250W → 255W (category=bike, type=power, duration=3600)
--- - Power curve: 1200W@5s, 450W@300s, 255W@3600s (same category/type, different durations)
--- - 5K pace: 4:30/km → 4:20/km (category=run, type=pace, duration=1200)
--- - LTHR: 165bpm → 168bpm (category=bike, type=heart_rate, duration=3600)
--- ============================================================================
-create table if not exists public.profile_performance_metric_logs (
-    -- ============================================================================
-    -- Identity
-    -- ============================================================================
-    id uuid primary key default uuid_generate_v4(),
-    idx serial unique not null,
-    profile_id uuid not null references public.profiles(id) on delete cascade,
-
-    -- ============================================================================
-    -- Metric identification (multi-dimensional for curves)
-    -- ============================================================================
-    category activity_category not null,
-    type performance_metric_type not null,
-    value numeric not null check (value > 0),
-    unit text not null,
-    duration_seconds integer check (duration_seconds > 0),
-
-    -- ============================================================================
-    -- Provenance (where did this metric come from?)
-    -- ============================================================================
-    reference_activity_id uuid references public.activities(id) on delete set null,
-    notes text,
-
-    -- ============================================================================
-    -- Timestamps
-    -- ============================================================================
-    recorded_at timestamptz not null default now(),
-    created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now()
-);
-
--- ============================================================================
--- INDEXES - PROFILE PERFORMANCE METRIC LOGS
--- ============================================================================
--- Critical for <10ms temporal queries: "What was FTP on 2024-03-15?"
-create index if not exists idx_profile_performance_metric_logs_temporal_lookup
-    on public.profile_performance_metric_logs(
-        profile_id,
-        category,
-        type,
-        duration_seconds,
-        recorded_at desc
-    );
-
--- Profile metrics list (for displaying all metrics)
-create index if not exists idx_profile_performance_metric_logs_profile
-    on public.profile_performance_metric_logs(profile_id, recorded_at desc);
-
--- Temporal queries (chronological ordering)
-create index if not exists idx_profile_performance_metric_logs_recorded_at
-    on public.profile_performance_metric_logs(recorded_at desc);
-
--- Reference activity lookup (for showing which activity generated a metric)
-create index if not exists idx_profile_performance_metric_logs_reference_activity
-    on public.profile_performance_metric_logs(reference_activity_id)
-    where reference_activity_id is not null;
-
--- Trigger for auto-updating updated_at timestamp
-create trigger update_profile_performance_metric_logs_updated_at
-    before update on public.profile_performance_metric_logs
-    for each row
-    execute function update_updated_at_column();
 
 -- ============================================================================
 -- PROFILE METRICS
@@ -804,6 +736,5 @@ alter table public.oauth_states disable row level security;
 alter table public.planned_activities disable row level security;
 alter table public.profiles disable row level security;
 alter table public.profile_metrics disable row level security;
-alter table public.profile_performance_metric_logs disable row level security;
 alter table public.synced_planned_activities disable row level security;
 alter table public.training_plans disable row level security;
