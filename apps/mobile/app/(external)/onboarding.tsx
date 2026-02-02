@@ -163,8 +163,7 @@ export default function OnboardingScreen() {
 
   // Completion handler
   const createProfileMetricsMutation = trpc.profileMetrics.create.useMutation();
-  const createPerformanceMetricsMutation =
-    trpc.profilePerformanceMetrics.create.useMutation();
+
   const updateProfileMutation = trpc.profiles.update.useMutation();
 
   const handleComplete = async () => {
@@ -176,30 +175,6 @@ export default function OnboardingScreen() {
         return;
       }
       const profileId = profile.id;
-
-      // Helper to map sport types to database category
-      const mapSportToCategory = (
-        sport:
-          | "cycling"
-          | "running"
-          | "swimming"
-          | "triathlon"
-          | "other"
-          | null,
-      ): "run" | "bike" | "swim" | "strength" | "other" => {
-        switch (sport) {
-          case "running":
-            return "run";
-          case "cycling":
-            return "bike";
-          case "swimming":
-            return "swim";
-          case "triathlon":
-            return "run"; // Default to run for triathlon
-          default:
-            return "other";
-        }
-      };
 
       // 1. Update profile with basic info
       await updateProfileMutation.mutateAsync({
@@ -214,70 +189,6 @@ export default function OnboardingScreen() {
           value: data.weight_kg,
           unit: "kg",
           recorded_at: new Date().toISOString(),
-        });
-      }
-
-      // 3. Create performance metrics
-      const recordedAt = new Date().toISOString();
-
-      // Heart rate metrics
-      if (data.max_hr && data.primary_sport) {
-        await createPerformanceMetricsMutation.mutateAsync({
-          profile_id: profileId,
-          category: mapSportToCategory(data.primary_sport),
-          type: "heart_rate",
-          value: data.max_hr,
-          unit: "bpm",
-          duration_seconds: 0,
-          recorded_at: recordedAt,
-          notes: "Max heart rate from onboarding",
-        });
-      }
-
-      if (data.lthr && data.primary_sport) {
-        await createPerformanceMetricsMutation.mutateAsync({
-          profile_id: profileId,
-          category: mapSportToCategory(data.primary_sport),
-          type: "heart_rate",
-          value: data.lthr,
-          unit: "bpm",
-          duration_seconds: 3600, // 1 hour threshold
-          recorded_at: recordedAt,
-          notes: "Lactate threshold HR from onboarding",
-        });
-      }
-
-      // Power metrics (cycling)
-      if (
-        data.ftp &&
-        (data.primary_sport === "cycling" || data.primary_sport === "triathlon")
-      ) {
-        await createPerformanceMetricsMutation.mutateAsync({
-          profile_id: profileId,
-          category: "bike",
-          type: "power",
-          value: data.ftp,
-          unit: "watts",
-          duration_seconds: 3600, // 1 hour FTP
-          recorded_at: recordedAt,
-          notes: "FTP from onboarding",
-        });
-      }
-
-      // Pace metrics (running)
-      if (
-        data.threshold_pace &&
-        (data.primary_sport === "running" || data.primary_sport === "triathlon")
-      ) {
-        await createPerformanceMetricsMutation.mutateAsync({
-          profile_id: profileId,
-          category: "run",
-          type: "pace",
-          value: data.threshold_pace,
-          unit: "seconds_per_km",
-          duration_seconds: 3600, // 1 hour threshold
-          recorded_at: recordedAt,
-          notes: "Threshold pace from onboarding",
         });
       }
 

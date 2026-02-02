@@ -5,8 +5,15 @@
  * Supports the temporal metrics architecture where metrics change over time.
  */
 
-import type { PerformanceMetricLog } from '../schemas/performance-metrics';
-import type { ProfileMetricLog } from '../schemas/profile-metrics';
+import type { ProfileMetricLog } from "../schemas/profile-metrics";
+
+// Placeholder type for PerformanceMetricLog until we fully migrate to activity_efforts
+export type PerformanceMetricLog = {
+  id: string;
+  value: number;
+  recorded_at: string;
+  unit: string;
+};
 
 /**
  * Gets the performance metric at or before a specific date.
@@ -26,9 +33,11 @@ import type { ProfileMetricLog } from '../schemas/profile-metrics';
  * ```
  */
 export function getPerformanceMetricAtDate(
-  metrics: Array<Pick<PerformanceMetricLog, 'id' | 'value' | 'recorded_at' | 'unit'>>,
-  date: Date
-): Pick<PerformanceMetricLog, 'id' | 'value' | 'recorded_at' | 'unit'> | null {
+  metrics: Array<
+    Pick<PerformanceMetricLog, "id" | "value" | "recorded_at" | "unit">
+  >,
+  date: Date,
+): Pick<PerformanceMetricLog, "id" | "value" | "recorded_at" | "unit"> | null {
   if (metrics.length === 0) {
     return null;
   }
@@ -66,9 +75,11 @@ export function getPerformanceMetricAtDate(
  * ```
  */
 export function getProfileMetricAtDate(
-  metrics: Array<Pick<ProfileMetricLog, 'id' | 'value' | 'recorded_at' | 'unit'>>,
-  date: Date
-): Pick<ProfileMetricLog, 'id' | 'value' | 'recorded_at' | 'unit'> | null {
+  metrics: Array<
+    Pick<ProfileMetricLog, "id" | "value" | "recorded_at" | "unit">
+  >,
+  date: Date,
+): Pick<ProfileMetricLog, "id" | "value" | "recorded_at" | "unit"> | null {
   if (metrics.length === 0) {
     return null;
   }
@@ -108,7 +119,7 @@ export function getProfileMetricAtDate(
 export function getPerformanceMetricsInRange(
   metrics: PerformanceMetricLog[],
   startDate: Date,
-  endDate: Date
+  endDate: Date,
 ): PerformanceMetricLog[] {
   const startTime = startDate.getTime();
   const endTime = endDate.getTime();
@@ -138,7 +149,7 @@ export function getPerformanceMetricsInRange(
 export function getProfileMetricsInRange(
   metrics: ProfileMetricLog[],
   startDate: Date,
-  endDate: Date
+  endDate: Date,
 ): ProfileMetricLog[] {
   const startTime = startDate.getTime();
   const endTime = endDate.getTime();
@@ -158,7 +169,7 @@ export function getProfileMetricsInRange(
  */
 export function getClosestPerformanceMetric(
   metrics: PerformanceMetricLog[],
-  date: Date
+  date: Date,
 ): PerformanceMetricLog | null {
   if (metrics.length === 0) {
     return null;
@@ -170,7 +181,9 @@ export function getClosestPerformanceMetric(
   if (!firstMetric) return null;
 
   let closestMetric = firstMetric;
-  let closestDiff = Math.abs(new Date(closestMetric.recorded_at).getTime() - targetTime);
+  let closestDiff = Math.abs(
+    new Date(closestMetric.recorded_at).getTime() - targetTime,
+  );
 
   for (const metric of metrics) {
     const metricTime = new Date(metric.recorded_at).getTime();
@@ -194,7 +207,7 @@ export function getClosestPerformanceMetric(
  */
 export function getClosestProfileMetric(
   metrics: ProfileMetricLog[],
-  date: Date
+  date: Date,
 ): ProfileMetricLog | null {
   if (metrics.length === 0) {
     return null;
@@ -206,7 +219,9 @@ export function getClosestProfileMetric(
   if (!firstMetric) return null;
 
   let closestMetric = firstMetric;
-  let closestDiff = Math.abs(new Date(closestMetric.recorded_at).getTime() - targetTime);
+  let closestDiff = Math.abs(
+    new Date(closestMetric.recorded_at).getTime() - targetTime,
+  );
 
   for (const metric of metrics) {
     const metricTime = new Date(metric.recorded_at).getTime();
@@ -228,9 +243,11 @@ export function getClosestProfileMetric(
  * @returns Trend information (increasing, decreasing, or stable)
  */
 export function calculateMetricTrend(
-  metrics: Array<Pick<PerformanceMetricLog | ProfileMetricLog, 'value' | 'recorded_at'>>
+  metrics: Array<
+    Pick<PerformanceMetricLog | ProfileMetricLog, "value" | "recorded_at">
+  >,
 ): {
-  direction: 'increasing' | 'decreasing' | 'stable';
+  direction: "increasing" | "decreasing" | "stable";
   changePercent: number;
   rate: number; // Change per day
 } | null {
@@ -250,18 +267,19 @@ export function calculateMetricTrend(
 
   // Calculate rate of change per day
   const timeRangeMs =
-    new Date(last.recorded_at).getTime() - new Date(first.recorded_at).getTime();
+    new Date(last.recorded_at).getTime() -
+    new Date(first.recorded_at).getTime();
   const timeRangeDays = timeRangeMs / (1000 * 60 * 60 * 24);
   const rate = timeRangeDays > 0 ? valueChange / timeRangeDays : 0;
 
-  let direction: 'increasing' | 'decreasing' | 'stable';
+  let direction: "increasing" | "decreasing" | "stable";
   if (Math.abs(changePercent) < 1) {
     // Less than 1% change considered stable
-    direction = 'stable';
+    direction = "stable";
   } else if (changePercent > 0) {
-    direction = 'increasing';
+    direction = "increasing";
   } else {
-    direction = 'decreasing';
+    direction = "decreasing";
   }
 
   return {

@@ -1285,13 +1285,6 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         try {
           const stats = this.liveMetricsManager.getSessionStats();
 
-          // VALIDATION: Ensure minimum recording duration (at least 3 seconds)
-          if (stats.duration < 3) {
-            throw new Error(
-              `Recording too short: ${stats.duration.toFixed(1)}s. Minimum 3 seconds required. Please record for longer before finishing.`,
-            );
-          }
-
           // VALIDATION: Ensure we have some data
           const status = this.fitEncoder.getStatus();
           if (status.recordCount === 0) {

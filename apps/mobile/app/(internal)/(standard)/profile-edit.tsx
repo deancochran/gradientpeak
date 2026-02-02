@@ -28,7 +28,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { Camera, Loader2, Upload } from "lucide-react-native";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import {
   ActionSheetIOS,
@@ -51,8 +51,8 @@ const profileEditSchema = z.object({
   bio: z.string().max(500, "Bio must be 500 characters or less").nullable(),
   dob: z.string().nullable(), // Format: YYYY-MM-DD
   weight_kg: z.number().min(1).max(500).nullable(),
-  ftp: z.number().min(1).max(1000).nullable(),
-  threshold_hr: z.number().min(1).max(250).nullable(),
+  // ftp: z.number().min(1).max(1000).nullable(), // Deprecated: FTP is now calculated
+  // threshold_hr: z.number().min(1).max(250).nullable(), // Deprecated: LTHR is now in profile_metrics
   preferred_units: z.enum(["metric", "imperial"]).nullable(),
   language: z.string().nullable(),
 });
@@ -64,6 +64,19 @@ function ProfileEditScreen() {
   const { profile, refreshProfile } = useAuth();
   const [avatarUploadLoading, setAvatarUploadLoading] = useState(false);
   const utils = trpc.useUtils();
+
+  // Fetch estimated FTP
+  const { data: estimatedFTP } = trpc.analytics.predictPerformance.useQuery({
+    activity_category: "bike",
+    effort_type: "power",
+    duration: 3600, // 1 hour for FTP
+  });
+
+  // Fetch LTHR from profile metrics
+  const { data: lthrMetric } = trpc.profileMetrics.getAtDate.useQuery({
+    metric_type: "lthr",
+    date: new Date(),
+  });
 
   const updateProfileMutation = useReliableMutation(trpc.profiles.update, {
     invalidate: [utils.profiles],
@@ -85,8 +98,6 @@ function ProfileEditScreen() {
       bio: profile?.bio || null,
       dob: profile?.dob || null,
       weight_kg: profile?.weight_kg || null,
-      ftp: profile?.ftp || null,
-      threshold_hr: profile?.threshold_hr || null,
       preferred_units: profile?.preferred_units || "metric",
       language: profile?.language || "en",
     },
@@ -99,8 +110,6 @@ function ProfileEditScreen() {
         bio: data.bio || undefined,
         dob: data.dob || undefined,
         weight_kg: data.weight_kg || undefined,
-        ftp: data.ftp || undefined,
-        threshold_hr: data.threshold_hr || undefined,
         preferred_units: data.preferred_units || undefined,
         language: data.language || undefined,
       });
@@ -426,55 +435,35 @@ function ProfileEditScreen() {
                   )}
                 />
 
-                <FormField
-                  control={form.control}
-                  name="ftp"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>FTP (watts)</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="Enter FTP"
-                          value={field.value ? field.value.toString() : ""}
-                          onChangeText={(text) => {
-                            const num = text ? Number(text) : null;
-                            field.onChange(num);
-                          }}
-                          keyboardType="numeric"
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        Functional Threshold Power for cycling
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <View>
+                  <Text className="text-sm font-medium mb-1">
+                    Estimated FTP
+                  </Text>
+                  <View className="bg-muted p-3 rounded-md">
+                    <Text className="text-foreground">
+                      {estimatedFTP?.predicted_value
+                        ? `${estimatedFTP.predicted_value} watts`
+                        : "Not enough data"}
+                    </Text>
+                    <Text className="text-xs text-muted-foreground mt-1">
+                      Calculated from your best efforts (last 90 days)
+                    </Text>
+                  </View>
+                </View>
 
-                <FormField
-                  control={form.control}
-                  name="threshold_hr"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Threshold HR (bpm)</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="Enter threshold HR"
-                          value={field.value ? field.value.toString() : ""}
-                          onChangeText={(text) => {
-                            const num = text ? Number(text) : null;
-                            field.onChange(num);
-                          }}
-                          keyboardType="numeric"
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        Lactate Threshold Heart Rate
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <View>
+                  <Text className="text-sm font-medium mb-1">Threshold HR</Text>
+                  <View className="bg-muted p-3 rounded-md">
+                    <Text className="text-foreground">
+                      {lthrMetric?.value
+                        ? `${Math.round(lthrMetric.value)} bpm`
+                        : "Not detected yet"}
+                    </Text>
+                    <Text className="text-xs text-muted-foreground mt-1">
+                      Detected from your best 20-minute heart rate
+                    </Text>
+                  </View>
+                </View>
               </View>
             </Form>
           </CardContent>

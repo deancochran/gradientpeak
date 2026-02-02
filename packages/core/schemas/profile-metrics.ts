@@ -140,7 +140,7 @@ export const PROFILE_METRIC_UNITS: Record<ProfileMetricType, string> = {
   hrv_rmssd: "ms",
   vo2_max: "ml/kg/min",
   body_fat_percentage: "%",
-  // lthr: 'bpm', // TODO: Enable when enum is updated
+  lthr: "bpm",
   sleep_hours: "hours",
   hydration_level: "scale",
   stress_score: "scale",
@@ -161,7 +161,7 @@ export const PROFILE_METRIC_RANGES: Record<
   hrv_rmssd: { min: 0, max: 300 },
   vo2_max: { min: 10, max: 100 },
   body_fat_percentage: { min: 0, max: 100 },
-  // lthr: { min: 80, max: 220 }, // TODO: Enable when enum is updated
+  lthr: { min: 80, max: 220 },
   sleep_hours: { min: 0, max: 24 },
   hydration_level: { min: 0, max: 10 },
   stress_score: { min: 0, max: 10 },

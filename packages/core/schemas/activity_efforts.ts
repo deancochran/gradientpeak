@@ -19,3 +19,4 @@ export const BestEffortSchema = z.object({
 
 export type BestEffort = z.infer<typeof BestEffortSchema>;
 export type EffortType = z.infer<typeof effortTypeSchema>;
+export type MetricSource = "manual" | "test" | "estimated" | "imported";

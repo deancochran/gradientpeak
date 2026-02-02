@@ -81,7 +81,7 @@ export * from "./recording_config";
 export * from "./recording_ui_types";
 
 // Export performance metrics schemas
-export * from "./performance-metrics";
+// export * from "./performance-metrics";
 
 // Export profile metrics schemas
 export * from "./profile-metrics";

@@ -570,39 +570,6 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
 
   const getSignedUrlMutation = trpc.fitFiles.getSignedUploadUrl.useMutation();
 
-  const submit = useCallback(async () => {
-    if (!state.activity || !service) {
-      throw new Error("No data to submit");
-    }
-
-    dispatch({ type: "UPLOADING" });
-
-    try {
-      // Check if we have a FIT file to upload
-      const metadata = service.recordingMetadata;
-
-      if (metadata?.fitFilePath) {
-        await submitOnce(
-          { ...metadata, fitFilePath: metadata.fitFilePath },
-          { ...state.activity, notes: state.activity.notes || undefined },
-        );
-      } else {
-        // No FIT file found
-        console.error(
-          "[useActivitySubmission] No FIT file found in recording metadata",
-        );
-        throw new Error(
-          "No activity file generated. Please try recording again.",
-        );
-      }
-    } catch (err) {
-      console.error("[useActivitySubmission] Upload failed:", err);
-
-      // Error state is already set by submitOnce
-      // Don't throw - keep the submission page available for manual retry
-    }
-  }, [state.activity, service, submitOnce]);
-
   // ================================
   // Single Upload Attempt (No Automatic Retry)
   // ================================
@@ -768,6 +735,39 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     },
     [getSignedUrlMutation, processFitFileMutation, service],
   );
+
+  const submit = useCallback(async () => {
+    if (!state.activity || !service) {
+      throw new Error("No data to submit");
+    }
+
+    dispatch({ type: "UPLOADING" });
+
+    try {
+      // Check if we have a FIT file to upload
+      const metadata = service.recordingMetadata;
+
+      if (metadata?.fitFilePath) {
+        await submitOnce(
+          { ...metadata, fitFilePath: metadata.fitFilePath },
+          { ...state.activity, notes: state.activity.notes || undefined },
+        );
+      } else {
+        // No FIT file found
+        console.error(
+          "[useActivitySubmission] No FIT file found in recording metadata",
+        );
+        throw new Error(
+          "No activity file generated. Please try recording again.",
+        );
+      }
+    } catch (err) {
+      console.error("[useActivitySubmission] Upload failed:", err);
+
+      // Error state is already set by submitOnce
+      // Don't throw - keep the submission page available for manual retry
+    }
+  }, [state.activity, service, submitOnce]);
 
   // ================================
   // Return Clean API

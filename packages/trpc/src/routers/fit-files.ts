@@ -366,29 +366,17 @@ export const fitFilesRouter = createTRPCRouter({
         // ========================================================================
         // T-308: Fetch User Performance Metrics (with Cold Start Defaults)
         // ========================================================================
-        // Fetch FTP for cycling activities (1-hour power)
-        const { data: ftpMetric } = await supabase
-          .from("profile_performance_metric_logs")
-          .select("value")
-          .eq("profile_id", userId)
-          .eq("category", "bike")
-          .eq("type", "power")
-          .eq("duration_seconds", 3600) // FTP is 1-hour power
-          .lte("recorded_at", startTime.toISOString())
-          .order("recorded_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
 
-        // Cold Start: Default to 200W if no FTP found
-        const ftp = ftpMetric?.value ? Number(ftpMetric.value) : 200;
+        // REFACTOR: We no longer use profile_performance_metric_logs.
+        // Instead, we should use the new analytics router logic or just defaults for now.
+        // For TSS calculation, we need FTP and LTHR.
 
-        // Fetch LTHR (Lactate Threshold Heart Rate) for all activities
+        // Fetch LTHR from profile_metrics
         const { data: lthrMetric } = await supabase
-          .from("profile_performance_metric_logs")
+          .from("profile_metrics")
           .select("value")
           .eq("profile_id", userId)
-          .eq("type", "heart_rate")
-          .lte("recorded_at", startTime.toISOString())
+          .eq("metric_type", "lthr")
           .order("recorded_at", { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -396,30 +384,44 @@ export const fitFilesRouter = createTRPCRouter({
         // Cold Start: Default to 170bpm if no LTHR found
         const lthr = lthrMetric?.value ? Number(lthrMetric.value) : 170;
 
-        // Fetch Max HR for all activities
+        // Fetch Max HR
         const { data: maxHRMetric } = await supabase
           .from("profile_metrics")
           .select("value")
           .eq("profile_id", userId)
           .eq("metric_type", "max_hr")
-          .lte("recorded_at", startTime.toISOString())
           .order("recorded_at", { ascending: false })
           .limit(1)
           .maybeSingle();
 
-        // Note: We're using maxHeartRate from session data if available,
-        // but in the future we could use a stored max_hr metric
         // Cold Start: Default to 190bpm if no Max HR found
         const maxHR =
           maxHeartRate ||
           (maxHRMetric?.value ? Number(maxHRMetric.value) : 190);
 
-        // Log when metrics are missing for debugging (but proceed with defaults)
-        if (powerStream.length > 0 && !ftpMetric?.value) {
-          console.log(
-            `No FTP found for user ${userId} - using default 200W for TSS calculation`,
-          );
-        }
+        // For FTP, we ideally want to calculate it dynamically, but that's expensive here.
+        // For now, let's use a default or try to fetch a cached value if we had one.
+        // Since we removed the logs table, we'll default to 200W for now,
+        // or we could implement a quick lookup of the best 20m power from activity_efforts
+        // and estimate it (0.95 * 20m).
+
+        // Quick estimation of FTP from recent history (last 90 days)
+        const cutoffDate = new Date(
+          Date.now() - 90 * 24 * 60 * 60 * 1000,
+        ).toISOString();
+        const { data: best20m } = await supabase
+          .from("activity_efforts")
+          .select("value")
+          .eq("profile_id", userId)
+          .eq("activity_category", "bike")
+          .eq("effort_type", "power")
+          .eq("duration_seconds", 1200)
+          .gte("recorded_at", cutoffDate)
+          .order("value", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const ftp = best20m?.value ? Math.round(best20m.value * 0.95) : 200;
 
         // ========================================================================
         // T-308: Calculate TSS using @repo/core (Universal Method)
@@ -797,33 +799,24 @@ export const fitFilesRouter = createTRPCRouter({
           }
         }
 
-        // 2. Detect LTHR / FTP
-        // Detect LTHR
+        // 2. Detect LTHR
         if (hrStream.length > 0) {
           const detectedLTHR = detectLTHR(hrStream, timestamps);
           if (detectedLTHR && detectedLTHR > lthr) {
+            // Update profile_metrics
+            await supabase.from("profile_metrics").insert({
+              profile_id: userId,
+              metric_type: "lthr",
+              value: detectedLTHR,
+              unit: "bpm",
+              recorded_at: startTime.toISOString(),
+            });
+
             // Create notification
             await supabase.from("notifications").insert({
               profile_id: userId,
               title: "New LTHR Detected!",
               message: `Your LTHR has improved to ${Math.round(detectedLTHR)} bpm based on your recent activity.`,
-              is_read: false,
-            });
-          }
-        }
-
-        // Detect FTP (20min power)
-        const effort20min = effortsToInsert.find(
-          (e) => e.effort_type === "power" && e.duration_seconds === 1200,
-        );
-        if (effort20min) {
-          const estimatedFTP = effort20min.value * 0.95;
-          if (estimatedFTP > ftp) {
-            // Create notification
-            await supabase.from("notifications").insert({
-              profile_id: userId,
-              title: "New FTP Detected!",
-              message: `Your estimated FTP has improved to ${Math.round(estimatedFTP)} watts based on your 20-minute power.`,
               is_read: false,
             });
           }

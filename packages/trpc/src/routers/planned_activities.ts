@@ -579,28 +579,39 @@ export const plannedActivitiesRouter = createTRPCRouter({
         .eq("id", ctx.session.user.id)
         .single();
 
-      // Fetch latest FTP from performance metrics
-      const { data: ftpMetrics } = await ctx.supabase
-        .from("profile_performance_metric_logs")
-        .select("*")
+      // Fetch latest FTP from activity efforts (best 20m power * 0.95)
+      const cutoffDate = new Date(
+        Date.now() - 90 * 24 * 60 * 60 * 1000,
+      ).toISOString();
+      const { data: best20m } = await ctx.supabase
+        .from("activity_efforts")
+        .select("value")
         .eq("profile_id", ctx.session.user.id)
-        .eq("type", "power")
-        .eq("category", "bike")
-        .gte("duration_seconds", 3000)
+        .eq("activity_category", "bike")
+        .eq("effort_type", "power")
+        .eq("duration_seconds", 1200)
+        .gte("recorded_at", cutoffDate)
+        .order("value", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const ftpValue = best20m?.value
+        ? Math.round(best20m.value * 0.95)
+        : undefined;
+
+      // Fetch latest threshold HR from profile metrics
+      const { data: lthrMetric } = await ctx.supabase
+        .from("profile_metrics")
+        .select("value")
+        .eq("profile_id", ctx.session.user.id)
+        .eq("metric_type", "lthr")
         .order("recorded_at", { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      // Fetch latest threshold HR from performance metrics
-      const { data: thresholdHrMetrics } = await ctx.supabase
-        .from("profile_performance_metric_logs")
-        .select("*")
-        .eq("profile_id", ctx.session.user.id)
-        .eq("type", "heart_rate")
-        .gte("duration_seconds", 3000)
-        .order("recorded_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const lthrValue = lthrMetric?.value
+        ? Number(lthrMetric.value)
+        : undefined;
 
       // Fetch latest weight from profile metrics
       const { data: weightMetrics } = await ctx.supabase
@@ -613,8 +624,8 @@ export const plannedActivitiesRouter = createTRPCRouter({
         .maybeSingle();
 
       const userMetrics = {
-        ftp: ftpMetrics?.value,
-        threshold_hr: thresholdHrMetrics?.value,
+        ftp: ftpValue,
+        threshold_hr: lthrValue,
         weight_kg: weightMetrics?.value,
         dob: profile?.dob,
       };

@@ -47,39 +47,3 @@ export function detectLTHR(
 
   return Math.round(estimatedLTHR);
 }
-
-/**
- * Detects FTP (Functional Threshold Power) from a power stream.
- *
- * @param powerStream - Array of power values (watts).
- * @param timestamps - Array of timestamps (seconds).
- * @returns Detected FTP (watts) or null if insufficient data.
- */
-export function detectFTP(
-  powerStream: number[],
-  timestamps: number[],
-): number | null {
-  if (!powerStream || !timestamps || powerStream.length === 0) {
-    return null;
-  }
-
-  // Check if we have at least 20 minutes of data
-  const totalDuration = timestamps[timestamps.length - 1]! - timestamps[0]!;
-  if (totalDuration < 1200) {
-    // 20 minutes
-    return null;
-  }
-
-  // Calculate best 20-minute effort
-  const best20MinEffort = calculateBestEffort(powerStream, timestamps, 1200);
-
-  if (!best20MinEffort) {
-    return null;
-  }
-
-  // Estimate FTP as 95% of the 20-minute max average power
-  // Standard FTP test protocol.
-  const estimatedFTP = best20MinEffort.value * 0.95;
-
-  return Math.round(estimatedFTP);
-}
