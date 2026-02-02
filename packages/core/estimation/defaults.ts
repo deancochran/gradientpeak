@@ -5,7 +5,7 @@
  * These estimates serve as starting points until actual test data is available.
  */
 
-import type { MetricSource } from '../schemas/performance-metrics';
+import type { MetricSource } from "../schemas/activity_efforts";
 
 /**
  * Result of a metric estimation.
@@ -13,7 +13,7 @@ import type { MetricSource } from '../schemas/performance-metrics';
 export interface EstimationResult {
   value: number;
   source: MetricSource;
-  confidence?: 'high' | 'medium' | 'low';
+  confidence?: "high" | "medium" | "low";
   notes?: string;
 }
 
@@ -36,8 +36,8 @@ export function estimateFTPFromWeight(weightKg: number): EstimationResult {
 
   return {
     value: estimatedFTP,
-    source: 'estimated',
-    confidence: 'low',
+    source: "estimated",
+    confidence: "low",
     notes: `Estimated from weight (${weightKg}kg) using ${W_PER_KG} W/kg ratio`,
   };
 }
@@ -55,7 +55,7 @@ export function estimateFTPFromRecentActivities(
     powerStream?: number[];
     timestamps?: number[];
     startedAt: Date;
-  }>
+  }>,
 ): EstimationResult | null {
   const NINETY_DAYS_AGO = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
   const TARGET_DURATION = 1200; // 20 minutes
@@ -66,7 +66,7 @@ export function estimateFTPFromRecentActivities(
       act.powerStream &&
       act.timestamps &&
       act.powerStream.length > 0 &&
-      new Date(act.startedAt) >= NINETY_DAYS_AGO
+      new Date(act.startedAt) >= NINETY_DAYS_AGO,
   );
 
   if (recentActivities.length === 0) {
@@ -82,7 +82,7 @@ export function estimateFTPFromRecentActivities(
     const avgPower = findMaxAveragePower(
       activity.powerStream,
       activity.timestamps,
-      TARGET_DURATION
+      TARGET_DURATION,
     );
 
     if (avgPower > maxAvgPower) {
@@ -99,8 +99,8 @@ export function estimateFTPFromRecentActivities(
 
   return {
     value: estimatedFTP,
-    source: 'estimated',
-    confidence: 'medium',
+    source: "estimated",
+    confidence: "medium",
     notes: `Estimated from 20min power (${Math.round(maxAvgPower)}W) from recent activities`,
   };
 }
@@ -123,8 +123,8 @@ export function estimateMaxHR(age: number): EstimationResult {
 
   return {
     value: estimatedMaxHR,
-    source: 'estimated',
-    confidence: 'low',
+    source: "estimated",
+    confidence: "low",
     notes: `Estimated from age (${age}) using 220 - age formula`,
   };
 }
@@ -143,8 +143,8 @@ export function estimateLTHR(maxHR: number): EstimationResult {
 
   return {
     value: estimatedLTHR,
-    source: 'estimated',
-    confidence: 'low',
+    source: "estimated",
+    confidence: "low",
     notes: `Estimated from max HR (${maxHR} bpm) using ${LTHR_PERCENTAGE * 100}% ratio`,
   };
 }
@@ -162,7 +162,7 @@ export function estimateLTHRFromRecentActivities(
     hrStream?: number[];
     timestamps?: number[];
     startedAt: Date;
-  }>
+  }>,
 ): EstimationResult | null {
   const NINETY_DAYS_AGO = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
   const TARGET_DURATION = 1200; // 20 minutes
@@ -173,7 +173,7 @@ export function estimateLTHRFromRecentActivities(
       act.hrStream &&
       act.timestamps &&
       act.hrStream.length > 0 &&
-      new Date(act.startedAt) >= NINETY_DAYS_AGO
+      new Date(act.startedAt) >= NINETY_DAYS_AGO,
   );
 
   if (recentActivities.length === 0) {
@@ -186,7 +186,11 @@ export function estimateLTHRFromRecentActivities(
   for (const activity of recentActivities) {
     if (!activity.hrStream || !activity.timestamps) continue;
 
-    const avgHR = findMaxAverageHR(activity.hrStream, activity.timestamps, TARGET_DURATION);
+    const avgHR = findMaxAverageHR(
+      activity.hrStream,
+      activity.timestamps,
+      TARGET_DURATION,
+    );
 
     if (avgHR > maxAvgHR) {
       maxAvgHR = avgHR;
@@ -199,8 +203,8 @@ export function estimateLTHRFromRecentActivities(
 
   return {
     value: Math.round(maxAvgHR),
-    source: 'estimated',
-    confidence: 'medium',
+    source: "estimated",
+    confidence: "medium",
     notes: `Estimated from 20min avg HR (${Math.round(maxAvgHR)} bpm) from recent activities`,
   };
 }
@@ -216,7 +220,7 @@ export function estimateLTHRFromRecentActivities(
  * @returns Estimated threshold pace in seconds per km
  */
 export function estimateThresholdPaceFromFitnessLevel(
-  fitnessLevel: 'beginner' | 'intermediate' | 'advanced'
+  fitnessLevel: "beginner" | "intermediate" | "advanced",
 ): EstimationResult {
   const PACE_BY_LEVEL: Record<typeof fitnessLevel, number> = {
     beginner: 360, // 6:00 min/km
@@ -230,9 +234,9 @@ export function estimateThresholdPaceFromFitnessLevel(
 
   return {
     value: estimatedPace,
-    source: 'estimated',
-    confidence: 'low',
-    notes: `Estimated from fitness level (${fitnessLevel}): ${minutes}:${seconds.toString().padStart(2, '0')} min/km`,
+    source: "estimated",
+    confidence: "low",
+    notes: `Estimated from fitness level (${fitnessLevel}): ${minutes}:${seconds.toString().padStart(2, "0")} min/km`,
   };
 }
 
@@ -250,7 +254,7 @@ export function estimateThresholdPaceFromRecentRuns(
     timestamps?: number[];
     distanceMeters?: number;
     startedAt: Date;
-  }>
+  }>,
 ): EstimationResult | null {
   const NINETY_DAYS_AGO = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
   const TARGET_DISTANCE = 5000; // 5k
@@ -262,7 +266,7 @@ export function estimateThresholdPaceFromRecentRuns(
       act.timestamps &&
       act.distanceMeters &&
       act.paceStream.length > 0 &&
-      new Date(act.startedAt) >= NINETY_DAYS_AGO
+      new Date(act.startedAt) >= NINETY_DAYS_AGO,
   );
 
   if (recentRuns.length === 0) {
@@ -278,7 +282,8 @@ export function estimateThresholdPaceFromRecentRuns(
     // If run is close to 5k, use average pace
     if (Math.abs(run.distanceMeters - TARGET_DISTANCE) < 500) {
       const avgPace =
-        run.paceStream.reduce((sum, pace) => sum + pace, 0) / run.paceStream.length;
+        run.paceStream.reduce((sum, pace) => sum + pace, 0) /
+        run.paceStream.length;
       if (avgPace < bestPace) {
         bestPace = avgPace;
       }
@@ -296,9 +301,9 @@ export function estimateThresholdPaceFromRecentRuns(
 
   return {
     value: estimatedThresholdPace,
-    source: 'estimated',
-    confidence: 'medium',
-    notes: `Estimated from recent 5k pace: ${minutes}:${seconds.toString().padStart(2, '0')} min/km`,
+    source: "estimated",
+    confidence: "medium",
+    notes: `Estimated from recent 5k pace: ${minutes}:${seconds.toString().padStart(2, "0")} min/km`,
   };
 }
 
@@ -315,7 +320,7 @@ export function estimateCriticalVelocity(
     distanceMeters?: number;
     durationSeconds?: number;
     startedAt: Date;
-  }>
+  }>,
 ): EstimationResult | null {
   const NINETY_DAYS_AGO = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
 
@@ -326,7 +331,7 @@ export function estimateCriticalVelocity(
       act.durationSeconds &&
       act.durationSeconds >= 1200 && // At least 20 minutes
       act.durationSeconds <= 3600 && // At most 60 minutes
-      new Date(act.startedAt) >= NINETY_DAYS_AGO
+      new Date(act.startedAt) >= NINETY_DAYS_AGO,
   );
 
   if (sustainedRuns.length === 0) {
@@ -356,9 +361,9 @@ export function estimateCriticalVelocity(
 
   return {
     value: bestVelocity,
-    source: 'estimated',
-    confidence: 'medium',
-    notes: `Estimated from recent sustained runs: ${minutes}:${seconds.toString().padStart(2, '0')} min/km`,
+    source: "estimated",
+    confidence: "medium",
+    notes: `Estimated from recent sustained runs: ${minutes}:${seconds.toString().padStart(2, "0")} min/km`,
   };
 }
 
@@ -377,7 +382,7 @@ export function estimateCriticalVelocity(
 function findMaxAveragePower(
   powerStream: number[],
   timestamps: number[],
-  durationSeconds: number
+  durationSeconds: number,
 ): number {
   if (powerStream.length < 2) return 0;
 
@@ -422,7 +427,7 @@ function findMaxAveragePower(
 function findMaxAverageHR(
   hrStream: number[],
   timestamps: number[],
-  durationSeconds: number
+  durationSeconds: number,
 ): number {
   if (hrStream.length < 2) return 0;
 

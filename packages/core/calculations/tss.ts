@@ -1,3 +1,5 @@
+import { calculateNormalizedPower } from "./normalized-power";
+
 /**
  * Training Stress Score (TSS) Calculations
  *
@@ -40,15 +42,15 @@ export function calculateTSSFromPower(params: TSSFromPowerParams): TSSResult {
   const { powerStream, timestamps, ftp, weight } = params;
 
   if (!ftp || ftp === 0) {
-    throw new Error('FTP is required for power-based TSS calculation');
+    throw new Error("FTP is required for power-based TSS calculation");
   }
 
   if (powerStream.length === 0 || timestamps.length === 0) {
-    throw new Error('Power stream and timestamps cannot be empty');
+    throw new Error("Power stream and timestamps cannot be empty");
   }
 
   if (powerStream.length !== timestamps.length) {
-    throw new Error('Power stream and timestamps must have the same length');
+    throw new Error("Power stream and timestamps must have the same length");
   }
 
   // Calculate 30-second rolling average (normalized power)
@@ -62,20 +64,23 @@ export function calculateTSSFromPower(params: TSSFromPowerParams): TSSResult {
   const lastTimestamp = timestamps[timestamps.length - 1];
 
   if (firstTimestamp === undefined || lastTimestamp === undefined) {
-    throw new Error('Invalid timestamps');
+    throw new Error("Invalid timestamps");
   }
 
   const durationSeconds = lastTimestamp - firstTimestamp;
 
   if (durationSeconds === 0) {
-    throw new Error('Duration cannot be zero');
+    throw new Error("Duration cannot be zero");
   }
 
   // TSS formula: (duration × NP × IF) / (FTP × 3600) × 100
-  const tss = (durationSeconds * normalizedPower * intensityFactor) / (ftp * 3600) * 100;
+  const tss =
+    ((durationSeconds * normalizedPower * intensityFactor) / (ftp * 3600)) *
+    100;
 
   // Variability index (VI = NP / Avg Power)
-  const avgPower = powerStream.reduce((sum, p) => sum + p, 0) / powerStream.length;
+  const avgPower =
+    powerStream.reduce((sum, p) => sum + p, 0) / powerStream.length;
   const variabilityIndex = avgPower > 0 ? normalizedPower / avgPower : 1;
 
   return {
@@ -84,41 +89,6 @@ export function calculateTSSFromPower(params: TSSFromPowerParams): TSSResult {
     intensityFactor: Math.round(intensityFactor * 100) / 100,
     variabilityIndex: Math.round(variabilityIndex * 100) / 100,
   };
-}
-
-/**
- * Calculates Normalized Power (NP) using 30-second rolling average.
- *
- * NP is the power you could have maintained for the same physiological "cost"
- * if your power had been perfectly constant.
- *
- * @param powerStream - Array of power values
- * @returns Normalized Power
- */
-export function calculateNormalizedPower(powerStream: number[]): number {
-  if (powerStream.length === 0) return 0;
-
-  const WINDOW_SIZE = 30; // 30-second rolling average
-  const rollingAverages: number[] = [];
-
-  // Calculate 30-second rolling averages
-  for (let i = 0; i < powerStream.length; i++) {
-    const start = Math.max(0, i - WINDOW_SIZE + 1);
-    const window = powerStream.slice(start, i + 1);
-    const avg = window.reduce((sum, p) => sum + p, 0) / window.length;
-    rollingAverages.push(avg);
-  }
-
-  // Raise each rolling average to the 4th power
-  const raisedTo4th = rollingAverages.map((avg) => Math.pow(avg, 4));
-
-  // Average the 4th power values
-  const avgOf4th = raisedTo4th.reduce((sum, val) => sum + val, 0) / raisedTo4th.length;
-
-  // Take the 4th root
-  const normalizedPower = Math.pow(avgOf4th, 1 / 4);
-
-  return normalizedPower;
 }
 
 // ==========================================
@@ -137,7 +107,7 @@ export interface HRSSResult {
   hrss: number;
   avgHR: number;
   timeInZones: { zone: number; seconds: number; percentage: number }[];
-  source: 'hr';
+  source: "hr";
 }
 
 /**
@@ -157,19 +127,19 @@ export function calculateHRSS(params: HRSSParams): HRSSResult {
   const { hrStream, timestamps, lthr, maxHR, restingHR = 60 } = params;
 
   if (!lthr || lthr === 0) {
-    throw new Error('LTHR is required for HR-based TSS calculation');
+    throw new Error("LTHR is required for HR-based TSS calculation");
   }
 
   if (!maxHR || maxHR === 0) {
-    throw new Error('Max HR is required for HR-based TSS calculation');
+    throw new Error("Max HR is required for HR-based TSS calculation");
   }
 
   if (hrStream.length === 0 || timestamps.length === 0) {
-    throw new Error('HR stream and timestamps cannot be empty');
+    throw new Error("HR stream and timestamps cannot be empty");
   }
 
   if (hrStream.length !== timestamps.length) {
-    throw new Error('HR stream and timestamps must have the same length');
+    throw new Error("HR stream and timestamps must have the same length");
   }
 
   // Define HR zones (% of LTHR)
@@ -193,9 +163,11 @@ export function calculateHRSS(params: HRSSParams): HRSSResult {
     const nextTimestamp = timestamps[i + 1];
     if (currentTimestamp === undefined) continue;
 
-    const duration = nextTimestamp !== undefined ? nextTimestamp - currentTimestamp : 1;
+    const duration =
+      nextTimestamp !== undefined ? nextTimestamp - currentTimestamp : 1;
 
-    const zone = zones.find((z) => hr >= z.min && hr < z.max) || zones[zones.length - 1];
+    const zone =
+      zones.find((z) => hr >= z.min && hr < z.max) || zones[zones.length - 1];
     if (!zone) continue;
 
     const zoneIndex = zones.indexOf(zone);
@@ -211,7 +183,7 @@ export function calculateHRSS(params: HRSSParams): HRSSResult {
   const firstTimestampHR = timestamps[0];
   const lastTimestampHR = timestamps[timestamps.length - 1];
   if (firstTimestampHR === undefined || lastTimestampHR === undefined) {
-    throw new Error('Invalid timestamps for HR calculation');
+    throw new Error("Invalid timestamps for HR calculation");
   }
 
   const totalDuration = lastTimestampHR - firstTimestampHR;
@@ -229,7 +201,7 @@ export function calculateHRSS(params: HRSSParams): HRSSResult {
       seconds,
       percentage,
     })),
-    source: 'hr',
+    source: "hr",
   };
 }
 
@@ -249,7 +221,7 @@ export interface RunningTSSResult {
   tss: number;
   normalizedPace: number; // Normalized graded pace
   intensityFactor: number;
-  source: 'pace';
+  source: "pace";
 }
 
 /**
@@ -263,25 +235,34 @@ export interface RunningTSSResult {
  * @param params - Pace stream, timestamps, threshold pace, and optional elevation
  * @returns Running TSS calculation result
  */
-export function calculateRunningTSS(params: RunningTSSParams): RunningTSSResult {
-  const { paceStream, timestamps, elevationStream, thresholdPace, distance } = params;
+export function calculateRunningTSS(
+  params: RunningTSSParams,
+): RunningTSSResult {
+  const { paceStream, timestamps, elevationStream, thresholdPace, distance } =
+    params;
 
   if (!thresholdPace || thresholdPace === 0) {
-    throw new Error('Threshold pace is required for pace-based TSS calculation');
+    throw new Error(
+      "Threshold pace is required for pace-based TSS calculation",
+    );
   }
 
   if (paceStream.length === 0 || timestamps.length === 0) {
-    throw new Error('Pace stream and timestamps cannot be empty');
+    throw new Error("Pace stream and timestamps cannot be empty");
   }
 
   if (paceStream.length !== timestamps.length) {
-    throw new Error('Pace stream and timestamps must have the same length');
+    throw new Error("Pace stream and timestamps must have the same length");
   }
 
   // Calculate grade-adjusted pace if elevation available
   let adjustedPaceStream = paceStream;
   if (elevationStream) {
-    adjustedPaceStream = calculateGradeAdjustedPace(paceStream, elevationStream, timestamps);
+    adjustedPaceStream = calculateGradeAdjustedPace(
+      paceStream,
+      elevationStream,
+      timestamps,
+    );
   }
 
   // Calculate normalized graded pace (NGP) - similar to normalized power
@@ -295,7 +276,7 @@ export function calculateRunningTSS(params: RunningTSSParams): RunningTSSResult 
   const firstTimestampPace = timestamps[0];
   const lastTimestampPace = timestamps[timestamps.length - 1];
   if (firstTimestampPace === undefined || lastTimestampPace === undefined) {
-    throw new Error('Invalid timestamps for pace calculation');
+    throw new Error("Invalid timestamps for pace calculation");
   }
 
   const durationSeconds = lastTimestampPace - firstTimestampPace;
@@ -308,7 +289,7 @@ export function calculateRunningTSS(params: RunningTSSParams): RunningTSSResult 
     tss: Math.round(tss),
     normalizedPace: Math.round(normalizedPace),
     intensityFactor: Math.round(intensityFactor * 100) / 100,
-    source: 'pace',
+    source: "pace",
   };
 }
 
@@ -325,7 +306,7 @@ export function calculateRunningTSS(params: RunningTSSParams): RunningTSSResult 
 function calculateGradeAdjustedPace(
   paceStream: number[],
   elevationStream: number[],
-  timestamps: number[]
+  timestamps: number[],
 ): number[] {
   const adjusted: number[] = [];
 
@@ -392,7 +373,9 @@ function calculateNormalizedPace(paceStream: number[]): number {
 
   // Return average of rolling averages
   if (rollingAverages.length === 0) return 0;
-  return rollingAverages.reduce((sum, p) => sum + p, 0) / rollingAverages.length;
+  return (
+    rollingAverages.reduce((sum, p) => sum + p, 0) / rollingAverages.length
+  );
 }
 
 // ==========================================
@@ -410,7 +393,7 @@ export interface SwimmingTSSResult {
   tss: number;
   normalizedPace: number;
   intensityFactor: number;
-  source: 'pace';
+  source: "pace";
 }
 
 /**
@@ -421,15 +404,17 @@ export interface SwimmingTSSResult {
  * @param params - Pace stream, timestamps, threshold pace
  * @returns Swimming TSS calculation result
  */
-export function calculateSwimmingTSS(params: SwimmingTSSParams): SwimmingTSSResult {
+export function calculateSwimmingTSS(
+  params: SwimmingTSSParams,
+): SwimmingTSSResult {
   const { paceStream, timestamps, thresholdPace, distance } = params;
 
   if (!thresholdPace || thresholdPace === 0) {
-    throw new Error('Threshold pace is required for swimming TSS calculation');
+    throw new Error("Threshold pace is required for swimming TSS calculation");
   }
 
   if (paceStream.length === 0 || timestamps.length === 0) {
-    throw new Error('Pace stream and timestamps cannot be empty');
+    throw new Error("Pace stream and timestamps cannot be empty");
   }
 
   // Calculate normalized pace
@@ -442,7 +427,7 @@ export function calculateSwimmingTSS(params: SwimmingTSSParams): SwimmingTSSResu
   const firstTimestampSwim = timestamps[0];
   const lastTimestampSwim = timestamps[timestamps.length - 1];
   if (firstTimestampSwim === undefined || lastTimestampSwim === undefined) {
-    throw new Error('Invalid timestamps for swimming calculation');
+    throw new Error("Invalid timestamps for swimming calculation");
   }
 
   const durationSeconds = lastTimestampSwim - firstTimestampSwim;
@@ -455,11 +440,14 @@ export function calculateSwimmingTSS(params: SwimmingTSSParams): SwimmingTSSResu
     tss: Math.round(tss),
     normalizedPace: Math.round(normalizedPace),
     intensityFactor: Math.round(intensityFactor * 100) / 100,
-    source: 'pace',
+    source: "pace",
   };
 }
 
 // ==========================================
+// Heart Rate-Based TSS (HRSS)
+// ==========================================
+
 // Universal TSS Calculator
 // ==========================================
 
@@ -476,14 +464,14 @@ export interface UniversalTSSParams {
   thresholdPace?: number;
   distance?: number;
   weight?: number;
-  activityType?: 'run' | 'bike' | 'swim' | 'other';
+  activityType?: "run" | "bike" | "swim" | "other";
 }
 
 export type UniversalTSSResult =
-  | (TSSResult & { source: 'power'; confidence: 'high' })
-  | (HRSSResult & { confidence: 'medium' })
-  | (RunningTSSResult & { confidence: 'medium' })
-  | (SwimmingTSSResult & { confidence: 'medium' });
+  | (TSSResult & { source: "power"; confidence: "high" })
+  | (HRSSResult & { confidence: "medium" })
+  | (RunningTSSResult & { confidence: "medium" })
+  | (SwimmingTSSResult & { confidence: "medium" });
 
 /**
  * Calculates TSS from whatever data is available.
@@ -494,7 +482,7 @@ export type UniversalTSSResult =
  * @returns Best TSS calculation or null if insufficient data
  */
 export function calculateTSSFromAvailableData(
-  params: UniversalTSSParams
+  params: UniversalTSSParams,
 ): UniversalTSSResult | null {
   const {
     powerStream,
@@ -515,8 +503,13 @@ export function calculateTSSFromAvailableData(
   // Try power-based TSS first (most accurate)
   if (powerStream && powerStream.length > 0 && ftp) {
     try {
-      const result = calculateTSSFromPower({ powerStream, timestamps, ftp, weight });
-      return { ...result, source: 'power', confidence: 'high' };
+      const result = calculateTSSFromPower({
+        powerStream,
+        timestamps,
+        ftp,
+        weight,
+      });
+      return { ...result, source: "power", confidence: "high" };
     } catch (error) {
       // Fall through to next method
     }
@@ -525,8 +518,14 @@ export function calculateTSSFromAvailableData(
   // Fallback to HR-based TSS
   if (hrStream && hrStream.length > 0 && lthr && maxHR) {
     try {
-      const result = calculateHRSS({ hrStream, timestamps, lthr, maxHR, restingHR });
-      return { ...result, confidence: 'medium' };
+      const result = calculateHRSS({
+        hrStream,
+        timestamps,
+        lthr,
+        maxHR,
+        restingHR,
+      });
+      return { ...result, confidence: "medium" };
     } catch (error) {
       // Fall through to next method
     }
@@ -536,14 +535,14 @@ export function calculateTSSFromAvailableData(
   if (paceStream && paceStream.length > 0 && thresholdPace && distance) {
     try {
       // Swimming
-      if (activityType === 'swim') {
+      if (activityType === "swim") {
         const result = calculateSwimmingTSS({
           paceStream,
           timestamps,
           thresholdPace,
           distance,
         });
-        return { ...result, confidence: 'medium' };
+        return { ...result, confidence: "medium" };
       }
 
       // Running
@@ -554,7 +553,7 @@ export function calculateTSSFromAvailableData(
         thresholdPace,
         distance,
       });
-      return { ...result, confidence: 'medium' };
+      return { ...result, confidence: "medium" };
     } catch (error) {
       // No method worked
     }

@@ -14,6 +14,7 @@
   },
   "scripts": {
     "lint": "eslint .",
+    "test": "vitest",
     "check-types": "tsc --noEmit",
     "watch": "concurrently \"tsc --noEmit --watch --preserveWatchOutput\" \"chokidar '**/*.{ts,tsx,js,jsx}' -c 'eslint .'\""
   },
@@ -29,6 +30,7 @@
     "@types/jest": "^29.5.0",
     "@types/mapbox__polyline": "^1.0.5",
     "concurrently": "^9.2.1",
-    "typescript": "^5.5.2"
+    "typescript": "^5.5.2",
+    "vitest": "^4.0.18"
   }
 }

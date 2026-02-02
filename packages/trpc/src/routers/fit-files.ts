@@ -12,9 +12,23 @@ import {
   extractPowerZones,
   parseFitFileWithSDK,
 } from "@repo/core";
+import {
+  calculateAerobicDecoupling,
+  calculateBestEfforts,
+  calculateDecouplingFromStreams,
+  calculateEfficiencyFactor,
+  calculateGradedSpeedStream,
+  calculateNGP,
+  calculateNormalizedPower,
+  calculateNormalizedSpeed,
+  calculateTrainingEffect,
+  detectLTHR,
+  estimateVO2Max,
+} from "@repo/core/calculations";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { fetchActivityTemperature } from "../utils/weather";
 
 const FIT_FILE_SIZE_LIMIT = 50 * 1024 * 1024; // 50MB
 const FIT_FILE_TYPES = [".fit"];
@@ -352,29 +366,17 @@ export const fitFilesRouter = createTRPCRouter({
         // ========================================================================
         // T-308: Fetch User Performance Metrics (with Cold Start Defaults)
         // ========================================================================
-        // Fetch FTP for cycling activities (1-hour power)
-        const { data: ftpMetric } = await supabase
-          .from("profile_performance_metric_logs")
-          .select("value")
-          .eq("profile_id", userId)
-          .eq("category", "bike")
-          .eq("type", "power")
-          .eq("duration_seconds", 3600) // FTP is 1-hour power
-          .lte("recorded_at", startTime.toISOString())
-          .order("recorded_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
 
-        // Cold Start: Default to 200W if no FTP found
-        const ftp = ftpMetric?.value ? Number(ftpMetric.value) : 200;
+        // REFACTOR: We no longer use profile_performance_metric_logs.
+        // Instead, we should use the new analytics router logic or just defaults for now.
+        // For TSS calculation, we need FTP and LTHR.
 
-        // Fetch LTHR (Lactate Threshold Heart Rate) for all activities
+        // Fetch LTHR from profile_metrics
         const { data: lthrMetric } = await supabase
-          .from("profile_performance_metric_logs")
+          .from("profile_metrics")
           .select("value")
           .eq("profile_id", userId)
-          .eq("type", "heart_rate")
-          .lte("recorded_at", startTime.toISOString())
+          .eq("metric_type", "lthr")
           .order("recorded_at", { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -382,30 +384,44 @@ export const fitFilesRouter = createTRPCRouter({
         // Cold Start: Default to 170bpm if no LTHR found
         const lthr = lthrMetric?.value ? Number(lthrMetric.value) : 170;
 
-        // Fetch Max HR for all activities
+        // Fetch Max HR
         const { data: maxHRMetric } = await supabase
-          .from("profile_metric_logs")
+          .from("profile_metrics")
           .select("value")
           .eq("profile_id", userId)
-          .eq("metric_type", "resting_hr_bpm")
-          .lte("recorded_at", startTime.toISOString())
+          .eq("metric_type", "max_hr")
           .order("recorded_at", { ascending: false })
           .limit(1)
           .maybeSingle();
 
-        // Note: We're using maxHeartRate from session data if available,
-        // but in the future we could use a stored max_hr metric
         // Cold Start: Default to 190bpm if no Max HR found
         const maxHR =
           maxHeartRate ||
           (maxHRMetric?.value ? Number(maxHRMetric.value) : 190);
 
-        // Log when metrics are missing for debugging (but proceed with defaults)
-        if (powerStream.length > 0 && !ftpMetric?.value) {
-          console.log(
-            `No FTP found for user ${userId} - using default 200W for TSS calculation`,
-          );
-        }
+        // For FTP, we ideally want to calculate it dynamically, but that's expensive here.
+        // For now, let's use a default or try to fetch a cached value if we had one.
+        // Since we removed the logs table, we'll default to 200W for now,
+        // or we could implement a quick lookup of the best 20m power from activity_efforts
+        // and estimate it (0.95 * 20m).
+
+        // Quick estimation of FTP from recent history (last 90 days)
+        const cutoffDate = new Date(
+          Date.now() - 90 * 24 * 60 * 60 * 1000,
+        ).toISOString();
+        const { data: best20m } = await supabase
+          .from("activity_efforts")
+          .select("value")
+          .eq("profile_id", userId)
+          .eq("activity_category", "bike")
+          .eq("effort_type", "power")
+          .eq("duration_seconds", 1200)
+          .gte("recorded_at", cutoffDate)
+          .order("value", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const ftp = best20m?.value ? Math.round(best20m.value * 0.95) : 200;
 
         // ========================================================================
         // T-308: Calculate TSS using @repo/core (Universal Method)
@@ -473,6 +489,121 @@ export const fitFilesRouter = createTRPCRouter({
         }
 
         // ========================================================================
+        // T-5.1, T-5.2: Calculate Advanced Metrics
+        // ========================================================================
+
+        // 1. Normalized Speed (All activities)
+        const normalizedSpeed = calculateNormalizedSpeed(distance, duration);
+
+        // 2. Normalized Graded Pace (Run)
+        let normalizedGradedSpeed: number | null = null;
+        if (
+          activityType === "run" &&
+          speedStream.length > 0 &&
+          altitudeStream.length > 0
+        ) {
+          const gradedSpeedStream = calculateGradedSpeedStream(
+            speedStream,
+            altitudeStream,
+            timestamps,
+          );
+          normalizedGradedSpeed = calculateNGP(gradedSpeedStream);
+        }
+
+        // 3. Efficiency Factor (EF)
+        // EF = Normalized Power / Avg HR (Bike) or Normalized Graded Speed / Avg HR (Run)
+        let efficiencyFactor: number | null = null;
+        if (avgHeartRate && avgHeartRate > 0) {
+          if (activityType === "bike" && normalizedPower) {
+            efficiencyFactor = calculateEfficiencyFactor(
+              normalizedPower,
+              avgHeartRate,
+            );
+          } else if (activityType === "run" && normalizedGradedSpeed) {
+            efficiencyFactor = calculateEfficiencyFactor(
+              normalizedGradedSpeed,
+              avgHeartRate,
+            );
+          }
+        }
+
+        // 4. Aerobic Decoupling (Pa:HR)
+        let aerobicDecoupling: number | null = null;
+        if (powerStream.length > 0 && hrStream.length > 0) {
+          aerobicDecoupling = calculateDecouplingFromStreams(
+            powerStream,
+            hrStream,
+            timestamps,
+            calculateNormalizedPower,
+          );
+        } else if (
+          activityType === "run" &&
+          speedStream.length > 0 &&
+          hrStream.length > 0
+        ) {
+          // For run, use graded speed if available, else speed
+          const runPowerStream = normalizedGradedSpeed
+            ? calculateGradedSpeedStream(
+                speedStream,
+                altitudeStream,
+                timestamps,
+              )
+            : speedStream;
+          aerobicDecoupling = calculateDecouplingFromStreams(
+            runPowerStream,
+            hrStream,
+            timestamps,
+            calculateNGP,
+          );
+        }
+
+        // 5. Training Effect
+        let trainingEffectLabel: string | null = null;
+        if (hrStream.length > 0 && lthr) {
+          trainingEffectLabel = calculateTrainingEffect(
+            hrStream,
+            timestamps,
+            lthr,
+          );
+        }
+
+        // ========================================================================
+        // T-5.3: Fetch Weather
+        // ========================================================================
+        let avgTemperature: number | null = null;
+
+        // Calculate average temperature from records if available
+        let tempSum = 0;
+        let tempCount = 0;
+        for (const record of records) {
+          if (record.temperature !== undefined) {
+            tempSum += record.temperature;
+            tempCount++;
+          }
+        }
+
+        if (tempCount > 0) {
+          avgTemperature = tempSum / tempCount;
+        }
+
+        if (avgTemperature === null) {
+          // Fetch from API if we have coordinates
+          if (coords.length > 0) {
+            const startCoord = coords[0];
+            if (startCoord) {
+              const temp = await fetchActivityTemperature(
+                startCoord.latitude,
+                startCoord.longitude,
+                startTime,
+              );
+              if (temp !== null) {
+                avgTemperature = temp;
+              }
+            }
+          }
+        }
+
+        // ========================================================================
         // T-313, T-314: Create activity record
         // ========================================================================
         const endTime = new Date(startTime.getTime() + duration * 1000);
@@ -522,6 +653,14 @@ export const fitFilesRouter = createTRPCRouter({
             summary.avgSpeed ??
             (distance && duration ? distance / duration : null),
           max_speed_mps: summary.maxSpeed ?? null,
+          normalized_speed_mps: normalizedSpeed || null,
+          normalized_graded_speed_mps: normalizedGradedSpeed || null,
+
+          // Efficiency & Training Effect
+          efficiency_factor: efficiencyFactor || null,
+          aerobic_decoupling: aerobicDecoupling || null,
+          training_effect: trainingEffectLabel as any,
+          avg_temperature: avgTemperature ? Math.round(avgTemperature) : null,
 
           // Heart rate zones (seconds in each zone)
           hr_zone_1_seconds: hrZones?.zone1 || null,
@@ -592,6 +731,115 @@ export const fitFilesRouter = createTRPCRouter({
           "[processFitFile] Activity record created successfully:",
           createdActivity.id,
         );
+
+        // ========================================================================
+        // T-5.4, T-5.5, T-5.6: Post-Processing (Best Efforts, Profile Metrics, Notifications)
+        // ========================================================================
+
+        // 1. Calculate Best Efforts
+        const effortsToInsert: any[] = [];
+
+        // Power Efforts
+        if (powerStream.length > 0) {
+          const bestPowers = calculateBestEfforts(powerStream, timestamps);
+          for (const effort of bestPowers) {
+            effortsToInsert.push({
+              activity_id: createdActivity.id,
+              profile_id: userId,
+              activity_category: activityType,
+              duration_seconds: effort.duration,
+              effort_type: "power",
+              value: effort.value,
+              unit: "watts",
+              start_offset:
+                effort.startIndex !== undefined
+                  ? Math.round(timestamps[effort.startIndex]! - timestamps[0]!)
+                  : null,
+              recorded_at: startTime.toISOString(),
+            });
+          }
+        }
+
+        // Speed/Pace Efforts (Run)
+        if (activityType === "run" && speedStream.length > 0) {
+          // Use graded speed if available for "effort"
+          const streamToUse = normalizedGradedSpeed
+            ? calculateGradedSpeedStream(
+                speedStream,
+                altitudeStream,
+                timestamps,
+              )
+            : speedStream;
+          const bestSpeeds = calculateBestEfforts(streamToUse, timestamps);
+          for (const effort of bestSpeeds) {
+            effortsToInsert.push({
+              activity_id: createdActivity.id,
+              profile_id: userId,
+              activity_category: activityType,
+              duration_seconds: effort.duration,
+              effort_type: "speed",
+              value: effort.value,
+              unit: "meters_per_second",
+              start_offset:
+                effort.startIndex !== undefined
+                  ? Math.round(timestamps[effort.startIndex]! - timestamps[0]!)
+                  : null,
+              recorded_at: startTime.toISOString(),
+            });
+          }
+        }
+
+        // Bulk insert efforts
+        if (effortsToInsert.length > 0) {
+          const { error: effortsError } = await supabase
+            .from("activity_efforts")
+            .insert(effortsToInsert);
+          if (effortsError) {
+            console.error("Failed to insert best efforts:", effortsError);
+          }
+        }
+
+        // 2. Detect LTHR
+        if (hrStream.length > 0) {
+          const detectedLTHR = detectLTHR(hrStream, timestamps);
+          if (detectedLTHR && detectedLTHR > lthr) {
+            // Update profile_metrics
+            await supabase.from("profile_metrics").insert({
+              profile_id: userId,
+              metric_type: "lthr",
+              value: detectedLTHR,
+              unit: "bpm",
+              recorded_at: startTime.toISOString(),
+            });
+
+            // Create notification
+            await supabase.from("notifications").insert({
+              profile_id: userId,
+              title: "New LTHR Detected!",
+              message: `Your LTHR has improved to ${Math.round(detectedLTHR)} bpm based on your recent activity.`,
+              is_read: false,
+            });
+          }
+        }
+
+        // 3. Estimate VO2 Max
+        const { data: restingHRMetric } = await supabase
+          .from("profile_metrics")
+          .select("value")
+          .eq("profile_id", userId)
+          .eq("metric_type", "resting_hr")
+          .order("recorded_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const restingHR = restingHRMetric?.value
+          ? Number(restingHRMetric.value)
+          : 60; // Default 60
+
+        if (maxHeartRate && restingHR) {
+          const estimatedVO2 = estimateVO2Max(maxHeartRate, restingHR);
+          // We could log this or notify
+        }
 
         return {
           success: true,

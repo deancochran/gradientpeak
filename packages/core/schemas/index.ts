@@ -81,10 +81,16 @@ export * from "./recording_config";
 export * from "./recording_ui_types";
 
 // Export performance metrics schemas
-export * from "./performance-metrics";
+// export * from "./performance-metrics";
 
 // Export profile metrics schemas
 export * from "./profile-metrics";
+
+// Export activity efforts schemas
+export * from "./activity_efforts";
+
+// Export notification schemas
+export * from "./notifications";
 
 // tRPC-specific Activity Plans Schemas - use different names to avoid conflicts with supabase exports
 // Note: estimated_duration and estimated_tss are calculated server-side and NOT part of the input

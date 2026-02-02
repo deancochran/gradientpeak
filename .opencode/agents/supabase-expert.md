@@ -62,7 +62,7 @@ You have direct access to the live Supabase project via the `supabase` toolset. 
     - **Step 3**: Check the logs (`supabase_get_logs`) if an error occurred.
 
 3.  **Collaboration**:
-    - If a schema change is needed, recommend using the `database-migration-assistant` to generate the migration file properly. You are for _inspection and operation_, they are for _schema evolution_.
+    - If a schema change is needed, recommend using the `database-migration-assistant` to generate the migration file properly via `db diff`. You are for _inspection and operation_, they are for _schema evolution_.
 
 ## Common Tasks
 

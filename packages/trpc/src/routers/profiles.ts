@@ -219,31 +219,36 @@ export const profilesRouter = createTRPCRouter({
 
   getZones: protectedProcedure.query(async ({ ctx }) => {
     try {
-      // Fetch latest threshold HR from performance metrics
-      const { data: thresholdHrMetrics } = await ctx.supabase
-        .from("profile_performance_metric_logs")
-        .select("*")
+      // Fetch latest threshold HR from profile metrics (lthr)
+      const { data: lthrMetric } = await ctx.supabase
+        .from("profile_metrics")
+        .select("value")
         .eq("profile_id", ctx.session.user.id)
-        .eq("type", "heart_rate")
-        .gte("duration_seconds", 3000) // Threshold HR is for longer durations
+        .eq("metric_type", "lthr")
         .order("recorded_at", { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      // Fetch latest FTP from performance metrics
-      const { data: ftpMetrics } = await ctx.supabase
-        .from("profile_performance_metric_logs")
-        .select("*")
+      // Fetch latest FTP from activity efforts (best 20m power * 0.95)
+      const cutoffDate = new Date(
+        Date.now() - 90 * 24 * 60 * 60 * 1000,
+      ).toISOString();
+      const { data: best20m } = await ctx.supabase
+        .from("activity_efforts")
+        .select("value")
         .eq("profile_id", ctx.session.user.id)
-        .eq("type", "power")
-        .eq("category", "bike")
-        .gte("duration_seconds", 3000) // FTP is for longer durations
-        .order("recorded_at", { ascending: false })
+        .eq("activity_category", "bike")
+        .eq("effort_type", "power")
+        .eq("duration_seconds", 1200)
+        .gte("recorded_at", cutoffDate)
+        .order("value", { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      const threshold_hr = thresholdHrMetrics?.value;
-      const ftp = ftpMetrics?.value;
+      const threshold_hr = lthrMetric?.value
+        ? Number(lthrMetric.value)
+        : undefined;
+      const ftp = best20m?.value ? Math.round(best20m.value * 0.95) : undefined;
 
       // Calculate heart rate zones based on threshold HR
       // Threshold HR is typically at the top of Zone 3 (~85-90% of max HR)

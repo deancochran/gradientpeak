@@ -37,14 +37,20 @@ export type Database = {
       activities: {
         Row: {
           activity_plan_id: string | null
+          aerobic_decoupling: number | null
           avg_cadence: number | null
           avg_heart_rate: number | null
           avg_power: number | null
           avg_speed_mps: number | null
+          avg_swolf: number | null
+          avg_temperature: number | null
           calories: number | null
           created_at: string
+          device_manufacturer: string | null
+          device_product: string | null
           distance_meters: number
           duration_seconds: number
+          efficiency_factor: number | null
           elevation_gain_meters: number | null
           elevation_loss_meters: number | null
           external_id: string | null
@@ -60,15 +66,21 @@ export type Database = {
           idx: number
           intensity_factor: number | null
           is_private: boolean
+          laps: Json | null
           location: string | null
+          map_bounds: Json | null
           max_cadence: number | null
           max_heart_rate: number | null
           max_power: number | null
           max_speed_mps: number | null
           moving_seconds: number
           name: string
+          normalized_graded_speed_mps: number | null
           normalized_power: number | null
+          normalized_speed_mps: number | null
           notes: string | null
+          polyline: string | null
+          pool_length: number | null
           power_zone_1_seconds: number | null
           power_zone_2_seconds: number | null
           power_zone_3_seconds: number | null
@@ -79,20 +91,30 @@ export type Database = {
           profile_id: string
           provider: Database["public"]["Enums"]["integration_provider"] | null
           started_at: string
+          total_strokes: number | null
+          training_effect:
+            | Database["public"]["Enums"]["training_effect_label"]
+            | null
           training_stress_score: number | null
           type: string
           updated_at: string
         }
         Insert: {
           activity_plan_id?: string | null
+          aerobic_decoupling?: number | null
           avg_cadence?: number | null
           avg_heart_rate?: number | null
           avg_power?: number | null
           avg_speed_mps?: number | null
+          avg_swolf?: number | null
+          avg_temperature?: number | null
           calories?: number | null
           created_at?: string
+          device_manufacturer?: string | null
+          device_product?: string | null
           distance_meters?: number
           duration_seconds?: number
+          efficiency_factor?: number | null
           elevation_gain_meters?: number | null
           elevation_loss_meters?: number | null
           external_id?: string | null
@@ -108,15 +130,21 @@ export type Database = {
           idx?: number
           intensity_factor?: number | null
           is_private?: boolean
+          laps?: Json | null
           location?: string | null
+          map_bounds?: Json | null
           max_cadence?: number | null
           max_heart_rate?: number | null
           max_power?: number | null
           max_speed_mps?: number | null
           moving_seconds?: number
           name: string
+          normalized_graded_speed_mps?: number | null
           normalized_power?: number | null
+          normalized_speed_mps?: number | null
           notes?: string | null
+          polyline?: string | null
+          pool_length?: number | null
           power_zone_1_seconds?: number | null
           power_zone_2_seconds?: number | null
           power_zone_3_seconds?: number | null
@@ -127,20 +155,30 @@ export type Database = {
           profile_id: string
           provider?: Database["public"]["Enums"]["integration_provider"] | null
           started_at: string
+          total_strokes?: number | null
+          training_effect?:
+            | Database["public"]["Enums"]["training_effect_label"]
+            | null
           training_stress_score?: number | null
           type: string
           updated_at?: string
         }
         Update: {
           activity_plan_id?: string | null
+          aerobic_decoupling?: number | null
           avg_cadence?: number | null
           avg_heart_rate?: number | null
           avg_power?: number | null
           avg_speed_mps?: number | null
+          avg_swolf?: number | null
+          avg_temperature?: number | null
           calories?: number | null
           created_at?: string
+          device_manufacturer?: string | null
+          device_product?: string | null
           distance_meters?: number
           duration_seconds?: number
+          efficiency_factor?: number | null
           elevation_gain_meters?: number | null
           elevation_loss_meters?: number | null
           external_id?: string | null
@@ -156,15 +194,21 @@ export type Database = {
           idx?: number
           intensity_factor?: number | null
           is_private?: boolean
+          laps?: Json | null
           location?: string | null
+          map_bounds?: Json | null
           max_cadence?: number | null
           max_heart_rate?: number | null
           max_power?: number | null
           max_speed_mps?: number | null
           moving_seconds?: number
           name?: string
+          normalized_graded_speed_mps?: number | null
           normalized_power?: number | null
+          normalized_speed_mps?: number | null
           notes?: string | null
+          polyline?: string | null
+          pool_length?: number | null
           power_zone_1_seconds?: number | null
           power_zone_2_seconds?: number | null
           power_zone_3_seconds?: number | null
@@ -175,6 +219,10 @@ export type Database = {
           profile_id?: string
           provider?: Database["public"]["Enums"]["integration_provider"] | null
           started_at?: string
+          total_strokes?: number | null
+          training_effect?:
+            | Database["public"]["Enums"]["training_effect_label"]
+            | null
           training_stress_score?: number | null
           type?: string
           updated_at?: string
@@ -189,6 +237,63 @@ export type Database = {
           },
           {
             foreignKeyName: "activities_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      activity_efforts: {
+        Row: {
+          activity_category: Database["public"]["Enums"]["activity_category"]
+          activity_id: string
+          created_at: string
+          duration_seconds: number
+          effort_type: Database["public"]["Enums"]["effort_type"]
+          id: string
+          profile_id: string
+          recorded_at: string
+          start_offset: number | null
+          unit: string
+          value: number
+        }
+        Insert: {
+          activity_category: Database["public"]["Enums"]["activity_category"]
+          activity_id: string
+          created_at?: string
+          duration_seconds: number
+          effort_type: Database["public"]["Enums"]["effort_type"]
+          id?: string
+          profile_id: string
+          recorded_at: string
+          start_offset?: number | null
+          unit: string
+          value: number
+        }
+        Update: {
+          activity_category?: Database["public"]["Enums"]["activity_category"]
+          activity_id?: string
+          created_at?: string
+          duration_seconds?: number
+          effort_type?: Database["public"]["Enums"]["effort_type"]
+          id?: string
+          profile_id?: string
+          recorded_at?: string
+          start_offset?: number | null
+          unit?: string
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_efforts_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "activity_efforts_profile_id_fkey"
             columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
@@ -374,6 +479,41 @@ export type Database = {
           },
         ]
       }
+      notifications: {
+        Row: {
+          created_at: string
+          id: string
+          is_read: boolean
+          message: string
+          profile_id: string
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          message: string
+          profile_id: string
+          title: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          message?: string
+          profile_id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       oauth_states: {
         Row: {
           created_at: string
@@ -473,7 +613,7 @@ export type Database = {
           },
         ]
       }
-      profile_metric_logs: {
+      profile_metrics: {
         Row: {
           created_at: string
           id: string
@@ -515,77 +655,14 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "profile_metric_logs_profile_id_fkey"
+            foreignKeyName: "profile_metrics_profile_id_fkey"
             columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "profile_metric_logs_reference_activity_id_fkey"
-            columns: ["reference_activity_id"]
-            isOneToOne: false
-            referencedRelation: "activities"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      profile_performance_metric_logs: {
-        Row: {
-          category: Database["public"]["Enums"]["activity_category"]
-          created_at: string
-          duration_seconds: number | null
-          id: string
-          idx: number
-          notes: string | null
-          profile_id: string
-          recorded_at: string
-          reference_activity_id: string | null
-          type: Database["public"]["Enums"]["performance_metric_type"]
-          unit: string
-          updated_at: string
-          value: number
-        }
-        Insert: {
-          category: Database["public"]["Enums"]["activity_category"]
-          created_at?: string
-          duration_seconds?: number | null
-          id?: string
-          idx?: number
-          notes?: string | null
-          profile_id: string
-          recorded_at?: string
-          reference_activity_id?: string | null
-          type: Database["public"]["Enums"]["performance_metric_type"]
-          unit: string
-          updated_at?: string
-          value: number
-        }
-        Update: {
-          category?: Database["public"]["Enums"]["activity_category"]
-          created_at?: string
-          duration_seconds?: number | null
-          id?: string
-          idx?: number
-          notes?: string | null
-          profile_id?: string
-          recorded_at?: string
-          reference_activity_id?: string | null
-          type?: Database["public"]["Enums"]["performance_metric_type"]
-          unit?: string
-          updated_at?: string
-          value?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "profile_performance_metric_logs_profile_id_fkey"
-            columns: ["profile_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "profile_performance_metric_logs_reference_activity_id_fkey"
+            foreignKeyName: "profile_metrics_reference_activity_id_fkey"
             columns: ["reference_activity_id"]
             isOneToOne: false
             referencedRelation: "activities"
@@ -743,24 +820,32 @@ export type Database = {
     Enums: {
       activity_category: "run" | "bike" | "swim" | "strength" | "other"
       activity_location: "outdoor" | "indoor"
+      effort_type: "power" | "speed"
       integration_provider:
         | "strava"
         | "wahoo"
         | "trainingpeaks"
         | "garmin"
         | "zwift"
-      performance_metric_type: "power" | "pace" | "speed" | "heart_rate"
       profile_metric_type:
         | "weight_kg"
-        | "resting_hr_bpm"
+        | "resting_hr"
         | "sleep_hours"
-        | "hrv_ms"
+        | "hrv_rmssd"
         | "vo2_max"
-        | "body_fat_pct"
+        | "body_fat_percentage"
         | "hydration_level"
         | "stress_score"
         | "soreness_level"
         | "wellness_score"
+        | "max_hr"
+        | "lthr"
+      training_effect_label:
+        | "recovery"
+        | "base"
+        | "tempo"
+        | "threshold"
+        | "vo2max"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -893,6 +978,7 @@ export const Constants = {
     Enums: {
       activity_category: ["run", "bike", "swim", "strength", "other"],
       activity_location: ["outdoor", "indoor"],
+      effort_type: ["power", "speed"],
       integration_provider: [
         "strava",
         "wahoo",
@@ -900,18 +986,26 @@ export const Constants = {
         "garmin",
         "zwift",
       ],
-      performance_metric_type: ["power", "pace", "speed", "heart_rate"],
       profile_metric_type: [
         "weight_kg",
-        "resting_hr_bpm",
+        "resting_hr",
         "sleep_hours",
-        "hrv_ms",
+        "hrv_rmssd",
         "vo2_max",
-        "body_fat_pct",
+        "body_fat_percentage",
         "hydration_level",
         "stress_score",
         "soreness_level",
         "wellness_score",
+        "max_hr",
+        "lthr",
+      ],
+      training_effect_label: [
+        "recovery",
+        "base",
+        "tempo",
+        "threshold",
+        "vo2max",
       ],
     },
   },
