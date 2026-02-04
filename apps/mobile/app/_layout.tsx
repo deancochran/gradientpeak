@@ -10,7 +10,7 @@ import { GarminFitEncoder } from "@/lib/services/fit/GarminFitEncoder";
 import { initSentry } from "@/lib/services/sentry";
 import { useTheme } from "@/lib/stores/theme-store";
 import { PortalHost } from "@rn-primitives/portal";
-import { router, Slot } from "expo-router";
+import { router, Slot, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "nativewind";
 import * as React from "react";
@@ -74,9 +74,64 @@ function AppContent() {
     verifyInstallation();
   }
 
-  const { loading: authLoading } = useAuth();
+  const {
+    loading: authLoading,
+    userStatus,
+    onboardingStatus,
+    isAuthenticated,
+    isFullyLoaded,
+  } = useAuth();
   const { theme, isLoaded: isThemeLoaded } = useTheme();
   const { colorScheme } = useColorScheme();
+  const segments = useSegments();
+
+  // Auth Guard Logic
+  React.useEffect(() => {
+    if (!isFullyLoaded) return;
+
+    const inAuthGroup = segments[0] === "(external)";
+    const inOnboardingGroup = segments[0] === "(onboarding)";
+    const isVerificationScreen = segments[0] === "verification-pending";
+    const inProtectedGroup =
+      segments[0] === "(internal)" ||
+      segments[0] === "(onboarding)" ||
+      segments[0] === "verification-pending";
+
+    console.log("🔒 Auth Guard Check:", {
+      isAuthenticated,
+      userStatus,
+      onboardingStatus,
+      segment: segments[0],
+    });
+
+    if (isAuthenticated) {
+      if (userStatus === "unverified") {
+        if (!isVerificationScreen) {
+          console.log("🔒 Redirecting to verification pending");
+          router.replace("/verification-pending");
+        }
+      } else if (onboardingStatus === false) {
+        if (!inOnboardingGroup) {
+          console.log("🔒 Redirecting to onboarding");
+          router.replace("/(onboarding)");
+        }
+      } else {
+        // Verified and Onboarded
+        // If we are in auth or onboarding or verification, go to tabs
+        if (inAuthGroup || inOnboardingGroup || isVerificationScreen) {
+          console.log("🔒 Redirecting to tabs");
+          router.replace("/(internal)/(tabs)");
+        }
+      }
+    } else {
+      // Not authenticated
+      // If trying to access protected routes, redirect to sign-in
+      if (inProtectedGroup) {
+        console.log("🔒 Redirecting to sign-in");
+        router.replace("/(external)/sign-in");
+      }
+    }
+  }, [userStatus, onboardingStatus, isAuthenticated, isFullyLoaded, segments]);
 
   if (authLoading || !isThemeLoaded) {
     return (

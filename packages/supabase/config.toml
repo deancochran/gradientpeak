@@ -222,6 +222,17 @@ content_path = "./supabase/templates/invite.html"
 subject = "Reset your password for {{ .SiteName }}"
 content_path = "./supabase/templates/recovery.html"
 
+# Uncomment to customize email template
+[auth.email.template.email_change]
+subject = "Confirm Email Change"
+content_path = "./supabase/templates/email_change.html"
+
+# Security Notifications
+[auth.email.notification.password_changed]
+enabled = true
+subject = "Your password has been changed"
+content_path = "./supabase/templates/password_changed_notification.html"
+
 [auth.sms]
 # Allow/disallow new user signups via SMS to your project.
 enable_signup = false

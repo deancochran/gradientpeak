@@ -855,3 +855,11 @@ export const publicTrainingPlansRelationshipsSchema = z.tuple([
     referencedColumns: z.tuple([z.literal("id")]),
   }),
 ]);
+
+export const publicDeleteOwnAccountArgsSchema = z.never();
+
+export const publicDeleteOwnAccountReturnsSchema = z.undefined();
+
+export const publicGetUserStatusArgsSchema = z.never();
+
+export const publicGetUserStatusReturnsSchema = z.string();

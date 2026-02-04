@@ -709,6 +709,46 @@ create index if not exists idx_notifications_is_read
     on public.notifications(is_read);
 
 -- ============================================================================
+-- RPC FUNCTIONS (AUTH & SECURITY)
+-- ============================================================================
+
+-- Function to check user status (verified vs unverified/pending email change)
+create or replace function public.get_user_status()
+returns text
+security definer
+language plpgsql
+as $$
+begin
+  -- Check if there is a pending email change
+  if exists (
+    select 1
+    from auth.users
+    where id = auth.uid()
+    and email_change is not null
+  ) then
+    return 'unverified';
+  else
+    return 'verified';
+  end if;
+end;
+$$;
+
+-- Function to allow users to delete their own account
+-- This triggers cascading deletes on all related tables
+create or replace function public.delete_own_account()
+returns void
+security definer
+language plpgsql
+as $$
+begin
+  -- Delete the user from auth.users
+  -- Postgres ON DELETE CASCADE constraints on related tables (profiles, activities, etc.)
+  -- will automatically remove all associated user data.
+  delete from auth.users where id = auth.uid();
+end;
+$$;
+
+-- ============================================================================
 -- ROW LEVEL SECURITY
 -- ============================================================================
 -- RLS is DISABLED for all tables because:

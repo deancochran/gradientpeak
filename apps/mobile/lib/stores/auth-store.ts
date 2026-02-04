@@ -8,6 +8,8 @@ export interface AuthState {
   session: Session | null;
   user: User | null;
   profile: any | null; // Profile data from tRPC (synced from useAuth hook)
+  userStatus: "verified" | "unverified" | null;
+  onboardingStatus: boolean | null;
   loading: boolean;
   ready: boolean; // Replaces hydrated && initialized
   error: Error | null;
@@ -16,6 +18,8 @@ export interface AuthState {
   setSession: (session: Session | null) => void;
   setUser: (user: User | null) => void;
   setProfile: (profile: any | null) => void;
+  setUserStatus: (status: "verified" | "unverified" | null) => void;
+  setOnboardingStatus: (status: boolean | null) => void;
   setLoading: (loading: boolean) => void;
   setReady: (ready: boolean) => void;
   setError: (error: Error | null) => void;
@@ -30,6 +34,8 @@ export const useAuthStore = create<AuthState>()(
       session: null as Session | null,
       user: null as User | null,
       profile: null as any | null,
+      userStatus: null as "verified" | "unverified" | null,
+      onboardingStatus: null as boolean | null,
       loading: true as boolean,
       ready: false as boolean,
       error: null as Error | null,
@@ -49,6 +55,8 @@ export const useAuthStore = create<AuthState>()(
 
       setUser: (user: User | null) => set({ user }),
       setProfile: (profile: any | null) => set({ profile }),
+      setUserStatus: (userStatus) => set({ userStatus }),
+      setOnboardingStatus: (onboardingStatus) => set({ onboardingStatus }),
       setLoading: (loading: boolean) => set({ loading }),
       setReady: (ready: boolean) => set({ ready }),
       setError: (error: Error | null) => set({ error }),
@@ -138,6 +146,8 @@ export const useAuthStore = create<AuthState>()(
             session: null,
             user: null,
             profile: null,
+            userStatus: null,
+            onboardingStatus: null,
             error: null,
             loading: false,
           });
@@ -150,6 +160,8 @@ export const useAuthStore = create<AuthState>()(
             session: null,
             user: null,
             profile: null,
+            userStatus: null,
+            onboardingStatus: null,
             error: null,
             loading: false,
           });
@@ -163,6 +175,8 @@ export const useAuthStore = create<AuthState>()(
         session: state.session,
         user: state.user,
         profile: state.profile,
+        userStatus: state.userStatus,
+        onboardingStatus: state.onboardingStatus,
         // Don't persist: loading, ready, error, _listenerRegistered
         // These should always start fresh on app startup
       }),

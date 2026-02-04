@@ -10,7 +10,7 @@ const BUNDLE_IDENTIFIER = "com.deancochran.gradientpeak";
 const PACKAGE_NAME = "com.deancochran.gradientpeak";
 const ICON = "./assets/images/icons/splash-icon-prod.png";
 const ADAPTIVE_ICON = "./assets/images/icons/splash-icon-prod.png";
-const SCHEME = "app-scheme";
+const SCHEME = "gradientpeak";
 
 export default ({ config }: ConfigContext): ExpoConfig => {
   const { name, bundleIdentifier, icon, adaptiveIcon, packageName, scheme } =

@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { ScrollView, View } from "react-native";
+import { Alert, ScrollView, View } from "react-native";
 
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { SettingItem, SettingsGroup } from "@/components/settings";
@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/hooks/useAuth";
@@ -17,9 +18,13 @@ import { Edit3 } from "lucide-react-native";
 
 function SettingsScreen() {
   const router = useRouter();
-  const { user, profile } = useAuth();
+  const { user, profile, deleteAccount } = useAuth();
   const { theme, setTheme } = useTheme();
   const [signoutLoading, setSignoutLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [isEmailUpdateVisible, setIsEmailUpdateVisible] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [emailUpdateLoading, setEmailUpdateLoading] = useState(false);
 
   const handleSignOut = async () => {
     setSignoutLoading(true);
@@ -29,6 +34,56 @@ function SettingsScreen() {
       console.error("Error signing out:", error);
     } finally {
       setSignoutLoading(false);
+    }
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      "Delete Account",
+      "Are you sure you want to delete your account? This action cannot be undone and all your data will be lost.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setDeleteLoading(true);
+            try {
+              await deleteAccount();
+              // Auth provider handles sign out and state clearing
+              // Router will redirect to sign-in automatically via global guard
+            } catch (error) {
+              Alert.alert(
+                "Error",
+                "Failed to delete account. Please try again.",
+              );
+              setDeleteLoading(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleUpdateEmail = async () => {
+    if (!newEmail) return;
+    setEmailUpdateLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ email: newEmail });
+      if (error) throw error;
+      Alert.alert(
+        "Verification Sent",
+        `Please check ${newEmail} to verify your new email address.`,
+      );
+      setIsEmailUpdateVisible(false);
+      setNewEmail("");
+    } catch (error) {
+      Alert.alert(
+        "Error",
+        error instanceof Error ? error.message : "Failed to update email",
+      );
+    } finally {
+      setEmailUpdateLoading(false);
     }
   };
 
@@ -261,6 +316,49 @@ function SettingsScreen() {
           value={theme === "dark"}
           onValueChange={(isChecked) => setTheme(isChecked ? "dark" : "light")}
           testID="dark-mode"
+        />
+      </SettingsGroup>
+
+      {/* Security */}
+      <SettingsGroup
+        title="Security"
+        description="Manage your login details"
+        testID="security-section"
+      >
+        <SettingItem
+          type="button"
+          label="Update Email"
+          buttonLabel={isEmailUpdateVisible ? "Cancel" : "Update"}
+          variant="outline"
+          onPress={() => setIsEmailUpdateVisible(!isEmailUpdateVisible)}
+        />
+
+        {isEmailUpdateVisible && (
+          <View className="bg-card p-4 rounded-lg border border-border mb-4">
+            <Text className="text-sm font-medium mb-2">New Email Address</Text>
+            <Input
+              value={newEmail}
+              onChangeText={setNewEmail}
+              placeholder="Enter new email"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              className="mb-3"
+            />
+            <Button onPress={handleUpdateEmail} disabled={emailUpdateLoading}>
+              <Text>
+                {emailUpdateLoading ? "Updating..." : "Send Verification"}
+              </Text>
+            </Button>
+          </View>
+        )}
+
+        <SettingItem
+          type="button"
+          label="Delete Account"
+          buttonLabel={deleteLoading ? "Deleting..." : "Delete"}
+          variant="destructive"
+          onPress={handleDeleteAccount}
+          disabled={deleteLoading}
         />
       </SettingsGroup>
 

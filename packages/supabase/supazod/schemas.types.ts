@@ -164,3 +164,15 @@ export type PublicTrainingPlansUpdate = z.infer<
 export type PublicTrainingPlansRelationships = z.infer<
   typeof generated.publicTrainingPlansRelationshipsSchema
 >;
+export type PublicDeleteOwnAccountArgs = z.infer<
+  typeof generated.publicDeleteOwnAccountArgsSchema
+>;
+export type PublicDeleteOwnAccountReturns = z.infer<
+  typeof generated.publicDeleteOwnAccountReturnsSchema
+>;
+export type PublicGetUserStatusArgs = z.infer<
+  typeof generated.publicGetUserStatusArgsSchema
+>;
+export type PublicGetUserStatusReturns = z.infer<
+  typeof generated.publicGetUserStatusReturnsSchema
+>;

@@ -815,7 +815,8 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      delete_own_account: { Args: never; Returns: undefined }
+      get_user_status: { Args: never; Returns: string }
     }
     Enums: {
       activity_category: "run" | "bike" | "swim" | "strength" | "other"
