@@ -82,11 +82,11 @@ As a user, I want to understand whether my recent and planned training keeps me 
 The model must be explicitly shaped by four input groups:
 
 1. **Training plan configuration**
-   - Goal type, target date/end date, activity category, constraints, and progression settings define the Ideal Path and expected adaptation slope.
+   - Goal type, target date/end date, activity category/ies, (advanced config) -> constraints, and progression settings define the Ideal Path and expected adaptation slope.
 2. **User training load history**
    - Completed activity load history (for example TSS/HR load proxies) drives Actual Path plus rolling fitness/fatigue state (CTL/ATL/TSB or equivalent category-specific signals).
 3. **Best effort evidence (`activity_efforts`)**
-   - Best sustained outputs by duration and category provide objective anchors for capability modeling.
+   - Best sustained outputs by duration and category provide objective anchors for capability modeling. Must leverage latest usable activity efforts by category.
 4. **User profile metrics (`profile_metrics`)**
    - Scope-limited inputs in this phase: latest usable weight and LTHR only.
 
@@ -116,6 +116,7 @@ The model must be explicitly shaped by four input groups:
   - arbitrary query dates inside the active horizon.
 - Projection outputs should include at minimum:
   - projected `CP`/`CS` at `tau`,
+  - projected TSS / ALB / etc... at `tau`
   - expected performance for goal-relevant durations/distances at `tau`,
   - uncertainty/confidence score and key drivers.
 - Projections are informational only and used to help users interpret likely outcomes from current trajectory.
@@ -129,15 +130,11 @@ The model must be explicitly shaped by four input groups:
 
 ### Freshness and Recompute Rules
 
-- Recompute triggered on:
+- Recompute dynamically triggered on:
   - new/updated/deleted activity,
   - goal/profile/config edits,
   - calendar edits or missed/completed sessions,
   - daily rollover.
-- Planning windows:
-  - **Hot (0-14 days):** full recalculation.
-  - **Warm (current block beyond hot window):** partial recalculation.
-  - **Cold (future blocks):** template projection recalculated when entering horizon.
 - Recalculation must run after any plan adjustment and regenerate all three paths for the active horizon.
 
 ---
@@ -164,10 +161,7 @@ The model must be explicitly shaped by four input groups:
 - `CapabilityPoint` (`date`, `category`, `cp_or_cs`, `fit_confidence`, `source_effort_count`).
 - `GoalProjectionPoint` (`date`, `goal_metric_projection`, `confidence`, `delta_vs_goal_target`).
 
-### Planned and Actual Activity Linkage Requirements
-
-- In MVP, `planned_activities` remains on existing schema fields; immutable schedule-intent snapshots and lifecycle context are derived from existing records plus training plan JSON configuration.
-- Lifecycle interpretation (`scheduled`, `completed`, `skipped`, `rescheduled`, `expired`) is computed in application logic and API contracts without requiring new DB columns in this phase.
+### Planned vs Actual Activity Requirements
 - Activities remain user-authoritative and are not required to link to a specific planned-activity instance.
 - Adherence attribution should be computed from time window, activity category, planned load intent, and actual load outcomes.
 
@@ -384,13 +378,5 @@ The two required inputs for MVP are goal and date. Everything else is optional w
 
 ---
 
-## 17) Open Questions
-
-- How should phenotype goals be normalized across categories (for example run pace vs bike power)?
-- What is the minimum data threshold to exit baseline mode per activity category?
-- How much week-to-week plan variance is acceptable before user trust drops?
-- What adherence weighting model should be used for Ideal-vs-Scheduled-vs-Actual comparisons?
-- What tolerance bands should apply per activity category and experience level?
-- How should timezone and week-boundary semantics be defined for cross-region travel scenarios?
 - How should confidence behave and be displayed when data is sparse or inconsistent?
 - What exact feasibility scoring rule should classify a goal as feasible, aggressive, or unsafe at setup time?
