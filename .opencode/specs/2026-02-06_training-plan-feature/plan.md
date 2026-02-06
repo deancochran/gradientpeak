@@ -11,6 +11,7 @@ It is written so a reviewer can understand exactly what will change, where, and 
 
 - No database schema changes in this phase.
 - Setup must allow required input only: `goal + target_date`.
+- Goal model must support both approachable intent goals and precise measurable goals.
 - Activity category and advanced controls are optional.
 - No recommendation engine / no auto-prescription language or behavior.
 - Safety and feasibility boundaries must be explicit and visible.
@@ -64,16 +65,33 @@ No table changes; evolve JSON shape with compatibility parser.
 export const mvpPlanConfigSchema = z.object({
   version: z.literal("mvp.v1"),
   goal: z.object({
-    type: z.enum([
-      "marathon",
-      "half_marathon",
-      "10k",
-      "5k",
-      "general_endurance",
-      "custom",
-    ]),
+    intent: z.string().min(1),
+    kind: z.enum(["event", "performance", "capability", "general"]),
     target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    target_metric: z.string().optional(),
+    metric: z
+      .discriminatedUnion("type", [
+        z.object({
+          type: z.literal("event_time"),
+          distance_m: z.number().positive(),
+          target_time_s: z.number().int().positive(),
+        }),
+        z.object({
+          type: z.literal("distance"),
+          target_distance_m: z.number().positive(),
+        }),
+        z.object({
+          type: z.literal("duration"),
+          target_duration_s: z.number().int().positive(),
+        }),
+        z.object({
+          type: z.literal("ftp"),
+          target_ftp_w: z.number().positive(),
+        }),
+        z.object({
+          type: z.literal("none"),
+        }),
+      ])
+      .default({ type: "none" }),
   }),
   defaults: z.object({
     activity_distribution: z.record(z.string(), z.number()).default({ run: 1 }),
@@ -94,16 +112,25 @@ Compatibility strategy:
 - New plans write `version: "mvp.v1"`.
 - Existing plans remain valid.
 - Router-side normalization maps legacy shapes into one internal config model.
+- For `event_time` goals, derive and persist normalized goal pace/speed in computed output (not as required DB field).
+- For `general` goals, use `metric.type = "none"` and rely on conservative baseline projection + confidence labeling.
 
 ```ts
 // packages/core/plan/normalizePlanConfig.ts (new)
 export function normalizePlanConfig(structure: unknown): NormalizedPlanConfig {
   if (isMvpV1(structure)) return fromMvpV1(structure);
+  if (isMvpV1GoalWizard(structure)) return fromMvpV1GoalWizard(structure);
   if (isLegacyPeriodized(structure)) return fromLegacyPeriodized(structure);
   if (isLegacyMaintenance(structure)) return fromLegacyMaintenance(structure);
   throw new Error("Unsupported training plan structure");
 }
 ```
+
+Approachable-to-precise goal normalization:
+
+- Accept plain-language/preset goal input from create flow (`intent`, `target_date`, optional details).
+- Parse into one canonical `goal.metric` variant for deterministic feasibility/projection calculations.
+- If parse confidence is low, default to `metric.type = "none"` and mark low-confidence assumptions in API response reasons.
 
 ## 3.2 Canonical Insight Contract (single payload)
 
@@ -237,8 +264,8 @@ Add new endpoints:
    - output: canonical `planInsightResponseSchema`
 
 2. `getFeasibilityPreview`
-   - input: minimal create payload (`goal`, `target_date`, optional advanced)
-   - output: `{ state, reasons, key_metrics }`
+   - input: minimal create payload (`goal_intent`, `target_date`, optional measurable goal fields, optional advanced)
+   - output: `{ state, reasons, key_metrics, normalized_goal }`
 
 3. `getProjectionAtDate`
    - input: `{ training_plan_id, date, activity_category }`
@@ -280,9 +307,14 @@ Primary files:
 Required UX behavior:
 
 - Step 1 (default visible):
-  - goal type,
+  - goal intent,
   - target date,
   - create button.
+- Nice-to-have follow-up: allow plan creation entry point before full onboarding completion, then enrich profile later without invalidating the plan.
+- Optional precision helper (still in Step 1, collapsed by default):
+  - race distance + target time,
+  - target FTP,
+  - distance/time target.
 - Advanced (collapsed by default):
   - activity categories,
   - availability,
@@ -293,6 +325,7 @@ Technical changes:
 - Reduce required form validation fields to goal/date only.
 - On submit:
   - call `getFeasibilityPreview` first,
+  - normalize goal input for deterministic projections,
   - show clear feasibility state,
   - allow create with warning state for `aggressive`, block with explicit confirmation pattern for `unsafe` (MVP policy to confirm exact behavior).
 
@@ -449,6 +482,7 @@ Scenarios:
 ## 10) Reviewer Sign-Off Checklist
 
 - Plan creation requires only goal + date.
+- Goal model supports race distance+time, FTP targets, distance/time goals, and general health/fitness goals.
 - Advanced config is optional and non-blocking.
 - No schema migration included.
 - Canonical insight payload includes timeline + boundary + feasibility + projection.
@@ -465,9 +499,10 @@ Scenarios:
 This feature is complete when a user can:
 
 1. Create a usable plan quickly with only goal/date.
-2. See Ideal vs Scheduled vs Actual clearly in minimal UI.
-3. Understand whether plan execution is safe, caution, or exceeded, and why.
-4. See feasibility for aggressive/unrealistic goals before committing.
-5. See confidence-labeled capability/projection insights.
+2. Use either general intent goals or precise measurable goals without changing the core flow.
+3. See Ideal vs Scheduled vs Actual clearly in minimal UI.
+4. Understand whether plan execution is safe, caution, or exceeded, and why.
+5. See feasibility for aggressive/unrealistic goals before committing.
+6. See confidence-labeled capability/projection insights.
 
 All of the above must ship without database schema changes.
