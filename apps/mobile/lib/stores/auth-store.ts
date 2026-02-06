@@ -47,9 +47,20 @@ export const useAuthStore = create<AuthState>()(
           hasUser: !!session?.user,
           email: session?.user?.email,
         });
-        set({
-          session,
-          user: session?.user || null,
+        set((state) => {
+          const nextUser = session?.user || null;
+          const previousUserId = state.user?.id || null;
+          const nextUserId = nextUser?.id || null;
+          const isUserSwitch = previousUserId !== nextUserId;
+
+          return {
+            session,
+            user: nextUser,
+            // Prevent stale profile/onboarding data from previous account
+            profile: isUserSwitch ? null : state.profile,
+            userStatus: isUserSwitch ? null : state.userStatus,
+            onboardingStatus: isUserSwitch ? null : state.onboardingStatus,
+          };
         });
       },
 
@@ -85,6 +96,30 @@ export const useAuthStore = create<AuthState>()(
           });
 
           if (error) {
+            // Check for invalid refresh token error
+            // Supabase returns this when the refresh token is expired or invalid
+            const isRefreshTokenError =
+              error.message &&
+              (error.message.includes("Invalid Refresh Token") ||
+                error.message.includes("refresh_token_not_found"));
+
+            if (isRefreshTokenError) {
+              console.warn(
+                "⚠️ Invalid refresh token, clearing session to force re-login",
+              );
+              // Clear session and return ready state without error
+              set({
+                session: null,
+                user: null,
+                loading: false,
+                ready: true,
+                error: null,
+              });
+              // Also make sure to sign out from supabase to clean up
+              await supabase.auth.signOut().catch(() => {});
+              return;
+            }
+
             console.error("❌ Auth Store init error:", error);
             // Still mark as ready even on error so the app doesn't hang
             set({
@@ -98,7 +133,7 @@ export const useAuthStore = create<AuthState>()(
           }
 
           console.log("🔄 Setting session", { hasSession: !!session });
-          set({ session, user: session?.user || null });
+          get().setSession(session);
 
           // Set up auth listener once per store instance
           if (!currentState._listenerRegistered) {

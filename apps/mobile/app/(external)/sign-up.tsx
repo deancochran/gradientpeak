@@ -92,7 +92,10 @@ export default function SignUpScreen() {
       } else {
         // Successfully signed up - show verification message
         console.log("Successfully signed up:", data.email);
-        router.push("/(external)/verify");
+        router.push({
+          pathname: "/(external)/verify",
+          params: { email: data.email },
+        });
       }
     } catch (err) {
       console.log("Unexpected sign up error:", err);

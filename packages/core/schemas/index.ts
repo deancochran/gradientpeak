@@ -92,6 +92,9 @@ export * from "./activity_efforts";
 // Export notification schemas
 export * from "./notifications";
 
+// Export onboarding schemas
+export * from "./onboarding";
+
 // tRPC-specific Activity Plans Schemas - use different names to avoid conflicts with supabase exports
 // Note: estimated_duration and estimated_tss are calculated server-side and NOT part of the input
 export const activityPlanCreateSchema = z.object({

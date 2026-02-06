@@ -1,13 +1,12 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
-
-import { supabase } from "@/lib/supabase/client";
-
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useRouter } from "expo-router";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
+import { supabase } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -20,74 +19,118 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
-import { useAuth } from "@/lib/hooks/useAuth";
 
-const resendSchema = z.object({
-  email: z.string().email("Invalid email address"),
+const verifySchema = z.object({
+  token: z
+    .string()
+    .length(6, "Code must be 6 digits")
+    .regex(/^\d+$/, "Must be numbers only"),
 });
 
-type ResendFields = z.infer<typeof resendSchema>;
+type VerifyFields = z.infer<typeof verifySchema>;
 
 export default function VerifyScreen() {
   const router = useRouter();
-  const { user } = useAuth();
-  const [showResendForm, setShowResendForm] = React.useState(false);
-  const [isResending, setIsResending] = React.useState(false);
+  const { email } = useLocalSearchParams<{ email: string }>();
+  const { isEmailVerified } = useAuth();
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isResending, setIsResending] = useState(false);
+  const [resendMessage, setResendMessage] = useState<string | null>(null);
 
-  const form = useForm<ResendFields>({
-    resolver: zodResolver(resendSchema),
+  const form = useForm<VerifyFields>({
+    resolver: zodResolver(verifySchema),
+    defaultValues: {
+      token: "",
+    },
   });
 
-  React.useEffect(() => {
-    // Check if user becomes verified and redirect
-    if (user && user.email_confirmed_at) {
-      router.replace("/(internal)/(tabs)");
+  // Auto-redirect when email becomes verified (via OTP or external link)
+  useEffect(() => {
+    if (isEmailVerified) {
+      console.log("✅ Email verified, redirecting to app...");
+      router.replace("/");
     }
-  }, [user, router]);
+  }, [isEmailVerified, router]);
 
-  const onResendVerification = async ({ email }: ResendFields) => {
-    setIsResending(true);
+  // Auto-Polling for external verification (e.g. desktop link click)
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user && user.email_confirmed_at) {
+        console.log(
+          "✅ Email verified via external link, refreshing session...",
+        );
+        // Refresh session to update the auth store
+        // This will trigger the useEffect above via isEmailVerified
+        await supabase.auth.refreshSession();
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const onVerify = async (data: VerifyFields) => {
+    if (!email) {
+      form.setError("root", {
+        message: "Email not found. Please try signing up again.",
+      });
+      return;
+    }
+
+    setIsVerifying(true);
     try {
-      const { error } = await supabase.auth.resend({
-        type: "signup",
-        email: email,
+      const { error } = await supabase.auth.verifyOtp({
+        email,
+        token: data.token,
+        type: "email",
       });
 
       if (error) {
-        console.log("Resend verification error:", error);
-        form.setError("email", {
-          message: error.message || "Failed to resend verification email",
-        });
+        console.log("Verify error:", error);
+        form.setError("root", { message: error.message });
       } else {
-        // Success - show confirmation
-        setShowResendForm(false);
-        form.setError("root", {
-          message: "Verification email sent! Please check your inbox.",
-        });
+        console.log("✅ Email verified via OTP");
+        // verifyOtp automatically updates the session with email_confirmed_at
+        // The useEffect above will handle the redirect
       }
     } catch (err) {
-      console.log("Unexpected resend verification error:", err);
-      form.setError("email", {
-        message: "Failed to resend verification email",
-      });
+      console.log("Unexpected verify error:", err);
+      form.setError("root", { message: "An unexpected error occurred" });
     } finally {
-      setIsResending(false);
+      setIsVerifying(false);
     }
   };
 
-  const handleContinuePress = () => {
-    router.replace("/(external)/sign-in");
-  };
+  const onResend = async () => {
+    if (!email) return;
 
-  const handleResendPress = () => {
-    setShowResendForm(!showResendForm);
+    setIsResending(true);
+    setResendMessage(null);
+    try {
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email,
+      });
+
+      if (error) {
+        setResendMessage(error.message || "Failed to resend code");
+      } else {
+        setResendMessage("Verification code sent!");
+      }
+    } catch (err) {
+      setResendMessage("Failed to resend code");
+    } finally {
+      setIsResending(false);
+    }
   };
 
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       className="flex-1 bg-background"
-      testID="verify-screen"
     >
       <ScrollView
         contentContainerClassName="flex-grow justify-center p-6"
@@ -98,104 +141,78 @@ export default function VerifyScreen() {
           <CardHeader className="items-center pb-6">
             <CardTitle>
               <Text variant="h2" className="text-center">
-                Check your email
+                Verify Email
               </Text>
             </CardTitle>
             <Text variant="muted" className="text-center">
-              We sent a verification link to {user?.email || "your email"}.
-              Click the link to verify your account and continue.
+              Enter the 6-digit code sent to {email || "your email"}
             </Text>
           </CardHeader>
 
           <CardContent className="gap-6">
-            {/* Status Message */}
-            {form.formState.errors.root && (
-              <View
-                className={`p-3 rounded-md border ${
-                  form.formState.errors.root?.message?.includes("sent")
-                    ? "bg-success/15 border-success/25"
-                    : "bg-destructive/15 border-destructive/25"
-                }`}
-                testID="status-message"
+            <Form {...form}>
+              <View className="gap-4">
+                <FormField
+                  control={form.control}
+                  name="token"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Verification Code</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="123456"
+                          value={field.value}
+                          onChangeText={field.onChange}
+                          keyboardType="number-pad"
+                          maxLength={6}
+                          className="text-center text-lg tracking-widest"
+                          autoFocus
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {form.formState.errors.root && (
+                  <View className="bg-destructive/15 p-3 rounded-md border border-destructive/25">
+                    <Text className="text-destructive text-center text-sm">
+                      {form.formState.errors.root.message}
+                    </Text>
+                  </View>
+                )}
+
+                <Button
+                  onPress={form.handleSubmit(onVerify)}
+                  disabled={isVerifying}
+                  className="w-full"
+                  size="lg"
+                >
+                  <Text>{isVerifying ? "Verifying..." : "Verify"}</Text>
+                </Button>
+              </View>
+            </Form>
+
+            <View className="gap-2 pt-2">
+              <Button
+                variant="ghost"
+                onPress={onResend}
+                disabled={isResending}
+                className="w-full"
               >
+                <Text>{isResending ? "Sending..." : "Resend Code"}</Text>
+              </Button>
+              {resendMessage && (
                 <Text
-                  variant="small"
-                  className={`text-center ${
-                    form.formState.errors.root?.message?.includes("sent")
+                  className={`text-center text-xs ${
+                    resendMessage.includes("sent")
                       ? "text-success"
                       : "text-destructive"
                   }`}
-                  testID="status-text"
                 >
-                  {form.formState.errors.root?.message}
+                  {resendMessage}
                 </Text>
-              </View>
-            )}
-
-            {/* Resend Form */}
-            {showResendForm && (
-              <Form {...form}>
-                <View className="gap-4" testID="resend-form">
-                  <FormField
-                    control={form.control}
-                    name="email"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Email</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="Enter your email address"
-                            value={field.value}
-                            onChangeText={field.onChange}
-                            autoCapitalize="none"
-                            keyboardType="email-address"
-                            autoComplete="email"
-                            testID="email-input"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <Button
-                    variant="outline"
-                    size="lg"
-                    onPress={form.handleSubmit(onResendVerification)}
-                    disabled={isResending}
-                    testID="resend-button"
-                    className="w-full"
-                  >
-                    <Text>
-                      {isResending ? "Sending..." : "Send verification email"}
-                    </Text>
-                  </Button>
-                </View>
-              </Form>
-            )}
-
-            {/* Action Buttons */}
-            <View className="gap-4">
-              <Button
-                variant="default"
-                size="lg"
-                onPress={handleContinuePress}
-                testID="continue-button"
-                className="w-full"
-              >
-                <Text>Continue to Sign In</Text>
-              </Button>
-
-              <Button
-                variant="link"
-                onPress={handleResendPress}
-                testID="resend-link"
-                className="w-full"
-              >
-                <Text className="text-muted-foreground">
-                  {showResendForm ? "Cancel" : "Didn't receive an email?"}
-                </Text>
-              </Button>
+              )}
             </View>
           </CardContent>
         </Card>

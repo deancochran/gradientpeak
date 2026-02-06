@@ -10,7 +10,7 @@ import { GarminFitEncoder } from "@/lib/services/fit/GarminFitEncoder";
 import { initSentry } from "@/lib/services/sentry";
 import { useTheme } from "@/lib/stores/theme-store";
 import { PortalHost } from "@rn-primitives/portal";
-import { router, Slot, useSegments } from "expo-router";
+import { Redirect, router, Slot, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "nativewind";
 import * as React from "react";
@@ -74,71 +74,96 @@ function AppContent() {
     verifyInstallation();
   }
 
-  const {
-    loading: authLoading,
-    userStatus,
-    onboardingStatus,
-    isAuthenticated,
-    isFullyLoaded,
-  } = useAuth();
+  const { userStatus, onboardingStatus, isAuthenticated, isFullyLoaded, user } =
+    useAuth();
   const { theme, isLoaded: isThemeLoaded } = useTheme();
   const { colorScheme } = useColorScheme();
   const segments = useSegments();
 
-  // Auth Guard Logic
-  React.useEffect(() => {
-    if (!isFullyLoaded) return;
+  const inInternalGroup = segments[0] === "(internal)";
+  const inExternalGroup = segments[0] === "(external)";
+  const isOnboardingScreen =
+    segments[0] === "(internal)" &&
+    segments[1] === "(standard)" &&
+    segments[2] === "onboarding";
+  const isVerificationScreen =
+    segments[0] === "(external)" && segments[1] === "verify";
+  const isAuthCallbackScreen =
+    segments[0] === "(external)" && segments[1] === "callback";
 
-    const inAuthGroup = segments[0] === "(external)";
-    const inOnboardingGroup = segments[0] === "(onboarding)";
-    const isVerificationScreen = segments[0] === "verification-pending";
-    const inProtectedGroup =
-      segments[0] === "(internal)" ||
-      segments[0] === "(onboarding)" ||
-      segments[0] === "verification-pending";
-
-    console.log("🔒 Auth Guard Check:", {
-      isAuthenticated,
-      userStatus,
-      onboardingStatus,
-      segment: segments[0],
-    });
-
-    if (isAuthenticated) {
-      if (userStatus === "unverified") {
-        if (!isVerificationScreen) {
-          console.log("🔒 Redirecting to verification pending");
-          router.replace("/verification-pending");
-        }
-      } else if (onboardingStatus === false) {
-        if (!inOnboardingGroup) {
-          console.log("🔒 Redirecting to onboarding");
-          router.replace("/(onboarding)");
-        }
-      } else {
-        // Verified and Onboarded
-        // If we are in auth or onboarding or verification, go to tabs
-        if (inAuthGroup || inOnboardingGroup || isVerificationScreen) {
-          console.log("🔒 Redirecting to tabs");
-          router.replace("/(internal)/(tabs)");
-        }
-      }
-    } else {
-      // Not authenticated
-      // If trying to access protected routes, redirect to sign-in
-      if (inProtectedGroup) {
-        console.log("🔒 Redirecting to sign-in");
-        router.replace("/(external)/sign-in");
-      }
+  const guardDecision = React.useMemo(() => {
+    if (!isFullyLoaded || !isThemeLoaded) {
+      return { type: "loading" as const };
     }
-  }, [userStatus, onboardingStatus, isAuthenticated, isFullyLoaded, segments]);
 
-  if (authLoading || !isThemeLoaded) {
+    // Not signed in: only external routes are allowed.
+    if (!isAuthenticated) {
+      return inExternalGroup
+        ? { type: "allow" as const }
+        : { type: "redirect" as const, to: "/(external)/sign-in" as const };
+    }
+
+    // Signed in but not verified: only verify/callback allowed.
+    if (userStatus !== "verified") {
+      if (isVerificationScreen || isAuthCallbackScreen) {
+        return { type: "allow" as const };
+      }
+
+      return {
+        type: "redirect" as const,
+        to: "/(external)/verify" as const,
+        params: { email: user?.email || "" },
+      };
+    }
+
+    // Verified but not onboarded: onboarding is mandatory before internal app.
+    if (onboardingStatus !== true) {
+      return isOnboardingScreen
+        ? { type: "allow" as const }
+        : {
+            type: "redirect" as const,
+            to: "/(internal)/(standard)/onboarding" as const,
+          };
+    }
+
+    // Fully eligible users should stay in internal app shell.
+    if (!inInternalGroup || isOnboardingScreen) {
+      return { type: "redirect" as const, to: "/(internal)/(tabs)" as const };
+    }
+
+    return { type: "allow" as const };
+  }, [
+    inExternalGroup,
+    inInternalGroup,
+    isAuthCallbackScreen,
+    isAuthenticated,
+    isFullyLoaded,
+    isOnboardingScreen,
+    isThemeLoaded,
+    isVerificationScreen,
+    onboardingStatus,
+    user,
+    userStatus,
+  ]);
+
+  if (guardDecision.type === "loading") {
     return (
       <View className="flex-1 items-center justify-center bg-background">
         <ActivityIndicator size="large" className="text-foreground" />
       </View>
     );
+  }
+
+  if (guardDecision.type === "redirect") {
+    if (guardDecision.to === "/(external)/verify") {
+      return (
+        <Redirect
+          href={{ pathname: guardDecision.to, params: guardDecision.params }}
+        />
+      );
+    }
+
+    return <Redirect href={guardDecision.to} />;
   }
 
   // Use NativeWind's colorScheme

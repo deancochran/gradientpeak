@@ -247,7 +247,7 @@ export type Database = {
       activity_efforts: {
         Row: {
           activity_category: Database["public"]["Enums"]["activity_category"]
-          activity_id: string
+          activity_id: string | null
           created_at: string
           duration_seconds: number
           effort_type: Database["public"]["Enums"]["effort_type"]
@@ -260,7 +260,7 @@ export type Database = {
         }
         Insert: {
           activity_category: Database["public"]["Enums"]["activity_category"]
-          activity_id: string
+          activity_id?: string | null
           created_at?: string
           duration_seconds: number
           effort_type: Database["public"]["Enums"]["effort_type"]
@@ -273,7 +273,7 @@ export type Database = {
         }
         Update: {
           activity_category?: Database["public"]["Enums"]["activity_category"]
-          activity_id?: string
+          activity_id?: string | null
           created_at?: string
           duration_seconds?: number
           effort_type?: Database["public"]["Enums"]["effort_type"]
@@ -676,6 +676,7 @@ export type Database = {
           bio: string | null
           created_at: string
           dob: string | null
+          gender: Database["public"]["Enums"]["gender"] | null
           id: string
           idx: number
           language: string | null
@@ -689,6 +690,7 @@ export type Database = {
           bio?: string | null
           created_at?: string
           dob?: string | null
+          gender?: Database["public"]["Enums"]["gender"] | null
           id: string
           idx?: number
           language?: string | null
@@ -702,6 +704,7 @@ export type Database = {
           bio?: string | null
           created_at?: string
           dob?: string | null
+          gender?: Database["public"]["Enums"]["gender"] | null
           id?: string
           idx?: number
           language?: string | null
@@ -822,6 +825,7 @@ export type Database = {
       activity_category: "run" | "bike" | "swim" | "strength" | "other"
       activity_location: "outdoor" | "indoor"
       effort_type: "power" | "speed"
+      gender: "male" | "female" | "other"
       integration_provider:
         | "strava"
         | "wahoo"
@@ -980,6 +984,7 @@ export const Constants = {
       activity_category: ["run", "bike", "swim", "strength", "other"],
       activity_location: ["outdoor", "indoor"],
       effort_type: ["power", "speed"],
+      gender: ["male", "female", "other"],
       integration_provider: [
         "strava",
         "wahoo",

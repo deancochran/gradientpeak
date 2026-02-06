@@ -1,8 +1,7 @@
 // auth-hooks.ts - Separate file for auth hooks that use tRPC
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { supabase } from "@/lib/supabase/client";
-import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { trpc } from "../trpc";
 
 /**
@@ -14,112 +13,131 @@ import { trpc } from "../trpc";
 
 export const useAuth = () => {
   const store = useAuthStore();
-  const { session, user } = store;
+  const utils = trpc.useUtils();
+  const { session, user, ready, loading } = store;
 
   const isAuthenticated = useMemo(() => !!session?.user, [session]);
 
+  // Compute verification status directly from user object
+  // This is more reliable than the RPC for initial email verification
+  const isEmailVerified = useMemo(() => {
+    if (!user) return false;
+    return !!user.email_confirmed_at;
+  }, [user]);
+
+  // Source of truth for verification is Supabase's email_confirmed_at.
+  const userStatus = useMemo(() => {
+    if (!isAuthenticated) return null;
+    return isEmailVerified ? ("verified" as const) : ("unverified" as const);
+  }, [isAuthenticated, isEmailVerified]);
+
+  // FIX: Use store methods directly in useEffect, don't include them in deps
   useEffect(() => {
-    if (!store.ready && !store.loading) {
+    if (!ready && !loading) {
       store.initialize();
     }
-  }, [store.ready, store.loading, store.initialize]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, loading]); // Only depend on primitive values
 
   // Use tRPC query for profile data - this gives you caching, refetching, etc.
   const profileQuery = trpc.profiles.get.useQuery(
     undefined, // or whatever parameters your profile query needs
     {
-      enabled: store.ready && !!user && isAuthenticated, // Only fetch if auth store is ready and user is authenticated
+      enabled: ready && !!user && isAuthenticated, // Only fetch if auth store is ready and user is authenticated
       staleTime: 5 * 60 * 1000, // Consider data stale after 5 minutes
       retry: 3,
     },
   );
 
-  // Sync profile from tRPC to store to maintain single source of truth
+  // FIX: Sync profile from tRPC to store - use ref to track if we've already synced this data
+  const lastSyncedProfileId = useRef<string | null>(null);
+  const lastSyncedOnboarded = useRef<boolean | null>(null);
+
   useEffect(() => {
     if (profileQuery.data) {
-      store.setProfile(profileQuery.data);
-      // Sync onboarding status from profile
-      store.setOnboardingStatus(profileQuery.data.onboarded);
+      // Only update if data actually changed
+      const profileId = profileQuery.data.id;
+      const onboarded = profileQuery.data.onboarded;
+
+      if (
+        lastSyncedProfileId.current !== profileId ||
+        lastSyncedOnboarded.current !== onboarded
+      ) {
+        // Prevent stale query data from overwriting optimistic 'true' status
+        if (store.onboardingStatus === true && onboarded === false) {
+          console.log(
+            "🛡️ Preventing stale profile query from overwriting optimistic onboarding status",
+          );
+        } else {
+          store.setProfile(profileQuery.data);
+          store.setOnboardingStatus(onboarded);
+          lastSyncedProfileId.current = profileId;
+          lastSyncedOnboarded.current = onboarded;
+        }
+      }
     } else if (profileQuery.isError || !isAuthenticated) {
       // Clear profile if query fails or user logs out
-      store.setProfile(null);
-      store.setOnboardingStatus(null);
+      if (lastSyncedProfileId.current !== null) {
+        store.setProfile(null);
+        store.setOnboardingStatus(null);
+        lastSyncedProfileId.current = null;
+        lastSyncedOnboarded.current = null;
+      }
     }
-  }, [
-    profileQuery.data,
-    profileQuery.isError,
-    isAuthenticated,
-    store.setProfile,
-    store.setOnboardingStatus,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileQuery.data, profileQuery.isError, isAuthenticated]); // Don't include store methods
 
-  // Check user status (verified/unverified)
-  const checkUserStatus = useCallback(async () => {
-    if (!user) return;
-    try {
-      const { data, error } = await supabase.rpc("get_user_status");
-      if (error) throw error;
-      store.setUserStatus(data as "verified" | "unverified");
-    } catch (e) {
-      console.error("Error checking user status:", e);
-    }
-  }, [user, store]);
-
-  // Delete account
+  // FIX: Delete account - stable callback
   const deleteAccount = useCallback(async () => {
     try {
       const { error } = await supabase.rpc("delete_own_account");
       if (error) throw error;
-      await store.clearSession();
+      await useAuthStore.getState().clearSession();
     } catch (e) {
       console.error("Error deleting account:", e);
       throw e;
     }
-  }, [store]);
+  }, []); // No dependencies needed
 
-  // Complete onboarding
+  // FIX: Complete onboarding - stable callback
   const completeOnboarding = useCallback(async () => {
     if (!user) return;
     try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({ onboarded: true })
-        .eq("id", user.id);
+      // Note: The DB update is now handled by the completeOnboarding TRPC mutation.
+      // This function simply updates the local store to reflect the change immediately
+      // and prevent navigation loops while the profile query re-fetches.
+      const currentStore = useAuthStore.getState();
+      currentStore.setOnboardingStatus(true);
 
-      if (error) throw error;
-
-      store.setOnboardingStatus(true);
       // Also update the profile in store if it exists
-      if (store.profile) {
-        store.setProfile({ ...store.profile, onboarded: true });
+      if (currentStore.profile) {
+        currentStore.setProfile({ ...currentStore.profile, onboarded: true });
       }
+
+      // Invalidate profile query to fetch fresh data.
+      // We intentionally don't await this to keep the UI responsive.
+      void utils.profiles.get.invalidate();
     } catch (e) {
       console.error("Error completing onboarding:", e);
       throw e;
     }
-  }, [user, store]);
-
-  // Check status on mount/auth
-  useEffect(() => {
-    if (isAuthenticated) {
-      checkUserStatus();
-    }
-  }, [isAuthenticated, checkUserStatus]);
+  }, [user, utils]);
 
   return {
     // Auth state from Zustand (single source of truth)
     user,
     session,
     profile: store.profile, // Now from store (synced from tRPC)
-    userStatus: store.userStatus,
+    // Use computed email verification status for more reliable routing
+    userStatus,
     onboardingStatus: store.onboardingStatus,
     loading: store.loading,
     ready: store.ready,
     error: store.error,
     isAuthenticated,
+    isEmailVerified,
 
     // Actions
-    checkUserStatus,
     deleteAccount,
     completeOnboarding,
 
@@ -131,49 +149,4 @@ export const useAuth = () => {
     // Combined loading state
     isFullyLoaded: store.ready && !store.loading && !profileQuery.isLoading,
   };
-};
-
-/**
- * Hook that enforces authentication and redirects to login if not authenticated
- * Use this in protected routes
- */
-export const useRequireAuth = (redirectTo = "/(external)/sign-in" as const) => {
-  const auth = useAuth();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!auth.loading && !auth.isAuthenticated) {
-      router.replace(redirectTo);
-    }
-  }, [auth.loading, auth.isAuthenticated, router, redirectTo]);
-
-  return auth;
-};
-
-/**
- * Hook that redirects authenticated users away from public pages
- * Use this in public routes like login/signup
- */
-export const useRedirectIfAuthenticated = (
-  redirectTo = "/(internal)/(tabs)" as const,
-) => {
-  const auth = useAuth();
-  const router = useRouter();
-
-  useEffect(() => {
-    console.log("🔄 useRedirectIfAuthenticated:", {
-      loading: auth.loading,
-      isAuthenticated: auth.isAuthenticated,
-      ready: auth.ready,
-      hasSession: !!auth.session,
-      hasUser: !!auth.user,
-    });
-
-    if (auth.ready && !auth.loading && auth.isAuthenticated) {
-      console.log("✅ Redirecting to:", redirectTo);
-      router.replace(redirectTo);
-    }
-  }, [auth.ready, auth.loading, auth.isAuthenticated, router, redirectTo]);
-
-  return auth;
 };

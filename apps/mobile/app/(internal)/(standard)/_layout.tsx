@@ -226,6 +226,14 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
+        name="onboarding"
+        options={{
+          title: "Onboarding",
+          headerShown: false, // Custom wizard UI
+          gestureEnabled: false, // Prevent going back
+        }}
+      />
+      <Stack.Screen
         name="notifications"
         options={{
           title: "Notifications",

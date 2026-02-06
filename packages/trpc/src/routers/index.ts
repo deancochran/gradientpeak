@@ -6,6 +6,7 @@ import { authRouter } from "./auth";
 import { fitFilesRouter } from "./fit-files";
 import { homeRouter } from "./home";
 import { integrationsRouter } from "./integrations";
+import { onboardingRouter } from "./onboarding";
 import { plannedActivitiesRouter } from "./planned_activities";
 import { profilesRouter } from "./profiles";
 
@@ -22,6 +23,7 @@ export const appRouter = createTRPCRouter({
   profiles: profilesRouter,
   analytics: analyticsRouter,
 
+  onboarding: onboardingRouter,
   profileMetrics: profileMetricsRouter,
   activities: activitiesRouter,
   activityPlans: activityPlansRouter,

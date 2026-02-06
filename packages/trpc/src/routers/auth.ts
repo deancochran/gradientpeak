@@ -24,7 +24,18 @@ const sendPasswordResetEmailSchema = z.object({
 });
 
 const updatePasswordSchema = z.object({
+  currentPassword: z.string().min(6),
   newPassword: z.string().min(6),
+});
+
+const updateEmailSchema = z.object({
+  newEmail: z.string().email(),
+  password: z.string().min(6), // Require password for re-authentication
+});
+
+const resendVerificationEmailSchema = z.object({
+  email: z.string().email(),
+  redirectTo: z.string().url().optional(),
 });
 
 const verifyOtpSchema = z.object({
@@ -175,6 +186,21 @@ export const authRouter = createTRPCRouter({
     .input(updatePasswordSchema)
     .mutation(async ({ ctx, input }) => {
       try {
+        // Verify current password by re-authenticating
+        const { error: signInError } =
+          await ctx.supabase.auth.signInWithPassword({
+            email: ctx.session.user.email!,
+            password: input.currentPassword,
+          });
+
+        if (signInError) {
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Current password is incorrect",
+          });
+        }
+
+        // Update to new password
         const { error } = await ctx.supabase.auth.updateUser({
           password: input.newPassword,
         });
@@ -194,6 +220,82 @@ export const authRouter = createTRPCRouter({
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to update password",
+        });
+      }
+    }),
+
+  updateEmail: protectedProcedure
+    .input(updateEmailSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        // Verify password by re-authenticating
+        const { error: signInError } =
+          await ctx.supabase.auth.signInWithPassword({
+            email: ctx.session.user.email!,
+            password: input.password,
+          });
+
+        if (signInError) {
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Password is incorrect",
+          });
+        }
+
+        // Update email - Supabase will send verification emails to both old and new
+        const { error } = await ctx.supabase.auth.updateUser({
+          email: input.newEmail,
+        });
+
+        if (error) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: error.message,
+          });
+        }
+
+        return {
+          success: true,
+          message: `Verification emails sent to both ${ctx.session.user.email} and ${input.newEmail}. Please verify both to complete the email change.`,
+        };
+      } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to update email",
+        });
+      }
+    }),
+
+  resendVerificationEmail: publicProcedure
+    .input(resendVerificationEmailSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const { error } = await ctx.supabase.auth.resend({
+          type: "signup",
+          email: input.email,
+          options: {
+            emailRedirectTo: input.redirectTo,
+          },
+        });
+
+        if (error) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: error.message,
+          });
+        }
+
+        return { success: true };
+      } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to resend verification email",
         });
       }
     }),
@@ -228,29 +330,29 @@ export const authRouter = createTRPCRouter({
 
   deleteAccount: protectedProcedure.mutation(async ({ ctx }) => {
     try {
-      // First delete the user profile (will cascade to related data)
-      const { error: profileError } = await ctx.supabase
-        .from("profiles")
-        .delete()
-        .eq("id", ctx.session.user.id);
-
-      if (profileError) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to delete profile data",
-        });
-      }
-
-      // Then delete the auth user
-      const { error: authError } = await ctx.supabase.auth.admin.deleteUser(
+      // Use the Admin API to delete the user directly
+      // This is required because the RPC 'delete_own_account' relies on auth.uid()
+      // which is not set when using the Service Role client in tRPC context
+      const { error: deleteError } = await ctx.supabase.auth.admin.deleteUser(
         ctx.session.user.id,
       );
 
-      if (authError) {
+      if (deleteError) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to delete user account",
+          message: "Failed to delete account: " + deleteError.message,
         });
+      }
+
+      // Sign out the user
+      const { error: signOutError } = await ctx.supabase.auth.signOut();
+
+      if (signOutError) {
+        // Log but don't fail - account is already deleted
+        console.error(
+          "Error signing out after account deletion:",
+          signOutError,
+        );
       }
 
       return { success: true };

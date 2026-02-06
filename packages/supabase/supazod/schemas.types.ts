@@ -13,6 +13,7 @@ export type PublicActivityLocation = z.infer<
   typeof generated.publicActivityLocationSchema
 >;
 export type PublicEffortType = z.infer<typeof generated.publicEffortTypeSchema>;
+export type PublicGender = z.infer<typeof generated.publicGenderSchema>;
 export type PublicIntegrationProvider = z.infer<
   typeof generated.publicIntegrationProviderSchema
 >;

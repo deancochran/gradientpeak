@@ -17,6 +17,11 @@ create type public.activity_category as enum (
     'other'
 );
 
+create type public.gender as enum (
+    'male',
+    'female',
+    'other'
+);
 
 
 create type public.integration_provider as enum (
@@ -58,6 +63,7 @@ create table public.profiles (
     id uuid primary key references auth.users(id) on delete cascade,
     idx serial unique,
     dob date,
+    gender gender,
     username text unique,
     language text default 'en',
     preferred_units text default 'metric',
@@ -576,9 +582,10 @@ create type public.effort_type as enum (
 
 create table public.activity_efforts (
     id uuid primary key default uuid_generate_v4(),
-    activity_id uuid not null references public.activities(id) on delete cascade,
+    activity_id uuid null references public.activities(id) on delete cascade, -- nullable for manual entries
     profile_id uuid not null references public.profiles(id) on delete cascade,
     activity_category activity_category not null,
+
     duration_seconds integer not null,
     effort_type effort_type not null,
     value numeric not null,
