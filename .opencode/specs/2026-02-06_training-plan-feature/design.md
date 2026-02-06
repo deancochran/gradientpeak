@@ -63,7 +63,7 @@ As a user, I want to understand whether my recent and planned training keeps me 
 
 ### Core Inputs
 
-- `activity_efforts`: canonical evidence of best efforts and recency.
+- `activity_efforts`: canonical evidence of activity efforts and recency. Can be used to find best efforts in a given timeframe
 - `profile_metrics`: limited to weight and LTHR usage in this phase.
 - Recent activity history and training load signals.
 - Training plan configuration (goals, timeline, constraints, calendar).
