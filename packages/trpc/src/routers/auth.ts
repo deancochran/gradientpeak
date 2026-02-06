@@ -6,11 +6,6 @@ import { createTRPCRouter, protectedProcedure, publicProcedure } from "../trpc";
 const signUpSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
-  metadata: z
-    .object({
-      emailRedirectTo: z.string().url().optional(),
-    })
-    .optional(),
 });
 
 const signInSchema = z.object({
@@ -20,7 +15,6 @@ const signInSchema = z.object({
 
 const sendPasswordResetEmailSchema = z.object({
   email: z.string().email(),
-  redirectTo: z.string().url(),
 });
 
 const updatePasswordSchema = z.object({
@@ -35,8 +29,33 @@ const updateEmailSchema = z.object({
 
 const resendVerificationEmailSchema = z.object({
   email: z.string().email(),
-  redirectTo: z.string().url().optional(),
 });
+
+const DEFAULT_WEB_APP_URL = "http://localhost:3000";
+const DEFAULT_MOBILE_DEEP_LINK = "gradientpeak://sign-in";
+
+const getWebAppUrl = () =>
+  process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? DEFAULT_WEB_APP_URL;
+
+const getMobileDeepLink = () =>
+  process.env.NEXT_PUBLIC_MOBILE_AUTH_REDIRECT_URI ??
+  process.env.MOBILE_DEEP_LINK_URL ??
+  process.env.EXPO_PUBLIC_REDIRECT_URL ??
+  DEFAULT_MOBILE_DEEP_LINK;
+
+const buildAuthConfirmRedirectUrl = () => {
+  const webAppUrl = getWebAppUrl();
+  const url = new URL("/auth/confirm", webAppUrl);
+  url.searchParams.set("next", getMobileDeepLink());
+  url.searchParams.set(
+    "fallback",
+    new URL("/auth/login", webAppUrl).toString(),
+  );
+  return url.toString();
+};
+
+const buildPasswordResetRedirectUrl = () =>
+  new URL("/auth/update-password", getWebAppUrl()).toString();
 
 const verifyOtpSchema = z.object({
   type: z.string(),
@@ -55,7 +74,7 @@ export const authRouter = createTRPCRouter({
           email: input.email,
           password: input.password,
           options: {
-            emailRedirectTo: input.metadata?.emailRedirectTo,
+            emailRedirectTo: buildAuthConfirmRedirectUrl(),
           },
         });
 
@@ -159,7 +178,7 @@ export const authRouter = createTRPCRouter({
         const { error } = await ctx.supabase.auth.resetPasswordForEmail(
           input.email,
           {
-            redirectTo: input.redirectTo,
+            redirectTo: buildPasswordResetRedirectUrl(),
           },
         );
 
@@ -195,7 +214,7 @@ export const authRouter = createTRPCRouter({
 
         if (signInError) {
           throw new TRPCError({
-            code: "UNAUTHORIZED",
+            code: "BAD_REQUEST",
             message: "Current password is incorrect",
           });
         }
@@ -237,15 +256,20 @@ export const authRouter = createTRPCRouter({
 
         if (signInError) {
           throw new TRPCError({
-            code: "UNAUTHORIZED",
+            code: "BAD_REQUEST",
             message: "Password is incorrect",
           });
         }
 
         // Update email - Supabase will send verification emails to both old and new
-        const { error } = await ctx.supabase.auth.updateUser({
-          email: input.newEmail,
-        });
+        const { error } = await ctx.supabase.auth.updateUser(
+          {
+            email: input.newEmail,
+          },
+          {
+            emailRedirectTo: buildAuthConfirmRedirectUrl(),
+          },
+        );
 
         if (error) {
           throw new TRPCError({
@@ -277,7 +301,7 @@ export const authRouter = createTRPCRouter({
           type: "signup",
           email: input.email,
           options: {
-            emailRedirectTo: input.redirectTo,
+            emailRedirectTo: buildAuthConfirmRedirectUrl(),
           },
         });
 

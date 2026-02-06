@@ -75,6 +75,7 @@ function SettingsScreen() {
 
   const updateEmailMutation = trpc.auth.updateEmail.useMutation({
     onSuccess: (data) => {
+      void utils.auth.getUser.invalidate();
       Alert.alert("Verification Sent", data.message);
       setIsEmailUpdateVisible(false);
       setNewEmail("");

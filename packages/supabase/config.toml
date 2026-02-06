@@ -222,6 +222,10 @@ content_path = "./supabase/templates/invite.html"
 subject = "Reset your password for {{ .SiteName }}"
 content_path = "./supabase/templates/recovery.html"
 
+[auth.email.template.email_change]
+subject = "Confirm your email change for {{ .SiteName }}"
+content_path = "./supabase/templates/email_change.html"
+
 # Security Notifications
 [auth.email.notification.password_changed]
 enabled = true

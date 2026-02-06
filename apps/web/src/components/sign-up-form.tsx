@@ -48,9 +48,6 @@ export function SignUpForm({
       await signUpMutation.mutateAsync({
         email,
         password,
-        metadata: {
-          emailRedirectTo: `${window.location.origin}/`,
-        },
       });
     } catch {
       // Error handling is done in mutation onError

@@ -98,7 +98,11 @@
       <div class="otp-box">{{ .Token }}</div>
 
       <p>Or click the link below to verify on the web:</p>
-      <a href="{{ .ConfirmationURL }}" class="button">Confirm Email</a>
+      <a
+        href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email"
+        class="button"
+        >Confirm Email</a
+      >
 
       <p style="font-size: 14px; color: #666">
         This link and code will expire in 24 hours. If you didn't request this

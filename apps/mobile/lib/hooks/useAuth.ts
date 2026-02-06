@@ -2,6 +2,7 @@
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { supabase } from "@/lib/supabase/client";
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import { AppState } from "react-native";
 import { trpc } from "../trpc";
 
 /**
@@ -48,6 +49,38 @@ export const useAuth = () => {
       retry: 3,
     },
   );
+
+  // Keep auth user data fresh (email, verification status, metadata changes)
+  const authUserQuery = trpc.auth.getUser.useQuery(undefined, {
+    enabled: ready && isAuthenticated,
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+  const { refetch: refetchAuthUser } = authUserQuery;
+
+  useEffect(() => {
+    if (!authUserQuery.data) return;
+
+    if (
+      store.user?.email !== authUserQuery.data.email ||
+      store.user?.email_confirmed_at !== authUserQuery.data.email_confirmed_at
+    ) {
+      store.setUser(authUserQuery.data);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUserQuery.data]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active" && isAuthenticated) {
+        void refetchAuthUser();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [isAuthenticated, refetchAuthUser]);
 
   // FIX: Sync profile from tRPC to store - use ref to track if we've already synced this data
   const lastSyncedProfileId = useRef<string | null>(null);
