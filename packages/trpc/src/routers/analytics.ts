@@ -22,7 +22,7 @@ export const analyticsRouter = createTRPCRouter({
       const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
       // Fetch efforts from DB
-      const { data: efforts, error } = await ctx.supabase
+      const { data: effortsRaw, error } = await ctx.supabase
         .from("activity_efforts")
         .select("*")
         .eq("profile_id", ctx.session.user.id)
@@ -33,6 +33,14 @@ export const analyticsRouter = createTRPCRouter({
       if (error) {
         throw new Error(`Failed to fetch activity efforts: ${error.message}`);
       }
+
+      // Filter out null activity_ids and ensure type safety
+      const efforts = (effortsRaw || [])
+        .filter((e) => e.activity_id !== null)
+        .map((e) => ({
+          ...e,
+          activity_id: e.activity_id as string,
+        }));
 
       // Calculate curve
       return calculateSeasonBestCurve(efforts, {
@@ -67,7 +75,7 @@ export const analyticsRouter = createTRPCRouter({
       const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
       // Fetch efforts from DB
-      const { data: efforts, error } = await ctx.supabase
+      const { data: effortsRaw, error } = await ctx.supabase
         .from("activity_efforts")
         .select("*")
         .eq("profile_id", ctx.session.user.id)
@@ -78,6 +86,14 @@ export const analyticsRouter = createTRPCRouter({
       if (error) {
         throw new Error(`Failed to fetch activity efforts: ${error.message}`);
       }
+
+      // Filter out null activity_ids and ensure type safety
+      const efforts = (effortsRaw || [])
+        .filter((e) => e.activity_id !== null)
+        .map((e) => ({
+          ...e,
+          activity_id: e.activity_id as string,
+        }));
 
       // Calculate curve
       const curve = calculateSeasonBestCurve(efforts, {

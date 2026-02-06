@@ -3,7 +3,7 @@ import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { useRequireAuth } from "@/lib/hooks/useAuth";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import { trpc } from "@/lib/trpc";
 import { getDurationMs } from "@/lib/utils/durationConversion";
@@ -32,7 +32,7 @@ import MapView, { Polyline, PROVIDER_DEFAULT } from "react-native-maps";
 
 export default function ActivityPlanDetailPage() {
   const router = useRouter();
-  const { profile } = useRequireAuth();
+  const { profile } = useAuth();
   const params = useLocalSearchParams();
   const planId = params.planId as string | undefined;
   const plannedActivityId = params.plannedActivityId as string | undefined;

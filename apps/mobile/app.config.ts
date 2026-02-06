@@ -10,7 +10,7 @@ const BUNDLE_IDENTIFIER = "com.deancochran.gradientpeak";
 const PACKAGE_NAME = "com.deancochran.gradientpeak";
 const ICON = "./assets/images/icons/splash-icon-prod.png";
 const ADAPTIVE_ICON = "./assets/images/icons/splash-icon-prod.png";
-const SCHEME = "app-scheme";
+const SCHEME = "gradientpeak";
 
 export default ({ config }: ConfigContext): ExpoConfig => {
   const { name, bundleIdentifier, icon, adaptiveIcon, packageName, scheme } =
@@ -48,6 +48,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           "This app needs your location to track activities.",
         NSMotionUsageDescription:
           "This app needs motion access to track your activity.",
+        NSHealthShareUsageDescription:
+          "This app needs access to your health data to sync your workouts and biometrics.",
+        NSHealthUpdateUsageDescription:
+          "This app needs access to update your health data with your workouts.",
         UNNotificationAlertStyle: "alert",
         // Allow HTTP connections for development
         NSAppTransportSecurity: {

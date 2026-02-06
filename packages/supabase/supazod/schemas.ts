@@ -19,6 +19,8 @@ export const publicActivityLocationSchema = z.enum(["outdoor", "indoor"]);
 
 export const publicEffortTypeSchema = z.enum(["power", "speed"]);
 
+export const publicGenderSchema = z.enum(["male", "female", "other"]);
+
 export const publicIntegrationProviderSchema = z.enum([
   "strava",
   "wahoo",
@@ -270,7 +272,7 @@ export const publicActivitiesRelationshipsSchema = z.tuple([
 
 export const publicActivityEffortsRowSchema = z.object({
   activity_category: publicActivityCategorySchema,
-  activity_id: z.string(),
+  activity_id: z.string().nullable(),
   created_at: z.string(),
   duration_seconds: z.number(),
   effort_type: publicEffortTypeSchema,
@@ -284,7 +286,7 @@ export const publicActivityEffortsRowSchema = z.object({
 
 export const publicActivityEffortsInsertSchema = z.object({
   activity_category: publicActivityCategorySchema,
-  activity_id: z.string(),
+  activity_id: z.string().optional().nullable(),
   created_at: z.string().optional(),
   duration_seconds: z.number(),
   effort_type: publicEffortTypeSchema,
@@ -298,7 +300,7 @@ export const publicActivityEffortsInsertSchema = z.object({
 
 export const publicActivityEffortsUpdateSchema = z.object({
   activity_category: publicActivityCategorySchema.optional(),
-  activity_id: z.string().optional(),
+  activity_id: z.string().optional().nullable(),
   created_at: z.string().optional(),
   duration_seconds: z.number().optional(),
   effort_type: publicEffortTypeSchema.optional(),
@@ -715,6 +717,7 @@ export const publicProfilesRowSchema = z.object({
   bio: z.string().nullable(),
   created_at: z.string(),
   dob: z.string().nullable(),
+  gender: publicGenderSchema.nullable(),
   id: z.string(),
   idx: z.number(),
   language: z.string().nullable(),
@@ -729,6 +732,7 @@ export const publicProfilesInsertSchema = z.object({
   bio: z.string().optional().nullable(),
   created_at: z.string().optional(),
   dob: z.string().optional().nullable(),
+  gender: publicGenderSchema.optional().nullable(),
   id: z.string(),
   idx: z.number().optional(),
   language: z.string().optional().nullable(),
@@ -743,6 +747,7 @@ export const publicProfilesUpdateSchema = z.object({
   bio: z.string().optional().nullable(),
   created_at: z.string().optional(),
   dob: z.string().optional().nullable(),
+  gender: publicGenderSchema.optional().nullable(),
   id: z.string().optional(),
   idx: z.number().optional(),
   language: z.string().optional().nullable(),
@@ -855,3 +860,11 @@ export const publicTrainingPlansRelationshipsSchema = z.tuple([
     referencedColumns: z.tuple([z.literal("id")]),
   }),
 ]);
+
+export const publicDeleteOwnAccountArgsSchema = z.never();
+
+export const publicDeleteOwnAccountReturnsSchema = z.undefined();
+
+export const publicGetUserStatusArgsSchema = z.never();
+
+export const publicGetUserStatusReturnsSchema = z.string();

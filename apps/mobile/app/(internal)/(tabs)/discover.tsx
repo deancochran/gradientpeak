@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
-import { useRequireAuth } from "@/lib/hooks/useAuth";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { useRouter } from "expo-router";
 import {
@@ -86,7 +86,7 @@ const CATEGORIES = [
 
 export default function DiscoverPage() {
   const router = useRouter();
-  const { profile } = useRequireAuth();
+  const { profile } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);

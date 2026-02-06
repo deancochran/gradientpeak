@@ -5,6 +5,7 @@ A sophisticated, enterprise-grade fitness tracking platform built with modern lo
 ## 🛠️ Developer Experience & Tooling
 
 ### Modern Development Stack
+
 - **Turborepo + npm** - High-performance monorepo build system with fast package manager
 - **TypeScript 5.9** - Full type safety with strict mode and modern features
 - **ESLint + Prettier** - Consistent code formatting and linting across all packages
@@ -12,12 +13,14 @@ A sophisticated, enterprise-grade fitness tracking platform built with modern lo
 - **Zustand** - Lightweight state management with persistence middleware
 
 ### Development Workflow
+
 - **Hot Reloading** - Instant updates across mobile and web during development
 - **Shared Tooling** - Consistent ESLint, TypeScript, and Prettier configurations
 - **Parallel Execution** - Turborepo caching for fast build and test runs
 - **Type Safety** - Full-stack type sharing between frontend and backend
 
 ### Build & Deployment
+
 - **Expo EAS Build** - Cloud builds for iOS and Android with over-the-air updates
 - **Vercel Deployment** - Automatic deployments for web dashboard
 - **Turborepo Pipelines** - Optimized build and test execution
@@ -37,17 +40,15 @@ The heart of GradientPeak, shared across web, mobile, and backend apps. **Comple
 
 **Responsibilities:**
 
-* **Type Definitions & Schemas** — Zod validation for profiles, activities, activities, and flexible JSON structures
-* **Calculations & Analytics** — Training zones, TSS, normalized power, compliance scoring, CTL/ATL/TSB
-* **Business Logic** — Activity plan validation, progression, and adaptive algorithms
-* **Utilities** — Time/duration helpers, unit conversions, constants
-* **Platform Agnostic** — Pure TypeScript with no database, ORM, or platform-specific dependencies
+- **Type Definitions & Schemas** — Zod validation for profiles, activities, activities, and flexible JSON structures
+- **Calculations & Analytics** — Training zones, TSS, normalized power, compliance scoring, CTL/ATL/TSB
+- **Business Logic** — Activity plan validation, progression, and adaptive algorithms
+- **Utilities** — Time/duration helpers, unit conversions, constants
+- **Platform Agnostic** — Pure TypeScript with no database, ORM, or platform-specific dependencies
 
 **Key Benefit:** Single source of truth ensures consistent calculations, type safety, and validation across all applications while remaining completely portable and testable in isolation.
 
 ---
-
-
 
 ### 📦 TypeScript Config Package (`packages/typescript-config`)
 
@@ -55,10 +56,10 @@ A shared TypeScript configuration used across all apps and packages in the Gradi
 
 **Responsibilities:**
 
-* **Centralized TS Configuration** — Base `tsconfig` defines compiler options, strict type checking, and module resolution
-* **Standardized Paths & Aliases** — Ensures consistent `@/*` imports across apps
-* **Extensible per App** — Apps can extend the base config for Next.js, Expo, or library-specific overrides
-* **Version Control** — Single source of truth for TypeScript settings to reduce discrepancies and errors
+- **Centralized TS Configuration** — Base `tsconfig` defines compiler options, strict type checking, and module resolution
+- **Standardized Paths & Aliases** — Ensures consistent `@/*` imports across apps
+- **Extensible per App** — Apps can extend the base config for Next.js, Expo, or library-specific overrides
+- **Version Control** — Single source of truth for TypeScript settings to reduce discrepancies and errors
 
 **Key Benefit:** All apps and packages share a **consistent TypeScript environment**, simplifying cross-package type safety and refactoring.
 
@@ -70,10 +71,10 @@ A shared ESLint configuration used across all apps and packages in the GradientP
 
 **Responsibilities:**
 
-* **Centralized Linting Rules** — Base ESLint rules and plugins (`@eslint/js`, `typescript-eslint`, `eslint-config-prettier`) applied across all apps
-* **Next.js & React Support** — Optional per-app overrides for Next.js or React library requirements
-* **Custom Plugins** — Turbo-specific rules, `eslint-plugin-only-warn`, and other shared rules enforced consistently
-* **Ignored Paths** — Standard exclusions for `dist`, `.next`, and build artifacts
+- **Centralized Linting Rules** — Base ESLint rules and plugins (`@eslint/js`, `typescript-eslint`, `eslint-config-prettier`) applied across all apps
+- **Next.js & React Support** — Optional per-app overrides for Next.js or React library requirements
+- **Custom Plugins** — Turbo-specific rules, `eslint-plugin-only-warn`, and other shared rules enforced consistently
+- **Ignored Paths** — Standard exclusions for `dist`, `.next`, and build artifacts
 
 **Key Benefit:** Provides **uniform code quality standards** across all apps and packages, making maintenance and onboarding simpler.
 
@@ -91,6 +92,7 @@ A shared ESLint configuration used across all apps and packages in the GradientP
 - **React Native Reanimated** - Smooth 60fps animations and gestures
 
 **Developer Experience Features:**
+
 - Hot reloading with Fast Refresh
 - Native module development with Expo Dev Client
 - Comprehensive debugging tools (Flipper, React DevTools)
@@ -114,6 +116,7 @@ A shared ESLint configuration used across all apps and packages in the GradientP
 - **Supabase** - Real-time database and authentication
 
 **Developer Experience Features:**
+
 - Instant hot reloading with Next.js
 - API route handlers with tRPC integration
 - Automatic code splitting and optimization
@@ -129,6 +132,7 @@ A shared ESLint configuration used across all apps and packages in the GradientP
 ### 🔗 Shared Infrastructure & Packages
 
 #### `@repo/core` - Business Logic & Calculations
+
 - **Database Independent** - Pure TypeScript with no external dependencies
 - **Zod Schemas** - Comprehensive validation for all data structures
 - **Performance Calculations** - TSS, normalized power, training zones, CTL/ATL/TSB
@@ -136,18 +140,21 @@ A shared ESLint configuration used across all apps and packages in the GradientP
 - **Test Utilities** - Mock data generators and test helpers
 
 #### `@repo/trpc` - API Layer & Types
+
 - **tRPC Routers** - Type-safe API endpoints for all data operations
 - **Shared Procedures** - Authentication, activities, profiles, analytics
 - **Error Handling** - Consistent error types and handling patterns
 - **Middleware** - Authentication, logging, and rate limiting
 
 #### `@repo/eslint-config` - Code Quality
+
 - **Base Configuration** - Shared ESLint rules across all projects
 - **TypeScript Support** - Comprehensive type-aware linting rules
 - **React Hooks** - Complete React hooks linting configuration
 - **Import Sorting** - Consistent import organization
 
 #### `@repo/typescript-config` - Type Safety
+
 - **Base tsconfig** - Shared compiler options and strict settings
 - **Path Mapping** - Consistent import aliases (`@/*`, `@repo/*`)
 - **Module Resolution** - Standardized module resolution strategy
@@ -195,18 +202,18 @@ The core package handles **profile validation**, **training zone calculations**,
 
 `planned_activities` contains scheduled activities with flexible JSON structures validated by the **core package**:
 
-* `structure` — Complex JSON objects defining activity steps
-* `structure_version` — Version tracked by core package
-* `requires_threshold_hr` / `requires_ftp` — Validated against core profile requirements
-* Performance estimates calculated by core algorithms
+- `structure` — Complex JSON objects defining activity steps
+- `structure_version` — Version tracked by core package
+- `requires_threshold_hr` / `requires_ftp` — Validated against core profile requirements
+- Performance estimates calculated by core algorithms
 
 **Activity Structure Features:**
 
-* Nested repetitions and complex step sequences
-* Multiple intensity target types with validation
-* Duration units (time, distance, repetition)
-* Intensity classes with core classification logic
-* Portable format compatible with major training platforms
+- Nested repetitions and complex step sequences
+- Multiple intensity target types with validation
+- Duration units (time, distance, repetition)
+- Intensity classes with core classification logic
+- Portable format compatible with major training platforms
 
 The core package ensures **valid activity structures**, calculates **estimated durations and training stress**, and provides **compliance scoring algorithms**.
 
@@ -218,13 +225,14 @@ The core package ensures **valid activity structures**, calculates **estimated d
 
 GradientPeak uses a **JSON-first approach** where all activity data is stored as the single source of truth:
 
-* **Primary Storage** — Complete activity data stored as JSON in Supabase Storage
-* **Local Recording** — Activities initially captured locally in SQLite as JSON
-* **Cloud Sync** — JSON objects uploaded to Supabase Storage when network available
-* **Metadata Generation** — Activity records created locally and synced after JSON storage
-* **Stream Processing** — Activity streams generated from JSON after successful upload
+- **Primary Storage** — Complete activity data stored as JSON in Supabase Storage
+- **Local Recording** — Activities initially captured locally in SQLite as JSON
+- **Cloud Sync** — JSON objects uploaded to Supabase Storage when network available
+- **Metadata Generation** — Activity records created locally and synced after JSON storage
+- **Stream Processing** — Activity streams generated from JSON after successful upload
 
 **Data Flow:**
+
 1. **Record** → Local SQLite stores complete activity as JSON
 2. **Upload** → JSON object uploaded to Supabase Storage (source of truth)
 3. **Process** → Activity metadata record generated locally and inserted
@@ -235,29 +243,29 @@ GradientPeak uses a **JSON-first approach** where all activity data is stored as
 
 Activity data flows through the **core package** for consistent analysis:
 
-* **Performance Metrics** — TSS, normalized power, intensity factors calculated from JSON
-* **Training Load Analytics** — CTL, ATL, TSB derived from activity metadata
-* **Compliance Scoring** — Activity matching algorithms using JSON activity structure
-* **Zone Analysis** — Training zone calculations using core package algorithms
+- **Performance Metrics** — TSS, normalized power, intensity factors calculated from JSON
+- **Training Load Analytics** — CTL, ATL, TSB derived from activity metadata
+- **Compliance Scoring** — Activity matching algorithms using JSON activity structure
+- **Zone Analysis** — Training zone calculations using core package algorithms
 
 ### Activity Streams
 
 Time-series data processed from JSON source through core package utilities:
 
-* **Generated from JSON** — All streams derived from primary JSON activity data
-* **Standardized Metrics** — Core package ensures consistent metric types and validation
-* **Performance Curves** — Power/HR curves calculated from JSON streams
-* **Real-time Processing** — Stream aggregation during activity recording
+- **Generated from JSON** — All streams derived from primary JSON activity data
+- **Standardized Metrics** — Core package ensures consistent metric types and validation
+- **Performance Curves** — Power/HR curves calculated from JSON streams
+- **Real-time Processing** — Stream aggregation during activity recording
 
 ---
 
 ## 🔄 Local-First Architecture
 
-* **Record Locally** — Expo-SQLite captures complete activities as JSON with core package validation
-* **JSON Source of Truth** — All activity data stored primarily as JSON objects
-* **Background Sync** — Core package ensures data integrity during upload process
-* **Metadata Derivation** — Activity records and streams generated from JSON post-upload
-* **Conflict Resolution** — Smart merging using JSON timestamps and core validation
+- **Record Locally** — Expo-SQLite captures complete activities as JSON with core package validation
+- **JSON Source of Truth** — All activity data stored primarily as JSON objects
+- **Background Sync** — Core package ensures data integrity during upload process
+- **Metadata Derivation** — Activity records and streams generated from JSON post-upload
+- **Conflict Resolution** — Smart merging using JSON timestamps and core validation
 
 ---
 
@@ -265,50 +273,50 @@ Time-series data processed from JSON source through core package utilities:
 
 ### 🔄 Shared Business Logic via Core Package
 
-* **Database Independent** — Core package has zero database dependencies
-* **Consistent Calculations** — Same algorithms across platforms
-* **Unified Validation** — JSON schema validation using Zod
-* **Type Safety** — Full TypeScript support without ORM coupling
-* **Client-side Performance** — Instant calculations without API calls
+- **Database Independent** — Core package has zero database dependencies
+- **Consistent Calculations** — Same algorithms across platforms
+- **Unified Validation** — JSON schema validation using Zod
+- **Type Safety** — Full TypeScript support without ORM coupling
+- **Client-side Performance** — Instant calculations without API calls
 
 ### 📊 Advanced Analytics
 
-* **JSON-Derived Metrics** — All analytics calculated from JSON source data
-* **Training Load Models** — CTL/ATL/TSB from activity metadata
-* **Performance Analytics** — Power curves, trends from JSON streams
-* **Compliance Tracking** — Plan adherence using JSON activity structures
-* **Zone Analysis** — Heart rate and power zones from core calculations
+- **JSON-Derived Metrics** — All analytics calculated from JSON source data
+- **Training Load Models** — CTL/ATL/TSB from activity metadata
+- **Performance Analytics** — Power curves, trends from JSON streams
+- **Compliance Tracking** — Plan adherence using JSON activity structures
+- **Zone Analysis** — Heart rate and power zones from core calculations
 
 ### 🔐 Enterprise Security
 
-* **Validated Data Integrity** — Core package schemas ensure data quality
-* **Row Level Security** — Database-level access control
-* **Encrypted Storage** — Secure local and cloud storage
-* **Audit Logging** — Complete activity history preservation
+- **Validated Data Integrity** — Core package schemas ensure data quality
+- **Row Level Security** — Database-level access control
+- **Encrypted Storage** — Secure local and cloud storage
+- **Audit Logging** — Complete activity history preservation
 
 ### 🚀 Developer Experience
 
-* **Independent Core Package** — Pure TypeScript, fully testable in isolation
-* **End-to-end Type Safety** — From JSON validation to UI components
-* **Hot Reloading** — Fast development iteration
-* **Consistent Behavior** — Same business logic across all platforms
+- **Independent Core Package** — Pure TypeScript, fully testable in isolation
+- **End-to-end Type Safety** — From JSON validation to UI components
+- **Hot Reloading** — Fast development iteration
+- **Consistent Behavior** — Same business logic across all platforms
 
 ---
 
 ## 🛠️ Tech Stack
 
-| Layer               | Mobile                          | Web                           | Shared Packages               |
-| ------------------- | ------------------------------- | ----------------------------- | ----------------------------- |
-| **Framework**       | Expo 54, React Native 0.81.4    | Next.js 15, React 19          | -                             |
-| **Business Logic**  | `@repo/core`                    | `@repo/core`                  | Core calculations & validation |
-| **API Layer**       | `@repo/trpc` + React Query      | `@repo/trpc` + React Query    | Type-safe API procedures      |
-| **State Management**| Zustand + AsyncStorage          | Zustand + React Query         | Persistent state patterns     |
-| **Local Storage**   | Expo SQLite + FileSystem        | -                             | JSON data structures          |
-| **Cloud Services**  | Supabase Auth + Storage         | Supabase Auth + PostgreSQL    | Real-time capabilities        |
-| **Styling**         | NativeWind v4 + Reusables       | Tailwind CSS + Shadcn/ui      | Design system consistency     |
-| **Navigation**      | Expo Router v6                  | Next.js App Router            | Type-safe routing             |
-| **Development**     | Turborepo + npm                 | Turborepo + npm               | Monorepo tooling              |
-| **Type Safety**     | TypeScript 5.9 + `@repo/config` | TypeScript 5.9 + `@repo/config` | Shared configurations        |
+| Layer                | Mobile                          | Web                             | Shared Packages                |
+| -------------------- | ------------------------------- | ------------------------------- | ------------------------------ |
+| **Framework**        | Expo 54, React Native 0.81.4    | Next.js 15, React 19            | -                              |
+| **Business Logic**   | `@repo/core`                    | `@repo/core`                    | Core calculations & validation |
+| **API Layer**        | `@repo/trpc` + React Query      | `@repo/trpc` + React Query      | Type-safe API procedures       |
+| **State Management** | Zustand + AsyncStorage          | Zustand + React Query           | Persistent state patterns      |
+| **Local Storage**    | Expo SQLite + FileSystem        | -                               | JSON data structures           |
+| **Cloud Services**   | Supabase Auth + Storage         | Supabase Auth + PostgreSQL      | Real-time capabilities         |
+| **Styling**          | NativeWind v4 + Reusables       | Tailwind CSS + Shadcn/ui        | Design system consistency      |
+| **Navigation**       | Expo Router v6                  | Next.js App Router              | Type-safe routing              |
+| **Development**      | Turborepo + npm                 | Turborepo + npm                 | Monorepo tooling               |
+| **Type Safety**      | TypeScript 5.9 + `@repo/config` | TypeScript 5.9 + `@repo/config` | Shared configurations          |
 
 ---
 
@@ -331,7 +339,7 @@ The `@repo/core` package is designed for maximum portability and testability:
 
 ```typescript
 // Example usage - completely database independent
-import { calculateHrZones, validateActivity } from '@repo/core';
+import { calculateHrZones, validateActivity } from "@repo/core";
 
 // Zone calculations using pure functions
 const zones = calculateHrZones(threshold_hr, maxHr);
@@ -341,6 +349,7 @@ const validation = validateActivity(activityJson);
 ```
 
 **Key Development Benefits:**
+
 - 🚀 **Zero Dependencies** - No database, ORM, or platform-specific code
 - 🧪 **Easy Testing** - Pure functions require no mocks or setup
 - 🔄 **Consistent Behavior** - Same results across all platforms
@@ -387,15 +396,24 @@ npm dev      # Watch mode for core package development
 3. Data validation through core package schemas
 4. Secure sync with core package integrity checks
 
+### Mobile Authentication Autonomy
+
+- **Self-Service Management**: Users can update email, password, and delete accounts directly from the mobile app.
+- **Security Guards**:
+  - **Verification Guard**: Blocks access to the app if an email change is pending.
+  - **Onboarding Guard**: Enforces onboarding completion for new users.
+  - **Force Re-authentication**: Critical actions like password resets force a fresh sign-in.
+- **Deep Linking**: Uses `gradientpeak://` scheme for password resets and email verification.
+
 ---
 
 ## 📱 Mobile & 🌐 Web Dashboard Features
 
-* **JSON-First Storage** — Single source of truth for all activity data
-* **Real-time Validation** — Core package schemas ensure data quality
-* **Client-side Analytics** — Performance calculations without server dependencies
-* **Consistent Training Zones** — Core package algorithms across platforms
-* **Intelligent Offline-first Sync** — JSON-based conflict resolution
+- **JSON-First Storage** — Single source of truth for all activity data
+- **Real-time Validation** — Core package schemas ensure data quality
+- **Client-side Analytics** — Performance calculations without server dependencies
+- **Consistent Training Zones** — Core package algorithms across platforms
+- **Intelligent Offline-first Sync** — JSON-based conflict resolution
 
 ---
 
@@ -404,6 +422,7 @@ npm dev      # Watch mode for core package development
 **Testing Strategy & Developer Experience**
 
 **Core Package Testing:**
+
 - 🧪 **Pure Function Testing** - No database mocking required
 - 📊 **Algorithm Validation** - Mathematical correctness of calculations
 - 🎯 **Schema Testing** - JSON validation and type safety
@@ -411,6 +430,7 @@ npm dev      # Watch mode for core package development
 - ⚡ **Performance Testing** - Benchmark critical calculation functions
 
 **Development Workflow:**
+
 ```bash
 # Start all development servers
 npm dev
@@ -429,6 +449,7 @@ npm check-types
 ```
 
 **Quality Assurance:**
+
 - ✅ **Pre-commit Hooks** - Automatic linting and type checking
 - 📋 **Code Reviews** - Consistent patterns across all packages
 - 🚦 **CI/CD Pipeline** - Automated testing on every commit
@@ -443,6 +464,7 @@ npm check-types
 **Application Testing & Debugging:**
 
 **Mobile App Testing:**
+
 - 📱 **Component Testing** - React Native component validation
 - 🔗 **Integration Tests** - JSON storage and retrieval workflows
 - 🎯 **E2E User Journeys** - Complete activity recording flows
@@ -450,12 +472,14 @@ npm check-types
 - 📶 **Network Testing** - Offline/online scenario testing
 
 **Web Dashboard Testing:**
+
 - 🌐 **Component Testing** - Next.js component validation
 - 🔌 **API Testing** - tRPC procedure integration tests
 - 🎨 **UI Testing** - Visual regression and accessibility testing
 - ⚡ **Performance Testing** - Page load and analytics performance
 
 **Debugging Tools:**
+
 - 🐛 **React DevTools** - Component hierarchy and state inspection
 - 📱 **Flipper** - Native debugging for React Native
 - 🌐 **Next.js DevTools** - Performance and bundle analysis
@@ -471,6 +495,7 @@ npm check-types
 ## 🚀 Deployment & DevOps
 
 **Mobile App Deployment (Expo EAS):**
+
 ```bash
 # Production builds for both platforms
 eas build --platform all --profile production
@@ -483,6 +508,7 @@ eas submit --platform ios --profile production
 ```
 
 **Web Dashboard Deployment (Vercel):**
+
 ```bash
 # Automatic deployment on push to main
 git push origin main
@@ -495,6 +521,7 @@ vercel env add VARIABLE_NAME
 ```
 
 **CI/CD Pipeline:**
+
 - ✅ **Automated Testing** - Runs on every pull request
 - 📦 **Build Verification** - Ensures all packages compile correctly
 - 🧪 **Test Coverage** - Minimum coverage requirements enforced
@@ -502,6 +529,7 @@ vercel env add VARIABLE_NAME
 - 🚀 **Preview Deployments** - Automatic staging environments for PRs
 
 **Environment Management:**
+
 - 🔧 **Turborepo Remote Caching** - Shared build cache across team
 - 🌐 **Multi-environment Support** - Development, staging, production
 - 📋 **Configuration Management** - Environment-specific variables
@@ -532,18 +560,18 @@ vercel --prod
 
 ## 🤝 Contributing
 
-* Fork the repository and create a feature branch
-* Make your changes with tests and documentation
-* Run quality checks: `npm lint && npm test`
-* Submit a pull request with clear description
+- Fork the repository and create a feature branch
+- Make your changes with tests and documentation
+- Run quality checks: `npm lint && npm test`
+- Submit a pull request with clear description
 
 ---
 
 ## 📄 Documentation
 
-* [Setup Guide](SETUP_GUIDE.md)
-* [Architecture Guide](CLAUDE.md)
-* [Component Library](packages/ui/README.md)
+- [Setup Guide](SETUP_GUIDE.md)
+- [Architecture Guide](CLAUDE.md)
+- [Component Library](packages/ui/README.md)
 
 ---
 
@@ -557,10 +585,10 @@ This project is licensed under the MIT License.
 
 Built with modern tools and technologies:
 
-* [Expo](https://expo.dev) — Cross-platform mobile development
-* [Next.js](https://nextjs.org) — React web framework
-* [Supabase](https://supabase.com) — Backend-as-a-service
-* [Turborepo](https://turbo.build) — Monorepo build system
+- [Expo](https://expo.dev) — Cross-platform mobile development
+- [Next.js](https://nextjs.org) — React web framework
+- [Supabase](https://supabase.com) — Backend-as-a-service
+- [Turborepo](https://turbo.build) — Monorepo build system
 
 ---
 

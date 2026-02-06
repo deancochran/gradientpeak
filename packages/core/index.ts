@@ -126,6 +126,42 @@ export type {
   ActivityStatsV2,
 } from "./calculations_v2";
 
+// Onboarding & Performance Estimation Functions
+export {
+  getBaselineProfile,
+  mergeWithBaseline,
+  calculateAge as calculateAgeFromDOB,
+} from "./calculations/baseline-profiles";
+export {
+  calculateHRReserve,
+  calculateTargetHR,
+  calculateVO2MaxFromHR,
+  estimateLTHR,
+  estimateMaxHRFromAge,
+} from "./calculations/heart-rate";
+export {
+  estimateCSSFromGender,
+  estimateFTPFromWeight,
+  estimateThresholdPaceFromGender,
+} from "./calculations/performance-estimates";
+export {
+  derivePowerCurveFromFTP,
+  estimatePowerForDuration,
+  estimateWPrime,
+} from "./calculations/power-curve";
+export {
+  deriveSpeedCurveFromThresholdPace,
+  paceToSpeed,
+  parsePace,
+  speedToPace,
+} from "./calculations/speed-curve";
+export {
+  deriveSwimPaceCurveFromCSS,
+  estimateCSSFromSwimTests,
+  pacePerHundredMetersToSpeed,
+  speedToPacePerHundredMeters,
+} from "./calculations/swim-pace-curve";
+
 // ============================================================================
 // Constants Module
 // ============================================================================

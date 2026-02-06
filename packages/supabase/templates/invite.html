@@ -1,369 +1,91 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Welcome to GradientPeak</title>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-    
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    
-    body {
-      background: #000;
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      color: #fff;
-      line-height: 1.4;
-      -webkit-font-smoothing: antialiased;
-    }
-    
-    .container {
-      max-width: 600px;
-      margin: 0 auto;
-      background: #000;
-    }
-    
-    /* Header */
-    .header {
-      padding: 40px 0;
-      text-align: center;
-      border-bottom: 1px solid #333;
-    }
-    
-    .logo {
-      font-size: 24px;
-      font-weight: 700;
-      letter-spacing: 2px;
-      color: #fff;
-      text-transform: uppercase;
-    }
-    
-    /* Hero Section */
-    .hero {
-      position: relative;
-      overflow: hidden;
-    }
-    
-    .hero-image {
-      width: 100%;
-      height: 400px;
-      object-fit: cover;
-      filter: grayscale(100%) contrast(1.2);
-    }
-    
-    .hero-overlay {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: linear-gradient(135deg, rgba(0,0,0,0.7), rgba(0,0,0,0.3));
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      text-align: center;
-      padding: 60px 40px;
-    }
-    
-    .hero-title {
-      font-size: 48px;
-      font-weight: 300;
-      letter-spacing: -1px;
-      margin-bottom: 12px;
-      text-transform: uppercase;
-    }
-    
-    .hero-subtitle {
-      font-size: 14px;
-      font-weight: 500;
-      letter-spacing: 3px;
-      text-transform: uppercase;
-      opacity: 0.8;
-    }
-    
-    /* Main Content */
-    .content {
-      padding: 60px 40px;
-      text-align: center;
-    }
-    
-    .welcome-text {
-      font-size: 18px;
-      font-weight: 400;
-      color: #ccc;
-      margin-bottom: 40px;
-      max-width: 400px;
-      margin-left: auto;
-      margin-right: auto;
-    }
-    
-    .cta-button {
-      display: inline-block;
-      padding: 18px 40px;
-      background: #fff;
-      color: #000 !important;
-      text-decoration: none;
-      font-size: 14px;
-      font-weight: 600;
-      letter-spacing: 1px;
-      text-transform: uppercase;
-      border: none;
-      transition: all 0.3s ease;
-      margin-bottom: 50px;
-    }
-    
-    .cta-button:hover {
-      background: #f0f0f0;
-      transform: translateY(-2px);
-    }
-    
-    /* Features Grid */
-    .features {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1px;
-      background: #333;
-      margin: 60px 0;
-    }
-    
-    .feature {
-      background: #000;
-      padding: 40px 30px;
-      text-align: left;
-    }
-    
-    .feature-icon {
-      width: 40px;
-      height: 40px;
-      background: #fff;
-      margin-bottom: 20px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    
-    .feature-title {
-      font-size: 16px;
-      font-weight: 600;
-      margin-bottom: 8px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-    }
-    
-    .feature-desc {
-      font-size: 14px;
-      color: #999;
-      line-height: 1.5;
-    }
-    
-    /* Split Section */
-    .split-section {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      min-height: 300px;
-    }
-    
-    .split-image {
-      background-image: url('https://pub-edcdcf8d1f27477eb6c95cde69e3dd12.r2.dev/marketing/04.jpg');
-      background-size: cover;
-      background-position: center;
-      filter: grayscale(100%) contrast(1.1);
-    }
-    
-    .split-content {
-      background: #111;
-      padding: 60px 40px;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-    }
-    
-    .split-title {
-      font-size: 24px;
-      font-weight: 300;
-      margin-bottom: 16px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-    }
-    
-    .split-text {
-      font-size: 14px;
-      color: #999;
-      line-height: 1.6;
-    }
-    
-    /* Footer */
-    .footer {
-      background: #111;
-      padding: 40px;
-      text-align: center;
-      border-top: 1px solid #333;
-    }
-    
-    .footer-links {
-      margin-bottom: 20px;
-    }
-    
-    .footer-links a {
-      color: #999;
-      text-decoration: none;
-      font-size: 12px;
-      font-weight: 500;
-      letter-spacing: 1px;
-      text-transform: uppercase;
-      margin: 0 20px;
-      transition: color 0.3s ease;
-    }
-    
-    .footer-links a:hover {
-      color: #fff;
-    }
-    
-    .footer-text {
-      font-size: 11px;
-      color: #666;
-      letter-spacing: 1px;
-      text-transform: uppercase;
-    }
-    
-    .divider {
-      height: 1px;
-      background: #333;
-      margin: 40px 0;
-    }
-    
-    /* Mobile Responsive */
-    @media (max-width: 600px) {
-      .hero-title {
-        font-size: 32px;
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>You've been invited</title>
+    <style>
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+          Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
+          "Segoe UI Symbol";
+        background-color: #ffffff;
+        color: #111111;
+        line-height: 1.6;
+        margin: 0;
+        padding: 0;
       }
-      
-      .features {
-        grid-template-columns: 1fr;
-      }
-      
-      .split-section {
-        grid-template-columns: 1fr;
-      }
-      
-      .split-image {
-        min-height: 200px;
-      }
-      
-      .content {
+      .container {
+        max-width: 500px;
+        margin: 0 auto;
         padding: 40px 20px;
       }
-      
-      .footer {
-        padding: 30px 20px;
+      .header {
+        margin-bottom: 40px;
       }
-      
-      .footer-links a {
-        margin: 0 10px;
+      .logo {
+        font-weight: 700;
+        font-size: 16px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #111111;
+        text-decoration: none;
+      }
+      h1 {
+        font-size: 24px;
+        font-weight: 600;
+        margin-bottom: 24px;
+        letter-spacing: -0.02em;
+      }
+      p {
+        margin-bottom: 24px;
+        color: #333333;
+        font-size: 16px;
+      }
+      .button {
         display: inline-block;
-        margin-bottom: 10px;
+        background-color: #111111;
+        color: #ffffff;
+        text-decoration: none;
+        padding: 12px 24px;
+        border-radius: 4px;
+        font-weight: 500;
+        font-size: 14px;
+        margin-bottom: 32px;
       }
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    
-    <!-- Header -->
-    <div class="header">
-      <div class="logo">GradientPeak</div>
-    </div>
-
-    <!-- Hero -->
-    <div class="hero">
-      <img src="https://pub-edcdcf8d1f27477eb6c95cde69e3dd12.r2.dev/marketing/01.jpg" alt="GradientPeak Training" class="hero-image">
-      <div class="hero-overlay">
-        <h1 class="hero-title">Welcome</h1>
-        <p class="hero-subtitle">To The Performance</p>
+      .footer {
+        border-top: 1px solid #eaeaea;
+        padding-top: 24px;
+        margin-top: 48px;
+        font-size: 12px;
+        color: #666666;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <span class="logo">GradientPeak</span>
       </div>
-    </div>
 
-    <!-- Main Content -->
-    <div class="content">
-      <p class="welcome-text">
-        Your performance journey starts now. Confirm your account to unlock advanced training insights, 
-        precision tracking, and tools built for athletes who demand excellence.
+      <h1>Welcome to GradientPeak</h1>
+
+      <p>
+        You have been invited to join GradientPeak. Your performance journey
+        starts now.
       </p>
-      
-      <a href="{{CONFIRM_LINK}}" class="cta-button">Confirm Account</a>
-      
-      <div class="divider"></div>
-    </div>
 
-    <!-- Features -->
-    <div class="features">
-      <div class="feature">
-        <div class="feature-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-            <path d="M12 2L13.09 8.26L20 9L13.09 9.74L12 16L10.91 9.74L4 9L10.91 8.26L12 2Z" fill="#000"/>
-          </svg>
-        </div>
-        <h3 class="feature-title">Precision Tracking</h3>
-        <p class="feature-desc">Advanced metrics and seamless device integration for complete performance monitoring.</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-            <path d="M9 11H7L5.5 7.5L4 11H2L5 4H8L9 11ZM17 11H15L13.5 7.5L12 11H10L13 4H16L17 11Z" fill="#000"/>
-          </svg>
-        </div>
-        <h3 class="feature-title">Elite Programming</h3>
-        <p class="feature-desc">Customized training protocols designed by performance specialists.</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-            <path d="M12 2C6.48 2 2 6.48 2 12S6.48 22 12 22 22 17.52 22 12 17.52 2 12 2ZM10 17L5 12L6.41 10.59L10 14.17L17.59 6.58L19 8L10 17Z" fill="#000"/>
-          </svg>
-        </div>
-        <h3 class="feature-title">Data Intelligence</h3>
-        <p class="feature-desc">AI-powered insights that adapt and evolve with your performance.</p>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-            <path d="M16 6L18.29 8.29L13.41 13.17L9.41 9.17L2 16.59L3.41 18L9.41 12L13.41 16L20.71 8.71L23 11V6H16Z" fill="#000"/>
-          </svg>
-        </div>
-        <h3 class="feature-title">Performance Edge</h3>
-        <p class="feature-desc">Competition-grade analytics for those who refuse to settle.</p>
+      <p>
+        Confirm your account to access advanced training insights and precision
+        tracking tools.
+      </p>
+
+      <a href="{{ .ConfirmationURL }}" class="button">Accept Invitation</a>
+
+      <div class="footer">
+        <p>&copy; 2025 GradientPeak</p>
       </div>
     </div>
-
-    <!-- Split Section -->
-    <div class="split-section">
-      <div class="split-image"></div>
-      <div class="split-content">
-        <h2 class="split-title">Built for Athletes</h2>
-        <p class="split-text">
-          Every feature, every metric, every insight is designed with one purpose: 
-          to push the boundaries of what's possible in human performance. 
-          Join the community that demands more.
-        </p>
-      </div>
-    </div>
-
-    <!-- Footer -->
-    <div class="footer">
-      <div class="footer-links">
-        <a href="{{CANCEL_LINK}}">Unsubscribe</a>
-        <a href="#">Instagram</a>
-        <a href="#">Strava</a>
-        <a href="#">Support</a>
-      </div>
-      <p class="footer-text">© 2025 GradientPeak · Performance Without Compromise</p>
-    </div>
-
-  </div>
-</body>
+  </body>
 </html>
