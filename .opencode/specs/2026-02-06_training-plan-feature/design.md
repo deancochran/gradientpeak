@@ -71,7 +71,7 @@ As a user, I want to understand whether my recent and planned training keeps me 
 ### Derived Artifacts (Dynamic)
 
 - Power/pace curve model by activity category.
-- Current capability estimate by phenotype (for example: sprint, threshold, endurance).
+- Current capability estimate by phenotype (for example: sprint, threshold, endurance). Can be used to calculate ftp or threshold pace/speed estimations
 - Deficit signals between goal trajectory and projected trajectory.
 - Progression-state insights and divergence annotations for each time window.
 - Daily and weekly adherence model across Ideal, Scheduled, and Actual paths.
