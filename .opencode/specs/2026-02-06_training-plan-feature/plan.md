@@ -10,8 +10,11 @@ It is written so a reviewer can understand exactly what will change, where, and 
 ## 1) Hard Constraints (must hold)
 
 - No database schema changes in this phase.
-- Setup must allow required input only: `goal + target_date`.
+- Setup must allow required input only: one goal (`name + target_date`).
 - Goal model must support both approachable intent goals and precise measurable goals.
+- Enhance existing training plan schema; do not replace it with a brand-new root schema.
+- Most plan/config fields should remain optional at creation time with safe defaults.
+- Plans must support multiple goals, with at least one goal required.
 - Activity category and advanced controls are optional.
 - No recommendation engine / no auto-prescription language or behavior.
 - Safety and feasibility boundaries must be explicit and visible.
@@ -46,7 +49,7 @@ It is written so a reviewer can understand exactly what will change, where, and 
 
 ## 2.3 Known Design/Code Gaps
 
-1. Creation UX is not yet minimal-first (`goal + date`).
+1. Creation UX is not yet minimal-first (one goal only).
 2. Three-path contract exists in pieces, not as one canonical API payload.
 3. Boundary + feasibility are not first-class response fields.
 4. Capability projections are available but not integrated into plan insight timeline.
@@ -56,81 +59,78 @@ It is written so a reviewer can understand exactly what will change, where, and 
 
 ## 3) Target Technical Architecture (MVP)
 
-## 3.1 Canonical Internal Plan Config (JSON in `training_plans.structure`)
+## 3.1 Enhance Existing Plan Schema (JSON in `training_plans.structure`)
 
-No table changes; evolve JSON shape with compatibility parser.
+No table changes and no root-schema replacement. Build on the current `trainingPlanCreateSchema` and goal model.
+
+Design intent:
+
+- Keep existing `periodized` and `maintenance` structures intact.
+- Keep existing configurability for advanced users.
+- Reduce required user input for creation to one goal only.
+- Make most setup fields optional at creation and backfill safe defaults server-side.
+
+Additive goal enhancement (within existing goal objects):
 
 ```ts
-// packages/core/schemas/training-plan-insight.ts (new)
-export const mvpPlanConfigSchema = z.object({
-  version: z.literal("mvp.v1"),
+// packages/core/schemas/training_plan_structure.ts (enhancement, not overhaul)
+const goalMetricSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("event_time"),
+    distance_m: z.number().positive(),
+    target_time_s: z.number().int().positive(),
+  }),
+  z.object({
+    type: z.literal("distance"),
+    target_distance_m: z.number().positive(),
+  }),
+  z.object({
+    type: z.literal("duration"),
+    target_duration_s: z.number().int().positive(),
+  }),
+  z.object({ type: z.literal("ftp"), target_ftp_w: z.number().positive() }),
+  z.object({ type: z.literal("none") }),
+]);
+
+export const trainingGoalSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1).max(100),
+  target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  priority: z.number().int().min(1).max(10).default(1),
+  target_performance: z.string().max(200).optional(),
+  metric: goalMetricSchema.optional(), // additive
+  intent: z.string().min(1).optional(), // additive
+  notes: z.string().max(1000).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+```
+
+Minimum-create contract (derived server-side into existing structure):
+
+```ts
+// new lightweight create input mapped to existing trainingPlanCreateSchema
+const minimalPlanCreateSchema = z.object({
   goal: z.object({
-    intent: z.string().min(1),
-    kind: z.enum(["event", "performance", "capability", "general"]),
+    name: z.string().min(1),
     target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    metric: z
-      .discriminatedUnion("type", [
-        z.object({
-          type: z.literal("event_time"),
-          distance_m: z.number().positive(),
-          target_time_s: z.number().int().positive(),
-        }),
-        z.object({
-          type: z.literal("distance"),
-          target_distance_m: z.number().positive(),
-        }),
-        z.object({
-          type: z.literal("duration"),
-          target_duration_s: z.number().int().positive(),
-        }),
-        z.object({
-          type: z.literal("ftp"),
-          target_ftp_w: z.number().positive(),
-        }),
-        z.object({
-          type: z.literal("none"),
-        }),
-      ])
-      .default({ type: "none" }),
-  }),
-  defaults: z.object({
-    activity_distribution: z.record(z.string(), z.number()).default({ run: 1 }),
-    weekly_tss_start: z.number().min(0),
-    ramp_rate: z.number().min(0.01).max(0.15),
-  }),
-  advanced: z.record(z.string(), z.unknown()).optional(),
-  safety: z.object({
-    weekly_ramp_soft: z.number(),
-    weekly_ramp_hard: z.number(),
-    max_consecutive_days: z.number().int().min(1).max(7),
+    metric: goalMetricSchema.optional(),
+    intent: z.string().optional(),
   }),
 });
 ```
 
 Compatibility strategy:
 
-- New plans write `version: "mvp.v1"`.
-- Existing plans remain valid.
-- Router-side normalization maps legacy shapes into one internal config model.
-- For `event_time` goals, derive and persist normalized goal pace/speed in computed output (not as required DB field).
-- For `general` goals, use `metric.type = "none"` and rely on conservative baseline projection + confidence labeling.
-
-```ts
-// packages/core/plan/normalizePlanConfig.ts (new)
-export function normalizePlanConfig(structure: unknown): NormalizedPlanConfig {
-  if (isMvpV1(structure)) return fromMvpV1(structure);
-  if (isMvpV1GoalWizard(structure)) return fromMvpV1GoalWizard(structure);
-  if (isLegacyPeriodized(structure)) return fromLegacyPeriodized(structure);
-  if (isLegacyMaintenance(structure)) return fromLegacyMaintenance(structure);
-  throw new Error("Unsupported training plan structure");
-}
-```
+- Existing plans remain valid with no migration.
+- Existing full-create flows remain valid.
+- New minimal-create flow compiles into existing periodized structure with defaults for blocks, progression, distribution, and constraints.
+- Plans support multiple goals (`goals[]`), with `min(1)` preserved.
 
 Approachable-to-precise goal normalization:
 
-- Accept plain-language/preset goal input from create flow (`intent`, `target_date`, optional details).
-- Parse into one canonical `goal.metric` variant for deterministic feasibility/projection calculations.
-- If parse confidence is low, default to `metric.type = "none"` and mark low-confidence assumptions in API response reasons.
+- Accept simple goal input first.
+- Optionally attach measurable detail (distance+time, FTP, duration, distance).
+- Derive normalized pace/power outputs in computations, not as required persisted fields.
 
 ## 3.2 Canonical Insight Contract (single payload)
 
@@ -264,14 +264,19 @@ Add new endpoints:
    - output: canonical `planInsightResponseSchema`
 
 2. `getFeasibilityPreview`
-   - input: minimal create payload (`goal_intent`, `target_date`, optional measurable goal fields, optional advanced)
+   - input: minimal create payload (`goal` object with name + target_date, optional metric/intent)
    - output: `{ state, reasons, key_metrics, normalized_goal }`
 
-3. `getProjectionAtDate`
+3. `createFromMinimalGoal`
+   - input: `minimalPlanCreateSchema`
+   - behavior: generates default periodized structure with one required goal and optional advanced defaults
+   - output: standard training plan record (same shape returned by existing `create`)
+
+4. `getProjectionAtDate`
    - input: `{ training_plan_id, date, activity_category }`
    - output: projection point + confidence + drivers
 
-4. `getCapabilityTimeline`
+5. `getCapabilityTimeline`
    - input: `{ training_plan_id, activity_category, days }`
    - output: `{date, cp_or_cs, confidence, effort_count}`[]
 
@@ -307,11 +312,11 @@ Primary files:
 Required UX behavior:
 
 - Step 1 (default visible):
-  - goal intent,
-  - target date,
+  - one goal (name + target date),
   - create button.
 - Nice-to-have follow-up: allow plan creation entry point before full onboarding completion, then enrich profile later without invalidating the plan.
 - Optional precision helper (still in Step 1, collapsed by default):
+  - goal intent text,
   - race distance + target time,
   - target FTP,
   - distance/time target.
@@ -322,12 +327,13 @@ Required UX behavior:
 
 Technical changes:
 
-- Reduce required form validation fields to goal/date only.
+- Reduce required form validation fields to one goal (name + target date) only.
 - On submit:
   - call `getFeasibilityPreview` first,
-  - normalize goal input for deterministic projections,
+  - normalize optional goal metric input for deterministic projections,
   - show clear feasibility state,
-  - allow create with warning state for `aggressive`, block with explicit confirmation pattern for `unsafe` (MVP policy to confirm exact behavior).
+  - allow create with warning state for `aggressive`, block with explicit confirmation pattern for `unsafe` (MVP policy to confirm exact behavior),
+  - create plan through minimal-goal endpoint that expands defaults into full schema.
 
 ## 5.2 Plan tab and chart surfaces
 
@@ -380,13 +386,15 @@ Changes:
 
 ## Workstream A - Contracts + Normalization (Core)
 
-- Add new schemas and normalization utilities.
-- Add backward compatibility tests for legacy structures.
+- Enhance existing training goal schema with optional metric/intent fields.
+- Add minimal-goal input schema and expansion utilities that compile to existing periodized structure.
+- Add backward compatibility tests for existing periodized/maintenance structures.
 
 Deliverables:
 
-- `packages/core/schemas/training-plan-insight.ts` (new)
-- `packages/core/plan/normalizePlanConfig.ts` (new)
+- `packages/core/schemas/training_plan_structure.ts` updates
+- `packages/core/plan/normalizeGoalInput.ts` (new)
+- `packages/core/plan/expandMinimalGoalToPlan.ts` (new)
 - `packages/core/plan/*.ts` calculations (new)
 
 ## Workstream B - Insight API (tRPC)
@@ -401,7 +409,7 @@ Deliverables:
 ## Workstream C - Minimal Create UX (Mobile)
 
 - Collapse advanced configuration.
-- Goal/date required only.
+- One goal required (name + target date) with optional precision details.
 - Feasibility preview integration.
 
 Deliverables:
@@ -439,7 +447,8 @@ Suggested file paths:
 - `packages/core/__tests__/plan/adherence.test.ts`
 - `packages/core/__tests__/plan/boundary.test.ts`
 - `packages/core/__tests__/plan/feasibility.test.ts`
-- `packages/core/__tests__/plan/normalizePlanConfig.test.ts`
+- `packages/core/__tests__/plan/normalizeGoalInput.test.ts`
+- `packages/core/__tests__/plan/expandMinimalGoalToPlan.test.ts`
 
 ## 8.2 Integration (tRPC)
 
@@ -450,7 +459,7 @@ Suggested file paths:
 
 Coverage requirements:
 
-- Legacy and new plan structure inputs.
+- Existing full structure inputs and new minimal-goal inputs.
 - Sparse effort data confidence fallback.
 - Unsafe-goal classification edge cases.
 - Timezone/week boundary consistency.
@@ -459,7 +468,7 @@ Coverage requirements:
 
 Scenarios:
 
-- quick create with goal/date only,
+- quick create with one goal only,
 - aggressive/unsafe feasibility handling,
 - schedule edit updates insight chart state.
 
@@ -482,6 +491,9 @@ Scenarios:
 ## 10) Reviewer Sign-Off Checklist
 
 - Plan creation requires only goal + date.
+- Schema enhancement is additive to current training plan schema (no root replacement).
+- Most plan configuration fields are optional at creation and defaulted server-side.
+- Plans support multiple goals with at least one goal required.
 - Goal model supports race distance+time, FTP targets, distance/time goals, and general health/fitness goals.
 - Advanced config is optional and non-blocking.
 - No schema migration included.
@@ -498,7 +510,7 @@ Scenarios:
 
 This feature is complete when a user can:
 
-1. Create a usable plan quickly with only goal/date.
+1. Create a usable plan quickly with one goal (name + target date).
 2. Use either general intent goals or precise measurable goals without changing the core flow.
 3. See Ideal vs Scheduled vs Actual clearly in minimal UI.
 4. Understand whether plan execution is safe, caution, or exceeded, and why.
