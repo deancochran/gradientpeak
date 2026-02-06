@@ -45,14 +45,13 @@ As a user, I want to understand whether my recent and planned training keeps me 
 
 ---
 
-## 5) Personas and Experience Modes
+## 5) Personas creating training plans
 
 - **Novice Athlete**
   - Wants a very quick setup and confidence.
   - Uses defaults for schedule, progression, and intensity distribution.
   - Needs clear progression status and obvious safety cues.
 - **Intermediate Athlete**
-  - Wants limited customization (days, duration caps, goal focus).
   - Expects adaptive plan behavior when schedule changes.
 - **Advanced Athlete**
   - Wants deeper control (sport weighting, ramp aggressiveness, distribution model, constraints).
