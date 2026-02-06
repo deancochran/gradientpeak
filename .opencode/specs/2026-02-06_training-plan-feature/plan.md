@@ -1,298 +1,473 @@
-# Training Plan Feature Alignment Plan (MVP)
+# Training Plan Implementation Alignment Plan (MVP)
 
-## 1) Purpose
+This plan is the implementation bridge between:
 
-This plan aligns the current implementation with the vision in `design.md` while staying within MVP constraints:
+- product/design intent in `./design.md`, and
+- current code in core, tRPC, and mobile.
 
-- no database schema changes,
-- minimal setup and minimal interaction,
-- beautiful but minimal charts,
-- safety-first boundaries,
-- dynamic computations from existing data,
-- only `weight_kg` and `lthr` from `profile_metrics`.
+It is written so a reviewer can understand exactly what will change, where, and why.
 
-This document is written for implementers and reviewers to understand exactly what must change and in what order.
+## 1) Hard Constraints (must hold)
 
----
-
-## 2) Scope and Constraints
-
-### In Scope
-
-- Training plan setup simplification to required `goal + target_date`.
-- Optional advanced configuration for categories and constraints.
-- Three-path system: Ideal, Scheduled, Actual.
-- Adherence, safety boundaries, and feasibility classification.
-- Capability and projection outputs from `activity_efforts` and activity history.
-- Mobile plan pages update to minimal, low-friction UX.
-
-### Out of Scope (MVP)
-
-- Database migrations or new tables/columns.
-- Recommendation or auto-prescription engine.
-- New readiness features beyond `weight_kg` and `lthr`.
-- Complex animation systems or style-heavy interactions.
+- No database schema changes in this phase.
+- Setup must allow required input only: `goal + target_date`.
+- Activity category and advanced controls are optional.
+- No recommendation engine / no auto-prescription language or behavior.
+- Safety and feasibility boundaries must be explicit and visible.
+- `profile_metrics` usage is limited to `weight_kg` and `lthr`.
 
 ---
 
-## 3) Current System Baseline (What Exists)
+## 2) Current Implementation Baseline
 
-### Backend + Data
+## 2.1 Backend and Data (already implemented)
 
-- Training plans are stored in `training_plans.structure` JSON and validated by core schemas.
-- Planned activities are stored in `planned_activities` with current fields only (`activity_plan_id`, `training_plan_id`, `scheduled_date`, `notes`, timestamps).
-- CTL/ATL/TSB and planned-vs-actual style summaries already exist in `training_plans` and `home` routers.
-- Capability primitives already exist via `analytics` router (`getSeasonBestCurve`, `predictPerformance`).
-
-### Mobile
-
-- Plan creation currently uses a high-configuration flow with many required/near-required controls.
-- Plan tab and training-plan screens show progress and charting, but not full three-path + boundary + feasibility contract.
-
-### Core
-
-- Training plan structure schemas are rich and valid for periodized plans.
-- Existing calculations can support CTL/ATL/TSB-based path derivation and guardrails.
-
----
-
-## 4) Gap Summary (Design vs Current)
-
-1. Setup is not yet truly minimal (`goal + date` first, everything else optional).
-2. Ideal/Scheduled/Actual are partially represented but not unified under one canonical contract.
-3. Safety/boundary state and feasibility classification are not first-class API outputs.
-4. Capability and projection outputs are available in pieces, not integrated into plan insight payloads.
-5. Mobile pages expose data but do not present the intended minimal decision-support flow.
-
----
-
-## 5) Target MVP Architecture (No Schema Changes)
-
-## 5.1 Canonical JSON in `training_plans.structure`
-
-Add/standardize top-level JSON keys (backward-compatible):
-
-- `goal`: `{ type, target_date, target_metric? }` (required for new flow)
-- `defaults`: generated defaults for activity categories, weekly targets, progression
-- `advanced`: optional user overrides (categories, availability, ramp aggressiveness, etc.)
-- `safety`: computed thresholds used by guardrail logic
-- `version`: semantic config version for migration-safe parsing
-
-Notes:
-
-- Keep legacy fields valid and continue parsing old structures.
-- Add normalization layer in backend/core to map old and new shape into one internal model.
-
-## 5.2 Canonical Insight Contract (Unified)
-
-Create one response contract for plan insight endpoints:
-
-- `timeline`: daily points with `ideal`, `scheduled`, `actual`, `adherence`
-- `boundary`: `safe | caution | exceeded` + threshold reasons
-- `feasibility`: `feasible | aggressive | unsafe` + reason summary
-- `projection`: current and target-date projection + confidence/drivers
-
-## 5.3 Derivation Model
-
-- Ideal Path: perfect-athlete normative execution from plan configuration.
-- Scheduled Path: planned calendar workload derived from `planned_activities` + plan estimations.
-- Actual Path: completed activities from `activities` and current load metrics.
-- Adherence: weighted score from Actual-vs-Scheduled and Scheduled-vs-Ideal.
-- Capability: CP/CS from effort curve fits (with sparse-data confidence fallback).
-- Feasibility: setup-time and refresh-time classification against safety/ramp limits.
-
----
-
-## 6) Implementation Phases
-
-## Phase 0 - Contract and Compatibility Foundation
-
-Objective: define strict internal contracts before UI rewrite.
-
-Work:
-
-- Define internal normalized training plan model in core (new + legacy JSON compatibility).
-- Define TypeScript/Zod contracts for:
-  - three-path points,
-  - adherence point,
-  - boundary state,
-  - feasibility state,
-  - projection summary.
-- Add parser/normalizer utilities used by routers.
-
-Exit Criteria:
-
-- Existing plans still parse.
-- New plans parse with minimal `goal + target_date`.
-- Contract tests pass for legacy and new JSON variants.
-
-## Phase 1 - Minimal Plan Creation Flow
-
-Objective: make plan creation fast and default-driven.
-
-Work:
-
-- Update mobile create flow so required inputs are only:
-  - goal,
-  - target date.
-- Move categories/availability/ramp/distribution into optional advanced section.
-- Add backend plan generation defaults for missing optional inputs.
-- Add feasibility pre-check at setup submit.
-
-Exit Criteria:
-
-- New user can create a valid plan in <= 60 seconds with only goal/date.
-- Advanced options remain available but optional.
-- Feasibility result is visible before final create.
-
-## Phase 2 - Three-Path + Safety Engine
-
-Objective: make insight computation consistent and dynamic.
-
-Work:
-
-- Implement/standardize backend computation module for:
-  - Ideal/Scheduled/Actual daily points,
-  - adherence score and state,
-  - boundary state and violated thresholds.
-- Add recompute triggers in existing mutation/query flows:
-  - activity create/update/delete,
-  - planned activity create/update/delete,
-  - training plan update/adjustment.
-- Ensure timezone/week-boundary handling is consistent across endpoints.
-
-Exit Criteria:
-
-- All path outputs available for 7/30/90 windows.
-- Boundary states and reasons present for each point.
-- Missed/rescheduled behavior updates insights on next fetch.
-
-## Phase 3 - Capability + Projection Integration
-
-Objective: connect capability math to plan decision support.
-
-Work:
-
-- Reuse `activity_efforts` analytics to produce capability timeline summaries by category.
-- Add projection endpoint for arbitrary date within plan horizon.
-- Add confidence and driver explanations (sparse data handling included).
-- Restrict profile metric influence to weight + LTHR in this phase.
-
-Exit Criteria:
-
-- CP/CS-based projection available at goal date and arbitrary date.
-- Confidence and top drivers returned consistently.
-- Behavior is deterministic under sparse/noisy input conditions.
-
-## Phase 4 - Mobile Plan Page Alignment (Minimal UX)
-
-Objective: deliver minimalistic, clear, functional UI.
-
-Work:
-
-- Update plan-related pages to show one primary insight path:
-  - top summary card (on-track/boundary/feasibility),
-  - three-path chart,
-  - compact adherence trend,
-  - expandable details for reasons/drivers.
-- Keep interactions minimal (tap-to-expand only where needed).
-- Remove noisy controls from main surfaces; keep advanced actions secondary.
-
-Chart Requirements:
-
-- clear contrast,
-- clean grid/legend,
-- consistent color semantics for safe/caution/exceeded,
-- no animation dependency for comprehension.
-
-Exit Criteria:
-
-- User can understand current state in <= 2 taps.
-- Visual hierarchy prioritizes safety and progression clarity.
-- No functionality loss vs current screens.
-
-## Phase 5 - Activity Plan and Scheduling Alignment
-
-Objective: ensure activity-plan workflows feed the new insight model correctly.
-
-Work:
-
-- Ensure planned activity operations preserve Scheduled Path stability.
-- Standardize interpretation rules for:
-  - completed,
-  - skipped,
-  - rescheduled,
-  - expired,
-    via application logic (no new columns).
-- Validate scheduling constraints against safety boundaries during edits.
-
-Exit Criteria:
-
-- Calendar edits immediately reflect in Scheduled/Adherence outputs.
-- Status interpretation is consistent across backend and mobile UI.
-
-## Phase 6 - QA, Instrumentation, Rollout
-
-Objective: ship safely with measurable quality.
-
-Work:
-
-- Unit tests for formulas, guardrails, feasibility thresholds, confidence behavior.
-- Integration tests for endpoint contract completeness and recomputation behavior.
-- Mobile E2E for:
-  - quick create,
-  - plan insight view,
-  - schedule change impact.
-- Add instrumentation for insight generation, boundary rates, adherence distribution, latency.
-
-Exit Criteria:
-
-- All acceptance criteria in `design.md` are mapped to tests.
-- Feature flag rollout path is verified.
-- Regression checklist signed by reviewer.
-
----
-
-## 7) File-Level Execution Map
-
-Likely primary implementation areas:
-
-- Core schemas/calculations:
-  - `packages/core/schemas/training_plan_structure.ts`
-  - `packages/core/calculations.ts`
-  - new or adjacent plan-insight calculation modules in `packages/core`
-- tRPC routers:
+- Plan storage + validation:
   - `packages/trpc/src/routers/training_plans.ts`
+  - `packages/core/schemas/index.ts`
+  - `packages/core/schemas/training_plan_structure.ts`
+- Planned activity CRUD + schedule constraint checks:
   - `packages/trpc/src/routers/planned_activities.ts`
-  - `packages/trpc/src/routers/analytics.ts`
+- Current CTL/ATL/TSB and planned-vs-actual behavior:
+  - `packages/trpc/src/routers/training_plans.ts`
   - `packages/trpc/src/routers/home.ts`
-- Mobile pages/components:
+- Capability primitives from effort data:
+  - `packages/trpc/src/routers/analytics.ts`
+
+## 2.2 Mobile (already implemented)
+
+- Current creation flow is config-heavy:
   - `apps/mobile/app/(internal)/(standard)/training-plan-create.tsx`
   - `apps/mobile/components/training-plan/create/SinglePageForm.tsx`
+- Plan tab currently renders plan-vs-actual trend and cards:
   - `apps/mobile/app/(internal)/(tabs)/plan.tsx`
   - `apps/mobile/components/charts/PlanVsActualChart.tsx`
 
----
+## 2.3 Known Design/Code Gaps
 
-## 8) Reviewer Checklist
-
-- Setup flow requires only goal + target date.
-- Advanced setup is optional and does not block creation.
-- No DB schema migration included.
-- Three-path contract is present and consistent in API responses.
-- Boundary and feasibility states are explicit and human-readable.
-- Projection/capability outputs include confidence and drivers.
-- Mobile plan UX is minimal, clear, and functionally complete.
-- Tests prove safety logic, sparse-data fallback, and recompute behavior.
+1. Creation UX is not yet minimal-first (`goal + date`).
+2. Three-path contract exists in pieces, not as one canonical API payload.
+3. Boundary + feasibility are not first-class response fields.
+4. Capability projections are available but not integrated into plan insight timeline.
+5. Mobile plan screens are functional but not yet aligned to minimal decision-support IA.
 
 ---
 
-## 9) Completion Definition for This Feature
+## 3) Target Technical Architecture (MVP)
 
-Feature is complete when:
+## 3.1 Canonical Internal Plan Config (JSON in `training_plans.structure`)
 
-1. A new user can create a plan from goal + date only, quickly.
-2. Plan screens clearly show Ideal/Scheduled/Actual with adherence and safety boundaries.
-3. Unsafe or unrealistic plans are clearly flagged with reasons.
-4. Capability and projection insights are available and confidence-labeled.
-5. All of the above ship without database schema changes.
+No table changes; evolve JSON shape with compatibility parser.
+
+```ts
+// packages/core/schemas/training-plan-insight.ts (new)
+export const mvpPlanConfigSchema = z.object({
+  version: z.literal("mvp.v1"),
+  goal: z.object({
+    type: z.enum([
+      "marathon",
+      "half_marathon",
+      "10k",
+      "5k",
+      "general_endurance",
+      "custom",
+    ]),
+    target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    target_metric: z.string().optional(),
+  }),
+  defaults: z.object({
+    activity_distribution: z.record(z.string(), z.number()).default({ run: 1 }),
+    weekly_tss_start: z.number().min(0),
+    ramp_rate: z.number().min(0.01).max(0.15),
+  }),
+  advanced: z.record(z.string(), z.unknown()).optional(),
+  safety: z.object({
+    weekly_ramp_soft: z.number(),
+    weekly_ramp_hard: z.number(),
+    max_consecutive_days: z.number().int().min(1).max(7),
+  }),
+});
+```
+
+Compatibility strategy:
+
+- New plans write `version: "mvp.v1"`.
+- Existing plans remain valid.
+- Router-side normalization maps legacy shapes into one internal config model.
+
+```ts
+// packages/core/plan/normalizePlanConfig.ts (new)
+export function normalizePlanConfig(structure: unknown): NormalizedPlanConfig {
+  if (isMvpV1(structure)) return fromMvpV1(structure);
+  if (isLegacyPeriodized(structure)) return fromLegacyPeriodized(structure);
+  if (isLegacyMaintenance(structure)) return fromLegacyMaintenance(structure);
+  throw new Error("Unsupported training plan structure");
+}
+```
+
+## 3.2 Canonical Insight Contract (single payload)
+
+```ts
+// packages/core/schemas/training-plan-insight.ts (new)
+export const planInsightPointSchema = z.object({
+  date: z.string(),
+  ideal_tss: z.number(),
+  scheduled_tss: z.number(),
+  actual_tss: z.number(),
+  adherence_score: z.number().min(0).max(100),
+  boundary_state: z.enum(["safe", "caution", "exceeded"]),
+  boundary_reasons: z.array(z.string()),
+});
+
+export const planInsightResponseSchema = z.object({
+  window: z.object({
+    start_date: z.string(),
+    end_date: z.string(),
+    timezone: z.string(),
+  }),
+  feasibility: z.object({
+    state: z.enum(["feasible", "aggressive", "unsafe"]),
+    reasons: z.array(z.string()),
+  }),
+  capability: z.object({
+    category: z.string(),
+    cp_or_cs: z.number().nullable(),
+    confidence: z.number().min(0).max(1),
+  }),
+  projection: z.object({
+    at_goal_date: z.object({
+      projected_goal_metric: z.number().nullable(),
+      confidence: z.number().min(0).max(1),
+    }),
+    drivers: z.array(z.string()),
+  }),
+  timeline: z.array(planInsightPointSchema),
+});
+```
+
+## 3.3 Core Calculation Rules (deterministic)
+
+Adherence formula (documented and testable):
+
+```ts
+// packages/core/plan/adherence.ts (new)
+// Keep weights configurable via constants for MVP tuning.
+const W_ACTUAL_VS_SCHEDULED = 0.7;
+const W_SCHEDULED_VS_IDEAL = 0.3;
+
+export function adherenceScore(
+  idealTss: number,
+  scheduledTss: number,
+  actualTss: number,
+): number {
+  const avs = ratioScore(actualTss, scheduledTss); // 0..100
+  const svi = ratioScore(scheduledTss, idealTss); // 0..100
+  return clamp(
+    Math.round(avs * W_ACTUAL_VS_SCHEDULED + svi * W_SCHEDULED_VS_IDEAL),
+    0,
+    100,
+  );
+}
+```
+
+Boundary classification (no recommendation, only safety state):
+
+```ts
+// packages/core/plan/boundary.ts (new)
+export function classifyBoundary(input: BoundaryInput): BoundaryResult {
+  const reasons: string[] = [];
+  if (input.weeklyRampPct > input.hardRampPct)
+    reasons.push("ramp_rate_hard_exceeded");
+  if (input.consecutiveTrainingDays > input.maxConsecutiveDays)
+    reasons.push("consecutive_days_exceeded");
+  if (input.tsb < input.tsbHardFloor) reasons.push("fatigue_exceeded");
+
+  if (reasons.length > 0) return { state: "exceeded", reasons };
+
+  const caution =
+    input.weeklyRampPct > input.softRampPct || input.tsb < input.tsbSoftFloor;
+
+  return caution
+    ? { state: "caution", reasons: ["near_boundary"] }
+    : { state: "safe", reasons: [] };
+}
+```
+
+Feasibility classification at setup (required for unrealistic goals):
+
+```ts
+// packages/core/plan/feasibility.ts (new)
+export function classifyFeasibility(x: FeasibilityInput): FeasibilityResult {
+  // Example thresholds from design; finalize in product tuning.
+  if (
+    x.prepTimeRatio < 0.5 ||
+    x.requiredWeeklyRampPct > 15 ||
+    x.capabilityDeficitPct > 40
+  ) {
+    return {
+      state: "unsafe",
+      reasons: ["insufficient_prep_time_or_excessive_ramp"],
+    };
+  }
+  if (x.requiredWeeklyRampPct > 10 || x.capabilityDeficitPct > 20) {
+    return { state: "aggressive", reasons: ["near_max_safe_progression"] };
+  }
+  return { state: "feasible", reasons: [] };
+}
+```
+
+---
+
+## 4) Endpoint Plan (add/extend without breaking existing clients)
+
+## 4.1 Extend `trainingPlans` router
+
+Primary file:
+
+- `packages/trpc/src/routers/training_plans.ts`
+
+Keep existing endpoints for backward compatibility:
+
+- `getCurrentStatus`, `getIdealCurve`, `getActualCurve`, `getWeeklySummary`
+
+Add new endpoints:
+
+1. `getInsightTimeline`
+   - input: `{ training_plan_id, start_date, end_date, timezone }`
+   - output: canonical `planInsightResponseSchema`
+
+2. `getFeasibilityPreview`
+   - input: minimal create payload (`goal`, `target_date`, optional advanced)
+   - output: `{ state, reasons, key_metrics }`
+
+3. `getProjectionAtDate`
+   - input: `{ training_plan_id, date, activity_category }`
+   - output: projection point + confidence + drivers
+
+4. `getCapabilityTimeline`
+   - input: `{ training_plan_id, activity_category, days }`
+   - output: `{date, cp_or_cs, confidence, effort_count}`[]
+
+Implementation notes:
+
+- Reuse effort retrieval logic already used in `analytics.ts`.
+- Reuse `addEstimationToPlans` behavior used in `planned_activities.ts` and `home.ts`.
+- Reuse existing CTL/ATL/TSB math from current routers/core.
+
+## 4.2 Keep planned activities workflow compatible
+
+Primary file:
+
+- `packages/trpc/src/routers/planned_activities.ts`
+
+Changes:
+
+- No schema changes.
+- Add a shared status interpretation helper for `scheduled/completed/skipped/rescheduled/expired` computed from timestamps/date windows and activity presence.
+- Reuse it in `list`, `listByWeek`, and insight aggregations.
+
+---
+
+## 5) Mobile Plan and Create Flow Plan
+
+## 5.1 Simplify create flow
+
+Primary files:
+
+- `apps/mobile/app/(internal)/(standard)/training-plan-create.tsx`
+- `apps/mobile/components/training-plan/create/SinglePageForm.tsx`
+
+Required UX behavior:
+
+- Step 1 (default visible):
+  - goal type,
+  - target date,
+  - create button.
+- Advanced (collapsed by default):
+  - activity categories,
+  - availability,
+  - ramp/distribution overrides.
+
+Technical changes:
+
+- Reduce required form validation fields to goal/date only.
+- On submit:
+  - call `getFeasibilityPreview` first,
+  - show clear feasibility state,
+  - allow create with warning state for `aggressive`, block with explicit confirmation pattern for `unsafe` (MVP policy to confirm exact behavior).
+
+## 5.2 Plan tab and chart surfaces
+
+Primary files:
+
+- `apps/mobile/app/(internal)/(tabs)/plan.tsx`
+- `apps/mobile/components/charts/PlanVsActualChart.tsx`
+
+UI structure (minimalistic, low interaction):
+
+1. Top status card:
+   - boundary state,
+   - feasibility state,
+   - one-sentence divergence explanation.
+2. Three-path chart:
+   - Ideal, Scheduled, Actual.
+3. Compact adherence trend.
+4. Expandable detail panel for reasons/drivers.
+
+Chart updates:
+
+- Keep visual style minimal and clean.
+- Use stable, semantic color mapping:
+  - safe = green,
+  - caution = amber,
+  - exceeded = red.
+- Do not rely on animation for meaning.
+
+---
+
+## 6) Activity Plan Feature Alignment
+
+Goal: ensure activity plan and scheduling feed the same insight model.
+
+Primary files:
+
+- `packages/trpc/src/routers/planned_activities.ts`
+- `apps/mobile/components/ScheduleActivityModal.tsx`
+- `apps/mobile/components/shared/ActivityPlanCard.tsx`
+
+Changes:
+
+- Keep existing scheduling constraints and extend response details to include boundary impact preview.
+- On schedule create/update, return enough info for client to refresh insight timeline immediately.
+- Standardize date handling with athlete-local timezone across schedule and insight endpoints.
+
+---
+
+## 7) Work Breakdown with Deliverables
+
+## Workstream A - Contracts + Normalization (Core)
+
+- Add new schemas and normalization utilities.
+- Add backward compatibility tests for legacy structures.
+
+Deliverables:
+
+- `packages/core/schemas/training-plan-insight.ts` (new)
+- `packages/core/plan/normalizePlanConfig.ts` (new)
+- `packages/core/plan/*.ts` calculations (new)
+
+## Workstream B - Insight API (tRPC)
+
+- Implement new insight/projection/feasibility endpoints.
+- Keep existing endpoints stable.
+
+Deliverables:
+
+- `packages/trpc/src/routers/training_plans.ts` updates
+
+## Workstream C - Minimal Create UX (Mobile)
+
+- Collapse advanced configuration.
+- Goal/date required only.
+- Feasibility preview integration.
+
+Deliverables:
+
+- `apps/mobile/app/(internal)/(standard)/training-plan-create.tsx` updates
+- `apps/mobile/components/training-plan/create/SinglePageForm.tsx` updates
+
+## Workstream D - Plan Screen UX (Mobile)
+
+- Replace fragmented cards with one insight-first hierarchy.
+- Integrate canonical timeline payload.
+
+Deliverables:
+
+- `apps/mobile/app/(internal)/(tabs)/plan.tsx` updates
+- `apps/mobile/components/charts/PlanVsActualChart.tsx` updates
+
+## Workstream E - Scheduling Alignment
+
+- Unify computed schedule status behavior.
+- Ensure planned activity edits reflect in insight quickly.
+
+Deliverables:
+
+- `packages/trpc/src/routers/planned_activities.ts` updates
+
+---
+
+## 8) Testing Plan (must be completed before rollout)
+
+## 8.1 Unit (core)
+
+Suggested file paths:
+
+- `packages/core/__tests__/plan/adherence.test.ts`
+- `packages/core/__tests__/plan/boundary.test.ts`
+- `packages/core/__tests__/plan/feasibility.test.ts`
+- `packages/core/__tests__/plan/normalizePlanConfig.test.ts`
+
+## 8.2 Integration (tRPC)
+
+Suggested file paths:
+
+- `packages/trpc/src/routers/__tests__/training_plans.insight.test.ts`
+- `packages/trpc/src/routers/__tests__/training_plans.feasibility.test.ts`
+
+Coverage requirements:
+
+- Legacy and new plan structure inputs.
+- Sparse effort data confidence fallback.
+- Unsafe-goal classification edge cases.
+- Timezone/week boundary consistency.
+
+## 8.3 Mobile E2E
+
+Scenarios:
+
+- quick create with goal/date only,
+- aggressive/unsafe feasibility handling,
+- schedule edit updates insight chart state.
+
+---
+
+## 9) Rollout and Risk Controls
+
+- Add feature flag: `feature.trainingPlanInsightsMvp`.
+- Rollout stages:
+  1. internal users,
+  2. small cohort,
+  3. wider rollout.
+- Rollback triggers:
+  - insight endpoint error rate spike,
+  - latency regressions,
+  - boundary misclassification incidents.
+
+---
+
+## 10) Reviewer Sign-Off Checklist
+
+- Plan creation requires only goal + date.
+- Advanced config is optional and non-blocking.
+- No schema migration included.
+- Canonical insight payload includes timeline + boundary + feasibility + projection.
+- Feasibility flags unrealistic goals with clear reasons.
+- Boundary states are visible and explainable in mobile UI.
+- Capability/projection confidence is present and understandable.
+- Existing endpoints remain functional for current clients.
+- Tests cover formulas, fallbacks, timezone behavior, and create flow.
+
+---
+
+## 11) Definition of Complete
+
+This feature is complete when a user can:
+
+1. Create a usable plan quickly with only goal/date.
+2. See Ideal vs Scheduled vs Actual clearly in minimal UI.
+3. Understand whether plan execution is safe, caution, or exceeded, and why.
+4. See feasibility for aggressive/unrealistic goals before committing.
+5. See confidence-labeled capability/projection insights.
+
+All of the above must ship without database schema changes.
