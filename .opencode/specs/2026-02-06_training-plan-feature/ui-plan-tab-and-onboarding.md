@@ -6,6 +6,13 @@ Owner: Mobile + Product + Design
 
 This document defines the visual and interaction contract for the Training Plan MVP mobile experience. It complements `./design.md` and `./plan.md` by specifying exactly what users see and how they interact.
 
+Document role alignment:
+
+- `./design.md`: high-level product and experience intent.
+- `./plan.md`: low-level technical architecture and implementation plan.
+- `./ui-plan-tab-and-onboarding.md`: low-level UX and UI behavior contract.
+- This document should not redefine backend architecture; it should translate approved product + technical contracts into actionable UX details.
+
 This revision intentionally removes heavyweight interaction patterns and keeps onboarding changes incremental.
 
 ---
@@ -284,21 +291,62 @@ Core and shared contracts required by above screens:
 - `packages/core/plan/expandMinimalGoalToPlan.ts` (create)
 - `packages/core/plan/goalPriorityWeighting.ts` (create)
 
-### 11.4 Explicitly Untouched in This Scope
+### 11.4 Full Creation-Flow Inventory (Training Plan + Activity Plan)
 
-These are related areas that are intentionally not being changed by this UI update:
+After reviewing current implementation, the full creation flows should be included in the refactor scope.
 
-- `apps/mobile/app/(internal)/(standard)/training-plan-wizard.tsx`
-- `apps/mobile/app/(internal)/(standard)/training-plan-method-selector.tsx`
-- `apps/mobile/app/(internal)/(standard)/training-plan-review.tsx`
-- `apps/mobile/components/training-plan/create/steps/ExperienceLevelStep.tsx`
-- `apps/mobile/components/training-plan/create/steps/SportMixStep.tsx`
-- `apps/mobile/components/training-plan/create/steps/CurrentFitnessStep.tsx`
-- `apps/mobile/components/training-plan/create/steps/AvailabilityStep.tsx`
-- `apps/mobile/components/ActivityPlan/IntervalWizard.tsx`
-- `apps/mobile/components/ActivityPlan/StepEditorDialog.tsx`
+Training plan creation and review flow (refactor + consolidate):
 
-### 11.5 Coverage Check for Athlete Types
+- `apps/mobile/app/(internal)/(standard)/training-plan-method-selector.tsx` (update)
+- `apps/mobile/app/(internal)/(standard)/training-plan-wizard.tsx` (update)
+- `apps/mobile/app/(internal)/(standard)/training-plan-review.tsx` (update)
+- `apps/mobile/app/(internal)/(standard)/training-plan-create.tsx` (update)
+- `apps/mobile/components/training-plan/create/SinglePageForm.tsx` (update)
+- `apps/mobile/components/training-plan/create/steps/GoalSelectionStep.tsx` (update)
+- `apps/mobile/components/training-plan/create/steps/CurrentFitnessStep.tsx` (update)
+- `apps/mobile/components/training-plan/create/steps/SportMixStep.tsx` (update)
+- `apps/mobile/components/training-plan/create/steps/AvailabilityStep.tsx` (update)
+- `apps/mobile/components/training-plan/create/steps/ExperienceLevelStep.tsx` (update)
+- `packages/trpc/src/routers/training_plans.ts` (update)
+
+Activity plan creation flow (refactor + simplify):
+
+- `apps/mobile/app/(internal)/(standard)/create-activity-plan.tsx` (update)
+- `apps/mobile/app/(internal)/(standard)/create-activity-plan-structure.tsx` (update)
+- `apps/mobile/app/(internal)/(standard)/create-activity-plan-repeat.tsx` (update)
+- `apps/mobile/lib/hooks/forms/useActivityPlanForm.ts` (update)
+- `apps/mobile/lib/stores/activityPlanCreation.ts` (update)
+- `apps/mobile/components/ActivityPlan/StepEditorDialog.tsx` (update)
+- `apps/mobile/components/ActivityPlan/IntervalWizard.tsx` (update)
+- `packages/trpc/src/routers/activity_plans.ts` (update)
+
+Activity scheduling from detail and calendar surfaces:
+
+- `apps/mobile/app/(internal)/(standard)/activity-plan-detail.tsx` (update)
+- `apps/mobile/components/ScheduleActivityModal.tsx` (update)
+- `apps/mobile/app/(internal)/(standard)/scheduled-activities-list.tsx` (update)
+- `apps/mobile/app/(internal)/(standard)/scheduled-activity-detail.tsx` (update)
+- `apps/mobile/components/plan/calendar/ActivityList.tsx` (update)
+- `packages/trpc/src/routers/planned_activities.ts` (update)
+
+Supporting schema/type files required for stronger type safety:
+
+- `packages/core/schemas/training_plan_structure.ts` (update)
+- `packages/core/schemas/activity_plan_v2.ts` (update)
+- `packages/core/schemas/form-schemas.ts` (update)
+- `packages/core/schemas/index.ts` (update)
+- `packages/core/schemas/training-plan-insight.ts` (create)
+- `packages/core/schemas/training-plan-form.ts` (create)
+- `packages/core/schemas/activity-plan-form.ts` (create)
+
+### 11.5 Explicitly Untouched (Related But Out of Scope)
+
+Only unrelated recording/runtime execution surfaces remain untouched in this planning update:
+
+- `apps/mobile/app/(internal)/record/*.tsx`
+- `apps/mobile/components/recording/**/*.tsx`
+
+### 11.6 Coverage Check for Athlete Types
 
 Beginner support:
 
@@ -314,3 +362,77 @@ Pro support:
 
 - richer plan edit controls (constraints/distribution/caps)
 - projection and capability chart context without heavyweight interactions
+
+---
+
+## 12) Schema-to-Form Representation Review
+
+Current observations:
+
+- Training plan creation currently mixes multiple UI flows (`method-selector`, `wizard`, `review`, `single-page`) that map to different structure shapes and validation assumptions.
+- Activity plan creation uses strong V2 structure types but combines local store-only state and form validation in a way that can drift.
+- Training plan form validation is largely component-local instead of a single canonical form schema.
+
+Recommended canonical form model:
+
+1. Training plan form layers
+   - `minimalTrainingPlanFormSchema`: required `goal.name`, `goal.target_date`, optional `goal.priority`, optional normalized metric payload.
+   - `advancedTrainingPlanFormSchema`: constraints, activity mix, ramp/distribution overrides.
+   - `trainingPlanSubmitSchema`: normalized payload consumed by `createFromMinimalGoal`.
+
+2. Activity plan form layers
+   - `activityPlanMetaFormSchema`: name/category/location/route/notes.
+   - `activityPlanStructureFormSchema`: V2 intervals + steps.
+   - `activityPlanSubmitSchema`: strict composition of meta + structure.
+
+3. Shared typing rules
+   - All form states should infer from Zod (`z.infer`) and avoid parallel handwritten interfaces.
+   - All numeric inputs should parse through preprocessors (`string -> number`) in schema layer, not per component.
+   - All defaults (priority, min rest days, versioning) should be applied in schema transformers, not scattered in screens.
+
+---
+
+## 13) Evaluation of Current Methods and Best Restructure
+
+Current method issues:
+
+- Training plan creation has overlapping entry points and duplicated validation paths.
+- Review step receives large JSON payload through route params, increasing fragility.
+- Activity plan creation has powerful editing features but feels fragmented across multiple screens for non-advanced users.
+- Type safety is strong in parts (Activity V2) but inconsistent across training-plan create/edit flows.
+
+Recommended restructure (best path):
+
+Phase A - Unify training plan creation contract
+
+- Make onboarding goal-and-plan step the primary entry for first plan creation.
+- Keep one advanced edit flow for post-create adjustments.
+- Route all create actions through one backend minimal-create path that expands defaults.
+
+Phase B - Consolidate training plan UI paths
+
+- Deprecate redundant create pathways in favor of:
+  - minimal create step,
+  - review/confirm screen,
+  - advanced edit form.
+- Keep wizard capability only as progressive advanced step sections, not a separate architecture.
+
+Phase C - Simplify activity plan creation UX
+
+- Keep a two-layer flow:
+  - metadata screen,
+  - structure builder screen.
+- Move repeat editing and step editing into inline sheets/dialogs from one parent structure screen to reduce navigation complexity.
+
+Phase D - Strengthen end-to-end type safety
+
+- Introduce dedicated training/activity form schemas in `@repo/core` and infer UI types from them.
+- Remove duplicated local validation logic where schema already defines constraints.
+- Add integration tests for create/edit submissions to ensure schema-to-router contract stability.
+
+Expected outcomes:
+
+- Faster first-plan creation for beginners.
+- Cleaner progression path for amateur athletes.
+- Advanced controls preserved for pro users without cluttering default flows.
+- More professional UX consistency with stronger, centralized type contracts.

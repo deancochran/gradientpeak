@@ -7,6 +7,13 @@ This plan is the implementation bridge between:
 
 It is written so a reviewer can understand exactly what will change, where, and why.
 
+Document role alignment:
+
+- `./design.md` defines high-level product intent and constraints.
+- `./plan.md` defines low-level technical architecture, file-level implementation, and testing strategy.
+- `./ui-plan-tab-and-onboarding.md` defines low-level UX behavior, screen composition, and interaction rules.
+- If any conflict appears, resolve by preserving design intent while making technical and UX contracts explicit and testable.
+
 ## 1) Hard Constraints (must hold)
 
 - No database schema changes in this phase.

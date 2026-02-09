@@ -3,6 +3,12 @@ Last Updated: 2026-02-06
 Status: Draft for implementation planning
 Owner: Mobile + Core + Backend
 
+Document Role and Relationship
+∙ `./design.md` is the high-level product/design source of truth (what and why)
+∙ `./plan.md` is the low-level technical implementation source of truth (how in code)
+∙ `./ui-plan-tab-and-onboarding.md` is the low-level UX/UI source of truth (screen structure, interactions, component behavior)
+∙ All three documents must stay consistent; design intent should not conflict with technical or UX implementation details
+
 1. Problem Statement
    Users need clearer understanding than a standalone load number. They need to see how their plan design, schedule, and completed training compare over time so they can make informed training decisions toward sprint, endurance, or multisport goals.
    Recent data model changes (profile_metrics and activity_efforts) enable dynamic, non-stale derivations of capability and readiness. This unlocks progression and adherence insights based on fresh best-effort evidence and power/pace curves instead of stale snapshots.
