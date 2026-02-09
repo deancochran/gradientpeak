@@ -6,6 +6,8 @@ Owner: Mobile + Product + Design
 
 This document defines the visual and interaction contract for the Training Plan MVP mobile experience. It complements `./design.md` and `./plan.md` by specifying exactly what users see and how they interact.
 
+This revision intentionally removes heavyweight interaction patterns and keeps onboarding changes incremental.
+
 ---
 
 ## 1) Goals and Scope
@@ -15,8 +17,8 @@ This document defines the visual and interaction contract for the Training Plan 
 - Plan tab information architecture and visual hierarchy
 - Plan tab component inventory and states
 - Chart surfaces available in MVP
-- Chart and panel interaction behaviors
-- Onboarding quickstart enhancements beyond current flow
+- Chart and interaction behaviors
+- Onboarding integration updates inside the existing multi-step onboarding flow
 - Related UI updates needed to keep setup and Plan tab coherent
 
 ### Out of Scope
@@ -46,13 +48,9 @@ Top-to-bottom order:
 4. **Secondary chart row**
    - adherence trend sparkline
    - capability/projection mini chart
-5. **Drivers panel (expandable)**
-   - top reasons and threshold details
-   - "what would change this state" guidance
-6. **Action row**
+5. **Action row**
    - Edit plan constraints
    - View calendar
-   - Recheck feasibility
 
 ---
 
@@ -97,22 +95,12 @@ Top-to-bottom order:
 - Goal-date projection marker with confidence tint
 - Supports CP or CS presentation by activity category
 
-## 3.5 Drivers Panel (Expandable)
-
-- Collapsed default on first load
-- Sections:
-  - "Top Drivers"
-  - "Thresholds Near/Exceeded"
-  - "What would change this state"
-- Must include explicit reason identifiers from backend (humanized labels)
-
-## 3.6 Action Row
+## 3.5 Action Row
 
 - `Adjust Plan`
 - `Open Calendar`
-- `Recalculate`
 
-Action row remains visible below drivers panel and uses low-emphasis styling.
+Action row remains visible below the chart row and uses low-emphasis styling.
 
 ---
 
@@ -138,22 +126,18 @@ No additional chart types are required for MVP in Plan tab.
 
 - Pull-to-refresh triggers `getInsightTimeline` refetch
 - Time range chip selection updates all chart windows together
-- Goal switcher updates summary, charts, and drivers in one transaction
+- Goal switcher updates summary and charts in one transaction
+- Plan tab passively refreshes when active plan data changes (goal edits, calendar updates, completed/missed sessions)
+- No manual recalculate control is shown in Plan tab
 
 ## 5.2 Chart Interactions
 
 - Tap/drag on primary chart shows synchronized vertical cursor across mini charts
 - Tooltip displays date + Ideal/Scheduled/Actual + adherence
-- Long-press opens per-day detail drawer
-- Legend toggles are allowed only for secondary emphasis; Actual line cannot be hidden
+- No long-press modal or drawer interactions in MVP
+- Legend is static for MVP to keep interaction lightweight
 
-## 5.3 Drivers/Details Interactions
-
-- Tap status summary card opens drivers panel directly
-- Tap boundary badge opens threshold detail modal
-- Modal includes plain-language reason + machine reason key
-
-## 5.4 Empty/Error/Loading States
+## 5.3 Empty/Error/Loading States
 
 - Loading: skeleton summary + skeleton chart blocks
 - Empty: clear explanation and next action ("Schedule your first week")
@@ -161,35 +145,26 @@ No additional chart types are required for MVP in Plan tab.
 
 ---
 
-## 6) Onboarding Quickstart Enhancements
+## 6) Onboarding Integration Update (Incremental)
 
-Goal: move from full onboarding dependency to fast plan-start, then progressive enrichment.
+Goal: incorporate goal + training plan creation into the existing multi-step onboarding flow, not a full onboarding overhaul.
 
-## 6.1 Quickstart Entry
+## 6.1 New Onboarding Step
 
-- Add "Start Quick Plan" path in onboarding and profile setup
-- Required fields remain exactly:
-  - goal name
-  - target date
-- Priority is optional input and defaulted server-side when omitted
+- Add one new step in the current multi-step onboarding form:
+  - step purpose: create first training goal and training plan
+  - required inputs: goal name + target date
+  - optional inputs: goal priority and collapsed precision helper
+- Keep current onboarding step order and existing steps intact unless needed for routing.
 
-## 6.2 Quickstart Flow
+## 6.2 In-Step Flow
 
-1. Goal + date input
-2. Optional precision helper (collapsed)
-3. Feasibility preview
-4. Create plan
-5. Post-create checklist (non-blocking)
+1. Enter goal name + target date
+2. Optionally expand precision helper
+3. Fetch feasibility preview inline
+4. Create plan and continue onboarding
 
-## 6.3 Post-Create Enrichment (Non-blocking)
-
-- Prompt cards shown after plan creation:
-  - add availability
-  - set weekly volume preference
-  - connect profile metrics data sources
-- Dismissed cards should not re-block Plan tab usage
-
-## 6.4 Unsafe Goal Handling UX
+## 6.3 Unsafe Goal Handling UX
 
 - `aggressive`: allow create with warning banner
 - `unsafe`: require explicit confirmation sheet before create
@@ -199,10 +174,10 @@ Goal: move from full onboarding dependency to fast plan-start, then progressive 
 
 ## 7) Related UI Updates Outside Plan Tab
 
-- **Today tab**: add compact boundary + adherence snapshot card that deep-links to Plan tab drivers panel.
+- **Today tab**: add compact boundary + adherence snapshot card that deep-links to Plan tab.
 - **Calendar tab**: after schedule edits, show transient "Plan updated" state and provide one-tap return to Plan tab.
 - **Training plan create screen**: collapse advanced controls by default and keep one-goal form above fold.
-- **Profile settings**: move advanced planning preferences to a dedicated subsection; do not expose in quickstart.
+- **Profile settings**: advanced planning preferences remain optional and unchanged for MVP.
 
 ---
 
@@ -227,7 +202,7 @@ Primary files expected to change:
 
 Supporting files likely:
 
-- `apps/mobile/components/...` (new status summary, drivers panel, chart wrappers)
+- `apps/mobile/components/...` (new status summary, chart wrappers)
 - `packages/trpc/src/routers/training_plans.ts` (payload fields consumed by UI)
 
 ---
@@ -237,6 +212,105 @@ Supporting files likely:
 - Plan tab shows boundary state, feasibility state, and divergence sentence above charts.
 - User can view Ideal/Scheduled/Actual and adherence trend in a single scroll without entering another screen.
 - Time window switching updates all chart surfaces consistently.
-- Drivers panel exposes both plain-language and explicit threshold reason details.
-- Quickstart allows plan creation with only goal name + target date input in under 60 seconds.
-- Post-create enrichment is suggested, never blocking.
+- Plan tab updates automatically when active plan state changes; no manual recalculate needed.
+- No long-press modal interactions are required for MVP charts.
+- Existing multi-step onboarding includes a new goal-and-plan step using only goal name + target date as required input.
+
+---
+
+## 11) Full File Inventory for This Update Scope
+
+This section is the authoritative file-level checklist for planning-related UX updates.
+
+### 11.1 Created in This Planning Update
+
+- `.opencode/specs/2026-02-06_training-plan-feature/ui-plan-tab-and-onboarding.md`
+
+### 11.2 Updated in This Planning Update
+
+- `.opencode/specs/2026-02-06_training-plan-feature/design.md`
+- `.opencode/specs/2026-02-06_training-plan-feature/plan.md`
+
+### 11.3 Planned Updates in Implementation (Related to Requested Features)
+
+Training plan edit form:
+
+- `apps/mobile/app/(internal)/(standard)/training-plan-adjust.tsx` (update)
+- `apps/mobile/app/(internal)/(standard)/training-plan-settings.tsx` (update)
+- `apps/mobile/components/training-plan/QuickAdjustSheet.tsx` (update)
+- `apps/mobile/components/training-plan/AdvancedConfigSheet.tsx` (update)
+- `apps/mobile/components/training-plan/edit/TrainingPlanEditForm.tsx` (create)
+
+Training plan view:
+
+- `apps/mobile/app/(internal)/(standard)/training-plan.tsx` (update)
+- `apps/mobile/app/(internal)/(standard)/training-plans-list.tsx` (update)
+- `apps/mobile/components/training-plan/CurrentStatusCard.tsx` (update)
+- `apps/mobile/components/training-plan/WeeklyProgressCard.tsx` (update)
+
+Plan tab:
+
+- `apps/mobile/app/(internal)/(tabs)/plan.tsx` (update)
+- `apps/mobile/components/charts/PlanVsActualChart.tsx` (update)
+- `apps/mobile/components/charts/TrainingLoadChart.tsx` (update)
+- `apps/mobile/components/shared/DetailChartModal.tsx` (update, simplified interaction only)
+- `apps/mobile/components/plan/PlanStatusSummaryCard.tsx` (create)
+- `apps/mobile/components/plan/PlanAdherenceMiniChart.tsx` (create)
+- `apps/mobile/components/plan/PlanCapabilityMiniChart.tsx` (create)
+
+Calendar view:
+
+- `apps/mobile/app/(internal)/(standard)/scheduled-activities-list.tsx` (update)
+- `apps/mobile/app/(internal)/(standard)/scheduled-activity-detail.tsx` (update)
+- `apps/mobile/components/plan/calendar/ActivityList.tsx` (update)
+
+Schedule activity plans from detail view:
+
+- `apps/mobile/app/(internal)/(standard)/activity-plan-detail.tsx` (update)
+- `apps/mobile/components/ScheduleActivityModal.tsx` (update)
+- `packages/trpc/src/routers/planned_activities.ts` (update)
+
+Onboarding integration (incremental, multi-step form):
+
+- `apps/mobile/app/(external)/onboarding.tsx` (update)
+- `apps/mobile/components/onboarding/steps/TrainingGoalPlanStep.tsx` (create)
+- `packages/trpc/src/routers/training_plans.ts` (update: minimal create + feasibility preview consumption)
+
+Core and shared contracts required by above screens:
+
+- `packages/core/schemas/training_plan_structure.ts` (update)
+- `packages/core/schemas/training-plan-insight.ts` (create)
+- `packages/core/plan/normalizeGoalInput.ts` (create)
+- `packages/core/plan/expandMinimalGoalToPlan.ts` (create)
+- `packages/core/plan/goalPriorityWeighting.ts` (create)
+
+### 11.4 Explicitly Untouched in This Scope
+
+These are related areas that are intentionally not being changed by this UI update:
+
+- `apps/mobile/app/(internal)/(standard)/training-plan-wizard.tsx`
+- `apps/mobile/app/(internal)/(standard)/training-plan-method-selector.tsx`
+- `apps/mobile/app/(internal)/(standard)/training-plan-review.tsx`
+- `apps/mobile/components/training-plan/create/steps/ExperienceLevelStep.tsx`
+- `apps/mobile/components/training-plan/create/steps/SportMixStep.tsx`
+- `apps/mobile/components/training-plan/create/steps/CurrentFitnessStep.tsx`
+- `apps/mobile/components/training-plan/create/steps/AvailabilityStep.tsx`
+- `apps/mobile/components/ActivityPlan/IntervalWizard.tsx`
+- `apps/mobile/components/ActivityPlan/StepEditorDialog.tsx`
+
+### 11.5 Coverage Check for Athlete Types
+
+Beginner support:
+
+- onboarding goal + date step in existing flow
+- simplified Plan tab summary + clear states
+
+Amateur support:
+
+- calendar scheduling flow from activity detail
+- plan trend charts and adherence visibility
+
+Pro support:
+
+- richer plan edit controls (constraints/distribution/caps)
+- projection and capability chart context without heavyweight interactions
