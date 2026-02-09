@@ -1,5 +1,7 @@
 Training Plan Feature Spec - Revision
-Last Updated: 2026-02-06Status: Draft for implementation planningOwner: Mobile + Core + Backend
+Last Updated: 2026-02-06
+Status: Draft for implementation planning
+Owner: Mobile + Core + Backend
 
 1. Problem Statement
    Users need clearer understanding than a standalone load number. They need to see how their plan design, schedule, and completed training compare over time so they can make informed training decisions toward sprint, endurance, or multisport goals.
@@ -193,6 +195,7 @@ Last Updated: 2026-02-06Status: Draft for implementation planningOwner: Mobile +
     ∙ Users can inspect divergence drivers and threshold details in-context
     ∙ Users can see whether divergence is from undertraining, overtraining, or schedule non-adherence
     ∙ Any plan adjustment updates path visualizations and adherence state without requiring re-onboarding
+    ∙ Detailed visual and interaction behavior for Plan tab and onboarding quickstart lives in `./ui-plan-tab-and-onboarding.md`
 
 11. Onboarding and Configuration UX
     Novice-First Default Flow
@@ -216,6 +219,7 @@ Last Updated: 2026-02-06Status: Draft for implementation planningOwner: Mobile +
        ∙ If data is sparse, use conservative starter plans and calibration workouts
        ∙ If data quality is high, scale targets from latest valid efforts and profile metrics
        ∙ If optional setup is skipped, system still generates a full dynamic plan from goal/date and current activity history
+       ∙ Quickstart onboarding and post-create enrichment UX details are specified in `./ui-plan-tab-and-onboarding.md`
 
 12. Safety, Guardrails, and Risk Mitigation
     Core Safety Principles

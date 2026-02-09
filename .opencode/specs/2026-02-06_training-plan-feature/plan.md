@@ -393,6 +393,12 @@ Chart updates:
   - exceeded = red.
 - Do not rely on animation for meaning.
 
+Detailed mobile visual specification (component hierarchy, chart definitions, interaction behavior, and onboarding quickstart UX) is documented in:
+
+- `./ui-plan-tab-and-onboarding.md`
+
+This visual spec is authoritative for Plan tab UI implementation details and should be kept in sync with this plan.
+
 ---
 
 ## 6) Activity Plan Feature Alignment
