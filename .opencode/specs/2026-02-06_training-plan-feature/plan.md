@@ -10,8 +10,9 @@ It is written so a reviewer can understand exactly what will change, where, and 
 ## 1) Hard Constraints (must hold)
 
 - No database schema changes in this phase.
-- Setup must allow required input only: one goal (`name + target_date`).
+- Setup must allow required user input only: one goal (`name + target_date`); goal priority must always exist via defaulting when omitted.
 - Goal model must support both approachable intent goals and precise measurable goals.
+- Goal metrics must use normalized standard units in contracts and persistence (e.g., meters, seconds, m/s), not raw pace strings.
 - Enhance existing training plan schema; do not replace it with a brand-new root schema.
 - Most plan/config fields should remain optional at creation time with safe defaults.
 - Plans must support multiple goals, with at least one goal required.
@@ -94,7 +95,7 @@ const goalMetricSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("pace_threshold"),
-    target_pace_per_100m_s: z.number().positive(),
+    target_speed_mps: z.number().positive(),
     test_distance_m: z.number().positive().default(400),
     activity_category: activityCategorySchema,
   }),
@@ -124,6 +125,7 @@ export const trainingGoalSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1).max(100),
   target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  // Always present for weighting when goals conflict; default applied if omitted.
   priority: z.number().int().min(1).max(10).default(1),
   metric: goalMetricSchema.optional(), // additive
 });
@@ -137,6 +139,7 @@ const minimalPlanCreateSchema = z.object({
   goal: z.object({
     name: z.string().min(1),
     target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    priority: z.number().int().min(1).max(10).default(1),
     metric: goalMetricSchema.optional(),
   }),
 });
@@ -148,13 +151,14 @@ Compatibility strategy:
 - Existing full-create flows remain valid.
 - New minimal-create flow compiles into existing periodized structure with defaults for blocks, progression, distribution, and constraints.
 - Plans support multiple goals (`goals[]`), with `min(1)` preserved.
+- Goal priority is mandatory in normalized plan data and used to weight planning tradeoffs when goals are near-conflicting.
 - Goal metric category fields are validated with Supazod-generated activity category schemas to keep DB and app contracts synchronized.
 
 Approachable-to-precise goal normalization:
 
 - Accept simple goal input first.
 - Optionally attach measurable detail via explicit metric types: `race_performance`, `power_threshold`, `pace_threshold`, `hr_threshold`, or `multisport_event`.
-- Derive normalized pace/power outputs in computations, not as required persisted fields.
+- Persist and compute with normalized numeric units (`distance_m`, `target_time_s`, `target_speed_mps` where relevant); avoid raw pace strings in API/storage contracts.
 
 ## 3.2 Canonical Insight Contract (single payload)
 
@@ -288,7 +292,7 @@ Add new endpoints:
    - output: canonical `planInsightResponseSchema`
 
 2. `getFeasibilityPreview`
-   - input: minimal create payload (`goal` object with name + target_date, optional metric)
+   - input: minimal create payload (`goal` object with name + target_date, optional `priority`, optional metric)
    - output: `{ state, reasons, key_metrics, normalized_goal }`
 
 3. `createFromMinimalGoal`
@@ -336,13 +340,13 @@ Primary files:
 Required UX behavior:
 
 - Step 1 (default visible):
-  - one goal (name + target date),
+  - one goal (name + target date; priority auto-defaulted if not set),
   - create button.
 - Nice-to-have follow-up: allow plan creation entry point before full onboarding completion, then enrich profile later without invalidating the plan.
 - Optional precision helper (still in Step 1, collapsed by default):
   - race performance (distance + target time + activity),
   - power threshold (watts + activity),
-  - pace threshold (sec/100m + activity),
+  - speed threshold (m/s + activity),
   - heart-rate threshold (LTHR),
   - multisport event segments + total target time.
 - Advanced (collapsed by default):
@@ -354,9 +358,10 @@ Required UX behavior:
 Technical changes:
 
 - Reduce required form validation fields to one goal (name + target date) only.
+- Ensure goal priority is always present in submit payload (user-selected or defaulted).
 - On submit:
   - call `getFeasibilityPreview` first,
-  - normalize optional goal metric input for deterministic projections,
+  - normalize optional goal metric input into standard units for deterministic projections,
   - show clear feasibility state,
   - allow create with warning state for `aggressive`, block with explicit confirmation pattern for `unsafe` (MVP policy to confirm exact behavior),
   - create plan through minimal-goal endpoint that expands defaults into full schema.
@@ -413,6 +418,7 @@ Changes:
 ## Workstream A - Contracts + Normalization (Core)
 
 - Enhance existing training goal schema with performance-only metric variants and activity-type awareness.
+- Enforce goal-priority defaults and weighting support for multi-goal conflict handling.
 - Add minimal-goal input schema and expansion utilities that compile to existing periodized structure.
 - Add backward compatibility tests for existing periodized/maintenance structures.
 
@@ -421,6 +427,7 @@ Deliverables:
 - `packages/core/schemas/training_plan_structure.ts` updates
 - `packages/core/plan/normalizeGoalInput.ts` (new)
 - `packages/core/plan/expandMinimalGoalToPlan.ts` (new)
+- `packages/core/plan/goalPriorityWeighting.ts` (new or merged into planning utilities)
 - `packages/core/plan/*.ts` calculations (new)
 
 ## Workstream B - Insight API (tRPC)
@@ -487,6 +494,7 @@ Coverage requirements:
 
 - Existing full structure inputs and new minimal-goal inputs.
 - All goal metric variants validate and normalize correctly.
+- Goal priority defaulting and weighting behavior under conflicting goals.
 - Sparse effort data confidence fallback.
 - Unsafe-goal classification edge cases.
 - Timezone/week boundary consistency.
@@ -517,11 +525,12 @@ Scenarios:
 
 ## 10) Reviewer Sign-Off Checklist
 
-- Plan creation requires only goal + date.
+- Plan creation requires only goal + date user input; priority is defaulted when omitted.
+- Goal priority is always present for each goal and used for conflict weighting.
 - Schema enhancement is additive to current training plan schema (no root replacement).
 - Most plan configuration fields are optional at creation and defaulted server-side.
 - Plans support multiple goals with at least one goal required.
-- Goal model supports race performance, power threshold, pace threshold, HR threshold, multisport events, and intent-only (`none`) under one contract.
+- Goal model supports race performance, power threshold, speed-threshold metrics in normalized units, HR threshold, multisport events, and intent-only (`none`) under one contract.
 - Advanced config is optional and non-blocking.
 - No schema migration included.
 - Canonical insight payload includes timeline + boundary + feasibility + projection.
@@ -537,7 +546,7 @@ Scenarios:
 
 This feature is complete when a user can:
 
-1. Create a usable plan quickly with one goal (name + target date).
+1. Create a usable plan quickly with one goal (name + target date), with priority auto-attached by default when omitted.
 2. Use either general intent goals or precise measurable goals without changing the core flow.
 3. See Ideal vs Scheduled vs Actual clearly in minimal UI.
 4. Understand whether plan execution is safe, caution, or exceeded, and why.

@@ -107,6 +107,7 @@ Last Updated: 2026-02-06Status: Draft for implementation planningOwner: Mobile +
 7. Domain Model (Feature-Level)
    Core Entities
    ∙ Goal and GoalTarget (objective, target date, KPI, priority)
+   ∙ Every goal must have an associated priority (defaulted if not user-specified) so calculations can weight higher-value goals when timelines or schedules conflict
    ∙ TrainingPlan (active version for a goal window)
    ∙ PlanBlock → WeekPlan → DayPlanTarget hierarchy (mapped to existing DayPrescription schema naming where needed)
    ∙ ConstraintSet (availability, duration caps, equipment, injury flags)
@@ -116,7 +117,7 @@ Last Updated: 2026-02-06Status: Draft for implementation planningOwner: Mobile +
    ∙ Supported goal archetypes must include:
    ∙ Race performance goals (distance + target time + activity type)
    ∙ Power threshold goals (target watts + test duration)
-   ∙ Pace threshold goals (target pace per 100m + test distance)
+   ∙ Speed threshold goals (target speed in meters/second + test distance in meters)
    ∙ Heart-rate threshold goals (target LTHR)
    ∙ Multisport event goals (segment targets + total target time)
    ∙ General intent goals (e.g., improve health/fitness) when no strict KPI is provided
@@ -143,7 +144,7 @@ Last Updated: 2026-02-06Status: Draft for implementation planningOwner: Mobile +
 
 1) Goal Setup
    ∙ User provides goal intent and target date/horizon (minimal required)
-   ∙ If user provides measurable detail (e.g., race performance, power threshold, pace threshold, HR threshold, multisport target), system derives normalized performance targets
+   ∙ If user provides measurable detail (e.g., race performance, power threshold, speed threshold, HR threshold, multisport target), system derives normalized performance targets using standard units (meters, seconds, m/s)
    ∙ If user provides only general intent, system creates a conservative baseline target model and labels confidence appropriately
    ∙ Activity categories default intelligently from goal intent; user customization is optional
 2) Calendar Configuration
@@ -163,6 +164,7 @@ Last Updated: 2026-02-06Status: Draft for implementation planningOwner: Mobile +
    ∙ Actual Path and adherence timeline are recalculated and reflected in UI
 6) Plan Adjustment and Re-baselining
    ∙ User can adjust plan constraints, intensity, timeline, or priorities
+   ∙ Priority must be used as an explicit weighting signal when two goals are too close or conflicting for simultaneous optimal progression
    ∙ System stores adjustment history and recomputes Ideal, Scheduled, and projected adherence from active configuration
 
 9. Progress Insight Contract
@@ -196,8 +198,8 @@ Last Updated: 2026-02-06Status: Draft for implementation planningOwner: Mobile +
     Novice-First Default Flow
     1. Choose goal (approachable input) and target date/horizon
     2. Confirm and start
-       The two required inputs for MVP are goal and date. Everything else is optional with sensible defaults.
-       Approachable goal input should allow simple phrases and guided presets while still supporting precise targets when available (e.g., "Marathon in 3:30", "Hit 300W FTP", "Swim CSS 1:20/100m", "Ironman under 12 hours").
+       The two required user-entered inputs for MVP are goal and date. Everything else is optional with sensible defaults, including an auto-assigned goal priority when not explicitly chosen.
+       Approachable goal input should allow simple phrases and guided presets while still supporting precise targets when available (e.g., "Marathon in 3:30", "Hit 300W FTP", "Swim CSS 1.50 m/s", "Ironman under 12 hours").
        Optional Setup (After Defaults)
        ∙ Activity categories
        ∙ Training availability
@@ -239,13 +241,13 @@ Last Updated: 2026-02-06Status: Draft for implementation planningOwner: Mobile +
 14. Acceptance Criteria
     Setup and Onboarding
     ∙ User can complete setup and receive first progression/adherence view in ≤2 minutes on defaults
-    ∙ A new user can create a usable plan with only goal + date inputs in ≤60 seconds
+    ∙ A new user can create a usable plan with only goal + date user input in ≤60 seconds; priority is always attached to the goal via defaulting if omitted
     ∙ System supports single-sport and multisport plans with consistent workflow
     Core Functionality
     ∙ Today screen always provides current progression state, adherence state, and safety/boundary status
     ∙ Insight states derive from fresh effort/profile data and avoid stale best-effort assumptions
     ∙ Calendar edits and missed sessions update near-term path/adherence insights automatically
-    ∙ Goal system supports precise measurable goals (race performance, power threshold, pace threshold, HR threshold, multisport events) and general intent goals under one workflow
+    ∙ Goal system supports precise measurable goals (race performance, power threshold, speed threshold in m/s, HR threshold, multisport events) and general intent goals under one workflow
     User Experience by Persona
     ∙ Low-data users receive safe, explicitly labeled low-confidence states and conservative boundary handling
     ∙ Advanced users can configure progression and distribution controls without affecting novice flow
