@@ -23,6 +23,7 @@ Document Role and Relationship
    ∙ Preserve training safety via fatigue, ramp-rate, and spacing guardrails with clear visual cues when boundaries are exceeded
    ∙ Make adherence visible as a time-series guide, not only aggregate weekly summaries
    ∙ Keep setup and day-to-day interaction minimal while preserving core planning and insight functionality
+   ∙ Make first-plan creation minimal-first (goal name + target date) and defer advanced schema configuration to post-create refinement
    ∙ Prefer minimalistic UI with high-quality charts and clear visual states; avoid complex motion and style-heavy interactions
 3. Non-Goals
    ∙ This spec does not define final interval-builder UX for custom workout authoring

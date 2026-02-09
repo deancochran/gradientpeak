@@ -52,6 +52,10 @@ Document role alignment:
 - Current creation flow is config-heavy:
   - `apps/mobile/app/(internal)/(standard)/training-plan-create.tsx`
   - `apps/mobile/components/training-plan/create/SinglePageForm.tsx`
+- Additional parallel creation paths currently exist:
+  - `apps/mobile/app/(internal)/(standard)/training-plan-method-selector.tsx`
+  - `apps/mobile/app/(internal)/(standard)/training-plan-wizard.tsx`
+  - `apps/mobile/app/(internal)/(standard)/training-plan-review.tsx`
 - Plan tab currently renders plan-vs-actual trend and cards:
   - `apps/mobile/app/(internal)/(tabs)/plan.tsx`
   - `apps/mobile/components/charts/PlanVsActualChart.tsx`
@@ -63,6 +67,14 @@ Document role alignment:
 3. Boundary + feasibility are not first-class response fields.
 4. Capability projections are available but not integrated into plan insight timeline.
 5. Mobile plan screens are functional but not yet aligned to minimal decision-support IA.
+6. Training plan creation is over-segmented across multiple pages for first-time users.
+
+## 2.4 Consolidation Audit Conclusion
+
+- Yes, the current training plan creation flow is over-engineered for default user entry.
+- First-plan creation should be a single minimal path (required: goal name + target date).
+- Advanced schema configuration should be moved to post-create edit surfaces.
+- Existing wizard/review/method selector should be consolidated into one lightweight entry and one advanced refine path.
 
 ---
 
@@ -346,21 +358,31 @@ Primary files:
 
 Required UX behavior:
 
-- Step 1 (default visible):
+- Default create path (single screen):
   - one goal (name + target date; priority auto-defaulted if not set),
-  - create button.
+  - create button,
+  - optional collapsed precision helper.
 - Nice-to-have follow-up: allow plan creation entry point before full onboarding completion, then enrich profile later without invalidating the plan.
-- Optional precision helper (still in Step 1, collapsed by default):
+- Optional precision helper (collapsed by default):
   - race performance (distance + target time + activity),
   - power threshold (watts + activity),
   - speed threshold (m/s + activity),
   - heart-rate threshold (LTHR),
   - multisport event segments + total target time.
-- Advanced (collapsed by default):
+- Advanced configuration is post-create by default:
   - activity categories,
   - availability,
   - ramp/distribution overrides,
   - weekly volume/frequency/duration caps.
+
+Route consolidation policy:
+
+- Keep as primary create entry:
+  - `apps/mobile/app/(internal)/(standard)/training-plan-create.tsx`
+- Convert to optional/refine-only or deprecate from default navigation:
+  - `apps/mobile/app/(internal)/(standard)/training-plan-method-selector.tsx`
+  - `apps/mobile/app/(internal)/(standard)/training-plan-wizard.tsx`
+  - `apps/mobile/app/(internal)/(standard)/training-plan-review.tsx`
 
 Technical changes:
 
@@ -372,6 +394,9 @@ Technical changes:
   - show clear feasibility state,
   - allow create with warning state for `aggressive`, block with explicit confirmation pattern for `unsafe` (MVP policy to confirm exact behavior),
   - create plan through minimal-goal endpoint that expands defaults into full schema.
+- After successful create:
+  - route to training plan view with a prominent `Refine Plan` action,
+  - open advanced configuration only on explicit user action.
 
 ## 5.2 Plan tab and chart surfaces
 
@@ -389,7 +414,7 @@ UI structure (minimalistic, low interaction):
 2. Three-path chart:
    - Ideal, Scheduled, Actual.
 3. Compact adherence trend.
-4. Expandable detail panel for reasons/drivers.
+4. No expandable detail panel in MVP.
 
 Chart updates:
 
@@ -457,11 +482,16 @@ Deliverables:
 - Collapse advanced configuration.
 - One goal required (name + target date) with optional precision details.
 - Feasibility preview integration.
+- Consolidate route entry so only one default create path is exposed.
+- Move complex setup to post-create refinement.
 
 Deliverables:
 
 - `apps/mobile/app/(internal)/(standard)/training-plan-create.tsx` updates
 - `apps/mobile/components/training-plan/create/SinglePageForm.tsx` updates
+- `apps/mobile/app/(internal)/(standard)/training-plan-method-selector.tsx` updates (demote/deprecate in default flow)
+- `apps/mobile/app/(internal)/(standard)/training-plan-wizard.tsx` updates (advanced-only or removed from default flow)
+- `apps/mobile/app/(internal)/(standard)/training-plan-review.tsx` updates (align or retire)
 
 ## Workstream D - Plan Screen UX (Mobile)
 
@@ -539,6 +569,8 @@ Scenarios:
 ## 10) Reviewer Sign-Off Checklist
 
 - Plan creation requires only goal + date user input; priority is defaulted when omitted.
+- Only one default training plan create entry is exposed to users.
+- Wizard/review/method-selector pages are no longer part of default first-plan flow.
 - Goal priority is always present for each goal and used for conflict weighting.
 - Schema enhancement is additive to current training plan schema (no root replacement).
 - Most plan configuration fields are optional at creation and defaulted server-side.

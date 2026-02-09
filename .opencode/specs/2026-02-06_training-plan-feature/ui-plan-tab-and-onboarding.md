@@ -156,6 +156,11 @@ No additional chart types are required for MVP in Plan tab.
 
 Goal: incorporate goal + training plan creation into the existing multi-step onboarding flow, not a full onboarding overhaul.
 
+Creation UX simplification policy:
+
+- First-time users should see only the minimum required fields to create a plan.
+- Advanced configuration is intentionally deferred to post-create edit surfaces.
+
 ## 6.1 New Onboarding Step
 
 - Add one new step in the current multi-step onboarding form:
@@ -170,6 +175,7 @@ Goal: incorporate goal + training plan creation into the existing multi-step onb
 2. Optionally expand precision helper
 3. Fetch feasibility preview inline
 4. Create plan and continue onboarding
+5. Offer `Refine Plan` entry after create (optional, non-blocking)
 
 ## 6.3 Unsafe Goal Handling UX
 
@@ -309,6 +315,15 @@ Training plan creation and review flow (refactor + consolidate):
 - `apps/mobile/components/training-plan/create/steps/ExperienceLevelStep.tsx` (update)
 - `packages/trpc/src/routers/training_plans.ts` (update)
 
+Training plan consolidation targets:
+
+- Primary default create screen:
+  - `apps/mobile/app/(internal)/(standard)/training-plan-create.tsx`
+- Advanced-only or deprecated from default entry flow:
+  - `apps/mobile/app/(internal)/(standard)/training-plan-method-selector.tsx`
+  - `apps/mobile/app/(internal)/(standard)/training-plan-wizard.tsx`
+  - `apps/mobile/app/(internal)/(standard)/training-plan-review.tsx`
+
 Activity plan creation flow (refactor + simplify):
 
 - `apps/mobile/app/(internal)/(standard)/create-activity-plan.tsx` (update)
@@ -400,6 +415,7 @@ Current method issues:
 - Review step receives large JSON payload through route params, increasing fragility.
 - Activity plan creation has powerful editing features but feels fragmented across multiple screens for non-advanced users.
 - Type safety is strong in parts (Activity V2) but inconsistent across training-plan create/edit flows.
+- Too many pages are involved before users can complete first plan creation.
 
 Recommended restructure (best path):
 
@@ -413,7 +429,7 @@ Phase B - Consolidate training plan UI paths
 
 - Deprecate redundant create pathways in favor of:
   - minimal create step,
-  - review/confirm screen,
+  - lightweight confirm state,
   - advanced edit form.
 - Keep wizard capability only as progressive advanced step sections, not a separate architecture.
 
