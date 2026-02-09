@@ -43,6 +43,7 @@ Last Updated: 2026-02-06Status: Draft for implementation planningOwner: Mobile +
    Core Inputs
    ∙ activity_efforts: canonical evidence of activity efforts and recency; used to find best efforts in a given timeframe
    ∙ profile_metrics: limited to weight and LTHR usage in this phase
+   ∙ activity_categories contract from Supazod-generated schemas/types (avoid hardcoded category enums in feature schemas)
    ∙ Recent activity history and training load signals
    ∙ Training plan configuration (goals, timeline, constraints, calendar)
    Derived Artifacts (Dynamic)
@@ -109,12 +110,15 @@ Last Updated: 2026-02-06Status: Draft for implementation planningOwner: Mobile +
    ∙ TrainingPlan (active version for a goal window)
    ∙ PlanBlock → WeekPlan → DayPlanTarget hierarchy (mapped to existing DayPrescription schema naming where needed)
    ∙ ConstraintSet (availability, duration caps, equipment, injury flags)
+   ∙ Goal model remains outcome-only; plan config/constraints hold training structure decisions (volume, frequency, weekly caps)
    Goal Modeling Requirements
    ∙ Goals must be precise when possible, but approachable by default
    ∙ Supported goal archetypes must include:
-   ∙ Race performance goals (distance + target time, from which target pace/speed is derived)
-   ∙ Time-based or distance-based progression goals
-   ∙ Capability goals (e.g., target FTP by date)
+   ∙ Race performance goals (distance + target time + activity type)
+   ∙ Power threshold goals (target watts + test duration)
+   ∙ Pace threshold goals (target pace per 100m + test distance)
+   ∙ Heart-rate threshold goals (target LTHR)
+   ∙ Multisport event goals (segment targets + total target time)
    ∙ General intent goals (e.g., improve health/fitness) when no strict KPI is provided
    ∙ System should normalize all goal inputs into one internal target model used by feasibility and projection calculations
    Computed State
@@ -139,7 +143,7 @@ Last Updated: 2026-02-06Status: Draft for implementation planningOwner: Mobile +
 
 1) Goal Setup
    ∙ User provides goal intent and target date/horizon (minimal required)
-   ∙ If user provides measurable detail (e.g., race distance + finish time, FTP target), system derives goal pace/power targets
+   ∙ If user provides measurable detail (e.g., race performance, power threshold, pace threshold, HR threshold, multisport target), system derives normalized performance targets
    ∙ If user provides only general intent, system creates a conservative baseline target model and labels confidence appropriately
    ∙ Activity categories default intelligently from goal intent; user customization is optional
 2) Calendar Configuration
@@ -193,11 +197,12 @@ Last Updated: 2026-02-06Status: Draft for implementation planningOwner: Mobile +
     1. Choose goal (approachable input) and target date/horizon
     2. Confirm and start
        The two required inputs for MVP are goal and date. Everything else is optional with sensible defaults.
-       Approachable goal input should allow simple phrases and guided presets while still supporting precise targets when available (e.g., "Marathon in 2:30", "Reach FTP 300W", "Improve fitness").
+       Approachable goal input should allow simple phrases and guided presets while still supporting precise targets when available (e.g., "Marathon in 3:30", "Hit 300W FTP", "Swim CSS 1:20/100m", "Ironman under 12 hours").
        Optional Setup (After Defaults)
        ∙ Activity categories
        ∙ Training availability
        ∙ Weekly volume preferences
+       ∙ Session frequency and peak-duration caps
        Optional setup can be deferred until after plan creation to keep first-time interaction minimal.
        Advanced Optional Controls
        ∙ Intensity distribution preference
@@ -240,7 +245,7 @@ Last Updated: 2026-02-06Status: Draft for implementation planningOwner: Mobile +
     ∙ Today screen always provides current progression state, adherence state, and safety/boundary status
     ∙ Insight states derive from fresh effort/profile data and avoid stale best-effort assumptions
     ∙ Calendar edits and missed sessions update near-term path/adherence insights automatically
-    ∙ Goal system supports precise measurable goals (distance+time, FTP, time/distance targets) and general intent goals under one workflow
+    ∙ Goal system supports precise measurable goals (race performance, power threshold, pace threshold, HR threshold, multisport events) and general intent goals under one workflow
     User Experience by Persona
     ∙ Low-data users receive safe, explicitly labeled low-confidence states and conservative boundary handling
     ∙ Advanced users can configure progression and distribution controls without affecting novice flow

@@ -19,6 +19,7 @@ It is written so a reviewer can understand exactly what will change, where, and 
 - No recommendation engine / no auto-prescription language or behavior.
 - Safety and feasibility boundaries must be explicit and visible.
 - `profile_metrics` usage is limited to `weight_kg` and `lthr`.
+- Prefer Supazod-generated schemas/types for DB-backed enums (`activity_categories`) over hardcoded Zod enum literals.
 
 ---
 
@@ -69,26 +70,53 @@ Design intent:
 - Keep existing configurability for advanced users.
 - Reduce required user input for creation to one goal only.
 - Make most setup fields optional at creation and backfill safe defaults server-side.
+- Keep a clean separation of concerns: goal objects describe performance outcomes; training structure (volume/frequency/caps) stays in plan config and constraints.
 
 Additive goal enhancement (within existing goal objects):
 
 ```ts
 // packages/core/schemas/training_plan_structure.ts (enhancement, not overhaul)
+// Use Supazod-generated schemas/types where possible.
+import { activityCategorySchema } from "@repo/supabase/supazod";
+
 const goalMetricSchema = z.discriminatedUnion("type", [
   z.object({
-    type: z.literal("event_time"),
+    type: z.literal("race_performance"),
     distance_m: z.number().positive(),
     target_time_s: z.number().int().positive(),
+    activity_category: activityCategorySchema,
   }),
   z.object({
-    type: z.literal("distance"),
-    target_distance_m: z.number().positive(),
+    type: z.literal("power_threshold"),
+    target_watts: z.number().positive(),
+    test_duration_s: z.number().int().positive().default(1200),
+    activity_category: activityCategorySchema,
   }),
   z.object({
-    type: z.literal("duration"),
-    target_duration_s: z.number().int().positive(),
+    type: z.literal("pace_threshold"),
+    target_pace_per_100m_s: z.number().positive(),
+    test_distance_m: z.number().positive().default(400),
+    activity_category: activityCategorySchema,
   }),
-  z.object({ type: z.literal("ftp"), target_ftp_w: z.number().positive() }),
+  z.object({
+    type: z.literal("hr_threshold"),
+    target_lthr_bpm: z.number().int().positive(),
+    activity_category: activityCategorySchema,
+  }),
+  z.object({
+    type: z.literal("multisport_event"),
+    event_name: z.string().optional(),
+    segments: z
+      .array(
+        z.object({
+          activity_category: activityCategorySchema,
+          distance_m: z.number().positive().optional(),
+          target_time_s: z.number().int().positive().optional(),
+        }),
+      )
+      .min(2),
+    total_target_time_s: z.number().int().positive(),
+  }),
   z.object({ type: z.literal("none") }),
 ]);
 
@@ -97,11 +125,7 @@ export const trainingGoalSchema = z.object({
   name: z.string().min(1).max(100),
   target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   priority: z.number().int().min(1).max(10).default(1),
-  target_performance: z.string().max(200).optional(),
   metric: goalMetricSchema.optional(), // additive
-  intent: z.string().min(1).optional(), // additive
-  notes: z.string().max(1000).optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 ```
 
@@ -114,7 +138,6 @@ const minimalPlanCreateSchema = z.object({
     name: z.string().min(1),
     target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     metric: goalMetricSchema.optional(),
-    intent: z.string().optional(),
   }),
 });
 ```
@@ -125,11 +148,12 @@ Compatibility strategy:
 - Existing full-create flows remain valid.
 - New minimal-create flow compiles into existing periodized structure with defaults for blocks, progression, distribution, and constraints.
 - Plans support multiple goals (`goals[]`), with `min(1)` preserved.
+- Goal metric category fields are validated with Supazod-generated activity category schemas to keep DB and app contracts synchronized.
 
 Approachable-to-precise goal normalization:
 
 - Accept simple goal input first.
-- Optionally attach measurable detail (distance+time, FTP, duration, distance).
+- Optionally attach measurable detail via explicit metric types: `race_performance`, `power_threshold`, `pace_threshold`, `hr_threshold`, or `multisport_event`.
 - Derive normalized pace/power outputs in computations, not as required persisted fields.
 
 ## 3.2 Canonical Insight Contract (single payload)
@@ -264,7 +288,7 @@ Add new endpoints:
    - output: canonical `planInsightResponseSchema`
 
 2. `getFeasibilityPreview`
-   - input: minimal create payload (`goal` object with name + target_date, optional metric/intent)
+   - input: minimal create payload (`goal` object with name + target_date, optional metric)
    - output: `{ state, reasons, key_metrics, normalized_goal }`
 
 3. `createFromMinimalGoal`
@@ -316,14 +340,16 @@ Required UX behavior:
   - create button.
 - Nice-to-have follow-up: allow plan creation entry point before full onboarding completion, then enrich profile later without invalidating the plan.
 - Optional precision helper (still in Step 1, collapsed by default):
-  - goal intent text,
-  - race distance + target time,
-  - target FTP,
-  - distance/time target.
+  - race performance (distance + target time + activity),
+  - power threshold (watts + activity),
+  - pace threshold (sec/100m + activity),
+  - heart-rate threshold (LTHR),
+  - multisport event segments + total target time.
 - Advanced (collapsed by default):
   - activity categories,
   - availability,
-  - ramp/distribution overrides.
+  - ramp/distribution overrides,
+  - weekly volume/frequency/duration caps.
 
 Technical changes:
 
@@ -386,7 +412,7 @@ Changes:
 
 ## Workstream A - Contracts + Normalization (Core)
 
-- Enhance existing training goal schema with optional metric/intent fields.
+- Enhance existing training goal schema with performance-only metric variants and activity-type awareness.
 - Add minimal-goal input schema and expansion utilities that compile to existing periodized structure.
 - Add backward compatibility tests for existing periodized/maintenance structures.
 
@@ -460,6 +486,7 @@ Suggested file paths:
 Coverage requirements:
 
 - Existing full structure inputs and new minimal-goal inputs.
+- All goal metric variants validate and normalize correctly.
 - Sparse effort data confidence fallback.
 - Unsafe-goal classification edge cases.
 - Timezone/week boundary consistency.
@@ -494,7 +521,7 @@ Scenarios:
 - Schema enhancement is additive to current training plan schema (no root replacement).
 - Most plan configuration fields are optional at creation and defaulted server-side.
 - Plans support multiple goals with at least one goal required.
-- Goal model supports race distance+time, FTP targets, distance/time goals, and general health/fitness goals.
+- Goal model supports race performance, power threshold, pace threshold, HR threshold, multisport events, and intent-only (`none`) under one contract.
 - Advanced config is optional and non-blocking.
 - No schema migration included.
 - Canonical insight payload includes timeline + boundary + feasibility + projection.
