@@ -10,7 +10,7 @@ It is written so a reviewer can understand exactly what will change, where, and 
 Document role alignment:
 
 - `./design.md` defines high-level product intent and constraints.
-- `./plan.md` defines low-level technical architecture, file-level implementation, and testing strategy.
+- `./plan.md` defines low-level technical architecture, file-level implementation, and validation strategy.
 - `./ui-plan-tab-and-onboarding.md` defines low-level UX behavior, screen composition, and interaction rules.
 - If any conflict appears, resolve by preserving design intent while making technical and UX contracts explicit and testable.
 
@@ -199,10 +199,30 @@ export const planInsightResponseSchema = z.object({
     end_date: z.string(),
     timezone: z.string(),
   }),
-  feasibility: z.object({
+  plan_feasibility: z.object({
     state: z.enum(["feasible", "aggressive", "unsafe"]),
     reasons: z.array(z.string()),
   }),
+  goal_feasibility: z.array(
+    z.object({
+      goal_id: z.string().uuid(),
+      goal_name: z.string(),
+      state: z.enum(["feasible", "aggressive", "unsafe"]),
+      reasons: z.array(z.string()),
+    }),
+  ),
+  plan_safety: z.object({
+    state: z.enum(["safe", "caution", "exceeded"]),
+    reasons: z.array(z.string()),
+  }),
+  goal_safety: z.array(
+    z.object({
+      goal_id: z.string().uuid(),
+      goal_name: z.string(),
+      state: z.enum(["safe", "caution", "exceeded"]),
+      reasons: z.array(z.string()),
+    }),
+  ),
   capability: z.object({
     category: z.string(),
     cp_or_cs: z.number().nullable(),
@@ -312,7 +332,8 @@ Add new endpoints:
 
 2. `getFeasibilityPreview`
    - input: minimal create payload (`goal` object with name + target_date, optional `priority`, optional metric)
-   - output: `{ state, reasons, key_metrics, normalized_goal }`
+   - output: `{ plan_assessment, goal_assessments, key_metrics, normalized_goal }`
+   - requirement: return both per-goal and plan-wide feasibility/safety explanations
 
 3. `createFromMinimalGoal`
    - input: `minimalPlanCreateSchema`
@@ -391,7 +412,7 @@ Technical changes:
 - On submit:
   - call `getFeasibilityPreview` first,
   - normalize optional goal metric input into standard units for deterministic projections,
-  - show clear feasibility state,
+  - show both plan-wide and per-goal feasibility/safety states,
   - allow create with warning state for `aggressive`, block with explicit confirmation pattern for `unsafe` (MVP policy to confirm exact behavior),
   - create plan through minimal-goal endpoint that expands defaults into full schema.
 - After successful create:
@@ -451,74 +472,145 @@ Changes:
 
 ---
 
-## 7) Work Breakdown with Deliverables
+## 7) Chronological Implementation Phases
 
-## Workstream A - Contracts + Normalization (Core)
+This section is execution-ordered. Later phases depend on earlier phases being complete.
 
-- Enhance existing training goal schema with performance-only metric variants and activity-type awareness.
-- Enforce goal-priority defaults and weighting support for multi-goal conflict handling.
-- Add minimal-goal input schema and expansion utilities that compile to existing periodized structure.
-- Add backward compatibility tests for existing periodized/maintenance structures.
+## Phase 0 - Preflight and Guardrails (no behavior change)
 
-Deliverables:
+Goal:
 
-- `packages/core/schemas/training_plan_structure.ts` updates
-- `packages/core/plan/normalizeGoalInput.ts` (new)
-- `packages/core/plan/expandMinimalGoalToPlan.ts` (new)
-- `packages/core/plan/goalPriorityWeighting.ts` (new or merged into planning utilities)
-- `packages/core/plan/*.ts` calculations (new)
+- Lock scope and confirm no DB migrations are required in this release.
 
-## Workstream B - Insight API (tRPC)
+Tasks:
 
-- Implement new insight/projection/feasibility endpoints.
-- Keep existing endpoints stable.
+- Confirm all planned changes are additive to existing JSON structures.
+- Confirm backward compatibility expectations for existing training plans.
+- Add/confirm feature flag strategy for staged rollout.
 
-Deliverables:
+Primary outputs:
 
-- `packages/trpc/src/routers/training_plans.ts` updates
+- Finalized constraints in this plan.
 
-## Workstream C - Minimal Create UX (Mobile)
+## Phase 1 - Core Contracts and Schema Normalization (highest priority)
 
-- Collapse advanced configuration.
-- One goal required (name + target date) with optional precision details.
-- Feasibility preview integration.
-- Consolidate route entry so only one default create path is exposed.
-- Move complex setup to post-create refinement.
+Goal:
 
-Deliverables:
+- Establish canonical, type-safe contracts in `@repo/core` before any endpoint or UI change.
 
-- `apps/mobile/app/(internal)/(standard)/training-plan-create.tsx` updates
-- `apps/mobile/components/training-plan/create/SinglePageForm.tsx` updates
-- `apps/mobile/app/(internal)/(standard)/training-plan-method-selector.tsx` updates (demote/deprecate in default flow)
-- `apps/mobile/app/(internal)/(standard)/training-plan-wizard.tsx` updates (advanced-only or removed from default flow)
-- `apps/mobile/app/(internal)/(standard)/training-plan-review.tsx` updates (align or retire)
+Tasks:
 
-## Workstream D - Plan Screen UX (Mobile)
+- Enhance training goal schema with normalized metric variants and priority defaulting.
+- Add minimal-goal input schema and default-expansion utilities.
+- Add goal-priority weighting helpers for multi-goal conflict handling.
+- Add or update form schemas so UI state derives from Zod-inferred types.
+- Validate backward compatibility for existing periodized/maintenance plan shapes.
 
-- Replace fragmented cards with one insight-first hierarchy.
-- Integrate canonical timeline payload.
+Primary files:
 
-Deliverables:
+- `packages/core/schemas/training_plan_structure.ts` (update)
+- `packages/core/schemas/form-schemas.ts` (update)
+- `packages/core/schemas/index.ts` (update)
+- `packages/core/plan/normalizeGoalInput.ts` (create)
+- `packages/core/plan/expandMinimalGoalToPlan.ts` (create)
+- `packages/core/plan/goalPriorityWeighting.ts` (create)
 
-- `apps/mobile/app/(internal)/(tabs)/plan.tsx` updates
-- `apps/mobile/components/charts/PlanVsActualChart.tsx` updates
+## Phase 2 - Backend API Alignment (tRPC)
 
-## Workstream E - Scheduling Alignment
+Goal:
 
-- Unify computed schedule status behavior.
-- Ensure planned activity edits reflect in insight quickly.
+- Make backend consume Phase 1 contracts and expose stable minimal-create + insight endpoints.
 
-Deliverables:
+Tasks:
 
-- `packages/trpc/src/routers/planned_activities.ts` updates
+- Add `getFeasibilityPreview` and `createFromMinimalGoal`.
+- Ensure feasibility and safety are produced both per-goal and plan-wide.
+- Add/complete canonical insight timeline/projection endpoints.
+- Keep existing `create` and legacy endpoints stable for compatibility.
+- Ensure planned activity status helpers are unified and insight-refresh friendly.
+
+Primary files:
+
+- `packages/trpc/src/routers/training_plans.ts` (update)
+- `packages/trpc/src/routers/planned_activities.ts` (update)
+
+## Phase 3 - Training Plan Create Flow Consolidation (mobile)
+
+Goal:
+
+- Reduce first-plan creation to minimum required input and remove multi-entry default complexity.
+
+Tasks:
+
+- Keep one default create path (`goal name + target date`, optional precision helper).
+- Route create submit through feasibility preview then minimal-create endpoint.
+- Move advanced configuration to post-create `Refine Plan` surfaces.
+- Demote or deprecate wizard/method-selector/review from default first-plan entry.
+
+Primary files:
+
+- `apps/mobile/app/(internal)/(standard)/training-plan-create.tsx` (update)
+- `apps/mobile/components/training-plan/create/SinglePageForm.tsx` (update)
+- `apps/mobile/app/(internal)/(standard)/training-plan-method-selector.tsx` (update)
+- `apps/mobile/app/(internal)/(standard)/training-plan-wizard.tsx` (update)
+- `apps/mobile/app/(internal)/(standard)/training-plan-review.tsx` (update)
+
+## Phase 4 - Plan Tab and View UX Integration (mobile)
+
+Goal:
+
+- Bind UI to canonical insight payload with lightweight interaction model.
+
+Tasks:
+
+- Update plan tab hierarchy to status + three-path chart + compact secondary charts.
+- Ensure passive refresh behavior when active plan data changes.
+- Keep interaction lightweight (no manual recalc, no long-press modal behavior).
+
+Primary files:
+
+- `apps/mobile/app/(internal)/(tabs)/plan.tsx` (update)
+- `apps/mobile/components/charts/PlanVsActualChart.tsx` (update)
+- `apps/mobile/components/charts/TrainingLoadChart.tsx` (update)
+
+## Phase 5 - Activity Plan + Scheduling UX Simplification
+
+Goal:
+
+- Align activity-plan creation and scheduling flows to the same minimal-first philosophy.
+
+Tasks:
+
+- Simplify activity-plan authoring path while preserving advanced editing for explicit use.
+- Ensure schedule actions from detail/calendar trigger immediate insight refresh.
+
+Primary files:
+
+- `apps/mobile/app/(internal)/(standard)/create-activity-plan.tsx` (update)
+- `apps/mobile/app/(internal)/(standard)/create-activity-plan-structure.tsx` (update)
+- `apps/mobile/app/(internal)/(standard)/create-activity-plan-repeat.tsx` (update)
+- `apps/mobile/components/ScheduleActivityModal.tsx` (update)
+- `apps/mobile/app/(internal)/(standard)/activity-plan-detail.tsx` (update)
+
+## Phase 6 - Validation, Rollout, and Cleanup
+
+Goal:
+
+- Verify no regressions and roll out safely.
+
+Tasks:
+
+- Validate backward compatibility with existing plans and existing clients.
+- Roll out behind feature flag and monitor error/latency indicators.
+- Remove dead navigation branches only after stabilization window.
 
 ---
 
-## 8) Testing Plan (must be completed before rollout)
+## 8) Validation Notes (tests deferred in this phase)
 
-## 8.1 Unit (core)
+## 8.1 Core validation focus
 
-Suggested file paths:
+Suggested future file paths (when tests are re-enabled):
 
 - `packages/core/__tests__/plan/adherence.test.ts`
 - `packages/core/__tests__/plan/boundary.test.ts`
@@ -526,14 +618,14 @@ Suggested file paths:
 - `packages/core/__tests__/plan/normalizeGoalInput.test.ts`
 - `packages/core/__tests__/plan/expandMinimalGoalToPlan.test.ts`
 
-## 8.2 Integration (tRPC)
+## 8.2 API validation focus
 
-Suggested file paths:
+Suggested future file paths (when tests are re-enabled):
 
 - `packages/trpc/src/routers/__tests__/training_plans.insight.test.ts`
 - `packages/trpc/src/routers/__tests__/training_plans.feasibility.test.ts`
 
-Coverage requirements:
+Validation requirements:
 
 - Existing full structure inputs and new minimal-goal inputs.
 - All goal metric variants validate and normalize correctly.
@@ -542,9 +634,9 @@ Coverage requirements:
 - Unsafe-goal classification edge cases.
 - Timezone/week boundary consistency.
 
-## 8.3 Mobile E2E
+## 8.3 Mobile flow validation
 
-Scenarios:
+Scenarios to validate manually:
 
 - quick create with one goal only,
 - aggressive/unsafe feasibility handling,

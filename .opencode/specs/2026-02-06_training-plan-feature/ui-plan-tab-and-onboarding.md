@@ -45,9 +45,10 @@ Top-to-bottom order:
 1. **Header strip**
    - active goal name
    - goal date badge
-   - feasibility state chip (`feasible | aggressive | unsafe`)
+   - active-goal feasibility state chip (`feasible | aggressive | unsafe`)
 2. **Status summary card**
-   - boundary state badge (`safe | caution | exceeded`)
+   - active-goal boundary state badge (`safe | caution | exceeded`)
+   - plan-wide feasibility and safety summary
    - one-sentence divergence summary
    - quick confidence indicator (High/Medium/Low)
 3. **Primary chart: Three-path load chart**
@@ -76,7 +77,9 @@ Top-to-bottom order:
   - safe = green
   - caution = amber
   - exceeded = red
-- Feasibility badge shown beside boundary when goal is aggressive/unsafe
+- Show both:
+  - active-goal feasibility/safety,
+  - plan-wide feasibility/safety.
 - Primary sentence pattern:
   - "Actual load is {x}% over/under scheduled this week"
 - Secondary sentence:
@@ -200,7 +203,7 @@ Creation UX simplification policy:
 - Touch targets minimum 44x44 points.
 - Charts must provide textual fallback summary for screen readers.
 - Dynamic type support required for summary card and action row.
-- Interaction count target: boundary state + top driver visible within 2 taps from app open.
+- Interaction count target: plan-wide and active-goal feasibility/safety visible within 2 taps from app open.
 
 ---
 
@@ -222,7 +225,7 @@ Supporting files likely:
 
 ## 10) Acceptance Criteria (UI-Specific)
 
-- Plan tab shows boundary state, feasibility state, and divergence sentence above charts.
+- Plan tab shows active-goal and plan-wide feasibility/safety states, plus divergence sentence above charts.
 - User can view Ideal/Scheduled/Actual and adherence trend in a single scroll without entering another screen.
 - Time window switching updates all chart surfaces consistently.
 - Plan tab updates automatically when active plan state changes; no manual recalculate needed.
@@ -452,3 +455,17 @@ Expected outcomes:
 - Cleaner progression path for amateur athletes.
 - Advanced controls preserved for pro users without cluttering default flows.
 - More professional UX consistency with stronger, centralized type contracts.
+
+---
+
+## 14) Chronological UX Delivery Dependencies
+
+To avoid rework, UX implementation should follow this order:
+
+1. Core/schema and API contracts finalized in `./plan.md` Phase 1-2.
+2. Minimal training-plan create UX shipped first (single default entry).
+3. Post-create refine surfaces enabled after minimal create is stable.
+4. Plan tab chart/status integration follows canonical insight payload readiness.
+5. Activity-plan/scheduling simplification follows once training-plan flow is stable.
+
+This keeps UI work sequenced against data-contract readiness and prevents premature screen complexity.
