@@ -1,0 +1,191 @@
+import {
+  creationContextSummarySchema,
+  type CreationContextSummary,
+} from "../schemas/training_plan_structure";
+
+export interface CreationCompletedActivitySignal {
+  occurred_at: string;
+  activity_category?: string | null;
+  duration_seconds?: number | null;
+  tss?: number | null;
+}
+
+export interface CreationEffortSignal {
+  recorded_at: string;
+  effort_type: "power" | "speed";
+  duration_seconds: number;
+  value: number;
+  activity_category?: string | null;
+}
+
+export interface CreationActivityContextSignal {
+  primary_category?: string | null;
+  category_mix?: Record<string, number>;
+}
+
+export interface CreationProfileMetricsSignal {
+  ftp?: number | null;
+  threshold_hr?: number | null;
+  weight_kg?: number | null;
+  lthr?: number | null;
+}
+
+export interface DeriveCreationContextInput {
+  completed_activities?: CreationCompletedActivitySignal[];
+  efforts?: CreationEffortSignal[];
+  activity_context?: CreationActivityContextSignal;
+  profile_metrics?: CreationProfileMetricsSignal;
+  as_of?: string;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function toDate(value: string): Date | null {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+function daysBetween(a: Date, b: Date): number {
+  const dayMs = 24 * 60 * 60 * 1000;
+  return Math.floor((a.getTime() - b.getTime()) / dayMs);
+}
+
+/**
+ * Derives a normalized creation context from profile evidence.
+ *
+ * Behavior:
+ * - no data -> conservative ranges and low confidence
+ * - rich data -> tighter ranges and higher confidence
+ */
+export function deriveCreationContext(
+  input: DeriveCreationContextInput,
+): CreationContextSummary {
+  const asOf = input.as_of ? toDate(input.as_of) : new Date();
+  const safeAsOf = asOf ?? new Date();
+  const recentWindowDays = 42;
+
+  const activities = (input.completed_activities ?? []).filter((activity) => {
+    const date = toDate(activity.occurred_at);
+    if (!date) return false;
+    const ageDays = daysBetween(safeAsOf, date);
+    return ageDays >= 0 && ageDays <= recentWindowDays;
+  });
+
+  const activityCount = activities.length;
+  const historyState =
+    activityCount === 0 ? "none" : activityCount < 10 ? "sparse" : "rich";
+
+  const weeksWithTraining = new Set(
+    activities.map((activity) => {
+      const date = toDate(activity.occurred_at);
+      if (!date) return -1;
+      const weekBucket = Math.floor(daysBetween(safeAsOf, date) / 7);
+      return weekBucket;
+    }),
+  );
+  weeksWithTraining.delete(-1);
+  const consistencyRatio = clamp(weeksWithTraining.size / 6, 0, 1);
+
+  const recentEfforts = (input.efforts ?? []).filter((effort) => {
+    const date = toDate(effort.recorded_at);
+    if (!date) return false;
+    const ageDays = daysBetween(safeAsOf, date);
+    return ageDays >= 0 && ageDays <= recentWindowDays;
+  });
+  const effortCount = recentEfforts.length;
+
+  const metrics = input.profile_metrics;
+  const presentMetricCount = [
+    metrics?.ftp,
+    metrics?.threshold_hr,
+    metrics?.weight_kg,
+    metrics?.lthr,
+  ].filter((value) => value !== null && value !== undefined).length;
+  const metricCompleteness = clamp(presentMetricCount / 4, 0, 1);
+
+  const consistencyMarker =
+    consistencyRatio >= 0.7
+      ? "high"
+      : consistencyRatio >= 0.35
+        ? "moderate"
+        : "low";
+  const effortMarker =
+    effortCount >= 6 ? "high" : effortCount >= 2 ? "moderate" : "low";
+  const profileMarker =
+    metricCompleteness >= 0.75
+      ? "high"
+      : metricCompleteness >= 0.4
+        ? "moderate"
+        : "low";
+
+  const qualityScore = clamp(
+    (historyState === "rich" ? 0.45 : historyState === "sparse" ? 0.25 : 0.05) +
+      consistencyRatio * 0.25 +
+      clamp(effortCount / 8, 0, 1) * 0.15 +
+      metricCompleteness * 0.15,
+    0,
+    1,
+  );
+
+  const totalRecentTss = activities.reduce((sum, activity) => {
+    if (activity.tss !== null && activity.tss !== undefined)
+      return sum + activity.tss;
+    const durationSeconds = activity.duration_seconds ?? 0;
+    return sum + (durationSeconds / 3600) * 45;
+  }, 0);
+  const estimatedWeeklyTss = activityCount > 0 ? totalRecentTss / 6 : 170;
+
+  const baselineWidth =
+    historyState === "rich" ? 0.2 : historyState === "sparse" ? 0.35 : 0.5;
+  const baselineMin = Math.round(
+    clamp(estimatedWeeklyTss * (1 - baselineWidth), 80, 900),
+  );
+  const baselineMax = Math.round(
+    clamp(estimatedWeeklyTss * (1 + baselineWidth), 140, 1200),
+  );
+
+  const influenceWidth =
+    historyState === "rich" ? 0.15 : historyState === "sparse" ? 0.3 : 0.5;
+  const influenceBias =
+    consistencyRatio >= 0.65 ? 0.1 : consistencyRatio <= 0.2 ? -0.1 : 0;
+
+  const sessionMin =
+    historyState === "none" ? 3 : historyState === "sparse" ? 3 : 4;
+  const sessionMax =
+    historyState === "none" ? 5 : historyState === "sparse" ? 6 : 7;
+
+  const rationaleCodes = [
+    `history_${historyState}`,
+    `consistency_${consistencyMarker}`,
+    `effort_${effortMarker}`,
+    `profile_metrics_${profileMarker}`,
+  ];
+
+  if (input.activity_context?.primary_category) {
+    rationaleCodes.push(`focus_${input.activity_context.primary_category}`);
+  }
+
+  return creationContextSummarySchema.parse({
+    history_availability_state: historyState,
+    recent_consistency_marker: consistencyMarker,
+    effort_confidence_marker: effortMarker,
+    profile_metric_completeness_marker: profileMarker,
+    signal_quality: Number(qualityScore.toFixed(3)),
+    recommended_baseline_tss_range: {
+      min: baselineMin,
+      max: Math.max(baselineMax, baselineMin + 20),
+    },
+    recommended_recent_influence_range: {
+      min: Number(clamp(influenceBias - influenceWidth, -1, 1).toFixed(3)),
+      max: Number(clamp(influenceBias + influenceWidth, -1, 1).toFixed(3)),
+    },
+    recommended_sessions_per_week_range: {
+      min: sessionMin,
+      max: sessionMax,
+    },
+    rationale_codes: rationaleCodes,
+  });
+}

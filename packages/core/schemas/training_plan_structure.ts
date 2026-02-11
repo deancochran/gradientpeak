@@ -486,6 +486,414 @@ export type TrainingPlan = z.infer<typeof trainingPlanSchema>;
 
 /**
  * ============================================================================
+ * TRAINING PLAN CREATION CONFIGURATION (MVP - PHASE 1)
+ * ============================================================================
+ */
+
+export const creationWeekDayEnum = z.enum([
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+]);
+
+export type CreationWeekDay = z.infer<typeof creationWeekDayEnum>;
+
+export const creationAvailabilityTemplateEnum = z.enum([
+  "low",
+  "moderate",
+  "high",
+  "custom",
+]);
+
+export type CreationAvailabilityTemplate = z.infer<
+  typeof creationAvailabilityTemplateEnum
+>;
+
+export const creationAvailabilityWindowSchema = z
+  .object({
+    start_minute_of_day: z.number().int().min(0).max(1439),
+    end_minute_of_day: z.number().int().min(1).max(1440),
+  })
+  .refine((data) => data.end_minute_of_day > data.start_minute_of_day, {
+    message: "Availability window end must be after start",
+    path: ["end_minute_of_day"],
+  });
+
+export type CreationAvailabilityWindow = z.infer<
+  typeof creationAvailabilityWindowSchema
+>;
+
+export const creationAvailabilityDaySchema = z.object({
+  day: creationWeekDayEnum,
+  windows: z.array(creationAvailabilityWindowSchema).max(4).default([]),
+  max_sessions: z.number().int().min(0).max(3).optional(),
+});
+
+export type CreationAvailabilityDay = z.infer<
+  typeof creationAvailabilityDaySchema
+>;
+
+export const creationAvailabilityConfigSchema = z
+  .object({
+    template: creationAvailabilityTemplateEnum.default("moderate"),
+    days: z.array(creationAvailabilityDaySchema).length(7),
+    template_applied_at: z.string().datetime().optional(),
+  })
+  .superRefine((data, ctx) => {
+    const seenDays = new Set<CreationWeekDay>();
+
+    for (const [index, dayConfig] of data.days.entries()) {
+      if (seenDays.has(dayConfig.day)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["days", index, "day"],
+          message: "Each weekday can only appear once in availability",
+        });
+      }
+      seenDays.add(dayConfig.day);
+
+      const sortedWindows = [...dayConfig.windows].sort(
+        (a, b) => a.start_minute_of_day - b.start_minute_of_day,
+      );
+
+      for (let i = 1; i < sortedWindows.length; i++) {
+        const previousWindow = sortedWindows[i - 1];
+        const currentWindow = sortedWindows[i];
+        if (
+          previousWindow &&
+          currentWindow &&
+          currentWindow.start_minute_of_day < previousWindow.end_minute_of_day
+        ) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["days", index, "windows", i],
+            message: "Availability windows cannot overlap",
+          });
+        }
+      }
+    }
+
+    if (seenDays.size !== 7) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["days"],
+        message:
+          "Availability config must include exactly one entry per weekday",
+      });
+    }
+  });
+
+export type CreationAvailabilityConfig = z.infer<
+  typeof creationAvailabilityConfigSchema
+>;
+
+export const creationBaselineLoadSchema = z.object({
+  weekly_tss: z.number().int().min(30).max(2000),
+});
+
+export type CreationBaselineLoad = z.infer<typeof creationBaselineLoadSchema>;
+
+export const creationRecentInfluenceSchema = z.object({
+  influence_score: z.number().min(-1).max(1),
+});
+
+export type CreationRecentInfluence = z.infer<
+  typeof creationRecentInfluenceSchema
+>;
+
+export const creationRecentInfluenceActionEnum = z.enum([
+  "accepted",
+  "edited",
+  "disabled",
+]);
+
+export type CreationRecentInfluenceAction = z.infer<
+  typeof creationRecentInfluenceActionEnum
+>;
+
+export const creationGoalDifficultyPreferenceEnum = z.enum([
+  "conservative",
+  "balanced",
+  "stretch",
+]);
+
+export type CreationGoalDifficultyPreference = z.infer<
+  typeof creationGoalDifficultyPreferenceEnum
+>;
+
+export const creationConstraintsSchema = z
+  .object({
+    weekly_load_floor_tss: z.number().int().min(0).max(2000).optional(),
+    weekly_load_cap_tss: z.number().int().min(0).max(3000).optional(),
+    hard_rest_days: z.array(creationWeekDayEnum).max(7).default([]),
+    min_sessions_per_week: z.number().int().min(0).max(21).optional(),
+    max_sessions_per_week: z.number().int().min(0).max(21).optional(),
+    max_single_session_duration_minutes: z
+      .number()
+      .int()
+      .min(20)
+      .max(600)
+      .optional(),
+    goal_difficulty_preference:
+      creationGoalDifficultyPreferenceEnum.default("balanced"),
+  })
+  .superRefine((data, ctx) => {
+    if (
+      data.weekly_load_floor_tss !== undefined &&
+      data.weekly_load_cap_tss !== undefined &&
+      data.weekly_load_floor_tss > data.weekly_load_cap_tss
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["weekly_load_floor_tss"],
+        message: "Weekly load floor cannot exceed weekly load cap",
+      });
+    }
+
+    if (
+      data.min_sessions_per_week !== undefined &&
+      data.max_sessions_per_week !== undefined &&
+      data.min_sessions_per_week > data.max_sessions_per_week
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["min_sessions_per_week"],
+        message: "Minimum sessions per week cannot exceed maximum sessions",
+      });
+    }
+
+    const uniqueRestDays = new Set(data.hard_rest_days);
+    if (uniqueRestDays.size !== data.hard_rest_days.length) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["hard_rest_days"],
+        message: "Hard rest days cannot contain duplicates",
+      });
+    }
+
+    const availableTrainingDays = 7 - uniqueRestDays.size;
+    if (
+      data.min_sessions_per_week !== undefined &&
+      data.min_sessions_per_week > availableTrainingDays
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["min_sessions_per_week"],
+        message:
+          "Minimum sessions exceed available training days after hard rest constraints",
+      });
+    }
+  });
+
+export type CreationConstraints = z.infer<typeof creationConstraintsSchema>;
+
+export const creationFieldLockSchema = z
+  .object({
+    locked: z.boolean().default(false),
+    locked_by: z.literal("user").optional(),
+    lock_reason: z.string().max(240).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.locked && data.locked_by !== "user") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["locked_by"],
+        message: 'locked_by must be "user" when field is locked',
+      });
+    }
+  });
+
+export type CreationFieldLock = z.infer<typeof creationFieldLockSchema>;
+
+export const creationConfigLocksSchema = z.object({
+  availability_config: creationFieldLockSchema.default({ locked: false }),
+  baseline_load: creationFieldLockSchema.default({ locked: false }),
+  recent_influence: creationFieldLockSchema.default({ locked: false }),
+  weekly_load_floor_tss: creationFieldLockSchema.default({ locked: false }),
+  weekly_load_cap_tss: creationFieldLockSchema.default({ locked: false }),
+  hard_rest_days: creationFieldLockSchema.default({ locked: false }),
+  min_sessions_per_week: creationFieldLockSchema.default({ locked: false }),
+  max_sessions_per_week: creationFieldLockSchema.default({ locked: false }),
+  max_single_session_duration_minutes: creationFieldLockSchema.default({
+    locked: false,
+  }),
+  goal_difficulty_preference: creationFieldLockSchema.default({
+    locked: false,
+  }),
+});
+
+export type CreationConfigLocks = z.infer<typeof creationConfigLocksSchema>;
+
+export const creationValueSourceEnum = z.enum(["user", "suggested", "default"]);
+
+export type CreationValueSource = z.infer<typeof creationValueSourceEnum>;
+
+export const creationProvenanceReferenceTypeEnum = z.enum([
+  "completed_activities",
+  "activity_efforts",
+  "activity_context",
+  "profile_metrics",
+  "questionnaire",
+  "default_heuristic",
+  "user_input",
+]);
+
+export type CreationProvenanceReferenceType = z.infer<
+  typeof creationProvenanceReferenceTypeEnum
+>;
+
+export const creationProvenanceReferenceSchema = z.object({
+  type: creationProvenanceReferenceTypeEnum,
+  id: z.string().min(1).max(120),
+  label: z.string().min(1).max(140).optional(),
+});
+
+export type CreationProvenanceReference = z.infer<
+  typeof creationProvenanceReferenceSchema
+>;
+
+export const creationProvenanceSchema = z.object({
+  source: creationValueSourceEnum,
+  confidence: z.number().min(0).max(1).nullable(),
+  rationale: z.array(z.string().min(1).max(120)).default([]),
+  references: z.array(creationProvenanceReferenceSchema).default([]),
+  updated_at: z.string().datetime(),
+});
+
+export type CreationProvenance = z.infer<typeof creationProvenanceSchema>;
+
+export const trainingPlanCreationProvenanceBundleSchema = z.object({
+  availability_provenance: creationProvenanceSchema,
+  baseline_load_provenance: creationProvenanceSchema,
+  recent_influence_provenance: creationProvenanceSchema,
+});
+
+export type TrainingPlanCreationProvenanceBundle = z.infer<
+  typeof trainingPlanCreationProvenanceBundleSchema
+>;
+
+export const creationHistoryAvailabilityStateEnum = z.enum([
+  "none",
+  "sparse",
+  "rich",
+]);
+
+export type CreationHistoryAvailabilityState = z.infer<
+  typeof creationHistoryAvailabilityStateEnum
+>;
+
+export const creationSignalMarkerEnum = z.enum(["low", "moderate", "high"]);
+
+export type CreationSignalMarker = z.infer<typeof creationSignalMarkerEnum>;
+
+export const creationRangeSchema = z
+  .object({
+    min: z.number(),
+    max: z.number(),
+  })
+  .refine((data) => data.max >= data.min, {
+    message: "Range max must be greater than or equal to min",
+    path: ["max"],
+  });
+
+export type CreationRange = z.infer<typeof creationRangeSchema>;
+
+export const creationContextSummarySchema = z.object({
+  history_availability_state: creationHistoryAvailabilityStateEnum,
+  recent_consistency_marker: creationSignalMarkerEnum,
+  effort_confidence_marker: creationSignalMarkerEnum,
+  profile_metric_completeness_marker: creationSignalMarkerEnum,
+  signal_quality: z.number().min(0).max(1),
+  recommended_baseline_tss_range: creationRangeSchema,
+  recommended_recent_influence_range: creationRangeSchema,
+  recommended_sessions_per_week_range: creationRangeSchema,
+  rationale_codes: z.array(z.string().min(1).max(120)).default([]),
+});
+
+export type CreationContextSummary = z.infer<
+  typeof creationContextSummarySchema
+>;
+
+export const creationFeasibilityBandEnum = z.enum([
+  "under-reaching",
+  "on-track",
+  "over-reaching",
+]);
+
+export type CreationFeasibilityBand = z.infer<
+  typeof creationFeasibilityBandEnum
+>;
+
+export const creationSafetyBandEnum = z.enum(["safe", "caution", "high-risk"]);
+
+export type CreationSafetyBand = z.infer<typeof creationSafetyBandEnum>;
+
+export const creationSummaryDriverSchema = z.object({
+  code: z.string().min(1).max(120),
+  message: z.string().min(1).max(300),
+  impact: z.number().min(-1).max(1),
+});
+
+export type CreationSummaryDriver = z.infer<typeof creationSummaryDriverSchema>;
+
+export const creationSummaryActionSchema = z.object({
+  code: z.string().min(1).max(120),
+  message: z.string().min(1).max(300),
+  priority: z.number().int().min(1).max(3),
+});
+
+export type CreationSummaryAction = z.infer<typeof creationSummaryActionSchema>;
+
+export const creationSummaryBlockerSchema = z.object({
+  code: z.string().min(1).max(120),
+  message: z.string().min(1).max(300),
+  field_paths: z.array(z.string().min(1).max(200)).default([]),
+});
+
+export type CreationSummaryBlocker = z.infer<
+  typeof creationSummaryBlockerSchema
+>;
+
+export const creationFeasibilitySafetySummarySchema = z.object({
+  feasibility_band: creationFeasibilityBandEnum,
+  safety_band: creationSafetyBandEnum,
+  feasibility_score: z.number().min(0).max(1),
+  safety_score: z.number().min(0).max(1),
+  confidence: z.number().min(0).max(1),
+  top_drivers: z.array(creationSummaryDriverSchema).min(1),
+  recommended_actions: z.array(creationSummaryActionSchema).default([]),
+  blockers: z.array(creationSummaryBlockerSchema).default([]),
+  computed_at: z.string().datetime(),
+});
+
+export type CreationFeasibilitySafetySummary = z.infer<
+  typeof creationFeasibilitySafetySummarySchema
+>;
+
+export const trainingPlanCreationConfigSchema = z.object({
+  availability_config: creationAvailabilityConfigSchema,
+  availability_provenance: creationProvenanceSchema,
+  baseline_load: creationBaselineLoadSchema,
+  baseline_load_provenance: creationProvenanceSchema,
+  recent_influence: creationRecentInfluenceSchema,
+  recent_influence_action: creationRecentInfluenceActionEnum,
+  recent_influence_provenance: creationProvenanceSchema,
+  constraints: creationConstraintsSchema,
+  locks: creationConfigLocksSchema,
+  context_summary: creationContextSummarySchema.optional(),
+  feasibility_safety_summary: creationFeasibilitySafetySummarySchema.optional(),
+});
+
+export type TrainingPlanCreationConfig = z.infer<
+  typeof trainingPlanCreationConfigSchema
+>;
+
+/**
+ * ============================================================================
  * WIZARD INPUT SCHEMAS
  * ============================================================================
  */

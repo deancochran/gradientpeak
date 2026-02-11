@@ -10,6 +10,8 @@ This specification defines the MVP configuration experience at training-plan cre
 
 The goal is to produce a usable initial plan configuration that is fast for novices, transparent for advanced users, and fully user-controlled when derived values are suggested by the system.
 
+This spec specifically enhances the existing mobile training plan create form (single-page flow) rather than introducing a separate creation experience.
+
 The design must work across the full athlete spectrum:
 
 - Beginner with little or no historical data
@@ -44,8 +46,36 @@ This MVP does not include autonomous post-create plan mutations based on complet
 5. If conflicts exist, the UI must show the conflict and resolution path before create.
 6. The system must support all experience levels by degrading gracefully when historical data is sparse.
 7. Feasibility and safety indicators must be visible and understandable at decision points.
+8. Progressive disclosure is fully optional; users can create with the minimal default path without opening advanced panels.
+9. Suggested defaults should be reconfigured from profile-specific evidence before create.
 
-## 5) Athlete Spectrum and Fitness Awareness Requirements
+## 5) Profile-Aware Signal Inputs (Creation-Time Analysis)
+
+The system should derive creation-time suggestions from all available profile evidence, prioritized by reliability:
+
+1. Completed activities (recent volume, consistency, recency)
+2. Activity efforts (quality/confidence of effort-derived capability signals)
+3. Current activity context (active discipline focus and category mix)
+4. Profile metrics (weight, threshold metrics, training background where available)
+5. Explicit user inputs in create flow (availability, constraints, load preference)
+
+Rules:
+
+- If high-quality recent data exists, recommendations should be narrower and confidence higher.
+- If data is sparse/noisy, recommendations should broaden and bias conservative defaults.
+- If signals conflict, user-entered values and locks always win.
+
+## 6) Information Load and Progressive Disclosure Policy
+
+To prevent overload in the create form:
+
+- Default surface shows only compact summary rows and one clear create action.
+- Advanced panels are collapsed and optional.
+- Panels may be context-highlighted (recommended to review) when risk/confidence warrants, but never forced open.
+- At least one valid create path must remain available without entering advanced panels.
+- The system should prefill from profile analysis so most users only confirm, not configure from scratch.
+
+## 7) Athlete Spectrum and Fitness Awareness Requirements
 
 The configuration system must support two extremes and all users between:
 
@@ -59,7 +89,7 @@ Fitness-awareness requirements:
 - Keep all recommendations editable with user-overrides and locks.
 - Persist confidence and rationale so downstream flows can explain why a value is suggested.
 
-## 6) Creation-Time Configuration Model
+## 8) Creation-Time Configuration Model
 
 ### 5.1 Availability Template
 
@@ -97,6 +127,7 @@ Required behavior:
 - User must be able to accept as-is, edit the value, or disable influence in create flow.
 - If data is sparse or absent, system must fall back to beginner-safe defaults plus short onboarding questions.
 - If data is dense and high quality, system may narrow recommendation bands and increase confidence.
+- Suggestion logic must consider completed activities, efforts, current activity focus, and profile metrics together (not a single-signal heuristic).
 
 Output contract:
 
@@ -122,7 +153,7 @@ Required lock behavior for MVP:
 - Locked values cannot be changed by derived suggestions in the same flow.
 - Lock state must be visually obvious and included in create payload.
 
-## 7) Lock Precedence and Conflict Policy
+## 9) Lock Precedence and Conflict Policy
 
 Precedence order (highest to lowest):
 
@@ -137,7 +168,7 @@ Conflict rules:
 - If constraints conflict with each other, create flow must block completion until user resolves or explicitly relaxes one side.
 - The system must present resolution options; it must not auto-resolve conflicts silently.
 
-## 8) Create Flow UX Requirements
+## 10) Create Flow UX Requirements
 
 1. Show suggested values with clear "Suggested" labeling and rationale entry points.
 2. Show lock toggles adjacent to each lockable field.
@@ -153,8 +184,10 @@ Conflict rules:
    - Top factors driving each score
 6. Beginner users must see concise plain-language guidance when no historical data exists.
 7. Advanced users must be able to inspect recommendation rationale and confidence details.
+8. Advanced sections remain optional; user can submit from minimal surface if configuration is valid.
+9. UI should use concise labels and value chips to reduce cognitive load in first-pass setup.
 
-## 9) Validation and Safety Boundaries
+## 11) Validation and Safety Boundaries
 
 Validation at create boundary:
 
@@ -163,6 +196,7 @@ Validation at create boundary:
 - Hard rest days must remain schedulable with requested session frequency.
 - Feasibility and safety scores must be computable for all users, including no-data users (via fallback heuristics).
 - Risk classification thresholds must be deterministic and testable.
+- Recommendation generation must tolerate missing profile fields and missing efforts without blocking create.
 
 Failure behavior:
 
@@ -175,9 +209,9 @@ Feasibility/safety interpretation requirement:
 - The user must be able to visually determine whether configuration is over-reaching or under-reaching before final create.
 - The UI must display at least one actionable recommendation when risk is elevated (for example: reduce baseline load, increase recovery constraints, or relax goal aggressiveness).
 
-## 10) Risks and Mitigations
+## 12) Risks and Mitigations
 
-### 9.1 Overestimating Capability
+### 12.1 Overestimating Capability
 
 Risk:
 
@@ -190,7 +224,7 @@ Mitigations:
 - Clear caution messaging when suggestion implies aggressive progression.
 - Easy override plus lock support so users can enforce safer settings.
 
-### 9.2 Underestimating Capability
+### 12.2 Underestimating Capability
 
 Risk:
 
@@ -203,7 +237,7 @@ Mitigations:
 - Show expected impact preview (for example: conservative vs moderate baseline outcomes).
 - Track accept/edit rates to tune future recommendation quality.
 
-### 9.3 User Trust Erosion from Opaque Automation
+### 12.3 User Trust Erosion from Opaque Automation
 
 Risk:
 
@@ -215,7 +249,7 @@ Mitigations:
 - Value provenance persisted and reviewable at create time.
 - Lock precedence consistently enforced and test-covered.
 
-### 9.4 Cold-Start Bias for Beginners
+### 12.4 Cold-Start Bias for Beginners
 
 Risk:
 
@@ -227,7 +261,7 @@ Mitigations:
 - Minimum onboarding inputs for no-data users (availability, perceived fitness, recent consistency, injury status).
 - Wider recommendation bands and lower confidence until validated by user edits.
 
-### 9.5 Overfitting to Historical Peaks for Advanced Athletes
+### 12.5 Overfitting to Historical Peaks for Advanced Athletes
 
 Risk:
 
@@ -239,7 +273,19 @@ Mitigations:
 - Cap influence from old peak periods.
 - Display confidence and top drivers so user can correct misleading assumptions.
 
-## 11) Acceptance Criteria
+### 12.6 User Overload During Create
+
+Risk:
+
+- Too many controls at once cause abandonment or low-confidence choices.
+
+Mitigations:
+
+- Keep advanced controls collapsed by default.
+- Use profile-driven prefills so most users only confirm.
+- Show only high-impact warnings in primary view; defer detailed tuning to optional panels.
+
+## 13) Acceptance Criteria
 
 1. User can complete creation with availability template, baseline load, recent training influence decision, and constraints/locks configured.
 2. Every derived value in create flow is editable before final submission.
@@ -250,3 +296,5 @@ Mitigations:
 7. Feasibility and safety visualization is present before create and clearly indicates under-reaching, on-track, or over-reaching status.
 8. Conflict states block create with clear, actionable resolution guidance.
 9. API payload includes final value provenance, confidence metadata, and lock metadata needed for deterministic interpretation.
+10. Minimal create path works without opening advanced panels, while advanced configuration remains optionally available.
+11. Suggestions are profile-aware and incorporate completed activities, efforts, current activity context, and profile metrics when available.

@@ -15,7 +15,12 @@ import {
   publicActivityCategorySchema,
   publicActivityPlansInsertSchema,
 } from "@repo/supabase";
-import { goalTargetV2Schema } from "./training_plan_structure";
+import {
+  creationProvenanceSchema,
+  creationRecentInfluenceActionEnum,
+  goalTargetV2Schema,
+  trainingPlanCreationConfigSchema,
+} from "./training_plan_structure";
 
 // ============================================================================
 // REUSABLE VALIDATION PATTERNS
@@ -924,6 +929,92 @@ export type TrainingPlanMinimalSubmitFormData = z.infer<
 >;
 
 /**
+ * Training plan creation provenance metadata at form boundary.
+ * Allows confidence to be submitted as a number or numeric string.
+ */
+export const trainingPlanCreationProvenanceFormSchema =
+  creationProvenanceSchema.extend({
+    confidence: z.preprocess(
+      (val) => stringToNumber(emptyStringToNull(val)),
+      z.number().min(0).max(1).nullable(),
+    ),
+  });
+
+export type TrainingPlanCreationProvenanceFormData = z.infer<
+  typeof trainingPlanCreationProvenanceFormSchema
+>;
+
+/**
+ * Form-level validator for creation config used by preview/create MVP endpoints.
+ * Adds cross-field checks that are specific to submission semantics.
+ */
+export const trainingPlanCreationConfigFormSchema =
+  trainingPlanCreationConfigSchema.superRefine((data, ctx) => {
+    const floor = data.constraints.weekly_load_floor_tss;
+    const cap = data.constraints.weekly_load_cap_tss;
+    const baseline = data.baseline_load.weekly_tss;
+
+    if (floor !== undefined && baseline < floor) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["baseline_load", "weekly_tss"],
+        message: "Baseline load cannot be below weekly load floor",
+      });
+    }
+
+    if (cap !== undefined && baseline > cap) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["baseline_load", "weekly_tss"],
+        message: "Baseline load cannot exceed weekly load cap",
+      });
+    }
+
+    if (
+      data.recent_influence_action ===
+        creationRecentInfluenceActionEnum.enum.disabled &&
+      data.recent_influence.influence_score !== 0
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["recent_influence", "influence_score"],
+        message:
+          'recent_influence.influence_score must be 0 when recent_influence_action is "disabled"',
+      });
+    }
+
+    if (
+      data.recent_influence_action ===
+        creationRecentInfluenceActionEnum.enum.accepted &&
+      data.recent_influence_provenance.source !== "suggested"
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["recent_influence_provenance", "source"],
+        message:
+          'recent_influence_provenance.source must be "suggested" when action is "accepted"',
+      });
+    }
+
+    if (
+      data.recent_influence_action ===
+        creationRecentInfluenceActionEnum.enum.edited &&
+      data.recent_influence_provenance.source !== "user"
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["recent_influence_provenance", "source"],
+        message:
+          'recent_influence_provenance.source must be "user" when action is "edited"',
+      });
+    }
+  });
+
+export type TrainingPlanCreationConfigFormData = z.infer<
+  typeof trainingPlanCreationConfigFormSchema
+>;
+
+/**
  * Weekly TSS target validation
  * Range: 50 - 2000 (covers recovery weeks to peak training)
  */
@@ -1363,6 +1454,8 @@ export const formSchemas = {
   trainingPlanMinimalGoal: trainingPlanMinimalGoalFormSchema,
   trainingPlanAdvancedGoal: trainingPlanAdvancedGoalFormSchema,
   trainingPlanMinimalSubmit: trainingPlanMinimalSubmitFormSchema,
+  trainingPlanCreationProvenance: trainingPlanCreationProvenanceFormSchema,
+  trainingPlanCreationConfig: trainingPlanCreationConfigFormSchema,
   distanceKm: distanceKmSchema,
   completionTimeHms: completionTimeHmsSchema,
   paceMmSs: paceMmSsSchema,

@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -9,18 +10,33 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Text } from "@/components/ui/text";
+import { Switch } from "@/components/ui/switch";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import type { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { format } from "date-fns";
 import {
+  AlertTriangle,
   ChevronDown,
   ChevronUp,
+  Lock,
+  LockOpen,
   Pencil,
   Plus,
+  ShieldAlert,
   Trash2,
 } from "lucide-react-native";
 import React, { useEffect, useMemo, useState } from "react";
 import { Modal, Pressable, ScrollView, View } from "react-native";
+import type {
+  CreationAvailabilityConfig,
+  CreationConfigLocks,
+  CreationConstraints,
+  CreationContextSummary,
+  CreationFeasibilitySafetySummary,
+  CreationProvenance,
+  CreationRecentInfluenceAction,
+  CreationValueSource,
+} from "@repo/core";
 
 export type GoalTargetType =
   | "race_performance"
@@ -52,9 +68,38 @@ export interface TrainingPlanFormData {
   goals: GoalFormData[];
 }
 
+export interface TrainingPlanConfigFormData {
+  availabilityConfig: CreationAvailabilityConfig;
+  availabilityProvenance: CreationProvenance;
+  baselineLoadWeeklyTss: number;
+  baselineLoadProvenance: CreationProvenance;
+  recentInfluenceScore: number;
+  recentInfluenceAction: CreationRecentInfluenceAction;
+  recentInfluenceProvenance: CreationProvenance;
+  constraints: CreationConstraints;
+  constraintsSource: CreationValueSource;
+  locks: CreationConfigLocks;
+}
+
+export interface TrainingPlanConfigConflict {
+  code: string;
+  severity: "blocking" | "warning";
+  message: string;
+  suggestions: string[];
+}
+
 interface SinglePageFormProps {
   formData: TrainingPlanFormData;
   onFormDataChange: (data: TrainingPlanFormData) => void;
+  showCreationConfig?: boolean;
+  configData: TrainingPlanConfigFormData;
+  contextSummary?: CreationContextSummary;
+  feasibilitySafetySummary?: CreationFeasibilitySafetySummary;
+  conflictItems?: TrainingPlanConfigConflict[];
+  informationalConflicts?: string[];
+  isPreviewPending?: boolean;
+  onConfigChange: (data: TrainingPlanConfigFormData) => void;
+  onResolveConflict: (code: string) => void;
   errors?: Record<string, string>;
 }
 
@@ -125,6 +170,53 @@ const activityCategoryOptions: Array<{
   { value: "swim", label: "Swim" },
   { value: "other", label: "Other" },
 ];
+
+const availabilityTemplateOptions: Array<{
+  value: CreationAvailabilityConfig["template"];
+  label: string;
+}> = [
+  { value: "low", label: "Low" },
+  { value: "moderate", label: "Moderate" },
+  { value: "high", label: "High" },
+  { value: "custom", label: "Custom" },
+];
+
+const goalDifficultyOptions: Array<{
+  value: NonNullable<CreationConstraints["goal_difficulty_preference"]>;
+  label: string;
+}> = [
+  { value: "conservative", label: "Conservative" },
+  { value: "balanced", label: "Balanced" },
+  { value: "stretch", label: "Stretch" },
+];
+
+const weekDays: Array<CreationAvailabilityConfig["days"][number]["day"]> = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+];
+
+const getWeekDayLabel = (day: string) =>
+  day.slice(0, 1).toUpperCase() + day.slice(1, 3);
+
+const formatMinutesAsTime = (minuteOfDay: number) => {
+  const clamped = Math.max(0, Math.min(1439, minuteOfDay));
+  const hours = Math.floor(clamped / 60)
+    .toString()
+    .padStart(2, "0");
+  const minutes = (clamped % 60).toString().padStart(2, "0");
+  return `${hours}:${minutes}`;
+};
+
+const getSourceBadgeVariant = (source: CreationValueSource) => {
+  if (source === "user") return "default";
+  if (source === "suggested") return "secondary";
+  return "outline";
+};
 
 const getActivityCategoryLabel = (
   category?: GoalTargetFormData["activityCategory"],
@@ -198,6 +290,15 @@ const getTargetSummary = (target: GoalTargetFormData) => {
 export function SinglePageForm({
   formData,
   onFormDataChange,
+  showCreationConfig = true,
+  configData,
+  contextSummary,
+  feasibilitySafetySummary,
+  conflictItems = [],
+  informationalConflicts = [],
+  isPreviewPending = false,
+  onConfigChange,
+  onResolveConflict,
   errors = {},
 }: SinglePageFormProps) {
   const [expandedGoalIds, setExpandedGoalIds] = useState<string[]>(() => {
@@ -207,6 +308,49 @@ export function SinglePageForm({
   const [editingTargetRef, setEditingTargetRef] =
     useState<EditingTargetRef | null>(null);
   const [datePickerGoalId, setDatePickerGoalId] = useState<string | null>(null);
+  const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>(
+    {
+      availability: false,
+      baseline: false,
+      influence: false,
+      constraints: false,
+    },
+  );
+  const [showContextDetails, setShowContextDetails] = useState(false);
+
+  const setPanelExpanded = (panel: keyof typeof expandedPanels) => {
+    setExpandedPanels((prev) => ({ ...prev, [panel]: !prev[panel] }));
+  };
+
+  const updateConfig = (
+    updater: (draft: TrainingPlanConfigFormData) => void,
+  ) => {
+    const next = {
+      ...configData,
+      constraints: {
+        ...configData.constraints,
+        hard_rest_days: [...configData.constraints.hard_rest_days],
+      },
+      locks: { ...configData.locks },
+    };
+    updater(next);
+    onConfigChange(next);
+  };
+
+  const setFieldLock = (field: keyof CreationConfigLocks, locked: boolean) => {
+    updateConfig((draft) => {
+      draft.locks[field] = locked
+        ? { locked: true, locked_by: "user" }
+        : { locked: false };
+    });
+  };
+
+  const selectedAvailabilityDays = configData.availabilityConfig.days.filter(
+    (day) => day.windows.length > 0,
+  ).length;
+  const restDaysCount = configData.constraints.hard_rest_days.length;
+  const baselineSource = configData.baselineLoadProvenance.source;
+  const influenceSource = configData.recentInfluenceProvenance.source;
 
   useEffect(() => {
     setExpandedGoalIds((prev) => {
@@ -414,6 +558,839 @@ export function SinglePageForm({
     <View className="flex-1">
       <ScrollView className="flex-1" contentContainerClassName="p-4 gap-4">
         <View className="gap-4">
+          {showCreationConfig && (
+            <>
+              <View className="gap-3 rounded-lg border border-border bg-card p-3">
+                <View className="flex-row items-start justify-between gap-3">
+                  <View className="flex-1 gap-1">
+                    <Text className="font-semibold">
+                      Suggested setup context
+                    </Text>
+                    <Text className="text-xs text-muted-foreground">
+                      {contextSummary
+                        ? `Based on ${contextSummary.history_availability_state} history and signal quality ${(contextSummary.signal_quality * 100).toFixed(0)}%`
+                        : "Loading profile-aware defaults..."}
+                    </Text>
+                  </View>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onPress={() => setShowContextDetails((prev) => !prev)}
+                  >
+                    <Text>{showContextDetails ? "Hide why" : "View why"}</Text>
+                  </Button>
+                </View>
+                {showContextDetails && contextSummary && (
+                  <View className="gap-1 rounded-md bg-muted/40 p-2">
+                    <Text className="text-xs text-muted-foreground">
+                      Consistency: {contextSummary.recent_consistency_marker}
+                    </Text>
+                    <Text className="text-xs text-muted-foreground">
+                      Effort confidence:{" "}
+                      {contextSummary.effort_confidence_marker}
+                    </Text>
+                    <Text className="text-xs text-muted-foreground">
+                      Profile completeness:{" "}
+                      {contextSummary.profile_metric_completeness_marker}
+                    </Text>
+                    {contextSummary.rationale_codes.slice(0, 4).map((code) => (
+                      <Text
+                        key={code}
+                        className="text-xs text-muted-foreground"
+                      >
+                        - {code}
+                      </Text>
+                    ))}
+                  </View>
+                )}
+              </View>
+
+              {informationalConflicts.length > 0 && (
+                <View className="gap-2 rounded-lg border border-amber-300 bg-amber-100/40 p-3">
+                  <View className="flex-row items-center gap-2">
+                    <AlertTriangle size={16} className="text-amber-600" />
+                    <Text className="font-medium text-amber-800">
+                      Locked field notices
+                    </Text>
+                  </View>
+                  {informationalConflicts.map((conflict) => (
+                    <Text key={conflict} className="text-xs text-amber-800">
+                      - {conflict}
+                    </Text>
+                  ))}
+                </View>
+              )}
+
+              <View className="gap-2 rounded-lg border border-border bg-card p-3">
+                <Text className="font-semibold">Configuration</Text>
+
+                <Pressable
+                  onPress={() => setPanelExpanded("availability")}
+                  className="flex-row items-center justify-between rounded-md border border-border px-3 py-2"
+                >
+                  <View className="flex-1">
+                    <Text className="text-sm font-medium">Availability</Text>
+                    <Text className="text-xs text-muted-foreground">
+                      {selectedAvailabilityDays} training day(s), template{" "}
+                      {configData.availabilityConfig.template}
+                    </Text>
+                  </View>
+                  <View className="flex-row items-center gap-2">
+                    <Badge
+                      variant={getSourceBadgeVariant(
+                        configData.availabilityProvenance.source,
+                      )}
+                    >
+                      <Text>{configData.availabilityProvenance.source}</Text>
+                    </Badge>
+                    {expandedPanels.availability ? (
+                      <ChevronUp size={16} className="text-muted-foreground" />
+                    ) : (
+                      <ChevronDown
+                        size={16}
+                        className="text-muted-foreground"
+                      />
+                    )}
+                  </View>
+                </Pressable>
+
+                {expandedPanels.availability && (
+                  <View className="gap-3 rounded-md border border-border bg-muted/20 p-3">
+                    <View className="flex-row items-center justify-between">
+                      <Text className="text-sm font-medium">
+                        Lock availability
+                      </Text>
+                      <View className="flex-row items-center gap-2">
+                        {configData.locks.availability_config.locked ? (
+                          <Lock size={14} className="text-primary" />
+                        ) : (
+                          <LockOpen
+                            size={14}
+                            className="text-muted-foreground"
+                          />
+                        )}
+                        <Switch
+                          checked={configData.locks.availability_config.locked}
+                          onCheckedChange={(value) =>
+                            setFieldLock("availability_config", Boolean(value))
+                          }
+                        />
+                      </View>
+                    </View>
+
+                    <View className="gap-2">
+                      <Label nativeID="availability-template">
+                        <Text className="text-sm font-medium">Template</Text>
+                      </Label>
+                      <Select
+                        value={{
+                          value: configData.availabilityConfig.template,
+                          label:
+                            availabilityTemplateOptions.find(
+                              (option) =>
+                                option.value ===
+                                configData.availabilityConfig.template,
+                            )?.label ?? "Moderate",
+                        }}
+                        onValueChange={(option) => {
+                          if (!option?.value) return;
+                          updateConfig((draft) => {
+                            draft.availabilityConfig = {
+                              ...draft.availabilityConfig,
+                              template:
+                                option.value as CreationAvailabilityConfig["template"],
+                            };
+                            draft.availabilityProvenance = {
+                              ...draft.availabilityProvenance,
+                              source: "user",
+                              updated_at: new Date().toISOString(),
+                            };
+                          });
+                        }}
+                      >
+                        <SelectTrigger aria-labelledby="availability-template">
+                          <SelectValue placeholder="Select template" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availabilityTemplateOptions.map((option) => (
+                            <SelectItem
+                              key={option.value}
+                              label={option.label}
+                              value={option.value}
+                            >
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </View>
+
+                    <View className="gap-2">
+                      <Text className="text-xs text-muted-foreground">
+                        Optional day-level edits
+                      </Text>
+                      {weekDays.map((day) => {
+                        const dayConfig =
+                          configData.availabilityConfig.days.find(
+                            (item) => item.day === day,
+                          ) ?? configData.availabilityConfig.days[0];
+                        if (!dayConfig) {
+                          return null;
+                        }
+
+                        const isAvailable = dayConfig.windows.length > 0;
+                        const startLabel = isAvailable
+                          ? formatMinutesAsTime(
+                              dayConfig.windows[0]?.start_minute_of_day ?? 360,
+                            )
+                          : "-";
+                        const endLabel = isAvailable
+                          ? formatMinutesAsTime(
+                              dayConfig.windows[0]?.end_minute_of_day ?? 450,
+                            )
+                          : "-";
+
+                        return (
+                          <View
+                            key={day}
+                            className="flex-row items-center justify-between rounded-md border border-border px-2 py-2"
+                          >
+                            <Text className="text-sm">
+                              {getWeekDayLabel(day)}
+                            </Text>
+                            <View className="flex-row items-center gap-2">
+                              <Text className="text-xs text-muted-foreground">
+                                {startLabel}-{endLabel}
+                              </Text>
+                              <Switch
+                                checked={isAvailable}
+                                onCheckedChange={(value) => {
+                                  const nextValue = Boolean(value);
+                                  updateConfig((draft) => {
+                                    draft.availabilityConfig = {
+                                      ...draft.availabilityConfig,
+                                      template: "custom",
+                                      days: draft.availabilityConfig.days.map(
+                                        (candidate) =>
+                                          candidate.day === day
+                                            ? {
+                                                ...candidate,
+                                                windows: nextValue
+                                                  ? [
+                                                      {
+                                                        start_minute_of_day: 360,
+                                                        end_minute_of_day: 450,
+                                                      },
+                                                    ]
+                                                  : [],
+                                                max_sessions: nextValue ? 1 : 0,
+                                              }
+                                            : candidate,
+                                      ),
+                                    };
+                                    draft.availabilityProvenance = {
+                                      ...draft.availabilityProvenance,
+                                      source: "user",
+                                      updated_at: new Date().toISOString(),
+                                    };
+                                  });
+                                }}
+                              />
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+                )}
+
+                <Pressable
+                  onPress={() => setPanelExpanded("baseline")}
+                  className="flex-row items-center justify-between rounded-md border border-border px-3 py-2"
+                >
+                  <View className="flex-1">
+                    <Text className="text-sm font-medium">Baseline load</Text>
+                    <Text className="text-xs text-muted-foreground">
+                      {configData.baselineLoadWeeklyTss} weekly TSS
+                    </Text>
+                  </View>
+                  <View className="flex-row items-center gap-2">
+                    <Badge variant={getSourceBadgeVariant(baselineSource)}>
+                      <Text>{baselineSource}</Text>
+                    </Badge>
+                    {expandedPanels.baseline ? (
+                      <ChevronUp size={16} className="text-muted-foreground" />
+                    ) : (
+                      <ChevronDown
+                        size={16}
+                        className="text-muted-foreground"
+                      />
+                    )}
+                  </View>
+                </Pressable>
+
+                {expandedPanels.baseline && (
+                  <View className="gap-3 rounded-md border border-border bg-muted/20 p-3">
+                    <View className="flex-row items-center justify-between">
+                      <Text className="text-sm font-medium">
+                        Lock baseline load
+                      </Text>
+                      <View className="flex-row items-center gap-2">
+                        {configData.locks.baseline_load.locked ? (
+                          <Lock size={14} className="text-primary" />
+                        ) : (
+                          <LockOpen
+                            size={14}
+                            className="text-muted-foreground"
+                          />
+                        )}
+                        <Switch
+                          checked={configData.locks.baseline_load.locked}
+                          onCheckedChange={(value) =>
+                            setFieldLock("baseline_load", Boolean(value))
+                          }
+                        />
+                      </View>
+                    </View>
+                    <View className="gap-1">
+                      <Text className="text-xs text-muted-foreground">
+                        Confidence:{" "}
+                        {(
+                          (configData.baselineLoadProvenance.confidence ?? 0) *
+                          100
+                        ).toFixed(0)}
+                        %
+                      </Text>
+                    </View>
+                    <Input
+                      keyboardType="numeric"
+                      value={String(configData.baselineLoadWeeklyTss)}
+                      onChangeText={(value) => {
+                        const parsed = Number(value);
+                        if (!Number.isFinite(parsed)) return;
+                        updateConfig((draft) => {
+                          draft.baselineLoadWeeklyTss = Math.max(
+                            30,
+                            Math.round(parsed),
+                          );
+                          draft.baselineLoadProvenance = {
+                            ...draft.baselineLoadProvenance,
+                            source: "user",
+                            updated_at: new Date().toISOString(),
+                          };
+                        });
+                      }}
+                    />
+                  </View>
+                )}
+
+                <Pressable
+                  onPress={() => setPanelExpanded("influence")}
+                  className="flex-row items-center justify-between rounded-md border border-border px-3 py-2"
+                >
+                  <View className="flex-1">
+                    <Text className="text-sm font-medium">
+                      Recent influence
+                    </Text>
+                    <Text className="text-xs text-muted-foreground">
+                      {configData.recentInfluenceAction} (
+                      {configData.recentInfluenceScore.toFixed(2)})
+                    </Text>
+                  </View>
+                  <View className="flex-row items-center gap-2">
+                    <Badge variant={getSourceBadgeVariant(influenceSource)}>
+                      <Text>{influenceSource}</Text>
+                    </Badge>
+                    {expandedPanels.influence ? (
+                      <ChevronUp size={16} className="text-muted-foreground" />
+                    ) : (
+                      <ChevronDown
+                        size={16}
+                        className="text-muted-foreground"
+                      />
+                    )}
+                  </View>
+                </Pressable>
+
+                {expandedPanels.influence && (
+                  <View className="gap-3 rounded-md border border-border bg-muted/20 p-3">
+                    <View className="flex-row items-center justify-between">
+                      <Text className="text-sm font-medium">
+                        Lock recent influence
+                      </Text>
+                      <View className="flex-row items-center gap-2">
+                        {configData.locks.recent_influence.locked ? (
+                          <Lock size={14} className="text-primary" />
+                        ) : (
+                          <LockOpen
+                            size={14}
+                            className="text-muted-foreground"
+                          />
+                        )}
+                        <Switch
+                          checked={configData.locks.recent_influence.locked}
+                          onCheckedChange={(value) =>
+                            setFieldLock("recent_influence", Boolean(value))
+                          }
+                        />
+                      </View>
+                    </View>
+
+                    <View className="flex-row gap-2">
+                      {(["accepted", "edited", "disabled"] as const).map(
+                        (action) => (
+                          <Button
+                            key={action}
+                            variant={
+                              configData.recentInfluenceAction === action
+                                ? "default"
+                                : "outline"
+                            }
+                            size="sm"
+                            onPress={() => {
+                              updateConfig((draft) => {
+                                draft.recentInfluenceAction = action;
+                                if (action === "disabled") {
+                                  draft.recentInfluenceScore = 0;
+                                  draft.recentInfluenceProvenance = {
+                                    ...draft.recentInfluenceProvenance,
+                                    source: "user",
+                                    updated_at: new Date().toISOString(),
+                                  };
+                                }
+                                if (action === "accepted") {
+                                  draft.recentInfluenceProvenance = {
+                                    ...draft.recentInfluenceProvenance,
+                                    source: "suggested",
+                                    updated_at: new Date().toISOString(),
+                                  };
+                                }
+                              });
+                            }}
+                          >
+                            <Text>{action}</Text>
+                          </Button>
+                        ),
+                      )}
+                    </View>
+
+                    <Input
+                      keyboardType="numbers-and-punctuation"
+                      value={String(configData.recentInfluenceScore)}
+                      onChangeText={(value) => {
+                        const parsed = Number(value);
+                        if (!Number.isFinite(parsed)) return;
+                        updateConfig((draft) => {
+                          draft.recentInfluenceScore = Math.max(
+                            -1,
+                            Math.min(1, Number(parsed.toFixed(3))),
+                          );
+                          draft.recentInfluenceAction = "edited";
+                          draft.recentInfluenceProvenance = {
+                            ...draft.recentInfluenceProvenance,
+                            source: "user",
+                            updated_at: new Date().toISOString(),
+                          };
+                        });
+                      }}
+                    />
+                  </View>
+                )}
+
+                <Pressable
+                  onPress={() => setPanelExpanded("constraints")}
+                  className="flex-row items-center justify-between rounded-md border border-border px-3 py-2"
+                >
+                  <View className="flex-1">
+                    <Text className="text-sm font-medium">Constraints</Text>
+                    <Text className="text-xs text-muted-foreground">
+                      Rest {restDaysCount}d, sessions{" "}
+                      {configData.constraints.min_sessions_per_week ?? 0}-
+                      {configData.constraints.max_sessions_per_week ?? 0}
+                    </Text>
+                  </View>
+                  <View className="flex-row items-center gap-2">
+                    <Badge
+                      variant={getSourceBadgeVariant(
+                        configData.constraintsSource,
+                      )}
+                    >
+                      <Text>{configData.constraintsSource}</Text>
+                    </Badge>
+                    {expandedPanels.constraints ? (
+                      <ChevronUp size={16} className="text-muted-foreground" />
+                    ) : (
+                      <ChevronDown
+                        size={16}
+                        className="text-muted-foreground"
+                      />
+                    )}
+                  </View>
+                </Pressable>
+
+                {expandedPanels.constraints && (
+                  <View className="gap-3 rounded-md border border-border bg-muted/20 p-3">
+                    <View className="flex-row items-center justify-between">
+                      <Text className="text-sm">Weekly floor TSS</Text>
+                      <View className="flex-row items-center gap-2">
+                        <Text className="text-xs text-muted-foreground">
+                          Lock
+                        </Text>
+                        <Switch
+                          checked={
+                            configData.locks.weekly_load_floor_tss.locked
+                          }
+                          onCheckedChange={(value) =>
+                            setFieldLock(
+                              "weekly_load_floor_tss",
+                              Boolean(value),
+                            )
+                          }
+                        />
+                      </View>
+                    </View>
+                    <Input
+                      keyboardType="numeric"
+                      value={String(
+                        configData.constraints.weekly_load_floor_tss ?? "",
+                      )}
+                      onChangeText={(value) => {
+                        const parsed = Number(value);
+                        if (!Number.isFinite(parsed)) return;
+                        updateConfig((draft) => {
+                          draft.constraints.weekly_load_floor_tss = Math.max(
+                            0,
+                            Math.round(parsed),
+                          );
+                          draft.constraintsSource = "user";
+                        });
+                      }}
+                    />
+
+                    <View className="flex-row items-center justify-between">
+                      <Text className="text-sm">Weekly cap TSS</Text>
+                      <View className="flex-row items-center gap-2">
+                        <Text className="text-xs text-muted-foreground">
+                          Lock
+                        </Text>
+                        <Switch
+                          checked={configData.locks.weekly_load_cap_tss.locked}
+                          onCheckedChange={(value) =>
+                            setFieldLock("weekly_load_cap_tss", Boolean(value))
+                          }
+                        />
+                      </View>
+                    </View>
+                    <Input
+                      keyboardType="numeric"
+                      value={String(
+                        configData.constraints.weekly_load_cap_tss ?? "",
+                      )}
+                      onChangeText={(value) => {
+                        const parsed = Number(value);
+                        if (!Number.isFinite(parsed)) return;
+                        updateConfig((draft) => {
+                          draft.constraints.weekly_load_cap_tss = Math.max(
+                            0,
+                            Math.round(parsed),
+                          );
+                          draft.constraintsSource = "user";
+                        });
+                      }}
+                    />
+
+                    <View className="flex-row items-center justify-between">
+                      <Text className="text-sm">Sessions / week</Text>
+                      <View className="flex-row items-center gap-2">
+                        <Switch
+                          checked={
+                            configData.locks.min_sessions_per_week.locked
+                          }
+                          onCheckedChange={(value) =>
+                            setFieldLock(
+                              "min_sessions_per_week",
+                              Boolean(value),
+                            )
+                          }
+                        />
+                        <Switch
+                          checked={
+                            configData.locks.max_sessions_per_week.locked
+                          }
+                          onCheckedChange={(value) =>
+                            setFieldLock(
+                              "max_sessions_per_week",
+                              Boolean(value),
+                            )
+                          }
+                        />
+                      </View>
+                    </View>
+                    <View className="flex-row gap-2">
+                      <Input
+                        keyboardType="numeric"
+                        value={String(
+                          configData.constraints.min_sessions_per_week ?? "",
+                        )}
+                        onChangeText={(value) => {
+                          const parsed = Number(value);
+                          if (!Number.isFinite(parsed)) return;
+                          updateConfig((draft) => {
+                            draft.constraints.min_sessions_per_week = Math.max(
+                              0,
+                              Math.round(parsed),
+                            );
+                            draft.constraintsSource = "user";
+                          });
+                        }}
+                        className="flex-1"
+                      />
+                      <Input
+                        keyboardType="numeric"
+                        value={String(
+                          configData.constraints.max_sessions_per_week ?? "",
+                        )}
+                        onChangeText={(value) => {
+                          const parsed = Number(value);
+                          if (!Number.isFinite(parsed)) return;
+                          updateConfig((draft) => {
+                            draft.constraints.max_sessions_per_week = Math.max(
+                              0,
+                              Math.round(parsed),
+                            );
+                            draft.constraintsSource = "user";
+                          });
+                        }}
+                        className="flex-1"
+                      />
+                    </View>
+
+                    <View className="gap-2">
+                      <View className="flex-row items-center justify-between">
+                        <Text className="text-sm">Hard rest days</Text>
+                        <Switch
+                          checked={configData.locks.hard_rest_days.locked}
+                          onCheckedChange={(value) =>
+                            setFieldLock("hard_rest_days", Boolean(value))
+                          }
+                        />
+                      </View>
+                      <View className="flex-row flex-wrap gap-2">
+                        {weekDays.map((day) => {
+                          const selected =
+                            configData.constraints.hard_rest_days.includes(day);
+                          return (
+                            <Button
+                              key={`rest-${day}`}
+                              variant={selected ? "default" : "outline"}
+                              size="sm"
+                              onPress={() => {
+                                updateConfig((draft) => {
+                                  draft.constraints.hard_rest_days = selected
+                                    ? draft.constraints.hard_rest_days.filter(
+                                        (candidate) => candidate !== day,
+                                      )
+                                    : [
+                                        ...draft.constraints.hard_rest_days,
+                                        day,
+                                      ];
+                                  draft.constraintsSource = "user";
+                                });
+                              }}
+                            >
+                              <Text>{getWeekDayLabel(day)}</Text>
+                            </Button>
+                          );
+                        })}
+                      </View>
+                    </View>
+
+                    <View className="gap-2">
+                      <View className="flex-row items-center justify-between">
+                        <Text className="text-sm">
+                          Max session duration (min)
+                        </Text>
+                        <Switch
+                          checked={
+                            configData.locks.max_single_session_duration_minutes
+                              .locked
+                          }
+                          onCheckedChange={(value) =>
+                            setFieldLock(
+                              "max_single_session_duration_minutes",
+                              Boolean(value),
+                            )
+                          }
+                        />
+                      </View>
+                      <Input
+                        keyboardType="numeric"
+                        value={String(
+                          configData.constraints
+                            .max_single_session_duration_minutes ?? "",
+                        )}
+                        onChangeText={(value) => {
+                          const parsed = Number(value);
+                          if (!Number.isFinite(parsed)) return;
+                          updateConfig((draft) => {
+                            draft.constraints.max_single_session_duration_minutes =
+                              Math.max(20, Math.round(parsed));
+                            draft.constraintsSource = "user";
+                          });
+                        }}
+                      />
+                    </View>
+
+                    <View className="gap-2">
+                      <View className="flex-row items-center justify-between">
+                        <Text className="text-sm">Goal difficulty</Text>
+                        <Switch
+                          checked={
+                            configData.locks.goal_difficulty_preference.locked
+                          }
+                          onCheckedChange={(value) =>
+                            setFieldLock(
+                              "goal_difficulty_preference",
+                              Boolean(value),
+                            )
+                          }
+                        />
+                      </View>
+                      <Select
+                        value={{
+                          value:
+                            configData.constraints.goal_difficulty_preference ??
+                            "balanced",
+                          label:
+                            goalDifficultyOptions.find(
+                              (option) =>
+                                option.value ===
+                                configData.constraints
+                                  .goal_difficulty_preference,
+                            )?.label ?? "Balanced",
+                        }}
+                        onValueChange={(option) => {
+                          if (!option?.value) return;
+                          updateConfig((draft) => {
+                            draft.constraints.goal_difficulty_preference =
+                              option.value as
+                                | "conservative"
+                                | "balanced"
+                                | "stretch";
+                            draft.constraintsSource = "user";
+                          });
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Choose preference" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {goalDifficultyOptions.map((option) => (
+                            <SelectItem
+                              key={option.value}
+                              label={option.label}
+                              value={option.value}
+                            >
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </View>
+                  </View>
+                )}
+              </View>
+
+              <View className="gap-2 rounded-lg border border-border bg-card p-3">
+                <View className="flex-row items-center justify-between">
+                  <Text className="font-semibold">Feasibility and safety</Text>
+                  {isPreviewPending && (
+                    <Text className="text-xs text-muted-foreground">
+                      Refreshing...
+                    </Text>
+                  )}
+                </View>
+                {feasibilitySafetySummary ? (
+                  <>
+                    <View className="flex-row gap-2">
+                      <Badge
+                        variant={
+                          feasibilitySafetySummary.feasibility_band ===
+                          "on-track"
+                            ? "default"
+                            : "secondary"
+                        }
+                      >
+                        <Text>{feasibilitySafetySummary.feasibility_band}</Text>
+                      </Badge>
+                      <Badge
+                        variant={
+                          feasibilitySafetySummary.safety_band === "safe"
+                            ? "default"
+                            : feasibilitySafetySummary.safety_band === "caution"
+                              ? "secondary"
+                              : "destructive"
+                        }
+                      >
+                        <Text>{feasibilitySafetySummary.safety_band}</Text>
+                      </Badge>
+                    </View>
+                    {feasibilitySafetySummary.top_drivers
+                      .slice(0, 3)
+                      .map((driver) => (
+                        <Text
+                          key={driver.code}
+                          className="text-xs text-muted-foreground"
+                        >
+                          - {driver.message}
+                        </Text>
+                      ))}
+                  </>
+                ) : (
+                  <Text className="text-xs text-muted-foreground">
+                    Complete required goal fields to compute pre-submit safety.
+                  </Text>
+                )}
+              </View>
+
+              {conflictItems.length > 0 && (
+                <View className="gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3">
+                  <View className="flex-row items-center gap-2">
+                    <ShieldAlert size={16} className="text-destructive" />
+                    <Text className="font-semibold text-destructive">
+                      Resolve blocking conflicts
+                    </Text>
+                  </View>
+                  {conflictItems.map((conflict) => (
+                    <View
+                      key={`${conflict.code}-${conflict.message}`}
+                      className="gap-1 rounded-md border border-destructive/30 p-2"
+                    >
+                      <Text className="text-sm text-destructive">
+                        {conflict.message}
+                      </Text>
+                      {conflict.suggestions.map((suggestion) => (
+                        <Text
+                          key={`${conflict.code}-${suggestion}`}
+                          className="text-xs text-destructive"
+                        >
+                          - {suggestion}
+                        </Text>
+                      ))}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onPress={() => onResolveConflict(conflict.code)}
+                      >
+                        <Text>Apply quick fix</Text>
+                      </Button>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </>
+          )}
+
           <View className="gap-2">
             <Text className="text-sm text-muted-foreground">
               Your plan starts with one primary goal. Additional goals are

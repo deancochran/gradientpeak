@@ -4,21 +4,36 @@ import {
   calculateCTL,
   calculateTSB,
   calculateTrainingLoadSeries,
+  classifyCreationFeasibility,
+  creationAvailabilityConfigSchema,
+  creationBaselineLoadSchema,
+  creationConfigLocksSchema,
+  creationConstraintsSchema,
+  creationProvenanceSchema,
+  creationRecentInfluenceActionEnum,
+  creationRecentInfluenceSchema,
+  deriveCreationContext,
+  deriveCreationSuggestions,
   deterministicUuidFromSeed,
   expandMinimalGoalToPlan,
   getFormStatus,
   getTrainingIntensityZone,
+  normalizeCreationConfig,
+  resolveConstraintConflicts,
+  trainingPlanCreationConfigFormSchema,
   trainingPlanCreateInputSchema,
   trainingPlanCreateSchema,
   trainingPlanSchema,
   trainingPlanUpdateInputSchema,
   validatePlanFeasibility,
+  type NormalizeCreationConfigInput,
 } from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { addEstimationToPlans } from "../utils/estimation-helpers";
+import { featureFlags } from "../lib/features";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_ESTIMATED_CTL = 40;
@@ -469,6 +484,417 @@ const blockSnapshotSchema = z.object({
     .optional(),
 });
 
+const creationConfigValueSchema = z.object({
+  availability_config: creationAvailabilityConfigSchema,
+  baseline_load: creationBaselineLoadSchema,
+  recent_influence: creationRecentInfluenceSchema,
+  recent_influence_action: creationRecentInfluenceActionEnum,
+  constraints: creationConstraintsSchema,
+});
+
+const creationNormalizationInputSchema = z.object({
+  user_values: creationConfigValueSchema
+    .extend({
+      locks: creationConfigLocksSchema,
+    })
+    .partial()
+    .optional(),
+  confirmed_suggestions: creationConfigValueSchema.partial().optional(),
+  defaults: creationConfigValueSchema.partial().optional(),
+  provenance_overrides: z
+    .object({
+      availability_provenance: creationProvenanceSchema.partial().optional(),
+      baseline_load_provenance: creationProvenanceSchema.partial().optional(),
+      recent_influence_provenance: creationProvenanceSchema
+        .partial()
+        .optional(),
+    })
+    .optional(),
+  now_iso: z.string().datetime().optional(),
+});
+
+const postCreateBehaviorSchema = z.object({
+  autonomous_mutation_enabled: z.boolean().default(false),
+});
+
+const getCreationSuggestionsInputSchema = z
+  .object({
+    as_of: z.string().datetime().optional(),
+    locks: creationConfigLocksSchema.partial().optional(),
+    existing_values: z
+      .object({
+        availability_config: creationAvailabilityConfigSchema.optional(),
+        baseline_load_weekly_tss: z.number().int().min(30).max(2000).optional(),
+        recent_influence_score: z.number().min(-1).max(1).optional(),
+        constraints: creationConstraintsSchema.partial().optional(),
+      })
+      .optional(),
+  })
+  .optional();
+
+const previewCreationConfigInputSchema = z.object({
+  minimal_plan: minimalTrainingPlanV2InputSchema,
+  creation_input: creationNormalizationInputSchema,
+  post_create_behavior: postCreateBehaviorSchema.optional(),
+});
+
+const createFromCreationConfigInputSchema =
+  previewCreationConfigInputSchema.extend({
+    is_active: z.boolean().optional().default(true),
+  });
+
+function formatIssuePath(path: Array<string | number>): string {
+  if (path.length === 0) {
+    return "root";
+  }
+
+  return path
+    .map((segment) =>
+      typeof segment === "number" ? `[${segment}]` : `${segment}`,
+    )
+    .join(".")
+    .replace(/\.\[/g, "[");
+}
+
+function throwPathValidationError(
+  message: string,
+  issues: Array<{ path: Array<string | number>; message: string }>,
+): never {
+  const formattedIssues = issues.map((issue) => ({
+    path: formatIssuePath(issue.path),
+    message: issue.message,
+  }));
+
+  throw new TRPCError({
+    code: "BAD_REQUEST",
+    message: `${message}: ${formattedIssues
+      .map((issue) => `${issue.path}: ${issue.message}`)
+      .join("; ")}`,
+    cause: {
+      issues: formattedIssues,
+    },
+  });
+}
+
+function enforceNoAutonomousPostCreateMutation(input?: {
+  autonomous_mutation_enabled?: boolean;
+}): void {
+  if (input?.autonomous_mutation_enabled) {
+    throwPathValidationError(
+      "Autonomous post-create mutation is not supported in MVP",
+      [
+        {
+          path: ["post_create_behavior", "autonomous_mutation_enabled"],
+          message:
+            "Set this to false. Post-create plan changes require explicit user confirmation in MVP.",
+        },
+      ],
+    );
+  }
+}
+
+function enforceCreationConfigFeatureEnabled(): void {
+  if (!featureFlags.trainingPlanCreateConfigMvp) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Training plan creation config MVP is not enabled",
+    });
+  }
+}
+
+function getAvailabilityTrainingDays(input: {
+  availability: z.infer<typeof creationAvailabilityConfigSchema>;
+  hardRestDays: string[];
+}): number {
+  const availableDays = new Set<string>(
+    input.availability.days
+      .filter((day) => day.windows.length > 0 && (day.max_sessions ?? 0) > 0)
+      .map((day) => day.day),
+  );
+
+  for (const restDay of input.hardRestDays) {
+    availableDays.delete(restDay);
+  }
+
+  return availableDays.size;
+}
+
+async function deriveProfileAwareCreationContext(input: {
+  supabase: SupabaseClient;
+  profileId: string;
+  asOfIso?: string;
+}) {
+  const asOf = input.asOfIso ? new Date(input.asOfIso) : new Date();
+  const recentActivitiesCutoff = new Date(asOf);
+  recentActivitiesCutoff.setDate(recentActivitiesCutoff.getDate() - 84);
+
+  const recentEffortsCutoff = new Date(asOf);
+  recentEffortsCutoff.setDate(recentEffortsCutoff.getDate() - 84);
+
+  const [activitiesResult, effortsResult, profileMetricsResult] =
+    await Promise.all([
+      input.supabase
+        .from("activities")
+        .select(
+          "started_at, activity_category, duration_seconds, training_stress_score",
+        )
+        .eq("profile_id", input.profileId)
+        .gte("started_at", recentActivitiesCutoff.toISOString())
+        .order("started_at", { ascending: false })
+        .limit(300),
+      input.supabase
+        .from("activity_efforts")
+        .select(
+          "recorded_at, effort_type, duration_seconds, value, activity_category",
+        )
+        .eq("profile_id", input.profileId)
+        .gte("recorded_at", recentEffortsCutoff.toISOString())
+        .order("recorded_at", { ascending: false })
+        .limit(200),
+      input.supabase
+        .from("profile_metrics")
+        .select("metric_type, value, recorded_at")
+        .eq("profile_id", input.profileId)
+        .in("metric_type", ["lthr", "weight_kg"])
+        .order("recorded_at", { ascending: false }),
+    ]);
+
+  if (activitiesResult.error) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: `Failed to load activities for creation context: ${activitiesResult.error.message}`,
+    });
+  }
+
+  if (effortsResult.error) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: `Failed to load activity efforts for creation context: ${effortsResult.error.message}`,
+    });
+  }
+
+  if (profileMetricsResult.error) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: `Failed to load profile metrics for creation context: ${profileMetricsResult.error.message}`,
+    });
+  }
+
+  const completedActivities = (activitiesResult.data ?? []).map((activity) => ({
+    occurred_at: activity.started_at,
+    activity_category: activity.activity_category,
+    duration_seconds: activity.duration_seconds,
+    tss: activity.training_stress_score,
+  }));
+
+  const activityCounts = completedActivities.reduce<Record<string, number>>(
+    (acc, activity) => {
+      const category = activity.activity_category ?? "other";
+      acc[category] = (acc[category] ?? 0) + 1;
+      return acc;
+    },
+    {},
+  );
+
+  const totalActivityCount = Object.values(activityCounts).reduce(
+    (sum, count) => sum + count,
+    0,
+  );
+  const categoryMix =
+    totalActivityCount > 0
+      ? Object.fromEntries(
+          Object.entries(activityCounts).map(([category, count]) => [
+            category,
+            Number((count / totalActivityCount).toFixed(3)),
+          ]),
+        )
+      : undefined;
+
+  const primaryCategory =
+    Object.entries(activityCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ??
+    undefined;
+
+  const efforts = (effortsResult.data ?? []).map((effort) => ({
+    recorded_at: effort.recorded_at,
+    effort_type: effort.effort_type,
+    duration_seconds: effort.duration_seconds,
+    value: effort.value,
+    activity_category: effort.activity_category,
+  }));
+
+  const ftpEffort = efforts
+    .filter(
+      (effort) =>
+        effort.effort_type === "power" && effort.duration_seconds === 1200,
+    )
+    .sort((a, b) => b.value - a.value)[0];
+
+  const lthrMetric = (profileMetricsResult.data ?? []).find(
+    (metric) => metric.metric_type === "lthr",
+  );
+  const weightMetric = (profileMetricsResult.data ?? []).find(
+    (metric) => metric.metric_type === "weight_kg",
+  );
+
+  const profileMetrics = {
+    ftp: ftpEffort?.value ? Math.round(ftpEffort.value * 0.95) : null,
+    threshold_hr: lthrMetric?.value ? Number(lthrMetric.value) : null,
+    weight_kg: weightMetric?.value ? Number(weightMetric.value) : null,
+    lthr: lthrMetric?.value ? Number(lthrMetric.value) : null,
+  };
+
+  const contextSummary = deriveCreationContext({
+    completed_activities: completedActivities,
+    efforts,
+    activity_context: {
+      primary_category: primaryCategory,
+      category_mix: categoryMix,
+    },
+    profile_metrics: profileMetrics,
+    as_of: input.asOfIso,
+  });
+
+  return {
+    contextSummary,
+  };
+}
+
+function buildConfirmedSuggestionsFromContext(input: {
+  contextSummary: ReturnType<typeof deriveCreationContext>;
+  creationInput: z.infer<typeof creationNormalizationInputSchema>;
+  nowIso: string;
+}) {
+  const suggestionPayload = deriveCreationSuggestions({
+    context: input.contextSummary,
+    existing_values: {
+      availability_config: input.creationInput.user_values?.availability_config,
+      baseline_load_weekly_tss:
+        input.creationInput.user_values?.baseline_load?.weekly_tss,
+      recent_influence_score:
+        input.creationInput.user_values?.recent_influence?.influence_score,
+      constraints: input.creationInput.user_values?.constraints,
+    },
+    locks: input.creationInput.user_values?.locks,
+    now_iso: input.nowIso,
+  });
+
+  const suggestedValues = {
+    availability_config: suggestionPayload.availability_config,
+    baseline_load: suggestionPayload.baseline_load,
+    recent_influence: suggestionPayload.recent_influence,
+    recent_influence_action: suggestionPayload.recent_influence_action,
+    constraints: suggestionPayload.constraints,
+  };
+
+  return {
+    suggestionPayload,
+    suggestedValues,
+  };
+}
+
+async function evaluateCreationConfig(input: {
+  supabase: SupabaseClient;
+  profileId: string;
+  creationInput: z.infer<typeof creationNormalizationInputSchema>;
+  asOfIso?: string;
+}) {
+  const nowIso = input.creationInput.now_iso ?? new Date().toISOString();
+
+  const { contextSummary } = await deriveProfileAwareCreationContext({
+    supabase: input.supabase,
+    profileId: input.profileId,
+    asOfIso: input.asOfIso,
+  });
+
+  const { suggestionPayload, suggestedValues } =
+    buildConfirmedSuggestionsFromContext({
+      contextSummary,
+      creationInput: input.creationInput,
+      nowIso,
+    });
+
+  const mergedConfirmedSuggestions = {
+    availability_config:
+      input.creationInput.confirmed_suggestions?.availability_config ??
+      suggestedValues.availability_config,
+    baseline_load:
+      input.creationInput.confirmed_suggestions?.baseline_load ??
+      suggestedValues.baseline_load,
+    recent_influence:
+      input.creationInput.confirmed_suggestions?.recent_influence ??
+      suggestedValues.recent_influence,
+    recent_influence_action:
+      input.creationInput.confirmed_suggestions?.recent_influence_action ??
+      suggestedValues.recent_influence_action,
+    constraints: {
+      ...suggestedValues.constraints,
+      ...(input.creationInput.confirmed_suggestions?.constraints ?? {}),
+    },
+  };
+
+  const normalizedConfig = normalizeCreationConfig({
+    ...input.creationInput,
+    confirmed_suggestions: mergedConfirmedSuggestions,
+    now_iso: nowIso,
+  } satisfies NormalizeCreationConfigInput);
+
+  const availabilityTrainingDays = getAvailabilityTrainingDays({
+    availability: normalizedConfig.availability_config,
+    hardRestDays: normalizedConfig.constraints.hard_rest_days,
+  });
+
+  const conflictResolution = resolveConstraintConflicts({
+    availability_training_days: availabilityTrainingDays,
+    baseline_weekly_tss: normalizedConfig.baseline_load.weekly_tss,
+    user_constraints: input.creationInput.user_values?.constraints,
+    confirmed_suggestions: mergedConfirmedSuggestions.constraints,
+    defaults: input.creationInput.defaults?.constraints,
+    locks: normalizedConfig.locks,
+  });
+
+  const configWithResolvedConstraints = {
+    ...normalizedConfig,
+    constraints: conflictResolution.resolved_constraints,
+  };
+
+  const feasibilitySummary = classifyCreationFeasibility({
+    config: configWithResolvedConstraints,
+    context: contextSummary,
+    conflicts: conflictResolution.conflicts,
+    now_iso: nowIso,
+  });
+
+  const finalConfig = {
+    ...configWithResolvedConstraints,
+    context_summary: contextSummary,
+    feasibility_safety_summary: feasibilitySummary,
+  };
+
+  const validatedFinalConfig =
+    trainingPlanCreationConfigFormSchema.safeParse(finalConfig);
+
+  if (!validatedFinalConfig.success) {
+    throwPathValidationError(
+      "Invalid creation configuration",
+      validatedFinalConfig.error.issues.map((issue) => ({
+        path: issue.path.filter(
+          (segment): segment is string | number =>
+            typeof segment === "string" || typeof segment === "number",
+        ),
+        message: issue.message,
+      })),
+    );
+  }
+
+  return {
+    finalConfig: validatedFinalConfig.data,
+    contextSummary,
+    suggestionPayload,
+    conflictResolution,
+    feasibilitySummary,
+  };
+}
+
 export const trainingPlansRouter = createTRPCRouter({
   // ------------------------------
   // Get a training plan (by ID or active plan)
@@ -811,6 +1237,177 @@ export const trainingPlansRouter = createTRPCRouter({
           target_weekly_tss_avg: Math.round(targetWeeklyTssAvg),
         },
         normalized_goals: normalizedGoals,
+      };
+    }),
+
+  // ------------------------------
+  // Derive profile-aware creation context + suggestions
+  // ------------------------------
+  getCreationSuggestions: protectedProcedure
+    .input(getCreationSuggestionsInputSchema)
+    .query(async ({ ctx, input }) => {
+      enforceCreationConfigFeatureEnabled();
+      const nowIso = new Date().toISOString();
+      const { contextSummary } = await deriveProfileAwareCreationContext({
+        supabase: ctx.supabase,
+        profileId: ctx.session.user.id,
+        asOfIso: input?.as_of,
+      });
+
+      const suggestions = deriveCreationSuggestions({
+        context: contextSummary,
+        existing_values: input?.existing_values,
+        locks: input?.locks,
+        now_iso: nowIso,
+      });
+
+      return {
+        context_summary: contextSummary,
+        suggestions,
+      };
+    }),
+
+  // ------------------------------
+  // Preview normalized creation config + feasibility/safety
+  // ------------------------------
+  previewCreationConfig: protectedProcedure
+    .input(previewCreationConfigInputSchema)
+    .query(async ({ ctx, input }) => {
+      enforceCreationConfigFeatureEnabled();
+      enforceNoAutonomousPostCreateMutation(input.post_create_behavior);
+
+      const expandedPlan = expandMinimalGoalToPlan(input.minimal_plan);
+      const evaluation = await evaluateCreationConfig({
+        supabase: ctx.supabase,
+        profileId: ctx.session.user.id,
+        creationInput: input.creation_input,
+      });
+
+      return {
+        normalized_creation_config: evaluation.finalConfig,
+        creation_context_summary: evaluation.contextSummary,
+        derived_suggestions: evaluation.suggestionPayload,
+        feasibility_safety: evaluation.feasibilitySummary,
+        conflicts: {
+          is_blocking: evaluation.conflictResolution.is_blocking,
+          items: evaluation.conflictResolution.conflicts,
+        },
+        plan_preview: {
+          name: expandedPlan.name,
+          start_date: expandedPlan.start_date,
+          end_date: expandedPlan.end_date,
+          goal_count: expandedPlan.goals.length,
+          block_count: expandedPlan.blocks.length,
+        },
+      };
+    }),
+
+  // ------------------------------
+  // Create plan from minimal goal + normalized creation config
+  // ------------------------------
+  createFromCreationConfig: protectedProcedure
+    .input(createFromCreationConfigInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      enforceCreationConfigFeatureEnabled();
+      enforceNoAutonomousPostCreateMutation(input.post_create_behavior);
+
+      const expandedPlan = expandMinimalGoalToPlan(input.minimal_plan);
+      const evaluation = await evaluateCreationConfig({
+        supabase: ctx.supabase,
+        profileId: ctx.session.user.id,
+        creationInput: input.creation_input,
+      });
+
+      const blockingConflicts = evaluation.conflictResolution.conflicts.filter(
+        (conflict) => conflict.severity === "blocking",
+      );
+
+      if (blockingConflicts.length > 0) {
+        throwPathValidationError(
+          "Creation config has blocking conflicts",
+          blockingConflicts.flatMap((conflict) =>
+            conflict.field_paths.map((fieldPath) => ({
+              path: fieldPath.split("."),
+              message: `${conflict.message}. ${conflict.suggestions.join(" | ")}`,
+            })),
+          ),
+        );
+      }
+
+      const planId = crypto.randomUUID();
+      const normalizedAt =
+        evaluation.finalConfig.feasibility_safety_summary?.computed_at ??
+        new Date().toISOString();
+
+      const structureWithId = {
+        ...expandedPlan,
+        id: planId,
+        metadata: {
+          ...(expandedPlan.metadata ?? {}),
+          creation_config_mvp: {
+            source_of_truth: "normalized_creation_config",
+            policy_version: "creation_config_mvp_v1",
+            precedence_order: [
+              "locked_user_values",
+              "user_values",
+              "confirmed_suggestions",
+              "defaults",
+            ],
+            post_create_mutation_policy: "manual_confirmation_required",
+            normalized_at: normalizedAt,
+            normalized_config: evaluation.finalConfig,
+            conflict_resolution: {
+              is_blocking: evaluation.conflictResolution.is_blocking,
+              conflicts: evaluation.conflictResolution.conflicts,
+              precedence: evaluation.conflictResolution.precedence,
+            },
+          },
+        },
+      };
+
+      try {
+        trainingPlanSchema.parse(structureWithId);
+      } catch (validationError) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Generated training plan structure is invalid",
+          cause: validationError,
+        });
+      }
+
+      if (input.is_active) {
+        await ctx.supabase
+          .from("training_plans")
+          .update({ is_active: false })
+          .eq("profile_id", ctx.session.user.id)
+          .eq("is_active", true);
+      }
+
+      const { data, error } = await ctx.supabase
+        .from("training_plans")
+        .insert({
+          name: expandedPlan.name,
+          description: expandedPlan.description ?? null,
+          structure: structureWithId as any,
+          is_active: input.is_active ?? true,
+          profile_id: ctx.session.user.id,
+        })
+        .select("*")
+        .single();
+
+      if (error) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: error.message,
+        });
+      }
+
+      return {
+        ...data,
+        creation_summary: {
+          feasibility_safety: evaluation.feasibilitySummary,
+          context_summary: evaluation.contextSummary,
+        },
       };
     }),
 
