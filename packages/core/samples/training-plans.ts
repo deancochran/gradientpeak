@@ -28,6 +28,14 @@ export const MARATHON_BEGINNER_18_WEEK: Omit<
       name: "First Marathon",
       target_date: "2025-05-11",
       priority: 1,
+      targets: [
+        {
+          target_type: "race_performance",
+          activity_category: "run",
+          distance_m: 42195,
+          target_time_s: 16200,
+        },
+      ],
       target_performance: "Finish strong",
       notes: "Focus on finishing, not time",
     },
@@ -146,6 +154,14 @@ export const MARATHON_INTERMEDIATE_18_WEEK: Omit<
       name: "Marathon PR",
       target_date: "2025-05-11",
       priority: 1,
+      targets: [
+        {
+          target_type: "race_performance",
+          activity_category: "run",
+          distance_m: 42195,
+          target_time_s: 12600,
+        },
+      ],
       target_performance: "Sub 3:30",
       notes: "Beat previous time by 10+ minutes",
     },
@@ -289,6 +305,14 @@ export const HALF_MARATHON_12_WEEK: Omit<
       name: "Half Marathon",
       target_date: "2025-05-11",
       priority: 1,
+      targets: [
+        {
+          target_type: "race_performance",
+          activity_category: "run",
+          distance_m: 21097.5,
+          target_time_s: 6300,
+        },
+      ],
       target_performance: "Sub 1:45",
     },
   ],
@@ -403,6 +427,14 @@ export const RACE_5K_10K_10_WEEK: Omit<
       name: "10K Race",
       target_date: "2025-05-11",
       priority: 1,
+      targets: [
+        {
+          target_type: "race_performance",
+          activity_category: "run",
+          distance_m: 10000,
+          target_time_s: 2700,
+        },
+      ],
       target_performance: "Sub 45:00",
     },
   ],
@@ -517,6 +549,14 @@ export const CYCLING_CENTURY_14_WEEK: Omit<
       name: "Century Ride (100 miles)",
       target_date: "2025-05-11",
       priority: 1,
+      targets: [
+        {
+          target_type: "race_performance",
+          activity_category: "bike",
+          distance_m: 160934,
+          target_time_s: 21600,
+        },
+      ],
       target_performance: "Complete 100 miles",
     },
   ],
@@ -631,6 +671,14 @@ export const TRIATHLON_SPRINT_10_WEEK: Omit<
       name: "Sprint Triathlon",
       target_date: "2025-05-11",
       priority: 1,
+      targets: [
+        {
+          target_type: "race_performance",
+          activity_category: "other",
+          distance_m: 25750,
+          target_time_s: 5400,
+        },
+      ],
       target_performance: "Complete sprint distance",
     },
   ],
@@ -755,6 +803,12 @@ export const BASE_BUILDING_8_WEEK: Omit<
       name: "Build Aerobic Base",
       target_date: "2025-05-11",
       priority: 1,
+      targets: [
+        {
+          target_type: "hr_threshold",
+          target_lthr_bpm: 165,
+        },
+      ],
       notes: "Foundation for future training",
     },
   ],

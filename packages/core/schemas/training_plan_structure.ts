@@ -54,20 +54,73 @@ export const intensityDistributionSchema = z
 
 export type IntensityDistribution = z.infer<typeof intensityDistributionSchema>;
 
+const targetActivityCategoryEnum = z.enum(["run", "bike", "swim", "other"]);
+
 /**
- * Training Goal
+ * Training Goal V2
  */
-export const trainingGoalSchema = z.object({
+export const goalTargetV2Schema = z.discriminatedUnion("target_type", [
+  z.object({
+    target_type: z.literal("race_performance"),
+    distance_m: z.number().positive(),
+    target_time_s: z.number().int().positive(),
+    activity_category: targetActivityCategoryEnum,
+  }),
+  z.object({
+    target_type: z.literal("pace_threshold"),
+    target_speed_mps: z.number().positive(),
+    test_duration_s: z.number().int().positive(),
+    activity_category: targetActivityCategoryEnum,
+  }),
+  z.object({
+    target_type: z.literal("power_threshold"),
+    target_watts: z.number().positive(),
+    test_duration_s: z.number().int().positive(),
+    activity_category: targetActivityCategoryEnum,
+  }),
+  z.object({
+    target_type: z.literal("hr_threshold"),
+    target_lthr_bpm: z.number().int().positive(),
+  }),
+]);
+
+export type GoalTargetV2 = z.infer<typeof goalTargetV2Schema>;
+
+export const goalV2Schema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1).max(100),
   target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   priority: z.number().int().min(1).max(10).default(1),
+  targets: z.array(goalTargetV2Schema).min(1),
   target_performance: z.string().max(200).optional(),
   notes: z.string().max(1000).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
+export const trainingGoalSchema = goalV2Schema;
+
+export type GoalV2 = z.infer<typeof goalV2Schema>;
+
 export type TrainingGoal = z.infer<typeof trainingGoalSchema>;
+
+export const minimalTrainingGoalCreateSchema = z.object({
+  name: z.string().min(1).max(100),
+  target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  priority: z.number().int().min(1).max(10).default(1),
+  targets: z.array(goalTargetV2Schema).min(1),
+});
+
+export type MinimalTrainingGoalCreate = z.infer<
+  typeof minimalTrainingGoalCreateSchema
+>;
+
+export const minimalTrainingPlanCreateSchema = z.object({
+  goals: z.array(minimalTrainingGoalCreateSchema).min(1),
+});
+
+export type MinimalTrainingPlanCreate = z.infer<
+  typeof minimalTrainingPlanCreateSchema
+>;
 
 /**
  * Training Block
@@ -440,8 +493,7 @@ export type TrainingPlan = z.infer<typeof trainingPlanSchema>;
 export const wizardGoalInputSchema = z.object({
   name: z.string().min(1).max(100),
   target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  target_performance: z.string().max(200).optional(),
-  notes: z.string().max(1000).optional(),
+  targets: z.array(goalTargetV2Schema).min(1),
 });
 
 export type WizardGoalInput = z.infer<typeof wizardGoalInputSchema>;
@@ -1418,9 +1470,6 @@ export function wizardInputToPlan(
     }
   }
 
-  // Validate start date
-  const startDate = new Date(input.start_date);
-  const primaryGoalDate = new Date(input.goals[0]!.target_date);
   const weeksAvailable = calculateWeeksUntil(
     input.goals[0]!.target_date,
     input.start_date,
@@ -1456,8 +1505,7 @@ export function wizardInputToPlan(
     name: g.name,
     target_date: g.target_date,
     priority: index + 1,
-    target_performance: g.target_performance,
-    notes: g.notes,
+    targets: g.targets,
   }));
 
   // Get primary goal
@@ -1978,10 +2026,7 @@ export function validatePlanFeasibility(plan: PeriodizedPlan): {
 
   // Check CTL progression
   const primaryGoal = getPrimaryGoal(plan.goals);
-  if (
-    primaryGoal?.target_performance &&
-    plan.fitness_progression.target_ctl_at_peak
-  ) {
+  if (plan.fitness_progression.target_ctl_at_peak) {
     const totalWeeks = calculateWeeks(plan.start_date, plan.end_date);
     const ctlIncrease =
       plan.fitness_progression.target_ctl_at_peak -

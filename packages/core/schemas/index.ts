@@ -1,7 +1,12 @@
 import type { PublicActivityPlansInsert } from "@repo/supabase";
 import { z } from "zod";
 import type { ActivityPlanStructureV2 } from "./activity_plan_v2";
-import { trainingPlanCreateSchema } from "./training_plan_structure";
+import {
+  goalTargetV2Schema,
+  goalV2Schema,
+  minimalTrainingPlanCreateSchema,
+  trainingPlanCreateSchema,
+} from "./training_plan_structure";
 
 // Export from activity_payload (includes ActivityType)
 export * from "./activity_payload";
@@ -135,3 +140,13 @@ export const trainingPlanCreateInputSchema = z.object({
 
 export const trainingPlanUpdateInputSchema =
   trainingPlanCreateInputSchema.partial();
+
+export const trainingPlanGoalTargetInputSchema = goalTargetV2Schema;
+
+export const trainingPlanGoalInputSchema = goalV2Schema.omit({
+  id: true,
+});
+
+export const trainingPlanMinimalCreateInputSchema = z.object({
+  structure: minimalTrainingPlanCreateSchema,
+});

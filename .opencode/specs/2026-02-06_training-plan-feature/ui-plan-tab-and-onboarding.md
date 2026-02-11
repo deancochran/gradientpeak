@@ -15,6 +15,13 @@ Document role alignment:
 
 This revision intentionally removes heavyweight interaction patterns and keeps onboarding changes incremental.
 
+Phase 0 guardrails for this UI scope:
+
+- No DB migrations in this phase.
+- Use additive schema evolution only (no root training-plan schema replacement).
+- Roll out behind `feature.trainingPlanInsightsMvp`.
+- Keep existing plan records and legacy clients backward compatible while the flag is off.
+
 ---
 
 ## 1) Goals and Scope
@@ -33,6 +40,9 @@ This revision intentionally removes heavyweight interaction patterns and keeps o
 - Workout interval-builder UI
 - Coach or multi-user collaboration tooling
 - New design system primitives
+- Training plan templates (system or user-created)
+- Activity series/collections as a planning construct
+- Bulk activity scheduling interactions
 
 ---
 

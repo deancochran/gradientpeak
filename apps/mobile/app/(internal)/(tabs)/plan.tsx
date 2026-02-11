@@ -7,6 +7,9 @@ import { FitnessProgressCard } from "@/components/home/FitnessProgressCard";
 import { DetailChartModal } from "@/components/shared/DetailChartModal";
 import { PlanVsActualChart } from "@/components/charts/PlanVsActualChart";
 import { TrainingLoadChart } from "@/components/charts/TrainingLoadChart";
+import { PlanAdherenceMiniChart } from "@/components/plan/PlanAdherenceMiniChart";
+import { PlanCapabilityMiniChart } from "@/components/plan/PlanCapabilityMiniChart";
+import { PlanStatusSummaryCard } from "@/components/plan/PlanStatusSummaryCard";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
@@ -17,11 +20,11 @@ import { trpc } from "@/lib/trpc";
 import { isActivityCompleted } from "@/lib/utils/plan/dateGrouping";
 import { ActivityPayload } from "@repo/core";
 import { format } from "date-fns";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { CalendarDays, Play, Settings } from "lucide-react-native";
-import React, { useMemo, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   RefreshControl,
   ScrollView,
   TouchableOpacity,
@@ -34,7 +37,6 @@ import { useColorScheme } from "nativewind";
 
 function PlanScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === "dark";
 
@@ -51,6 +53,26 @@ function PlanScreen() {
   >();
   const [trainingStatusModalVisible, setTrainingStatusModalVisible] =
     useState(false);
+  const [selectedInsightRange, setSelectedInsightRange] = useState<7 | 30 | 90>(
+    30,
+  );
+
+  const todayDate = useMemo(() => new Date(), []);
+  const timezone = useMemo(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    [],
+  );
+
+  const insightWindow = useMemo(() => {
+    const endDateValue = new Date();
+    const startDateValue = new Date(endDateValue);
+    startDateValue.setDate(endDateValue.getDate() - (selectedInsightRange - 1));
+
+    return {
+      start_date: startDateValue.toISOString().split("T")[0]!,
+      end_date: endDateValue.toISOString().split("T")[0]!,
+    };
+  }, [selectedInsightRange]);
 
   // Calculate month range for calendar
   const { startDate, endDate } = useMemo(() => {
@@ -77,6 +99,23 @@ function PlanScreen() {
   } = trpc.trainingPlans.getCurrentStatus.useQuery(undefined, {
     enabled: !!plan,
   });
+
+  const {
+    data: insightTimeline,
+    isLoading: loadingInsightTimeline,
+    isError: insightTimelineError,
+    refetch: refetchInsightTimeline,
+  } = trpc.trainingPlans.getInsightTimeline.useQuery(
+    {
+      training_plan_id: plan?.id || "",
+      start_date: insightWindow.start_date,
+      end_date: insightWindow.end_date,
+      timezone,
+    },
+    {
+      enabled: !!plan?.id,
+    },
+  );
 
   // Query for activities in the current month
   const {
@@ -105,7 +144,7 @@ function PlanScreen() {
   );
 
   // Calculate date ranges for fitness data
-  const today = useMemo(() => new Date(), []);
+  const today = todayDate;
   const thirtyDaysAgo = useMemo(() => {
     const date = new Date(today);
     date.setDate(today.getDate() - 30);
@@ -128,16 +167,17 @@ function PlanScreen() {
     );
 
   // Get ideal fitness curve from training plan (if exists)
-  const { data: idealCurveData } = trpc.trainingPlans.getIdealCurve.useQuery(
-    {
-      id: plan?.id || "",
-      start_date: thirtyDaysAgo.toISOString().split("T")[0]!,
-      end_date: fourteenDaysAhead.toISOString().split("T")[0]!,
-    },
-    {
-      enabled: !!plan?.id,
-    },
-  );
+  const { data: idealCurveData, refetch: refetchIdealCurve } =
+    trpc.trainingPlans.getIdealCurve.useQuery(
+      {
+        id: plan?.id || "",
+        start_date: thirtyDaysAgo.toISOString().split("T")[0]!,
+        end_date: fourteenDaysAhead.toISOString().split("T")[0]!,
+      },
+      {
+        enabled: !!plan?.id,
+      },
+    );
 
   // Extract data from API responses
   const fitnessHistory = useMemo(
@@ -313,6 +353,76 @@ function PlanScreen() {
     return Math.round((status.weekProgress.completedActivities / total) * 100);
   }, [status]);
 
+  const insightTimelinePoints = useMemo(
+    () => insightTimeline?.timeline || [],
+    [insightTimeline],
+  );
+
+  const activeGoalFeasibility = useMemo(
+    () => insightTimeline?.goal_feasibility?.[0],
+    [insightTimeline],
+  );
+
+  const activeGoalSafety = useMemo(
+    () => insightTimeline?.goal_safety?.[0],
+    [insightTimeline],
+  );
+
+  const divergenceSummary = useMemo(() => {
+    if (!insightTimelinePoints.length) {
+      return "No load divergence available in this window.";
+    }
+
+    const latestPoint =
+      insightTimelinePoints[insightTimelinePoints.length - 1]!;
+    const scheduled = latestPoint.scheduled_tss;
+    const actual = latestPoint.actual_tss;
+    const deltaPct =
+      scheduled > 0
+        ? Math.round(((actual - scheduled) / scheduled) * 100)
+        : actual > 0
+          ? 100
+          : 0;
+
+    if (deltaPct > 0) {
+      return `Actual load is ${Math.abs(deltaPct)}% over scheduled in the latest session window.`;
+    }
+
+    if (deltaPct < 0) {
+      return `Actual load is ${Math.abs(deltaPct)}% under scheduled in the latest session window.`;
+    }
+
+    return "Actual load is on schedule in the latest session window.";
+  }, [insightTimelinePoints]);
+
+  const capabilityCurrentEstimate = useMemo(() => {
+    const directValue = insightTimeline?.capability?.cp_or_cs;
+    if (typeof directValue === "number") {
+      return directValue;
+    }
+
+    if (!insightTimelinePoints.length) {
+      return null;
+    }
+
+    return insightTimelinePoints[insightTimelinePoints.length - 1]!.actual_tss;
+  }, [insightTimeline, insightTimelinePoints]);
+
+  const capabilityProjectionEstimate = useMemo(() => {
+    const directProjection =
+      insightTimeline?.projection?.at_goal_date?.projected_goal_metric;
+    if (typeof directProjection === "number") {
+      return directProjection;
+    }
+
+    if (!insightTimelinePoints.length) {
+      return null;
+    }
+
+    return insightTimelinePoints[insightTimelinePoints.length - 1]!
+      .scheduled_tss;
+  }, [insightTimeline, insightTimelinePoints]);
+
   // Get upcoming activities (next 3-4 days after today, excluding today)
   const upcomingActivities = useMemo(() => {
     if (!allPlannedActivities?.items) return [];
@@ -422,14 +532,51 @@ function PlanScreen() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
+    const insightRefresh = plan?.id
+      ? refetchInsightTimeline()
+      : Promise.resolve();
     await Promise.all([
       refetchPlan(),
       refetchStatus(),
+      insightRefresh,
       refetchActivities(),
       refetchFitnessHistory(),
+      refetchIdealCurve(),
     ]);
     setRefreshing(false);
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      const insightRefresh = plan?.id
+        ? refetchInsightTimeline()
+        : Promise.resolve();
+      void Promise.all([
+        refetchPlan(),
+        refetchStatus(),
+        insightRefresh,
+        refetchActivities(),
+      ]);
+    }, [
+      plan?.id,
+      refetchPlan,
+      refetchStatus,
+      refetchInsightTimeline,
+      refetchActivities,
+    ]),
+  );
+
+  useEffect(() => {
+    if (!plan?.id) {
+      return;
+    }
+
+    void Promise.all([
+      refetchStatus(),
+      refetchInsightTimeline(),
+      refetchActivities(),
+    ]);
+  }, [plan?.id, refetchStatus, refetchInsightTimeline, refetchActivities]);
 
   // Loading state
   if (loadingPlan || loadingStatus || loadingAllPlanned) {
@@ -602,6 +749,132 @@ function PlanScreen() {
               </View>
             )}
           </View>
+
+          {/* Plan Insights (Phase 4) */}
+          {plan && (
+            <View className="mb-6 gap-3">
+              <PlanStatusSummaryCard
+                planFeasibility={insightTimeline?.plan_feasibility}
+                planSafety={insightTimeline?.plan_safety}
+                activeGoalFeasibility={activeGoalFeasibility}
+                activeGoalSafety={activeGoalSafety}
+                divergenceSummary={divergenceSummary}
+                confidence={
+                  insightTimeline?.projection?.at_goal_date?.confidence
+                }
+              />
+
+              <View className="bg-card border border-border rounded-lg p-4">
+                <View className="flex-row items-center justify-between mb-3">
+                  <Text className="text-base font-semibold">Load Path</Text>
+                  <View className="flex-row gap-2">
+                    {[7, 30, 90].map((days) => (
+                      <TouchableOpacity
+                        key={days}
+                        onPress={() =>
+                          setSelectedInsightRange(days as 7 | 30 | 90)
+                        }
+                        className={`px-3 py-1.5 rounded-full border ${
+                          selectedInsightRange === days
+                            ? "bg-primary border-primary"
+                            : "bg-muted border-border"
+                        }`}
+                        activeOpacity={0.8}
+                      >
+                        <Text
+                          className={`text-xs font-medium ${
+                            selectedInsightRange === days
+                              ? "text-primary-foreground"
+                              : "text-muted-foreground"
+                          }`}
+                        >
+                          {days}D
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+
+                {loadingInsightTimeline &&
+                insightTimelinePoints.length === 0 ? (
+                  <View className="h-44 items-center justify-center bg-muted/30 rounded-md">
+                    <Text className="text-xs text-muted-foreground">
+                      Loading insight timeline...
+                    </Text>
+                  </View>
+                ) : insightTimelineError ? (
+                  <View className="h-44 items-center justify-center bg-muted/30 rounded-md px-4 gap-2">
+                    <Text className="text-xs text-muted-foreground text-center">
+                      Unable to load plan insights right now.
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => void refetchInsightTimeline()}
+                      className="px-3 py-1.5 rounded-full border border-border bg-card"
+                      activeOpacity={0.8}
+                    >
+                      <Text className="text-xs text-foreground">Retry</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : insightTimelinePoints.length === 0 ? (
+                  <View className="h-44 items-center justify-center bg-muted/30 rounded-md px-4 gap-2">
+                    <Text className="text-xs text-muted-foreground text-center">
+                      No insight timeline yet for this range.
+                    </Text>
+                    <Text className="text-xs text-muted-foreground text-center">
+                      Schedule your first week to start tracking load paths.
+                    </Text>
+                  </View>
+                ) : (
+                  <PlanVsActualChart
+                    timeline={insightTimelinePoints}
+                    actualData={[]}
+                    projectedData={[]}
+                    showLegend
+                    height={260}
+                  />
+                )}
+              </View>
+
+              <View className="flex-row gap-3">
+                <PlanAdherenceMiniChart timeline={insightTimelinePoints} />
+                <PlanCapabilityMiniChart
+                  currentCapability={capabilityCurrentEstimate}
+                  projectedCapability={capabilityProjectionEstimate}
+                  confidence={
+                    insightTimeline?.projection?.at_goal_date?.confidence
+                  }
+                  category={insightTimeline?.capability?.category}
+                />
+              </View>
+
+              <View className="flex-row gap-2">
+                <TouchableOpacity
+                  onPress={() =>
+                    router.push(ROUTES.PLAN.TRAINING_PLAN.SETTINGS)
+                  }
+                  className="flex-1 bg-muted rounded-lg py-2.5 items-center"
+                  activeOpacity={0.8}
+                >
+                  <Text className="text-sm text-muted-foreground font-medium">
+                    Adjust Plan
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    const todayStr = new Date().toISOString().split("T")[0]!;
+                    setSelectedDate(todayStr);
+                    setCurrentMonth(todayStr);
+                  }}
+                  className="flex-1 bg-muted rounded-lg py-2.5 items-center"
+                  activeOpacity={0.8}
+                >
+                  <Text className="text-sm text-muted-foreground font-medium">
+                    Open Calendar
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
 
           {/* Calendar View */}
           <View className="mb-6">
@@ -780,20 +1053,10 @@ function PlanScreen() {
                 ? 30
                 : dateRange === "90d"
                   ? 90
-                  : fitnessHistory?.length || 30;
-          const filteredData = (fitnessHistory || []).slice(-days);
+                  : insightTimelinePoints.length || 30;
+          const filteredTimeline = insightTimelinePoints.slice(-days);
 
-          return (
-            <TrainingLoadChart
-              data={filteredData.map((t) => ({
-                date: t.date,
-                ctl: t.ctl,
-                atl: t.atl || 0,
-                tsb: t.tsb || 0,
-              }))}
-              height={400}
-            />
-          );
+          return <TrainingLoadChart timeline={filteredTimeline} height={400} />;
         }}
       </DetailChartModal>
     </View>

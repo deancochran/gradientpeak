@@ -4,17 +4,470 @@ import {
   calculateCTL,
   calculateTSB,
   calculateTrainingLoadSeries,
+  deterministicUuidFromSeed,
+  expandMinimalGoalToPlan,
   getFormStatus,
   getTrainingIntensityZone,
   trainingPlanCreateInputSchema,
   trainingPlanCreateSchema,
   trainingPlanSchema,
   trainingPlanUpdateInputSchema,
+  validatePlanFeasibility,
 } from "@repo/core";
 import { TRPCError } from "@trpc/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { addEstimationToPlans } from "../utils/estimation-helpers";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_ESTIMATED_CTL = 40;
+
+const feasibilityStateSchema = z.enum(["feasible", "aggressive", "unsafe"]);
+const safetyStateSchema = z.enum(["safe", "caution", "exceeded"]);
+
+type FeasibilityState = z.infer<typeof feasibilityStateSchema>;
+type SafetyState = z.infer<typeof safetyStateSchema>;
+
+type GoalAssessment = {
+  goal_id: string;
+  goal_name: string;
+  state: FeasibilityState;
+  reasons: string[];
+};
+
+type GoalSafetyAssessment = {
+  goal_id: string;
+  goal_name: string;
+  state: SafetyState;
+  reasons: string[];
+};
+
+type PlanAssessmentBundle = {
+  planFeasibility: {
+    state: FeasibilityState;
+    reasons: string[];
+  };
+  goalFeasibility: GoalAssessment[];
+  planSafety: {
+    state: SafetyState;
+    reasons: string[];
+  };
+  goalSafety: GoalSafetyAssessment[];
+};
+
+function parseDateOnlyUtc(value: string): Date {
+  return new Date(`${value}T00:00:00.000Z`);
+}
+
+function toDateOnlyUtc(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function diffDaysUtc(startDate: string, endDate: string): number {
+  const start = parseDateOnlyUtc(startDate).getTime();
+  const end = parseDateOnlyUtc(endDate).getTime();
+  return Math.floor((end - start) / DAY_MS);
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function uniqueReasons(reasons: string[]): string[] {
+  return [...new Set(reasons)];
+}
+
+function getWorstFeasibilityState(
+  states: FeasibilityState[],
+): FeasibilityState {
+  if (states.includes("unsafe")) return "unsafe";
+  if (states.includes("aggressive")) return "aggressive";
+  return "feasible";
+}
+
+function getWorstSafetyState(states: SafetyState[]): SafetyState {
+  if (states.includes("exceeded")) return "exceeded";
+  if (states.includes("caution")) return "caution";
+  return "safe";
+}
+
+function assessSingleGoal(
+  goal: {
+    id: string;
+    name: string;
+    target_date: string;
+    priority?: number;
+  },
+  referenceDate: string,
+  currentCtl: number,
+  targetCtlAtPeak?: number,
+): { feasibility: GoalAssessment; safety: GoalSafetyAssessment } {
+  const daysUntilGoal = diffDaysUtc(referenceDate, goal.target_date);
+  const weeksUntilGoal = Math.max(daysUntilGoal / 7, 0.1);
+  const requiredWeeklyCtlRamp =
+    typeof targetCtlAtPeak === "number"
+      ? (targetCtlAtPeak - currentCtl) / weeksUntilGoal
+      : null;
+
+  const feasibilityReasons: string[] = [];
+  let feasibilityState: FeasibilityState = "feasible";
+
+  if (daysUntilGoal < 0) {
+    feasibilityState = "unsafe";
+    feasibilityReasons.push("goal_date_in_past");
+  } else if (daysUntilGoal < 21) {
+    feasibilityState = "unsafe";
+    feasibilityReasons.push("goal_timeline_too_short");
+  } else if (daysUntilGoal < 56) {
+    feasibilityState = "aggressive";
+    feasibilityReasons.push("limited_preparation_window");
+  }
+
+  if (requiredWeeklyCtlRamp !== null) {
+    if (requiredWeeklyCtlRamp > 8) {
+      feasibilityState = "unsafe";
+      feasibilityReasons.push("required_ctl_ramp_too_high");
+    } else if (requiredWeeklyCtlRamp > 5 && feasibilityState !== "unsafe") {
+      feasibilityState = "aggressive";
+      feasibilityReasons.push("required_ctl_ramp_near_limit");
+    }
+  }
+
+  if (
+    (goal.priority ?? 1) >= 8 &&
+    daysUntilGoal < 84 &&
+    feasibilityState === "feasible"
+  ) {
+    feasibilityState = "aggressive";
+    feasibilityReasons.push("high_priority_goal_short_timeline");
+  }
+
+  const safetyReasons: string[] = [];
+  let safetyState: SafetyState = "safe";
+
+  if (daysUntilGoal < 14) {
+    safetyState = "exceeded";
+    safetyReasons.push("goal_date_within_two_weeks");
+  } else if (daysUntilGoal < 35) {
+    safetyState = "caution";
+    safetyReasons.push("goal_date_within_five_weeks");
+  }
+
+  if (requiredWeeklyCtlRamp !== null) {
+    if (requiredWeeklyCtlRamp > 7) {
+      safetyState = "exceeded";
+      safetyReasons.push("required_ramp_exceeds_safe_boundary");
+    } else if (requiredWeeklyCtlRamp > 4 && safetyState !== "exceeded") {
+      safetyState = "caution";
+      safetyReasons.push("required_ramp_near_safe_boundary");
+    }
+  }
+
+  return {
+    feasibility: {
+      goal_id: goal.id,
+      goal_name: goal.name,
+      state: feasibilityState,
+      reasons: uniqueReasons(feasibilityReasons),
+    },
+    safety: {
+      goal_id: goal.id,
+      goal_name: goal.name,
+      state: safetyState,
+      reasons: uniqueReasons(safetyReasons),
+    },
+  };
+}
+
+function buildPlanAssessments(input: {
+  goals: Array<{
+    id: string;
+    name: string;
+    target_date: string;
+    priority?: number;
+  }>;
+  referenceDate: string;
+  currentCtl: number;
+  targetCtlAtPeak?: number;
+  planWarnings?: string[];
+  blockRampWarnings?: string[];
+}): PlanAssessmentBundle {
+  const goalBundles = input.goals.map((goal) =>
+    assessSingleGoal(
+      goal,
+      input.referenceDate,
+      input.currentCtl,
+      input.targetCtlAtPeak,
+    ),
+  );
+
+  const goalFeasibility = goalBundles.map((bundle) => bundle.feasibility);
+  const goalSafety = goalBundles.map((bundle) => bundle.safety);
+
+  const planFeasibilityReasons = uniqueReasons([
+    ...goalFeasibility.flatMap((goal) => goal.reasons),
+    ...(input.planWarnings ?? []),
+  ]);
+  const planSafetyReasons = uniqueReasons([
+    ...goalSafety.flatMap((goal) => goal.reasons),
+    ...(input.blockRampWarnings ?? []),
+  ]);
+
+  const planFeasibilityState = getWorstFeasibilityState([
+    ...goalFeasibility.map((goal) => goal.state),
+    ...(input.planWarnings && input.planWarnings.length > 0
+      ? (["aggressive"] as FeasibilityState[])
+      : []),
+  ]);
+
+  const planSafetyState = getWorstSafetyState([
+    ...goalSafety.map((goal) => goal.state),
+    ...(input.blockRampWarnings && input.blockRampWarnings.length > 0
+      ? (["caution"] as SafetyState[])
+      : []),
+  ]);
+
+  return {
+    planFeasibility: {
+      state: planFeasibilityState,
+      reasons: planFeasibilityReasons,
+    },
+    goalFeasibility,
+    planSafety: {
+      state: planSafetyState,
+      reasons: planSafetyReasons,
+    },
+    goalSafety,
+  };
+}
+
+function buildDateRange(startDate: string, endDate: string): string[] {
+  const start = parseDateOnlyUtc(startDate);
+  const end = parseDateOnlyUtc(endDate);
+
+  const totalDays = Math.floor((end.getTime() - start.getTime()) / DAY_MS);
+  if (totalDays < 0) {
+    return [];
+  }
+
+  const dates: string[] = [];
+  for (let i = 0; i <= totalDays; i++) {
+    const d = new Date(start.getTime());
+    d.setUTCDate(start.getUTCDate() + i);
+    dates.push(toDateOnlyUtc(d));
+  }
+  return dates;
+}
+
+function ratioScore(actual: number, target: number): number {
+  if (target <= 0) {
+    return actual <= 0 ? 100 : 0;
+  }
+
+  const ratio = actual / target;
+  if (ratio <= 1) {
+    return clampNumber(Math.round(ratio * 100), 0, 100);
+  }
+
+  if (ratio <= 1.2) {
+    return clampNumber(Math.round(100 - (ratio - 1) * 100), 0, 100);
+  }
+
+  return clampNumber(Math.round(80 - (ratio - 1.2) * 50), 0, 100);
+}
+
+function adherenceScore(
+  idealTss: number,
+  scheduledTss: number,
+  actualTss: number,
+): number {
+  const actualVsScheduled = ratioScore(actualTss, scheduledTss);
+  const scheduledVsIdeal = ratioScore(scheduledTss, idealTss);
+  return clampNumber(
+    Math.round(actualVsScheduled * 0.7 + scheduledVsIdeal * 0.3),
+    0,
+    100,
+  );
+}
+
+function classifyBoundaryState(
+  idealTss: number,
+  scheduledTss: number,
+  actualTss: number,
+): { state: SafetyState; reasons: string[] } {
+  const reasons: string[] = [];
+  let state: SafetyState = "safe";
+
+  if (idealTss > 0 && scheduledTss > idealTss * 1.35) {
+    state = "exceeded";
+    reasons.push("scheduled_load_above_ideal_boundary");
+  } else if (idealTss > 0 && scheduledTss > idealTss * 1.15) {
+    state = "caution";
+    reasons.push("scheduled_load_near_ideal_boundary");
+  }
+
+  if (scheduledTss > 0 && actualTss > scheduledTss * 1.35) {
+    state = "exceeded";
+    reasons.push("actual_load_above_scheduled_boundary");
+  } else if (scheduledTss > 0 && actualTss > scheduledTss * 1.15) {
+    state = state === "exceeded" ? "exceeded" : "caution";
+    reasons.push("actual_load_near_scheduled_boundary");
+  }
+
+  return {
+    state,
+    reasons: uniqueReasons(reasons),
+  };
+}
+
+function estimateIdealDailyTss(
+  date: string,
+  blocks: Array<{
+    start_date: string;
+    end_date: string;
+    target_weekly_tss_range?: { min: number; max: number };
+  }>,
+): number {
+  const block = blocks.find(
+    (candidate) =>
+      candidate.start_date <= date &&
+      candidate.end_date >= date &&
+      candidate.target_weekly_tss_range,
+  );
+
+  if (!block?.target_weekly_tss_range) {
+    return 0;
+  }
+
+  const weeklyMidpoint =
+    (block.target_weekly_tss_range.min + block.target_weekly_tss_range.max) / 2;
+  return Math.round((weeklyMidpoint / 7) * 10) / 10;
+}
+
+function collectBlockRampWarnings(
+  blocks: Array<{ target_weekly_tss_range?: { min: number; max: number } }>,
+): string[] {
+  if (blocks.length < 2) {
+    return [];
+  }
+
+  const warnings: string[] = [];
+  for (let i = 1; i < blocks.length; i++) {
+    const previous = blocks[i - 1]?.target_weekly_tss_range;
+    const current = blocks[i]?.target_weekly_tss_range;
+    if (!previous || !current || previous.max <= 0) continue;
+
+    const weeklyRampPct = ((current.max - previous.max) / previous.max) * 100;
+    if (weeklyRampPct > 25) {
+      warnings.push("block_to_block_tss_ramp_exceeds_25pct");
+    } else if (weeklyRampPct > 15) {
+      warnings.push("block_to_block_tss_ramp_exceeds_15pct");
+    }
+  }
+
+  return uniqueReasons(warnings);
+}
+
+async function estimateCurrentCtl(
+  supabase: SupabaseClient,
+  profileId: string,
+): Promise<number> {
+  const since = new Date();
+  since.setDate(since.getDate() - 42);
+
+  const { data, error } = await supabase
+    .from("activities")
+    .select("training_stress_score, started_at")
+    .eq("profile_id", profileId)
+    .gte("started_at", since.toISOString())
+    .order("started_at", { ascending: true });
+
+  if (error || !data || data.length === 0) {
+    return DEFAULT_ESTIMATED_CTL;
+  }
+
+  let ctl = DEFAULT_ESTIMATED_CTL;
+  for (const activity of data) {
+    const tss = activity.training_stress_score || 0;
+    ctl = calculateCTL(ctl, tss);
+  }
+
+  return Math.round(ctl * 10) / 10;
+}
+
+const insightTimelineInputSchema = z.object({
+  training_plan_id: z.string().uuid(),
+  start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  timezone: z.string().min(1),
+});
+
+const goalSnapshotSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().optional(),
+  target_date: z.string().optional(),
+  priority: z.number().optional(),
+});
+
+const minimalGoalTargetV2InputSchema = z.discriminatedUnion("target_type", [
+  z
+    .object({
+      target_type: z.literal("race_performance"),
+      distance_m: z.number().positive(),
+      target_time_s: z.number().int().positive(),
+      activity_category: z.enum(["run", "bike", "swim", "other"]),
+    })
+    .strict(),
+  z
+    .object({
+      target_type: z.literal("pace_threshold"),
+      target_speed_mps: z.number().positive(),
+      test_duration_s: z.number().int().positive(),
+      activity_category: z.enum(["run", "bike", "swim", "other"]),
+    })
+    .strict(),
+  z
+    .object({
+      target_type: z.literal("power_threshold"),
+      target_watts: z.number().positive(),
+      test_duration_s: z.number().int().positive(),
+      activity_category: z.enum(["run", "bike", "swim", "other"]),
+    })
+    .strict(),
+  z
+    .object({
+      target_type: z.literal("hr_threshold"),
+      target_lthr_bpm: z.number().int().positive(),
+    })
+    .strict(),
+]);
+
+const minimalTrainingGoalV2InputSchema = z
+  .object({
+    name: z.string().min(1).max(100),
+    target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    priority: z.number().int().min(1).max(10).default(1),
+    targets: z.array(minimalGoalTargetV2InputSchema).min(1),
+  })
+  .strict();
+
+const minimalTrainingPlanV2InputSchema = z
+  .object({
+    goals: z.array(minimalTrainingGoalV2InputSchema).min(1),
+  })
+  .strict();
+
+const blockSnapshotSchema = z.object({
+  start_date: z.string(),
+  end_date: z.string(),
+  target_weekly_tss_range: z
+    .object({
+      min: z.number(),
+      max: z.number(),
+    })
+    .optional(),
+});
 
 export const trainingPlansRouter = createTRPCRouter({
   // ------------------------------
@@ -259,6 +712,404 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       return data;
+    }),
+
+  // ------------------------------
+  // Preview feasibility/safety from minimal goal payload
+  // ------------------------------
+  getFeasibilityPreview: protectedProcedure
+    .input(minimalTrainingPlanV2InputSchema)
+    .query(async ({ ctx, input }) => {
+      const expandedPlan = expandMinimalGoalToPlan(input);
+      const normalizedGoals = expandedPlan.goals;
+
+      const referenceDate = toDateOnlyUtc(new Date());
+      const estimatedCurrentCtl = await estimateCurrentCtl(
+        ctx.supabase,
+        ctx.session.user.id,
+      );
+
+      const assessmentGoals = normalizedGoals.map((goal) => ({
+        id: goal.id,
+        name: goal.name,
+        target_date: goal.target_date,
+        priority: goal.priority,
+      }));
+
+      const nextGoal = [...assessmentGoals].sort((a, b) =>
+        a.target_date.localeCompare(b.target_date),
+      )[0];
+
+      const previewPlanWithId = {
+        ...expandedPlan,
+        id: deterministicUuidFromSeed(
+          `${ctx.session.user.id}|${assessmentGoals.map((goal) => goal.id).join("|")}|preview-plan`,
+        ),
+      };
+
+      const parsedPreviewPlan = trainingPlanSchema.safeParse(previewPlanWithId);
+      const planWarnings =
+        parsedPreviewPlan.success &&
+        parsedPreviewPlan.data.plan_type === "periodized"
+          ? validatePlanFeasibility(parsedPreviewPlan.data).warnings
+          : [];
+
+      const blockRampWarnings = collectBlockRampWarnings(expandedPlan.blocks);
+      const assessments = buildPlanAssessments({
+        goals: assessmentGoals,
+        referenceDate,
+        currentCtl: estimatedCurrentCtl,
+        targetCtlAtPeak: expandedPlan.fitness_progression.target_ctl_at_peak,
+        planWarnings,
+        blockRampWarnings,
+      });
+
+      const planDurationDays = Math.max(
+        0,
+        diffDaysUtc(expandedPlan.start_date, expandedPlan.end_date) + 1,
+      );
+      const targetWeeklyTssAvg =
+        expandedPlan.blocks.length > 0
+          ? expandedPlan.blocks.reduce((sum, block) => {
+              const range = block.target_weekly_tss_range;
+              return sum + (range.min + range.max) / 2;
+            }, 0) / expandedPlan.blocks.length
+          : 0;
+
+      return {
+        plan_assessment: {
+          feasibility: assessments.planFeasibility,
+          safety: assessments.planSafety,
+        },
+        goal_assessments: assessments.goalFeasibility.map((goalFeasibility) => {
+          const goalSafety = assessments.goalSafety.find(
+            (goal) => goal.goal_id === goalFeasibility.goal_id,
+          );
+
+          return {
+            goal_id: goalFeasibility.goal_id,
+            goal_name: goalFeasibility.goal_name,
+            feasibility: {
+              state: goalFeasibility.state,
+              reasons: goalFeasibility.reasons,
+            },
+            safety: {
+              state: goalSafety?.state ?? "safe",
+              reasons: goalSafety?.reasons ?? [],
+            },
+          };
+        }),
+        key_metrics: {
+          reference_date: referenceDate,
+          days_until_goal: nextGoal
+            ? diffDaysUtc(referenceDate, nextGoal.target_date)
+            : 0,
+          plan_duration_days: planDurationDays,
+          block_count: expandedPlan.blocks.length,
+          goal_count: assessmentGoals.length,
+          estimated_current_ctl: estimatedCurrentCtl,
+          target_weekly_tss_avg: Math.round(targetWeeklyTssAvg),
+        },
+        normalized_goals: normalizedGoals,
+      };
+    }),
+
+  // ------------------------------
+  // Create training plan from minimal goal payload
+  // ------------------------------
+  createFromMinimalGoal: protectedProcedure
+    .input(minimalTrainingPlanV2InputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const expandedPlan = expandMinimalGoalToPlan(input);
+
+      const planId = crypto.randomUUID();
+      const structureWithId = {
+        ...expandedPlan,
+        id: planId,
+      };
+
+      try {
+        trainingPlanSchema.parse(structureWithId);
+      } catch (validationError) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Generated training plan structure is invalid",
+          cause: validationError,
+        });
+      }
+
+      // Keep behavior aligned with create: newly generated minimal plans are active
+      await ctx.supabase
+        .from("training_plans")
+        .update({ is_active: false })
+        .eq("profile_id", ctx.session.user.id)
+        .eq("is_active", true);
+
+      const { data, error } = await ctx.supabase
+        .from("training_plans")
+        .insert({
+          name: expandedPlan.name,
+          description: expandedPlan.description ?? null,
+          structure: structureWithId as any,
+          is_active: true,
+          profile_id: ctx.session.user.id,
+        })
+        .select("*")
+        .single();
+
+      if (error) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: error.message,
+        });
+      }
+
+      return data;
+    }),
+
+  // ------------------------------
+  // Canonical insight timeline (MVP deterministic baseline)
+  // ------------------------------
+  getInsightTimeline: protectedProcedure
+    .input(insightTimelineInputSchema)
+    .query(async ({ ctx, input }) => {
+      const windowDays = diffDaysUtc(input.start_date, input.end_date) + 1;
+      if (windowDays <= 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "end_date must be on or after start_date",
+        });
+      }
+
+      if (windowDays > 400) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Date range too large. Use 400 days or fewer.",
+        });
+      }
+
+      const { data: plan, error: planError } = await ctx.supabase
+        .from("training_plans")
+        .select("*")
+        .eq("id", input.training_plan_id)
+        .eq("profile_id", ctx.session.user.id)
+        .single();
+
+      if (planError || !plan) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Training plan not found",
+        });
+      }
+
+      const parsedStructure = trainingPlanSchema.safeParse(plan.structure);
+      const looseStructure =
+        (plan.structure as {
+          goals?: unknown;
+          blocks?: unknown;
+          fitness_progression?: { target_ctl_at_peak?: number };
+          activity_distribution?: Record<string, unknown>;
+        }) ?? {};
+
+      const parsedGoals = z
+        .array(goalSnapshotSchema)
+        .safeParse(looseStructure.goals);
+      const fallbackGoals = parsedGoals.success ? parsedGoals.data : [];
+
+      const goals = fallbackGoals
+        .filter((goal) => goal.name && goal.target_date)
+        .map((goal, index) => ({
+          id:
+            goal.id ??
+            deterministicUuidFromSeed(
+              `${plan.id}|goal|${index}|${goal.name}|${goal.target_date}`,
+            ),
+          name: goal.name ?? `Goal ${index + 1}`,
+          target_date: goal.target_date ?? input.end_date,
+          priority: goal.priority,
+        }));
+
+      const parsedBlocks = z
+        .array(blockSnapshotSchema)
+        .safeParse(looseStructure.blocks);
+      const blocks = parsedBlocks.success ? parsedBlocks.data : [];
+
+      const planWarnings =
+        parsedStructure.success &&
+        parsedStructure.data.plan_type === "periodized"
+          ? validatePlanFeasibility(parsedStructure.data).warnings
+          : [];
+
+      const estimatedCurrentCtl = await estimateCurrentCtl(
+        ctx.supabase,
+        ctx.session.user.id,
+      );
+
+      const targetCtlAtPeak =
+        parsedStructure.success &&
+        parsedStructure.data.plan_type === "periodized"
+          ? parsedStructure.data.fitness_progression.target_ctl_at_peak
+          : looseStructure.fitness_progression?.target_ctl_at_peak;
+
+      const blockRampWarnings = collectBlockRampWarnings(blocks);
+      const assessments = buildPlanAssessments({
+        goals,
+        referenceDate: toDateOnlyUtc(new Date()),
+        currentCtl: estimatedCurrentCtl,
+        targetCtlAtPeak,
+        planWarnings,
+        blockRampWarnings,
+      });
+
+      const { data: plannedActivitiesRaw } = await ctx.supabase
+        .from("planned_activities")
+        .select("scheduled_date, activity_plan:activity_plans (*)")
+        .eq("profile_id", ctx.session.user.id)
+        .eq("training_plan_id", input.training_plan_id)
+        .gte("scheduled_date", input.start_date)
+        .lte("scheduled_date", input.end_date);
+
+      const activityPlans = (plannedActivitiesRaw || [])
+        .map((item) => item.activity_plan)
+        .filter((item): item is NonNullable<typeof item> => item !== null);
+
+      const plansWithEstimations =
+        activityPlans.length > 0
+          ? await addEstimationToPlans(
+              activityPlans,
+              ctx.supabase,
+              ctx.session.user.id,
+            )
+          : [];
+
+      const estimatedTssByPlanId = new Map(
+        plansWithEstimations.map((item) => [item.id, item.estimated_tss]),
+      );
+
+      const scheduledByDate = new Map<string, number>();
+      for (const planned of plannedActivitiesRaw || []) {
+        const scheduledDate = planned.scheduled_date;
+        if (!scheduledDate) continue;
+
+        const planId = planned.activity_plan?.id;
+        const estimatedTss = planId ? estimatedTssByPlanId.get(planId) || 0 : 0;
+        scheduledByDate.set(
+          scheduledDate,
+          (scheduledByDate.get(scheduledDate) || 0) + estimatedTss,
+        );
+      }
+
+      const endExclusive = new Date(parseDateOnlyUtc(input.end_date));
+      endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+
+      const { data: actualActivities } = await ctx.supabase
+        .from("activities")
+        .select("started_at, training_stress_score")
+        .eq("profile_id", ctx.session.user.id)
+        .gte("started_at", `${input.start_date}T00:00:00.000Z`)
+        .lt("started_at", endExclusive.toISOString());
+
+      const actualByDate = new Map<string, number>();
+      for (const activity of actualActivities || []) {
+        if (!activity.started_at) continue;
+        const date = toDateOnlyUtc(new Date(activity.started_at));
+        const tss = activity.training_stress_score || 0;
+        actualByDate.set(date, (actualByDate.get(date) || 0) + tss);
+      }
+
+      const timelineDates = buildDateRange(input.start_date, input.end_date);
+      const timeline = timelineDates.map((date) => {
+        const ideal_tss = estimateIdealDailyTss(date, blocks);
+        const scheduled_tss =
+          Math.round((scheduledByDate.get(date) || 0) * 10) / 10;
+        const actual_tss = Math.round((actualByDate.get(date) || 0) * 10) / 10;
+        const boundary = classifyBoundaryState(
+          ideal_tss,
+          scheduled_tss,
+          actual_tss,
+        );
+
+        return {
+          date,
+          ideal_tss,
+          scheduled_tss,
+          actual_tss,
+          adherence_score: adherenceScore(ideal_tss, scheduled_tss, actual_tss),
+          boundary_state: boundary.state,
+          boundary_reasons: boundary.reasons,
+        };
+      });
+
+      const timelineBoundaryState = getWorstSafetyState(
+        timeline.map((point) => point.boundary_state),
+      );
+      const timelineBoundaryReasons = uniqueReasons(
+        timeline.flatMap((point) => point.boundary_reasons),
+      );
+
+      const planSafetyState = getWorstSafetyState([
+        assessments.planSafety.state,
+        timelineBoundaryState,
+      ]);
+
+      const primaryCategory =
+        parsedStructure.success &&
+        parsedStructure.data.plan_type === "periodized"
+          ? (Object.keys(parsedStructure.data.activity_distribution)[0] ??
+            "run")
+          : (Object.keys(looseStructure.activity_distribution ?? {})[0] ??
+            "run");
+
+      const adherenceAverage =
+        timeline.length > 0
+          ? timeline.reduce((sum, point) => sum + point.adherence_score, 0) /
+            timeline.length
+          : 0;
+
+      const projectionDrivers = [
+        "mvp_baseline_projection",
+        adherenceAverage < 70
+          ? "low_adherence_reduces_projection_confidence"
+          : "adherence_within_expected_range",
+      ];
+
+      return {
+        window: {
+          start_date: input.start_date,
+          end_date: input.end_date,
+          timezone: input.timezone,
+        },
+        plan_feasibility: assessments.planFeasibility,
+        goal_feasibility: assessments.goalFeasibility,
+        plan_safety: {
+          state: planSafetyState,
+          reasons: uniqueReasons([
+            ...assessments.planSafety.reasons,
+            ...timelineBoundaryReasons,
+          ]),
+        },
+        goal_safety: assessments.goalSafety,
+        capability: {
+          category: primaryCategory,
+          cp_or_cs: null,
+          confidence: clampNumber(
+            (actualActivities?.length || 0) / 30,
+            0.1,
+            0.9,
+          ),
+        },
+        projection: {
+          at_goal_date: {
+            projected_goal_metric: null,
+            confidence:
+              adherenceAverage <= 0
+                ? 0.2
+                : clampNumber(adherenceAverage / 100, 0.2, 0.8),
+          },
+          drivers: projectionDrivers,
+        },
+        timeline,
+      };
     }),
 
   // ------------------------------

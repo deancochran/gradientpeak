@@ -1,543 +1,1166 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Text } from "@/components/ui/text";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FitnessProjectionChart } from "@/components/charts/FitnessProjectionChart";
-import React, { useState, useMemo } from "react";
-import { View, ScrollView, Pressable } from "react-native";
-import type { Mesocycle, PublicActivityCategory } from "@repo/core";
-import { autoGenerateMesocycles } from "@repo/core";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import type { DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import { format } from "date-fns";
+import {
+  ChevronDown,
+  ChevronUp,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import { Modal, Pressable, ScrollView, View } from "react-native";
 
-export type PlanPreset = "beginner" | "intermediate" | "advanced";
+export type GoalTargetType =
+  | "race_performance"
+  | "pace_threshold"
+  | "power_threshold"
+  | "hr_threshold";
 
-interface PresetConfig {
-  tssMin: number;
-  tssMax: number;
-  activitiesPerWeek: number;
-  maxConsecutiveDays: number;
-  minRestDays: number;
+export interface GoalTargetFormData {
+  id: string;
+  targetType: GoalTargetType;
+  activityCategory?: "run" | "bike" | "swim" | "other";
+  distanceKm?: string;
+  completionTimeHms?: string;
+  paceMmSs?: string;
+  testDurationHms?: string;
+  targetWatts?: number;
+  targetLthrBpm?: number;
 }
 
-const PRESETS: Record<PlanPreset, PresetConfig> = {
-  beginner: {
-    tssMin: 100,
-    tssMax: 250,
-    activitiesPerWeek: 3,
-    maxConsecutiveDays: 2,
-    minRestDays: 2,
-  },
-  intermediate: {
-    tssMin: 200,
-    tssMax: 400,
-    activitiesPerWeek: 4,
-    maxConsecutiveDays: 3,
-    minRestDays: 2,
-  },
-  advanced: {
-    tssMin: 350,
-    tssMax: 600,
-    activitiesPerWeek: 5,
-    maxConsecutiveDays: 4,
-    minRestDays: 1,
-  },
-};
+export interface GoalFormData {
+  id: string;
+  name: string;
+  targetDate: string;
+  priority: number;
+  targets: GoalTargetFormData[];
+}
 
 export interface TrainingPlanFormData {
-  name: string;
-  description: string;
-  preset: PlanPreset;
-  targetDate: string;
-  tssMin: number;
-  tssMax: number;
-  activitiesPerWeek: number;
-  maxConsecutiveDays: number;
-  minRestDays: number;
-  startingCTL: number;
-  targetCTL: number;
-  rampRate: number;
-  mesocycles?: Mesocycle[];
-  activityDistribution?: Record<PublicActivityCategory, number>;
+  goals: GoalFormData[];
 }
 
 interface SinglePageFormProps {
   formData: TrainingPlanFormData;
-  onFormDataChange: (data: Partial<TrainingPlanFormData>) => void;
-  onSubmit: () => void;
-  onCancel: () => void;
-  isSubmitting?: boolean;
+  onFormDataChange: (data: TrainingPlanFormData) => void;
   errors?: Record<string, string>;
-  currentCTL?: number;
 }
+
+interface EditingTargetRef {
+  goalId: string;
+  targetId: string;
+}
+
+const createLocalId = () =>
+  `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+const createEmptyTarget = (): GoalTargetFormData => ({
+  id: createLocalId(),
+  targetType: "race_performance",
+  activityCategory: "run",
+});
+
+const createEmptyGoal = (targetDate?: string): GoalFormData => ({
+  id: createLocalId(),
+  name: "",
+  targetDate: targetDate ?? new Date().toISOString().split("T")[0] ?? "",
+  priority: 1,
+  targets: [createEmptyTarget()],
+});
+
+const raceDistancePresetsByCategory: Record<
+  "run" | "bike" | "swim" | "other",
+  Array<{ label: string; km: string }>
+> = {
+  run: [
+    { label: "5K", km: "5" },
+    { label: "10K", km: "10" },
+    { label: "Half", km: "21.1" },
+    { label: "Marathon", km: "42.2" },
+  ],
+  bike: [
+    { label: "20K TT", km: "20" },
+    { label: "40K TT", km: "40" },
+    { label: "Gran Fondo", km: "100" },
+    { label: "Century", km: "160" },
+  ],
+  swim: [
+    { label: "400m", km: "0.4" },
+    { label: "800m", km: "0.8" },
+    { label: "1500m", km: "1.5" },
+    { label: "5K", km: "5" },
+  ],
+  other: [
+    { label: "1K", km: "1" },
+    { label: "5K", km: "5" },
+    { label: "10K", km: "10" },
+  ],
+};
+
+const targetTypeOptions: { value: GoalTargetType; label: string }[] = [
+  { value: "race_performance", label: "Race Performance" },
+  { value: "pace_threshold", label: "Pace Threshold" },
+  { value: "power_threshold", label: "Power Threshold" },
+  { value: "hr_threshold", label: "HR Threshold" },
+];
+
+const activityCategoryOptions: Array<{
+  value: "run" | "bike" | "swim" | "other";
+  label: string;
+}> = [
+  { value: "run", label: "Run" },
+  { value: "bike", label: "Bike" },
+  { value: "swim", label: "Swim" },
+  { value: "other", label: "Other" },
+];
+
+const getActivityCategoryLabel = (
+  category?: GoalTargetFormData["activityCategory"],
+) => activityCategoryOptions.find((option) => option.value === category)?.label;
+
+const parseNumberOrUndefined = (value: string): number | undefined => {
+  if (!value.trim()) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const getTargetTypeLabel = (targetType: GoalTargetType) => {
+  return targetTypeOptions.find((option) => option.value === targetType)?.label;
+};
+
+const getTargetSummary = (target: GoalTargetFormData) => {
+  if (target.targetType === "race_performance") {
+    const parts = [];
+    const categoryLabel = getActivityCategoryLabel(target.activityCategory);
+    if (categoryLabel) {
+      parts.push(categoryLabel);
+    }
+    if (target.distanceKm?.trim()) {
+      parts.push(`${target.distanceKm.trim()} km`);
+    }
+    if (target.completionTimeHms?.trim()) {
+      parts.push(target.completionTimeHms.trim());
+    }
+    return parts.length > 0 ? parts.join(" - ") : "Distance + completion time";
+  }
+
+  if (target.targetType === "pace_threshold") {
+    const parts = [];
+    const categoryLabel = getActivityCategoryLabel(target.activityCategory);
+    if (categoryLabel) {
+      parts.push(categoryLabel);
+    }
+    if (target.paceMmSs?.trim()) {
+      parts.push(`${target.paceMmSs.trim()} /km`);
+    }
+    if (target.testDurationHms?.trim()) {
+      parts.push(`test ${target.testDurationHms.trim()}`);
+    }
+    return parts.length > 0 ? parts.join(" - ") : "Pace + test duration";
+  }
+
+  if (target.targetType === "power_threshold") {
+    const parts = [];
+    const categoryLabel = getActivityCategoryLabel(target.activityCategory);
+    if (categoryLabel) {
+      parts.push(categoryLabel);
+    }
+    if (target.targetWatts !== undefined) {
+      parts.push(`${target.targetWatts} W`);
+    }
+    if (target.testDurationHms?.trim()) {
+      parts.push(`test ${target.testDurationHms.trim()}`);
+    }
+    return parts.length > 0 ? parts.join(" - ") : "Watts + test duration";
+  }
+
+  if (target.targetLthrBpm !== undefined) {
+    return `${target.targetLthrBpm} bpm`;
+  }
+  return "LTHR bpm";
+};
 
 export function SinglePageForm({
   formData,
   onFormDataChange,
-  onSubmit,
-  onCancel,
-  isSubmitting = false,
   errors = {},
-  currentCTL = 0,
 }: SinglePageFormProps) {
-  const [activeTab, setActiveTab] = useState("basic");
+  const [expandedGoalIds, setExpandedGoalIds] = useState<string[]>(() => {
+    const firstGoal = formData.goals[0];
+    return firstGoal ? [firstGoal.id] : [];
+  });
+  const [editingTargetRef, setEditingTargetRef] =
+    useState<EditingTargetRef | null>(null);
+  const [datePickerGoalId, setDatePickerGoalId] = useState<string | null>(null);
 
-  const handlePresetChange = (preset: PlanPreset) => {
-    const presetConfig = PRESETS[preset];
+  useEffect(() => {
+    setExpandedGoalIds((prev) => {
+      const existing = new Set(formData.goals.map((goal) => goal.id));
+      const next = prev.filter((id) => existing.has(id));
+
+      const firstGoal = formData.goals[0];
+      if (firstGoal && !next.includes(firstGoal.id)) {
+        next.unshift(firstGoal.id);
+      }
+
+      return next;
+    });
+  }, [formData.goals]);
+
+  useEffect(() => {
+    if (!editingTargetRef) {
+      return;
+    }
+
+    const goal = formData.goals.find(
+      (item) => item.id === editingTargetRef.goalId,
+    );
+    const target = goal?.targets.find(
+      (item) => item.id === editingTargetRef.targetId,
+    );
+    if (!goal || !target) {
+      setEditingTargetRef(null);
+    }
+  }, [editingTargetRef, formData.goals]);
+
+  const editingContext = useMemo(() => {
+    if (!editingTargetRef) {
+      return null;
+    }
+
+    const goalIndex = formData.goals.findIndex(
+      (goal) => goal.id === editingTargetRef.goalId,
+    );
+    if (goalIndex < 0) {
+      return null;
+    }
+
+    const goal = formData.goals[goalIndex];
+    const targetIndex = goal.targets.findIndex(
+      (target) => target.id === editingTargetRef.targetId,
+    );
+    if (targetIndex < 0) {
+      return null;
+    }
+
+    return {
+      goal,
+      goalIndex,
+      target: goal.targets[targetIndex],
+      targetIndex,
+    };
+  }, [editingTargetRef, formData.goals]);
+
+  const updateGoal = (goalId: string, updates: Partial<GoalFormData>) => {
     onFormDataChange({
-      preset,
-      ...presetConfig,
+      goals: formData.goals.map((goal) =>
+        goal.id === goalId ? { ...goal, ...updates } : goal,
+      ),
     });
   };
 
-  const avgTSS = Math.round((formData.tssMin + formData.tssMax) / 2);
+  const updateTarget = (
+    goalId: string,
+    targetId: string,
+    updates: Partial<GoalTargetFormData>,
+  ) => {
+    onFormDataChange({
+      goals: formData.goals.map((goal) => {
+        if (goal.id !== goalId) {
+          return goal;
+        }
 
-  // Auto-generate mesocycles when target date changes
-  const mesocycles = useMemo(() => {
-    if (formData.mesocycles) return formData.mesocycles;
-    return autoGenerateMesocycles(formData.targetDate);
-  }, [formData.targetDate, formData.mesocycles]);
+        return {
+          ...goal,
+          targets: goal.targets.map((target) =>
+            target.id === targetId ? { ...target, ...updates } : target,
+          ),
+        };
+      }),
+    });
+  };
 
-  // Calculate estimated target CTL if not explicitly set
-  const effectiveTargetCTL = useMemo(() => {
-    if (formData.targetCTL > 0) return formData.targetCTL;
-    return Math.max(Math.round(avgTSS * 0.15), formData.startingCTL + 10);
-  }, [formData.targetCTL, avgTSS, formData.startingCTL]);
+  const addGoal = () => {
+    const referenceTargetDate =
+      formData.goals[0]?.targetDate ??
+      new Date().toISOString().split("T")[0] ??
+      "";
+
+    const newGoal = createEmptyGoal(referenceTargetDate);
+    onFormDataChange({
+      goals: [...formData.goals, newGoal],
+    });
+    setExpandedGoalIds((prev) => [...prev, newGoal.id]);
+  };
+
+  const removeGoal = (goalId: string) => {
+    if (formData.goals.length <= 1) {
+      return;
+    }
+
+    onFormDataChange({
+      goals: formData.goals.filter((goal) => goal.id !== goalId),
+    });
+    setExpandedGoalIds((prev) => prev.filter((id) => id !== goalId));
+  };
+
+  const toggleGoalExpanded = (goalId: string) => {
+    setExpandedGoalIds((prev) =>
+      prev.includes(goalId)
+        ? prev.filter((id) => id !== goalId)
+        : [...prev, goalId],
+    );
+  };
+
+  const addTarget = (goalId: string) => {
+    const target = createEmptyTarget();
+    onFormDataChange({
+      goals: formData.goals.map((goal) =>
+        goal.id === goalId
+          ? { ...goal, targets: [...goal.targets, target] }
+          : goal,
+      ),
+    });
+    setEditingTargetRef({ goalId, targetId: target.id });
+  };
+
+  const removeTarget = (goalId: string, targetId: string) => {
+    onFormDataChange({
+      goals: formData.goals.map((goal) => {
+        if (goal.id !== goalId) {
+          return goal;
+        }
+
+        if (goal.targets.length <= 1) {
+          return goal;
+        }
+
+        return {
+          ...goal,
+          targets: goal.targets.filter((target) => target.id !== targetId),
+        };
+      }),
+    });
+  };
+
+  const applyRaceDistancePreset = (
+    goalId: string,
+    targetId: string,
+    km: string,
+  ) => {
+    updateTarget(goalId, targetId, { distanceKm: km });
+  };
+
+  const getError = (path: string) => errors[path];
+
+  const parseGoalDate = (value: string) => {
+    const parsed = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) {
+      return new Date();
+    }
+    return parsed;
+  };
+
+  const handleGoalDateChange = (
+    goalId: string,
+    event: DateTimePickerEvent,
+    selectedDate?: Date,
+  ) => {
+    if (event.type === "dismissed") {
+      setDatePickerGoalId(null);
+      return;
+    }
+
+    if (selectedDate) {
+      const isoDate = selectedDate.toISOString().split("T")[0] ?? "";
+      updateGoal(goalId, { targetDate: isoDate });
+    }
+
+    setDatePickerGoalId(null);
+  };
+
+  const getTargetRowError = (goalIndex: number, targetIndex: number) => {
+    const prefix = `goals.${goalIndex}.targets.${targetIndex}`;
+    return (
+      getError(`${prefix}.targetType`) ??
+      getError(`${prefix}.distanceKm`) ??
+      getError(`${prefix}.completionTimeHms`) ??
+      getError(`${prefix}.paceMmSs`) ??
+      getError(`${prefix}.activityCategory`) ??
+      getError(`${prefix}.testDurationHms`) ??
+      getError(`${prefix}.targetWatts`) ??
+      getError(`${prefix}.targetLthrBpm`)
+    );
+  };
+
+  const closeTargetEditor = () => setEditingTargetRef(null);
 
   return (
     <View className="flex-1">
-      <ScrollView
-        className="flex-1"
-        contentContainerStyle={{ paddingBottom: 100 }}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Fitness Projection Chart - Always Visible */}
-        <View className="p-4 bg-background border-b border-border">
-          <FitnessProjectionChart
-            currentCTL={formData.startingCTL}
-            targetCTL={effectiveTargetCTL}
-            targetDate={formData.targetDate}
-            weeklyTSSAvg={avgTSS}
-            mesocycles={mesocycles}
-            rampRate={formData.rampRate}
-            recoveryWeekFrequency={3}
-            recoveryWeekReduction={0.5}
-            height={220}
-          />
-
-          {/* Minimal Summary */}
-          <View className="flex-row gap-2 mt-3">
-            <View className="flex-1 bg-muted/30 rounded-lg p-2">
-              <Text className="text-xs text-muted-foreground">Weekly TSS</Text>
-              <Text className="text-sm font-semibold">
-                {formData.tssMin}-{formData.tssMax}
-              </Text>
-            </View>
-            <View className="flex-1 bg-muted/30 rounded-lg p-2">
-              <Text className="text-xs text-muted-foreground">
-                Activities/Week
-              </Text>
-              <Text className="text-sm font-semibold">
-                {formData.activitiesPerWeek}
-              </Text>
-            </View>
-            <View className="flex-1 bg-muted/30 rounded-lg p-2">
-              <Text className="text-xs text-muted-foreground">Target CTL</Text>
-              <Text className="text-sm font-semibold">
-                {effectiveTargetCTL}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Tab Navigation */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1">
-          <View className="px-4 pt-3 pb-2 border-b border-border bg-background">
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <TabsList>
-                <TabsTrigger value="basic">
-                  <Text className="text-xs">Basic</Text>
-                </TabsTrigger>
-                <TabsTrigger value="targets">
-                  <Text className="text-xs">Targets</Text>
-                </TabsTrigger>
-                <TabsTrigger value="recovery">
-                  <Text className="text-xs">Recovery</Text>
-                </TabsTrigger>
-                <TabsTrigger value="activities">
-                  <Text className="text-xs">Activity Mix</Text>
-                </TabsTrigger>
-                <TabsTrigger value="phases">
-                  <Text className="text-xs">Phases</Text>
-                </TabsTrigger>
-              </TabsList>
-            </ScrollView>
+      <ScrollView className="flex-1" contentContainerClassName="p-4 gap-4">
+        <View className="gap-4">
+          <View className="gap-2">
+            <Text className="text-sm text-muted-foreground">
+              Your plan starts with one primary goal. Additional goals are
+              optional.
+            </Text>
+            {errors.goals && (
+              <Text className="text-xs text-destructive">{errors.goals}</Text>
+            )}
           </View>
 
-          <View className="px-4 pt-4">
-            {/* Basic Tab */}
-            <TabsContent value="basic" className="gap-4">
-              <View className="gap-2">
-                <Label nativeID="plan-name">
-                  <Text className="text-sm font-medium">
-                    Plan Name <Text className="text-destructive">*</Text>
+          {formData.goals.map((goal, goalIndex) => (
+            <View
+              key={goal.id}
+              className="gap-3 rounded-lg border border-border bg-muted/20 p-3"
+            >
+              <View className="flex-row items-center justify-between">
+                <Pressable
+                  onPress={() => toggleGoalExpanded(goal.id)}
+                  className="flex-1 flex-row items-center justify-between pr-2"
+                >
+                  <Text className="font-semibold">
+                    {goalIndex === 0
+                      ? "Primary Goal"
+                      : `Goal ${goalIndex + 1} (Optional)`}
                   </Text>
-                </Label>
-                <Input
-                  aria-labelledby="plan-name"
-                  placeholder="e.g., Marathon Prep 2024"
-                  value={formData.name}
-                  onChangeText={(value) => onFormDataChange({ name: value })}
-                  autoFocus
-                  maxLength={100}
-                />
-                {errors.name && (
-                  <Text className="text-xs text-destructive">
-                    {errors.name}
-                  </Text>
-                )}
+                  {expandedGoalIds.includes(goal.id) ? (
+                    <ChevronUp size={18} className="text-muted-foreground" />
+                  ) : (
+                    <ChevronDown size={18} className="text-muted-foreground" />
+                  )}
+                </Pressable>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onPress={() => removeGoal(goal.id)}
+                  disabled={formData.goals.length <= 1 || goalIndex === 0}
+                >
+                  <Trash2 size={16} className="text-muted-foreground" />
+                </Button>
               </View>
 
-              <View className="gap-2">
-                <Label nativeID="plan-description">
-                  <Text className="text-sm font-medium">Description</Text>
-                </Label>
-                <Input
-                  aria-labelledby="plan-description"
-                  placeholder="Brief description"
-                  value={formData.description}
-                  onChangeText={(value) =>
-                    onFormDataChange({ description: value })
-                  }
-                  multiline
-                  numberOfLines={2}
-                  maxLength={500}
-                  style={{ minHeight: 60 }}
-                />
-              </View>
+              {goalIndex > 0 && !expandedGoalIds.includes(goal.id) && (
+                <Text className="text-xs text-muted-foreground">
+                  Tap to expand this optional goal.
+                </Text>
+              )}
 
-              <View className="gap-2">
-                <Label nativeID="training-level">
-                  <Text className="text-sm font-medium">
-                    Level <Text className="text-destructive">*</Text>
-                  </Text>
-                </Label>
-                <View className="flex-row gap-2">
-                  {(
-                    ["beginner", "intermediate", "advanced"] as PlanPreset[]
-                  ).map((preset) => (
+              {expandedGoalIds.includes(goal.id) && (
+                <>
+                  <View className="gap-2">
+                    <Label nativeID={`goal-name-${goal.id}`}>
+                      <Text className="text-sm font-medium">
+                        Goal Name <Text className="text-destructive">*</Text>
+                      </Text>
+                    </Label>
+                    <Input
+                      aria-labelledby={`goal-name-${goal.id}`}
+                      placeholder="e.g., Spring Half Marathon"
+                      value={goal.name}
+                      onChangeText={(value) =>
+                        updateGoal(goal.id, { name: value })
+                      }
+                      autoFocus={goalIndex === 0}
+                      maxLength={100}
+                    />
+                    {getError(`goals.${goalIndex}.name`) && (
+                      <Text className="text-xs text-destructive">
+                        {getError(`goals.${goalIndex}.name`)}
+                      </Text>
+                    )}
+                  </View>
+
+                  <View className="gap-2">
+                    <Label nativeID={`target-date-${goal.id}`}>
+                      <Text className="text-sm font-medium">
+                        Target Date <Text className="text-destructive">*</Text>
+                      </Text>
+                    </Label>
                     <Pressable
-                      key={preset}
-                      onPress={() => handlePresetChange(preset)}
-                      className={`flex-1 border rounded-lg p-3 ${
-                        formData.preset === preset
-                          ? "border-primary bg-primary/5"
-                          : "border-border bg-card"
-                      }`}
+                      onPress={() => setDatePickerGoalId(goal.id)}
+                      className="rounded-md border border-input bg-background px-3 py-3"
                     >
-                      <Text
-                        className={`text-sm font-medium text-center ${
-                          formData.preset === preset
-                            ? "text-primary"
-                            : "text-foreground"
-                        }`}
-                      >
-                        {preset.charAt(0).toUpperCase() + preset.slice(1)}
+                      <Text>
+                        {format(
+                          parseGoalDate(goal.targetDate),
+                          "EEE, MMM d, yyyy",
+                        )}
                       </Text>
                     </Pressable>
-                  ))}
-                </View>
-              </View>
-
-              <View className="gap-2">
-                <Label nativeID="target-date">
-                  <Text className="text-sm font-medium">
-                    Target Date <Text className="text-destructive">*</Text>
-                  </Text>
-                </Label>
-                <Input
-                  aria-labelledby="target-date"
-                  value={formData.targetDate}
-                  onChangeText={(text) =>
-                    onFormDataChange({ targetDate: text })
-                  }
-                  placeholder="YYYY-MM-DD"
-                />
-                {errors.targetDate && (
-                  <Text className="text-xs text-destructive">
-                    {errors.targetDate}
-                  </Text>
-                )}
-              </View>
-            </TabsContent>
-
-            {/* Targets Tab */}
-            <TabsContent value="targets" className="gap-4">
-              <View className="gap-3">
-                <Label>
-                  <Text className="text-sm font-medium">Weekly TSS Range</Text>
-                </Label>
-                <View className="flex-row gap-3">
-                  <View className="flex-1 gap-2">
-                    <Label nativeID="tss-min">
-                      <Text className="text-xs text-muted-foreground">Min</Text>
-                    </Label>
-                    <Input
-                      aria-labelledby="tss-min"
-                      value={formData.tssMin.toString()}
-                      onChangeText={(text) =>
-                        onFormDataChange({ tssMin: parseInt(text) || 0 })
-                      }
-                      keyboardType="numeric"
-                    />
-                  </View>
-                  <View className="flex-1 gap-2">
-                    <Label nativeID="tss-max">
-                      <Text className="text-xs text-muted-foreground">Max</Text>
-                    </Label>
-                    <Input
-                      aria-labelledby="tss-max"
-                      value={formData.tssMax.toString()}
-                      onChangeText={(text) =>
-                        onFormDataChange({ tssMax: parseInt(text) || 0 })
-                      }
-                      keyboardType="numeric"
-                    />
-                  </View>
-                </View>
-                {errors.tssMin && (
-                  <Text className="text-xs text-destructive">
-                    {errors.tssMin}
-                  </Text>
-                )}
-                {errors.tssMax && (
-                  <Text className="text-xs text-destructive">
-                    {errors.tssMax}
-                  </Text>
-                )}
-              </View>
-
-              <View className="gap-2">
-                <Label nativeID="activities-per-week">
-                  <Text className="text-sm font-medium">
-                    Activities per Week
-                  </Text>
-                </Label>
-                <Input
-                  aria-labelledby="activities-per-week"
-                  value={formData.activitiesPerWeek.toString()}
-                  onChangeText={(text) =>
-                    onFormDataChange({
-                      activitiesPerWeek: parseInt(text) || 0,
-                    })
-                  }
-                  keyboardType="numeric"
-                />
-                {errors.activitiesPerWeek && (
-                  <Text className="text-xs text-destructive">
-                    {errors.activitiesPerWeek}
-                  </Text>
-                )}
-              </View>
-
-              <View className="gap-3">
-                <View className="flex-row gap-3">
-                  <View className="flex-1 gap-2">
-                    <Label nativeID="starting-ctl">
-                      <Text className="text-xs text-muted-foreground">
-                        Starting CTL
+                    {datePickerGoalId === goal.id && (
+                      <DateTimePicker
+                        value={parseGoalDate(goal.targetDate)}
+                        mode="date"
+                        display="default"
+                        minimumDate={new Date()}
+                        onChange={(event, selectedDate) =>
+                          handleGoalDateChange(goal.id, event, selectedDate)
+                        }
+                      />
+                    )}
+                    {getError(`goals.${goalIndex}.targetDate`) && (
+                      <Text className="text-xs text-destructive">
+                        {getError(`goals.${goalIndex}.targetDate`)}
                       </Text>
-                    </Label>
-                    <Input
-                      aria-labelledby="starting-ctl"
-                      value={formData.startingCTL.toString()}
-                      onChangeText={(text) =>
-                        onFormDataChange({
-                          startingCTL: parseInt(text) || 0,
-                        })
-                      }
-                      keyboardType="numeric"
-                    />
+                    )}
                   </View>
-                  <View className="flex-1 gap-2">
-                    <Label nativeID="target-ctl">
-                      <Text className="text-xs text-muted-foreground">
-                        Target CTL
-                      </Text>
-                    </Label>
-                    <Input
-                      aria-labelledby="target-ctl"
-                      value={formData.targetCTL.toString()}
-                      onChangeText={(text) =>
-                        onFormDataChange({ targetCTL: parseInt(text) || 0 })
-                      }
-                      keyboardType="numeric"
-                      placeholder={effectiveTargetCTL.toString()}
-                    />
-                  </View>
-                </View>
-              </View>
 
-              <View className="gap-2">
-                <View className="flex-row justify-between items-center">
-                  <Label nativeID="ramp-rate">
-                    <Text className="text-sm font-medium">Ramp Rate</Text>
-                  </Label>
-                  <Text className="text-sm font-semibold">
-                    {formData.rampRate.toFixed(2)}
-                  </Text>
-                </View>
-                <Slider
-                  value={formData.rampRate}
-                  onValueChange={(value) =>
-                    onFormDataChange({ rampRate: value })
-                  }
-                  minimumValue={0.01}
-                  maximumValue={0.15}
-                  step={0.01}
-                  minimumTrackTintColor="#3b82f6"
-                  maximumTrackTintColor="#e5e7eb"
-                />
-                <View className="flex-row justify-between">
-                  <Text className="text-xs text-muted-foreground">
-                    Conservative
-                  </Text>
-                  <Text className="text-xs text-muted-foreground">
-                    Aggressive
-                  </Text>
-                </View>
-              </View>
-            </TabsContent>
-
-            {/* Recovery Tab */}
-            <TabsContent value="recovery" className="gap-4">
-              <View className="gap-2">
-                <Label nativeID="max-consecutive">
-                  <Text className="text-sm font-medium">
-                    Max Consecutive Training Days
-                  </Text>
-                </Label>
-                <Input
-                  aria-labelledby="max-consecutive"
-                  value={formData.maxConsecutiveDays.toString()}
-                  onChangeText={(text) =>
-                    onFormDataChange({
-                      maxConsecutiveDays: parseInt(text) || 0,
-                    })
-                  }
-                  keyboardType="numeric"
-                />
-                {errors.maxConsecutiveDays && (
-                  <Text className="text-xs text-destructive">
-                    {errors.maxConsecutiveDays}
-                  </Text>
-                )}
-              </View>
-
-              <View className="gap-2">
-                <Label nativeID="min-rest">
-                  <Text className="text-sm font-medium">
-                    Min Rest Days per Week
-                  </Text>
-                </Label>
-                <Input
-                  aria-labelledby="min-rest"
-                  value={formData.minRestDays.toString()}
-                  onChangeText={(text) =>
-                    onFormDataChange({
-                      minRestDays: parseInt(text) || 0,
-                    })
-                  }
-                  keyboardType="numeric"
-                />
-                {errors.minRestDays && (
-                  <Text className="text-xs text-destructive">
-                    {errors.minRestDays}
-                  </Text>
-                )}
-              </View>
-
-              <View className="bg-muted/30 rounded-lg p-3 mt-2">
-                <Text className="text-xs text-muted-foreground">
-                  Train up to {formData.maxConsecutiveDays} days in a row, with
-                  at least {formData.minRestDays} rest day
-                  {formData.minRestDays !== 1 ? "s" : ""} per week
-                </Text>
-              </View>
-            </TabsContent>
-
-            {/* Activity Mix Tab */}
-            <TabsContent value="activities" className="gap-4">
-              <View className="gap-2">
-                <Text className="text-sm font-medium">
-                  Activity Distribution
-                </Text>
-                <Text className="text-xs text-muted-foreground">
-                  Single-sport by default. Multi-sport customization coming
-                  soon.
-                </Text>
-              </View>
-
-              <View className="bg-muted/30 rounded-lg p-4">
-                <View className="flex-row justify-between items-center">
-                  <Text className="text-sm">Running</Text>
-                  <Text className="text-sm font-medium">100%</Text>
-                </View>
-              </View>
-            </TabsContent>
-
-            {/* Phases Tab */}
-            <TabsContent value="phases" className="gap-4">
-              <View className="gap-2">
-                <Text className="text-sm font-medium">Training Phases</Text>
-                <Text className="text-xs text-muted-foreground">
-                  Mesocycles are auto-generated based on your target date. You
-                  can customize them after creation.
-                </Text>
-              </View>
-
-              <View className="bg-muted/30 rounded-lg p-4">
-                <View className="gap-2">
-                  {mesocycles.map((cycle, index) => (
-                    <View
-                      key={index}
-                      className="flex-row justify-between items-center py-2 border-b border-border last:border-b-0"
-                    >
-                      <Text className="text-sm font-medium">{cycle.name}</Text>
-                      <Text className="text-xs text-muted-foreground">
-                        {cycle.duration_weeks} weeks
-                      </Text>
+                  <View className="gap-3 rounded-lg border border-border bg-background/80 p-3">
+                    <View className="flex-row items-center justify-between">
+                      <Text className="font-medium">Targets</Text>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onPress={() => addTarget(goal.id)}
+                      >
+                        <Plus size={16} className="text-muted-foreground" />
+                      </Button>
                     </View>
-                  ))}
-                </View>
-              </View>
-            </TabsContent>
-          </View>
-        </Tabs>
-      </ScrollView>
 
-      {/* Fixed Footer */}
-      <View className="absolute bottom-0 left-0 right-0 p-4 border-t border-border bg-background">
-        <View className="flex-row gap-3">
+                    {goal.targets.map((target, targetIndex) => {
+                      const rowError = getTargetRowError(
+                        goalIndex,
+                        targetIndex,
+                      );
+                      return (
+                        <View
+                          key={target.id}
+                          className="gap-2 rounded-md border border-border bg-muted/20 p-3"
+                        >
+                          <Pressable
+                            onPress={() =>
+                              setEditingTargetRef({
+                                goalId: goal.id,
+                                targetId: target.id,
+                              })
+                            }
+                            className="gap-1"
+                          >
+                            <Text className="text-sm font-medium">
+                              {getTargetTypeLabel(target.targetType)}
+                            </Text>
+                            <Text className="text-xs text-muted-foreground">
+                              {getTargetSummary(target)}
+                            </Text>
+                          </Pressable>
+
+                          <View className="flex-row justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onPress={() =>
+                                setEditingTargetRef({
+                                  goalId: goal.id,
+                                  targetId: target.id,
+                                })
+                              }
+                            >
+                              <Pencil
+                                size={16}
+                                className="text-muted-foreground"
+                              />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onPress={() => removeTarget(goal.id, target.id)}
+                              disabled={goal.targets.length <= 1}
+                            >
+                              <Trash2
+                                size={16}
+                                className="text-muted-foreground"
+                              />
+                            </Button>
+                          </View>
+
+                          {rowError && (
+                            <Text className="text-xs text-destructive">
+                              {rowError}
+                            </Text>
+                          )}
+                        </View>
+                      );
+                    })}
+                  </View>
+                </>
+              )}
+            </View>
+          ))}
+
           <Button
             variant="outline"
-            onPress={onCancel}
-            disabled={isSubmitting}
-            className="flex-1"
+            onPress={addGoal}
+            className="flex-row gap-2"
           >
-            <Text className="text-foreground">Cancel</Text>
-          </Button>
-          <Button
-            onPress={onSubmit}
-            disabled={isSubmitting || !formData.name.trim()}
-            className="flex-1"
-          >
-            <Text className="text-primary-foreground font-semibold">
-              {isSubmitting ? "Creating..." : "Create Plan"}
-            </Text>
+            <Plus size={16} className="text-muted-foreground" />
+            <Text>Add Optional Goal</Text>
           </Button>
         </View>
-      </View>
+
+        <View className="h-12" />
+      </ScrollView>
+
+      <Modal
+        visible={Boolean(editingContext)}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={closeTargetEditor}
+      >
+        <View className="flex-1 bg-background">
+          <View className="flex-row items-center justify-between border-b border-border px-4 py-3">
+            <Text className="text-base font-semibold">Edit Target</Text>
+            <Button variant="outline" size="sm" onPress={closeTargetEditor}>
+              <Text>Done</Text>
+            </Button>
+          </View>
+
+          {editingContext && (
+            <ScrollView
+              className="flex-1"
+              contentContainerClassName="gap-4 px-4 py-4 pb-10"
+            >
+              <View className="gap-2">
+                <Label nativeID="editor-target-type">
+                  <Text className="text-sm font-medium">
+                    Target Type <Text className="text-destructive">*</Text>
+                  </Text>
+                </Label>
+                <Select
+                  value={{
+                    value: editingContext.target.targetType,
+                    label:
+                      getTargetTypeLabel(editingContext.target.targetType) ??
+                      "Target Type",
+                  }}
+                  onValueChange={(option) => {
+                    if (!option?.value) {
+                      return;
+                    }
+                    const nextType = option.value as GoalTargetType;
+                    const defaultCategory =
+                      nextType === "race_performance" ||
+                      nextType === "pace_threshold"
+                        ? "run"
+                        : nextType === "power_threshold"
+                          ? "bike"
+                          : undefined;
+                    updateTarget(
+                      editingContext.goal.id,
+                      editingContext.target.id,
+                      {
+                        targetType: nextType,
+                        activityCategory:
+                          nextType === "race_performance" ||
+                          nextType === "pace_threshold" ||
+                          nextType === "power_threshold"
+                            ? (editingContext.target.activityCategory ??
+                              defaultCategory)
+                            : undefined,
+                      },
+                    );
+                  }}
+                >
+                  <SelectTrigger aria-labelledby="editor-target-type">
+                    <SelectValue placeholder="Select target type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {targetTypeOptions.map((option) => (
+                      <SelectItem
+                        key={option.value}
+                        label={option.label}
+                        value={option.value}
+                      >
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {getError(
+                  `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.targetType`,
+                ) && (
+                  <Text className="text-xs text-destructive">
+                    {getError(
+                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.targetType`,
+                    )}
+                  </Text>
+                )}
+              </View>
+
+              {editingContext.target.targetType === "race_performance" && (
+                <>
+                  <View className="gap-2">
+                    <Label nativeID="editor-race-category">
+                      <Text className="text-sm font-medium">
+                        Activity <Text className="text-destructive">*</Text>
+                      </Text>
+                    </Label>
+                    <Select
+                      value={
+                        editingContext.target.activityCategory
+                          ? {
+                              value: editingContext.target.activityCategory,
+                              label:
+                                getActivityCategoryLabel(
+                                  editingContext.target.activityCategory,
+                                ) ?? "Activity",
+                            }
+                          : undefined
+                      }
+                      onValueChange={(option) => {
+                        if (!option?.value) {
+                          return;
+                        }
+                        updateTarget(
+                          editingContext.goal.id,
+                          editingContext.target.id,
+                          {
+                            activityCategory: option.value as
+                              | "run"
+                              | "bike"
+                              | "swim"
+                              | "other",
+                          },
+                        );
+                      }}
+                    >
+                      <SelectTrigger aria-labelledby="editor-race-category">
+                        <SelectValue placeholder="Select activity" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {activityCategoryOptions.map((option) => (
+                          <SelectItem
+                            key={`race-${option.value}`}
+                            label={option.label}
+                            value={option.value}
+                          >
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {getError(
+                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.activityCategory`,
+                    ) && (
+                      <Text className="text-xs text-destructive">
+                        {getError(
+                          `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.activityCategory`,
+                        )}
+                      </Text>
+                    )}
+                  </View>
+
+                  <View className="gap-2">
+                    <Label nativeID="editor-distance">
+                      <Text className="text-sm font-medium">
+                        Distance (km){" "}
+                        <Text className="text-destructive">*</Text>
+                      </Text>
+                    </Label>
+                    <Input
+                      aria-labelledby="editor-distance"
+                      value={editingContext.target.distanceKm ?? ""}
+                      onChangeText={(value) =>
+                        updateTarget(
+                          editingContext.goal.id,
+                          editingContext.target.id,
+                          {
+                            distanceKm: value,
+                          },
+                        )
+                      }
+                      keyboardType="numbers-and-punctuation"
+                      placeholder="e.g., 21.1"
+                    />
+                    <View className="flex-row flex-wrap gap-2">
+                      {(
+                        raceDistancePresetsByCategory[
+                          editingContext.target.activityCategory ?? "run"
+                        ] ?? raceDistancePresetsByCategory.run
+                      ).map((preset) => (
+                        <Button
+                          key={`${editingContext.goal.id}-${editingContext.target.id}-${preset.label}`}
+                          variant="outline"
+                          size="sm"
+                          onPress={() =>
+                            applyRaceDistancePreset(
+                              editingContext.goal.id,
+                              editingContext.target.id,
+                              preset.km,
+                            )
+                          }
+                        >
+                          <Text>{preset.label}</Text>
+                        </Button>
+                      ))}
+                    </View>
+                    {getError(
+                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.distanceKm`,
+                    ) && (
+                      <Text className="text-xs text-destructive">
+                        {getError(
+                          `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.distanceKm`,
+                        )}
+                      </Text>
+                    )}
+                  </View>
+
+                  <View className="gap-2">
+                    <Label nativeID="editor-race-time">
+                      <Text className="text-sm font-medium">
+                        Completion Time (h:mm:ss){" "}
+                        <Text className="text-destructive">*</Text>
+                      </Text>
+                    </Label>
+                    <Input
+                      aria-labelledby="editor-race-time"
+                      value={editingContext.target.completionTimeHms ?? ""}
+                      onChangeText={(value) =>
+                        updateTarget(
+                          editingContext.goal.id,
+                          editingContext.target.id,
+                          {
+                            completionTimeHms: value,
+                          },
+                        )
+                      }
+                      keyboardType="numbers-and-punctuation"
+                      placeholder="e.g., 1:35:00"
+                    />
+                    {getError(
+                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.completionTimeHms`,
+                    ) && (
+                      <Text className="text-xs text-destructive">
+                        {getError(
+                          `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.completionTimeHms`,
+                        )}
+                      </Text>
+                    )}
+                  </View>
+                </>
+              )}
+
+              {editingContext.target.targetType === "pace_threshold" && (
+                <>
+                  <View className="gap-2">
+                    <Label nativeID="editor-pace-category">
+                      <Text className="text-sm font-medium">
+                        Activity <Text className="text-destructive">*</Text>
+                      </Text>
+                    </Label>
+                    <Select
+                      value={
+                        editingContext.target.activityCategory
+                          ? {
+                              value: editingContext.target.activityCategory,
+                              label:
+                                getActivityCategoryLabel(
+                                  editingContext.target.activityCategory,
+                                ) ?? "Activity",
+                            }
+                          : undefined
+                      }
+                      onValueChange={(option) => {
+                        if (!option?.value) {
+                          return;
+                        }
+                        updateTarget(
+                          editingContext.goal.id,
+                          editingContext.target.id,
+                          {
+                            activityCategory: option.value as
+                              | "run"
+                              | "bike"
+                              | "swim"
+                              | "other",
+                          },
+                        );
+                      }}
+                    >
+                      <SelectTrigger aria-labelledby="editor-pace-category">
+                        <SelectValue placeholder="Select activity" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {activityCategoryOptions.map((option) => (
+                          <SelectItem
+                            key={`pace-${option.value}`}
+                            label={option.label}
+                            value={option.value}
+                          >
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {getError(
+                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.activityCategory`,
+                    ) && (
+                      <Text className="text-xs text-destructive">
+                        {getError(
+                          `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.activityCategory`,
+                        )}
+                      </Text>
+                    )}
+                  </View>
+
+                  <View className="gap-2">
+                    <Label nativeID="editor-pace">
+                      <Text className="text-sm font-medium">
+                        Target Pace (mm:ss){" "}
+                        <Text className="text-destructive">*</Text>
+                      </Text>
+                    </Label>
+                    <Input
+                      aria-labelledby="editor-pace"
+                      value={editingContext.target.paceMmSs ?? ""}
+                      onChangeText={(value) =>
+                        updateTarget(
+                          editingContext.goal.id,
+                          editingContext.target.id,
+                          {
+                            paceMmSs: value,
+                          },
+                        )
+                      }
+                      keyboardType="numbers-and-punctuation"
+                      placeholder="e.g., 4:15"
+                    />
+                    {getError(
+                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.paceMmSs`,
+                    ) && (
+                      <Text className="text-xs text-destructive">
+                        {getError(
+                          `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.paceMmSs`,
+                        )}
+                      </Text>
+                    )}
+                  </View>
+
+                  <View className="gap-2">
+                    <Label nativeID="editor-pace-test-duration">
+                      <Text className="text-sm font-medium">
+                        Required Test Duration (h:mm:ss){" "}
+                        <Text className="text-destructive">*</Text>
+                      </Text>
+                    </Label>
+                    <Input
+                      aria-labelledby="editor-pace-test-duration"
+                      value={editingContext.target.testDurationHms ?? ""}
+                      onChangeText={(value) =>
+                        updateTarget(
+                          editingContext.goal.id,
+                          editingContext.target.id,
+                          {
+                            testDurationHms: value,
+                          },
+                        )
+                      }
+                      keyboardType="numbers-and-punctuation"
+                      placeholder="e.g., 0:20:00"
+                    />
+                    {getError(
+                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.testDurationHms`,
+                    ) && (
+                      <Text className="text-xs text-destructive">
+                        {getError(
+                          `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.testDurationHms`,
+                        )}
+                      </Text>
+                    )}
+                  </View>
+                </>
+              )}
+
+              {editingContext.target.targetType === "power_threshold" && (
+                <>
+                  <View className="gap-2">
+                    <Label nativeID="editor-power-category">
+                      <Text className="text-sm font-medium">
+                        Activity <Text className="text-destructive">*</Text>
+                      </Text>
+                    </Label>
+                    <Select
+                      value={
+                        editingContext.target.activityCategory
+                          ? {
+                              value: editingContext.target.activityCategory,
+                              label:
+                                getActivityCategoryLabel(
+                                  editingContext.target.activityCategory,
+                                ) ?? "Activity",
+                            }
+                          : undefined
+                      }
+                      onValueChange={(option) => {
+                        if (!option?.value) {
+                          return;
+                        }
+                        updateTarget(
+                          editingContext.goal.id,
+                          editingContext.target.id,
+                          {
+                            activityCategory: option.value as
+                              | "run"
+                              | "bike"
+                              | "swim"
+                              | "other",
+                          },
+                        );
+                      }}
+                    >
+                      <SelectTrigger aria-labelledby="editor-power-category">
+                        <SelectValue placeholder="Select activity" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {activityCategoryOptions.map((option) => (
+                          <SelectItem
+                            key={`power-${option.value}`}
+                            label={option.label}
+                            value={option.value}
+                          >
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {getError(
+                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.activityCategory`,
+                    ) && (
+                      <Text className="text-xs text-destructive">
+                        {getError(
+                          `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.activityCategory`,
+                        )}
+                      </Text>
+                    )}
+                  </View>
+
+                  <View className="gap-2">
+                    <Label nativeID="editor-power-watts">
+                      <Text className="text-sm font-medium">
+                        Target Watts <Text className="text-destructive">*</Text>
+                      </Text>
+                    </Label>
+                    <Input
+                      aria-labelledby="editor-power-watts"
+                      value={
+                        editingContext.target.targetWatts === undefined
+                          ? ""
+                          : String(editingContext.target.targetWatts)
+                      }
+                      onChangeText={(value) =>
+                        updateTarget(
+                          editingContext.goal.id,
+                          editingContext.target.id,
+                          {
+                            targetWatts: parseNumberOrUndefined(value),
+                          },
+                        )
+                      }
+                      keyboardType="numeric"
+                      placeholder="e.g., 285"
+                    />
+                    {getError(
+                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.targetWatts`,
+                    ) && (
+                      <Text className="text-xs text-destructive">
+                        {getError(
+                          `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.targetWatts`,
+                        )}
+                      </Text>
+                    )}
+                  </View>
+
+                  <View className="gap-2">
+                    <Label nativeID="editor-power-test-duration">
+                      <Text className="text-sm font-medium">
+                        Required Test Duration (h:mm:ss){" "}
+                        <Text className="text-destructive">*</Text>
+                      </Text>
+                    </Label>
+                    <Input
+                      aria-labelledby="editor-power-test-duration"
+                      value={editingContext.target.testDurationHms ?? ""}
+                      onChangeText={(value) =>
+                        updateTarget(
+                          editingContext.goal.id,
+                          editingContext.target.id,
+                          {
+                            testDurationHms: value,
+                          },
+                        )
+                      }
+                      keyboardType="numbers-and-punctuation"
+                      placeholder="e.g., 0:20:00"
+                    />
+                    {getError(
+                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.testDurationHms`,
+                    ) && (
+                      <Text className="text-xs text-destructive">
+                        {getError(
+                          `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.testDurationHms`,
+                        )}
+                      </Text>
+                    )}
+                  </View>
+                </>
+              )}
+
+              {editingContext.target.targetType === "hr_threshold" && (
+                <View className="gap-2">
+                  <Label nativeID="editor-lthr-bpm">
+                    <Text className="text-sm font-medium">
+                      LTHR (bpm) <Text className="text-destructive">*</Text>
+                    </Text>
+                  </Label>
+                  <Input
+                    aria-labelledby="editor-lthr-bpm"
+                    value={
+                      editingContext.target.targetLthrBpm === undefined
+                        ? ""
+                        : String(editingContext.target.targetLthrBpm)
+                    }
+                    onChangeText={(value) =>
+                      updateTarget(
+                        editingContext.goal.id,
+                        editingContext.target.id,
+                        {
+                          targetLthrBpm: parseNumberOrUndefined(value),
+                        },
+                      )
+                    }
+                    keyboardType="numeric"
+                    placeholder="e.g., 168"
+                  />
+                  {getError(
+                    `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.targetLthrBpm`,
+                  ) && (
+                    <Text className="text-xs text-destructive">
+                      {getError(
+                        `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.targetLthrBpm`,
+                      )}
+                    </Text>
+                  )}
+                </View>
+              )}
+            </ScrollView>
+          )}
+        </View>
+      </Modal>
     </View>
   );
 }

@@ -29,6 +29,9 @@ Document Role and Relationship
    ∙ This spec does not define final interval-builder UX for custom workout authoring
    ∙ This spec does not replace all existing analytics screens in this phase
    ∙ This spec does not require external coach tooling in initial rollout
+   ∙ This spec does not include training plan templates (system or user-defined)
+   ∙ This spec does not include activity series/collections as a first-class planning object
+   ∙ This spec does not include bulk activity scheduling workflows
    ∙ This spec does not introduce a recommendation engine or auto-prescribed workouts
    ∙ This phase does not require database schema changes; implementation should use existing tables and evolve training plan JSON configuration
    ∙ This phase does not use expanded readiness signals from profile_metrics beyond weight and LTHR
@@ -316,10 +319,15 @@ Document Role and Relationship
     ∙ Provide capability timeline endpoint returning {date, category, cp_or_cs, fit_confidence, effort_count}
     ∙ Provide projection endpoint for arbitrary date query returning {date, projected_capability, projected_goal_metric, confidence, uncertainty_band, drivers}
     ∙ Ensure projections can be queried for goal/end date and any in-plan checkpoint date
-    Rollout Strategy 1. Feature-flagged phased rollout: internal → small cohort → wider cohort 2. Shadow evaluation mode before full exposure 3. Rollback triggers on safety, error, or latency regressions
+    Rollout Strategy
+    ∙ Feature-flagged phased rollout behind `feature.trainingPlanInsightsMvp`: internal → small cohort → wider cohort
+    ∙ Shadow evaluation mode before full exposure
+    ∙ Rollback triggers on safety, error, or latency regressions
     Implementation Constraints (MVP)
     ∙ No database schema migrations are required for this phase
+    ∙ Schema changes must be additive to existing training plan JSON; do not replace the root training plan schema
     ∙ Any additional planning state should be represented in training plan JSON configuration and derived server-side computations
+    ∙ Existing training plan records and current clients must remain backward compatible during rollout
 
 17. Open Questions
     Confidence Display and Behavior

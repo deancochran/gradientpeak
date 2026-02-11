@@ -358,6 +358,7 @@ function PlannedActivityDetailScreen() {
           plannedActivityId={plannedActivity.id}
           onSuccess={() => {
             utils.plannedActivities.invalidate();
+            utils.trainingPlans.invalidate();
           }}
         />
       )}

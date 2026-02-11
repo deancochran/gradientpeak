@@ -214,7 +214,7 @@ export function ScheduleActivityModal({
   const utils = trpc.useUtils();
 
   const createMutation = useReliableMutation(trpc.plannedActivities.create, {
-    invalidate: [utils.plannedActivities],
+    invalidate: [utils.plannedActivities, utils.trainingPlans],
     success: "Activity scheduled!",
     onSuccess: () => {
       onSuccess?.();
@@ -223,7 +223,7 @@ export function ScheduleActivityModal({
   });
 
   const updateMutation = useReliableMutation(trpc.plannedActivities.update, {
-    invalidate: [utils.plannedActivities],
+    invalidate: [utils.plannedActivities, utils.trainingPlans],
     success: "Activity updated!",
     onSuccess: () => {
       onSuccess?.();

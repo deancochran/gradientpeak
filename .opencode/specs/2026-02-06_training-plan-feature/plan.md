@@ -24,6 +24,9 @@ Document role alignment:
 - Most plan/config fields should remain optional at creation time with safe defaults.
 - Plans must support multiple goals, with at least one goal required.
 - Activity category and advanced controls are optional.
+- Training plan templates are out of scope for this phase.
+- Activity series/collections of activities are out of scope for this phase.
+- Bulk activity scheduling workflows are out of scope for this phase.
 - No recommendation engine / no auto-prescription language or behavior.
 - Safety and feasibility boundaries must be explicit and visible.
 - `profile_metrics` usage is limited to `weight_kg` and `lthr`.

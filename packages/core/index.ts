@@ -168,6 +168,7 @@ export {
 // and will automatically pick up new files added to their directories
 
 export * from "./estimation"; // TSS estimation system
+export * from "./plan"; // Training plan normalization/expansion helpers
 export * from "./samples"; // Sample data for testing and development
 export * from "./schemas"; // Zod schemas and types (includes formatDuration for DurationV2)
 export * from "./utils"; // Utility functions
@@ -213,6 +214,7 @@ export * as Calculations from "./calculations";
 export * as CalculationsV2 from "./calculations_v2";
 export * as Constants from "./constants";
 export * as Estimation from "./estimation";
+export * as Plan from "./plan";
 export * as Samples from "./samples";
 export * as Schemas from "./schemas";
 export * as Utils from "./utils";

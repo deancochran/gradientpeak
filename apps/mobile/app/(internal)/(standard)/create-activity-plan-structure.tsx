@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
+import { ROUTES } from "@/lib/constants/routes";
 import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
 import { getDurationMs } from "@/lib/utils/durationConversion";
 import {
@@ -198,6 +199,12 @@ export default function StructureEditScreen() {
     setIntervalWizardOpen(true);
   }, []);
 
+  const handleAddRepeatInterval = useCallback(() => {
+    if (!isMountedRef.current) return;
+    setAddMenuOpen(false);
+    router.push(ROUTES.PLAN.CREATE_ACTIVITY_PLAN.REPEAT as any);
+  }, []);
+
   const handleEditStep = useCallback((intervalId: string, stepId: string) => {
     if (!isMountedRef.current) return;
     setEditingIntervalId(intervalId);
@@ -364,7 +371,7 @@ export default function StructureEditScreen() {
                 No Intervals Yet
               </Text>
               <Text className="text-sm text-muted-foreground text-center mb-6">
-                Add intervals to build your workout structure
+                This editor is optional. Add intervals only if you want details.
               </Text>
               <Button onPress={handleAddStep}>
                 <Plus size={18} className="text-primary-foreground mr-2" />
@@ -455,6 +462,15 @@ export default function StructureEditScreen() {
 
             <View className="gap-3 py-4">
               <Button
+                onPress={handleAddRepeatInterval}
+                variant="outline"
+                className="w-full"
+              >
+                <Plus size={18} className="text-foreground mr-2" />
+                <Text>Repeat Interval Pattern</Text>
+              </Button>
+
+              <Button
                 onPress={handleAddStep}
                 variant="outline"
                 className="w-full"
@@ -469,7 +485,7 @@ export default function StructureEditScreen() {
                 className="w-full"
               >
                 <Menu size={18} className="text-foreground mr-2" />
-                <Text>Interval Set</Text>
+                <Text>Interval Set (Advanced)</Text>
               </Button>
             </View>
 

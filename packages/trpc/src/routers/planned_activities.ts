@@ -2,7 +2,9 @@ import {
   plannedActivityCreateSchema,
   plannedActivityUpdateSchema,
 } from "@repo/core";
+import type { Database } from "@repo/supabase";
 import { TRPCError } from "@trpc/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { WahooSyncService } from "../lib/integrations/wahoo/sync-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
@@ -10,6 +12,200 @@ import {
   addEstimationToPlan,
   addEstimationToPlans,
 } from "../utils/estimation-helpers";
+
+type PlannedActivityLifecycleStatus =
+  | "scheduled"
+  | "completed"
+  | "skipped"
+  | "rescheduled"
+  | "expired";
+
+type PlannedActivityStatusContext = {
+  completedByDate: Set<string>;
+  completedByDateAndPlan: Set<string>;
+  todayDateKey: string;
+};
+
+type InsightRefreshHint = {
+  training_plan_id: string | null;
+  changed_date: string | null;
+  refresh_key: string;
+};
+
+function toDateKey(value: string): string {
+  return value.split("T")[0] || value;
+}
+
+function getRecordValue(record: unknown, key: string): unknown {
+  if (!record || typeof record !== "object") return undefined;
+  return (record as Record<string, unknown>)[key];
+}
+
+function hasTruthyRecordValue(record: unknown, keys: string[]): boolean {
+  return keys.some((key) => {
+    const value = getRecordValue(record, key);
+    return Boolean(value);
+  });
+}
+
+function getRecordString(record: unknown, key: string): string | undefined {
+  const value = getRecordValue(record, key);
+  return typeof value === "string" ? value : undefined;
+}
+
+function buildCompletedSignature(
+  dateKey: string,
+  activityPlanId: string,
+): string {
+  return `${dateKey}::${activityPlanId}`;
+}
+
+function resolvePlannedActivityStatus(
+  plannedActivity: {
+    scheduled_date: string;
+    activity_plan_id?: string | null;
+  },
+  statusContext: PlannedActivityStatusContext,
+): PlannedActivityLifecycleStatus {
+  const scheduledDateKey = toDateKey(plannedActivity.scheduled_date);
+  const explicitStatus = getRecordString(
+    plannedActivity,
+    "status",
+  )?.toLowerCase();
+
+  const completedByMatch =
+    statusContext.completedByDate.has(scheduledDateKey) &&
+    (plannedActivity.activity_plan_id
+      ? statusContext.completedByDateAndPlan.has(
+          buildCompletedSignature(
+            scheduledDateKey,
+            plannedActivity.activity_plan_id,
+          ),
+        )
+      : true);
+  const explicitlyCompleted =
+    explicitStatus === "completed" ||
+    hasTruthyRecordValue(plannedActivity, [
+      "completed_activity_id",
+      "completed_at",
+    ]);
+  if (completedByMatch || explicitlyCompleted) {
+    return "completed";
+  }
+
+  const explicitlySkipped =
+    explicitStatus === "skipped" ||
+    hasTruthyRecordValue(plannedActivity, ["skipped_at", "is_skipped"]);
+  if (explicitlySkipped) {
+    return "skipped";
+  }
+
+  const explicitlyRescheduled =
+    explicitStatus === "rescheduled" ||
+    hasTruthyRecordValue(plannedActivity, [
+      "rescheduled_at",
+      "rescheduled_from_date",
+      "original_scheduled_date",
+    ]);
+  if (explicitlyRescheduled) {
+    return "rescheduled";
+  }
+
+  if (scheduledDateKey < statusContext.todayDateKey) {
+    return "expired";
+  }
+
+  return "scheduled";
+}
+
+async function addPlannedActivityLifecycleStatus<
+  T extends {
+    scheduled_date: string;
+    activity_plan_id?: string | null;
+  },
+>(
+  plannedActivities: T[],
+  ctx: { supabase: SupabaseClient<Database>; profileId: string },
+): Promise<Array<T & { status: PlannedActivityLifecycleStatus }>> {
+  if (plannedActivities.length === 0) return [];
+
+  const dateKeys = plannedActivities.map((activity) =>
+    toDateKey(activity.scheduled_date),
+  );
+  const sortedDateKeys = [...dateKeys].sort();
+  const minDateKey = sortedDateKeys[0];
+  const maxDateKey = sortedDateKeys[sortedDateKeys.length - 1];
+  if (!minDateKey || !maxDateKey) {
+    return plannedActivities.map((activity) => ({
+      ...activity,
+      status: "scheduled",
+    }));
+  }
+
+  const maxDate = new Date(maxDateKey);
+  maxDate.setDate(maxDate.getDate() + 1);
+  const maxDateExclusive = maxDate.toISOString().split("T")[0] || maxDateKey;
+
+  const { data: completedActivities, error } = await ctx.supabase
+    .from("activities")
+    .select("started_at, activity_plan_id")
+    .eq("profile_id", ctx.profileId)
+    .gte("started_at", minDateKey)
+    .lt("started_at", maxDateExclusive);
+
+  if (error) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: error.message,
+    });
+  }
+
+  const completedByDate = new Set<string>();
+  const completedByDateAndPlan = new Set<string>();
+
+  (completedActivities || []).forEach((activity) => {
+    const dateKey = toDateKey(activity.started_at);
+    completedByDate.add(dateKey);
+
+    if (activity.activity_plan_id) {
+      completedByDateAndPlan.add(
+        buildCompletedSignature(dateKey, activity.activity_plan_id),
+      );
+    }
+  });
+
+  const todayDateKey = toDateKey(new Date().toISOString());
+  const statusContext: PlannedActivityStatusContext = {
+    completedByDate,
+    completedByDateAndPlan,
+    todayDateKey,
+  };
+
+  return plannedActivities.map((activity) => ({
+    ...activity,
+    status: resolvePlannedActivityStatus(activity, statusContext),
+  }));
+}
+
+function buildInsightRefreshHint(params: {
+  trainingPlanId?: string | null;
+  changedDate?: string | null;
+  changeAt?: string;
+}): InsightRefreshHint {
+  const trainingPlanId = params.trainingPlanId ?? null;
+  const changedDate = params.changedDate ?? null;
+  const changeAt = params.changeAt ?? new Date().toISOString();
+
+  return {
+    training_plan_id: trainingPlanId,
+    changed_date: changedDate,
+    refresh_key: [
+      trainingPlanId || "adhoc",
+      changedDate || "none",
+      changeAt,
+    ].join(":"),
+  };
+}
 
 // Validation constraint schema
 const validateConstraintsSchema = z.object({
@@ -245,6 +441,11 @@ export const plannedActivitiesRouter = createTRPCRouter({
       return {
         ...data,
         wahooSync: wahooSyncResult,
+        insight_refresh_hint: buildInsightRefreshHint({
+          trainingPlanId: data.training_plan_id,
+          changedDate: data.scheduled_date,
+          changeAt: data.updated_at,
+        }),
       };
     }),
 
@@ -345,6 +546,11 @@ export const plannedActivitiesRouter = createTRPCRouter({
       return {
         ...data,
         wahooSync: wahooSyncResult,
+        insight_refresh_hint: buildInsightRefreshHint({
+          trainingPlanId: data.training_plan_id,
+          changedDate: data.scheduled_date,
+          changeAt: data.updated_at,
+        }),
       };
     }),
 
@@ -403,7 +609,14 @@ export const plannedActivitiesRouter = createTRPCRouter({
       if (error)
         throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
 
-      return { success: true };
+      return {
+        success: true,
+        insight_refresh_hint: buildInsightRefreshHint({
+          trainingPlanId: existing.training_plan_id,
+          changedDate: existing.scheduled_date,
+          changeAt: existing.updated_at,
+        }),
+      };
     }),
 
   // ------------------------------
@@ -505,8 +718,16 @@ export const plannedActivitiesRouter = createTRPCRouter({
         nextCursor = `${lastItem.scheduled_date}_${lastItem.id}`;
       }
 
+      const itemsWithStatus = await addPlannedActivityLifecycleStatus(
+        itemsWithEstimation,
+        {
+          supabase: ctx.supabase,
+          profileId: ctx.session.user.id,
+        },
+      );
+
       return {
-        items: itemsWithEstimation,
+        items: itemsWithStatus,
         nextCursor,
       };
     }),
@@ -836,14 +1057,22 @@ export const plannedActivitiesRouter = createTRPCRouter({
 
         // Map back to planned activities
         const plansMap = new Map(plansWithEstimation.map((p) => [p.id, p]));
-        return data.map((pa) => ({
+        const itemsWithEstimation = data.map((pa) => ({
           ...pa,
           activity_plan: pa.activity_plan
             ? plansMap.get(pa.activity_plan.id)
             : null,
         }));
+
+        return addPlannedActivityLifecycleStatus(itemsWithEstimation, {
+          supabase: ctx.supabase,
+          profileId: ctx.session.user.id,
+        });
       }
 
-      return data || [];
+      return addPlannedActivityLifecycleStatus(data || [], {
+        supabase: ctx.supabase,
+        profileId: ctx.session.user.id,
+      });
     }),
 });

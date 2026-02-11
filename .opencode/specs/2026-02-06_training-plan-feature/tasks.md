@@ -11,14 +11,17 @@ This checklist follows the chronological phase order in `./plan.md`.
 
 ### Scope and safety
 
-- [ ] Confirm no DB migrations are required in this phase.
-- [ ] Confirm additive schema strategy only (no root training-plan schema replacement).
-- [ ] Confirm feature flag strategy for staged rollout (`feature.trainingPlanInsightsMvp`).
+- [x] Confirm no DB migrations are required in this phase.
+- [x] Confirm additive schema strategy only (no root training-plan schema replacement).
+- [x] Confirm feature flag strategy for staged rollout (`feature.trainingPlanInsightsMvp`).
+- [x] Confirm training plan templates are excluded from this phase.
+- [x] Confirm activity series/collections are excluded from this phase.
+- [x] Confirm bulk scheduling workflows are excluded from this phase.
 
 ### Acceptance
 
-- [ ] Implementation plan explicitly states zero DB schema changes.
-- [ ] Backward compatibility expectations documented for existing plan records.
+- [x] Implementation plan explicitly states zero DB schema changes.
+- [x] Backward compatibility expectations documented for existing plan records.
 
 ---
 
@@ -26,28 +29,28 @@ This checklist follows the chronological phase order in `./plan.md`.
 
 ### Core schema updates
 
-- [ ] Update `packages/core/schemas/training_plan_structure.ts`:
-  - [ ] Ensure goal priority always exists (default when omitted).
-  - [ ] Ensure metric contracts use normalized units (`distance_m`, `target_time_s`, `target_speed_mps`).
-  - [ ] Ensure no raw pace-string contract reliance.
-- [ ] Update `packages/core/schemas/form-schemas.ts` with canonical form-layer schemas.
-- [ ] Update `packages/core/schemas/index.ts` exports for new/updated form schemas.
+- [x] Update `packages/core/schemas/training_plan_structure.ts`:
+  - [x] Ensure goal priority always exists (default when omitted).
+  - [x] Ensure metric contracts use normalized units (`distance_m`, `target_time_s`, `target_speed_mps`).
+  - [x] Ensure no raw pace-string contract reliance.
+- [x] Update `packages/core/schemas/form-schemas.ts` with canonical form-layer schemas.
+- [x] Update `packages/core/schemas/index.ts` exports for new/updated form schemas.
 
 ### Core helpers
 
-- [ ] Create `packages/core/plan/normalizeGoalInput.ts`.
-- [ ] Create `packages/core/plan/expandMinimalGoalToPlan.ts`.
-- [ ] Create `packages/core/plan/goalPriorityWeighting.ts`.
+- [x] Create `packages/core/plan/normalizeGoalInput.ts`.
+- [x] Create `packages/core/plan/expandMinimalGoalToPlan.ts`.
+- [x] Create `packages/core/plan/goalPriorityWeighting.ts`.
 
 ### Validation
 
-- [ ] Validate normalization and compatibility via schema checks and manual verification.
+- [x] Validate normalization and compatibility via schema checks and manual verification.
 
 ### Acceptance
 
-- [ ] Minimal input can compile to valid existing periodized structure.
-- [ ] Priority is guaranteed in normalized plan data.
-- [ ] Existing plan structures remain valid.
+- [x] Minimal input can compile to valid existing periodized structure.
+- [x] Priority is guaranteed in normalized plan data.
+- [x] Existing plan structures remain valid.
 
 ---
 
@@ -55,23 +58,23 @@ This checklist follows the chronological phase order in `./plan.md`.
 
 ### Training plan router
 
-- [ ] Update `packages/trpc/src/routers/training_plans.ts`:
-  - [ ] Add `getFeasibilityPreview`.
-  - [ ] Add `createFromMinimalGoal`.
-  - [ ] Add/complete `getInsightTimeline` canonical payload support.
-  - [ ] Return per-goal and plan-wide feasibility + safety assessments.
-  - [ ] Keep existing `create` and legacy endpoints backward compatible.
+- [x] Update `packages/trpc/src/routers/training_plans.ts`:
+  - [x] Add `getFeasibilityPreview`.
+  - [x] Add `createFromMinimalGoal`.
+  - [x] Add/complete `getInsightTimeline` canonical payload support.
+  - [x] Return per-goal and plan-wide feasibility + safety assessments.
+  - [x] Keep existing `create` and legacy endpoints backward compatible.
 
 ### Planned activities alignment
 
-- [ ] Update `packages/trpc/src/routers/planned_activities.ts`:
-  - [ ] Unify status interpretation helper usage.
-  - [ ] Ensure schedule updates can trigger fresh insight reads.
+- [x] Update `packages/trpc/src/routers/planned_activities.ts`:
+  - [x] Unify status interpretation helper usage.
+  - [x] Ensure schedule updates can trigger fresh insight reads.
 
 ### Acceptance
 
-- [ ] Minimal-create endpoint returns same record shape as existing create flow.
-- [ ] Feasibility/safety responses include both per-goal and plan-wide states with reasons.
+- [x] Minimal-create endpoint returns same record shape as existing create flow.
+- [x] Feasibility/safety responses include both per-goal and plan-wide states with reasons.
 
 ---
 
@@ -79,28 +82,28 @@ This checklist follows the chronological phase order in `./plan.md`.
 
 ### Default path simplification
 
-- [ ] Update `apps/mobile/app/(internal)/(standard)/training-plan-create.tsx`:
-  - [ ] Require only goal name + target date.
-  - [ ] Run feasibility preview before create.
-  - [ ] Show both per-goal and plan-wide feasibility/safety summaries before confirm.
-  - [ ] Submit through `createFromMinimalGoal`.
-  - [ ] Route successful create to training plan view.
-- [ ] Update `apps/mobile/components/training-plan/create/SinglePageForm.tsx`:
-  - [ ] Minimal default form section only.
-  - [ ] Optional collapsed precision helper.
-  - [ ] Remove upfront advanced-required validation.
+- [x] Update `apps/mobile/app/(internal)/(standard)/training-plan-create.tsx`:
+  - [x] Require only goal name + target date.
+  - [x] Run feasibility preview before create.
+  - [x] Show both per-goal and plan-wide feasibility/safety summaries before confirm.
+  - [x] Submit through `createFromMinimalGoal`.
+  - [x] Route successful create to training plan view.
+- [x] Update `apps/mobile/components/training-plan/create/SinglePageForm.tsx`:
+  - [x] Minimal default form section only.
+  - [x] Optional collapsed precision helper.
+  - [x] Remove upfront advanced-required validation.
 
 ### Route consolidation
 
-- [ ] Update `apps/mobile/app/(internal)/(standard)/training-plan-method-selector.tsx` to remove from default first-plan path.
-- [ ] Update `apps/mobile/app/(internal)/(standard)/training-plan-wizard.tsx` to advanced-only or retired state.
-- [ ] Update `apps/mobile/app/(internal)/(standard)/training-plan-review.tsx` to lightweight confirm or retired state.
+- [x] Update `apps/mobile/app/(internal)/(standard)/training-plan-method-selector.tsx` to remove from default first-plan path.
+- [x] Update `apps/mobile/app/(internal)/(standard)/training-plan-wizard.tsx` to advanced-only or retired state.
+- [x] Update `apps/mobile/app/(internal)/(standard)/training-plan-review.tsx` to lightweight confirm or retired state.
 
 ### Acceptance
 
-- [ ] One default training-plan create entry in navigation.
-- [ ] First plan can be created with only required inputs.
-- [ ] Advanced configuration is post-create.
+- [x] One default training-plan create entry in navigation.
+- [x] First plan can be created with only required inputs.
+- [x] Advanced configuration is post-create.
 
 ---
 
@@ -108,23 +111,23 @@ This checklist follows the chronological phase order in `./plan.md`.
 
 ### Plan tab updates
 
-- [ ] Update `apps/mobile/app/(internal)/(tabs)/plan.tsx`:
-  - [ ] Status summary + boundary/feasibility visibility at both goal and plan-wide levels.
-  - [ ] Dynamic refresh on active plan updates.
-  - [ ] No manual recalculate control.
-- [ ] Update `apps/mobile/components/charts/PlanVsActualChart.tsx`.
-- [ ] Update `apps/mobile/components/charts/TrainingLoadChart.tsx`.
+- [x] Update `apps/mobile/app/(internal)/(tabs)/plan.tsx`:
+  - [x] Status summary + boundary/feasibility visibility at both goal and plan-wide levels.
+  - [x] Dynamic refresh on active plan updates.
+  - [x] No manual recalculate control.
+- [x] Update `apps/mobile/components/charts/PlanVsActualChart.tsx`.
+- [x] Update `apps/mobile/components/charts/TrainingLoadChart.tsx`.
 
 ### Supporting UI components
 
-- [ ] Create `apps/mobile/components/plan/PlanStatusSummaryCard.tsx`.
-- [ ] Create `apps/mobile/components/plan/PlanAdherenceMiniChart.tsx`.
-- [ ] Create `apps/mobile/components/plan/PlanCapabilityMiniChart.tsx`.
+- [x] Create `apps/mobile/components/plan/PlanStatusSummaryCard.tsx`.
+- [x] Create `apps/mobile/components/plan/PlanAdherenceMiniChart.tsx`.
+- [x] Create `apps/mobile/components/plan/PlanCapabilityMiniChart.tsx`.
 
 ### Acceptance
 
-- [ ] Ideal/Scheduled/Actual + adherence visible in one scroll.
-- [ ] Lightweight interactions only (no long-press modal patterns).
+- [x] Ideal/Scheduled/Actual + adherence visible in one scroll.
+- [x] Lightweight interactions only (no long-press modal patterns).
 
 ---
 
@@ -132,23 +135,23 @@ This checklist follows the chronological phase order in `./plan.md`.
 
 ### Activity-plan authoring
 
-- [ ] Update `apps/mobile/app/(internal)/(standard)/create-activity-plan.tsx`.
-- [ ] Update `apps/mobile/app/(internal)/(standard)/create-activity-plan-structure.tsx`.
-- [ ] Update `apps/mobile/app/(internal)/(standard)/create-activity-plan-repeat.tsx`.
-- [ ] Update `apps/mobile/lib/hooks/forms/useActivityPlanForm.ts` for cleaner schema-driven form flow.
-- [ ] Update `apps/mobile/lib/stores/activityPlanCreation.ts` to reduce flow fragmentation.
+- [x] Update `apps/mobile/app/(internal)/(standard)/create-activity-plan.tsx`.
+- [x] Update `apps/mobile/app/(internal)/(standard)/create-activity-plan-structure.tsx`.
+- [x] Update `apps/mobile/app/(internal)/(standard)/create-activity-plan-repeat.tsx`.
+- [x] Update `apps/mobile/lib/hooks/forms/useActivityPlanForm.ts` for cleaner schema-driven form flow.
+- [x] Update `apps/mobile/lib/stores/activityPlanCreation.ts` to reduce flow fragmentation.
 
 ### Scheduling from detail/calendar
 
-- [ ] Update `apps/mobile/app/(internal)/(standard)/activity-plan-detail.tsx`.
-- [ ] Update `apps/mobile/components/ScheduleActivityModal.tsx`.
-- [ ] Update `apps/mobile/app/(internal)/(standard)/scheduled-activities-list.tsx`.
-- [ ] Update `apps/mobile/app/(internal)/(standard)/scheduled-activity-detail.tsx`.
+- [x] Update `apps/mobile/app/(internal)/(standard)/activity-plan-detail.tsx`.
+- [x] Update `apps/mobile/components/ScheduleActivityModal.tsx`.
+- [x] Update `apps/mobile/app/(internal)/(standard)/scheduled-activities-list.tsx`.
+- [x] Update `apps/mobile/app/(internal)/(standard)/scheduled-activity-detail.tsx`.
 
 ### Acceptance
 
-- [ ] Scheduling from activity detail is clear and low-friction.
-- [ ] Schedule changes reflect quickly in plan insight surfaces.
+- [x] Scheduling from activity detail is clear and low-friction.
+- [x] Schedule changes reflect quickly in plan insight surfaces.
 
 ---
 
@@ -180,3 +183,6 @@ This checklist follows the chronological phase order in `./plan.md`.
 - [ ] Goal priority always present and used in conflict-aware weighting.
 - [ ] No recommendation-engine or auto-prescription behavior introduced.
 - [ ] No DB schema migration introduced.
+- [ ] No training plan template feature work added in this phase.
+- [ ] No activity series/collections feature work added in this phase.
+- [ ] No bulk activity scheduling feature work added in this phase.

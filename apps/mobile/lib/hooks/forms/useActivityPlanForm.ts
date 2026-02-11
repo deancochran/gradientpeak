@@ -1,4 +1,7 @@
-import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
+import {
+  createMinimalActivityPlanStructure,
+  useActivityPlanCreationStore,
+} from "@/lib/stores/activityPlanCreation";
 import { trpc } from "@/lib/trpc";
 import { getErrorMessage, showErrorAlert } from "@/lib/utils/formErrors";
 import {
@@ -168,52 +171,55 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
   }, [structure]);
 
   // Validation
-  const validate = useCallback(() => {
-    try {
-      activityPlanCreateFormSchema.parse({
-        name,
-        description: description || null,
-        activity_location: activityLocation,
-        activity_category: activityCategory,
-        route_id: routeId || null,
-        notes: notes || null,
-        structure,
-      });
-      return { isValid: true, errors: {} };
-    } catch (error: any) {
-      if (error?.issues) {
-        const errors: Record<string, string> = {};
-        error.issues.forEach((err: any) => {
-          if (err.path[0]) {
-            errors[err.path[0] as string] = err.message;
-          }
+  const validate = useCallback(
+    (structureOverride = structure) => {
+      try {
+        activityPlanCreateFormSchema.parse({
+          name,
+          description: description || null,
+          activity_location: activityLocation,
+          activity_category: activityCategory,
+          route_id: routeId || null,
+          notes: notes || null,
+          structure: structureOverride,
         });
-        return { isValid: false, errors };
+        return { isValid: true, errors: {} };
+      } catch (error: any) {
+        if (error?.issues) {
+          const errors: Record<string, string> = {};
+          error.issues.forEach((err: any) => {
+            if (err.path[0]) {
+              errors[err.path[0] as string] = err.message;
+            }
+          });
+          return { isValid: false, errors };
+        }
+        return { isValid: false, errors: { general: getErrorMessage(error) } };
       }
-      return { isValid: false, errors: { general: getErrorMessage(error) } };
-    }
-  }, [
-    name,
-    description,
-    activityLocation,
-    activityCategory,
-    structure,
-    routeId,
-    notes,
-  ]);
+    },
+    [
+      name,
+      description,
+      activityLocation,
+      activityCategory,
+      structure,
+      routeId,
+      notes,
+    ],
+  );
 
   // Submit handler
   const submit = useCallback(async () => {
-    // Check for empty structure first
-    if (!structure.intervals || structure.intervals.length === 0) {
-      Alert.alert(
-        "Activity Structure Required",
-        "Please add at least one interval to your activity plan before saving.",
-      );
-      return null;
+    const structureToSubmit =
+      structure.intervals && structure.intervals.length > 0
+        ? structure
+        : createMinimalActivityPlanStructure(name.trim() || "Main Activity");
+
+    if (structureToSubmit !== structure) {
+      useActivityPlanCreationStore.setState({ structure: structureToSubmit });
     }
 
-    const validation = validate();
+    const validation = validate(structureToSubmit);
     if (!validation.isValid) {
       const firstError = Object.values(validation.errors)[0];
       Alert.alert("Please Check Your Input", firstError);
@@ -227,7 +233,7 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
           description && description.trim() !== "" ? description : null,
         activity_location: activityLocation as any,
         activity_category: activityCategory as any,
-        structure,
+        structure: structureToSubmit,
         route_id: routeId || null,
         notes: notes && notes.trim() !== "" ? notes : null,
         // estimated_duration and estimated_tss are now calculated server-side
@@ -256,7 +262,6 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     activityLocation,
     activityCategory,
     structure,
-    metrics,
     routeId,
     notes,
     isEditMode,

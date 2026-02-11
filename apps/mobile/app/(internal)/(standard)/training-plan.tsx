@@ -28,7 +28,10 @@ import {
 export default function TrainingPlanOverview() {
   const router = useRouter();
   const utils = trpc.useUtils();
-  const { id } = useLocalSearchParams<{ id?: string }>();
+  const { id, nextStep } = useLocalSearchParams<{
+    id?: string;
+    nextStep?: string;
+  }>();
 
   // Get training plan - if ID is provided, get specific plan, otherwise get active plan
   const { data: plan, isLoading: loadingPlan } =
@@ -132,8 +135,14 @@ export default function TrainingPlanOverview() {
   };
 
   const handleCreatePlan = () => {
-    router.push(ROUTES.PLAN.TRAINING_PLAN.METHOD_SELECTOR);
+    router.push(ROUTES.PLAN.TRAINING_PLAN.CREATE);
   };
+
+  React.useEffect(() => {
+    if (!loadingPlan && !plan && !id) {
+      router.replace(ROUTES.PLAN.TRAINING_PLAN.CREATE as any);
+    }
+  }, [id, loadingPlan, plan, router]);
 
   // Derive plan progress
   const planProgress = useMemo(() => {
@@ -168,6 +177,17 @@ export default function TrainingPlanOverview() {
 
   // No training plan - show empty state
   if (!plan) {
+    if (!id) {
+      return (
+        <View className="flex-1 bg-background items-center justify-center">
+          <ActivityIndicator size="large" />
+          <Text className="text-muted-foreground mt-4">
+            Opening plan creation...
+          </Text>
+        </View>
+      );
+    }
+
     return (
       <ScrollView
         className="flex-1 bg-background"
@@ -266,6 +286,20 @@ export default function TrainingPlanOverview() {
       <View className="flex-1 p-4 gap-4">
         {/* Header with Plan Name and Actions */}
         <View className="mb-4">
+          {nextStep === "refine" && (
+            <Card className="border-primary/40 bg-primary/5 mb-4">
+              <CardContent className="p-3">
+                <Text className="text-sm text-primary font-semibold">
+                  Refine Plan
+                </Text>
+                <Text className="text-xs text-muted-foreground mt-1">
+                  Your plan is ready. Open plan settings any time to adjust
+                  constraints, targets, and details.
+                </Text>
+              </CardContent>
+            </Card>
+          )}
+
           <View className="flex-row items-start justify-between mb-3">
             <View className="flex-1">
               <Text className="text-2xl font-bold mb-2">{plan.name}</Text>
