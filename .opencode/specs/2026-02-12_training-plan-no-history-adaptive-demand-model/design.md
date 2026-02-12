@@ -13,6 +13,7 @@ Define a dynamic, programmatic no-history planning model that:
 3. Uses intrinsic goal demand properties (distance, target outcome, sport) to determine required race-day capability.
 4. Builds weekly load progressively toward that demand, instead of applying static floors or one-off spikes.
 5. Adapts as new evidence arrives, with deterministic behavior and transparent reasoning.
+6. Avoids assuming one identical race-day CTL requirement for all users with the same goal.
 
 ## Problem Statement
 
@@ -34,6 +35,7 @@ This creates an untrustworthy user experience, especially for demanding goals (f
 4. Deterministic and explainable: same inputs produce same trajectory and reason tokens.
 5. Safety invariant: ramp caps, recovery, and taper semantics remain authoritative.
 6. Preview/create parity: one shared engine path and one shared contract.
+7. Readiness is multi-factor; CTL is informative but not solely decisive.
 
 ## Scope
 
@@ -65,10 +67,28 @@ Compute a `goal_demand_profile` from each goal target using intrinsic properties
 
 Output (per goal):
 
-1. `required_event_ctl_range` (min, target, stretch).
+1. `required_event_demand_range` (min, target, stretch) as capability envelope.
 2. `required_peak_weekly_tss_range`.
 3. `required_build_weeks` and minimum feasible ramp envelope.
 4. `demand_confidence` and rationale codes.
+
+Notes:
+
+1. CTL remains a core state variable but is not a universal race-readiness endpoint.
+2. Different users can achieve the same race result with different CTL and load distributions.
+
+### 1b) Chained Default Estimation (No-History)
+
+Replace direct goal-to-CTL anchoring with a deterministic chained estimator:
+
+1. Parse goal/target into event demand score and expected event duration.
+2. Map demand + sport profile to session-dose requirements.
+3. Apply availability and constraints to produce feasible weekly dose envelope.
+4. Initialize conservative start state (`never_trained`) unless user override exists.
+5. Progress weekly load through capped adaptation toward demand envelope.
+6. Emit readiness and demand-gap outputs with confidence.
+
+This chain avoids brittle fixed CTL assumptions while staying deterministic.
 
 ### 2) Athlete State Model (No-History Prior)
 
@@ -84,7 +104,7 @@ For `history_availability_state === "none"`:
 Generate weekly load path with two simultaneous targets:
 
 1. **Near-term adaptation target**: feasible weekly progression from current state.
-2. **Goal-demand target**: required trajectory to reach event capability on time.
+2. **Goal-demand target**: required trajectory to reach event capability band on time.
 
 Weekly requested load is the deterministic blend of:
 
@@ -96,11 +116,27 @@ Weekly requested load is the deterministic blend of:
 
 If required demand exceeds feasible capped growth, mark infeasible pressure explicitly rather than silently under-targeting.
 
+### 4) Multi-factor Readiness (Not CTL-only)
+
+Race-day readiness should be derived from chained state features, not CTL alone:
+
+1. recent load consistency,
+2. progression trend and cap pressure,
+3. event-specific long-session exposure,
+4. recovery compliance,
+5. modeled fitness state (including CTL).
+
+Projection output should include:
+
+1. `readiness_band` (`low | medium | high`) per goal,
+2. `demand_gap` (required vs feasible),
+3. `dominant_limiters` reason tokens.
+
 ## Core Equations (V1)
 
 1. `steady_state_ctl ~= weekly_tss / 7`
-2. `required_ctl_progress(t) = interpolate(start_ctl, target_event_ctl, t / weeks_to_event)`
-3. `required_weekly_tss_progress(t) = round(7 * required_ctl_progress(t))`
+2. `required_demand_progress(t) = interpolate(start_demand_state, target_demand_band, t / weeks_to_event)`
+3. `demand_floor_weekly_tss_progress(t) = map_demand_state_to_weekly_tss(required_demand_progress(t), sport_profile)`
 4. `requested_weekly_tss(t) = max(base_request(t), adaptation_floor(t), demand_floor(t))`
 5. `applied_weekly_tss(t) = clamp_by_existing_ramp_caps_and_recovery(requested_weekly_tss(t))`
 
@@ -127,13 +163,14 @@ Add/maintain non-breaking metadata in projection payload:
 1. `no_history.starting_ctl_for_projection`
 2. `no_history.starting_weekly_tss_for_projection`
 3. `no_history.goal_demand_profile` (compact summary)
-4. `no_history.required_event_ctl`
+4. `no_history.required_event_demand_range`
 5. `no_history.required_peak_weekly_tss`
 6. `microcycle.metadata.tss_ramp.raw_requested_weekly_tss`
 7. `microcycle.metadata.tss_ramp.floor_override_applied`
 8. `microcycle.metadata.tss_ramp.weekly_load_override_reason`
 9. `microcycle.metadata.tss_ramp.floor_minimum_weekly_tss`
 10. `projection_feasibility.demand_gap` (required vs feasible under caps)
+11. `projection_feasibility.readiness_band`
 
 Contract rule:
 
@@ -176,16 +213,18 @@ Return concise reason tokens for major decisions:
 ## Acceptance Criteria
 
 1. No-history users with demanding goals no longer show immediate CTL collapse after start.
-2. Weekly load trajectories progress toward goal demand unless constrained by safety caps or availability.
+2. Weekly load trajectories progress toward goal demand bands unless constrained by safety caps or availability.
 3. If constrained, payload explicitly reports why and by how much (`demand_gap`, override reason tokens).
 4. Optional starting CTL override is supported end-to-end for no-history users.
 5. Preview/create parity holds for projection outputs and metadata.
 6. Existing safety semantics (ramp caps, recovery/taper) remain intact.
+7. Readiness outputs are multi-factor and not represented by CTL alone.
 
 ## Minimal Implementation Checklist
 
 - [ ] Add intrinsic goal demand scorer in core (target-aware, sport-aware).
-- [ ] Add required race-day capability estimator (`required_event_ctl`, `required_peak_weekly_tss`).
+- [ ] Add chained default estimator from goal demand -> session/load demand band -> readiness projection.
+- [ ] Add required race-day demand estimator (`required_event_demand_range`, `required_peak_weekly_tss`).
 - [ ] Add adaptive weekly demand trajectory floor that persists through build horizon.
 - [ ] Keep no-history default start at never-trained state; support optional start override.
 - [ ] Emit explicit override and feasibility-pressure metadata.
