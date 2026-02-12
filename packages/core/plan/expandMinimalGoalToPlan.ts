@@ -12,6 +12,7 @@ import {
   normalizeGoalInput,
 } from "./normalizeGoalInput";
 import { derivePlanTimeline } from "./derivePlanTimeline";
+import { addDaysDateOnlyUtc, diffDateOnlyUtcDays } from "./dateOnlyUtc";
 
 type ActivityDistributionInput = Partial<Record<string, number>>;
 
@@ -59,7 +60,9 @@ export function expandMinimalGoalToPlan(
   let cursor = startDate;
   const blocks: TrainingBlock[] = phases.map((phase, index) => {
     const isLast = index === phases.length - 1;
-    const blockEndDate = isLast ? endDate : addDaysUtc(cursor, phase.days - 1);
+    const blockEndDate = isLast
+      ? endDate
+      : addDaysDateOnlyUtc(cursor, phase.days - 1);
     const baseWeeklyTss = Math.max(
       50,
       Math.round((options.startingCtl ?? 40) * 7),
@@ -82,7 +85,7 @@ export function expandMinimalGoalToPlan(
       target_sessions_per_week_range: phase.sessionsRange,
     };
 
-    cursor = addDaysUtc(blockEndDate, 1);
+    cursor = addDaysDateOnlyUtc(blockEndDate, 1);
     return block;
   });
 
@@ -207,24 +210,7 @@ function normalizeActivityDistribution(
 }
 
 function diffDaysInclusive(startDate: string, endDate: string): number {
-  const start = parseDateOnlyUtc(startDate).getTime();
-  const end = parseDateOnlyUtc(endDate).getTime();
-  const dayMs = 24 * 60 * 60 * 1000;
-  return Math.floor((end - start) / dayMs) + 1;
-}
-
-function addDaysUtc(dateString: string, days: number): string {
-  const date = parseDateOnlyUtc(dateString);
-  date.setUTCDate(date.getUTCDate() + days);
-  return formatDateOnlyUtc(date);
-}
-
-function parseDateOnlyUtc(date: string): Date {
-  return new Date(`${date}T00:00:00.000Z`);
-}
-
-function formatDateOnlyUtc(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  return diffDateOnlyUtcDays(startDate, endDate) + 1;
 }
 
 function getPrimaryGoal(goals: TrainingGoal[]): TrainingGoal {

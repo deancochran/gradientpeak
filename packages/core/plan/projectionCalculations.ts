@@ -1,4 +1,7 @@
 import { calculateCTL } from "../calculations";
+import type { CreationContextSummary } from "../schemas/training_plan_structure";
+import { countAvailableTrainingDays } from "./availabilityUtils";
+import { addDaysDateOnlyUtc, diffDateOnlyUtcDays } from "./dateOnlyUtc";
 
 export type ProjectionWeekPattern = "ramp" | "deload" | "taper" | "event";
 export type ProjectionMicrocyclePattern = ProjectionWeekPattern | "recovery";
@@ -33,6 +36,134 @@ interface GoalPatternInfluence {
 const MIN_GOAL_PRIORITY = 1;
 const MAX_GOAL_PRIORITY = 10;
 
+export type NoHistoryFitnessLevel = "weak" | "strong";
+export type NoHistoryGoalTier = "low" | "medium" | "high";
+export type BuildTimeFeasibility = "full" | "limited" | "insufficient";
+export type ProjectionFloorConfidence = "high" | "medium" | "low";
+
+export interface NoHistoryAvailabilityContext {
+  availability_days: Array<{
+    day: string;
+    windows: Array<{
+      start_minute_of_day: number;
+      end_minute_of_day: number;
+    }>;
+    max_sessions?: number;
+  }>;
+  hard_rest_days?: string[];
+  max_single_session_duration_minutes?: number;
+}
+
+export interface NoHistoryIntensityModel {
+  version: string;
+  weak_if: number;
+  strong_if: number;
+  conservative_if: number;
+}
+
+export interface NoHistoryAnchorContext {
+  history_availability_state: "none" | "sparse" | "rich";
+  goal_tier: NoHistoryGoalTier;
+  weeks_to_event: number;
+  total_horizon_weeks?: number;
+  goal_count?: number;
+  starting_ctl_override?: number;
+  context_summary?: CreationContextSummary;
+  availability_context?: NoHistoryAvailabilityContext;
+  intensity_model?: Partial<NoHistoryIntensityModel>;
+}
+
+export type NoHistoryGoalTargetInput =
+  | {
+      target_type: "race_performance";
+      distance_m: number;
+    }
+  | {
+      target_type: "pace_threshold";
+    }
+  | {
+      target_type: "power_threshold";
+    }
+  | {
+      target_type: "hr_threshold";
+    };
+
+export interface NoHistoryEvidence {
+  strong_signal_tokens: string[];
+  rationale_codes: string[];
+}
+
+export interface NoHistoryFitnessInference {
+  fitnessLevel: NoHistoryFitnessLevel;
+  reasons: string[];
+}
+
+export interface NoHistoryProjectionFloor {
+  goalTier: NoHistoryGoalTier;
+  fitnessLevel: NoHistoryFitnessLevel;
+  start_ctl_floor: number;
+  start_weekly_tss_floor: number;
+  target_event_ctl: number;
+}
+
+export interface NoHistoryProjectionFloorClampResult {
+  start_ctl: number;
+  start_weekly_tss: number;
+  floor_clamped_by_availability: boolean;
+  reasons: string[];
+  assumed_intensity_model_version: string;
+}
+
+export interface NoHistoryAnchorResolution {
+  projection_floor_applied: boolean;
+  projection_floor_values: {
+    start_ctl: number;
+    start_weekly_tss: number;
+  } | null;
+  fitness_level: NoHistoryFitnessLevel | null;
+  fitness_inference_reasons: string[];
+  projection_floor_confidence: ProjectionFloorConfidence | null;
+  floor_clamped_by_availability: boolean;
+  projection_floor_tier: NoHistoryGoalTier | null;
+  starting_state_is_prior: boolean;
+  target_event_ctl: number | null;
+  weeks_to_event: number | null;
+  periodization_feasibility: BuildTimeFeasibility | null;
+  build_phase_warnings: string[];
+  assumed_intensity_model_version: string | null;
+  starting_ctl_for_projection: number | null;
+  starting_weekly_tss_for_projection: number | null;
+}
+
+const NO_HISTORY_DEFAULT_INTENSITY_MODEL: NoHistoryIntensityModel = {
+  version: "no_history_intensity_v1",
+  weak_if: 0.68,
+  strong_if: 0.75,
+  conservative_if: 0.65,
+};
+
+const NO_HISTORY_DAYS_UNTIL_RELIABLE_PROJECTION = 42;
+const NO_HISTORY_DEFAULT_STARTING_CTL = 0;
+
+const NO_HISTORY_PROJECTION_FLOOR_MATRIX: Record<
+  NoHistoryFitnessLevel,
+  Record<
+    NoHistoryGoalTier,
+    { start_ctl_floor: number; target_event_ctl: number }
+  >
+> = {
+  weak: {
+    low: { start_ctl_floor: 20, target_event_ctl: 35 },
+    medium: { start_ctl_floor: 28, target_event_ctl: 50 },
+    high: { start_ctl_floor: 35, target_event_ctl: 70 },
+  },
+  strong: {
+    low: { start_ctl_floor: 30, target_event_ctl: 45 },
+    medium: { start_ctl_floor: 40, target_event_ctl: 60 },
+    high: { start_ctl_floor: 50, target_event_ctl: 85 },
+  },
+};
+
 export function weeklyLoadFromBlockAndBaseline(
   block:
     | {
@@ -52,10 +183,365 @@ export function weeklyLoadFromBlockAndBaseline(
 }
 
 function diffDays(startDate: string, endDate: string): number {
-  const start = new Date(`${startDate}T00:00:00.000Z`).getTime();
-  const end = new Date(`${endDate}T00:00:00.000Z`).getTime();
-  const dayMs = 24 * 60 * 60 * 1000;
-  return Math.floor((end - start) / dayMs);
+  return diffDateOnlyUtcDays(startDate, endDate);
+}
+
+function deriveWeeklyTssFromCtl(ctl: number): number {
+  return Math.round(ctl * 7);
+}
+
+function roundWeeksToEvent(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.floor(value));
+}
+
+/**
+ * Collects deterministic no-history evidence from context summary markers.
+ */
+export function collectNoHistoryEvidence(
+  context: Pick<NoHistoryAnchorContext, "context_summary">,
+): NoHistoryEvidence {
+  const summary = context.context_summary;
+  const strongSignals: string[] = [];
+
+  if (summary?.recent_consistency_marker === "high") {
+    strongSignals.push("strong_consistency_marker");
+  }
+
+  if (summary?.effort_confidence_marker === "high") {
+    strongSignals.push("strong_effort_marker");
+  }
+
+  if (summary?.profile_metric_completeness_marker === "high") {
+    strongSignals.push("strong_profile_metrics_marker");
+  }
+
+  if ((summary?.signal_quality ?? 0) >= 0.8) {
+    strongSignals.push("strong_signal_quality_score");
+  }
+
+  return {
+    strong_signal_tokens: [...new Set(strongSignals)],
+    rationale_codes: summary?.rationale_codes ?? [],
+  };
+}
+
+/**
+ * Infers no-history fitness class.
+ * Defaults to weak unless at least two independent strong signals exist.
+ */
+export function determineNoHistoryFitnessLevel(
+  evidence: NoHistoryEvidence,
+): NoHistoryFitnessInference {
+  if (evidence.strong_signal_tokens.length >= 2) {
+    return {
+      fitnessLevel: "strong",
+      reasons: [
+        ...evidence.strong_signal_tokens,
+        "fitness_promoted_to_strong_two_independent_signals",
+      ],
+    };
+  }
+
+  return {
+    fitnessLevel: "weak",
+    reasons: [
+      ...evidence.strong_signal_tokens,
+      "fitness_defaulted_to_weak_insufficient_strong_signals",
+    ],
+  };
+}
+
+/**
+ * Derives canonical no-history CTL and weekly TSS floors.
+ */
+export function deriveNoHistoryProjectionFloor(
+  goalTier: NoHistoryGoalTier,
+  fitnessLevel: NoHistoryFitnessLevel,
+): NoHistoryProjectionFloor {
+  const row = NO_HISTORY_PROJECTION_FLOOR_MATRIX[fitnessLevel][goalTier];
+  const startCtlFloor = row.start_ctl_floor;
+
+  return {
+    goalTier,
+    fitnessLevel,
+    start_ctl_floor: startCtlFloor,
+    start_weekly_tss_floor: deriveWeeklyTssFromCtl(startCtlFloor),
+    target_event_ctl: row.target_event_ctl,
+  };
+}
+
+/**
+ * Clamps no-history floors by available weekly duration and assumed intensity.
+ */
+export function clampNoHistoryFloorByAvailability(
+  floor: NoHistoryProjectionFloor,
+  availabilityContext: NoHistoryAvailabilityContext | undefined,
+  intensityModel: Partial<NoHistoryIntensityModel> | undefined,
+): NoHistoryProjectionFloorClampResult {
+  const mergedIntensityModel: NoHistoryIntensityModel = {
+    ...NO_HISTORY_DEFAULT_INTENSITY_MODEL,
+    ...intensityModel,
+  };
+
+  if (!availabilityContext) {
+    return {
+      start_ctl: floor.start_ctl_floor,
+      start_weekly_tss: floor.start_weekly_tss_floor,
+      floor_clamped_by_availability: false,
+      reasons: ["availability_missing_skip_floor_clamp"],
+      assumed_intensity_model_version: mergedIntensityModel.version,
+    };
+  }
+
+  const hardRestDays = availabilityContext.hard_rest_days ?? [];
+  const availableTrainingDays = countAvailableTrainingDays({
+    availabilityDays: availabilityContext.availability_days,
+    hardRestDays,
+  });
+
+  const cappedSessionMinutes =
+    availabilityContext.max_single_session_duration_minutes;
+
+  const totalAvailableMinutes = availabilityContext.availability_days.reduce(
+    (sum, day) => {
+      if (hardRestDays.includes(day.day)) {
+        return sum;
+      }
+
+      const dayMinutes = day.windows.reduce((windowSum, window) => {
+        const windowDuration = Math.max(
+          0,
+          window.end_minute_of_day - window.start_minute_of_day,
+        );
+        const cappedDuration =
+          cappedSessionMinutes === undefined
+            ? windowDuration
+            : Math.min(windowDuration, cappedSessionMinutes);
+        return windowSum + cappedDuration;
+      }, 0);
+
+      return sum + dayMinutes;
+    },
+    0,
+  );
+
+  const intensityFactor =
+    floor.fitnessLevel === "strong"
+      ? mergedIntensityModel.strong_if
+      : mergedIntensityModel.weak_if;
+  const safeIntensityFactor = Number.isFinite(intensityFactor)
+    ? intensityFactor
+    : mergedIntensityModel.conservative_if;
+
+  const feasibleWeeklyTss = Math.max(
+    0,
+    Math.round((totalAvailableMinutes / 60) * 100 * safeIntensityFactor ** 2),
+  );
+  const clampedWeeklyTss = Math.min(
+    floor.start_weekly_tss_floor,
+    feasibleWeeklyTss,
+  );
+  const clampedStartCtl = round1(clampedWeeklyTss / 7);
+  const derivedWeeklyFromCtl = deriveWeeklyTssFromCtl(clampedStartCtl);
+  const floorClamped = derivedWeeklyFromCtl < floor.start_weekly_tss_floor;
+
+  const reasons = [`availability_training_days_${availableTrainingDays}`];
+  if (
+    intensityModel?.weak_if === undefined ||
+    intensityModel?.strong_if === undefined
+  ) {
+    reasons.push("intensity_model_missing_using_conservative_baseline");
+  }
+  if (floorClamped) {
+    reasons.push("floor_clamped_by_availability");
+  }
+
+  return {
+    start_ctl: clampedStartCtl,
+    start_weekly_tss: derivedWeeklyFromCtl,
+    floor_clamped_by_availability: floorClamped,
+    reasons,
+    assumed_intensity_model_version: mergedIntensityModel.version,
+  };
+}
+
+export function classifyBuildTimeFeasibility(
+  goalTier: NoHistoryGoalTier,
+  weeksToEvent: number,
+): BuildTimeFeasibility {
+  const safeWeeks = roundWeeksToEvent(weeksToEvent);
+
+  if (goalTier === "high") {
+    if (safeWeeks >= 16) return "full";
+    if (safeWeeks >= 12) return "limited";
+    return "insufficient";
+  }
+
+  if (goalTier === "medium") {
+    if (safeWeeks >= 12) return "full";
+    if (safeWeeks >= 8) return "limited";
+    return "insufficient";
+  }
+
+  if (safeWeeks >= 8) return "full";
+  if (safeWeeks >= 6) return "limited";
+  return "insufficient";
+}
+
+export function mapFeasibilityToConfidence(
+  feasibility: BuildTimeFeasibility,
+): ProjectionFloorConfidence {
+  if (feasibility === "full") return "high";
+  if (feasibility === "limited") return "medium";
+  return "low";
+}
+
+export function deriveNoHistoryGoalTierFromTargets(
+  targets: NoHistoryGoalTargetInput[],
+): NoHistoryGoalTier {
+  if (targets.length === 0) {
+    return "medium";
+  }
+
+  let hasMediumDemandSignal = false;
+
+  for (const target of targets) {
+    if (target.target_type === "race_performance") {
+      if (target.distance_m >= 30000) {
+        return "high";
+      }
+
+      if (target.distance_m >= 10000) {
+        hasMediumDemandSignal = true;
+      }
+      continue;
+    }
+
+    hasMediumDemandSignal = true;
+  }
+
+  return hasMediumDemandSignal ? "medium" : "low";
+}
+
+/**
+ * Resolves deterministic no-history floor anchor metadata.
+ */
+export function resolveNoHistoryAnchor(
+  context: NoHistoryAnchorContext,
+): NoHistoryAnchorResolution {
+  if (context.history_availability_state !== "none") {
+    return {
+      projection_floor_applied: false,
+      projection_floor_values: null,
+      fitness_level: null,
+      fitness_inference_reasons: ["no_history_gate_inactive"],
+      projection_floor_confidence: null,
+      floor_clamped_by_availability: false,
+      projection_floor_tier: null,
+      starting_state_is_prior: false,
+      target_event_ctl: null,
+      weeks_to_event: null,
+      periodization_feasibility: null,
+      build_phase_warnings: [],
+      assumed_intensity_model_version: null,
+      starting_ctl_for_projection: null,
+      starting_weekly_tss_for_projection: null,
+    };
+  }
+
+  const evidence = collectNoHistoryEvidence(context);
+  const fitness = determineNoHistoryFitnessLevel(evidence);
+  const floor = deriveNoHistoryProjectionFloor(
+    context.goal_tier,
+    fitness.fitnessLevel,
+  );
+  const clamped = clampNoHistoryFloorByAvailability(
+    floor,
+    context.availability_context,
+    context.intensity_model,
+  );
+  const periodizationFeasibility = classifyBuildTimeFeasibility(
+    context.goal_tier,
+    context.weeks_to_event,
+  );
+  let confidence = mapFeasibilityToConfidence(periodizationFeasibility);
+  const confidenceReasons: string[] = [];
+
+  if (fitness.fitnessLevel === "weak" && confidence === "high") {
+    confidence = "medium";
+    confidenceReasons.push("confidence_downgraded_weak_fitness_inference");
+  }
+
+  if ((context.goal_count ?? 1) > 1) {
+    if (confidence === "high") {
+      confidence = "medium";
+    }
+    confidenceReasons.push("confidence_downgraded_multi_goal_plan");
+  }
+
+  if ((context.total_horizon_weeks ?? context.weeks_to_event) > 52) {
+    if (confidence === "high") {
+      confidence = "medium";
+    }
+    confidenceReasons.push("confidence_downgraded_long_horizon");
+  }
+
+  if (clamped.floor_clamped_by_availability && confidence === "high") {
+    confidence = "medium";
+    confidenceReasons.push("confidence_downgraded_availability_clamped");
+  }
+
+  const hasStartingCtlOverride =
+    Number.isFinite(context.starting_ctl_override) &&
+    (context.starting_ctl_override ?? 0) >= 0;
+  const startingCtlForProjection = round1(
+    hasStartingCtlOverride
+      ? (context.starting_ctl_override ?? NO_HISTORY_DEFAULT_STARTING_CTL)
+      : NO_HISTORY_DEFAULT_STARTING_CTL,
+  );
+  const startingWeeklyTssForProjection = deriveWeeklyTssFromCtl(
+    startingCtlForProjection,
+  );
+
+  return {
+    projection_floor_applied: true,
+    projection_floor_values: {
+      start_ctl: clamped.start_ctl,
+      start_weekly_tss: clamped.start_weekly_tss,
+    },
+    fitness_level: fitness.fitnessLevel,
+    fitness_inference_reasons: [
+      ...fitness.reasons,
+      ...evidence.rationale_codes,
+      ...clamped.reasons,
+      ...confidenceReasons,
+      hasStartingCtlOverride
+        ? "starting_ctl_override_applied"
+        : "starting_ctl_defaulted_never_trained",
+    ],
+    projection_floor_confidence: confidence,
+    floor_clamped_by_availability: clamped.floor_clamped_by_availability,
+    projection_floor_tier: context.goal_tier,
+    starting_state_is_prior: true,
+    target_event_ctl: floor.target_event_ctl,
+    weeks_to_event: roundWeeksToEvent(context.weeks_to_event),
+    periodization_feasibility: periodizationFeasibility,
+    build_phase_warnings:
+      periodizationFeasibility === "full"
+        ? []
+        : [
+            periodizationFeasibility === "limited"
+              ? "build_time_limited"
+              : "build_time_insufficient",
+          ],
+    assumed_intensity_model_version: clamped.assumed_intensity_model_version,
+    starting_ctl_for_projection: startingCtlForProjection,
+    starting_weekly_tss_for_projection: startingWeeklyTssForProjection,
+  };
 }
 
 export function getProjectionWeekPattern(
@@ -97,17 +583,37 @@ export function getProjectionWeekPattern(
     Math.min(basePattern.multiplier, weightedGoalMultiplier),
   );
 
-  const dominantInfluence = [...goalInfluences].sort((a, b) => {
-    if (b.influenceScore !== a.influenceScore) {
-      return b.influenceScore - a.influenceScore;
+  let dominantInfluence: GoalPatternInfluence | undefined;
+  for (const influence of goalInfluences) {
+    if (!dominantInfluence) {
+      dominantInfluence = influence;
+      continue;
     }
 
-    if (a.pattern !== b.pattern) {
-      return a.pattern === "event" ? -1 : 1;
+    if (influence.influenceScore > dominantInfluence.influenceScore) {
+      dominantInfluence = influence;
+      continue;
     }
 
-    return a.goalTargetDate.localeCompare(b.goalTargetDate);
-  })[0];
+    if (influence.influenceScore < dominantInfluence.influenceScore) {
+      continue;
+    }
+
+    if (
+      influence.pattern === "event" &&
+      dominantInfluence.pattern !== "event"
+    ) {
+      dominantInfluence = influence;
+      continue;
+    }
+
+    if (
+      influence.pattern === dominantInfluence.pattern &&
+      influence.goalTargetDate < dominantInfluence.goalTargetDate
+    ) {
+      dominantInfluence = influence;
+    }
+  }
 
   return {
     pattern: dominantInfluence?.pattern ?? basePattern.pattern,
@@ -263,9 +769,13 @@ export interface ProjectionWeekMetadata {
   tss_ramp: {
     previous_week_tss: number;
     requested_weekly_tss: number;
+    raw_requested_weekly_tss: number;
     applied_weekly_tss: number;
     max_weekly_tss_ramp_pct: number;
     clamped: boolean;
+    floor_override_applied: boolean;
+    floor_minimum_weekly_tss: number | null;
+    weekly_load_override_reason: "no_history_floor" | null;
   };
   ctl_ramp: {
     requested_ctl_ramp: number;
@@ -304,7 +814,22 @@ export interface DeterministicProjectionPayload {
     tss_ramp_clamp_weeks: number;
     ctl_ramp_clamp_weeks: number;
     recovery_weeks: number;
+    starting_state: {
+      starting_ctl: number;
+      starting_atl: number;
+      starting_tsb: number;
+      starting_state_is_prior: boolean;
+    };
   };
+  no_history: Pick<
+    NoHistoryAnchorResolution,
+    | "projection_floor_applied"
+    | "projection_floor_values"
+    | "fitness_level"
+    | "fitness_inference_reasons"
+    | "projection_floor_confidence"
+    | "floor_clamped_by_availability"
+  >;
 }
 
 export interface BuildDeterministicProjectionInput {
@@ -328,6 +853,7 @@ export interface BuildDeterministicProjectionInput {
   baseline_weekly_tss: number;
   starting_ctl?: number;
   creation_config?: ProjectionSafetyConfigInput;
+  no_history_context?: NoHistoryAnchorContext;
 }
 
 /**
@@ -376,7 +902,7 @@ export function buildDeterministicProjectionPayload(
   const normalizedConfig = normalizeProjectionSafetyConfig(
     input.creation_config,
   );
-  const baselineWeeklyTss = Math.max(0, round1(input.baseline_weekly_tss));
+  const baselineWeeklyTssInput = Math.max(0, round1(input.baseline_weekly_tss));
   const goalMarkers = input.goals
     .map((goal, index) => ({
       id: goal.id ?? `goal-${index + 1}`,
@@ -394,21 +920,58 @@ export function buildDeterministicProjectionPayload(
 
   const startDate = input.timeline.start_date;
   const endDate = input.timeline.end_date;
+  const noHistory = input.no_history_context
+    ? resolveNoHistoryAnchor(input.no_history_context)
+    : null;
+
+  const effectiveStartingCtlInput =
+    noHistory?.projection_floor_applied && noHistory.projection_floor_values
+      ? (noHistory.starting_ctl_for_projection ?? undefined)
+      : input.starting_ctl;
+  const effectiveBaselineWeeklyTss =
+    noHistory?.projection_floor_applied && noHistory.projection_floor_values
+      ? Math.max(
+          baselineWeeklyTssInput,
+          noHistory.starting_weekly_tss_for_projection ?? 0,
+        )
+      : baselineWeeklyTssInput;
+  const noHistoryStartingWeeklyTss =
+    noHistory?.projection_floor_applied && noHistory.projection_floor_values
+      ? (noHistory.starting_weekly_tss_for_projection ?? 0)
+      : null;
+  const noHistoryStartWeeklyTssFloor =
+    noHistory?.projection_floor_applied && noHistory.projection_floor_values
+      ? noHistory.projection_floor_values.start_weekly_tss
+      : null;
+  const noHistoryTargetWeeklyTssFloor =
+    noHistoryStartWeeklyTssFloor === null
+      ? null
+      : Math.max(noHistoryStartWeeklyTssFloor, noHistoryStartingWeeklyTss ?? 0);
+  const noHistoryFloorHoldWeeks =
+    noHistoryStartWeeklyTssFloor === null
+      ? 0
+      : Math.ceil(NO_HISTORY_DAYS_UNTIL_RELIABLE_PROJECTION / 7);
+  const noHistoryWeeksToEvent = Math.max(0, noHistory?.weeks_to_event ?? 0);
+
   const startingCtl = Math.max(
     0,
     round1(
-      input.starting_ctl === undefined
-        ? baselineWeeklyTss / 7
-        : input.starting_ctl,
+      effectiveStartingCtlInput === undefined
+        ? effectiveBaselineWeeklyTss / 7
+        : effectiveStartingCtlInput,
     ),
   );
+  const startingAtl = round1(startingCtl);
+  const startingTsb = round1(startingCtl - startingAtl);
+  const startingStateIsPrior = Boolean(noHistory?.projection_floor_applied);
 
   const microcycles: DeterministicProjectionMicrocycle[] = [];
   const points: DeterministicProjectionPoint[] = [];
   const dailySnapshotByDate = new Map<string, DeterministicProjectionPoint>();
 
   let currentCtl = startingCtl;
-  let previousWeekTss = baselineWeeklyTss;
+  let previousWeekTss = effectiveBaselineWeeklyTss;
+  let projectionWeekIndex = 0;
   let tssRampClampWeeks = 0;
   let ctlRampClampWeeks = 0;
   let recoveryWeeks = 0;
@@ -416,11 +979,11 @@ export function buildDeterministicProjectionPayload(
   for (
     let weekStartDate = startDate;
     weekStartDate <= endDate;
-    weekStartDate = addDaysUtc(weekStartDate, 7)
+    weekStartDate = addDaysDateOnlyUtc(weekStartDate, 7)
   ) {
     const weekEndDate =
-      addDaysUtc(weekStartDate, 6) <= endDate
-        ? addDaysUtc(weekStartDate, 6)
+      addDaysDateOnlyUtc(weekStartDate, 6) <= endDate
+        ? addDaysDateOnlyUtc(weekStartDate, 6)
         : endDate;
     const daysInWeek = diffDays(weekStartDate, weekEndDate) + 1;
 
@@ -438,7 +1001,7 @@ export function buildDeterministicProjectionPayload(
 
     const baseWeeklyTss = weeklyLoadFromBlockAndBaseline(
       block,
-      baselineWeeklyTss,
+      effectiveBaselineWeeklyTss,
     );
     const requestedWeeklyTss = Math.max(
       0,
@@ -457,17 +1020,64 @@ export function buildDeterministicProjectionPayload(
       0,
       round1(requestedWeeklyTss * recoveryReductionFactor),
     );
+    const enforceNoHistoryStartingFloor =
+      noHistoryTargetWeeklyTssFloor !== null &&
+      projectionWeekIndex < noHistoryWeeksToEvent &&
+      noHistoryTargetWeeklyTssFloor !== null &&
+      recoveryOverlap.goal_ids.length === 0 &&
+      weekPattern.pattern !== "taper" &&
+      weekPattern.pattern !== "event";
+    const noHistoryInitialRampFloor =
+      enforceNoHistoryStartingFloor && noHistoryStartingWeeklyTss !== null
+        ? projectionWeekIndex < noHistoryFloorHoldWeeks
+          ? round1(
+              noHistoryStartingWeeklyTss +
+                (noHistoryTargetWeeklyTssFloor - noHistoryStartingWeeklyTss) *
+                  Math.min(
+                    1,
+                    Math.max(0, projectionWeekIndex) /
+                      Math.max(1, noHistoryFloorHoldWeeks - 1),
+                  ),
+            )
+          : noHistoryTargetWeeklyTssFloor
+        : null;
+    const noHistoryGoalDemandFloor =
+      enforceNoHistoryStartingFloor &&
+      noHistory?.target_event_ctl !== null &&
+      noHistory?.target_event_ctl !== undefined &&
+      noHistoryWeeksToEvent > 0
+        ? round1(
+            (noHistory.starting_ctl_for_projection ?? 0) *
+              (1 -
+                Math.min(
+                  1,
+                  (projectionWeekIndex + 1) / noHistoryWeeksToEvent,
+                )) +
+              noHistory.target_event_ctl *
+                Math.min(1, (projectionWeekIndex + 1) / noHistoryWeeksToEvent),
+          ) * 7
+        : null;
+    const noHistoryProgressiveFloor = Math.max(
+      noHistoryInitialRampFloor ?? 0,
+      noHistoryGoalDemandFloor ?? 0,
+    );
+    const floorOverrideApplied =
+      enforceNoHistoryStartingFloor &&
+      recoveryAdjustedWeeklyTss < noHistoryProgressiveFloor;
+    const flooredWeeklyTss = enforceNoHistoryStartingFloor
+      ? Math.max(recoveryAdjustedWeeklyTss, noHistoryProgressiveFloor)
+      : recoveryAdjustedWeeklyTss;
 
     const maxAllowedByTssRamp = round1(
       previousWeekTss * (1 + normalizedConfig.max_weekly_tss_ramp_pct / 100),
     );
-    const tssRampClamped = recoveryAdjustedWeeklyTss > maxAllowedByTssRamp;
+    const tssRampClamped = flooredWeeklyTss > maxAllowedByTssRamp;
     if (tssRampClamped) {
       tssRampClampWeeks += 1;
     }
     let appliedWeeklyTss = tssRampClamped
       ? maxAllowedByTssRamp
-      : recoveryAdjustedWeeklyTss;
+      : flooredWeeklyTss;
 
     const ctlBeforeWeek = currentCtl;
     const requestedCtlAfterWeek = simulateCtlOverWeek(
@@ -502,7 +1112,7 @@ export function buildDeterministicProjectionPayload(
     }
 
     for (let dayOffset = 0; dayOffset < daysInWeek; dayOffset += 1) {
-      const dayDate = addDaysUtc(weekStartDate, dayOffset);
+      const dayDate = addDaysDateOnlyUtc(weekStartDate, dayOffset);
       const dayCtl = simulateCtlOverWeek(
         ctlBeforeWeek,
         appliedWeeklyTss,
@@ -531,10 +1141,18 @@ export function buildDeterministicProjectionPayload(
         },
         tss_ramp: {
           previous_week_tss: round1(previousWeekTss),
-          requested_weekly_tss: recoveryAdjustedWeeklyTss,
+          requested_weekly_tss: flooredWeeklyTss,
+          raw_requested_weekly_tss: recoveryAdjustedWeeklyTss,
           applied_weekly_tss: appliedWeeklyTss,
           max_weekly_tss_ramp_pct: normalizedConfig.max_weekly_tss_ramp_pct,
           clamped: tssRampClamped,
+          floor_override_applied: floorOverrideApplied,
+          floor_minimum_weekly_tss: enforceNoHistoryStartingFloor
+            ? noHistoryProgressiveFloor
+            : null,
+          weekly_load_override_reason: floorOverrideApplied
+            ? "no_history_floor"
+            : null,
         },
         ctl_ramp: {
           requested_ctl_ramp: round3(requestedCtlRamp),
@@ -552,6 +1170,7 @@ export function buildDeterministicProjectionPayload(
     });
 
     previousWeekTss = appliedWeeklyTss;
+    projectionWeekIndex += 1;
   }
 
   for (const goal of goalMarkers) {
@@ -581,18 +1200,24 @@ export function buildDeterministicProjectionPayload(
       tss_ramp_clamp_weeks: tssRampClampWeeks,
       ctl_ramp_clamp_weeks: ctlRampClampWeeks,
       recovery_weeks: recoveryWeeks,
+      starting_state: {
+        starting_ctl: startingCtl,
+        starting_atl: startingAtl,
+        starting_tsb: startingTsb,
+        starting_state_is_prior: startingStateIsPrior,
+      },
+    },
+    no_history: {
+      projection_floor_applied: noHistory?.projection_floor_applied ?? false,
+      projection_floor_values: noHistory?.projection_floor_values ?? null,
+      fitness_level: noHistory?.fitness_level ?? null,
+      fitness_inference_reasons: noHistory?.fitness_inference_reasons ?? [],
+      projection_floor_confidence:
+        noHistory?.projection_floor_confidence ?? null,
+      floor_clamped_by_availability:
+        noHistory?.floor_clamped_by_availability ?? false,
     },
   };
-}
-
-function parseDateOnlyUtc(value: string): Date {
-  return new Date(`${value}T00:00:00.000Z`);
-}
-
-function addDaysUtc(value: string, days: number): string {
-  const date = parseDateOnlyUtc(value);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
 }
 
 function simulateCtlOverWeek(
@@ -652,8 +1277,8 @@ function deriveRecoverySegments(
 
   return goals
     .map((goal) => {
-      const recoveryStartDate = addDaysUtc(goal.target_date, 1);
-      const rawRecoveryEndDate = addDaysUtc(
+      const recoveryStartDate = addDaysDateOnlyUtc(goal.target_date, 1);
+      const rawRecoveryEndDate = addDaysDateOnlyUtc(
         recoveryStartDate,
         recoveryDays - 1,
       );

@@ -1,4 +1,6 @@
 export * from "./classifyCreationFeasibility";
+export * from "./availabilityUtils";
+export * from "./dateOnlyUtc";
 export * from "./deriveCreationContext";
 export * from "./deriveCreationSuggestions";
 export * from "./derivePlanTimeline";
@@ -7,5 +9,6 @@ export * from "./goalPriorityWeighting";
 export * from "./normalizeCreationConfig";
 export * from "./normalizeGoalInput";
 export * from "./projectionCalculations";
+export * from "./projectionTypes";
 export * from "./resolveConstraintConflicts";
 export * from "./trainingPlanPreview";

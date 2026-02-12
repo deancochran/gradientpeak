@@ -147,6 +147,100 @@ describe("trainingPlanPreview helpers", () => {
 });
 
 describe("deterministic projection safety behavior", () => {
+  it("applies explicit no-history prior initialization when floor metadata is active", () => {
+    const projection = buildDeterministicProjectionPayload({
+      timeline: {
+        start_date: "2026-01-05",
+        end_date: "2026-02-01",
+      },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2026-02-01",
+          target_weekly_tss_range: { min: 250, max: 290 },
+        },
+      ],
+      goals: [
+        {
+          id: "goal-a",
+          name: "A race",
+          target_date: "2026-02-01",
+          priority: 1,
+        },
+      ],
+      baseline_weekly_tss: 120,
+      no_history_context: {
+        history_availability_state: "none",
+        goal_tier: "high",
+        weeks_to_event: 16,
+        context_summary: {
+          history_availability_state: "none",
+          recent_consistency_marker: "moderate",
+          effort_confidence_marker: "moderate",
+          profile_metric_completeness_marker: "low",
+          signal_quality: 0.4,
+          recommended_baseline_tss_range: { min: 40, max: 90 },
+          recommended_recent_influence_range: { min: -0.3, max: 0.2 },
+          recommended_sessions_per_week_range: { min: 3, max: 4 },
+          rationale_codes: ["history_none"],
+        },
+      },
+      creation_config: {
+        optimization_profile: "balanced",
+      },
+    });
+
+    expect(projection.no_history.projection_floor_applied).toBe(true);
+    expect(
+      projection.constraint_summary.starting_state.starting_state_is_prior,
+    ).toBe(true);
+    expect(projection.constraint_summary.starting_state.starting_ctl).toBe(
+      projection.constraint_summary.starting_state.starting_atl,
+    );
+    expect(projection.constraint_summary.starting_state.starting_tsb).toBe(0);
+  });
+
+  it("does not apply no-history floor when history state is sparse", () => {
+    const projection = buildDeterministicProjectionPayload({
+      timeline: {
+        start_date: "2026-01-05",
+        end_date: "2026-01-25",
+      },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2026-01-25",
+          target_weekly_tss_range: { min: 140, max: 170 },
+        },
+      ],
+      goals: [
+        {
+          id: "goal-a",
+          name: "A race",
+          target_date: "2026-01-24",
+          priority: 1,
+        },
+      ],
+      baseline_weekly_tss: 140,
+      starting_ctl: 20,
+      no_history_context: {
+        history_availability_state: "sparse",
+        goal_tier: "high",
+        weeks_to_event: 10,
+      },
+    });
+
+    expect(projection.no_history.projection_floor_applied).toBe(false);
+    expect(
+      projection.constraint_summary.starting_state.starting_state_is_prior,
+    ).toBe(false);
+    expect(projection.constraint_summary.starting_state.starting_ctl).toBe(20);
+  });
+
   it("clamps week-over-week TSS and CTL ramps when caps are low", () => {
     const projection = buildDeterministicProjectionPayload({
       timeline: {

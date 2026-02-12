@@ -1,5 +1,6 @@
 // packages/trpc/src/routers/training_plans.ts
 import {
+  addDaysDateOnlyUtc,
   buildDeterministicProjectionPayload,
   calculateATL,
   calculateCTL,
@@ -14,14 +15,19 @@ import {
   creationProvenanceSchema,
   creationRecentInfluenceActionEnum,
   creationRecentInfluenceSchema,
+  countAvailableTrainingDays,
   deriveCreationContext,
   deriveCreationSuggestions,
+  deriveNoHistoryGoalTierFromTargets,
   deterministicUuidFromSeed,
+  diffDateOnlyUtcDays,
   expandMinimalGoalToPlan,
+  formatDateOnlyUtc,
   getFormStatus,
   getTrainingIntensityZone,
-  normalizeProjectionSafetyConfig,
   normalizeCreationConfig,
+  normalizeProjectionSafetyConfig,
+  parseDateOnlyUtc,
   resolveConstraintConflicts,
   trainingPlanCreationConfigFormSchema,
   trainingPlanCreateInputSchema,
@@ -29,6 +35,15 @@ import {
   trainingPlanSchema,
   trainingPlanUpdateInputSchema,
   validatePlanFeasibility,
+  type CreationContextSummary,
+  type DeterministicProjectionMicrocycle,
+  type NoHistoryAnchorContext,
+  type NoHistoryProjectionMetadata,
+  type NoHistoryGoalTargetInput,
+  type ProjectionChartPayload as CoreProjectionChartPayload,
+  type ProjectionConstraintSummary,
+  type ProjectionPeriodizationPhase,
+  type ProjectionRecoverySegment,
   type NormalizeCreationConfigInput,
 } from "@repo/core";
 import { TRPCError } from "@trpc/server";
@@ -38,7 +53,6 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { addEstimationToPlans } from "../utils/estimation-helpers";
 import { featureFlags } from "../lib/features";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_ESTIMATED_CTL = 0;
 
 const feasibilityStateSchema = z.enum(["feasible", "aggressive", "unsafe"]);
@@ -74,75 +88,8 @@ type PlanAssessmentBundle = {
   goalSafety: GoalSafetyAssessment[];
 };
 
-type ProjectionChartPoint = {
-  date: string;
-  predicted_load_tss: number;
-  predicted_fitness_ctl: number;
-};
-
-type ProjectionGoalMarker = {
-  id: string;
-  name: string;
-  target_date: string;
-  priority: number;
-};
-
-type ProjectionPeriodizationPhase = {
-  id: string;
-  name: string;
-  start_date: string;
-  end_date: string;
-  target_weekly_tss_min: number;
-  target_weekly_tss_max: number;
-};
-
-type ProjectionMicrocycle = {
+type ProjectionMicrocycleWithId = DeterministicProjectionMicrocycle & {
   id?: string;
-  week_start_date: string;
-  week_end_date: string;
-  phase: string;
-  pattern: "ramp" | "deload" | "taper" | "event" | "recovery";
-  planned_weekly_tss: number;
-  projected_ctl: number;
-  metadata?: {
-    recovery: {
-      active: boolean;
-      goal_ids: string[];
-      reduction_factor: number;
-    };
-    tss_ramp: {
-      previous_week_tss: number;
-      requested_weekly_tss: number;
-      applied_weekly_tss: number;
-      max_weekly_tss_ramp_pct: number;
-      clamped: boolean;
-    };
-    ctl_ramp: {
-      requested_ctl_ramp: number;
-      applied_ctl_ramp: number;
-      max_ctl_ramp_per_week: number;
-      clamped: boolean;
-    };
-  };
-};
-
-type ProjectionRecoverySegment = {
-  goal_id: string;
-  goal_name: string;
-  start_date: string;
-  end_date: string;
-};
-
-type ProjectionConstraintSummary = {
-  normalized_creation_config: {
-    optimization_profile: "outcome_first" | "balanced" | "sustainable";
-    post_goal_recovery_days: number;
-    max_weekly_tss_ramp_pct: number;
-    max_ctl_ramp_per_week: number;
-  };
-  tss_ramp_clamp_weeks: number;
-  ctl_ramp_clamp_weeks: number;
-  recovery_weeks: number;
 };
 
 type ProjectionFeasibilitySummary = {
@@ -165,30 +112,14 @@ type CreationConflictItem = {
   suggestions: string[];
 };
 
-type ProjectionChartPayload = {
-  start_date: string;
-  end_date: string;
-  points: ProjectionChartPoint[];
-  goal_markers: ProjectionGoalMarker[];
-  periodization_phases: ProjectionPeriodizationPhase[];
-  microcycles: ProjectionMicrocycle[];
+type ProjectionChartPayload = Omit<
+  CoreProjectionChartPayload,
+  "microcycles"
+> & {
+  microcycles: ProjectionMicrocycleWithId[];
   recovery_segments: ProjectionRecoverySegment[];
   constraint_summary: ProjectionConstraintSummary;
 };
-
-function parseDateOnlyUtc(value: string): Date {
-  return new Date(`${value}T00:00:00.000Z`);
-}
-
-function toDateOnlyUtc(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
-
-function diffDaysUtc(startDate: string, endDate: string): number {
-  const start = parseDateOnlyUtc(startDate).getTime();
-  const end = parseDateOnlyUtc(endDate).getTime();
-  return Math.floor((end - start) / DAY_MS);
-}
 
 function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -223,7 +154,7 @@ function assessSingleGoal(
   currentCtl: number,
   targetCtlAtPeak?: number,
 ): { feasibility: GoalAssessment; safety: GoalSafetyAssessment } {
-  const daysUntilGoal = diffDaysUtc(referenceDate, goal.target_date);
+  const daysUntilGoal = diffDateOnlyUtcDays(referenceDate, goal.target_date);
   const weeksUntilGoal = Math.max(daysUntilGoal / 7, 0.1);
   const requiredWeeklyCtlRamp =
     typeof targetCtlAtPeak === "number"
@@ -363,19 +294,14 @@ function buildPlanAssessments(input: {
 }
 
 function buildDateRange(startDate: string, endDate: string): string[] {
-  const start = parseDateOnlyUtc(startDate);
-  const end = parseDateOnlyUtc(endDate);
-
-  const totalDays = Math.floor((end.getTime() - start.getTime()) / DAY_MS);
+  const totalDays = diffDateOnlyUtcDays(startDate, endDate);
   if (totalDays < 0) {
     return [];
   }
 
   const dates: string[] = [];
   for (let i = 0; i <= totalDays; i++) {
-    const d = new Date(start.getTime());
-    d.setUTCDate(start.getUTCDate() + i);
-    dates.push(toDateOnlyUtc(d));
+    dates.push(addDaysDateOnlyUtc(startDate, i));
   }
   return dates;
 }
@@ -504,19 +430,6 @@ function findBlockForDate(
   );
 }
 
-function diffDays(startDate: string, endDate: string): number {
-  const start = parseDateOnlyUtc(startDate).getTime();
-  const end = parseDateOnlyUtc(endDate).getTime();
-  const dayMs = 24 * 60 * 60 * 1000;
-  return Math.floor((end - start) / dayMs);
-}
-
-function addDaysUtc(dateString: string, days: number): string {
-  const date = parseDateOnlyUtc(dateString);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}
-
 function buildProjectionChartPayload(input: {
   expandedPlan: ReturnType<typeof expandMinimalGoalToPlan>;
   baselineWeeklyTss: number;
@@ -527,6 +440,7 @@ function buildProjectionChartPayload(input: {
     max_weekly_tss_ramp_pct?: number;
     max_ctl_ramp_per_week?: number;
   };
+  noHistoryContext?: NoHistoryAnchorContext;
 }): ProjectionChartPayload {
   const { expandedPlan } = input;
   const baselineWeeklyTss = Math.max(0, input.baselineWeeklyTss);
@@ -570,9 +484,10 @@ function buildProjectionChartPayload(input: {
     baseline_weekly_tss: baselineWeeklyTss,
     starting_ctl: input.startingCtl,
     creation_config: input.creationConfig,
+    no_history_context: input.noHistoryContext,
   });
 
-  const microcycles: ProjectionMicrocycle[] =
+  const microcycles: ProjectionMicrocycleWithId[] =
     deterministicProjection.microcycles.map((microcycle) => ({
       id: deterministicUuidFromSeed(
         `projection-microcycle|${expandedPlan.start_date}|${microcycle.week_start_date}|${microcycle.week_end_date}`,
@@ -589,6 +504,88 @@ function buildProjectionChartPayload(input: {
     microcycles,
     recovery_segments: deterministicProjection.recovery_segments,
     constraint_summary: deterministicProjection.constraint_summary,
+    no_history: toNoHistoryMetadataOrUndefined(
+      deterministicProjection.no_history,
+    ),
+  };
+}
+
+function toNoHistoryMetadataOrUndefined(
+  metadata: NoHistoryProjectionMetadata,
+): NoHistoryProjectionMetadata | undefined {
+  if (!metadata.projection_floor_applied) {
+    return undefined;
+  }
+
+  return metadata;
+}
+
+function deriveNoHistoryAnchorContext(input: {
+  expandedPlan: ReturnType<typeof expandMinimalGoalToPlan>;
+  contextSummary: CreationContextSummary;
+  finalConfig: Awaited<
+    ReturnType<typeof evaluateCreationConfig>
+  >["finalConfig"];
+  startingCtlOverride?: number;
+}): NoHistoryAnchorContext | undefined {
+  if (input.contextSummary.history_availability_state !== "none") {
+    return undefined;
+  }
+
+  const earliestGoal = input.expandedPlan.goals.reduce<
+    (typeof input.expandedPlan.goals)[number] | undefined
+  >((earliest, goal) => {
+    if (!earliest || goal.target_date < earliest.target_date) {
+      return goal;
+    }
+    return earliest;
+  }, undefined);
+
+  if (!earliestGoal) {
+    return undefined;
+  }
+
+  const latestGoal = input.expandedPlan.goals.reduce<
+    (typeof input.expandedPlan.goals)[number] | undefined
+  >((latest, goal) => {
+    if (!latest || goal.target_date > latest.target_date) {
+      return goal;
+    }
+    return latest;
+  }, undefined);
+
+  return {
+    history_availability_state: "none",
+    goal_tier: deriveNoHistoryGoalTierFromTargets(
+      input.expandedPlan.goals.flatMap(
+        (goal) => goal.targets ?? [],
+      ) as NoHistoryGoalTargetInput[],
+    ),
+    weeks_to_event: Math.max(
+      0,
+      diffDateOnlyUtcDays(
+        input.expandedPlan.start_date,
+        earliestGoal.target_date,
+      ) / 7,
+    ),
+    total_horizon_weeks: latestGoal
+      ? Math.max(
+          0,
+          diffDateOnlyUtcDays(
+            input.expandedPlan.start_date,
+            latestGoal.target_date,
+          ) / 7,
+        )
+      : undefined,
+    goal_count: input.expandedPlan.goals.length,
+    starting_ctl_override: input.startingCtlOverride,
+    context_summary: input.contextSummary,
+    availability_context: {
+      availability_days: input.finalConfig.availability_config.days,
+      hard_rest_days: input.finalConfig.constraints.hard_rest_days,
+      max_single_session_duration_minutes:
+        input.finalConfig.constraints.max_single_session_duration_minutes,
+    },
   };
 }
 
@@ -714,13 +711,11 @@ function deriveProjectionDrivenConflicts(input: {
   for (let i = 0; i < sortedGoals.length - 1; i += 1) {
     const currentGoal = sortedGoals[i]!;
     const nextGoal = sortedGoals[i + 1]!;
-    const recoveryEnd = toDateOnlyUtc(
-      new Date(
-        parseDateOnlyUtc(currentGoal.target_date).getTime() +
-          input.postGoalRecoveryDays * DAY_MS,
-      ),
+    const recoveryEnd = addDaysDateOnlyUtc(
+      currentGoal.target_date,
+      input.postGoalRecoveryDays,
     );
-    const prepDays = diffDaysUtc(recoveryEnd, nextGoal.target_date);
+    const prepDays = diffDateOnlyUtcDays(recoveryEnd, nextGoal.target_date);
     if (prepDays < 21) {
       conflicts.push({
         code:
@@ -930,6 +925,7 @@ const getCreationSuggestionsInputSchema = z
 const previewCreationConfigInputSchema = z.object({
   minimal_plan: minimalTrainingPlanV2InputSchema,
   creation_input: creationNormalizationInputSchema,
+  starting_ctl_override: z.number().min(0).max(150).optional(),
   post_create_behavior: postCreateBehaviorSchema.optional(),
 });
 
@@ -1021,6 +1017,7 @@ function buildCreationPreviewSnapshotToken(input: {
   estimatedCurrentCtl: number;
   projectionConstraintSummary: ProjectionConstraintSummary;
   projectionFeasibility: ProjectionFeasibilitySummary;
+  noHistoryMetadata?: NoHistoryProjectionMetadata;
 }): string {
   const normalizedCreationConfigSnapshot = {
     availability_config: input.finalConfig.availability_config,
@@ -1041,6 +1038,9 @@ function buildCreationPreviewSnapshotToken(input: {
     estimated_current_ctl: Math.round(input.estimatedCurrentCtl * 10) / 10,
     projection_constraint_summary: input.projectionConstraintSummary,
     projection_feasibility: input.projectionFeasibility,
+    ...(input.noHistoryMetadata
+      ? { projection_no_history: input.noHistoryMetadata }
+      : {}),
   };
 
   const canonicalSnapshotPayload =
@@ -1051,6 +1051,50 @@ function buildCreationPreviewSnapshotToken(input: {
   );
 }
 
+function buildCreationProjectionArtifacts(input: {
+  minimalPlan: z.infer<typeof minimalTrainingPlanV2InputSchema>;
+  estimatedCurrentCtl: number;
+  startingCtlOverride?: number;
+  finalConfig: Awaited<
+    ReturnType<typeof evaluateCreationConfig>
+  >["finalConfig"];
+  contextSummary: CreationContextSummary;
+}): {
+  expandedPlan: ReturnType<typeof expandMinimalGoalToPlan>;
+  projectionChart: ProjectionChartPayload;
+  projectionFeasibility: ProjectionFeasibilitySummary;
+} {
+  const expandedPlan = expandMinimalGoalToPlan(input.minimalPlan, {
+    startingCtl: input.estimatedCurrentCtl,
+  });
+
+  const noHistoryContext = deriveNoHistoryAnchorContext({
+    expandedPlan,
+    contextSummary: input.contextSummary,
+    finalConfig: input.finalConfig,
+    startingCtlOverride: input.startingCtlOverride,
+  });
+
+  const projectionChart = buildProjectionChartPayload({
+    expandedPlan,
+    baselineWeeklyTss: input.finalConfig.baseline_load.weekly_tss,
+    startingCtl: input.estimatedCurrentCtl,
+    creationConfig: {
+      optimization_profile: input.finalConfig.optimization_profile,
+      post_goal_recovery_days: input.finalConfig.post_goal_recovery_days,
+      max_weekly_tss_ramp_pct: input.finalConfig.max_weekly_tss_ramp_pct,
+      max_ctl_ramp_per_week: input.finalConfig.max_ctl_ramp_per_week,
+    },
+    noHistoryContext,
+  });
+
+  return {
+    expandedPlan,
+    projectionChart,
+    projectionFeasibility: buildProjectionFeasibilitySummary(projectionChart),
+  };
+}
+
 function enforceCreationConfigFeatureEnabled(): void {
   if (!featureFlags.trainingPlanCreateConfigMvp) {
     throw new TRPCError({
@@ -1058,23 +1102,6 @@ function enforceCreationConfigFeatureEnabled(): void {
       message: "Training plan creation config MVP is not enabled",
     });
   }
-}
-
-function getAvailabilityTrainingDays(input: {
-  availability: z.infer<typeof creationAvailabilityConfigSchema>;
-  hardRestDays: string[];
-}): number {
-  const availableDays = new Set<string>(
-    input.availability.days
-      .filter((day) => day.windows.length > 0 && (day.max_sessions ?? 0) > 0)
-      .map((day) => day.day),
-  );
-
-  for (const restDay of input.hardRestDays) {
-    availableDays.delete(restDay);
-  }
-
-  return availableDays.size;
 }
 
 export async function deriveProfileAwareCreationContext(input: {
@@ -1340,9 +1367,10 @@ async function evaluateCreationConfig(input: {
     now_iso: nowIso,
   } satisfies NormalizeCreationConfigInput);
 
-  const availabilityTrainingDays = getAvailabilityTrainingDays({
-    availability: normalizedConfig.availability_config,
+  const availabilityTrainingDays = countAvailableTrainingDays({
+    availabilityDays: normalizedConfig.availability_config.days,
     hardRestDays: normalizedConfig.constraints.hard_rest_days,
+    requirePositiveMaxSessions: true,
   });
 
   const constraintResolution = resolveConstraintConflicts({
@@ -1670,7 +1698,7 @@ export const trainingPlansRouter = createTRPCRouter({
       });
       const normalizedGoals = expandedPlan.goals;
 
-      const referenceDate = toDateOnlyUtc(new Date());
+      const referenceDate = formatDateOnlyUtc(new Date());
 
       const assessmentGoals = normalizedGoals.map((goal) => ({
         id: goal.id,
@@ -1709,7 +1737,7 @@ export const trainingPlansRouter = createTRPCRouter({
 
       const planDurationDays = Math.max(
         0,
-        diffDaysUtc(expandedPlan.start_date, expandedPlan.end_date) + 1,
+        diffDateOnlyUtcDays(expandedPlan.start_date, expandedPlan.end_date) + 1,
       );
       const targetWeeklyTssAvg =
         expandedPlan.blocks.length > 0
@@ -1745,7 +1773,7 @@ export const trainingPlansRouter = createTRPCRouter({
         key_metrics: {
           reference_date: referenceDate,
           days_until_goal: nextGoal
-            ? diffDaysUtc(referenceDate, nextGoal.target_date)
+            ? diffDateOnlyUtcDays(referenceDate, nextGoal.target_date)
             : 0,
           plan_duration_days: planDurationDays,
           block_count: expandedPlan.blocks.length,
@@ -1801,30 +1829,21 @@ export const trainingPlansRouter = createTRPCRouter({
         ctx.supabase,
         ctx.session.user.id,
       );
-      const expandedPlan = expandMinimalGoalToPlan(input.minimal_plan, {
-        startingCtl: estimatedCurrentCtl,
-      });
-      const projectionChart = buildProjectionChartPayload({
-        expandedPlan,
-        baselineWeeklyTss: evaluation.finalConfig.baseline_load.weekly_tss,
-        startingCtl: estimatedCurrentCtl,
-        creationConfig: {
-          optimization_profile: evaluation.finalConfig.optimization_profile,
-          post_goal_recovery_days:
-            evaluation.finalConfig.post_goal_recovery_days,
-          max_weekly_tss_ramp_pct:
-            evaluation.finalConfig.max_weekly_tss_ramp_pct,
-          max_ctl_ramp_per_week: evaluation.finalConfig.max_ctl_ramp_per_week,
-        },
-      });
-      const projectionFeasibility =
-        buildProjectionFeasibilitySummary(projectionChart);
+      const { expandedPlan, projectionChart, projectionFeasibility } =
+        buildCreationProjectionArtifacts({
+          minimalPlan: input.minimal_plan,
+          estimatedCurrentCtl,
+          startingCtlOverride: input.starting_ctl_override,
+          finalConfig: evaluation.finalConfig,
+          contextSummary: evaluation.contextSummary,
+        });
       const previewSnapshotToken = buildCreationPreviewSnapshotToken({
         minimalPlan: input.minimal_plan,
         finalConfig: evaluation.finalConfig,
         estimatedCurrentCtl,
         projectionConstraintSummary: projectionChart.constraint_summary,
         projectionFeasibility,
+        noHistoryMetadata: projectionChart.no_history,
       });
       const projectionConflicts = deriveProjectionDrivenConflicts({
         expandedPlan,
@@ -1880,30 +1899,21 @@ export const trainingPlansRouter = createTRPCRouter({
         ctx.supabase,
         ctx.session.user.id,
       );
-      const expandedPlan = expandMinimalGoalToPlan(input.minimal_plan, {
-        startingCtl: estimatedCurrentCtl,
-      });
-      const projectionChart = buildProjectionChartPayload({
-        expandedPlan,
-        baselineWeeklyTss: evaluation.finalConfig.baseline_load.weekly_tss,
-        startingCtl: estimatedCurrentCtl,
-        creationConfig: {
-          optimization_profile: evaluation.finalConfig.optimization_profile,
-          post_goal_recovery_days:
-            evaluation.finalConfig.post_goal_recovery_days,
-          max_weekly_tss_ramp_pct:
-            evaluation.finalConfig.max_weekly_tss_ramp_pct,
-          max_ctl_ramp_per_week: evaluation.finalConfig.max_ctl_ramp_per_week,
-        },
-      });
-      const projectionFeasibility =
-        buildProjectionFeasibilitySummary(projectionChart);
+      const { expandedPlan, projectionChart, projectionFeasibility } =
+        buildCreationProjectionArtifacts({
+          minimalPlan: input.minimal_plan,
+          estimatedCurrentCtl,
+          startingCtlOverride: input.starting_ctl_override,
+          finalConfig: evaluation.finalConfig,
+          contextSummary: evaluation.contextSummary,
+        });
       const expectedPreviewSnapshotToken = buildCreationPreviewSnapshotToken({
         minimalPlan: input.minimal_plan,
         finalConfig: evaluation.finalConfig,
         estimatedCurrentCtl,
         projectionConstraintSummary: projectionChart.constraint_summary,
         projectionFeasibility,
+        noHistoryMetadata: projectionChart.no_history,
       });
 
       if (
@@ -2094,7 +2104,8 @@ export const trainingPlansRouter = createTRPCRouter({
   getInsightTimeline: protectedProcedure
     .input(insightTimelineInputSchema)
     .query(async ({ ctx, input }) => {
-      const windowDays = diffDaysUtc(input.start_date, input.end_date) + 1;
+      const windowDays =
+        diffDateOnlyUtcDays(input.start_date, input.end_date) + 1;
       if (windowDays <= 0) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -2175,7 +2186,7 @@ export const trainingPlansRouter = createTRPCRouter({
       const blockRampWarnings = collectBlockRampWarnings(blocks);
       const assessments = buildPlanAssessments({
         goals,
-        referenceDate: toDateOnlyUtc(new Date()),
+        referenceDate: formatDateOnlyUtc(new Date()),
         currentCtl: estimatedCurrentCtl,
         targetCtlAtPeak,
         planWarnings,
@@ -2233,7 +2244,7 @@ export const trainingPlansRouter = createTRPCRouter({
       const actualByDate = new Map<string, number>();
       for (const activity of actualActivities || []) {
         if (!activity.started_at) continue;
-        const date = toDateOnlyUtc(new Date(activity.started_at));
+        const date = formatDateOnlyUtc(new Date(activity.started_at));
         const tss = activity.training_stress_score || 0;
         actualByDate.set(date, (actualByDate.get(date) || 0) + tss);
       }

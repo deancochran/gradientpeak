@@ -11,7 +11,10 @@ import {
   useChartPressState,
 } from "victory-native";
 import { format } from "date-fns";
-import type { ProjectionChartPayload } from "./projection-chart-types";
+import type {
+  NoHistoryProjectionMetadata,
+  ProjectionChartPayload,
+} from "@repo/core";
 
 interface CreationProjectionChartProps {
   projectionChart?: ProjectionChartPayload;
@@ -63,6 +66,10 @@ const toDateOnlyUtc = (value: Date) => value.toISOString().slice(0, 10);
 
 const getTodayDateOnlyUtc = () => toDateOnlyUtc(new Date());
 
+const formatNoHistoryConfidence = (
+  confidence: NoHistoryProjectionMetadata["projection_floor_confidence"],
+) => confidence ?? "n/a";
+
 type GoalPointPlacement = {
   marker: {
     id: string;
@@ -97,16 +104,24 @@ const resolveGoalPointPlacements = (
     return [];
   }
 
+  const indexByPointDate = new Map<string, number>();
+  const pointTimes = points.map((point, index) => {
+    if (!indexByPointDate.has(point.date)) {
+      indexByPointDate.set(point.date, index);
+    }
+
+    const pointDate = toUtcDate(point.date);
+    return pointDate ? pointDate.getTime() : Number.NaN;
+  });
+
   const indexedPlacements: Array<{
     marker: GoalPointPlacement["marker"];
     pointIndex: number;
   }> = [];
 
   for (const goal of mergedMarkers) {
-    const directIndex = points.findIndex(
-      (point) => point.date === goal.target_date,
-    );
-    if (directIndex >= 0) {
+    const directIndex = indexByPointDate.get(goal.target_date);
+    if (directIndex !== undefined) {
       indexedPlacements.push({ marker: goal, pointIndex: directIndex });
       continue;
     }
@@ -118,14 +133,15 @@ const resolveGoalPointPlacements = (
 
     let bestIndex = 0;
     let bestDistance = Number.POSITIVE_INFINITY;
+    const goalTime = goalDate.getTime();
 
-    for (let index = 0; index < points.length; index++) {
-      const pointDate = toUtcDate(points[index]!.date);
-      if (!pointDate) {
+    for (let index = 0; index < pointTimes.length; index++) {
+      const pointTime = pointTimes[index];
+      if (!Number.isFinite(pointTime)) {
         continue;
       }
 
-      const distance = Math.abs(pointDate.getTime() - goalDate.getTime());
+      const distance = Math.abs(pointTime - goalTime);
       if (distance < bestDistance) {
         bestDistance = distance;
         bestIndex = index;
@@ -291,18 +307,6 @@ export const CreationProjectionChart = React.memo(
       return Math.max(1, Math.floor(points.length / 6));
     }, [points.length]);
 
-    const chartLabels = useMemo(
-      () =>
-        points.map((point, index) => {
-          const isShownLabel =
-            index === 0 ||
-            index % labelStride === 0 ||
-            index === points.length - 1;
-          return isShownLabel ? formatIsoDate(point.date, "MMM d") : "";
-        }),
-      [labelStride, points],
-    );
-
     const shortDateLabels = useMemo(
       () => points.map((point) => formatIsoDate(point.date, "MMM d")),
       [points],
@@ -311,6 +315,18 @@ export const CreationProjectionChart = React.memo(
     const longDateLabels = useMemo(
       () => points.map((point) => formatIsoDate(point.date, "EEE, MMM d")),
       [points],
+    );
+
+    const chartLabels = useMemo(
+      () =>
+        points.map((point, index) => {
+          const isShownLabel =
+            index === 0 ||
+            index % labelStride === 0 ||
+            index === points.length - 1;
+          return isShownLabel ? (shortDateLabels[index] ?? point.date) : "";
+        }),
+      [labelStride, points, shortDateLabels],
     );
 
     const chartData = useMemo(
@@ -401,7 +417,7 @@ export const CreationProjectionChart = React.memo(
 
     const selectedPoint = points[selectedPointIndex];
     const selectedPointSummary = selectedPoint
-      ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date}. Load ${Math.round(selectedPoint.predicted_load_tss)} TSS. Fitness ${selectedPoint.predicted_fitness_ctl.toFixed(1)} CTL.`
+      ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date}. Weekly load ${Math.round(selectedPoint.predicted_load_tss)} TSS. Fitness ${selectedPoint.predicted_fitness_ctl.toFixed(1)} CTL.`
       : "No point selected.";
     const activePhase = useMemo(() => {
       if (!projectionChart || !selectedPoint) {
@@ -440,7 +456,7 @@ export const CreationProjectionChart = React.memo(
     );
 
     const selectedWeekSummary = selectedMicrocycle?.metadata
-      ? `${formatIsoDate(selectedMicrocycle.week_start_date, "MMM d")} to ${formatIsoDate(selectedMicrocycle.week_end_date, "MMM d")}. Requested ${Math.round(selectedMicrocycle.metadata.tss_ramp.requested_weekly_tss)} TSS, applied ${Math.round(selectedMicrocycle.metadata.tss_ramp.applied_weekly_tss)} TSS${selectedMicrocycle.metadata.tss_ramp.clamped ? " due to load ramp cap" : " within load ramp cap"}. Requested CTL ramp ${selectedMicrocycle.metadata.ctl_ramp.requested_ctl_ramp.toFixed(2)}, applied ${selectedMicrocycle.metadata.ctl_ramp.applied_ctl_ramp.toFixed(2)}${selectedMicrocycle.metadata.ctl_ramp.clamped ? " due to CTL cap" : " within CTL cap"}.${selectedMicrocycle.metadata.recovery.active ? ` Recovery active at ${toPercentReductionLabel(selectedMicrocycle.metadata.recovery.reduction_factor)} load reduction.` : " Recovery not active."}`
+      ? `${formatIsoDate(selectedMicrocycle.week_start_date, "MMM d")} to ${formatIsoDate(selectedMicrocycle.week_end_date, "MMM d")}. Requested ${Math.round(selectedMicrocycle.metadata.tss_ramp.raw_requested_weekly_tss)} TSS${selectedMicrocycle.metadata.tss_ramp.floor_override_applied ? `, floored to ${Math.round(selectedMicrocycle.metadata.tss_ramp.requested_weekly_tss)} TSS` : ""}, applied ${Math.round(selectedMicrocycle.metadata.tss_ramp.applied_weekly_tss)} TSS${selectedMicrocycle.metadata.tss_ramp.floor_override_applied ? " (floor minimum applied)" : selectedMicrocycle.metadata.tss_ramp.clamped ? " due to load ramp cap" : " within load ramp cap"}. Requested CTL ramp ${selectedMicrocycle.metadata.ctl_ramp.requested_ctl_ramp.toFixed(2)}, applied ${selectedMicrocycle.metadata.ctl_ramp.applied_ctl_ramp.toFixed(2)}${selectedMicrocycle.metadata.ctl_ramp.clamped ? " due to CTL cap" : " within CTL cap"}.${selectedMicrocycle.metadata.recovery.active ? ` Recovery active at ${toPercentReductionLabel(selectedMicrocycle.metadata.recovery.reduction_factor)} load reduction.` : " Recovery not active."}`
       : "No per-week safety metadata available for this point.";
 
     const recoverySegmentSummary = projectionChart?.recovery_segments?.length
@@ -456,6 +472,18 @@ export const CreationProjectionChart = React.memo(
       projectionChart && points.length
         ? `Projection chart with ${points.length} points. ${selectedPointSummary} Active phase: ${activePhaseSummary} Goal dates: ${goalDatesSummary} ${microcycleSummary} ${constraintSummaryText} ${recoverySegmentSummary}`
         : undefined;
+    const noHistoryMetadata = projectionChart?.no_history;
+    const noHistoryReasons = noHistoryMetadata?.fitness_inference_reasons ?? [];
+    const noHistoryConfidenceLabel = noHistoryMetadata
+      ? formatNoHistoryConfidence(noHistoryMetadata.projection_floor_confidence)
+      : "n/a";
+    const noHistoryFloorAppliedLabel =
+      noHistoryMetadata?.projection_floor_applied ? "Yes" : "No";
+    const noHistoryAvailabilityClampLabel =
+      noHistoryMetadata?.floor_clamped_by_availability ? "On" : "Off";
+    const noHistoryAccessibilitySummary = noHistoryMetadata
+      ? `No-history mode. Confidence ${noHistoryConfidenceLabel}. Floor applied ${noHistoryFloorAppliedLabel}. Availability clamp ${noHistoryAvailabilityClampLabel}.`
+      : undefined;
 
     return (
       <View className="gap-3 rounded-lg border border-border bg-card p-3">
@@ -465,6 +493,33 @@ export const CreationProjectionChart = React.memo(
             <Text className="text-xs text-muted-foreground">Refreshing...</Text>
           )}
         </View>
+
+        {noHistoryMetadata ? (
+          <View
+            className="gap-1 rounded-md border border-border bg-muted/20 p-2"
+            accessibilityRole="text"
+            accessibilityLiveRegion="polite"
+            accessibilityLabel={noHistoryAccessibilitySummary}
+          >
+            <Text className="text-[11px] text-muted-foreground">
+              No-history mode
+            </Text>
+            <Text className="text-[11px] text-muted-foreground">
+              Confidence: {noHistoryConfidenceLabel}
+            </Text>
+            <Text className="text-[11px] text-muted-foreground">
+              Floor applied: {noHistoryFloorAppliedLabel}
+            </Text>
+            <Text className="text-[11px] text-muted-foreground">
+              Availability clamp: {noHistoryAvailabilityClampLabel}
+            </Text>
+            {noHistoryReasons.slice(0, 2).map((reason) => (
+              <Text key={reason} className="text-[11px] text-muted-foreground">
+                - {reason}
+              </Text>
+            ))}
+          </View>
+        ) : null}
 
         {!projectionChart || points.length === 0 ? (
           <View className="rounded-md border border-dashed border-border bg-muted/20 p-3">
@@ -539,7 +594,7 @@ export const CreationProjectionChart = React.memo(
               <View className="flex-row items-center gap-1.5">
                 <View className="h-0.5 w-5 rounded-full bg-blue-500" />
                 <Text className="text-[11px] text-muted-foreground">
-                  Load (TSS, left axis)
+                  Weekly load (TSS/week, left axis)
                 </Text>
               </View>
               <View className="flex-row items-center gap-1.5">
@@ -557,8 +612,13 @@ export const CreationProjectionChart = React.memo(
             </View>
 
             <Text className="px-1 text-[11px] text-muted-foreground">
-              Raw projected values are shown directly: load in TSS and fitness
-              in CTL.
+              Raw projected values are shown directly: weekly load in TSS/week
+              and fitness in CTL.
+            </Text>
+            <Text className="px-1 text-[11px] text-muted-foreground">
+              Projection window:{" "}
+              {formatIsoDate(projectionChart.start_date, "MMM d, yyyy")} to{" "}
+              {formatIsoDate(projectionChart.end_date, "MMM d, yyyy")}
             </Text>
 
             <View
@@ -576,7 +636,7 @@ export const CreationProjectionChart = React.memo(
               <Text className="text-xs font-medium">Selected point</Text>
               <Text className="text-xs text-muted-foreground">
                 {selectedPoint
-                  ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date} - Load ${Math.round(selectedPoint.predicted_load_tss)} TSS - Fitness ${selectedPoint.predicted_fitness_ctl.toFixed(1)} CTL`
+                  ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date} - Weekly load ${Math.round(selectedPoint.predicted_load_tss)} TSS - Fitness ${selectedPoint.predicted_fitness_ctl.toFixed(1)} CTL`
                   : "Tap a point to inspect projected details."}
               </Text>
               <Text className="text-xs text-muted-foreground">
@@ -601,17 +661,26 @@ export const CreationProjectionChart = React.memo(
                     - {formatIsoDate(selectedMicrocycle.week_end_date, "MMM d")}
                   </Text>
                   <Text className="text-[11px] text-muted-foreground">
-                    Load ramp: requested{" "}
+                    Weekly load: requested{" "}
                     {Math.round(
-                      selectedMicrocycle.metadata.tss_ramp.requested_weekly_tss,
+                      selectedMicrocycle.metadata.tss_ramp
+                        .raw_requested_weekly_tss,
                     )}
+                    {selectedMicrocycle.metadata.tss_ramp.floor_override_applied
+                      ? `, floored to ${Math.round(
+                          selectedMicrocycle.metadata.tss_ramp
+                            .requested_weekly_tss,
+                        )}`
+                      : ""}
                     , applied{" "}
                     {Math.round(
                       selectedMicrocycle.metadata.tss_ramp.applied_weekly_tss,
                     )}
-                    {selectedMicrocycle.metadata.tss_ramp.clamped
-                      ? " (clamped)"
-                      : " (within cap)"}
+                    {selectedMicrocycle.metadata.tss_ramp.floor_override_applied
+                      ? " (floor minimum applied)"
+                      : selectedMicrocycle.metadata.tss_ramp.clamped
+                        ? " (clamped by ramp cap)"
+                        : " (within ramp cap)"}
                   </Text>
                   <Text className="text-[11px] text-muted-foreground">
                     CTL ramp: requested{" "}
@@ -659,7 +728,7 @@ export const CreationProjectionChart = React.memo(
                       accessibilityRole="tab"
                       accessibilityState={{ selected: isActive }}
                       accessibilityLabel={`Point ${index + 1} of ${points.length}, ${dateLabel}`}
-                      accessibilityHint={`Load ${Math.round(point.predicted_load_tss)} TSS and fitness ${point.predicted_fitness_ctl.toFixed(1)} CTL`}
+                      accessibilityHint={`Weekly load ${Math.round(point.predicted_load_tss)} TSS and fitness ${point.predicted_fitness_ctl.toFixed(1)} CTL`}
                       hitSlop={8}
                       style={{
                         minHeight: 44,
@@ -741,10 +810,7 @@ export const CreationProjectionChart = React.memo(
                   <View className="flex-row gap-2">
                     {projectionChart.microcycles.map((microcycle) => (
                       <View
-                        key={
-                          microcycle.id ??
-                          `${microcycle.week_start_date}-${microcycle.week_end_date}`
-                        }
+                        key={`${microcycle.week_start_date}-${microcycle.week_end_date}`}
                         className="rounded-md border border-border bg-muted/20 px-3 py-2"
                       >
                         <Text className="text-xs font-medium">

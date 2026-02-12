@@ -586,7 +586,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
     expect(last.predicted_fitness_ctl).toBeGreaterThan(0);
   });
 
-  it("starts projections from low fitness when user has no activity data", async () => {
+  it("applies no-history projection floor metadata when user has no activity data", async () => {
     const caller = createTrainingPlansCaller({
       activities: { data: [], error: null },
       activity_efforts: { data: [], error: null },
@@ -603,7 +603,14 @@ describe("trainingPlansRouter plan_start_date support", () => {
 
     const points = result.projection_chart.points;
     expect(points.length).toBeGreaterThan(0);
-    expect(points[0]!.predicted_fitness_ctl).toBeLessThan(10);
+    expect(points[0]!.predicted_fitness_ctl).toBeGreaterThanOrEqual(20);
+    expect(result.projection_chart.no_history).toMatchObject({
+      projection_floor_applied: true,
+      floor_clamped_by_availability: expect.any(Boolean),
+      fitness_level: expect.any(String),
+      fitness_inference_reasons: expect.any(Array),
+      projection_floor_confidence: expect.any(String),
+    });
   });
 
   it("avoids finishing projected fitness below starting fitness for ambitious marathon goal", async () => {

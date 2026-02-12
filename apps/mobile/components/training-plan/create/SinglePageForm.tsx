@@ -28,7 +28,6 @@ import {
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Modal, Pressable, ScrollView, View } from "react-native";
 import { CreationProjectionChart } from "./CreationProjectionChart";
-import type { ProjectionChartPayload } from "./projection-chart-types";
 import { calculateGoalPriorityWeights } from "@repo/core";
 import type {
   CreationAvailabilityConfig,
@@ -36,6 +35,8 @@ import type {
   CreationConstraints,
   CreationContextSummary,
   CreationFeasibilitySafetySummary,
+  NoHistoryProjectionMetadata,
+  ProjectionChartPayload,
   CreationProvenance,
   CreationRecentInfluenceAction,
   CreationValueSource,
@@ -383,6 +384,16 @@ const areStringArraysEqual = (left: string[], right: string[]) => {
   return true;
 };
 
+const toNoHistoryConfidenceLabel = (
+  confidence: NoHistoryProjectionMetadata["projection_floor_confidence"],
+) => {
+  if (!confidence) {
+    return "n/a";
+  }
+
+  return confidence;
+};
+
 export function SinglePageForm({
   formData,
   onFormDataChange,
@@ -462,6 +473,19 @@ export function SinglePageForm({
   const influenceActionCopy =
     recentInfluenceActionOptionCopy[configData.recentInfluenceAction];
   const signedInfluenceScore = `${configData.recentInfluenceScore >= 0 ? "+" : ""}${configData.recentInfluenceScore.toFixed(2)}`;
+  const noHistoryMetadata = projectionChart?.no_history;
+  const noHistoryReasons = noHistoryMetadata?.fitness_inference_reasons ?? [];
+  const noHistoryConfidenceLabel = noHistoryMetadata
+    ? toNoHistoryConfidenceLabel(noHistoryMetadata.projection_floor_confidence)
+    : "n/a";
+  const noHistoryFloorAppliedLabel = noHistoryMetadata?.projection_floor_applied
+    ? "Yes"
+    : "No";
+  const noHistoryAvailabilityClampLabel =
+    noHistoryMetadata?.floor_clamped_by_availability ? "Yes" : "No";
+  const noHistoryAccessibilitySummary = noHistoryMetadata
+    ? `No-history cues. Confidence ${noHistoryConfidenceLabel}. Floor applied ${noHistoryFloorAppliedLabel}. Availability clamp ${noHistoryAvailabilityClampLabel}.`
+    : undefined;
 
   const goalInfluenceWeights = useMemo(() => {
     const weightsByGoalId = calculateGoalPriorityWeights(
@@ -779,7 +803,9 @@ export function SinglePageForm({
                       <Text className="text-xs text-muted-foreground">
                         {contextSummary
                           ? `Based on ${contextSummary.history_availability_state} history and signal quality ${(contextSummary.signal_quality * 100).toFixed(0)}%`
-                          : "Loading profile-aware defaults..."}
+                          : isPreviewPending
+                            ? "Loading profile-aware defaults..."
+                            : "Using conservative defaults until profile-aware suggestions are available."}
                       </Text>
                     </View>
                     <Button
@@ -819,6 +845,34 @@ export function SinglePageForm({
                   )}
                 </View>
               )}
+
+              {activeTab === "review" && noHistoryMetadata ? (
+                <View
+                  className="gap-2 rounded-lg border border-border bg-muted/20 p-3"
+                  accessibilityRole="text"
+                  accessibilityLiveRegion="polite"
+                  accessibilityLabel={noHistoryAccessibilitySummary}
+                >
+                  <Text className="text-xs font-medium">No-history cues</Text>
+                  <Text className="text-xs text-muted-foreground">
+                    Confidence: {noHistoryConfidenceLabel}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">
+                    Floor applied: {noHistoryFloorAppliedLabel}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">
+                    Availability clamp: {noHistoryAvailabilityClampLabel}
+                  </Text>
+                  {noHistoryReasons.slice(0, 2).map((reason) => (
+                    <Text
+                      key={reason}
+                      className="text-xs text-muted-foreground"
+                    >
+                      - {reason}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
 
               {activeTab === "review" && informationalConflicts.length > 0 && (
                 <View className="gap-2 rounded-lg border border-amber-300 bg-amber-100/40 p-3">

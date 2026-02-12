@@ -7,6 +7,7 @@ import {
   type CreationContextSummary,
   type CreationProvenance,
 } from "../schemas/training_plan_structure";
+import { countAvailableTrainingDays } from "./availabilityUtils";
 
 const WEEKDAY_ORDER = [
   "monday",
@@ -116,23 +117,6 @@ function buildAvailabilityForSessionRange(
   });
 }
 
-function getAvailableTrainingDays(input: {
-  availabilityDays: Array<{ day: string; windows: Array<unknown> }>;
-  hardRestDays: string[];
-}): number {
-  const availableDays = new Set(
-    input.availabilityDays
-      .filter((day) => day.windows.length > 0)
-      .map((day) => day.day),
-  );
-
-  for (const restDay of input.hardRestDays) {
-    availableDays.delete(restDay);
-  }
-
-  return availableDays.size;
-}
-
 /**
  * Builds deterministic profile-aware suggestions for creation config.
  *
@@ -214,7 +198,7 @@ export function deriveCreationSuggestions(
       profileMode === "rich_data" ? "balanced" : "conservative",
   });
 
-  const availableTrainingDays = getAvailableTrainingDays({
+  const availableTrainingDays = countAvailableTrainingDays({
     availabilityDays: availabilitySuggestion.days,
     hardRestDays: constraintsSuggestion.hard_rest_days,
   });

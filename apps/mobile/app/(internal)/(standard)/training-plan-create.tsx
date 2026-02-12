@@ -6,7 +6,6 @@ import {
   type TrainingPlanConfigFormData,
   type TrainingPlanFormData,
 } from "@/components/training-plan/create/SinglePageForm";
-import type { ProjectionChartPayload } from "@/components/training-plan/create/projection-chart-types";
 import { ROUTES } from "@/lib/constants/routes";
 import { featureFlags } from "@/lib/constants/features";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
@@ -24,6 +23,7 @@ import type {
   CreationProvenance,
   CreationValueSource,
   MinimalTrainingPlanCreate,
+  ProjectionChartPayload,
 } from "@repo/core";
 import { Stack, useRouter } from "expo-router";
 import React, {
@@ -128,6 +128,14 @@ const normalizePlanStartDate = (
   }
 
   return DATE_ONLY_PATTERN.test(trimmed) ? trimmed : undefined;
+};
+
+const areJsonStructurallyEqual = (left: unknown, right: unknown): boolean => {
+  if (left === right) {
+    return true;
+  }
+
+  return JSON.stringify(left) === JSON.stringify(right);
 };
 
 const createDefaultAvailability = (): CreationAvailabilityConfig => ({
@@ -517,7 +525,7 @@ export default function CreateTrainingPlan() {
         setPreviewState((previous) =>
           reducePreviewState(previous, {
             status: "success",
-            projectionChart: preview.projection_chart,
+            projectionChart: preview.projection_chart as ProjectionChartPayload,
           }),
         );
         const nextConflicts: TrainingPlanConfigConflict[] =
@@ -574,14 +582,28 @@ export default function CreateTrainingPlan() {
   );
 
   useEffect(() => {
-    if (!suggestionsQuery.data || hasSeededDefaults) {
+    if (!featureFlags.trainingPlanCreateConfigMvp || hasSeededDefaults) {
       return;
     }
-    setConfigData((previous) =>
-      mergeSuggestionsIntoConfig(previous, suggestionsQuery.data, "seed"),
-    );
-    setHasSeededDefaults(true);
-  }, [hasSeededDefaults, mergeSuggestionsIntoConfig, suggestionsQuery.data]);
+
+    if (suggestionsQuery.data) {
+      setConfigData((previous) =>
+        mergeSuggestionsIntoConfig(previous, suggestionsQuery.data, "seed"),
+      );
+      setHasSeededDefaults(true);
+      return;
+    }
+
+    if (!suggestionsQuery.isLoading && !suggestionsQuery.isFetching) {
+      setHasSeededDefaults(true);
+    }
+  }, [
+    hasSeededDefaults,
+    mergeSuggestionsIntoConfig,
+    suggestionsQuery.data,
+    suggestionsQuery.isFetching,
+    suggestionsQuery.isLoading,
+  ]);
 
   useEffect(() => {
     if (!hasSeededDefaults || recomputeNonce === 0) {
@@ -643,12 +665,16 @@ export default function CreateTrainingPlan() {
       return;
     }
 
+    if (!hasSeededDefaults) {
+      return;
+    }
+
     const timer = setTimeout(() => {
       void refreshPreview(false);
     }, PREVIEW_REFRESH_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [configData, refreshPreview]);
+  }, [configData, hasSeededDefaults, refreshPreview]);
 
   const handleFormDataChange = (nextData: TrainingPlanFormData) => {
     setFormData(nextData);
@@ -659,16 +685,17 @@ export default function CreateTrainingPlan() {
 
   const handleConfigChange = (nextData: TrainingPlanConfigFormData) => {
     const highImpactChanged =
-      JSON.stringify(configData.availabilityConfig) !==
-        JSON.stringify(nextData.availabilityConfig) ||
       configData.baselineLoadWeeklyTss !== nextData.baselineLoadWeeklyTss ||
       configData.optimizationProfile !== nextData.optimizationProfile ||
       configData.postGoalRecoveryDays !== nextData.postGoalRecoveryDays ||
       configData.maxWeeklyTssRampPct !== nextData.maxWeeklyTssRampPct ||
       configData.maxCtlRampPerWeek !== nextData.maxCtlRampPerWeek ||
-      JSON.stringify(configData.constraints) !==
-        JSON.stringify(nextData.constraints) ||
-      JSON.stringify(configData.locks) !== JSON.stringify(nextData.locks);
+      !areJsonStructurallyEqual(
+        configData.availabilityConfig,
+        nextData.availabilityConfig,
+      ) ||
+      !areJsonStructurallyEqual(configData.constraints, nextData.constraints) ||
+      !areJsonStructurallyEqual(configData.locks, nextData.locks);
 
     if (highImpactChanged) {
       setRecomputeNonce((value) => value + 1);
