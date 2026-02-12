@@ -37,6 +37,7 @@ TSS research note:
 3. Deterministic and explainable: same inputs produce same outputs.
 4. Safety-first invariant: caps and conflict logic remain authoritative.
 5. Shared contract: preview and create must execute identical logic.
+6. Single source of truth: CTL floor is canonical, weekly TSS floor is derived.
 
 ## Scope
 
@@ -45,6 +46,9 @@ TSS research note:
 1. No-history bootstrap floors calibrated by goal demand and inferred fitness class.
 2. Timeline feasibility classification for floor confidence (metadata-only).
 3. Non-breaking preview/create metadata for floor provenance and confidence.
+4. Deterministic no-history CTL/ATL/TSB starting prior.
+5. Floor clamping by existing availability inputs (no new controls).
+6. Deterministic no-history workout intensity assumptions for TSS estimation.
 
 ### Out of Scope
 
@@ -69,22 +73,40 @@ Use two inferred fitness classes to keep complexity low:
 
 Apply floor matrix using goal demand tier (`low | medium | high`):
 
-| Fitness | Tier            | Start CTL Floor | Start Weekly TSS Floor | Event CTL Target |
-| ------- | --------------- | --------------: | ---------------------: | ---------------: |
-| weak    | low             |              20 |                    140 |               35 |
-| weak    | medium          |              28 |                    196 |               50 |
-| weak    | high (marathon) |              35 |                    245 |               70 |
-| strong  | low             |              30 |                    210 |               45 |
-| strong  | medium          |              40 |                    280 |               60 |
-| strong  | high (marathon) |              50 |                    350 |               85 |
+| Fitness | Tier            | Start CTL Floor (canonical) | Derived Start Weekly TSS Floor (`7 * CTL`) | Event CTL Target |
+| ------- | --------------- | --------------------------: | -----------------------------------------: | ---------------: |
+| weak    | low             |                          20 |                                        140 |               35 |
+| weak    | medium          |                          28 |                                        196 |               50 |
+| weak    | high (marathon) |                          35 |                                        245 |               70 |
+| strong  | low             |                          30 |                                        210 |               45 |
+| strong  | medium          |                          40 |                                        280 |               60 |
+| strong  | high (marathon) |                          50 |                                        350 |               85 |
 
 Rules:
 
-1. Floors are starting anchors, not forced weekly values.
-2. Existing caps still limit week-over-week increases.
-3. Event CTL target is advisory metadata for realism checks and UX explanation.
+1. CTL floor is the only stored anchor; weekly TSS floor is always derived as `round(7 * ctl_floor)` in one shared helper.
+2. Floors are starting anchors, not forced weekly values.
+3. Existing caps still limit week-over-week increases.
+4. Event CTL target is advisory metadata for realism checks and UX explanation.
+5. Floors are clamped by existing availability constraints before projection start (see Requirement 3).
 
-### 3) Minimal Timeline Feasibility Check
+Fitness inference rule (deterministic):
+
+1. Default to `weak` when uncertain.
+2. Promote to `strong` only when at least two independent existing signals indicate higher endurance readiness.
+3. Return compact reason tokens for explainability/debugging in metadata.
+
+### 3) Availability Clamp (No New Controls)
+
+Use existing time-availability inputs already present in plan construction to avoid unrealistic floor anchors.
+
+1. Compute maximum feasible weekly duration from current availability fields.
+2. Convert that duration to a no-history feasible weekly TSS ceiling using deterministic assumed intensity distributions.
+3. Clamp derived floor weekly TSS to this ceiling.
+4. Re-derive effective start CTL as `clamped_weekly_tss / 7`.
+5. If clamped, emit warning metadata token `floor_clamped_by_availability`.
+
+### 4) Minimal Timeline Feasibility Check
 
 Classify build-time sufficiency by goal tier:
 
@@ -92,21 +114,32 @@ Classify build-time sufficiency by goal tier:
 2. `medium`: full >=12 weeks, limited 8-11, insufficient <8.
 3. `low`: full >=8 weeks, limited 6-7, insufficient <6.
 
-If `limited` or `insufficient`, return warning metadata. Do not add new blocking rules in this MVP.
+If `limited` or `insufficient`, return warning metadata and lower confidence. Do not add new blocking rules in this MVP.
 
-### 4) Deterministic Projection Order
+Confidence rule:
+
+1. `full -> high`
+2. `limited -> medium`
+3. `insufficient -> low`
+
+### 5) Deterministic Projection Order
 
 For `history=none`, calculation order is:
 
 1. Normalize config (existing path).
-2. Infer fitness class from existing context signals.
+2. Infer fitness class from existing context signals and capture reason tokens.
 3. Map primary goal to demand tier.
-4. Derive floor anchors + event CTL target.
-5. Initialize projection with `max(current_estimate, floor)`.
-6. Run existing projection engine with existing clamps/recovery/taper logic.
-7. Run existing feasibility/conflict classification unchanged.
+4. Derive canonical CTL floor + derived weekly TSS floor + event CTL target.
+5. Clamp floor by existing availability-derived feasible weekly TSS ceiling.
+6. Initialize no-history prior state explicitly when floor is applied:
+   - `starting_ctl = effective_floor_ctl`
+   - `starting_atl = starting_ctl` (neutral fatigue prior)
+   - `starting_tsb = 0`
+7. Mark metadata `starting_state_is_prior = true` when floor path is used.
+8. Run existing projection engine with existing clamps/recovery/taper logic.
+9. Run existing feasibility/conflict classification unchanged.
 
-### 5) Metadata Transparency
+### 6) Metadata Transparency
 
 Preview/create responses include:
 
@@ -114,11 +147,33 @@ Preview/create responses include:
 2. `projection_floor_tier: "low" | "medium" | "high" | null`
 3. `projection_floor_values: { start_ctl: number; start_weekly_tss: number } | null`
 4. `fitness_level: "weak" | "strong" | null`
-5. `target_event_ctl: number | null`
-6. `weeks_to_event: number`
-7. `periodization_feasibility: "full" | "limited" | "insufficient" | null`
-8. `build_phase_warnings: string[]`
-9. `days_until_reliable_projection: number` (countdown to 42 days)
+5. `fitness_inference_reasons: string[]`
+6. `starting_state_is_prior: boolean`
+7. `target_event_ctl: number | null`
+8. `weeks_to_event: number`
+9. `periodization_feasibility: "full" | "limited" | "insufficient" | null`
+10. `projection_floor_confidence: "high" | "medium" | "low" | null`
+11. `build_phase_warnings: string[]`
+12. `floor_clamped_by_availability: boolean`
+13. `days_until_reliable_projection: number` (countdown to 42 days)
+14. `assumed_intensity_model_version: string | null`
+
+Invariant note:
+
+1. If CTL/ATL/TSB values are exposed in preview/create payloads, enforce `TSB = CTL - ATL` at each output step.
+
+### 7) CTL Definition (Explicit)
+
+For this MVP, CTL is treated as blended all-sport training load, consistent with current system behavior. Floor and target values above are calibrated for this blended interpretation.
+
+### 8) No-History Intensity Assumption Layer (MVP)
+
+To keep no-history workout-level TSS deterministic without new user inputs:
+
+1. Define default intensity multiplier distributions by workout type (`easy`, `long`, `tempo`, `interval`) and goal tier.
+2. Select the weak/strong variant using inferred fitness class.
+3. Version this table and emit `assumed_intensity_model_version` in metadata.
+4. Keep this assumption layer internal (no new UI controls).
 
 ## Data Contract Changes
 
@@ -128,15 +183,16 @@ No new creation config fields.
 
 ### Preview/Create Output Additions
 
-Add non-breaking fields listed in Functional Requirement 5.
+Add non-breaking fields listed in Functional Requirement 6.
 
 ## Algorithm Changes
 
-1. Add `determineNoHistoryFitnessLevel(context)` helper in `@repo/core`.
-2. Add `deriveNoHistoryProjectionFloor(goalTier, fitnessLevel, weeksToEvent)` helper in `@repo/core`.
-3. Add `classifyBuildTimeFeasibility(goalTier, weeksToEvent)` helper in `@repo/core`.
-4. Apply floor initialization in shared preview/create projection path.
-5. Preserve all current cap and recovery/taper logic as-is.
+1. Add `determineNoHistoryFitnessLevel(context)` helper in `@repo/core` that returns `{ fitnessLevel, reasons[] }`.
+2. Add `deriveNoHistoryProjectionFloor(goalTier, fitnessLevel)` helper in `@repo/core` with canonical CTL floor and derived weekly TSS floor.
+3. Add `clampNoHistoryFloorByAvailability(floor, availabilityContext, intensityModel)` helper in `@repo/core`.
+4. Add `classifyBuildTimeFeasibility(goalTier, weeksToEvent)` helper in `@repo/core` and map to confidence.
+5. Apply explicit no-history prior initialization (CTL/ATL/TSB) in shared preview/create projection path.
+6. Preserve all current cap and recovery/taper logic as-is.
 
 ## Risks and Mitigations
 
@@ -148,7 +204,7 @@ Risk:
 
 Mitigation:
 
-- Default uncertain users to `weak`, keep existing caps, surface warnings for short timelines.
+- Default uncertain users to `weak`, require two independent strong signals for `strong`, keep existing caps, surface warnings for short timelines.
 
 ### 2) Misclassification of Fitness Level
 
@@ -158,7 +214,7 @@ Risk:
 
 Mitigation:
 
-- Conservative default to `weak`; expose inferred class in metadata for transparency.
+- Conservative default to `weak`; expose inferred class and reason tokens in metadata for transparency.
 
 ### 3) Perceived Methodology Complexity
 
@@ -183,18 +239,21 @@ Mitigation:
 ## Acceptance Criteria
 
 1. No-history marathon projections no longer anchor near ~100 weekly TSS / ~14 CTL.
-2. `weak + high` no-history goals anchor at >=245 weekly TSS and >=35 CTL.
-3. `strong + high` no-history goals anchor at >=350 weekly TSS and >=50 CTL.
-4. Existing ramp caps remain strictly enforced with no regressions.
-5. `sparse` and `rich` users show unchanged behavior.
-6. Preview/create parity holds for floor metadata and projected values.
-7. Tests cover floor mapping, fitness classification fallback, timeline feasibility labels, and cap preservation.
+2. Canonical invariant holds: `derived_start_weekly_tss_floor = round(7 * start_ctl_floor)`.
+3. `weak + high` no-history goals anchor at >=245 weekly TSS and >=35 CTL before availability clamp.
+4. `strong + high` no-history goals anchor at >=350 weekly TSS and >=50 CTL before availability clamp.
+5. Existing ramp caps remain strictly enforced with no regressions.
+6. `sparse` and `rich` users show unchanged behavior.
+7. Preview/create parity holds for projected values and all new metadata fields.
+8. Tests cover floor mapping, availability clamp behavior, fitness classification fallback + reasons, timeline feasibility + confidence, no-history prior initialization, cross-metric sanity (TSB identity), and cap preservation.
 
 ## Minimal Implementation Checklist
 
 - [ ] Add fitness-level inference helper (`weak/strong`) using existing context signals.
-- [ ] Add goal-tier floor helper with calibrated matrix values.
-- [ ] Add timeline feasibility helper (`full/limited/insufficient`).
-- [ ] Apply floor initialization in shared projection path used by preview/create.
-- [ ] Thread metadata fields through API response contracts.
-- [ ] Add targeted tests for no-history marathon realism and unchanged safety behavior.
+- [ ] Add deterministic fitness inference reasons and two-signal promotion rule for `strong`.
+- [ ] Add goal-tier floor helper with canonical CTL floor and derived weekly TSS floor.
+- [ ] Add availability clamp helper using existing availability inputs and no-history intensity assumptions.
+- [ ] Add timeline feasibility helper (`full/limited/insufficient`) and confidence mapping (`high/medium/low`).
+- [ ] Apply explicit no-history prior initialization (CTL/ATL/TSB neutral) in shared projection path used by preview/create.
+- [ ] Thread extended metadata fields (including reasons, clamp/confidence, model version) through API response contracts.
+- [ ] Add targeted tests for invariants, clamp behavior, preview/create parity, and unchanged safety behavior.
