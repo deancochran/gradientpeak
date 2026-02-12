@@ -57,6 +57,41 @@ TSS research note:
 3. Changes to cap semantics (`max_weekly_tss_ramp_pct`, `max_ctl_ramp_per_week`).
 4. Behavior changes for users with `sparse` or `rich` history.
 
+## Current System Alignment (Application + Core)
+
+This MVP must integrate with the existing create/preview pipeline, not bypass it.
+
+### Core package touchpoints (`@repo/core`)
+
+1. `packages/core/plan/projectionCalculations.ts`
+   - Add no-history anchor resolver and fallback ladder before deterministic projection loop.
+   - Keep existing ramp/recovery/taper/cap behavior unchanged.
+2. `packages/core/plan/deriveCreationContext.ts`
+   - Reuse `history_availability_state` and existing evidence signals as fusion inputs.
+   - Do not redefine context semantics in other packages.
+3. `packages/core/plan/expandMinimalGoalToPlan.ts`
+   - Keep block generation behavior stable.
+   - Ensure no-history floor logic is applied in projection path, not by mutating plan structure defaults.
+4. `packages/core/plan/trainingPlanPreview.ts`
+   - Continue using shared minimal-plan transform path for preview/create parity.
+
+### Backend/API touchpoints (`@repo/trpc`)
+
+1. `packages/trpc/src/routers/training_plans.ts`
+   - `previewCreationConfig` and `createFromCreationConfig` must call the same shared projection/floor logic.
+   - Snapshot token generation must include the minimal no-history metadata contract when applicable.
+   - Avoid re-implementing projection logic in router-local helpers.
+
+### Mobile app touchpoints (`apps/mobile`)
+
+1. `apps/mobile/app/(internal)/(standard)/training-plan-create.tsx`
+   - Continue consuming preview/create API as source of truth for projection state.
+   - Avoid local projection assumptions that can drift from core calculations.
+2. `apps/mobile/components/training-plan/create/CreationProjectionChart.tsx`
+   - Render no-history confidence/clamp signals from API metadata (non-blocking UI cues).
+3. `apps/mobile/components/training-plan/create/SinglePageForm.tsx`
+   - Surface concise explanation chips/messages for no-history fallback/clamp outcomes.
+
 ## Functional Requirements
 
 ### 1) No-History Gate
@@ -188,6 +223,11 @@ No new creation config fields.
 
 Add non-breaking fields listed in Functional Requirement 6.
 
+Contract source-of-truth rule:
+
+1. Define and export the projection payload + no-history metadata types from `@repo/core`.
+2. `@repo/trpc` and mobile must consume those exported types instead of redefining parallel interfaces.
+
 ## Algorithm Changes
 
 1. Add a shared orchestrator `resolveNoHistoryAnchor(context)` in `@repo/core` to centralize evidence fusion and fallbacks.
@@ -203,6 +243,61 @@ Add non-breaking fields listed in Functional Requirement 6.
    - missing intensity model -> conservative baseline profile
 4. Apply explicit no-history prior initialization (CTL/ATL/TSB neutral) in shared preview/create projection path.
 5. Preserve all current cap and recovery/taper logic as-is.
+
+Implementation placement rule:
+
+1. Fusion and fallback decisions live in `@repo/core` only.
+2. `@repo/trpc` orchestrates and forwards results; it does not own anchor math.
+3. Mobile displays results; it does not infer or recompute anchor math.
+
+## Consolidation Requirements (Remove Redundant Logic)
+
+### 1) Shared projection payload types
+
+Problem:
+
+- Projection payload interfaces are duplicated between router-local types and mobile-local types.
+
+Requirement:
+
+1. Move canonical projection chart payload types to `@repo/core` (plan module).
+2. Replace mobile file-local projection types with imports from `@repo/core`.
+3. Replace router-local projection payload aliases with imports from `@repo/core` where possible.
+
+### 2) Shared minimal-plan transformation/target parsing
+
+Problem:
+
+- Target parsing/validation helpers (HMS/MM:SS/distance conversion) are duplicated across create screen and core preview helpers.
+
+Requirement:
+
+1. Keep canonical minimal-plan transformation logic in `@repo/core`.
+2. Reuse canonical helper in mobile for preview and create payload construction where feasible.
+3. Preserve UX-friendly field-level errors in mobile while avoiding duplicate conversion math.
+
+### 3) Shared availability-day counting utility
+
+Problem:
+
+- Availability training-day counting exists in multiple places (core suggestion logic, router, mobile).
+
+Requirement:
+
+1. Extract one shared utility in `@repo/core` for counting available training days with hard-rest exclusions.
+2. Use shared utility in core suggestion/conflict logic and router/mobile consumers.
+
+### 4) Shared UTC date helpers for plan/projection
+
+Problem:
+
+- Date-only parse/add/diff helpers are repeated in core plan modules and router.
+
+Requirement:
+
+1. Introduce one shared date-only UTC helper module in `@repo/core/plan`.
+2. Replace duplicated local implementations where behavior is equivalent.
+3. Keep behavior deterministic (date-only UTC semantics) and test for parity.
 
 ## Risks and Mitigations
 
@@ -256,6 +351,9 @@ Mitigation:
 6. `sparse` and `rich` users show unchanged behavior.
 7. Preview/create parity holds for projected values and all new metadata fields.
 8. Tests cover floor mapping, availability clamp behavior, fitness classification fallback + reasons, timeline feasibility + confidence, no-history prior initialization, cross-metric sanity (TSB identity), and cap preservation.
+9. No duplicate projection payload type definitions remain in mobile/router when equivalent core exports exist.
+10. Shared availability/date utilities replace duplicated implementations where semantics match.
+11. No-history decision math exists only in `@repo/core` (not duplicated in router/mobile).
 
 ## Minimal Implementation Checklist
 
@@ -267,3 +365,5 @@ Mitigation:
 - [ ] Apply explicit no-history prior initialization (CTL/ATL/TSB neutral) in shared projection path used by preview/create.
 - [ ] Thread minimal MVP metadata fields through API response contracts; keep additional fields internal unless consumed.
 - [ ] Add targeted tests for invariants, clamp behavior, fallback determinism, preview/create parity, and unchanged safety behavior.
+- [ ] Export canonical projection payload + no-history metadata types from `@repo/core` and adopt in router/mobile.
+- [ ] Consolidate shared helper duplication (target parsing, availability-day count, date-only UTC ops) with tests for behavior parity.
