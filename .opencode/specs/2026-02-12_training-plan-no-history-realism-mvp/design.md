@@ -48,7 +48,7 @@ TSS research note:
 3. Non-breaking preview/create metadata for floor provenance and confidence.
 4. Deterministic no-history CTL/ATL/TSB starting prior.
 5. Floor clamping by existing availability inputs (no new controls).
-6. Deterministic no-history workout intensity assumptions for TSS estimation.
+6. Deterministic no-history intensity assumptions for TSS estimation with sensible fallbacks.
 
 ### Out of Scope
 
@@ -141,22 +141,25 @@ For `history=none`, calculation order is:
 
 ### 6) Metadata Transparency
 
-Preview/create responses include:
+Preview/create responses include the minimal MVP contract:
 
 1. `projection_floor_applied: boolean`
-2. `projection_floor_tier: "low" | "medium" | "high" | null`
-3. `projection_floor_values: { start_ctl: number; start_weekly_tss: number } | null`
-4. `fitness_level: "weak" | "strong" | null`
-5. `fitness_inference_reasons: string[]`
-6. `starting_state_is_prior: boolean`
-7. `target_event_ctl: number | null`
-8. `weeks_to_event: number`
-9. `periodization_feasibility: "full" | "limited" | "insufficient" | null`
-10. `projection_floor_confidence: "high" | "medium" | "low" | null`
-11. `build_phase_warnings: string[]`
-12. `floor_clamped_by_availability: boolean`
-13. `days_until_reliable_projection: number` (countdown to 42 days)
-14. `assumed_intensity_model_version: string | null`
+2. `projection_floor_values: { start_ctl: number; start_weekly_tss: number } | null`
+3. `fitness_level: "weak" | "strong" | null`
+4. `fitness_inference_reasons: string[]`
+5. `projection_floor_confidence: "high" | "medium" | "low" | null`
+6. `floor_clamped_by_availability: boolean`
+
+Deferred/internal-only for MVP unless active product/UI consumer exists:
+
+1. `projection_floor_tier`
+2. `starting_state_is_prior`
+3. `target_event_ctl`
+4. `weeks_to_event`
+5. `periodization_feasibility`
+6. `build_phase_warnings`
+7. `days_until_reliable_projection`
+8. `assumed_intensity_model_version`
 
 Invariant note:
 
@@ -170,9 +173,9 @@ For this MVP, CTL is treated as blended all-sport training load, consistent with
 
 To keep no-history workout-level TSS deterministic without new user inputs:
 
-1. Define default intensity multiplier distributions by workout type (`easy`, `long`, `tempo`, `interval`) and goal tier.
-2. Select the weak/strong variant using inferred fitness class.
-3. Version this table and emit `assumed_intensity_model_version` in metadata.
+1. Use one default no-history intensity model for floor derivation and availability clamp calculations.
+2. Select weak/strong variant using inferred fitness class.
+3. If the intensity model is unavailable/incomplete, fall back deterministically to a conservative baseline profile.
 4. Keep this assumption layer internal (no new UI controls).
 
 ## Data Contract Changes
@@ -187,12 +190,19 @@ Add non-breaking fields listed in Functional Requirement 6.
 
 ## Algorithm Changes
 
-1. Add `determineNoHistoryFitnessLevel(context)` helper in `@repo/core` that returns `{ fitnessLevel, reasons[] }`.
-2. Add `deriveNoHistoryProjectionFloor(goalTier, fitnessLevel)` helper in `@repo/core` with canonical CTL floor and derived weekly TSS floor.
-3. Add `clampNoHistoryFloorByAvailability(floor, availabilityContext, intensityModel)` helper in `@repo/core`.
-4. Add `classifyBuildTimeFeasibility(goalTier, weeksToEvent)` helper in `@repo/core` and map to confidence.
-5. Apply explicit no-history prior initialization (CTL/ATL/TSB) in shared preview/create projection path.
-6. Preserve all current cap and recovery/taper logic as-is.
+1. Add a shared orchestrator `resolveNoHistoryAnchor(context)` in `@repo/core` to centralize evidence fusion and fallbacks.
+2. Within orchestrator, implement small composable helpers:
+   - `collectNoHistoryEvidence(context)`
+   - `determineNoHistoryFitnessLevel(evidence)` -> `{ fitnessLevel, reasons[] }`
+   - `deriveNoHistoryProjectionFloor(goalTier, fitnessLevel)`
+   - `clampNoHistoryFloorByAvailability(floor, availabilityContext, intensityModel)`
+   - `classifyBuildTimeFeasibility(goalTier, weeksToEvent)` and confidence mapping
+3. Use deterministic fallback ladder in orchestrator:
+   - uncertain/insufficient signals -> `weak`
+   - missing availability inputs -> skip clamp + reason token
+   - missing intensity model -> conservative baseline profile
+4. Apply explicit no-history prior initialization (CTL/ATL/TSB neutral) in shared preview/create projection path.
+5. Preserve all current cap and recovery/taper logic as-is.
 
 ## Risks and Mitigations
 
@@ -249,11 +259,11 @@ Mitigation:
 
 ## Minimal Implementation Checklist
 
-- [ ] Add fitness-level inference helper (`weak/strong`) using existing context signals.
-- [ ] Add deterministic fitness inference reasons and two-signal promotion rule for `strong`.
+- [ ] Add shared no-history anchor orchestrator with deterministic evidence fusion and fallback ladder.
+- [ ] Add fitness-level inference helper (`weak/strong`) using existing context signals + reason tokens.
 - [ ] Add goal-tier floor helper with canonical CTL floor and derived weekly TSS floor.
-- [ ] Add availability clamp helper using existing availability inputs and no-history intensity assumptions.
-- [ ] Add timeline feasibility helper (`full/limited/insufficient`) and confidence mapping (`high/medium/low`).
+- [ ] Add availability clamp helper using existing availability inputs and simplified no-history intensity model.
+- [ ] Add timeline feasibility helper (`full/limited/insufficient`) and confidence mapping (`high/medium/low`) for internal fusion output.
 - [ ] Apply explicit no-history prior initialization (CTL/ATL/TSB neutral) in shared projection path used by preview/create.
-- [ ] Thread extended metadata fields (including reasons, clamp/confidence, model version) through API response contracts.
-- [ ] Add targeted tests for invariants, clamp behavior, preview/create parity, and unchanged safety behavior.
+- [ ] Thread minimal MVP metadata fields through API response contracts; keep additional fields internal unless consumed.
+- [ ] Add targeted tests for invariants, clamp behavior, fallback determinism, preview/create parity, and unchanged safety behavior.
