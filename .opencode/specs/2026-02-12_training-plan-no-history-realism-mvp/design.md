@@ -78,6 +78,7 @@ This MVP must integrate with the existing create/preview pipeline, not bypass it
 ### Backend/API touchpoints (`@repo/trpc`)
 
 1. `packages/trpc/src/routers/training_plans.ts`
+   - `getCreationSuggestions` remains the entry-point for pre-form evaluation and dynamic default seeding.
    - `previewCreationConfig` and `createFromCreationConfig` must call the same shared projection/floor logic.
    - Snapshot token generation must include the minimal no-history metadata contract when applicable.
    - Avoid re-implementing projection logic in router-local helpers.
@@ -85,6 +86,8 @@ This MVP must integrate with the existing create/preview pipeline, not bypass it
 ### Mobile app touchpoints (`apps/mobile`)
 
 1. `apps/mobile/app/(internal)/(standard)/training-plan-create.tsx`
+   - Seed defaults from pre-form evaluation (`getCreationSuggestions`) before user edits.
+   - If suggestion fetch fails, retain conservative local defaults and continue.
    - Continue consuming preview/create API as source of truth for projection state.
    - Avoid local projection assumptions that can drift from core calculations.
 2. `apps/mobile/components/training-plan/create/CreationProjectionChart.tsx`
@@ -94,12 +97,22 @@ This MVP must integrate with the existing create/preview pipeline, not bypass it
 
 ## Functional Requirements
 
-### 1) No-History Gate
+### 1) Pre-Form Evaluation + Dynamic Defaults
+
+Before users finalize a new plan, evaluate profile/context signals to seed sensible defaults.
+
+1. On create flow entry, fetch/evaluate creation context and suggestions before first meaningful preview.
+2. Seed dynamic defaults for availability, baseline load, recent influence, and constraints from evaluated context.
+3. Keep this evaluation deterministic and reusable across preview/create.
+4. If evaluation fails or signal quality is insufficient, fall back to conservative defaults (never block form usage).
+5. Persist provenance/reason tokens so users can understand why defaults were chosen.
+
+### 2) No-History Gate
 
 1. Floor logic activates only when `history_availability_state === "none"`.
 2. For `sparse` and `rich`, current behavior remains unchanged.
 
-### 2) Fitness-Class + Goal-Tier Floors
+### 3) Fitness-Class + Goal-Tier Floors
 
 Use two inferred fitness classes to keep complexity low:
 
@@ -131,7 +144,7 @@ Fitness inference rule (deterministic):
 2. Promote to `strong` only when at least two independent existing signals indicate higher endurance readiness.
 3. Return compact reason tokens for explainability/debugging in metadata.
 
-### 3) Availability Clamp (No New Controls)
+### 4) Availability Clamp (No New Controls)
 
 Use existing time-availability inputs already present in plan construction to avoid unrealistic floor anchors.
 
@@ -141,7 +154,7 @@ Use existing time-availability inputs already present in plan construction to av
 4. Re-derive effective start CTL as `clamped_weekly_tss / 7`.
 5. If clamped, emit warning metadata token `floor_clamped_by_availability`.
 
-### 4) Minimal Timeline Feasibility Check
+### 5) Minimal Timeline Feasibility Check
 
 Classify build-time sufficiency by goal tier:
 
@@ -157,7 +170,7 @@ Confidence rule:
 2. `limited -> medium`
 3. `insufficient -> low`
 
-### 5) Deterministic Projection Order
+### 6) Deterministic Projection Order
 
 For `history=none`, calculation order is:
 
@@ -174,7 +187,7 @@ For `history=none`, calculation order is:
 8. Run existing projection engine with existing clamps/recovery/taper logic.
 9. Run existing feasibility/conflict classification unchanged.
 
-### 6) Metadata Transparency
+### 7) Metadata Transparency
 
 Preview/create responses include the minimal MVP contract:
 
@@ -200,11 +213,11 @@ Invariant note:
 
 1. If CTL/ATL/TSB values are exposed in preview/create payloads, enforce `TSB = CTL - ATL` at each output step.
 
-### 7) CTL Definition (Explicit)
+### 8) CTL Definition (Explicit)
 
 For this MVP, CTL is treated as blended all-sport training load, consistent with current system behavior. Floor and target values above are calibrated for this blended interpretation.
 
-### 8) No-History Intensity Assumption Layer (MVP)
+### 9) No-History Intensity Assumption Layer (MVP)
 
 To keep no-history workout-level TSS deterministic without new user inputs:
 
@@ -354,6 +367,7 @@ Mitigation:
 9. No duplicate projection payload type definitions remain in mobile/router when equivalent core exports exist.
 10. Shared availability/date utilities replace duplicated implementations where semantics match.
 11. No-history decision math exists only in `@repo/core` (not duplicated in router/mobile).
+12. Create flow seeds evaluated dynamic defaults before preview/create, and gracefully falls back to conservative defaults when evaluation is unavailable.
 
 ## Minimal Implementation Checklist
 
@@ -367,3 +381,4 @@ Mitigation:
 - [ ] Add targeted tests for invariants, clamp behavior, fallback determinism, preview/create parity, and unchanged safety behavior.
 - [ ] Export canonical projection payload + no-history metadata types from `@repo/core` and adopt in router/mobile.
 - [ ] Consolidate shared helper duplication (target parsing, availability-day count, date-only UTC ops) with tests for behavior parity.
+- [ ] Enforce pre-form evaluation default seeding in create flow with non-blocking conservative fallback path.
