@@ -723,7 +723,9 @@ function PlanScreen() {
             ) : (
               <View className="bg-card border border-border rounded-lg overflow-hidden">
                 <TouchableOpacity
-                  onPress={() => router.push(ROUTES.PLAN.TRAINING_PLAN.LIST)}
+                  onPress={() =>
+                    router.push(ROUTES.LIBRARY_WITH_RESOURCE("training_plans"))
+                  }
                   className="p-6"
                   activeOpacity={0.7}
                 >

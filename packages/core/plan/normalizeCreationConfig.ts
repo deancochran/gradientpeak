@@ -2,6 +2,7 @@ import {
   creationAvailabilityConfigSchema,
   creationConfigLocksSchema,
   creationConstraintsSchema,
+  creationOptimizationProfileEnum,
   creationProvenanceSchema,
   creationRecentInfluenceActionEnum,
   creationValueSourceEnum,
@@ -32,6 +33,10 @@ type CreationConfigValues = {
   recent_influence: CreationRecentInfluence;
   recent_influence_action: CreationRecentInfluenceAction;
   constraints: CreationConstraints;
+  optimization_profile: "outcome_first" | "balanced" | "sustainable";
+  post_goal_recovery_days: number;
+  max_weekly_tss_ramp_pct: number;
+  max_ctl_ramp_per_week: number;
 };
 
 export interface NormalizeCreationConfigInput {
@@ -95,6 +100,10 @@ const DEFAULT_VALUES: CreationConfigValues = {
   recent_influence: { influence_score: 0 },
   recent_influence_action: "disabled",
   constraints: CONSERVATIVE_DEFAULT_CONSTRAINTS,
+  optimization_profile: "balanced",
+  post_goal_recovery_days: 5,
+  max_weekly_tss_ramp_pct: 7,
+  max_ctl_ramp_per_week: 3,
 };
 
 function pickByPrecedence<T>(
@@ -282,6 +291,34 @@ export function normalizeCreationConfig(
     locks,
   );
 
+  const optimizationProfilePick = pickByPrecedence(
+    input.user_values?.optimization_profile,
+    input.confirmed_suggestions?.optimization_profile,
+    defaultValues.optimization_profile,
+    locks.optimization_profile.locked,
+  );
+
+  const postGoalRecoveryDaysPick = pickByPrecedence(
+    input.user_values?.post_goal_recovery_days,
+    input.confirmed_suggestions?.post_goal_recovery_days,
+    defaultValues.post_goal_recovery_days,
+    locks.post_goal_recovery_days.locked,
+  );
+
+  const maxWeeklyTssRampPctPick = pickByPrecedence(
+    input.user_values?.max_weekly_tss_ramp_pct,
+    input.confirmed_suggestions?.max_weekly_tss_ramp_pct,
+    defaultValues.max_weekly_tss_ramp_pct,
+    locks.max_weekly_tss_ramp_pct.locked,
+  );
+
+  const maxCtlRampPerWeekPick = pickByPrecedence(
+    input.user_values?.max_ctl_ramp_per_week,
+    input.confirmed_suggestions?.max_ctl_ramp_per_week,
+    defaultValues.max_ctl_ramp_per_week,
+    locks.max_ctl_ramp_per_week.locked,
+  );
+
   const normalizedDays = WEEK_DAYS.map((day) => {
     return (
       availabilityPick.value.days.find((entry) => entry.day === day) ?? {
@@ -320,6 +357,12 @@ export function normalizeCreationConfig(
       input.provenance_overrides?.recent_influence_provenance,
     ),
     constraints,
+    optimization_profile: creationOptimizationProfileEnum.parse(
+      optimizationProfilePick.value,
+    ),
+    post_goal_recovery_days: postGoalRecoveryDaysPick.value,
+    max_weekly_tss_ramp_pct: maxWeeklyTssRampPctPick.value,
+    max_ctl_ramp_per_week: maxCtlRampPerWeekPick.value,
     locks,
   });
 }

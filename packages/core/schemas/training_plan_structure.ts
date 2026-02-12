@@ -114,9 +114,36 @@ export type MinimalTrainingGoalCreate = z.infer<
   typeof minimalTrainingGoalCreateSchema
 >;
 
-export const minimalTrainingPlanCreateSchema = z.object({
-  goals: z.array(minimalTrainingGoalCreateSchema).min(1),
-});
+export const minimalTrainingPlanCreateSchema = z
+  .object({
+    plan_start_date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+    goals: z.array(minimalTrainingGoalCreateSchema).min(1),
+  })
+  .superRefine((data, ctx) => {
+    if (!data.plan_start_date) {
+      return;
+    }
+
+    const latestGoalDate = data.goals
+      .map((goal) => goal.target_date)
+      .sort((a, b) => a.localeCompare(b))
+      .at(-1);
+
+    if (!latestGoalDate) {
+      return;
+    }
+
+    if (data.plan_start_date > latestGoalDate) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["plan_start_date"],
+        message: `plan_start_date must be on or before the latest goal target_date (${latestGoalDate})`,
+      });
+    }
+  });
 
 export type MinimalTrainingPlanCreate = z.infer<
   typeof minimalTrainingPlanCreateSchema
@@ -625,6 +652,16 @@ export type CreationGoalDifficultyPreference = z.infer<
   typeof creationGoalDifficultyPreferenceEnum
 >;
 
+export const creationOptimizationProfileEnum = z.enum([
+  "outcome_first",
+  "balanced",
+  "sustainable",
+]);
+
+export type CreationOptimizationProfile = z.infer<
+  typeof creationOptimizationProfileEnum
+>;
+
 export const creationConstraintsSchema = z
   .object({
     weekly_load_floor_tss: z.number().int().min(0).max(2000).optional(),
@@ -724,6 +761,10 @@ export const creationConfigLocksSchema = z.object({
   goal_difficulty_preference: creationFieldLockSchema.default({
     locked: false,
   }),
+  optimization_profile: creationFieldLockSchema.default({ locked: false }),
+  post_goal_recovery_days: creationFieldLockSchema.default({ locked: false }),
+  max_weekly_tss_ramp_pct: creationFieldLockSchema.default({ locked: false }),
+  max_ctl_ramp_per_week: creationFieldLockSchema.default({ locked: false }),
 });
 
 export type CreationConfigLocks = z.infer<typeof creationConfigLocksSchema>;
@@ -883,6 +924,10 @@ export const trainingPlanCreationConfigSchema = z.object({
   recent_influence_action: creationRecentInfluenceActionEnum,
   recent_influence_provenance: creationProvenanceSchema,
   constraints: creationConstraintsSchema,
+  optimization_profile: creationOptimizationProfileEnum.default("balanced"),
+  post_goal_recovery_days: z.number().int().min(0).max(28).default(5),
+  max_weekly_tss_ramp_pct: z.number().min(0).max(20).default(7),
+  max_ctl_ramp_per_week: z.number().min(0).max(8).default(3),
   locks: creationConfigLocksSchema,
   context_summary: creationContextSummarySchema.optional(),
   feasibility_safety_summary: creationFeasibilitySafetySummarySchema.optional(),

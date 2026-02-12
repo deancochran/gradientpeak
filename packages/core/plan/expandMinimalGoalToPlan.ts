@@ -11,6 +11,7 @@ import {
   deterministicUuidFromSeed,
   normalizeGoalInput,
 } from "./normalizeGoalInput";
+import { derivePlanTimeline } from "./derivePlanTimeline";
 
 type ActivityDistributionInput = Partial<Record<string, number>>;
 
@@ -18,6 +19,7 @@ export interface ExpandMinimalGoalToPlanOptions {
   planName?: string;
   description?: string;
   startDate?: string;
+  todayDate?: string;
   startingCtl?: number;
   activityDistribution?: ActivityDistributionInput;
   metadata?: Record<string, unknown>;
@@ -42,11 +44,15 @@ export function expandMinimalGoalToPlan(
     }),
   );
   const normalizedGoal = getPrimaryGoal(normalizedGoals);
+  const goalIds = normalizedGoals.map((goal) => goal.id);
 
-  const endDate = normalizedGoal.target_date;
-  const requestedStartDate = options.startDate ?? addDaysUtc(endDate, -84);
-  const startDate =
-    requestedStartDate <= endDate ? requestedStartDate : endDate;
+  const timeline = derivePlanTimeline({
+    goals: normalizedGoals,
+    plan_start_date: parsed.plan_start_date ?? options.startDate,
+    today_date: options.todayDate,
+  });
+  const startDate = timeline.start_date;
+  const endDate = timeline.end_date;
   const totalDays = Math.max(1, diffDaysInclusive(startDate, endDate));
   const phases = buildPhaseSpecs(totalDays);
 
@@ -67,7 +73,7 @@ export function expandMinimalGoalToPlan(
       name: phase.name,
       start_date: cursor,
       end_date: blockEndDate,
-      goal_ids: [normalizedGoal.id],
+      goal_ids: goalIds,
       phase: phase.phase,
       target_weekly_tss_range: {
         min: Math.max(0, Math.round(targetTss * 0.85)),
@@ -135,15 +141,15 @@ function buildPhaseSpecs(totalDays: number): PhaseSpec[] {
         name: "Taper",
         phase: "taper",
         days: 7,
-        tssMultiplier: 0.65,
+        tssMultiplier: 0.82,
         sessionsRange: { min: 2, max: 4 },
       },
     ];
   }
 
   const baseDays = Math.max(7, Math.round(totalDays * 0.45));
-  const buildDays = Math.max(7, Math.round(totalDays * 0.4));
-  const taperDays = Math.max(7, totalDays - baseDays - buildDays);
+  const rawTaperDays = Math.max(7, Math.round(totalDays * 0.12));
+  const taperDays = Math.min(14, rawTaperDays);
   const adjustedBuildDays = Math.max(7, totalDays - baseDays - taperDays);
 
   return [
@@ -165,7 +171,7 @@ function buildPhaseSpecs(totalDays: number): PhaseSpec[] {
       name: "Taper",
       phase: "taper",
       days: taperDays,
-      tssMultiplier: 0.65,
+      tssMultiplier: 0.82,
       sessionsRange: { min: 2, max: 4 },
     },
   ];

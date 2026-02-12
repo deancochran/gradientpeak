@@ -1,16 +1,23 @@
 import {
+  type GoalFormData,
   type GoalTargetFormData,
   SinglePageForm,
   type TrainingPlanConfigConflict,
   type TrainingPlanConfigFormData,
   type TrainingPlanFormData,
 } from "@/components/training-plan/create/SinglePageForm";
+import type { ProjectionChartPayload } from "@/components/training-plan/create/projection-chart-types";
 import { ROUTES } from "@/lib/constants/routes";
 import { featureFlags } from "@/lib/constants/features";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { trpc } from "@/lib/trpc";
 import { Text } from "@/components/ui/text";
+import {
+  buildPreviewMinimalPlanFromForm,
+  reducePreviewState,
+} from "@repo/core";
 import type {
+  PreviewState,
   CreationAvailabilityConfig,
   CreationContextSummary,
   CreationFeasibilitySafetySummary,
@@ -19,7 +26,13 @@ import type {
   MinimalTrainingPlanCreate,
 } from "@repo/core";
 import { Stack, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -30,6 +43,10 @@ import {
 
 const HIGH_IMPACT_RECOMPUTE_DELAY_MS = 500;
 const PREVIEW_REFRESH_DELAY_MS = 350;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MIN_PREP_DAYS_BETWEEN_GOALS = 21;
+const MAX_SAFE_WEEKLY_TSS_RAMP_PCT = 20;
+const MAX_SAFE_CTL_RAMP_PER_WEEK = 8;
 
 const weekDays: Array<CreationAvailabilityConfig["days"][number]["day"]> = [
   "monday",
@@ -60,6 +77,7 @@ const createDefaultGoal = (targetDate: string) => ({
 
 const HMS_PATTERN = /^([0-9]+):([0-5][0-9]):([0-5][0-9])$/;
 const MMS_PATTERN = /^([0-9]+):([0-5][0-9])$/;
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 const parseHmsToSeconds = (value: string): number | undefined => {
   const trimmed = value.trim();
@@ -99,6 +117,17 @@ const parseDistanceKmToMeters = (
   }
 
   return Math.round(distanceKm * 1000);
+};
+
+const normalizePlanStartDate = (
+  value: string | undefined,
+): string | undefined => {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return DATE_ONLY_PATTERN.test(trimmed) ? trimmed : undefined;
 };
 
 const createDefaultAvailability = (): CreationAvailabilityConfig => ({
@@ -141,6 +170,10 @@ const createDefaultConfigState = (): TrainingPlanConfigFormData => ({
     max_single_session_duration_minutes: 90,
     goal_difficulty_preference: "balanced",
   },
+  optimizationProfile: "balanced",
+  postGoalRecoveryDays: 5,
+  maxWeeklyTssRampPct: 7,
+  maxCtlRampPerWeek: 3,
   constraintsSource: "default",
   locks: {
     availability_config: { locked: false },
@@ -153,6 +186,10 @@ const createDefaultConfigState = (): TrainingPlanConfigFormData => ({
     max_sessions_per_week: { locked: false },
     max_single_session_duration_minutes: { locked: false },
     goal_difficulty_preference: { locked: false },
+    optimization_profile: { locked: false },
+    post_goal_recovery_days: { locked: false },
+    max_weekly_tss_ramp_pct: { locked: false },
+    max_ctl_ramp_per_week: { locked: false },
   },
 });
 
@@ -168,6 +205,39 @@ const getAvailableTrainingDays = (config: TrainingPlanConfigFormData) => {
   return availableDays.size;
 };
 
+const getMinimumGoalGapDays = (goals: GoalFormData[]): number | undefined => {
+  const sortedGoalDates = goals
+    .map((goal) => goal.targetDate)
+    .filter((targetDate) => DATE_ONLY_PATTERN.test(targetDate))
+    .sort((a, b) => a.localeCompare(b));
+
+  if (sortedGoalDates.length < 2) {
+    return undefined;
+  }
+
+  let minimumGapDays = Number.POSITIVE_INFINITY;
+
+  for (let index = 0; index < sortedGoalDates.length - 1; index += 1) {
+    const currentDate = sortedGoalDates[index];
+    const nextDate = sortedGoalDates[index + 1];
+    if (!currentDate || !nextDate) {
+      continue;
+    }
+
+    const currentDateUtc = new Date(`${currentDate}T00:00:00Z`);
+    const nextDateUtc = new Date(`${nextDate}T00:00:00Z`);
+    const gapDays = Math.floor(
+      (nextDateUtc.getTime() - currentDateUtc.getTime()) / DAY_MS,
+    );
+
+    if (gapDays < minimumGapDays) {
+      minimumGapDays = gapDays;
+    }
+  }
+
+  return Number.isFinite(minimumGapDays) ? minimumGapDays : undefined;
+};
+
 export default function CreateTrainingPlan() {
   const router = useRouter();
   const utils = trpc.useUtils();
@@ -179,6 +249,7 @@ export default function CreateTrainingPlan() {
   }, []);
 
   const [formData, setFormData] = useState<TrainingPlanFormData>({
+    planStartDate: undefined,
     goals: [createDefaultGoal(defaultTargetDate)],
   });
   const [configData, setConfigData] = useState<TrainingPlanConfigFormData>(
@@ -203,10 +274,17 @@ export default function CreateTrainingPlan() {
   const [conflictItems, setConflictItems] = useState<
     TrainingPlanConfigConflict[]
   >([]);
+  const [previewSnapshotToken, setPreviewSnapshotToken] = useState<
+    string | undefined
+  >(undefined);
+  const [previewState, setPreviewState] = useState<
+    PreviewState<ProjectionChartPayload>
+  >({});
   const [informationalConflicts, setInformationalConflicts] = useState<
     string[]
   >([]);
   const [recomputeNonce, setRecomputeNonce] = useState(0);
+  const lastHandledRecomputeNonceRef = useRef(0);
 
   const suggestionsQuery = trpc.trainingPlans.getCreationSuggestions.useQuery(
     undefined,
@@ -215,6 +293,13 @@ export default function CreateTrainingPlan() {
       enabled: featureFlags.trainingPlanCreateConfigMvp,
     },
   );
+  const previewCreationConfigQuery =
+    utils.client.trainingPlans.previewCreationConfig.query;
+  const getCreationSuggestionsQuery =
+    utils.client.trainingPlans.getCreationSuggestions.query;
+  type CreationSuggestionsResponse = Awaited<
+    ReturnType<typeof getCreationSuggestionsQuery>
+  >;
 
   const createPlanLegacyMutation = useReliableMutation(
     trpc.trainingPlans.createFromMinimalGoal,
@@ -312,7 +397,10 @@ export default function CreateTrainingPlan() {
   };
 
   const buildMinimalPayload = useCallback((): MinimalTrainingPlanCreate => {
+    const planStartDate = normalizePlanStartDate(formData.planStartDate);
+
     return {
+      plan_start_date: planStartDate,
       goals: formData.goals.map((goal) => ({
         name: goal.name.trim(),
         target_date: goal.targetDate,
@@ -320,7 +408,7 @@ export default function CreateTrainingPlan() {
         targets: goal.targets.map(toPayloadTarget),
       })),
     };
-  }, [formData.goals]);
+  }, [formData.goals, formData.planStartDate]);
 
   const buildCreationInput = useCallback(
     (state: TrainingPlanConfigFormData) => ({
@@ -330,6 +418,10 @@ export default function CreateTrainingPlan() {
         recent_influence: { influence_score: state.recentInfluenceScore },
         recent_influence_action: state.recentInfluenceAction,
         constraints: state.constraints,
+        optimization_profile: state.optimizationProfile,
+        post_goal_recovery_days: state.postGoalRecoveryDays,
+        max_weekly_tss_ramp_pct: state.maxWeeklyTssRampPct,
+        max_ctl_ramp_per_week: state.maxCtlRampPerWeek,
         locks: state.locks,
       },
       provenance_overrides: {
@@ -344,7 +436,7 @@ export default function CreateTrainingPlan() {
   const mergeSuggestionsIntoConfig = useCallback(
     (
       current: TrainingPlanConfigFormData,
-      suggestionResponse: NonNullable<typeof suggestionsQuery.data>,
+      suggestionResponse: CreationSuggestionsResponse,
       mode: "seed" | "recompute",
     ): TrainingPlanConfigFormData => {
       const suggestions = suggestionResponse.suggestions;
@@ -397,20 +489,37 @@ export default function CreateTrainingPlan() {
         return { blocked: false };
       }
 
-      const minimalPlan = buildMinimalPayload();
+      const previewMinimalPlan = buildPreviewMinimalPlanFromForm(formData);
+      if (!previewMinimalPlan) {
+        setPreviewState((previous) =>
+          reducePreviewState(previous, {
+            status: "failure",
+            errorMessage:
+              "Preview unavailable until at least one goal has complete target details.",
+          }),
+        );
+        return { blocked: true };
+      }
+
       setIsPreviewPending(true);
       try {
-        const preview =
-          await utils.client.trainingPlans.previewCreationConfig.query({
-            minimal_plan: minimalPlan,
-            creation_input: buildCreationInput(configData),
-            post_create_behavior: {
-              autonomous_mutation_enabled: false,
-            },
-          });
+        const preview = await previewCreationConfigQuery({
+          minimal_plan: previewMinimalPlan,
+          creation_input: buildCreationInput(configData),
+          post_create_behavior: {
+            autonomous_mutation_enabled: false,
+          },
+        });
 
         setContextSummary(preview.creation_context_summary);
         setFeasibilitySummary(preview.feasibility_safety);
+        setPreviewSnapshotToken(preview.preview_snapshot?.token);
+        setPreviewState((previous) =>
+          reducePreviewState(previous, {
+            status: "success",
+            projectionChart: preview.projection_chart,
+          }),
+        );
         const nextConflicts: TrainingPlanConfigConflict[] =
           preview.conflicts.items.map((conflict) => ({
             code: conflict.code,
@@ -430,11 +539,25 @@ export default function CreateTrainingPlan() {
             "Your current settings have blocking conflicts. Apply a quick fix or adjust the advanced fields.",
             [{ text: "OK" }],
           );
-          return { blocked: true };
+          return {
+            blocked: true,
+            previewSnapshotToken: preview.preview_snapshot?.token,
+          };
         }
 
-        return { blocked: false };
-      } catch (error) {
+        return {
+          blocked: false,
+          previewSnapshotToken: preview.preview_snapshot?.token,
+        };
+      } catch {
+        setPreviewSnapshotToken(undefined);
+        setPreviewState((previous) =>
+          reducePreviewState(previous, {
+            status: "failure",
+            errorMessage:
+              "Could not compute feasibility and safety preview. Check goal details and try again.",
+          }),
+        );
         if (showBlockingAlert) {
           Alert.alert(
             "Preview failed",
@@ -447,12 +570,7 @@ export default function CreateTrainingPlan() {
         setIsPreviewPending(false);
       }
     },
-    [
-      buildCreationInput,
-      buildMinimalPayload,
-      configData,
-      utils.client.trainingPlans.previewCreationConfig.query,
-    ],
+    [buildCreationInput, configData, formData, previewCreationConfigQuery],
   );
 
   useEffect(() => {
@@ -474,18 +592,26 @@ export default function CreateTrainingPlan() {
       return;
     }
 
+    if (lastHandledRecomputeNonceRef.current === recomputeNonce) {
+      return;
+    }
+    lastHandledRecomputeNonceRef.current = recomputeNonce;
+
     const timer = setTimeout(async () => {
       try {
-        const suggestions =
-          await utils.client.trainingPlans.getCreationSuggestions.query({
-            locks: configData.locks,
-            existing_values: {
-              availability_config: configData.availabilityConfig,
-              baseline_load_weekly_tss: configData.baselineLoadWeeklyTss,
-              recent_influence_score: configData.recentInfluenceScore,
-              constraints: configData.constraints,
-            },
-          });
+        const suggestions = await getCreationSuggestionsQuery({
+          locks: configData.locks,
+          existing_values: {
+            availability_config: configData.availabilityConfig,
+            baseline_load_weekly_tss: configData.baselineLoadWeeklyTss,
+            recent_influence_score: configData.recentInfluenceScore,
+            optimization_profile: configData.optimizationProfile,
+            post_goal_recovery_days: configData.postGoalRecoveryDays,
+            max_weekly_tss_ramp_pct: configData.maxWeeklyTssRampPct,
+            max_ctl_ramp_per_week: configData.maxCtlRampPerWeek,
+            constraints: configData.constraints,
+          },
+        });
 
         setConfigData((previous) =>
           mergeSuggestionsIntoConfig(previous, suggestions, "recompute"),
@@ -501,18 +627,18 @@ export default function CreateTrainingPlan() {
     configData.baselineLoadWeeklyTss,
     configData.constraints,
     configData.locks,
+    configData.maxCtlRampPerWeek,
+    configData.maxWeeklyTssRampPct,
+    configData.optimizationProfile,
+    configData.postGoalRecoveryDays,
     configData.recentInfluenceScore,
     hasSeededDefaults,
     mergeSuggestionsIntoConfig,
     recomputeNonce,
-    utils.client.trainingPlans.getCreationSuggestions.query,
+    getCreationSuggestionsQuery,
   ]);
 
   useEffect(() => {
-    if (!hasSeededDefaults) {
-      return;
-    }
-
     if (!featureFlags.trainingPlanCreateConfigMvp) {
       return;
     }
@@ -522,7 +648,7 @@ export default function CreateTrainingPlan() {
     }, PREVIEW_REFRESH_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [buildMinimalPayload, configData, hasSeededDefaults, refreshPreview]);
+  }, [configData, refreshPreview]);
 
   const handleFormDataChange = (nextData: TrainingPlanFormData) => {
     setFormData(nextData);
@@ -536,6 +662,10 @@ export default function CreateTrainingPlan() {
       JSON.stringify(configData.availabilityConfig) !==
         JSON.stringify(nextData.availabilityConfig) ||
       configData.baselineLoadWeeklyTss !== nextData.baselineLoadWeeklyTss ||
+      configData.optimizationProfile !== nextData.optimizationProfile ||
+      configData.postGoalRecoveryDays !== nextData.postGoalRecoveryDays ||
+      configData.maxWeeklyTssRampPct !== nextData.maxWeeklyTssRampPct ||
+      configData.maxCtlRampPerWeek !== nextData.maxCtlRampPerWeek ||
       JSON.stringify(configData.constraints) !==
         JSON.stringify(nextData.constraints) ||
       JSON.stringify(configData.locks) !== JSON.stringify(nextData.locks);
@@ -675,6 +805,30 @@ export default function CreateTrainingPlan() {
       });
     });
 
+    const normalizedPlanStartDate = normalizePlanStartDate(
+      formData.planStartDate,
+    );
+    if (formData.planStartDate && !normalizedPlanStartDate) {
+      newErrors.planStartDate = "Plan start date must use yyyy-mm-dd";
+    }
+
+    if (normalizedPlanStartDate) {
+      const latestGoalDate = formData.goals
+        .map((goal) => goal.targetDate)
+        .filter((targetDate) => DATE_ONLY_PATTERN.test(targetDate))
+        .reduce<string | undefined>((latest, targetDate) => {
+          if (!latest || targetDate > latest) {
+            return targetDate;
+          }
+          return latest;
+        }, undefined);
+
+      if (latestGoalDate && normalizedPlanStartDate > latestGoalDate) {
+        newErrors.planStartDate =
+          "Plan start date must be on or before the latest goal target date";
+      }
+    }
+
     if (Object.keys(newErrors).some((key) => key.includes(".targets"))) {
       newErrors.goals =
         newErrors.goals ?? "Each goal must include valid target details";
@@ -734,6 +888,26 @@ export default function CreateTrainingPlan() {
           next.constraints.max_sessions_per_week = availableDays;
           next.constraintsSource = "user";
           break;
+        case "required_tss_ramp_exceeds_cap":
+          next.maxWeeklyTssRampPct = MAX_SAFE_WEEKLY_TSS_RAMP_PCT;
+          break;
+        case "required_ctl_ramp_exceeds_cap":
+          next.maxCtlRampPerWeek = MAX_SAFE_CTL_RAMP_PER_WEEK;
+          break;
+        case "post_goal_recovery_overlaps_next_goal":
+        case "post_goal_recovery_compresses_next_goal_prep": {
+          const minimumGoalGapDays = getMinimumGoalGapDays(formData.goals);
+          const maxRecoveryDaysForPrepWindow =
+            minimumGoalGapDays === undefined
+              ? 0
+              : Math.max(0, minimumGoalGapDays - MIN_PREP_DAYS_BETWEEN_GOALS);
+
+          next.postGoalRecoveryDays = Math.max(
+            0,
+            Math.min(next.postGoalRecoveryDays, maxRecoveryDaysForPrepWindow),
+          );
+          break;
+        }
       }
 
       return next;
@@ -768,6 +942,8 @@ export default function CreateTrainingPlan() {
       const createdPlan = await createPlanMutation.mutateAsync({
         minimal_plan: buildMinimalPayload(),
         creation_input: buildCreationInput(configData),
+        preview_snapshot_token:
+          previewResult.previewSnapshotToken ?? previewSnapshotToken,
         post_create_behavior: {
           autonomous_mutation_enabled: false,
         },
@@ -800,6 +976,12 @@ export default function CreateTrainingPlan() {
               disabled={isCreating}
               hitSlop={8}
               className={isCreating ? "opacity-50" : "opacity-100"}
+              accessibilityRole="button"
+              accessibilityLabel={
+                isCreating ? "Creating training plan" : "Create training plan"
+              }
+              accessibilityHint="Saves your plan and opens it"
+              accessibilityState={{ disabled: isCreating, busy: isCreating }}
             >
               <Text className="font-semibold text-primary">
                 {isCreating ? "Saving..." : "Create"}
@@ -813,11 +995,19 @@ export default function CreateTrainingPlan() {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         className="flex-1"
       >
+        {previewState.previewError ? (
+          <View className="px-4 pt-3">
+            <Text className="text-xs text-destructive">
+              {previewState.previewError}
+            </Text>
+          </View>
+        ) : null}
         <SinglePageForm
           formData={formData}
           onFormDataChange={handleFormDataChange}
           showCreationConfig={featureFlags.trainingPlanCreateConfigMvp}
           configData={configData}
+          projectionChart={previewState.projectionChart}
           onConfigChange={handleConfigChange}
           contextSummary={contextSummary}
           feasibilitySafetySummary={feasibilitySummary}

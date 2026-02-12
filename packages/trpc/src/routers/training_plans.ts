@@ -1,5 +1,6 @@
 // packages/trpc/src/routers/training_plans.ts
 import {
+  buildDeterministicProjectionPayload,
   calculateATL,
   calculateCTL,
   calculateTSB,
@@ -9,6 +10,7 @@ import {
   creationBaselineLoadSchema,
   creationConfigLocksSchema,
   creationConstraintsSchema,
+  creationOptimizationProfileEnum,
   creationProvenanceSchema,
   creationRecentInfluenceActionEnum,
   creationRecentInfluenceSchema,
@@ -18,6 +20,7 @@ import {
   expandMinimalGoalToPlan,
   getFormStatus,
   getTrainingIntensityZone,
+  normalizeProjectionSafetyConfig,
   normalizeCreationConfig,
   resolveConstraintConflicts,
   trainingPlanCreationConfigFormSchema,
@@ -36,7 +39,7 @@ import { addEstimationToPlans } from "../utils/estimation-helpers";
 import { featureFlags } from "../lib/features";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const DEFAULT_ESTIMATED_CTL = 40;
+const DEFAULT_ESTIMATED_CTL = 0;
 
 const feasibilityStateSchema = z.enum(["feasible", "aggressive", "unsafe"]);
 const safetyStateSchema = z.enum(["safe", "caution", "exceeded"]);
@@ -69,6 +72,108 @@ type PlanAssessmentBundle = {
     reasons: string[];
   };
   goalSafety: GoalSafetyAssessment[];
+};
+
+type ProjectionChartPoint = {
+  date: string;
+  predicted_load_tss: number;
+  predicted_fitness_ctl: number;
+};
+
+type ProjectionGoalMarker = {
+  id: string;
+  name: string;
+  target_date: string;
+  priority: number;
+};
+
+type ProjectionPeriodizationPhase = {
+  id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  target_weekly_tss_min: number;
+  target_weekly_tss_max: number;
+};
+
+type ProjectionMicrocycle = {
+  id?: string;
+  week_start_date: string;
+  week_end_date: string;
+  phase: string;
+  pattern: "ramp" | "deload" | "taper" | "event" | "recovery";
+  planned_weekly_tss: number;
+  projected_ctl: number;
+  metadata?: {
+    recovery: {
+      active: boolean;
+      goal_ids: string[];
+      reduction_factor: number;
+    };
+    tss_ramp: {
+      previous_week_tss: number;
+      requested_weekly_tss: number;
+      applied_weekly_tss: number;
+      max_weekly_tss_ramp_pct: number;
+      clamped: boolean;
+    };
+    ctl_ramp: {
+      requested_ctl_ramp: number;
+      applied_ctl_ramp: number;
+      max_ctl_ramp_per_week: number;
+      clamped: boolean;
+    };
+  };
+};
+
+type ProjectionRecoverySegment = {
+  goal_id: string;
+  goal_name: string;
+  start_date: string;
+  end_date: string;
+};
+
+type ProjectionConstraintSummary = {
+  normalized_creation_config: {
+    optimization_profile: "outcome_first" | "balanced" | "sustainable";
+    post_goal_recovery_days: number;
+    max_weekly_tss_ramp_pct: number;
+    max_ctl_ramp_per_week: number;
+  };
+  tss_ramp_clamp_weeks: number;
+  ctl_ramp_clamp_weeks: number;
+  recovery_weeks: number;
+};
+
+type ProjectionFeasibilitySummary = {
+  state: FeasibilityState;
+  reasons: string[];
+  diagnostics: {
+    tss_ramp_near_cap_weeks: number;
+    ctl_ramp_near_cap_weeks: number;
+    tss_ramp_clamp_weeks: number;
+    ctl_ramp_clamp_weeks: number;
+    recovery_weeks: number;
+  };
+};
+
+type CreationConflictItem = {
+  code: string;
+  severity: "blocking" | "warning";
+  message: string;
+  field_paths: string[];
+  suggestions: string[];
+};
+
+type ProjectionChartPayload = {
+  start_date: string;
+  end_date: string;
+  points: ProjectionChartPoint[];
+  goal_markers: ProjectionGoalMarker[];
+  periodization_phases: ProjectionPeriodizationPhase[];
+  microcycles: ProjectionMicrocycle[];
+  recovery_segments: ProjectionRecoverySegment[];
+  constraint_summary: ProjectionConstraintSummary;
 };
 
 function parseDateOnlyUtc(value: string): Date {
@@ -384,6 +489,262 @@ function collectBlockRampWarnings(
   return uniqueReasons(warnings);
 }
 
+function findBlockForDate(
+  blocks: Array<{
+    name: string;
+    phase: string;
+    start_date: string;
+    end_date: string;
+    target_weekly_tss_range?: { min: number; max: number };
+  }>,
+  date: string,
+) {
+  return blocks.find(
+    (block) => block.start_date <= date && block.end_date >= date,
+  );
+}
+
+function diffDays(startDate: string, endDate: string): number {
+  const start = parseDateOnlyUtc(startDate).getTime();
+  const end = parseDateOnlyUtc(endDate).getTime();
+  const dayMs = 24 * 60 * 60 * 1000;
+  return Math.floor((end - start) / dayMs);
+}
+
+function addDaysUtc(dateString: string, days: number): string {
+  const date = parseDateOnlyUtc(dateString);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function buildProjectionChartPayload(input: {
+  expandedPlan: ReturnType<typeof expandMinimalGoalToPlan>;
+  baselineWeeklyTss: number;
+  startingCtl?: number;
+  creationConfig?: {
+    optimization_profile?: "outcome_first" | "balanced" | "sustainable";
+    post_goal_recovery_days?: number;
+    max_weekly_tss_ramp_pct?: number;
+    max_ctl_ramp_per_week?: number;
+  };
+}): ProjectionChartPayload {
+  const { expandedPlan } = input;
+  const baselineWeeklyTss = Math.max(0, input.baselineWeeklyTss);
+
+  const periodizationPhases: ProjectionPeriodizationPhase[] =
+    expandedPlan.blocks.map((block, index) => ({
+      id: deterministicUuidFromSeed(
+        `projection-phase|${expandedPlan.start_date}|${expandedPlan.end_date}|${index}|${block.name}|${block.start_date}|${block.end_date}`,
+      ),
+      name: block.name,
+      start_date: block.start_date,
+      end_date: block.end_date,
+      target_weekly_tss_min:
+        Math.round(
+          (block.target_weekly_tss_range?.min ?? baselineWeeklyTss) * 10,
+        ) / 10,
+      target_weekly_tss_max:
+        Math.round(
+          (block.target_weekly_tss_range?.max ?? baselineWeeklyTss) * 10,
+        ) / 10,
+    }));
+
+  const deterministicProjection = buildDeterministicProjectionPayload({
+    timeline: {
+      start_date: expandedPlan.start_date,
+      end_date: expandedPlan.end_date,
+    },
+    blocks: expandedPlan.blocks.map((block) => ({
+      name: block.name,
+      phase: block.phase,
+      start_date: block.start_date,
+      end_date: block.end_date,
+      target_weekly_tss_range: block.target_weekly_tss_range,
+    })),
+    goals: expandedPlan.goals.map((goal) => ({
+      id: goal.id,
+      name: goal.name,
+      target_date: goal.target_date,
+      priority: goal.priority,
+    })),
+    baseline_weekly_tss: baselineWeeklyTss,
+    starting_ctl: input.startingCtl,
+    creation_config: input.creationConfig,
+  });
+
+  const microcycles: ProjectionMicrocycle[] =
+    deterministicProjection.microcycles.map((microcycle) => ({
+      id: deterministicUuidFromSeed(
+        `projection-microcycle|${expandedPlan.start_date}|${microcycle.week_start_date}|${microcycle.week_end_date}`,
+      ),
+      ...microcycle,
+    }));
+
+  return {
+    start_date: expandedPlan.start_date,
+    end_date: expandedPlan.end_date,
+    points: deterministicProjection.points,
+    goal_markers: deterministicProjection.goal_markers,
+    periodization_phases: periodizationPhases,
+    microcycles,
+    recovery_segments: deterministicProjection.recovery_segments,
+    constraint_summary: deterministicProjection.constraint_summary,
+  };
+}
+
+function buildProjectionFeasibilitySummary(
+  projectionChart: ProjectionChartPayload,
+): ProjectionFeasibilitySummary {
+  const nearCapThreshold = 0.9;
+  let tssNearCapWeeks = 0;
+  let ctlNearCapWeeks = 0;
+
+  for (const microcycle of projectionChart.microcycles) {
+    const tssRamp = microcycle.metadata?.tss_ramp;
+    const ctlRamp = microcycle.metadata?.ctl_ramp;
+    if (!tssRamp || !ctlRamp) {
+      continue;
+    }
+
+    if (
+      !tssRamp.clamped &&
+      tssRamp.previous_week_tss > 0 &&
+      tssRamp.max_weekly_tss_ramp_pct > 0
+    ) {
+      const requestedRampPct =
+        ((tssRamp.requested_weekly_tss - tssRamp.previous_week_tss) /
+          tssRamp.previous_week_tss) *
+        100;
+      if (
+        requestedRampPct >=
+        tssRamp.max_weekly_tss_ramp_pct * nearCapThreshold
+      ) {
+        tssNearCapWeeks += 1;
+      }
+    }
+
+    if (!ctlRamp.clamped && ctlRamp.max_ctl_ramp_per_week > 0) {
+      if (
+        ctlRamp.requested_ctl_ramp >=
+        ctlRamp.max_ctl_ramp_per_week * nearCapThreshold
+      ) {
+        ctlNearCapWeeks += 1;
+      }
+    }
+  }
+
+  const reasons: string[] = [];
+  let state: FeasibilityState = "feasible";
+
+  if (projectionChart.constraint_summary.tss_ramp_clamp_weeks > 0) {
+    state = "unsafe";
+    reasons.push("required_tss_ramp_exceeds_configured_cap");
+  }
+
+  if (projectionChart.constraint_summary.ctl_ramp_clamp_weeks > 0) {
+    state = "unsafe";
+    reasons.push("required_ctl_ramp_exceeds_configured_cap");
+  }
+
+  if (state !== "unsafe" && tssNearCapWeeks > 0) {
+    state = "aggressive";
+    reasons.push("required_tss_ramp_near_configured_cap");
+  }
+
+  if (state !== "unsafe" && ctlNearCapWeeks > 0) {
+    state = "aggressive";
+    reasons.push("required_ctl_ramp_near_configured_cap");
+  }
+
+  return {
+    state,
+    reasons: uniqueReasons(reasons),
+    diagnostics: {
+      tss_ramp_near_cap_weeks: tssNearCapWeeks,
+      ctl_ramp_near_cap_weeks: ctlNearCapWeeks,
+      tss_ramp_clamp_weeks:
+        projectionChart.constraint_summary.tss_ramp_clamp_weeks,
+      ctl_ramp_clamp_weeks:
+        projectionChart.constraint_summary.ctl_ramp_clamp_weeks,
+      recovery_weeks: projectionChart.constraint_summary.recovery_weeks,
+    },
+  };
+}
+
+function deriveProjectionDrivenConflicts(input: {
+  expandedPlan: ReturnType<typeof expandMinimalGoalToPlan>;
+  projectionChart: ProjectionChartPayload;
+  postGoalRecoveryDays: number;
+}): CreationConflictItem[] {
+  const conflicts: CreationConflictItem[] = [];
+
+  if (input.projectionChart.constraint_summary.tss_ramp_clamp_weeks > 0) {
+    conflicts.push({
+      code: "required_tss_ramp_exceeds_cap",
+      severity: "blocking",
+      message:
+        "Required week-to-week TSS progression exceeds the configured max_weekly_tss_ramp_pct",
+      field_paths: ["max_weekly_tss_ramp_pct", "optimization_profile"],
+      suggestions: [
+        "Raise max_weekly_tss_ramp_pct",
+        "Move one or more goals farther out",
+        "Pick a less conservative optimization profile",
+      ],
+    });
+  }
+
+  if (input.projectionChart.constraint_summary.ctl_ramp_clamp_weeks > 0) {
+    conflicts.push({
+      code: "required_ctl_ramp_exceeds_cap",
+      severity: "blocking",
+      message:
+        "Required CTL progression exceeds the configured max_ctl_ramp_per_week",
+      field_paths: ["max_ctl_ramp_per_week", "optimization_profile"],
+      suggestions: [
+        "Raise max_ctl_ramp_per_week",
+        "Extend timeline before high-priority goals",
+        "Lower expected peak load requirements",
+      ],
+    });
+  }
+
+  const sortedGoals = [...input.expandedPlan.goals].sort((a, b) =>
+    a.target_date.localeCompare(b.target_date),
+  );
+  for (let i = 0; i < sortedGoals.length - 1; i += 1) {
+    const currentGoal = sortedGoals[i]!;
+    const nextGoal = sortedGoals[i + 1]!;
+    const recoveryEnd = toDateOnlyUtc(
+      new Date(
+        parseDateOnlyUtc(currentGoal.target_date).getTime() +
+          input.postGoalRecoveryDays * DAY_MS,
+      ),
+    );
+    const prepDays = diffDaysUtc(recoveryEnd, nextGoal.target_date);
+    if (prepDays < 21) {
+      conflicts.push({
+        code:
+          prepDays < 0
+            ? "post_goal_recovery_overlaps_next_goal"
+            : "post_goal_recovery_compresses_next_goal_prep",
+        severity: "blocking",
+        message:
+          prepDays < 0
+            ? `Post-goal recovery after ${currentGoal.name} overlaps ${nextGoal.name}`
+            : `Post-goal recovery after ${currentGoal.name} leaves only ${prepDays} prep days before ${nextGoal.name}`,
+        field_paths: ["post_goal_recovery_days", "optimization_profile"],
+        suggestions: [
+          "Reduce post_goal_recovery_days",
+          "Move the next goal farther out",
+          "Use a more aggressive profile only when recovery can safely shorten",
+        ],
+      });
+    }
+  }
+
+  return conflicts;
+}
+
 async function estimateCurrentCtl(
   supabase: SupabaseClient,
   profileId: string,
@@ -469,7 +830,33 @@ const minimalTrainingGoalV2InputSchema = z
 
 const minimalTrainingPlanV2InputSchema = z
   .object({
+    plan_start_date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
     goals: z.array(minimalTrainingGoalV2InputSchema).min(1),
+  })
+  .superRefine((data, ctx) => {
+    if (!data.plan_start_date) {
+      return;
+    }
+
+    const latestGoalDate = data.goals
+      .map((goal) => goal.target_date)
+      .sort((a, b) => a.localeCompare(b))
+      .at(-1);
+
+    if (!latestGoalDate) {
+      return;
+    }
+
+    if (data.plan_start_date > latestGoalDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["plan_start_date"],
+        message: `plan_start_date must be on or before the latest goal target_date (${latestGoalDate})`,
+      });
+    }
   })
   .strict();
 
@@ -490,6 +877,10 @@ const creationConfigValueSchema = z.object({
   recent_influence: creationRecentInfluenceSchema,
   recent_influence_action: creationRecentInfluenceActionEnum,
   constraints: creationConstraintsSchema,
+  optimization_profile: creationOptimizationProfileEnum,
+  post_goal_recovery_days: z.number().int().min(0).max(28),
+  max_weekly_tss_ramp_pct: z.number().min(0).max(20),
+  max_ctl_ramp_per_week: z.number().min(0).max(8),
 });
 
 const creationNormalizationInputSchema = z.object({
@@ -526,6 +917,10 @@ const getCreationSuggestionsInputSchema = z
         availability_config: creationAvailabilityConfigSchema.optional(),
         baseline_load_weekly_tss: z.number().int().min(30).max(2000).optional(),
         recent_influence_score: z.number().min(-1).max(1).optional(),
+        optimization_profile: creationOptimizationProfileEnum.optional(),
+        post_goal_recovery_days: z.number().int().min(0).max(28).optional(),
+        max_weekly_tss_ramp_pct: z.number().min(0).max(20).optional(),
+        max_ctl_ramp_per_week: z.number().min(0).max(8).optional(),
         constraints: creationConstraintsSchema.partial().optional(),
       })
       .optional(),
@@ -541,7 +936,10 @@ const previewCreationConfigInputSchema = z.object({
 const createFromCreationConfigInputSchema =
   previewCreationConfigInputSchema.extend({
     is_active: z.boolean().optional().default(true),
+    preview_snapshot_token: z.string().min(1).optional(),
   });
+
+const CREATION_PREVIEW_SNAPSHOT_VERSION = "creation_preview_v1";
 
 function formatIssuePath(path: Array<string | number>): string {
   if (path.length === 0) {
@@ -593,6 +991,66 @@ function enforceNoAutonomousPostCreateMutation(input?: {
   }
 }
 
+function canonicalizeForDeterministicToken(value: unknown): unknown {
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => canonicalizeForDeterministicToken(item));
+  }
+
+  const objectValue = value as Record<string, unknown>;
+  const sortedEntries = Object.entries(objectValue).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
+
+  return Object.fromEntries(
+    sortedEntries.map(([key, nestedValue]) => [
+      key,
+      canonicalizeForDeterministicToken(nestedValue),
+    ]),
+  );
+}
+
+function buildCreationPreviewSnapshotToken(input: {
+  minimalPlan: z.infer<typeof minimalTrainingPlanV2InputSchema>;
+  finalConfig: Awaited<
+    ReturnType<typeof evaluateCreationConfig>
+  >["finalConfig"];
+  estimatedCurrentCtl: number;
+  projectionConstraintSummary: ProjectionConstraintSummary;
+  projectionFeasibility: ProjectionFeasibilitySummary;
+}): string {
+  const normalizedCreationConfigSnapshot = {
+    availability_config: input.finalConfig.availability_config,
+    baseline_load: input.finalConfig.baseline_load,
+    recent_influence: input.finalConfig.recent_influence,
+    recent_influence_action: input.finalConfig.recent_influence_action,
+    constraints: input.finalConfig.constraints,
+    optimization_profile: input.finalConfig.optimization_profile,
+    post_goal_recovery_days: input.finalConfig.post_goal_recovery_days,
+    max_weekly_tss_ramp_pct: input.finalConfig.max_weekly_tss_ramp_pct,
+    max_ctl_ramp_per_week: input.finalConfig.max_ctl_ramp_per_week,
+  };
+
+  const snapshotPayload = {
+    version: CREATION_PREVIEW_SNAPSHOT_VERSION,
+    minimal_plan: input.minimalPlan,
+    normalized_creation_config: normalizedCreationConfigSnapshot,
+    estimated_current_ctl: Math.round(input.estimatedCurrentCtl * 10) / 10,
+    projection_constraint_summary: input.projectionConstraintSummary,
+    projection_feasibility: input.projectionFeasibility,
+  };
+
+  const canonicalSnapshotPayload =
+    canonicalizeForDeterministicToken(snapshotPayload);
+
+  return deterministicUuidFromSeed(
+    `creation-preview-snapshot|${JSON.stringify(canonicalSnapshotPayload)}`,
+  );
+}
+
 function enforceCreationConfigFeatureEnabled(): void {
   if (!featureFlags.trainingPlanCreateConfigMvp) {
     throw new TRPCError({
@@ -619,7 +1077,7 @@ function getAvailabilityTrainingDays(input: {
   return availableDays.size;
 }
 
-async function deriveProfileAwareCreationContext(input: {
+export async function deriveProfileAwareCreationContext(input: {
   supabase: SupabaseClient;
   profileId: string;
   asOfIso?: string;
@@ -660,27 +1118,29 @@ async function deriveProfileAwareCreationContext(input: {
     ]);
 
   if (activitiesResult.error) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: `Failed to load activities for creation context: ${activitiesResult.error.message}`,
-    });
+    console.warn(
+      "Failed to load activities for creation context. Falling back to empty activities.",
+      activitiesResult.error.message,
+    );
   }
 
   if (effortsResult.error) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: `Failed to load activity efforts for creation context: ${effortsResult.error.message}`,
-    });
+    console.warn(
+      "Failed to load activity efforts for creation context. Falling back to empty efforts.",
+      effortsResult.error.message,
+    );
   }
 
   if (profileMetricsResult.error) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: `Failed to load profile metrics for creation context: ${profileMetricsResult.error.message}`,
-    });
+    console.warn(
+      "Failed to load profile metrics for creation context. Falling back to empty metrics.",
+      profileMetricsResult.error.message,
+    );
   }
 
-  const completedActivities = (activitiesResult.data ?? []).map((activity) => ({
+  const completedActivities = (
+    activitiesResult.error ? [] : (activitiesResult.data ?? [])
+  ).map((activity) => ({
     occurred_at: activity.started_at,
     activity_category: activity.activity_category,
     duration_seconds: activity.duration_seconds,
@@ -714,13 +1174,15 @@ async function deriveProfileAwareCreationContext(input: {
     Object.entries(activityCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ??
     undefined;
 
-  const efforts = (effortsResult.data ?? []).map((effort) => ({
-    recorded_at: effort.recorded_at,
-    effort_type: effort.effort_type,
-    duration_seconds: effort.duration_seconds,
-    value: effort.value,
-    activity_category: effort.activity_category,
-  }));
+  const efforts = (effortsResult.error ? [] : (effortsResult.data ?? [])).map(
+    (effort) => ({
+      recorded_at: effort.recorded_at,
+      effort_type: effort.effort_type,
+      duration_seconds: effort.duration_seconds,
+      value: effort.value,
+      activity_category: effort.activity_category,
+    }),
+  );
 
   const ftpEffort = efforts
     .filter(
@@ -729,10 +1191,14 @@ async function deriveProfileAwareCreationContext(input: {
     )
     .sort((a, b) => b.value - a.value)[0];
 
-  const lthrMetric = (profileMetricsResult.data ?? []).find(
+  const profileMetricsRows = profileMetricsResult.error
+    ? []
+    : (profileMetricsResult.data ?? []);
+
+  const lthrMetric = profileMetricsRows.find(
     (metric) => metric.metric_type === "lthr",
   );
-  const weightMetric = (profileMetricsResult.data ?? []).find(
+  const weightMetric = profileMetricsRows.find(
     (metric) => metric.metric_type === "weight_kg",
   );
 
@@ -764,6 +1230,26 @@ function buildConfirmedSuggestionsFromContext(input: {
   creationInput: z.infer<typeof creationNormalizationInputSchema>;
   nowIso: string;
 }) {
+  const suggestedOptimizationProfile =
+    input.contextSummary.history_availability_state === "none"
+      ? "sustainable"
+      : input.contextSummary.signal_quality >= 0.75
+        ? "outcome_first"
+        : "balanced";
+
+  const profileDefaults = normalizeProjectionSafetyConfig({
+    optimization_profile:
+      input.creationInput.user_values?.optimization_profile ??
+      input.creationInput.confirmed_suggestions?.optimization_profile ??
+      input.creationInput.defaults?.optimization_profile ??
+      suggestedOptimizationProfile,
+    post_goal_recovery_days:
+      input.creationInput.defaults?.post_goal_recovery_days,
+    max_weekly_tss_ramp_pct:
+      input.creationInput.defaults?.max_weekly_tss_ramp_pct,
+    max_ctl_ramp_per_week: input.creationInput.defaults?.max_ctl_ramp_per_week,
+  });
+
   const suggestionPayload = deriveCreationSuggestions({
     context: input.contextSummary,
     existing_values: {
@@ -784,6 +1270,10 @@ function buildConfirmedSuggestionsFromContext(input: {
     recent_influence: suggestionPayload.recent_influence,
     recent_influence_action: suggestionPayload.recent_influence_action,
     constraints: suggestionPayload.constraints,
+    optimization_profile: profileDefaults.optimization_profile,
+    post_goal_recovery_days: profileDefaults.post_goal_recovery_days,
+    max_weekly_tss_ramp_pct: profileDefaults.max_weekly_tss_ramp_pct,
+    max_ctl_ramp_per_week: profileDefaults.max_ctl_ramp_per_week,
   };
 
   return {
@@ -830,6 +1320,18 @@ async function evaluateCreationConfig(input: {
       ...suggestedValues.constraints,
       ...(input.creationInput.confirmed_suggestions?.constraints ?? {}),
     },
+    optimization_profile:
+      input.creationInput.confirmed_suggestions?.optimization_profile ??
+      suggestedValues.optimization_profile,
+    post_goal_recovery_days:
+      input.creationInput.confirmed_suggestions?.post_goal_recovery_days ??
+      suggestedValues.post_goal_recovery_days,
+    max_weekly_tss_ramp_pct:
+      input.creationInput.confirmed_suggestions?.max_weekly_tss_ramp_pct ??
+      suggestedValues.max_weekly_tss_ramp_pct,
+    max_ctl_ramp_per_week:
+      input.creationInput.confirmed_suggestions?.max_ctl_ramp_per_week ??
+      suggestedValues.max_ctl_ramp_per_week,
   };
 
   const normalizedConfig = normalizeCreationConfig({
@@ -843,7 +1345,7 @@ async function evaluateCreationConfig(input: {
     hardRestDays: normalizedConfig.constraints.hard_rest_days,
   });
 
-  const conflictResolution = resolveConstraintConflicts({
+  const constraintResolution = resolveConstraintConflicts({
     availability_training_days: availabilityTrainingDays,
     baseline_weekly_tss: normalizedConfig.baseline_load.weekly_tss,
     user_constraints: input.creationInput.user_values?.constraints,
@@ -854,13 +1356,26 @@ async function evaluateCreationConfig(input: {
 
   const configWithResolvedConstraints = {
     ...normalizedConfig,
-    constraints: conflictResolution.resolved_constraints,
+    constraints: constraintResolution.resolved_constraints,
+  };
+
+  const conflictResolution = {
+    resolved_constraints: constraintResolution.resolved_constraints,
+    conflicts: constraintResolution.conflicts.map((conflict) => ({
+      code: conflict.code,
+      severity: conflict.severity,
+      message: conflict.message,
+      field_paths: [...conflict.field_paths],
+      suggestions: [...conflict.suggestions],
+    })) satisfies CreationConflictItem[],
+    is_blocking: constraintResolution.is_blocking,
+    precedence: constraintResolution.precedence,
   };
 
   const feasibilitySummary = classifyCreationFeasibility({
     config: configWithResolvedConstraints,
     context: contextSummary,
-    conflicts: conflictResolution.conflicts,
+    conflicts: constraintResolution.conflicts,
     now_iso: nowIso,
   });
 
@@ -1146,14 +1661,16 @@ export const trainingPlansRouter = createTRPCRouter({
   getFeasibilityPreview: protectedProcedure
     .input(minimalTrainingPlanV2InputSchema)
     .query(async ({ ctx, input }) => {
-      const expandedPlan = expandMinimalGoalToPlan(input);
-      const normalizedGoals = expandedPlan.goals;
-
-      const referenceDate = toDateOnlyUtc(new Date());
       const estimatedCurrentCtl = await estimateCurrentCtl(
         ctx.supabase,
         ctx.session.user.id,
       );
+      const expandedPlan = expandMinimalGoalToPlan(input, {
+        startingCtl: estimatedCurrentCtl,
+      });
+      const normalizedGoals = expandedPlan.goals;
+
+      const referenceDate = toDateOnlyUtc(new Date());
 
       const assessmentGoals = normalizedGoals.map((goal) => ({
         id: goal.id,
@@ -1275,22 +1792,61 @@ export const trainingPlansRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       enforceCreationConfigFeatureEnabled();
       enforceNoAutonomousPostCreateMutation(input.post_create_behavior);
-
-      const expandedPlan = expandMinimalGoalToPlan(input.minimal_plan);
       const evaluation = await evaluateCreationConfig({
         supabase: ctx.supabase,
         profileId: ctx.session.user.id,
         creationInput: input.creation_input,
       });
+      const estimatedCurrentCtl = await estimateCurrentCtl(
+        ctx.supabase,
+        ctx.session.user.id,
+      );
+      const expandedPlan = expandMinimalGoalToPlan(input.minimal_plan, {
+        startingCtl: estimatedCurrentCtl,
+      });
+      const projectionChart = buildProjectionChartPayload({
+        expandedPlan,
+        baselineWeeklyTss: evaluation.finalConfig.baseline_load.weekly_tss,
+        startingCtl: estimatedCurrentCtl,
+        creationConfig: {
+          optimization_profile: evaluation.finalConfig.optimization_profile,
+          post_goal_recovery_days:
+            evaluation.finalConfig.post_goal_recovery_days,
+          max_weekly_tss_ramp_pct:
+            evaluation.finalConfig.max_weekly_tss_ramp_pct,
+          max_ctl_ramp_per_week: evaluation.finalConfig.max_ctl_ramp_per_week,
+        },
+      });
+      const projectionFeasibility =
+        buildProjectionFeasibilitySummary(projectionChart);
+      const previewSnapshotToken = buildCreationPreviewSnapshotToken({
+        minimalPlan: input.minimal_plan,
+        finalConfig: evaluation.finalConfig,
+        estimatedCurrentCtl,
+        projectionConstraintSummary: projectionChart.constraint_summary,
+        projectionFeasibility,
+      });
+      const projectionConflicts = deriveProjectionDrivenConflicts({
+        expandedPlan,
+        projectionChart,
+        postGoalRecoveryDays: evaluation.finalConfig.post_goal_recovery_days,
+      });
+      const allConflicts = [
+        ...evaluation.conflictResolution.conflicts,
+        ...projectionConflicts,
+      ];
 
       return {
         normalized_creation_config: evaluation.finalConfig,
         creation_context_summary: evaluation.contextSummary,
         derived_suggestions: evaluation.suggestionPayload,
         feasibility_safety: evaluation.feasibilitySummary,
+        projection_feasibility: projectionFeasibility,
         conflicts: {
-          is_blocking: evaluation.conflictResolution.is_blocking,
-          items: evaluation.conflictResolution.conflicts,
+          is_blocking: allConflicts.some(
+            (conflict) => conflict.severity === "blocking",
+          ),
+          items: allConflicts,
         },
         plan_preview: {
           name: expandedPlan.name,
@@ -1298,6 +1854,11 @@ export const trainingPlansRouter = createTRPCRouter({
           end_date: expandedPlan.end_date,
           goal_count: expandedPlan.goals.length,
           block_count: expandedPlan.blocks.length,
+        },
+        projection_chart: projectionChart,
+        preview_snapshot: {
+          version: CREATION_PREVIEW_SNAPSHOT_VERSION,
+          token: previewSnapshotToken,
         },
       };
     }),
@@ -1310,15 +1871,63 @@ export const trainingPlansRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       enforceCreationConfigFeatureEnabled();
       enforceNoAutonomousPostCreateMutation(input.post_create_behavior);
-
-      const expandedPlan = expandMinimalGoalToPlan(input.minimal_plan);
       const evaluation = await evaluateCreationConfig({
         supabase: ctx.supabase,
         profileId: ctx.session.user.id,
         creationInput: input.creation_input,
       });
+      const estimatedCurrentCtl = await estimateCurrentCtl(
+        ctx.supabase,
+        ctx.session.user.id,
+      );
+      const expandedPlan = expandMinimalGoalToPlan(input.minimal_plan, {
+        startingCtl: estimatedCurrentCtl,
+      });
+      const projectionChart = buildProjectionChartPayload({
+        expandedPlan,
+        baselineWeeklyTss: evaluation.finalConfig.baseline_load.weekly_tss,
+        startingCtl: estimatedCurrentCtl,
+        creationConfig: {
+          optimization_profile: evaluation.finalConfig.optimization_profile,
+          post_goal_recovery_days:
+            evaluation.finalConfig.post_goal_recovery_days,
+          max_weekly_tss_ramp_pct:
+            evaluation.finalConfig.max_weekly_tss_ramp_pct,
+          max_ctl_ramp_per_week: evaluation.finalConfig.max_ctl_ramp_per_week,
+        },
+      });
+      const projectionFeasibility =
+        buildProjectionFeasibilitySummary(projectionChart);
+      const expectedPreviewSnapshotToken = buildCreationPreviewSnapshotToken({
+        minimalPlan: input.minimal_plan,
+        finalConfig: evaluation.finalConfig,
+        estimatedCurrentCtl,
+        projectionConstraintSummary: projectionChart.constraint_summary,
+        projectionFeasibility,
+      });
 
-      const blockingConflicts = evaluation.conflictResolution.conflicts.filter(
+      if (
+        input.preview_snapshot_token &&
+        input.preview_snapshot_token !== expectedPreviewSnapshotToken
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "Creation preview is stale or invalid. Refresh previewCreationConfig and retry createFromCreationConfig.",
+        });
+      }
+
+      const projectionConflicts = deriveProjectionDrivenConflicts({
+        expandedPlan,
+        projectionChart,
+        postGoalRecoveryDays: evaluation.finalConfig.post_goal_recovery_days,
+      });
+      const allConflicts = [
+        ...evaluation.conflictResolution.conflicts,
+        ...projectionConflicts,
+      ];
+
+      const blockingConflicts = allConflicts.filter(
         (conflict) => conflict.severity === "blocking",
       );
 
@@ -1357,10 +1966,12 @@ export const trainingPlansRouter = createTRPCRouter({
             normalized_at: normalizedAt,
             normalized_config: evaluation.finalConfig,
             conflict_resolution: {
-              is_blocking: evaluation.conflictResolution.is_blocking,
-              conflicts: evaluation.conflictResolution.conflicts,
+              is_blocking: blockingConflicts.length > 0,
+              conflicts: allConflicts,
               precedence: evaluation.conflictResolution.precedence,
             },
+            projection_feasibility: projectionFeasibility,
+            projection_chart: projectionChart,
           },
         },
       };
@@ -1405,6 +2016,13 @@ export const trainingPlansRouter = createTRPCRouter({
       return {
         ...data,
         creation_summary: {
+          normalized_creation_config: evaluation.finalConfig,
+          conflicts: {
+            is_blocking: blockingConflicts.length > 0,
+            items: allConflicts,
+          },
+          projection_feasibility: projectionFeasibility,
+          projection_chart: projectionChart,
           feasibility_safety: evaluation.feasibilitySummary,
           context_summary: evaluation.contextSummary,
         },
@@ -1417,7 +2035,13 @@ export const trainingPlansRouter = createTRPCRouter({
   createFromMinimalGoal: protectedProcedure
     .input(minimalTrainingPlanV2InputSchema)
     .mutation(async ({ ctx, input }) => {
-      const expandedPlan = expandMinimalGoalToPlan(input);
+      const estimatedCurrentCtl = await estimateCurrentCtl(
+        ctx.supabase,
+        ctx.session.user.id,
+      );
+      const expandedPlan = expandMinimalGoalToPlan(input, {
+        startingCtl: estimatedCurrentCtl,
+      });
 
       const planId = crypto.randomUUID();
       const structureWithId = {

@@ -21,6 +21,7 @@ export const ROUTES = {
       WIZARD: "/training-plan-wizard" as const,
       REVIEW: "/training-plan-review" as const,
       SETTINGS: "/training-plan-settings" as const,
+      // Deprecated: use ROUTES.LIBRARY_WITH_RESOURCE("training_plans") instead.
       LIST: "/training-plans-list" as const,
       ADJUST: "/training-plan-adjust" as const,
     },
@@ -55,6 +56,9 @@ export const ROUTES = {
   // Other Tab Routes
   DISCOVER: "/(internal)/(tabs)/discover" as const,
   LIBRARY: "/(internal)/(tabs)/library" as const,
+  LIBRARY_WITH_RESOURCE: (
+    resource: "activity_plans" | "training_plans" | "activities" | "routes",
+  ) => `/(internal)/(tabs)/library?resource=${resource}` as const,
 
   // Settings & Profile
   SETTINGS: "/settings" as const,

@@ -136,15 +136,30 @@ export function deriveCreationContext(
     const durationSeconds = activity.duration_seconds ?? 0;
     return sum + (durationSeconds / 3600) * 45;
   }, 0);
-  const estimatedWeeklyTss = activityCount > 0 ? totalRecentTss / 6 : 170;
+  const estimatedWeeklyTss = activityCount > 0 ? totalRecentTss / 6 : 70;
+
+  const baselineBounds =
+    historyState === "none"
+      ? { minFloor: 30, maxFloor: 60, maxCeil: 400 }
+      : historyState === "sparse"
+        ? { minFloor: 60, maxFloor: 100, maxCeil: 800 }
+        : { minFloor: 80, maxFloor: 140, maxCeil: 1200 };
 
   const baselineWidth =
     historyState === "rich" ? 0.2 : historyState === "sparse" ? 0.35 : 0.5;
   const baselineMin = Math.round(
-    clamp(estimatedWeeklyTss * (1 - baselineWidth), 80, 900),
+    clamp(
+      estimatedWeeklyTss * (1 - baselineWidth),
+      baselineBounds.minFloor,
+      baselineBounds.maxCeil,
+    ),
   );
   const baselineMax = Math.round(
-    clamp(estimatedWeeklyTss * (1 + baselineWidth), 140, 1200),
+    clamp(
+      estimatedWeeklyTss * (1 + baselineWidth),
+      baselineBounds.maxFloor,
+      baselineBounds.maxCeil,
+    ),
   );
 
   const influenceWidth =

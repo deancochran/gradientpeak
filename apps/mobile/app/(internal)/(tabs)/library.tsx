@@ -10,7 +10,7 @@ import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { trpc } from "@/lib/trpc";
 import { decodePolyline } from "@repo/core";
 import { format } from "date-fns";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   Activity,
   Calendar,
@@ -24,7 +24,7 @@ import {
   TrendingDown,
   TrendingUp,
 } from "lucide-react-native";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -42,6 +42,24 @@ type ResourceType =
   | "training_plans"
   | "activities"
   | "routes";
+
+const VALID_RESOURCE_TYPES = new Set<ResourceType>([
+  "activity_plans",
+  "training_plans",
+  "activities",
+  "routes",
+]);
+
+function parseResourceParam(
+  resource: string | string[] | undefined,
+): ResourceType | null {
+  const value = Array.isArray(resource) ? resource[0] : resource;
+  if (!value || !VALID_RESOURCE_TYPES.has(value as ResourceType)) {
+    return null;
+  }
+
+  return value as ResourceType;
+}
 
 const RESOURCE_OPTIONS = [
   { value: "activity_plans" as const, label: "Activity Plans", icon: Dumbbell },
@@ -219,11 +237,23 @@ function RouteItem({ item, onPress }: { item: any; onPress: () => void }) {
 
 export default function LibraryScreen() {
   const router = useRouter();
+  const { resource } = useLocalSearchParams<{ resource?: string | string[] }>();
   const utils = trpc.useUtils();
+  const routeResource = useMemo(() => parseResourceParam(resource), [resource]);
 
-  const [selectedResource, setSelectedResource] =
-    useState<ResourceType>("activity_plans");
+  const [selectedResource, setSelectedResource] = useState<ResourceType>(
+    routeResource ?? "activity_plans",
+  );
   const [searchQuery, setSearchQuery] = useState("");
+
+  useEffect(() => {
+    if (!routeResource || routeResource === selectedResource) {
+      return;
+    }
+
+    setSelectedResource(routeResource);
+    setSearchQuery("");
+  }, [routeResource, selectedResource]);
 
   // Training plan activation mutation
   const activateMutation = useReliableMutation(trpc.trainingPlans.activate, {
@@ -439,7 +469,7 @@ export default function LibraryScreen() {
     if (selectedResource === "activity_plans") {
       router.push("/create-activity-plan" as any);
     } else if (selectedResource === "training_plans") {
-      router.push(ROUTES.PLAN.TRAINING_PLAN.WIZARD as any);
+      router.push(ROUTES.PLAN.TRAINING_PLAN.CREATE as any);
     } else if (selectedResource === "routes") {
       router.push("/route-upload" as any);
     }
