@@ -21,6 +21,28 @@ export interface ProjectionGoalMarker {
   priority: number;
 }
 
+export type ReadinessBand = "low" | "medium" | "high";
+export type DemandConfidence = "high" | "medium" | "low";
+
+export interface DemandBand {
+  min: number;
+  target: number;
+  stretch: number;
+}
+
+export interface ProjectionDemandGap {
+  required_weekly_tss_target: number;
+  feasible_weekly_tss_applied: number;
+  unmet_weekly_tss: number;
+  unmet_ratio: number;
+}
+
+export interface ProjectionFeasibilityMetadata {
+  demand_gap: ProjectionDemandGap;
+  readiness_band: ReadinessBand;
+  dominant_limiters: string[];
+}
+
 export interface NoHistoryProjectionMetadata {
   projection_floor_applied: boolean;
   projection_floor_values: {
@@ -31,6 +53,16 @@ export interface NoHistoryProjectionMetadata {
   fitness_inference_reasons: string[];
   projection_floor_confidence: "high" | "medium" | "low" | null;
   floor_clamped_by_availability: boolean;
+  starting_ctl_for_projection?: number | null;
+  starting_weekly_tss_for_projection?: number | null;
+  required_event_demand_range?: DemandBand | null;
+  required_peak_weekly_tss?: DemandBand | null;
+  projection_feasibility?: ProjectionFeasibilityMetadata | null;
+  evidence_confidence?: {
+    score: number;
+    state: "none" | "sparse" | "stale" | "rich";
+    reasons: string[];
+  } | null;
 }
 
 export interface ProjectionConstraintSummary {

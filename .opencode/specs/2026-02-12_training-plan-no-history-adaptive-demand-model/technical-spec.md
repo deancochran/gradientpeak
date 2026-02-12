@@ -6,9 +6,68 @@ Owner: Core + tRPC + Mobile
 
 ## Goal
 
-Implement a deterministic adaptive demand model for no-history users that replaces floor-centric behavior with demand-band progression while preserving all existing safety invariants.
+Implement a deterministic, confidence-weighted adaptive demand model that works across none/sparse/stale/rich data states, uses all available evidence, and preserves all existing safety invariants.
 
 This document translates `design.md` into implementation-level details with concrete file paths, code touchpoints, and test expectations.
+
+## User Experience Invariants
+
+The data strategy must be invisible to the end user.
+
+1. Plan creation must succeed whether the user has rich, sparse, stale, or zero prior data.
+2. The app must use real database data automatically when available, with no extra user workflow.
+3. If data is missing or low quality, weighting must shift automatically toward deterministic conservative baselines.
+4. New activity/effort/metric data logged to the database must be reflected in subsequent previews/creates without manual intervention.
+5. No additional mandatory onboarding fields are required to unlock planning.
+
+## Evidence Weighting Model (Critical)
+
+Use a single continuous model, not a binary fallback mode split.
+
+Rules:
+
+1. Always consume all available evidence (`activities`, `activity_efforts`, `profile_metrics`, creation inputs).
+2. Derive per-signal confidence from freshness, sample sufficiency, and source quality.
+3. Blend observed evidence with conservative baselines using deterministic weighting.
+4. Let `none/sparse/stale/rich` states influence weighting strength, not whether the model runs.
+5. Rich/fresh evidence should dominate naturally through higher confidence, not through a separate hard path.
+
+Implementation note:
+
+- Replace strict fallback gating with confidence-weighted blending.
+- Preserve deterministic outputs and reason-token explainability.
+
+## Dynamic Data Utilization Requirements
+
+### Runtime data pull (source of truth)
+
+Plan creation and preview must evaluate against current database state at request time.
+
+- `deriveProfileAwareCreationContext(...)` in `packages/trpc/src/routers/training_plans.ts` already performs this pull.
+- It should continue to load live evidence from:
+  1. `activities` (recency, load, consistency)
+  2. `activity_efforts` (performance signals)
+  3. `profile_metrics` (physiological context)
+
+### Continuous enrichment from ingestion
+
+As new activities are logged, enrichment should happen via existing ingestion paths so creation context naturally improves over time.
+
+Current path reference:
+
+- `packages/trpc/src/routers/fit-files.ts`
+  - inserts `activity_efforts`
+  - updates `profile_metrics` (for example LTHR detection)
+
+This means plan creation quality increases automatically with continued usage, without user-facing configuration steps.
+
+### Failure-safe behavior
+
+If any data source query fails or returns empty:
+
+1. Continue with partial evidence (do not block creation).
+2. Use conservative baseline ranges when confidence is low.
+3. Keep output deterministic and explainable through reason tokens.
 
 ## Existing Baseline (As Implemented)
 
@@ -140,6 +199,12 @@ return {
 };
 ```
 
+Required weighting extension in router orchestration:
+
+1. Pass freshness-sensitive evidence summaries into core on both preview and create paths.
+2. Pass reason tokens that explain weighting posture (for example `confidence_low_sparse_history`, `confidence_discount_stale_history`, `confidence_high_fresh_history`).
+3. Ensure weighting inputs use freshly queried context in both `previewCreationConfig` and `createFromCreationConfig` so behavior tracks newly logged data automatically.
+
 ### Mobile projection consumption
 
 - `apps/mobile/components/training-plan/create/CreationProjectionChart.tsx`
@@ -154,7 +219,7 @@ Weekly load: requested {raw_requested_weekly_tss}
 applied {applied_weekly_tss}
 ```
 
-## Target V2 Model (What to Implement)
+## Target Model (What to Implement)
 
 ### Design intent to operationalize
 
@@ -176,7 +241,7 @@ applied {applied_weekly_tss}
 
 #### File: `packages/core/plan/projectionTypes.ts`
 
-Add V2 metadata types while preserving backward compatibility.
+Update projection metadata types in place.
 
 ```ts
 export type ReadinessBand = "low" | "medium" | "high";
@@ -202,7 +267,7 @@ export interface ProjectionFeasibilityMetadata {
 }
 ```
 
-Extend `NoHistoryProjectionMetadata` with optional V2 fields:
+Update `NoHistoryProjectionMetadata` with demand-model fields:
 
 ```ts
 export interface NoHistoryProjectionMetadata {
@@ -216,7 +281,6 @@ export interface NoHistoryProjectionMetadata {
   projection_floor_confidence: "high" | "medium" | "low" | null;
   floor_clamped_by_availability: boolean;
 
-  demand_model_version?: "no_history_demand_v2";
   starting_ctl_for_projection?: number | null;
   starting_weekly_tss_for_projection?: number | null;
   required_event_demand_range?: DemandBand | null;
@@ -242,6 +306,29 @@ function deriveGoalDemandProfileFromTargets(input: {
 } { ... }
 ```
 
+Add explicit evidence confidence utility:
+
+```ts
+function deriveEvidenceWeighting(input: {
+  historyAvailabilityState: "none" | "sparse" | "rich";
+  lastHistoryDate?: string | null;
+  nowDate: string;
+  staleDaysThreshold: number;
+  effortSampleCount: number;
+  activitySampleCount: number;
+}): {
+  confidence: number;
+  state: "none" | "sparse" | "stale" | "rich";
+  reasons: string[];
+} { ... }
+```
+
+Behavioral requirement for this utility:
+
+1. Consume context derived from current DB data snapshot.
+2. Return deterministic confidence and reason outputs for the same snapshot.
+3. Never throw or block plan projection generation.
+
 ```ts
 function computeNoHistoryDemandFloorWeek(input: {
   projectionWeekIndex: number;
@@ -253,7 +340,7 @@ function computeNoHistoryDemandFloorWeek(input: {
 }): number | null { ... }
 ```
 
-In weekly loop, replace single floor override reason behavior with demand-band semantics:
+In weekly loop, replace single floor override behavior with confidence-weighted demand semantics:
 
 ```ts
 type WeeklyLoadOverrideReason = "no_history_floor" | "demand_band_floor" | null;
@@ -261,14 +348,19 @@ type WeeklyLoadOverrideReason = "no_history_floor" | "demand_band_floor" | null;
 
 ```ts
 const demandFloorWeeklyTss = computeNoHistoryDemandFloorWeek(...);
+const weightedDemandWeeklyTss = blendDemandWithConfidence({
+  demandFloorWeeklyTss,
+  conservativeBaselineWeeklyTss,
+  confidence: evidenceWeighting.confidence,
+});
 const requestedWithDemandFloor =
-  demandFloorWeeklyTss === null
+  weightedDemandWeeklyTss === null
     ? recoveryAdjustedWeeklyTss
-    : Math.max(recoveryAdjustedWeeklyTss, demandFloorWeeklyTss);
+    : Math.max(recoveryAdjustedWeeklyTss, weightedDemandWeeklyTss);
 
 const floorOverrideApplied =
-  demandFloorWeeklyTss !== null &&
-  recoveryAdjustedWeeklyTss < demandFloorWeeklyTss;
+  weightedDemandWeeklyTss !== null &&
+  recoveryAdjustedWeeklyTss < weightedDemandWeeklyTss;
 ```
 
 Keep ramp-cap/CTL-cap clamp pipeline unchanged after requested load is formed.
@@ -278,10 +370,10 @@ Emit additional fields in week metadata:
 ```ts
 tss_ramp: {
   ...
-  demand_band_minimum_weekly_tss: demandFloorWeeklyTss,
+  demand_band_minimum_weekly_tss: weightedDemandWeeklyTss,
   demand_gap_unmet_weekly_tss: Math.max(
     0,
-    (demandFloorWeeklyTss ?? 0) - appliedWeeklyTss,
+    (weightedDemandWeeklyTss ?? 0) - appliedWeeklyTss,
   ),
   weekly_load_override_reason: floorOverrideApplied
     ? "demand_band_floor"
@@ -294,13 +386,13 @@ At payload return, emit top-level no-history demand fields and feasibility summa
 ```ts
 no_history: {
   ...existing,
-  demand_model_version: "no_history_demand_v2",
   starting_ctl_for_projection: noHistory?.starting_ctl_for_projection ?? null,
   starting_weekly_tss_for_projection:
     noHistory?.starting_weekly_tss_for_projection ?? null,
   required_event_demand_range,
   required_peak_weekly_tss,
   projection_feasibility,
+  evidence_confidence,
 }
 ```
 
@@ -318,7 +410,6 @@ Required updates:
 
 1. Ensure no-history context includes any additional target metadata required for demand profile derivation.
 2. Ensure snapshot token captures new no-history demand metadata.
-3. Version snapshot if token shape changes.
 
 Current snapshot version constant:
 
@@ -326,19 +417,19 @@ Current snapshot version constant:
 const CREATION_PREVIEW_SNAPSHOT_VERSION = "creation_preview_v1";
 ```
 
-If token input schema changes materially, bump to `creation_preview_v2` and keep stale-token error behavior unchanged.
+If token input schema changes materially, update snapshot token inputs in place and keep stale-token error behavior unchanged.
 
 ### 3) Mobile projection cues (read-only rendering)
 
 #### File: `apps/mobile/components/training-plan/create/CreationProjectionChart.tsx`
 
-Continue rendering existing fields, but add V2-first display fallback chain:
+Continue rendering existing fields, and add demand/readiness cues directly:
 
 1. If `projectionChart.no_history?.projection_feasibility` exists, show:
    - `readiness_band`
    - `demand_gap.unmet_weekly_tss`
    - `dominant_limiters`
-2. Else use current floor-era indicators.
+2. Show updated override semantics in constrained-week details.
 
 Keep the weekly constrained context panel and include the new override token where present.
 
@@ -369,25 +460,22 @@ demand_gap = max(0, required_target - feasible_applied)
 - `medium`: moderate gap or moderate clamp pressure
 - `low`: high gap and/or repeated clamp pressure and/or low confidence
 
-5. Demand floor activation rules:
+5. Demand weighting rules:
 
-- Active through build horizon for no-history plans
-- Inactive for taper/event/recovery weeks
-- Never bypasses safety clamps
+- Always compute from all available evidence plus conservative baseline
+- Discount stale or low-volume evidence through confidence decay
+- Keep taper/event/recovery exclusions for floor influence
+- Never bypass safety clamps
 
-## Migration and Compatibility Strategy
+## In-Place Update Strategy
 
-### Phase A: Dual-write metadata
+Apply demand-model changes directly to current contracts and implementation (no parallel schema track, no feature-version split).
 
-Emit both legacy floor fields and new demand fields in `no_history` payload.
-
-### Phase B: UI V2-first, legacy fallback
-
-Prefer new fields in mobile rendering, preserve old path for compatibility.
-
-### Phase C: Deprecation markers
-
-Mark legacy floor-only semantics as deprecated in type docs after one stable cycle.
+1. Replace floor-centric semantics in `NoHistoryProjectionMetadata` with demand-centric fields as the canonical current contract.
+2. Keep preview/create parity by updating only shared core-driven projection artifacts.
+3. Update mobile labels and interpretation to the new semantics in the same implementation pass.
+4. Keep weighting continuous so rich/fresh users become evidence-dominant without mode switching.
+5. Keep the end-user flow unchanged regardless of data availability state.
 
 ## Testing Specification
 
@@ -403,6 +491,9 @@ Add/extend tests for:
 2. Demand-band override reason (`demand_band_floor`) is emitted when floor drives request.
 3. Demand-gap is non-zero when caps/availability prevent meeting target demand.
 4. Start-state logic remains deterministic (`starting_ctl_for_projection = 0` unless override).
+5. Confidence weighting discounts stale/sparse/none evidence and increases with richer/fresher evidence.
+6. Preview/create succeed with empty data, partial data, stale data, and rich/fresh data.
+7. Newly logged activities/efforts/metrics change context classification and projection outputs on next preview call without extra user input.
 
 Example existing assertions to preserve:
 
@@ -437,17 +528,19 @@ Add new test file:
 
 Test cases:
 
-1. Renders readiness and demand-gap cues when V2 metadata exists.
-2. Falls back to legacy floor display when V2 metadata is absent.
-3. Constrained week panel displays updated override reason labels.
+1. Renders readiness and demand-gap cues from `no_history.projection_feasibility`.
+2. Constrained week panel displays updated override reason labels.
+3. No binary fallback branch is required for this implementation.
 
 ## Acceptance Criteria
 
 1. No-history demanding goals do not show immediate collapse after start unless constrained.
-2. Projection payload explicitly reports demand pressure (`demand_gap`) and readiness (`readiness_band`).
+2. Projection payload explicitly reports demand pressure (`demand_gap`), readiness (`readiness_band`), and evidence confidence.
 3. Safety semantics remain unchanged and authoritative.
 4. Preview/create parity is maintained for identical inputs.
 5. Mobile renders explainability metadata without local projection math.
+6. End-user creation flow is unaffected by data availability (none/sparse/stale/rich all succeed with no blocking UX).
+7. Real DB evidence is consumed dynamically at request time and improves projection quality as data accumulates.
 
 ## Suggested Execution Order
 
@@ -455,4 +548,4 @@ Test cases:
 2. Weekly loop migration to demand-band floor while preserving clamp order.
 3. Payload contract emission and barrel exports.
 4. tRPC snapshot/token updates and parity tests.
-5. Mobile V2 rendering and fallback tests.
+5. Mobile demand/readiness rendering tests.

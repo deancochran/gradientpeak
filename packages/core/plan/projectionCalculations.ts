@@ -40,6 +40,32 @@ export type NoHistoryFitnessLevel = "weak" | "strong";
 export type NoHistoryGoalTier = "low" | "medium" | "high";
 export type BuildTimeFeasibility = "full" | "limited" | "insufficient";
 export type ProjectionFloorConfidence = "high" | "medium" | "low";
+type ReadinessBand = "low" | "medium" | "high";
+
+interface DemandBand {
+  min: number;
+  target: number;
+  stretch: number;
+}
+
+interface ProjectionDemandGap {
+  required_weekly_tss_target: number;
+  feasible_weekly_tss_applied: number;
+  unmet_weekly_tss: number;
+  unmet_ratio: number;
+}
+
+interface ProjectionFeasibilityMetadata {
+  demand_gap: ProjectionDemandGap;
+  readiness_band: ReadinessBand;
+  dominant_limiters: string[];
+}
+
+export interface EvidenceWeightingResult {
+  score: number;
+  state: "none" | "sparse" | "stale" | "rich";
+  reasons: string[];
+}
 
 export interface NoHistoryAvailabilityContext {
   availability_days: Array<{
@@ -133,6 +159,10 @@ export interface NoHistoryAnchorResolution {
   assumed_intensity_model_version: string | null;
   starting_ctl_for_projection: number | null;
   starting_weekly_tss_for_projection: number | null;
+  required_event_demand_range: DemandBand | null;
+  required_peak_weekly_tss: DemandBand | null;
+  evidence_confidence: EvidenceWeightingResult | null;
+  projection_feasibility: ProjectionFeasibilityMetadata | null;
 }
 
 const NO_HISTORY_DEFAULT_INTENSITY_MODEL: NoHistoryIntensityModel = {
@@ -427,32 +457,175 @@ export function deriveNoHistoryGoalTierFromTargets(
   return hasMediumDemandSignal ? "medium" : "low";
 }
 
+function toDemandBand(target: number): DemandBand {
+  return {
+    min: round1(target * 0.85),
+    target: round1(target),
+    stretch: round1(target * 1.15),
+  };
+}
+
+export function deriveGoalDemandProfileFromTargets(input: {
+  goalTargets: NoHistoryGoalTargetInput[];
+  goalTier: NoHistoryGoalTier;
+  weeksToEvent: number;
+}): {
+  required_event_demand_range: DemandBand;
+  required_peak_weekly_tss: DemandBand;
+  demand_confidence: ProjectionFloorConfidence;
+  rationale_codes: string[];
+} {
+  const baseEventCtlByTier: Record<NoHistoryGoalTier, number> = {
+    low: 45,
+    medium: 60,
+    high: 80,
+  };
+  const targetEventCtl = baseEventCtlByTier[input.goalTier];
+  const targetPeakWeeklyTss = targetEventCtl * 7;
+  const reasons = [`goal_tier_${input.goalTier}`];
+  if (input.goalTargets.length === 0) {
+    reasons.push("goal_targets_missing_using_tier_defaults");
+  }
+
+  const weeks = roundWeeksToEvent(input.weeksToEvent);
+  const confidence: ProjectionFloorConfidence =
+    weeks >= 16 ? "high" : weeks >= 10 ? "medium" : "low";
+
+  return {
+    required_event_demand_range: toDemandBand(targetEventCtl),
+    required_peak_weekly_tss: toDemandBand(targetPeakWeeklyTss),
+    demand_confidence: confidence,
+    rationale_codes: reasons,
+  };
+}
+
+export function deriveEvidenceWeighting(input: {
+  historyAvailabilityState: "none" | "sparse" | "rich";
+  rationaleCodes?: string[];
+  signalQuality?: number;
+  effortConfidenceMarker?: "low" | "moderate" | "high";
+  profileMetricCompletenessMarker?: "low" | "moderate" | "high";
+}): EvidenceWeightingResult {
+  const hasStaleMarker = (input.rationaleCodes ?? []).some((code) =>
+    code.includes("stale"),
+  );
+  const state: EvidenceWeightingResult["state"] = hasStaleMarker
+    ? "stale"
+    : input.historyAvailabilityState;
+  const baseByState: Record<EvidenceWeightingResult["state"], number> = {
+    none: 0.2,
+    sparse: 0.45,
+    stale: 0.35,
+    rich: 0.8,
+  };
+
+  const reasons = [
+    `confidence_state_${state}`,
+    ...(hasStaleMarker ? ["confidence_discount_stale_history"] : []),
+  ];
+  const quality = clamp01(input.signalQuality ?? 0.4);
+  let confidence = baseByState[state] * 0.7 + quality * 0.3;
+
+  if (input.effortConfidenceMarker === "high") {
+    confidence += 0.08;
+    reasons.push("confidence_boost_effort_marker_high");
+  } else if (input.effortConfidenceMarker === "low") {
+    confidence -= 0.08;
+    reasons.push("confidence_penalty_effort_marker_low");
+  }
+
+  if (input.profileMetricCompletenessMarker === "high") {
+    confidence += 0.06;
+    reasons.push("confidence_boost_profile_metrics_high");
+  } else if (input.profileMetricCompletenessMarker === "low") {
+    confidence -= 0.06;
+    reasons.push("confidence_penalty_profile_metrics_low");
+  }
+
+  return {
+    score: clamp01(confidence),
+    state,
+    reasons,
+  };
+}
+
+function blendDemandWithConfidence(input: {
+  demandFloorWeeklyTss: number | null;
+  conservativeBaselineWeeklyTss: number;
+  confidence: number;
+}): number | null {
+  if (input.demandFloorWeeklyTss === null) {
+    return null;
+  }
+
+  const baseline = Math.max(0, input.conservativeBaselineWeeklyTss);
+  const confidence = clamp01(input.confidence);
+  return round1(
+    baseline + (input.demandFloorWeeklyTss - baseline) * confidence,
+  );
+}
+
+function computeProjectionFeasibilityMetadata(input: {
+  requiredPeakWeeklyTssTarget: number;
+  feasiblePeakWeeklyTssApplied: number;
+  tssRampClampWeeks: number;
+  ctlRampClampWeeks: number;
+  confidence: number;
+}): ProjectionFeasibilityMetadata {
+  const unmetWeeklyTss = Math.max(
+    0,
+    round1(
+      input.requiredPeakWeeklyTssTarget - input.feasiblePeakWeeklyTssApplied,
+    ),
+  );
+  const unmetRatio =
+    input.requiredPeakWeeklyTssTarget <= 0
+      ? 0
+      : round3(unmetWeeklyTss / input.requiredPeakWeeklyTssTarget);
+
+  let readiness: ReadinessBand = "high";
+  if (
+    unmetRatio >= 0.35 ||
+    input.tssRampClampWeeks > 1 ||
+    input.ctlRampClampWeeks > 1 ||
+    input.confidence < 0.45
+  ) {
+    readiness = "low";
+  } else if (
+    unmetRatio >= 0.15 ||
+    input.tssRampClampWeeks > 0 ||
+    input.ctlRampClampWeeks > 0 ||
+    input.confidence < 0.7
+  ) {
+    readiness = "medium";
+  }
+
+  const dominantLimiters: string[] = [];
+  if (unmetWeeklyTss > 0) dominantLimiters.push("required_growth_exceeds_caps");
+  if (input.tssRampClampWeeks > 0)
+    dominantLimiters.push("tss_ramp_cap_pressure");
+  if (input.ctlRampClampWeeks > 0)
+    dominantLimiters.push("ctl_ramp_cap_pressure");
+  if (input.confidence < 0.5) dominantLimiters.push("low_evidence_confidence");
+
+  return {
+    demand_gap: {
+      required_weekly_tss_target: round1(input.requiredPeakWeeklyTssTarget),
+      feasible_weekly_tss_applied: round1(input.feasiblePeakWeeklyTssApplied),
+      unmet_weekly_tss: unmetWeeklyTss,
+      unmet_ratio: unmetRatio,
+    },
+    readiness_band: readiness,
+    dominant_limiters: dominantLimiters,
+  };
+}
+
 /**
  * Resolves deterministic no-history floor anchor metadata.
  */
 export function resolveNoHistoryAnchor(
   context: NoHistoryAnchorContext,
 ): NoHistoryAnchorResolution {
-  if (context.history_availability_state !== "none") {
-    return {
-      projection_floor_applied: false,
-      projection_floor_values: null,
-      fitness_level: null,
-      fitness_inference_reasons: ["no_history_gate_inactive"],
-      projection_floor_confidence: null,
-      floor_clamped_by_availability: false,
-      projection_floor_tier: null,
-      starting_state_is_prior: false,
-      target_event_ctl: null,
-      weeks_to_event: null,
-      periodization_feasibility: null,
-      build_phase_warnings: [],
-      assumed_intensity_model_version: null,
-      starting_ctl_for_projection: null,
-      starting_weekly_tss_for_projection: null,
-    };
-  }
-
   const evidence = collectNoHistoryEvidence(context);
   const fitness = determineNoHistoryFitnessLevel(evidence);
   const floor = deriveNoHistoryProjectionFloor(
@@ -506,13 +679,29 @@ export function resolveNoHistoryAnchor(
   const startingWeeklyTssForProjection = deriveWeeklyTssFromCtl(
     startingCtlForProjection,
   );
+  const goalDemandProfile = deriveGoalDemandProfileFromTargets({
+    goalTargets: [],
+    goalTier: context.goal_tier,
+    weeksToEvent: context.weeks_to_event,
+  });
+  const evidenceConfidence = deriveEvidenceWeighting({
+    historyAvailabilityState: context.history_availability_state,
+    rationaleCodes: evidence.rationale_codes,
+    signalQuality: context.context_summary?.signal_quality,
+    effortConfidenceMarker: context.context_summary?.effort_confidence_marker,
+    profileMetricCompletenessMarker:
+      context.context_summary?.profile_metric_completeness_marker,
+  });
+  const projectionFloorApplied = evidenceConfidence.state !== "rich";
 
   return {
-    projection_floor_applied: true,
-    projection_floor_values: {
-      start_ctl: clamped.start_ctl,
-      start_weekly_tss: clamped.start_weekly_tss,
-    },
+    projection_floor_applied: projectionFloorApplied,
+    projection_floor_values: projectionFloorApplied
+      ? {
+          start_ctl: clamped.start_ctl,
+          start_weekly_tss: clamped.start_weekly_tss,
+        }
+      : null,
     fitness_level: fitness.fitnessLevel,
     fitness_inference_reasons: [
       ...fitness.reasons,
@@ -526,7 +715,7 @@ export function resolveNoHistoryAnchor(
     projection_floor_confidence: confidence,
     floor_clamped_by_availability: clamped.floor_clamped_by_availability,
     projection_floor_tier: context.goal_tier,
-    starting_state_is_prior: true,
+    starting_state_is_prior: projectionFloorApplied,
     target_event_ctl: floor.target_event_ctl,
     weeks_to_event: roundWeeksToEvent(context.weeks_to_event),
     periodization_feasibility: periodizationFeasibility,
@@ -541,6 +730,10 @@ export function resolveNoHistoryAnchor(
     assumed_intensity_model_version: clamped.assumed_intensity_model_version,
     starting_ctl_for_projection: startingCtlForProjection,
     starting_weekly_tss_for_projection: startingWeeklyTssForProjection,
+    required_event_demand_range: goalDemandProfile.required_event_demand_range,
+    required_peak_weekly_tss: goalDemandProfile.required_peak_weekly_tss,
+    evidence_confidence: evidenceConfidence,
+    projection_feasibility: null,
   };
 }
 
@@ -775,7 +968,12 @@ export interface ProjectionWeekMetadata {
     clamped: boolean;
     floor_override_applied: boolean;
     floor_minimum_weekly_tss: number | null;
-    weekly_load_override_reason: "no_history_floor" | null;
+    demand_band_minimum_weekly_tss?: number | null;
+    demand_gap_unmet_weekly_tss?: number;
+    weekly_load_override_reason:
+      | "no_history_floor"
+      | "demand_band_floor"
+      | null;
   };
   ctl_ramp: {
     requested_ctl_ramp: number;
@@ -829,6 +1027,12 @@ export interface DeterministicProjectionPayload {
     | "fitness_inference_reasons"
     | "projection_floor_confidence"
     | "floor_clamped_by_availability"
+    | "starting_ctl_for_projection"
+    | "starting_weekly_tss_for_projection"
+    | "required_event_demand_range"
+    | "required_peak_weekly_tss"
+    | "evidence_confidence"
+    | "projection_feasibility"
   >;
 }
 
@@ -952,6 +1156,7 @@ export function buildDeterministicProjectionPayload(
       ? 0
       : Math.ceil(NO_HISTORY_DAYS_UNTIL_RELIABLE_PROJECTION / 7);
   const noHistoryWeeksToEvent = Math.max(0, noHistory?.weeks_to_event ?? 0);
+  const evidenceConfidenceScore = noHistory?.evidence_confidence?.score ?? 0.25;
 
   const startingCtl = Math.max(
     0,
@@ -975,6 +1180,8 @@ export function buildDeterministicProjectionPayload(
   let tssRampClampWeeks = 0;
   let ctlRampClampWeeks = 0;
   let recoveryWeeks = 0;
+  let maxRequiredDemandWeeklyTss = 0;
+  let maxAppliedWeeklyTss = 0;
 
   for (
     let weekStartDate = startDate;
@@ -1061,12 +1268,21 @@ export function buildDeterministicProjectionPayload(
       noHistoryInitialRampFloor ?? 0,
       noHistoryGoalDemandFloor ?? 0,
     );
+    const weightedNoHistoryDemandFloor = blendDemandWithConfidence({
+      demandFloorWeeklyTss: enforceNoHistoryStartingFloor
+        ? noHistoryProgressiveFloor
+        : null,
+      conservativeBaselineWeeklyTss:
+        noHistoryStartingWeeklyTss ?? effectiveBaselineWeeklyTss,
+      confidence: evidenceConfidenceScore,
+    });
     const floorOverrideApplied =
-      enforceNoHistoryStartingFloor &&
-      recoveryAdjustedWeeklyTss < noHistoryProgressiveFloor;
-    const flooredWeeklyTss = enforceNoHistoryStartingFloor
-      ? Math.max(recoveryAdjustedWeeklyTss, noHistoryProgressiveFloor)
-      : recoveryAdjustedWeeklyTss;
+      weightedNoHistoryDemandFloor !== null &&
+      recoveryAdjustedWeeklyTss < weightedNoHistoryDemandFloor;
+    const flooredWeeklyTss =
+      weightedNoHistoryDemandFloor !== null
+        ? Math.max(recoveryAdjustedWeeklyTss, weightedNoHistoryDemandFloor)
+        : recoveryAdjustedWeeklyTss;
 
     const maxAllowedByTssRamp = round1(
       previousWeekTss * (1 + normalizedConfig.max_weekly_tss_ramp_pct / 100),
@@ -1078,6 +1294,12 @@ export function buildDeterministicProjectionPayload(
     let appliedWeeklyTss = tssRampClamped
       ? maxAllowedByTssRamp
       : flooredWeeklyTss;
+    if (weightedNoHistoryDemandFloor !== null) {
+      maxRequiredDemandWeeklyTss = Math.max(
+        maxRequiredDemandWeeklyTss,
+        weightedNoHistoryDemandFloor,
+      );
+    }
 
     const ctlBeforeWeek = currentCtl;
     const requestedCtlAfterWeek = simulateCtlOverWeek(
@@ -1106,6 +1328,7 @@ export function buildDeterministicProjectionPayload(
     );
     const appliedCtlRamp = ctlAfterWeek - ctlBeforeWeek;
     currentCtl = ctlAfterWeek;
+    maxAppliedWeeklyTss = Math.max(maxAppliedWeeklyTss, appliedWeeklyTss);
 
     if (recoveryOverlap.goal_ids.length > 0) {
       recoveryWeeks += 1;
@@ -1150,8 +1373,16 @@ export function buildDeterministicProjectionPayload(
           floor_minimum_weekly_tss: enforceNoHistoryStartingFloor
             ? noHistoryProgressiveFloor
             : null,
+          demand_band_minimum_weekly_tss: weightedNoHistoryDemandFloor,
+          demand_gap_unmet_weekly_tss:
+            weightedNoHistoryDemandFloor === null
+              ? 0
+              : Math.max(
+                  0,
+                  round1(weightedNoHistoryDemandFloor - appliedWeeklyTss),
+                ),
           weekly_load_override_reason: floorOverrideApplied
-            ? "no_history_floor"
+            ? "demand_band_floor"
             : null,
         },
         ctl_ramp: {
@@ -1188,6 +1419,19 @@ export function buildDeterministicProjectionPayload(
 
   points.sort((a, b) => a.date.localeCompare(b.date));
 
+  const projectionFeasibility = computeProjectionFeasibilityMetadata({
+    requiredPeakWeeklyTssTarget: Math.max(
+      0,
+      maxRequiredDemandWeeklyTss ||
+        noHistory?.required_peak_weekly_tss?.target ||
+        0,
+    ),
+    feasiblePeakWeeklyTssApplied: Math.max(0, maxAppliedWeeklyTss),
+    tssRampClampWeeks,
+    ctlRampClampWeeks,
+    confidence: evidenceConfidenceScore,
+  });
+
   return {
     start_date: startDate,
     end_date: endDate,
@@ -1216,6 +1460,15 @@ export function buildDeterministicProjectionPayload(
         noHistory?.projection_floor_confidence ?? null,
       floor_clamped_by_availability:
         noHistory?.floor_clamped_by_availability ?? false,
+      starting_ctl_for_projection:
+        noHistory?.starting_ctl_for_projection ?? null,
+      starting_weekly_tss_for_projection:
+        noHistory?.starting_weekly_tss_for_projection ?? null,
+      required_event_demand_range:
+        noHistory?.required_event_demand_range ?? null,
+      required_peak_weekly_tss: noHistory?.required_peak_weekly_tss ?? null,
+      evidence_confidence: noHistory?.evidence_confidence ?? null,
+      projection_feasibility: projectionFeasibility,
     },
   };
 }
@@ -1336,6 +1589,10 @@ function findRecoveryOverlap(
 
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
+}
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
 }
 
 function round3(value: number): number {

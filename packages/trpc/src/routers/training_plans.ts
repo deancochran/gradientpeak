@@ -513,7 +513,11 @@ function buildProjectionChartPayload(input: {
 function toNoHistoryMetadataOrUndefined(
   metadata: NoHistoryProjectionMetadata,
 ): NoHistoryProjectionMetadata | undefined {
-  if (!metadata.projection_floor_applied) {
+  if (
+    !metadata.projection_floor_applied &&
+    !metadata.evidence_confidence &&
+    !metadata.projection_feasibility
+  ) {
     return undefined;
   }
 
@@ -528,10 +532,6 @@ function deriveNoHistoryAnchorContext(input: {
   >["finalConfig"];
   startingCtlOverride?: number;
 }): NoHistoryAnchorContext | undefined {
-  if (input.contextSummary.history_availability_state !== "none") {
-    return undefined;
-  }
-
   const earliestGoal = input.expandedPlan.goals.reduce<
     (typeof input.expandedPlan.goals)[number] | undefined
   >((earliest, goal) => {
@@ -555,7 +555,7 @@ function deriveNoHistoryAnchorContext(input: {
   }, undefined);
 
   return {
-    history_availability_state: "none",
+    history_availability_state: input.contextSummary.history_availability_state,
     goal_tier: deriveNoHistoryGoalTierFromTargets(
       input.expandedPlan.goals.flatMap(
         (goal) => goal.targets ?? [],

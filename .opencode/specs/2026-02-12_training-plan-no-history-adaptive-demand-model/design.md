@@ -6,7 +6,7 @@ Owner: Product + Core + Backend + Mobile
 
 ## Purpose
 
-Define a dynamic, programmatic no-history planning model that:
+Define a dynamic, programmatic adaptive demand model that:
 
 1. Assumes "never trained" when user history is absent.
 2. Supports optional user-configurable starting fitness override.
@@ -14,6 +14,8 @@ Define a dynamic, programmatic no-history planning model that:
 4. Builds weekly load progressively toward that demand, instead of applying static floors or one-off spikes.
 5. Adapts as new evidence arrives, with deterministic behavior and transparent reasoning.
 6. Avoids assuming one identical race-day CTL requirement for all users with the same goal.
+7. Uses all available evidence with freshness-weighted confidence instead of binary fallback modes.
+8. Keeps plan creation non-blocking for none/sparse/stale/rich data states.
 
 ## Problem Statement
 
@@ -31,7 +33,7 @@ This creates an untrustworthy user experience, especially for demanding goals (f
 
 1. Programmatic over lookup: rely on model equations and constraints, not static calibration tables.
 2. Goal-aware demand: each goal/target contributes explicit intrinsic demand.
-3. Athlete-aware adaptation: no-history starts conservative, then updates with evidence.
+3. Athlete-aware adaptation: low-confidence states start conservative, then update smoothly with evidence.
 4. Deterministic and explainable: same inputs produce same trajectory and reason tokens.
 5. Safety invariant: ramp caps, recovery, and taper semantics remain authoritative.
 6. Preview/create parity: one shared engine path and one shared contract.
@@ -90,14 +92,15 @@ Replace direct goal-to-CTL anchoring with a deterministic chained estimator:
 
 This chain avoids brittle fixed CTL assumptions while staying deterministic.
 
-### 2) Athlete State Model (No-History Prior)
+### 2) Athlete State Model (Confidence-Weighted Prior)
 
-For `history_availability_state === "none"`:
+For all availability states, derive a weighted athlete state from observed evidence plus conservative baseline:
 
-1. Default start state is `starting_ctl = 0` (never-trained assumption).
-2. Optional `starting_ctl_override` allows user-provided start estimate.
+1. Default baseline remains `starting_ctl = 0` (never-trained assumption).
+2. Optional `starting_ctl_override` remains supported and acts as high-priority evidence.
 3. Convert to initial weekly load via canonical relation: `starting_weekly_tss = round(7 * starting_ctl)`.
 4. Initialize neutral fatigue prior (`starting_atl = starting_ctl`, `starting_tsb = 0`).
+5. Let freshness/sample/source quality determine how strongly observed evidence overrides baseline.
 
 ### 3) Adaptive Trajectory Model
 
@@ -145,16 +148,17 @@ Deterministic rule:
 1. Demand floor may be active until event week (except taper/event/recovery weeks).
 2. If floor drives request above raw block request, emit explicit override reason.
 
-## No-History Personalization Inputs (Without History)
+## Personalization Inputs and Weighting
 
-Use available evidence only:
+Use all available evidence:
 
 1. Goal targets and timelines.
 2. Availability windows and session constraints.
 3. Profile metrics if present (weight, threshold metrics), as uncertainty reducers and demand scalers.
 4. Optional user override for starting CTL.
+5. Freshness metadata (age of evidence) and sample sufficiency for confidence weighting.
 
-No-history users without profile metrics remain valid; uncertainty rises and confidence lowers.
+Users without profile metrics remain valid; uncertainty rises and confidence lowers without blocking creation.
 
 ## Data Contract (Preview/Create)
 
@@ -182,9 +186,10 @@ Return concise reason tokens for major decisions:
 
 1. Starting prior source (`default_never_trained` vs `user_override`).
 2. Goal demand derivation (`goal_distance_high`, `target_time_aggressive`, etc).
-3. Floor/override application (`no_history_floor`, `availability_clamp`, `ramp_cap_clamp`).
-4. Confidence downgrades (`long_horizon`, `multi_goal`, `low_signal_quality`).
-5. Infeasibility pressure (`required_growth_exceeds_caps`).
+3. Floor/override application (`demand_band_floor`, `availability_clamp`, `ramp_cap_clamp`).
+4. Confidence posture (`confidence_low_sparse_history`, `confidence_discount_stale_history`, `confidence_high_fresh_history`).
+5. Confidence downgrades (`long_horizon`, `multi_goal`, `low_signal_quality`).
+6. Infeasibility pressure (`required_growth_exceeds_caps`).
 
 ## Architecture Placement
 
@@ -208,7 +213,8 @@ Return concise reason tokens for major decisions:
 1. Over-prescription risk -> mitigate with availability constraints and ramp caps.
 2. Under-prescription risk for hard goals -> mitigate with demand floor active through build horizon.
 3. False confidence in no-history -> mitigate with uncertainty-aware confidence and explicit demand-gap reporting.
-4. Complexity creep -> keep v1 to deterministic equations and bounded metadata.
+4. Hard mode-switch discontinuities -> mitigate with continuous confidence-weighted blending.
+5. Complexity creep -> keep v1 to deterministic equations and bounded metadata.
 
 ## Acceptance Criteria
 
@@ -219,6 +225,7 @@ Return concise reason tokens for major decisions:
 5. Preview/create parity holds for projection outputs and metadata.
 6. Existing safety semantics (ramp caps, recovery/taper) remain intact.
 7. Readiness outputs are multi-factor and not represented by CTL alone.
+8. Plan creation succeeds for none/sparse/stale/rich data states without additional required steps.
 
 ## Minimal Implementation Checklist
 

@@ -395,6 +395,9 @@ describe("trainingPlansRouter plan_start_date support", () => {
     expect(
       created.creation_summary.projection_chart.constraint_summary,
     ).toEqual(preview.projection_chart.constraint_summary);
+    expect(created.creation_summary.projection_chart.no_history).toEqual(
+      preview.projection_chart.no_history,
+    );
   });
 
   it("returns a preview snapshot token from previewCreationConfig", async () => {
@@ -603,13 +606,23 @@ describe("trainingPlansRouter plan_start_date support", () => {
 
     const points = result.projection_chart.points;
     expect(points.length).toBeGreaterThan(0);
-    expect(points[0]!.predicted_fitness_ctl).toBeGreaterThanOrEqual(20);
+    expect(points[0]!.predicted_fitness_ctl).toBeGreaterThanOrEqual(0);
     expect(result.projection_chart.no_history).toMatchObject({
       projection_floor_applied: true,
       floor_clamped_by_availability: expect.any(Boolean),
       fitness_level: expect.any(String),
       fitness_inference_reasons: expect.any(Array),
       projection_floor_confidence: expect.any(String),
+      evidence_confidence: {
+        score: expect.any(Number),
+        state: expect.any(String),
+        reasons: expect.any(Array),
+      },
+      projection_feasibility: {
+        demand_gap: expect.any(Object),
+        readiness_band: expect.any(String),
+        dominant_limiters: expect.any(Array),
+      },
     });
   });
 

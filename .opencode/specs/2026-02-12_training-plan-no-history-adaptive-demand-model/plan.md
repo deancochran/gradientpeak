@@ -6,7 +6,7 @@ Depends On: `design.md`, `technical-spec.md`
 
 ## Objective
 
-Implement V2 no-history adaptive demand modeling in a deterministic, test-first way while preserving existing safety semantics and preview/create parity.
+Implement no-history adaptive demand modeling in a deterministic, test-first way while preserving existing safety semantics and preview/create parity.
 
 ## Non-Negotiables
 
@@ -14,7 +14,25 @@ Implement V2 no-history adaptive demand modeling in a deterministic, test-first 
 2. Keep no-history default start as never-trained (`starting_ctl_for_projection = 0`) unless override provided.
 3. Do not duplicate projection decision logic outside `@repo/core`.
 4. Maintain preview/create output parity for identical inputs.
-5. Preserve backward compatibility during migration (dual-write metadata).
+5. Update the current contract and behavior directly (no parallel version track).
+6. Adaptive demand must use a single confidence-weighted model across none/sparse/stale/rich states (no hard mode switching).
+7. User flow must not change or break based on data state; creation works for none/sparse/stale/rich.
+8. The system must use live database evidence at request time with no manual user steps.
+
+## Evidence Weighting Rules
+
+Adaptive demand must always run using all available evidence, with confidence-based weighting:
+
+1. Use all available `activities`, `activity_efforts`, `profile_metrics`, and creation inputs.
+2. Apply freshness decay and sample-quality weighting to each signal.
+3. Blend weighted evidence with conservative baselines deterministically.
+4. Let `none/sparse/stale/rich` influence confidence strength, not model eligibility.
+
+## Data Freshness and Dynamic Utilization Rules
+
+1. Every `previewCreationConfig` and `createFromCreationConfig` call must derive context from current DB records.
+2. Newly logged `activities`, `activity_efforts`, and `profile_metrics` must be reflected in the next preview/create request.
+3. Query failures or empty sources must degrade gracefully to conservative baselines, never blocking creation.
 
 ## Implementation Phases
 
@@ -32,7 +50,7 @@ Add demand-band contracts and feasibility/readiness metadata to projection types
 ### Deliverables
 
 1. Add `DemandBand`, `ProjectionDemandGap`, `ProjectionFeasibilityMetadata`, `ReadinessBand`, `DemandConfidence`.
-2. Extend `NoHistoryProjectionMetadata` with optional V2 fields.
+2. Update `NoHistoryProjectionMetadata` with demand-model fields.
 3. Export all new types via core barrel.
 
 ### Exit Criteria
@@ -54,22 +72,25 @@ Implement deterministic chained demand estimation and integrate it into weekly r
 
 1. Add deterministic goal-demand derivation helper(s).
 2. Add weekly demand-floor function for build-horizon weeks.
-3. Replace floor-only week override behavior with demand-band-first override behavior.
+3. Replace floor-only week override behavior with confidence-weighted demand-band behavior.
 4. Keep current clamp ordering and semantics unchanged.
 5. Emit enriched week metadata (`demand_band_minimum_weekly_tss`, unmet demand where applicable).
 6. Emit top-level feasibility metadata (`demand_gap`, `readiness_band`, `dominant_limiters`).
+7. Add evidence weighting utility (freshness/sample/source-quality -> confidence score).
+8. Ensure weighting utility is failure-safe and never blocks projection generation.
 
 ### Exit Criteria
 
 1. Weekly projections remain deterministic for same inputs.
 2. Hard goals do not immediately collapse unless constrained.
 3. Clamp behavior remains unchanged relative to safety rules.
+4. Rich/fresh users remain on history-driven projection path.
 
 ## Phase 3 - Router Threading and Snapshot Parity
 
 ### Scope
 
-Thread V2 metadata through preview and create flows, keeping stale snapshot protections intact.
+Thread updated demand metadata through preview and create flows, keeping stale snapshot protections intact.
 
 ### Files
 
@@ -78,20 +99,23 @@ Thread V2 metadata through preview and create flows, keeping stale snapshot prot
 ### Deliverables
 
 1. Ensure no-history context provides all inputs needed for core demand derivation.
-2. Ensure `buildCreationProjectionArtifacts` surfaces V2 metadata unchanged from core.
-3. Include V2 metadata in snapshot token inputs.
-4. Bump preview snapshot version if token payload shape changes.
+2. Ensure `buildCreationProjectionArtifacts` surfaces updated metadata unchanged from core.
+3. Include updated metadata in snapshot token inputs.
+4. Add/forward weighting reason tokens and confidence breakdown for explainability.
+5. Enforce dynamic context derivation from live DB state on every request path.
 
 ### Exit Criteria
 
 1. `previewCreationConfig` and `createFromCreationConfig` produce matching projection metadata.
 2. Snapshot stale-token detection still works exactly as before.
+3. Confidence weighting outcomes are identical between preview and create for the same snapshot.
+4. Empty/partial data states still return successful preview/create responses.
 
-## Phase 4 - Mobile V2 Explainability Cues
+## Phase 4 - Mobile Explainability Cues
 
 ### Scope
 
-Render demand-band insights in projection UI with backward-compatible fallback to legacy fields.
+Render demand-band insights in projection UI using the updated metadata semantics.
 
 ### Files
 
@@ -99,14 +123,13 @@ Render demand-band insights in projection UI with backward-compatible fallback t
 
 ### Deliverables
 
-1. Show readiness band and demand-gap cues when V2 metadata exists.
+1. Show readiness band and demand-gap cues from updated metadata.
 2. Surface dominant limiters and confidence labels.
-3. Retain fallback rendering for floor-era metadata.
-4. Keep UI read-only (no local projection math).
+3. Keep UI read-only (no local projection math).
 
 ### Exit Criteria
 
-1. Chart renders with both V2 and legacy payloads.
+1. Chart renders updated demand/readiness metadata correctly.
 2. Constrained-week context remains accurate and understandable.
 
 ## Phase 5 - Test Coverage and Verification
@@ -126,7 +149,9 @@ Add and update tests for demand model behavior, parity, and UI rendering.
 
 1. Core tests for demand-band progression, demand-gap emission, override behavior, and deterministic start-state handling.
 2. Router tests for preview/create parity and snapshot token behavior.
-3. Mobile tests for V2 rendering + legacy fallback.
+3. Mobile tests for updated demand/readiness rendering.
+4. Weighting tests for none/sparse/stale confidence discounting and rich/fresh confidence dominance.
+5. Dynamic data tests validating updated outputs after new DB evidence appears.
 
 ### Verification Commands
 
@@ -146,34 +171,31 @@ pnpm --filter mobile check-types
 
 ## Rollout Strategy
 
-## Release A - Dual Write
+## Single Cutover
 
-1. Emit both legacy floor fields and V2 demand fields.
-2. Keep existing tokens accepted where needed (`no_history_floor`).
-
-## Release B - V2-First UI
-
-1. Mobile prefers V2 fields.
-2. Legacy fallback remains active.
-
-## Release C - Deprecation
-
-1. Mark floor-era fields as deprecated in type docs.
-2. Keep wire compatibility until next planned contract cleanup.
+1. Update core projection contract and calculations in place.
+2. Update router snapshot token inputs to match the new metadata shape.
+3. Update mobile rendering in the same implementation window.
+4. Validate parity and safety semantics before merge.
 
 ## Risks and Mitigations
 
 1. Over-prescription risk -> mitigated by existing clamp authority and availability constraints.
 2. Under-prescription risk for hard goals -> mitigated by demand-floor persistence through build horizon.
 3. Contract drift between preview/create -> mitigated by shared projection artifacts and snapshot parity tests.
-4. UI confusion during migration -> mitigated by V2-first labels with legacy fallback.
+4. UI interpretation drift -> mitigated by updating labels and tests in the same change set.
+5. Incorrect confidence scaling -> mitigated by explicit weighting function, monotonic tests, and parity tests for preview/create.
+6. User-visible disruptions when data missing -> mitigated by strict no-block conservative baseline behavior and null-safe defaults.
 
 ## Completion Criteria
 
 This plan is complete when:
 
-1. V2 demand metadata is produced in core and surfaced end-to-end.
+1. Demand metadata is produced in core and surfaced end-to-end.
 2. Hard no-history goals show believable progressive demand unless constrained.
 3. Constrained projections explicitly report gap and dominant limiters.
 4. Safety and determinism are preserved.
 5. Tests and type checks pass for all affected packages.
+6. Rich/fresh users are evidence-dominant through confidence weighting (without separate fallback mode).
+7. No end-user friction is introduced by data availability differences.
+8. Plan creation adapts automatically as real data is logged to the database.

@@ -202,7 +202,7 @@ describe("deterministic projection safety behavior", () => {
     expect(projection.constraint_summary.starting_state.starting_tsb).toBe(0);
   });
 
-  it("does not apply no-history floor when history state is sparse", () => {
+  it("uses confidence-weighted demand metadata when history state is sparse", () => {
     const projection = buildDeterministicProjectionPayload({
       timeline: {
         start_date: "2026-01-05",
@@ -234,11 +234,12 @@ describe("deterministic projection safety behavior", () => {
       },
     });
 
-    expect(projection.no_history.projection_floor_applied).toBe(false);
+    expect(projection.no_history.projection_floor_applied).toBe(true);
+    expect(projection.no_history.evidence_confidence?.state).toBe("sparse");
     expect(
       projection.constraint_summary.starting_state.starting_state_is_prior,
-    ).toBe(false);
-    expect(projection.constraint_summary.starting_state.starting_ctl).toBe(20);
+    ).toBe(true);
+    expect(projection.no_history.projection_feasibility).toBeTruthy();
   });
 
   it("clamps week-over-week TSS and CTL ramps when caps are low", () => {

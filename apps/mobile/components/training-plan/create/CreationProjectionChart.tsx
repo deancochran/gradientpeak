@@ -481,8 +481,18 @@ export const CreationProjectionChart = React.memo(
       noHistoryMetadata?.projection_floor_applied ? "Yes" : "No";
     const noHistoryAvailabilityClampLabel =
       noHistoryMetadata?.floor_clamped_by_availability ? "On" : "Off";
+    const evidenceConfidenceScore =
+      noHistoryMetadata?.evidence_confidence?.score;
+    const evidenceConfidenceState =
+      noHistoryMetadata?.evidence_confidence?.state;
+    const readinessBand =
+      noHistoryMetadata?.projection_feasibility?.readiness_band;
+    const unmetDemand =
+      noHistoryMetadata?.projection_feasibility?.demand_gap.unmet_weekly_tss;
+    const dominantLimiters =
+      noHistoryMetadata?.projection_feasibility?.dominant_limiters ?? [];
     const noHistoryAccessibilitySummary = noHistoryMetadata
-      ? `No-history mode. Confidence ${noHistoryConfidenceLabel}. Floor applied ${noHistoryFloorAppliedLabel}. Availability clamp ${noHistoryAvailabilityClampLabel}.`
+      ? `Adaptive demand confidence ${noHistoryConfidenceLabel}. Floor applied ${noHistoryFloorAppliedLabel}. Availability clamp ${noHistoryAvailabilityClampLabel}. Evidence confidence ${evidenceConfidenceState ?? "n/a"} ${evidenceConfidenceScore !== undefined ? evidenceConfidenceScore.toFixed(2) : "n/a"}. Readiness ${readinessBand ?? "n/a"}.`
       : undefined;
 
     return (
@@ -502,10 +512,22 @@ export const CreationProjectionChart = React.memo(
             accessibilityLabel={noHistoryAccessibilitySummary}
           >
             <Text className="text-[11px] text-muted-foreground">
-              No-history mode
+              Adaptive demand
             </Text>
             <Text className="text-[11px] text-muted-foreground">
               Confidence: {noHistoryConfidenceLabel}
+            </Text>
+            <Text className="text-[11px] text-muted-foreground">
+              Evidence confidence: {evidenceConfidenceState ?? "n/a"}{" "}
+              {evidenceConfidenceScore !== undefined
+                ? `(${evidenceConfidenceScore.toFixed(2)})`
+                : ""}
+            </Text>
+            <Text className="text-[11px] text-muted-foreground">
+              Readiness: {readinessBand ?? "n/a"}
+              {unmetDemand !== undefined
+                ? ` | Demand gap: ${Math.round(unmetDemand)} TSS`
+                : ""}
             </Text>
             <Text className="text-[11px] text-muted-foreground">
               Floor applied: {noHistoryFloorAppliedLabel}
@@ -513,6 +535,11 @@ export const CreationProjectionChart = React.memo(
             <Text className="text-[11px] text-muted-foreground">
               Availability clamp: {noHistoryAvailabilityClampLabel}
             </Text>
+            {dominantLimiters.slice(0, 2).map((limiter) => (
+              <Text key={limiter} className="text-[11px] text-muted-foreground">
+                limiter: {limiter}
+              </Text>
+            ))}
             {noHistoryReasons.slice(0, 2).map((reason) => (
               <Text key={reason} className="text-[11px] text-muted-foreground">
                 - {reason}

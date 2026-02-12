@@ -192,7 +192,7 @@ describe("deterministic projection goal conflict weighting", () => {
 });
 
 describe("no-history anchor orchestration", () => {
-  it("keeps no-history gate inactive when history state is not none", () => {
+  it("applies confidence-weighted metadata for sparse history", () => {
     const anchor = resolveNoHistoryAnchor({
       history_availability_state: "sparse",
       goal_tier: "high",
@@ -210,12 +210,57 @@ describe("no-history anchor orchestration", () => {
       },
     });
 
+    expect(anchor.projection_floor_applied).toBe(true);
+    expect(anchor.projection_floor_values).not.toBeNull();
+    expect(anchor.fitness_level).toBeTypeOf("string");
+    expect(anchor.evidence_confidence?.state).toBe("sparse");
+    expect(anchor.evidence_confidence?.score ?? 0).toBeGreaterThan(0);
+  });
+
+  it("keeps rich/fresh evidence dominant without forcing floor priors", () => {
+    const anchor = resolveNoHistoryAnchor({
+      history_availability_state: "rich",
+      goal_tier: "medium",
+      weeks_to_event: 18,
+      context_summary: {
+        history_availability_state: "rich",
+        recent_consistency_marker: "high",
+        effort_confidence_marker: "high",
+        profile_metric_completeness_marker: "high",
+        signal_quality: 0.95,
+        recommended_baseline_tss_range: { min: 180, max: 320 },
+        recommended_recent_influence_range: { min: -0.1, max: 0.2 },
+        recommended_sessions_per_week_range: { min: 5, max: 7 },
+        rationale_codes: ["history_rich"],
+      },
+    });
+
     expect(anchor.projection_floor_applied).toBe(false);
     expect(anchor.projection_floor_values).toBeNull();
-    expect(anchor.fitness_level).toBeNull();
-    expect(anchor.fitness_inference_reasons).toContain(
-      "no_history_gate_inactive",
-    );
+    expect(anchor.evidence_confidence?.state).toBe("rich");
+    expect(anchor.evidence_confidence?.score ?? 0).toBeGreaterThan(0.7);
+  });
+
+  it("discounts confidence when stale markers are present", () => {
+    const stale = resolveNoHistoryAnchor({
+      history_availability_state: "rich",
+      goal_tier: "medium",
+      weeks_to_event: 18,
+      context_summary: {
+        history_availability_state: "rich",
+        recent_consistency_marker: "high",
+        effort_confidence_marker: "high",
+        profile_metric_completeness_marker: "high",
+        signal_quality: 0.95,
+        recommended_baseline_tss_range: { min: 180, max: 320 },
+        recommended_recent_influence_range: { min: -0.1, max: 0.2 },
+        recommended_sessions_per_week_range: { min: 5, max: 7 },
+        rationale_codes: ["history_stale"],
+      },
+    });
+
+    expect(stale.evidence_confidence?.state).toBe("stale");
+    expect(stale.evidence_confidence?.score ?? 1).toBeLessThan(0.8);
   });
 
   it("keeps CTL and weekly TSS floor invariant from canonical matrix", () => {
@@ -373,7 +418,7 @@ describe("no-history anchor orchestration", () => {
     );
   });
 
-  it("enforces no-history weekly floor on first non-taper week", () => {
+  it("emits demand-band floor metadata on constrained early weeks", () => {
     const projection = buildDeterministicProjectionPayload({
       timeline: {
         start_date: "2026-01-05",
@@ -426,20 +471,18 @@ describe("no-history anchor orchestration", () => {
     expect(
       projection.no_history.projection_floor_values?.start_weekly_tss,
     ).toBe(245);
-    expect(
-      projection.microcycles
-        .slice(0, 6)
-        .every(
-          (cycle, index, cycles) =>
-            index === 0 ||
-            cycle.planned_weekly_tss >= cycles[index - 1]!.planned_weekly_tss,
-        ),
-    ).toBe(true);
+    expect(projection.no_history.evidence_confidence).toBeTruthy();
+    expect(projection.no_history.projection_feasibility).toBeTruthy();
     expect(projection.constraint_summary.starting_state.starting_ctl).toBe(0);
     expect(
       projection.microcycles
         .slice(0, 6)
-        .some((cycle) => cycle.metadata.tss_ramp.floor_override_applied),
+        .some((cycle) =>
+          Number.isFinite(
+            cycle.metadata.tss_ramp.demand_band_minimum_weekly_tss ??
+              Number.NaN,
+          ),
+        ),
     ).toBe(true);
   });
 });
