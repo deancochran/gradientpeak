@@ -1,105 +1,71 @@
-# Tasks - Training Plan Creation UX Minimalization
+# Tasks - Training Plan Creation UX Minimalization (In-Place Refactor)
 
 Last Updated: 2026-02-13
 Status: Ready for implementation
-Owner: Mobile + Core + tRPC + QA
+Owner: Mobile + QA
 
-This checklist implements `./design.md` and `./plan.md`.
+This checklist implements `./design.md` and `./plan.md` and explicitly preserves the current create process.
 
-## Phase 1 - Feature Flag and Minimal Flow Shell
+## Phase 1 - Simplify Current Form Surface
 
-- [ ] [Mobile][S1] Add `trainingPlanCreateUxMinimalization` flag in `apps/mobile/lib/constants/features.ts`.
-- [ ] [Mobile][S1] Create `apps/mobile/components/training-plan/create/MinimalCreateFlow.tsx` with 3-step shell (`goal`, `availability`, `review`).
-- [ ] [Mobile][S1] Wire conditional rendering in `apps/mobile/app/(internal)/(standard)/training-plan-create.tsx` to use minimal flow when flag is enabled.
-- [ ] [Mobile][S1] Keep `apps/mobile/components/training-plan/create/SinglePageForm.tsx` as fallback path while migration is in progress.
-- [ ] [QA][S1] Verify no create/preview API contract changes from shell introduction.
+- [ ] [Mobile][S1] Refactor `apps/mobile/components/training-plan/create/SinglePageForm.tsx` to reduce default information density.
+- [ ] [Mobile][S1] Keep current tab/screen process; do not introduce new multi-screen flow.
+- [ ] [Mobile][S1] Keep goals, availability, and review as the default-visible journey in current UI.
+- [ ] [Mobile][S1] Collapse advanced sections by default within current structure.
+- [ ] [Mobile][S1] Keep forecast chart available but collapsed by default via toggle.
 
-## Phase 2 - Typed Input Component Foundation (Best-Practice UX)
+## Phase 2 - Add Typed Input Components
 
-- [ ] [Mobile][S1] Create `apps/mobile/components/training-plan/create/inputs/DateField.tsx` using native `DateTimePicker`.
-- [ ] [Mobile][S1] Create `apps/mobile/components/training-plan/create/inputs/DurationInput.tsx` for `h:mm:ss` entry with format-safe behavior.
-- [ ] [Mobile][S1] Create `apps/mobile/components/training-plan/create/inputs/PaceInput.tsx` for `mm:ss` with explicit unit label.
-- [ ] [Mobile][S1] Create `apps/mobile/components/training-plan/create/inputs/BoundedNumberInput.tsx` for numeric + min/max constraints.
-- [ ] [Mobile][S1] Create `apps/mobile/components/training-plan/create/inputs/IntegerStepper.tsx` for bounded integer counts.
-- [ ] [Mobile][S1] Create `apps/mobile/components/training-plan/create/inputs/PercentSliderInput.tsx` for percentage caps with numeric fallback.
-- [ ] [Mobile][S1] Add `apps/mobile/lib/training-plan-form/input-parsers.ts` for shared date/time/pace/distance parsing/formatting utilities.
-- [ ] [QA][S1] Add parser unit tests in `apps/mobile/lib/training-plan-form/__tests__/input-parsers.test.ts`.
+- [ ] [Mobile][S1] Create `apps/mobile/components/training-plan/create/inputs/DateField.tsx`.
+- [ ] [Mobile][S1] Create `apps/mobile/components/training-plan/create/inputs/DurationInput.tsx`.
+- [ ] [Mobile][S1] Create `apps/mobile/components/training-plan/create/inputs/PaceInput.tsx`.
+- [ ] [Mobile][S1] Create `apps/mobile/components/training-plan/create/inputs/IntegerStepper.tsx`.
+- [ ] [Mobile][S1] Create `apps/mobile/components/training-plan/create/inputs/BoundedNumberInput.tsx`.
+- [ ] [Mobile][S1] Create `apps/mobile/components/training-plan/create/inputs/PercentSliderInput.tsx`.
+- [ ] [Mobile][S1] Add shared parsing helpers in `apps/mobile/lib/training-plan-form/input-parsers.ts`.
 
-## Phase 3 - Goal Step (Minimal Required, Inline Editing)
+## Phase 3 - Replace High-Risk Fields with Typed Inputs
 
-- [ ] [Mobile][S1] Create `apps/mobile/components/training-plan/create/steps/GoalStep.tsx`.
-- [ ] [Mobile][S1] Use typed controls for goal fields:
-  - [ ] `DateField` for target date and plan start date
-  - [ ] `DurationInput` for completion/test duration
-  - [ ] `PaceInput` for pace threshold values
-  - [ ] Numeric distance input with `km` suffix and quick-preset chips
-- [ ] [Mobile][S1] Replace target-edit modal dependency with inline expandable target cards in `GoalStep`.
-- [ ] [Mobile][S1] Keep optional goals behind explicit "Add another goal" action.
-- [ ] [Mobile][S1] Add/retain accessibility labels and hints that specify required format and units.
-- [ ] [QA][S1] Add goal-step interaction tests covering inline edit and typed input validation.
+- [ ] [Mobile][S2] Replace goal and plan date fields with `DateField` in `SinglePageForm.tsx`.
+- [ ] [Mobile][S2] Replace duration/time target fields with `DurationInput`.
+- [ ] [Mobile][S2] Replace pace fields with `PaceInput` and explicit unit label.
+- [ ] [Mobile][S2] Replace session/rest count fields with `IntegerStepper` or bounded integer control.
+- [ ] [Mobile][S2] Replace percent cap fields with `PercentSliderInput` plus numeric fallback.
+- [ ] [Mobile][S2] Ensure distance inputs are bounded numeric with `km` context and optional preset chips.
 
-## Phase 4 - Availability Step (Minimal Required, Type-Compatible Inputs)
+## Phase 4 - Validation and Blocking UX in Current Flow
 
-- [ ] [Mobile][S2] Create `apps/mobile/components/training-plan/create/steps/AvailabilityStepMinimal.tsx`.
-- [ ] [Mobile][S2] Implement training day toggles and selected-day summary.
-- [ ] [Mobile][S2] Implement min/max sessions/week using `IntegerStepper` or bounded integer control.
-- [ ] [Mobile][S2] Enforce min<=max and available-day consistency with immediate feedback.
-- [ ] [Mobile][S2] Keep conservative defaults visible without exposing provenance internals in minimal path.
-- [ ] [QA][S2] Add availability-step tests for invalid ranges and progression gating.
+- [ ] [Mobile][S2] Add/update `apps/mobile/lib/training-plan-form/validation.ts` for field/section/submission validation.
+- [ ] [Mobile][S2] Trigger inline validation on blur/change for date/time/pace/count fields.
+- [ ] [Mobile][S2] In review section, surface top blocking conflicts (max 3) near create action.
+- [ ] [Mobile][S2] Keep and reuse existing quick-fix actions for conflict resolution.
+- [ ] [Mobile][S2] Disable create only when blocking issues exist, with explicit reason copy.
 
-## Phase 5 - Review Step, Blocking Guidance, and Create Rules
+## Phase 5 - Copy Simplification and Progressive Disclosure
 
-- [ ] [Mobile][S2] Create `apps/mobile/components/training-plan/create/steps/ReviewStep.tsx` with plain-language summary blocks.
-- [ ] [Mobile][S2] Create `apps/mobile/components/training-plan/create/FixBeforeCreateCard.tsx` for top blockers (max 3).
-- [ ] [Mobile][S2] Surface feasibility/safety bands in review without leaking internal jargon.
-- [ ] [Mobile][S2] Disable Create only when blocked; show explicit disabled-reason copy.
-- [ ] [Mobile][S2] Reuse existing quick-fix handler (`onResolveConflict`) from create screen orchestration.
-- [ ] [QA][S2] Add review-step tests for blocking conflict rendering and quick-fix interactions.
+- [ ] [Mobile][S2] Replace technical copy in default view with plain-language labels.
+- [ ] [Mobile][S2] Keep provenance/lock/source details available only in expanded advanced sections.
+- [ ] [Mobile][S2] Add unit/format helper text where needed (`mm:ss`, `h:mm:ss`, `%`, `km`).
+- [ ] [Mobile][S2] Ensure accessibility labels/hints include expected input format.
 
-## Phase 6 - Advanced Settings Progressive Disclosure
+## Phase 6 - Regression Safety and QA
 
-- [ ] [Mobile][S2] Create `apps/mobile/components/training-plan/create/AdvancedSettingsSection.tsx`.
-- [ ] [Mobile][S2] Move advanced controls from `SinglePageForm.tsx` into `AdvancedSettingsSection` while preserving behavior.
-- [ ] [Mobile][S2] Default advanced section to collapsed state; require explicit user expansion.
-- [ ] [Mobile][S2] Keep lock controls and provenance/source indicators in advanced section only.
-- [ ] [Mobile][S2] Upgrade advanced numeric controls to typed components (`PercentSliderInput`, `IntegerStepper`, bounded numeric).
-- [ ] [QA][S2] Verify advanced path exposes all prior expert controls and values persist correctly.
-
-## Phase 7 - Validation Architecture and Orchestration Wiring
-
-- [ ] [Mobile][S3] Add `apps/mobile/lib/training-plan-form/validation.ts` with:
-  - [ ] `validateGoalStep`
-  - [ ] `validateAvailabilityStep`
-  - [ ] `validateCreateSubmission`
-- [ ] [Mobile][S3] Trigger field-level validation on blur/change for date/time/pace/count critical fields.
-- [ ] [Mobile][S3] Add step-level gating in `training-plan-create.tsx` + `MinimalCreateFlow.tsx`.
-- [ ] [Mobile][S3] Keep submit-level validation + preview guard before create mutation.
-- [ ] [Mobile][S3] Keep data adapters unchanged in `apps/mobile/lib/training-plan-form/adapters.ts` to preserve payload contract.
-- [ ] [QA][S3] Add regression tests confirming no payload drift for `createFromCreationConfig` inputs.
-
-## Phase 8 - Forecast Toggle, QA Hardening, and Rollout
-
-- [ ] [Mobile][S3] Add default-collapsed forecast toggle (`Show forecast`) around `CreationProjectionChart`.
-- [ ] [Mobile][S3] Ensure chart remains optional and does not block minimal flow completion.
-- [ ] [QA][S3] Add component tests:
-  - [ ] `apps/mobile/components/training-plan/create/__tests__/MinimalCreateFlow.test.tsx`
-  - [ ] `apps/mobile/components/training-plan/create/inputs/__tests__/DateField.test.tsx`
-  - [ ] `apps/mobile/components/training-plan/create/inputs/__tests__/DurationInput.test.tsx`
-  - [ ] `apps/mobile/components/training-plan/create/inputs/__tests__/PaceInput.test.tsx`
-- [ ] [QA][S3] Execute manual QA script from plan (minimal completion, typed input validation, blocking fixes, advanced path, forecast toggle).
-- [ ] [Product+QA][S3] Verify event telemetry requirements if enabled (`step_view`, `step_blocked`, `quick_fix_applied`, `create_success`).
+- [ ] [QA][S3] Add parser tests in `apps/mobile/lib/training-plan-form/__tests__/input-parsers.test.ts`.
+- [ ] [QA][S3] Add validation tests in `apps/mobile/lib/training-plan-form/__tests__/validation.test.ts`.
+- [ ] [QA][S3] Add component tests for new typed inputs under `apps/mobile/components/training-plan/create/inputs/__tests__/`.
+- [ ] [QA][S3] Add/extend `SinglePageForm` behavior tests for blockers + create enablement.
+- [ ] [QA][S3] Verify create/preview payload parity remains unchanged.
 
 ## Quality Gates
 
 - [ ] [Mobile][S3] Run `pnpm --filter @repo/mobile check-types`.
 - [ ] [Mobile][S3] Run `pnpm --filter @repo/mobile test`.
-- [ ] [QA][S3] Run full validation when feasible: `pnpm check-types && pnpm lint && pnpm test`.
+- [ ] [QA][S3] Run `pnpm check-types && pnpm lint && pnpm test` when feasible.
 
 ## Definition of Done
 
-- [ ] Minimal create flow is 3-step and fully completable without opening advanced settings.
-- [ ] Advanced controls are preserved and hidden by default.
-- [ ] Date/time/pace/distance/session/count fields use type-compatible components with unit-aware UX.
-- [ ] Blocking issues are surfaced before create with direct correction actions.
-- [ ] Preview/create payload and endpoint contracts remain backward compatible.
-- [ ] Automated and manual validation checks pass.
+- [ ] Current training-plan create process is preserved and simplified in place.
+- [ ] Advanced controls are default-collapsed, not removed.
+- [ ] Typed inputs are used for date/time/pace/distance/count/percent fields.
+- [ ] Blocking errors are visible and actionable before create.
+- [ ] API contracts and create orchestration behavior remain backward compatible.
