@@ -37,6 +37,7 @@ Observed friction in the current mobile flow:
 3. **Inline prevention over late failure:** surface errors at field-level as soon as they become invalid.
 4. **Meaning over mechanics:** communicate plan quality in plain language, not internal state names.
 5. **Advanced is optional:** expert controls stay available behind a clear "Advanced settings" entry point.
+6. **Input modality fit:** each field must use an input component designed for its data type (date, duration, pace/speed, numeric count).
 
 ## Target UX Structure
 
@@ -90,13 +91,35 @@ Default state: collapsed and never auto-expanded.
    - Hide lock-state mechanics unless advanced is open.
 4. Replace target edit modal with inline expandable target editor to reduce navigation/context loss.
 
+## Input Component Standards (Best Practice UX)
+
+To reduce format errors and improve confidence, the create flow must use type-compatible input components rather than generic text fields.
+
+### Component-to-Data Mapping
+
+- **Date values** (goal date, plan start date): native date picker (`DateTimePicker`) with min/max constraints.
+- **Duration values** (completion time, test duration): structured duration input (`h:mm:ss`) with segmented fields or mask.
+- **Pace values** (`mm:ss`): dedicated pace input with unit label (`/km` default) and normalized seconds output.
+- **Speed values** (if shown in future targets): decimal numeric input with unit suffix (`km/h` or `mph`) and bounded range.
+- **Distance values**: decimal numeric input with `km` suffix plus quick-select chips for common distances.
+- **Session counts / rest day counts**: stepper or bounded integer input, not free text.
+- **Percent caps** (weekly load ramp): slider + numeric fallback with clamped range.
+
+### UX Rules for Typed Inputs
+
+1. Keep display format and stored format explicit (for example: display `1:35:00`, store seconds).
+2. Apply validation at the component boundary (invalid keystrokes or impossible ranges are blocked early).
+3. Show unit context inline (`km`, `%`, `min/km`, `CTL/week`) to prevent interpretation ambiguity.
+4. Provide keyboard type aligned to entry pattern (`numeric`, `numbers-and-punctuation`) where native picker is unavailable.
+5. Provide accessible labels and hints that include expected format.
+
 ## Validation and Error Handling
 
 ### Validation Strategy
 
 - Field-level validation on blur/change for high-risk inputs:
   - Target date must be future date.
-  - Time/pace format validation.
+  - Time/pace format validation through typed components.
   - Min sessions cannot exceed max sessions.
 - Step-level gating: user cannot continue until required fields are valid.
 - Submit-level validation retained as final guardrail.
@@ -125,6 +148,13 @@ Default state: collapsed and never auto-expanded.
   - `ReviewStep`
   - `AdvancedSettingsSection`
 - Introduce a lightweight step state machine (`currentStep`, `canContinue`, `canCreate`).
+- Introduce reusable typed input controls for domain-specific values:
+  - `DateField`
+  - `DurationInput`
+  - `PaceInput`
+  - `BoundedNumberInput`
+  - `IntegerStepper`
+  - `PercentSliderInput`
 
 ### State and Mapping
 
@@ -161,6 +191,7 @@ Default state: collapsed and never auto-expanded.
 3. Users can create a valid plan without touching advanced settings.
 4. Blocking issues are surfaced before submit with direct corrective actions.
 5. Create/preview endpoint payload compatibility remains unchanged.
+6. Date/time/pace/distance/count fields use type-compatible input components with units and format-safe validation.
 
 ## Success Metrics
 
