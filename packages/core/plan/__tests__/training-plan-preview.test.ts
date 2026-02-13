@@ -131,7 +131,15 @@ describe("trainingPlanPreview helpers", () => {
       {
         status: "success",
         projectionChart: {
-          points: [{ date: "2026-01-01", predicted_load_tss: 200 }],
+          points: [
+            {
+              date: "2026-01-01",
+              predicted_load_tss: 200,
+              predicted_fitness_ctl: 30,
+              predicted_fatigue_atl: 35,
+              predicted_form_tsb: -5,
+            },
+          ],
         },
       },
     );

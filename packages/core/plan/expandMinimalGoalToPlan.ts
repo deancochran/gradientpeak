@@ -13,6 +13,7 @@ import {
 } from "./normalizeGoalInput";
 import { derivePlanTimeline } from "./derivePlanTimeline";
 import { addDaysDateOnlyUtc, diffDateOnlyUtcDays } from "./dateOnlyUtc";
+import { normalizeGoalPriority } from "./goalPriorityWeighting";
 
 type ActivityDistributionInput = Partial<Record<string, number>>;
 
@@ -26,12 +27,10 @@ export interface ExpandMinimalGoalToPlanOptions {
   metadata?: Record<string, unknown>;
 }
 
-type PhaseSpec = {
-  name: string;
+type SegmentSpec = {
   phase: TrainingBlock["phase"];
   days: number;
-  tssMultiplier: number;
-  sessionsRange: { min: number; max: number };
+  priority: number;
 };
 
 export function expandMinimalGoalToPlan(
@@ -54,35 +53,56 @@ export function expandMinimalGoalToPlan(
   });
   const startDate = timeline.start_date;
   const endDate = timeline.end_date;
-  const totalDays = Math.max(1, diffDaysInclusive(startDate, endDate));
-  const phases = buildPhaseSpecs(totalDays);
+  const orderedGoals = [...normalizedGoals].sort((a, b) => {
+    const byDate = a.target_date.localeCompare(b.target_date);
+    if (byDate !== 0) return byDate;
+    return a.priority - b.priority;
+  });
+  const baseWeeklyTss = Math.max(
+    50,
+    Math.round((options.startingCtl ?? 40) * 7),
+  );
+  const segments = mergeAdjacentSegments(
+    buildGoalAwareSegments(startDate, orderedGoals),
+  );
 
   let cursor = startDate;
-  const blocks: TrainingBlock[] = phases.map((phase, index) => {
-    const isLast = index === phases.length - 1;
+  let progression = 1;
+  const blocks: TrainingBlock[] = segments.map((segment, index) => {
+    const isLast = index === segments.length - 1;
     const blockEndDate = isLast
       ? endDate
-      : addDaysDateOnlyUtc(cursor, phase.days - 1);
-    const baseWeeklyTss = Math.max(
-      50,
-      Math.round((options.startingCtl ?? 40) * 7),
+      : addDaysDateOnlyUtc(cursor, segment.days - 1);
+    const phaseMultiplier = getPhaseTssMultiplier(segment.phase);
+    const priorityMultiplier = getPriorityTssMultiplier(segment.priority);
+    const targetTss = Math.round(
+      clamp(
+        baseWeeklyTss * phaseMultiplier * priorityMultiplier * progression,
+        baseWeeklyTss * 0.45,
+        baseWeeklyTss * 1.85,
+      ),
     );
-    const targetTss = Math.round(baseWeeklyTss * phase.tssMultiplier);
+    progression = clamp(
+      progression + getProgressionDelta(segment.phase),
+      0.62,
+      1.5,
+    );
+    const targetRangeSpread = getTargetRangeSpread(segment.phase);
 
     const block: TrainingBlock = {
       id: deterministicUuidFromSeed(
-        `${normalizedGoal.id}|${phase.phase}|${index}|${cursor}|${blockEndDate}`,
+        `${normalizedGoal.id}|${segment.phase}|${index}|${cursor}|${blockEndDate}`,
       ),
-      name: phase.name,
+      name: phaseName(segment.phase),
       start_date: cursor,
       end_date: blockEndDate,
       goal_ids: goalIds,
-      phase: phase.phase,
+      phase: segment.phase,
       target_weekly_tss_range: {
-        min: Math.max(0, Math.round(targetTss * 0.85)),
-        max: Math.max(0, Math.round(targetTss * 1.15)),
+        min: Math.max(0, Math.round(targetTss * (1 - targetRangeSpread))),
+        max: Math.max(0, Math.round(targetTss * (1 + targetRangeSpread))),
       },
-      target_sessions_per_week_range: phase.sessionsRange,
+      target_sessions_per_week_range: getPhaseSessionRange(segment.phase),
     };
 
     cursor = addDaysDateOnlyUtc(blockEndDate, 1);
@@ -118,66 +138,267 @@ export function expandMinimalGoalToPlan(
   return periodizedPlanCreateSchema.parse(plan);
 }
 
-function buildPhaseSpecs(totalDays: number): PhaseSpec[] {
-  if (totalDays < 14) {
-    return [
-      {
-        name: "Build",
-        phase: "build",
-        days: totalDays,
-        tssMultiplier: 1.0,
-        sessionsRange: { min: 3, max: 5 },
-      },
-    ];
+function buildGoalAwareSegments(
+  startDate: string,
+  goals: TrainingGoal[],
+): SegmentSpec[] {
+  const segments: SegmentSpec[] = [];
+  let cursor = startDate;
+
+  for (let index = 0; index < goals.length; index++) {
+    const goal = goals[index];
+    if (!goal) continue;
+
+    let daysToGoal = diffDaysInclusive(cursor, goal.target_date);
+    if (daysToGoal <= 0) {
+      continue;
+    }
+
+    if (index > 0) {
+      const previousGoal = goals[index - 1];
+      const gapBetweenGoalDates = previousGoal
+        ? diffDateOnlyUtcDays(previousGoal.target_date, goal.target_date)
+        : 0;
+      const recoveryDays = determineRecoveryDays(
+        daysToGoal,
+        gapBetweenGoalDates,
+      );
+
+      if (recoveryDays > 0) {
+        segments.push({
+          phase: "recovery",
+          days: recoveryDays,
+          priority: goal.priority,
+        });
+        cursor = addDaysDateOnlyUtc(cursor, recoveryDays);
+        daysToGoal -= recoveryDays;
+      }
+    }
+
+    if (daysToGoal > 0) {
+      segments.push(...buildPrepSegments(daysToGoal, goal.priority));
+      cursor = addDaysDateOnlyUtc(cursor, daysToGoal);
+    }
   }
 
-  if (totalDays < 42) {
-    return [
-      {
-        name: "Build",
-        phase: "build",
-        days: totalDays - 7,
-        tssMultiplier: 1.1,
-        sessionsRange: { min: 4, max: 6 },
-      },
-      {
-        name: "Taper",
-        phase: "taper",
-        days: 7,
-        tssMultiplier: 0.82,
-        sessionsRange: { min: 2, max: 4 },
-      },
-    ];
+  return segments;
+}
+
+function buildPrepSegments(days: number, priority: number): SegmentSpec[] {
+  const normalizedPriority = normalizeGoalPriority(priority);
+  const isHighPriority = normalizedPriority <= 3;
+  const isLowPriority = normalizedPriority >= 7;
+
+  if (days <= 4) {
+    return [{ phase: "build", days, priority: normalizedPriority }];
   }
 
-  const baseDays = Math.max(7, Math.round(totalDays * 0.45));
-  const rawTaperDays = Math.max(7, Math.round(totalDays * 0.12));
-  const taperDays = Math.min(14, rawTaperDays);
-  const adjustedBuildDays = Math.max(7, totalDays - baseDays - taperDays);
+  let taperDays =
+    days >= 56 ? 10 : days >= 35 ? 7 : days >= 18 ? 5 : days >= 10 ? 3 : 2;
+  if (isHighPriority) taperDays += 2;
+  if (isLowPriority) taperDays -= 1;
+  taperDays = clampInteger(taperDays, 1, Math.min(14, days - 1));
 
-  return [
-    {
-      name: "Base",
+  let peakDays = days >= 49 ? 7 : days >= 35 ? 5 : days >= 24 ? 3 : 0;
+  if (isHighPriority && peakDays > 0) peakDays += 1;
+  if (isLowPriority && peakDays > 0) peakDays = Math.max(0, peakDays - 2);
+
+  const maxPeakDays = Math.max(0, days - taperDays - 7);
+  peakDays = clampInteger(peakDays, 0, Math.min(10, maxPeakDays));
+
+  const remainingPrepDays = days - taperDays - peakDays;
+  let baseDays = 0;
+  if (remainingPrepDays >= 28) {
+    baseDays = Math.max(
+      7,
+      Math.round(remainingPrepDays * (isHighPriority ? 0.45 : 0.4)),
+    );
+  } else if (remainingPrepDays >= 18) {
+    baseDays = Math.max(5, Math.round(remainingPrepDays * 0.3));
+  }
+
+  baseDays = Math.min(baseDays, Math.max(0, remainingPrepDays - 7));
+  let buildDays = remainingPrepDays - baseDays;
+  if (buildDays < 4 && baseDays > 0) {
+    const shift = Math.min(baseDays, 4 - buildDays);
+    baseDays -= shift;
+    buildDays += shift;
+  }
+
+  const segments: SegmentSpec[] = [];
+  if (baseDays > 0) {
+    segments.push({
       phase: "base",
       days: baseDays,
-      tssMultiplier: 1.0,
-      sessionsRange: { min: 3, max: 5 },
-    },
-    {
-      name: "Build",
+      priority: normalizedPriority,
+    });
+  }
+  if (buildDays > 0) {
+    segments.push({
       phase: "build",
-      days: adjustedBuildDays,
-      tssMultiplier: 1.15,
-      sessionsRange: { min: 4, max: 6 },
-    },
-    {
-      name: "Taper",
+      days: buildDays,
+      priority: normalizedPriority,
+    });
+  }
+  if (peakDays > 0) {
+    segments.push({
+      phase: "peak",
+      days: peakDays,
+      priority: normalizedPriority,
+    });
+  }
+  if (taperDays > 0) {
+    segments.push({
       phase: "taper",
       days: taperDays,
-      tssMultiplier: 0.82,
-      sessionsRange: { min: 2, max: 4 },
-    },
-  ];
+      priority: normalizedPriority,
+    });
+  }
+
+  return segments;
+}
+
+function determineRecoveryDays(
+  daysToGoal: number,
+  gapBetweenGoalDates: number,
+): number {
+  if (daysToGoal <= 2 || gapBetweenGoalDates <= 0) {
+    return 0;
+  }
+
+  if (gapBetweenGoalDates <= 10) {
+    return Math.min(3, daysToGoal - 1);
+  }
+
+  if (gapBetweenGoalDates <= 21) {
+    return Math.min(5, Math.max(2, Math.floor(daysToGoal * 0.2)));
+  }
+
+  if (gapBetweenGoalDates <= 28) {
+    return Math.min(4, Math.max(1, Math.floor(daysToGoal * 0.12)));
+  }
+
+  return 0;
+}
+
+function mergeAdjacentSegments(segments: SegmentSpec[]): SegmentSpec[] {
+  if (segments.length === 0) {
+    return [];
+  }
+
+  const merged: SegmentSpec[] = [];
+  for (const segment of segments) {
+    const previous = merged[merged.length - 1];
+    if (!previous || previous.phase !== segment.phase) {
+      merged.push({ ...segment });
+      continue;
+    }
+
+    const totalDays = previous.days + segment.days;
+    previous.priority =
+      (previous.priority * previous.days + segment.priority * segment.days) /
+      totalDays;
+    previous.days = totalDays;
+  }
+
+  return merged;
+}
+
+function phaseName(phase: TrainingBlock["phase"]): string {
+  return phase.slice(0, 1).toUpperCase() + phase.slice(1);
+}
+
+function getPhaseSessionRange(phase: TrainingBlock["phase"]): {
+  min: number;
+  max: number;
+} {
+  switch (phase) {
+    case "base":
+      return { min: 3, max: 5 };
+    case "build":
+      return { min: 4, max: 6 };
+    case "peak":
+      return { min: 4, max: 6 };
+    case "taper":
+      return { min: 2, max: 4 };
+    case "recovery":
+      return { min: 2, max: 4 };
+    case "transition":
+      return { min: 2, max: 4 };
+    case "maintenance":
+      return { min: 3, max: 5 };
+  }
+}
+
+function getPhaseTssMultiplier(phase: TrainingBlock["phase"]): number {
+  switch (phase) {
+    case "base":
+      return 1;
+    case "build":
+      return 1.12;
+    case "peak":
+      return 1.05;
+    case "taper":
+      return 0.82;
+    case "recovery":
+      return 0.66;
+    case "transition":
+      return 0.72;
+    case "maintenance":
+      return 0.92;
+  }
+}
+
+function getPriorityTssMultiplier(priority: number): number {
+  const normalized = normalizeGoalPriority(priority);
+  const centered = (6 - normalized) / 40;
+  return clamp(1 + centered, 0.88, 1.13);
+}
+
+function getProgressionDelta(phase: TrainingBlock["phase"]): number {
+  switch (phase) {
+    case "base":
+      return 0.03;
+    case "build":
+      return 0.05;
+    case "peak":
+      return 0.01;
+    case "taper":
+      return -0.08;
+    case "recovery":
+      return -0.12;
+    case "transition":
+      return -0.06;
+    case "maintenance":
+      return 0;
+  }
+}
+
+function getTargetRangeSpread(phase: TrainingBlock["phase"]): number {
+  switch (phase) {
+    case "base":
+      return 0.12;
+    case "build":
+      return 0.1;
+    case "peak":
+      return 0.09;
+    case "taper":
+      return 0.14;
+    case "recovery":
+      return 0.18;
+    case "transition":
+      return 0.16;
+    case "maintenance":
+      return 0.12;
+  }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function clampInteger(value: number, min: number, max: number): number {
+  return Math.round(clamp(value, min, max));
 }
 
 function normalizeActivityDistribution(

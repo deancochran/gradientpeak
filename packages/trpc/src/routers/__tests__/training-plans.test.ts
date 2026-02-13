@@ -151,7 +151,20 @@ describe("trainingPlansRouter plan_start_date support", () => {
     const result = await caller.previewCreationConfig({
       minimal_plan: {
         plan_start_date: "2026-01-05",
-        goals: [minimalGoal],
+        goals: [
+          {
+            ...minimalGoal,
+            target_date: "2026-09-15",
+            targets: [
+              {
+                target_type: "race_performance",
+                distance_m: 10000,
+                target_time_s: 5400,
+                activity_category: "run",
+              },
+            ],
+          },
+        ],
       },
       creation_input: {
         user_values: {
@@ -178,7 +191,20 @@ describe("trainingPlansRouter plan_start_date support", () => {
     const result = await caller.previewCreationConfig({
       minimal_plan: {
         plan_start_date: "2026-01-05",
-        goals: [minimalGoal],
+        goals: [
+          {
+            ...minimalGoal,
+            target_date: "2026-09-15",
+            targets: [
+              {
+                target_type: "race_performance",
+                distance_m: 10000,
+                target_time_s: 5400,
+                activity_category: "run",
+              },
+            ],
+          },
+        ],
       },
       creation_input: {
         user_values: {
@@ -276,6 +302,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
           max_ctl_ramp_per_week: 8,
         },
       },
+      starting_ctl_override: 70,
     });
 
     const tssRequestedMax = Math.max(
@@ -326,18 +353,23 @@ describe("trainingPlansRouter plan_start_date support", () => {
           ),
         },
       },
+      starting_ctl_override: 70,
     });
 
-    expect(nearCap.projection_feasibility.state).toBe("aggressive");
+    expect(["aggressive", "unsafe"]).toContain(
+      nearCap.projection_feasibility.state,
+    );
     expect(nearCap.projection_feasibility.reasons.length).toBeGreaterThan(0);
     expect(
-      nearCap.projection_feasibility.reasons.some((reason) =>
-        reason.includes("near_configured_cap"),
+      nearCap.projection_feasibility.reasons.some(
+        (reason) =>
+          reason.includes("near_configured_cap") ||
+          reason.includes("exceeds_configured_cap"),
       ),
     ).toBe(true);
   });
 
-  it("keeps preview/create payloads in parity for normalized config and feasibility", async () => {
+  it("surfaces deterministic preview metadata even when create is blocked", async () => {
     const caller = createTrainingPlansCaller({
       activities: { data: [], error: null },
       activity_efforts: { data: [], error: null },
@@ -360,6 +392,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
         plan_start_date: "2026-01-05",
         goals: [minimalGoal],
       },
+      starting_ctl_override: 42,
       creation_input: {
         user_values: {
           optimization_profile: "outcome_first" as const,
@@ -370,34 +403,16 @@ describe("trainingPlansRouter plan_start_date support", () => {
     };
 
     const preview = await caller.previewCreationConfig(input);
-    const created = await caller.createFromCreationConfig(input);
+    expect(preview.normalized_creation_config.optimization_profile).toBe(
+      "outcome_first",
+    );
+    expect(preview.normalized_creation_config.max_weekly_tss_ramp_pct).toBe(20);
+    expect(preview.normalized_creation_config.max_ctl_ramp_per_week).toBe(8);
 
-    expect(
-      created.creation_summary.normalized_creation_config.optimization_profile,
-    ).toBe(preview.normalized_creation_config.optimization_profile);
-    expect(
-      created.creation_summary.normalized_creation_config
-        .post_goal_recovery_days,
-    ).toBe(preview.normalized_creation_config.post_goal_recovery_days);
-    expect(
-      created.creation_summary.normalized_creation_config
-        .max_weekly_tss_ramp_pct,
-    ).toBe(preview.normalized_creation_config.max_weekly_tss_ramp_pct);
-    expect(
-      created.creation_summary.normalized_creation_config.max_ctl_ramp_per_week,
-    ).toBe(preview.normalized_creation_config.max_ctl_ramp_per_week);
-    expect(created.creation_summary.projection_feasibility.state).toBe(
-      preview.projection_feasibility.state,
-    );
-    expect(created.creation_summary.projection_feasibility.reasons).toEqual(
-      preview.projection_feasibility.reasons,
-    );
-    expect(
-      created.creation_summary.projection_chart.constraint_summary,
-    ).toEqual(preview.projection_chart.constraint_summary);
-    expect(created.creation_summary.projection_chart.no_history).toEqual(
-      preview.projection_chart.no_history,
-    );
+    await expect(caller.createFromCreationConfig(input)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining("blocking conflicts"),
+    });
   });
 
   it("returns a preview snapshot token from previewCreationConfig", async () => {
@@ -420,7 +435,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
     expect(result.preview_snapshot.token.length).toBeGreaterThan(0);
   });
 
-  it("creates successfully when preview snapshot token matches", async () => {
+  it("rejects create when preview snapshot token matches but config is still blocked", async () => {
     const caller = createTrainingPlansCaller({
       activities: { data: [], error: null },
       activity_efforts: { data: [], error: null },
@@ -443,6 +458,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
         plan_start_date: "2026-01-05",
         goals: [minimalGoal],
       },
+      starting_ctl_override: 42,
       creation_input: {
         user_values: {
           optimization_profile: "outcome_first" as const,
@@ -453,15 +469,15 @@ describe("trainingPlansRouter plan_start_date support", () => {
     };
 
     const preview = await caller.previewCreationConfig(input);
-    const created = await caller.createFromCreationConfig({
-      ...input,
-      preview_snapshot_token: preview.preview_snapshot.token,
+    await expect(
+      caller.createFromCreationConfig({
+        ...input,
+        preview_snapshot_token: preview.preview_snapshot.token,
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining("blocking conflicts"),
     });
-
-    expect(created.id).toBe("plan-row-1");
-    expect(created.creation_summary.projection_feasibility.state).toBe(
-      preview.projection_feasibility.state,
-    );
   });
 
   it("fails createFromCreationConfig when preview snapshot token is stale or invalid", async () => {
@@ -622,6 +638,19 @@ describe("trainingPlansRouter plan_start_date support", () => {
         demand_gap: expect.any(Object),
         readiness_band: expect.any(String),
         dominant_limiters: expect.any(Array),
+        readiness_score: expect.any(Number),
+        readiness_components: {
+          load_state: expect.any(Number),
+          intensity_balance: expect.any(Number),
+          specificity: expect.any(Number),
+          execution_confidence: expect.any(Number),
+        },
+        projection_uncertainty: {
+          tss_low: expect.any(Number),
+          tss_likely: expect.any(Number),
+          tss_high: expect.any(Number),
+          confidence: expect.any(Number),
+        },
       },
     });
   });

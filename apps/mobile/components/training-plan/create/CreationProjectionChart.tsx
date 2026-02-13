@@ -4,12 +4,7 @@ import { useColorScheme } from "nativewind";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, View, useWindowDimensions } from "react-native";
 import { runOnJS, useAnimatedReaction } from "react-native-reanimated";
-import {
-  CartesianChart,
-  Line,
-  Scatter,
-  useChartPressState,
-} from "victory-native";
+import { CartesianChart, Line, useChartPressState } from "victory-native";
 import { format } from "date-fns";
 import type {
   NoHistoryProjectionMetadata,
@@ -25,11 +20,19 @@ type ProjectionChartDatum = Record<string, unknown> & {
   index: number;
   loadTss: number;
   fitnessCtl: number;
+  fatigueAtl: number;
+  formTsb: number;
 };
 
 type ProjectionPoint = ProjectionChartPayload["points"][number];
 
-const chartYKeys: ("loadTss" | "fitnessCtl")[] = ["loadTss", "fitnessCtl"];
+const chartYKeys: ("loadTss" | "fitnessCtl" | "fatigueAtl" | "formTsb")[] = [
+  "loadTss",
+  "fitnessCtl",
+  "fatigueAtl",
+  "formTsb",
+];
+const chartHeight = 220;
 const chartPadding = { left: 18, right: 22, top: 10, bottom: 16 };
 const chartDomainPadding = { left: 8, right: 8, top: 12 };
 
@@ -100,7 +103,16 @@ const resolveGoalPointPlacements = (
     source: "projection",
   }));
 
-  if (mergedMarkers.length === 0) {
+  const visibleStartDate = points[0]?.date;
+  const visibleEndDate = points[points.length - 1]?.date;
+  const visibleMarkers =
+    visibleStartDate && visibleEndDate
+      ? mergedMarkers.filter((goal) =>
+          isDateWithinRange(goal.target_date, visibleStartDate, visibleEndDate),
+        )
+      : mergedMarkers;
+
+  if (visibleMarkers.length === 0) {
     return [];
   }
 
@@ -119,7 +131,7 @@ const resolveGoalPointPlacements = (
     pointIndex: number;
   }> = [];
 
-  for (const goal of mergedMarkers) {
+  for (const goal of visibleMarkers) {
     const directIndex = indexByPointDate.get(goal.target_date);
     if (directIndex !== undefined) {
       indexedPlacements.push({ marker: goal, pointIndex: directIndex });
@@ -180,16 +192,51 @@ const resolveGoalPointPlacements = (
   return stackedPlacements;
 };
 
+const resolveNearestPointIndexByDate = (
+  points: ProjectionPoint[],
+  date: string,
+): number | null => {
+  if (points.length === 0) return null;
+
+  const directIndex = points.findIndex((point) => point.date === date);
+  if (directIndex >= 0) return directIndex;
+
+  const target = toUtcDate(date);
+  if (!target) return null;
+
+  let bestIndex = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < points.length; index += 1) {
+    const pointDate = toUtcDate(points[index]!.date);
+    if (!pointDate) continue;
+    const distance = Math.abs(pointDate.getTime() - target.getTime());
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = index;
+    }
+  }
+
+  return bestIndex;
+};
+
 const buildDisplayedPoints = (input: {
   projectionChart?: ProjectionChartPayload;
 }): ProjectionPoint[] => {
-  const basePoints = input.projectionChart?.points ?? [];
+  const projection = input.projectionChart;
+  const basePoints = projection?.points ?? [];
   if (basePoints.length === 0) {
     return [];
   }
 
+  const pointByDate = new Map(basePoints.map((point) => [point.date, point]));
+  const weeklyPoints =
+    projection?.microcycles
+      ?.map((cycle) => pointByDate.get(cycle.week_end_date))
+      .filter((point): point is ProjectionPoint => point !== undefined) ?? [];
+  const sourcePoints = weeklyPoints.length > 0 ? weeklyPoints : basePoints;
+
   const today = getTodayDateOnlyUtc();
-  const projectionEndDate = basePoints[basePoints.length - 1]?.date;
+  const projectionEndDate = sourcePoints[sourcePoints.length - 1]?.date;
 
   const endDateCandidates = [today, projectionEndDate].filter(
     (value): value is string => Boolean(value),
@@ -198,12 +245,12 @@ const buildDisplayedPoints = (input: {
     .sort((a, b) => a.localeCompare(b))
     .at(-1);
   if (!targetEndDate) {
-    return basePoints;
+    return sourcePoints;
   }
 
-  const filtered = basePoints.filter((point) => point.date >= today);
+  const filtered = sourcePoints.filter((point) => point.date >= today);
   const seedPoint =
-    filtered[0] ?? basePoints[basePoints.length - 1] ?? basePoints[0];
+    filtered[0] ?? sourcePoints[sourcePoints.length - 1] ?? sourcePoints[0];
   if (!seedPoint) {
     return [];
   }
@@ -214,6 +261,8 @@ const buildDisplayedPoints = (input: {
       date: today,
       predicted_load_tss: seedPoint.predicted_load_tss,
       predicted_fitness_ctl: seedPoint.predicted_fitness_ctl,
+      predicted_fatigue_atl: seedPoint.predicted_fatigue_atl,
+      predicted_form_tsb: seedPoint.predicted_form_tsb,
     });
   }
 
@@ -223,6 +272,8 @@ const buildDisplayedPoints = (input: {
       date: targetEndDate,
       predicted_load_tss: lastPoint.predicted_load_tss,
       predicted_fitness_ctl: lastPoint.predicted_fitness_ctl,
+      predicted_fatigue_atl: lastPoint.predicted_fatigue_atl,
+      predicted_form_tsb: lastPoint.predicted_form_tsb,
     });
   }
 
@@ -261,7 +312,7 @@ export const CreationProjectionChart = React.memo(
     );
     const { state: chartPressState } = useChartPressState({
       x: 0,
-      y: { loadTss: 0, fitnessCtl: 0 },
+      y: { loadTss: 0, fitnessCtl: 0, fatigueAtl: 0, formTsb: 0 },
     });
 
     const points = useMemo(
@@ -299,6 +350,37 @@ export const CreationProjectionChart = React.memo(
       () => goalPointPlacements.map((placement) => placement.marker),
       [goalPointPlacements],
     );
+    const goalLineIndices = useMemo(
+      () =>
+        Array.from(
+          new Set(goalPointPlacements.map((p) => p.pointIndex)),
+        ).filter((index) => index > 0 && index < points.length - 1),
+      [goalPointPlacements, points.length],
+    );
+    const phaseLineIndices = useMemo(() => {
+      if (!projectionChart) return [] as number[];
+
+      return projectionChart.periodization_phases
+        .slice(1)
+        .map((phase) =>
+          resolveNearestPointIndexByDate(points, phase.start_date),
+        )
+        .filter((index): index is number => index !== null)
+        .filter((index, idx, arr) => arr.indexOf(index) === idx)
+        .filter((index) => index > 0 && index < points.length - 1);
+    }, [points, projectionChart]);
+    const markerXForIndex = useCallback(
+      (index: number) => {
+        if (points.length <= 1) {
+          return chartPadding.left + 2;
+        }
+        const plotLeft = chartPadding.left + 2;
+        const plotRight = chartWidth - chartPadding.right - 2;
+        const ratio = Math.max(0, Math.min(1, index / (points.length - 1)));
+        return plotLeft + ratio * Math.max(0, plotRight - plotLeft);
+      },
+      [chartWidth, points.length],
+    );
 
     const labelStride = useMemo(() => {
       if (!points.length) {
@@ -335,6 +417,8 @@ export const CreationProjectionChart = React.memo(
           index,
           loadTss: point.predicted_load_tss,
           fitnessCtl: point.predicted_fitness_ctl,
+          fatigueAtl: point.predicted_fatigue_atl,
+          formTsb: point.predicted_form_tsb,
         })),
       [points],
     );
@@ -360,7 +444,12 @@ export const CreationProjectionChart = React.memo(
     const yAxisConfig = useMemo(
       () => [
         {
-          yKeys: ["loadTss"] as ("loadTss" | "fitnessCtl")[],
+          yKeys: ["loadTss"] as (
+            | "loadTss"
+            | "fitnessCtl"
+            | "fatigueAtl"
+            | "formTsb"
+          )[],
           axisSide: "left" as const,
           domain: [0] as [number],
           font: axisFont,
@@ -373,9 +462,13 @@ export const CreationProjectionChart = React.memo(
           formatYLabel: (value: unknown) => `${Math.round(Number(value))}`,
         },
         {
-          yKeys: ["fitnessCtl"] as ("loadTss" | "fitnessCtl")[],
+          yKeys: ["fitnessCtl", "fatigueAtl", "formTsb"] as (
+            | "loadTss"
+            | "fitnessCtl"
+            | "fatigueAtl"
+            | "formTsb"
+          )[],
           axisSide: "right" as const,
-          domain: [0] as [number],
           font: axisFont,
           tickCount: 5,
           labelColor: isDark ? "#6ee7b7" : "#047857",
@@ -417,7 +510,7 @@ export const CreationProjectionChart = React.memo(
 
     const selectedPoint = points[selectedPointIndex];
     const selectedPointSummary = selectedPoint
-      ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date}. Weekly load ${Math.round(selectedPoint.predicted_load_tss)} TSS. Fitness ${selectedPoint.predicted_fitness_ctl.toFixed(1)} CTL.`
+      ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date}. Weekly load ${Math.round(selectedPoint.predicted_load_tss)} TSS. Fitness ${selectedPoint.predicted_fitness_ctl.toFixed(1)} CTL. Fatigue ${selectedPoint.predicted_fatigue_atl.toFixed(1)} ATL. Form ${selectedPoint.predicted_form_tsb.toFixed(1)} TSB.`
       : "No point selected.";
     const activePhase = useMemo(() => {
       if (!projectionChart || !selectedPoint) {
@@ -477,7 +570,7 @@ export const CreationProjectionChart = React.memo(
     const noHistoryConfidenceLabel = noHistoryMetadata
       ? formatNoHistoryConfidence(noHistoryMetadata.projection_floor_confidence)
       : "n/a";
-    const noHistoryFloorAppliedLabel =
+    const noHistoryFloorEnabledLabel =
       noHistoryMetadata?.projection_floor_applied ? "Yes" : "No";
     const noHistoryAvailabilityClampLabel =
       noHistoryMetadata?.floor_clamped_by_availability ? "On" : "Off";
@@ -492,7 +585,7 @@ export const CreationProjectionChart = React.memo(
     const dominantLimiters =
       noHistoryMetadata?.projection_feasibility?.dominant_limiters ?? [];
     const noHistoryAccessibilitySummary = noHistoryMetadata
-      ? `Adaptive demand confidence ${noHistoryConfidenceLabel}. Floor applied ${noHistoryFloorAppliedLabel}. Availability clamp ${noHistoryAvailabilityClampLabel}. Evidence confidence ${evidenceConfidenceState ?? "n/a"} ${evidenceConfidenceScore !== undefined ? evidenceConfidenceScore.toFixed(2) : "n/a"}. Readiness ${readinessBand ?? "n/a"}.`
+      ? `Adaptive demand confidence ${noHistoryConfidenceLabel}. Demand floor enabled ${noHistoryFloorEnabledLabel}. Availability clamp ${noHistoryAvailabilityClampLabel}. Evidence confidence ${evidenceConfidenceState ?? "n/a"} ${evidenceConfidenceScore !== undefined ? evidenceConfidenceScore.toFixed(2) : "n/a"}. Readiness ${readinessBand ?? "n/a"}.`
       : undefined;
 
     return (
@@ -530,7 +623,7 @@ export const CreationProjectionChart = React.memo(
                 : ""}
             </Text>
             <Text className="text-[11px] text-muted-foreground">
-              Floor applied: {noHistoryFloorAppliedLabel}
+              Demand floor enabled: {noHistoryFloorEnabledLabel}
             </Text>
             <Text className="text-[11px] text-muted-foreground">
               Availability clamp: {noHistoryAvailabilityClampLabel}
@@ -560,11 +653,11 @@ export const CreationProjectionChart = React.memo(
               accessible={false}
               importantForAccessibility="no-hide-descendants"
             >
-              <View style={{ width: chartWidth, height: 220 }}>
+              <View style={{ width: chartWidth, height: chartHeight }}>
                 <CartesianChart<
                   ProjectionChartDatum,
                   "index",
-                  "loadTss" | "fitnessCtl"
+                  "loadTss" | "fitnessCtl" | "fatigueAtl" | "formTsb"
                 >
                   data={chartData}
                   xKey="index"
@@ -591,29 +684,66 @@ export const CreationProjectionChart = React.memo(
                         curveType="natural"
                         animate={{ type: "timing", duration: 220 }}
                       />
-                      <Scatter
-                        points={goalPointPlacements
-                          .map(({ pointIndex, stackIndex, stackSize }) => {
-                            const point = plottedPoints.fitnessCtl[pointIndex];
-                            if (!point) {
-                              return undefined;
-                            }
-
-                            const stackOffset =
-                              (stackIndex - (stackSize - 1) / 2) * 8;
-
-                            return {
-                              ...point,
-                              y: Number(point.y ?? 0) - stackOffset,
-                            };
-                          })
-                          .filter((point) => point !== undefined)}
-                        color="rgba(251, 191, 36, 1)"
-                        radius={4.5}
+                      <Line
+                        points={plottedPoints.fatigueAtl}
+                        color="rgba(245, 158, 11, 0.95)"
+                        strokeWidth={2}
+                        curveType="natural"
+                        animate={{ type: "timing", duration: 220 }}
+                      />
+                      <Line
+                        points={plottedPoints.formTsb}
+                        color="rgba(244, 63, 94, 0.95)"
+                        strokeWidth={2}
+                        curveType="natural"
+                        animate={{ type: "timing", duration: 220 }}
                       />
                     </>
                   )}
                 </CartesianChart>
+                <View
+                  pointerEvents="none"
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                  }}
+                >
+                  {phaseLineIndices.map((index) => (
+                    <View
+                      key={`phase-line-${index}`}
+                      style={{
+                        position: "absolute",
+                        left: markerXForIndex(index),
+                        top: chartPadding.top,
+                        height:
+                          chartHeight - chartPadding.top - chartPadding.bottom,
+                        width: 1,
+                        backgroundColor: isDark
+                          ? "rgba(148, 163, 184, 0.45)"
+                          : "rgba(71, 85, 105, 0.35)",
+                      }}
+                    />
+                  ))}
+                  {goalLineIndices.map((index) => (
+                    <View
+                      key={`goal-line-${index}`}
+                      style={{
+                        position: "absolute",
+                        left: markerXForIndex(index),
+                        top: chartPadding.top,
+                        height:
+                          chartHeight - chartPadding.top - chartPadding.bottom,
+                        width: 1.5,
+                        backgroundColor: isDark
+                          ? "rgba(251, 191, 36, 0.8)"
+                          : "rgba(217, 119, 6, 0.75)",
+                      }}
+                    />
+                  ))}
+                </View>
               </View>
             </View>
 
@@ -631,16 +761,34 @@ export const CreationProjectionChart = React.memo(
                 </Text>
               </View>
               <View className="flex-row items-center gap-1.5">
-                <View className="h-2.5 w-2.5 rounded-full border border-amber-600 bg-amber-400" />
+                <View className="h-0.5 w-5 rounded-full bg-amber-500" />
                 <Text className="text-[11px] text-muted-foreground">
-                  Goal dates
+                  Fatigue (ATL, right axis)
+                </Text>
+              </View>
+              <View className="flex-row items-center gap-1.5">
+                <View className="h-0.5 w-5 rounded-full bg-rose-500" />
+                <Text className="text-[11px] text-muted-foreground">
+                  Form (TSB, right axis)
+                </Text>
+              </View>
+              <View className="flex-row items-center gap-1.5">
+                <View className="h-5 w-px bg-slate-500" />
+                <Text className="text-[11px] text-muted-foreground">
+                  Phase boundaries
+                </Text>
+              </View>
+              <View className="flex-row items-center gap-1.5">
+                <View className="h-5 w-px bg-amber-600" />
+                <Text className="text-[11px] text-muted-foreground">
+                  Goal dates (vertical markers)
                 </Text>
               </View>
             </View>
 
             <Text className="px-1 text-[11px] text-muted-foreground">
-              Raw projected values are shown directly: weekly load in TSS/week
-              and fitness in CTL.
+              Raw projected values are shown directly: weekly load in TSS/week ,
+              fitness in CTL, fatigue in ATL, and form in TSB.
             </Text>
             <Text className="px-1 text-[11px] text-muted-foreground">
               Projection window:{" "}
@@ -663,7 +811,7 @@ export const CreationProjectionChart = React.memo(
               <Text className="text-xs font-medium">Selected point</Text>
               <Text className="text-xs text-muted-foreground">
                 {selectedPoint
-                  ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date} - Weekly load ${Math.round(selectedPoint.predicted_load_tss)} TSS - Fitness ${selectedPoint.predicted_fitness_ctl.toFixed(1)} CTL`
+                  ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date} - Weekly load ${Math.round(selectedPoint.predicted_load_tss)} TSS - Fitness ${selectedPoint.predicted_fitness_ctl.toFixed(1)} CTL - Fatigue ${selectedPoint.predicted_fatigue_atl.toFixed(1)} ATL - Form ${selectedPoint.predicted_form_tsb.toFixed(1)} TSB`
                   : "Tap a point to inspect projected details."}
               </Text>
               <Text className="text-xs text-muted-foreground">
@@ -708,6 +856,18 @@ export const CreationProjectionChart = React.memo(
                       : selectedMicrocycle.metadata.tss_ramp.clamped
                         ? " (clamped by ramp cap)"
                         : " (within ramp cap)"}
+                  </Text>
+                  <Text className="text-[11px] text-muted-foreground">
+                    Demand floor this week:{" "}
+                    {selectedMicrocycle.metadata.tss_ramp.floor_override_applied
+                      ? "active"
+                      : "not active"}
+                    {selectedMicrocycle.metadata.tss_ramp
+                      .demand_band_minimum_weekly_tss !== undefined &&
+                    selectedMicrocycle.metadata.tss_ramp
+                      .demand_band_minimum_weekly_tss !== null
+                      ? ` (${Math.round(selectedMicrocycle.metadata.tss_ramp.demand_band_minimum_weekly_tss)} TSS min)`
+                      : ""}
                   </Text>
                   <Text className="text-[11px] text-muted-foreground">
                     CTL ramp: requested{" "}
@@ -755,7 +915,7 @@ export const CreationProjectionChart = React.memo(
                       accessibilityRole="tab"
                       accessibilityState={{ selected: isActive }}
                       accessibilityLabel={`Point ${index + 1} of ${points.length}, ${dateLabel}`}
-                      accessibilityHint={`Weekly load ${Math.round(point.predicted_load_tss)} TSS and fitness ${point.predicted_fitness_ctl.toFixed(1)} CTL`}
+                      accessibilityHint={`Weekly load ${Math.round(point.predicted_load_tss)} TSS, fitness ${point.predicted_fitness_ctl.toFixed(1)} CTL, fatigue ${point.predicted_fatigue_atl.toFixed(1)} ATL, form ${point.predicted_form_tsb.toFixed(1)} TSB`}
                       hitSlop={8}
                       style={{
                         minHeight: 44,

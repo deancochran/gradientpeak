@@ -4,6 +4,7 @@ import {
   clampNoHistoryFloorByAvailability,
   collectNoHistoryEvidence,
   deriveNoHistoryProjectionFloor,
+  deriveGoalDemandProfileFromTargets,
   determineNoHistoryFitnessLevel,
   mapFeasibilityToConfidence,
   resolveNoHistoryAnchor,
@@ -21,11 +22,26 @@ describe("projection calculations", () => {
       200,
     );
 
-    expect(weeklyTss).toBe(265);
+    expect(weeklyTss).toBe(240);
   });
 
   it("uses baseline weekly TSS when block has no target range", () => {
     expect(weeklyLoadFromBlockAndBaseline(undefined, 187.34)).toBe(187.3);
+  });
+
+  it("uses prior state and demand context in rolling weekly composition", () => {
+    const weeklyTss = weeklyLoadFromBlockAndBaseline(
+      {
+        target_weekly_tss_range: { min: 260, max: 300 },
+      },
+      200,
+      {
+        previous_week_tss: 320,
+        demand_floor_weekly_tss: 360,
+      },
+    );
+
+    expect(weeklyTss).toBe(316);
   });
 
   it("classifies event week when goal lands inside week", () => {
@@ -263,6 +279,117 @@ describe("no-history anchor orchestration", () => {
     expect(stale.evidence_confidence?.score ?? 1).toBeLessThan(0.8);
   });
 
+  it("applies strong confidence floor for aggressive marathon pace targets", () => {
+    const anchor = resolveNoHistoryAnchor({
+      history_availability_state: "none",
+      goal_tier: "high",
+      goal_targets: [
+        {
+          target_type: "race_performance",
+          distance_m: 42195,
+          target_time_s: 10740,
+        },
+      ],
+      weeks_to_event: 40,
+      context_summary: {
+        history_availability_state: "none",
+        recent_consistency_marker: "low",
+        effort_confidence_marker: "low",
+        profile_metric_completeness_marker: "low",
+        signal_quality: 0.05,
+        recommended_baseline_tss_range: { min: 30, max: 60 },
+        recommended_recent_influence_range: { min: -0.5, max: 0.5 },
+        recommended_sessions_per_week_range: { min: 3, max: 5 },
+        rationale_codes: ["history_none"],
+      },
+    });
+
+    expect(anchor.required_peak_weekly_tss?.target ?? 0).toBeGreaterThan(450);
+    expect(anchor.evidence_confidence?.score ?? 0).toBeGreaterThanOrEqual(0.75);
+    expect(anchor.fitness_inference_reasons).toContain(
+      "demand_model_dynamic_continuous_v1",
+    );
+    expect(anchor.fitness_inference_reasons).toContain(
+      "race_performance_target_with_pace",
+    );
+  });
+
+  it("keeps demand continuous for nearby marathon target times", () => {
+    const faster = deriveGoalDemandProfileFromTargets({
+      goalTier: "high",
+      weeksToEvent: 18,
+      goalTargets: [
+        {
+          target_type: "race_performance",
+          distance_m: 42195,
+          target_time_s: 11400,
+        },
+      ],
+    });
+    const slightlySlower = deriveGoalDemandProfileFromTargets({
+      goalTier: "high",
+      weeksToEvent: 18,
+      goalTargets: [
+        {
+          target_type: "race_performance",
+          distance_m: 42195,
+          target_time_s: 11460,
+        },
+      ],
+    });
+
+    const delta =
+      (faster.required_event_demand_range.target ?? 0) -
+      (slightlySlower.required_event_demand_range.target ?? 0);
+
+    expect(delta).toBeGreaterThan(0);
+    expect(delta).toBeLessThan(1);
+  });
+
+  it("keeps race demand monotonic with faster targets requiring at least as much demand", () => {
+    const targetTimes = [15000, 13500, 12600, 11700, 10800];
+    const demands = targetTimes.map(
+      (targetTime) =>
+        deriveGoalDemandProfileFromTargets({
+          goalTier: "high",
+          weeksToEvent: 20,
+          goalTargets: [
+            {
+              target_type: "race_performance",
+              distance_m: 42195,
+              target_time_s: targetTime,
+            },
+          ],
+        }).required_event_demand_range.target,
+    );
+
+    for (let i = 1; i < demands.length; i += 1) {
+      expect(demands[i - 1] ?? 0).toBeLessThanOrEqual(demands[i] ?? 0);
+    }
+  });
+
+  it("produces non-bucket demand outputs across marathon time sweep", () => {
+    const times = Array.from({ length: 13 }, (_, index) => 10800 + index * 300);
+    const distinctDemands = new Set(
+      times.map(
+        (targetTime) =>
+          deriveGoalDemandProfileFromTargets({
+            goalTier: "high",
+            weeksToEvent: 22,
+            goalTargets: [
+              {
+                target_type: "race_performance",
+                distance_m: 42195,
+                target_time_s: targetTime,
+              },
+            ],
+          }).required_event_demand_range.target,
+      ),
+    );
+
+    expect(distinctDemands.size).toBeGreaterThan(8);
+  });
+
   it("keeps CTL and weekly TSS floor invariant from canonical matrix", () => {
     const floor = deriveNoHistoryProjectionFloor("high", "weak");
 
@@ -454,7 +581,7 @@ describe("no-history anchor orchestration", () => {
         goal_tier: "high",
         weeks_to_event: 18,
         context_summary: {
-          history_availability_state: "none",
+          history_availability_state: "none" as const,
           recent_consistency_marker: "moderate",
           effort_confidence_marker: "low",
           profile_metric_completeness_marker: "moderate",
@@ -484,5 +611,322 @@ describe("no-history anchor orchestration", () => {
           ),
         ),
     ).toBe(true);
+  });
+
+  it("computes bounded deterministic readiness score and maps readiness band", () => {
+    const input: Parameters<typeof buildDeterministicProjectionPayload>[0] = {
+      timeline: {
+        start_date: "2026-01-05",
+        end_date: "2026-03-01",
+      },
+      blocks: [
+        {
+          name: "Base",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2026-03-01",
+          target_weekly_tss_range: { min: 90, max: 120 },
+        },
+      ],
+      goals: [
+        {
+          id: "goal-1",
+          name: "A race",
+          target_date: "2026-05-10",
+          priority: 1,
+        },
+      ],
+      baseline_weekly_tss: 80,
+      creation_config: {
+        optimization_profile: "balanced" as const,
+      },
+      no_history_context: {
+        history_availability_state: "none" as const,
+        goal_tier: "high" as const,
+        weeks_to_event: 18,
+        context_summary: {
+          history_availability_state: "none",
+          recent_consistency_marker: "moderate",
+          effort_confidence_marker: "low",
+          profile_metric_completeness_marker: "moderate",
+          signal_quality: 0.55,
+          recommended_baseline_tss_range: { min: 30, max: 90 },
+          recommended_recent_influence_range: { min: -0.4, max: 0.4 },
+          recommended_sessions_per_week_range: { min: 3, max: 5 },
+          rationale_codes: ["history_none"],
+        },
+      },
+    };
+    const first = buildDeterministicProjectionPayload(input);
+    const second = buildDeterministicProjectionPayload(input);
+    const firstFeasibility = first.no_history.projection_feasibility;
+    const secondFeasibility = second.no_history.projection_feasibility;
+
+    expect(firstFeasibility?.readiness_score).toBeGreaterThanOrEqual(0);
+    expect(firstFeasibility?.readiness_score).toBeLessThanOrEqual(100);
+    expect(firstFeasibility?.readiness_score).toBe(
+      secondFeasibility?.readiness_score,
+    );
+    expect(firstFeasibility?.readiness_components).toBeTruthy();
+    expect(firstFeasibility?.projection_uncertainty).toBeTruthy();
+
+    const score = firstFeasibility?.readiness_score ?? 0;
+    const band = firstFeasibility?.readiness_band;
+    if (score >= 75) expect(band).toBe("high");
+    else if (score >= 55) expect(band).toBe("medium");
+    else expect(band).toBe("low");
+  });
+
+  it("reduces readiness as demand gap and clamp pressure increase", () => {
+    const lenient = buildDeterministicProjectionPayload({
+      timeline: { start_date: "2026-01-05", end_date: "2026-03-01" },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2026-03-01",
+          target_weekly_tss_range: { min: 180, max: 220 },
+        },
+      ],
+      goals: [
+        { id: "g", name: "Goal", target_date: "2026-05-10", priority: 1 },
+      ],
+      baseline_weekly_tss: 160,
+      starting_ctl: 22,
+      creation_config: {
+        optimization_profile: "outcome_first",
+        max_weekly_tss_ramp_pct: 20,
+        max_ctl_ramp_per_week: 8,
+      },
+      no_history_context: {
+        history_availability_state: "rich",
+        goal_tier: "high",
+        weeks_to_event: 18,
+        context_summary: {
+          history_availability_state: "rich",
+          recent_consistency_marker: "high",
+          effort_confidence_marker: "high",
+          profile_metric_completeness_marker: "high",
+          signal_quality: 0.95,
+          recommended_baseline_tss_range: { min: 160, max: 260 },
+          recommended_recent_influence_range: { min: -0.1, max: 0.2 },
+          recommended_sessions_per_week_range: { min: 5, max: 7 },
+          rationale_codes: ["history_rich"],
+        },
+      },
+    });
+
+    const constrained = buildDeterministicProjectionPayload({
+      timeline: { start_date: "2026-01-05", end_date: "2026-03-01" },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2026-03-01",
+          target_weekly_tss_range: { min: 120, max: 140 },
+        },
+      ],
+      goals: [
+        { id: "g", name: "Goal", target_date: "2026-05-10", priority: 1 },
+      ],
+      baseline_weekly_tss: 70,
+      starting_ctl: 8,
+      creation_config: {
+        optimization_profile: "sustainable",
+        max_weekly_tss_ramp_pct: 3,
+        max_ctl_ramp_per_week: 0.5,
+      },
+      no_history_context: {
+        history_availability_state: "none",
+        goal_tier: "high",
+        weeks_to_event: 18,
+        context_summary: {
+          history_availability_state: "none",
+          recent_consistency_marker: "low",
+          effort_confidence_marker: "low",
+          profile_metric_completeness_marker: "low",
+          signal_quality: 0.1,
+          recommended_baseline_tss_range: { min: 30, max: 90 },
+          recommended_recent_influence_range: { min: -0.5, max: 0.5 },
+          recommended_sessions_per_week_range: { min: 3, max: 4 },
+          rationale_codes: ["history_none"],
+        },
+      },
+    });
+
+    const lenientFeasibility = lenient.no_history.projection_feasibility!;
+    const constrainedFeasibility =
+      constrained.no_history.projection_feasibility!;
+
+    expect(constrainedFeasibility.readiness_score ?? 100).toBeLessThan(
+      lenientFeasibility.readiness_score ?? 0,
+    );
+    expect(
+      constrainedFeasibility.demand_gap.unmet_weekly_tss,
+    ).toBeGreaterThanOrEqual(lenientFeasibility.demand_gap.unmet_weekly_tss);
+  });
+
+  it("widens uncertainty and lowers readiness with weaker evidence confidence", () => {
+    const highConfidence = buildDeterministicProjectionPayload({
+      timeline: { start_date: "2026-01-05", end_date: "2026-03-01" },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2026-03-01",
+          target_weekly_tss_range: { min: 120, max: 150 },
+        },
+      ],
+      goals: [
+        { id: "g", name: "Goal", target_date: "2026-05-10", priority: 1 },
+      ],
+      baseline_weekly_tss: 90,
+      no_history_context: {
+        history_availability_state: "rich",
+        goal_tier: "high",
+        weeks_to_event: 18,
+        context_summary: {
+          history_availability_state: "rich",
+          recent_consistency_marker: "high",
+          effort_confidence_marker: "high",
+          profile_metric_completeness_marker: "high",
+          signal_quality: 0.95,
+          recommended_baseline_tss_range: { min: 80, max: 160 },
+          recommended_recent_influence_range: { min: -0.1, max: 0.2 },
+          recommended_sessions_per_week_range: { min: 5, max: 7 },
+          rationale_codes: ["history_rich"],
+        },
+      },
+    });
+
+    const lowConfidence = buildDeterministicProjectionPayload({
+      timeline: { start_date: "2026-01-05", end_date: "2026-03-01" },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2026-03-01",
+          target_weekly_tss_range: { min: 120, max: 150 },
+        },
+      ],
+      goals: [
+        { id: "g", name: "Goal", target_date: "2026-05-10", priority: 1 },
+      ],
+      baseline_weekly_tss: 90,
+      no_history_context: {
+        history_availability_state: "none",
+        goal_tier: "high",
+        weeks_to_event: 18,
+        context_summary: {
+          history_availability_state: "none",
+          recent_consistency_marker: "low",
+          effort_confidence_marker: "low",
+          profile_metric_completeness_marker: "low",
+          signal_quality: 0.05,
+          recommended_baseline_tss_range: { min: 30, max: 90 },
+          recommended_recent_influence_range: { min: -0.5, max: 0.5 },
+          recommended_sessions_per_week_range: { min: 3, max: 4 },
+          rationale_codes: ["history_none"],
+        },
+      },
+    });
+
+    const high = highConfidence.no_history.projection_feasibility!;
+    const low = lowConfidence.no_history.projection_feasibility!;
+    const highWidth =
+      (high.projection_uncertainty?.tss_high ?? 0) -
+      (high.projection_uncertainty?.tss_low ?? 0);
+    const lowWidth =
+      (low.projection_uncertainty?.tss_high ?? 0) -
+      (low.projection_uncertainty?.tss_low ?? 0);
+
+    expect(high.readiness_score ?? 0).toBeGreaterThan(
+      low.readiness_score ?? 100,
+    );
+    expect(lowWidth).toBeGreaterThan(highWidth);
+  });
+
+  it("prefers CTL-derived seed and carries forward prior-state context", () => {
+    const projection = buildDeterministicProjectionPayload({
+      timeline: {
+        start_date: "2026-01-05",
+        end_date: "2026-02-01",
+      },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2026-02-01",
+          target_weekly_tss_range: { min: 120, max: 150 },
+        },
+      ],
+      goals: [
+        {
+          id: "goal-1",
+          name: "A race",
+          target_date: "2026-05-10",
+          priority: 1,
+        },
+      ],
+      baseline_weekly_tss: 80,
+      starting_ctl: 30,
+      creation_config: {
+        optimization_profile: "balanced",
+      },
+    });
+
+    const week1 = projection.microcycles[0]!;
+    const week2 = projection.microcycles[1]!;
+
+    expect(week1.metadata.tss_ramp.seed_source).toBe("starting_ctl");
+    expect(week1.metadata.tss_ramp.seed_weekly_tss).toBe(210);
+    expect(
+      week2.metadata.tss_ramp.rolling_base_components.previous_week_tss,
+    ).toBe(week1.planned_weekly_tss);
+    expect(
+      week2.metadata.tss_ramp.rolling_base_components.previous_week_tss,
+    ).not.toBe(80);
+  });
+
+  it("falls back to baseline seed when CTL is unavailable", () => {
+    const projection = buildDeterministicProjectionPayload({
+      timeline: {
+        start_date: "2026-01-05",
+        end_date: "2026-01-12",
+      },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2026-01-12",
+          target_weekly_tss_range: { min: 120, max: 150 },
+        },
+      ],
+      goals: [
+        {
+          id: "goal-1",
+          name: "A race",
+          target_date: "2026-05-10",
+          priority: 1,
+        },
+      ],
+      baseline_weekly_tss: 80,
+      creation_config: {
+        optimization_profile: "balanced",
+      },
+    });
+
+    expect(projection.microcycles[0]!.metadata.tss_ramp.seed_source).toBe(
+      "baseline_fallback",
+    );
+    expect(projection.microcycles[0]!.metadata.tss_ramp.seed_weekly_tss).toBe(
+      80,
+    );
   });
 });

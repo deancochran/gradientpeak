@@ -554,6 +554,9 @@ function deriveNoHistoryAnchorContext(input: {
     return latest;
   }, undefined);
 
+  const demandAnchorGoal =
+    input.expandedPlan.goals.length > 1 ? latestGoal : earliestGoal;
+
   return {
     history_availability_state: input.contextSummary.history_availability_state,
     goal_tier: deriveNoHistoryGoalTierFromTargets(
@@ -561,11 +564,14 @@ function deriveNoHistoryAnchorContext(input: {
         (goal) => goal.targets ?? [],
       ) as NoHistoryGoalTargetInput[],
     ),
+    goal_targets: input.expandedPlan.goals.flatMap(
+      (goal) => goal.targets ?? [],
+    ) as NoHistoryGoalTargetInput[],
     weeks_to_event: Math.max(
       0,
       diffDateOnlyUtcDays(
         input.expandedPlan.start_date,
-        earliestGoal.target_date,
+        (demandAnchorGoal ?? earliestGoal).target_date,
       ) / 7,
     ),
     total_horizon_weeks: latestGoal

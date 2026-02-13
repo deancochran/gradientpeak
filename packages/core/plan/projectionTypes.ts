@@ -41,6 +41,20 @@ export interface ProjectionFeasibilityMetadata {
   demand_gap: ProjectionDemandGap;
   readiness_band: ReadinessBand;
   dominant_limiters: string[];
+  readiness_score?: number;
+  readiness_components?: {
+    load_state: number;
+    intensity_balance: number;
+    specificity: number;
+    execution_confidence: number;
+  };
+  projection_uncertainty?: {
+    tss_low: number;
+    tss_likely: number;
+    tss_high: number;
+    confidence: number;
+  };
+  readiness_rationale_codes?: string[];
 }
 
 export interface NoHistoryProjectionMetadata {
@@ -57,6 +71,7 @@ export interface NoHistoryProjectionMetadata {
   starting_weekly_tss_for_projection?: number | null;
   required_event_demand_range?: DemandBand | null;
   required_peak_weekly_tss?: DemandBand | null;
+  demand_confidence?: DemandConfidence | null;
   projection_feasibility?: ProjectionFeasibilityMetadata | null;
   evidence_confidence?: {
     score: number;

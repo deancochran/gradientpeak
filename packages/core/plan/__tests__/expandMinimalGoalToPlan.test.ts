@@ -88,6 +88,87 @@ describe("expandMinimalGoalToPlan", () => {
     }
   });
 
+  it("creates repeated build and taper opportunities across spaced goals", () => {
+    const plan = expandMinimalGoalToPlan({
+      plan_start_date: "2026-01-05",
+      goals: [
+        {
+          name: "Spring 10k",
+          target_date: "2026-04-12",
+          priority: 2,
+          targets: [
+            {
+              target_type: "race_performance",
+              activity_category: "run",
+              distance_m: 10000,
+              target_time_s: 2700,
+            },
+          ],
+        },
+        {
+          name: "Summer 10k",
+          target_date: "2026-06-28",
+          priority: 3,
+          targets: [
+            {
+              target_type: "race_performance",
+              activity_category: "run",
+              distance_m: 10000,
+              target_time_s: 2640,
+            },
+          ],
+        },
+      ],
+    });
+
+    const buildBlocks = plan.blocks.filter((block) => block.phase === "build");
+    const taperBlocks = plan.blocks.filter((block) => block.phase === "taper");
+
+    expect(buildBlocks.length).toBeGreaterThan(1);
+    expect(taperBlocks.length).toBeGreaterThan(1);
+    expect(plan.end_date).toBe("2026-06-28");
+    expect(plan.blocks.at(-1)?.end_date).toBe("2026-06-28");
+  });
+
+  it("inserts a recovery block between close goals when timing allows", () => {
+    const plan = expandMinimalGoalToPlan({
+      plan_start_date: "2026-02-01",
+      goals: [
+        {
+          name: "Early tune-up",
+          target_date: "2026-04-01",
+          priority: 2,
+          targets: [
+            {
+              target_type: "race_performance",
+              activity_category: "run",
+              distance_m: 5000,
+              target_time_s: 1320,
+            },
+          ],
+        },
+        {
+          name: "Primary race",
+          target_date: "2026-04-15",
+          priority: 1,
+          targets: [
+            {
+              target_type: "race_performance",
+              activity_category: "run",
+              distance_m: 10000,
+              target_time_s: 2700,
+            },
+          ],
+        },
+      ],
+    });
+
+    const recoveryBlocks = plan.blocks.filter(
+      (block) => block.phase === "recovery",
+    );
+    expect(recoveryBlocks.length).toBeGreaterThan(0);
+  });
+
   it("falls back to today when plan_start_date is missing", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-10T12:00:00.000Z"));
