@@ -175,7 +175,7 @@ export function OverviewTab({
       {/* Week Progress */}
       <View className="bg-card rounded-lg border border-border p-4">
         <Text className="text-base font-semibold text-foreground mb-3">
-          This Week's Progress
+          This Week&apos;s Progress
         </Text>
 
         <View className="gap-3">

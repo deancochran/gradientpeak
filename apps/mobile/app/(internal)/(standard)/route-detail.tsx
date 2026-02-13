@@ -13,7 +13,7 @@ import {
   TrendingDown,
   TrendingUp,
 } from "lucide-react-native";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { Alert, ScrollView, View } from "react-native";
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
 
@@ -41,6 +41,11 @@ export default function RouteDetailScreen() {
     onSuccess: () => router.back(),
   });
 
+  const coordinates = useMemo(
+    () => (route ? decodePolyline(route.polyline) : []),
+    [route],
+  );
+
   const handleDelete = () => {
     if (!route) return;
 
@@ -58,6 +63,20 @@ export default function RouteDetailScreen() {
     );
   };
 
+  // Fit map to route coordinates on mount
+  useEffect(() => {
+    if (coordinates.length > 0 && mapRef.current) {
+      const timeout = setTimeout(() => {
+        mapRef.current?.fitToCoordinates(coordinates, {
+          edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+          animated: false,
+        });
+      }, 100);
+
+      return () => clearTimeout(timeout);
+    }
+  }, [coordinates]);
+
   if (isLoading) {
     return (
       <View className="flex-1 bg-background items-center justify-center">
@@ -74,7 +93,6 @@ export default function RouteDetailScreen() {
     );
   }
 
-  const coordinates = decodePolyline(route.polyline);
   const formatDistance = (meters: number) => {
     const km = meters / 1000;
     return `${km.toFixed(2)} km`;
@@ -88,20 +106,6 @@ export default function RouteDetailScreen() {
     });
   };
 
-  // Fit map to route coordinates on mount
-  useEffect(() => {
-    if (coordinates.length > 0 && mapRef.current) {
-      const timeout = setTimeout(() => {
-        mapRef.current?.fitToCoordinates(coordinates, {
-          edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
-          animated: false,
-        });
-      }, 100);
-
-      return () => clearTimeout(timeout);
-    }
-  }, [coordinates]);
-
   return (
     <View className="flex-1 bg-background">
       <ScrollView>
@@ -114,7 +118,8 @@ export default function RouteDetailScreen() {
               provider={PROVIDER_DEFAULT}
               initialRegion={{
                 latitude:
-                  coordinates[Math.floor(coordinates.length / 2)]?.latitude || 0,
+                  coordinates[Math.floor(coordinates.length / 2)]?.latitude ||
+                  0,
                 longitude:
                   coordinates[Math.floor(coordinates.length / 2)]?.longitude ||
                   0,
@@ -157,7 +162,9 @@ export default function RouteDetailScreen() {
             </MapView>
           ) : (
             <View className="flex-1 items-center justify-center">
-              <Text className="text-muted-foreground">No GPS data available</Text>
+              <Text className="text-muted-foreground">
+                No GPS data available
+              </Text>
             </View>
           )}
         </View>

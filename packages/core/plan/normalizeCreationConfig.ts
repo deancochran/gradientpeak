@@ -29,7 +29,6 @@ const WEEK_DAYS = [
 
 type CreationConfigValues = {
   availability_config: CreationAvailabilityConfig;
-  baseline_load: { weekly_tss: number };
   recent_influence: CreationRecentInfluence;
   recent_influence_action: CreationRecentInfluenceAction;
   constraints: CreationConstraints;
@@ -47,7 +46,6 @@ export interface NormalizeCreationConfigInput {
   defaults?: Partial<CreationConfigValues>;
   provenance_overrides?: {
     availability_provenance?: Partial<CreationProvenance>;
-    baseline_load_provenance?: Partial<CreationProvenance>;
     recent_influence_provenance?: Partial<CreationProvenance>;
   };
   now_iso?: string;
@@ -85,8 +83,6 @@ const CONSERVATIVE_DEFAULT_AVAILABILITY: CreationAvailabilityConfig =
 
 const CONSERVATIVE_DEFAULT_CONSTRAINTS: CreationConstraints =
   creationConstraintsSchema.parse({
-    weekly_load_floor_tss: 120,
-    weekly_load_cap_tss: 260,
     hard_rest_days: ["wednesday", "friday", "sunday"],
     min_sessions_per_week: 3,
     max_sessions_per_week: 4,
@@ -96,7 +92,6 @@ const CONSERVATIVE_DEFAULT_CONSTRAINTS: CreationConstraints =
 
 const DEFAULT_VALUES: CreationConfigValues = {
   availability_config: CONSERVATIVE_DEFAULT_AVAILABILITY,
-  baseline_load: { weekly_tss: 180 },
   recent_influence: { influence_score: 0 },
   recent_influence_action: "disabled",
   constraints: CONSERVATIVE_DEFAULT_CONSTRAINTS,
@@ -181,18 +176,6 @@ function normalizeConstraintWithPrecedence(
 ): CreationConstraints {
   return creationConstraintsSchema.parse({
     ...defaultConstraints,
-    weekly_load_floor_tss: pickByPrecedence(
-      userConstraints?.weekly_load_floor_tss,
-      suggestedConstraints?.weekly_load_floor_tss,
-      defaultConstraints.weekly_load_floor_tss,
-      locks.weekly_load_floor_tss.locked,
-    ).value,
-    weekly_load_cap_tss: pickByPrecedence(
-      userConstraints?.weekly_load_cap_tss,
-      suggestedConstraints?.weekly_load_cap_tss,
-      defaultConstraints.weekly_load_cap_tss,
-      locks.weekly_load_cap_tss.locked,
-    ).value,
     hard_rest_days: pickByPrecedence(
       userConstraints?.hard_rest_days,
       suggestedConstraints?.hard_rest_days,
@@ -261,13 +244,6 @@ export function normalizeCreationConfig(
     input.confirmed_suggestions?.availability_config,
     defaultValues.availability_config,
     locks.availability_config.locked,
-  );
-
-  const baselinePick = pickByPrecedence(
-    input.user_values?.baseline_load,
-    input.confirmed_suggestions?.baseline_load,
-    defaultValues.baseline_load,
-    locks.baseline_load.locked,
   );
 
   const influencePick = pickByPrecedence(
@@ -340,12 +316,6 @@ export function normalizeCreationConfig(
       availabilityPick.source,
       nowIso,
       input.provenance_overrides?.availability_provenance,
-    ),
-    baseline_load: baselinePick.value,
-    baseline_load_provenance: toCreationProvenance(
-      baselinePick.source,
-      nowIso,
-      input.provenance_overrides?.baseline_load_provenance,
     ),
     recent_influence: influencePick.value,
     recent_influence_action: creationRecentInfluenceActionEnum.parse(

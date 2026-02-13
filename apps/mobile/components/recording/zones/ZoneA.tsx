@@ -25,7 +25,9 @@ import { Icon } from "@/components/ui/icon";
 import { useFocusMode } from "@/lib/contexts/FocusModeContext";
 import { useGpsTracking } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import type { PublicActivityLocation } from "@repo/core";
+import type {
+  PublicActivityLocation
+} from "@repo/supabase";
 import type { LocationObject } from "expo-location";
 import { Minimize2, Navigation } from "lucide-react-native";
 import React, { useEffect, useRef, useState } from "react";

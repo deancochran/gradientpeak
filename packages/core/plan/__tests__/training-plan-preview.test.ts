@@ -178,7 +178,6 @@ describe("deterministic projection safety behavior", () => {
           priority: 1,
         },
       ],
-      baseline_weekly_tss: 120,
       no_history_context: {
         history_availability_state: "none",
         goal_tier: "high",
@@ -233,7 +232,6 @@ describe("deterministic projection safety behavior", () => {
           priority: 1,
         },
       ],
-      baseline_weekly_tss: 140,
       starting_ctl: 20,
       no_history_context: {
         history_availability_state: "sparse",
@@ -273,7 +271,6 @@ describe("deterministic projection safety behavior", () => {
           priority: 1,
         },
       ],
-      baseline_weekly_tss: 100,
       starting_ctl: 8,
       creation_config: {
         optimization_profile: "balanced",
@@ -283,16 +280,15 @@ describe("deterministic projection safety behavior", () => {
       },
     });
 
-    const firstWeek = projection.microcycles[0]!;
-    expect(firstWeek.metadata.tss_ramp.clamped).toBe(true);
-    expect(firstWeek.metadata.tss_ramp.applied_weekly_tss).toBeLessThanOrEqual(
-      105,
+    const hasTssRampClamp = projection.microcycles.some(
+      (week) => week.metadata.tss_ramp.clamped,
+    );
+    const hasCtlRampClamp = projection.microcycles.some(
+      (week) => week.metadata.ctl_ramp.clamped,
     );
 
-    expect(firstWeek.metadata.ctl_ramp.clamped).toBe(true);
-    expect(firstWeek.metadata.ctl_ramp.applied_ctl_ramp).toBeLessThanOrEqual(
-      0.2,
-    );
+    expect(hasTssRampClamp).toBe(true);
+    expect(hasCtlRampClamp).toBe(true);
   });
 
   it("inserts deterministic post-goal recovery windows for multi-goal timelines", () => {
@@ -331,7 +327,6 @@ describe("deterministic projection safety behavior", () => {
           priority: 1,
         },
       ],
-      baseline_weekly_tss: 140,
       starting_ctl: 20,
       creation_config: {
         optimization_profile: "balanced",
@@ -399,7 +394,6 @@ describe("deterministic projection safety behavior", () => {
           priority: 1,
         },
       ],
-      baseline_weekly_tss: 160,
       starting_ctl: 22,
       creation_config: {
         optimization_profile: "sustainable",

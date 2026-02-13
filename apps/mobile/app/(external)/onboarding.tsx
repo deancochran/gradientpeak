@@ -331,7 +331,7 @@ function Step1BasicProfile({ data, updateData, errors }: StepProps) {
     <Card>
       <CardHeader>
         <CardTitle>Basic Profile Information</CardTitle>
-        <CardDescription>Let's start with the essentials</CardDescription>
+        <CardDescription>Let&apos;s start with the essentials</CardDescription>
       </CardHeader>
       <CardContent className="gap-4">
         {/* Date of Birth */}

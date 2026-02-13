@@ -93,6 +93,57 @@ describe("deriveProfileAwareCreationContext", () => {
   });
 });
 
+describe("trainingPlansRouter.getCreationSuggestions", () => {
+  it("returns the same contract shape for context summary and suggestions", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+
+    const result = await caller.getCreationSuggestions();
+
+    expect(result).toMatchObject({
+      context_summary: {
+        history_availability_state: expect.any(String),
+        signal_quality: expect.any(Number),
+        rationale_codes: expect.any(Array),
+      },
+      suggestions: {
+        availability_config: expect.any(Object),
+        recent_influence: expect.any(Object),
+        recent_influence_action: expect.any(String),
+        constraints: expect.any(Object),
+        locked_conflicts: expect.any(Array),
+      },
+    });
+  });
+
+  it("keeps suggestion payload shape when optional params are provided", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+
+    const result = await caller.getCreationSuggestions({
+      as_of: "2026-01-10T00:00:00.000Z",
+      existing_values: {
+        recent_influence_score: 0.2,
+      },
+    });
+
+    expect(result.context_summary).toMatchObject({
+      history_availability_state: expect.any(String),
+      rationale_codes: expect.any(Array),
+    });
+    expect(result.suggestions).toMatchObject({
+      recent_influence: { influence_score: expect.any(Number) },
+      locked_conflicts: expect.any(Array),
+    });
+  });
+});
+
 describe("trainingPlansRouter plan_start_date support", () => {
   const minimalGoal = {
     name: "Spring 10k",
@@ -430,7 +481,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       creation_input: {},
     });
 
-    expect(result.preview_snapshot.version).toBe("creation_preview_v1");
+    expect(result.preview_snapshot.version).toBe("creation_preview_v2");
     expect(typeof result.preview_snapshot.token).toBe("string");
     expect(result.preview_snapshot.token.length).toBeGreaterThan(0);
   });
@@ -693,6 +744,43 @@ describe("trainingPlansRouter plan_start_date support", () => {
     expect(endFitness).toBeGreaterThanOrEqual(startFitness);
   });
 
+  it("keeps long-horizon sub-3 marathon demand from collapsing to low fixed weekly TSS", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+
+    const result = await caller.previewCreationConfig({
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [
+          {
+            name: "Sub-3 Marathon",
+            target_date: "2026-09-06",
+            priority: 1,
+            targets: [
+              {
+                target_type: "race_performance",
+                distance_m: 42195,
+                target_time_s: 10800,
+                activity_category: "run",
+              },
+            ],
+          },
+        ],
+      },
+      creation_input: {},
+    });
+
+    const peakWeeklyTss = result.projection_chart.microcycles.reduce(
+      (max, week) => Math.max(max, week.planned_weekly_tss),
+      0,
+    );
+
+    expect(peakWeeklyTss).toBeGreaterThan(140);
+  });
+
   it("includes all goals as markers in projection chart for multi-goal previews", async () => {
     const caller = createTrainingPlansCaller({
       activities: { data: [], error: null },
@@ -815,5 +903,99 @@ describe("trainingPlansRouter plan_start_date support", () => {
     expect(
       result.projection_chart.microcycles.some((week) => week.metadata),
     ).toBe(true);
+  });
+});
+
+describe("trainingPlansRouter analytics endpoints", () => {
+  const planId = "11111111-1111-4111-8111-111111111111";
+
+  it("returns null current status when no plan exists", async () => {
+    const caller = createTrainingPlansCaller({
+      training_plans: { data: null, error: null },
+    });
+
+    const result = await caller.getCurrentStatus();
+    expect(result).toBeNull();
+  });
+
+  it("returns ideal curve projection payload shape", async () => {
+    const caller = createTrainingPlansCaller({
+      training_plans: {
+        data: {
+          id: planId,
+          structure: {
+            periodization_template: {
+              starting_ctl: 42,
+              target_ctl: 60,
+              target_date: "2026-03-31",
+            },
+            blocks: [],
+            target_weekly_tss: 280,
+          },
+        },
+        error: null,
+      },
+      activities: { data: [], error: null },
+    });
+
+    const result = await caller.getIdealCurve({
+      id: planId,
+      start_date: "2026-01-01",
+      end_date: "2026-03-31",
+    });
+
+    expect(result).toMatchObject({
+      dataPoints: expect.any(Array),
+      startCTL: expect.any(Number),
+      targetCTL: expect.any(Number),
+      targetDate: expect.any(String),
+    });
+  });
+
+  it("returns actual curve data points", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+    });
+
+    const result = await caller.getActualCurve({
+      start_date: "2026-01-01T00:00:00.000Z",
+      end_date: "2026-01-07T00:00:00.000Z",
+    });
+
+    expect(result).toMatchObject({
+      dataPoints: expect.any(Array),
+    });
+  });
+
+  it("returns weekly summary rows", async () => {
+    const caller = createTrainingPlansCaller({
+      training_plans: {
+        data: {
+          id: planId,
+          structure: {
+            blocks: [],
+            constraints: { available_days_per_week: ["monday", "wednesday"] },
+          },
+        },
+        error: null,
+      },
+      planned_activities: { data: [], error: null },
+      activities: { data: [], error: null },
+    });
+
+    const result = await caller.getWeeklySummary({
+      training_plan_id: planId,
+      weeks_back: 2,
+    });
+
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({
+      weekStart: expect.any(String),
+      weekEnd: expect.any(String),
+      plannedTSS: expect.any(Number),
+      completedTSS: expect.any(Number),
+      status: expect.any(String),
+    });
   });
 });

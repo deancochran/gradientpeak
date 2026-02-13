@@ -109,7 +109,7 @@ function DefaultErrorFallback({ error, resetError }: ErrorFallbackProps) {
         Something went wrong
       </Text>
       <Text className="text-muted-foreground text-base mb-8 text-center">
-        We're sorry, but something unexpected happened.
+        We&apos;re sorry, but something unexpected happened.
       </Text>
 
       {__DEV__ && (
@@ -167,8 +167,8 @@ export function ScreenErrorFallback({ error, resetError }: ErrorFallbackProps) {
           Something went wrong on this screen
         </Text>
         <Text className="text-muted-foreground text-base mb-8 text-center">
-          Don't worry, the rest of the app should still work. Try refreshing or
-          go back.
+          Don&apos;t worry, the rest of the app should still work. Try
+          refreshing or go back.
         </Text>
 
         {__DEV__ && (
@@ -222,7 +222,7 @@ export function ModalErrorFallback({ error, resetError }: ErrorFallbackProps) {
           Error Loading Content
         </Text>
         <Text className="text-muted-foreground text-sm mb-6 text-center">
-          This content couldn't be loaded. Try again or close this modal.
+          This content couldn&apos;t be loaded. Try again or close this modal.
         </Text>
 
         {__DEV__ && (

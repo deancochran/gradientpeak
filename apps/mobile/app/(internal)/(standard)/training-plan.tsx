@@ -388,8 +388,8 @@ export default function TrainingPlanOverview() {
                       </Text>
                       <Text className="text-sm text-muted-foreground">
                         Enable periodization to see your planned fitness
-                        progression and track if you're on pace to reach your
-                        goals.
+                        progression and track if you&apos;re on pace to reach
+                        your goals.
                       </Text>
                     </View>
                     <Button

@@ -23,11 +23,8 @@ export interface DeriveCreationSuggestionsInput {
   context: CreationContextSummary;
   existing_values?: {
     availability_config?: unknown;
-    baseline_load_weekly_tss?: number;
     recent_influence_score?: number;
     constraints?: Partial<{
-      weekly_load_floor_tss: number;
-      weekly_load_cap_tss: number;
       hard_rest_days: string[];
       min_sessions_per_week: number;
       max_sessions_per_week: number;
@@ -44,8 +41,6 @@ export interface CreationSuggestions {
     typeof creationAvailabilityConfigSchema.parse
   >;
   availability_provenance: CreationProvenance;
-  baseline_load: { weekly_tss: number };
-  baseline_load_provenance: CreationProvenance;
   recent_influence: { influence_score: number };
   recent_influence_action: "accepted" | "edited" | "disabled";
   recent_influence_provenance: CreationProvenance;
@@ -137,10 +132,6 @@ export function deriveCreationSuggestions(
         ? "rich_data"
         : "mixed";
 
-  const baselineMidpoint =
-    (context.recommended_baseline_tss_range.min +
-      context.recommended_baseline_tss_range.max) /
-    2;
   const influenceMidpoint =
     (context.recommended_recent_influence_range.min +
       context.recommended_recent_influence_range.max) /
@@ -158,14 +149,6 @@ export function deriveCreationSuggestions(
     profileMode,
   );
 
-  const baselineSuggestion = {
-    weekly_tss: Math.round(
-      profileMode === "no_data"
-        ? Math.min(baselineMidpoint, 200)
-        : baselineMidpoint,
-    ),
-  };
-
   const influenceSuggestion = {
     influence_score: Number(
       clamp(
@@ -177,14 +160,6 @@ export function deriveCreationSuggestions(
   };
 
   const constraintsSuggestion = creationConstraintsSchema.parse({
-    weekly_load_floor_tss: Math.max(
-      0,
-      Math.round(baselineSuggestion.weekly_tss * 0.75),
-    ),
-    weekly_load_cap_tss: Math.round(
-      baselineSuggestion.weekly_tss *
-        (profileMode === "rich_data" ? 1.2 : 1.45),
-    ),
     hard_rest_days:
       profileMode === "rich_data"
         ? ["wednesday"]
@@ -228,18 +203,6 @@ export function deriveCreationSuggestions(
   const conflicts: string[] = [];
 
   if (
-    locks?.baseline_load?.locked &&
-    input.existing_values?.baseline_load_weekly_tss
-  ) {
-    if (
-      input.existing_values.baseline_load_weekly_tss !==
-      baselineSuggestion.weekly_tss
-    ) {
-      conflicts.push("baseline_load_locked_differs_from_suggestion");
-    }
-  }
-
-  if (
     locks?.recent_influence?.locked &&
     input.existing_values?.recent_influence_score !== undefined
   ) {
@@ -254,12 +217,6 @@ export function deriveCreationSuggestions(
   return {
     availability_config: availabilitySuggestion,
     availability_provenance: buildProvenance(
-      nowIso,
-      suggestionsConfidence,
-      context.rationale_codes,
-    ),
-    baseline_load: baselineSuggestion,
-    baseline_load_provenance: buildProvenance(
       nowIso,
       suggestionsConfidence,
       context.rationale_codes,

@@ -28,8 +28,8 @@ import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvi
 import { useActivityStatus } from "@/lib/hooks/useActivityRecorder";
 import type {
   PublicActivityCategory,
-  PublicActivityLocation,
-} from "@repo/core";
+  PublicActivityLocation
+} from "@repo/supabase";
 
 const ACTIVITY_CATEGORIES: {
   value: PublicActivityCategory;

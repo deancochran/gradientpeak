@@ -28,11 +28,13 @@ import type {
   StatsUpdateEvent,
 } from "@/lib/services/ActivityRecorder/types";
 import type {
+  RecordingServiceActivityPlan
+} from "@repo/core";
+import type {
   PublicActivityCategory,
   PublicActivityLocation,
-  PublicProfilesRow,
-  RecordingServiceActivityPlan,
-} from "@repo/core";
+  PublicProfilesRow
+} from "@repo/supabase";
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import type { Device } from "react-native-ble-plx";
 

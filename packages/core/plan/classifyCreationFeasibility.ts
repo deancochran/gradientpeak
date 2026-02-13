@@ -27,21 +27,35 @@ export function classifyCreationFeasibility(
   const nowIso = input.now_iso ?? new Date().toISOString();
   const conflicts = input.conflicts ?? [];
 
-  const baseline = config.baseline_load.weekly_tss;
-  const minRecommended = context.recommended_baseline_tss_range.min;
-  const maxRecommended = context.recommended_baseline_tss_range.max;
-  const midRecommended = (minRecommended + maxRecommended) / 2;
-  const halfRange = Math.max(1, (maxRecommended - minRecommended) / 2);
-
-  const normalizedDistance = Math.abs(baseline - midRecommended) / halfRange;
+  const recommendedSessionMidpoint =
+    (context.recommended_sessions_per_week_range.min +
+      context.recommended_sessions_per_week_range.max) /
+    2;
+  const configuredSessionMidpoint =
+    ((config.constraints.min_sessions_per_week ?? recommendedSessionMidpoint) +
+      (config.constraints.max_sessions_per_week ??
+        recommendedSessionMidpoint)) /
+    2;
+  const sessionHalfRange =
+    Math.max(
+      1,
+      (context.recommended_sessions_per_week_range.max -
+        context.recommended_sessions_per_week_range.min) /
+        2,
+    ) || 1;
+  const normalizedDistance =
+    Math.abs(configuredSessionMidpoint - recommendedSessionMidpoint) /
+    sessionHalfRange;
   const feasibilityScore = Number(
     clamp(1 - normalizedDistance, 0, 1).toFixed(3),
   );
 
   const feasibilityBand =
-    baseline < minRecommended * 0.9
+    configuredSessionMidpoint <
+    context.recommended_sessions_per_week_range.min * 0.9
       ? "under-reaching"
-      : baseline > maxRecommended * 1.1
+      : configuredSessionMidpoint >
+          context.recommended_sessions_per_week_range.max * 1.1
         ? "over-reaching"
         : "on-track";
 
@@ -53,8 +67,9 @@ export function classifyCreationFeasibility(
   if (hardRestDays === 0 && maxSessions >= 6) safetyScore -= 0.2;
   if (config.constraints.goal_difficulty_preference === "stretch")
     safetyScore -= 0.12;
-  if (context.history_availability_state === "none" && baseline > 220)
+  if (context.history_availability_state === "none" && maxSessions >= 6) {
     safetyScore -= 0.2;
+  }
 
   const blockingConflictCount = conflicts.filter(
     (conflict) => conflict.severity === "blocking",
@@ -72,13 +87,13 @@ export function classifyCreationFeasibility(
 
   const topDrivers = [
     {
-      code: `baseline_vs_context_${feasibilityBand}`,
+      code: `sessions_vs_context_${feasibilityBand}`,
       message:
         feasibilityBand === "on-track"
-          ? "Baseline load aligns with recent context range"
+          ? "Session constraints align with recent context range"
           : feasibilityBand === "under-reaching"
-            ? "Baseline load is conservative compared to recent context"
-            : "Baseline load is aggressive compared to recent context",
+            ? "Session constraints are conservative compared to recent context"
+            : "Session constraints are aggressive compared to recent context",
       impact: Number((feasibilityBand === "on-track" ? 0.4 : -0.45).toFixed(3)),
     },
     {
@@ -114,16 +129,16 @@ export function classifyCreationFeasibility(
 
   if (feasibilityBand === "over-reaching" || safetyBand !== "safe") {
     recommendedActions.push({
-      code: "reduce_baseline_load",
-      message: "Reduce baseline load or raise recovery constraints",
+      code: "reduce_session_density",
+      message: "Reduce session targets or raise recovery constraints",
       priority: 1,
     });
   }
 
   if (feasibilityBand === "under-reaching") {
     recommendedActions.push({
-      code: "increase_baseline_load",
-      message: "Increase baseline load toward the recommended range",
+      code: "increase_session_density",
+      message: "Increase session targets toward the recommended range",
       priority: 2,
     });
   }

@@ -2,8 +2,8 @@ import type {
   PublicIntegrationProvider,
   PublicIntegrationsInsert,
   PublicIntegrationsRow,
-  PublicIntegrationsUpdate,
-} from "@repo/core";
+  PublicIntegrationsUpdate
+} from "@repo/supabase";
 
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";

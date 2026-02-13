@@ -59,7 +59,7 @@ export function WeeklyPlanPreview({
   return (
     <Card className="bg-card border-border">
       <CardHeader className="flex-row items-center justify-between pb-3">
-        <CardTitle className="text-foreground">This Week's Plan</CardTitle>
+        <CardTitle className="text-foreground">This Week&apos;s Plan</CardTitle>
         <Button variant="ghost" size="sm" onPress={onViewAll}>
           <Text className="text-blue-400 text-sm">View All</Text>
         </Button>

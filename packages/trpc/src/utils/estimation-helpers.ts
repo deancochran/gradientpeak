@@ -4,8 +4,8 @@
 
 import type {
   PublicActivityPlansRow,
-  PublicActivityRoutesRow,
-} from "@repo/core";
+  PublicActivityRoutesRow
+} from "@repo/supabase";
 import {
   buildEstimationContext,
   estimateActivity,

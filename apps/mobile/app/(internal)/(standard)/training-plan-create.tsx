@@ -9,6 +9,10 @@ import {
 import { ROUTES } from "@/lib/constants/routes";
 import { featureFlags } from "@/lib/constants/features";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
+import {
+  buildMinimalTrainingPlanPayload,
+  toCreationNormalizationInput,
+} from "@/lib/training-plan-form/adapters";
 import { trpc } from "@/lib/trpc";
 import { Text } from "@/components/ui/text";
 import {
@@ -16,13 +20,12 @@ import {
   reducePreviewState,
 } from "@repo/core";
 import type {
-  PreviewState,
   CreationAvailabilityConfig,
   CreationContextSummary,
   CreationFeasibilitySafetySummary,
   CreationProvenance,
   CreationValueSource,
-  MinimalTrainingPlanCreate,
+  PreviewState,
   ProjectionChartPayload,
 } from "@repo/core";
 import { Stack, useRouter } from "expo-router";
@@ -164,14 +167,10 @@ const createProvenance = (
 const createDefaultConfigState = (): TrainingPlanConfigFormData => ({
   availabilityConfig: createDefaultAvailability(),
   availabilityProvenance: createProvenance("default", ["initial_default"]),
-  baselineLoadWeeklyTss: 180,
-  baselineLoadProvenance: createProvenance("default", ["initial_default"]),
   recentInfluenceScore: 0,
   recentInfluenceAction: "disabled",
   recentInfluenceProvenance: createProvenance("default", ["initial_default"]),
   constraints: {
-    weekly_load_floor_tss: 120,
-    weekly_load_cap_tss: 260,
     hard_rest_days: ["wednesday", "friday"],
     min_sessions_per_week: 3,
     max_sessions_per_week: 4,
@@ -185,10 +184,7 @@ const createDefaultConfigState = (): TrainingPlanConfigFormData => ({
   constraintsSource: "default",
   locks: {
     availability_config: { locked: false },
-    baseline_load: { locked: false },
     recent_influence: { locked: false },
-    weekly_load_floor_tss: { locked: false },
-    weekly_load_cap_tss: { locked: false },
     hard_rest_days: { locked: false },
     min_sessions_per_week: { locked: false },
     max_sessions_per_week: { locked: false },
@@ -269,7 +265,6 @@ export default function CreateTrainingPlan() {
   const [hasSeededDefaults, setHasSeededDefaults] = useState(false);
   const [dirtyState, setDirtyState] = useState({
     availability: false,
-    baseline: false,
     recent: false,
     constraints: false,
   });
@@ -334,112 +329,16 @@ export default function CreateTrainingPlan() {
     },
   );
 
-  const toPayloadTarget = (
-    target: GoalTargetFormData,
-  ): MinimalTrainingPlanCreate["goals"][number]["targets"][number] => {
-    switch (target.targetType) {
-      case "race_performance": {
-        const distanceM = parseDistanceKmToMeters(target.distanceKm);
-        const targetTimeS = parseHmsToSeconds(target.completionTimeHms ?? "");
-        const activityCategory = target.activityCategory;
-
-        if (!distanceM || !targetTimeS || !activityCategory) {
-          throw new Error(
-            "race_performance target requires activity, distance, and time",
-          );
-        }
-
-        return {
-          target_type: "race_performance",
-          distance_m: distanceM,
-          target_time_s: targetTimeS,
-          activity_category: activityCategory,
-        };
-      }
-      case "pace_threshold": {
-        const paceSeconds = parseMmSsToSeconds(target.paceMmSs ?? "");
-        const testDurationS = parseHmsToSeconds(target.testDurationHms ?? "");
-        const activityCategory = target.activityCategory;
-
-        if (!paceSeconds || !testDurationS || !activityCategory) {
-          throw new Error(
-            "pace_threshold target requires pace, activity, and test duration",
-          );
-        }
-
-        return {
-          target_type: "pace_threshold",
-          target_speed_mps: 1000 / paceSeconds,
-          test_duration_s: testDurationS,
-          activity_category: activityCategory,
-        };
-      }
-      case "power_threshold": {
-        const testDurationS = parseHmsToSeconds(target.testDurationHms ?? "");
-        const activityCategory = target.activityCategory;
-
-        if (!target.targetWatts || !testDurationS || !activityCategory) {
-          throw new Error(
-            "power_threshold target requires watts, activity, and test duration",
-          );
-        }
-
-        return {
-          target_type: "power_threshold",
-          target_watts: target.targetWatts,
-          test_duration_s: testDurationS,
-          activity_category: activityCategory,
-        };
-      }
-      case "hr_threshold": {
-        if (!target.targetLthrBpm) {
-          throw new Error("hr_threshold target requires lthr bpm");
-        }
-
-        return {
-          target_type: "hr_threshold",
-          target_lthr_bpm: Math.round(target.targetLthrBpm),
-        };
-      }
-    }
-  };
-
-  const buildMinimalPayload = useCallback((): MinimalTrainingPlanCreate => {
-    const planStartDate = normalizePlanStartDate(formData.planStartDate);
-
-    return {
-      plan_start_date: planStartDate,
-      goals: formData.goals.map((goal) => ({
-        name: goal.name.trim(),
-        target_date: goal.targetDate,
-        priority: goal.priority,
-        targets: goal.targets.map(toPayloadTarget),
-      })),
-    };
-  }, [formData.goals, formData.planStartDate]);
-
-  const buildCreationInput = useCallback(
-    (state: TrainingPlanConfigFormData) => ({
-      user_values: {
-        availability_config: state.availabilityConfig,
-        baseline_load: { weekly_tss: state.baselineLoadWeeklyTss },
-        recent_influence: { influence_score: state.recentInfluenceScore },
-        recent_influence_action: state.recentInfluenceAction,
-        constraints: state.constraints,
-        optimization_profile: state.optimizationProfile,
-        post_goal_recovery_days: state.postGoalRecoveryDays,
-        max_weekly_tss_ramp_pct: state.maxWeeklyTssRampPct,
-        max_ctl_ramp_per_week: state.maxCtlRampPerWeek,
-        locks: state.locks,
-      },
-      provenance_overrides: {
-        availability_provenance: state.availabilityProvenance,
-        baseline_load_provenance: state.baselineLoadProvenance,
-        recent_influence_provenance: state.recentInfluenceProvenance,
-      },
-    }),
-    [],
+  const buildMinimalPayload = useCallback(
+    () =>
+      buildMinimalTrainingPlanPayload({
+        planStartDate: formData.planStartDate,
+        goals: formData.goals,
+      }),
+    [formData.goals, formData.planStartDate],
   );
+
+  const buildCreationInput = toCreationNormalizationInput;
 
   const mergeSuggestionsIntoConfig = useCallback(
     (
@@ -456,14 +355,6 @@ export default function CreateTrainingPlan() {
       if (canApplyAvailability) {
         next.availabilityConfig = suggestions.availability_config;
         next.availabilityProvenance = suggestions.availability_provenance;
-      }
-
-      const canApplyBaseline =
-        mode === "seed" ||
-        (!dirtyState.baseline && !current.locks.baseline_load.locked);
-      if (canApplyBaseline) {
-        next.baselineLoadWeeklyTss = suggestions.baseline_load.weekly_tss;
-        next.baselineLoadProvenance = suggestions.baseline_load_provenance;
       }
 
       const canApplyRecent =
@@ -625,7 +516,6 @@ export default function CreateTrainingPlan() {
           locks: configData.locks,
           existing_values: {
             availability_config: configData.availabilityConfig,
-            baseline_load_weekly_tss: configData.baselineLoadWeeklyTss,
             recent_influence_score: configData.recentInfluenceScore,
             optimization_profile: configData.optimizationProfile,
             post_goal_recovery_days: configData.postGoalRecoveryDays,
@@ -646,7 +536,6 @@ export default function CreateTrainingPlan() {
     return () => clearTimeout(timer);
   }, [
     configData.availabilityConfig,
-    configData.baselineLoadWeeklyTss,
     configData.constraints,
     configData.locks,
     configData.maxCtlRampPerWeek,
@@ -685,7 +574,6 @@ export default function CreateTrainingPlan() {
 
   const handleConfigChange = (nextData: TrainingPlanConfigFormData) => {
     const highImpactChanged =
-      configData.baselineLoadWeeklyTss !== nextData.baselineLoadWeeklyTss ||
       configData.optimizationProfile !== nextData.optimizationProfile ||
       configData.postGoalRecoveryDays !== nextData.postGoalRecoveryDays ||
       configData.maxWeeklyTssRampPct !== nextData.maxWeeklyTssRampPct ||
@@ -705,8 +593,6 @@ export default function CreateTrainingPlan() {
       availability:
         previous.availability ||
         nextData.availabilityProvenance.source === "user",
-      baseline:
-        previous.baseline || nextData.baselineLoadProvenance.source === "user",
       recent:
         previous.recent ||
         nextData.recentInfluenceAction !== "accepted" ||
@@ -878,28 +764,6 @@ export default function CreateTrainingPlan() {
       const availableDays = getAvailableTrainingDays(previous);
 
       switch (code) {
-        case "baseline_below_floor":
-          next.baselineLoadWeeklyTss = Math.max(
-            next.baselineLoadWeeklyTss,
-            next.constraints.weekly_load_floor_tss ??
-              next.baselineLoadWeeklyTss,
-          );
-          next.baselineLoadProvenance = createProvenance("user", ["quick_fix"]);
-          break;
-        case "baseline_above_cap":
-          next.baselineLoadWeeklyTss = Math.min(
-            next.baselineLoadWeeklyTss,
-            next.constraints.weekly_load_cap_tss ?? next.baselineLoadWeeklyTss,
-          );
-          next.baselineLoadProvenance = createProvenance("user", ["quick_fix"]);
-          break;
-        case "weekly_load_floor_exceeds_cap":
-          next.constraints.weekly_load_floor_tss = Math.min(
-            next.constraints.weekly_load_floor_tss ?? 0,
-            next.constraints.weekly_load_cap_tss ?? 0,
-          );
-          next.constraintsSource = "user";
-          break;
         case "min_sessions_exceeds_max":
           next.constraints.max_sessions_per_week = Math.max(
             next.constraints.max_sessions_per_week ?? 0,

@@ -76,8 +76,6 @@ export interface TrainingPlanFormData {
 export interface TrainingPlanConfigFormData {
   availabilityConfig: CreationAvailabilityConfig;
   availabilityProvenance: CreationProvenance;
-  baselineLoadWeeklyTss: number;
-  baselineLoadProvenance: CreationProvenance;
   recentInfluenceScore: number;
   recentInfluenceAction: CreationRecentInfluenceAction;
   recentInfluenceProvenance: CreationProvenance;
@@ -121,7 +119,6 @@ interface EditingTargetRef {
 type FormTabKey =
   | "goals"
   | "availability"
-  | "baseline"
   | "influence"
   | "constraints"
   | "review";
@@ -129,7 +126,6 @@ type FormTabKey =
 const formTabs: Array<{ key: FormTabKey; label: string }> = [
   { key: "goals", label: "Goals" },
   { key: "availability", label: "Availability" },
-  { key: "baseline", label: "Baseline" },
   { key: "influence", label: "Influence" },
   { key: "constraints", label: "Constraints" },
   { key: "review", label: "Review" },
@@ -262,8 +258,7 @@ const recentInfluenceActionOptionCopy: Record<
   },
   disabled: {
     label: "Off",
-    helper:
-      "Ignore recent-training bias and rely on goals, baseline, and safety caps.",
+    helper: "Ignore recent-training bias and rely on goals and safety caps.",
   },
 };
 
@@ -419,7 +414,6 @@ export function SinglePageForm({
   const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>(
     {
       availability: false,
-      baseline: false,
       influence: false,
       constraints: false,
     },
@@ -468,7 +462,6 @@ export function SinglePageForm({
     (day) => day.windows.length > 0,
   ).length;
   const restDaysCount = configData.constraints.hard_rest_days.length;
-  const baselineSource = configData.baselineLoadProvenance.source;
   const influenceSource = configData.recentInfluenceProvenance.source;
   const influenceActionCopy =
     recentInfluenceActionOptionCopy[configData.recentInfluenceAction];
@@ -891,7 +884,6 @@ export function SinglePageForm({
               )}
 
               {(activeTab === "availability" ||
-                activeTab === "baseline" ||
                 activeTab === "influence" ||
                 activeTab === "constraints") && (
                 <View className="gap-2 rounded-lg border border-border bg-card p-3">
@@ -1095,97 +1087,6 @@ export function SinglePageForm({
                               );
                             })}
                           </View>
-                        </View>
-                      )}
-                    </>
-                  )}
-
-                  {activeTab === "baseline" && (
-                    <>
-                      <Pressable
-                        onPress={() => setPanelExpanded("baseline")}
-                        className="flex-row items-center justify-between rounded-md border border-border px-3 py-2"
-                      >
-                        <View className="flex-1">
-                          <Text className="text-sm font-medium">
-                            Baseline load
-                          </Text>
-                          <Text className="text-xs text-muted-foreground">
-                            {configData.baselineLoadWeeklyTss} weekly TSS
-                          </Text>
-                        </View>
-                        <View className="flex-row items-center gap-2">
-                          <Badge
-                            variant={getSourceBadgeVariant(baselineSource)}
-                          >
-                            <Text>{baselineSource}</Text>
-                          </Badge>
-                          {expandedPanels.baseline ? (
-                            <ChevronUp
-                              size={16}
-                              className="text-muted-foreground"
-                            />
-                          ) : (
-                            <ChevronDown
-                              size={16}
-                              className="text-muted-foreground"
-                            />
-                          )}
-                        </View>
-                      </Pressable>
-
-                      {expandedPanels.baseline && (
-                        <View className="gap-3 rounded-md border border-border bg-muted/20 p-3">
-                          <View className="flex-row items-center justify-between">
-                            <Text className="text-sm font-medium">
-                              Lock baseline load
-                            </Text>
-                            <View className="flex-row items-center gap-2">
-                              {configData.locks.baseline_load.locked ? (
-                                <Lock size={14} className="text-primary" />
-                              ) : (
-                                <LockOpen
-                                  size={14}
-                                  className="text-muted-foreground"
-                                />
-                              )}
-                              <Switch
-                                checked={configData.locks.baseline_load.locked}
-                                onCheckedChange={(value) =>
-                                  setFieldLock("baseline_load", Boolean(value))
-                                }
-                              />
-                            </View>
-                          </View>
-                          <View className="gap-1">
-                            <Text className="text-xs text-muted-foreground">
-                              Confidence:{" "}
-                              {(
-                                (configData.baselineLoadProvenance.confidence ??
-                                  0) * 100
-                              ).toFixed(0)}
-                              %
-                            </Text>
-                          </View>
-                          <Input
-                            keyboardType="numeric"
-                            value={String(configData.baselineLoadWeeklyTss)}
-                            onChangeText={(value) => {
-                              const parsed = Number(value);
-                              if (!Number.isFinite(parsed)) return;
-                              updateConfig((draft) => {
-                                draft.baselineLoadWeeklyTss = Math.max(
-                                  30,
-                                  Math.round(parsed),
-                                );
-                                draft.baselineLoadProvenance = {
-                                  ...draft.baselineLoadProvenance,
-                                  source: "user",
-                                  updated_at: new Date().toISOString(),
-                                };
-                              });
-                            }}
-                          />
                         </View>
                       )}
                     </>
@@ -1433,77 +1334,6 @@ export function SinglePageForm({
 
                       {expandedPanels.constraints && (
                         <View className="gap-3 rounded-md border border-border bg-muted/20 p-3">
-                          <View className="flex-row items-center justify-between">
-                            <Text className="text-sm">Weekly floor TSS</Text>
-                            <View className="flex-row items-center gap-2">
-                              <Text className="text-xs text-muted-foreground">
-                                Lock
-                              </Text>
-                              <Switch
-                                checked={
-                                  configData.locks.weekly_load_floor_tss.locked
-                                }
-                                onCheckedChange={(value) =>
-                                  setFieldLock(
-                                    "weekly_load_floor_tss",
-                                    Boolean(value),
-                                  )
-                                }
-                              />
-                            </View>
-                          </View>
-                          <Input
-                            keyboardType="numeric"
-                            value={String(
-                              configData.constraints.weekly_load_floor_tss ??
-                                "",
-                            )}
-                            onChangeText={(value) => {
-                              const parsed = Number(value);
-                              if (!Number.isFinite(parsed)) return;
-                              updateConfig((draft) => {
-                                draft.constraints.weekly_load_floor_tss =
-                                  Math.max(0, Math.round(parsed));
-                                draft.constraintsSource = "user";
-                              });
-                            }}
-                          />
-
-                          <View className="flex-row items-center justify-between">
-                            <Text className="text-sm">Weekly cap TSS</Text>
-                            <View className="flex-row items-center gap-2">
-                              <Text className="text-xs text-muted-foreground">
-                                Lock
-                              </Text>
-                              <Switch
-                                checked={
-                                  configData.locks.weekly_load_cap_tss.locked
-                                }
-                                onCheckedChange={(value) =>
-                                  setFieldLock(
-                                    "weekly_load_cap_tss",
-                                    Boolean(value),
-                                  )
-                                }
-                              />
-                            </View>
-                          </View>
-                          <Input
-                            keyboardType="numeric"
-                            value={String(
-                              configData.constraints.weekly_load_cap_tss ?? "",
-                            )}
-                            onChangeText={(value) => {
-                              const parsed = Number(value);
-                              if (!Number.isFinite(parsed)) return;
-                              updateConfig((draft) => {
-                                draft.constraints.weekly_load_cap_tss =
-                                  Math.max(0, Math.round(parsed));
-                                draft.constraintsSource = "user";
-                              });
-                            }}
-                          />
-
                           <View className="flex-row items-center justify-between">
                             <Text className="text-sm">Sessions / week</Text>
                             <View className="flex-row items-center gap-2">

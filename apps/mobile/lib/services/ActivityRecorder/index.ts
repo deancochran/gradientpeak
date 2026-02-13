@@ -14,14 +14,16 @@
  */
 
 import {
-  PublicActivityCategory,
-  PublicActivityLocation,
-  PublicProfilesRow,
   RecordingServiceActivityPlan,
   type IntervalStepV2,
   type RecordingCapabilities,
-  type RecordingConfiguration,
+  type RecordingConfiguration
 } from "@repo/core";
+import type {
+  PublicActivityCategory,
+  PublicActivityLocation,
+  PublicProfilesRow
+} from "@repo/supabase";
 
 import { FitRecord, GarminFitEncoder } from "../fit/GarminFitEncoder";
 import {

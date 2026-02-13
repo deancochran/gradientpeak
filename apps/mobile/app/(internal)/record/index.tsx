@@ -18,10 +18,12 @@ import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvi
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import type {
   ActivityPayload,
-  PublicActivityCategory,
-  PublicActivityLocation,
-  RecordingState,
+  RecordingState
 } from "@repo/core";
+import type {
+  PublicActivityCategory,
+  PublicActivityLocation
+} from "@repo/supabase";
 import { useRouter } from "expo-router";
 import {
   Activity,

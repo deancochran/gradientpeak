@@ -12,8 +12,42 @@ import {
   getProjectionWeekPattern,
   weeklyLoadFromBlockAndBaseline,
 } from "../projectionCalculations";
+import { buildDeterministicProjectionPayload as buildDeterministicProjectionPayloadFromEngine } from "../projection/engine";
 
 describe("projection calculations", () => {
+  it("keeps engine entrypoint behavior aligned with legacy projectionCalculations export", () => {
+    const input: Parameters<typeof buildDeterministicProjectionPayload>[0] = {
+      timeline: {
+        start_date: "2026-01-05",
+        end_date: "2026-01-25",
+      },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2026-01-25",
+          target_weekly_tss_range: { min: 280, max: 320 },
+        },
+      ],
+      goals: [
+        {
+          id: "goal-1",
+          name: "B Race",
+          target_date: "2026-01-25",
+          priority: 1,
+        },
+      ],
+      starting_ctl: 35,
+    };
+
+    const legacyProjection = buildDeterministicProjectionPayload(input);
+    const engineProjection =
+      buildDeterministicProjectionPayloadFromEngine(input);
+
+    expect(engineProjection).toEqual(legacyProjection);
+  });
+
   it("blends block target range and baseline weekly TSS", () => {
     const weeklyTss = weeklyLoadFromBlockAndBaseline(
       {
@@ -153,7 +187,6 @@ describe("deterministic projection goal conflict weighting", () => {
           priority: 8,
         },
       ],
-      baseline_weekly_tss: 200,
       starting_ctl: 28,
       creation_config: {
         optimization_profile: "balanced",
@@ -191,7 +224,6 @@ describe("deterministic projection goal conflict weighting", () => {
           priority: 1,
         },
       ],
-      baseline_weekly_tss: 200,
       starting_ctl: 28,
       creation_config: {
         optimization_profile: "balanced",
@@ -568,7 +600,6 @@ describe("no-history anchor orchestration", () => {
           priority: 1,
         },
       ],
-      baseline_weekly_tss: 80,
       starting_ctl: 12,
       creation_config: {
         optimization_profile: "balanced",
@@ -636,7 +667,6 @@ describe("no-history anchor orchestration", () => {
           priority: 1,
         },
       ],
-      baseline_weekly_tss: 80,
       creation_config: {
         optimization_profile: "balanced" as const,
       },
@@ -692,7 +722,6 @@ describe("no-history anchor orchestration", () => {
       goals: [
         { id: "g", name: "Goal", target_date: "2026-05-10", priority: 1 },
       ],
-      baseline_weekly_tss: 160,
       starting_ctl: 22,
       creation_config: {
         optimization_profile: "outcome_first",
@@ -731,7 +760,6 @@ describe("no-history anchor orchestration", () => {
       goals: [
         { id: "g", name: "Goal", target_date: "2026-05-10", priority: 1 },
       ],
-      baseline_weekly_tss: 70,
       starting_ctl: 8,
       creation_config: {
         optimization_profile: "sustainable",
@@ -783,7 +811,6 @@ describe("no-history anchor orchestration", () => {
       goals: [
         { id: "g", name: "Goal", target_date: "2026-05-10", priority: 1 },
       ],
-      baseline_weekly_tss: 90,
       no_history_context: {
         history_availability_state: "rich",
         goal_tier: "high",
@@ -816,7 +843,6 @@ describe("no-history anchor orchestration", () => {
       goals: [
         { id: "g", name: "Goal", target_date: "2026-05-10", priority: 1 },
       ],
-      baseline_weekly_tss: 90,
       no_history_context: {
         history_availability_state: "none",
         goal_tier: "high",
@@ -873,7 +899,6 @@ describe("no-history anchor orchestration", () => {
           priority: 1,
         },
       ],
-      baseline_weekly_tss: 80,
       starting_ctl: 30,
       creation_config: {
         optimization_profile: "balanced",
@@ -893,7 +918,7 @@ describe("no-history anchor orchestration", () => {
     ).not.toBe(80);
   });
 
-  it("falls back to baseline seed when CTL is unavailable", () => {
+  it("falls back to dynamic seed when CTL is unavailable", () => {
     const projection = buildDeterministicProjectionPayload({
       timeline: {
         start_date: "2026-01-05",
@@ -916,17 +941,16 @@ describe("no-history anchor orchestration", () => {
           priority: 1,
         },
       ],
-      baseline_weekly_tss: 80,
       creation_config: {
         optimization_profile: "balanced",
       },
     });
 
     expect(projection.microcycles[0]!.metadata.tss_ramp.seed_source).toBe(
-      "baseline_fallback",
+      "dynamic_seed",
     );
     expect(projection.microcycles[0]!.metadata.tss_ramp.seed_weekly_tss).toBe(
-      80,
+      135,
     );
   });
 });

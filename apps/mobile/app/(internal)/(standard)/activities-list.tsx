@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { trpc } from "@/lib/trpc";
-import { PublicActivityCategory } from "@repo/core";
+import type { PublicActivityCategory } from "@repo/supabase";
 import { format } from "date-fns";
 import { useRouter } from "expo-router";
 import { Activity, ChevronRight } from "lucide-react-native";
@@ -345,7 +345,7 @@ function ActivitiesScreen() {
             {!hasMore && activities.length > 0 && (
               <View className="py-4">
                 <Text className="text-center text-sm text-muted-foreground">
-                  You've reached the end
+                  You&apos;ve reached the end
                 </Text>
               </View>
             )}

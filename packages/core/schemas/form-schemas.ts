@@ -950,26 +950,6 @@ export type TrainingPlanCreationProvenanceFormData = z.infer<
  */
 export const trainingPlanCreationConfigFormSchema =
   trainingPlanCreationConfigSchema.superRefine((data, ctx) => {
-    const floor = data.constraints.weekly_load_floor_tss;
-    const cap = data.constraints.weekly_load_cap_tss;
-    const baseline = data.baseline_load.weekly_tss;
-
-    if (floor !== undefined && baseline < floor) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["baseline_load", "weekly_tss"],
-        message: "Baseline load cannot be below weekly load floor",
-      });
-    }
-
-    if (cap !== undefined && baseline > cap) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["baseline_load", "weekly_tss"],
-        message: "Baseline load cannot exceed weekly load cap",
-      });
-    }
-
     if (
       data.recent_influence_action ===
         creationRecentInfluenceActionEnum.enum.disabled &&

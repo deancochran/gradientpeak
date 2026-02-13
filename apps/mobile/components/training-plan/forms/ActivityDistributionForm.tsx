@@ -280,7 +280,7 @@ export function ActivityDistributionForm({
                 • Single-sport mode dedicates 100% of training to one activity
               </Text>
               <Text className="text-sm text-muted-foreground">
-                • Switch to multi-sport if you're training for multiple
+                • Switch to multi-sport if you&apos;re training for multiple
                 disciplines
               </Text>
               <Text className="text-sm text-muted-foreground">

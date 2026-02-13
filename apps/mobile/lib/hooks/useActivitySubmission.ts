@@ -46,9 +46,11 @@ import {
   calculateNormalizedPower,
   calculatePowerHeartRateRatio,
   calculateTotalWork,
-  calculateVariabilityIndex,
-  PublicActivitiesInsert,
+  calculateVariabilityIndex
 } from "@repo/core";
+import type {
+  PublicActivitiesInsert
+} from "@repo/supabase";
 import { useCallback, useEffect, useReducer } from "react";
 
 import { FitUploader } from "@/lib/services/fit/FitUploader";

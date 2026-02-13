@@ -1,5 +1,6 @@
 {
   "name": "@repo/trpc",
+  "type": "module",
   "exports": {
     "./client": "./src/client.ts",
     "./server": "./src/server.ts",
@@ -10,6 +11,7 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "check-types": "tsc --noEmit",
+    "check-boundaries": "node ./scripts/check-layer-boundaries.mjs",
     "lint": "eslint src",
     "test": "vitest",
     "watch": "tsc --noEmit --watch --preserveWatchOutput"

@@ -6,8 +6,8 @@ import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import type {
   PublicActivityCategory,
-  PublicActivityLocation,
-} from "@repo/core";
+  PublicActivityLocation
+} from "@repo/supabase";
 import { ActivityPayload, getSampleActivitiesByCategory } from "@repo/core";
 import { useRouter } from "expo-router";
 import {

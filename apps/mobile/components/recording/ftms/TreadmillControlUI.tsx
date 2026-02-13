@@ -45,7 +45,8 @@ export function TreadmillControlUI({
   const features = trainer?.ftmsFeatures;
 
   const supportsSpeed = features?.speedTargetSettingSupported ?? false;
-  const supportsInclination = features?.inclinationTargetSettingSupported ?? false;
+  const supportsInclination =
+    features?.inclinationTargetSettingSupported ?? false;
 
   // Load safety limits from features
   useEffect(() => {
@@ -76,13 +77,21 @@ export function TreadmillControlUI({
     // Find speed target
     const speedTarget = targets.find((t) => t.type === "speed");
 
-    if (speedTarget && "min" in speedTarget && "max" in speedTarget && supportsSpeed) {
+    if (
+      speedTarget &&
+      "min" in speedTarget &&
+      "max" in speedTarget &&
+      supportsSpeed
+    ) {
       // Use midpoint of range, convert m/s to km/h
-      const speedMs = ((speedTarget.min as number) + (speedTarget.max as number)) / 2;
+      const speedMs =
+        ((speedTarget.min as number) + (speedTarget.max as number)) / 2;
       const speedKph = speedMs * 3.6;
       setSpeedKmh(speedKph);
       await service.sensorsManager.setTargetSpeed(speedKph);
-      console.log(`[TreadmillControl] Auto mode: Set speed to ${speedKph.toFixed(1)} km/h`);
+      console.log(
+        `[TreadmillControl] Auto mode: Set speed to ${speedKph.toFixed(1)} km/h`,
+      );
     }
 
     // Note: Grade/incline targets typically come from routes, not plan steps
@@ -96,7 +105,7 @@ export function TreadmillControlUI({
     if (controlMode === "auto") {
       Alert.alert(
         "Auto Mode Active",
-        "Switch to Manual mode to adjust treadmill settings."
+        "Switch to Manual mode to adjust treadmill settings.",
       );
       return;
     }
@@ -120,7 +129,7 @@ export function TreadmillControlUI({
               await service.sensorsManager.setTargetSpeed(maxSpeed);
             },
           },
-        ]
+        ],
       );
       return;
     }
@@ -128,7 +137,9 @@ export function TreadmillControlUI({
     const success = await service.sensorsManager.setTargetSpeed(speedKmh);
 
     if (success) {
-      console.log(`[TreadmillControl] Manual: Set speed to ${speedKmh.toFixed(1)} km/h`);
+      console.log(
+        `[TreadmillControl] Manual: Set speed to ${speedKmh.toFixed(1)} km/h`,
+      );
     } else {
       Alert.alert("Error", "Failed to set speed. Check treadmill connection.");
     }
@@ -141,13 +152,16 @@ export function TreadmillControlUI({
     if (controlMode === "auto") {
       Alert.alert(
         "Auto Mode Active",
-        "Switch to Manual mode to adjust treadmill settings."
+        "Switch to Manual mode to adjust treadmill settings.",
       );
       return;
     }
 
     if (!supportsInclination) {
-      Alert.alert("Not Supported", "Treadmill does not support incline control.");
+      Alert.alert(
+        "Not Supported",
+        "Treadmill does not support incline control.",
+      );
       return;
     }
 
@@ -165,19 +179,23 @@ export function TreadmillControlUI({
               await service.sensorsManager.setTargetInclination(maxIncline);
             },
           },
-        ]
+        ],
       );
       return;
     }
 
-    const success = await service.sensorsManager.setTargetInclination(
-      inclinePercent
-    );
+    const success =
+      await service.sensorsManager.setTargetInclination(inclinePercent);
 
     if (success) {
-      console.log(`[TreadmillControl] Manual: Set incline to ${inclinePercent.toFixed(1)}%`);
+      console.log(
+        `[TreadmillControl] Manual: Set incline to ${inclinePercent.toFixed(1)}%`,
+      );
     } else {
-      Alert.alert("Error", "Failed to set incline. Check treadmill connection.");
+      Alert.alert(
+        "Error",
+        "Failed to set incline. Check treadmill connection.",
+      );
     }
   }, [inclinePercent, maxIncline, controlMode, supportsInclination]);
 
@@ -197,16 +215,20 @@ export function TreadmillControlUI({
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
             >
-              <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
+              <Text
+                className={
+                  isDisabled
+                    ? "text-muted-foreground"
+                    : "text-primary-foreground"
+                }
+              >
                 -
               </Text>
             </Pressable>
 
             <View className="flex-1 items-center">
               <Text className="text-4xl font-bold">{speedKmh.toFixed(1)}</Text>
-              <Text className="text-xs text-muted-foreground mt-1">
-                km/h
-              </Text>
+              <Text className="text-xs text-muted-foreground mt-1">km/h</Text>
             </View>
 
             <Pressable
@@ -216,7 +238,13 @@ export function TreadmillControlUI({
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
             >
-              <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
+              <Text
+                className={
+                  isDisabled
+                    ? "text-muted-foreground"
+                    : "text-primary-foreground"
+                }
+              >
                 +
               </Text>
             </Pressable>
@@ -227,9 +255,11 @@ export function TreadmillControlUI({
             disabled={isDisabled}
             className={`py-3 rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
           >
-            <Text className={`text-center font-medium ${
-              isDisabled ? "text-muted-foreground" : "text-primary-foreground"
-            }`}>
+            <Text
+              className={`text-center font-medium ${
+                isDisabled ? "text-muted-foreground" : "text-primary-foreground"
+              }`}
+            >
               {isDisabled ? "Auto Mode Active" : "Apply Speed"}
             </Text>
           </Pressable>
@@ -249,29 +279,47 @@ export function TreadmillControlUI({
           <Text className="text-sm font-medium mb-3">Incline</Text>
           <View className="flex-row items-center gap-3 mb-3">
             <Pressable
-              onPress={() => setInclinePercent(Math.max(-5, inclinePercent - 0.5))}
+              onPress={() =>
+                setInclinePercent(Math.max(-5, inclinePercent - 0.5))
+              }
               disabled={isDisabled}
               className={`w-12 h-12 items-center justify-center rounded ${
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
             >
-              <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
+              <Text
+                className={
+                  isDisabled
+                    ? "text-muted-foreground"
+                    : "text-primary-foreground"
+                }
+              >
                 -
               </Text>
             </Pressable>
 
             <View className="flex-1 items-center">
-              <Text className="text-4xl font-bold">{inclinePercent.toFixed(1)}%</Text>
+              <Text className="text-4xl font-bold">
+                {inclinePercent.toFixed(1)}%
+              </Text>
             </View>
 
             <Pressable
-              onPress={() => setInclinePercent(Math.min(maxIncline, inclinePercent + 0.5))}
+              onPress={() =>
+                setInclinePercent(Math.min(maxIncline, inclinePercent + 0.5))
+              }
               disabled={isDisabled}
               className={`w-12 h-12 items-center justify-center rounded ${
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
             >
-              <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
+              <Text
+                className={
+                  isDisabled
+                    ? "text-muted-foreground"
+                    : "text-primary-foreground"
+                }
+              >
                 +
               </Text>
             </Pressable>
@@ -282,9 +330,11 @@ export function TreadmillControlUI({
             disabled={isDisabled}
             className={`py-3 rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
           >
-            <Text className={`text-center font-medium ${
-              isDisabled ? "text-muted-foreground" : "text-primary-foreground"
-            }`}>
+            <Text
+              className={`text-center font-medium ${
+                isDisabled ? "text-muted-foreground" : "text-primary-foreground"
+              }`}
+            >
               {isDisabled ? "Auto Mode Active" : "Apply Incline"}
             </Text>
           </Pressable>
@@ -308,7 +358,8 @@ export function TreadmillControlUI({
           {plan.currentStep.targets && plan.currentStep.targets.length > 0 && (
             <Text className="text-xs text-muted-foreground mt-1">
               Target: {plan.currentStep.targets[0].type}{" "}
-              {"min" in plan.currentStep.targets[0] && "max" in plan.currentStep.targets[0] &&
+              {"min" in plan.currentStep.targets[0] &&
+                "max" in plan.currentStep.targets[0] &&
                 `${plan.currentStep.targets[0].min}-${plan.currentStep.targets[0].max}`}
               {"value" in plan.currentStep.targets[0] &&
                 `${plan.currentStep.targets[0].value}`}
@@ -323,8 +374,9 @@ export function TreadmillControlUI({
           Safety First
         </Text>
         <Text className="text-xs text-muted-foreground">
-          Always ensure the safety key is attached and you're comfortable with the speed
-          and incline before starting. Use emergency stop if needed.
+          Always ensure the safety key is attached and you&apos;re comfortable
+          with the speed and incline before starting. Use emergency stop if
+          needed.
         </Text>
       </View>
     </View>

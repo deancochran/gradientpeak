@@ -456,7 +456,7 @@ export default function StructureEditScreen() {
             <AlertDialogHeader>
               <AlertDialogTitle>Add to Structure</AlertDialogTitle>
               <AlertDialogDescription>
-                Choose what you'd like to add to your workout
+                Choose what you&apos;d like to add to your workout
               </AlertDialogDescription>
             </AlertDialogHeader>
 

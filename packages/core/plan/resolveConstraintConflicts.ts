@@ -5,22 +5,16 @@ import {
 } from "../schemas/training_plan_structure";
 
 export type ConstraintFieldPath =
-  | "constraints.weekly_load_floor_tss"
-  | "constraints.weekly_load_cap_tss"
   | "constraints.hard_rest_days"
   | "constraints.min_sessions_per_week"
   | "constraints.max_sessions_per_week"
-  | "baseline_load.weekly_tss"
   | "availability_config.days";
 
 export interface ConstraintConflict {
   code:
-    | "weekly_load_floor_exceeds_cap"
     | "min_sessions_exceeds_max"
     | "min_sessions_exceeds_available_days"
-    | "max_sessions_exceeds_available_days"
-    | "baseline_below_floor"
-    | "baseline_above_cap";
+    | "max_sessions_exceeds_available_days";
   severity: "blocking" | "warning";
   message: string;
   field_paths: ConstraintFieldPath[];
@@ -29,7 +23,6 @@ export interface ConstraintConflict {
 
 export interface ResolveConstraintConflictsInput {
   availability_training_days: number;
-  baseline_weekly_tss: number;
   user_constraints?: Partial<CreationConstraints>;
   confirmed_suggestions?: Partial<CreationConstraints>;
   defaults?: Partial<CreationConstraints>;
@@ -80,8 +73,6 @@ export function resolveConstraintConflicts(
   input: ResolveConstraintConflictsInput,
 ): ConstraintResolutionResult {
   const defaultConstraints = creationConstraintsSchema.parse({
-    weekly_load_floor_tss: 120,
-    weekly_load_cap_tss: 260,
     hard_rest_days: ["wednesday", "friday", "sunday"],
     min_sessions_per_week: 3,
     max_sessions_per_week: 4,
@@ -91,8 +82,6 @@ export function resolveConstraintConflicts(
   });
 
   const locks = {
-    weekly_load_floor_tss: input.locks?.weekly_load_floor_tss?.locked ?? false,
-    weekly_load_cap_tss: input.locks?.weekly_load_cap_tss?.locked ?? false,
     hard_rest_days: input.locks?.hard_rest_days?.locked ?? false,
     min_sessions_per_week: input.locks?.min_sessions_per_week?.locked ?? false,
     max_sessions_per_week: input.locks?.max_sessions_per_week?.locked ?? false,
@@ -102,18 +91,6 @@ export function resolveConstraintConflicts(
       input.locks?.goal_difficulty_preference?.locked ?? false,
   };
 
-  const weeklyLoadFloor = resolveValue(
-    input.user_constraints?.weekly_load_floor_tss,
-    input.confirmed_suggestions?.weekly_load_floor_tss,
-    defaultConstraints.weekly_load_floor_tss,
-    locks.weekly_load_floor_tss,
-  );
-  const weeklyLoadCap = resolveValue(
-    input.user_constraints?.weekly_load_cap_tss,
-    input.confirmed_suggestions?.weekly_load_cap_tss,
-    defaultConstraints.weekly_load_cap_tss,
-    locks.weekly_load_cap_tss,
-  );
   const hardRestDays = resolveValue(
     input.user_constraints?.hard_rest_days,
     input.confirmed_suggestions?.hard_rest_days,
@@ -146,8 +123,6 @@ export function resolveConstraintConflicts(
   );
 
   const resolvedConstraints = creationConstraintsSchema.parse({
-    weekly_load_floor_tss: weeklyLoadFloor.value,
-    weekly_load_cap_tss: weeklyLoadCap.value,
     hard_rest_days: hardRestDays.value,
     min_sessions_per_week: minSessions.value,
     max_sessions_per_week: maxSessions.value,
@@ -156,28 +131,6 @@ export function resolveConstraintConflicts(
   });
 
   const conflicts: ConstraintConflict[] = [];
-
-  if (
-    resolvedConstraints.weekly_load_floor_tss !== undefined &&
-    resolvedConstraints.weekly_load_cap_tss !== undefined &&
-    resolvedConstraints.weekly_load_floor_tss >
-      resolvedConstraints.weekly_load_cap_tss
-  ) {
-    conflicts.push({
-      code: "weekly_load_floor_exceeds_cap",
-      severity: "blocking",
-      message: "Weekly load floor exceeds weekly load cap",
-      field_paths: [
-        "constraints.weekly_load_floor_tss",
-        "constraints.weekly_load_cap_tss",
-      ],
-      suggestions: [
-        "Lower weekly load floor",
-        "Raise weekly load cap",
-        "Unlock one of the load bound fields",
-      ],
-    });
-  }
 
   if (
     resolvedConstraints.min_sessions_per_week !== undefined &&
@@ -241,45 +194,11 @@ export function resolveConstraintConflicts(
     });
   }
 
-  if (
-    resolvedConstraints.weekly_load_floor_tss !== undefined &&
-    input.baseline_weekly_tss < resolvedConstraints.weekly_load_floor_tss
-  ) {
-    conflicts.push({
-      code: "baseline_below_floor",
-      severity: "blocking",
-      message: "Baseline weekly load is below configured floor",
-      field_paths: [
-        "baseline_load.weekly_tss",
-        "constraints.weekly_load_floor_tss",
-      ],
-      suggestions: ["Increase baseline weekly load", "Lower weekly load floor"],
-    });
-  }
-
-  if (
-    resolvedConstraints.weekly_load_cap_tss !== undefined &&
-    input.baseline_weekly_tss > resolvedConstraints.weekly_load_cap_tss
-  ) {
-    conflicts.push({
-      code: "baseline_above_cap",
-      severity: "blocking",
-      message: "Baseline weekly load exceeds configured cap",
-      field_paths: [
-        "baseline_load.weekly_tss",
-        "constraints.weekly_load_cap_tss",
-      ],
-      suggestions: ["Reduce baseline weekly load", "Raise weekly load cap"],
-    });
-  }
-
   return {
     resolved_constraints: resolvedConstraints,
     conflicts,
     is_blocking: conflicts.some((conflict) => conflict.severity === "blocking"),
     precedence: {
-      weekly_load_floor_tss: weeklyLoadFloor.source,
-      weekly_load_cap_tss: weeklyLoadCap.source,
       hard_rest_days: hardRestDays.source,
       min_sessions_per_week: minSessions.source,
       max_sessions_per_week: maxSessions.source,

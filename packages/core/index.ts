@@ -2,21 +2,13 @@
  * @repo/core - Core types, schemas, and utilities
  *
  * This package serves as the main dependency for web, mobile, and tRPC packages.
- * It re-exports database types from @repo/supabase and provides business logic,
- * calculations, schemas, and utilities.
+ * It provides business logic, calculations, schemas, and utilities.
  *
  * Architecture:
- * - Database types come from @repo/supabase (single source of truth)
+ * - Database types are consumed directly from @repo/supabase
  * - Business logic, calculations, and utilities are defined here
  * - All exports are organized for easy consumption by consuming packages
  */
-
-// ============================================================================
-// Database Layer - Re-export from @repo/supabase
-// ============================================================================
-// This provides a single import point for database types and schemas
-// while maintaining the @repo/supabase package as the source of truth
-export * from "@repo/supabase";
 
 // ============================================================================
 // FTMS (Fitness Machine Service) Types
@@ -171,6 +163,7 @@ export * from "./estimation"; // TSS estimation system
 export * from "./plan"; // Training plan normalization/expansion helpers
 export * from "./samples"; // Sample data for testing and development
 export * from "./schemas"; // Zod schemas and types (includes formatDuration for DurationV2)
+export * from "./contracts"; // Shared API contracts
 export * from "./utils"; // Utility functions
 
 // ============================================================================

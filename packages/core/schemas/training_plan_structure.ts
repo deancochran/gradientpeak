@@ -618,12 +618,6 @@ export type CreationAvailabilityConfig = z.infer<
   typeof creationAvailabilityConfigSchema
 >;
 
-export const creationBaselineLoadSchema = z.object({
-  weekly_tss: z.number().int().min(30).max(2000),
-});
-
-export type CreationBaselineLoad = z.infer<typeof creationBaselineLoadSchema>;
-
 export const creationRecentInfluenceSchema = z.object({
   influence_score: z.number().min(-1).max(1),
 });
@@ -664,8 +658,6 @@ export type CreationOptimizationProfile = z.infer<
 
 export const creationConstraintsSchema = z
   .object({
-    weekly_load_floor_tss: z.number().int().min(0).max(2000).optional(),
-    weekly_load_cap_tss: z.number().int().min(0).max(3000).optional(),
     hard_rest_days: z.array(creationWeekDayEnum).max(7).default([]),
     min_sessions_per_week: z.number().int().min(0).max(21).optional(),
     max_sessions_per_week: z.number().int().min(0).max(21).optional(),
@@ -679,18 +671,6 @@ export const creationConstraintsSchema = z
       creationGoalDifficultyPreferenceEnum.default("balanced"),
   })
   .superRefine((data, ctx) => {
-    if (
-      data.weekly_load_floor_tss !== undefined &&
-      data.weekly_load_cap_tss !== undefined &&
-      data.weekly_load_floor_tss > data.weekly_load_cap_tss
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["weekly_load_floor_tss"],
-        message: "Weekly load floor cannot exceed weekly load cap",
-      });
-    }
-
     if (
       data.min_sessions_per_week !== undefined &&
       data.max_sessions_per_week !== undefined &&
@@ -748,10 +728,7 @@ export type CreationFieldLock = z.infer<typeof creationFieldLockSchema>;
 
 export const creationConfigLocksSchema = z.object({
   availability_config: creationFieldLockSchema.default({ locked: false }),
-  baseline_load: creationFieldLockSchema.default({ locked: false }),
   recent_influence: creationFieldLockSchema.default({ locked: false }),
-  weekly_load_floor_tss: creationFieldLockSchema.default({ locked: false }),
-  weekly_load_cap_tss: creationFieldLockSchema.default({ locked: false }),
   hard_rest_days: creationFieldLockSchema.default({ locked: false }),
   min_sessions_per_week: creationFieldLockSchema.default({ locked: false }),
   max_sessions_per_week: creationFieldLockSchema.default({ locked: false }),
@@ -809,7 +786,6 @@ export type CreationProvenance = z.infer<typeof creationProvenanceSchema>;
 
 export const trainingPlanCreationProvenanceBundleSchema = z.object({
   availability_provenance: creationProvenanceSchema,
-  baseline_load_provenance: creationProvenanceSchema,
   recent_influence_provenance: creationProvenanceSchema,
 });
 
@@ -918,8 +894,6 @@ export type CreationFeasibilitySafetySummary = z.infer<
 export const trainingPlanCreationConfigSchema = z.object({
   availability_config: creationAvailabilityConfigSchema,
   availability_provenance: creationProvenanceSchema,
-  baseline_load: creationBaselineLoadSchema,
-  baseline_load_provenance: creationProvenanceSchema,
   recent_influence: creationRecentInfluenceSchema,
   recent_influence_action: creationRecentInfluenceActionEnum,
   recent_influence_provenance: creationProvenanceSchema,
