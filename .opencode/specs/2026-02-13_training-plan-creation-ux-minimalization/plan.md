@@ -9,6 +9,13 @@ Owner: Mobile + QA
 
 Simplify the current `training-plan-create` form experience in place by reducing default complexity, upgrading to type-compatible input components, and improving pre-submit error handling, without changing API contracts or introducing a new process architecture.
 
+## UX Compression Targets
+
+1. Reduce default visible sections to essentials-only per tab.
+2. Replace verbose explanatory text with compact summaries and optional details.
+3. Reduce initial rendered component count by moving non-essential blocks into collapsible containers.
+4. Keep one clear primary action zone and one concise blocker zone.
+
 ## Non-Negotiables
 
 1. Keep the existing create screen and orchestration path (`training-plan-create.tsx`).
@@ -69,11 +76,14 @@ Reorganize existing form sections to reduce default cognitive load without chang
 2. Collapse advanced controls by default in existing tabs (constraints/influence details).
 3. Hide source/provenance/lock detail from default view; show only when advanced section expands.
 4. Keep existing chart available, but collapsed by default behind "Show forecast" toggle.
+5. Introduce summary cards that show current values with inline "Edit" / "Expand" actions.
+6. Remove duplicate helper/warning text across sections; keep single source near relevant control.
 
 ### Exit Criteria
 
 1. Default form view is visibly simpler.
 2. All advanced controls remain accessible through expansion.
+3. Non-essential sections are collapsed by default and expand on demand.
 
 ## Phase 2 - Typed Input Components and Field Replacement
 
@@ -117,6 +127,7 @@ Improve error timing and actionability inside the current form structure.
 2. Add section validation summaries in context (Goals, Availability, Review).
 3. In review area, show top blockers (max 3) with existing quick-fix actions.
 4. Disable Create only on blocking errors and show reason copy.
+5. Deduplicate warnings so each blocking issue appears once in a single blocker area.
 
 ### Example Blocking Copy Rule
 
@@ -142,6 +153,7 @@ Keep existing domain behavior, but simplify wording and labels.
 1. Replace technical labels in default view with user language.
 2. Keep deep technical explanations inside advanced disclosures.
 3. Add unit/format hints directly in labels or helper text.
+4. Introduce an optional per-section "Learn more" disclosure for educational content.
 
 ### Exit Criteria
 
@@ -174,6 +186,31 @@ pnpm check-types && pnpm lint && pnpm test
 1. Add preset chips for common distances and durations.
 2. Add optional haptic feedback for invalid boundary taps on steppers.
 3. Add analytics events for blocked-create reasons.
+
+## Technical Patterns for Consolidation
+
+1. **Summary Row Pattern**
+   - Render compact row: `Label | current value | Edit`.
+   - Expand to full control group only when Edit is tapped.
+2. **Accordion Group Pattern**
+   - Use one accordion per advanced domain (influence, constraints, safety caps).
+   - Persist accordion state in component state.
+3. **Single Warning Surface Pattern**
+   - Build one derived blocker list near create CTA.
+   - Avoid repeating same conflict in tab body and footer.
+
+### Example Summary Row Snippet
+
+```tsx
+<Pressable onPress={() => setExpanded((v) => !v)} className="flex-row items-center justify-between rounded-md border border-border p-3">
+  <View>
+    <Text className="text-sm font-medium">Weekly sessions</Text>
+    <Text className="text-xs text-muted-foreground">{minSessions}-{maxSessions} per week</Text>
+  </View>
+  <Text className="text-xs text-primary">{expanded ? "Collapse" : "Edit"}</Text>
+</Pressable>
+{expanded ? <IntegerStepper ... /> : null}
+```
 
 ## Definition of Done
 

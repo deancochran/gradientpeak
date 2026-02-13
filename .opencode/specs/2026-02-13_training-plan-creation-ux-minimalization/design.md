@@ -26,6 +26,7 @@ Observed friction:
 3. Reduce input errors through type-compatible controls and earlier validation.
 4. Preserve all current backend behavior and payload contracts.
 5. Preserve existing power-user capabilities.
+6. Reduce visible component count and on-screen text while keeping decision quality high.
 
 ## Non-Goals
 
@@ -41,6 +42,8 @@ Observed friction:
 3. **Typed input fit:** input component must match data type.
 4. **Early prevention:** inline errors before submit.
 5. **Plain-language copy:** user intent over internal terminology.
+6. **Information compression:** summarize by default, expand for details.
+7. **Component budget:** avoid rendering every control at once.
 
 ## Updated UX Model (Current Process, Simplified)
 
@@ -53,6 +56,29 @@ Maintain the existing create screen and orchestration, but simplify presentation
 2. Move influence/constraints complexity into collapsed "Advanced settings" inside the existing flow.
 3. Keep chart available, but collapsed behind "Show forecast" by default.
 4. Keep existing conflict quick-fixes, but surface top blockers near Create CTA.
+
+## Content and Component Consolidation Rules
+
+### Default View Budget
+
+- Show only the minimum controls required to create a valid plan.
+- Keep helper text to one short line per section in default view.
+- Do not show long explanatory paragraphs unless user expands "Learn more".
+- Limit visible blocking messages to top 1-3 actionable items.
+
+### Consolidation Patterns
+
+1. Replace repeated field groups with compact summary rows (value + edit action).
+2. Group related controls into expandable cards (for example, "Training limits", "Safety caps").
+3. Use "Show details" and "Advanced settings" disclosures instead of always-rendered subcomponents.
+4. Use chips/tags for quick context (days selected, sessions/week) instead of verbose text blocks.
+5. Keep one primary CTA area with concise status; avoid duplicate warnings in multiple sections.
+
+### Data-Driven Minimalism
+
+- Auto-populate recommended values from available athlete data.
+- Show recommendations as prefilled defaults, not long narrative explanations.
+- Let user override only when needed via inline edit or expansion.
 
 ## Input Component Standards (Required)
 
@@ -79,6 +105,14 @@ Rules:
 - Keep submit-time validation as final guardrail.
 - In review area, show top 1-3 blocking issues with direct fix actions.
 
+## Progressive Disclosure Requirements
+
+1. Every non-essential section must be collapsed by default.
+2. Advanced detail opens only by explicit user action.
+3. Expanded sections must be independently collapsible.
+4. State must persist when users expand/collapse or switch tabs.
+5. A minimal path must remain fully functional without opening any advanced section.
+
 ## Technical Direction
 
 1. Refactor existing `SinglePageForm` in place; avoid introducing parallel form architecture.
@@ -93,6 +127,8 @@ Rules:
 3. Date/time/pace/distance/count fields use type-compatible components.
 4. Blocking issues are visible before create and have direct correction paths.
 5. Preview/create payload compatibility remains unchanged.
+6. Default view contains consolidated summaries with expandable details instead of fully expanded control groups.
+7. Users can complete creation on the minimal path while still being able to expand for deeper control.
 
 ## Success Metrics
 

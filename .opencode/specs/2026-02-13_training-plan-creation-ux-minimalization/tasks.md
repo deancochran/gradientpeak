@@ -13,6 +13,8 @@ This checklist implements `./design.md` and `./plan.md` and explicitly preserves
 - [ ] [Mobile][S1] Keep goals, availability, and review as the default-visible journey in current UI.
 - [ ] [Mobile][S1] Collapse advanced sections by default within current structure.
 - [ ] [Mobile][S1] Keep forecast chart available but collapsed by default via toggle.
+- [ ] [Mobile][S1] Add compact summary rows for key sections (value + edit/expand action) to reduce always-visible controls.
+- [ ] [Mobile][S1] Remove duplicate helper or warning text shown in multiple places.
 
 ## Phase 2 - Add Typed Input Components
 
@@ -40,6 +42,7 @@ This checklist implements `./design.md` and `./plan.md` and explicitly preserves
 - [ ] [Mobile][S2] In review section, surface top blocking conflicts (max 3) near create action.
 - [ ] [Mobile][S2] Keep and reuse existing quick-fix actions for conflict resolution.
 - [ ] [Mobile][S2] Disable create only when blocking issues exist, with explicit reason copy.
+- [ ] [Mobile][S2] Ensure each blocking issue is shown once in a consolidated blocker area (no repeated warnings across sections).
 
 ## Phase 5 - Copy Simplification and Progressive Disclosure
 
@@ -47,6 +50,8 @@ This checklist implements `./design.md` and `./plan.md` and explicitly preserves
 - [ ] [Mobile][S2] Keep provenance/lock/source details available only in expanded advanced sections.
 - [ ] [Mobile][S2] Add unit/format helper text where needed (`mm:ss`, `h:mm:ss`, `%`, `km`).
 - [ ] [Mobile][S2] Ensure accessibility labels/hints include expected input format.
+- [ ] [Mobile][S2] Move long explanatory content behind per-section "Learn more" or "Show details" disclosures.
+- [ ] [Mobile][S2] Keep default helper text to one concise line per section.
 
 ## Phase 6 - Regression Safety and QA
 
@@ -69,3 +74,5 @@ This checklist implements `./design.md` and `./plan.md` and explicitly preserves
 - [ ] Typed inputs are used for date/time/pace/distance/count/percent fields.
 - [ ] Blocking errors are visible and actionable before create.
 - [ ] API contracts and create orchestration behavior remain backward compatible.
+- [ ] Default screen state shows consolidated summaries; details are expandable on demand.
+- [ ] Users can complete create on a minimal path without expanding advanced/details panels.
