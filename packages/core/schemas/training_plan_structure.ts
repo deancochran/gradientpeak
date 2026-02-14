@@ -104,7 +104,7 @@ export type GoalV2 = z.infer<typeof goalV2Schema>;
 export type TrainingGoal = z.infer<typeof trainingGoalSchema>;
 
 export const minimalTrainingGoalCreateSchema = z.object({
-  name: z.string().min(1).max(100),
+  name: z.string().max(100).default(""),
   target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   priority: z.number().int().min(1).max(10).default(1),
   targets: z.array(goalTargetV2Schema).min(1),
@@ -122,6 +122,16 @@ export const minimalTrainingPlanCreateSchema = z
       .optional(),
     goals: z.array(minimalTrainingGoalCreateSchema).min(1),
   })
+  .transform((data) => ({
+    ...data,
+    goals: data.goals.map((goal, index) => {
+      const trimmed = goal.name.trim();
+      return {
+        ...goal,
+        name: trimmed.length > 0 ? trimmed : `Goal #${index + 1}`,
+      };
+    }),
+  }))
   .superRefine((data, ctx) => {
     if (!data.plan_start_date) {
       return;
@@ -918,7 +928,7 @@ export type TrainingPlanCreationConfig = z.infer<
  */
 
 export const wizardGoalInputSchema = z.object({
-  name: z.string().min(1).max(100),
+  name: z.string().max(100).default(""),
   target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   targets: z.array(goalTargetV2Schema).min(1),
 });
@@ -972,7 +982,18 @@ export const wizardPeriodizedInputSchema = z.object({
   plan_type: z.literal("periodized"),
   name: z.string().min(1).max(255).optional(),
   start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  goals: z.array(wizardGoalInputSchema).min(1),
+  goals: z
+    .array(wizardGoalInputSchema)
+    .min(1)
+    .transform((goals) =>
+      goals.map((goal, index) => {
+        const trimmed = goal.name.trim();
+        return {
+          ...goal,
+          name: trimmed.length > 0 ? trimmed : `Goal #${index + 1}`,
+        };
+      }),
+    ),
   fitness: wizardFitnessInputSchema,
   activities: wizardActivityInputSchema,
   constraints: wizardConstraintsInputSchema.optional(),

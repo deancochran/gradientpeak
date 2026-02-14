@@ -3,6 +3,7 @@ import type {
   GoalFormData,
   TrainingPlanConfigFormData,
 } from "@/components/training-plan/create/SinglePageForm";
+import { buildPreviewMinimalPlanFromForm } from "@repo/core";
 import {
   buildMinimalTrainingPlanPayload,
   toCreationNormalizationInput,
@@ -149,5 +150,69 @@ describe("buildMinimalTrainingPlanPayload", () => {
         },
       ],
     });
+  });
+
+  it("keeps create and preview minimal payloads in parity", () => {
+    const goals: GoalFormData[] = [
+      {
+        id: "goal-1",
+        name: "Spring Marathon",
+        targetDate: "2026-05-01",
+        priority: 1,
+        targets: [
+          {
+            id: "target-1",
+            targetType: "race_performance",
+            activityCategory: "run",
+            distanceKm: "42.2",
+            completionTimeHms: "03:10:00",
+          },
+          {
+            id: "target-2",
+            targetType: "pace_threshold",
+            activityCategory: "run",
+            paceMmSs: "04:15",
+            testDurationHms: "00:20:00",
+          },
+        ],
+      },
+      {
+        id: "goal-2",
+        name: "FTP Block",
+        targetDate: "2026-07-15",
+        priority: 2,
+        targets: [
+          {
+            id: "target-3",
+            targetType: "power_threshold",
+            activityCategory: "bike",
+            targetWatts: 280,
+            testDurationHms: "00:20:00",
+          },
+          {
+            id: "target-4",
+            targetType: "hr_threshold",
+            targetLthrBpm: 168,
+          },
+        ],
+      },
+    ];
+
+    const createPayload = buildMinimalTrainingPlanPayload({
+      planStartDate: "2026-01-05",
+      goals,
+    });
+
+    const previewPayload = buildPreviewMinimalPlanFromForm({
+      planStartDate: "2026-01-05",
+      goals: goals.map((goal) => ({
+        name: goal.name,
+        targetDate: goal.targetDate,
+        priority: goal.priority,
+        targets: goal.targets,
+      })),
+    });
+
+    expect(previewPayload).toEqual(createPayload);
   });
 });

@@ -2,9 +2,14 @@ import { Text } from "@/components/ui/text";
 import { useFont } from "@shopify/react-native-skia";
 import { useColorScheme } from "nativewind";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, View, useWindowDimensions } from "react-native";
-import { runOnJS, useAnimatedReaction } from "react-native-reanimated";
-import { CartesianChart, Line, useChartPressState } from "victory-native";
+import {
+  Pressable,
+  ScrollView,
+  View,
+  type LayoutChangeEvent,
+  useWindowDimensions,
+} from "react-native";
+import { CartesianChart, Line } from "victory-native";
 import { format } from "date-fns";
 import type {
   NoHistoryProjectionMetadata,
@@ -14,6 +19,8 @@ import type {
 interface CreationProjectionChartProps {
   projectionChart?: ProjectionChartPayload;
   isPreviewPending?: boolean;
+  compact?: boolean;
+  chartMaxHeight?: number;
 }
 
 type ProjectionChartDatum = Record<string, unknown> & {
@@ -22,19 +29,83 @@ type ProjectionChartDatum = Record<string, unknown> & {
   fitnessCtl: number;
   fatigueAtl: number;
   formTsb: number;
+  readinessScore: number;
 };
+
+type ChartYKey =
+  | "loadTss"
+  | "fitnessCtl"
+  | "fatigueAtl"
+  | "formTsb"
+  | "readinessScore";
 
 type ProjectionPoint = ProjectionChartPayload["points"][number];
 
-const chartYKeys: ("loadTss" | "fitnessCtl" | "fatigueAtl" | "formTsb")[] = [
+const chartYKeys: ChartYKey[] = [
   "loadTss",
   "fitnessCtl",
   "fatigueAtl",
   "formTsb",
+  "readinessScore",
 ];
-const chartHeight = 220;
-const chartPadding = { left: 18, right: 22, top: 10, bottom: 16 };
-const chartDomainPadding = { left: 8, right: 8, top: 12 };
+
+const lineConfig: Array<{
+  key: ChartYKey;
+  label: string;
+  color: string;
+}> = [
+  {
+    key: "loadTss",
+    label: "Load",
+    color: "rgba(59, 130, 246, 0.95)",
+  },
+  {
+    key: "fitnessCtl",
+    label: "Fitness",
+    color: "rgba(16, 185, 129, 0.95)",
+  },
+  {
+    key: "fatigueAtl",
+    label: "Fatigue",
+    color: "rgba(245, 158, 11, 0.95)",
+  },
+  {
+    key: "formTsb",
+    label: "Form",
+    color: "rgba(6, 182, 212, 0.95)",
+  },
+  {
+    key: "readinessScore",
+    label: "Readiness",
+    color: "rgba(244, 63, 94, 0.95)",
+  },
+];
+
+const defaultLineVisibility: Record<ChartYKey, boolean> = {
+  loadTss: true,
+  fitnessCtl: true,
+  fatigueAtl: true,
+  formTsb: true,
+  readinessScore: true,
+};
+const defaultChartHeight = 300;
+const minChartHeight = 120;
+const leftAxisLabelGutter = 2;
+const rightAxisLabelGutter = 2;
+const chartPadding = {
+  left: leftAxisLabelGutter,
+  right: rightAxisLabelGutter,
+  top: 10,
+  bottom: 12,
+};
+const chartDomainPadding = { left: 0, right: 0, top: 8 };
+const markerEdgeInset = 0;
+const phaseLabelWidth = 64;
+const phaseLabelHalfWidth = phaseLabelWidth / 2;
+const phaseLabelTopOffset = -1;
+const phaseLabelStripHeight = 10;
+const goalDateLabelWidth = 34;
+const goalDateLabelHalfWidth = goalDateLabelWidth / 2;
 
 const formatIsoDate = (isoDate: string, pattern: string) => {
   const date = new Date(`${isoDate}T00:00:00`);
@@ -73,6 +144,44 @@ const formatNoHistoryConfidence = (
   confidence: NoHistoryProjectionMetadata["projection_floor_confidence"],
 ) => confidence ?? "n/a";
 
+const formatCompactAxisNumber = (value: number) => {
+  const absolute = Math.abs(value);
+  if (absolute >= 1000) {
+    return `${(value / 1000).toFixed(1)}k`;
+  }
+  return `${Math.round(value)}`;
+};
+
+const clampReadinessScore = (value: number) =>
+  Math.max(0, Math.min(100, value));
+
+const buildDerivedReadinessScores = (
+  points: ProjectionPoint[],
+  baselineReadiness: number | undefined,
+): number[] => {
+  if (points.length === 0) {
+    return [];
+  }
+
+  const baseline = clampReadinessScore(baselineReadiness ?? 50);
+
+  return points.map((point, index) => {
+    const previousPoint = points[index - 1];
+    const formSignal =
+      point.predicted_fitness_ctl - point.predicted_fatigue_atl;
+    const loadMomentumSignal = previousPoint
+      ? previousPoint.predicted_load_tss - point.predicted_load_tss
+      : 0;
+    const timelineSignal =
+      points.length > 1 ? (index / (points.length - 1) - 0.5) * 2 : 0;
+
+    const derived =
+      baseline + formSignal * 1.4 + loadMomentumSignal * 0.08 + timelineSignal;
+
+    return clampReadinessScore(derived);
+  });
+};
+
 type GoalPointPlacement = {
   marker: {
     id: string;
@@ -84,6 +193,40 @@ type GoalPointPlacement = {
   stackIndex: number;
   stackSize: number;
 };
+
+type PhaseLabelPlacement = {
+  index: number;
+  label: string;
+  left: number;
+  top: number;
+};
+
+type PlotBounds = {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+};
+
+const areBoundsEqual = (left: PlotBounds, right: PlotBounds) =>
+  left.left === right.left &&
+  left.right === right.right &&
+  left.top === right.top &&
+  left.bottom === right.bottom;
+
+const ChartBoundsSync = React.memo(function ChartBoundsSync({
+  chartBounds,
+  onChange,
+}: {
+  chartBounds: PlotBounds;
+  onChange: (chartBounds: PlotBounds) => void;
+}) {
+  useEffect(() => {
+    onChange(chartBounds);
+  }, [chartBounds, onChange]);
+
+  return null;
+});
 
 const resolveGoalPointPlacements = (
   points: ProjectionPoint[],
@@ -237,10 +380,18 @@ const buildDisplayedPoints = (input: {
 
   const today = getTodayDateOnlyUtc();
   const projectionEndDate = sourcePoints[sourcePoints.length - 1]?.date;
+  const explicitProjectionEndDate = projection?.end_date;
+  const latestGoalDate = projection?.goal_markers
+    ?.map((goal) => goal.target_date)
+    .sort((a, b) => a.localeCompare(b))
+    .at(-1);
 
-  const endDateCandidates = [today, projectionEndDate].filter(
-    (value): value is string => Boolean(value),
-  );
+  const endDateCandidates = [
+    today,
+    projectionEndDate,
+    explicitProjectionEndDate,
+    latestGoalDate,
+  ].filter((value): value is string => Boolean(value));
   const targetEndDate = endDateCandidates
     .sort((a, b) => a.localeCompare(b))
     .at(-1);
@@ -301,20 +452,43 @@ export const CreationProjectionChart = React.memo(
   function CreationProjectionChart({
     projectionChart,
     isPreviewPending = false,
+    compact = false,
+    chartMaxHeight,
   }: CreationProjectionChartProps) {
     const { colorScheme } = useColorScheme();
     const isDark = colorScheme === "dark";
     const { width } = useWindowDimensions();
-    const chartWidth = width - 48;
+    const [measuredChartContainerWidth, setMeasuredChartContainerWidth] =
+      useState(0);
+    const fallbackChartContainerWidth = width;
+    const chartWidth = Math.max(
+      1,
+      measuredChartContainerWidth || fallbackChartContainerWidth,
+    );
+    const resolvedChartHeight = Math.max(
+      minChartHeight,
+      Math.floor(chartMaxHeight ?? defaultChartHeight),
+    );
+    const [plotBounds, setPlotBounds] = useState<PlotBounds>(() => ({
+      left: chartPadding.left + chartDomainPadding.left + markerEdgeInset,
+      right:
+        chartWidth -
+        chartPadding.right -
+        chartDomainPadding.right -
+        markerEdgeInset,
+      top: chartPadding.top,
+      bottom: resolvedChartHeight - chartPadding.bottom,
+    }));
+    const handleChartLayout = useCallback((event: LayoutChangeEvent) => {
+      const nextWidth = Math.floor(event.nativeEvent.layout.width);
+      setMeasuredChartContainerWidth((previousWidth) =>
+        previousWidth !== nextWidth ? nextWidth : previousWidth,
+      );
+    }, []);
     const axisFont = useFont(
       require("@/assets/fonts/SpaceMono-Regular.ttf"),
-      10,
+      9,
     );
-    const { state: chartPressState } = useChartPressState({
-      x: 0,
-      y: { loadTss: 0, fitnessCtl: 0, fatigueAtl: 0, formTsb: 0 },
-    });
-
     const points = useMemo(
       () =>
         buildDisplayedPoints({
@@ -323,6 +497,7 @@ export const CreationProjectionChart = React.memo(
       [projectionChart],
     );
     const [selectedPointIndex, setSelectedPointIndex] = useState(0);
+    const [lineVisibility, setLineVisibility] = useState(defaultLineVisibility);
 
     useEffect(() => {
       if (!points.length) {
@@ -354,34 +529,122 @@ export const CreationProjectionChart = React.memo(
       () =>
         Array.from(
           new Set(goalPointPlacements.map((p) => p.pointIndex)),
-        ).filter((index) => index > 0 && index < points.length - 1),
+        ).filter((index) => index >= 0 && index < points.length),
       [goalPointPlacements, points.length],
     );
-    const phaseLineIndices = useMemo(() => {
-      if (!projectionChart) return [] as number[];
+    const phaseBoundaryMarkers = useMemo(() => {
+      if (!projectionChart) {
+        return [] as Array<{ index: number; label: string }>;
+      }
 
-      return projectionChart.periodization_phases
-        .slice(1)
-        .map((phase) =>
-          resolveNearestPointIndexByDate(points, phase.start_date),
-        )
-        .filter((index): index is number => index !== null)
-        .filter((index, idx, arr) => arr.indexOf(index) === idx)
-        .filter((index) => index > 0 && index < points.length - 1);
+      const deduped = new Map<number, string>();
+      for (const phase of projectionChart.periodization_phases.slice(1)) {
+        const index = resolveNearestPointIndexByDate(points, phase.start_date);
+        if (index === null || index <= 0 || index >= points.length - 1) {
+          continue;
+        }
+        if (!deduped.has(index)) {
+          deduped.set(index, phase.name);
+        }
+      }
+
+      return Array.from(deduped.entries())
+        .sort((left, right) => left[0] - right[0])
+        .map(([index, label]) => ({ index, label }));
     }, [points, projectionChart]);
+    const handlePlotBoundsChange = useCallback((nextBounds: PlotBounds) => {
+      setPlotBounds((previous) =>
+        areBoundsEqual(previous, nextBounds) ? previous : nextBounds,
+      );
+    }, []);
+    useEffect(() => {
+      const fallbackBounds: PlotBounds = {
+        left: chartPadding.left + chartDomainPadding.left + markerEdgeInset,
+        right:
+          chartWidth -
+          chartPadding.right -
+          chartDomainPadding.right -
+          markerEdgeInset,
+        top: chartPadding.top,
+        bottom: resolvedChartHeight - chartPadding.bottom,
+      };
+
+      setPlotBounds((previous) => {
+        if (previous.right > previous.left) {
+          return previous;
+        }
+
+        return fallbackBounds;
+      });
+    }, [chartWidth, resolvedChartHeight]);
     const markerXForIndex = useCallback(
       (index: number) => {
         if (points.length <= 1) {
-          return chartPadding.left + 2;
+          return plotBounds.left;
         }
-        const plotLeft = chartPadding.left + 2;
-        const plotRight = chartWidth - chartPadding.right - 2;
         const ratio = Math.max(0, Math.min(1, index / (points.length - 1)));
-        return plotLeft + ratio * Math.max(0, plotRight - plotLeft);
+        return (
+          plotBounds.left +
+          ratio * Math.max(0, plotBounds.right - plotBounds.left)
+        );
       },
-      [chartWidth, points.length],
+      [plotBounds.left, plotBounds.right, points.length],
     );
+    const phaseLabelPlacements = useMemo(() => {
+      if (phaseBoundaryMarkers.length === 0) {
+        return [] as PhaseLabelPlacement[];
+      }
 
+      const minLeft = plotBounds.left;
+      const maxLeft = Math.max(minLeft, plotBounds.right - phaseLabelWidth);
+      return phaseBoundaryMarkers.map((marker) => {
+        const centerX = markerXForIndex(marker.index);
+        const clampedLeft = Math.max(
+          minLeft,
+          Math.min(maxLeft, centerX - phaseLabelHalfWidth),
+        );
+
+        return {
+          index: marker.index,
+          label: marker.label,
+          left: clampedLeft,
+          top: phaseLabelTopOffset,
+        };
+      });
+    }, [
+      markerXForIndex,
+      phaseBoundaryMarkers,
+      plotBounds.left,
+      plotBounds.right,
+    ]);
+    const goalDateLabelPlacements = useMemo(() => {
+      if (goalPointPlacements.length === 0) {
+        return [] as Array<{ key: string; left: number; dateLabel: string }>;
+      }
+      const dedupedByIndex = new Map<number, string>();
+
+      for (const placement of goalPointPlacements) {
+        if (!dedupedByIndex.has(placement.pointIndex)) {
+          dedupedByIndex.set(
+            placement.pointIndex,
+            formatIsoDate(placement.marker.target_date, "MMM d"),
+          );
+        }
+      }
+
+      return Array.from(dedupedByIndex.entries())
+        .sort((left, right) => left[0] - right[0])
+        .map(([index, dateLabel]) => {
+          const centerX = markerXForIndex(index);
+          const left = centerX - goalDateLabelHalfWidth;
+
+          return {
+            key: `goal-date-${index}`,
+            left,
+            dateLabel,
+          };
+        });
+    }, [goalPointPlacements, markerXForIndex]);
     const labelStride = useMemo(() => {
       if (!points.length) {
         return 1;
@@ -419,9 +682,42 @@ export const CreationProjectionChart = React.memo(
           fitnessCtl: point.predicted_fitness_ctl,
           fatigueAtl: point.predicted_fatigue_atl,
           formTsb: point.predicted_form_tsb,
+          readinessScore: 0,
         })),
       [points],
     );
+
+    const readinessScores = useMemo(
+      () =>
+        buildDerivedReadinessScores(
+          points,
+          projectionChart?.no_history?.projection_feasibility?.readiness_score,
+        ),
+      [
+        points,
+        projectionChart?.no_history?.projection_feasibility?.readiness_score,
+      ],
+    );
+
+    const chartDataWithReadiness = useMemo(
+      () =>
+        chartData.map((datum, index) => ({
+          ...datum,
+          readinessScore: readinessScores[index] ?? 0,
+        })),
+      [chartData, readinessScores],
+    );
+
+    const visibleChartYKeys = useMemo(
+      () =>
+        lineConfig
+          .filter((line) => lineVisibility[line.key])
+          .map((line) => line.key),
+      [lineVisibility],
+    );
+
+    const leftAxisUnitLabel = "TSS/wk";
+    const rightAxisUnitLabel = "pts";
 
     const xAxisConfig = useMemo(
       () => ({
@@ -444,14 +740,11 @@ export const CreationProjectionChart = React.memo(
     const yAxisConfig = useMemo(
       () => [
         {
-          yKeys: ["loadTss"] as (
-            | "loadTss"
-            | "fitnessCtl"
-            | "fatigueAtl"
-            | "formTsb"
-          )[],
+          yKeys: ["loadTss"] as ChartYKey[],
           axisSide: "left" as const,
           domain: [0] as [number],
+          labelPosition: "outset" as const,
+          labelOffset: 8,
           font: axisFont,
           tickCount: 5,
           labelColor: isDark ? "#93c5fd" : "#1d4ed8",
@@ -459,24 +752,55 @@ export const CreationProjectionChart = React.memo(
             ? "rgba(38, 38, 38, 0.55)"
             : "rgba(228, 228, 228, 0.75)",
           lineWidth: 1,
-          formatYLabel: (value: unknown) => `${Math.round(Number(value))}`,
+          formatYLabel: (value: unknown) =>
+            formatCompactAxisNumber(Number(value)),
         },
         {
-          yKeys: ["fitnessCtl", "fatigueAtl", "formTsb"] as (
-            | "loadTss"
-            | "fitnessCtl"
-            | "fatigueAtl"
-            | "formTsb"
-          )[],
+          yKeys: [
+            "fitnessCtl",
+            "fatigueAtl",
+            "formTsb",
+            "readinessScore",
+          ] as ChartYKey[],
           axisSide: "right" as const,
+          labelPosition: "outset" as const,
+          labelOffset: 8,
           font: axisFont,
           tickCount: 5,
           labelColor: isDark ? "#6ee7b7" : "#047857",
+          lineColor: "transparent",
           lineWidth: 0,
-          formatYLabel: (value: unknown) => `${Number(value).toFixed(0)}`,
+          formatYLabel: (value: unknown) =>
+            formatCompactAxisNumber(Number(value)),
         },
       ],
       [axisFont, isDark],
+    );
+
+    const toggleLineVisibility = useCallback((key: ChartYKey) => {
+      setLineVisibility((previous) => {
+        const currentlyVisibleCount = lineConfig.reduce(
+          (count, line) => count + (previous[line.key] ? 1 : 0),
+          0,
+        );
+
+        if (previous[key] && currentlyVisibleCount <= 1) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          [key]: !previous[key],
+        };
+      });
+    }, []);
+    const activeLineCount = useMemo(
+      () =>
+        lineConfig.reduce(
+          (count, line) => count + (lineVisibility[line.key] ? 1 : 0),
+          0,
+        ),
+      [lineVisibility],
     );
 
     const handleSelectPoint = useCallback(
@@ -497,20 +821,10 @@ export const CreationProjectionChart = React.memo(
       [points.length],
     );
 
-    useAnimatedReaction(
-      () => chartPressState.matchedIndex.value,
-      (nextIndex, previousIndex) => {
-        if (nextIndex === previousIndex || nextIndex < 0) {
-          return;
-        }
-        runOnJS(handleSelectPoint)(nextIndex);
-      },
-      [handleSelectPoint],
-    );
-
     const selectedPoint = points[selectedPointIndex];
+    const selectedReadiness = readinessScores[selectedPointIndex];
     const selectedPointSummary = selectedPoint
-      ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date}. Weekly load ${Math.round(selectedPoint.predicted_load_tss)} TSS. Fitness ${selectedPoint.predicted_fitness_ctl.toFixed(1)} CTL. Fatigue ${selectedPoint.predicted_fatigue_atl.toFixed(1)} ATL. Form ${selectedPoint.predicted_form_tsb.toFixed(1)} TSB.`
+      ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date}. Weekly load ${Math.round(selectedPoint.predicted_load_tss)} TSS. Fitness ${selectedPoint.predicted_fitness_ctl.toFixed(1)} CTL. Fatigue ${selectedPoint.predicted_fatigue_atl.toFixed(1)} ATL. Form ${selectedPoint.predicted_form_tsb.toFixed(1)} TSB. Readiness ${Math.round(selectedReadiness ?? 0)} out of 100.`
       : "No point selected.";
     const activePhase = useMemo(() => {
       if (!projectionChart || !selectedPoint) {
@@ -589,7 +903,14 @@ export const CreationProjectionChart = React.memo(
       : undefined;
 
     return (
-      <View className="gap-3 rounded-lg border border-border bg-card p-3">
+      <View
+        style={{ width: "100%" }}
+        className={
+          compact
+            ? "gap-1 px-2 pt-1 pb-1"
+            : "gap-1 rounded-lg border border-border bg-card px-2 py-1"
+        }
+      >
         <View className="flex-row items-center justify-between">
           <Text className="font-semibold">Projection</Text>
           {isPreviewPending && (
@@ -597,7 +918,7 @@ export const CreationProjectionChart = React.memo(
           )}
         </View>
 
-        {noHistoryMetadata ? (
+        {!compact && noHistoryMetadata ? (
           <View
             className="gap-1 rounded-md border border-border bg-muted/20 p-2"
             accessibilityRole="text"
@@ -653,449 +974,546 @@ export const CreationProjectionChart = React.memo(
               accessible={false}
               importantForAccessibility="no-hide-descendants"
             >
-              <View style={{ width: chartWidth, height: chartHeight }}>
-                <CartesianChart<
-                  ProjectionChartDatum,
-                  "index",
-                  "loadTss" | "fitnessCtl" | "fatigueAtl" | "formTsb"
-                >
-                  data={chartData}
-                  xKey="index"
-                  yKeys={chartYKeys}
-                  chartPressState={chartPressState}
-                  padding={chartPadding}
-                  domainPadding={chartDomainPadding}
-                  xAxis={xAxisConfig}
-                  yAxis={yAxisConfig}
-                >
-                  {({ points: plottedPoints }) => (
-                    <>
-                      <Line
-                        points={plottedPoints.loadTss}
-                        color="rgba(59, 130, 246, 0.95)"
-                        strokeWidth={2}
-                        curveType="natural"
-                        animate={{ type: "timing", duration: 220 }}
-                      />
-                      <Line
-                        points={plottedPoints.fitnessCtl}
-                        color="rgba(16, 185, 129, 0.95)"
-                        strokeWidth={2}
-                        curveType="natural"
-                        animate={{ type: "timing", duration: 220 }}
-                      />
-                      <Line
-                        points={plottedPoints.fatigueAtl}
-                        color="rgba(245, 158, 11, 0.95)"
-                        strokeWidth={2}
-                        curveType="natural"
-                        animate={{ type: "timing", duration: 220 }}
-                      />
-                      <Line
-                        points={plottedPoints.formTsb}
-                        color="rgba(244, 63, 94, 0.95)"
-                        strokeWidth={2}
-                        curveType="natural"
-                        animate={{ type: "timing", duration: 220 }}
-                      />
-                    </>
-                  )}
-                </CartesianChart>
+              <View onLayout={handleChartLayout} style={{ width: "100%" }}>
                 <View
                   pointerEvents="none"
                   style={{
-                    position: "absolute",
-                    left: 0,
-                    right: 0,
-                    top: 0,
-                    bottom: 0,
+                    width: chartWidth,
+                    height: phaseLabelStripHeight,
+                    alignSelf: "center",
+                    position: "relative",
+                    marginBottom: -1,
                   }}
                 >
-                  {phaseLineIndices.map((index) => (
+                  <Text
+                    className="text-[9px] text-muted-foreground"
+                    style={{
+                      position: "absolute",
+                      left: 2,
+                      top: 0,
+                    }}
+                  >
+                    {leftAxisUnitLabel}
+                  </Text>
+                  <Text
+                    className="text-[9px] text-muted-foreground"
+                    style={{
+                      position: "absolute",
+                      right: 2,
+                      top: 0,
+                    }}
+                  >
+                    {rightAxisUnitLabel}
+                  </Text>
+                  {phaseLabelPlacements.map((labelPlacement) => (
                     <View
-                      key={`phase-line-${index}`}
+                      key={`phase-label-${labelPlacement.index}`}
                       style={{
                         position: "absolute",
-                        left: markerXForIndex(index),
-                        top: chartPadding.top,
-                        height:
-                          chartHeight - chartPadding.top - chartPadding.bottom,
-                        width: 1,
-                        backgroundColor: isDark
-                          ? "rgba(148, 163, 184, 0.45)"
-                          : "rgba(71, 85, 105, 0.35)",
-                      }}
-                    />
-                  ))}
-                  {goalLineIndices.map((index) => (
-                    <View
-                      key={`goal-line-${index}`}
-                      style={{
-                        position: "absolute",
-                        left: markerXForIndex(index),
-                        top: chartPadding.top,
-                        height:
-                          chartHeight - chartPadding.top - chartPadding.bottom,
-                        width: 1.5,
-                        backgroundColor: isDark
-                          ? "rgba(251, 191, 36, 0.8)"
-                          : "rgba(217, 119, 6, 0.75)",
-                      }}
-                    />
-                  ))}
-                </View>
-              </View>
-            </View>
-
-            <View className="mt-1 flex-row flex-wrap items-center gap-3 px-1">
-              <View className="flex-row items-center gap-1.5">
-                <View className="h-0.5 w-5 rounded-full bg-blue-500" />
-                <Text className="text-[11px] text-muted-foreground">
-                  Weekly load (TSS/week, left axis)
-                </Text>
-              </View>
-              <View className="flex-row items-center gap-1.5">
-                <View className="h-0.5 w-5 rounded-full bg-emerald-500" />
-                <Text className="text-[11px] text-muted-foreground">
-                  Fitness (CTL, right axis)
-                </Text>
-              </View>
-              <View className="flex-row items-center gap-1.5">
-                <View className="h-0.5 w-5 rounded-full bg-amber-500" />
-                <Text className="text-[11px] text-muted-foreground">
-                  Fatigue (ATL, right axis)
-                </Text>
-              </View>
-              <View className="flex-row items-center gap-1.5">
-                <View className="h-0.5 w-5 rounded-full bg-rose-500" />
-                <Text className="text-[11px] text-muted-foreground">
-                  Form (TSB, right axis)
-                </Text>
-              </View>
-              <View className="flex-row items-center gap-1.5">
-                <View className="h-5 w-px bg-slate-500" />
-                <Text className="text-[11px] text-muted-foreground">
-                  Phase boundaries
-                </Text>
-              </View>
-              <View className="flex-row items-center gap-1.5">
-                <View className="h-5 w-px bg-amber-600" />
-                <Text className="text-[11px] text-muted-foreground">
-                  Goal dates (vertical markers)
-                </Text>
-              </View>
-            </View>
-
-            <Text className="px-1 text-[11px] text-muted-foreground">
-              Raw projected values are shown directly: weekly load in TSS/week ,
-              fitness in CTL, fatigue in ATL, and form in TSB.
-            </Text>
-            <Text className="px-1 text-[11px] text-muted-foreground">
-              Projection window:{" "}
-              {formatIsoDate(projectionChart.start_date, "MMM d, yyyy")} to{" "}
-              {formatIsoDate(projectionChart.end_date, "MMM d, yyyy")}
-            </Text>
-
-            <View
-              accessible={true}
-              accessibilityRole="text"
-              accessibilityLabel={chartAccessibilitySummary}
-            />
-
-            <View
-              className="gap-2 rounded-md bg-muted/20 p-3"
-              accessibilityRole="text"
-              accessibilityLiveRegion="polite"
-              accessibilityLabel={`Selected point: ${selectedPointSummary} Active phase: ${activePhaseSummary}`}
-            >
-              <Text className="text-xs font-medium">Selected point</Text>
-              <Text className="text-xs text-muted-foreground">
-                {selectedPoint
-                  ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date} - Weekly load ${Math.round(selectedPoint.predicted_load_tss)} TSS - Fitness ${selectedPoint.predicted_fitness_ctl.toFixed(1)} CTL - Fatigue ${selectedPoint.predicted_fatigue_atl.toFixed(1)} ATL - Form ${selectedPoint.predicted_form_tsb.toFixed(1)} TSB`
-                  : "Tap a point to inspect projected details."}
-              </Text>
-              <Text className="text-xs text-muted-foreground">
-                Active phase: {activePhase?.name ?? "-"}
-              </Text>
-            </View>
-
-            <View
-              className="gap-2 rounded-md border border-border bg-muted/20 p-3"
-              accessibilityRole="text"
-              accessibilityLiveRegion="polite"
-              accessibilityLabel={`Constrained week context. ${selectedWeekSummary}`}
-            >
-              <Text className="text-xs font-medium">
-                Constrained week context
-              </Text>
-              {selectedMicrocycle?.metadata ? (
-                <>
-                  <Text className="text-[11px] text-muted-foreground">
-                    Week:{" "}
-                    {formatIsoDate(selectedMicrocycle.week_start_date, "MMM d")}{" "}
-                    - {formatIsoDate(selectedMicrocycle.week_end_date, "MMM d")}
-                  </Text>
-                  <Text className="text-[11px] text-muted-foreground">
-                    Weekly load: requested{" "}
-                    {Math.round(
-                      selectedMicrocycle.metadata.tss_ramp
-                        .raw_requested_weekly_tss,
-                    )}
-                    {selectedMicrocycle.metadata.tss_ramp.floor_override_applied
-                      ? `, floored to ${Math.round(
-                          selectedMicrocycle.metadata.tss_ramp
-                            .requested_weekly_tss,
-                        )}`
-                      : ""}
-                    , applied{" "}
-                    {Math.round(
-                      selectedMicrocycle.metadata.tss_ramp.applied_weekly_tss,
-                    )}
-                    {selectedMicrocycle.metadata.tss_ramp.floor_override_applied
-                      ? " (floor minimum applied)"
-                      : selectedMicrocycle.metadata.tss_ramp.clamped
-                        ? " (clamped by ramp cap)"
-                        : " (within ramp cap)"}
-                  </Text>
-                  <Text className="text-[11px] text-muted-foreground">
-                    Demand floor this week:{" "}
-                    {selectedMicrocycle.metadata.tss_ramp.floor_override_applied
-                      ? "active"
-                      : "not active"}
-                    {selectedMicrocycle.metadata.tss_ramp
-                      .demand_band_minimum_weekly_tss !== undefined &&
-                    selectedMicrocycle.metadata.tss_ramp
-                      .demand_band_minimum_weekly_tss !== null
-                      ? ` (${Math.round(selectedMicrocycle.metadata.tss_ramp.demand_band_minimum_weekly_tss)} TSS min)`
-                      : ""}
-                  </Text>
-                  <Text className="text-[11px] text-muted-foreground">
-                    CTL ramp: requested{" "}
-                    {selectedMicrocycle.metadata.ctl_ramp.requested_ctl_ramp.toFixed(
-                      2,
-                    )}
-                    , applied{" "}
-                    {selectedMicrocycle.metadata.ctl_ramp.applied_ctl_ramp.toFixed(
-                      2,
-                    )}
-                    {selectedMicrocycle.metadata.ctl_ramp.clamped
-                      ? " (clamped)"
-                      : " (within cap)"}
-                  </Text>
-                  <Text className="text-[11px] text-muted-foreground">
-                    Recovery:{" "}
-                    {selectedMicrocycle.metadata.recovery.active
-                      ? `active with ${toPercentReductionLabel(selectedMicrocycle.metadata.recovery.reduction_factor)} reduction`
-                      : "not active"}
-                  </Text>
-                </>
-              ) : (
-                <Text className="text-[11px] text-muted-foreground">
-                  This point has no per-week ramp metadata.
-                </Text>
-              )}
-            </View>
-
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              accessibilityRole="tablist"
-              accessibilityLabel="Projection points"
-              accessibilityHint="Swipe left or right to browse dates, then double tap to select"
-            >
-              <View className="flex-row gap-2">
-                {points.map((point, index) => {
-                  const isActive = index === selectedPointIndex;
-                  const dateLabel = shortDateLabels[index] ?? point.date;
-                  return (
-                    <Pressable
-                      key={`${point.date}-${index}`}
-                      onPress={() => handleSelectPoint(index)}
-                      className={`rounded-full border px-3 py-1 ${isActive ? "border-primary bg-primary/10" : "border-border bg-background"}`}
-                      accessibilityRole="tab"
-                      accessibilityState={{ selected: isActive }}
-                      accessibilityLabel={`Point ${index + 1} of ${points.length}, ${dateLabel}`}
-                      accessibilityHint={`Weekly load ${Math.round(point.predicted_load_tss)} TSS, fitness ${point.predicted_fitness_ctl.toFixed(1)} CTL, fatigue ${point.predicted_fatigue_atl.toFixed(1)} ATL, form ${point.predicted_form_tsb.toFixed(1)} TSB`}
-                      hitSlop={8}
-                      style={{
-                        minHeight: 44,
-                        minWidth: 44,
-                        justifyContent: "center",
+                        left: labelPlacement.left,
+                        top: labelPlacement.top,
+                        width: phaseLabelWidth,
+                        alignItems: "center",
                       }}
                     >
                       <Text
-                        className={`text-xs ${isActive ? "text-primary" : "text-muted-foreground"}`}
+                        className="text-[9px] text-muted-foreground"
+                        numberOfLines={1}
                       >
-                        {dateLabel}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </ScrollView>
-
-            <View
-              className="gap-2"
-              accessibilityRole="text"
-              accessibilityLabel={`Goal dates: ${goalDatesSummary}`}
-            >
-              <Text className="text-xs font-medium">Goal dates</Text>
-              <View className="flex-row flex-wrap gap-2">
-                {renderedGoalMarkers.map((goal, goalIndex) => (
-                  <View
-                    key={`${goal.id}-${goal.target_date}-${goalIndex}`}
-                    className="rounded-full border border-amber-300 bg-amber-100/50 px-3 py-1"
-                  >
-                    <Text className="text-xs text-amber-900">
-                      {formatIsoDate(goal.target_date, "MMM d")}:{" "}
-                      {goal.name || "Goal"}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-
-            <View className="gap-2">
-              <Text className="text-xs font-medium">Periodization phases</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View className="flex-row gap-2">
-                  {projectionChart.periodization_phases.map((phase) => {
-                    const isActivePhase = selectedPoint
-                      ? isDateWithinRange(
-                          selectedPoint.date,
-                          phase.start_date,
-                          phase.end_date,
-                        )
-                      : false;
-                    return (
-                      <View
-                        key={phase.id}
-                        className={`rounded-md border px-3 py-2 ${isActivePhase ? "border-primary bg-primary/10" : "border-border bg-muted/20"}`}
-                      >
-                        <Text className="text-xs font-medium">
-                          {phase.name}
-                        </Text>
-                        <Text className="text-[11px] text-muted-foreground">
-                          {formatIsoDate(phase.start_date, "MMM d")} -{" "}
-                          {formatIsoDate(phase.end_date, "MMM d")}
-                        </Text>
-                        <Text className="text-[11px] text-muted-foreground">
-                          {Math.round(phase.target_weekly_tss_min)}-
-                          {Math.round(phase.target_weekly_tss_max)} TSS/wk
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              </ScrollView>
-            </View>
-
-            {projectionChart.microcycles?.length ? (
-              <View className="gap-2">
-                <Text className="text-xs font-medium">Microcycles</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View className="flex-row gap-2">
-                    {projectionChart.microcycles.map((microcycle) => (
-                      <View
-                        key={`${microcycle.week_start_date}-${microcycle.week_end_date}`}
-                        className="rounded-md border border-border bg-muted/20 px-3 py-2"
-                      >
-                        <Text className="text-xs font-medium">
-                          {formatIsoDate(microcycle.week_start_date, "MMM d")} -{" "}
-                          {formatIsoDate(microcycle.week_end_date, "MMM d")}
-                        </Text>
-                        <Text className="text-[11px] capitalize text-muted-foreground">
-                          {microcycle.phase} - {microcycle.pattern}
-                        </Text>
-                        <Text className="text-[11px] text-muted-foreground">
-                          {Math.round(microcycle.planned_weekly_tss)} TSS / CTL{" "}
-                          {microcycle.projected_ctl.toFixed(1)}
-                        </Text>
-                        {microcycle.metadata ? (
-                          <Text className="text-[11px] text-muted-foreground">
-                            {microcycle.metadata.tss_ramp.clamped ||
-                            microcycle.metadata.ctl_ramp.clamped
-                              ? "Ramp clamped"
-                              : "Ramp within limits"}
-                            {microcycle.metadata.recovery.active
-                              ? ` - Recovery (${Math.round((1 - microcycle.metadata.recovery.reduction_factor) * 100)}% reduction)`
-                              : ""}
-                          </Text>
-                        ) : null}
-                      </View>
-                    ))}
-                  </View>
-                </ScrollView>
-              </View>
-            ) : null}
-
-            {projectionChart.constraint_summary ? (
-              <View
-                className="gap-1 rounded-md border border-border bg-muted/20 p-3"
-                accessibilityRole="text"
-                accessibilityLabel={`Ramp and recovery guardrails. ${constraintSummaryText}`}
-              >
-                <Text className="text-xs font-medium">
-                  Ramp and recovery guardrails
-                </Text>
-                <Text className="text-[11px] text-muted-foreground">
-                  Profile:{" "}
-                  {
-                    projectionChart.constraint_summary
-                      .normalized_creation_config.optimization_profile
-                  }
-                  {" | "}Recovery window:{" "}
-                  {
-                    projectionChart.constraint_summary
-                      .normalized_creation_config.post_goal_recovery_days
-                  }{" "}
-                  day(s)
-                  {" | "}Max weekly load ramp:{" "}
-                  {
-                    projectionChart.constraint_summary
-                      .normalized_creation_config.max_weekly_tss_ramp_pct
-                  }
-                  %{" | "}Max weekly CTL ramp:{" "}
-                  {
-                    projectionChart.constraint_summary
-                      .normalized_creation_config.max_ctl_ramp_per_week
-                  }
-                </Text>
-                <Text className="text-[11px] text-muted-foreground">
-                  Clamped weeks - Load:{" "}
-                  {projectionChart.constraint_summary.tss_ramp_clamp_weeks},
-                  Fitness:{" "}
-                  {projectionChart.constraint_summary.ctl_ramp_clamp_weeks},
-                  Recovery: {projectionChart.constraint_summary.recovery_weeks}
-                </Text>
-              </View>
-            ) : null}
-
-            {projectionChart.recovery_segments?.length ? (
-              <View
-                className="gap-2"
-                accessibilityRole="text"
-                accessibilityLabel={`Post-goal recovery windows. ${recoverySegmentSummary}`}
-              >
-                <Text className="text-xs font-medium">
-                  Post-goal recovery windows
-                </Text>
-                <View className="flex-row flex-wrap gap-2">
-                  {projectionChart.recovery_segments.map((segment) => (
-                    <View
-                      key={`${segment.goal_id}-${segment.start_date}`}
-                      className="rounded-full border border-emerald-300 bg-emerald-100/50 px-3 py-1"
-                    >
-                      <Text className="text-xs text-emerald-900">
-                        {segment.goal_name}:{" "}
-                        {formatIsoDate(segment.start_date, "MMM d")} -{" "}
-                        {formatIsoDate(segment.end_date, "MMM d")}
+                        {labelPlacement.label}
                       </Text>
                     </View>
                   ))}
                 </View>
+                <View
+                  style={{
+                    width: chartWidth,
+                    height: resolvedChartHeight,
+                    alignSelf: "center",
+                  }}
+                >
+                  <CartesianChart<ProjectionChartDatum, "index", ChartYKey>
+                    data={chartDataWithReadiness}
+                    xKey="index"
+                    yKeys={chartYKeys}
+                    padding={chartPadding}
+                    domainPadding={chartDomainPadding}
+                    xAxis={xAxisConfig}
+                    yAxis={yAxisConfig}
+                  >
+                    {({ points: plottedPoints, chartBounds }) => (
+                      <>
+                        <ChartBoundsSync
+                          chartBounds={chartBounds as PlotBounds}
+                          onChange={handlePlotBoundsChange}
+                        />
+                        {lineConfig.map((line) =>
+                          lineVisibility[line.key] ? (
+                            <Line
+                              key={line.key}
+                              points={plottedPoints[line.key]}
+                              color={line.color}
+                              strokeWidth={2}
+                              curveType="natural"
+                              animate={{ type: "timing", duration: 220 }}
+                            />
+                          ) : null,
+                        )}
+                      </>
+                    )}
+                  </CartesianChart>
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      right: 0,
+                      top: 0,
+                      bottom: 0,
+                    }}
+                  >
+                    {phaseBoundaryMarkers.map((marker) => (
+                      <View
+                        key={`phase-line-${marker.index}`}
+                        style={{
+                          position: "absolute",
+                          left: markerXForIndex(marker.index),
+                          top: plotBounds.top,
+                          height: Math.max(
+                            0,
+                            plotBounds.bottom - plotBounds.top,
+                          ),
+                          width: 1,
+                          backgroundColor: isDark
+                            ? "rgba(148, 163, 184, 0.45)"
+                            : "rgba(71, 85, 105, 0.35)",
+                        }}
+                      />
+                    ))}
+                    {goalLineIndices.map((index) => (
+                      <View
+                        key={`goal-line-${index}`}
+                        style={{
+                          position: "absolute",
+                          left: markerXForIndex(index),
+                          top: plotBounds.top,
+                          height: Math.max(
+                            0,
+                            plotBounds.bottom - plotBounds.top,
+                          ),
+                          width: 1.5,
+                          backgroundColor: isDark
+                            ? "rgba(251, 191, 36, 0.8)"
+                            : "rgba(217, 119, 6, 0.75)",
+                        }}
+                      />
+                    ))}
+                    {goalDateLabelPlacements.map((label) => (
+                      <Text
+                        key={label.key}
+                        className="text-[9px] text-amber-700"
+                        numberOfLines={1}
+                        style={{
+                          position: "absolute",
+                          left: label.left,
+                          top: Math.min(
+                            resolvedChartHeight - 10,
+                            plotBounds.bottom + 2,
+                          ),
+                          width: goalDateLabelWidth,
+                          textAlign: "center",
+                        }}
+                      >
+                        {label.dateLabel}
+                      </Text>
+                    ))}
+                  </View>
+                </View>
               </View>
-            ) : null}
+            </View>
+
+            <View className="gap-1">
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ alignItems: "center", gap: 6 }}
+              >
+                {lineConfig.map((line) => {
+                  const isActive = lineVisibility[line.key];
+                  const isOnlyVisibleLine = isActive && activeLineCount === 1;
+                  return (
+                    <Pressable
+                      key={line.key}
+                      onPress={() => toggleLineVisibility(line.key)}
+                      disabled={isOnlyVisibleLine}
+                      accessibilityRole="button"
+                      accessibilityState={{
+                        selected: isActive,
+                        disabled: isOnlyVisibleLine,
+                      }}
+                      accessibilityLabel={`${line.label} line`}
+                      accessibilityHint={
+                        isOnlyVisibleLine
+                          ? "At least one chart line must remain visible"
+                          : `${isActive ? "Hide" : "Show"} this series`
+                      }
+                      hitSlop={8}
+                      className={`flex-row items-center gap-1 rounded-full border px-1.5 py-0.5 ${isActive ? "border-border bg-muted/40" : "border-border/70 bg-background/70"}`}
+                    >
+                      <View
+                        className="h-0.5 w-3 rounded-full"
+                        style={{
+                          backgroundColor: line.color,
+                          opacity: isActive ? 1 : 0.35,
+                        }}
+                      />
+                      <Text
+                        className={`text-[9px] ${isActive ? "text-foreground" : "text-muted-foreground"}`}
+                      >
+                        {line.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            {!compact && (
+              <>
+                <Text className="px-1 text-[11px] text-muted-foreground">
+                  Raw projected values are shown directly: weekly load in
+                  TSS/week, fitness in CTL, fatigue in ATL, form in TSB, and a
+                  derived readiness score (0-100).
+                </Text>
+                <Text className="px-1 text-[11px] text-muted-foreground">
+                  Projection window:{" "}
+                  {formatIsoDate(projectionChart.start_date, "MMM d, yyyy")} to{" "}
+                  {formatIsoDate(projectionChart.end_date, "MMM d, yyyy")}
+                </Text>
+
+                <View
+                  accessible={true}
+                  accessibilityRole="text"
+                  accessibilityLabel={chartAccessibilitySummary}
+                />
+
+                <View
+                  className="gap-2 rounded-md bg-muted/20 p-3"
+                  accessibilityRole="text"
+                  accessibilityLiveRegion="polite"
+                  accessibilityLabel={`Selected point: ${selectedPointSummary} Active phase: ${activePhaseSummary}`}
+                >
+                  <Text className="text-xs font-medium">Selected point</Text>
+                  <Text className="text-xs text-muted-foreground">
+                    {selectedPoint
+                      ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date} - Weekly load ${Math.round(selectedPoint.predicted_load_tss)} TSS - Fitness ${selectedPoint.predicted_fitness_ctl.toFixed(1)} CTL - Fatigue ${selectedPoint.predicted_fatigue_atl.toFixed(1)} ATL - Form ${selectedPoint.predicted_form_tsb.toFixed(1)} TSB - Readiness ${Math.round(selectedReadiness ?? 0)}/100`
+                      : "Tap a point to inspect projected details."}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">
+                    Active phase: {activePhase?.name ?? "-"}
+                  </Text>
+                </View>
+
+                <View
+                  className="gap-2 rounded-md border border-border bg-muted/20 p-3"
+                  accessibilityRole="text"
+                  accessibilityLiveRegion="polite"
+                  accessibilityLabel={`Constrained week context. ${selectedWeekSummary}`}
+                >
+                  <Text className="text-xs font-medium">
+                    Constrained week context
+                  </Text>
+                  {selectedMicrocycle?.metadata ? (
+                    <>
+                      <Text className="text-[11px] text-muted-foreground">
+                        Week:{" "}
+                        {formatIsoDate(
+                          selectedMicrocycle.week_start_date,
+                          "MMM d",
+                        )}{" "}
+                        -{" "}
+                        {formatIsoDate(
+                          selectedMicrocycle.week_end_date,
+                          "MMM d",
+                        )}
+                      </Text>
+                      <Text className="text-[11px] text-muted-foreground">
+                        Weekly load: requested{" "}
+                        {Math.round(
+                          selectedMicrocycle.metadata.tss_ramp
+                            .raw_requested_weekly_tss,
+                        )}
+                        {selectedMicrocycle.metadata.tss_ramp
+                          .floor_override_applied
+                          ? `, floored to ${Math.round(
+                              selectedMicrocycle.metadata.tss_ramp
+                                .requested_weekly_tss,
+                            )}`
+                          : ""}
+                        , applied{" "}
+                        {Math.round(
+                          selectedMicrocycle.metadata.tss_ramp
+                            .applied_weekly_tss,
+                        )}
+                        {selectedMicrocycle.metadata.tss_ramp
+                          .floor_override_applied
+                          ? " (floor minimum applied)"
+                          : selectedMicrocycle.metadata.tss_ramp.clamped
+                            ? " (clamped by ramp cap)"
+                            : " (within ramp cap)"}
+                      </Text>
+                      <Text className="text-[11px] text-muted-foreground">
+                        Demand floor this week:{" "}
+                        {selectedMicrocycle.metadata.tss_ramp
+                          .floor_override_applied
+                          ? "active"
+                          : "not active"}
+                        {selectedMicrocycle.metadata.tss_ramp
+                          .demand_band_minimum_weekly_tss !== undefined &&
+                        selectedMicrocycle.metadata.tss_ramp
+                          .demand_band_minimum_weekly_tss !== null
+                          ? ` (${Math.round(selectedMicrocycle.metadata.tss_ramp.demand_band_minimum_weekly_tss)} TSS min)`
+                          : ""}
+                      </Text>
+                      <Text className="text-[11px] text-muted-foreground">
+                        CTL ramp: requested{" "}
+                        {selectedMicrocycle.metadata.ctl_ramp.requested_ctl_ramp.toFixed(
+                          2,
+                        )}
+                        , applied{" "}
+                        {selectedMicrocycle.metadata.ctl_ramp.applied_ctl_ramp.toFixed(
+                          2,
+                        )}
+                        {selectedMicrocycle.metadata.ctl_ramp.clamped
+                          ? " (clamped)"
+                          : " (within cap)"}
+                      </Text>
+                      <Text className="text-[11px] text-muted-foreground">
+                        Recovery:{" "}
+                        {selectedMicrocycle.metadata.recovery.active
+                          ? `active with ${toPercentReductionLabel(selectedMicrocycle.metadata.recovery.reduction_factor)} reduction`
+                          : "not active"}
+                      </Text>
+                    </>
+                  ) : (
+                    <Text className="text-[11px] text-muted-foreground">
+                      This point has no per-week ramp metadata.
+                    </Text>
+                  )}
+                </View>
+
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  accessibilityRole="tablist"
+                  accessibilityLabel="Projection points"
+                  accessibilityHint="Swipe left or right to browse dates, then double tap to select"
+                >
+                  <View className="flex-row gap-2">
+                    {points.map((point, index) => {
+                      const isActive = index === selectedPointIndex;
+                      const dateLabel = shortDateLabels[index] ?? point.date;
+                      return (
+                        <Pressable
+                          key={`${point.date}-${index}`}
+                          onPress={() => handleSelectPoint(index)}
+                          className={`rounded-full border px-3 py-1 ${isActive ? "border-primary bg-primary/10" : "border-border bg-background"}`}
+                          accessibilityRole="tab"
+                          accessibilityState={{ selected: isActive }}
+                          accessibilityLabel={`Point ${index + 1} of ${points.length}, ${dateLabel}`}
+                          accessibilityHint={`Weekly load ${Math.round(point.predicted_load_tss)} TSS, fitness ${point.predicted_fitness_ctl.toFixed(1)} CTL, fatigue ${point.predicted_fatigue_atl.toFixed(1)} ATL, form ${point.predicted_form_tsb.toFixed(1)} TSB, readiness ${Math.round(readinessScores[index] ?? 0)} out of 100`}
+                          hitSlop={8}
+                          style={{
+                            minHeight: 44,
+                            minWidth: 44,
+                            justifyContent: "center",
+                          }}
+                        >
+                          <Text
+                            className={`text-xs ${isActive ? "text-primary" : "text-muted-foreground"}`}
+                          >
+                            {dateLabel}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
+
+                <View
+                  className="gap-2"
+                  accessibilityRole="text"
+                  accessibilityLabel={`Goal dates: ${goalDatesSummary}`}
+                >
+                  <Text className="text-xs font-medium">Goal dates</Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    {renderedGoalMarkers.map((goal, goalIndex) => (
+                      <View
+                        key={`${goal.id}-${goal.target_date}-${goalIndex}`}
+                        className="rounded-full border border-amber-300 bg-amber-100/50 px-3 py-1"
+                      >
+                        <Text className="text-xs text-amber-900">
+                          {formatIsoDate(goal.target_date, "MMM d")}:{" "}
+                          {goal.name || "Goal"}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+
+                <View className="gap-2">
+                  <Text className="text-xs font-medium">
+                    Periodization phases
+                  </Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <View className="flex-row gap-2">
+                      {projectionChart.periodization_phases.map((phase) => {
+                        const isActivePhase = selectedPoint
+                          ? isDateWithinRange(
+                              selectedPoint.date,
+                              phase.start_date,
+                              phase.end_date,
+                            )
+                          : false;
+                        return (
+                          <View
+                            key={phase.id}
+                            className={`rounded-md border px-3 py-2 ${isActivePhase ? "border-primary bg-primary/10" : "border-border bg-muted/20"}`}
+                          >
+                            <Text className="text-xs font-medium">
+                              {phase.name}
+                            </Text>
+                            <Text className="text-[11px] text-muted-foreground">
+                              {formatIsoDate(phase.start_date, "MMM d")} -{" "}
+                              {formatIsoDate(phase.end_date, "MMM d")}
+                            </Text>
+                            <Text className="text-[11px] text-muted-foreground">
+                              {Math.round(phase.target_weekly_tss_min)}-
+                              {Math.round(phase.target_weekly_tss_max)} TSS/wk
+                            </Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </ScrollView>
+                </View>
+
+                {projectionChart.microcycles?.length ? (
+                  <View className="gap-2">
+                    <Text className="text-xs font-medium">Microcycles</Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                    >
+                      <View className="flex-row gap-2">
+                        {projectionChart.microcycles.map((microcycle) => (
+                          <View
+                            key={`${microcycle.week_start_date}-${microcycle.week_end_date}`}
+                            className="rounded-md border border-border bg-muted/20 px-3 py-2"
+                          >
+                            <Text className="text-xs font-medium">
+                              {formatIsoDate(
+                                microcycle.week_start_date,
+                                "MMM d",
+                              )}{" "}
+                              -{" "}
+                              {formatIsoDate(microcycle.week_end_date, "MMM d")}
+                            </Text>
+                            <Text className="text-[11px] capitalize text-muted-foreground">
+                              {microcycle.phase} - {microcycle.pattern}
+                            </Text>
+                            <Text className="text-[11px] text-muted-foreground">
+                              {Math.round(microcycle.planned_weekly_tss)} TSS /
+                              CTL {microcycle.projected_ctl.toFixed(1)}
+                            </Text>
+                            {microcycle.metadata ? (
+                              <Text className="text-[11px] text-muted-foreground">
+                                {microcycle.metadata.tss_ramp.clamped ||
+                                microcycle.metadata.ctl_ramp.clamped
+                                  ? "Ramp clamped"
+                                  : "Ramp within limits"}
+                                {microcycle.metadata.recovery.active
+                                  ? ` - Recovery (${Math.round((1 - microcycle.metadata.recovery.reduction_factor) * 100)}% reduction)`
+                                  : ""}
+                              </Text>
+                            ) : null}
+                          </View>
+                        ))}
+                      </View>
+                    </ScrollView>
+                  </View>
+                ) : null}
+
+                {projectionChart.constraint_summary ? (
+                  <View
+                    className="gap-1 rounded-md border border-border bg-muted/20 p-3"
+                    accessibilityRole="text"
+                    accessibilityLabel={`Ramp and recovery guardrails. ${constraintSummaryText}`}
+                  >
+                    <Text className="text-xs font-medium">
+                      Ramp and recovery guardrails
+                    </Text>
+                    <Text className="text-[11px] text-muted-foreground">
+                      Profile:{" "}
+                      {
+                        projectionChart.constraint_summary
+                          .normalized_creation_config.optimization_profile
+                      }
+                      {" | "}Recovery window:{" "}
+                      {
+                        projectionChart.constraint_summary
+                          .normalized_creation_config.post_goal_recovery_days
+                      }{" "}
+                      day(s)
+                      {" | "}Max weekly load ramp:{" "}
+                      {
+                        projectionChart.constraint_summary
+                          .normalized_creation_config.max_weekly_tss_ramp_pct
+                      }
+                      %{" | "}Max weekly CTL ramp:{" "}
+                      {
+                        projectionChart.constraint_summary
+                          .normalized_creation_config.max_ctl_ramp_per_week
+                      }
+                    </Text>
+                    <Text className="text-[11px] text-muted-foreground">
+                      Clamped weeks - Load:{" "}
+                      {projectionChart.constraint_summary.tss_ramp_clamp_weeks},
+                      Fitness:{" "}
+                      {projectionChart.constraint_summary.ctl_ramp_clamp_weeks},
+                      Recovery:{" "}
+                      {projectionChart.constraint_summary.recovery_weeks}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {projectionChart.recovery_segments?.length ? (
+                  <View
+                    className="gap-2"
+                    accessibilityRole="text"
+                    accessibilityLabel={`Post-goal recovery windows. ${recoverySegmentSummary}`}
+                  >
+                    <Text className="text-xs font-medium">
+                      Post-goal recovery windows
+                    </Text>
+                    <View className="flex-row flex-wrap gap-2">
+                      {projectionChart.recovery_segments.map((segment) => (
+                        <View
+                          key={`${segment.goal_id}-${segment.start_date}`}
+                          className="rounded-full border border-emerald-300 bg-emerald-100/50 px-3 py-1"
+                        >
+                          <Text className="text-xs text-emerald-900">
+                            {segment.goal_name}:{" "}
+                            {formatIsoDate(segment.start_date, "MMM d")} -{" "}
+                            {formatIsoDate(segment.end_date, "MMM d")}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                ) : null}
+              </>
+            )}
           </>
         )}
       </View>

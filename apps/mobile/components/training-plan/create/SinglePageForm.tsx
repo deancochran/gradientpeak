@@ -11,24 +11,37 @@ import {
 } from "@/components/ui/select";
 import { Text } from "@/components/ui/text";
 import { Switch } from "@/components/ui/switch";
-import DateTimePicker from "@react-native-community/datetimepicker";
-import type { DateTimePickerEvent } from "@react-native-community/datetimepicker";
-import { format } from "date-fns";
+import { BoundedNumberInput } from "./inputs/BoundedNumberInput";
+import { DateField } from "./inputs/DateField";
+import { DurationInput } from "./inputs/DurationInput";
+import { IntegerStepper } from "./inputs/IntegerStepper";
+import { PaceInput } from "./inputs/PaceInput";
+import { PercentSliderInput } from "./inputs/PercentSliderInput";
 import {
-  AlertTriangle,
-  ChevronDown,
-  ChevronUp,
+  Flag,
+  Gauge,
+  Heart,
   Lock,
   LockOpen,
   Pencil,
   Plus,
   ShieldAlert,
+  Trophy,
   Trash2,
+  Zap,
 } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Modal, Pressable, ScrollView, View } from "react-native";
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import { CreationProjectionChart } from "./CreationProjectionChart";
-import { calculateGoalPriorityWeights } from "@repo/core";
+import { parseNumberOrUndefined } from "@/lib/training-plan-form/input-parsers";
+import type { BlockingIssue } from "@/lib/training-plan-form/validation";
+import { validateTrainingPlanForm } from "@/lib/training-plan-form/validation";
 import type {
   CreationAvailabilityConfig,
   CreationConfigLocks,
@@ -103,8 +116,11 @@ interface SinglePageFormProps {
   configData: TrainingPlanConfigFormData;
   contextSummary?: CreationContextSummary;
   feasibilitySafetySummary?: CreationFeasibilitySafetySummary;
-  conflictItems?: TrainingPlanConfigConflict[];
   informationalConflicts?: string[];
+  blockingIssues?: BlockingIssue[];
+  createDisabledReason?: string;
+  riskAcknowledged?: boolean;
+  onRiskAcknowledgedChange?: (value: boolean) => void;
   isPreviewPending?: boolean;
   onConfigChange: (data: TrainingPlanConfigFormData) => void;
   onResolveConflict: (code: string) => void;
@@ -116,18 +132,12 @@ interface EditingTargetRef {
   targetId: string;
 }
 
-type FormTabKey =
-  | "goals"
-  | "availability"
-  | "influence"
-  | "constraints"
-  | "review";
+type FormTabKey = "goals" | "availability" | "constraints" | "review";
 
 const formTabs: Array<{ key: FormTabKey; label: string }> = [
   { key: "goals", label: "Goals" },
-  { key: "availability", label: "Availability" },
-  { key: "influence", label: "Influence" },
-  { key: "constraints", label: "Constraints" },
+  { key: "availability", label: "Avail" },
+  { key: "constraints", label: "Limits" },
   { key: "review", label: "Review" },
 ];
 
@@ -139,6 +149,36 @@ const createEmptyTarget = (): GoalTargetFormData => ({
   targetType: "race_performance",
   activityCategory: "run",
 });
+
+const createTargetByType = (targetType: GoalTargetType): GoalTargetFormData => {
+  const target = createEmptyTarget();
+  if (targetType === "race_performance") {
+    return target;
+  }
+
+  if (targetType === "pace_threshold") {
+    return {
+      ...target,
+      targetType,
+      activityCategory: "run",
+      testDurationHms: "0:20:00",
+    };
+  }
+
+  if (targetType === "power_threshold") {
+    return {
+      ...target,
+      targetType,
+      activityCategory: "bike",
+      testDurationHms: "0:20:00",
+    };
+  }
+
+  return {
+    ...target,
+    targetType,
+  };
+};
 
 const createEmptyGoal = (targetDate?: string): GoalFormData => ({
   id: createLocalId(),
@@ -178,10 +218,10 @@ const raceDistancePresetsByCategory: Record<
 };
 
 const targetTypeOptions: { value: GoalTargetType; label: string }[] = [
-  { value: "race_performance", label: "Race Performance" },
-  { value: "pace_threshold", label: "Pace Threshold" },
-  { value: "power_threshold", label: "Power Threshold" },
-  { value: "hr_threshold", label: "HR Threshold" },
+  { value: "race_performance", label: "Race goal" },
+  { value: "pace_threshold", label: "Pace test" },
+  { value: "power_threshold", label: "Power test" },
+  { value: "hr_threshold", label: "Heart-rate threshold" },
 ];
 
 const activityCategoryOptions: Array<{
@@ -204,25 +244,25 @@ const availabilityTemplateOptions: Array<{
   { value: "custom", label: "Custom" },
 ];
 
-const goalDifficultyOptions: Array<{
-  value: NonNullable<CreationConstraints["goal_difficulty_preference"]>;
-  label: string;
-}> = [
-  { value: "conservative", label: "Conservative" },
-  { value: "balanced", label: "Balanced" },
-  { value: "stretch", label: "Stretch" },
-];
-
 const optimizationProfileOptions: Array<{
   value: TrainingPlanConfigFormData["optimizationProfile"];
   label: string;
 }> = [
-  { value: "outcome_first", label: "Outcome-first" },
+  { value: "outcome_first", label: "Fast progress" },
   { value: "balanced", label: "Balanced" },
-  { value: "sustainable", label: "Sustainable" },
+  { value: "sustainable", label: "Steady" },
 ];
 
 const optimizationProfileHelperCopy: Record<
+  TrainingPlanConfigFormData["optimizationProfile"],
+  string
+> = {
+  outcome_first: "Pushes progress faster.",
+  balanced: "Balances progress and recovery.",
+  sustainable: "Builds fitness more gradually.",
+};
+
+const optimizationProfileDetailCopy: Record<
   TrainingPlanConfigFormData["optimizationProfile"],
   string
 > = {
@@ -234,39 +274,45 @@ const optimizationProfileHelperCopy: Record<
     "Prioritizes durability with slower ramps and longer recovery to support consistent training across long horizons.",
 };
 
-const postGoalRecoveryHelperCopy =
-  "Inserts a lower-load window after each goal before the next build. Fewer days increase momentum but raise risk of accumulated fatigue.";
-
-const maxWeeklyTssRampHelperCopy =
-  "Hard cap on week-to-week load growth. Lower values improve durability; higher values can reach targets faster but increase strain.";
-
-const maxCtlRampHelperCopy =
-  "Hard cap on weekly CTL gain. Lower values smooth fitness progression; higher values speed adaptation but can increase risk when sustained.";
-
-const recentInfluenceActionOptionCopy: Record<
-  CreationRecentInfluenceAction,
-  { label: string; helper: string }
+const optimizationProfileVisualPresets: Record<
+  TrainingPlanConfigFormData["optimizationProfile"],
+  {
+    postGoalRecoveryDays: number;
+    maxWeeklyTssRampPct: number;
+    maxCtlRampPerWeek: number;
+  }
 > = {
-  accepted: {
-    label: "Suggested",
-    helper: "Use the planner's recommended recent-training influence score.",
+  outcome_first: {
+    postGoalRecoveryDays: 2,
+    maxWeeklyTssRampPct: 12,
+    maxCtlRampPerWeek: 5,
   },
-  edited: {
-    label: "Custom",
-    helper:
-      "Use your manual score to increase or soften early load progression.",
+  balanced: {
+    postGoalRecoveryDays: 5,
+    maxWeeklyTssRampPct: 7,
+    maxCtlRampPerWeek: 3,
   },
-  disabled: {
-    label: "Off",
-    helper: "Ignore recent-training bias and rely on goals and safety caps.",
+  sustainable: {
+    postGoalRecoveryDays: 9,
+    maxWeeklyTssRampPct: 4,
+    maxCtlRampPerWeek: 2,
   },
 };
 
-const influenceEducationBullets = [
-  "Multiple goals are blended into one load prescription.",
-  "Lower priority numbers carry more weight in that blend (1 = highest).",
-  "The recent influence score (-1 to 1) shifts early load up or down around that weighted goal blend.",
-];
+const postGoalRecoveryHelperCopy = "Adds easy days after each goal.";
+
+const postGoalRecoveryDetailCopy =
+  "Inserts a lower-load window after each goal before the next build. Fewer days increase momentum but raise risk of accumulated fatigue.";
+
+const maxWeeklyTssRampHelperCopy = "Caps weekly load increase.";
+
+const maxWeeklyTssRampDetailCopy =
+  "Hard cap on week-to-week load growth. Lower values improve durability; higher values can reach targets faster but increase strain.";
+
+const maxCtlRampHelperCopy = "Caps weekly CTL increase.";
+
+const maxCtlRampDetailCopy =
+  "Hard cap on weekly CTL gain. Lower values smooth fitness progression; higher values speed adaptation but can increase risk when sustained.";
 
 const weekDays: Array<CreationAvailabilityConfig["days"][number]["day"]> = [
   "monday",
@@ -299,15 +345,6 @@ const getSourceBadgeVariant = (source: CreationValueSource) => {
 const getActivityCategoryLabel = (
   category?: GoalTargetFormData["activityCategory"],
 ) => activityCategoryOptions.find((option) => option.value === category)?.label;
-
-const parseNumberOrUndefined = (value: string): number | undefined => {
-  if (!value.trim()) {
-    return undefined;
-  }
-
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-};
 
 const getTargetTypeLabel = (targetType: GoalTargetType) => {
   return targetTypeOptions.find((option) => option.value === targetType)?.label;
@@ -365,6 +402,12 @@ const getTargetSummary = (target: GoalTargetFormData) => {
   return "LTHR bpm";
 };
 
+const getGoalSummary = (goal: GoalFormData) => {
+  const trimmedName = goal.name.trim();
+  const label = trimmedName || "Untitled goal";
+  return `${label} - ${goal.targetDate || "No date"} - ${goal.targets.length} target(s)`;
+};
+
 const areStringArraysEqual = (left: string[], right: string[]) => {
   if (left.length !== right.length) {
     return false;
@@ -397,38 +440,29 @@ export function SinglePageForm({
   configData,
   contextSummary,
   feasibilitySafetySummary,
-  conflictItems = [],
   informationalConflicts = [],
+  blockingIssues = [],
+  createDisabledReason,
+  riskAcknowledged = false,
+  onRiskAcknowledgedChange,
   isPreviewPending = false,
   onConfigChange,
   onResolveConflict,
   errors = {},
 }: SinglePageFormProps) {
-  const [expandedGoalIds, setExpandedGoalIds] = useState<string[]>(() => {
-    const firstGoal = formData.goals[0];
-    return firstGoal ? [firstGoal.id] : [];
-  });
+  const { height: windowHeight } = useWindowDimensions();
+  const previewChartMaxHeight = Math.floor(windowHeight * 0.2);
+  const [activeGoalId, setActiveGoalId] = useState<string | null>(
+    () => formData.goals[0]?.id ?? null,
+  );
   const [editingTargetRef, setEditingTargetRef] =
     useState<EditingTargetRef | null>(null);
-  const [datePickerGoalId, setDatePickerGoalId] = useState<string | null>(null);
-  const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>(
-    {
-      availability: false,
-      influence: false,
-      constraints: false,
-    },
-  );
   const [showContextDetails, setShowContextDetails] = useState(false);
   const [activeTab, setActiveTab] = useState<FormTabKey>("goals");
-  const [isPlanStartDatePickerVisible, setIsPlanStartDatePickerVisible] =
-    useState(false);
+  const [touchedFieldPaths, setTouchedFieldPaths] = useState<string[]>([]);
 
   const handleTabChange = useCallback((tab: FormTabKey) => {
     setActiveTab(tab);
-  }, []);
-
-  const setPanelExpanded = useCallback((panel: keyof typeof expandedPanels) => {
-    setExpandedPanels((prev) => ({ ...prev, [panel]: !prev[panel] }));
   }, []);
 
   const updateConfig = useCallback(
@@ -461,11 +495,6 @@ export function SinglePageForm({
   const selectedAvailabilityDays = configData.availabilityConfig.days.filter(
     (day) => day.windows.length > 0,
   ).length;
-  const restDaysCount = configData.constraints.hard_rest_days.length;
-  const influenceSource = configData.recentInfluenceProvenance.source;
-  const influenceActionCopy =
-    recentInfluenceActionOptionCopy[configData.recentInfluenceAction];
-  const signedInfluenceScore = `${configData.recentInfluenceScore >= 0 ? "+" : ""}${configData.recentInfluenceScore.toFixed(2)}`;
   const noHistoryMetadata = projectionChart?.no_history;
   const noHistoryReasons = noHistoryMetadata?.fitness_inference_reasons ?? [];
   const noHistoryConfidenceLabel = noHistoryMetadata
@@ -480,43 +509,20 @@ export function SinglePageForm({
     ? `No-history cues. Confidence ${noHistoryConfidenceLabel}. Floor applied ${noHistoryFloorAppliedLabel}. Availability clamp ${noHistoryAvailabilityClampLabel}.`
     : undefined;
 
-  const goalInfluenceWeights = useMemo(() => {
-    const weightsByGoalId = calculateGoalPriorityWeights(
-      formData.goals.map((goal) => ({
-        id: goal.id,
-        priority: goal.priority,
-      })),
-    );
-
-    return formData.goals.map((goal, index) => {
-      const normalizedPriority = Math.max(
-        1,
-        Math.min(10, Math.round(goal.priority)),
-      );
-      return {
-        id: goal.id,
-        label:
-          goal.name.trim() ||
-          (index === 0 ? "Primary goal" : `Goal ${index + 1}`),
-        priority: normalizedPriority,
-        percent: (weightsByGoalId[goal.id] ?? 0) * 100,
-      };
-    });
-  }, [formData.goals]);
-
   useEffect(() => {
-    setExpandedGoalIds((prev) => {
-      const existing = new Set(formData.goals.map((goal) => goal.id));
-      const next = prev.filter((id) => existing.has(id));
+    if (!formData.goals.length) {
+      setActiveGoalId(null);
+      return;
+    }
 
-      const firstGoal = formData.goals[0];
-      if (firstGoal && !next.includes(firstGoal.id)) {
-        next.unshift(firstGoal.id);
-      }
+    const stillExists = activeGoalId
+      ? formData.goals.some((goal) => goal.id === activeGoalId)
+      : false;
 
-      return areStringArraysEqual(prev, next) ? prev : next;
-    });
-  }, [formData.goals]);
+    if (!stillExists) {
+      setActiveGoalId(formData.goals[0]?.id ?? null);
+    }
+  }, [activeGoalId, formData.goals]);
 
   useEffect(() => {
     if (!editingTargetRef) {
@@ -599,12 +605,16 @@ export function SinglePageForm({
       new Date().toISOString().split("T")[0] ??
       "";
 
-    const newGoal = createEmptyGoal(referenceTargetDate);
+    const newGoalIndex = formData.goals.length + 1;
+    const newGoal = {
+      ...createEmptyGoal(referenceTargetDate),
+      name: `Goal ${newGoalIndex}`,
+    };
     onFormDataChange({
       ...formData,
       goals: [...formData.goals, newGoal],
     });
-    setExpandedGoalIds((prev) => [...prev, newGoal.id]);
+    setActiveGoalId(newGoal.id);
   };
 
   const removeGoal = (goalId: string) => {
@@ -616,19 +626,23 @@ export function SinglePageForm({
       ...formData,
       goals: formData.goals.filter((goal) => goal.id !== goalId),
     });
-    setExpandedGoalIds((prev) => prev.filter((id) => id !== goalId));
-  };
-
-  const toggleGoalExpanded = (goalId: string) => {
-    setExpandedGoalIds((prev) =>
-      prev.includes(goalId)
-        ? prev.filter((id) => id !== goalId)
-        : [...prev, goalId],
-    );
   };
 
   const addTarget = (goalId: string) => {
-    const target = createEmptyTarget();
+    const target = createTargetByType("race_performance");
+    onFormDataChange({
+      ...formData,
+      goals: formData.goals.map((goal) =>
+        goal.id === goalId
+          ? { ...goal, targets: [...goal.targets, target] }
+          : goal,
+      ),
+    });
+    setEditingTargetRef({ goalId, targetId: target.id });
+  };
+
+  const addTargetWithType = (goalId: string, targetType: GoalTargetType) => {
+    const target = createTargetByType(targetType);
     onFormDataChange({
       ...formData,
       goals: formData.goals.map((goal) =>
@@ -660,68 +674,7 @@ export function SinglePageForm({
     });
   };
 
-  const applyRaceDistancePreset = (
-    goalId: string,
-    targetId: string,
-    km: string,
-  ) => {
-    updateTarget(goalId, targetId, { distanceKm: km });
-  };
-
-  const getError = (path: string) => errors[path];
-
-  const parseGoalDate = (value: string) => {
-    const parsed = new Date(`${value}T00:00:00`);
-    if (Number.isNaN(parsed.getTime())) {
-      return new Date();
-    }
-    return parsed;
-  };
-
-  const parsePlanStartDate = (value: string | undefined) => {
-    if (!value) {
-      return new Date();
-    }
-    return parseGoalDate(value);
-  };
-
-  const handleGoalDateChange = (
-    goalId: string,
-    event: DateTimePickerEvent,
-    selectedDate?: Date,
-  ) => {
-    if (event.type === "dismissed") {
-      setDatePickerGoalId(null);
-      return;
-    }
-
-    if (selectedDate) {
-      const isoDate = selectedDate.toISOString().split("T")[0] ?? "";
-      updateGoal(goalId, { targetDate: isoDate });
-    }
-
-    setDatePickerGoalId(null);
-  };
-
-  const handlePlanStartDateChange = (
-    event: DateTimePickerEvent,
-    selectedDate?: Date,
-  ) => {
-    if (event.type === "dismissed") {
-      setIsPlanStartDatePickerVisible(false);
-      return;
-    }
-
-    if (selectedDate) {
-      const isoDate = selectedDate.toISOString().split("T")[0] ?? "";
-      onFormDataChange({
-        ...formData,
-        planStartDate: isoDate,
-      });
-    }
-
-    setIsPlanStartDatePickerVisible(false);
-  };
+  const getError = (path: string) => errors[path] ?? inlineErrors[path];
 
   const getTargetRowError = (goalIndex: number, targetIndex: number) => {
     const prefix = `goals.${goalIndex}.targets.${targetIndex}`;
@@ -739,1414 +692,866 @@ export function SinglePageForm({
 
   const closeTargetEditor = () => setEditingTargetRef(null);
 
+  const markFieldTouched = useCallback((path: string) => {
+    setTouchedFieldPaths((previous) =>
+      previous.includes(path) ? previous : [...previous, path],
+    );
+  }, []);
+
+  const inlineErrors = useMemo(() => {
+    if (touchedFieldPaths.length === 0) {
+      return {} as Record<string, string>;
+    }
+
+    const touched = new Set(touchedFieldPaths);
+    const nextErrors = validateTrainingPlanForm(formData);
+    const visibleErrors: Record<string, string> = {};
+
+    for (const [path, message] of Object.entries(nextErrors)) {
+      if (touched.has(path)) {
+        visibleErrors[path] = message;
+      }
+    }
+
+    return visibleErrors;
+  }, [formData, touchedFieldPaths]);
+
+  const activeGoal = useMemo(
+    () =>
+      formData.goals.find((goal) => goal.id === activeGoalId) ??
+      formData.goals[0],
+    [activeGoalId, formData.goals],
+  );
+  const activeGoalIndex = activeGoal
+    ? formData.goals.findIndex((goal) => goal.id === activeGoal.id)
+    : -1;
+  const reviewNoticeCount = useMemo(() => {
+    const blockingCount = blockingIssues.length;
+    const cautionDriverCount = feasibilitySafetySummary
+      ? feasibilitySafetySummary.feasibility_band === "on-track" &&
+        feasibilitySafetySummary.safety_band === "safe"
+        ? 0
+        : feasibilitySafetySummary.top_drivers.slice(0, 3).length
+      : 0;
+
+    return blockingCount + cautionDriverCount;
+  }, [blockingIssues.length, feasibilitySafetySummary]);
+
   return (
     <View className="flex-1">
-      <ScrollView className="flex-1" contentContainerClassName="p-4 gap-4">
-        <View className="gap-4">
-          <CreationProjectionChart
-            projectionChart={projectionChart}
-            isPreviewPending={isPreviewPending}
-          />
+      {showCreationConfig && (
+        <CreationProjectionChart
+          projectionChart={projectionChart}
+          isPreviewPending={isPreviewPending}
+          compact
+          chartMaxHeight={previewChartMaxHeight}
+        />
+      )}
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerClassName="gap-2 pr-2"
-            accessibilityRole="tablist"
-            accessibilityLabel="Training plan setup sections"
-            accessibilityHint="Swipe horizontally to browse sections, then double tap to open one"
-          >
-            {formTabs.map((tab) => {
-              const isActive = tab.key === activeTab;
-              return (
-                <Pressable
-                  key={tab.key}
-                  onPress={() => handleTabChange(tab.key)}
-                  className={`rounded-full border px-4 py-2 ${isActive ? "border-primary bg-primary/10" : "border-border bg-card"}`}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: isActive }}
-                  accessibilityLabel={`${tab.label} tab`}
-                  accessibilityHint={
-                    isActive
-                      ? `Currently selected. Shows ${tab.label.toLowerCase()} section`
-                      : `Shows ${tab.label.toLowerCase()} section`
-                  }
-                  hitSlop={8}
-                  style={{ minHeight: 44, justifyContent: "center" }}
+      <View className="px-4 pt-1">
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerClassName="gap-2 pr-2"
+          accessibilityRole="tablist"
+          accessibilityLabel="Training plan setup sections"
+          accessibilityHint="Swipe horizontally to browse sections, then double tap to open one"
+        >
+          {formTabs.map((tab) => {
+            const isActive = tab.key === activeTab;
+            return (
+              <Pressable
+                key={tab.key}
+                onPress={() => handleTabChange(tab.key)}
+                className={`border-b-2 px-1.5 py-2 ${isActive ? "border-primary" : "border-transparent"}`}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: isActive }}
+                accessibilityLabel={`${tab.label} tab`}
+                accessibilityHint={
+                  isActive
+                    ? `Currently selected. Shows ${tab.label.toLowerCase()} section`
+                    : `Shows ${tab.label.toLowerCase()} section`
+                }
+                hitSlop={8}
+                style={{ minHeight: 44, justifyContent: "center" }}
+              >
+                <Text
+                  className={`text-sm ${isActive ? "font-semibold text-foreground" : "text-muted-foreground"}`}
                 >
-                  <Text
-                    className={`text-sm ${isActive ? "font-semibold text-primary" : "text-muted-foreground"}`}
-                  >
-                    {tab.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
+                  {tab.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
 
-          {showCreationConfig && (
-            <>
-              {activeTab === "review" && (
-                <View className="gap-3 rounded-lg border border-border bg-card p-3">
-                  <View className="flex-row items-start justify-between gap-3">
-                    <View className="flex-1 gap-1">
-                      <Text className="font-semibold">
-                        Suggested setup context
-                      </Text>
-                      <Text className="text-xs text-muted-foreground">
-                        {contextSummary
-                          ? `Based on ${contextSummary.history_availability_state} history and signal quality ${(contextSummary.signal_quality * 100).toFixed(0)}%`
-                          : isPreviewPending
-                            ? "Loading profile-aware defaults..."
-                            : "Using conservative defaults until profile-aware suggestions are available."}
-                      </Text>
-                    </View>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onPress={() => setShowContextDetails((prev) => !prev)}
-                    >
-                      <Text>
-                        {showContextDetails ? "Hide why" : "View why"}
-                      </Text>
-                    </Button>
-                  </View>
-                  {showContextDetails && contextSummary && (
-                    <View className="gap-1 rounded-md bg-muted/40 p-2">
-                      <Text className="text-xs text-muted-foreground">
-                        Consistency: {contextSummary.recent_consistency_marker}
-                      </Text>
-                      <Text className="text-xs text-muted-foreground">
-                        Effort confidence:{" "}
-                        {contextSummary.effort_confidence_marker}
-                      </Text>
-                      <Text className="text-xs text-muted-foreground">
-                        Profile completeness:{" "}
-                        {contextSummary.profile_metric_completeness_marker}
-                      </Text>
-                      {contextSummary.rationale_codes
-                        .slice(0, 4)
-                        .map((code) => (
-                          <Text
-                            key={code}
-                            className="text-xs text-muted-foreground"
-                          >
-                            - {code}
-                          </Text>
-                        ))}
-                    </View>
-                  )}
-                </View>
-              )}
-
-              {activeTab === "review" && noHistoryMetadata ? (
-                <View
-                  className="gap-2 rounded-lg border border-border bg-muted/20 p-3"
-                  accessibilityRole="text"
-                  accessibilityLiveRegion="polite"
-                  accessibilityLabel={noHistoryAccessibilitySummary}
-                >
-                  <Text className="text-xs font-medium">No-history cues</Text>
-                  <Text className="text-xs text-muted-foreground">
-                    Confidence: {noHistoryConfidenceLabel}
-                  </Text>
-                  <Text className="text-xs text-muted-foreground">
-                    Floor applied: {noHistoryFloorAppliedLabel}
-                  </Text>
-                  <Text className="text-xs text-muted-foreground">
-                    Availability clamp: {noHistoryAvailabilityClampLabel}
-                  </Text>
-                  {noHistoryReasons.slice(0, 2).map((reason) => (
-                    <Text
-                      key={reason}
-                      className="text-xs text-muted-foreground"
-                    >
-                      - {reason}
+      <ScrollView
+        className="flex-1"
+        contentContainerClassName="gap-3 px-4 pt-3 pb-8"
+      >
+        {showCreationConfig && (
+          <>
+            {activeTab === "review" && (
+              <View className="gap-3 rounded-lg border border-border bg-card p-3">
+                <View className="flex-row items-start justify-between gap-3">
+                  <View className="flex-1 gap-1">
+                    <Text className="font-semibold">
+                      Suggested setup context
                     </Text>
-                  ))}
+                    <Text className="text-xs text-muted-foreground">
+                      {contextSummary
+                        ? `Based on ${contextSummary.history_availability_state} history and signal quality ${(contextSummary.signal_quality * 100).toFixed(0)}%`
+                        : isPreviewPending
+                          ? "Loading profile-aware defaults..."
+                          : "Using conservative defaults until profile-aware suggestions are available."}
+                    </Text>
+                  </View>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onPress={() => setShowContextDetails((prev) => !prev)}
+                  >
+                    <Text>{showContextDetails ? "Hide why" : "View why"}</Text>
+                  </Button>
                 </View>
-              ) : null}
+                {showContextDetails && contextSummary && (
+                  <View className="gap-1 rounded-md bg-muted/40 p-2">
+                    <Text className="text-xs text-muted-foreground">
+                      Consistency: {contextSummary.recent_consistency_marker}
+                    </Text>
+                    <Text className="text-xs text-muted-foreground">
+                      Effort confidence:{" "}
+                      {contextSummary.effort_confidence_marker}
+                    </Text>
+                    <Text className="text-xs text-muted-foreground">
+                      Profile completeness:{" "}
+                      {contextSummary.profile_metric_completeness_marker}
+                    </Text>
+                    {contextSummary.rationale_codes.slice(0, 4).map((code) => (
+                      <Text
+                        key={code}
+                        className="text-xs text-muted-foreground"
+                      >
+                        - {code}
+                      </Text>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
 
-              {activeTab === "review" && informationalConflicts.length > 0 && (
-                <View className="gap-2 rounded-lg border border-amber-300 bg-amber-100/40 p-3">
+            {activeTab === "review" && noHistoryMetadata ? (
+              <View
+                className="gap-2 rounded-lg border border-border bg-muted/20 p-3"
+                accessibilityRole="text"
+                accessibilityLiveRegion="polite"
+                accessibilityLabel={noHistoryAccessibilitySummary}
+              >
+                <Text className="text-xs font-medium">No-history cues</Text>
+                <Text className="text-xs text-muted-foreground">
+                  Confidence: {noHistoryConfidenceLabel}
+                </Text>
+                <Text className="text-xs text-muted-foreground">
+                  Floor applied: {noHistoryFloorAppliedLabel}
+                </Text>
+                <Text className="text-xs text-muted-foreground">
+                  Availability clamp: {noHistoryAvailabilityClampLabel}
+                </Text>
+                {noHistoryReasons.slice(0, 2).map((reason) => (
+                  <Text key={reason} className="text-xs text-muted-foreground">
+                    - {reason}
+                  </Text>
+                ))}
+              </View>
+            ) : null}
+
+            {activeTab === "availability" && (
+              <View className="gap-3 rounded-lg border border-border bg-card p-3">
+                <View className="flex-row items-center justify-between">
+                  <Text className="font-semibold">Availability</Text>
+                  <Badge
+                    variant={getSourceBadgeVariant(
+                      configData.availabilityProvenance.source,
+                    )}
+                  >
+                    <Text>{configData.availabilityProvenance.source}</Text>
+                  </Badge>
+                </View>
+
+                <DateField
+                  id="plan-start-date"
+                  label="Plan start date"
+                  value={formData.planStartDate}
+                  onChange={(nextDate) => {
+                    markFieldTouched("planStartDate");
+                    onFormDataChange({
+                      ...formData,
+                      planStartDate: nextDate,
+                    });
+                  }}
+                  placeholder="Use today (default)"
+                  clearable
+                  error={getError("planStartDate")}
+                  accessibilityHint="Sets your training plan start date. Format yyyy-mm-dd"
+                />
+
+                <View className="flex-row items-center justify-between">
+                  <Text className="text-sm">Lock availability</Text>
                   <View className="flex-row items-center gap-2">
-                    <AlertTriangle size={16} className="text-amber-600" />
-                    <Text className="font-medium text-amber-800">
+                    {configData.locks.availability_config.locked ? (
+                      <Lock size={14} className="text-primary" />
+                    ) : (
+                      <LockOpen size={14} className="text-muted-foreground" />
+                    )}
+                    <Switch
+                      checked={configData.locks.availability_config.locked}
+                      onCheckedChange={(value) =>
+                        setFieldLock("availability_config", Boolean(value))
+                      }
+                    />
+                  </View>
+                </View>
+
+                <View className="gap-2">
+                  <Label nativeID="availability-template">
+                    <Text className="text-sm font-medium">Template</Text>
+                  </Label>
+                  <Select
+                    value={{
+                      value: configData.availabilityConfig.template,
+                      label:
+                        availabilityTemplateOptions.find(
+                          (option) =>
+                            option.value ===
+                            configData.availabilityConfig.template,
+                        )?.label ?? "Moderate",
+                    }}
+                    onValueChange={(option) => {
+                      if (!option?.value) return;
+                      updateConfig((draft) => {
+                        draft.availabilityConfig = {
+                          ...draft.availabilityConfig,
+                          template:
+                            option.value as CreationAvailabilityConfig["template"],
+                        };
+                        draft.availabilityProvenance = {
+                          ...draft.availabilityProvenance,
+                          source: "user",
+                          updated_at: new Date().toISOString(),
+                        };
+                      });
+                    }}
+                  >
+                    <SelectTrigger aria-labelledby="availability-template">
+                      <SelectValue placeholder="Select template" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availabilityTemplateOptions.map((option) => (
+                        <SelectItem
+                          key={option.value}
+                          label={option.label}
+                          value={option.value}
+                        >
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </View>
+
+                <View className="gap-1">
+                  <Text className="text-xs text-muted-foreground">
+                    Training days ({selectedAvailabilityDays}/7)
+                  </Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    {weekDays.map((day) => {
+                      const dayConfig =
+                        configData.availabilityConfig.days.find(
+                          (item) => item.day === day,
+                        ) ?? configData.availabilityConfig.days[0];
+                      if (!dayConfig) {
+                        return null;
+                      }
+
+                      const isAvailable = dayConfig.windows.length > 0;
+                      return (
+                        <Button
+                          key={`availability-${day}`}
+                          variant={isAvailable ? "default" : "outline"}
+                          size="sm"
+                          onPress={() => {
+                            updateConfig((draft) => {
+                              draft.availabilityConfig = {
+                                ...draft.availabilityConfig,
+                                template: "custom",
+                                days: draft.availabilityConfig.days.map(
+                                  (candidate) =>
+                                    candidate.day === day
+                                      ? {
+                                          ...candidate,
+                                          windows: isAvailable
+                                            ? []
+                                            : [
+                                                {
+                                                  start_minute_of_day: 360,
+                                                  end_minute_of_day: 450,
+                                                },
+                                              ],
+                                          max_sessions: isAvailable ? 0 : 1,
+                                        }
+                                      : candidate,
+                                ),
+                              };
+                              draft.availabilityProvenance = {
+                                ...draft.availabilityProvenance,
+                                source: "user",
+                                updated_at: new Date().toISOString(),
+                              };
+                            });
+                          }}
+                        >
+                          <Text>{getWeekDayLabel(day)}</Text>
+                        </Button>
+                      );
+                    })}
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {activeTab === "constraints" && (
+              <View className="gap-3 rounded-lg border border-border bg-card p-3">
+                <View className="flex-row items-center justify-between">
+                  <Text className="font-semibold">Limits</Text>
+                  <Badge
+                    variant={getSourceBadgeVariant(
+                      configData.constraintsSource,
+                    )}
+                  >
+                    <Text>{configData.constraintsSource}</Text>
+                  </Badge>
+                </View>
+
+                <View className="gap-2">
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-sm">Plan style</Text>
+                    <Switch
+                      checked={configData.locks.optimization_profile.locked}
+                      onCheckedChange={(value) =>
+                        setFieldLock("optimization_profile", Boolean(value))
+                      }
+                    />
+                  </View>
+                  <Select
+                    value={{
+                      value: configData.optimizationProfile,
+                      label:
+                        optimizationProfileOptions.find(
+                          (option) =>
+                            option.value === configData.optimizationProfile,
+                        )?.label ?? "Balanced",
+                    }}
+                    onValueChange={(option) => {
+                      if (!option?.value) return;
+                      updateConfig((draft) => {
+                        const nextProfile =
+                          option.value as TrainingPlanConfigFormData["optimizationProfile"];
+                        draft.optimizationProfile = nextProfile;
+
+                        const preset =
+                          optimizationProfileVisualPresets[nextProfile];
+                        if (!draft.locks.post_goal_recovery_days.locked) {
+                          draft.postGoalRecoveryDays =
+                            preset.postGoalRecoveryDays;
+                        }
+                        if (!draft.locks.max_weekly_tss_ramp_pct.locked) {
+                          draft.maxWeeklyTssRampPct =
+                            preset.maxWeeklyTssRampPct;
+                        }
+                        if (!draft.locks.max_ctl_ramp_per_week.locked) {
+                          draft.maxCtlRampPerWeek = preset.maxCtlRampPerWeek;
+                        }
+                      });
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose profile" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {optimizationProfileOptions.map((option) => (
+                        <SelectItem
+                          key={option.value}
+                          label={option.label}
+                          value={option.value}
+                        >
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </View>
+
+                <View className="gap-2">
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-sm">Recovery days after goal</Text>
+                    <Switch
+                      checked={configData.locks.post_goal_recovery_days.locked}
+                      onCheckedChange={(value) =>
+                        setFieldLock("post_goal_recovery_days", Boolean(value))
+                      }
+                    />
+                  </View>
+                  <IntegerStepper
+                    id="post-goal-recovery-days"
+                    value={configData.postGoalRecoveryDays}
+                    min={0}
+                    max={28}
+                    onChange={(nextValue) => {
+                      updateConfig((draft) => {
+                        draft.postGoalRecoveryDays = nextValue;
+                      });
+                    }}
+                  />
+                </View>
+
+                <View className="gap-2">
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-sm">
+                      Weekly load increase cap (%)
+                    </Text>
+                    <Switch
+                      checked={configData.locks.max_weekly_tss_ramp_pct.locked}
+                      onCheckedChange={(value) =>
+                        setFieldLock("max_weekly_tss_ramp_pct", Boolean(value))
+                      }
+                    />
+                  </View>
+                  <PercentSliderInput
+                    id="max-weekly-load-ramp"
+                    value={configData.maxWeeklyTssRampPct}
+                    min={0}
+                    max={20}
+                    step={0.25}
+                    onChange={(nextValue) => {
+                      updateConfig((draft) => {
+                        draft.maxWeeklyTssRampPct = nextValue;
+                      });
+                    }}
+                  />
+                </View>
+
+                <View className="gap-2">
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-sm">Weekly fitness increase cap</Text>
+                    <Switch
+                      checked={configData.locks.max_ctl_ramp_per_week.locked}
+                      onCheckedChange={(value) =>
+                        setFieldLock("max_ctl_ramp_per_week", Boolean(value))
+                      }
+                    />
+                  </View>
+                  <BoundedNumberInput
+                    id="max-weekly-ctl-ramp"
+                    label="Cap"
+                    value={String(configData.maxCtlRampPerWeek)}
+                    min={0}
+                    max={8}
+                    decimals={2}
+                    unitLabel="CTL/wk"
+                    onChange={(value) => {
+                      const parsed = parseNumberOrUndefined(value);
+                      if (parsed === undefined) {
+                        return;
+                      }
+                      updateConfig((draft) => {
+                        draft.maxCtlRampPerWeek = Math.max(
+                          0,
+                          Math.min(8, Number(parsed.toFixed(2))),
+                        );
+                      });
+                    }}
+                  />
+                </View>
+
+                {informationalConflicts.length > 0 && (
+                  <View className="gap-1 rounded-md border border-amber-300 bg-amber-100/40 p-2">
+                    <Text className="text-xs font-medium text-amber-800">
                       Locked field notices
                     </Text>
+                    {informationalConflicts.map((conflict) => (
+                      <Text key={conflict} className="text-xs text-amber-800">
+                        - {conflict}
+                      </Text>
+                    ))}
                   </View>
-                  {informationalConflicts.map((conflict) => (
-                    <Text key={conflict} className="text-xs text-amber-800">
-                      - {conflict}
-                    </Text>
-                  ))}
-                </View>
-              )}
+                )}
+              </View>
+            )}
 
-              {(activeTab === "availability" ||
-                activeTab === "influence" ||
-                activeTab === "constraints") && (
-                <View className="gap-2 rounded-lg border border-border bg-card p-3">
-                  <Text className="font-semibold">Configuration</Text>
-
-                  {activeTab === "availability" && (
-                    <>
-                      <Pressable
-                        onPress={() => setPanelExpanded("availability")}
-                        className="flex-row items-center justify-between rounded-md border border-border px-3 py-2"
-                      >
-                        <View className="flex-1">
-                          <Text className="text-sm font-medium">
-                            Availability
-                          </Text>
-                          <Text className="text-xs text-muted-foreground">
-                            {selectedAvailabilityDays} training day(s), template{" "}
-                            {configData.availabilityConfig.template}
-                          </Text>
-                        </View>
-                        <View className="flex-row items-center gap-2">
-                          <Badge
-                            variant={getSourceBadgeVariant(
-                              configData.availabilityProvenance.source,
-                            )}
-                          >
-                            <Text>
-                              {configData.availabilityProvenance.source}
-                            </Text>
-                          </Badge>
-                          {expandedPanels.availability ? (
-                            <ChevronUp
-                              size={16}
-                              className="text-muted-foreground"
-                            />
-                          ) : (
-                            <ChevronDown
-                              size={16}
-                              className="text-muted-foreground"
-                            />
-                          )}
-                        </View>
-                      </Pressable>
-
-                      {expandedPanels.availability && (
-                        <View className="gap-3 rounded-md border border-border bg-muted/20 p-3">
-                          <View className="flex-row items-center justify-between">
-                            <Text className="text-sm font-medium">
-                              Lock availability
-                            </Text>
-                            <View className="flex-row items-center gap-2">
-                              {configData.locks.availability_config.locked ? (
-                                <Lock size={14} className="text-primary" />
-                              ) : (
-                                <LockOpen
-                                  size={14}
-                                  className="text-muted-foreground"
-                                />
-                              )}
-                              <Switch
-                                checked={
-                                  configData.locks.availability_config.locked
-                                }
-                                onCheckedChange={(value) =>
-                                  setFieldLock(
-                                    "availability_config",
-                                    Boolean(value),
-                                  )
-                                }
-                              />
-                            </View>
-                          </View>
-
-                          <View className="gap-2">
-                            <Label nativeID="availability-template">
-                              <Text className="text-sm font-medium">
-                                Template
-                              </Text>
-                            </Label>
-                            <Select
-                              value={{
-                                value: configData.availabilityConfig.template,
-                                label:
-                                  availabilityTemplateOptions.find(
-                                    (option) =>
-                                      option.value ===
-                                      configData.availabilityConfig.template,
-                                  )?.label ?? "Moderate",
-                              }}
-                              onValueChange={(option) => {
-                                if (!option?.value) return;
-                                updateConfig((draft) => {
-                                  draft.availabilityConfig = {
-                                    ...draft.availabilityConfig,
-                                    template:
-                                      option.value as CreationAvailabilityConfig["template"],
-                                  };
-                                  draft.availabilityProvenance = {
-                                    ...draft.availabilityProvenance,
-                                    source: "user",
-                                    updated_at: new Date().toISOString(),
-                                  };
-                                });
-                              }}
-                            >
-                              <SelectTrigger aria-labelledby="availability-template">
-                                <SelectValue placeholder="Select template" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {availabilityTemplateOptions.map((option) => (
-                                  <SelectItem
-                                    key={option.value}
-                                    label={option.label}
-                                    value={option.value}
-                                  >
-                                    {option.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </View>
-
-                          <View className="gap-2">
-                            <Text className="text-xs text-muted-foreground">
-                              Optional day-level edits
-                            </Text>
-                            {weekDays.map((day) => {
-                              const dayConfig =
-                                configData.availabilityConfig.days.find(
-                                  (item) => item.day === day,
-                                ) ?? configData.availabilityConfig.days[0];
-                              if (!dayConfig) {
-                                return null;
-                              }
-
-                              const isAvailable = dayConfig.windows.length > 0;
-                              const startLabel = isAvailable
-                                ? formatMinutesAsTime(
-                                    dayConfig.windows[0]?.start_minute_of_day ??
-                                      360,
-                                  )
-                                : "-";
-                              const endLabel = isAvailable
-                                ? formatMinutesAsTime(
-                                    dayConfig.windows[0]?.end_minute_of_day ??
-                                      450,
-                                  )
-                                : "-";
-
-                              return (
-                                <View
-                                  key={day}
-                                  className="flex-row items-center justify-between rounded-md border border-border px-2 py-2"
-                                >
-                                  <Text className="text-sm">
-                                    {getWeekDayLabel(day)}
-                                  </Text>
-                                  <View className="flex-row items-center gap-2">
-                                    <Text className="text-xs text-muted-foreground">
-                                      {startLabel}-{endLabel}
-                                    </Text>
-                                    <Switch
-                                      checked={isAvailable}
-                                      onCheckedChange={(value) => {
-                                        const nextValue = Boolean(value);
-                                        updateConfig((draft) => {
-                                          draft.availabilityConfig = {
-                                            ...draft.availabilityConfig,
-                                            template: "custom",
-                                            days: draft.availabilityConfig.days.map(
-                                              (candidate) =>
-                                                candidate.day === day
-                                                  ? {
-                                                      ...candidate,
-                                                      windows: nextValue
-                                                        ? [
-                                                            {
-                                                              start_minute_of_day: 360,
-                                                              end_minute_of_day: 450,
-                                                            },
-                                                          ]
-                                                        : [],
-                                                      max_sessions: nextValue
-                                                        ? 1
-                                                        : 0,
-                                                    }
-                                                  : candidate,
-                                            ),
-                                          };
-                                          draft.availabilityProvenance = {
-                                            ...draft.availabilityProvenance,
-                                            source: "user",
-                                            updated_at:
-                                              new Date().toISOString(),
-                                          };
-                                        });
-                                      }}
-                                    />
-                                  </View>
-                                </View>
-                              );
-                            })}
-                          </View>
-                        </View>
-                      )}
-                    </>
-                  )}
-
-                  {activeTab === "influence" && (
-                    <>
-                      <Pressable
-                        onPress={() => setPanelExpanded("influence")}
-                        className="flex-row items-center justify-between rounded-md border border-border px-3 py-2"
-                      >
-                        <View className="flex-1">
-                          <Text className="text-sm font-medium">
-                            Recent influence
-                          </Text>
-                          <Text className="text-xs text-muted-foreground">
-                            {influenceActionCopy.label}
-                            {configData.recentInfluenceAction === "disabled"
-                              ? " - no recent-load bias"
-                              : ` - score ${signedInfluenceScore}`}
-                          </Text>
-                        </View>
-                        <View className="flex-row items-center gap-2">
-                          <Badge
-                            variant={getSourceBadgeVariant(influenceSource)}
-                          >
-                            <Text>{influenceSource}</Text>
-                          </Badge>
-                          {expandedPanels.influence ? (
-                            <ChevronUp
-                              size={16}
-                              className="text-muted-foreground"
-                            />
-                          ) : (
-                            <ChevronDown
-                              size={16}
-                              className="text-muted-foreground"
-                            />
-                          )}
-                        </View>
-                      </Pressable>
-
-                      {expandedPanels.influence && (
-                        <View className="gap-3 rounded-md border border-border bg-muted/20 p-3">
-                          <View className="gap-2 rounded-md border border-border bg-background/80 p-3">
-                            <Text className="text-sm font-medium">
-                              How load is blended
-                            </Text>
-                            {influenceEducationBullets.map((bullet) => (
-                              <Text
-                                key={bullet}
-                                className="text-xs text-muted-foreground"
-                              >
-                                - {bullet}
-                              </Text>
-                            ))}
-                          </View>
-
-                          <View className="gap-2 rounded-md border border-border bg-background/80 p-3">
-                            <Text className="text-sm font-medium">
-                              Goal priority weighting
-                            </Text>
-                            <Text className="text-xs text-muted-foreground">
-                              The planner normalizes goal priority into weighted
-                              influence shares.
-                            </Text>
-                            {goalInfluenceWeights.map((goal) => (
-                              <View
-                                key={goal.id}
-                                className="flex-row items-center justify-between rounded-md border border-border px-2 py-2"
-                              >
-                                <View className="flex-1 pr-2">
-                                  <Text
-                                    className="text-sm font-medium"
-                                    numberOfLines={1}
-                                  >
-                                    {goal.label}
-                                  </Text>
-                                  <Text className="text-xs text-muted-foreground">
-                                    Priority {goal.priority}
-                                  </Text>
-                                </View>
-                                <Badge variant="secondary">
-                                  <Text>{goal.percent.toFixed(0)}%</Text>
-                                </Badge>
-                              </View>
-                            ))}
-                          </View>
-
-                          <View className="flex-row items-center justify-between">
-                            <Text className="text-sm font-medium">
-                              Lock recent influence
-                            </Text>
-                            <View className="flex-row items-center gap-2">
-                              {configData.locks.recent_influence.locked ? (
-                                <Lock size={14} className="text-primary" />
-                              ) : (
-                                <LockOpen
-                                  size={14}
-                                  className="text-muted-foreground"
-                                />
-                              )}
-                              <Switch
-                                checked={
-                                  configData.locks.recent_influence.locked
-                                }
-                                onCheckedChange={(value) =>
-                                  setFieldLock(
-                                    "recent_influence",
-                                    Boolean(value),
-                                  )
-                                }
-                              />
-                            </View>
-                          </View>
-
-                          <View className="flex-row gap-2">
-                            {(["accepted", "edited", "disabled"] as const).map(
-                              (action) => (
-                                <Button
-                                  key={action}
-                                  variant={
-                                    configData.recentInfluenceAction === action
-                                      ? "default"
-                                      : "outline"
-                                  }
-                                  size="sm"
-                                  accessibilityLabel={`Recent influence mode: ${recentInfluenceActionOptionCopy[action].label}`}
-                                  accessibilityHint={
-                                    recentInfluenceActionOptionCopy[action]
-                                      .helper
-                                  }
-                                  onPress={() => {
-                                    updateConfig((draft) => {
-                                      draft.recentInfluenceAction = action;
-                                      if (action === "disabled") {
-                                        draft.recentInfluenceScore = 0;
-                                        draft.recentInfluenceProvenance = {
-                                          ...draft.recentInfluenceProvenance,
-                                          source: "user",
-                                          updated_at: new Date().toISOString(),
-                                        };
-                                      }
-                                      if (action === "accepted") {
-                                        draft.recentInfluenceProvenance = {
-                                          ...draft.recentInfluenceProvenance,
-                                          source: "suggested",
-                                          updated_at: new Date().toISOString(),
-                                        };
-                                      }
-                                    });
-                                  }}
-                                >
-                                  <Text>
-                                    {
-                                      recentInfluenceActionOptionCopy[action]
-                                        .label
-                                    }
-                                  </Text>
-                                </Button>
-                              ),
-                            )}
-                          </View>
-
-                          <Text className="text-xs text-muted-foreground">
-                            {influenceActionCopy.helper}
-                          </Text>
-
-                          <View className="gap-2">
-                            <Label nativeID="recent-influence-score">
-                              <Text className="text-sm font-medium">
-                                Recent influence score
-                              </Text>
-                            </Label>
-                            <Text className="text-xs text-muted-foreground">
-                              Range -1.00 to 1.00. Negative values soften load;
-                              positive values push load progression.
-                            </Text>
-
-                            <Input
-                              aria-labelledby="recent-influence-score"
-                              accessibilityHint="Enter a value from negative one to positive one"
-                              keyboardType="numbers-and-punctuation"
-                              value={String(configData.recentInfluenceScore)}
-                              onChangeText={(value) => {
-                                const parsed = Number(value);
-                                if (!Number.isFinite(parsed)) return;
-                                updateConfig((draft) => {
-                                  draft.recentInfluenceScore = Math.max(
-                                    -1,
-                                    Math.min(1, Number(parsed.toFixed(3))),
-                                  );
-                                  draft.recentInfluenceAction = "edited";
-                                  draft.recentInfluenceProvenance = {
-                                    ...draft.recentInfluenceProvenance,
-                                    source: "user",
-                                    updated_at: new Date().toISOString(),
-                                  };
-                                });
-                              }}
-                            />
-                          </View>
-                        </View>
-                      )}
-                    </>
-                  )}
-
-                  {activeTab === "constraints" && (
-                    <>
-                      <Pressable
-                        onPress={() => setPanelExpanded("constraints")}
-                        className="flex-row items-center justify-between rounded-md border border-border px-3 py-2"
-                      >
-                        <View className="flex-1">
-                          <Text className="text-sm font-medium">
-                            Constraints
-                          </Text>
-                          <Text className="text-xs text-muted-foreground">
-                            Rest {restDaysCount}d, sessions{" "}
-                            {configData.constraints.min_sessions_per_week ?? 0}-
-                            {configData.constraints.max_sessions_per_week ?? 0}
-                          </Text>
-                        </View>
-                        <View className="flex-row items-center gap-2">
-                          <Badge
-                            variant={getSourceBadgeVariant(
-                              configData.constraintsSource,
-                            )}
-                          >
-                            <Text>{configData.constraintsSource}</Text>
-                          </Badge>
-                          {expandedPanels.constraints ? (
-                            <ChevronUp
-                              size={16}
-                              className="text-muted-foreground"
-                            />
-                          ) : (
-                            <ChevronDown
-                              size={16}
-                              className="text-muted-foreground"
-                            />
-                          )}
-                        </View>
-                      </Pressable>
-
-                      {expandedPanels.constraints && (
-                        <View className="gap-3 rounded-md border border-border bg-muted/20 p-3">
-                          <View className="flex-row items-center justify-between">
-                            <Text className="text-sm">Sessions / week</Text>
-                            <View className="flex-row items-center gap-2">
-                              <Switch
-                                checked={
-                                  configData.locks.min_sessions_per_week.locked
-                                }
-                                onCheckedChange={(value) =>
-                                  setFieldLock(
-                                    "min_sessions_per_week",
-                                    Boolean(value),
-                                  )
-                                }
-                              />
-                              <Switch
-                                checked={
-                                  configData.locks.max_sessions_per_week.locked
-                                }
-                                onCheckedChange={(value) =>
-                                  setFieldLock(
-                                    "max_sessions_per_week",
-                                    Boolean(value),
-                                  )
-                                }
-                              />
-                            </View>
-                          </View>
-                          <View className="flex-row gap-2">
-                            <Input
-                              keyboardType="numeric"
-                              value={String(
-                                configData.constraints.min_sessions_per_week ??
-                                  "",
-                              )}
-                              onChangeText={(value) => {
-                                const parsed = Number(value);
-                                if (!Number.isFinite(parsed)) return;
-                                updateConfig((draft) => {
-                                  draft.constraints.min_sessions_per_week =
-                                    Math.max(0, Math.round(parsed));
-                                  draft.constraintsSource = "user";
-                                });
-                              }}
-                              className="flex-1"
-                            />
-                            <Input
-                              keyboardType="numeric"
-                              value={String(
-                                configData.constraints.max_sessions_per_week ??
-                                  "",
-                              )}
-                              onChangeText={(value) => {
-                                const parsed = Number(value);
-                                if (!Number.isFinite(parsed)) return;
-                                updateConfig((draft) => {
-                                  draft.constraints.max_sessions_per_week =
-                                    Math.max(0, Math.round(parsed));
-                                  draft.constraintsSource = "user";
-                                });
-                              }}
-                              className="flex-1"
-                            />
-                          </View>
-
-                          <View className="gap-2">
-                            <View className="flex-row items-center justify-between">
-                              <Text className="text-sm">Hard rest days</Text>
-                              <Switch
-                                checked={configData.locks.hard_rest_days.locked}
-                                onCheckedChange={(value) =>
-                                  setFieldLock("hard_rest_days", Boolean(value))
-                                }
-                              />
-                            </View>
-                            <View className="flex-row flex-wrap gap-2">
-                              {weekDays.map((day) => {
-                                const selected =
-                                  configData.constraints.hard_rest_days.includes(
-                                    day,
-                                  );
-                                return (
-                                  <Button
-                                    key={`rest-${day}`}
-                                    variant={selected ? "default" : "outline"}
-                                    size="sm"
-                                    onPress={() => {
-                                      updateConfig((draft) => {
-                                        draft.constraints.hard_rest_days =
-                                          selected
-                                            ? draft.constraints.hard_rest_days.filter(
-                                                (candidate) =>
-                                                  candidate !== day,
-                                              )
-                                            : [
-                                                ...draft.constraints
-                                                  .hard_rest_days,
-                                                day,
-                                              ];
-                                        draft.constraintsSource = "user";
-                                      });
-                                    }}
-                                  >
-                                    <Text>{getWeekDayLabel(day)}</Text>
-                                  </Button>
-                                );
-                              })}
-                            </View>
-                          </View>
-
-                          <View className="gap-2">
-                            <View className="flex-row items-center justify-between">
-                              <Text className="text-sm">
-                                Max session duration (min)
-                              </Text>
-                              <Switch
-                                checked={
-                                  configData.locks
-                                    .max_single_session_duration_minutes.locked
-                                }
-                                onCheckedChange={(value) =>
-                                  setFieldLock(
-                                    "max_single_session_duration_minutes",
-                                    Boolean(value),
-                                  )
-                                }
-                              />
-                            </View>
-                            <Input
-                              keyboardType="numeric"
-                              value={String(
-                                configData.constraints
-                                  .max_single_session_duration_minutes ?? "",
-                              )}
-                              onChangeText={(value) => {
-                                const parsed = Number(value);
-                                if (!Number.isFinite(parsed)) return;
-                                updateConfig((draft) => {
-                                  draft.constraints.max_single_session_duration_minutes =
-                                    Math.max(20, Math.round(parsed));
-                                  draft.constraintsSource = "user";
-                                });
-                              }}
-                            />
-                          </View>
-
-                          <View className="gap-2">
-                            <View className="flex-row items-center justify-between">
-                              <Text className="text-sm">Goal difficulty</Text>
-                              <Switch
-                                checked={
-                                  configData.locks.goal_difficulty_preference
-                                    .locked
-                                }
-                                onCheckedChange={(value) =>
-                                  setFieldLock(
-                                    "goal_difficulty_preference",
-                                    Boolean(value),
-                                  )
-                                }
-                              />
-                            </View>
-                            <Select
-                              value={{
-                                value:
-                                  configData.constraints
-                                    .goal_difficulty_preference ?? "balanced",
-                                label:
-                                  goalDifficultyOptions.find(
-                                    (option) =>
-                                      option.value ===
-                                      configData.constraints
-                                        .goal_difficulty_preference,
-                                  )?.label ?? "Balanced",
-                              }}
-                              onValueChange={(option) => {
-                                if (!option?.value) return;
-                                updateConfig((draft) => {
-                                  draft.constraints.goal_difficulty_preference =
-                                    option.value as
-                                      | "conservative"
-                                      | "balanced"
-                                      | "stretch";
-                                  draft.constraintsSource = "user";
-                                });
-                              }}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Choose preference" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {goalDifficultyOptions.map((option) => (
-                                  <SelectItem
-                                    key={option.value}
-                                    label={option.label}
-                                    value={option.value}
-                                  >
-                                    {option.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </View>
-
-                          <View className="gap-2 rounded-md border border-border bg-background/50 p-2">
-                            <View className="flex-row items-center justify-between">
-                              <Text className="text-sm font-medium">
-                                Optimization profile
-                              </Text>
-                              <Switch
-                                checked={
-                                  configData.locks.optimization_profile.locked
-                                }
-                                onCheckedChange={(value) =>
-                                  setFieldLock(
-                                    "optimization_profile",
-                                    Boolean(value),
-                                  )
-                                }
-                                accessibilityLabel="Lock optimization profile"
-                                accessibilityHint="Prevents automatic suggestion updates from changing optimization profile"
-                              />
-                            </View>
-                            <Select
-                              value={{
-                                value: configData.optimizationProfile,
-                                label:
-                                  optimizationProfileOptions.find(
-                                    (option) =>
-                                      option.value ===
-                                      configData.optimizationProfile,
-                                  )?.label ?? "Balanced",
-                              }}
-                              onValueChange={(option) => {
-                                if (!option?.value) return;
-                                updateConfig((draft) => {
-                                  draft.optimizationProfile =
-                                    option.value as TrainingPlanConfigFormData["optimizationProfile"];
-                                });
-                              }}
-                            >
-                              <SelectTrigger
-                                accessibilityLabel="Optimization profile"
-                                accessibilityHint="Select outcome-first, balanced, or sustainable tradeoff"
-                              >
-                                <SelectValue placeholder="Choose profile" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {optimizationProfileOptions.map((option) => (
-                                  <SelectItem
-                                    key={option.value}
-                                    label={option.label}
-                                    value={option.value}
-                                  >
-                                    {option.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <Text
-                              className="text-[11px] text-muted-foreground"
-                              accessibilityRole="text"
-                              accessibilityLabel={`Optimization profile explanation. ${optimizationProfileHelperCopy[configData.optimizationProfile]}`}
-                            >
-                              {
-                                optimizationProfileHelperCopy[
-                                  configData.optimizationProfile
-                                ]
-                              }
-                            </Text>
-                          </View>
-
-                          <View className="gap-2 rounded-md border border-border bg-background/50 p-2">
-                            <View className="flex-row items-center justify-between">
-                              <Text className="text-sm">
-                                Post-goal recovery days
-                              </Text>
-                              <Switch
-                                checked={
-                                  configData.locks.post_goal_recovery_days
-                                    .locked
-                                }
-                                onCheckedChange={(value) =>
-                                  setFieldLock(
-                                    "post_goal_recovery_days",
-                                    Boolean(value),
-                                  )
-                                }
-                                accessibilityLabel="Lock post-goal recovery days"
-                                accessibilityHint="Prevents automatic suggestion updates from changing recovery days"
-                              />
-                            </View>
-                            <Input
-                              keyboardType="numeric"
-                              value={String(configData.postGoalRecoveryDays)}
-                              onChangeText={(value) => {
-                                const parsed = Number(value);
-                                if (!Number.isFinite(parsed)) return;
-                                updateConfig((draft) => {
-                                  draft.postGoalRecoveryDays = Math.max(
-                                    0,
-                                    Math.min(28, Math.round(parsed)),
-                                  );
-                                });
-                              }}
-                              accessibilityLabel="Post-goal recovery days"
-                              accessibilityHint="Sets number of low-load days inserted after each goal"
-                            />
-                            <Text
-                              className="text-[11px] text-muted-foreground"
-                              accessibilityRole="text"
-                              accessibilityLabel={`Post-goal recovery explanation. ${postGoalRecoveryHelperCopy}`}
-                            >
-                              {postGoalRecoveryHelperCopy}
-                            </Text>
-                          </View>
-
-                          <View className="gap-2 rounded-md border border-border bg-background/50 p-2">
-                            <View className="flex-row items-center justify-between">
-                              <Text className="text-sm">
-                                Max weekly load ramp (%)
-                              </Text>
-                              <Switch
-                                checked={
-                                  configData.locks.max_weekly_tss_ramp_pct
-                                    .locked
-                                }
-                                onCheckedChange={(value) =>
-                                  setFieldLock(
-                                    "max_weekly_tss_ramp_pct",
-                                    Boolean(value),
-                                  )
-                                }
-                                accessibilityLabel="Lock max weekly load ramp"
-                                accessibilityHint="Prevents automatic suggestion updates from changing weekly TSS ramp cap"
-                              />
-                            </View>
-                            <Input
-                              keyboardType="numbers-and-punctuation"
-                              value={String(configData.maxWeeklyTssRampPct)}
-                              onChangeText={(value) => {
-                                const parsed = parseNumberOrUndefined(value);
-                                if (parsed === undefined) return;
-                                updateConfig((draft) => {
-                                  draft.maxWeeklyTssRampPct = Math.max(
-                                    0,
-                                    Math.min(20, Number(parsed.toFixed(2))),
-                                  );
-                                });
-                              }}
-                              accessibilityLabel="Max weekly load ramp percent"
-                              accessibilityHint="Sets hard percent cap for week-to-week TSS increase"
-                            />
-                            <Text
-                              className="text-[11px] text-muted-foreground"
-                              accessibilityRole="text"
-                              accessibilityLabel={`Weekly load ramp explanation. ${maxWeeklyTssRampHelperCopy}`}
-                            >
-                              {maxWeeklyTssRampHelperCopy}
-                            </Text>
-                          </View>
-
-                          <View className="gap-2 rounded-md border border-border bg-background/50 p-2">
-                            <View className="flex-row items-center justify-between">
-                              <Text className="text-sm">
-                                Max weekly CTL ramp
-                              </Text>
-                              <Switch
-                                checked={
-                                  configData.locks.max_ctl_ramp_per_week.locked
-                                }
-                                onCheckedChange={(value) =>
-                                  setFieldLock(
-                                    "max_ctl_ramp_per_week",
-                                    Boolean(value),
-                                  )
-                                }
-                                accessibilityLabel="Lock max weekly CTL ramp"
-                                accessibilityHint="Prevents automatic suggestion updates from changing CTL ramp cap"
-                              />
-                            </View>
-                            <Input
-                              keyboardType="numbers-and-punctuation"
-                              value={String(configData.maxCtlRampPerWeek)}
-                              onChangeText={(value) => {
-                                const parsed = parseNumberOrUndefined(value);
-                                if (parsed === undefined) return;
-                                updateConfig((draft) => {
-                                  draft.maxCtlRampPerWeek = Math.max(
-                                    0,
-                                    Math.min(8, Number(parsed.toFixed(2))),
-                                  );
-                                });
-                              }}
-                              accessibilityLabel="Max weekly CTL ramp"
-                              accessibilityHint="Sets hard cap for weekly CTL increase"
-                            />
-                            <Text
-                              className="text-[11px] text-muted-foreground"
-                              accessibilityRole="text"
-                              accessibilityLabel={`Weekly CTL ramp explanation. ${maxCtlRampHelperCopy}`}
-                            >
-                              {maxCtlRampHelperCopy}
-                            </Text>
-                          </View>
-                        </View>
-                      )}
-                    </>
-                  )}
-                </View>
-              )}
-
-              {activeTab === "review" && (
-                <View className="gap-2 rounded-lg border border-border bg-card p-3">
-                  <View className="flex-row items-center justify-between">
-                    <Text className="font-semibold">
-                      Feasibility and safety
-                    </Text>
+            {activeTab === "review" && (
+              <View className="gap-2 rounded-lg border border-border bg-card p-3">
+                <View className="flex-row items-center justify-between">
+                  <Text className="font-semibold">Feasibility and safety</Text>
+                  <View className="flex-row items-center gap-2">
+                    <View
+                      className="flex-row items-center gap-1 rounded-full border border-border px-2 py-1"
+                      accessibilityRole="text"
+                      accessibilityLabel={`${reviewNoticeCount} plan notice${reviewNoticeCount === 1 ? "" : "s"} to review`}
+                    >
+                      <Trophy size={12} className="text-muted-foreground" />
+                      <Text className="text-xs font-medium">
+                        {reviewNoticeCount}
+                      </Text>
+                    </View>
                     {isPreviewPending && (
                       <Text className="text-xs text-muted-foreground">
                         Refreshing...
                       </Text>
                     )}
                   </View>
-                  {feasibilitySafetySummary ? (
-                    <>
-                      <View className="flex-row gap-2">
-                        <Badge
-                          variant={
-                            feasibilitySafetySummary.feasibility_band ===
-                            "on-track"
-                              ? "default"
-                              : "secondary"
-                          }
-                        >
-                          <Text>
-                            {feasibilitySafetySummary.feasibility_band}
-                          </Text>
-                        </Badge>
-                        <Badge
-                          variant={
-                            feasibilitySafetySummary.safety_band === "safe"
-                              ? "default"
-                              : feasibilitySafetySummary.safety_band ===
-                                  "caution"
-                                ? "secondary"
-                                : "destructive"
-                          }
-                        >
-                          <Text>{feasibilitySafetySummary.safety_band}</Text>
-                        </Badge>
-                      </View>
-                      {feasibilitySafetySummary.top_drivers
-                        .slice(0, 3)
-                        .map((driver) => (
-                          <Text
-                            key={driver.code}
-                            className="text-xs text-muted-foreground"
-                          >
-                            - {driver.message}
-                          </Text>
-                        ))}
-                    </>
-                  ) : (
-                    <Text className="text-xs text-muted-foreground">
-                      Complete required goal fields to compute pre-submit
-                      safety.
-                    </Text>
-                  )}
                 </View>
-              )}
-
-              {activeTab === "review" && conflictItems.length > 0 && (
-                <View className="gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-3">
-                  <View className="flex-row items-center gap-2">
-                    <ShieldAlert size={16} className="text-destructive" />
-                    <Text className="font-semibold text-destructive">
-                      Resolve blocking conflicts
-                    </Text>
-                  </View>
-                  {conflictItems.map((conflict) => (
-                    <View
-                      key={`${conflict.code}-${conflict.message}`}
-                      className="gap-1 rounded-md border border-destructive/30 p-2"
-                    >
-                      <Text className="text-sm text-destructive">
-                        {conflict.message}
-                      </Text>
-                      {conflict.suggestions.map((suggestion) => (
+                {feasibilitySafetySummary ? (
+                  <>
+                    <View className="flex-row gap-2">
+                      <Badge
+                        variant={
+                          feasibilitySafetySummary.feasibility_band ===
+                          "on-track"
+                            ? "default"
+                            : "secondary"
+                        }
+                      >
+                        <Text>{feasibilitySafetySummary.feasibility_band}</Text>
+                      </Badge>
+                      <Badge
+                        variant={
+                          feasibilitySafetySummary.safety_band === "safe"
+                            ? "default"
+                            : feasibilitySafetySummary.safety_band === "caution"
+                              ? "secondary"
+                              : "destructive"
+                        }
+                      >
+                        <Text>{feasibilitySafetySummary.safety_band}</Text>
+                      </Badge>
+                    </View>
+                    {feasibilitySafetySummary.top_drivers
+                      .slice(0, 3)
+                      .map((driver) => (
                         <Text
-                          key={`${conflict.code}-${suggestion}`}
-                          className="text-xs text-destructive"
+                          key={driver.code}
+                          className="text-xs text-muted-foreground"
                         >
-                          - {suggestion}
+                          - {driver.message}
                         </Text>
                       ))}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onPress={() => onResolveConflict(conflict.code)}
-                      >
-                        <Text>Apply quick fix</Text>
-                      </Button>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </>
-          )}
-
-          {activeTab === "goals" && (
-            <View className="gap-2">
-              <Text className="text-sm text-muted-foreground">
-                Your plan starts with one primary goal. Additional goals are
-                optional.
-              </Text>
-              <View className="gap-2 rounded-lg border border-border bg-card p-3">
-                <Label nativeID="plan-start-date">
-                  <Text className="text-sm font-medium">Plan Start Date</Text>
-                </Label>
-                <Pressable
-                  onPress={() => setIsPlanStartDatePickerVisible(true)}
-                  className="rounded-md border border-input bg-background px-3 py-3"
-                >
-                  <Text>
-                    {formData.planStartDate
-                      ? format(
-                          parsePlanStartDate(formData.planStartDate),
-                          "EEE, MMM d, yyyy",
-                        )
-                      : "Use today (default)"}
+                  </>
+                ) : (
+                  <Text className="text-xs text-muted-foreground">
+                    Safety summary appears here as your setup is completed.
                   </Text>
-                </Pressable>
-                {isPlanStartDatePickerVisible && (
-                  <DateTimePicker
-                    value={parsePlanStartDate(formData.planStartDate)}
-                    mode="date"
-                    display="default"
-                    onChange={handlePlanStartDateChange}
-                  />
                 )}
-                <Text className="text-xs text-muted-foreground">
-                  If unset, the plan start date defaults to today.
-                </Text>
-                {formData.planStartDate ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onPress={() =>
-                      onFormDataChange({
-                        ...formData,
-                        planStartDate: undefined,
-                      })
-                    }
-                  >
-                    <Text>Clear date</Text>
-                  </Button>
-                ) : null}
-                {errors.planStartDate ? (
-                  <Text className="text-xs text-destructive">
-                    {errors.planStartDate}
-                  </Text>
-                ) : null}
               </View>
-              {errors.goals && (
-                <Text className="text-xs text-destructive">{errors.goals}</Text>
-              )}
-            </View>
-          )}
+            )}
 
-          {activeTab === "goals" &&
-            formData.goals.map((goal, goalIndex) => {
-              const isGoalExpanded = expandedGoalIds.includes(goal.id);
-              return (
-                <View
-                  key={goal.id}
-                  className="gap-3 rounded-lg border border-border bg-muted/20 p-3"
+            {activeTab === "review" && createDisabledReason && (
+              <View
+                className={`gap-1 rounded-lg p-3 ${blockingIssues.length > 0 ? "border border-amber-300 bg-amber-100/40" : "border border-destructive/40 bg-destructive/5"}`}
+              >
+                <Text
+                  className={`text-xs font-medium ${blockingIssues.length > 0 ? "text-amber-800" : "text-destructive"}`}
                 >
-                  <View className="flex-row items-center justify-between">
-                    <Pressable
-                      onPress={() => toggleGoalExpanded(goal.id)}
-                      className="flex-1 flex-row items-center justify-between pr-2"
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        goalIndex === 0
-                          ? "Primary goal details"
-                          : `Optional goal ${goalIndex + 1} details`
+                  {createDisabledReason}
+                </Text>
+                {blockingIssues.length > 0 && onRiskAcknowledgedChange && (
+                  <View className="mt-1 flex-row items-center justify-between rounded-md border border-amber-300 px-2 py-2">
+                    <Text className="mr-2 flex-1 text-xs text-amber-800">
+                      I understand the feasibility/safety risk and want to
+                      create this plan anyway.
+                    </Text>
+                    <Switch
+                      checked={riskAcknowledged}
+                      onCheckedChange={(value) =>
+                        onRiskAcknowledgedChange(Boolean(value))
                       }
-                      accessibilityHint={
-                        isGoalExpanded
-                          ? "Collapses this goal section"
-                          : "Expands this goal section"
-                      }
-                      accessibilityState={{ expanded: isGoalExpanded }}
-                    >
-                      <Text className="font-semibold">
-                        {goalIndex === 0
-                          ? "Primary Goal"
-                          : `Goal ${goalIndex + 1} (Optional)`}
+                      accessibilityLabel="Acknowledge plan risk"
+                      accessibilityHint="Enable to allow creating a plan with unresolved feasibility or safety issues"
+                    />
+                  </View>
+                )}
+              </View>
+            )}
+
+            {activeTab === "review" && blockingIssues.length > 0 && (
+              <View className="gap-2 rounded-lg border border-amber-300 bg-amber-100/40 p-3">
+                <View className="flex-row items-center gap-2">
+                  <ShieldAlert size={16} className="text-amber-800" />
+                  <Text className="font-semibold text-amber-800">
+                    Observations based on known standards
+                  </Text>
+                </View>
+                {blockingIssues.map((conflict) => (
+                  <View
+                    key={`${conflict.code}-${conflict.message}`}
+                    className="gap-1 rounded-md border border-amber-300 p-2"
+                  >
+                    <Text className="text-sm text-amber-800">
+                      {conflict.message}
+                    </Text>
+                    {conflict.suggestions.map((suggestion) => (
+                      <Text
+                        key={`${conflict.code}-${suggestion}`}
+                        className="text-xs text-amber-800"
+                      >
+                        - {suggestion}
                       </Text>
-                      {isGoalExpanded ? (
-                        <ChevronUp
-                          size={18}
-                          className="text-muted-foreground"
-                        />
-                      ) : (
-                        <ChevronDown
-                          size={18}
-                          className="text-muted-foreground"
-                        />
-                      )}
-                    </Pressable>
+                    ))}
                     <Button
+                      size="sm"
                       variant="outline"
-                      size="icon"
-                      onPress={() => removeGoal(goal.id)}
-                      disabled={formData.goals.length <= 1 || goalIndex === 0}
-                      accessibilityLabel={
-                        goalIndex === 0
-                          ? "Delete primary goal unavailable"
-                          : `Delete optional goal ${goalIndex + 1}`
-                      }
-                      accessibilityHint={
-                        goalIndex === 0
-                          ? "The primary goal cannot be deleted"
-                          : "Removes this optional goal from your plan"
-                      }
-                      accessibilityState={{
-                        disabled: formData.goals.length <= 1 || goalIndex === 0,
-                      }}
+                      onPress={() => onResolveConflict(conflict.code)}
                     >
-                      <Trash2 size={16} className="text-muted-foreground" />
+                      <Text>Apply suggested fix</Text>
                     </Button>
                   </View>
+                ))}
+              </View>
+            )}
+          </>
+        )}
 
-                  {goalIndex > 0 && !isGoalExpanded && (
-                    <Text className="text-xs text-muted-foreground">
-                      Tap to expand this optional goal.
-                    </Text>
-                  )}
+        {activeTab === "goals" && errors.goals && (
+          <Text className="text-xs text-destructive">{errors.goals}</Text>
+        )}
 
-                  {isGoalExpanded && (
-                    <>
-                      <View className="gap-2">
-                        <Label nativeID={`goal-name-${goal.id}`}>
-                          <Text className="text-sm font-medium">
-                            Goal Name{" "}
-                            <Text className="text-destructive">*</Text>
-                          </Text>
-                        </Label>
-                        <Input
-                          aria-labelledby={`goal-name-${goal.id}`}
-                          placeholder="e.g., Spring Half Marathon"
-                          value={goal.name}
-                          onChangeText={(value) =>
-                            updateGoal(goal.id, { name: value })
+        {activeTab === "goals" && (
+          <View className="gap-2">
+            <View className="relative">
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerClassName="flex-row gap-2 pr-2"
+              >
+                {formData.goals.map((goal, goalIndex) => {
+                  const isActive = activeGoal?.id === goal.id;
+                  return (
+                    <Pressable
+                      key={goal.id}
+                      onPress={() => setActiveGoalId(goal.id)}
+                      className={`rounded-md border px-3 py-2 ${isActive ? "border-primary bg-primary/10" : "border-border bg-background"}`}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: isActive }}
+                      accessibilityLabel={`Goal ${goalIndex + 1}`}
+                    >
+                      <View className="flex-row items-center gap-1.5">
+                        <Flag
+                          size={13}
+                          className={
+                            isActive ? "text-primary" : "text-muted-foreground"
                           }
-                          autoFocus={goalIndex === 0}
-                          maxLength={100}
                         />
-                        {getError(`goals.${goalIndex}.name`) && (
-                          <Text className="text-xs text-destructive">
-                            {getError(`goals.${goalIndex}.name`)}
-                          </Text>
-                        )}
-                      </View>
-
-                      <View className="gap-2">
-                        <Label nativeID={`target-date-${goal.id}`}>
-                          <Text className="text-sm font-medium">
-                            Target Date{" "}
-                            <Text className="text-destructive">*</Text>
-                          </Text>
-                        </Label>
-                        <Pressable
-                          onPress={() => setDatePickerGoalId(goal.id)}
-                          className="rounded-md border border-input bg-background px-3 py-3"
+                        <Text
+                          className={`text-xs ${isActive ? "font-semibold text-foreground" : "text-muted-foreground"}`}
+                          numberOfLines={1}
                         >
-                          <Text>
-                            {format(
-                              parseGoalDate(goal.targetDate),
-                              "EEE, MMM d, yyyy",
-                            )}
-                          </Text>
-                        </Pressable>
-                        {datePickerGoalId === goal.id && (
-                          <DateTimePicker
-                            value={parseGoalDate(goal.targetDate)}
-                            mode="date"
-                            display="default"
-                            minimumDate={new Date()}
-                            onChange={(event, selectedDate) =>
-                              handleGoalDateChange(goal.id, event, selectedDate)
-                            }
-                          />
-                        )}
-                        {getError(`goals.${goalIndex}.targetDate`) && (
-                          <Text className="text-xs text-destructive">
-                            {getError(`goals.${goalIndex}.targetDate`)}
-                          </Text>
-                        )}
+                          {goal.name.trim() || `Goal ${goalIndex + 1}`}
+                        </Text>
+                        <Badge variant={isActive ? "default" : "outline"}>
+                          <Text>{goal.targets.length}</Text>
+                        </Badge>
                       </View>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+              <View className="absolute right-0 top-0 bottom-0 justify-center pl-2 z-10">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onPress={addGoal}
+                  accessibilityLabel="Add goal"
+                  accessibilityHint="Adds a new goal"
+                  hitSlop={8}
+                >
+                  <Plus size={16} className="text-muted-foreground" />
+                </Button>
+              </View>
+            </View>
+          </View>
+        )}
 
-                      <View className="gap-3 rounded-lg border border-border bg-background/80 p-3">
-                        <View className="flex-row items-center justify-between">
-                          <Text className="font-medium">Targets</Text>
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            onPress={() => addTarget(goal.id)}
-                            accessibilityLabel={`Add target to ${goal.name.trim() || (goalIndex === 0 ? "primary goal" : `goal ${goalIndex + 1}`)}`}
-                            accessibilityHint="Adds another target under this goal"
-                          >
-                            <Plus size={16} className="text-muted-foreground" />
-                          </Button>
-                        </View>
+        {activeTab === "goals" && activeGoal && activeGoalIndex >= 0 && (
+          <View className="gap-2 rounded-lg border border-border bg-muted/20 p-2.5">
+            <View className="flex-row items-center gap-2">
+              <View className="flex-1 gap-1.5">
+                <Input
+                  aria-label="Goal name"
+                  placeholder="Goal name"
+                  value={activeGoal.name}
+                  onChangeText={(value) =>
+                    updateGoal(activeGoal.id, { name: value })
+                  }
+                  maxLength={100}
+                />
+                {getError(`goals.${activeGoalIndex}.name`) && (
+                  <Text className="text-xs text-destructive">
+                    {getError(`goals.${activeGoalIndex}.name`)}
+                  </Text>
+                )}
+              </View>
+              <Button
+                variant="outline"
+                size="icon"
+                onPress={() => removeGoal(activeGoal.id)}
+                disabled={formData.goals.length <= 1 || activeGoalIndex === 0}
+                accessibilityLabel="Delete goal"
+              >
+                <Trash2 size={16} className="text-muted-foreground" />
+              </Button>
+            </View>
 
-                        {goal.targets.map((target, targetIndex) => {
-                          const rowError = getTargetRowError(
-                            goalIndex,
-                            targetIndex,
-                          );
-                          return (
-                            <View
-                              key={target.id}
-                              className="gap-2 rounded-md border border-border bg-muted/20 p-3"
-                            >
-                              <Pressable
-                                onPress={() =>
-                                  setEditingTargetRef({
-                                    goalId: goal.id,
-                                    targetId: target.id,
-                                  })
-                                }
-                                className="gap-1"
-                              >
-                                <Text className="text-sm font-medium">
-                                  {getTargetTypeLabel(target.targetType)}
-                                </Text>
-                                <Text className="text-xs text-muted-foreground">
-                                  {getTargetSummary(target)}
-                                </Text>
-                              </Pressable>
+            <DateField
+              id={`target-date-${activeGoal.id}`}
+              label="Target date"
+              value={activeGoal.targetDate}
+              onChange={(nextDate) => {
+                if (!nextDate) {
+                  return;
+                }
+                markFieldTouched(`goals.${activeGoalIndex}.targetDate`);
+                updateGoal(activeGoal.id, { targetDate: nextDate });
+              }}
+              required
+              minimumDate={new Date()}
+              error={getError(`goals.${activeGoalIndex}.targetDate`)}
+              accessibilityHint="Sets goal target date. Format yyyy-mm-dd"
+            />
 
-                              <View className="flex-row justify-end gap-2">
-                                <Button
-                                  variant="outline"
-                                  size="icon"
-                                  onPress={() =>
-                                    setEditingTargetRef({
-                                      goalId: goal.id,
-                                      targetId: target.id,
-                                    })
-                                  }
-                                  accessibilityLabel={`Edit target ${targetIndex + 1} for ${goal.name.trim() || (goalIndex === 0 ? "primary goal" : `goal ${goalIndex + 1}`)}`}
-                                  accessibilityHint="Opens target details for editing"
-                                >
-                                  <Pencil
-                                    size={16}
-                                    className="text-muted-foreground"
-                                  />
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="icon"
-                                  onPress={() =>
-                                    removeTarget(goal.id, target.id)
-                                  }
-                                  disabled={goal.targets.length <= 1}
-                                  accessibilityLabel={`Delete target ${targetIndex + 1} for ${goal.name.trim() || (goalIndex === 0 ? "primary goal" : `goal ${goalIndex + 1}`)}`}
-                                  accessibilityHint={
-                                    goal.targets.length <= 1
-                                      ? "Each goal needs at least one target"
-                                      : "Removes this target from the goal"
-                                  }
-                                  accessibilityState={{
-                                    disabled: goal.targets.length <= 1,
-                                  }}
-                                >
-                                  <Trash2
-                                    size={16}
-                                    className="text-muted-foreground"
-                                  />
-                                </Button>
-                              </View>
-
-                              {rowError && (
-                                <Text className="text-xs text-destructive">
-                                  {rowError}
-                                </Text>
-                              )}
-                            </View>
-                          );
-                        })}
-                      </View>
-                    </>
-                  )}
+            <View className="gap-2 rounded-md border border-border bg-background/70 p-2">
+              <View className="flex-row items-center justify-between">
+                <Text className="text-xs text-muted-foreground">Targets</Text>
+                <View className="flex-row gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onPress={() =>
+                      addTargetWithType(activeGoal.id, "race_performance")
+                    }
+                    accessibilityLabel="Add race target"
+                  >
+                    <Flag size={14} className="text-muted-foreground" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onPress={() =>
+                      addTargetWithType(activeGoal.id, "pace_threshold")
+                    }
+                    accessibilityLabel="Add pace target"
+                  >
+                    <Gauge size={14} className="text-muted-foreground" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onPress={() =>
+                      addTargetWithType(activeGoal.id, "power_threshold")
+                    }
+                    accessibilityLabel="Add power target"
+                  >
+                    <Zap size={14} className="text-muted-foreground" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onPress={() =>
+                      addTargetWithType(activeGoal.id, "hr_threshold")
+                    }
+                    accessibilityLabel="Add heart-rate target"
+                  >
+                    <Heart size={14} className="text-muted-foreground" />
+                  </Button>
                 </View>
-              );
-            })}
+              </View>
 
-          {activeTab === "goals" && (
-            <Button
-              variant="outline"
-              onPress={addGoal}
-              className="flex-row gap-2"
-            >
-              <Plus size={16} className="text-muted-foreground" />
-              <Text>Add Optional Goal</Text>
-            </Button>
-          )}
-        </View>
+              {activeGoal.targets.map((target, targetIndex) => {
+                const rowError = getTargetRowError(
+                  activeGoalIndex,
+                  targetIndex,
+                );
+                const icon =
+                  target.targetType === "race_performance" ? (
+                    <Flag size={13} className="text-muted-foreground" />
+                  ) : target.targetType === "pace_threshold" ? (
+                    <Gauge size={13} className="text-muted-foreground" />
+                  ) : target.targetType === "power_threshold" ? (
+                    <Zap size={13} className="text-muted-foreground" />
+                  ) : (
+                    <Heart size={13} className="text-muted-foreground" />
+                  );
 
-        <View className="h-12" />
+                return (
+                  <View
+                    key={target.id}
+                    className="gap-1 rounded-md border border-border bg-background/80 px-2 py-2"
+                  >
+                    <View className="flex-row items-center gap-2">
+                      {icon}
+                      <Pressable
+                        onPress={() =>
+                          setEditingTargetRef({
+                            goalId: activeGoal.id,
+                            targetId: target.id,
+                          })
+                        }
+                        className="flex-1 gap-0.5"
+                      >
+                        <Text className="text-xs font-medium">
+                          {getTargetTypeLabel(target.targetType)}
+                        </Text>
+                        <Text
+                          className="text-xs text-muted-foreground"
+                          numberOfLines={1}
+                        >
+                          {getTargetSummary(target)}
+                        </Text>
+                      </Pressable>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onPress={() =>
+                          setEditingTargetRef({
+                            goalId: activeGoal.id,
+                            targetId: target.id,
+                          })
+                        }
+                        accessibilityLabel="Edit target"
+                      >
+                        <Pencil size={14} className="text-muted-foreground" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onPress={() => removeTarget(activeGoal.id, target.id)}
+                        disabled={activeGoal.targets.length <= 1}
+                        accessibilityLabel="Delete target"
+                      >
+                        <Trash2 size={14} className="text-muted-foreground" />
+                      </Button>
+                    </View>
+
+                    {rowError && (
+                      <Text className="text-xs text-destructive">
+                        {rowError}
+                      </Text>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
       </ScrollView>
 
       <Modal
@@ -2171,7 +1576,7 @@ export function SinglePageForm({
               <View className="gap-2">
                 <Label nativeID="editor-target-type">
                   <Text className="text-sm font-medium">
-                    Target Type <Text className="text-destructive">*</Text>
+                    Target Type<Text className="text-destructive">*</Text>
                   </Text>
                 </Label>
                 <Select
@@ -2240,7 +1645,7 @@ export function SinglePageForm({
                   <View className="gap-2">
                     <Label nativeID="editor-race-category">
                       <Text className="text-sm font-medium">
-                        Activity <Text className="text-destructive">*</Text>
+                        Activity<Text className="text-destructive">*</Text>
                       </Text>
                     </Label>
                     <Select
@@ -2298,93 +1703,66 @@ export function SinglePageForm({
                     )}
                   </View>
 
-                  <View className="gap-2">
-                    <Label nativeID="editor-distance">
-                      <Text className="text-sm font-medium">
-                        Distance (km){" "}
-                        <Text className="text-destructive">*</Text>
-                      </Text>
-                    </Label>
-                    <Input
-                      aria-labelledby="editor-distance"
-                      value={editingContext.target.distanceKm ?? ""}
-                      onChangeText={(value) =>
-                        updateTarget(
-                          editingContext.goal.id,
-                          editingContext.target.id,
-                          {
-                            distanceKm: value,
-                          },
-                        )
-                      }
-                      keyboardType="numbers-and-punctuation"
-                      placeholder="e.g., 21.1"
-                    />
-                    <View className="flex-row flex-wrap gap-2">
-                      {(
-                        raceDistancePresetsByCategory[
-                          editingContext.target.activityCategory ?? "run"
-                        ] ?? raceDistancePresetsByCategory.run
-                      ).map((preset) => (
-                        <Button
-                          key={`${editingContext.goal.id}-${editingContext.target.id}-${preset.label}`}
-                          variant="outline"
-                          size="sm"
-                          onPress={() =>
-                            applyRaceDistancePreset(
-                              editingContext.goal.id,
-                              editingContext.target.id,
-                              preset.km,
-                            )
-                          }
-                        >
-                          <Text>{preset.label}</Text>
-                        </Button>
-                      ))}
-                    </View>
-                    {getError(
+                  <BoundedNumberInput
+                    id="editor-distance"
+                    label="Distance"
+                    value={editingContext.target.distanceKm ?? ""}
+                    onChange={(nextValue) => {
+                      markFieldTouched(
+                        `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.distanceKm`,
+                      );
+                      updateTarget(
+                        editingContext.goal.id,
+                        editingContext.target.id,
+                        {
+                          distanceKm: nextValue,
+                        },
+                      );
+                    }}
+                    min={0.1}
+                    max={1000}
+                    decimals={2}
+                    unitLabel="km"
+                    placeholder="e.g., 21.1"
+                    helperText="Enter distance in kilometers"
+                    required
+                    presets={(
+                      raceDistancePresetsByCategory[
+                        editingContext.target.activityCategory ?? "run"
+                      ] ?? raceDistancePresetsByCategory.run
+                    ).map((preset) => ({
+                      label: preset.label,
+                      value: preset.km,
+                    }))}
+                    error={getError(
                       `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.distanceKm`,
-                    ) && (
-                      <Text className="text-xs text-destructive">
-                        {getError(
-                          `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.distanceKm`,
-                        )}
-                      </Text>
                     )}
-                  </View>
+                    accessibilityHint="Enter distance in kilometers, for example 21.1"
+                  />
 
-                  <View className="gap-2">
-                    <Label nativeID="editor-race-time">
-                      <Text className="text-sm font-medium">
-                        Completion Time (h:mm:ss){" "}
-                        <Text className="text-destructive">*</Text>
-                      </Text>
-                    </Label>
-                    <Input
-                      aria-labelledby="editor-race-time"
-                      value={editingContext.target.completionTimeHms ?? ""}
-                      onChangeText={(value) =>
-                        updateTarget(
-                          editingContext.goal.id,
-                          editingContext.target.id,
-                          {
-                            completionTimeHms: value,
-                          },
-                        )
-                      }
-                      keyboardType="numbers-and-punctuation"
-                      placeholder="e.g., 1:35:00"
-                    />
-                    {getError(
+                  <DurationInput
+                    id="editor-race-time"
+                    label="Completion Time"
+                    value={editingContext.target.completionTimeHms ?? ""}
+                    onChange={(nextValue) => {
+                      markFieldTouched(
+                        `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.completionTimeHms`,
+                      );
+                      updateTarget(
+                        editingContext.goal.id,
+                        editingContext.target.id,
+                        {
+                          completionTimeHms: nextValue,
+                        },
+                      );
+                    }}
+                    placeholder="e.g., 1:35:00"
+                    required
+                    error={getError(
                       `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.completionTimeHms`,
-                    ) && (
-                      <Text className="text-xs text-destructive">
-                        {getError(
-                          `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.completionTimeHms`,
-                        )}
-                      </Text>
                     )}
-                  </View>
+                    accessibilityHint="Enter completion time in h:mm:ss format"
+                  />
                 </>
               )}
 
@@ -2393,7 +1771,7 @@ export function SinglePageForm({
                   <View className="gap-2">
                     <Label nativeID="editor-pace-category">
                       <Text className="text-sm font-medium">
-                        Activity <Text className="text-destructive">*</Text>
+                        Activity<Text className="text-destructive">*</Text>
                       </Text>
                     </Label>
                     <Select
@@ -2451,71 +1829,52 @@ export function SinglePageForm({
                     )}
                   </View>
 
-                  <View className="gap-2">
-                    <Label nativeID="editor-pace">
-                      <Text className="text-sm font-medium">
-                        Target Pace (mm:ss){" "}
-                        <Text className="text-destructive">*</Text>
-                      </Text>
-                    </Label>
-                    <Input
-                      aria-labelledby="editor-pace"
-                      value={editingContext.target.paceMmSs ?? ""}
-                      onChangeText={(value) =>
-                        updateTarget(
-                          editingContext.goal.id,
-                          editingContext.target.id,
-                          {
-                            paceMmSs: value,
-                          },
-                        )
-                      }
-                      keyboardType="numbers-and-punctuation"
-                      placeholder="e.g., 4:15"
-                    />
-                    {getError(
+                  <PaceInput
+                    id="editor-pace"
+                    label="Target Pace"
+                    value={editingContext.target.paceMmSs ?? ""}
+                    onChange={(nextValue) => {
+                      markFieldTouched(
+                        `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.paceMmSs`,
+                      );
+                      updateTarget(
+                        editingContext.goal.id,
+                        editingContext.target.id,
+                        {
+                          paceMmSs: nextValue,
+                        },
+                      );
+                    }}
+                    required
+                    error={getError(
                       `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.paceMmSs`,
-                    ) && (
-                      <Text className="text-xs text-destructive">
-                        {getError(
-                          `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.paceMmSs`,
-                        )}
-                      </Text>
                     )}
-                  </View>
+                    accessibilityHint="Enter pace in mm:ss per kilometer"
+                  />
 
-                  <View className="gap-2">
-                    <Label nativeID="editor-pace-test-duration">
-                      <Text className="text-sm font-medium">
-                        Required Test Duration (h:mm:ss){" "}
-                        <Text className="text-destructive">*</Text>
-                      </Text>
-                    </Label>
-                    <Input
-                      aria-labelledby="editor-pace-test-duration"
-                      value={editingContext.target.testDurationHms ?? ""}
-                      onChangeText={(value) =>
-                        updateTarget(
-                          editingContext.goal.id,
-                          editingContext.target.id,
-                          {
-                            testDurationHms: value,
-                          },
-                        )
-                      }
-                      keyboardType="numbers-and-punctuation"
-                      placeholder="e.g., 0:20:00"
-                    />
-                    {getError(
+                  <DurationInput
+                    id="editor-pace-test-duration"
+                    label="Required Test Duration"
+                    value={editingContext.target.testDurationHms ?? ""}
+                    onChange={(nextValue) => {
+                      markFieldTouched(
+                        `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.testDurationHms`,
+                      );
+                      updateTarget(
+                        editingContext.goal.id,
+                        editingContext.target.id,
+                        {
+                          testDurationHms: nextValue,
+                        },
+                      );
+                    }}
+                    placeholder="e.g., 0:20:00"
+                    required
+                    error={getError(
                       `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.testDurationHms`,
-                    ) && (
-                      <Text className="text-xs text-destructive">
-                        {getError(
-                          `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.testDurationHms`,
-                        )}
-                      </Text>
                     )}
-                  </View>
+                    accessibilityHint="Enter test duration in h:mm:ss format"
+                  />
                 </>
               )}
 
@@ -2524,7 +1883,7 @@ export function SinglePageForm({
                   <View className="gap-2">
                     <Label nativeID="editor-power-category">
                       <Text className="text-sm font-medium">
-                        Activity <Text className="text-destructive">*</Text>
+                        Activity<Text className="text-destructive">*</Text>
                       </Text>
                     </Label>
                     <Select
@@ -2582,113 +1941,98 @@ export function SinglePageForm({
                     )}
                   </View>
 
-                  <View className="gap-2">
-                    <Label nativeID="editor-power-watts">
-                      <Text className="text-sm font-medium">
-                        Target Watts <Text className="text-destructive">*</Text>
-                      </Text>
-                    </Label>
-                    <Input
-                      aria-labelledby="editor-power-watts"
-                      value={
-                        editingContext.target.targetWatts === undefined
-                          ? ""
-                          : String(editingContext.target.targetWatts)
-                      }
-                      onChangeText={(value) =>
-                        updateTarget(
-                          editingContext.goal.id,
-                          editingContext.target.id,
-                          {
-                            targetWatts: parseNumberOrUndefined(value),
-                          },
-                        )
-                      }
-                      keyboardType="numeric"
-                      placeholder="e.g., 285"
-                    />
-                    {getError(
-                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.targetWatts`,
-                    ) && (
-                      <Text className="text-xs text-destructive">
-                        {getError(
-                          `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.targetWatts`,
-                        )}
-                      </Text>
-                    )}
-                  </View>
-
-                  <View className="gap-2">
-                    <Label nativeID="editor-power-test-duration">
-                      <Text className="text-sm font-medium">
-                        Required Test Duration (h:mm:ss){" "}
-                        <Text className="text-destructive">*</Text>
-                      </Text>
-                    </Label>
-                    <Input
-                      aria-labelledby="editor-power-test-duration"
-                      value={editingContext.target.testDurationHms ?? ""}
-                      onChangeText={(value) =>
-                        updateTarget(
-                          editingContext.goal.id,
-                          editingContext.target.id,
-                          {
-                            testDurationHms: value,
-                          },
-                        )
-                      }
-                      keyboardType="numbers-and-punctuation"
-                      placeholder="e.g., 0:20:00"
-                    />
-                    {getError(
-                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.testDurationHms`,
-                    ) && (
-                      <Text className="text-xs text-destructive">
-                        {getError(
-                          `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.testDurationHms`,
-                        )}
-                      </Text>
-                    )}
-                  </View>
-                </>
-              )}
-
-              {editingContext.target.targetType === "hr_threshold" && (
-                <View className="gap-2">
-                  <Label nativeID="editor-lthr-bpm">
-                    <Text className="text-sm font-medium">
-                      LTHR (bpm) <Text className="text-destructive">*</Text>
-                    </Text>
-                  </Label>
-                  <Input
-                    aria-labelledby="editor-lthr-bpm"
+                  <BoundedNumberInput
+                    id="editor-power-watts"
+                    label="Target Watts"
                     value={
-                      editingContext.target.targetLthrBpm === undefined
+                      editingContext.target.targetWatts === undefined
                         ? ""
-                        : String(editingContext.target.targetLthrBpm)
+                        : String(editingContext.target.targetWatts)
                     }
-                    onChangeText={(value) =>
+                    onChange={(value) => {
+                      markFieldTouched(
+                        `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.targetWatts`,
+                      );
                       updateTarget(
                         editingContext.goal.id,
                         editingContext.target.id,
                         {
-                          targetLthrBpm: parseNumberOrUndefined(value),
+                          targetWatts: parseNumberOrUndefined(value),
                         },
-                      )
-                    }
-                    keyboardType="numeric"
-                    placeholder="e.g., 168"
+                      );
+                    }}
+                    min={1}
+                    max={2000}
+                    decimals={0}
+                    unitLabel="W"
+                    required
+                    placeholder="e.g., 285"
+                    helperText="Enter whole watts"
+                    error={getError(
+                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.targetWatts`,
+                    )}
+                    accessibilityHint="Enter target power in whole watts"
                   />
-                  {getError(
+
+                  <DurationInput
+                    id="editor-power-test-duration"
+                    label="Required Test Duration"
+                    value={editingContext.target.testDurationHms ?? ""}
+                    onChange={(nextValue) => {
+                      markFieldTouched(
+                        `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.testDurationHms`,
+                      );
+                      updateTarget(
+                        editingContext.goal.id,
+                        editingContext.target.id,
+                        {
+                          testDurationHms: nextValue,
+                        },
+                      );
+                    }}
+                    placeholder="e.g., 0:20:00"
+                    required
+                    error={getError(
+                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.testDurationHms`,
+                    )}
+                    accessibilityHint="Enter test duration in h:mm:ss format"
+                  />
+                </>
+              )}
+
+              {editingContext.target.targetType === "hr_threshold" && (
+                <BoundedNumberInput
+                  id="editor-lthr-bpm"
+                  label="LTHR"
+                  value={
+                    editingContext.target.targetLthrBpm === undefined
+                      ? ""
+                      : String(editingContext.target.targetLthrBpm)
+                  }
+                  onChange={(value) => {
+                    markFieldTouched(
+                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.targetLthrBpm`,
+                    );
+                    updateTarget(
+                      editingContext.goal.id,
+                      editingContext.target.id,
+                      {
+                        targetLthrBpm: parseNumberOrUndefined(value),
+                      },
+                    );
+                  }}
+                  min={1}
+                  max={260}
+                  decimals={0}
+                  unitLabel="bpm"
+                  required
+                  placeholder="e.g., 168"
+                  helperText="Enter heart rate in beats per minute"
+                  error={getError(
                     `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.targetLthrBpm`,
-                  ) && (
-                    <Text className="text-xs text-destructive">
-                      {getError(
-                        `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.targetLthrBpm`,
-                      )}
-                    </Text>
                   )}
-                </View>
+                  accessibilityHint="Enter lactate threshold heart rate in bpm"
+                />
               )}
             </ScrollView>
           )}

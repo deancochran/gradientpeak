@@ -1,5 +1,4 @@
 import {
-  type GoalFormData,
   type GoalTargetFormData,
   SinglePageForm,
   type TrainingPlanConfigConflict,
@@ -13,6 +12,16 @@ import {
   buildMinimalTrainingPlanPayload,
   toCreationNormalizationInput,
 } from "@/lib/training-plan-form/adapters";
+import {
+  MAX_SAFE_CTL_RAMP_PER_WEEK,
+  MAX_SAFE_WEEKLY_TSS_RAMP_PCT,
+  MIN_PREP_DAYS_BETWEEN_GOALS,
+  getAvailableTrainingDays,
+  getCreateDisabledReason,
+  getMinimumGoalGapDays,
+  getTopBlockingIssues,
+  validateTrainingPlanForm,
+} from "@/lib/training-plan-form/validation";
 import { trpc } from "@/lib/trpc";
 import { Text } from "@/components/ui/text";
 import {
@@ -46,10 +55,6 @@ import {
 
 const HIGH_IMPACT_RECOMPUTE_DELAY_MS = 500;
 const PREVIEW_REFRESH_DELAY_MS = 350;
-const DAY_MS = 24 * 60 * 60 * 1000;
-const MIN_PREP_DAYS_BETWEEN_GOALS = 21;
-const MAX_SAFE_WEEKLY_TSS_RAMP_PCT = 20;
-const MAX_SAFE_CTL_RAMP_PER_WEEK = 8;
 
 const weekDays: Array<CreationAvailabilityConfig["days"][number]["day"]> = [
   "monday",
@@ -77,61 +82,6 @@ const createDefaultGoal = (targetDate: string) => ({
   priority: 1,
   targets: [createDefaultTarget()],
 });
-
-const HMS_PATTERN = /^([0-9]+):([0-5][0-9]):([0-5][0-9])$/;
-const MMS_PATTERN = /^([0-9]+):([0-5][0-9])$/;
-const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
-const parseHmsToSeconds = (value: string): number | undefined => {
-  const trimmed = value.trim();
-  const match = HMS_PATTERN.exec(trimmed);
-  if (!match) {
-    return undefined;
-  }
-
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  const seconds = Number(match[3]);
-  return hours * 3600 + minutes * 60 + seconds;
-};
-
-const parseMmSsToSeconds = (value: string): number | undefined => {
-  const trimmed = value.trim();
-  const match = MMS_PATTERN.exec(trimmed);
-  if (!match) {
-    return undefined;
-  }
-
-  const minutes = Number(match[1]);
-  const seconds = Number(match[2]);
-  return minutes * 60 + seconds;
-};
-
-const parseDistanceKmToMeters = (
-  value: string | undefined,
-): number | undefined => {
-  if (!value?.trim()) {
-    return undefined;
-  }
-
-  const distanceKm = Number(value);
-  if (!Number.isFinite(distanceKm) || distanceKm <= 0) {
-    return undefined;
-  }
-
-  return Math.round(distanceKm * 1000);
-};
-
-const normalizePlanStartDate = (
-  value: string | undefined,
-): string | undefined => {
-  const trimmed = value?.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-
-  return DATE_ONLY_PATTERN.test(trimmed) ? trimmed : undefined;
-};
 
 const areJsonStructurallyEqual = (left: unknown, right: unknown): boolean => {
   if (left === right) {
@@ -197,51 +147,6 @@ const createDefaultConfigState = (): TrainingPlanConfigFormData => ({
   },
 });
 
-const getAvailableTrainingDays = (config: TrainingPlanConfigFormData) => {
-  const availableDays = new Set(
-    config.availabilityConfig.days
-      .filter((day) => day.windows.length > 0 && (day.max_sessions ?? 0) > 0)
-      .map((day) => day.day),
-  );
-  for (const day of config.constraints.hard_rest_days) {
-    availableDays.delete(day);
-  }
-  return availableDays.size;
-};
-
-const getMinimumGoalGapDays = (goals: GoalFormData[]): number | undefined => {
-  const sortedGoalDates = goals
-    .map((goal) => goal.targetDate)
-    .filter((targetDate) => DATE_ONLY_PATTERN.test(targetDate))
-    .sort((a, b) => a.localeCompare(b));
-
-  if (sortedGoalDates.length < 2) {
-    return undefined;
-  }
-
-  let minimumGapDays = Number.POSITIVE_INFINITY;
-
-  for (let index = 0; index < sortedGoalDates.length - 1; index += 1) {
-    const currentDate = sortedGoalDates[index];
-    const nextDate = sortedGoalDates[index + 1];
-    if (!currentDate || !nextDate) {
-      continue;
-    }
-
-    const currentDateUtc = new Date(`${currentDate}T00:00:00Z`);
-    const nextDateUtc = new Date(`${nextDate}T00:00:00Z`);
-    const gapDays = Math.floor(
-      (nextDateUtc.getTime() - currentDateUtc.getTime()) / DAY_MS,
-    );
-
-    if (gapDays < minimumGapDays) {
-      minimumGapDays = gapDays;
-    }
-  }
-
-  return Number.isFinite(minimumGapDays) ? minimumGapDays : undefined;
-};
-
 export default function CreateTrainingPlan() {
   const router = useRouter();
   const utils = trpc.useUtils();
@@ -288,6 +193,37 @@ export default function CreateTrainingPlan() {
   >([]);
   const [recomputeNonce, setRecomputeNonce] = useState(0);
   const lastHandledRecomputeNonceRef = useRef(0);
+
+  const blockingIssues = useMemo(
+    () =>
+      getTopBlockingIssues({
+        conflictItems,
+        feasibilitySafetySummary: feasibilitySummary,
+      }),
+    [conflictItems, feasibilitySummary],
+  );
+  const createDisabledReason = useMemo(
+    () => getCreateDisabledReason(blockingIssues),
+    [blockingIssues],
+  );
+  const blockingIssueSignature = useMemo(
+    () =>
+      blockingIssues.map((issue) => `${issue.code}:${issue.message}`).join("|"),
+    [blockingIssues],
+  );
+  const [riskAcknowledged, setRiskAcknowledged] = useState(false);
+  const requiresRiskAcknowledgement = blockingIssues.length > 0;
+  const canCreatePlan =
+    !isCreating && (!requiresRiskAcknowledgement || riskAcknowledged);
+  const effectiveCreateDisabledReason = requiresRiskAcknowledgement
+    ? riskAcknowledged
+      ? undefined
+      : "Acknowledge observations to enable creation"
+    : createDisabledReason;
+
+  useEffect(() => {
+    setRiskAcknowledged(false);
+  }, [blockingIssueSignature]);
 
   const suggestionsQuery = trpc.trainingPlans.getCreationSuggestions.useQuery(
     undefined,
@@ -393,8 +329,7 @@ export default function CreateTrainingPlan() {
         setPreviewState((previous) =>
           reducePreviewState(previous, {
             status: "failure",
-            errorMessage:
-              "Preview unavailable until at least one goal has complete target details.",
+            errorMessage: "",
           }),
         );
         return { blocked: true };
@@ -605,150 +540,9 @@ export default function CreateTrainingPlan() {
   };
 
   const validateForm = (): boolean => {
-    const newErrors: Record<string, string> = {};
-
-    if (!formData.goals.length) {
-      newErrors.goals = "At least one goal is required";
-    }
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    formData.goals.forEach((goal, goalIndex) => {
-      if (!goal.name.trim()) {
-        newErrors[`goals.${goalIndex}.name`] = "Goal name is required";
-      }
-
-      if (!goal.targetDate) {
-        newErrors[`goals.${goalIndex}.targetDate`] = "Target date is required";
-      } else {
-        const targetDate = new Date(goal.targetDate);
-        if (targetDate < today) {
-          newErrors[`goals.${goalIndex}.targetDate`] =
-            "Target date must be in the future";
-        }
-      }
-
-      if (goal.priority < 1 || goal.priority > 10) {
-        newErrors[`goals.${goalIndex}.priority`] =
-          "Priority must be between 1 and 10";
-      }
-
-      if (!goal.targets.length) {
-        newErrors[`goals.${goalIndex}.targets`] =
-          "At least one target is required";
-        return;
-      }
-
-      goal.targets.forEach((target, targetIndex) => {
-        switch (target.targetType) {
-          case "race_performance": {
-            if (!target.activityCategory) {
-              newErrors[
-                `goals.${goalIndex}.targets.${targetIndex}.activityCategory`
-              ] = "Select an activity for race performance";
-            }
-            const distanceM = parseDistanceKmToMeters(target.distanceKm);
-            if (!distanceM) {
-              newErrors[
-                `goals.${goalIndex}.targets.${targetIndex}.distanceKm`
-              ] = "Distance (km) must be greater than 0";
-            }
-            const targetTimeS = parseHmsToSeconds(
-              target.completionTimeHms ?? "",
-            );
-            if (!targetTimeS) {
-              newErrors[
-                `goals.${goalIndex}.targets.${targetIndex}.completionTimeHms`
-              ] = "Completion time must use h:mm:ss";
-            }
-            break;
-          }
-          case "pace_threshold": {
-            const paceSeconds = parseMmSsToSeconds(target.paceMmSs ?? "");
-            if (!paceSeconds) {
-              newErrors[`goals.${goalIndex}.targets.${targetIndex}.paceMmSs`] =
-                "Pace must use mm:ss";
-            }
-            if (!target.activityCategory) {
-              newErrors[
-                `goals.${goalIndex}.targets.${targetIndex}.activityCategory`
-              ] = "Select an activity for pace threshold";
-            }
-            const testDurationS = parseHmsToSeconds(
-              target.testDurationHms ?? "",
-            );
-            if (!testDurationS) {
-              newErrors[
-                `goals.${goalIndex}.targets.${targetIndex}.testDurationHms`
-              ] = "Test duration must use h:mm:ss";
-            }
-            break;
-          }
-          case "power_threshold": {
-            if (!target.targetWatts || target.targetWatts <= 0) {
-              newErrors[
-                `goals.${goalIndex}.targets.${targetIndex}.targetWatts`
-              ] = "Target watts must be greater than 0";
-            }
-            if (!target.activityCategory) {
-              newErrors[
-                `goals.${goalIndex}.targets.${targetIndex}.activityCategory`
-              ] = "Select an activity for power threshold";
-            }
-            const testDurationS = parseHmsToSeconds(
-              target.testDurationHms ?? "",
-            );
-            if (!testDurationS) {
-              newErrors[
-                `goals.${goalIndex}.targets.${targetIndex}.testDurationHms`
-              ] = "Test duration must use h:mm:ss";
-            }
-            break;
-          }
-          case "hr_threshold": {
-            if (!target.targetLthrBpm || target.targetLthrBpm <= 0) {
-              newErrors[
-                `goals.${goalIndex}.targets.${targetIndex}.targetLthrBpm`
-              ] = "LTHR must be greater than 0";
-            }
-            break;
-          }
-        }
-      });
-    });
-
-    const normalizedPlanStartDate = normalizePlanStartDate(
-      formData.planStartDate,
-    );
-    if (formData.planStartDate && !normalizedPlanStartDate) {
-      newErrors.planStartDate = "Plan start date must use yyyy-mm-dd";
-    }
-
-    if (normalizedPlanStartDate) {
-      const latestGoalDate = formData.goals
-        .map((goal) => goal.targetDate)
-        .filter((targetDate) => DATE_ONLY_PATTERN.test(targetDate))
-        .reduce<string | undefined>((latest, targetDate) => {
-          if (!latest || targetDate > latest) {
-            return targetDate;
-          }
-          return latest;
-        }, undefined);
-
-      if (latestGoalDate && normalizedPlanStartDate > latestGoalDate) {
-        newErrors.planStartDate =
-          "Plan start date must be on or before the latest goal target date";
-      }
-    }
-
-    if (Object.keys(newErrors).some((key) => key.includes(".targets"))) {
-      newErrors.goals =
-        newErrors.goals ?? "Each goal must include valid target details";
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    const nextErrors = validateTrainingPlanForm(formData);
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
   };
 
   const handleResolveConflict = (code: string) => {
@@ -807,6 +601,10 @@ export default function CreateTrainingPlan() {
   };
 
   const handleCreate = async () => {
+    if (!canCreatePlan) {
+      return;
+    }
+
     if (!validateForm()) {
       return;
     }
@@ -864,15 +662,20 @@ export default function CreateTrainingPlan() {
           headerRight: () => (
             <Pressable
               onPress={handleCreate}
-              disabled={isCreating}
+              disabled={!canCreatePlan}
               hitSlop={8}
-              className={isCreating ? "opacity-50" : "opacity-100"}
+              className={canCreatePlan ? "opacity-100" : "opacity-50"}
               accessibilityRole="button"
               accessibilityLabel={
                 isCreating ? "Creating training plan" : "Create training plan"
               }
-              accessibilityHint="Saves your plan and opens it"
-              accessibilityState={{ disabled: isCreating, busy: isCreating }}
+              accessibilityHint={
+                effectiveCreateDisabledReason ?? "Saves your plan and opens it"
+              }
+              accessibilityState={{
+                disabled: !canCreatePlan,
+                busy: isCreating,
+              }}
             >
               <Text className="font-semibold text-primary">
                 {isCreating ? "Saving..." : "Create"}
@@ -902,8 +705,11 @@ export default function CreateTrainingPlan() {
           onConfigChange={handleConfigChange}
           contextSummary={contextSummary}
           feasibilitySafetySummary={feasibilitySummary}
-          conflictItems={conflictItems}
           informationalConflicts={informationalConflicts}
+          blockingIssues={blockingIssues}
+          createDisabledReason={effectiveCreateDisabledReason}
+          riskAcknowledged={riskAcknowledged}
+          onRiskAcknowledgedChange={setRiskAcknowledged}
           isPreviewPending={
             isPreviewPending ||
             suggestionsQuery.isLoading ||
