@@ -1,4 +1,4 @@
-import { Text } from "@/components/ui/text";
+import { Text } from "../../ui/text";
 import { useFont } from "@shopify/react-native-skia";
 import { useColorScheme } from "nativewind";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -147,6 +147,16 @@ const formatCompactAxisNumber = (value: number) => {
     return `${(value / 1000).toFixed(1)}k`;
   }
   return `${Math.round(value)}`;
+};
+
+const getAxisFontSource = (): Parameters<typeof useFont>[0] => {
+  try {
+    return require("../../../assets/fonts/SpaceMono-Regular.ttf") as Parameters<
+      typeof useFont
+    >[0];
+  } catch {
+    return undefined;
+  }
 };
 
 const getPhaseColor = (phaseName: string, isDark: boolean) => {
@@ -477,10 +487,7 @@ export const CreationProjectionChart = React.memo(
         previousWidth !== nextWidth ? nextWidth : previousWidth,
       );
     }, []);
-    const axisFont = useFont(
-      require("@/assets/fonts/SpaceMono-Regular.ttf"),
-      9,
-    );
+    const axisFont = useFont(getAxisFontSource(), 9);
     const points = useMemo(
       () =>
         buildDisplayedPoints({
@@ -917,7 +924,6 @@ export const CreationProjectionChart = React.memo(
     const noHistoryAccessibilitySummary = noHistoryMetadata
       ? `Adaptive demand confidence ${noHistoryConfidenceLabel}. Demand floor enabled ${noHistoryFloorEnabledLabel}. Availability clamp ${noHistoryAvailabilityClampLabel}. Evidence confidence ${evidenceConfidenceState ?? "n/a"} ${evidenceConfidenceScore !== undefined ? evidenceConfidenceScore.toFixed(2) : "n/a"}. Readiness ${readinessBand ?? "n/a"}.`
       : undefined;
-
     return (
       <View
         style={{ width: "100%" }}
@@ -1213,6 +1219,10 @@ export const CreationProjectionChart = React.memo(
                   readiness score (0-100) from core projection output.
                 </Text>
                 <Text className="px-1 text-[11px] text-muted-foreground">
+                  CTL, ATL, and TSB are training-state metrics only and are not
+                  suitability or safety determinations.
+                </Text>
+                <Text className="px-1 text-[11px] text-muted-foreground">
                   Projection window:{" "}
                   {formatIsoDate(projectionChart.start_date, "MMM d, yyyy")} to{" "}
                   {formatIsoDate(projectionChart.end_date, "MMM d, yyyy")}
@@ -1221,7 +1231,7 @@ export const CreationProjectionChart = React.memo(
                 <View
                   accessible={true}
                   accessibilityRole="text"
-                  accessibilityLabel={chartAccessibilitySummary}
+                  accessibilityLabel={`${chartAccessibilitySummary ?? ""}`.trim()}
                 />
 
                 <View
@@ -1230,11 +1240,15 @@ export const CreationProjectionChart = React.memo(
                   accessibilityLiveRegion="polite"
                   accessibilityLabel={`Selected point: ${selectedPointSummary} Active phase: ${activePhaseSummary}`}
                 >
-                  <Text className="text-xs font-medium">Selected point</Text>
+                  <Text className="text-xs font-medium">Training state</Text>
                   <Text className="text-xs text-muted-foreground">
                     {selectedPoint
-                      ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date} - Weekly load ${Math.round(selectedPoint.predicted_load_tss)} TSS - Fitness ${selectedPoint.predicted_fitness_ctl.toFixed(1)} CTL - Fatigue ${selectedPoint.predicted_fatigue_atl.toFixed(1)} ATL - Form ${selectedPoint.predicted_form_tsb.toFixed(1)} TSB - Readiness ${Math.round(selectedReadiness ?? 0)}/100`
+                      ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date} - Weekly load ${Math.round(selectedPoint.predicted_load_tss)} TSS - CTL ${selectedPoint.predicted_fitness_ctl.toFixed(1)} - ATL ${selectedPoint.predicted_fatigue_atl.toFixed(1)} - TSB ${selectedPoint.predicted_form_tsb.toFixed(1)} - Readiness ${Math.round(selectedReadiness ?? 0)}/100`
                       : "Tap a point to inspect projected details."}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">
+                    CTL/ATL/TSB describe training load and freshness trends
+                    only; they do not determine athlete suitability.
                   </Text>
                   <Text className="text-xs text-muted-foreground">
                     Active phase: {activePhase?.name ?? "-"}

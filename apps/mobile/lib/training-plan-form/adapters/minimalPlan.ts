@@ -8,7 +8,10 @@ import {
   parseHmsToSeconds,
   parseMmSsToSeconds,
 } from "../input-parsers";
-import type { MinimalTrainingPlanCreate } from "@repo/core";
+import {
+  canonicalizeMinimalTrainingPlanCreate,
+  type MinimalTrainingPlanCreate,
+} from "@repo/core";
 
 function normalizePlanStartDate(value: string | undefined): string | undefined {
   return parseDateOnly(value);
@@ -90,7 +93,7 @@ export function buildMinimalTrainingPlanPayload(input: {
 }): MinimalTrainingPlanCreate {
   const planStartDate = normalizePlanStartDate(input.planStartDate);
 
-  return {
+  return canonicalizeMinimalTrainingPlanCreate({
     plan_start_date: planStartDate,
     goals: input.goals.map((goal) => ({
       name: goal.name.trim(),
@@ -98,5 +101,5 @@ export function buildMinimalTrainingPlanPayload(input: {
       priority: goal.priority,
       targets: goal.targets.map(toPayloadTarget),
     })),
-  };
+  });
 }

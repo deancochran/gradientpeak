@@ -86,6 +86,11 @@ vi.mock("../inputs/PercentSliderInput", () => ({
 vi.mock("lucide-react-native", () => {
   const icon = (props: any) => React.createElement("Icon", props);
   return {
+    Flag: icon,
+    Gauge: icon,
+    Heart: icon,
+    Trophy: icon,
+    Zap: icon,
     ChevronDown: icon,
     ChevronUp: icon,
     Lock: icon,
@@ -224,7 +229,7 @@ describe("SinglePageForm blocker surfacing", () => {
     expect(textNodes).toContain(
       "Create is disabled until blockers are resolved.",
     );
-    expect(textNodes).toContain("Resolve blocking conflicts");
+    expect(textNodes).toContain("Observations based on known standards");
     expect(textNodes).toContain("Required weekly load exceeds cap");
     expect(textNodes).toContain("Min sessions exceeds max sessions");
 
@@ -233,12 +238,80 @@ describe("SinglePageForm blocker surfacing", () => {
         getNodeText(node.props.children).includes("Apply quick fix"),
     );
 
+    const suggestedFixButton = findMockNodes(renderer!, "Button").find(
+      (node: any) =>
+        getNodeText(node.props.children).includes("Apply suggested fix"),
+    );
+
     act(() => {
-      quickFixButton?.props.onPress();
+      (quickFixButton ?? suggestedFixButton)?.props.onPress();
     });
 
     expect(onResolveConflict).toHaveBeenCalledWith(
       "required_tss_ramp_exceeds_cap",
     );
+  });
+
+  it("renders goal assessment metadata on review tab when present", () => {
+    let renderer: ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        <SinglePageForm
+          formData={baseFormData}
+          onFormDataChange={vi.fn()}
+          configData={baseConfigData}
+          onConfigChange={vi.fn()}
+          onResolveConflict={vi.fn()}
+          projectionChart={
+            {
+              start_date: "2026-02-14",
+              end_date: "2026-06-01",
+              points: [],
+              goal_markers: [
+                {
+                  id: "goal-1",
+                  name: "Spring race",
+                  target_date: "2026-06-01",
+                  priority: 1,
+                },
+              ],
+              periodization_phases: [],
+              microcycles: [],
+              goal_assessments: [
+                {
+                  goal_id: "goal-1",
+                  priority: 1,
+                  feasibility_band: "aggressive",
+                  target_scores: [
+                    {
+                      kind: "finish_time",
+                      score_0_100: 67,
+                      unmet_gap: 210,
+                      rationale_codes: ["gap_high"],
+                    },
+                  ],
+                  conflict_notes: ["priority_precedence"],
+                },
+              ],
+            } as any
+          }
+        />,
+      );
+    });
+
+    const reviewTab = renderer!.root.find(
+      (node: any) => node.props.accessibilityLabel === "Review tab",
+    );
+    act(() => {
+      reviewTab.props.onPress();
+    });
+
+    const textNodes = findMockNodes(renderer!, "Text").map((node: any) =>
+      getNodeText(node.props.children),
+    );
+
+    expect(textNodes).toContain("Per-goal feasibility and target satisfaction");
+    expect(textNodes).toContain("conflict: priority_precedence");
+    expect(textNodes).toContain("Finish time: 67 / 100 | unmet gap 210");
   });
 });

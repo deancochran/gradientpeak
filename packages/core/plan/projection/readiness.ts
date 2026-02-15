@@ -1,3 +1,8 @@
+import type {
+  CapacityEnvelopeResult,
+  EvidenceState,
+} from "./capacity-envelope";
+
 type ProjectionMicrocyclePattern =
   | "ramp"
   | "deload"
@@ -48,6 +53,116 @@ function clamp01(value: number): number {
 
 function clampScore(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+export interface CompositeReadinessInput {
+  target_attainment_score: number;
+  durability_score: number;
+  evidence_score: number;
+  envelope: CapacityEnvelopeResult;
+  evidence_state?: EvidenceState;
+}
+
+export interface CompositeReadinessResult {
+  target_attainment_score: number;
+  envelope_score: number;
+  durability_score: number;
+  evidence_score: number;
+  readiness_score: number;
+  readiness_confidence: number;
+  readiness_rationale_codes: string[];
+}
+
+export function computeDurabilityScore(input: {
+  weekly_tss: number[];
+}): number {
+  if (input.weekly_tss.length === 0) {
+    return 80;
+  }
+
+  const mean =
+    input.weekly_tss.reduce((sum, value) => sum + Math.max(0, value), 0) /
+    input.weekly_tss.length;
+  const variance =
+    input.weekly_tss.reduce((sum, value) => {
+      const delta = Math.max(0, value) - mean;
+      return sum + delta * delta;
+    }, 0) / input.weekly_tss.length;
+  const stdDev = Math.sqrt(variance);
+  const monotony = mean / Math.max(1, stdDev);
+  const strain = mean * monotony;
+
+  let deloadDebtWeeks = 0;
+  for (let index = 1; index < input.weekly_tss.length; index += 1) {
+    const prev = Math.max(1, input.weekly_tss[index - 1] ?? 0);
+    const curr = Math.max(0, input.weekly_tss[index] ?? 0);
+    if (curr > prev * 0.96) {
+      deloadDebtWeeks += 1;
+    }
+  }
+
+  const monotonyPenalty = clamp01((monotony - 2) / 2) * 34;
+  const strainPenalty = clamp01((strain - 900) / 900) * 28;
+  const deloadDebtPenalty = clamp01(deloadDebtWeeks / 6) * 22;
+  return clampScore(100 - monotonyPenalty - strainPenalty - deloadDebtPenalty);
+}
+
+export function computeCompositeReadiness(
+  input: CompositeReadinessInput,
+): CompositeReadinessResult {
+  const targetAttainmentScore = clampScore(input.target_attainment_score);
+  const envelopeScore = clampScore(input.envelope.envelope_score);
+  const durabilityScore = clampScore(input.durability_score);
+  const evidenceScore = clampScore(input.evidence_score);
+
+  const readinessRaw =
+    targetAttainmentScore * 0.45 +
+    envelopeScore * 0.3 +
+    durabilityScore * 0.15 +
+    evidenceScore * 0.1;
+  const readinessScore = clampScore(readinessRaw);
+
+  const baseConfidence =
+    evidenceScore * 0.7 + envelopeScore * 0.2 + durabilityScore * 0.1;
+  const evidenceCap =
+    input.evidence_state === "none"
+      ? 58
+      : input.evidence_state === "sparse"
+        ? 72
+        : input.evidence_state === "stale"
+          ? 68
+          : 92;
+  const readinessConfidence = clampScore(Math.min(evidenceCap, baseConfidence));
+
+  const rationaleCodes = [
+    ...(targetAttainmentScore < 60
+      ? ["readiness_penalty_target_attainment_low"]
+      : ["readiness_credit_target_attainment_strong"]),
+    ...(envelopeScore < 65
+      ? ["readiness_penalty_capacity_envelope_outside"]
+      : envelopeScore < 85
+        ? ["readiness_penalty_capacity_envelope_edge"]
+        : ["readiness_credit_capacity_envelope_inside"]),
+    ...(durabilityScore < 60 ? ["readiness_penalty_durability_low"] : []),
+    ...(evidenceScore < 55
+      ? ["readiness_penalty_evidence_low"]
+      : evidenceScore >= 80
+        ? ["readiness_credit_evidence_high"]
+        : []),
+    ...input.envelope.limiting_factors.map(
+      (factor) => `readiness_envelope_limiter_${factor}`,
+    ),
+  ];
+
+  return {
+    target_attainment_score: targetAttainmentScore,
+    envelope_score: envelopeScore,
+    durability_score: durabilityScore,
+    evidence_score: evidenceScore,
+    readiness_score: readinessScore,
+    readiness_confidence: readinessConfidence,
+    readiness_rationale_codes: [...new Set(rationaleCodes)],
+  };
 }
 
 export function blendDemandWithConfidence(input: {
@@ -421,6 +536,20 @@ export function computeProjectionPointReadinessScores(input: {
     optimized[anchor.goalIndex] = clampScore(
       Math.max(optimized[anchor.goalIndex] ?? 0, localMax),
     );
+  }
+
+  if (typeof input.planReadinessScore === "number") {
+    const planReadinessCap = clampScore(input.planReadinessScore);
+    const capped = optimized.map((value) =>
+      clampScore(Math.min(value ?? 0, planReadinessCap)),
+    );
+
+    for (const goal of goals) {
+      const goalIndex = resolveGoalIndex(goal.target_date);
+      capped[goalIndex] = planReadinessCap;
+    }
+
+    return capped;
   }
 
   return optimized;

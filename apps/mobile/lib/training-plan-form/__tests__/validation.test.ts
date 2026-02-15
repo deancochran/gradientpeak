@@ -117,11 +117,11 @@ describe("blocking issue consolidation", () => {
 
     expect(issues).toHaveLength(3);
     expect(issues.map((issue) => issue.code)).toEqual([
-      "required_tss_ramp_exceeds_cap",
       "min_sessions_exceeds_max",
       "max_sessions_exceeds_available_days",
+      "new_blocker",
     ]);
-    expect(issues.some((issue) => issue.code === "new_blocker")).toBe(false);
+    expect(issues.some((issue) => issue.code === "new_blocker")).toBe(true);
     expect(getCreateDisabledReason(issues)).toBe(
       "Create is disabled until 3 blocking conflicts are resolved.",
     );

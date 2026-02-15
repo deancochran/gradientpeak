@@ -1,5 +1,6 @@
 import type {
   DeterministicProjectionMicrocycle,
+  ProjectionDiagnostics,
   DeterministicProjectionPoint,
   ProjectionRecoverySegment,
   ProjectionSafetyConfig,
@@ -103,4 +104,39 @@ export interface ProjectionChartPayload {
   recovery_segments?: ProjectionRecoverySegment[];
   constraint_summary?: ProjectionConstraintSummary;
   no_history?: NoHistoryProjectionMetadata;
+  readiness_score?: number;
+  readiness_confidence?: number;
+  readiness_rationale_codes?: string[];
+  capacity_envelope?: {
+    envelope_score: number;
+    envelope_state: "inside" | "edge" | "outside";
+    limiting_factors: string[];
+  };
+  feasibility_band?:
+    | "feasible"
+    | "stretch"
+    | "aggressive"
+    | "nearly_impossible"
+    | "infeasible";
+  risk_level?: "low" | "moderate" | "high" | "extreme";
+  risk_flags?: string[];
+  caps_applied?: string[];
+  projection_diagnostics?: ProjectionDiagnostics;
+  goal_assessments?: Array<{
+    goal_id: string;
+    priority: number;
+    feasibility_band:
+      | "feasible"
+      | "stretch"
+      | "aggressive"
+      | "nearly_impossible"
+      | "infeasible";
+    target_scores: Array<{
+      kind: string;
+      score_0_100: number;
+      unmet_gap?: number;
+      rationale_codes: string[];
+    }>;
+    conflict_notes: string[];
+  }>;
 }

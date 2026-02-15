@@ -5,8 +5,24 @@ type CreationConfigUserValues = NonNullable<
   CreationNormalizationInput["user_values"]
 >;
 
+export type CreationConfigAdapterInput = Pick<
+  TrainingPlanConfigFormData,
+  | "availabilityConfig"
+  | "availabilityProvenance"
+  | "recentInfluenceScore"
+  | "recentInfluenceAction"
+  | "recentInfluenceProvenance"
+  | "constraints"
+  | "optimizationProfile"
+  | "postGoalRecoveryDays"
+  | "maxWeeklyTssRampPct"
+  | "maxCtlRampPerWeek"
+  | "constraintsSource"
+  | "locks"
+>;
+
 export function toCreationNormalizationInput(
-  state: TrainingPlanConfigFormData,
+  state: CreationConfigAdapterInput,
 ): CreationNormalizationInput {
   const userValues: CreationConfigUserValues = {
     recent_influence: { influence_score: state.recentInfluenceScore },

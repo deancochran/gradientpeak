@@ -11,6 +11,7 @@ import {
   deterministicUuidFromSeed,
   normalizeGoalInput,
 } from "./normalizeGoalInput";
+import { canonicalizeMinimalTrainingPlanCreate } from "./canonicalization";
 import { derivePlanTimeline } from "./derivePlanTimeline";
 import { addDaysDateOnlyUtc, diffDateOnlyUtcDays } from "./dateOnlyUtc";
 import { normalizeGoalPriority } from "./goalPriorityWeighting";
@@ -38,9 +39,10 @@ export function expandMinimalGoalToPlan(
   options: ExpandMinimalGoalToPlanOptions = {},
 ): Extract<TrainingPlanCreate, { plan_type: "periodized" }> {
   const parsed = minimalTrainingPlanCreateSchema.parse(input);
-  const normalizedGoals = parsed.goals.map((goal, index) =>
+  const canonicalMinimalPlan = canonicalizeMinimalTrainingPlanCreate(parsed);
+  const normalizedGoals = canonicalMinimalPlan.goals.map((goal, index) =>
     normalizeGoalInput(goal, {
-      idSeed: `minimal-goal:${index}`,
+      idSeed: `minimal-goal:${goal.target_date}:${goal.priority ?? 1}:${index}`,
     }),
   );
   const normalizedGoal = getPrimaryGoal(normalizedGoals);
@@ -48,7 +50,7 @@ export function expandMinimalGoalToPlan(
 
   const timeline = derivePlanTimeline({
     goals: normalizedGoals,
-    plan_start_date: parsed.plan_start_date ?? options.startDate,
+    plan_start_date: canonicalMinimalPlan.plan_start_date ?? options.startDate,
     today_date: options.todayDate,
   });
   const startDate = timeline.start_date;

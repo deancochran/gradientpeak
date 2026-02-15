@@ -123,6 +123,32 @@ describe("toCreationNormalizationInput", () => {
 
     expect(mapped.user_values?.constraints).toBeUndefined();
   });
+
+  it("omits legacy mode/risk/policy payload fields", () => {
+    const fixture = buildConfigFixture();
+
+    const mapped = toCreationNormalizationInput(fixture);
+
+    expect(mapped.user_values).not.toHaveProperty("mode");
+    expect(mapped.user_values).not.toHaveProperty("risk_acceptance");
+    expect(mapped.user_values).not.toHaveProperty("constraint_policy");
+  });
+
+  it("keeps creation-input parity for user-sourced availability", () => {
+    const fixture = buildConfigFixture();
+    fixture.availabilityProvenance.source = "user";
+    fixture.locks.availability_config = { locked: false };
+
+    const mapped = toCreationNormalizationInput(fixture);
+
+    expect(mapped.user_values?.availability_config).toEqual(
+      fixture.availabilityConfig,
+    );
+    expect(mapped.user_values).not.toHaveProperty("risk_acceptance");
+    expect(mapped.provenance_overrides?.availability_provenance?.source).toBe(
+      "user",
+    );
+  });
 });
 
 describe("buildMinimalTrainingPlanPayload", () => {

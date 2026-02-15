@@ -10,36 +10,40 @@ import {
   minimalTrainingPlanCreateSchema,
 } from "../../schemas/training_plan_structure";
 
-export const creationConfigValueSchema = z.object({
-  availability_config: creationAvailabilityConfigSchema,
-  recent_influence: creationRecentInfluenceSchema,
-  recent_influence_action: creationRecentInfluenceActionEnum,
-  constraints: creationConstraintsSchema,
-  optimization_profile: creationOptimizationProfileEnum,
-  post_goal_recovery_days: z.number().int().min(0).max(28),
-  max_weekly_tss_ramp_pct: z.number().min(0).max(20),
-  max_ctl_ramp_per_week: z.number().min(0).max(8),
-});
+export const creationConfigValueSchema = z
+  .object({
+    availability_config: creationAvailabilityConfigSchema,
+    recent_influence: creationRecentInfluenceSchema,
+    recent_influence_action: creationRecentInfluenceActionEnum,
+    constraints: creationConstraintsSchema,
+    optimization_profile: creationOptimizationProfileEnum,
+    post_goal_recovery_days: z.number().int().min(0).max(28),
+    max_weekly_tss_ramp_pct: z.number().min(0).max(20),
+    max_ctl_ramp_per_week: z.number().min(0).max(8),
+  })
+  .strict();
 
-export const creationNormalizationInputSchema = z.object({
-  user_values: creationConfigValueSchema
-    .extend({
-      locks: creationConfigLocksSchema,
-    })
-    .partial()
-    .optional(),
-  confirmed_suggestions: creationConfigValueSchema.partial().optional(),
-  defaults: creationConfigValueSchema.partial().optional(),
-  provenance_overrides: z
-    .object({
-      availability_provenance: creationProvenanceSchema.partial().optional(),
-      recent_influence_provenance: creationProvenanceSchema
-        .partial()
-        .optional(),
-    })
-    .optional(),
-  now_iso: z.string().datetime().optional(),
-});
+export const creationNormalizationInputSchema = z
+  .object({
+    user_values: creationConfigValueSchema
+      .extend({
+        locks: creationConfigLocksSchema,
+      })
+      .partial()
+      .optional(),
+    confirmed_suggestions: creationConfigValueSchema.partial().optional(),
+    defaults: creationConfigValueSchema.partial().optional(),
+    provenance_overrides: z
+      .object({
+        availability_provenance: creationProvenanceSchema.partial().optional(),
+        recent_influence_provenance: creationProvenanceSchema
+          .partial()
+          .optional(),
+      })
+      .optional(),
+    now_iso: z.string().datetime().optional(),
+  })
+  .strict();
 
 export const postCreateBehaviorSchema = z.object({
   autonomous_mutation_enabled: z.boolean().default(false),
@@ -52,7 +56,7 @@ export const getCreationSuggestionsInputSchema = z
     existing_values: z
       .object({
         availability_config: creationAvailabilityConfigSchema.optional(),
-        recent_influence_score: z.number().min(-1).max(1).optional(),
+        recent_influence: creationRecentInfluenceSchema.optional(),
         optimization_profile: creationOptimizationProfileEnum.optional(),
         post_goal_recovery_days: z.number().int().min(0).max(28).optional(),
         max_weekly_tss_ramp_pct: z.number().min(0).max(20).optional(),
@@ -63,12 +67,14 @@ export const getCreationSuggestionsInputSchema = z
   })
   .optional();
 
-export const previewCreationConfigInputSchema = z.object({
-  minimal_plan: minimalTrainingPlanCreateSchema,
-  creation_input: creationNormalizationInputSchema,
-  starting_ctl_override: z.number().min(0).max(150).optional(),
-  post_create_behavior: postCreateBehaviorSchema.optional(),
-});
+export const previewCreationConfigInputSchema = z
+  .object({
+    minimal_plan: minimalTrainingPlanCreateSchema,
+    creation_input: creationNormalizationInputSchema,
+    starting_ctl_override: z.number().min(0).max(150).optional(),
+    post_create_behavior: postCreateBehaviorSchema.optional(),
+  })
+  .strict();
 
 export const createFromCreationConfigInputSchema =
   previewCreationConfigInputSchema.extend({

@@ -1,5 +1,8 @@
 import { calculateATL, calculateCTL } from "../calculations";
-import type { CreationContextSummary } from "../schemas/training_plan_structure";
+import type {
+  CreationContextSummary,
+  GoalTargetV2,
+} from "../schemas/training_plan_structure";
 import { countAvailableTrainingDays } from "./availabilityUtils";
 import { addDaysDateOnlyUtc, diffDateOnlyUtcDays } from "./dateOnlyUtc";
 import {
@@ -10,11 +13,23 @@ import {
 } from "./projection/safety-caps";
 import {
   blendDemandWithConfidence,
+  computeCompositeReadiness,
+  computeDurabilityScore,
   computeProjectionFeasibilityMetadata,
   computeProjectionPointReadinessScores,
   getDemandRhythmMultiplier,
   type ProjectionFeasibilityMetadata as ReadinessProjectionFeasibilityMetadata,
 } from "./projection/readiness";
+import { computeCapacityEnvelope } from "./projection/capacity-envelope";
+import { evaluateMpcObjective } from "./projection/mpc/objective";
+import { solveDeterministicBoundedMpc } from "./projection/mpc/solver";
+import {
+  computeGoalGdi,
+  computePlanGdi,
+  type FeasibilityBand,
+} from "./scoring/gdi";
+import { scoreGoalAssessment } from "./scoring/goalScore";
+import { scorePlanGoals } from "./scoring/planScore";
 
 export {
   getOptimizationProfileBehavior,
@@ -24,10 +39,13 @@ export {
 } from "./projection/safety-caps";
 export {
   blendDemandWithConfidence,
+  computeCompositeReadiness,
+  computeDurabilityScore,
   computeProjectionFeasibilityMetadata,
   computeProjectionPointReadinessScores,
   getDemandRhythmMultiplier,
 } from "./projection/readiness";
+export { computeCapacityEnvelope } from "./projection/capacity-envelope";
 
 export type ProjectionWeekPattern = "ramp" | "deload" | "taper" | "event";
 export type ProjectionMicrocyclePattern = ProjectionWeekPattern | "recovery";
@@ -1084,6 +1102,31 @@ export interface DeterministicProjectionPayload {
     | "evidence_confidence"
     | "projection_feasibility"
   >;
+  readiness_score: number;
+  readiness_confidence?: number;
+  readiness_rationale_codes?: string[];
+  capacity_envelope?: {
+    envelope_score: number;
+    envelope_state: "inside" | "edge" | "outside";
+    limiting_factors: string[];
+  };
+  feasibility_band?: FeasibilityBand;
+  risk_level?: "low" | "moderate" | "high" | "extreme";
+  risk_flags?: string[];
+  caps_applied?: string[];
+  projection_diagnostics?: ProjectionDiagnostics;
+  goal_assessments?: Array<{
+    goal_id: string;
+    priority: number;
+    feasibility_band: FeasibilityBand;
+    target_scores: Array<{
+      kind: GoalTargetV2["target_type"];
+      score_0_100: number;
+      unmet_gap?: number;
+      rationale_codes: string[];
+    }>;
+    conflict_notes: string[];
+  }>;
 }
 
 export interface BuildDeterministicProjectionInput {
@@ -1103,6 +1146,7 @@ export interface BuildDeterministicProjectionInput {
     name: string;
     target_date: string;
     priority?: number;
+    targets?: GoalTargetV2[];
   }>;
   starting_ctl?: number;
   creation_config?: ProjectionSafetyConfigInput;
@@ -1186,6 +1230,33 @@ interface WeeklyTssOptimizerInput {
   flooredWeeklyTss: number;
   weightedNoHistoryDemandFloor: number | null;
   maxAllowedByTssRamp: number;
+}
+
+export type WeeklyOptimizationPath =
+  | "full_mpc"
+  | "degraded_bounded_mpc"
+  | "legacy_optimizer"
+  | "cap_only_baseline";
+
+export interface ProjectionDiagnostics {
+  selected_path: WeeklyOptimizationPath;
+  fallback_reason: string | null;
+  candidate_counts: {
+    full_mpc: number;
+    degraded_bounded_mpc: number;
+    legacy_optimizer: number;
+  };
+  prune_counts: {
+    full_mpc: number;
+    degraded_bounded_mpc: number;
+  };
+  active_constraints: string[];
+  tie_break_chain: string[];
+}
+
+interface WeeklyOptimizationDecision {
+  selected_weekly_tss: number;
+  diagnostics: ProjectionDiagnostics;
 }
 
 function resolveWeeklyLoadSignals(
@@ -1331,10 +1402,47 @@ function resolveWeeklyLoadSignals(
   };
 }
 
+function resolveEffectiveRampCaps(normalizedConfig: ProjectionSafetyConfig): {
+  max_weekly_tss_ramp_pct: number;
+  max_ctl_ramp_per_week: number;
+} {
+  return {
+    max_weekly_tss_ramp_pct: normalizedConfig.max_weekly_tss_ramp_pct,
+    max_ctl_ramp_per_week: normalizedConfig.max_ctl_ramp_per_week,
+  };
+}
+
+function resolveActiveConstraintTags(
+  normalizedConfig: ProjectionSafetyConfig,
+): string[] {
+  const tags: string[] = [
+    "single_mode_safety_caps_enforced",
+    "feasibility_caps_enforced",
+    "readiness_unified_composite",
+    `optimization_profile_${normalizedConfig.optimization_profile}`,
+  ];
+
+  return [...new Set(tags)].sort((a, b) => a.localeCompare(b));
+}
+
+function mergeSelectedPath(
+  current: WeeklyOptimizationPath,
+  next: WeeklyOptimizationPath,
+): WeeklyOptimizationPath {
+  const rank: Record<WeeklyOptimizationPath, number> = {
+    full_mpc: 0,
+    degraded_bounded_mpc: 1,
+    legacy_optimizer: 2,
+    cap_only_baseline: 3,
+  };
+
+  return rank[next] > rank[current] ? next : current;
+}
+
 function applyWeeklyTssCaps(input: WeeklyTssCapInput): WeeklyTssCapResult {
+  const rampCaps = resolveEffectiveRampCaps(input.normalizedConfig);
   const maxAllowedByTssRamp = round1(
-    input.previousWeekTss *
-      (1 + input.normalizedConfig.max_weekly_tss_ramp_pct / 100),
+    input.previousWeekTss * (1 + rampCaps.max_weekly_tss_ramp_pct / 100),
   );
   const tssRampClamped = input.flooredWeeklyTss > maxAllowedByTssRamp;
   const constrainedFloor =
@@ -1360,12 +1468,12 @@ function applyWeeklyTssCaps(input: WeeklyTssCapInput): WeeklyTssCapResult {
   const requestedCtlRamp = requestedCtlAfterWeek - input.currentCtl;
 
   let ctlRampClamped = false;
-  if (requestedCtlRamp > input.normalizedConfig.max_ctl_ramp_per_week) {
+  if (requestedCtlRamp > rampCaps.max_ctl_ramp_per_week) {
     ctlRampClamped = true;
     appliedWeeklyTss = findWeeklyTssForCtlRampLimit(
       input.currentCtl,
       appliedWeeklyTss,
-      input.normalizedConfig.max_ctl_ramp_per_week,
+      rampCaps.max_ctl_ramp_per_week,
       input.daysInWeek,
     );
   }
@@ -1379,7 +1487,10 @@ function applyWeeklyTssCaps(input: WeeklyTssCapInput): WeeklyTssCapResult {
   };
 }
 
-function optimizeWeeklyAppliedTss(input: WeeklyTssOptimizerInput): number {
+function optimizeWeeklyAppliedTssLegacy(input: WeeklyTssOptimizerInput): {
+  selected_weekly_tss: number;
+  evaluated_candidates: number;
+} {
   const profileBehavior = getOptimizationProfileBehavior(
     input.normalizedConfig.optimization_profile,
   );
@@ -1392,20 +1503,26 @@ function optimizeWeeklyAppliedTss(input: WeeklyTssOptimizerInput): number {
   }).appliedWeeklyTss;
 
   if (input.input.disable_weekly_tss_optimizer) {
-    return baseline;
+    return {
+      selected_weekly_tss: baseline,
+      evaluated_candidates: 0,
+    };
   }
 
   const futureGoals = input.goalMarkers.filter(
     (goal) => goal.target_date >= input.weekStartDate,
   );
   if (futureGoals.length === 0) {
-    return baseline;
+    return {
+      selected_weekly_tss: baseline,
+      evaluated_candidates: 0,
+    };
   }
 
   const cappedUpperByCtl = findWeeklyTssForCtlRampLimit(
     input.currentCtl,
     input.maxAllowedByTssRamp,
-    input.normalizedConfig.max_ctl_ramp_per_week,
+    resolveEffectiveRampCaps(input.normalizedConfig).max_ctl_ramp_per_week,
     input.daysInWeek,
   );
   const lowerBound =
@@ -1415,7 +1532,10 @@ function optimizeWeeklyAppliedTss(input: WeeklyTssOptimizerInput): number {
   const upperBound = Math.min(input.maxAllowedByTssRamp, cappedUpperByCtl);
 
   if (upperBound <= lowerBound) {
-    return baseline;
+    return {
+      selected_weekly_tss: baseline,
+      evaluated_candidates: 0,
+    };
   }
 
   const candidateValues = new Set<number>([
@@ -1434,8 +1554,10 @@ function optimizeWeeklyAppliedTss(input: WeeklyTssOptimizerInput): number {
 
   let bestTss = baseline;
   let bestScore = Number.NEGATIVE_INFINITY;
+  let evaluatedCandidates = 0;
 
   for (const candidateTss of [...candidateValues].sort((a, b) => a - b)) {
+    evaluatedCandidates += 1;
     const constrainedCandidate = applyWeeklyTssCaps({
       flooredWeeklyTss: input.flooredWeeklyTss,
       previousWeekTss: input.previousWeekTss,
@@ -1466,13 +1588,248 @@ function optimizeWeeklyAppliedTss(input: WeeklyTssOptimizerInput): number {
     }
   }
 
-  return bestTss;
+  return {
+    selected_weekly_tss: bestTss,
+    evaluated_candidates: evaluatedCandidates,
+  };
+}
+
+function solveWeeklyAppliedTssWithFallback(
+  input: WeeklyTssOptimizerInput,
+): WeeklyOptimizationDecision {
+  const baselineDecision = applyWeeklyTssCaps({
+    flooredWeeklyTss: input.flooredWeeklyTss,
+    previousWeekTss: input.previousWeekTss,
+    currentCtl: input.currentCtl,
+    daysInWeek: input.daysInWeek,
+    normalizedConfig: input.normalizedConfig,
+  });
+  const activeConstraints = resolveActiveConstraintTags(input.normalizedConfig);
+  const baseDiagnostics: ProjectionDiagnostics = {
+    selected_path: "cap_only_baseline",
+    fallback_reason: null,
+    candidate_counts: {
+      full_mpc: 0,
+      degraded_bounded_mpc: 0,
+      legacy_optimizer: 0,
+    },
+    prune_counts: {
+      full_mpc: 0,
+      degraded_bounded_mpc: 0,
+    },
+    active_constraints: activeConstraints,
+    tie_break_chain: [],
+  };
+
+  if (input.input.disable_weekly_tss_optimizer) {
+    return {
+      selected_weekly_tss: baselineDecision.appliedWeeklyTss,
+      diagnostics: {
+        ...baseDiagnostics,
+        selected_path: "cap_only_baseline",
+        fallback_reason: "optimizer_disabled",
+      },
+    };
+  }
+
+  const futureGoals = input.goalMarkers.filter(
+    (goal) => goal.target_date >= input.weekStartDate,
+  );
+  if (futureGoals.length === 0) {
+    return {
+      selected_weekly_tss: baselineDecision.appliedWeeklyTss,
+      diagnostics: {
+        ...baseDiagnostics,
+        selected_path: "cap_only_baseline",
+        fallback_reason: "no_future_goals",
+      },
+    };
+  }
+
+  const effectiveRampCaps = resolveEffectiveRampCaps(input.normalizedConfig);
+  const cappedUpperByCtl = findWeeklyTssForCtlRampLimit(
+    input.currentCtl,
+    baselineDecision.maxAllowedByTssRamp,
+    effectiveRampCaps.max_ctl_ramp_per_week,
+    input.daysInWeek,
+  );
+  const lowerBound =
+    input.flooredWeeklyTss <= baselineDecision.maxAllowedByTssRamp
+      ? input.flooredWeeklyTss
+      : baselineDecision.maxAllowedByTssRamp;
+  const upperBound = Math.min(
+    baselineDecision.maxAllowedByTssRamp,
+    cappedUpperByCtl,
+  );
+
+  if (upperBound <= lowerBound) {
+    return {
+      selected_weekly_tss: baselineDecision.appliedWeeklyTss,
+      diagnostics: {
+        ...baseDiagnostics,
+        selected_path: "cap_only_baseline",
+        fallback_reason: "bounded_action_space_empty",
+      },
+    };
+  }
+
+  let fullMpcFailure: string | null = null;
+  try {
+    const fullMpcResult = solveDeterministicBoundedMpc({
+      optimization_profile: input.normalizedConfig.optimization_profile,
+      previous_action: baselineDecision.appliedWeeklyTss,
+      action_bounds: {
+        min_value: lowerBound,
+        max_value: upperBound,
+      },
+      evaluate_candidate: ({ candidate_value, horizon_weeks }) => {
+        const constrainedCandidate = applyWeeklyTssCaps({
+          flooredWeeklyTss: input.flooredWeeklyTss,
+          previousWeekTss: input.previousWeekTss,
+          currentCtl: input.currentCtl,
+          daysInWeek: input.daysInWeek,
+          normalizedConfig: input.normalizedConfig,
+          preferredWeeklyTss: candidate_value,
+        }).appliedWeeklyTss;
+        const score = evaluateWeeklyTssCandidateObjective({
+          ...input,
+          candidateWeeklyTss: constrainedCandidate,
+          baselineWeeklyTss: baselineDecision.appliedWeeklyTss,
+          lookaheadWeeksOverride: horizon_weeks,
+        });
+
+        return {
+          objective_score: score,
+          primary_goal_date: input.goalMarkers[0]?.target_date,
+          primary_goal_id: input.goalMarkers[0]?.id,
+        };
+      },
+    });
+
+    return {
+      selected_weekly_tss: fullMpcResult.selected_candidate,
+      diagnostics: {
+        ...baseDiagnostics,
+        selected_path: "full_mpc",
+        candidate_counts: {
+          ...baseDiagnostics.candidate_counts,
+          full_mpc: fullMpcResult.diagnostics.evaluated_candidates,
+        },
+        prune_counts: {
+          ...baseDiagnostics.prune_counts,
+          full_mpc: fullMpcResult.diagnostics.pruned_branches,
+        },
+        active_constraints: [
+          ...new Set([
+            ...activeConstraints,
+            ...fullMpcResult.diagnostics.active_constraints,
+          ]),
+        ],
+        tie_break_chain: [...fullMpcResult.diagnostics.tie_break_order],
+      },
+    };
+  } catch {
+    fullMpcFailure = "full_mpc_error";
+  }
+
+  let degradedFailure: string | null = null;
+  try {
+    const degradedResult = solveDeterministicBoundedMpc({
+      optimization_profile: input.normalizedConfig.optimization_profile,
+      previous_action: baselineDecision.appliedWeeklyTss,
+      action_bounds: {
+        min_value: lowerBound,
+        max_value: upperBound,
+      },
+      requested_horizon_weeks: 1,
+      requested_candidate_count: 3,
+      evaluate_candidate: ({ candidate_value, horizon_weeks }) => {
+        const constrainedCandidate = applyWeeklyTssCaps({
+          flooredWeeklyTss: input.flooredWeeklyTss,
+          previousWeekTss: input.previousWeekTss,
+          currentCtl: input.currentCtl,
+          daysInWeek: input.daysInWeek,
+          normalizedConfig: input.normalizedConfig,
+          preferredWeeklyTss: candidate_value,
+        }).appliedWeeklyTss;
+        const score = evaluateWeeklyTssCandidateObjective({
+          ...input,
+          candidateWeeklyTss: constrainedCandidate,
+          baselineWeeklyTss: baselineDecision.appliedWeeklyTss,
+          lookaheadWeeksOverride: horizon_weeks,
+        });
+
+        return {
+          objective_score: score,
+          primary_goal_date: input.goalMarkers[0]?.target_date,
+          primary_goal_id: input.goalMarkers[0]?.id,
+        };
+      },
+    });
+
+    return {
+      selected_weekly_tss: degradedResult.selected_candidate,
+      diagnostics: {
+        ...baseDiagnostics,
+        selected_path: "degraded_bounded_mpc",
+        fallback_reason: fullMpcFailure,
+        candidate_counts: {
+          ...baseDiagnostics.candidate_counts,
+          degraded_bounded_mpc: degradedResult.diagnostics.evaluated_candidates,
+        },
+        prune_counts: {
+          ...baseDiagnostics.prune_counts,
+          degraded_bounded_mpc: degradedResult.diagnostics.pruned_branches,
+        },
+        active_constraints: [
+          ...new Set([
+            ...activeConstraints,
+            ...degradedResult.diagnostics.active_constraints,
+          ]),
+        ],
+        tie_break_chain: [...degradedResult.diagnostics.tie_break_order],
+      },
+    };
+  } catch {
+    degradedFailure = "degraded_mpc_error";
+  }
+
+  const legacy = optimizeWeeklyAppliedTssLegacy(input);
+  if (Number.isFinite(legacy.selected_weekly_tss)) {
+    return {
+      selected_weekly_tss: legacy.selected_weekly_tss,
+      diagnostics: {
+        ...baseDiagnostics,
+        selected_path: "legacy_optimizer",
+        fallback_reason:
+          fullMpcFailure !== null || degradedFailure !== null
+            ? [fullMpcFailure, degradedFailure]
+                .filter((reason): reason is string => reason !== null)
+                .join("|")
+            : null,
+        candidate_counts: {
+          ...baseDiagnostics.candidate_counts,
+          legacy_optimizer: legacy.evaluated_candidates,
+        },
+      },
+    };
+  }
+
+  return {
+    selected_weekly_tss: baselineDecision.appliedWeeklyTss,
+    diagnostics: {
+      ...baseDiagnostics,
+      selected_path: "cap_only_baseline",
+      fallback_reason: "legacy_optimizer_unavailable",
+    },
+  };
 }
 
 function evaluateWeeklyTssCandidateObjective(
   input: WeeklyTssOptimizerInput & {
     candidateWeeklyTss: number;
     baselineWeeklyTss: number;
+    lookaheadWeeksOverride?: number;
   },
 ): number {
   const profileBehavior = getOptimizationProfileBehavior(
@@ -1523,7 +1880,9 @@ function evaluateWeeklyTssCandidateObjective(
 
   for (
     let lookahead = 0;
-    lookahead < profileBehavior.optimizer_lookahead_weeks &&
+    lookahead <
+      (input.lookaheadWeeksOverride ??
+        profileBehavior.optimizer_lookahead_weeks) &&
     simWeekStartDate <= input.endDate;
     lookahead += 1
   ) {
@@ -1647,13 +2006,28 @@ function evaluateWeeklyTssCandidateObjective(
     Math.max(1, input.baselineWeeklyTss);
   const normalizedGoalReadiness =
     weightedGoalCount <= 0 ? 0 : weightedGoalReadiness / weightedGoalCount;
+  const objective = evaluateMpcObjective({
+    components: {
+      goal_attainment: normalizedGoalReadiness,
+      projected_readiness: 0,
+      overload_penalty: overloadPenalty,
+      load_volatility_penalty: volatilityPenalty,
+      plan_change_penalty: baselineDeviationPenalty,
+      monotony_penalty: 0,
+      strain_penalty: 0,
+    },
+    weights: {
+      w_goal: profileBehavior.goal_readiness_weight,
+      w_readiness: 0,
+      w_risk: profileBehavior.overload_penalty_weight,
+      w_volatility: profileBehavior.volatility_penalty_weight,
+      w_churn: profileBehavior.baseline_deviation_penalty_weight,
+      w_monotony: 0,
+      w_strain: 0,
+    },
+  });
 
-  return (
-    normalizedGoalReadiness * profileBehavior.goal_readiness_weight -
-    volatilityPenalty * profileBehavior.volatility_penalty_weight -
-    overloadPenalty * profileBehavior.overload_penalty_weight -
-    baselineDeviationPenalty * profileBehavior.baseline_deviation_penalty_weight
-  );
+  return objective.objective_score;
 }
 
 function computeWeightedGoalDateReadiness(input: {
@@ -1692,6 +2066,48 @@ function computeWeightedGoalDateReadiness(input: {
   }
 
   return totalWeight <= 0 ? 0 : weightedTotal / totalWeight;
+}
+
+function resolveGoalDateReadiness(
+  points: DeterministicProjectionPoint[],
+  targetDate: string,
+): number {
+  const exact = points.find((point) => point.date === targetDate);
+  if (exact) {
+    return exact.readiness_score;
+  }
+
+  let nearest = points[0];
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for (const point of points) {
+    const distance = Math.abs(diffDays(point.date, targetDate));
+    if (distance < nearestDistance) {
+      nearest = point;
+      nearestDistance = distance;
+    }
+  }
+
+  return nearest?.readiness_score ?? 0;
+}
+
+function resolveSparsityPenalty(
+  state: "none" | "sparse" | "stale" | "rich" | undefined,
+): number {
+  if (state === "none") return 0.2;
+  if (state === "stale") return 0.16;
+  if (state === "sparse") return 0.12;
+  return 0.04;
+}
+
+function resolveRiskLevel(input: {
+  feasibilityBand: FeasibilityBand;
+}): "low" | "moderate" | "high" | "extreme" {
+  if (input.feasibilityBand === "infeasible") return "extreme";
+  if (input.feasibilityBand === "nearly_impossible") return "high";
+  if (input.feasibilityBand === "aggressive") return "high";
+  if (input.feasibilityBand === "stretch") return "moderate";
+
+  return "low";
 }
 
 /**
@@ -1841,6 +2257,21 @@ export function buildDeterministicProjectionPayload(
   let maxRequiredDemandWeeklyTss = 0;
   let maxRequiredUnweightedDemandWeeklyTss = 0;
   let maxAppliedWeeklyTss = 0;
+  const projectionDiagnostics: ProjectionDiagnostics = {
+    selected_path: "full_mpc",
+    fallback_reason: null,
+    candidate_counts: {
+      full_mpc: 0,
+      degraded_bounded_mpc: 0,
+      legacy_optimizer: 0,
+    },
+    prune_counts: {
+      full_mpc: 0,
+      degraded_bounded_mpc: 0,
+    },
+    active_constraints: [],
+    tie_break_chain: [],
+  };
 
   for (
     let weekStartDate = startDate;
@@ -1886,7 +2317,7 @@ export function buildDeterministicProjectionPayload(
       daysInWeek,
       normalizedConfig,
     });
-    const optimizedWeeklyTss = optimizeWeeklyAppliedTss({
+    const weeklyDecision = solveWeeklyAppliedTssWithFallback({
       input,
       normalizedConfig,
       goalMarkers,
@@ -1911,13 +2342,43 @@ export function buildDeterministicProjectionPayload(
       weightedNoHistoryDemandFloor: weekSignals.weightedNoHistoryDemandFloor,
       maxAllowedByTssRamp: baselineCaps.maxAllowedByTssRamp,
     });
+    projectionDiagnostics.candidate_counts.full_mpc +=
+      weeklyDecision.diagnostics.candidate_counts.full_mpc;
+    projectionDiagnostics.candidate_counts.degraded_bounded_mpc +=
+      weeklyDecision.diagnostics.candidate_counts.degraded_bounded_mpc;
+    projectionDiagnostics.candidate_counts.legacy_optimizer +=
+      weeklyDecision.diagnostics.candidate_counts.legacy_optimizer;
+    projectionDiagnostics.prune_counts.full_mpc +=
+      weeklyDecision.diagnostics.prune_counts.full_mpc;
+    projectionDiagnostics.prune_counts.degraded_bounded_mpc +=
+      weeklyDecision.diagnostics.prune_counts.degraded_bounded_mpc;
+    projectionDiagnostics.active_constraints = [
+      ...new Set([
+        ...projectionDiagnostics.active_constraints,
+        ...weeklyDecision.diagnostics.active_constraints,
+      ]),
+    ];
+    if (weeklyDecision.diagnostics.tie_break_chain.length > 0) {
+      projectionDiagnostics.tie_break_chain =
+        weeklyDecision.diagnostics.tie_break_chain;
+    }
+    projectionDiagnostics.selected_path = mergeSelectedPath(
+      projectionDiagnostics.selected_path,
+      weeklyDecision.diagnostics.selected_path,
+    );
+    if (projectionDiagnostics.fallback_reason === null) {
+      projectionDiagnostics.fallback_reason =
+        weeklyDecision.diagnostics.fallback_reason;
+    }
+
+    const effectiveRampCaps = resolveEffectiveRampCaps(normalizedConfig);
     const cappedDecision = applyWeeklyTssCaps({
       flooredWeeklyTss: weekSignals.flooredWeeklyTss,
       previousWeekTss,
       currentCtl,
       daysInWeek,
       normalizedConfig,
-      preferredWeeklyTss: optimizedWeeklyTss,
+      preferredWeeklyTss: weeklyDecision.selected_weekly_tss,
     });
     const tssRampClamped = baselineCaps.tssRampClamped;
     if (tssRampClamped) {
@@ -2013,7 +2474,7 @@ export function buildDeterministicProjectionPayload(
           requested_weekly_tss: weekSignals.flooredWeeklyTss,
           raw_requested_weekly_tss: weekSignals.recoveryAdjustedWeeklyTss,
           applied_weekly_tss: appliedWeeklyTss,
-          max_weekly_tss_ramp_pct: normalizedConfig.max_weekly_tss_ramp_pct,
+          max_weekly_tss_ramp_pct: effectiveRampCaps.max_weekly_tss_ramp_pct,
           clamped: tssRampClamped,
           floor_override_applied: weekSignals.floorOverrideApplied,
           floor_minimum_weekly_tss: weekSignals.enforceNoHistoryStartingFloor
@@ -2037,7 +2498,7 @@ export function buildDeterministicProjectionPayload(
         ctl_ramp: {
           requested_ctl_ramp: round3(requestedCtlRamp),
           applied_ctl_ramp: round3(appliedCtlRamp),
-          max_ctl_ramp_per_week: normalizedConfig.max_ctl_ramp_per_week,
+          max_ctl_ramp_per_week: effectiveRampCaps.max_ctl_ramp_per_week,
           clamped: ctlRampClamped,
         },
       },
@@ -2086,15 +2547,137 @@ export function buildDeterministicProjectionPayload(
     confidence: evidenceConfidenceScore,
     projectionWeeks: Math.max(1, microcycles.length),
   });
-  const pointReadinessScores = computeProjectionPointReadinessScores({
+  const rawPointReadinessScores = computeProjectionPointReadinessScores({
     points,
     planReadinessScore: projectionFeasibility.readiness_score,
     goals: goalMarkers,
   });
-  const pointsWithReadiness = points.map((point, index) => ({
+  const preliminaryPointsWithReadiness = points.map((point, index) => ({
     ...point,
-    readiness_score: pointReadinessScores[index] ?? 0,
+    readiness_score: rawPointReadinessScores[index] ?? 0,
   }));
+
+  const goalInputById = new Map(
+    input.goals.map((goal) => [
+      goal.id ?? `${goal.name}|${goal.target_date}`,
+      goal,
+    ]),
+  );
+  const goalAssessmentsRaw = goalMarkers.map((marker) => {
+    const sourceGoal =
+      goalInputById.get(marker.id) ??
+      input.goals.find(
+        (goal) =>
+          goal.name === marker.name && goal.target_date === marker.target_date,
+      );
+
+    const readinessAtGoal = resolveGoalDateReadiness(
+      preliminaryPointsWithReadiness,
+      marker.target_date,
+    );
+
+    return scoreGoalAssessment({
+      goal_id: marker.id,
+      priority: marker.priority,
+      targets: sourceGoal?.targets ?? [],
+      projection: {
+        readiness_score: readinessAtGoal,
+      },
+    });
+  });
+
+  const goalGdi = goalAssessmentsRaw.map((goal) => {
+    const goalMarker = goalMarkers.find((marker) => marker.id === goal.goal_id);
+    const weeksToGoal =
+      goalMarker === undefined
+        ? 0
+        : Math.max(0, diffDays(startDate, goalMarker.target_date)) / 7;
+    const timelinePressure = clamp01(1 - weeksToGoal / 24);
+
+    return computeGoalGdi({
+      goal_id: goal.goal_id,
+      priority: goal.priority,
+      performance_gap: 1 - goal.goal_score_0_1,
+      load_gap: projectionFeasibility.demand_gap.unmet_ratio,
+      timeline_pressure: timelinePressure,
+      sparsity_penalty: resolveSparsityPenalty(
+        noHistory?.evidence_confidence?.state,
+      ),
+    });
+  });
+
+  const planGoalScore = scorePlanGoals(goalAssessmentsRaw);
+  const planGdi = computePlanGdi(goalGdi);
+  const capacityEnvelope = computeCapacityEnvelope({
+    weeks: microcycles.map((cycle) => ({
+      projected_weekly_tss: cycle.planned_weekly_tss,
+      projected_ramp_pct:
+        cycle.metadata.tss_ramp.previous_week_tss <= 0
+          ? 0
+          : ((cycle.planned_weekly_tss -
+              cycle.metadata.tss_ramp.previous_week_tss) /
+              cycle.metadata.tss_ramp.previous_week_tss) *
+            100,
+    })),
+    starting_ctl: startingCtl,
+    evidence_state: noHistory?.evidence_confidence?.state,
+  });
+  const compositeReadiness = computeCompositeReadiness({
+    target_attainment_score: planGoalScore.plan_goal_score_0_1 * 100,
+    durability_score: computeDurabilityScore({
+      weekly_tss: microcycles.map((cycle) => cycle.planned_weekly_tss),
+    }),
+    evidence_score: evidenceConfidenceScore * 100,
+    envelope: capacityEnvelope,
+    evidence_state: noHistory?.evidence_confidence?.state,
+  });
+
+  const finalPointReadinessScores = computeProjectionPointReadinessScores({
+    points,
+    planReadinessScore: compositeReadiness.readiness_score,
+    goals: goalMarkers,
+  });
+  const pointsWithReadiness = preliminaryPointsWithReadiness.map(
+    (point, i) => ({
+      ...point,
+      readiness_score: finalPointReadinessScores[i] ?? point.readiness_score,
+    }),
+  );
+  const cappedProjectionFeasibility: ReadinessProjectionFeasibilityMetadata = {
+    ...projectionFeasibility,
+    readiness_score: compositeReadiness.readiness_score,
+    readiness_components: {
+      load_state: round3(compositeReadiness.target_attainment_score / 100),
+      intensity_balance: round3(compositeReadiness.envelope_score / 100),
+      specificity: round3(compositeReadiness.durability_score / 100),
+      execution_confidence: round3(compositeReadiness.evidence_score / 100),
+    },
+    readiness_rationale_codes: compositeReadiness.readiness_rationale_codes,
+  };
+
+  const goalFeasibilityById = new Map(
+    goalGdi.map((goal) => [goal.goal_id, goal.feasibility_band]),
+  );
+  const goalAssessments = goalAssessmentsRaw.map((goal) => ({
+    goal_id: goal.goal_id,
+    priority: goal.priority,
+    feasibility_band: goalFeasibilityById.get(goal.goal_id) ?? "feasible",
+    target_scores: goal.target_scores,
+    conflict_notes: goal.conflict_notes,
+  }));
+
+  const riskFlags = [
+    `feasibility_band_${planGdi.feasibility_band}`,
+    ...projectionFeasibility.dominant_limiters,
+    `capacity_envelope_${capacityEnvelope.envelope_state}`,
+    ...capacityEnvelope.limiting_factors.map(
+      (factor) => `capacity_envelope_${factor}`,
+    ),
+  ];
+  const uniqueRiskFlags = [...new Set(riskFlags)];
+  const riskLevel = resolveRiskLevel({
+    feasibilityBand: planGdi.feasibility_band,
+  });
 
   const optimizedPayload: DeterministicProjectionPayload = {
     start_date: startDate,
@@ -2133,8 +2716,18 @@ export function buildDeterministicProjectionPayload(
       required_peak_weekly_tss: noHistory?.required_peak_weekly_tss ?? null,
       demand_confidence: noHistory?.demand_confidence ?? null,
       evidence_confidence: noHistory?.evidence_confidence ?? null,
-      projection_feasibility: projectionFeasibility,
+      projection_feasibility: cappedProjectionFeasibility,
     },
+    readiness_score: compositeReadiness.readiness_score,
+    readiness_confidence: compositeReadiness.readiness_confidence,
+    capacity_envelope: capacityEnvelope,
+    readiness_rationale_codes: compositeReadiness.readiness_rationale_codes,
+    feasibility_band: planGdi.feasibility_band,
+    risk_level: riskLevel,
+    risk_flags: uniqueRiskFlags,
+    caps_applied: [],
+    projection_diagnostics: projectionDiagnostics,
+    goal_assessments: goalAssessments,
   };
 
   if (input.disable_weekly_tss_optimizer) {

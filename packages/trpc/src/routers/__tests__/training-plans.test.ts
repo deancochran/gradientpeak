@@ -49,6 +49,60 @@ function createTrainingPlansCaller(results: Record<string, QueryResult> = {}) {
   } as any);
 }
 
+function percentile(values: number[], p: number): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = Math.min(
+    sorted.length - 1,
+    Math.max(0, Math.ceil((p / 100) * sorted.length) - 1),
+  );
+  return sorted[idx] ?? 0;
+}
+
+function assertSaneProjectionDiagnostics(diagnostics: any) {
+  expect(diagnostics).toBeDefined();
+  expect([
+    "full_mpc",
+    "degraded_bounded_mpc",
+    "legacy_optimizer",
+    "cap_only_baseline",
+  ]).toContain(diagnostics.selected_path);
+  expect(typeof diagnostics.candidate_counts.full_mpc).toBe("number");
+  expect(typeof diagnostics.candidate_counts.degraded_bounded_mpc).toBe(
+    "number",
+  );
+  expect(typeof diagnostics.candidate_counts.legacy_optimizer).toBe("number");
+  expect(typeof diagnostics.prune_counts.full_mpc).toBe("number");
+  expect(typeof diagnostics.prune_counts.degraded_bounded_mpc).toBe("number");
+  expect(Array.isArray(diagnostics.active_constraints)).toBe(true);
+  expect(Array.isArray(diagnostics.tie_break_chain)).toBe(true);
+
+  expect(diagnostics.candidate_counts.full_mpc).toBeGreaterThanOrEqual(0);
+  expect(
+    diagnostics.candidate_counts.degraded_bounded_mpc,
+  ).toBeGreaterThanOrEqual(0);
+  expect(diagnostics.candidate_counts.legacy_optimizer).toBeGreaterThanOrEqual(
+    0,
+  );
+
+  if (diagnostics.selected_path === "full_mpc") {
+    expect(diagnostics.candidate_counts.full_mpc).toBeGreaterThan(0);
+  }
+  if (diagnostics.selected_path === "degraded_bounded_mpc") {
+    expect(diagnostics.candidate_counts.degraded_bounded_mpc).toBeGreaterThan(
+      0,
+    );
+  }
+  if (diagnostics.selected_path === "legacy_optimizer") {
+    expect(diagnostics.candidate_counts.legacy_optimizer).toBeGreaterThan(0);
+  }
+
+  const fallbackReason = diagnostics.fallback_reason;
+  expect(fallbackReason === null || typeof fallbackReason === "string").toBe(
+    true,
+  );
+}
+
 describe("deriveProfileAwareCreationContext", () => {
   it("falls back to empty arrays when one source query fails", async () => {
     const supabase = createSupabaseMock({
@@ -129,7 +183,7 @@ describe("trainingPlansRouter.getCreationSuggestions", () => {
     const result = await caller.getCreationSuggestions({
       as_of: "2026-01-10T00:00:00.000Z",
       existing_values: {
-        recent_influence_score: 0.2,
+        recent_influence: { influence_score: 0.2 },
       },
     });
 
@@ -155,6 +209,18 @@ describe("trainingPlansRouter plan_start_date support", () => {
         distance_m: 10000,
         target_time_s: 2700,
         activity_category: "run" as const,
+      },
+    ],
+  };
+
+  const nonBlockingGoal = {
+    name: "Threshold check",
+    target_date: "2026-10-15",
+    priority: 1,
+    targets: [
+      {
+        target_type: "hr_threshold" as const,
+        target_lthr_bpm: 160,
       },
     ],
   };
@@ -265,7 +331,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       },
     });
 
-    expect(result.conflicts.is_blocking).toBe(true);
+    expect(result.conflicts.is_blocking).toBe(false);
     expect(
       result.conflicts.items.some(
         (c) =>
@@ -311,7 +377,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       },
     });
 
-    expect(result.conflicts.is_blocking).toBe(true);
+    expect(result.conflicts.is_blocking).toBe(false);
     expect(
       result.conflicts.items.some(
         (conflict) =>
@@ -420,7 +486,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
     ).toBe(true);
   });
 
-  it("surfaces deterministic preview metadata even when create is blocked", async () => {
+  it("surfaces deterministic preview metadata and allows create when unblocked", async () => {
     const caller = createTrainingPlansCaller({
       activities: { data: [], error: null },
       activity_efforts: { data: [], error: null },
@@ -441,7 +507,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
     const input = {
       minimal_plan: {
         plan_start_date: "2026-01-05",
-        goals: [minimalGoal],
+        goals: [nonBlockingGoal],
       },
       starting_ctl_override: 42,
       creation_input: {
@@ -460,10 +526,8 @@ describe("trainingPlansRouter plan_start_date support", () => {
     expect(preview.normalized_creation_config.max_weekly_tss_ramp_pct).toBe(20);
     expect(preview.normalized_creation_config.max_ctl_ramp_per_week).toBe(8);
 
-    await expect(caller.createFromCreationConfig(input)).rejects.toMatchObject({
-      code: "BAD_REQUEST",
-      message: expect.stringContaining("blocking conflicts"),
-    });
+    const created = await caller.createFromCreationConfig(input);
+    expect(created.creation_summary.conflicts.is_blocking).toBe(false);
   });
 
   it("returns a preview snapshot token from previewCreationConfig", async () => {
@@ -476,7 +540,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
     const result = await caller.previewCreationConfig({
       minimal_plan: {
         plan_start_date: "2026-01-05",
-        goals: [minimalGoal],
+        goals: [nonBlockingGoal],
       },
       creation_input: {},
     });
@@ -486,7 +550,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
     expect(result.preview_snapshot.token.length).toBeGreaterThan(0);
   });
 
-  it("rejects create when preview snapshot token matches but config is still blocked", async () => {
+  it("accepts create when preview snapshot token matches and config is unblocked", async () => {
     const caller = createTrainingPlansCaller({
       activities: { data: [], error: null },
       activity_efforts: { data: [], error: null },
@@ -507,7 +571,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
     const input = {
       minimal_plan: {
         plan_start_date: "2026-01-05",
-        goals: [minimalGoal],
+        goals: [nonBlockingGoal],
       },
       starting_ctl_override: 42,
       creation_input: {
@@ -520,15 +584,11 @@ describe("trainingPlansRouter plan_start_date support", () => {
     };
 
     const preview = await caller.previewCreationConfig(input);
-    await expect(
-      caller.createFromCreationConfig({
-        ...input,
-        preview_snapshot_token: preview.preview_snapshot.token,
-      }),
-    ).rejects.toMatchObject({
-      code: "BAD_REQUEST",
-      message: expect.stringContaining("blocking conflicts"),
+    const created = await caller.createFromCreationConfig({
+      ...input,
+      preview_snapshot_token: preview.preview_snapshot.token,
     });
+    expect(created.creation_summary.conflicts.is_blocking).toBe(false);
   });
 
   it("fails createFromCreationConfig when preview snapshot token is stale or invalid", async () => {
@@ -566,7 +626,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
     const input = {
       minimal_plan: {
         plan_start_date: "2026-01-05",
-        goals: [minimalGoal],
+        goals: [nonBlockingGoal],
       },
       creation_input: {},
     };
@@ -592,6 +652,194 @@ describe("trainingPlansRouter plan_start_date support", () => {
       code: "BAD_REQUEST",
       message: expect.stringContaining("Refresh previewCreationConfig"),
     });
+  });
+
+  it("invalidates preview tokens when creation config changes between preview and create", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "plan-row-1",
+          name: "Generated Plan",
+          description: null,
+          structure: {},
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const previewInput = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [nonBlockingGoal],
+      },
+      creation_input: {
+        user_values: {
+          optimization_profile: "balanced" as const,
+          max_weekly_tss_ramp_pct: 7,
+          max_ctl_ramp_per_week: 3,
+        },
+      },
+    };
+
+    const preview = await caller.previewCreationConfig(previewInput);
+
+    await expect(
+      caller.createFromCreationConfig({
+        minimal_plan: previewInput.minimal_plan,
+        creation_input: {
+          user_values: {
+            optimization_profile: "outcome_first",
+            max_weekly_tss_ramp_pct: 20,
+            max_ctl_ramp_per_week: 8,
+          },
+        },
+        preview_snapshot_token: preview.preview_snapshot.token,
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining("Refresh previewCreationConfig"),
+    });
+  });
+
+  it("keeps preview/create projection diagnostics and metadata in parity", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "plan-row-1",
+          name: "Generated Plan",
+          description: null,
+          structure: {},
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const input = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [minimalGoal],
+      },
+      starting_ctl_override: 42,
+      creation_input: {
+        user_values: {
+          optimization_profile: "outcome_first" as const,
+          max_weekly_tss_ramp_pct: 20,
+          max_ctl_ramp_per_week: 8,
+        },
+      },
+    };
+
+    const preview = await caller.previewCreationConfig(input);
+    const created = await caller.createFromCreationConfig({
+      ...input,
+      preview_snapshot_token: preview.preview_snapshot.token,
+    });
+
+    expect(created.creation_summary.normalized_creation_config).toMatchObject({
+      optimization_profile:
+        preview.normalized_creation_config.optimization_profile,
+      max_weekly_tss_ramp_pct:
+        preview.normalized_creation_config.max_weekly_tss_ramp_pct,
+      max_ctl_ramp_per_week:
+        preview.normalized_creation_config.max_ctl_ramp_per_week,
+    });
+    expect(created.creation_summary.projection_feasibility).toEqual(
+      preview.projection_feasibility,
+    );
+    expect(created.creation_summary.projection_chart.readiness_score).toBe(
+      preview.projection_chart.readiness_score,
+    );
+    expect(created.creation_summary.projection_chart.readiness_confidence).toBe(
+      preview.projection_chart.readiness_confidence,
+    );
+    expect(created.creation_summary.projection_chart.capacity_envelope).toEqual(
+      preview.projection_chart.capacity_envelope,
+    );
+    expect(created.creation_summary.projection_chart.risk_flags).toEqual(
+      preview.projection_chart.risk_flags,
+    );
+    expect(created.creation_summary.projection_chart.caps_applied).toEqual(
+      preview.projection_chart.caps_applied,
+    );
+    expect(
+      created.creation_summary.projection_chart.projection_diagnostics,
+    ).toEqual(preview.projection_chart.projection_diagnostics);
+    expect("mode_applied" in created.creation_summary.projection_chart).toBe(
+      false,
+    );
+    expect(
+      "overrides_applied" in created.creation_summary.projection_chart,
+    ).toBe(false);
+  });
+
+  it("preserves deterministic diagnostics path in preview", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "plan-row-1",
+          name: "Generated Plan",
+          description: null,
+          structure: {},
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const relaxedGoal = {
+      name: "Safe Fallback Goal",
+      target_date: "2026-10-15",
+      priority: 1,
+      targets: [
+        {
+          target_type: "hr_threshold" as const,
+          target_lthr_bpm: 160,
+        },
+      ],
+    };
+
+    const input = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [relaxedGoal],
+      },
+      starting_ctl_override: 42,
+      creation_input: {
+        user_values: {
+          optimization_profile: "balanced" as const,
+          max_weekly_tss_ramp_pct: 7,
+          max_ctl_ramp_per_week: 3,
+        },
+      },
+    };
+
+    const preview = await caller.previewCreationConfig(input);
+
+    expect(preview.projection_chart.projection_diagnostics).toMatchObject({
+      selected_path: expect.any(String),
+      candidate_counts: expect.any(Object),
+      prune_counts: expect.any(Object),
+      tie_break_chain: expect.any(Array),
+    });
+    const fallbackReason =
+      preview.projection_chart.projection_diagnostics?.fallback_reason;
+    expect(fallbackReason === null || typeof fallbackReason === "string").toBe(
+      true,
+    );
   });
 
   it("returns preview timeline anchored to plan_start_date when provided", async () => {
@@ -903,6 +1151,195 @@ describe("trainingPlansRouter plan_start_date support", () => {
     expect(
       result.projection_chart.microcycles.some((week) => week.metadata),
     ).toBe(true);
+  });
+
+  it("accepts create payload with no mode/risk fields and no acknowledgement requirement", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "plan-row-1",
+          name: "Generated Plan",
+          description: null,
+          structure: {},
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const input = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [minimalGoal],
+      },
+      starting_ctl_override: 42,
+      creation_input: {
+        user_values: {
+          optimization_profile: "outcome_first" as const,
+          max_weekly_tss_ramp_pct: 20,
+          max_ctl_ramp_per_week: 8,
+        },
+      },
+    };
+
+    const preview = await caller.previewCreationConfig(input);
+    const created = await caller.createFromCreationConfig({
+      ...input,
+      preview_snapshot_token: preview.preview_snapshot.token,
+    });
+
+    expect(created.creation_summary.conflicts.is_blocking).toBe(false);
+  });
+
+  it("hard-rejects removed mode/risk/constraint fields", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+
+    const relaxedGoal = {
+      name: "Threshold check",
+      target_date: "2026-10-15",
+      priority: 1,
+      targets: [
+        {
+          target_type: "hr_threshold" as const,
+          target_lthr_bpm: 160,
+        },
+      ],
+    };
+
+    const input = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [relaxedGoal],
+      },
+      creation_input: {
+        mode: "risk_accepted",
+        risk_acceptance: {
+          accepted: true,
+          reason: "Accept elevated risk",
+        },
+        constraint_policy: {
+          enforce_safety_caps: true,
+          enforce_feasibility_caps: false,
+          readiness_cap_enabled: false,
+        },
+        user_values: {
+          mode: "risk_accepted",
+          risk_acceptance: {
+            accepted: true,
+            reason: "Accept elevated risk",
+          },
+          constraint_policy: {
+            enforce_safety_caps: true,
+            enforce_feasibility_caps: false,
+            readiness_cap_enabled: false,
+          },
+          optimization_profile: "outcome_first" as const,
+          max_weekly_tss_ramp_pct: 20,
+          max_ctl_ramp_per_week: 8,
+        },
+      },
+    };
+
+    await expect(caller.previewCreationConfig(input)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+
+    await expect(
+      caller.createFromCreationConfig({
+        ...input,
+        preview_snapshot_token: "not-used-because-parse-fails",
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+  });
+
+  it("keeps preview/create latency percentiles and diagnostics within rollout guardrails", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "plan-row-1",
+          name: "Generated Plan",
+          description: null,
+          structure: {},
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const iterations = 8;
+    const thresholdsMs = {
+      preview: { p50: 1500, p95: 3000, p99: 3500 },
+      create: { p50: 1800, p95: 3500, p99: 4000 },
+    };
+
+    const input = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [minimalGoal],
+      },
+      starting_ctl_override: 42,
+      creation_input: {
+        user_values: {
+          optimization_profile: "outcome_first" as const,
+          max_weekly_tss_ramp_pct: 20,
+          max_ctl_ramp_per_week: 8,
+        },
+      },
+    };
+
+    const previewLatenciesMs: number[] = [];
+    const createLatenciesMs: number[] = [];
+
+    for (let i = 0; i < iterations; i += 1) {
+      const previewStart = performance.now();
+      const preview = await caller.previewCreationConfig(input);
+      previewLatenciesMs.push(performance.now() - previewStart);
+      assertSaneProjectionDiagnostics(
+        preview.projection_chart.projection_diagnostics,
+      );
+
+      const createStart = performance.now();
+      const created = await caller.createFromCreationConfig({
+        ...input,
+        preview_snapshot_token: preview.preview_snapshot.token,
+      });
+      createLatenciesMs.push(performance.now() - createStart);
+      assertSaneProjectionDiagnostics(
+        created.creation_summary.projection_chart.projection_diagnostics,
+      );
+
+      expect(
+        created.creation_summary.projection_chart.projection_diagnostics,
+      ).toEqual(preview.projection_chart.projection_diagnostics);
+    }
+
+    const previewP50 = percentile(previewLatenciesMs, 50);
+    const previewP95 = percentile(previewLatenciesMs, 95);
+    const previewP99 = percentile(previewLatenciesMs, 99);
+    const createP50 = percentile(createLatenciesMs, 50);
+    const createP95 = percentile(createLatenciesMs, 95);
+    const createP99 = percentile(createLatenciesMs, 99);
+
+    expect(previewP50).toBeLessThan(thresholdsMs.preview.p50);
+    expect(previewP95).toBeLessThan(thresholdsMs.preview.p95);
+    expect(previewP99).toBeLessThan(thresholdsMs.preview.p99);
+    expect(createP50).toBeLessThan(thresholdsMs.create.p50);
+    expect(createP95).toBeLessThan(thresholdsMs.create.p95);
+    expect(createP99).toBeLessThan(thresholdsMs.create.p99);
   });
 });
 

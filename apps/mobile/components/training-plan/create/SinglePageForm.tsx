@@ -1,16 +1,16 @@
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Badge } from "../../ui/badge";
+import { Button } from "../../ui/button";
+import { Input } from "../../ui/input";
+import { Label } from "../../ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { Text } from "@/components/ui/text";
-import { Switch } from "@/components/ui/switch";
+} from "../../ui/select";
+import { Switch } from "../../ui/switch";
+import { Text } from "../../ui/text";
 import { BoundedNumberInput } from "./inputs/BoundedNumberInput";
 import { DateField } from "./inputs/DateField";
 import { DurationInput } from "./inputs/DurationInput";
@@ -39,9 +39,9 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { CreationProjectionChart } from "./CreationProjectionChart";
-import { parseNumberOrUndefined } from "@/lib/training-plan-form/input-parsers";
-import type { BlockingIssue } from "@/lib/training-plan-form/validation";
-import { validateTrainingPlanForm } from "@/lib/training-plan-form/validation";
+import { parseNumberOrUndefined } from "../../../lib/training-plan-form/input-parsers";
+import type { BlockingIssue } from "../../../lib/training-plan-form/validation";
+import { validateTrainingPlanForm } from "../../../lib/training-plan-form/validation";
 import type {
   CreationAvailabilityConfig,
   CreationConfigLocks,
@@ -120,8 +120,6 @@ interface SinglePageFormProps {
   informationalConflicts?: string[];
   blockingIssues?: BlockingIssue[];
   createDisabledReason?: string;
-  riskAcknowledged?: boolean;
-  onRiskAcknowledgedChange?: (value: boolean) => void;
   isPreviewPending?: boolean;
   onConfigChange: (data: TrainingPlanConfigFormData) => void;
   onResolveConflict: (code: string) => void;
@@ -418,6 +416,32 @@ const getGoalSummary = (goal: GoalFormData) => {
   return `${label} - ${goal.targetDate || "No date"} - ${goal.targets.length} target(s)`;
 };
 
+const formatFeasibilityBandLabel = (
+  band:
+    | "feasible"
+    | "stretch"
+    | "aggressive"
+    | "nearly_impossible"
+    | "infeasible",
+) => band.replaceAll("_", " ");
+
+const getAssessmentTargetKindLabel = (kind: string) => {
+  switch (kind) {
+    case "finish_time":
+      return "Finish time";
+    case "pace":
+      return "Pace";
+    case "power":
+      return "Power";
+    case "split":
+      return "Split";
+    case "completion_probability":
+      return "Completion probability";
+    default:
+      return kind.replaceAll("_", " ");
+  }
+};
+
 const areStringArraysEqual = (left: string[], right: string[]) => {
   if (left.length !== right.length) {
     return false;
@@ -453,8 +477,6 @@ export function SinglePageForm({
   informationalConflicts = [],
   blockingIssues = [],
   createDisabledReason,
-  riskAcknowledged = false,
-  onRiskAcknowledgedChange,
   isPreviewPending = false,
   onConfigChange,
   onResolveConflict,
@@ -746,6 +768,17 @@ export function SinglePageForm({
 
     return blockingCount + cautionDriverCount;
   }, [blockingIssues.length, feasibilitySafetySummary]);
+  const goalAssessments = projectionChart?.goal_assessments ?? [];
+  const goalMarkersById = useMemo(
+    () =>
+      new Map(
+        (projectionChart?.goal_markers ?? []).map((marker) => [
+          marker.id,
+          marker,
+        ]),
+      ),
+    [projectionChart?.goal_markers],
+  );
 
   return (
     <View className="flex-1">
@@ -1265,6 +1298,61 @@ export function SinglePageForm({
               </View>
             )}
 
+            {activeTab === "review" && goalAssessments.length > 0 && (
+              <View className="gap-2 rounded-lg border border-border bg-card p-3">
+                <Text className="font-semibold">
+                  Per-goal feasibility and target satisfaction
+                </Text>
+                {goalAssessments.map((assessment, index) => {
+                  const marker = goalMarkersById.get(assessment.goal_id);
+                  const title = marker?.name?.trim()
+                    ? marker.name
+                    : `Goal ${index + 1}`;
+
+                  return (
+                    <View
+                      key={`${assessment.goal_id}-${assessment.priority}-${index}`}
+                      className="gap-1 rounded-md border border-border bg-muted/20 p-2"
+                    >
+                      <View className="flex-row items-center justify-between">
+                        <Text className="text-sm font-medium">{title}</Text>
+                        <Badge variant="outline">
+                          <Text>
+                            {formatFeasibilityBandLabel(
+                              assessment.feasibility_band,
+                            )}
+                          </Text>
+                        </Badge>
+                      </View>
+                      <Text className="text-xs text-muted-foreground">
+                        Priority: {assessment.priority}
+                      </Text>
+                      {assessment.target_scores.map((target, targetIndex) => (
+                        <Text
+                          key={`${assessment.goal_id}-${target.kind}-${targetIndex}`}
+                          className="text-xs text-muted-foreground"
+                        >
+                          {getAssessmentTargetKindLabel(target.kind)}:{" "}
+                          {Math.round(target.score_0_100)} / 100
+                          {target.unmet_gap !== undefined
+                            ? ` | unmet gap ${Number(target.unmet_gap.toFixed(2))}`
+                            : ""}
+                        </Text>
+                      ))}
+                      {assessment.conflict_notes.slice(0, 2).map((note) => (
+                        <Text
+                          key={`${assessment.goal_id}-${note}`}
+                          className="text-xs text-muted-foreground"
+                        >
+                          conflict: {note}
+                        </Text>
+                      ))}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
             {activeTab === "review" && createDisabledReason && (
               <View
                 className={`gap-1 rounded-lg p-3 ${blockingIssues.length > 0 ? "border border-amber-300 bg-amber-100/40" : "border border-destructive/40 bg-destructive/5"}`}
@@ -1274,22 +1362,6 @@ export function SinglePageForm({
                 >
                   {createDisabledReason}
                 </Text>
-                {blockingIssues.length > 0 && onRiskAcknowledgedChange && (
-                  <View className="mt-1 flex-row items-center justify-between rounded-md border border-amber-300 px-2 py-2">
-                    <Text className="mr-2 flex-1 text-xs text-amber-800">
-                      I understand the feasibility/safety risk and want to
-                      create this plan anyway.
-                    </Text>
-                    <Switch
-                      checked={riskAcknowledged}
-                      onCheckedChange={(value) =>
-                        onRiskAcknowledgedChange(Boolean(value))
-                      }
-                      accessibilityLabel="Acknowledge plan risk"
-                      accessibilityHint="Enable to allow creating a plan with unresolved feasibility or safety issues"
-                    />
-                  </View>
-                )}
               </View>
             )}
 

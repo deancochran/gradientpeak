@@ -1,4 +1,5 @@
 import type { MinimalTrainingPlanCreate } from "../schemas/training_plan_structure";
+import { canonicalizeMinimalTrainingPlanCreate } from "./canonicalization";
 
 const HMS_PATTERN = /^([0-9]+):([0-5][0-9]):([0-5][0-9])$/;
 const MMS_PATTERN = /^([0-9]+):([0-5][0-9])$/;
@@ -94,10 +95,10 @@ export function buildPreviewMinimalPlanFromForm(
       ? trimmedPlanStartDate
       : undefined;
 
-  return {
+  return canonicalizeMinimalTrainingPlanCreate({
     goals,
     plan_start_date: planStartDate,
-  };
+  });
 }
 
 function getFallbackPreviewTarget(

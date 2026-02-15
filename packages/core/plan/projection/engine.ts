@@ -5,7 +5,9 @@ import type {
   DeterministicProjectionMicrocycle,
   DeterministicProjectionPayload,
   DeterministicProjectionPoint,
+  ProjectionDiagnostics,
   ProjectionRecoverySegment,
+  WeeklyOptimizationPath,
   ProjectionWeekMetadata,
 } from "../projectionCalculations";
 
@@ -15,7 +17,9 @@ export type {
   DeterministicProjectionMicrocycle,
   DeterministicProjectionPayload,
   DeterministicProjectionPoint,
+  ProjectionDiagnostics,
   ProjectionRecoverySegment,
+  WeeklyOptimizationPath,
   ProjectionWeekMetadata,
 };
 

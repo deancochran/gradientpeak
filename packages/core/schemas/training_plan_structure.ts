@@ -901,21 +901,24 @@ export type CreationFeasibilitySafetySummary = z.infer<
   typeof creationFeasibilitySafetySummarySchema
 >;
 
-export const trainingPlanCreationConfigSchema = z.object({
-  availability_config: creationAvailabilityConfigSchema,
-  availability_provenance: creationProvenanceSchema,
-  recent_influence: creationRecentInfluenceSchema,
-  recent_influence_action: creationRecentInfluenceActionEnum,
-  recent_influence_provenance: creationProvenanceSchema,
-  constraints: creationConstraintsSchema,
-  optimization_profile: creationOptimizationProfileEnum.default("balanced"),
-  post_goal_recovery_days: z.number().int().min(0).max(28).default(5),
-  max_weekly_tss_ramp_pct: z.number().min(0).max(20).default(7),
-  max_ctl_ramp_per_week: z.number().min(0).max(8).default(3),
-  locks: creationConfigLocksSchema,
-  context_summary: creationContextSummarySchema.optional(),
-  feasibility_safety_summary: creationFeasibilitySafetySummarySchema.optional(),
-});
+export const trainingPlanCreationConfigSchema = z
+  .object({
+    availability_config: creationAvailabilityConfigSchema,
+    availability_provenance: creationProvenanceSchema,
+    recent_influence: creationRecentInfluenceSchema,
+    recent_influence_action: creationRecentInfluenceActionEnum,
+    recent_influence_provenance: creationProvenanceSchema,
+    constraints: creationConstraintsSchema,
+    optimization_profile: creationOptimizationProfileEnum.default("balanced"),
+    post_goal_recovery_days: z.number().int().min(0).max(28).default(5),
+    max_weekly_tss_ramp_pct: z.number().min(0).max(20).default(7),
+    max_ctl_ramp_per_week: z.number().min(0).max(8).default(3),
+    locks: creationConfigLocksSchema,
+    context_summary: creationContextSummarySchema.optional(),
+    feasibility_safety_summary:
+      creationFeasibilitySafetySummarySchema.optional(),
+  })
+  .strict();
 
 export type TrainingPlanCreationConfig = z.infer<
   typeof trainingPlanCreationConfigSchema

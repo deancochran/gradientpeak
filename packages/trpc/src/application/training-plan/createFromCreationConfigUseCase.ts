@@ -114,6 +114,7 @@ export async function createFromCreationConfigUseCase<
     profileId: input.profileId,
     creationInput: input.params.creation_input,
   });
+
   const estimatedCurrentCtl = await input.deps.estimateCurrentCtl(
     input.supabase,
     input.profileId,
@@ -157,55 +158,17 @@ export async function createFromCreationConfigUseCase<
   const allConflicts = [
     ...evaluation.conflictResolution.conflicts,
     ...projectionConflicts,
-  ];
-
-  const blockingConflicts = allConflicts.filter(
-    (conflict) => conflict.severity === "blocking",
+  ].map((conflict) =>
+    conflict.severity === "blocking"
+      ? { ...conflict, severity: "warning" as const }
+      : conflict,
   );
 
-  if (blockingConflicts.length > 0) {
-    input.deps.throwPathValidationError(
-      "Creation config has blocking conflicts",
-      blockingConflicts.flatMap((conflict) =>
-        conflict.field_paths.map((fieldPath) => ({
-          path: fieldPath.split("."),
-          message: `${conflict.message}. ${conflict.suggestions.join(" | ")}`,
-        })),
-      ),
-    );
-  }
-
   const planId = input.deps.randomUUID?.() ?? crypto.randomUUID();
-  const normalizedAt =
-    evaluation.finalConfig.feasibility_safety_summary?.computed_at ??
-    new Date().toISOString();
 
   const structureWithId = {
     ...expandedPlan,
     id: planId,
-    metadata: {
-      ...(expandedPlan.metadata ?? {}),
-      creation_config_mvp: {
-        source_of_truth: "normalized_creation_config",
-        policy_version: "creation_config_mvp_v1",
-        precedence_order: [
-          "locked_user_values",
-          "user_values",
-          "confirmed_suggestions",
-          "defaults",
-        ],
-        post_create_mutation_policy: "manual_confirmation_required",
-        normalized_at: normalizedAt,
-        normalized_config: evaluation.finalConfig,
-        conflict_resolution: {
-          is_blocking: blockingConflicts.length > 0,
-          conflicts: allConflicts,
-          precedence: evaluation.conflictResolution.precedence,
-        },
-        projection_feasibility: projectionFeasibility,
-        projection_chart: projectionChart,
-      },
-    },
   };
 
   try {
@@ -266,7 +229,7 @@ export async function createFromCreationConfigUseCase<
     creation_summary: {
       normalized_creation_config: evaluation.finalConfig,
       conflicts: {
-        is_blocking: blockingConflicts.length > 0,
+        is_blocking: false,
         items: allConflicts,
       },
       projection_feasibility: projectionFeasibility,

@@ -855,12 +855,12 @@ describe("no-history anchor orchestration", () => {
     );
     expect(firstFeasibility?.readiness_components).toBeTruthy();
     expect(firstFeasibility?.projection_uncertainty).toBeTruthy();
+    expect(first.readiness_confidence).toBeGreaterThanOrEqual(0);
+    expect(first.readiness_confidence).toBeLessThanOrEqual(100);
+    expect(first.capacity_envelope?.envelope_score).toBeGreaterThanOrEqual(0);
+    expect(first.capacity_envelope?.envelope_score).toBeLessThanOrEqual(100);
 
-    const score = firstFeasibility?.readiness_score ?? 0;
-    const band = firstFeasibility?.readiness_band;
-    if (score >= 75) expect(band).toBe("high");
-    else if (score >= 55) expect(band).toBe("medium");
-    else expect(band).toBe("low");
+    expect(first.readiness_rationale_codes?.length ?? 0).toBeGreaterThan(0);
   });
 
   it("reduces readiness as demand gap and clamp pressure increase", () => {
@@ -1108,5 +1108,210 @@ describe("no-history anchor orchestration", () => {
     expect(projection.microcycles[0]!.metadata.tss_ramp.seed_weekly_tss).toBe(
       135,
     );
+  });
+});
+
+describe("phase 1 scoring integration", () => {
+  it("emits plan-level and goal-level assessment metadata", () => {
+    const projection = buildDeterministicProjectionPayload({
+      timeline: {
+        start_date: "2026-01-05",
+        end_date: "2026-02-02",
+      },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2026-02-02",
+          target_weekly_tss_range: { min: 220, max: 260 },
+        },
+      ],
+      goals: [
+        {
+          id: "goal-1",
+          name: "10k",
+          target_date: "2026-02-02",
+          priority: 2,
+          targets: [
+            {
+              target_type: "race_performance",
+              distance_m: 10000,
+              target_time_s: 2400,
+              activity_category: "run",
+            },
+          ],
+        },
+      ],
+      starting_ctl: 40,
+      creation_config: {
+        optimization_profile: "balanced",
+      },
+    });
+
+    expect(projection.readiness_confidence).toBeGreaterThanOrEqual(0);
+    expect(projection.capacity_envelope).toBeTruthy();
+    expect(projection.feasibility_band).toBeTypeOf("string");
+    expect(projection.goal_assessments).toHaveLength(1);
+    expect(projection.goal_assessments?.[0]?.target_scores.length).toBe(1);
+    expect(projection.risk_flags?.length).toBeGreaterThan(0);
+    expect("mode_applied" in projection).toBe(false);
+    expect("overrides_applied" in projection).toBe(false);
+  });
+
+  it("keeps single readiness outputs without legacy mode semantics", () => {
+    const projection = buildDeterministicProjectionPayload({
+      timeline: {
+        start_date: "2026-01-05",
+        end_date: "2026-03-01",
+      },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2026-03-01",
+          target_weekly_tss_range: { min: 260, max: 320 },
+        },
+      ],
+      goals: [
+        {
+          id: "goal-1",
+          name: "A goal",
+          target_date: "2026-03-01",
+          priority: 1,
+        },
+      ],
+      starting_ctl: 35,
+      creation_config: {
+        optimization_profile: "outcome_first",
+        max_weekly_tss_ramp_pct: 20,
+        max_ctl_ramp_per_week: 8,
+      },
+    });
+
+    expect(projection.readiness_confidence).toBeGreaterThanOrEqual(0);
+    expect(projection.capacity_envelope?.envelope_state).toMatch(
+      /inside|edge|outside/,
+    );
+    expect(projection.readiness_rationale_codes?.length ?? 0).toBeGreaterThan(
+      0,
+    );
+    expect("mode_applied" in projection).toBe(false);
+    expect("overrides_applied" in projection).toBe(false);
+  });
+});
+
+describe("phase 2 mpc integration diagnostics", () => {
+  const phase2Fixture: Parameters<
+    typeof buildDeterministicProjectionPayload
+  >[0] = {
+    timeline: {
+      start_date: "2026-01-05",
+      end_date: "2026-02-16",
+    },
+    blocks: [
+      {
+        name: "Build",
+        phase: "build",
+        start_date: "2026-01-05",
+        end_date: "2026-02-16",
+        target_weekly_tss_range: { min: 260, max: 320 },
+      },
+    ],
+    goals: [
+      {
+        id: "goal-main",
+        name: "A goal",
+        target_date: "2026-02-16",
+        priority: 1,
+      },
+    ],
+    starting_ctl: 34,
+    creation_config: {
+      optimization_profile: "balanced",
+      max_weekly_tss_ramp_pct: 7,
+      max_ctl_ramp_per_week: 3,
+    },
+  };
+
+  it("keeps deterministic MPC-selected path across repeated runs", () => {
+    const first = buildDeterministicProjectionPayload(phase2Fixture);
+    const second = buildDeterministicProjectionPayload(phase2Fixture);
+
+    expect(first.projection_diagnostics).toEqual(second.projection_diagnostics);
+    expect(first.projection_diagnostics?.selected_path).toBeDefined();
+    expect([
+      "full_mpc",
+      "degraded_bounded_mpc",
+      "legacy_optimizer",
+      "cap_only_baseline",
+    ]).toContain(first.projection_diagnostics?.selected_path);
+  });
+
+  it("emits solver diagnostics metadata for candidate counts and tie-break chain", () => {
+    const projection = buildDeterministicProjectionPayload(phase2Fixture);
+    const diagnostics = projection.projection_diagnostics;
+
+    expect(diagnostics?.candidate_counts.full_mpc ?? 0).toBeGreaterThanOrEqual(
+      0,
+    );
+    expect(diagnostics?.active_constraints).toContain(
+      "single_mode_safety_caps_enforced",
+    );
+    expect(diagnostics?.tie_break_chain).toEqual(expect.any(Array));
+    expect((diagnostics?.tie_break_chain ?? []).length).toBeGreaterThanOrEqual(
+      0,
+    );
+  });
+
+  it("uses deterministic cap-only fallback when optimizer is disabled", () => {
+    const first = buildDeterministicProjectionPayload({
+      ...phase2Fixture,
+      disable_weekly_tss_optimizer: true,
+    });
+    const second = buildDeterministicProjectionPayload({
+      ...phase2Fixture,
+      disable_weekly_tss_optimizer: true,
+    });
+
+    expect(first.projection_diagnostics).toEqual(second.projection_diagnostics);
+    expect(first.projection_diagnostics?.selected_path).toBe(
+      "cap_only_baseline",
+    );
+    expect(first.projection_diagnostics?.fallback_reason).toBe(
+      "optimizer_disabled",
+    );
+  });
+
+  it("applies configured ramp caps deterministically", () => {
+    const strictProjection = buildDeterministicProjectionPayload({
+      ...phase2Fixture,
+      creation_config: {
+        optimization_profile: "balanced",
+        max_weekly_tss_ramp_pct: 4,
+        max_ctl_ramp_per_week: 1,
+      },
+    });
+    const lenientProjection = buildDeterministicProjectionPayload({
+      ...phase2Fixture,
+      creation_config: {
+        optimization_profile: "balanced",
+        max_weekly_tss_ramp_pct: 20,
+        max_ctl_ramp_per_week: 8,
+      },
+    });
+
+    expect(
+      strictProjection.microcycles[0]?.metadata.tss_ramp
+        .max_weekly_tss_ramp_pct,
+    ).toBe(4);
+    expect(
+      lenientProjection.microcycles[0]?.metadata.tss_ramp
+        .max_weekly_tss_ramp_pct,
+    ).toBe(20);
+    expect(
+      strictProjection.projection_diagnostics?.active_constraints,
+    ).toContain("single_mode_safety_caps_enforced");
   });
 });

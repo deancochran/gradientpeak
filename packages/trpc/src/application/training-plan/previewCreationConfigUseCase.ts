@@ -106,6 +106,7 @@ export async function previewCreationConfigUseCase<
     profileId: input.profileId,
     creationInput: input.params.creation_input,
   });
+
   const estimatedCurrentCtl = await input.deps.estimateCurrentCtl(
     input.supabase,
     input.profileId,
@@ -138,7 +139,11 @@ export async function previewCreationConfigUseCase<
   const allConflicts = [
     ...evaluation.conflictResolution.conflicts,
     ...projectionConflicts,
-  ];
+  ].map((conflict) =>
+    conflict.severity === "blocking"
+      ? { ...conflict, severity: "warning" as const }
+      : conflict,
+  );
 
   return {
     normalized_creation_config: evaluation.finalConfig,
@@ -147,9 +152,7 @@ export async function previewCreationConfigUseCase<
     feasibility_safety: evaluation.feasibilitySummary,
     projection_feasibility: projectionFeasibility,
     conflicts: {
-      is_blocking: allConflicts.some(
-        (conflict) => conflict.severity === "blocking",
-      ),
+      is_blocking: false,
       items: allConflicts,
     },
     plan_preview: {

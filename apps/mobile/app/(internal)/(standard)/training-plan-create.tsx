@@ -4,14 +4,14 @@ import {
   type TrainingPlanConfigConflict,
   type TrainingPlanConfigFormData,
   type TrainingPlanFormData,
-} from "@/components/training-plan/create/SinglePageForm";
-import { ROUTES } from "@/lib/constants/routes";
-import { featureFlags } from "@/lib/constants/features";
-import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
+} from "../../../components/training-plan/create/SinglePageForm";
+import { featureFlags } from "../../../lib/constants/features";
+import { ROUTES } from "../../../lib/constants/routes";
+import { useReliableMutation } from "../../../lib/hooks/useReliableMutation";
 import {
   buildMinimalTrainingPlanPayload,
   toCreationNormalizationInput,
-} from "@/lib/training-plan-form/adapters";
+} from "../../../lib/training-plan-form/adapters";
 import {
   MAX_SAFE_CTL_RAMP_PER_WEEK,
   MAX_SAFE_WEEKLY_TSS_RAMP_PCT,
@@ -21,9 +21,9 @@ import {
   getMinimumGoalGapDays,
   getTopBlockingIssues,
   validateTrainingPlanForm,
-} from "@/lib/training-plan-form/validation";
-import { trpc } from "@/lib/trpc";
-import { Text } from "@/components/ui/text";
+} from "../../../lib/training-plan-form/validation";
+import { trpc } from "../../../lib/trpc";
+import { Text } from "../../../components/ui/text";
 import {
   buildPreviewMinimalPlanFromForm,
   reducePreviewState,
@@ -56,7 +56,7 @@ import {
 const HIGH_IMPACT_RECOMPUTE_DELAY_MS = 500;
 const PREVIEW_REFRESH_DELAY_MS = 350;
 
-const weekDays: Array<CreationAvailabilityConfig["days"][number]["day"]> = [
+const weekDays: CreationAvailabilityConfig["days"][number]["day"][] = [
   "monday",
   "tuesday",
   "wednesday",
@@ -206,24 +206,8 @@ export default function CreateTrainingPlan() {
     () => getCreateDisabledReason(blockingIssues),
     [blockingIssues],
   );
-  const blockingIssueSignature = useMemo(
-    () =>
-      blockingIssues.map((issue) => `${issue.code}:${issue.message}`).join("|"),
-    [blockingIssues],
-  );
-  const [riskAcknowledged, setRiskAcknowledged] = useState(false);
-  const requiresRiskAcknowledgement = blockingIssues.length > 0;
-  const canCreatePlan =
-    !isCreating && (!requiresRiskAcknowledgement || riskAcknowledged);
-  const effectiveCreateDisabledReason = requiresRiskAcknowledgement
-    ? riskAcknowledged
-      ? undefined
-      : "Acknowledge observations to enable creation"
-    : createDisabledReason;
-
-  useEffect(() => {
-    setRiskAcknowledged(false);
-  }, [blockingIssueSignature]);
+  const canCreatePlan = !isCreating && !createDisabledReason;
+  const effectiveCreateDisabledReason = createDisabledReason;
 
   const suggestionsQuery = trpc.trainingPlans.getCreationSuggestions.useQuery(
     undefined,
@@ -451,7 +435,9 @@ export default function CreateTrainingPlan() {
           locks: configData.locks,
           existing_values: {
             availability_config: configData.availabilityConfig,
-            recent_influence_score: configData.recentInfluenceScore,
+            recent_influence: {
+              influence_score: configData.recentInfluenceScore,
+            },
             optimization_profile: configData.optimizationProfile,
             post_goal_recovery_days: configData.postGoalRecoveryDays,
             max_weekly_tss_ramp_pct: configData.maxWeeklyTssRampPct,
@@ -619,7 +605,7 @@ export default function CreateTrainingPlan() {
         router.replace({
           pathname: ROUTES.PLAN.TRAINING_PLAN.INDEX,
           params: { id: createdPlan.id, nextStep: "refine" },
-        } as any);
+        });
         return;
       }
 
@@ -642,7 +628,7 @@ export default function CreateTrainingPlan() {
       router.replace({
         pathname: ROUTES.PLAN.TRAINING_PLAN.INDEX,
         params: { id: createdPlan.id, nextStep: "refine" },
-      } as any);
+      });
     } catch (error) {
       console.error(
         "Failed to create training plan from creation config:",
@@ -708,8 +694,6 @@ export default function CreateTrainingPlan() {
           informationalConflicts={informationalConflicts}
           blockingIssues={blockingIssues}
           createDisabledReason={effectiveCreateDisabledReason}
-          riskAcknowledged={riskAcknowledged}
-          onRiskAcknowledgedChange={setRiskAcknowledged}
           isPreviewPending={
             isPreviewPending ||
             suggestionsQuery.isLoading ||

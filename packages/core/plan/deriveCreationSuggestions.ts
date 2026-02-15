@@ -6,6 +6,7 @@ import {
   type CreationConfigLocks,
   type CreationContextSummary,
   type CreationProvenance,
+  type CreationRecentInfluence,
 } from "../schemas/training_plan_structure";
 import { countAvailableTrainingDays } from "./availabilityUtils";
 
@@ -23,7 +24,7 @@ export interface DeriveCreationSuggestionsInput {
   context: CreationContextSummary;
   existing_values?: {
     availability_config?: unknown;
-    recent_influence_score?: number;
+    recent_influence?: CreationRecentInfluence;
     constraints?: Partial<{
       hard_rest_days: string[];
       min_sessions_per_week: number;
@@ -204,10 +205,10 @@ export function deriveCreationSuggestions(
 
   if (
     locks?.recent_influence?.locked &&
-    input.existing_values?.recent_influence_score !== undefined
+    input.existing_values?.recent_influence?.influence_score !== undefined
   ) {
     if (
-      input.existing_values.recent_influence_score !==
+      input.existing_values.recent_influence.influence_score !==
       influenceSuggestion.influence_score
     ) {
       conflicts.push("recent_influence_locked_differs_from_suggestion");

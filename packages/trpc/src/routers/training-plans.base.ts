@@ -4,6 +4,7 @@ import {
   buildDeterministicProjectionPayload,
   calculateTrainingLoadSeries,
   classifyCreationFeasibility,
+  canonicalizeMinimalTrainingPlanCreate,
   createFromCreationConfigInputSchema,
   creationConfigValueSchema,
   creationNormalizationInputSchema,
@@ -136,7 +137,10 @@ type PreviewCreationConfigResponse = {
   feasibility_safety: Awaited<
     ReturnType<typeof evaluateCreationConfig>
   >["feasibilitySummary"];
-  projection_feasibility: ProjectionFeasibilitySummary;
+  projection_feasibility: {
+    state: "feasible" | "aggressive" | "unsafe";
+    reasons: string[];
+  };
   conflicts: {
     is_blocking: boolean;
     items: CreationConflictItem[];
@@ -467,12 +471,9 @@ function findBlockForDate(
 function buildProjectionChartPayload(input: {
   expandedPlan: ReturnType<typeof expandMinimalGoalToPlan>;
   startingCtl?: number;
-  creationConfig?: {
-    optimization_profile?: "outcome_first" | "balanced" | "sustainable";
-    post_goal_recovery_days?: number;
-    max_weekly_tss_ramp_pct?: number;
-    max_ctl_ramp_per_week?: number;
-  };
+  creationConfig?: NonNullable<
+    Parameters<typeof buildDeterministicProjectionPayload>[0]["creation_config"]
+  >;
   noHistoryContext?: NoHistoryAnchorContext;
 }): ProjectionChartPayload {
   const { expandedPlan } = input;
@@ -508,6 +509,7 @@ function buildProjectionChartPayload(input: {
       name: goal.name,
       target_date: goal.target_date,
       priority: goal.priority,
+      targets: goal.targets,
     })),
     starting_ctl: input.startingCtl,
     creation_config: input.creationConfig,
@@ -534,6 +536,17 @@ function buildProjectionChartPayload(input: {
     no_history: toNoHistoryMetadataOrUndefined(
       deterministicProjection.no_history,
     ),
+    readiness_score: deterministicProjection.readiness_score,
+    readiness_confidence: deterministicProjection.readiness_confidence,
+    readiness_rationale_codes:
+      deterministicProjection.readiness_rationale_codes,
+    capacity_envelope: deterministicProjection.capacity_envelope,
+    feasibility_band: deterministicProjection.feasibility_band,
+    risk_level: deterministicProjection.risk_level,
+    risk_flags: deterministicProjection.risk_flags,
+    caps_applied: deterministicProjection.caps_applied,
+    projection_diagnostics: deterministicProjection.projection_diagnostics,
+    goal_assessments: deterministicProjection.goal_assessments,
   };
 }
 
@@ -920,7 +933,7 @@ function buildCreationPreviewSnapshotToken(input: {
 
   const snapshotPayload = {
     version: CREATION_PREVIEW_SNAPSHOT_VERSION,
-    minimal_plan: input.minimalPlan,
+    minimal_plan: canonicalizeMinimalTrainingPlanCreate(input.minimalPlan),
     normalized_creation_config: normalizedCreationConfigSnapshot,
     estimated_current_ctl: Math.round(input.estimatedCurrentCtl * 10) / 10,
     projection_constraint_summary: input.projectionConstraintSummary,
@@ -1167,8 +1180,7 @@ function buildConfirmedSuggestionsFromContext(input: {
     context: input.contextSummary,
     existing_values: {
       availability_config: input.creationInput.user_values?.availability_config,
-      recent_influence_score:
-        input.creationInput.user_values?.recent_influence?.influence_score,
+      recent_influence: input.creationInput.user_values?.recent_influence,
       constraints: input.creationInput.user_values?.constraints,
     },
     locks: input.creationInput.user_values?.locks,
@@ -1199,7 +1211,6 @@ async function evaluateCreationConfig(input: {
   asOfIso?: string;
 }) {
   const nowIso = input.creationInput.now_iso ?? new Date().toISOString();
-
   const { contextSummary } = await deriveProfileAwareCreationContext({
     supabase: input.supabase,
     profileId: input.profileId,
