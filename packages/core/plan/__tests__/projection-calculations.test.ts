@@ -6,6 +6,7 @@ import {
   deriveNoHistoryProjectionFloor,
   deriveGoalDemandProfileFromTargets,
   determineNoHistoryFitnessLevel,
+  getOptimizationProfileBehavior,
   mapFeasibilityToConfidence,
   resolveNoHistoryAnchor,
   classifyBuildTimeFeasibility,
@@ -235,6 +236,161 @@ describe("deterministic projection goal conflict weighting", () => {
 
     expect(highPriorityUrgent.microcycles[0]?.planned_weekly_tss).toBeLessThan(
       lowPriorityUrgent.microcycles[0]?.planned_weekly_tss ?? 0,
+    );
+  });
+});
+
+describe("deterministic weekly TSS optimizer", () => {
+  const optimizerFixture: Parameters<
+    typeof buildDeterministicProjectionPayload
+  >[0] = {
+    timeline: {
+      start_date: "2026-01-05",
+      end_date: "2026-02-08",
+    },
+    blocks: [
+      {
+        name: "Build",
+        phase: "build",
+        start_date: "2026-01-05",
+        end_date: "2026-02-08",
+        target_weekly_tss_range: { min: 320, max: 360 },
+      },
+    ],
+    goals: [
+      {
+        id: "goal-a",
+        name: "Goal A",
+        target_date: "2026-02-08",
+        priority: 1,
+      },
+    ],
+    starting_ctl: 44,
+    creation_config: {
+      optimization_profile: "outcome_first",
+      post_goal_recovery_days: 0,
+      max_weekly_tss_ramp_pct: 16,
+      max_ctl_ramp_per_week: 8,
+    },
+  };
+
+  const weightedGoalReadiness = (
+    projection: ReturnType<typeof buildDeterministicProjectionPayload>,
+  ): number => {
+    const resolveGoalReadiness = (targetDate: string): number => {
+      const exact = projection.points.find(
+        (point) => point.date === targetDate,
+      );
+      if (exact) {
+        return exact.readiness_score;
+      }
+
+      let nearest = projection.points[0];
+      let nearestDistance = Number.POSITIVE_INFINITY;
+      for (const point of projection.points) {
+        const distance = Math.abs(
+          Date.parse(`${point.date}T00:00:00.000Z`) -
+            Date.parse(`${targetDate}T00:00:00.000Z`),
+        );
+        if (distance < nearestDistance) {
+          nearest = point;
+          nearestDistance = distance;
+        }
+      }
+
+      return nearest?.readiness_score ?? 0;
+    };
+
+    let weightedTotal = 0;
+    let totalWeight = 0;
+    for (const goal of projection.goal_markers) {
+      const priority = Math.max(
+        1,
+        Math.min(10, Math.round(goal.priority ?? 1)),
+      );
+      const weight = 11 - priority;
+      weightedTotal += resolveGoalReadiness(goal.target_date) * weight;
+      totalWeight += weight;
+    }
+
+    return totalWeight > 0 ? weightedTotal / totalWeight : 0;
+  };
+
+  it("does not worsen weekly decisions vs naive constrained path", () => {
+    const optimized = buildDeterministicProjectionPayload(optimizerFixture);
+    const naive = buildDeterministicProjectionPayload({
+      ...optimizerFixture,
+      disable_weekly_tss_optimizer: true,
+    });
+
+    const hasDecisionDiff = optimized.microcycles.some(
+      (cycle, index) =>
+        cycle.planned_weekly_tss !==
+        naive.microcycles[index]?.planned_weekly_tss,
+    );
+
+    if (hasDecisionDiff) {
+      expect(weightedGoalReadiness(optimized)).toBeGreaterThanOrEqual(
+        weightedGoalReadiness(naive),
+      );
+    } else {
+      expect(optimized.microcycles).toEqual(naive.microcycles);
+    }
+  });
+
+  it("improves or preserves weighted goal-day readiness", () => {
+    const optimized = buildDeterministicProjectionPayload(optimizerFixture);
+    const naive = buildDeterministicProjectionPayload({
+      ...optimizerFixture,
+      disable_weekly_tss_optimizer: true,
+    });
+
+    expect(weightedGoalReadiness(optimized)).toBeGreaterThanOrEqual(
+      weightedGoalReadiness(naive),
+    );
+  });
+
+  it("remains deterministic for multi-goal plans", () => {
+    const multiGoalInput: Parameters<
+      typeof buildDeterministicProjectionPayload
+    >[0] = {
+      ...optimizerFixture,
+      goals: [
+        {
+          id: "goal-primary",
+          name: "Primary",
+          target_date: "2026-02-08",
+          priority: 1,
+        },
+        {
+          id: "goal-secondary",
+          name: "Secondary",
+          target_date: "2026-01-31",
+          priority: 4,
+        },
+      ],
+    };
+
+    const first = buildDeterministicProjectionPayload(multiGoalInput);
+    const second = buildDeterministicProjectionPayload(multiGoalInput);
+
+    expect(first.microcycles).toEqual(second.microcycles);
+    expect(first.points).toEqual(second.points);
+  });
+
+  it("maps optimization profile to distinct optimizer behavior", () => {
+    const aggressive = getOptimizationProfileBehavior("outcome_first");
+    const balanced = getOptimizationProfileBehavior("balanced");
+    const stable = getOptimizationProfileBehavior("sustainable");
+
+    expect(aggressive.optimizer_lookahead_weeks).toBeGreaterThan(
+      balanced.optimizer_lookahead_weeks,
+    );
+    expect(stable.volatility_penalty_weight).toBeGreaterThan(
+      balanced.volatility_penalty_weight,
+    );
+    expect(aggressive.goal_readiness_weight).toBeGreaterThan(
+      stable.goal_readiness_weight,
     );
   });
 });

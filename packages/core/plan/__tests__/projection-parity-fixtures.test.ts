@@ -35,6 +35,7 @@ describe("projection parity fixtures", () => {
         predicted_fitness_ctl: 36.3,
         predicted_fatigue_atl: 38.8,
         predicted_form_tsb: -2.6,
+        readiness_score: 73,
       },
       {
         date: "2026-01-18",
@@ -42,6 +43,7 @@ describe("projection parity fixtures", () => {
         predicted_fitness_ctl: 36.4,
         predicted_fatigue_atl: 37,
         predicted_form_tsb: -0.6,
+        readiness_score: 79,
       },
       {
         date: "2026-01-25",
@@ -49,6 +51,7 @@ describe("projection parity fixtures", () => {
         predicted_fitness_ctl: 35.2,
         predicted_fatigue_atl: 32.8,
         predicted_form_tsb: 2.4,
+        readiness_score: 85,
       },
     ]);
 
@@ -74,5 +77,13 @@ describe("projection parity fixtures", () => {
       "high",
     );
     expect(result.no_history.projection_feasibility?.readiness_score).toBe(91);
+
+    const peakReadiness = Math.max(
+      ...result.points.map((point) => point.readiness_score),
+    );
+    const goalDateReadiness =
+      result.points.find((point) => point.date === "2026-01-25")
+        ?.readiness_score ?? 0;
+    expect(goalDateReadiness).toBe(peakReadiness);
   });
 });

@@ -54,6 +54,7 @@ import type {
   CreationRecentInfluenceAction,
   CreationValueSource,
 } from "@repo/core";
+import { getProjectionProfileDefaults } from "@repo/core";
 
 export type GoalTargetType =
   | "race_performance"
@@ -248,18 +249,18 @@ const optimizationProfileOptions: Array<{
   value: TrainingPlanConfigFormData["optimizationProfile"];
   label: string;
 }> = [
-  { value: "outcome_first", label: "Fast progress" },
+  { value: "outcome_first", label: "Aggressive" },
   { value: "balanced", label: "Balanced" },
-  { value: "sustainable", label: "Steady" },
+  { value: "sustainable", label: "Stable" },
 ];
 
 const optimizationProfileHelperCopy: Record<
   TrainingPlanConfigFormData["optimizationProfile"],
   string
 > = {
-  outcome_first: "Pushes progress faster.",
-  balanced: "Balances progress and recovery.",
-  sustainable: "Builds fitness more gradually.",
+  outcome_first: "Prioritizes higher performance upside near goals.",
+  balanced: "Balances upside and week-to-week stability.",
+  sustainable: "Prioritizes consistency and durability.",
 };
 
 const optimizationProfileDetailCopy: Record<
@@ -267,11 +268,11 @@ const optimizationProfileDetailCopy: Record<
   string
 > = {
   outcome_first:
-    "Prioritizes outcome progression, but still never exceeds your weekly TSS and CTL safety caps.",
+    "Uses goal-first optimization behavior with lower volatility penalties, while still respecting your hard weekly TSS and CTL caps.",
   balanced:
-    "Balances progress and recovery using moderate defaults so you can improve without sustained overload.",
+    "Uses moderate optimization penalties and moderate caps for a steady progression/recovery tradeoff.",
   sustainable:
-    "Prioritizes durability with slower ramps and longer recovery to support consistent training across long horizons.",
+    "Uses stability-first optimization behavior with stronger volatility and overload penalties for long-horizon durability.",
 };
 
 const optimizationProfileVisualPresets: Record<
@@ -282,21 +283,30 @@ const optimizationProfileVisualPresets: Record<
     maxCtlRampPerWeek: number;
   }
 > = {
-  outcome_first: {
-    postGoalRecoveryDays: 2,
-    maxWeeklyTssRampPct: 12,
-    maxCtlRampPerWeek: 5,
-  },
-  balanced: {
-    postGoalRecoveryDays: 5,
-    maxWeeklyTssRampPct: 7,
-    maxCtlRampPerWeek: 3,
-  },
-  sustainable: {
-    postGoalRecoveryDays: 9,
-    maxWeeklyTssRampPct: 4,
-    maxCtlRampPerWeek: 2,
-  },
+  outcome_first: (() => {
+    const defaults = getProjectionProfileDefaults("outcome_first");
+    return {
+      postGoalRecoveryDays: defaults.post_goal_recovery_days,
+      maxWeeklyTssRampPct: defaults.max_weekly_tss_ramp_pct,
+      maxCtlRampPerWeek: defaults.max_ctl_ramp_per_week,
+    };
+  })(),
+  balanced: (() => {
+    const defaults = getProjectionProfileDefaults("balanced");
+    return {
+      postGoalRecoveryDays: defaults.post_goal_recovery_days,
+      maxWeeklyTssRampPct: defaults.max_weekly_tss_ramp_pct,
+      maxCtlRampPerWeek: defaults.max_ctl_ramp_per_week,
+    };
+  })(),
+  sustainable: (() => {
+    const defaults = getProjectionProfileDefaults("sustainable");
+    return {
+      postGoalRecoveryDays: defaults.post_goal_recovery_days,
+      maxWeeklyTssRampPct: defaults.max_weekly_tss_ramp_pct,
+      maxCtlRampPerWeek: defaults.max_ctl_ramp_per_week,
+    };
+  })(),
 };
 
 const postGoalRecoveryHelperCopy = "Adds easy days after each goal.";
@@ -1035,7 +1045,7 @@ export function SinglePageForm({
 
                 <View className="gap-2">
                   <View className="flex-row items-center justify-between">
-                    <Text className="text-sm">Plan style</Text>
+                    <Text className="text-sm">Optimization style</Text>
                     <Switch
                       checked={configData.locks.optimization_profile.locked}
                       onCheckedChange={(value) =>

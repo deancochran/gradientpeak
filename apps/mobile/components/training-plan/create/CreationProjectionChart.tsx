@@ -72,7 +72,7 @@ const lineConfig: Array<{
   {
     key: "formTsb",
     label: "Form",
-    color: "rgba(6, 182, 212, 0.95)",
+    color: "rgba(139, 92, 246, 0.95)",
   },
   {
     key: "readinessScore",
@@ -95,17 +95,14 @@ const rightAxisLabelGutter = 2;
 const chartPadding = {
   left: leftAxisLabelGutter,
   right: rightAxisLabelGutter,
-  top: 10,
+  top: 6,
   bottom: 12,
 };
 const chartDomainPadding = { left: 0, right: 0, top: 8 };
 const markerEdgeInset = 0;
-const phaseLabelWidth = 64;
-const phaseLabelHalfWidth = phaseLabelWidth / 2;
-const phaseLabelTopOffset = -1;
-const phaseLabelStripHeight = 10;
 const goalDateLabelWidth = 34;
 const goalDateLabelHalfWidth = goalDateLabelWidth / 2;
+const phaseAxisStripHeight = 2;
 
 const formatIsoDate = (isoDate: string, pattern: string) => {
   const date = new Date(`${isoDate}T00:00:00`);
@@ -152,34 +149,26 @@ const formatCompactAxisNumber = (value: number) => {
   return `${Math.round(value)}`;
 };
 
-const clampReadinessScore = (value: number) =>
-  Math.max(0, Math.min(100, value));
+const getPhaseColor = (phaseName: string, isDark: boolean) => {
+  const normalized = phaseName.toLowerCase();
 
-const buildDerivedReadinessScores = (
-  points: ProjectionPoint[],
-  baselineReadiness: number | undefined,
-): number[] => {
-  if (points.length === 0) {
-    return [];
+  if (normalized.includes("base")) {
+    return isDark ? "rgba(56, 189, 248, 0.78)" : "rgba(3, 105, 161, 0.78)";
+  }
+  if (normalized.includes("build")) {
+    return isDark ? "rgba(52, 211, 153, 0.8)" : "rgba(5, 150, 105, 0.8)";
+  }
+  if (normalized.includes("peak")) {
+    return isDark ? "rgba(250, 204, 21, 0.85)" : "rgba(202, 138, 4, 0.85)";
+  }
+  if (normalized.includes("taper")) {
+    return isDark ? "rgba(148, 163, 184, 0.82)" : "rgba(71, 85, 105, 0.82)";
+  }
+  if (normalized.includes("recovery")) {
+    return isDark ? "rgba(167, 139, 250, 0.82)" : "rgba(124, 58, 237, 0.82)";
   }
 
-  const baseline = clampReadinessScore(baselineReadiness ?? 50);
-
-  return points.map((point, index) => {
-    const previousPoint = points[index - 1];
-    const formSignal =
-      point.predicted_fitness_ctl - point.predicted_fatigue_atl;
-    const loadMomentumSignal = previousPoint
-      ? previousPoint.predicted_load_tss - point.predicted_load_tss
-      : 0;
-    const timelineSignal =
-      points.length > 1 ? (index / (points.length - 1) - 0.5) * 2 : 0;
-
-    const derived =
-      baseline + formSignal * 1.4 + loadMomentumSignal * 0.08 + timelineSignal;
-
-    return clampReadinessScore(derived);
-  });
+  return isDark ? "rgba(148, 163, 184, 0.72)" : "rgba(100, 116, 139, 0.72)";
 };
 
 type GoalPointPlacement = {
@@ -194,11 +183,12 @@ type GoalPointPlacement = {
   stackSize: number;
 };
 
-type PhaseLabelPlacement = {
-  index: number;
+type PhaseBandPlacement = {
+  key: string;
   label: string;
   left: number;
-  top: number;
+  width: number;
+  color: string;
 };
 
 type PlotBounds = {
@@ -414,6 +404,7 @@ const buildDisplayedPoints = (input: {
       predicted_fitness_ctl: seedPoint.predicted_fitness_ctl,
       predicted_fatigue_atl: seedPoint.predicted_fatigue_atl,
       predicted_form_tsb: seedPoint.predicted_form_tsb,
+      readiness_score: seedPoint.readiness_score,
     });
   }
 
@@ -425,6 +416,7 @@ const buildDisplayedPoints = (input: {
       predicted_fitness_ctl: lastPoint.predicted_fitness_ctl,
       predicted_fatigue_atl: lastPoint.predicted_fatigue_atl,
       predicted_form_tsb: lastPoint.predicted_form_tsb,
+      readiness_score: lastPoint.readiness_score,
     });
   }
 
@@ -590,33 +582,76 @@ export const CreationProjectionChart = React.memo(
       },
       [plotBounds.left, plotBounds.right, points.length],
     );
-    const phaseLabelPlacements = useMemo(() => {
-      if (phaseBoundaryMarkers.length === 0) {
-        return [] as PhaseLabelPlacement[];
+    const phaseBandPlacements = useMemo(() => {
+      if (!projectionChart || points.length === 0) {
+        return [] as PhaseBandPlacement[];
       }
 
-      const minLeft = plotBounds.left;
-      const maxLeft = Math.max(minLeft, plotBounds.right - phaseLabelWidth);
-      return phaseBoundaryMarkers.map((marker) => {
-        const centerX = markerXForIndex(marker.index);
-        const clampedLeft = Math.max(
-          minLeft,
-          Math.min(maxLeft, centerX - phaseLabelHalfWidth),
-        );
+      const visibleStart = points[0]?.date;
+      const visibleEnd = points[points.length - 1]?.date;
+      if (!visibleStart || !visibleEnd) {
+        return [] as PhaseBandPlacement[];
+      }
+
+      const rawBands = projectionChart.periodization_phases
+        .map((phase) => {
+          const clampedStart =
+            phase.start_date < visibleStart ? visibleStart : phase.start_date;
+          const clampedEnd =
+            phase.end_date > visibleEnd ? visibleEnd : phase.end_date;
+          if (clampedStart > clampedEnd) {
+            return null;
+          }
+
+          const startIndex = resolveNearestPointIndexByDate(
+            points,
+            clampedStart,
+          );
+          const endIndex = resolveNearestPointIndexByDate(points, clampedEnd);
+          if (startIndex === null || endIndex === null) {
+            return null;
+          }
+
+          const leftIndex = Math.min(startIndex, endIndex);
+          const rightIndex = Math.max(startIndex, endIndex);
+          const left = markerXForIndex(leftIndex);
+          const right = markerXForIndex(rightIndex);
+
+          return {
+            key: phase.id,
+            label: phase.name,
+            left,
+            width: Math.max(1, right - left),
+            color: getPhaseColor(phase.name, isDark),
+          };
+        })
+        .filter((phase): phase is PhaseBandPlacement => phase !== null);
+
+      const sortedBands = [...rawBands].sort((a, b) => a.left - b.left);
+
+      return sortedBands.map((band, index) => {
+        const nextBand = sortedBands[index + 1];
+        const connectedWidth = nextBand
+          ? Math.max(1, nextBand.left - band.left)
+          : band.width;
 
         return {
-          index: marker.index,
-          label: marker.label,
-          left: clampedLeft,
-          top: phaseLabelTopOffset,
+          ...band,
+          width: connectedWidth,
         };
       });
-    }, [
-      markerXForIndex,
-      phaseBoundaryMarkers,
-      plotBounds.left,
-      plotBounds.right,
-    ]);
+    }, [isDark, markerXForIndex, points, projectionChart]);
+    const phaseLegendItems = useMemo(() => {
+      const deduped = new Map<string, { label: string; color: string }>();
+      for (const phase of phaseBandPlacements) {
+        const key = phase.label.trim().toLowerCase();
+        if (!deduped.has(key)) {
+          deduped.set(key, { label: phase.label, color: phase.color });
+        }
+      }
+
+      return Array.from(deduped.values());
+    }, [phaseBandPlacements]);
     const goalDateLabelPlacements = useMemo(() => {
       if (goalPointPlacements.length === 0) {
         return [] as Array<{ key: string; left: number; dateLabel: string }>;
@@ -682,30 +717,9 @@ export const CreationProjectionChart = React.memo(
           fitnessCtl: point.predicted_fitness_ctl,
           fatigueAtl: point.predicted_fatigue_atl,
           formTsb: point.predicted_form_tsb,
-          readinessScore: 0,
+          readinessScore: point.readiness_score,
         })),
       [points],
-    );
-
-    const readinessScores = useMemo(
-      () =>
-        buildDerivedReadinessScores(
-          points,
-          projectionChart?.no_history?.projection_feasibility?.readiness_score,
-        ),
-      [
-        points,
-        projectionChart?.no_history?.projection_feasibility?.readiness_score,
-      ],
-    );
-
-    const chartDataWithReadiness = useMemo(
-      () =>
-        chartData.map((datum, index) => ({
-          ...datum,
-          readinessScore: readinessScores[index] ?? 0,
-        })),
-      [chartData, readinessScores],
     );
 
     const visibleChartYKeys = useMemo(
@@ -718,6 +732,8 @@ export const CreationProjectionChart = React.memo(
 
     const leftAxisUnitLabel = "TSS/wk";
     const rightAxisUnitLabel = "pts";
+    const leftAxisUnitColor = isDark ? "#93c5fd" : "#1d4ed8";
+    const rightAxisUnitColor = isDark ? "#a3a3a3" : "#525252";
 
     const xAxisConfig = useMemo(
       () => ({
@@ -767,7 +783,7 @@ export const CreationProjectionChart = React.memo(
           labelOffset: 8,
           font: axisFont,
           tickCount: 5,
-          labelColor: isDark ? "#6ee7b7" : "#047857",
+          labelColor: isDark ? "#a3a3a3" : "#525252",
           lineColor: "transparent",
           lineWidth: 0,
           formatYLabel: (value: unknown) =>
@@ -822,7 +838,7 @@ export const CreationProjectionChart = React.memo(
     );
 
     const selectedPoint = points[selectedPointIndex];
-    const selectedReadiness = readinessScores[selectedPointIndex];
+    const selectedReadiness = selectedPoint?.readiness_score;
     const selectedPointSummary = selectedPoint
       ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date}. Weekly load ${Math.round(selectedPoint.predicted_load_tss)} TSS. Fitness ${selectedPoint.predicted_fitness_ctl.toFixed(1)} CTL. Fatigue ${selectedPoint.predicted_fatigue_atl.toFixed(1)} ATL. Form ${selectedPoint.predicted_form_tsb.toFixed(1)} TSB. Readiness ${Math.round(selectedReadiness ?? 0)} out of 100.`
       : "No point selected.";
@@ -976,56 +992,6 @@ export const CreationProjectionChart = React.memo(
             >
               <View onLayout={handleChartLayout} style={{ width: "100%" }}>
                 <View
-                  pointerEvents="none"
-                  style={{
-                    width: chartWidth,
-                    height: phaseLabelStripHeight,
-                    alignSelf: "center",
-                    position: "relative",
-                    marginBottom: -1,
-                  }}
-                >
-                  <Text
-                    className="text-[9px] text-muted-foreground"
-                    style={{
-                      position: "absolute",
-                      left: 2,
-                      top: 0,
-                    }}
-                  >
-                    {leftAxisUnitLabel}
-                  </Text>
-                  <Text
-                    className="text-[9px] text-muted-foreground"
-                    style={{
-                      position: "absolute",
-                      right: 2,
-                      top: 0,
-                    }}
-                  >
-                    {rightAxisUnitLabel}
-                  </Text>
-                  {phaseLabelPlacements.map((labelPlacement) => (
-                    <View
-                      key={`phase-label-${labelPlacement.index}`}
-                      style={{
-                        position: "absolute",
-                        left: labelPlacement.left,
-                        top: labelPlacement.top,
-                        width: phaseLabelWidth,
-                        alignItems: "center",
-                      }}
-                    >
-                      <Text
-                        className="text-[9px] text-muted-foreground"
-                        numberOfLines={1}
-                      >
-                        {labelPlacement.label}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-                <View
                   style={{
                     width: chartWidth,
                     height: resolvedChartHeight,
@@ -1033,7 +999,7 @@ export const CreationProjectionChart = React.memo(
                   }}
                 >
                   <CartesianChart<ProjectionChartDatum, "index", ChartYKey>
-                    data={chartDataWithReadiness}
+                    data={chartData}
                     xKey="index"
                     yKeys={chartYKeys}
                     padding={chartPadding}
@@ -1072,6 +1038,20 @@ export const CreationProjectionChart = React.memo(
                       bottom: 0,
                     }}
                   >
+                    {phaseBandPlacements.map((phaseBand) => (
+                      <View
+                        key={`phase-band-${phaseBand.key}`}
+                        style={{
+                          position: "absolute",
+                          left: phaseBand.left,
+                          top: Math.max(0, plotBounds.bottom - 1),
+                          width: phaseBand.width,
+                          height: phaseAxisStripHeight,
+                          backgroundColor: phaseBand.color,
+                          borderRadius: 0,
+                        }}
+                      />
+                    ))}
                     {phaseBoundaryMarkers.map((marker) => (
                       <View
                         key={`phase-line-${marker.index}`}
@@ -1101,13 +1081,35 @@ export const CreationProjectionChart = React.memo(
                             0,
                             plotBounds.bottom - plotBounds.top,
                           ),
-                          width: 1.5,
+                          width: 1,
                           backgroundColor: isDark
                             ? "rgba(251, 191, 36, 0.8)"
                             : "rgba(217, 119, 6, 0.75)",
                         }}
                       />
                     ))}
+                    <Text
+                      className="text-[9px] text-muted-foreground"
+                      style={{
+                        position: "absolute",
+                        left: 2,
+                        top: 0,
+                        color: leftAxisUnitColor,
+                      }}
+                    >
+                      {leftAxisUnitLabel}
+                    </Text>
+                    <Text
+                      className="text-[9px] text-muted-foreground"
+                      style={{
+                        position: "absolute",
+                        right: 2,
+                        top: 0,
+                        color: rightAxisUnitColor,
+                      }}
+                    >
+                      {rightAxisUnitLabel}
+                    </Text>
                     {goalDateLabelPlacements.map((label) => (
                       <Text
                         key={label.key}
@@ -1176,6 +1178,31 @@ export const CreationProjectionChart = React.memo(
                   );
                 })}
               </ScrollView>
+              {phaseLegendItems.length > 0 ? (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ alignItems: "center", gap: 8 }}
+                >
+                  <Text className="text-[9px] text-muted-foreground">
+                    Phase colors:
+                  </Text>
+                  {phaseLegendItems.map((phase) => (
+                    <View
+                      key={`phase-legend-${phase.label}`}
+                      className="flex-row items-center gap-1"
+                    >
+                      <View
+                        className="h-1 w-3 rounded-full"
+                        style={{ backgroundColor: phase.color }}
+                      />
+                      <Text className="text-[9px] text-muted-foreground">
+                        {phase.label}
+                      </Text>
+                    </View>
+                  ))}
+                </ScrollView>
+              ) : null}
             </View>
 
             {!compact && (
@@ -1183,7 +1210,7 @@ export const CreationProjectionChart = React.memo(
                 <Text className="px-1 text-[11px] text-muted-foreground">
                   Raw projected values are shown directly: weekly load in
                   TSS/week, fitness in CTL, fatigue in ATL, form in TSB, and a
-                  derived readiness score (0-100).
+                  readiness score (0-100) from core projection output.
                 </Text>
                 <Text className="px-1 text-[11px] text-muted-foreground">
                   Projection window:{" "}
@@ -1321,7 +1348,7 @@ export const CreationProjectionChart = React.memo(
                           accessibilityRole="tab"
                           accessibilityState={{ selected: isActive }}
                           accessibilityLabel={`Point ${index + 1} of ${points.length}, ${dateLabel}`}
-                          accessibilityHint={`Weekly load ${Math.round(point.predicted_load_tss)} TSS, fitness ${point.predicted_fitness_ctl.toFixed(1)} CTL, fatigue ${point.predicted_fatigue_atl.toFixed(1)} ATL, form ${point.predicted_form_tsb.toFixed(1)} TSB, readiness ${Math.round(readinessScores[index] ?? 0)} out of 100`}
+                          accessibilityHint={`Weekly load ${Math.round(point.predicted_load_tss)} TSS, fitness ${point.predicted_fitness_ctl.toFixed(1)} CTL, fatigue ${point.predicted_fatigue_atl.toFixed(1)} ATL, form ${point.predicted_form_tsb.toFixed(1)} TSB, readiness ${Math.round(point.readiness_score ?? 0)} out of 100`}
                           hitSlop={8}
                           style={{
                             minHeight: 44,

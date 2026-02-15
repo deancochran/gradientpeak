@@ -25,6 +25,14 @@ const PROJECTION_PROFILE_DEFAULTS: Record<
   },
 };
 
+export function getProjectionProfileDefaults(profile: OptimizationProfile): {
+  post_goal_recovery_days: number;
+  max_weekly_tss_ramp_pct: number;
+  max_ctl_ramp_per_week: number;
+} {
+  return PROJECTION_PROFILE_DEFAULTS[profile];
+}
+
 export interface ProjectionSafetyConfigInput {
   optimization_profile?: OptimizationProfile;
   post_goal_recovery_days?: number;
@@ -37,6 +45,59 @@ export interface ProjectionSafetyConfig {
   post_goal_recovery_days: number;
   max_weekly_tss_ramp_pct: number;
   max_ctl_ramp_per_week: number;
+}
+
+export interface OptimizationProfileBehavior {
+  aggressiveness_score: number;
+  stability_score: number;
+  optimizer_lookahead_weeks: number;
+  optimizer_candidate_steps: number;
+  goal_readiness_weight: number;
+  volatility_penalty_weight: number;
+  overload_penalty_weight: number;
+  baseline_deviation_penalty_weight: number;
+}
+
+const OPTIMIZATION_PROFILE_BEHAVIORS: Record<
+  OptimizationProfile,
+  OptimizationProfileBehavior
+> = {
+  outcome_first: {
+    aggressiveness_score: 0.9,
+    stability_score: 0.35,
+    optimizer_lookahead_weeks: 6,
+    optimizer_candidate_steps: 8,
+    goal_readiness_weight: 1.2,
+    volatility_penalty_weight: 1.1,
+    overload_penalty_weight: 3.6,
+    baseline_deviation_penalty_weight: 0.4,
+  },
+  balanced: {
+    aggressiveness_score: 0.6,
+    stability_score: 0.65,
+    optimizer_lookahead_weeks: 4,
+    optimizer_candidate_steps: 6,
+    goal_readiness_weight: 1,
+    volatility_penalty_weight: 1.8,
+    overload_penalty_weight: 5,
+    baseline_deviation_penalty_weight: 0.6,
+  },
+  sustainable: {
+    aggressiveness_score: 0.3,
+    stability_score: 0.92,
+    optimizer_lookahead_weeks: 3,
+    optimizer_candidate_steps: 5,
+    goal_readiness_weight: 0.92,
+    volatility_penalty_weight: 2.8,
+    overload_penalty_weight: 7.2,
+    baseline_deviation_penalty_weight: 1,
+  },
+};
+
+export function getOptimizationProfileBehavior(
+  profile: OptimizationProfile,
+): OptimizationProfileBehavior {
+  return OPTIMIZATION_PROFILE_BEHAVIORS[profile];
 }
 
 export function normalizeProjectionSafetyConfig(

@@ -3,6 +3,7 @@ import type { CreationContextSummary } from "../schemas/training_plan_structure"
 import { countAvailableTrainingDays } from "./availabilityUtils";
 import { addDaysDateOnlyUtc, diffDateOnlyUtcDays } from "./dateOnlyUtc";
 import {
+  getOptimizationProfileBehavior,
   normalizeProjectionSafetyConfig,
   type ProjectionSafetyConfig,
   type ProjectionSafetyConfigInput,
@@ -10,11 +11,13 @@ import {
 import {
   blendDemandWithConfidence,
   computeProjectionFeasibilityMetadata,
+  computeProjectionPointReadinessScores,
   getDemandRhythmMultiplier,
   type ProjectionFeasibilityMetadata as ReadinessProjectionFeasibilityMetadata,
 } from "./projection/readiness";
 
 export {
+  getOptimizationProfileBehavior,
   normalizeProjectionSafetyConfig,
   type ProjectionSafetyConfig,
   type ProjectionSafetyConfigInput,
@@ -22,6 +25,7 @@ export {
 export {
   blendDemandWithConfidence,
   computeProjectionFeasibilityMetadata,
+  computeProjectionPointReadinessScores,
   getDemandRhythmMultiplier,
 } from "./projection/readiness";
 
@@ -986,6 +990,7 @@ export interface DeterministicProjectionPoint {
   predicted_fitness_ctl: number;
   predicted_fatigue_atl: number;
   predicted_form_tsb: number;
+  readiness_score: number;
 }
 
 export interface ProjectionWeekMetadata {
@@ -1102,6 +1107,591 @@ export interface BuildDeterministicProjectionInput {
   starting_ctl?: number;
   creation_config?: ProjectionSafetyConfigInput;
   no_history_context?: NoHistoryAnchorContext;
+  disable_weekly_tss_optimizer?: boolean;
+}
+
+interface WeeklyLoadSignalInput {
+  weekStartDate: string;
+  weekEndDate: string;
+  daysInWeek: number;
+  projectionWeekIndex: number;
+  previousWeekTss: number;
+  previousDemandFloorSignal: number | null;
+  effectiveSeedWeeklyTss: number;
+  noHistory: NoHistoryAnchorResolution | null;
+  noHistoryWeeksToEvent: number;
+  noHistoryFloorHoldWeeks: number;
+  noHistoryStartingWeeklyTss: number | null;
+  noHistoryTargetWeeklyTssFloor: number | null;
+  evidenceConfidenceScore: number;
+  recoverySegments: ProjectionRecoverySegment[];
+  goalMarkers: DeterministicProjectionGoalMarker[];
+  blocks: BuildDeterministicProjectionInput["blocks"];
+}
+
+interface WeeklyLoadSignalResult {
+  block: BuildDeterministicProjectionInput["blocks"][number] | undefined;
+  weekPattern: ProjectionWeekPatternResult;
+  baseWeeklyTss: number;
+  blockMidpointTss: number;
+  recoveryOverlap: { overlap_days: number; goal_ids: string[] };
+  recoveryReductionFactor: number;
+  recoveryAdjustedWeeklyTss: number;
+  flooredWeeklyTss: number;
+  weightedNoHistoryDemandFloor: number | null;
+  enforceNoHistoryStartingFloor: boolean;
+  rhythmAdjustedDemandFloor: number;
+  floorOverrideApplied: boolean;
+  rollingCompositionRationaleCodes: string[];
+}
+
+interface WeeklyTssCapInput {
+  flooredWeeklyTss: number;
+  previousWeekTss: number;
+  currentCtl: number;
+  daysInWeek: number;
+  normalizedConfig: ProjectionSafetyConfig;
+  preferredWeeklyTss?: number;
+}
+
+interface WeeklyTssCapResult {
+  appliedWeeklyTss: number;
+  tssRampClamped: boolean;
+  ctlRampClamped: boolean;
+  maxAllowedByTssRamp: number;
+  requestedCtlRamp: number;
+}
+
+interface WeeklyTssOptimizerInput {
+  input: BuildDeterministicProjectionInput;
+  normalizedConfig: ProjectionSafetyConfig;
+  goalMarkers: DeterministicProjectionGoalMarker[];
+  recoverySegments: ProjectionRecoverySegment[];
+  endDate: string;
+  noHistory: NoHistoryAnchorResolution | null;
+  noHistoryWeeksToEvent: number;
+  noHistoryFloorHoldWeeks: number;
+  noHistoryStartingWeeklyTss: number | null;
+  noHistoryTargetWeeklyTssFloor: number | null;
+  evidenceConfidenceScore: number;
+  effectiveSeedWeeklyTss: number;
+  weekStartDate: string;
+  weekEndDate: string;
+  daysInWeek: number;
+  projectionWeekIndex: number;
+  currentCtl: number;
+  currentAtl: number;
+  previousWeekTss: number;
+  previousDemandFloorSignal: number | null;
+  flooredWeeklyTss: number;
+  weightedNoHistoryDemandFloor: number | null;
+  maxAllowedByTssRamp: number;
+}
+
+function resolveWeeklyLoadSignals(
+  input: WeeklyLoadSignalInput,
+): WeeklyLoadSignalResult {
+  const block = findBlockForDate(input.blocks, input.weekStartDate);
+  const weekIndexWithinBlock = block
+    ? Math.max(
+        0,
+        Math.floor(diffDays(block.start_date, input.weekStartDate) / 7),
+      )
+    : 0;
+  const weekPattern = getProjectionWeekPattern({
+    blockPhase: block?.phase ?? "build",
+    weekIndexWithinBlock,
+    weekStartDate: input.weekStartDate,
+    weekEndDate: input.weekEndDate,
+    goals: input.goalMarkers,
+  });
+
+  const blockMidpointTss = block?.target_weekly_tss_range
+    ? (block.target_weekly_tss_range.min + block.target_weekly_tss_range.max) /
+      2
+    : input.effectiveSeedWeeklyTss;
+  const rollingCompositionRationaleCodes = [
+    "rolling_base_prior_week_primary",
+    "rolling_base_block_midpoint_signal",
+    input.previousDemandFloorSignal !== null
+      ? "rolling_base_demand_floor_signal"
+      : "rolling_base_demand_floor_absent",
+  ];
+  const baseWeeklyTss = weeklyLoadFromBlockAndBaseline(
+    block,
+    input.effectiveSeedWeeklyTss,
+    {
+      previous_week_tss: input.previousWeekTss,
+      demand_floor_weekly_tss: input.previousDemandFloorSignal,
+    },
+  );
+  const requestedWeeklyTss = Math.max(
+    0,
+    round1(baseWeeklyTss * weekPattern.multiplier),
+  );
+
+  const recoveryOverlap = findRecoveryOverlap(
+    input.recoverySegments,
+    input.weekStartDate,
+    input.weekEndDate,
+  );
+  const recoveryCoverage =
+    recoveryOverlap.overlap_days / Math.max(1, input.daysInWeek);
+  const recoveryReductionFactor = round3(1 - 0.35 * recoveryCoverage);
+  const recoveryAdjustedWeeklyTss = Math.max(
+    0,
+    round1(requestedWeeklyTss * recoveryReductionFactor),
+  );
+  const enforceNoHistoryStartingFloor =
+    input.noHistory?.target_event_ctl !== null &&
+    input.noHistory?.target_event_ctl !== undefined &&
+    input.projectionWeekIndex < input.noHistoryWeeksToEvent &&
+    recoveryOverlap.goal_ids.length === 0 &&
+    weekPattern.pattern === "ramp";
+  const noHistoryInitialRampFloor =
+    enforceNoHistoryStartingFloor && input.noHistoryStartingWeeklyTss !== null
+      ? input.projectionWeekIndex < input.noHistoryFloorHoldWeeks
+        ? round1(
+            input.noHistoryStartingWeeklyTss +
+              ((input.noHistoryTargetWeeklyTssFloor ??
+                input.noHistoryStartingWeeklyTss) -
+                input.noHistoryStartingWeeklyTss) *
+                Math.min(
+                  1,
+                  Math.max(0, input.projectionWeekIndex) /
+                    Math.max(1, input.noHistoryFloorHoldWeeks - 1),
+                ),
+          )
+        : (input.noHistoryTargetWeeklyTssFloor ??
+          input.noHistoryStartingWeeklyTss)
+      : null;
+  const noHistoryGoalDemandFloor =
+    enforceNoHistoryStartingFloor &&
+    input.noHistory?.target_event_ctl !== null &&
+    input.noHistory?.target_event_ctl !== undefined &&
+    input.noHistoryWeeksToEvent > 0
+      ? round1(
+          (input.noHistory.starting_ctl_for_projection ?? 0) *
+            (1 -
+              Math.min(
+                1,
+                (input.projectionWeekIndex + 1) / input.noHistoryWeeksToEvent,
+              )) +
+            input.noHistory.target_event_ctl *
+              Math.min(
+                1,
+                (input.projectionWeekIndex + 1) / input.noHistoryWeeksToEvent,
+              ),
+        ) * 7
+      : null;
+  const noHistoryProgressiveFloor = Math.max(
+    noHistoryInitialRampFloor ?? 0,
+    noHistoryGoalDemandFloor ?? 0,
+  );
+  const demandRhythmMultiplier = getDemandRhythmMultiplier({
+    weekPattern:
+      recoveryOverlap.goal_ids.length > 0 ? "recovery" : weekPattern.pattern,
+    weekIndex: input.projectionWeekIndex,
+    weeksToEvent: input.noHistoryWeeksToEvent,
+  });
+  const rhythmAdjustedDemandFloor =
+    noHistoryProgressiveFloor <= 0
+      ? 0
+      : round1(noHistoryProgressiveFloor * demandRhythmMultiplier);
+  const weightedNoHistoryDemandFloor = blendDemandWithConfidence({
+    demandFloorWeeklyTss: enforceNoHistoryStartingFloor
+      ? rhythmAdjustedDemandFloor
+      : null,
+    conservativeBaselineWeeklyTss:
+      input.noHistoryStartingWeeklyTss ?? input.effectiveSeedWeeklyTss,
+    confidence: input.evidenceConfidenceScore,
+  });
+  const floorOverrideApplied =
+    weightedNoHistoryDemandFloor !== null &&
+    recoveryAdjustedWeeklyTss < weightedNoHistoryDemandFloor;
+  const flooredWeeklyTss =
+    weightedNoHistoryDemandFloor !== null
+      ? Math.max(recoveryAdjustedWeeklyTss, weightedNoHistoryDemandFloor)
+      : recoveryAdjustedWeeklyTss;
+
+  return {
+    block,
+    weekPattern,
+    baseWeeklyTss,
+    blockMidpointTss,
+    recoveryOverlap,
+    recoveryReductionFactor,
+    recoveryAdjustedWeeklyTss,
+    flooredWeeklyTss,
+    weightedNoHistoryDemandFloor,
+    enforceNoHistoryStartingFloor,
+    rhythmAdjustedDemandFloor,
+    floorOverrideApplied,
+    rollingCompositionRationaleCodes,
+  };
+}
+
+function applyWeeklyTssCaps(input: WeeklyTssCapInput): WeeklyTssCapResult {
+  const maxAllowedByTssRamp = round1(
+    input.previousWeekTss *
+      (1 + input.normalizedConfig.max_weekly_tss_ramp_pct / 100),
+  );
+  const tssRampClamped = input.flooredWeeklyTss > maxAllowedByTssRamp;
+  const constrainedFloor =
+    input.flooredWeeklyTss <= maxAllowedByTssRamp
+      ? input.flooredWeeklyTss
+      : maxAllowedByTssRamp;
+
+  let appliedWeeklyTss =
+    input.preferredWeeklyTss === undefined
+      ? constrainedFloor
+      : round1(
+          Math.max(
+            constrainedFloor,
+            Math.min(maxAllowedByTssRamp, input.preferredWeeklyTss),
+          ),
+        );
+
+  const requestedCtlAfterWeek = simulateCtlOverWeek(
+    input.currentCtl,
+    appliedWeeklyTss,
+    input.daysInWeek,
+  );
+  const requestedCtlRamp = requestedCtlAfterWeek - input.currentCtl;
+
+  let ctlRampClamped = false;
+  if (requestedCtlRamp > input.normalizedConfig.max_ctl_ramp_per_week) {
+    ctlRampClamped = true;
+    appliedWeeklyTss = findWeeklyTssForCtlRampLimit(
+      input.currentCtl,
+      appliedWeeklyTss,
+      input.normalizedConfig.max_ctl_ramp_per_week,
+      input.daysInWeek,
+    );
+  }
+
+  return {
+    appliedWeeklyTss,
+    tssRampClamped,
+    ctlRampClamped,
+    maxAllowedByTssRamp,
+    requestedCtlRamp,
+  };
+}
+
+function optimizeWeeklyAppliedTss(input: WeeklyTssOptimizerInput): number {
+  const profileBehavior = getOptimizationProfileBehavior(
+    input.normalizedConfig.optimization_profile,
+  );
+  const baseline = applyWeeklyTssCaps({
+    flooredWeeklyTss: input.flooredWeeklyTss,
+    previousWeekTss: input.previousWeekTss,
+    currentCtl: input.currentCtl,
+    daysInWeek: input.daysInWeek,
+    normalizedConfig: input.normalizedConfig,
+  }).appliedWeeklyTss;
+
+  if (input.input.disable_weekly_tss_optimizer) {
+    return baseline;
+  }
+
+  const futureGoals = input.goalMarkers.filter(
+    (goal) => goal.target_date >= input.weekStartDate,
+  );
+  if (futureGoals.length === 0) {
+    return baseline;
+  }
+
+  const cappedUpperByCtl = findWeeklyTssForCtlRampLimit(
+    input.currentCtl,
+    input.maxAllowedByTssRamp,
+    input.normalizedConfig.max_ctl_ramp_per_week,
+    input.daysInWeek,
+  );
+  const lowerBound =
+    input.flooredWeeklyTss <= input.maxAllowedByTssRamp
+      ? input.flooredWeeklyTss
+      : input.maxAllowedByTssRamp;
+  const upperBound = Math.min(input.maxAllowedByTssRamp, cappedUpperByCtl);
+
+  if (upperBound <= lowerBound) {
+    return baseline;
+  }
+
+  const candidateValues = new Set<number>([
+    round1(lowerBound),
+    round1(upperBound),
+    baseline,
+  ]);
+  for (
+    let step = 1;
+    step < profileBehavior.optimizer_candidate_steps;
+    step += 1
+  ) {
+    const ratio = step / profileBehavior.optimizer_candidate_steps;
+    candidateValues.add(round1(lowerBound + (upperBound - lowerBound) * ratio));
+  }
+
+  let bestTss = baseline;
+  let bestScore = Number.NEGATIVE_INFINITY;
+
+  for (const candidateTss of [...candidateValues].sort((a, b) => a - b)) {
+    const constrainedCandidate = applyWeeklyTssCaps({
+      flooredWeeklyTss: input.flooredWeeklyTss,
+      previousWeekTss: input.previousWeekTss,
+      currentCtl: input.currentCtl,
+      daysInWeek: input.daysInWeek,
+      normalizedConfig: input.normalizedConfig,
+      preferredWeeklyTss: candidateTss,
+    }).appliedWeeklyTss;
+
+    const score = evaluateWeeklyTssCandidateObjective({
+      ...input,
+      candidateWeeklyTss: constrainedCandidate,
+      baselineWeeklyTss: baseline,
+    });
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestTss = constrainedCandidate;
+      continue;
+    }
+
+    if (score === bestScore) {
+      const currentDistance = Math.abs(constrainedCandidate - baseline);
+      const bestDistance = Math.abs(bestTss - baseline);
+      if (currentDistance < bestDistance) {
+        bestTss = constrainedCandidate;
+      }
+    }
+  }
+
+  return bestTss;
+}
+
+function evaluateWeeklyTssCandidateObjective(
+  input: WeeklyTssOptimizerInput & {
+    candidateWeeklyTss: number;
+    baselineWeeklyTss: number;
+  },
+): number {
+  const profileBehavior = getOptimizationProfileBehavior(
+    input.normalizedConfig.optimization_profile,
+  );
+  const simulatedPoints: Array<{
+    date: string;
+    predicted_fitness_ctl: number;
+    predicted_fatigue_atl: number;
+    predicted_form_tsb: number;
+  }> = [];
+
+  let simCtl = simulateCtlOverWeek(
+    input.currentCtl,
+    input.candidateWeeklyTss,
+    input.daysInWeek,
+  );
+  let simAtl = simulateAtlOverWeek(
+    input.currentAtl,
+    input.candidateWeeklyTss,
+    input.daysInWeek,
+  );
+  let simPrevWeekTss = input.candidateWeeklyTss;
+  let simPrevDemandFloorSignal = input.weightedNoHistoryDemandFloor;
+
+  for (let dayOffset = 0; dayOffset < input.daysInWeek; dayOffset += 1) {
+    const dayDate = addDaysDateOnlyUtc(input.weekStartDate, dayOffset);
+    const dayCtl = simulateCtlOverWeek(
+      input.currentCtl,
+      input.candidateWeeklyTss,
+      dayOffset + 1,
+    );
+    const dayAtl = simulateAtlOverWeek(
+      input.currentAtl,
+      input.candidateWeeklyTss,
+      dayOffset + 1,
+    );
+    simulatedPoints.push({
+      date: dayDate,
+      predicted_fitness_ctl: round1(dayCtl),
+      predicted_fatigue_atl: round1(dayAtl),
+      predicted_form_tsb: round1(dayCtl - dayAtl),
+    });
+  }
+
+  let simWeekStartDate = addDaysDateOnlyUtc(input.weekStartDate, 7);
+  let simProjectionWeekIndex = input.projectionWeekIndex + 1;
+
+  for (
+    let lookahead = 0;
+    lookahead < profileBehavior.optimizer_lookahead_weeks &&
+    simWeekStartDate <= input.endDate;
+    lookahead += 1
+  ) {
+    const simWeekEndDate =
+      addDaysDateOnlyUtc(simWeekStartDate, 6) <= input.endDate
+        ? addDaysDateOnlyUtc(simWeekStartDate, 6)
+        : input.endDate;
+    const simDaysInWeek = diffDays(simWeekStartDate, simWeekEndDate) + 1;
+
+    const simSignals = resolveWeeklyLoadSignals({
+      weekStartDate: simWeekStartDate,
+      weekEndDate: simWeekEndDate,
+      daysInWeek: simDaysInWeek,
+      projectionWeekIndex: simProjectionWeekIndex,
+      previousWeekTss: simPrevWeekTss,
+      previousDemandFloorSignal: simPrevDemandFloorSignal,
+      effectiveSeedWeeklyTss: input.effectiveSeedWeeklyTss,
+      noHistory: input.noHistory,
+      noHistoryWeeksToEvent: input.noHistoryWeeksToEvent,
+      noHistoryFloorHoldWeeks: input.noHistoryFloorHoldWeeks,
+      noHistoryStartingWeeklyTss: input.noHistoryStartingWeeklyTss,
+      noHistoryTargetWeeklyTssFloor: input.noHistoryTargetWeeklyTssFloor,
+      evidenceConfidenceScore: input.evidenceConfidenceScore,
+      recoverySegments: input.recoverySegments,
+      goalMarkers: input.goalMarkers,
+      blocks: input.input.blocks,
+    });
+
+    const simWeeklyTss = applyWeeklyTssCaps({
+      flooredWeeklyTss: simSignals.flooredWeeklyTss,
+      previousWeekTss: simPrevWeekTss,
+      currentCtl: simCtl,
+      daysInWeek: simDaysInWeek,
+      normalizedConfig: input.normalizedConfig,
+    }).appliedWeeklyTss;
+
+    const priorCtl = simCtl;
+    const priorAtl = simAtl;
+    simCtl = simulateCtlOverWeek(simCtl, simWeeklyTss, simDaysInWeek);
+    simAtl = simulateAtlOverWeek(simAtl, simWeeklyTss, simDaysInWeek);
+
+    for (let dayOffset = 0; dayOffset < simDaysInWeek; dayOffset += 1) {
+      const dayDate = addDaysDateOnlyUtc(simWeekStartDate, dayOffset);
+      const dayCtl = simulateCtlOverWeek(priorCtl, simWeeklyTss, dayOffset + 1);
+      const dayAtl = simulateAtlOverWeek(priorAtl, simWeeklyTss, dayOffset + 1);
+      simulatedPoints.push({
+        date: dayDate,
+        predicted_fitness_ctl: round1(dayCtl),
+        predicted_fatigue_atl: round1(dayAtl),
+        predicted_form_tsb: round1(dayCtl - dayAtl),
+      });
+    }
+
+    simPrevWeekTss = simWeeklyTss;
+    simPrevDemandFloorSignal = simSignals.weightedNoHistoryDemandFloor;
+    simWeekStartDate = addDaysDateOnlyUtc(simWeekStartDate, 7);
+    simProjectionWeekIndex += 1;
+  }
+
+  const windowEndDate =
+    simulatedPoints[simulatedPoints.length - 1]?.date ?? input.weekEndDate;
+  const goalsInWindow = input.goalMarkers.filter(
+    (goal) =>
+      goal.target_date >= input.weekStartDate &&
+      goal.target_date <= windowEndDate,
+  );
+
+  if (goalsInWindow.length === 0) {
+    return -Math.abs(input.candidateWeeklyTss - input.baselineWeeklyTss) * 0.05;
+  }
+
+  const readinessScores = computeProjectionPointReadinessScores({
+    points: simulatedPoints,
+    goals: goalsInWindow,
+  });
+
+  let weightedGoalReadiness = 0;
+  let weightedGoalCount = 0;
+  let overloadPenalty = 0;
+
+  for (const goal of goalsInWindow) {
+    let nearestIndex = 0;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < simulatedPoints.length; i += 1) {
+      const point = simulatedPoints[i];
+      if (!point) {
+        continue;
+      }
+
+      const distance = Math.abs(diffDays(point.date, goal.target_date));
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestIndex = i;
+      }
+    }
+
+    const goalPoint = simulatedPoints[nearestIndex];
+    if (!goalPoint) {
+      continue;
+    }
+
+    const priorityWeight = getPriorityInfluenceWeight(goal.priority);
+    weightedGoalReadiness +=
+      (readinessScores[nearestIndex] ?? 0) * priorityWeight;
+    weightedGoalCount += priorityWeight;
+
+    const atlOverCtl = Math.max(
+      0,
+      goalPoint.predicted_fatigue_atl - goalPoint.predicted_fitness_ctl,
+    );
+    overloadPenalty +=
+      (priorityWeight * Math.max(0, atlOverCtl - 4)) /
+      Math.max(1, goalPoint.predicted_fitness_ctl + 8);
+  }
+
+  const volatilityPenalty =
+    Math.abs(input.candidateWeeklyTss - input.previousWeekTss) /
+    Math.max(1, input.previousWeekTss);
+  const baselineDeviationPenalty =
+    Math.abs(input.candidateWeeklyTss - input.baselineWeeklyTss) /
+    Math.max(1, input.baselineWeeklyTss);
+  const normalizedGoalReadiness =
+    weightedGoalCount <= 0 ? 0 : weightedGoalReadiness / weightedGoalCount;
+
+  return (
+    normalizedGoalReadiness * profileBehavior.goal_readiness_weight -
+    volatilityPenalty * profileBehavior.volatility_penalty_weight -
+    overloadPenalty * profileBehavior.overload_penalty_weight -
+    baselineDeviationPenalty * profileBehavior.baseline_deviation_penalty_weight
+  );
+}
+
+function computeWeightedGoalDateReadiness(input: {
+  points: DeterministicProjectionPoint[];
+  goals: DeterministicProjectionGoalMarker[];
+}): number {
+  if (input.goals.length === 0 || input.points.length === 0) {
+    return 0;
+  }
+
+  const resolveGoalReadiness = (targetDate: string): number => {
+    const exact = input.points.find((point) => point.date === targetDate);
+    if (exact) {
+      return exact.readiness_score;
+    }
+
+    let nearest = input.points[0];
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    for (const point of input.points) {
+      const distance = Math.abs(diffDays(point.date, targetDate));
+      if (distance < nearestDistance) {
+        nearest = point;
+        nearestDistance = distance;
+      }
+    }
+
+    return nearest?.readiness_score ?? 0;
+  };
+
+  let weightedTotal = 0;
+  let totalWeight = 0;
+  for (const goal of input.goals) {
+    const weight = getPriorityInfluenceWeight(goal.priority);
+    weightedTotal += resolveGoalReadiness(goal.target_date) * weight;
+    totalWeight += weight;
+  }
+
+  return totalWeight <= 0 ? 0 : weightedTotal / totalWeight;
 }
 
 /**
@@ -1263,164 +1853,90 @@ export function buildDeterministicProjectionPayload(
         : endDate;
     const daysInWeek = diffDays(weekStartDate, weekEndDate) + 1;
 
-    const block = findBlockForDate(input.blocks, weekStartDate);
-    const weekIndexWithinBlock = block
-      ? Math.max(0, Math.floor(diffDays(block.start_date, weekStartDate) / 7))
-      : 0;
-    const weekPattern = getProjectionWeekPattern({
-      blockPhase: block?.phase ?? "build",
-      weekIndexWithinBlock,
+    const weekSignals = resolveWeeklyLoadSignals({
       weekStartDate,
       weekEndDate,
-      goals: goalMarkers,
-    });
-
-    const blockMidpointTss = block?.target_weekly_tss_range
-      ? (block.target_weekly_tss_range.min +
-          block.target_weekly_tss_range.max) /
-        2
-      : effectiveSeedWeeklyTss;
-    const rollingCompositionRationaleCodes = [
-      "rolling_base_prior_week_primary",
-      "rolling_base_block_midpoint_signal",
-      previousDemandFloorSignal !== null
-        ? "rolling_base_demand_floor_signal"
-        : "rolling_base_demand_floor_absent",
-    ];
-    const baseWeeklyTss = weeklyLoadFromBlockAndBaseline(
-      block,
+      daysInWeek,
+      projectionWeekIndex,
+      previousWeekTss,
+      previousDemandFloorSignal,
       effectiveSeedWeeklyTss,
-      {
-        previous_week_tss: previousWeekTss,
-        demand_floor_weekly_tss: previousDemandFloorSignal,
-      },
-    );
-    const requestedWeeklyTss = Math.max(
-      0,
-      round1(baseWeeklyTss * weekPattern.multiplier),
-    );
-
-    const recoveryOverlap = findRecoveryOverlap(
+      noHistory,
+      noHistoryWeeksToEvent,
+      noHistoryFloorHoldWeeks,
+      noHistoryStartingWeeklyTss,
+      noHistoryTargetWeeklyTssFloor,
+      evidenceConfidenceScore,
       recoverySegments,
-      weekStartDate,
-      weekEndDate,
-    );
-    const recoveryCoverage =
-      recoveryOverlap.overlap_days / Math.max(1, daysInWeek);
-    const recoveryReductionFactor = round3(1 - 0.35 * recoveryCoverage);
-    const recoveryAdjustedWeeklyTss = Math.max(
-      0,
-      round1(requestedWeeklyTss * recoveryReductionFactor),
-    );
-    const enforceNoHistoryStartingFloor =
-      noHistory?.target_event_ctl !== null &&
-      noHistory?.target_event_ctl !== undefined &&
-      projectionWeekIndex < noHistoryWeeksToEvent &&
-      recoveryOverlap.goal_ids.length === 0 &&
-      weekPattern.pattern === "ramp";
-    const noHistoryInitialRampFloor =
-      enforceNoHistoryStartingFloor && noHistoryStartingWeeklyTss !== null
-        ? projectionWeekIndex < noHistoryFloorHoldWeeks
-          ? round1(
-              noHistoryStartingWeeklyTss +
-                ((noHistoryTargetWeeklyTssFloor ?? noHistoryStartingWeeklyTss) -
-                  noHistoryStartingWeeklyTss) *
-                  Math.min(
-                    1,
-                    Math.max(0, projectionWeekIndex) /
-                      Math.max(1, noHistoryFloorHoldWeeks - 1),
-                  ),
-            )
-          : (noHistoryTargetWeeklyTssFloor ?? noHistoryStartingWeeklyTss)
-        : null;
-    const noHistoryGoalDemandFloor =
-      enforceNoHistoryStartingFloor &&
-      noHistory?.target_event_ctl !== null &&
-      noHistory?.target_event_ctl !== undefined &&
-      noHistoryWeeksToEvent > 0
-        ? round1(
-            (noHistory.starting_ctl_for_projection ?? 0) *
-              (1 -
-                Math.min(
-                  1,
-                  (projectionWeekIndex + 1) / noHistoryWeeksToEvent,
-                )) +
-              noHistory.target_event_ctl *
-                Math.min(1, (projectionWeekIndex + 1) / noHistoryWeeksToEvent),
-          ) * 7
-        : null;
-    const noHistoryProgressiveFloor = Math.max(
-      noHistoryInitialRampFloor ?? 0,
-      noHistoryGoalDemandFloor ?? 0,
-    );
-    const demandRhythmMultiplier = getDemandRhythmMultiplier({
-      weekPattern:
-        recoveryOverlap.goal_ids.length > 0 ? "recovery" : weekPattern.pattern,
-      weekIndex: projectionWeekIndex,
-      weeksToEvent: noHistoryWeeksToEvent,
+      goalMarkers,
+      blocks: input.blocks,
     });
-    const rhythmAdjustedDemandFloor =
-      noHistoryProgressiveFloor <= 0
-        ? 0
-        : round1(noHistoryProgressiveFloor * demandRhythmMultiplier);
-    if (enforceNoHistoryStartingFloor) {
+
+    if (weekSignals.enforceNoHistoryStartingFloor) {
       maxRequiredUnweightedDemandWeeklyTss = Math.max(
         maxRequiredUnweightedDemandWeeklyTss,
-        rhythmAdjustedDemandFloor,
+        weekSignals.rhythmAdjustedDemandFloor,
       );
     }
-    const weightedNoHistoryDemandFloor = blendDemandWithConfidence({
-      demandFloorWeeklyTss: enforceNoHistoryStartingFloor
-        ? rhythmAdjustedDemandFloor
-        : null,
-      conservativeBaselineWeeklyTss:
-        noHistoryStartingWeeklyTss ?? effectiveSeedWeeklyTss,
-      confidence: evidenceConfidenceScore,
-    });
-    const floorOverrideApplied =
-      weightedNoHistoryDemandFloor !== null &&
-      recoveryAdjustedWeeklyTss < weightedNoHistoryDemandFloor;
-    const flooredWeeklyTss =
-      weightedNoHistoryDemandFloor !== null
-        ? Math.max(recoveryAdjustedWeeklyTss, weightedNoHistoryDemandFloor)
-        : recoveryAdjustedWeeklyTss;
 
-    const maxAllowedByTssRamp = round1(
-      previousWeekTss * (1 + normalizedConfig.max_weekly_tss_ramp_pct / 100),
-    );
-    const tssRampClamped = flooredWeeklyTss > maxAllowedByTssRamp;
+    const baselineCaps = applyWeeklyTssCaps({
+      flooredWeeklyTss: weekSignals.flooredWeeklyTss,
+      previousWeekTss,
+      currentCtl,
+      daysInWeek,
+      normalizedConfig,
+    });
+    const optimizedWeeklyTss = optimizeWeeklyAppliedTss({
+      input,
+      normalizedConfig,
+      goalMarkers,
+      recoverySegments,
+      endDate,
+      noHistory,
+      noHistoryWeeksToEvent,
+      noHistoryFloorHoldWeeks,
+      noHistoryStartingWeeklyTss,
+      noHistoryTargetWeeklyTssFloor,
+      evidenceConfidenceScore,
+      effectiveSeedWeeklyTss,
+      weekStartDate,
+      weekEndDate,
+      daysInWeek,
+      projectionWeekIndex,
+      currentCtl,
+      currentAtl,
+      previousWeekTss,
+      previousDemandFloorSignal,
+      flooredWeeklyTss: weekSignals.flooredWeeklyTss,
+      weightedNoHistoryDemandFloor: weekSignals.weightedNoHistoryDemandFloor,
+      maxAllowedByTssRamp: baselineCaps.maxAllowedByTssRamp,
+    });
+    const cappedDecision = applyWeeklyTssCaps({
+      flooredWeeklyTss: weekSignals.flooredWeeklyTss,
+      previousWeekTss,
+      currentCtl,
+      daysInWeek,
+      normalizedConfig,
+      preferredWeeklyTss: optimizedWeeklyTss,
+    });
+    const tssRampClamped = baselineCaps.tssRampClamped;
     if (tssRampClamped) {
       tssRampClampWeeks += 1;
     }
-    let appliedWeeklyTss = tssRampClamped
-      ? maxAllowedByTssRamp
-      : flooredWeeklyTss;
-    if (weightedNoHistoryDemandFloor !== null) {
+    const appliedWeeklyTss = cappedDecision.appliedWeeklyTss;
+    if (weekSignals.weightedNoHistoryDemandFloor !== null) {
       maxRequiredDemandWeeklyTss = Math.max(
         maxRequiredDemandWeeklyTss,
-        weightedNoHistoryDemandFloor,
+        weekSignals.weightedNoHistoryDemandFloor,
       );
     }
 
     const ctlBeforeWeek = currentCtl;
     const atlBeforeWeek = currentAtl;
-    const requestedCtlAfterWeek = simulateCtlOverWeek(
-      currentCtl,
-      appliedWeeklyTss,
-      daysInWeek,
-    );
-    const requestedCtlRamp = requestedCtlAfterWeek - ctlBeforeWeek;
-
-    let ctlRampClamped = false;
-    if (requestedCtlRamp > normalizedConfig.max_ctl_ramp_per_week) {
-      ctlRampClamped = true;
+    const requestedCtlRamp = cappedDecision.requestedCtlRamp;
+    const ctlRampClamped = cappedDecision.ctlRampClamped;
+    if (ctlRampClamped) {
       ctlRampClampWeeks += 1;
-      appliedWeeklyTss = findWeeklyTssForCtlRampLimit(
-        currentCtl,
-        appliedWeeklyTss,
-        normalizedConfig.max_ctl_ramp_per_week,
-        daysInWeek,
-      );
     }
 
     const ctlAfterWeek = simulateCtlOverWeek(
@@ -1438,7 +1954,7 @@ export function buildDeterministicProjectionPayload(
     currentAtl = atlAfterWeek;
     maxAppliedWeeklyTss = Math.max(maxAppliedWeeklyTss, appliedWeeklyTss);
 
-    if (recoveryOverlap.goal_ids.length > 0) {
+    if (weekSignals.recoveryOverlap.goal_ids.length > 0) {
       recoveryWeeks += 1;
     }
 
@@ -1460,55 +1976,61 @@ export function buildDeterministicProjectionPayload(
         predicted_fitness_ctl: round1(dayCtl),
         predicted_fatigue_atl: round1(dayAtl),
         predicted_form_tsb: round1(dayCtl - dayAtl),
+        readiness_score: 0,
       });
     }
 
     microcycles.push({
       week_start_date: weekStartDate,
       week_end_date: weekEndDate,
-      phase: block?.name ?? "Build",
+      phase: weekSignals.block?.name ?? "Build",
       pattern:
-        recoveryOverlap.goal_ids.length > 0 ? "recovery" : weekPattern.pattern,
+        weekSignals.recoveryOverlap.goal_ids.length > 0
+          ? "recovery"
+          : weekSignals.weekPattern.pattern,
       planned_weekly_tss: appliedWeeklyTss,
       projected_ctl: round1(currentCtl),
       metadata: {
         recovery: {
-          active: recoveryOverlap.goal_ids.length > 0,
-          goal_ids: recoveryOverlap.goal_ids,
-          reduction_factor: recoveryReductionFactor,
+          active: weekSignals.recoveryOverlap.goal_ids.length > 0,
+          goal_ids: weekSignals.recoveryOverlap.goal_ids,
+          reduction_factor: weekSignals.recoveryReductionFactor,
         },
         tss_ramp: {
           previous_week_tss: round1(previousWeekTss),
           seed_weekly_tss: round1(seedWeeklyTss),
           seed_source: seedSource,
-          rolling_base_weekly_tss: round1(baseWeeklyTss),
+          rolling_base_weekly_tss: round1(weekSignals.baseWeeklyTss),
           rolling_base_components: {
             previous_week_tss: round1(previousWeekTss),
-            block_midpoint_tss: round1(blockMidpointTss),
+            block_midpoint_tss: round1(weekSignals.blockMidpointTss),
             demand_floor_tss:
               previousDemandFloorSignal === null
                 ? null
                 : round1(previousDemandFloorSignal),
-            rationale_codes: rollingCompositionRationaleCodes,
+            rationale_codes: weekSignals.rollingCompositionRationaleCodes,
           },
-          requested_weekly_tss: flooredWeeklyTss,
-          raw_requested_weekly_tss: recoveryAdjustedWeeklyTss,
+          requested_weekly_tss: weekSignals.flooredWeeklyTss,
+          raw_requested_weekly_tss: weekSignals.recoveryAdjustedWeeklyTss,
           applied_weekly_tss: appliedWeeklyTss,
           max_weekly_tss_ramp_pct: normalizedConfig.max_weekly_tss_ramp_pct,
           clamped: tssRampClamped,
-          floor_override_applied: floorOverrideApplied,
-          floor_minimum_weekly_tss: enforceNoHistoryStartingFloor
-            ? rhythmAdjustedDemandFloor
+          floor_override_applied: weekSignals.floorOverrideApplied,
+          floor_minimum_weekly_tss: weekSignals.enforceNoHistoryStartingFloor
+            ? weekSignals.rhythmAdjustedDemandFloor
             : null,
-          demand_band_minimum_weekly_tss: weightedNoHistoryDemandFloor,
+          demand_band_minimum_weekly_tss:
+            weekSignals.weightedNoHistoryDemandFloor,
           demand_gap_unmet_weekly_tss:
-            weightedNoHistoryDemandFloor === null
+            weekSignals.weightedNoHistoryDemandFloor === null
               ? 0
               : Math.max(
                   0,
-                  round1(weightedNoHistoryDemandFloor - appliedWeeklyTss),
+                  round1(
+                    weekSignals.weightedNoHistoryDemandFloor - appliedWeeklyTss,
+                  ),
                 ),
-          weekly_load_override_reason: floorOverrideApplied
+          weekly_load_override_reason: weekSignals.floorOverrideApplied
             ? "demand_band_floor"
             : null,
         },
@@ -1527,10 +2049,11 @@ export function buildDeterministicProjectionPayload(
       predicted_fitness_ctl: round1(currentCtl),
       predicted_fatigue_atl: round1(currentAtl),
       predicted_form_tsb: round1(currentCtl - currentAtl),
+      readiness_score: 0,
     });
 
     previousWeekTss = appliedWeeklyTss;
-    previousDemandFloorSignal = weightedNoHistoryDemandFloor;
+    previousDemandFloorSignal = weekSignals.weightedNoHistoryDemandFloor;
     projectionWeekIndex += 1;
   }
 
@@ -1563,11 +2086,20 @@ export function buildDeterministicProjectionPayload(
     confidence: evidenceConfidenceScore,
     projectionWeeks: Math.max(1, microcycles.length),
   });
+  const pointReadinessScores = computeProjectionPointReadinessScores({
+    points,
+    planReadinessScore: projectionFeasibility.readiness_score,
+    goals: goalMarkers,
+  });
+  const pointsWithReadiness = points.map((point, index) => ({
+    ...point,
+    readiness_score: pointReadinessScores[index] ?? 0,
+  }));
 
-  return {
+  const optimizedPayload: DeterministicProjectionPayload = {
     start_date: startDate,
     end_date: endDate,
-    points,
+    points: pointsWithReadiness,
     goal_markers: goalMarkers,
     microcycles,
     recovery_segments: recoverySegments,
@@ -1604,6 +2136,29 @@ export function buildDeterministicProjectionPayload(
       projection_feasibility: projectionFeasibility,
     },
   };
+
+  if (input.disable_weekly_tss_optimizer) {
+    return optimizedPayload;
+  }
+
+  const baselinePayload = buildDeterministicProjectionPayload({
+    ...input,
+    disable_weekly_tss_optimizer: true,
+  });
+  const optimizedReadiness = computeWeightedGoalDateReadiness({
+    points: optimizedPayload.points,
+    goals: optimizedPayload.goal_markers,
+  });
+  const baselineReadiness = computeWeightedGoalDateReadiness({
+    points: baselinePayload.points,
+    goals: baselinePayload.goal_markers,
+  });
+
+  if (optimizedReadiness < baselineReadiness) {
+    return baselinePayload;
+  }
+
+  return optimizedPayload;
 }
 
 function simulateCtlOverWeek(
