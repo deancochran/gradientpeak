@@ -6,14 +6,11 @@ Goal: direct replacement of training-plan projection/scoring internals with a co
 
 ## 1) Requirements Review -> Current Implementation Gaps
 
-### R1. Bidirectional modeling (forward prediction + inverse state inference)
+### R1. Foward directional modeling (forward prediction of uesr state and training load/readiness/etc)
 
 - Requirement:
   - Infer current user state from history/efforts/profile/prior state.
   - Predict future load and readiness from inferred state.
-- Current gap:
-  - `packages/core/plan/projectionCalculations.ts` predicts forward but does not expose or persist a first-class posterior state estimator.
-  - No explicit daily state uncertainty contract is returned.
 
 ### R2. Continuous model replacing heuristic cliffs
 
@@ -33,6 +30,8 @@ Goal: direct replacement of training-plan projection/scoring internals with a co
   - Target weight is not formally part of core target schema contract and can be implicit/fallback in scoring.
 
 ### R4. Safety-first unless overridden, preserving true blocking semantics
+
+Users are not forced to fix risky training plans, but accept risk of those plans and are allowed to make them for themselves/have a coach make it for them
 
 - Requirement:
   - Unsafe states remain blocking by default.
