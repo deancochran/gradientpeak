@@ -3,6 +3,8 @@ import {
   creationConfigLocksSchema,
   creationConstraintsSchema,
   creationOptimizationProfileEnum,
+  projectionControlOwnershipMapV2Schema,
+  projectionControlV2Schema,
   creationProvenanceSchema,
   creationRecentInfluenceActionEnum,
   creationValueSourceEnum,
@@ -14,7 +16,11 @@ import {
   type CreationRecentInfluence,
   type CreationRecentInfluenceAction,
   type CreationValueSource,
+  type ProjectionControlOwnershipMapV2,
+  type ProjectionControlV2,
+  type TrainingPlanCalibrationConfig,
   type TrainingPlanCreationConfig,
+  trainingPlanCalibrationConfigSchema,
 } from "../schemas/training_plan_structure";
 
 const WEEK_DAYS = [
@@ -36,14 +42,51 @@ type CreationConfigValues = {
   post_goal_recovery_days: number;
   max_weekly_tss_ramp_pct: number;
   max_ctl_ramp_per_week: number;
+  projection_control_v2: ProjectionControlV2;
+  calibration: TrainingPlanCalibrationConfig;
+};
+
+type PartialProjectionControlInput = {
+  mode?: ProjectionControlV2["mode"];
+  ambition?: number;
+  risk_tolerance?: number;
+  curvature?: number;
+  curvature_strength?: number;
+  user_owned?: Partial<ProjectionControlOwnershipMapV2>;
+};
+
+type PartialCalibrationInput = {
+  version?: 1;
+  readiness_composite?: Partial<
+    TrainingPlanCalibrationConfig["readiness_composite"]
+  >;
+  readiness_timeline?: Partial<
+    TrainingPlanCalibrationConfig["readiness_timeline"]
+  >;
+  envelope_penalties?: Partial<
+    TrainingPlanCalibrationConfig["envelope_penalties"]
+  >;
+  durability_penalties?: Partial<
+    TrainingPlanCalibrationConfig["durability_penalties"]
+  >;
+  no_history?: Partial<TrainingPlanCalibrationConfig["no_history"]>;
+  optimizer?: Partial<TrainingPlanCalibrationConfig["optimizer"]>;
+};
+
+type CreationConfigInputValues = Omit<
+  CreationConfigValues,
+  "calibration" | "projection_control_v2"
+> & {
+  projection_control_v2: PartialProjectionControlInput;
+  calibration: PartialCalibrationInput;
 };
 
 export interface NormalizeCreationConfigInput {
-  user_values?: Partial<CreationConfigValues> & {
+  user_values?: Partial<CreationConfigInputValues> & {
     locks?: Partial<CreationConfigLocks>;
   };
-  confirmed_suggestions?: Partial<CreationConfigValues>;
-  defaults?: Partial<CreationConfigValues>;
+  confirmed_suggestions?: Partial<CreationConfigInputValues>;
+  defaults?: Partial<CreationConfigInputValues>;
   provenance_overrides?: {
     availability_provenance?: Partial<CreationProvenance>;
     recent_influence_provenance?: Partial<CreationProvenance>;
@@ -99,7 +142,119 @@ const DEFAULT_VALUES: CreationConfigValues = {
   post_goal_recovery_days: 5,
   max_weekly_tss_ramp_pct: 7,
   max_ctl_ramp_per_week: 3,
+  projection_control_v2: projectionControlV2Schema.parse({}),
+  calibration: trainingPlanCalibrationConfigSchema.parse({}),
 };
+
+function normalizeProjectionControlWithPrecedence(
+  userValue: PartialProjectionControlInput | undefined,
+  suggestionValue: PartialProjectionControlInput | undefined,
+  defaultValue: ProjectionControlV2,
+): ProjectionControlV2 {
+  return projectionControlV2Schema.parse({
+    mode: pickByPrecedence(
+      userValue?.mode,
+      suggestionValue?.mode,
+      defaultValue.mode,
+      false,
+    ).value,
+    ambition: pickByPrecedence(
+      userValue?.ambition,
+      suggestionValue?.ambition,
+      defaultValue.ambition,
+      false,
+    ).value,
+    risk_tolerance: pickByPrecedence(
+      userValue?.risk_tolerance,
+      suggestionValue?.risk_tolerance,
+      defaultValue.risk_tolerance,
+      false,
+    ).value,
+    curvature: pickByPrecedence(
+      userValue?.curvature,
+      suggestionValue?.curvature,
+      defaultValue.curvature,
+      false,
+    ).value,
+    curvature_strength: pickByPrecedence(
+      userValue?.curvature_strength,
+      suggestionValue?.curvature_strength,
+      defaultValue.curvature_strength,
+      false,
+    ).value,
+    user_owned: projectionControlOwnershipMapV2Schema.parse({
+      mode: pickByPrecedence(
+        userValue?.user_owned?.mode,
+        suggestionValue?.user_owned?.mode,
+        defaultValue.user_owned.mode,
+        false,
+      ).value,
+      ambition: pickByPrecedence(
+        userValue?.user_owned?.ambition,
+        suggestionValue?.user_owned?.ambition,
+        defaultValue.user_owned.ambition,
+        false,
+      ).value,
+      risk_tolerance: pickByPrecedence(
+        userValue?.user_owned?.risk_tolerance,
+        suggestionValue?.user_owned?.risk_tolerance,
+        defaultValue.user_owned.risk_tolerance,
+        false,
+      ).value,
+      curvature: pickByPrecedence(
+        userValue?.user_owned?.curvature,
+        suggestionValue?.user_owned?.curvature,
+        defaultValue.user_owned.curvature,
+        false,
+      ).value,
+      curvature_strength: pickByPrecedence(
+        userValue?.user_owned?.curvature_strength,
+        suggestionValue?.user_owned?.curvature_strength,
+        defaultValue.user_owned.curvature_strength,
+        false,
+      ).value,
+    }),
+  });
+}
+
+function mergeCalibration(
+  base: TrainingPlanCalibrationConfig,
+  override: PartialCalibrationInput | undefined,
+): TrainingPlanCalibrationConfig {
+  if (!override) {
+    return base;
+  }
+
+  return trainingPlanCalibrationConfigSchema.parse({
+    ...base,
+    ...override,
+    version: 1,
+    readiness_composite: {
+      ...base.readiness_composite,
+      ...override.readiness_composite,
+    },
+    readiness_timeline: {
+      ...base.readiness_timeline,
+      ...override.readiness_timeline,
+    },
+    envelope_penalties: {
+      ...base.envelope_penalties,
+      ...override.envelope_penalties,
+    },
+    durability_penalties: {
+      ...base.durability_penalties,
+      ...override.durability_penalties,
+    },
+    no_history: {
+      ...base.no_history,
+      ...override.no_history,
+    },
+    optimizer: {
+      ...base.optimizer,
+      ...override.optimizer,
+    },
+  });
+}
 
 function pickByPrecedence<T>(
   userValue: T | undefined,
@@ -237,6 +392,18 @@ export function normalizeCreationConfig(
       ...CONSERVATIVE_DEFAULT_CONSTRAINTS,
       ...input.defaults?.constraints,
     }),
+    projection_control_v2: projectionControlV2Schema.parse({
+      ...DEFAULT_VALUES.projection_control_v2,
+      ...input.defaults?.projection_control_v2,
+      user_owned: {
+        ...DEFAULT_VALUES.projection_control_v2.user_owned,
+        ...input.defaults?.projection_control_v2?.user_owned,
+      },
+    }),
+    calibration: mergeCalibration(
+      DEFAULT_VALUES.calibration,
+      input.defaults?.calibration,
+    ),
   };
 
   const availabilityPick = pickByPrecedence(
@@ -295,6 +462,19 @@ export function normalizeCreationConfig(
     locks.max_ctl_ramp_per_week.locked,
   );
 
+  const projectionControl = normalizeProjectionControlWithPrecedence(
+    input.user_values?.projection_control_v2,
+    input.confirmed_suggestions?.projection_control_v2,
+    defaultValues.projection_control_v2,
+  );
+
+  const calibrationPick = pickByPrecedence(
+    input.user_values?.calibration,
+    input.confirmed_suggestions?.calibration,
+    defaultValues.calibration,
+    false,
+  );
+
   const normalizedDays = WEEK_DAYS.map((day) => {
     return (
       availabilityPick.value.days.find((entry) => entry.day === day) ?? {
@@ -333,6 +513,11 @@ export function normalizeCreationConfig(
     post_goal_recovery_days: postGoalRecoveryDaysPick.value,
     max_weekly_tss_ramp_pct: maxWeeklyTssRampPctPick.value,
     max_ctl_ramp_per_week: maxCtlRampPerWeekPick.value,
+    projection_control_v2: projectionControl,
+    calibration: mergeCalibration(
+      DEFAULT_VALUES.calibration,
+      calibrationPick.value,
+    ),
     locks,
   });
 }

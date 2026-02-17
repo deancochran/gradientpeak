@@ -22,6 +22,7 @@ interface PercentSliderInputProps {
   helperText?: string;
   error?: string;
   accessibilityHint?: string;
+  showNumericInput?: boolean;
 }
 
 export function PercentSliderInput({
@@ -36,6 +37,7 @@ export function PercentSliderInput({
   helperText,
   error,
   accessibilityHint,
+  showNumericInput = true,
 }: PercentSliderInputProps) {
   const [draftValue, setDraftValue] = useState(
     formatNumberForInput(value, decimals),
@@ -70,6 +72,9 @@ export function PercentSliderInput({
           <Text className="text-sm">{label}</Text>
         </Label>
       ) : null}
+      {helperText ? (
+        <Text className="text-xs text-muted-foreground">{helperText}</Text>
+      ) : null}
       <View className="flex-row items-center justify-between">
         <Text className="text-xs text-muted-foreground">{min}%</Text>
         <Text className="text-xs font-medium">
@@ -84,22 +89,21 @@ export function PercentSliderInput({
         step={step}
         onValueChange={handleSliderChange}
       />
-      <View className="flex-row items-center gap-2">
-        <Input
-          className="flex-1"
-          aria-labelledby={id}
-          value={draftValue}
-          onChangeText={setDraftValue}
-          onBlur={() => commitValue(draftValue)}
-          keyboardType="numbers-and-punctuation"
-          accessibilityHint={
-            accessibilityHint ?? `Enter percent between ${min} and ${max}`
-          }
-        />
-        <Text className="text-xs text-muted-foreground">%</Text>
-      </View>
-      {helperText ? (
-        <Text className="text-xs text-muted-foreground">{helperText}</Text>
+      {showNumericInput ? (
+        <View className="flex-row items-center gap-2">
+          <Input
+            className="flex-1"
+            aria-labelledby={id}
+            value={draftValue}
+            onChangeText={setDraftValue}
+            onBlur={() => commitValue(draftValue)}
+            keyboardType="numbers-and-punctuation"
+            accessibilityHint={
+              accessibilityHint ?? `Enter percent between ${min} and ${max}`
+            }
+          />
+          <Text className="text-xs text-muted-foreground">%</Text>
+        </View>
       ) : null}
       {error ? <Text className="text-xs text-destructive">{error}</Text> : null}
     </View>

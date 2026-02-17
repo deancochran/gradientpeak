@@ -27,9 +27,7 @@ interface ReviewTabProps {
   noHistoryAccessibilitySummary?: string;
   noHistoryReasons: string[];
   feasibilitySafetySummary?: CreationFeasibilitySafetySummary;
-  createDisabledReason?: string;
   blockingIssues: BlockingIssue[];
-  onResolveConflict: (code: string) => void;
 }
 
 export function ReviewTab({
@@ -44,9 +42,7 @@ export function ReviewTab({
   noHistoryAccessibilitySummary,
   noHistoryReasons,
   feasibilitySafetySummary,
-  createDisabledReason,
   blockingIssues,
-  onResolveConflict,
 }: ReviewTabProps) {
   return (
     <>
@@ -154,20 +150,12 @@ export function ReviewTab({
         )}
       </View>
 
-      {createDisabledReason && (
-        <View className="gap-1 rounded-lg border border-destructive/40 bg-destructive/5 p-2.5">
-          <Text className="text-xs font-medium text-destructive">
-            {createDisabledReason}
-          </Text>
-        </View>
-      )}
-
       {blockingIssues.length > 0 && (
         <View className="gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-2.5">
           <View className="flex-row items-center gap-2">
             <ShieldAlert size={16} className="text-destructive" />
             <Text className="font-semibold text-destructive">
-              Resolve blocking conflicts
+              Observations based on known standards
             </Text>
           </View>
           {blockingIssues.map((conflict) => (
@@ -178,21 +166,6 @@ export function ReviewTab({
               <Text className="text-sm text-destructive">
                 {conflict.message}
               </Text>
-              {conflict.suggestions.map((suggestion) => (
-                <Text
-                  key={`${conflict.code}-${suggestion}`}
-                  className="text-xs text-destructive"
-                >
-                  - {suggestion}
-                </Text>
-              ))}
-              <Button
-                size="sm"
-                variant="outline"
-                onPress={() => onResolveConflict(conflict.code)}
-              >
-                <Text>Apply quick fix</Text>
-              </Button>
             </View>
           ))}
         </View>

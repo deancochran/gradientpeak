@@ -102,7 +102,7 @@ describe("computeCompositeReadiness", () => {
 });
 
 describe("computeProjectionPointReadinessScores", () => {
-  it("caps timeline readiness at plan readiness when provided", () => {
+  it("anchors terminal readiness to plan readiness without globally clipping", () => {
     const scores = computeProjectionPointReadinessScores({
       points: [
         {
@@ -129,7 +129,45 @@ describe("computeProjectionPointReadinessScores", () => {
     });
 
     expect(scores.length).toBe(3);
+    expect(scores.at(-1)).toBe(47);
     expect(Math.max(...scores)).toBeLessThanOrEqual(47);
-    expect(scores[2]).toBe(47);
+    expect(new Set(scores).size).toBeGreaterThan(1);
+  });
+
+  it("does not force non-terminal goal day to equal plan readiness", () => {
+    const scores = computeProjectionPointReadinessScores({
+      points: [
+        {
+          date: "2026-01-05",
+          predicted_fitness_ctl: 20,
+          predicted_fatigue_atl: 22,
+          predicted_form_tsb: -2,
+        },
+        {
+          date: "2026-01-12",
+          predicted_fitness_ctl: 29,
+          predicted_fatigue_atl: 26,
+          predicted_form_tsb: 3,
+        },
+        {
+          date: "2026-01-19",
+          predicted_fitness_ctl: 33,
+          predicted_fatigue_atl: 24,
+          predicted_form_tsb: 9,
+        },
+        {
+          date: "2026-01-26",
+          predicted_fitness_ctl: 38,
+          predicted_fatigue_atl: 27,
+          predicted_form_tsb: 11,
+        },
+      ],
+      planReadinessScore: 62,
+      goals: [{ target_date: "2026-01-12", priority: 1 }],
+    });
+
+    expect(scores.length).toBe(4);
+    expect(scores[1] ?? 0).toBeLessThan(62);
+    expect(scores[3] ?? 0).toBe(62);
   });
 });

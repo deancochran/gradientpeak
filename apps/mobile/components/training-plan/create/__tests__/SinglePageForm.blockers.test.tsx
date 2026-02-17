@@ -83,6 +83,11 @@ vi.mock("../inputs/PercentSliderInput", () => ({
     React.createElement("PercentSliderInput", props),
 }));
 
+vi.mock("../inputs/NumberSliderInput", () => ({
+  NumberSliderInput: (props: any) =>
+    React.createElement("NumberSliderInput", props),
+}));
+
 vi.mock("lucide-react-native", () => {
   const icon = (props: any) => React.createElement("Icon", props);
   return {
@@ -176,6 +181,71 @@ const baseConfigData = {
   postGoalRecoveryDays: 5,
   maxWeeklyTssRampPct: 8,
   maxCtlRampPerWeek: 4,
+  projectionControlV2: {
+    mode: "advanced",
+    ambition: 0.5,
+    risk_tolerance: 0.4,
+    curvature: 0,
+    curvature_strength: 0.35,
+    user_owned: {
+      mode: false,
+      ambition: false,
+      risk_tolerance: false,
+      curvature: false,
+      curvature_strength: false,
+    },
+  },
+  calibration: {
+    version: 1,
+    readiness_composite: {
+      target_attainment_weight: 0.45,
+      envelope_weight: 0.3,
+      durability_weight: 0.15,
+      evidence_weight: 0.1,
+    },
+    readiness_timeline: {
+      target_tsb: 8,
+      form_tolerance: 20,
+      fatigue_overflow_scale: 0.4,
+      feasibility_blend_weight: 0.15,
+      smoothing_iterations: 24,
+      smoothing_lambda: 0.28,
+      max_step_delta: 9,
+    },
+    envelope_penalties: {
+      over_high_weight: 0.55,
+      under_low_weight: 0.2,
+      over_ramp_weight: 0.25,
+    },
+    durability_penalties: {
+      monotony_threshold: 2,
+      monotony_scale: 2,
+      strain_threshold: 900,
+      strain_scale: 900,
+      deload_debt_scale: 6,
+    },
+    no_history: {
+      reliability_horizon_days: 42,
+      confidence_floor_high: 0.75,
+      confidence_floor_mid: 0.6,
+      confidence_floor_low: 0.45,
+      demand_tier_time_pressure_scale: 1,
+    },
+    optimizer: {
+      preparedness_weight: 14,
+      risk_penalty_weight: 0.35,
+      volatility_penalty_weight: 0.22,
+      churn_penalty_weight: 0.2,
+      lookahead_weeks: 5,
+      candidate_steps: 7,
+    },
+  },
+  calibrationCompositeLocks: {
+    target_attainment_weight: false,
+    envelope_weight: false,
+    durability_weight: false,
+    evidence_weight: false,
+  },
   constraintsSource: "default",
   locks: {
     availability_config: { locked: false },
@@ -185,8 +255,98 @@ const baseConfigData = {
 } as unknown as TrainingPlanConfigFormData;
 
 describe("SinglePageForm blocker surfacing", () => {
-  it("shows create-disabled reason and blocking conflicts on review tab", () => {
-    const onResolveConflict = vi.fn();
+  it("marks projection controls as user-owned when edited", () => {
+    const handleConfigChange = vi.fn();
+    let renderer: ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        <SinglePageForm
+          formData={baseFormData}
+          onFormDataChange={vi.fn()}
+          configData={baseConfigData}
+          onConfigChange={handleConfigChange}
+        />,
+      );
+    });
+
+    const tuningTab = renderer!.root.find(
+      (node: any) => node.props.accessibilityLabel === "Tuning tab",
+    );
+
+    act(() => {
+      tuningTab.props.onPress();
+    });
+
+    const sliderNodes = findMockNodes(renderer!, "NumberSliderInput");
+    const ambitionSlider = sliderNodes.find(
+      (node: any) => node.props.id === "proj-ambition",
+    );
+
+    act(() => {
+      ambitionSlider?.props.onChange(0.78);
+    });
+
+    const firstConfig = handleConfigChange.mock.calls.at(-1)?.[0];
+    expect(firstConfig?.projectionControlV2.ambition).toBe(0.78);
+    expect(firstConfig?.projectionControlV2.user_owned.ambition).toBe(true);
+
+    const curvatureStrengthSlider = sliderNodes.find(
+      (node: any) => node.props.id === "proj-curvature-strength",
+    );
+    act(() => {
+      curvatureStrengthSlider?.props.onChange(0.91);
+    });
+
+    const secondConfig = handleConfigChange.mock.calls.at(-1)?.[0];
+    expect(secondConfig?.projectionControlV2.curvature_strength).toBe(0.91);
+    expect(
+      secondConfig?.projectionControlV2.user_owned.curvature_strength,
+    ).toBe(true);
+  });
+
+  it("shows technical multipliers inline without mode switching", () => {
+    let renderer: ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        <SinglePageForm
+          formData={baseFormData}
+          onFormDataChange={vi.fn()}
+          configData={{
+            ...baseConfigData,
+            projectionControlV2: {
+              ...baseConfigData.projectionControlV2,
+              mode: "simple",
+            },
+          }}
+          onConfigChange={vi.fn()}
+        />,
+      );
+    });
+
+    const tuningTab = renderer!.root.find(
+      (node: any) => node.props.accessibilityLabel === "Tuning tab",
+    );
+    act(() => {
+      tuningTab.props.onPress();
+    });
+
+    const sliderNodes = findMockNodes(renderer!, "NumberSliderInput");
+    expect(
+      sliderNodes.some(
+        (node: any) => node.props.id === "cal-preparedness-weight",
+      ),
+    ).toBe(true);
+
+    const textNodes = findMockNodes(renderer!, "Text").map((node: any) =>
+      getNodeText(node.props.children),
+    );
+    expect(
+      textNodes.some((text) => text.includes("Switch mode to Advanced")),
+    ).toBe(false);
+  });
+
+  it("wires single projection reset action to tuning header", () => {
+    const onResetProjectionAll = vi.fn();
 
     let renderer: ReactTestRenderer;
     act(() => {
@@ -196,8 +356,140 @@ describe("SinglePageForm blocker surfacing", () => {
           onFormDataChange={vi.fn()}
           configData={baseConfigData}
           onConfigChange={vi.fn()}
-          onResolveConflict={onResolveConflict}
-          createDisabledReason="Create is disabled until blockers are resolved."
+          onResetProjectionAll={onResetProjectionAll}
+        />,
+      );
+    });
+
+    const tuningTab = renderer!.root.find(
+      (node: any) => node.props.accessibilityLabel === "Tuning tab",
+    );
+    act(() => {
+      tuningTab.props.onPress();
+    });
+
+    const buttons = findMockNodes(renderer!, "Button");
+    const resetButtons = buttons.filter(
+      (node: any) => getNodeText(node.props.children) === "Reset",
+    );
+    expect(resetButtons).toHaveLength(1);
+    const reset = resetButtons[0];
+
+    act(() => {
+      reset?.props.onPress();
+    });
+
+    expect(onResetProjectionAll).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses frontier-aligned limits slider ranges", () => {
+    let renderer: ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        <SinglePageForm
+          formData={baseFormData}
+          onFormDataChange={vi.fn()}
+          configData={baseConfigData}
+          onConfigChange={vi.fn()}
+        />,
+      );
+    });
+
+    const limitsTab = renderer!.root.find(
+      (node: any) => node.props.accessibilityLabel === "Limits tab",
+    );
+    act(() => {
+      limitsTab.props.onPress();
+    });
+
+    const numberSliders = findMockNodes(renderer!, "NumberSliderInput");
+    const percentSliders = findMockNodes(renderer!, "PercentSliderInput");
+
+    const weeklyRamp = percentSliders.find(
+      (node: any) => node.props.id === "max-weekly-load-ramp",
+    )?.props;
+    const ctlRamp = numberSliders.find(
+      (node: any) => node.props.id === "max-weekly-ctl-ramp",
+    )?.props;
+
+    expect(weeklyRamp).toMatchObject({
+      min: 0,
+      max: 40,
+      step: 0.25,
+    });
+    expect(ctlRamp).toMatchObject({
+      min: 0,
+      max: 12,
+      step: 0.1,
+      decimals: 2,
+      unitLabel: "CTL/wk",
+    });
+  });
+
+  it("uses multiplier slider ranges for optimizer tuning", () => {
+    let renderer: ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        <SinglePageForm
+          formData={baseFormData}
+          onFormDataChange={vi.fn()}
+          configData={baseConfigData}
+          onConfigChange={vi.fn()}
+        />,
+      );
+    });
+
+    const tuningTab = renderer!.root.find(
+      (node: any) => node.props.accessibilityLabel === "Tuning tab",
+    );
+
+    act(() => {
+      tuningTab.props.onPress();
+    });
+
+    const sliderNodes = findMockNodes(renderer!, "NumberSliderInput");
+    const byId = (id: string) =>
+      sliderNodes.find((node: any) => node.props.id === id)?.props;
+
+    expect(byId("cal-preparedness-weight")).toMatchObject({
+      min: 0,
+      max: 30,
+      step: 0.1,
+      decimals: 1,
+      label: "Push fitness multiplier",
+    });
+    expect(byId("cal-risk-penalty")).toMatchObject({
+      min: 0,
+      max: 2,
+      step: 0.05,
+      decimals: 2,
+      label: "Overload risk multiplier",
+    });
+    expect(byId("cal-volatility-penalty")).toMatchObject({
+      min: 0,
+      max: 2,
+      step: 0.05,
+      decimals: 2,
+      label: "Volatility multiplier",
+    });
+    expect(byId("cal-churn-penalty")).toMatchObject({
+      min: 0,
+      max: 2,
+      step: 0.05,
+      decimals: 2,
+      label: "Schedule stability multiplier",
+    });
+  });
+
+  it("shows review observations without fix CTAs on review tab", () => {
+    let renderer: ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        <SinglePageForm
+          formData={baseFormData}
+          onFormDataChange={vi.fn()}
+          configData={baseConfigData}
+          onConfigChange={vi.fn()}
           blockingIssues={[
             {
               code: "required_tss_ramp_exceeds_cap",
@@ -227,28 +519,20 @@ describe("SinglePageForm blocker surfacing", () => {
     );
 
     expect(textNodes).toContain(
-      "Create is disabled until blockers are resolved.",
+      "Optional guidance only. This check explains plan fit, risk, and trend changes in plain language. It never blocks create.",
     );
     expect(textNodes).toContain("Observations based on known standards");
     expect(textNodes).toContain("Required weekly load exceeds cap");
     expect(textNodes).toContain("Min sessions exceeds max sessions");
 
-    const quickFixButton = findMockNodes(renderer!, "Button").find(
-      (node: any) =>
-        getNodeText(node.props.children).includes("Apply quick fix"),
+    const buttonText = findMockNodes(renderer!, "Button").map((node: any) =>
+      getNodeText(node.props.children),
     );
-
-    const suggestedFixButton = findMockNodes(renderer!, "Button").find(
-      (node: any) =>
-        getNodeText(node.props.children).includes("Apply suggested fix"),
-    );
-
-    act(() => {
-      (quickFixButton ?? suggestedFixButton)?.props.onPress();
-    });
-
-    expect(onResolveConflict).toHaveBeenCalledWith(
-      "required_tss_ramp_exceeds_cap",
+    expect(
+      buttonText.some((text) => text.includes("Apply suggested fix")),
+    ).toBe(false);
+    expect(buttonText.some((text) => text.includes("Apply quick fix"))).toBe(
+      false,
     );
   });
 
@@ -261,7 +545,6 @@ describe("SinglePageForm blocker surfacing", () => {
           onFormDataChange={vi.fn()}
           configData={baseConfigData}
           onConfigChange={vi.fn()}
-          onResolveConflict={vi.fn()}
           projectionChart={
             {
               start_date: "2026-02-14",
@@ -310,8 +593,325 @@ describe("SinglePageForm blocker surfacing", () => {
       getNodeText(node.props.children),
     );
 
-    expect(textNodes).toContain("Per-goal feasibility and target satisfaction");
-    expect(textNodes).toContain("conflict: priority_precedence");
-    expect(textNodes).toContain("Finish time: 67 / 100 | unmet gap 210");
+    expect(textNodes).toContain("Goal-by-goal check");
+    expect(textNodes).toContain("Plan note: priority precedence");
+    expect(textNodes).toContain(
+      "Finish time confidence: 67 / 100 | shortfall 210",
+    );
+  });
+
+  it("shows safety-first default planning policy in review diagnostics", () => {
+    let renderer: ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        <SinglePageForm
+          formData={baseFormData}
+          onFormDataChange={vi.fn()}
+          configData={baseConfigData}
+          onConfigChange={vi.fn()}
+          feasibilitySafetySummary={
+            {
+              feasibility_band: "on-track",
+              safety_band: "safe",
+              blockers: [],
+              top_drivers: [],
+            } as any
+          }
+        />,
+      );
+    });
+
+    const reviewTab = renderer!.root.find(
+      (node: any) => node.props.accessibilityLabel === "Review tab",
+    );
+    act(() => {
+      reviewTab.props.onPress();
+    });
+
+    const textNodes = findMockNodes(renderer!, "Text").map((node: any) =>
+      getNodeText(node.props.children),
+    );
+
+    expect(textNodes).toContain(
+      "The planner always prefers a safer progression that still moves you toward your goals.",
+    );
+  });
+
+  it("renders readiness-delta diagnostics panel for latest movement", () => {
+    let renderer: ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        <SinglePageForm
+          formData={baseFormData}
+          onFormDataChange={vi.fn()}
+          configData={baseConfigData}
+          onConfigChange={vi.fn()}
+          readinessDeltaDiagnostics={
+            {
+              readiness: {
+                direction: "down",
+                delta: -3.25,
+                previous_score: 71.4,
+                current_score: 68.15,
+              },
+              impacts: {
+                load: {
+                  key: "load",
+                  direction: "up",
+                  delta: 12,
+                  effect: "supports_readiness",
+                  previous_value: 405,
+                  current_value: 417,
+                  reason_codes: ["impact_load_tss_delta"],
+                },
+                fatigue: {
+                  key: "fatigue",
+                  direction: "up",
+                  delta: 5.5,
+                  effect: "suppresses_readiness",
+                  previous_value: 61,
+                  current_value: 66.5,
+                  reason_codes: ["impact_fatigue_atl_delta"],
+                },
+                feasibility: {
+                  key: "feasibility",
+                  direction: "up",
+                  delta: 1,
+                  effect: "suppresses_readiness",
+                  previous_value: 0,
+                  current_value: 1,
+                  reason_codes: ["impact_feasibility_pressure_delta"],
+                },
+              },
+              dominant_driver: "fatigue",
+              summary_codes: ["readiness_delta_diagnostics_v1"],
+            } as any
+          }
+        />,
+      );
+    });
+
+    const reviewTab = renderer!.root.find(
+      (node: any) => node.props.accessibilityLabel === "Review tab",
+    );
+    act(() => {
+      reviewTab.props.onPress();
+    });
+
+    const textNodes = findMockNodes(renderer!, "Text").map((node: any) =>
+      getNodeText(node.props.children),
+    );
+
+    expect(textNodes).toContain("What changed most recently");
+    expect(
+      textNodes.some((text) =>
+        text.includes("Readiness decreased by 3.25 points"),
+      ),
+    ).toBe(true);
+    expect(textNodes).toContain("Main reason: fatigue.");
+    expect(
+      textNodes.some((text) =>
+        text.includes("Timeline pressure increased by 1.00"),
+      ),
+    ).toBe(true);
+  });
+
+  it("surfaces continuous projection diagnostics in review panel when available", () => {
+    let renderer: ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        <SinglePageForm
+          formData={baseFormData}
+          onFormDataChange={vi.fn()}
+          configData={baseConfigData}
+          onConfigChange={vi.fn()}
+          feasibilitySafetySummary={
+            {
+              feasibility_band: "on-track",
+              safety_band: "safe",
+              blockers: [],
+              top_drivers: [],
+            } as any
+          }
+          projectionChart={
+            {
+              start_date: "2026-02-14",
+              end_date: "2026-06-01",
+              points: [],
+              goal_markers: [],
+              periodization_phases: [],
+              microcycles: [],
+              projection_diagnostics: {
+                continuous_projection_diagnostics: {
+                  effective_optimizer: {
+                    preparedness_weight: 17.2,
+                    risk_penalty_weight: 0.31,
+                  },
+                  active_constraints: ["tss_ramp_cap_pressure"],
+                  binding_constraints: ["availability_cap"],
+                  clamp_pressure: 0.38,
+                  objective_composition: {
+                    preparedness: 2.41,
+                    risk_penalty: -0.52,
+                  },
+                  curvature_contribution: 0.18,
+                },
+              },
+            } as any
+          }
+        />,
+      );
+    });
+
+    const reviewTab = renderer!.root.find(
+      (node: any) => node.props.accessibilityLabel === "Review tab",
+    );
+    act(() => {
+      reviewTab.props.onPress();
+    });
+
+    const textNodes = findMockNodes(renderer!, "Text").map((node: any) =>
+      getNodeText(node.props.children),
+    );
+
+    expect(
+      textNodes.some((text) =>
+        text.includes("Effective optimizer: preparedness weight 17.2"),
+      ),
+    ).toBe(true);
+    expect(textNodes).toContain("Active constraints: tss ramp cap pressure.");
+    expect(
+      textNodes.some((text) =>
+        text.includes(
+          "Binding constraints: availability cap | clamp pressure 38%",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      textNodes.some((text) =>
+        text.includes(
+          "Objective mix: preparedness 2.41, risk penalty -0.52 | curvature 0.18.",
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("shows canonical projection diagnostics for theoretical frontier review", () => {
+    let renderer: ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        <SinglePageForm
+          formData={baseFormData}
+          onFormDataChange={vi.fn()}
+          configData={baseConfigData}
+          onConfigChange={vi.fn()}
+          feasibilitySafetySummary={
+            {
+              feasibility_band: "on-track",
+              safety_band: "safe",
+              blockers: [],
+              top_drivers: [],
+            } as any
+          }
+          projectionChart={
+            {
+              start_date: "2026-02-14",
+              end_date: "2026-06-01",
+              points: [],
+              goal_markers: [],
+              periodization_phases: [],
+              microcycles: [],
+              projection_diagnostics: {
+                selected_path: "full_mpc",
+                fallback_reason: null,
+                candidate_counts: {
+                  full_mpc: 50,
+                  degraded_bounded_mpc: 0,
+                  legacy_optimizer: 0,
+                },
+                prune_counts: {
+                  full_mpc: 4,
+                  degraded_bounded_mpc: 0,
+                },
+                active_constraints: [
+                  "single_mode_safety_caps_enforced",
+                  "feasibility_caps_enforced",
+                ],
+                tie_break_chain: ["objective", "readiness"],
+                effective_optimizer_config: {
+                  weights: {
+                    preparedness_weight: 19.1,
+                    risk_penalty_weight: 0.16,
+                    volatility_penalty_weight: 0.2,
+                    churn_penalty_weight: 0.18,
+                  },
+                  caps: {
+                    max_weekly_tss_ramp_pct: 40,
+                    max_ctl_ramp_per_week: 12,
+                  },
+                  search: {
+                    lookahead_weeks: 8,
+                    candidate_steps: 15,
+                  },
+                  curvature: {
+                    target: 0,
+                    strength: 0,
+                    weight: 0,
+                  },
+                },
+                clamp_counts: {
+                  tss: 4,
+                  ctl: 2,
+                },
+                objective_contributions: {
+                  sampled_weeks: 6,
+                  objective_score: 2.3,
+                  weighted_terms: {
+                    goal: 2.2,
+                    readiness: 1.5,
+                    risk: -0.7,
+                    volatility: -0.2,
+                    churn: -0.1,
+                    monotony: -0.03,
+                    strain: -0.02,
+                    curve: 0.21,
+                  },
+                },
+              },
+            } as any
+          }
+        />,
+      );
+    });
+
+    const reviewTab = renderer!.root.find(
+      (node: any) => node.props.accessibilityLabel === "Review tab",
+    );
+    act(() => {
+      reviewTab.props.onPress();
+    });
+
+    const textNodes = findMockNodes(renderer!, "Text").map((node: any) =>
+      getNodeText(node.props.children),
+    );
+
+    expect(
+      textNodes.some((text) =>
+        text.includes("Effective optimizer: preparedness weight 19.1"),
+      ),
+    ).toBe(true);
+    expect(textNodes).toContain(
+      "Active constraints: single mode safety caps enforced, feasibility caps enforced.",
+    );
+    expect(
+      textNodes.some((text) =>
+        text.includes("Binding constraints: none | clamp pressure 100%"),
+      ),
+    ).toBe(true);
+    expect(
+      textNodes.some((text) =>
+        text.includes("Objective mix: goal 2.20, readiness 1.50, risk -0.70"),
+      ),
+    ).toBe(true);
   });
 });

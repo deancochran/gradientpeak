@@ -9,20 +9,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../ui/select";
-import { Switch } from "../../ui/switch";
 import { Text } from "../../ui/text";
 import { BoundedNumberInput } from "./inputs/BoundedNumberInput";
 import { DateField } from "./inputs/DateField";
 import { DurationInput } from "./inputs/DurationInput";
-import { IntegerStepper } from "./inputs/IntegerStepper";
+import { NumberSliderInput } from "./inputs/NumberSliderInput";
 import { PaceInput } from "./inputs/PaceInput";
 import { PercentSliderInput } from "./inputs/PercentSliderInput";
 import {
   Flag,
   Gauge,
   Heart,
-  Lock,
-  LockOpen,
   Pencil,
   Plus,
   ShieldAlert,
@@ -39,6 +36,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { CreationProjectionChart } from "./CreationProjectionChart";
+import { type CompositeWeightLocks } from "../../../lib/training-plan-form/calibration";
 import { parseNumberOrUndefined } from "../../../lib/training-plan-form/input-parsers";
 import type { BlockingIssue } from "../../../lib/training-plan-form/validation";
 import { validateTrainingPlanForm } from "../../../lib/training-plan-form/validation";
@@ -50,11 +48,13 @@ import type {
   CreationFeasibilitySafetySummary,
   NoHistoryProjectionMetadata,
   ProjectionChartPayload,
+  ReadinessDeltaDiagnostics,
   CreationProvenance,
   CreationRecentInfluenceAction,
+  TrainingPlanCalibrationConfig,
   CreationValueSource,
+  ProjectionControlV2,
 } from "@repo/core";
-import { getProjectionProfileDefaults } from "@repo/core";
 
 export type GoalTargetType =
   | "race_performance"
@@ -98,6 +98,11 @@ export interface TrainingPlanConfigFormData {
   postGoalRecoveryDays: number;
   maxWeeklyTssRampPct: number;
   maxCtlRampPerWeek: number;
+  startingCtlAssumption?: number;
+  startingFatigueState?: "fresh" | "normal" | "fatigued";
+  projectionControlV2: ProjectionControlV2;
+  calibration: TrainingPlanCalibrationConfig;
+  calibrationCompositeLocks: CompositeWeightLocks;
   constraintsSource: CreationValueSource;
   locks: CreationConfigLocks;
 }
@@ -112,6 +117,7 @@ export interface TrainingPlanConfigConflict {
 interface SinglePageFormProps {
   formData: TrainingPlanFormData;
   onFormDataChange: (data: TrainingPlanFormData) => void;
+  onResetGoals?: () => void;
   showCreationConfig?: boolean;
   projectionChart?: ProjectionChartPayload;
   configData: TrainingPlanConfigFormData;
@@ -119,10 +125,12 @@ interface SinglePageFormProps {
   feasibilitySafetySummary?: CreationFeasibilitySafetySummary;
   informationalConflicts?: string[];
   blockingIssues?: BlockingIssue[];
-  createDisabledReason?: string;
   isPreviewPending?: boolean;
+  readinessDeltaDiagnostics?: ReadinessDeltaDiagnostics;
   onConfigChange: (data: TrainingPlanConfigFormData) => void;
-  onResolveConflict: (code: string) => void;
+  onResetAvailability?: () => void;
+  onResetLimits?: () => void;
+  onResetProjectionAll?: () => void;
   errors?: Record<string, string>;
 }
 
@@ -131,12 +139,18 @@ interface EditingTargetRef {
   targetId: string;
 }
 
-type FormTabKey = "goals" | "availability" | "constraints" | "review";
+type FormTabKey =
+  | "goals"
+  | "availability"
+  | "constraints"
+  | "calibration"
+  | "review";
 
 const formTabs: Array<{ key: FormTabKey; label: string }> = [
   { key: "goals", label: "Goals" },
-  { key: "availability", label: "Avail" },
+  { key: "availability", label: "Availability" },
   { key: "constraints", label: "Limits" },
+  { key: "calibration", label: "Tuning" },
   { key: "review", label: "Review" },
 ];
 
@@ -233,95 +247,6 @@ const activityCategoryOptions: Array<{
   { value: "other", label: "Other" },
 ];
 
-const availabilityTemplateOptions: Array<{
-  value: CreationAvailabilityConfig["template"];
-  label: string;
-}> = [
-  { value: "low", label: "Low" },
-  { value: "moderate", label: "Moderate" },
-  { value: "high", label: "High" },
-  { value: "custom", label: "Custom" },
-];
-
-const optimizationProfileOptions: Array<{
-  value: TrainingPlanConfigFormData["optimizationProfile"];
-  label: string;
-}> = [
-  { value: "outcome_first", label: "Aggressive" },
-  { value: "balanced", label: "Balanced" },
-  { value: "sustainable", label: "Stable" },
-];
-
-const optimizationProfileHelperCopy: Record<
-  TrainingPlanConfigFormData["optimizationProfile"],
-  string
-> = {
-  outcome_first: "Prioritizes higher performance upside near goals.",
-  balanced: "Balances upside and week-to-week stability.",
-  sustainable: "Prioritizes consistency and durability.",
-};
-
-const optimizationProfileDetailCopy: Record<
-  TrainingPlanConfigFormData["optimizationProfile"],
-  string
-> = {
-  outcome_first:
-    "Uses goal-first optimization behavior with lower volatility penalties, while still respecting your hard weekly TSS and CTL caps.",
-  balanced:
-    "Uses moderate optimization penalties and moderate caps for a steady progression/recovery tradeoff.",
-  sustainable:
-    "Uses stability-first optimization behavior with stronger volatility and overload penalties for long-horizon durability.",
-};
-
-const optimizationProfileVisualPresets: Record<
-  TrainingPlanConfigFormData["optimizationProfile"],
-  {
-    postGoalRecoveryDays: number;
-    maxWeeklyTssRampPct: number;
-    maxCtlRampPerWeek: number;
-  }
-> = {
-  outcome_first: (() => {
-    const defaults = getProjectionProfileDefaults("outcome_first");
-    return {
-      postGoalRecoveryDays: defaults.post_goal_recovery_days,
-      maxWeeklyTssRampPct: defaults.max_weekly_tss_ramp_pct,
-      maxCtlRampPerWeek: defaults.max_ctl_ramp_per_week,
-    };
-  })(),
-  balanced: (() => {
-    const defaults = getProjectionProfileDefaults("balanced");
-    return {
-      postGoalRecoveryDays: defaults.post_goal_recovery_days,
-      maxWeeklyTssRampPct: defaults.max_weekly_tss_ramp_pct,
-      maxCtlRampPerWeek: defaults.max_ctl_ramp_per_week,
-    };
-  })(),
-  sustainable: (() => {
-    const defaults = getProjectionProfileDefaults("sustainable");
-    return {
-      postGoalRecoveryDays: defaults.post_goal_recovery_days,
-      maxWeeklyTssRampPct: defaults.max_weekly_tss_ramp_pct,
-      maxCtlRampPerWeek: defaults.max_ctl_ramp_per_week,
-    };
-  })(),
-};
-
-const postGoalRecoveryHelperCopy = "Adds easy days after each goal.";
-
-const postGoalRecoveryDetailCopy =
-  "Inserts a lower-load window after each goal before the next build. Fewer days increase momentum but raise risk of accumulated fatigue.";
-
-const maxWeeklyTssRampHelperCopy = "Caps weekly load increase.";
-
-const maxWeeklyTssRampDetailCopy =
-  "Hard cap on week-to-week load growth. Lower values improve durability; higher values can reach targets faster but increase strain.";
-
-const maxCtlRampHelperCopy = "Caps weekly CTL increase.";
-
-const maxCtlRampDetailCopy =
-  "Hard cap on weekly CTL gain. Lower values smooth fitness progression; higher values speed adaptation but can increase risk when sustained.";
-
 const weekDays: Array<CreationAvailabilityConfig["days"][number]["day"]> = [
   "monday",
   "tuesday",
@@ -331,6 +256,10 @@ const weekDays: Array<CreationAvailabilityConfig["days"][number]["day"]> = [
   "saturday",
   "sunday",
 ];
+
+const tabPanelClass = "gap-3 rounded-lg border border-border bg-card p-3";
+const sectionCardClass = "gap-2";
+const helperTextClass = "text-xs text-muted-foreground";
 
 const getWeekDayLabel = (day: string) =>
   day.slice(0, 1).toUpperCase() + day.slice(1, 3);
@@ -342,12 +271,6 @@ const formatMinutesAsTime = (minuteOfDay: number) => {
     .padStart(2, "0");
   const minutes = (clamped % 60).toString().padStart(2, "0");
   return `${hours}:${minutes}`;
-};
-
-const getSourceBadgeVariant = (source: CreationValueSource) => {
-  if (source === "user") return "default";
-  if (source === "suggested") return "secondary";
-  return "outline";
 };
 
 const getActivityCategoryLabel = (
@@ -423,7 +346,223 @@ const formatFeasibilityBandLabel = (
     | "aggressive"
     | "nearly_impossible"
     | "infeasible",
-) => band.replaceAll("_", " ");
+) => {
+  if (band === "feasible") return "On track";
+  if (band === "stretch") return "Challenging";
+  if (band === "aggressive") return "Very challenging";
+  if (band === "nearly_impossible") return "Unlikely";
+  return "Not realistic";
+};
+
+const formatReviewBandLabel = (band: string) => {
+  if (band === "on-track") return "On track";
+  return "Needs adjustment";
+};
+
+const formatSafetyBandLabel = (band: string) => {
+  if (band === "safe") return "Low risk";
+  if (band === "caution") return "Moderate risk";
+  return "High risk";
+};
+
+const formatDirectionLabel = (direction: string) => {
+  if (direction === "up") return "increased";
+  if (direction === "down") return "decreased";
+  return "stayed flat";
+};
+
+const formatDriverLabel = (driver: string) => {
+  if (driver === "fatigue") return "fatigue";
+  if (driver === "load") return "training load";
+  if (driver === "feasibility") return "time pressure";
+  return driver.replaceAll("_", " ");
+};
+
+const formatNoteLabel = (note: string) =>
+  note.replaceAll("_", " ").replaceAll("-", " ");
+
+const toRecord = (value: unknown): Record<string, unknown> | undefined => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value as Record<string, unknown>;
+};
+
+const readNumber = (value: unknown): number | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+
+  return value;
+};
+
+const readStringArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((item): item is string => typeof item === "string");
+};
+
+const formatNumericDiagnostics = (
+  record: Record<string, unknown> | undefined,
+  limit: number,
+) => {
+  if (!record) {
+    return "";
+  }
+
+  const parts = Object.entries(record)
+    .map(([key, value]) => {
+      const numeric = readNumber(value);
+      if (numeric === undefined) {
+        return null;
+      }
+
+      const formatted =
+        Math.abs(numeric) >= 100
+          ? numeric.toFixed(0)
+          : Math.abs(numeric) >= 10
+            ? numeric.toFixed(1)
+            : numeric.toFixed(2);
+      return `${formatNoteLabel(key)} ${formatted}`;
+    })
+    .filter((entry): entry is string => Boolean(entry));
+
+  return parts.slice(0, limit).join(", ");
+};
+
+const resolveProjectionReviewDiagnostics = (
+  projectionChart: ProjectionChartPayload | undefined,
+) => {
+  const base = toRecord(projectionChart?.projection_diagnostics);
+  const scoped =
+    toRecord(base?.continuous_projection_diagnostics) ??
+    toRecord(base?.continuous_projection) ??
+    toRecord(base?.continuous) ??
+    base;
+
+  const effectiveOptimizer =
+    toRecord(scoped?.effective_optimizer) ??
+    toRecord(scoped?.effectiveOptimizer) ??
+    toRecord(scoped?.effective_optimizer_values) ??
+    toRecord(scoped?.effectiveOptimizerValues) ??
+    toRecord(
+      toRecord(scoped?.effective_optimizer_config)?.weights ??
+        toRecord(scoped?.effectiveOptimizerConfig)?.weights,
+    ) ??
+    toRecord(scoped?.effective_optimizer_config) ??
+    toRecord(scoped?.effectiveOptimizerConfig);
+  const objectiveContributions =
+    toRecord(scoped?.objective_contributions) ??
+    toRecord(scoped?.objectiveContributions);
+  const objectiveComposition =
+    toRecord(scoped?.objective_composition) ??
+    toRecord(scoped?.objectiveComposition) ??
+    toRecord(objectiveContributions?.weighted_terms) ??
+    objectiveContributions;
+  const activeConstraintsRaw = readStringArray(scoped?.active_constraints);
+  const bindingConstraintsRaw = readStringArray(scoped?.binding_constraints);
+  const clampCounts =
+    toRecord(scoped?.clamp_counts) ?? toRecord(scoped?.clampCounts);
+  const sampledWeeks =
+    readNumber(objectiveContributions?.sampled_weeks) ??
+    readNumber(objectiveContributions?.sampledWeeks);
+  const derivedClampPressure =
+    clampCounts && sampledWeeks && sampledWeeks > 0
+      ? ((readNumber(clampCounts.tss) ?? 0) +
+          (readNumber(clampCounts.ctl) ?? 0)) /
+        sampledWeeks
+      : undefined;
+
+  return {
+    effectiveOptimizerSummary: formatNumericDiagnostics(effectiveOptimizer, 3),
+    objectiveSummary: formatNumericDiagnostics(objectiveComposition, 4),
+    activeConstraints: (activeConstraintsRaw.length > 0
+      ? activeConstraintsRaw
+      : readStringArray(scoped?.activeConstraints)
+    )
+      .slice(0, 2)
+      .map((value) => formatNoteLabel(value))
+      .join(", "),
+    bindingConstraints: (bindingConstraintsRaw.length > 0
+      ? bindingConstraintsRaw
+      : readStringArray(scoped?.bindingConstraints)
+    )
+      .slice(0, 2)
+      .map((value) => formatNoteLabel(value))
+      .join(", "),
+    clampPressure:
+      readNumber(scoped?.clamp_pressure) ??
+      readNumber(scoped?.clampPressure) ??
+      (derivedClampPressure !== undefined
+        ? Math.max(0, Math.min(1, derivedClampPressure))
+        : undefined),
+    curvatureContribution:
+      readNumber(scoped?.curvature_contribution) ??
+      readNumber(scoped?.curvatureContribution) ??
+      readNumber(objectiveComposition?.curvature_contribution) ??
+      readNumber(objectiveComposition?.curvatureContribution) ??
+      readNumber(objectiveComposition?.curvature) ??
+      readNumber(objectiveComposition?.curve),
+  };
+};
+
+const humanizeToken = (value: string) => {
+  const cleaned = value.replaceAll("_", " ").replaceAll("-", " ").trim();
+  if (!cleaned) return value;
+  return cleaned.slice(0, 1).toUpperCase() + cleaned.slice(1);
+};
+
+const formatContextAvailabilityLabel = (value: string) => {
+  const map: Record<string, string> = {
+    history_none: "no recent training history",
+    history_limited: "limited recent training history",
+    history_partial: "partial recent training history",
+    history_good: "solid recent training history",
+    history_full: "strong recent training history",
+  };
+  return map[value] ?? humanizeToken(value).toLowerCase();
+};
+
+const formatMarkerLabel = (value: string) => {
+  const map: Record<string, string> = {
+    consistency_low: "Low",
+    consistency_medium: "Moderate",
+    consistency_high: "High",
+    effort_low: "Low",
+    effort_medium: "Moderate",
+    effort_high: "High",
+    profile_low: "Low",
+    profile_medium: "Moderate",
+    profile_high: "High",
+  };
+  return map[value] ?? humanizeToken(value);
+};
+
+const formatCodeAsSentence = (code: string) => {
+  if (code.includes("history_none")) {
+    return "Little or no recent training history was found.";
+  }
+  if (code.includes("effort_high")) {
+    return "Recent efforts suggest you can handle a stronger training load.";
+  }
+  if (code.includes("effort_low")) {
+    return "Recent efforts suggest we should keep intensity conservative.";
+  }
+  if (code.includes("profile") && code.includes("missing")) {
+    return "Some profile data is missing, so defaults are more conservative.";
+  }
+  return `${humanizeToken(code)}.`;
+};
+
+const formatDriverText = (message: string, code?: string) => {
+  if (message && message.includes(" ")) return message;
+  if (message) return formatCodeAsSentence(message);
+  if (code) return formatCodeAsSentence(code);
+  return "Adjustment noted.";
+};
 
 const getAssessmentTargetKindLabel = (kind: string) => {
   switch (kind) {
@@ -469,6 +608,7 @@ const toNoHistoryConfidenceLabel = (
 export function SinglePageForm({
   formData,
   onFormDataChange,
+  onResetGoals,
   showCreationConfig = true,
   projectionChart,
   configData,
@@ -476,10 +616,12 @@ export function SinglePageForm({
   feasibilitySafetySummary,
   informationalConflicts = [],
   blockingIssues = [],
-  createDisabledReason,
   isPreviewPending = false,
+  readinessDeltaDiagnostics,
   onConfigChange,
-  onResolveConflict,
+  onResetAvailability,
+  onResetLimits,
+  onResetProjectionAll,
   errors = {},
 }: SinglePageFormProps) {
   const { height: windowHeight } = useWindowDimensions();
@@ -489,7 +631,6 @@ export function SinglePageForm({
   );
   const [editingTargetRef, setEditingTargetRef] =
     useState<EditingTargetRef | null>(null);
-  const [showContextDetails, setShowContextDetails] = useState(false);
   const [activeTab, setActiveTab] = useState<FormTabKey>("goals");
   const [touchedFieldPaths, setTouchedFieldPaths] = useState<string[]>([]);
 
@@ -506,6 +647,34 @@ export function SinglePageForm({
           hard_rest_days: [...configData.constraints.hard_rest_days],
         },
         locks: { ...configData.locks },
+        calibration: {
+          ...configData.calibration,
+          readiness_composite: {
+            ...configData.calibration.readiness_composite,
+          },
+          readiness_timeline: {
+            ...configData.calibration.readiness_timeline,
+          },
+          envelope_penalties: {
+            ...configData.calibration.envelope_penalties,
+          },
+          durability_penalties: {
+            ...configData.calibration.durability_penalties,
+          },
+          no_history: {
+            ...configData.calibration.no_history,
+          },
+          optimizer: {
+            ...configData.calibration.optimizer,
+          },
+        },
+        projectionControlV2: {
+          ...configData.projectionControlV2,
+          user_owned: {
+            ...configData.projectionControlV2.user_owned,
+          },
+        },
+        calibrationCompositeLocks: { ...configData.calibrationCompositeLocks },
       };
       updater(next);
       onConfigChange(next);
@@ -513,22 +682,13 @@ export function SinglePageForm({
     [configData, onConfigChange],
   );
 
-  const setFieldLock = useCallback(
-    (field: keyof CreationConfigLocks, locked: boolean) => {
-      updateConfig((draft) => {
-        draft.locks[field] = locked
-          ? { locked: true, locked_by: "user" }
-          : { locked: false };
-      });
-    },
-    [updateConfig],
-  );
-
   const selectedAvailabilityDays = configData.availabilityConfig.days.filter(
     (day) => day.windows.length > 0,
   ).length;
   const noHistoryMetadata = projectionChart?.no_history;
   const noHistoryReasons = noHistoryMetadata?.fitness_inference_reasons ?? [];
+  const projectionStartingState =
+    projectionChart?.constraint_summary?.starting_state;
   const noHistoryConfidenceLabel = noHistoryMetadata
     ? toNoHistoryConfidenceLabel(noHistoryMetadata.projection_floor_confidence)
     : "n/a";
@@ -769,6 +929,17 @@ export function SinglePageForm({
     return blockingCount + cautionDriverCount;
   }, [blockingIssues.length, feasibilitySafetySummary]);
   const goalAssessments = projectionChart?.goal_assessments ?? [];
+  const projectionReviewDiagnostics = useMemo(
+    () => resolveProjectionReviewDiagnostics(projectionChart),
+    [projectionChart],
+  );
+  const hasProjectionReviewDiagnostics =
+    projectionReviewDiagnostics.effectiveOptimizerSummary.length > 0 ||
+    projectionReviewDiagnostics.objectiveSummary.length > 0 ||
+    projectionReviewDiagnostics.activeConstraints.length > 0 ||
+    projectionReviewDiagnostics.bindingConstraints.length > 0 ||
+    projectionReviewDiagnostics.clampPressure !== undefined ||
+    projectionReviewDiagnostics.curvatureContribution !== undefined;
   const goalMarkersById = useMemo(
     () =>
       new Map(
@@ -837,46 +1008,43 @@ export function SinglePageForm({
           <>
             {activeTab === "review" && (
               <View className="gap-3 rounded-lg border border-border bg-card p-3">
-                <View className="flex-row items-start justify-between gap-3">
-                  <View className="flex-1 gap-1">
-                    <Text className="font-semibold">
-                      Suggested setup context
-                    </Text>
-                    <Text className="text-xs text-muted-foreground">
-                      {contextSummary
-                        ? `Based on ${contextSummary.history_availability_state} history and signal quality ${(contextSummary.signal_quality * 100).toFixed(0)}%`
-                        : isPreviewPending
-                          ? "Loading profile-aware defaults..."
-                          : "Using conservative defaults until profile-aware suggestions are available."}
-                    </Text>
-                  </View>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onPress={() => setShowContextDetails((prev) => !prev)}
-                  >
-                    <Text>{showContextDetails ? "Hide why" : "View why"}</Text>
-                  </Button>
+                <View className="gap-1">
+                  <Text className="font-semibold">Suggested setup context</Text>
+                  <Text className="text-xs text-muted-foreground">
+                    {contextSummary
+                      ? `Based on ${formatContextAvailabilityLabel(contextSummary.history_availability_state)} and signal quality ${(contextSummary.signal_quality * 100).toFixed(0)}%`
+                      : isPreviewPending
+                        ? "Loading profile-aware defaults..."
+                        : "Using conservative defaults until profile-aware suggestions are available."}
+                  </Text>
                 </View>
-                {showContextDetails && contextSummary && (
+
+                {contextSummary && (
                   <View className="gap-1 rounded-md bg-muted/40 p-2">
                     <Text className="text-xs text-muted-foreground">
-                      Consistency: {contextSummary.recent_consistency_marker}
+                      Consistency:{" "}
+                      {formatMarkerLabel(
+                        contextSummary.recent_consistency_marker,
+                      )}
                     </Text>
                     <Text className="text-xs text-muted-foreground">
                       Effort confidence:{" "}
-                      {contextSummary.effort_confidence_marker}
+                      {formatMarkerLabel(
+                        contextSummary.effort_confidence_marker,
+                      )}
                     </Text>
                     <Text className="text-xs text-muted-foreground">
                       Profile completeness:{" "}
-                      {contextSummary.profile_metric_completeness_marker}
+                      {formatMarkerLabel(
+                        contextSummary.profile_metric_completeness_marker,
+                      )}
                     </Text>
                     {contextSummary.rationale_codes.slice(0, 4).map((code) => (
                       <Text
                         key={code}
                         className="text-xs text-muted-foreground"
                       >
-                        - {code}
+                        - {formatCodeAsSentence(code)}
                       </Text>
                     ))}
                   </View>
@@ -903,24 +1071,27 @@ export function SinglePageForm({
                 </Text>
                 {noHistoryReasons.slice(0, 2).map((reason) => (
                   <Text key={reason} className="text-xs text-muted-foreground">
-                    - {reason}
+                    - {formatCodeAsSentence(reason)}
                   </Text>
                 ))}
               </View>
             ) : null}
 
             {activeTab === "availability" && (
-              <View className="gap-3 rounded-lg border border-border bg-card p-3">
+              <View className={tabPanelClass}>
                 <View className="flex-row items-center justify-between">
                   <Text className="font-semibold">Availability</Text>
-                  <Badge
-                    variant={getSourceBadgeVariant(
-                      configData.availabilityProvenance.source,
-                    )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onPress={() => onResetAvailability?.()}
                   >
-                    <Text>{configData.availabilityProvenance.source}</Text>
-                  </Badge>
+                    <Text>Reset</Text>
+                  </Button>
                 </View>
+                <Text className={helperTextClass}>
+                  Set your plan start date and weekly availability.
+                </Text>
 
                 <DateField
                   id="plan-start-date"
@@ -938,70 +1109,6 @@ export function SinglePageForm({
                   error={getError("planStartDate")}
                   accessibilityHint="Sets your training plan start date. Format yyyy-mm-dd"
                 />
-
-                <View className="flex-row items-center justify-between">
-                  <Text className="text-sm">Lock availability</Text>
-                  <View className="flex-row items-center gap-2">
-                    {configData.locks.availability_config.locked ? (
-                      <Lock size={14} className="text-primary" />
-                    ) : (
-                      <LockOpen size={14} className="text-muted-foreground" />
-                    )}
-                    <Switch
-                      checked={configData.locks.availability_config.locked}
-                      onCheckedChange={(value) =>
-                        setFieldLock("availability_config", Boolean(value))
-                      }
-                    />
-                  </View>
-                </View>
-
-                <View className="gap-2">
-                  <Label nativeID="availability-template">
-                    <Text className="text-sm font-medium">Template</Text>
-                  </Label>
-                  <Select
-                    value={{
-                      value: configData.availabilityConfig.template,
-                      label:
-                        availabilityTemplateOptions.find(
-                          (option) =>
-                            option.value ===
-                            configData.availabilityConfig.template,
-                        )?.label ?? "Moderate",
-                    }}
-                    onValueChange={(option) => {
-                      if (!option?.value) return;
-                      updateConfig((draft) => {
-                        draft.availabilityConfig = {
-                          ...draft.availabilityConfig,
-                          template:
-                            option.value as CreationAvailabilityConfig["template"],
-                        };
-                        draft.availabilityProvenance = {
-                          ...draft.availabilityProvenance,
-                          source: "user",
-                          updated_at: new Date().toISOString(),
-                        };
-                      });
-                    }}
-                  >
-                    <SelectTrigger aria-labelledby="availability-template">
-                      <SelectValue placeholder="Select template" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availabilityTemplateOptions.map((option) => (
-                        <SelectItem
-                          key={option.value}
-                          label={option.label}
-                          value={option.value}
-                        >
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </View>
 
                 <View className="gap-1">
                   <Text className="text-xs text-muted-foreground">
@@ -1064,118 +1171,70 @@ export function SinglePageForm({
             )}
 
             {activeTab === "constraints" && (
-              <View className="gap-3 rounded-lg border border-border bg-card p-3">
+              <View className={tabPanelClass}>
                 <View className="flex-row items-center justify-between">
                   <Text className="font-semibold">Limits</Text>
-                  <Badge
-                    variant={getSourceBadgeVariant(
-                      configData.constraintsSource,
-                    )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onPress={() => onResetLimits?.()}
                   >
-                    <Text>{configData.constraintsSource}</Text>
-                  </Badge>
+                    <Text>Reset</Text>
+                  </Button>
                 </View>
-
-                <View className="gap-2">
-                  <View className="flex-row items-center justify-between">
-                    <Text className="text-sm">Optimization style</Text>
-                    <Switch
-                      checked={configData.locks.optimization_profile.locked}
-                      onCheckedChange={(value) =>
-                        setFieldLock("optimization_profile", Boolean(value))
-                      }
-                    />
-                  </View>
-                  <Select
-                    value={{
-                      value: configData.optimizationProfile,
-                      label:
-                        optimizationProfileOptions.find(
-                          (option) =>
-                            option.value === configData.optimizationProfile,
-                        )?.label ?? "Balanced",
-                    }}
-                    onValueChange={(option) => {
-                      if (!option?.value) return;
+                <View className={sectionCardClass}>
+                  <NumberSliderInput
+                    id="starting-ctl-assumption"
+                    label="Initial CTL (fitness)"
+                    value={
+                      configData.startingCtlAssumption ??
+                      projectionStartingState?.starting_ctl ??
+                      0
+                    }
+                    min={0}
+                    max={250}
+                    step={0.5}
+                    decimals={1}
+                    unitLabel="CTL"
+                    helperText="Higher values raise your starting fitness line before progression is projected."
+                    onChange={(value) => {
                       updateConfig((draft) => {
-                        const nextProfile =
-                          option.value as TrainingPlanConfigFormData["optimizationProfile"];
-                        draft.optimizationProfile = nextProfile;
-
-                        const preset =
-                          optimizationProfileVisualPresets[nextProfile];
-                        if (!draft.locks.post_goal_recovery_days.locked) {
-                          draft.postGoalRecoveryDays =
-                            preset.postGoalRecoveryDays;
-                        }
-                        if (!draft.locks.max_weekly_tss_ramp_pct.locked) {
-                          draft.maxWeeklyTssRampPct =
-                            preset.maxWeeklyTssRampPct;
-                        }
-                        if (!draft.locks.max_ctl_ramp_per_week.locked) {
-                          draft.maxCtlRampPerWeek = preset.maxCtlRampPerWeek;
-                        }
+                        draft.startingCtlAssumption = Number(value.toFixed(1));
                       });
                     }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choose profile" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {optimizationProfileOptions.map((option) => (
-                        <SelectItem
-                          key={option.value}
-                          label={option.label}
-                          value={option.value}
-                        >
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    showCurrentValueInRange={false}
+                  />
                 </View>
 
-                <View className="gap-2">
-                  <View className="flex-row items-center justify-between">
-                    <Text className="text-sm">Recovery days after goal</Text>
-                    <Switch
-                      checked={configData.locks.post_goal_recovery_days.locked}
-                      onCheckedChange={(value) =>
-                        setFieldLock("post_goal_recovery_days", Boolean(value))
-                      }
-                    />
-                  </View>
-                  <IntegerStepper
+                <View className={sectionCardClass}>
+                  <Text className="text-sm">Recovery days after goal</Text>
+                  <NumberSliderInput
                     id="post-goal-recovery-days"
                     value={configData.postGoalRecoveryDays}
                     min={0}
                     max={28}
-                    onChange={(nextValue) => {
+                    decimals={0}
+                    step={1}
+                    unitLabel="days"
+                    helperText="Adds easy days between goal peaks."
+                    onChange={(value) => {
                       updateConfig((draft) => {
-                        draft.postGoalRecoveryDays = nextValue;
+                        draft.postGoalRecoveryDays = value;
                       });
                     }}
                   />
                 </View>
 
-                <View className="gap-2">
-                  <View className="flex-row items-center justify-between">
-                    <Text className="text-sm">
-                      Weekly load increase cap (%)
-                    </Text>
-                    <Switch
-                      checked={configData.locks.max_weekly_tss_ramp_pct.locked}
-                      onCheckedChange={(value) =>
-                        setFieldLock("max_weekly_tss_ramp_pct", Boolean(value))
-                      }
-                    />
-                  </View>
+                <View className={sectionCardClass}>
+                  <Text className="text-sm">Weekly load increase cap (%)</Text>
                   <PercentSliderInput
                     id="max-weekly-load-ramp"
                     value={configData.maxWeeklyTssRampPct}
                     min={0}
-                    max={20}
+                    max={40}
                     step={0.25}
+                    showNumericInput={false}
+                    helperText="Caps weekly load growth."
                     onChange={(nextValue) => {
                       updateConfig((draft) => {
                         draft.maxWeeklyTssRampPct = nextValue;
@@ -1184,58 +1243,188 @@ export function SinglePageForm({
                   />
                 </View>
 
-                <View className="gap-2">
-                  <View className="flex-row items-center justify-between">
-                    <Text className="text-sm">Weekly fitness increase cap</Text>
-                    <Switch
-                      checked={configData.locks.max_ctl_ramp_per_week.locked}
-                      onCheckedChange={(value) =>
-                        setFieldLock("max_ctl_ramp_per_week", Boolean(value))
-                      }
-                    />
-                  </View>
-                  <BoundedNumberInput
+                <View className={sectionCardClass}>
+                  <Text className="text-sm">Weekly fitness increase cap</Text>
+                  <NumberSliderInput
                     id="max-weekly-ctl-ramp"
                     label="Cap"
-                    value={String(configData.maxCtlRampPerWeek)}
+                    value={configData.maxCtlRampPerWeek}
                     min={0}
-                    max={8}
+                    max={12}
+                    step={0.1}
                     decimals={2}
                     unitLabel="CTL/wk"
+                    helperText="Caps weekly CTL growth."
                     onChange={(value) => {
-                      const parsed = parseNumberOrUndefined(value);
-                      if (parsed === undefined) {
-                        return;
-                      }
                       updateConfig((draft) => {
                         draft.maxCtlRampPerWeek = Math.max(
                           0,
-                          Math.min(8, Number(parsed.toFixed(2))),
+                          Math.min(12, Number(value.toFixed(2))),
                         );
                       });
                     }}
                   />
                 </View>
+              </View>
+            )}
 
-                {informationalConflicts.length > 0 && (
-                  <View className="gap-1 rounded-md border border-amber-300 bg-amber-100/40 p-2">
-                    <Text className="text-xs font-medium text-amber-800">
-                      Locked field notices
-                    </Text>
-                    {informationalConflicts.map((conflict) => (
-                      <Text key={conflict} className="text-xs text-amber-800">
-                        - {conflict}
-                      </Text>
-                    ))}
-                  </View>
-                )}
+            {activeTab === "calibration" && (
+              <View className={tabPanelClass}>
+                <View className="flex-row items-center justify-between">
+                  <Text className="font-semibold">Tuning</Text>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onPress={() => onResetProjectionAll?.()}
+                  >
+                    <Text>Reset</Text>
+                  </Button>
+                </View>
+                <View className={sectionCardClass}>
+                  <NumberSliderInput
+                    id="proj-ambition"
+                    label="Ambition"
+                    value={configData.projectionControlV2.ambition}
+                    min={0}
+                    max={1}
+                    decimals={2}
+                    step={0.01}
+                    helperText="Higher values push for bigger readiness gains."
+                    onChange={(value) => {
+                      updateConfig((draft) => {
+                        draft.projectionControlV2.ambition = value;
+                        draft.projectionControlV2.user_owned.ambition = true;
+                      });
+                    }}
+                  />
+                  <NumberSliderInput
+                    id="proj-risk-tolerance"
+                    label="Risk tolerance"
+                    value={configData.projectionControlV2.risk_tolerance}
+                    min={0}
+                    max={1}
+                    decimals={2}
+                    step={0.01}
+                    helperText="Higher values allow riskier progression choices."
+                    onChange={(value) => {
+                      updateConfig((draft) => {
+                        draft.projectionControlV2.risk_tolerance = value;
+                        draft.projectionControlV2.user_owned.risk_tolerance = true;
+                      });
+                    }}
+                  />
+                  <NumberSliderInput
+                    id="proj-curvature"
+                    label="Curvature"
+                    value={configData.projectionControlV2.curvature}
+                    min={-1}
+                    max={1}
+                    decimals={2}
+                    step={0.05}
+                    helperText="Negative front-loads. Positive back-loads."
+                    onChange={(value) => {
+                      updateConfig((draft) => {
+                        draft.projectionControlV2.curvature = value;
+                        draft.projectionControlV2.user_owned.curvature = true;
+                      });
+                    }}
+                  />
+                  <NumberSliderInput
+                    id="proj-curvature-strength"
+                    label="Curvature strength"
+                    value={configData.projectionControlV2.curvature_strength}
+                    min={0}
+                    max={1}
+                    decimals={2}
+                    step={0.01}
+                    helperText="Controls how strongly curvature preference is enforced."
+                    onChange={(value) => {
+                      updateConfig((draft) => {
+                        draft.projectionControlV2.curvature_strength = value;
+                        draft.projectionControlV2.user_owned.curvature_strength = true;
+                      });
+                    }}
+                  />
+                </View>
+                <View className={sectionCardClass}>
+                  <NumberSliderInput
+                    id="cal-preparedness-weight"
+                    label="Push fitness multiplier"
+                    value={configData.calibration.optimizer.preparedness_weight}
+                    min={0}
+                    max={30}
+                    decimals={1}
+                    step={0.1}
+                    unitLabel="x"
+                    helperText="Higher values prioritize readiness gains more strongly."
+                    onChange={(value) => {
+                      updateConfig((draft) => {
+                        draft.calibration.optimizer.preparedness_weight = value;
+                      });
+                    }}
+                  />
+                  <NumberSliderInput
+                    id="cal-risk-penalty"
+                    label="Overload risk multiplier"
+                    value={configData.calibration.optimizer.risk_penalty_weight}
+                    min={0}
+                    max={2}
+                    decimals={2}
+                    step={0.05}
+                    unitLabel="x"
+                    helperText="Higher values penalize fatigue-risky progression more."
+                    onChange={(value) => {
+                      updateConfig((draft) => {
+                        draft.calibration.optimizer.risk_penalty_weight = value;
+                      });
+                    }}
+                  />
+                  <NumberSliderInput
+                    id="cal-volatility-penalty"
+                    label="Volatility multiplier"
+                    value={
+                      configData.calibration.optimizer.volatility_penalty_weight
+                    }
+                    min={0}
+                    max={2}
+                    decimals={2}
+                    step={0.05}
+                    unitLabel="x"
+                    helperText="Higher values reduce week-to-week load swings."
+                    onChange={(value) => {
+                      updateConfig((draft) => {
+                        draft.calibration.optimizer.volatility_penalty_weight =
+                          value;
+                      });
+                    }}
+                  />
+                  <NumberSliderInput
+                    id="cal-churn-penalty"
+                    label="Schedule stability multiplier"
+                    value={
+                      configData.calibration.optimizer.churn_penalty_weight
+                    }
+                    min={0}
+                    max={2}
+                    decimals={2}
+                    step={0.05}
+                    unitLabel="x"
+                    helperText="Higher values reduce frequent plan rewrites."
+                    onChange={(value) => {
+                      updateConfig((draft) => {
+                        draft.calibration.optimizer.churn_penalty_weight =
+                          value;
+                      });
+                    }}
+                  />
+                </View>
               </View>
             )}
 
             {activeTab === "review" && (
-              <View className="gap-2 rounded-lg border border-border bg-card p-3">
+              <View className={tabPanelClass}>
                 <View className="flex-row items-center justify-between">
-                  <Text className="font-semibold">Feasibility and safety</Text>
+                  <Text className="font-semibold">Plan check</Text>
                   <View className="flex-row items-center gap-2">
                     <View
                       className="flex-row items-center gap-1 rounded-full border border-border px-2 py-1"
@@ -1254,6 +1443,10 @@ export function SinglePageForm({
                     )}
                   </View>
                 </View>
+                <Text className={helperTextClass}>
+                  Optional guidance only. This check explains plan fit, risk,
+                  and trend changes in plain language. It never blocks create.
+                </Text>
                 {feasibilitySafetySummary ? (
                   <>
                     <View className="flex-row gap-2">
@@ -1265,7 +1458,12 @@ export function SinglePageForm({
                             : "secondary"
                         }
                       >
-                        <Text>{feasibilitySafetySummary.feasibility_band}</Text>
+                        <Text>
+                          Plan fit:{" "}
+                          {formatReviewBandLabel(
+                            feasibilitySafetySummary.feasibility_band,
+                          )}
+                        </Text>
                       </Badge>
                       <Badge
                         variant={
@@ -1276,7 +1474,12 @@ export function SinglePageForm({
                               : "destructive"
                         }
                       >
-                        <Text>{feasibilitySafetySummary.safety_band}</Text>
+                        <Text>
+                          Risk:{" "}
+                          {formatSafetyBandLabel(
+                            feasibilitySafetySummary.safety_band,
+                          )}
+                        </Text>
                       </Badge>
                     </View>
                     {feasibilitySafetySummary.top_drivers
@@ -1286,23 +1489,179 @@ export function SinglePageForm({
                           key={driver.code}
                           className="text-xs text-muted-foreground"
                         >
-                          - {driver.message}
+                          - {formatDriverText(driver.message, driver.code)}
                         </Text>
                       ))}
+                    {hasProjectionReviewDiagnostics ? (
+                      <>
+                        {projectionReviewDiagnostics.effectiveOptimizerSummary ? (
+                          <Text className="text-xs text-muted-foreground">
+                            Effective optimizer:{" "}
+                            {
+                              projectionReviewDiagnostics.effectiveOptimizerSummary
+                            }
+                            .
+                          </Text>
+                        ) : null}
+                        {projectionReviewDiagnostics.activeConstraints ? (
+                          <Text className="text-xs text-muted-foreground">
+                            Active constraints:{" "}
+                            {projectionReviewDiagnostics.activeConstraints}.
+                          </Text>
+                        ) : null}
+                        {projectionReviewDiagnostics.bindingConstraints ||
+                        projectionReviewDiagnostics.clampPressure !==
+                          undefined ? (
+                          <Text className="text-xs text-muted-foreground">
+                            Binding constraints:{" "}
+                            {projectionReviewDiagnostics.bindingConstraints ||
+                              "none"}
+                            {projectionReviewDiagnostics.clampPressure !==
+                            undefined
+                              ? ` | clamp pressure ${Math.round(
+                                  Math.max(
+                                    0,
+                                    Math.min(
+                                      100,
+                                      projectionReviewDiagnostics.clampPressure *
+                                        100,
+                                    ),
+                                  ),
+                                )}%`
+                              : ""}
+                            .
+                          </Text>
+                        ) : null}
+                        {projectionReviewDiagnostics.objectiveSummary ? (
+                          <Text className="text-xs text-muted-foreground">
+                            Objective mix:{" "}
+                            {projectionReviewDiagnostics.objectiveSummary}
+                            {projectionReviewDiagnostics.curvatureContribution !==
+                            undefined
+                              ? ` | curvature ${projectionReviewDiagnostics.curvatureContribution.toFixed(2)}`
+                              : ""}
+                            .
+                          </Text>
+                        ) : projectionReviewDiagnostics.curvatureContribution !==
+                          undefined ? (
+                          <Text className="text-xs text-muted-foreground">
+                            Curvature contribution:{" "}
+                            {projectionReviewDiagnostics.curvatureContribution.toFixed(
+                              2,
+                            )}
+                            .
+                          </Text>
+                        ) : null}
+                      </>
+                    ) : null}
+                    <Text className="text-xs text-muted-foreground">
+                      The planner always prefers a safer progression that still
+                      moves you toward your goals.
+                    </Text>
+                    <Text className="text-xs text-muted-foreground">
+                      If your timeline is too tight, it shows the best safe
+                      version instead of blocking creation.
+                    </Text>
                   </>
                 ) : (
                   <Text className="text-xs text-muted-foreground">
-                    Safety summary appears here as your setup is completed.
+                    Your plan check appears here once enough setup details are
+                    available.
                   </Text>
                 )}
               </View>
             )}
 
-            {activeTab === "review" && goalAssessments.length > 0 && (
-              <View className="gap-2 rounded-lg border border-border bg-card p-3">
+            {activeTab === "review" && readinessDeltaDiagnostics ? (
+              <View className={tabPanelClass}>
                 <Text className="font-semibold">
-                  Per-goal feasibility and target satisfaction
+                  What changed most recently
                 </Text>
+                <Text className="text-xs text-muted-foreground">
+                  Readiness{" "}
+                  {formatDirectionLabel(
+                    readinessDeltaDiagnostics.readiness.direction,
+                  )}{" "}
+                  by{" "}
+                  {Math.abs(readinessDeltaDiagnostics.readiness.delta).toFixed(
+                    2,
+                  )}{" "}
+                  points ({" "}
+                  {readinessDeltaDiagnostics.readiness.previous_score.toFixed(
+                    2,
+                  )}
+                  {" -> "}
+                  {readinessDeltaDiagnostics.readiness.current_score.toFixed(2)}
+                  ).
+                </Text>
+                <Text className="text-xs text-muted-foreground">
+                  Main reason:{" "}
+                  {formatDriverLabel(readinessDeltaDiagnostics.dominant_driver)}
+                  .
+                </Text>
+                <Text className="text-xs text-muted-foreground">
+                  Training load{" "}
+                  {formatDirectionLabel(
+                    readinessDeltaDiagnostics.impacts.load.direction,
+                  )}{" "}
+                  by{" "}
+                  {Math.abs(
+                    readinessDeltaDiagnostics.impacts.load.delta,
+                  ).toFixed(2)}{" "}
+                  ({" "}
+                  {readinessDeltaDiagnostics.impacts.load.previous_value.toFixed(
+                    2,
+                  )}
+                  {" -> "}
+                  {readinessDeltaDiagnostics.impacts.load.current_value.toFixed(
+                    2,
+                  )}
+                  ).
+                </Text>
+                <Text className="text-xs text-muted-foreground">
+                  Fatigue{" "}
+                  {formatDirectionLabel(
+                    readinessDeltaDiagnostics.impacts.fatigue.direction,
+                  )}{" "}
+                  by{" "}
+                  {Math.abs(
+                    readinessDeltaDiagnostics.impacts.fatigue.delta,
+                  ).toFixed(2)}{" "}
+                  ({" "}
+                  {readinessDeltaDiagnostics.impacts.fatigue.previous_value.toFixed(
+                    2,
+                  )}
+                  {" -> "}
+                  {readinessDeltaDiagnostics.impacts.fatigue.current_value.toFixed(
+                    2,
+                  )}
+                  ).
+                </Text>
+                <Text className="text-xs text-muted-foreground">
+                  Timeline pressure{" "}
+                  {formatDirectionLabel(
+                    readinessDeltaDiagnostics.impacts.feasibility.direction,
+                  )}{" "}
+                  by{" "}
+                  {Math.abs(
+                    readinessDeltaDiagnostics.impacts.feasibility.delta,
+                  ).toFixed(2)}{" "}
+                  ({" "}
+                  {readinessDeltaDiagnostics.impacts.feasibility.previous_value.toFixed(
+                    2,
+                  )}
+                  {" -> "}
+                  {readinessDeltaDiagnostics.impacts.feasibility.current_value.toFixed(
+                    2,
+                  )}
+                  ).
+                </Text>
+              </View>
+            ) : null}
+
+            {activeTab === "review" && goalAssessments.length > 0 && (
+              <View className={tabPanelClass}>
+                <Text className="font-semibold">Goal-by-goal check</Text>
                 {goalAssessments.map((assessment, index) => {
                   const marker = goalMarkersById.get(assessment.goal_id);
                   const title = marker?.name?.trim()
@@ -1325,17 +1684,17 @@ export function SinglePageForm({
                         </Badge>
                       </View>
                       <Text className="text-xs text-muted-foreground">
-                        Priority: {assessment.priority}
+                        Priority {assessment.priority}
                       </Text>
                       {assessment.target_scores.map((target, targetIndex) => (
                         <Text
                           key={`${assessment.goal_id}-${target.kind}-${targetIndex}`}
                           className="text-xs text-muted-foreground"
                         >
-                          {getAssessmentTargetKindLabel(target.kind)}:{" "}
-                          {Math.round(target.score_0_100)} / 100
+                          {getAssessmentTargetKindLabel(target.kind)}{" "}
+                          confidence: {Math.round(target.score_0_100)} / 100
                           {target.unmet_gap !== undefined
-                            ? ` | unmet gap ${Number(target.unmet_gap.toFixed(2))}`
+                            ? ` | shortfall ${Number(target.unmet_gap.toFixed(2))}`
                             : ""}
                         </Text>
                       ))}
@@ -1344,24 +1703,12 @@ export function SinglePageForm({
                           key={`${assessment.goal_id}-${note}`}
                           className="text-xs text-muted-foreground"
                         >
-                          conflict: {note}
+                          Plan note: {formatNoteLabel(note)}
                         </Text>
                       ))}
                     </View>
                   );
                 })}
-              </View>
-            )}
-
-            {activeTab === "review" && createDisabledReason && (
-              <View
-                className={`gap-1 rounded-lg p-3 ${blockingIssues.length > 0 ? "border border-amber-300 bg-amber-100/40" : "border border-destructive/40 bg-destructive/5"}`}
-              >
-                <Text
-                  className={`text-xs font-medium ${blockingIssues.length > 0 ? "text-amber-800" : "text-destructive"}`}
-                >
-                  {createDisabledReason}
-                </Text>
               </View>
             )}
 
@@ -1381,21 +1728,6 @@ export function SinglePageForm({
                     <Text className="text-sm text-amber-800">
                       {conflict.message}
                     </Text>
-                    {conflict.suggestions.map((suggestion) => (
-                      <Text
-                        key={`${conflict.code}-${suggestion}`}
-                        className="text-xs text-amber-800"
-                      >
-                        - {suggestion}
-                      </Text>
-                    ))}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onPress={() => onResolveConflict(conflict.code)}
-                    >
-                      <Text>Apply suggested fix</Text>
-                    </Button>
                   </View>
                 ))}
               </View>
@@ -1403,12 +1735,26 @@ export function SinglePageForm({
           </>
         )}
 
-        {activeTab === "goals" && errors.goals && (
-          <Text className="text-xs text-destructive">{errors.goals}</Text>
-        )}
-
         {activeTab === "goals" && (
-          <View className="gap-2">
+          <View className={tabPanelClass}>
+            <View className="flex-row items-center justify-between">
+              <Text className="font-semibold">Goals</Text>
+              <Button
+                variant="outline"
+                size="sm"
+                onPress={() => onResetGoals?.()}
+              >
+                <Text>Reset</Text>
+              </Button>
+            </View>
+            <Text className={helperTextClass}>
+              Add one or more goals and mix race, pace, power, or heart-rate
+              targets.
+            </Text>
+            {errors.goals ? (
+              <Text className="text-xs text-destructive">{errors.goals}</Text>
+            ) : null}
+
             <View className="relative">
               <ScrollView
                 horizontal
@@ -1460,178 +1806,190 @@ export function SinglePageForm({
                 </Button>
               </View>
             </View>
-          </View>
-        )}
 
-        {activeTab === "goals" && activeGoal && activeGoalIndex >= 0 && (
-          <View className="gap-2 rounded-lg border border-border bg-muted/20 p-2.5">
-            <View className="flex-row items-center gap-2">
-              <View className="flex-1 gap-1.5">
-                <Input
-                  aria-label="Goal name"
-                  placeholder="Goal name"
-                  value={activeGoal.name}
-                  onChangeText={(value) =>
-                    updateGoal(activeGoal.id, { name: value })
-                  }
-                  maxLength={100}
-                />
-                {getError(`goals.${activeGoalIndex}.name`) && (
-                  <Text className="text-xs text-destructive">
-                    {getError(`goals.${activeGoalIndex}.name`)}
-                  </Text>
-                )}
-              </View>
-              <Button
-                variant="outline"
-                size="icon"
-                onPress={() => removeGoal(activeGoal.id)}
-                disabled={formData.goals.length <= 1 || activeGoalIndex === 0}
-                accessibilityLabel="Delete goal"
-              >
-                <Trash2 size={16} className="text-muted-foreground" />
-              </Button>
-            </View>
-
-            <DateField
-              id={`target-date-${activeGoal.id}`}
-              label="Target date"
-              value={activeGoal.targetDate}
-              onChange={(nextDate) => {
-                if (!nextDate) {
-                  return;
-                }
-                markFieldTouched(`goals.${activeGoalIndex}.targetDate`);
-                updateGoal(activeGoal.id, { targetDate: nextDate });
-              }}
-              required
-              minimumDate={new Date()}
-              error={getError(`goals.${activeGoalIndex}.targetDate`)}
-              accessibilityHint="Sets goal target date. Format yyyy-mm-dd"
-            />
-
-            <View className="gap-2 rounded-md border border-border bg-background/70 p-2">
-              <View className="flex-row items-center justify-between">
-                <Text className="text-xs text-muted-foreground">Targets</Text>
-                <View className="flex-row gap-1.5">
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onPress={() =>
-                      addTargetWithType(activeGoal.id, "race_performance")
-                    }
-                    accessibilityLabel="Add race target"
-                  >
-                    <Flag size={14} className="text-muted-foreground" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onPress={() =>
-                      addTargetWithType(activeGoal.id, "pace_threshold")
-                    }
-                    accessibilityLabel="Add pace target"
-                  >
-                    <Gauge size={14} className="text-muted-foreground" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onPress={() =>
-                      addTargetWithType(activeGoal.id, "power_threshold")
-                    }
-                    accessibilityLabel="Add power target"
-                  >
-                    <Zap size={14} className="text-muted-foreground" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onPress={() =>
-                      addTargetWithType(activeGoal.id, "hr_threshold")
-                    }
-                    accessibilityLabel="Add heart-rate target"
-                  >
-                    <Heart size={14} className="text-muted-foreground" />
-                  </Button>
-                </View>
-              </View>
-
-              {activeGoal.targets.map((target, targetIndex) => {
-                const rowError = getTargetRowError(
-                  activeGoalIndex,
-                  targetIndex,
-                );
-                const icon =
-                  target.targetType === "race_performance" ? (
-                    <Flag size={13} className="text-muted-foreground" />
-                  ) : target.targetType === "pace_threshold" ? (
-                    <Gauge size={13} className="text-muted-foreground" />
-                  ) : target.targetType === "power_threshold" ? (
-                    <Zap size={13} className="text-muted-foreground" />
-                  ) : (
-                    <Heart size={13} className="text-muted-foreground" />
-                  );
-
-                return (
-                  <View
-                    key={target.id}
-                    className="gap-1 rounded-md border border-border bg-background/80 px-2 py-2"
-                  >
-                    <View className="flex-row items-center gap-2">
-                      {icon}
-                      <Pressable
-                        onPress={() =>
-                          setEditingTargetRef({
-                            goalId: activeGoal.id,
-                            targetId: target.id,
-                          })
-                        }
-                        className="flex-1 gap-0.5"
-                      >
-                        <Text className="text-xs font-medium">
-                          {getTargetTypeLabel(target.targetType)}
-                        </Text>
-                        <Text
-                          className="text-xs text-muted-foreground"
-                          numberOfLines={1}
-                        >
-                          {getTargetSummary(target)}
-                        </Text>
-                      </Pressable>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onPress={() =>
-                          setEditingTargetRef({
-                            goalId: activeGoal.id,
-                            targetId: target.id,
-                          })
-                        }
-                        accessibilityLabel="Edit target"
-                      >
-                        <Pencil size={14} className="text-muted-foreground" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onPress={() => removeTarget(activeGoal.id, target.id)}
-                        disabled={activeGoal.targets.length <= 1}
-                        accessibilityLabel="Delete target"
-                      >
-                        <Trash2 size={14} className="text-muted-foreground" />
-                      </Button>
-                    </View>
-
-                    {rowError && (
+            {activeGoal && activeGoalIndex >= 0 ? (
+              <View className="gap-2 rounded-md border border-border bg-muted/20 p-2.5">
+                <View className="flex-row items-center gap-2">
+                  <View className="flex-1 gap-1.5">
+                    <Input
+                      aria-label="Goal name"
+                      placeholder="Goal name"
+                      value={activeGoal.name}
+                      onChangeText={(value) =>
+                        updateGoal(activeGoal.id, { name: value })
+                      }
+                      maxLength={100}
+                    />
+                    {getError(`goals.${activeGoalIndex}.name`) && (
                       <Text className="text-xs text-destructive">
-                        {rowError}
+                        {getError(`goals.${activeGoalIndex}.name`)}
                       </Text>
                     )}
                   </View>
-                );
-              })}
-            </View>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onPress={() => removeGoal(activeGoal.id)}
+                    disabled={
+                      formData.goals.length <= 1 || activeGoalIndex === 0
+                    }
+                    accessibilityLabel="Delete goal"
+                  >
+                    <Trash2 size={16} className="text-muted-foreground" />
+                  </Button>
+                </View>
+
+                <DateField
+                  id={`target-date-${activeGoal.id}`}
+                  label="Target date"
+                  value={activeGoal.targetDate}
+                  onChange={(nextDate) => {
+                    if (!nextDate) {
+                      return;
+                    }
+                    markFieldTouched(`goals.${activeGoalIndex}.targetDate`);
+                    updateGoal(activeGoal.id, { targetDate: nextDate });
+                  }}
+                  required
+                  minimumDate={new Date()}
+                  error={getError(`goals.${activeGoalIndex}.targetDate`)}
+                  accessibilityHint="Sets goal target date. Format yyyy-mm-dd"
+                />
+
+                <View className="gap-2 rounded-md border border-border bg-background/70 p-2">
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-xs text-muted-foreground">
+                      Targets
+                    </Text>
+                    <View className="flex-row gap-1.5">
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onPress={() =>
+                          addTargetWithType(activeGoal.id, "race_performance")
+                        }
+                        accessibilityLabel="Add race target"
+                      >
+                        <Flag size={14} className="text-muted-foreground" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onPress={() =>
+                          addTargetWithType(activeGoal.id, "pace_threshold")
+                        }
+                        accessibilityLabel="Add pace target"
+                      >
+                        <Gauge size={14} className="text-muted-foreground" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onPress={() =>
+                          addTargetWithType(activeGoal.id, "power_threshold")
+                        }
+                        accessibilityLabel="Add power target"
+                      >
+                        <Zap size={14} className="text-muted-foreground" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onPress={() =>
+                          addTargetWithType(activeGoal.id, "hr_threshold")
+                        }
+                        accessibilityLabel="Add heart-rate target"
+                      >
+                        <Heart size={14} className="text-muted-foreground" />
+                      </Button>
+                    </View>
+                  </View>
+
+                  {activeGoal.targets.map((target, targetIndex) => {
+                    const rowError = getTargetRowError(
+                      activeGoalIndex,
+                      targetIndex,
+                    );
+                    const icon =
+                      target.targetType === "race_performance" ? (
+                        <Flag size={13} className="text-muted-foreground" />
+                      ) : target.targetType === "pace_threshold" ? (
+                        <Gauge size={13} className="text-muted-foreground" />
+                      ) : target.targetType === "power_threshold" ? (
+                        <Zap size={13} className="text-muted-foreground" />
+                      ) : (
+                        <Heart size={13} className="text-muted-foreground" />
+                      );
+
+                    return (
+                      <View
+                        key={target.id}
+                        className="gap-1 rounded-md border border-border bg-background/80 px-2 py-2"
+                      >
+                        <View className="flex-row items-center gap-2">
+                          {icon}
+                          <Pressable
+                            onPress={() =>
+                              setEditingTargetRef({
+                                goalId: activeGoal.id,
+                                targetId: target.id,
+                              })
+                            }
+                            className="flex-1 gap-0.5"
+                          >
+                            <Text className="text-xs font-medium">
+                              {getTargetTypeLabel(target.targetType)}
+                            </Text>
+                            <Text
+                              className="text-xs text-muted-foreground"
+                              numberOfLines={1}
+                            >
+                              {getTargetSummary(target)}
+                            </Text>
+                          </Pressable>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onPress={() =>
+                              setEditingTargetRef({
+                                goalId: activeGoal.id,
+                                targetId: target.id,
+                              })
+                            }
+                            accessibilityLabel="Edit target"
+                          >
+                            <Pencil
+                              size={14}
+                              className="text-muted-foreground"
+                            />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onPress={() =>
+                              removeTarget(activeGoal.id, target.id)
+                            }
+                            disabled={activeGoal.targets.length <= 1}
+                            accessibilityLabel="Delete target"
+                          >
+                            <Trash2
+                              size={14}
+                              className="text-muted-foreground"
+                            />
+                          </Button>
+                        </View>
+
+                        {rowError && (
+                          <Text className="text-xs text-destructive">
+                            {rowError}
+                          </Text>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
           </View>
         )}
       </ScrollView>

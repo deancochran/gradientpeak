@@ -1,4 +1,3 @@
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -7,7 +6,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Text } from "@/components/ui/text";
 import { BoundedNumberInput } from "../inputs/BoundedNumberInput";
 import { IntegerStepper } from "../inputs/IntegerStepper";
@@ -15,7 +13,6 @@ import { PercentSliderInput } from "../inputs/PercentSliderInput";
 import { parseNumberOrUndefined } from "@/lib/training-plan-form/input-parsers";
 import type {
   CreationAvailabilityConfig,
-  CreationConfigLocks,
   CreationConstraints,
 } from "@repo/core";
 import { ChevronDown, ChevronUp } from "lucide-react-native";
@@ -49,7 +46,6 @@ interface ConstraintsTabProps {
   postGoalRecoveryDetailCopy: string;
   maxWeeklyTssRampDetailCopy: string;
   maxCtlRampDetailCopy: string;
-  setFieldLock: (field: keyof CreationConfigLocks, locked: boolean) => void;
   getWeekDayLabel: (day: string) => string;
   onToggleExpanded: () => void;
   onToggleDetails: () => void;
@@ -70,7 +66,6 @@ export function ConstraintsTab({
   postGoalRecoveryDetailCopy,
   maxWeeklyTssRampDetailCopy,
   maxCtlRampDetailCopy,
-  setFieldLock,
   getWeekDayLabel,
   onToggleExpanded,
   onToggleDetails,
@@ -104,36 +99,13 @@ export function ConstraintsTab({
 
       {expanded && (
         <View className="gap-2 rounded-md border border-border bg-muted/20 p-2.5">
-          <View className="flex-row items-center justify-between">
-            <Badge
-              variant={
-                configData.constraintsSource === "user" ? "default" : "outline"
-              }
-            >
-              <Text>Source: {configData.constraintsSource}</Text>
-            </Badge>
+          <View className="items-end">
             <Button variant="outline" size="sm" onPress={onToggleDetails}>
               <Text>{showDetails ? "Hide details" : "Learn"}</Text>
             </Button>
           </View>
 
-          <View className="flex-row items-center justify-between">
-            <Text className="text-sm">Sessions / week</Text>
-            <View className="flex-row items-center gap-2">
-              <Switch
-                checked={configData.locks.min_sessions_per_week.locked}
-                onCheckedChange={(value) =>
-                  setFieldLock("min_sessions_per_week", Boolean(value))
-                }
-              />
-              <Switch
-                checked={configData.locks.max_sessions_per_week.locked}
-                onCheckedChange={(value) =>
-                  setFieldLock("max_sessions_per_week", Boolean(value))
-                }
-              />
-            </View>
-          </View>
+          <Text className="text-sm">Sessions / week</Text>
           <View className="flex-row gap-2">
             <View className="flex-1">
               <IntegerStepper
@@ -168,15 +140,7 @@ export function ConstraintsTab({
           </View>
 
           <View className="gap-1.5">
-            <View className="flex-row items-center justify-between">
-              <Text className="text-sm">Hard rest days</Text>
-              <Switch
-                checked={configData.locks.hard_rest_days.locked}
-                onCheckedChange={(value) =>
-                  setFieldLock("hard_rest_days", Boolean(value))
-                }
-              />
-            </View>
+            <Text className="text-sm">Hard rest days</Text>
             <View className="flex-row flex-wrap gap-2">
               {weekDays.map((day) => {
                 const selected =
@@ -205,20 +169,7 @@ export function ConstraintsTab({
           </View>
 
           <View className="gap-1.5">
-            <View className="flex-row items-center justify-between">
-              <Text className="text-sm">Max session (min)</Text>
-              <Switch
-                checked={
-                  configData.locks.max_single_session_duration_minutes.locked
-                }
-                onCheckedChange={(value) =>
-                  setFieldLock(
-                    "max_single_session_duration_minutes",
-                    Boolean(value),
-                  )
-                }
-              />
-            </View>
+            <Text className="text-sm">Max session (min)</Text>
             <IntegerStepper
               id="max-session-duration"
               value={
@@ -237,15 +188,7 @@ export function ConstraintsTab({
           </View>
 
           <View className="gap-1.5">
-            <View className="flex-row items-center justify-between">
-              <Text className="text-sm">Goal difficulty</Text>
-              <Switch
-                checked={configData.locks.goal_difficulty_preference.locked}
-                onCheckedChange={(value) =>
-                  setFieldLock("goal_difficulty_preference", Boolean(value))
-                }
-              />
-            </View>
+            <Text className="text-sm">Goal difficulty</Text>
             <Select
               value={{
                 value:
@@ -285,15 +228,7 @@ export function ConstraintsTab({
           </View>
 
           <View className="gap-1.5 rounded-md border border-border bg-background/50 p-2">
-            <View className="flex-row items-center justify-between">
-              <Text className="text-sm font-medium">Plan style</Text>
-              <Switch
-                checked={configData.locks.optimization_profile.locked}
-                onCheckedChange={(value) =>
-                  setFieldLock("optimization_profile", Boolean(value))
-                }
-              />
-            </View>
+            <Text className="text-sm font-medium">Plan style</Text>
             <Select
               value={{
                 value: configData.optimizationProfile,
@@ -336,15 +271,7 @@ export function ConstraintsTab({
           </View>
 
           <View className="gap-1.5 rounded-md border border-border bg-background/50 p-2">
-            <View className="flex-row items-center justify-between">
-              <Text className="text-sm">Recovery days</Text>
-              <Switch
-                checked={configData.locks.post_goal_recovery_days.locked}
-                onCheckedChange={(value) =>
-                  setFieldLock("post_goal_recovery_days", Boolean(value))
-                }
-              />
-            </View>
+            <Text className="text-sm">Recovery days</Text>
             <IntegerStepper
               id="post-goal-recovery-days"
               value={configData.postGoalRecoveryDays}
@@ -364,15 +291,7 @@ export function ConstraintsTab({
           </View>
 
           <View className="gap-1.5 rounded-md border border-border bg-background/50 p-2">
-            <View className="flex-row items-center justify-between">
-              <Text className="text-sm">Weekly load cap (%)</Text>
-              <Switch
-                checked={configData.locks.max_weekly_tss_ramp_pct.locked}
-                onCheckedChange={(value) =>
-                  setFieldLock("max_weekly_tss_ramp_pct", Boolean(value))
-                }
-              />
-            </View>
+            <Text className="text-sm">Weekly load cap (%)</Text>
             <PercentSliderInput
               id="max-weekly-load-ramp"
               value={configData.maxWeeklyTssRampPct}
@@ -393,15 +312,7 @@ export function ConstraintsTab({
           </View>
 
           <View className="gap-1.5 rounded-md border border-border bg-background/50 p-2">
-            <View className="flex-row items-center justify-between">
-              <Text className="text-sm">Weekly CTL cap</Text>
-              <Switch
-                checked={configData.locks.max_ctl_ramp_per_week.locked}
-                onCheckedChange={(value) =>
-                  setFieldLock("max_ctl_ramp_per_week", Boolean(value))
-                }
-              />
-            </View>
+            <Text className="text-sm">Weekly CTL cap</Text>
             <BoundedNumberInput
               id="max-weekly-ctl-ramp"
               label="Cap value"
@@ -430,19 +341,6 @@ export function ConstraintsTab({
               </Text>
             )}
           </View>
-
-          {informationalConflicts.length > 0 && (
-            <View className="gap-1 rounded-md border border-amber-300 bg-amber-100/40 p-2">
-              <Text className="text-xs font-medium text-amber-800">
-                Locked notices
-              </Text>
-              {informationalConflicts.map((conflict) => (
-                <Text key={conflict} className="text-xs text-amber-800">
-                  - {conflict}
-                </Text>
-              ))}
-            </View>
-          )}
         </View>
       )}
     </View>

@@ -53,6 +53,19 @@ function daysBetween(a: Date, b: Date): number {
   return Math.floor((a.getTime() - b.getTime()) / dayMs);
 }
 
+function percentile(values: number[], q: number): number {
+  if (values.length === 0) {
+    return 0;
+  }
+
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = Math.min(
+    sorted.length - 1,
+    Math.max(0, Math.ceil((q / 100) * sorted.length) - 1),
+  );
+  return sorted[index] ?? 0;
+}
+
 /**
  * Derives a normalized creation context from profile evidence.
  *
@@ -130,13 +143,41 @@ export function deriveCreationContext(
     1,
   );
 
-  const totalRecentTss = activities.reduce((sum, activity) => {
-    if (activity.tss !== null && activity.tss !== undefined)
-      return sum + activity.tss;
-    const durationSeconds = activity.duration_seconds ?? 0;
-    return sum + (durationSeconds / 3600) * 45;
-  }, 0);
-  const estimatedWeeklyTss = activityCount > 0 ? totalRecentTss / 6 : 70;
+  const weeklyTssBuckets = Array.from({ length: 6 }, () => 0);
+  const weeklySessionBuckets = Array.from({ length: 6 }, () => 0);
+  const weekdayCounts = [0, 0, 0, 0, 0, 0, 0];
+
+  for (const activity of activities) {
+    const date = toDate(activity.occurred_at);
+    if (!date) {
+      continue;
+    }
+
+    const ageDays = daysBetween(safeAsOf, date);
+    const weekBucket = clamp(Math.floor(ageDays / 7), 0, 5);
+    const normalizedTss =
+      activity.tss !== null && activity.tss !== undefined
+        ? activity.tss
+        : ((activity.duration_seconds ?? 0) / 3600) * 45;
+
+    weeklyTssBuckets[weekBucket] =
+      (weeklyTssBuckets[weekBucket] ?? 0) + Math.max(0, normalizedTss);
+    weeklySessionBuckets[weekBucket] =
+      (weeklySessionBuckets[weekBucket] ?? 0) + 1;
+    const weekday = date.getUTCDay();
+    weekdayCounts[weekday] = (weekdayCounts[weekday] ?? 0) + 1;
+  }
+
+  const weeklyTssMedian = percentile(weeklyTssBuckets, 50);
+  const weeklyTssP25 = percentile(weeklyTssBuckets, 25);
+  const weeklyTssP75 = percentile(weeklyTssBuckets, 75);
+  const estimatedWeeklyTss =
+    activityCount > 0
+      ? Math.max(
+          weeklyTssMedian,
+          weeklyTssBuckets.reduce((a, b) => a + b, 0) / 6,
+        )
+      : 70;
 
   const baselineBounds =
     historyState === "none"
@@ -145,18 +186,23 @@ export function deriveCreationContext(
         ? { minFloor: 60, maxFloor: 100, maxCeil: 800 }
         : { minFloor: 80, maxFloor: 140, maxCeil: 1200 };
 
-  const baselineWidth =
-    historyState === "rich" ? 0.2 : historyState === "sparse" ? 0.35 : 0.5;
+  const baselineSpreadFromHistory =
+    weeklyTssP75 > 0 ? weeklyTssP75 - weeklyTssP25 : estimatedWeeklyTss * 0.35;
+  const confidenceWidthMultiplier =
+    historyState === "rich" ? 0.85 : historyState === "sparse" ? 1 : 1.25;
+  const lowSignalExpansion = clamp((0.7 - qualityScore) * 0.4, 0, 0.25);
+  const baselineWidthMultiplier =
+    confidenceWidthMultiplier + lowSignalExpansion;
   const baselineMin = Math.round(
     clamp(
-      estimatedWeeklyTss * (1 - baselineWidth),
+      estimatedWeeklyTss - baselineSpreadFromHistory * baselineWidthMultiplier,
       baselineBounds.minFloor,
       baselineBounds.maxCeil,
     ),
   );
   const baselineMax = Math.round(
     clamp(
-      estimatedWeeklyTss * (1 + baselineWidth),
+      estimatedWeeklyTss + baselineSpreadFromHistory * baselineWidthMultiplier,
       baselineBounds.maxFloor,
       baselineBounds.maxCeil,
     ),
@@ -167,10 +213,43 @@ export function deriveCreationContext(
   const influenceBias =
     consistencyRatio >= 0.65 ? 0.1 : consistencyRatio <= 0.2 ? -0.1 : 0;
 
-  const sessionMin =
-    historyState === "none" ? 3 : historyState === "sparse" ? 3 : 4;
-  const sessionMax =
-    historyState === "none" ? 5 : historyState === "sparse" ? 6 : 7;
+  const sessionMinFromHistory = Math.floor(
+    percentile(weeklySessionBuckets, 25),
+  );
+  const sessionMaxFromHistory = Math.ceil(percentile(weeklySessionBuckets, 75));
+  const sessionMin = clamp(
+    historyState === "none"
+      ? 3
+      : Math.max(2, sessionMinFromHistory || (historyState === "rich" ? 4 : 3)),
+    2,
+    7,
+  );
+  const sessionMax = clamp(
+    historyState === "none"
+      ? 5
+      : Math.max(
+          sessionMin + 1,
+          sessionMaxFromHistory || (historyState === "rich" ? 7 : 6),
+        ),
+    3,
+    7,
+  );
+
+  const weekdayNames = [
+    "sunday",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+  ] as const;
+  const preferredDays = weekdayCounts
+    .map((count, index) => ({ day: weekdayNames[index], count }))
+    .filter((item) => item.count > 0)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 2)
+    .map((item) => item.day);
 
   const rationaleCodes = [
     `history_${historyState}`,
@@ -181,6 +260,10 @@ export function deriveCreationContext(
 
   if (input.activity_context?.primary_category) {
     rationaleCodes.push(`focus_${input.activity_context.primary_category}`);
+  }
+
+  for (const preferredDay of preferredDays) {
+    rationaleCodes.push(`preferred_day_${preferredDay}`);
   }
 
   return creationContextSummarySchema.parse({

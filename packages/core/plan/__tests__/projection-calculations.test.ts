@@ -350,6 +350,35 @@ describe("deterministic weekly TSS optimizer", () => {
     );
   });
 
+  it("maximizes safe preparedness toward readiness 100", () => {
+    const optimized = buildDeterministicProjectionPayload(optimizerFixture);
+    const baseline = buildDeterministicProjectionPayload({
+      ...optimizerFixture,
+      disable_weekly_tss_optimizer: true,
+    });
+
+    expect(optimized.readiness_score).toBeGreaterThanOrEqual(
+      baseline.readiness_score,
+    );
+    expect(
+      optimized.microcycles.every((cycle) => {
+        const tssRamp = cycle.metadata.tss_ramp;
+        const ctlRamp = cycle.metadata.ctl_ramp;
+        const requestedRampPct =
+          tssRamp.previous_week_tss <= 0
+            ? 0
+            : ((tssRamp.applied_weekly_tss - tssRamp.previous_week_tss) /
+                tssRamp.previous_week_tss) *
+              100;
+
+        return (
+          requestedRampPct <= tssRamp.max_weekly_tss_ramp_pct + 0.001 &&
+          ctlRamp.applied_ctl_ramp <= ctlRamp.max_ctl_ramp_per_week + 0.001
+        );
+      }),
+    ).toBe(true);
+  });
+
   it("remains deterministic for multi-goal plans", () => {
     const multiGoalInput: Parameters<
       typeof buildDeterministicProjectionPayload
@@ -1200,6 +1229,63 @@ describe("phase 1 scoring integration", () => {
     expect("mode_applied" in projection).toBe(false);
     expect("overrides_applied" in projection).toBe(false);
   });
+
+  it("emits canonical chart display points coherent with headline readiness", () => {
+    const projection = buildDeterministicProjectionPayload({
+      timeline: {
+        start_date: "2026-01-05",
+        end_date: "2026-03-01",
+      },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2026-03-01",
+          target_weekly_tss_range: { min: 260, max: 320 },
+        },
+      ],
+      goals: [
+        {
+          id: "goal-1",
+          name: "Primary goal",
+          target_date: "2026-02-15",
+          priority: 1,
+        },
+        {
+          id: "goal-2",
+          name: "Secondary goal",
+          target_date: "2026-03-01",
+          priority: 3,
+        },
+      ],
+      starting_ctl: 35,
+      creation_config: {
+        optimization_profile: "outcome_first",
+        max_weekly_tss_ramp_pct: 20,
+        max_ctl_ramp_per_week: 8,
+      },
+    });
+
+    expect(projection.display_points).toEqual(projection.points);
+    expect(
+      Math.max(...projection.points.map((point) => point.readiness_score)),
+    ).toBeLessThanOrEqual(projection.readiness_score);
+
+    for (const goal of projection.goal_markers) {
+      const goalPoint = projection.points.find(
+        (point) => point.date === goal.target_date,
+      );
+      if (goalPoint) {
+        expect(goalPoint.readiness_score).toBeLessThanOrEqual(
+          projection.readiness_score,
+        );
+        expect(
+          projection.readiness_score - goalPoint.readiness_score,
+        ).toBeLessThanOrEqual(6);
+      }
+    }
+  });
 });
 
 describe("phase 2 mpc integration diagnostics", () => {
@@ -1263,6 +1349,45 @@ describe("phase 2 mpc integration diagnostics", () => {
     expect((diagnostics?.tie_break_chain ?? []).length).toBeGreaterThanOrEqual(
       0,
     );
+    expect(diagnostics?.effective_optimizer_config).toMatchObject({
+      weights: {
+        preparedness_weight: expect.any(Number),
+        risk_penalty_weight: expect.any(Number),
+        volatility_penalty_weight: expect.any(Number),
+        churn_penalty_weight: expect.any(Number),
+      },
+      caps: {
+        max_weekly_tss_ramp_pct: expect.any(Number),
+        max_ctl_ramp_per_week: expect.any(Number),
+      },
+      search: {
+        lookahead_weeks: expect.any(Number),
+        candidate_steps: expect.any(Number),
+      },
+      curvature: {
+        target: expect.any(Number),
+        strength: expect.any(Number),
+        weight: expect.any(Number),
+      },
+    });
+    expect(diagnostics?.clamp_counts).toMatchObject({
+      tss: expect.any(Number),
+      ctl: expect.any(Number),
+    });
+    expect(diagnostics?.objective_contributions).toMatchObject({
+      sampled_weeks: expect.any(Number),
+      objective_score: expect.any(Number),
+      weighted_terms: {
+        goal: expect.any(Number),
+        readiness: expect.any(Number),
+        risk: expect.any(Number),
+        volatility: expect.any(Number),
+        churn: expect.any(Number),
+        monotony: expect.any(Number),
+        strain: expect.any(Number),
+        curve: expect.any(Number),
+      },
+    });
   });
 
   it("uses deterministic cap-only fallback when optimizer is disabled", () => {
@@ -1305,13 +1430,291 @@ describe("phase 2 mpc integration diagnostics", () => {
     expect(
       strictProjection.microcycles[0]?.metadata.tss_ramp
         .max_weekly_tss_ramp_pct,
-    ).toBe(4);
+    ).toBeLessThan(
+      lenientProjection.microcycles[0]?.metadata.tss_ramp
+        .max_weekly_tss_ramp_pct ?? Number.POSITIVE_INFINITY,
+    );
+    expect(
+      strictProjection.microcycles[0]?.metadata.ctl_ramp.max_ctl_ramp_per_week,
+    ).toBeLessThan(
+      lenientProjection.microcycles[0]?.metadata.ctl_ramp
+        .max_ctl_ramp_per_week ?? Number.POSITIVE_INFINITY,
+    );
+    expect(
+      strictProjection.microcycles[0]?.metadata.tss_ramp
+        .max_weekly_tss_ramp_pct,
+    ).toBeGreaterThanOrEqual(0);
     expect(
       lenientProjection.microcycles[0]?.metadata.tss_ramp
         .max_weekly_tss_ramp_pct,
-    ).toBe(20);
+    ).toBeLessThanOrEqual(40);
     expect(
       strictProjection.projection_diagnostics?.active_constraints,
     ).toContain("single_mode_safety_caps_enforced");
+    expect(strictProjection.projection_diagnostics?.clamp_counts).toEqual({
+      tss: strictProjection.constraint_summary.tss_ramp_clamp_weeks,
+      ctl: strictProjection.constraint_summary.ctl_ramp_clamp_weeks,
+    });
+  });
+
+  it("maps projection_control_v2 into effective ramp caps in projection output", () => {
+    const conservativeControls = buildDeterministicProjectionPayload({
+      ...phase2Fixture,
+      creation_config: {
+        ...phase2Fixture.creation_config,
+        projection_control_v2: {
+          ambition: 0,
+          risk_tolerance: 0,
+          curvature: 0,
+          curvature_strength: 0,
+        },
+      },
+    });
+    const aggressiveControls = buildDeterministicProjectionPayload({
+      ...phase2Fixture,
+      creation_config: {
+        ...phase2Fixture.creation_config,
+        projection_control_v2: {
+          ambition: 1,
+          risk_tolerance: 1,
+          curvature: 0,
+          curvature_strength: 0,
+        },
+      },
+    });
+
+    expect(
+      aggressiveControls.microcycles[0]?.metadata.tss_ramp
+        .max_weekly_tss_ramp_pct,
+    ).toBeGreaterThan(
+      conservativeControls.microcycles[0]?.metadata.tss_ramp
+        .max_weekly_tss_ramp_pct ?? 0,
+    );
+    expect(
+      aggressiveControls.microcycles[0]?.metadata.ctl_ramp
+        .max_ctl_ramp_per_week,
+    ).toBeGreaterThan(
+      conservativeControls.microcycles[0]?.metadata.ctl_ramp
+        .max_ctl_ramp_per_week ?? 0,
+    );
+  });
+
+  it("exposes widened frontier caps and preserves monotonic upper band under higher overrides", () => {
+    const practicalCeiling = buildDeterministicProjectionPayload({
+      ...phase2Fixture,
+      creation_config: {
+        ...phase2Fixture.creation_config,
+        max_weekly_tss_ramp_pct: 20,
+        max_ctl_ramp_per_week: 8,
+        projection_control_v2: {
+          ambition: 1,
+          risk_tolerance: 1,
+          curvature: 0,
+          curvature_strength: 0,
+        },
+      },
+    });
+    const theoreticalFrontier = buildDeterministicProjectionPayload({
+      ...phase2Fixture,
+      creation_config: {
+        ...phase2Fixture.creation_config,
+        max_weekly_tss_ramp_pct: 40,
+        max_ctl_ramp_per_week: 12,
+        projection_control_v2: {
+          ambition: 1,
+          risk_tolerance: 1,
+          curvature: 0,
+          curvature_strength: 0,
+        },
+      },
+    });
+
+    const practicalCaps =
+      practicalCeiling.projection_diagnostics?.effective_optimizer_config.caps;
+    const frontierCaps =
+      theoreticalFrontier.projection_diagnostics?.effective_optimizer_config
+        .caps;
+
+    expect(frontierCaps?.max_weekly_tss_ramp_pct ?? 0).toBeGreaterThan(20);
+    expect(frontierCaps?.max_ctl_ramp_per_week ?? 0).toBeGreaterThan(8);
+    expect(frontierCaps?.max_weekly_tss_ramp_pct ?? 0).toBeGreaterThanOrEqual(
+      practicalCaps?.max_weekly_tss_ramp_pct ?? 0,
+    );
+    expect(frontierCaps?.max_ctl_ramp_per_week ?? 0).toBeGreaterThanOrEqual(
+      practicalCaps?.max_ctl_ramp_per_week ?? 0,
+    );
+
+    const practicalUpperBand = Math.max(
+      ...practicalCeiling.microcycles.map((cycle) => cycle.planned_weekly_tss),
+    );
+    const frontierUpperBand = Math.max(
+      ...theoreticalFrontier.microcycles.map(
+        (cycle) => cycle.planned_weekly_tss,
+      ),
+    );
+
+    expect(frontierUpperBand).toBeGreaterThanOrEqual(practicalUpperBand);
+  });
+
+  it("applies curvature controls to shape early vs late weekly load", () => {
+    const frontLoaded = buildDeterministicProjectionPayload({
+      ...phase2Fixture,
+      creation_config: {
+        ...phase2Fixture.creation_config,
+        projection_control_v2: {
+          ambition: 0.7,
+          risk_tolerance: 0.6,
+          curvature: -1,
+          curvature_strength: 1,
+        },
+      },
+    });
+    const backLoaded = buildDeterministicProjectionPayload({
+      ...phase2Fixture,
+      creation_config: {
+        ...phase2Fixture.creation_config,
+        projection_control_v2: {
+          ambition: 0.7,
+          risk_tolerance: 0.6,
+          curvature: 1,
+          curvature_strength: 1,
+        },
+      },
+    });
+
+    const firstThreeFrontLoaded = frontLoaded.microcycles
+      .slice(0, 3)
+      .reduce((sum, week) => sum + week.planned_weekly_tss, 0);
+    const firstThreeBackLoaded = backLoaded.microcycles
+      .slice(0, 3)
+      .reduce((sum, week) => sum + week.planned_weekly_tss, 0);
+    const curveTermFrontLoaded =
+      frontLoaded.projection_diagnostics?.objective_contributions.weighted_terms
+        .curve ?? 0;
+    const curveTermBackLoaded =
+      backLoaded.projection_diagnostics?.objective_contributions.weighted_terms
+        .curve ?? 0;
+
+    expect(firstThreeFrontLoaded).toBeGreaterThan(firstThreeBackLoaded);
+    expect(
+      Math.abs(curveTermFrontLoaded - curveTermBackLoaded),
+    ).toBeGreaterThan(0);
+  });
+});
+
+describe("phase 5 benchmark and theoretical frontier validation", () => {
+  const benchmarkBase = {
+    timeline: {
+      start_date: "2026-01-05",
+      end_date: "2026-04-27",
+    },
+    goals: [
+      {
+        id: "goal-benchmark",
+        name: "Benchmark target",
+        target_date: "2026-04-27",
+        priority: 1,
+      },
+    ],
+  };
+  const buildBlockBase = {
+    name: "Build",
+    phase: "build" as const,
+    start_date: "2026-01-05",
+    end_date: "2026-04-27",
+  };
+
+  it("keeps professional benchmark scenario in the 800-1200 weekly range", () => {
+    const projection = buildDeterministicProjectionPayload({
+      ...benchmarkBase,
+      blocks: [
+        {
+          ...buildBlockBase,
+          target_weekly_tss_range: { min: 820, max: 1040 },
+        },
+      ],
+      starting_ctl: 95,
+      creation_config: {
+        optimization_profile: "balanced",
+        max_weekly_tss_ramp_pct: 20,
+        max_ctl_ramp_per_week: 8,
+      },
+    });
+
+    const weeklyPeak = Math.max(
+      ...projection.microcycles.map((cycle) => cycle.planned_weekly_tss),
+    );
+
+    expect(weeklyPeak).toBeGreaterThanOrEqual(800);
+    expect(weeklyPeak).toBeLessThanOrEqual(1200);
+  });
+
+  it("reaches ultra benchmark range (1500-2200+) when explicitly configured", () => {
+    const projection = buildDeterministicProjectionPayload({
+      ...benchmarkBase,
+      blocks: [
+        {
+          ...buildBlockBase,
+          target_weekly_tss_range: { min: 1550, max: 2250 },
+        },
+      ],
+      starting_ctl: 150,
+      creation_config: {
+        optimization_profile: "outcome_first",
+        max_weekly_tss_ramp_pct: 40,
+        max_ctl_ramp_per_week: 12,
+      },
+    });
+
+    const weeklyPeak = Math.max(
+      ...projection.microcycles.map((cycle) => cycle.planned_weekly_tss),
+    );
+
+    expect(weeklyPeak).toBeGreaterThanOrEqual(1500);
+  });
+
+  it("supports theoretical stress runs above benchmark ranges while staying deterministic and finite", () => {
+    const theoreticalInput: Parameters<
+      typeof buildDeterministicProjectionPayload
+    >[0] = {
+      ...benchmarkBase,
+      blocks: [
+        {
+          ...buildBlockBase,
+          target_weekly_tss_range: { min: 2300, max: 3200 },
+        },
+      ],
+      starting_ctl: 190,
+      creation_config: {
+        optimization_profile: "outcome_first",
+        max_weekly_tss_ramp_pct: 40,
+        max_ctl_ramp_per_week: 12,
+        projection_control_v2: {
+          ambition: 1,
+          risk_tolerance: 1,
+          curvature: 0,
+          curvature_strength: 0,
+        },
+      },
+    };
+
+    const first = buildDeterministicProjectionPayload(theoreticalInput);
+    const second = buildDeterministicProjectionPayload(theoreticalInput);
+    const weeklyPeak = Math.max(
+      ...first.microcycles.map((cycle) => cycle.planned_weekly_tss),
+    );
+
+    expect(weeklyPeak).toBeGreaterThan(2200);
+    expect(first.microcycles.map((cycle) => cycle.planned_weekly_tss)).toEqual(
+      second.microcycles.map((cycle) => cycle.planned_weekly_tss),
+    );
+    expect(first.microcycles.map((cycle) => cycle.projected_ctl)).toEqual(
+      second.microcycles.map((cycle) => cycle.projected_ctl),
+    );
+
+    for (const cycle of first.microcycles) {
+      expect(Number.isFinite(cycle.planned_weekly_tss)).toBe(true);
+      expect(Number.isFinite(cycle.projected_ctl)).toBe(true);
+    }
   });
 });

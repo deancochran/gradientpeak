@@ -98,6 +98,7 @@ export interface ProjectionChartPayload {
   start_date: string;
   end_date: string;
   points: DeterministicProjectionPoint[];
+  display_points?: DeterministicProjectionPoint[];
   goal_markers: ProjectionGoalMarker[];
   periodization_phases: ProjectionPeriodizationPhase[];
   microcycles: DeterministicProjectionMicrocycle[];

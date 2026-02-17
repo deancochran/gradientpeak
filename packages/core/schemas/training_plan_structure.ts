@@ -666,6 +666,213 @@ export type CreationOptimizationProfile = z.infer<
   typeof creationOptimizationProfileEnum
 >;
 
+export const projectionControlModeV2Enum = z.enum(["simple", "advanced"]);
+
+export type ProjectionControlModeV2 = z.infer<
+  typeof projectionControlModeV2Enum
+>;
+
+export const projectionControlOwnershipMapV2Schema = z
+  .object({
+    mode: z.boolean().default(false),
+    ambition: z.boolean().default(false),
+    risk_tolerance: z.boolean().default(false),
+    curvature: z.boolean().default(false),
+    curvature_strength: z.boolean().default(false),
+  })
+  .strict();
+
+export type ProjectionControlOwnershipMapV2 = z.infer<
+  typeof projectionControlOwnershipMapV2Schema
+>;
+
+export const projectionControlV2Schema = z
+  .object({
+    mode: projectionControlModeV2Enum.default("simple"),
+    ambition: z.number().min(0).max(1).finite().default(0.5),
+    risk_tolerance: z.number().min(0).max(1).finite().default(0.4),
+    curvature: z.number().min(-1).max(1).finite().default(0),
+    curvature_strength: z.number().min(0).max(1).finite().default(0.35),
+    user_owned: projectionControlOwnershipMapV2Schema.default({
+      mode: false,
+      ambition: false,
+      risk_tolerance: false,
+      curvature: false,
+      curvature_strength: false,
+    }),
+  })
+  .strict();
+
+export type ProjectionControlV2 = z.infer<typeof projectionControlV2Schema>;
+
+export const CREATION_MAX_WEEKLY_TSS_RAMP_PCT = 40;
+export const CREATION_MAX_CTL_RAMP_PER_WEEK = 12;
+
+const calibrationBoundedNumber = (min: number, max: number) =>
+  z.number().min(min).max(max).finite();
+
+const calibrationWeightSchema = calibrationBoundedNumber(0, 1);
+
+export const readinessCompositeCalibrationSchema = z
+  .object({
+    target_attainment_weight: calibrationWeightSchema.default(0.45),
+    envelope_weight: calibrationWeightSchema.default(0.3),
+    durability_weight: calibrationWeightSchema.default(0.15),
+    evidence_weight: calibrationWeightSchema.default(0.1),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const sum =
+      value.target_attainment_weight +
+      value.envelope_weight +
+      value.durability_weight +
+      value.evidence_weight;
+    if (Math.abs(sum - 1) > 1e-6) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["target_attainment_weight"],
+        message: "Readiness composite weights must sum to 1",
+      });
+    }
+  });
+
+export type ReadinessCompositeCalibration = z.infer<
+  typeof readinessCompositeCalibrationSchema
+>;
+
+export const readinessTimelineCalibrationSchema = z
+  .object({
+    target_tsb: calibrationBoundedNumber(-5, 20).default(8),
+    form_tolerance: calibrationBoundedNumber(8, 40).default(20),
+    fatigue_overflow_scale: calibrationBoundedNumber(0.1, 1).default(0.4),
+    feasibility_blend_weight: calibrationBoundedNumber(0, 1).default(0.15),
+    smoothing_iterations: z.number().int().min(0).max(80).default(24),
+    smoothing_lambda: calibrationBoundedNumber(0, 0.9).default(0.28),
+    max_step_delta: z.number().int().min(1).max(20).default(9),
+  })
+  .strict();
+
+export type ReadinessTimelineCalibration = z.infer<
+  typeof readinessTimelineCalibrationSchema
+>;
+
+export const envelopePenaltyCalibrationSchema = z
+  .object({
+    over_high_weight: calibrationBoundedNumber(0, 1.5).default(0.55),
+    under_low_weight: calibrationBoundedNumber(0, 1.5).default(0.2),
+    over_ramp_weight: calibrationBoundedNumber(0, 1.5).default(0.25),
+  })
+  .strict();
+
+export type EnvelopePenaltyCalibration = z.infer<
+  typeof envelopePenaltyCalibrationSchema
+>;
+
+export const durabilityPenaltyCalibrationSchema = z
+  .object({
+    monotony_threshold: calibrationBoundedNumber(1, 4).default(2),
+    monotony_scale: calibrationBoundedNumber(0.1, 6).default(2),
+    strain_threshold: calibrationBoundedNumber(400, 2000).default(900),
+    strain_scale: calibrationBoundedNumber(200, 3000).default(900),
+    deload_debt_scale: calibrationBoundedNumber(0.5, 12).default(6),
+  })
+  .strict();
+
+export type DurabilityPenaltyCalibration = z.infer<
+  typeof durabilityPenaltyCalibrationSchema
+>;
+
+export const noHistoryCalibrationSchema = z
+  .object({
+    reliability_horizon_days: z.number().int().min(14).max(120).default(42),
+    confidence_floor_high: calibrationBoundedNumber(0.1, 0.95).default(0.75),
+    confidence_floor_mid: calibrationBoundedNumber(0.1, 0.95).default(0.6),
+    confidence_floor_low: calibrationBoundedNumber(0.1, 0.95).default(0.45),
+    demand_tier_time_pressure_scale: calibrationBoundedNumber(0, 2).default(1),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (
+      !(
+        value.confidence_floor_high >= value.confidence_floor_mid &&
+        value.confidence_floor_mid >= value.confidence_floor_low
+      )
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["confidence_floor_high"],
+        message: "No-history confidence floors must satisfy high >= mid >= low",
+      });
+    }
+  });
+
+export type NoHistoryCalibration = z.infer<typeof noHistoryCalibrationSchema>;
+
+export const optimizerCalibrationSchema = z
+  .object({
+    preparedness_weight: calibrationBoundedNumber(0, 30).default(14),
+    risk_penalty_weight: calibrationBoundedNumber(0, 2).default(0.35),
+    volatility_penalty_weight: calibrationBoundedNumber(0, 2).default(0.22),
+    churn_penalty_weight: calibrationBoundedNumber(0, 2).default(0.2),
+    lookahead_weeks: z.number().int().min(1).max(8).default(5),
+    candidate_steps: z.number().int().min(3).max(15).default(7),
+  })
+  .strict();
+
+export type OptimizerCalibration = z.infer<typeof optimizerCalibrationSchema>;
+
+export const trainingPlanCalibrationConfigSchema = z
+  .object({
+    version: z.literal(1).default(1),
+    readiness_composite: readinessCompositeCalibrationSchema.default({
+      target_attainment_weight: 0.45,
+      envelope_weight: 0.3,
+      durability_weight: 0.15,
+      evidence_weight: 0.1,
+    }),
+    readiness_timeline: readinessTimelineCalibrationSchema.default({
+      target_tsb: 8,
+      form_tolerance: 20,
+      fatigue_overflow_scale: 0.4,
+      feasibility_blend_weight: 0.15,
+      smoothing_iterations: 24,
+      smoothing_lambda: 0.28,
+      max_step_delta: 9,
+    }),
+    envelope_penalties: envelopePenaltyCalibrationSchema.default({
+      over_high_weight: 0.55,
+      under_low_weight: 0.2,
+      over_ramp_weight: 0.25,
+    }),
+    durability_penalties: durabilityPenaltyCalibrationSchema.default({
+      monotony_threshold: 2,
+      monotony_scale: 2,
+      strain_threshold: 900,
+      strain_scale: 900,
+      deload_debt_scale: 6,
+    }),
+    no_history: noHistoryCalibrationSchema.default({
+      reliability_horizon_days: 42,
+      confidence_floor_high: 0.75,
+      confidence_floor_mid: 0.6,
+      confidence_floor_low: 0.45,
+      demand_tier_time_pressure_scale: 1,
+    }),
+    optimizer: optimizerCalibrationSchema.default({
+      preparedness_weight: 14,
+      risk_penalty_weight: 0.35,
+      volatility_penalty_weight: 0.22,
+      churn_penalty_weight: 0.2,
+      lookahead_weeks: 5,
+      candidate_steps: 7,
+    }),
+  })
+  .strict();
+
+export type TrainingPlanCalibrationConfig = z.infer<
+  typeof trainingPlanCalibrationConfigSchema
+>;
+
 export const creationConstraintsSchema = z
   .object({
     hard_rest_days: z.array(creationWeekDayEnum).max(7).default([]),
@@ -911,8 +1118,75 @@ export const trainingPlanCreationConfigSchema = z
     constraints: creationConstraintsSchema,
     optimization_profile: creationOptimizationProfileEnum.default("balanced"),
     post_goal_recovery_days: z.number().int().min(0).max(28).default(5),
-    max_weekly_tss_ramp_pct: z.number().min(0).max(20).default(7),
-    max_ctl_ramp_per_week: z.number().min(0).max(8).default(3),
+    max_weekly_tss_ramp_pct: z
+      .number()
+      .min(0)
+      .max(CREATION_MAX_WEEKLY_TSS_RAMP_PCT)
+      .default(7),
+    max_ctl_ramp_per_week: z
+      .number()
+      .min(0)
+      .max(CREATION_MAX_CTL_RAMP_PER_WEEK)
+      .default(3),
+    projection_control_v2: projectionControlV2Schema.default({
+      mode: "simple",
+      ambition: 0.5,
+      risk_tolerance: 0.4,
+      curvature: 0,
+      curvature_strength: 0.35,
+      user_owned: {
+        mode: false,
+        ambition: false,
+        risk_tolerance: false,
+        curvature: false,
+        curvature_strength: false,
+      },
+    }),
+    calibration: trainingPlanCalibrationConfigSchema.default({
+      version: 1,
+      readiness_composite: {
+        target_attainment_weight: 0.45,
+        envelope_weight: 0.3,
+        durability_weight: 0.15,
+        evidence_weight: 0.1,
+      },
+      readiness_timeline: {
+        target_tsb: 8,
+        form_tolerance: 20,
+        fatigue_overflow_scale: 0.4,
+        feasibility_blend_weight: 0.15,
+        smoothing_iterations: 24,
+        smoothing_lambda: 0.28,
+        max_step_delta: 9,
+      },
+      envelope_penalties: {
+        over_high_weight: 0.55,
+        under_low_weight: 0.2,
+        over_ramp_weight: 0.25,
+      },
+      durability_penalties: {
+        monotony_threshold: 2,
+        monotony_scale: 2,
+        strain_threshold: 900,
+        strain_scale: 900,
+        deload_debt_scale: 6,
+      },
+      no_history: {
+        reliability_horizon_days: 42,
+        confidence_floor_high: 0.75,
+        confidence_floor_mid: 0.6,
+        confidence_floor_low: 0.45,
+        demand_tier_time_pressure_scale: 1,
+      },
+      optimizer: {
+        preparedness_weight: 14,
+        risk_penalty_weight: 0.35,
+        volatility_penalty_weight: 0.22,
+        churn_penalty_weight: 0.2,
+        lookahead_weeks: 5,
+        candidate_steps: 7,
+      },
+    }),
     locks: creationConfigLocksSchema,
     context_summary: creationContextSummarySchema.optional(),
     feasibility_safety_summary:

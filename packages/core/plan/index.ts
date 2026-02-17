@@ -4,6 +4,7 @@ export * from "./canonicalization";
 export * from "./dateOnlyUtc";
 export * from "./deriveCreationContext";
 export * from "./deriveCreationSuggestions";
+export * from "./computeLoadBootstrapState";
 export * from "./derivePlanTimeline";
 export * from "./expandMinimalGoalToPlan";
 export * from "./goalPriorityWeighting";
@@ -22,6 +23,7 @@ export {
 export * from "./projectionCalculations";
 export * from "./projection/no-history";
 export * from "./projection/safety-caps";
+export * from "./projection/effective-controls";
 export * from "./projection/mpc/lattice";
 export * from "./projection/mpc/constraints";
 export * from "./projection/mpc/objective";

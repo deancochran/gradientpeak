@@ -1,5 +1,62 @@
 export type OptimizationProfile = "outcome_first" | "balanced" | "sustainable";
 
+export interface ProjectionCalibrationConfigInput {
+  version?: 1;
+  readiness_composite?: {
+    target_attainment_weight?: number;
+    envelope_weight?: number;
+    durability_weight?: number;
+    evidence_weight?: number;
+  };
+  readiness_timeline?: {
+    target_tsb?: number;
+    form_tolerance?: number;
+    fatigue_overflow_scale?: number;
+    feasibility_blend_weight?: number;
+    smoothing_iterations?: number;
+    smoothing_lambda?: number;
+    max_step_delta?: number;
+  };
+  envelope_penalties?: {
+    over_high_weight?: number;
+    under_low_weight?: number;
+    over_ramp_weight?: number;
+  };
+  durability_penalties?: {
+    monotony_threshold?: number;
+    monotony_scale?: number;
+    strain_threshold?: number;
+    strain_scale?: number;
+    deload_debt_scale?: number;
+  };
+  no_history?: {
+    reliability_horizon_days?: number;
+    confidence_floor_high?: number;
+    confidence_floor_mid?: number;
+    confidence_floor_low?: number;
+    demand_tier_time_pressure_scale?: number;
+  };
+  optimizer?: {
+    preparedness_weight?: number;
+    risk_penalty_weight?: number;
+    volatility_penalty_weight?: number;
+    churn_penalty_weight?: number;
+    lookahead_weeks?: number;
+    candidate_steps?: number;
+  };
+}
+
+export interface ProjectionControlV2Input {
+  mode?: "simple" | "advanced";
+  ambition?: number;
+  risk_tolerance?: number;
+  curvature?: number;
+  curvature_strength?: number;
+}
+
+export const ABSOLUTE_MAX_WEEKLY_TSS_RAMP_PCT = 40;
+export const ABSOLUTE_MAX_CTL_RAMP_PER_WEEK = 12;
+
 const PROJECTION_PROFILE_DEFAULTS: Record<
   OptimizationProfile,
   {
@@ -38,6 +95,8 @@ export interface ProjectionSafetyConfigInput {
   post_goal_recovery_days?: number;
   max_weekly_tss_ramp_pct?: number;
   max_ctl_ramp_per_week?: number;
+  projection_control_v2?: ProjectionControlV2Input;
+  calibration?: ProjectionCalibrationConfigInput;
 }
 
 export interface ProjectionSafetyConfig {
@@ -120,14 +179,14 @@ export function normalizeProjectionSafetyConfig(
     max_weekly_tss_ramp_pct: Math.max(
       0,
       Math.min(
-        20,
+        ABSOLUTE_MAX_WEEKLY_TSS_RAMP_PCT,
         input?.max_weekly_tss_ramp_pct ?? defaults.max_weekly_tss_ramp_pct,
       ),
     ),
     max_ctl_ramp_per_week: Math.max(
       0,
       Math.min(
-        8,
+        ABSOLUTE_MAX_CTL_RAMP_PER_WEEK,
         input?.max_ctl_ramp_per_week ?? defaults.max_ctl_ramp_per_week,
       ),
     ),

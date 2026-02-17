@@ -1,3 +1,5 @@
+import type { TrainingPlanCalibrationConfig } from "../../schemas/training_plan_structure";
+
 export type EnvelopeState = "inside" | "edge" | "outside";
 export type EvidenceState = "none" | "sparse" | "stale" | "rich";
 
@@ -10,6 +12,7 @@ export interface CapacityEnvelopeInput {
   weeks: CapacityEnvelopeWeekInput[];
   starting_ctl: number;
   evidence_state?: EvidenceState;
+  envelope_penalties?: TrainingPlanCalibrationConfig["envelope_penalties"];
 }
 
 export interface CapacityEnvelopeResult {
@@ -17,12 +20,6 @@ export interface CapacityEnvelopeResult {
   envelope_state: EnvelopeState;
   limiting_factors: string[];
 }
-
-const WEIGHTS = {
-  over_high: 0.55,
-  under_low: 0.2,
-  over_ramp: 0.25,
-} as const;
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -37,10 +34,18 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function getHistoryMultiplier(state: EvidenceState | undefined): number {
-  if (state === "rich") return 1;
-  if (state === "sparse") return 0.93;
-  if (state === "stale") return 0.88;
-  return 0.82;
+  if (state === "rich") return 1.08;
+  if (state === "sparse") return 0.95;
+  if (state === "stale") return 0.9;
+  return 0.84;
+}
+
+function deriveEliteLoadFactor(baselineWeeklyTss: number): number {
+  if (baselineWeeklyTss <= 650) {
+    return 0;
+  }
+
+  return clamp01((baselineWeeklyTss - 650) / 650);
 }
 
 function deriveEnvelopeBounds(input: {
@@ -52,17 +57,22 @@ function deriveEnvelopeBounds(input: {
   safe_high: number;
   ramp_limit: number;
 } {
-  const progressiveGrowth = 1 + Math.min(0.38, input.weekIndex * 0.035);
+  const eliteLoadFactor = deriveEliteLoadFactor(input.baselineWeeklyTss);
+  const progressiveGrowthCeiling = 0.38 + eliteLoadFactor * 0.52;
+  const progressiveGrowth =
+    1 + Math.min(progressiveGrowthCeiling, input.weekIndex * 0.035);
   const safeLow =
     input.baselineWeeklyTss * (0.76 + Math.min(0.08, input.weekIndex * 0.006));
+  const safeHighMultiplier = 1.08 + eliteLoadFactor * 0.28;
   const safeHigh =
     input.baselineWeeklyTss *
     progressiveGrowth *
-    (1.08 * input.historyMultiplier);
+    (safeHighMultiplier * input.historyMultiplier);
+  const rampLimitCeiling = 14 + eliteLoadFactor * 10;
   const rampLimit = clamp(
     7 + input.baselineWeeklyTss / 160 + input.weekIndex * 0.2,
     4,
-    14,
+    rampLimitCeiling,
   );
 
   return {
@@ -88,6 +98,10 @@ export function computeCapacityEnvelope(
 
   const baselineWeeklyTss = Math.max(35, input.starting_ctl * 7);
   const historyMultiplier = getHistoryMultiplier(input.evidence_state);
+  const envelopePenalties = input.envelope_penalties;
+  const weightOverHigh = envelopePenalties?.over_high_weight ?? 0.55;
+  const weightUnderLow = envelopePenalties?.under_low_weight ?? 0.2;
+  const weightOverRamp = envelopePenalties?.over_ramp_weight ?? 0.25;
 
   let weightedPenalty = 0;
   let weightTotal = 0;
@@ -113,9 +127,9 @@ export function computeCapacityEnvelope(
     const normOverRamp = overRamp / bounds.ramp_limit;
 
     const weekPenalty = clamp01(
-      WEIGHTS.over_high * normOverHigh +
-        WEIGHTS.under_low * normUnderLow +
-        WEIGHTS.over_ramp * normOverRamp,
+      weightOverHigh * normOverHigh +
+        weightUnderLow * normUnderLow +
+        weightOverRamp * normOverRamp,
     );
     const weekWeight = 1 + index * 0.04;
 

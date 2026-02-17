@@ -28,26 +28,15 @@ type ProjectionChartDatum = Record<string, unknown> & {
   loadTss: number;
   fitnessCtl: number;
   fatigueAtl: number;
-  formTsb: number;
   readinessScore: number;
 };
 
-type ChartYKey =
-  | "loadTss"
-  | "fitnessCtl"
-  | "fatigueAtl"
-  | "formTsb"
-  | "readinessScore";
+type ChartYKey = "loadTss" | "fitnessCtl" | "fatigueAtl";
 
 type ProjectionPoint = ProjectionChartPayload["points"][number];
+type UnknownRecord = Record<string, unknown>;
 
-const chartYKeys: ChartYKey[] = [
-  "loadTss",
-  "fitnessCtl",
-  "fatigueAtl",
-  "formTsb",
-  "readinessScore",
-];
+const chartYKeys: ChartYKey[] = ["loadTss", "fitnessCtl", "fatigueAtl"];
 
 const lineConfig: Array<{
   key: ChartYKey;
@@ -69,24 +58,12 @@ const lineConfig: Array<{
     label: "Fatigue",
     color: "rgba(245, 158, 11, 0.95)",
   },
-  {
-    key: "formTsb",
-    label: "Form",
-    color: "rgba(139, 92, 246, 0.95)",
-  },
-  {
-    key: "readinessScore",
-    label: "Readiness",
-    color: "rgba(244, 63, 94, 0.95)",
-  },
 ];
 
 const defaultLineVisibility: Record<ChartYKey, boolean> = {
   loadTss: true,
   fitnessCtl: true,
   fatigueAtl: true,
-  formTsb: true,
-  readinessScore: true,
 };
 const defaultChartHeight = 300;
 const minChartHeight = 120;
@@ -133,10 +110,6 @@ const toPercentReductionLabel = (factor: number) => {
   return `${Math.round(reduction * 100)}%`;
 };
 
-const toDateOnlyUtc = (value: Date) => value.toISOString().slice(0, 10);
-
-const getTodayDateOnlyUtc = () => toDateOnlyUtc(new Date());
-
 const formatNoHistoryConfidence = (
   confidence: NoHistoryProjectionMetadata["projection_floor_confidence"],
 ) => confidence ?? "n/a";
@@ -147,6 +120,221 @@ const formatCompactAxisNumber = (value: number) => {
     return `${(value / 1000).toFixed(1)}k`;
   }
   return `${Math.round(value)}`;
+};
+
+const asRecord = (value: unknown): UnknownRecord | undefined => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value as UnknownRecord;
+};
+
+const asFiniteNumber = (value: unknown): number | undefined => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+
+  return value;
+};
+
+const asStringArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((item): item is string => typeof item === "string");
+};
+
+const toSentenceKey = (key: string) =>
+  key.replaceAll("_", " ").replaceAll("-", " ").trim();
+
+const formatDiagnosticNumber = (value: number) => {
+  if (Math.abs(value) >= 100) return value.toFixed(0);
+  if (Math.abs(value) >= 10) return value.toFixed(1);
+  return value.toFixed(2);
+};
+
+const summarizeNumericRecord = (
+  record: UnknownRecord | undefined,
+  limit: number,
+) => {
+  if (!record) {
+    return "";
+  }
+
+  const entries = Object.entries(record)
+    .map(([key, value]) => {
+      const numeric = asFiniteNumber(value);
+      if (numeric === undefined) {
+        return null;
+      }
+      return `${toSentenceKey(key)} ${formatDiagnosticNumber(numeric)}`;
+    })
+    .filter((entry): entry is string => Boolean(entry));
+
+  return entries.slice(0, limit).join(", ");
+};
+
+const readFirstRecord = (
+  source: UnknownRecord | undefined,
+  keys: string[],
+): UnknownRecord | undefined => {
+  if (!source) {
+    return undefined;
+  }
+
+  for (const key of keys) {
+    const candidate = asRecord(source[key]);
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+};
+
+const readFirstNumber = (
+  source: UnknownRecord | undefined,
+  keys: string[],
+): number | undefined => {
+  if (!source) {
+    return undefined;
+  }
+
+  for (const key of keys) {
+    const candidate = asFiniteNumber(source[key]);
+    if (candidate !== undefined) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+};
+
+const readFirstStringArray = (
+  source: UnknownRecord | undefined,
+  keys: string[],
+): string[] => {
+  if (!source) {
+    return [];
+  }
+
+  for (const key of keys) {
+    const candidate = asStringArray(source[key]);
+    if (candidate.length > 0) {
+      return candidate;
+    }
+  }
+
+  return [];
+};
+
+const resolveContinuousProjectionDiagnostics = (
+  projectionChart: ProjectionChartPayload | undefined,
+) => {
+  const baseDiagnostics = asRecord(projectionChart?.projection_diagnostics);
+  const scopedDiagnostics =
+    readFirstRecord(baseDiagnostics, [
+      "continuous_projection_diagnostics",
+      "continuous_projection",
+      "continuous",
+    ]) ?? baseDiagnostics;
+
+  const effectiveOptimizer = readFirstRecord(scopedDiagnostics, [
+    "effective_optimizer",
+    "effectiveOptimizer",
+    "effective_optimizer_values",
+    "effectiveOptimizerValues",
+  ]);
+  const effectiveOptimizerConfig = readFirstRecord(scopedDiagnostics, [
+    "effective_optimizer_config",
+    "effectiveOptimizerConfig",
+  ]);
+  const objectiveContributions = readFirstRecord(scopedDiagnostics, [
+    "objective_contributions",
+    "objectiveContributions",
+  ]);
+  const objectiveComposition = readFirstRecord(scopedDiagnostics, [
+    "objective_composition",
+    "objectiveComposition",
+  ]);
+  const clampCounts = readFirstRecord(scopedDiagnostics, [
+    "clamp_counts",
+    "clampCounts",
+  ]);
+  const sampledWeeks =
+    readFirstNumber(objectiveContributions, [
+      "sampled_weeks",
+      "sampledWeeks",
+    ]) ?? undefined;
+  const derivedClampPressure =
+    clampCounts && sampledWeeks && sampledWeeks > 0
+      ? ((readFirstNumber(clampCounts, ["tss"]) ?? 0) +
+          (readFirstNumber(clampCounts, ["ctl"]) ?? 0)) /
+        sampledWeeks
+      : undefined;
+  const effectiveOptimizerSummaryRecord =
+    effectiveOptimizer ??
+    readFirstRecord(effectiveOptimizerConfig, ["weights"]) ??
+    effectiveOptimizerConfig;
+  const objectiveSummaryRecord =
+    objectiveComposition ??
+    readFirstRecord(objectiveContributions, [
+      "weighted_terms",
+      "weightedTerms",
+    ]) ??
+    objectiveContributions;
+  const curvatureContribution =
+    readFirstNumber(scopedDiagnostics, [
+      "curvature_contribution",
+      "curvatureContribution",
+    ]) ??
+    readFirstNumber(objectiveSummaryRecord, [
+      "curvature_contribution",
+      "curvatureContribution",
+      "curvature",
+      "curve",
+    ]);
+
+  return {
+    activeConstraints: readFirstStringArray(scopedDiagnostics, [
+      "active_constraints",
+      "activeConstraints",
+    ]),
+    bindingConstraints: readFirstStringArray(scopedDiagnostics, [
+      "binding_constraints",
+      "bindingConstraints",
+    ]),
+    clampPressure:
+      readFirstNumber(scopedDiagnostics, ["clamp_pressure", "clampPressure"]) ??
+      (derivedClampPressure !== undefined
+        ? Math.max(0, Math.min(1, derivedClampPressure))
+        : undefined),
+    effectiveOptimizer: effectiveOptimizerSummaryRecord,
+    objectiveComposition: objectiveSummaryRecord,
+    curvatureContribution,
+  };
+};
+
+const roundUpAxisMax = (value: number) => {
+  if (!Number.isFinite(value) || value <= 0) {
+    return 100;
+  }
+
+  const magnitude = 10 ** Math.floor(Math.log10(value));
+  const normalized = value / magnitude;
+
+  let roundedNormalized = 10;
+  if (normalized <= 1) {
+    roundedNormalized = 1;
+  } else if (normalized <= 2) {
+    roundedNormalized = 2;
+  } else if (normalized <= 5) {
+    roundedNormalized = 5;
+  }
+
+  return roundedNormalized * magnitude;
 };
 
 const getAxisFontSource = (): Parameters<typeof useFont>[0] => {
@@ -366,71 +554,7 @@ const buildDisplayedPoints = (input: {
   projectionChart?: ProjectionChartPayload;
 }): ProjectionPoint[] => {
   const projection = input.projectionChart;
-  const basePoints = projection?.points ?? [];
-  if (basePoints.length === 0) {
-    return [];
-  }
-
-  const pointByDate = new Map(basePoints.map((point) => [point.date, point]));
-  const weeklyPoints =
-    projection?.microcycles
-      ?.map((cycle) => pointByDate.get(cycle.week_end_date))
-      .filter((point): point is ProjectionPoint => point !== undefined) ?? [];
-  const sourcePoints = weeklyPoints.length > 0 ? weeklyPoints : basePoints;
-
-  const today = getTodayDateOnlyUtc();
-  const projectionEndDate = sourcePoints[sourcePoints.length - 1]?.date;
-  const explicitProjectionEndDate = projection?.end_date;
-  const latestGoalDate = projection?.goal_markers
-    ?.map((goal) => goal.target_date)
-    .sort((a, b) => a.localeCompare(b))
-    .at(-1);
-
-  const endDateCandidates = [
-    today,
-    projectionEndDate,
-    explicitProjectionEndDate,
-    latestGoalDate,
-  ].filter((value): value is string => Boolean(value));
-  const targetEndDate = endDateCandidates
-    .sort((a, b) => a.localeCompare(b))
-    .at(-1);
-  if (!targetEndDate) {
-    return sourcePoints;
-  }
-
-  const filtered = sourcePoints.filter((point) => point.date >= today);
-  const seedPoint =
-    filtered[0] ?? sourcePoints[sourcePoints.length - 1] ?? sourcePoints[0];
-  if (!seedPoint) {
-    return [];
-  }
-
-  const displayed: ProjectionPoint[] = [...filtered];
-  if (displayed.length === 0 || displayed[0]?.date !== today) {
-    displayed.unshift({
-      date: today,
-      predicted_load_tss: seedPoint.predicted_load_tss,
-      predicted_fitness_ctl: seedPoint.predicted_fitness_ctl,
-      predicted_fatigue_atl: seedPoint.predicted_fatigue_atl,
-      predicted_form_tsb: seedPoint.predicted_form_tsb,
-      readiness_score: seedPoint.readiness_score,
-    });
-  }
-
-  const lastPoint = displayed[displayed.length - 1] ?? seedPoint;
-  if (lastPoint.date < targetEndDate) {
-    displayed.push({
-      date: targetEndDate,
-      predicted_load_tss: lastPoint.predicted_load_tss,
-      predicted_fitness_ctl: lastPoint.predicted_fitness_ctl,
-      predicted_fatigue_atl: lastPoint.predicted_fatigue_atl,
-      predicted_form_tsb: lastPoint.predicted_form_tsb,
-      readiness_score: lastPoint.readiness_score,
-    });
-  }
-
-  return displayed;
+  return projection?.display_points ?? projection?.points ?? [];
 };
 
 const resolveSelectedMicrocycle = (
@@ -716,6 +840,27 @@ export const CreationProjectionChart = React.memo(
       [labelStride, points, shortDateLabels],
     );
 
+    const rightAxisDomainMax = useMemo(() => {
+      if (!points.length) {
+        return 100;
+      }
+
+      const includeFitness = lineVisibility.fitnessCtl;
+      const includeFatigue = lineVisibility.fatigueAtl;
+      let maxValue = 0;
+
+      for (const point of points) {
+        if (includeFitness) {
+          maxValue = Math.max(maxValue, point.predicted_fitness_ctl);
+        }
+        if (includeFatigue) {
+          maxValue = Math.max(maxValue, point.predicted_fatigue_atl);
+        }
+      }
+
+      return roundUpAxisMax(Math.max(100, maxValue));
+    }, [lineVisibility.fatigueAtl, lineVisibility.fitnessCtl, points]);
+
     const chartData = useMemo(
       (): ProjectionChartDatum[] =>
         points.map((point, index) => ({
@@ -723,7 +868,6 @@ export const CreationProjectionChart = React.memo(
           loadTss: point.predicted_load_tss,
           fitnessCtl: point.predicted_fitness_ctl,
           fatigueAtl: point.predicted_fatigue_atl,
-          formTsb: point.predicted_form_tsb,
           readinessScore: point.readiness_score,
         })),
       [points],
@@ -779,13 +923,9 @@ export const CreationProjectionChart = React.memo(
             formatCompactAxisNumber(Number(value)),
         },
         {
-          yKeys: [
-            "fitnessCtl",
-            "fatigueAtl",
-            "formTsb",
-            "readinessScore",
-          ] as ChartYKey[],
+          yKeys: ["fitnessCtl", "fatigueAtl"] as ChartYKey[],
           axisSide: "right" as const,
+          domain: [0, rightAxisDomainMax] as [number, number],
           labelPosition: "outset" as const,
           labelOffset: 8,
           font: axisFont,
@@ -797,7 +937,7 @@ export const CreationProjectionChart = React.memo(
             formatCompactAxisNumber(Number(value)),
         },
       ],
-      [axisFont, isDark],
+      [axisFont, isDark, rightAxisDomainMax],
     );
 
     const toggleLineVisibility = useCallback((key: ChartYKey) => {
@@ -847,7 +987,7 @@ export const CreationProjectionChart = React.memo(
     const selectedPoint = points[selectedPointIndex];
     const selectedReadiness = selectedPoint?.readiness_score;
     const selectedPointSummary = selectedPoint
-      ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date}. Weekly load ${Math.round(selectedPoint.predicted_load_tss)} TSS. Fitness ${selectedPoint.predicted_fitness_ctl.toFixed(1)} CTL. Fatigue ${selectedPoint.predicted_fatigue_atl.toFixed(1)} ATL. Form ${selectedPoint.predicted_form_tsb.toFixed(1)} TSB. Readiness ${Math.round(selectedReadiness ?? 0)} out of 100.`
+      ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date}. Weekly load ${Math.round(selectedPoint.predicted_load_tss)} TSS. Fitness ${selectedPoint.predicted_fitness_ctl.toFixed(1)} CTL. Fatigue ${selectedPoint.predicted_fatigue_atl.toFixed(1)} ATL. Readiness ${Math.round(selectedReadiness ?? 0)} out of 100.`
       : "No point selected.";
     const activePhase = useMemo(() => {
       if (!projectionChart || !selectedPoint) {
@@ -924,6 +1064,33 @@ export const CreationProjectionChart = React.memo(
     const noHistoryAccessibilitySummary = noHistoryMetadata
       ? `Adaptive demand confidence ${noHistoryConfidenceLabel}. Demand floor enabled ${noHistoryFloorEnabledLabel}. Availability clamp ${noHistoryAvailabilityClampLabel}. Evidence confidence ${evidenceConfidenceState ?? "n/a"} ${evidenceConfidenceScore !== undefined ? evidenceConfidenceScore.toFixed(2) : "n/a"}. Readiness ${readinessBand ?? "n/a"}.`
       : undefined;
+    const continuousDiagnostics = useMemo(
+      () => resolveContinuousProjectionDiagnostics(projectionChart),
+      [projectionChart],
+    );
+    const effectiveOptimizerSummary = summarizeNumericRecord(
+      continuousDiagnostics.effectiveOptimizer,
+      4,
+    );
+    const objectiveSummary = summarizeNumericRecord(
+      continuousDiagnostics.objectiveComposition,
+      5,
+    );
+    const activeConstraintSummary = continuousDiagnostics.activeConstraints
+      .slice(0, 3)
+      .map((item) => toSentenceKey(item))
+      .join(", ");
+    const bindingConstraintSummary = continuousDiagnostics.bindingConstraints
+      .slice(0, 3)
+      .map((item) => toSentenceKey(item))
+      .join(", ");
+    const showContinuousDiagnostics =
+      Boolean(effectiveOptimizerSummary) ||
+      Boolean(objectiveSummary) ||
+      activeConstraintSummary.length > 0 ||
+      bindingConstraintSummary.length > 0 ||
+      continuousDiagnostics.clampPressure !== undefined ||
+      continuousDiagnostics.curvatureContribution !== undefined;
     return (
       <View
         style={{ width: "100%" }}
@@ -1215,11 +1382,13 @@ export const CreationProjectionChart = React.memo(
               <>
                 <Text className="px-1 text-[11px] text-muted-foreground">
                   Raw projected values are shown directly: weekly load in
-                  TSS/week, fitness in CTL, fatigue in ATL, form in TSB, and a
-                  readiness score (0-100) from core projection output.
+                  TSS/week, fitness in CTL, and fatigue in ATL. Readiness is
+                  still calculated from core projection output (0-100) and shown
+                  in selected-point details below, but not drawn as a chart
+                  line.
                 </Text>
                 <Text className="px-1 text-[11px] text-muted-foreground">
-                  CTL, ATL, and TSB are training-state metrics only and are not
+                  CTL and ATL are training-state metrics only and are not
                   suitability or safety determinations.
                 </Text>
                 <Text className="px-1 text-[11px] text-muted-foreground">
@@ -1243,12 +1412,12 @@ export const CreationProjectionChart = React.memo(
                   <Text className="text-xs font-medium">Training state</Text>
                   <Text className="text-xs text-muted-foreground">
                     {selectedPoint
-                      ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date} - Weekly load ${Math.round(selectedPoint.predicted_load_tss)} TSS - CTL ${selectedPoint.predicted_fitness_ctl.toFixed(1)} - ATL ${selectedPoint.predicted_fatigue_atl.toFixed(1)} - TSB ${selectedPoint.predicted_form_tsb.toFixed(1)} - Readiness ${Math.round(selectedReadiness ?? 0)}/100`
+                      ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date} - Weekly load ${Math.round(selectedPoint.predicted_load_tss)} TSS - CTL ${selectedPoint.predicted_fitness_ctl.toFixed(1)} - ATL ${selectedPoint.predicted_fatigue_atl.toFixed(1)} - Readiness ${Math.round(selectedReadiness ?? 0)}/100`
                       : "Tap a point to inspect projected details."}
                   </Text>
                   <Text className="text-xs text-muted-foreground">
-                    CTL/ATL/TSB describe training load and freshness trends
-                    only; they do not determine athlete suitability.
+                    CTL/ATL describe training load and fatigue trends only; they
+                    do not determine athlete suitability.
                   </Text>
                   <Text className="text-xs text-muted-foreground">
                     Active phase: {activePhase?.name ?? "-"}
@@ -1362,7 +1531,7 @@ export const CreationProjectionChart = React.memo(
                           accessibilityRole="tab"
                           accessibilityState={{ selected: isActive }}
                           accessibilityLabel={`Point ${index + 1} of ${points.length}, ${dateLabel}`}
-                          accessibilityHint={`Weekly load ${Math.round(point.predicted_load_tss)} TSS, fitness ${point.predicted_fitness_ctl.toFixed(1)} CTL, fatigue ${point.predicted_fatigue_atl.toFixed(1)} ATL, form ${point.predicted_form_tsb.toFixed(1)} TSB, readiness ${Math.round(point.readiness_score ?? 0)} out of 100`}
+                          accessibilityHint={`Weekly load ${Math.round(point.predicted_load_tss)} TSS, fitness ${point.predicted_fitness_ctl.toFixed(1)} CTL, fatigue ${point.predicted_fatigue_atl.toFixed(1)} ATL, readiness ${Math.round(point.readiness_score ?? 0)} out of 100`}
                           hitSlop={8}
                           style={{
                             minHeight: 44,
@@ -1525,6 +1694,59 @@ export const CreationProjectionChart = React.memo(
                       Recovery:{" "}
                       {projectionChart.constraint_summary.recovery_weeks}
                     </Text>
+                    {showContinuousDiagnostics ? (
+                      <>
+                        {effectiveOptimizerSummary ? (
+                          <Text className="text-[11px] text-muted-foreground">
+                            Effective optimizer: {effectiveOptimizerSummary}.
+                          </Text>
+                        ) : null}
+                        {activeConstraintSummary ? (
+                          <Text className="text-[11px] text-muted-foreground">
+                            Active constraints: {activeConstraintSummary}.
+                          </Text>
+                        ) : null}
+                        {bindingConstraintSummary ||
+                        continuousDiagnostics.clampPressure !== undefined ? (
+                          <Text className="text-[11px] text-muted-foreground">
+                            Binding constraints:{" "}
+                            {bindingConstraintSummary || "none"}
+                            {continuousDiagnostics.clampPressure !== undefined
+                              ? ` | Clamp pressure ${Math.round(
+                                  Math.max(
+                                    0,
+                                    Math.min(
+                                      100,
+                                      continuousDiagnostics.clampPressure * 100,
+                                    ),
+                                  ),
+                                )}%`
+                              : ""}
+                          </Text>
+                        ) : null}
+                        {objectiveSummary ? (
+                          <Text className="text-[11px] text-muted-foreground">
+                            Objective mix: {objectiveSummary}
+                            {continuousDiagnostics.curvatureContribution !==
+                            undefined
+                              ? ` | curvature ${formatDiagnosticNumber(
+                                  continuousDiagnostics.curvatureContribution,
+                                )}`
+                              : ""}
+                            .
+                          </Text>
+                        ) : continuousDiagnostics.curvatureContribution !==
+                          undefined ? (
+                          <Text className="text-[11px] text-muted-foreground">
+                            Curvature contribution:{" "}
+                            {formatDiagnosticNumber(
+                              continuousDiagnostics.curvatureContribution,
+                            )}
+                            .
+                          </Text>
+                        ) : null}
+                      </>
+                    ) : null}
                   </View>
                 ) : null}
 

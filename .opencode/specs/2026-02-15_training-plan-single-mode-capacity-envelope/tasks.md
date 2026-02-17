@@ -5,9 +5,26 @@ Spec: `.opencode/specs/2026-02-15_training-plan-single-mode-capacity-envelope/`
 
 ## Dependency Notes
 
-- Execution order is strict: **Phase 0 -> Phase 1 -> Phase 2 -> Phase 3 -> Phase 4**.
+- Execution order is strict: **Phase 0 -> Phase 1 -> Phase 2 -> Phase 3 -> Phase 4 -> Phase 5 -> Phase 6 -> Phase 7**.
 - Do not begin a phase until prior phase exit criteria are satisfied.
 - `@repo/core` types and schemas are the source of truth.
+
+## Current Status Snapshot
+
+- [x] Phase 0 complete
+- [x] Phase 1 complete
+- [x] Phase 2 complete
+- [x] Phase 3 complete
+- [x] Phase 4 complete
+- [x] Phase 5 complete
+- [x] Phase 6 complete
+- [x] Phase 7 complete
+
+## Current Execution Focus (2026-02-15)
+
+- [x] Complete Phase 5 core/trpc/mobile coherence path by introducing a canonical chart display series contract and consuming it in mobile without local synthetic point injection.
+- [x] Add cross-layer readiness coherence assertions (core projection fixture + trpc parity + mobile rendering fixture) for headline readiness and displayed curve consistency.
+- [x] Start Phase 6 objective hardening by making preparedness-first objective semantics explicit in optimizer scoring and adding deterministic tests for safe-best outcome behavior.
 
 ## Phase 0 - Contract Migration Scaffolding
 
@@ -113,3 +130,62 @@ Depends on: **Phase 3 complete**
 - [x] Single readiness metric is the only readiness headline and includes capacity-envelope realism.
 - [x] CTL/ATL/TSB are exposed only as training-state metrics, never suitability labels.
 - [x] Determinism and performance gates pass at release threshold.
+- [x] Default planner objective is safety-first and maximizes highest achievable preparedness toward 100.
+- [x] Readiness timeline and headline semantics remain coherent in core/trpc/mobile outputs.
+- [x] No derivable duplicate input aliases remain in active creation/projection contracts.
+
+## Phase 5 - Readiness Coherence + Visual Truth Alignment
+
+Depends on: **Phase 4 complete**
+
+### Checklist
+
+- [x] (owner: core/mobile) Remove standalone readiness metadata card from chart review UI to avoid duplicate/conflicting readiness narratives.
+- [x] (owner: core) Cap goal-anchored point readiness to plan readiness when plan readiness is supplied.
+- [x] (owner: core) Refactor readiness orchestration to avoid semantic overwrite between feasibility and composite stages.
+- [x] (owner: core) Provide explicit chart-ready readiness series contract (`display_points`) to minimize client-side reshaping.
+- [x] (owner: mobile) Consume canonical readiness display series from API/core payload and reduce local synthetic point manipulation.
+- [x] (owner: core/trpc/mobile) Add cross-layer readiness coherence fixture test (headline, point series, goal-date behavior).
+
+### Test Commands
+
+- [x] `cd packages/core && pnpm test -- --runInBand`
+- [x] `cd apps/mobile && pnpm check-types && pnpm test`
+- [x] `cd packages/trpc && pnpm check-types && pnpm test`
+
+## Phase 6 - Safety-First Objective Hardening
+
+Depends on: **Phase 5 complete**
+
+### Checklist
+
+- [x] (owner: core) Make optimizer objective explicit: maximize safe achievable preparedness toward readiness 100.
+- [x] (owner: core) Preserve ramp/CTL/recovery as hard constraints in default path and assert no violations under optimization.
+- [x] (owner: core/trpc) Ensure infeasible goals still yield best-safe plan progression without create blocking.
+- [x] (owner: core) Add objective-coherence tests (preparedness-first ordering with deterministic tie-break behavior).
+- [x] (owner: trpc/mobile) Reflect safety-first default policy in preview/create explanatory copy and diagnostics.
+
+### Test Commands
+
+- [x] `cd packages/core && pnpm test -- --runInBand`
+- [x] `cd packages/trpc && pnpm check-types && pnpm test`
+- [x] `cd apps/mobile && pnpm check-types && pnpm test`
+
+## Phase 7 - Schema Governance + Maintainability Cleanup
+
+Depends on: **Phase 6 complete**
+
+### Checklist
+
+- [x] (owner: core/trpc/mobile) Remove derived duplicate suggestions input alias `recent_influence_score` and use canonical `recent_influence.influence_score` object path.
+- [x] (owner: spec) Document no-derived-duplicates schema policy in design spec.
+- [x] (owner: core) Identify and remove remaining low-risk duplicate/legacy schema aliases in active contracts.
+- [x] (owner: trpc) Add write-boundary canonicalization tests to ensure persisted structures use canonical parsed shapes.
+- [x] (owner: mobile) Add adapter contract tests that fail on reintroduction of deprecated/inferred alias fields.
+- [x] (owner: core/trpc/mobile) Add schema release-gate checklist execution artifact in this spec folder.
+
+### Test Commands
+
+- [x] `cd packages/core && pnpm test -- --runInBand`
+- [x] `cd packages/trpc && pnpm check-types && pnpm test`
+- [x] `cd apps/mobile && pnpm check-types && pnpm test`

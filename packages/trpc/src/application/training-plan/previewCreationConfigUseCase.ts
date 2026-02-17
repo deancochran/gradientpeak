@@ -1,8 +1,13 @@
 import {
+  buildPreviewReadinessSnapshot,
+  buildReadinessDeltaDiagnostics,
   previewCreationConfigInputSchema,
   type CreationFeasibilitySafetySummary,
   type CreationContextSummary,
+  type LoadBootstrapState,
   type ProjectionConstraintSummary,
+  type ReadinessDeltaDiagnostics,
+  type PreviewReadinessSnapshot,
   type TrainingPlanCreationConfig,
 } from "@repo/core";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -23,6 +28,7 @@ type CreationConflictItem = {
 type EvaluateCreationConfigResult = {
   finalConfig: TrainingPlanCreationConfig;
   contextSummary: CreationContextSummary;
+  loadBootstrapState: LoadBootstrapState;
   suggestionPayload: unknown;
   conflictResolution: {
     conflicts: CreationConflictItem[];
@@ -39,12 +45,19 @@ export async function previewCreationConfigUseCase<
   }) => Promise<EvaluateCreationConfigResult>,
   TProjectionChart extends {
     constraint_summary: ProjectionConstraintSummary;
+    points: Array<{
+      readiness_score?: number;
+      predicted_load_tss: number;
+      predicted_fatigue_atl: number;
+    }>;
+    readiness_score?: number;
     no_history?: unknown;
   },
   TBuildCreationProjectionArtifacts extends (input: {
     minimalPlan: PreviewCreationConfigInput["minimal_plan"];
-    estimatedCurrentCtl: number;
+    loadBootstrapState: LoadBootstrapState;
     startingCtlOverride?: number;
+    startingAtlOverride?: number;
     finalConfig: Awaited<ReturnType<TEvaluateCreationConfig>>["finalConfig"];
     contextSummary: Awaited<
       ReturnType<TEvaluateCreationConfig>
@@ -66,7 +79,7 @@ export async function previewCreationConfigUseCase<
   TBuildCreationPreviewSnapshotToken extends (input: {
     minimalPlan: PreviewCreationConfigInput["minimal_plan"];
     finalConfig: Awaited<ReturnType<TEvaluateCreationConfig>>["finalConfig"];
-    estimatedCurrentCtl: number;
+    loadBootstrapState: LoadBootstrapState;
     projectionConstraintSummary: ReturnType<TBuildCreationProjectionArtifacts>["projectionChart"]["constraint_summary"];
     projectionFeasibility: ReturnType<TBuildCreationProjectionArtifacts>["projectionFeasibility"];
     noHistoryMetadata?: ReturnType<TBuildCreationProjectionArtifacts>["projectionChart"]["no_history"];
@@ -86,10 +99,6 @@ export async function previewCreationConfigUseCase<
       input: PreviewCreationConfigInput["post_create_behavior"],
     ) => void;
     evaluateCreationConfig: TEvaluateCreationConfig;
-    estimateCurrentCtl: (
-      supabase: SupabaseClient,
-      profileId: string,
-    ) => Promise<number>;
     buildCreationProjectionArtifacts: TBuildCreationProjectionArtifacts;
     buildCreationPreviewSnapshotToken: TBuildCreationPreviewSnapshotToken;
     deriveProjectionDrivenConflicts: TDeriveProjectionDrivenConflicts;
@@ -107,16 +116,12 @@ export async function previewCreationConfigUseCase<
     creationInput: input.params.creation_input,
   });
 
-  const estimatedCurrentCtl = await input.deps.estimateCurrentCtl(
-    input.supabase,
-    input.profileId,
-  );
-
   const { expandedPlan, projectionChart, projectionFeasibility } =
     input.deps.buildCreationProjectionArtifacts({
       minimalPlan: input.params.minimal_plan,
-      estimatedCurrentCtl,
+      loadBootstrapState: evaluation.loadBootstrapState,
       startingCtlOverride: input.params.starting_ctl_override,
+      startingAtlOverride: input.params.starting_atl_override,
       finalConfig: evaluation.finalConfig,
       contextSummary: evaluation.contextSummary,
     });
@@ -124,7 +129,7 @@ export async function previewCreationConfigUseCase<
   const previewSnapshotToken = input.deps.buildCreationPreviewSnapshotToken({
     minimalPlan: input.params.minimal_plan,
     finalConfig: evaluation.finalConfig,
-    estimatedCurrentCtl,
+    loadBootstrapState: evaluation.loadBootstrapState,
     projectionConstraintSummary: projectionChart.constraint_summary,
     projectionFeasibility,
     noHistoryMetadata: projectionChart.no_history,
@@ -135,6 +140,23 @@ export async function previewCreationConfigUseCase<
     projectionChart,
     postGoalRecoveryDays: evaluation.finalConfig.post_goal_recovery_days,
   });
+
+  const currentPreviewSnapshot = buildPreviewReadinessSnapshot({
+    projectionChart,
+    projectionFeasibilityState: projectionFeasibility.state,
+  });
+
+  let readinessDeltaDiagnostics: ReadinessDeltaDiagnostics | undefined;
+  const previousBaseline = input.params.preview_baseline as
+    | PreviewReadinessSnapshot
+    | undefined;
+
+  if (previousBaseline && currentPreviewSnapshot) {
+    readinessDeltaDiagnostics = buildReadinessDeltaDiagnostics({
+      previous: previousBaseline,
+      current: currentPreviewSnapshot,
+    });
+  }
 
   const allConflicts = [
     ...evaluation.conflictResolution.conflicts,
@@ -163,6 +185,8 @@ export async function previewCreationConfigUseCase<
       block_count: expandedPlan.blocks.length,
     },
     projection_chart: projectionChart,
+    readiness_delta_diagnostics: readinessDeltaDiagnostics,
+    preview_snapshot_baseline: currentPreviewSnapshot,
     preview_snapshot: {
       version: input.deps.previewSnapshotVersion,
       token: previewSnapshotToken,

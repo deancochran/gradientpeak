@@ -2,6 +2,7 @@ import type {
   CapacityEnvelopeResult,
   EvidenceState,
 } from "./capacity-envelope";
+import type { TrainingPlanCalibrationConfig } from "../../schemas/training_plan_structure";
 
 type ProjectionMicrocyclePattern =
   | "ramp"
@@ -61,6 +62,7 @@ export interface CompositeReadinessInput {
   evidence_score: number;
   envelope: CapacityEnvelopeResult;
   evidence_state?: EvidenceState;
+  composite_weights?: TrainingPlanCalibrationConfig["readiness_composite"];
 }
 
 export interface CompositeReadinessResult {
@@ -75,7 +77,15 @@ export interface CompositeReadinessResult {
 
 export function computeDurabilityScore(input: {
   weekly_tss: number[];
+  durability_penalties?: TrainingPlanCalibrationConfig["durability_penalties"];
 }): number {
+  const durabilityPenalties = input.durability_penalties;
+  const monotonyThreshold = durabilityPenalties?.monotony_threshold ?? 2;
+  const monotonyScale = durabilityPenalties?.monotony_scale ?? 2;
+  const strainThreshold = durabilityPenalties?.strain_threshold ?? 900;
+  const strainScale = durabilityPenalties?.strain_scale ?? 900;
+  const deloadDebtScale = durabilityPenalties?.deload_debt_scale ?? 6;
+
   if (input.weekly_tss.length === 0) {
     return 80;
   }
@@ -101,9 +111,12 @@ export function computeDurabilityScore(input: {
     }
   }
 
-  const monotonyPenalty = clamp01((monotony - 2) / 2) * 34;
-  const strainPenalty = clamp01((strain - 900) / 900) * 28;
-  const deloadDebtPenalty = clamp01(deloadDebtWeeks / 6) * 22;
+  const monotonyPenalty =
+    clamp01((monotony - monotonyThreshold) / Math.max(0.1, monotonyScale)) * 34;
+  const strainPenalty =
+    clamp01((strain - strainThreshold) / Math.max(1, strainScale)) * 28;
+  const deloadDebtPenalty =
+    clamp01(deloadDebtWeeks / Math.max(0.5, deloadDebtScale)) * 22;
   return clampScore(100 - monotonyPenalty - strainPenalty - deloadDebtPenalty);
 }
 
@@ -114,12 +127,17 @@ export function computeCompositeReadiness(
   const envelopeScore = clampScore(input.envelope.envelope_score);
   const durabilityScore = clampScore(input.durability_score);
   const evidenceScore = clampScore(input.evidence_score);
+  const compositeWeights = input.composite_weights;
+  const targetWeight = compositeWeights?.target_attainment_weight ?? 0.45;
+  const envelopeWeight = compositeWeights?.envelope_weight ?? 0.3;
+  const durabilityWeight = compositeWeights?.durability_weight ?? 0.15;
+  const evidenceWeight = compositeWeights?.evidence_weight ?? 0.1;
 
   const readinessRaw =
-    targetAttainmentScore * 0.45 +
-    envelopeScore * 0.3 +
-    durabilityScore * 0.15 +
-    evidenceScore * 0.1;
+    targetAttainmentScore * targetWeight +
+    envelopeScore * envelopeWeight +
+    durabilityScore * durabilityWeight +
+    evidenceScore * evidenceWeight;
   const readinessScore = clampScore(readinessRaw);
 
   const baseConfidence =
@@ -356,6 +374,7 @@ export function computeProjectionPointReadinessScores(input: {
   points: ProjectionPointReadinessInput[];
   planReadinessScore?: number;
   goals?: ProjectionPointReadinessGoalInput[];
+  timeline_calibration?: TrainingPlanCalibrationConfig["readiness_timeline"];
 }): number[] {
   if (input.points.length === 0) {
     return [];
@@ -365,28 +384,50 @@ export function computeProjectionPointReadinessScores(input: {
     1,
     ...input.points.map((point) => Math.max(0, point.predicted_fitness_ctl)),
   );
+  const startingProjectedCtl = Math.max(
+    0,
+    input.points[0]?.predicted_fitness_ctl ?? 0,
+  );
   const feasibilitySignal = clamp01((input.planReadinessScore ?? 50) / 100);
 
   const goals = input.goals ?? [];
+  const timelineCalibration = input.timeline_calibration;
+  const targetTsb = timelineCalibration?.target_tsb ?? 8;
+  const formTolerance = timelineCalibration?.form_tolerance ?? 20;
+  const fatigueOverflowScale =
+    timelineCalibration?.fatigue_overflow_scale ?? 0.4;
+  const feasibilityBlendWeight =
+    timelineCalibration?.feasibility_blend_weight ?? 0.15;
 
   const rawScores = input.points.map((point) => {
     const ctl = Math.max(0, point.predicted_fitness_ctl);
     const atl = Math.max(0, point.predicted_fatigue_atl);
     const tsb = point.predicted_form_tsb;
 
-    const fitnessSignal = clamp01(ctl / peakProjectedCtl);
-    const targetTsb = 8;
-    const formTolerance = 20;
+    const ctlProgress = clamp01(
+      (ctl - startingProjectedCtl) /
+        Math.max(1, peakProjectedCtl - startingProjectedCtl),
+    );
+    const progressiveFitnessSignal = clamp01(Math.pow(ctlProgress, 1.35));
+    const absoluteFitnessSignal = clamp01(
+      ctl / Math.max(1, peakProjectedCtl * 1.15),
+    );
+    const fitnessSignal = clamp01(
+      progressiveFitnessSignal * 0.7 + absoluteFitnessSignal * 0.3,
+    );
     const formSignal = clamp01(1 - Math.abs(tsb - targetTsb) / formTolerance);
 
     const fatigueOverflow = Math.max(0, atl - ctl);
     const fatigueSignal = clamp01(
-      1 - fatigueOverflow / Math.max(1, peakProjectedCtl * 0.4),
+      1 -
+        fatigueOverflow / Math.max(1, peakProjectedCtl * fatigueOverflowScale),
     );
 
     const readinessSignal =
       formSignal * 0.5 + fitnessSignal * 0.3 + fatigueSignal * 0.2;
-    const blendedSignal = readinessSignal * 0.85 + feasibilitySignal * 0.15;
+    const blendedSignal =
+      readinessSignal * (1 - feasibilityBlendWeight) +
+      feasibilitySignal * feasibilityBlendWeight;
 
     return clampScore(blendedSignal * 100);
   });
@@ -443,9 +484,9 @@ export function computeProjectionPointReadinessScores(input: {
     .sort((a, b) => a.goalIndex - b.goalIndex);
 
   let optimized = [...rawScores];
-  const iterations = 60;
-  const smoothingLambda = 0.42;
-  const maxStepDelta = 6;
+  const iterations = timelineCalibration?.smoothing_iterations ?? 24;
+  const smoothingLambda = timelineCalibration?.smoothing_lambda ?? 0.28;
+  const maxStepDelta = timelineCalibration?.max_step_delta ?? 9;
 
   for (let iteration = 0; iteration < iterations; iteration += 1) {
     const smoothed = [...optimized];
@@ -540,16 +581,42 @@ export function computeProjectionPointReadinessScores(input: {
 
   if (typeof input.planReadinessScore === "number") {
     const planReadinessCap = clampScore(input.planReadinessScore);
-    const capped = optimized.map((value) =>
-      clampScore(Math.min(value ?? 0, planReadinessCap)),
+    const terminalIndex = Math.max(0, optimized.length - 1);
+    const terminalReadiness = optimized[terminalIndex] ?? planReadinessCap;
+    const terminalAdjustment = planReadinessCap - terminalReadiness;
+    const startingCeiling = Math.min(
+      planReadinessCap,
+      Math.max(0, Math.min(planReadinessCap - 6, optimized[0] ?? 0)),
     );
+    const anchored = optimized.map((value, index) => {
+      const progress = terminalIndex <= 0 ? 1 : index / terminalIndex;
+      const easedProgress = Math.pow(clamp01(progress), 1.35);
+      const adjusted = (value ?? 0) + terminalAdjustment * easedProgress;
+      const progressCeiling =
+        startingCeiling +
+        (planReadinessCap - startingCeiling) *
+          Math.pow(clamp01(progress), 1.15);
+
+      return clampScore(Math.min(adjusted, progressCeiling, planReadinessCap));
+    });
 
     for (const goal of goals) {
       const goalIndex = resolveGoalIndex(goal.target_date);
-      capped[goalIndex] = planReadinessCap;
+      const goalProgress = terminalIndex <= 0 ? 1 : goalIndex / terminalIndex;
+      const goalCeiling =
+        startingCeiling +
+        (planReadinessCap - startingCeiling) *
+          Math.pow(clamp01(goalProgress), 1.15);
+      anchored[goalIndex] = clampScore(
+        Math.min(
+          goalCeiling,
+          Math.max(anchored[goalIndex] ?? 0, rawScores[goalIndex] ?? 0),
+        ),
+      );
     }
 
-    return capped;
+    anchored[terminalIndex] = planReadinessCap;
+    return anchored;
   }
 
   return optimized;

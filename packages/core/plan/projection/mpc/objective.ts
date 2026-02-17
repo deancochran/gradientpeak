@@ -6,6 +6,7 @@ export interface MpcObjectiveWeights {
   w_churn: number;
   w_monotony: number;
   w_strain: number;
+  w_curve: number;
 }
 
 export interface MpcObjectiveComponents {
@@ -16,6 +17,7 @@ export interface MpcObjectiveComponents {
   plan_change_penalty: number;
   monotony_penalty: number;
   strain_penalty: number;
+  curvature_penalty?: number;
 }
 
 export interface MpcObjectiveEvaluation {
@@ -28,6 +30,7 @@ export interface MpcObjectiveEvaluation {
     churn: number;
     monotony: number;
     strain: number;
+    curve: number;
   };
 }
 
@@ -39,6 +42,7 @@ export const DEFAULT_MPC_OBJECTIVE_WEIGHTS: MpcObjectiveWeights = {
   w_churn: 1,
   w_monotony: 1,
   w_strain: 1,
+  w_curve: 0,
 };
 
 /**
@@ -61,6 +65,7 @@ export function evaluateMpcObjective(input: {
     churn: input.components.plan_change_penalty * weights.w_churn,
     monotony: input.components.monotony_penalty * weights.w_monotony,
     strain: input.components.strain_penalty * weights.w_strain,
+    curve: (input.components.curvature_penalty ?? 0) * weights.w_curve,
   };
 
   return {
@@ -71,7 +76,8 @@ export function evaluateMpcObjective(input: {
         weightedTerms.volatility -
         weightedTerms.churn -
         weightedTerms.monotony -
-        weightedTerms.strain,
+        weightedTerms.strain -
+        weightedTerms.curve,
     ),
     weighted_terms: weightedTerms,
   };

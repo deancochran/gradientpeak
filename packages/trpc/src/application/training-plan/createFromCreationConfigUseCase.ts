@@ -1,8 +1,10 @@
 import { TRPCError } from "@trpc/server";
 import {
   createFromCreationConfigInputSchema,
+  trainingPlanCalibrationConfigSchema,
   type CreationFeasibilitySafetySummary,
   type CreationContextSummary,
+  type LoadBootstrapState,
   type ProjectionConstraintSummary,
   type TrainingPlanCreationConfig,
 } from "@repo/core";
@@ -25,6 +27,7 @@ type CreationConflictItem = {
 type EvaluateCreationConfigResult = {
   finalConfig: TrainingPlanCreationConfig;
   contextSummary: CreationContextSummary;
+  loadBootstrapState: LoadBootstrapState;
   conflictResolution: {
     conflicts: CreationConflictItem[];
     precedence: unknown;
@@ -45,8 +48,9 @@ export async function createFromCreationConfigUseCase<
   },
   TBuildCreationProjectionArtifacts extends (input: {
     minimalPlan: CreateFromCreationConfigInput["minimal_plan"];
-    estimatedCurrentCtl: number;
+    loadBootstrapState: LoadBootstrapState;
     startingCtlOverride?: number;
+    startingAtlOverride?: number;
     finalConfig: Awaited<ReturnType<TEvaluateCreationConfig>>["finalConfig"];
     contextSummary: Awaited<
       ReturnType<TEvaluateCreationConfig>
@@ -68,7 +72,7 @@ export async function createFromCreationConfigUseCase<
   TBuildCreationPreviewSnapshotToken extends (input: {
     minimalPlan: CreateFromCreationConfigInput["minimal_plan"];
     finalConfig: Awaited<ReturnType<TEvaluateCreationConfig>>["finalConfig"];
-    estimatedCurrentCtl: number;
+    loadBootstrapState: LoadBootstrapState;
     projectionConstraintSummary: ReturnType<TBuildCreationProjectionArtifacts>["projectionChart"]["constraint_summary"];
     projectionFeasibility: ReturnType<TBuildCreationProjectionArtifacts>["projectionFeasibility"];
     noHistoryMetadata?: ReturnType<TBuildCreationProjectionArtifacts>["projectionChart"]["no_history"];
@@ -89,10 +93,6 @@ export async function createFromCreationConfigUseCase<
       input: CreateFromCreationConfigInput["post_create_behavior"],
     ) => void;
     evaluateCreationConfig: TEvaluateCreationConfig;
-    estimateCurrentCtl: (
-      supabase: SupabaseClient,
-      profileId: string,
-    ) => Promise<number>;
     buildCreationProjectionArtifacts: TBuildCreationProjectionArtifacts;
     buildCreationPreviewSnapshotToken: TBuildCreationPreviewSnapshotToken;
     deriveProjectionDrivenConflicts: TDeriveProjectionDrivenConflicts;
@@ -115,16 +115,12 @@ export async function createFromCreationConfigUseCase<
     creationInput: input.params.creation_input,
   });
 
-  const estimatedCurrentCtl = await input.deps.estimateCurrentCtl(
-    input.supabase,
-    input.profileId,
-  );
-
   const { expandedPlan, projectionChart, projectionFeasibility } =
     input.deps.buildCreationProjectionArtifacts({
       minimalPlan: input.params.minimal_plan,
-      estimatedCurrentCtl,
+      loadBootstrapState: evaluation.loadBootstrapState,
       startingCtlOverride: input.params.starting_ctl_override,
+      startingAtlOverride: input.params.starting_atl_override,
       finalConfig: evaluation.finalConfig,
       contextSummary: evaluation.contextSummary,
     });
@@ -133,7 +129,7 @@ export async function createFromCreationConfigUseCase<
     input.deps.buildCreationPreviewSnapshotToken({
       minimalPlan: input.params.minimal_plan,
       finalConfig: evaluation.finalConfig,
-      estimatedCurrentCtl,
+      loadBootstrapState: evaluation.loadBootstrapState,
       projectionConstraintSummary: projectionChart.constraint_summary,
       projectionFeasibility,
       noHistoryMetadata: projectionChart.no_history,
@@ -165,10 +161,22 @@ export async function createFromCreationConfigUseCase<
   );
 
   const planId = input.deps.randomUUID?.() ?? crypto.randomUUID();
+  const calibrationSnapshot = trainingPlanCalibrationConfigSchema.parse(
+    evaluation.finalConfig.calibration ?? {},
+  );
 
   const structureWithId = {
     ...expandedPlan,
     id: planId,
+    metadata: {
+      ...(typeof expandedPlan.metadata === "object" && expandedPlan.metadata
+        ? expandedPlan.metadata
+        : {}),
+      creation_calibration: {
+        version: calibrationSnapshot.version,
+        snapshot: calibrationSnapshot,
+      },
+    },
   };
 
   try {
@@ -236,6 +244,10 @@ export async function createFromCreationConfigUseCase<
       projection_chart: projectionChart,
       feasibility_safety: evaluation.feasibilitySummary,
       context_summary: evaluation.contextSummary,
+      calibration: {
+        version: calibrationSnapshot.version,
+        snapshot: calibrationSnapshot,
+      },
     },
   };
 }

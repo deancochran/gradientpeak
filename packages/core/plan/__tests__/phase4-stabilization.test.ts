@@ -3,6 +3,7 @@ import {
   buildDeterministicProjectionPayload,
   type BuildDeterministicProjectionInput,
 } from "../projectionCalculations";
+import { evaluateMpcObjective } from "../projection/mpc/objective";
 import { scoreTargetSatisfaction } from "../scoring/targetSatisfaction";
 
 function maxPlannedWeeklyTss(
@@ -11,6 +12,44 @@ function maxPlannedWeeklyTss(
   return Math.max(
     ...projection.microcycles.map((cycle) => cycle.planned_weekly_tss),
   );
+}
+
+function createSeededRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
+}
+
+function randomInRange(random: () => number, min: number, max: number): number {
+  return min + (max - min) * random();
+}
+
+function randomInt(random: () => number, min: number, max: number): number {
+  return Math.floor(randomInRange(random, min, max + 1));
+}
+
+function randomSimplex4(random: () => number): {
+  target_attainment_weight: number;
+  envelope_weight: number;
+  durability_weight: number;
+  evidence_weight: number;
+} {
+  const values = [random(), random(), random(), random()];
+  const total = values.reduce((sum, value) => sum + value, 0) || 1;
+  const targetAttainment = values[0]! / total;
+  const envelope = values[1]! / total;
+  const durability = values[2]! / total;
+  const evidence = Math.max(0, 1 - (targetAttainment + envelope + durability));
+  const correction = 1 - (targetAttainment + envelope + durability + evidence);
+
+  return {
+    target_attainment_weight: targetAttainment,
+    envelope_weight: envelope,
+    durability_weight: durability,
+    evidence_weight: evidence + correction,
+  };
 }
 
 describe("phase 4 property suite", () => {
@@ -186,9 +225,11 @@ describe("phase 4 property suite", () => {
       maxPlannedWeeklyTss(lenient),
     );
     expect(
-      strict.no_history.projection_feasibility?.readiness_score ?? 100,
-    ).toBeLessThanOrEqual(
-      (lenient.no_history.projection_feasibility?.readiness_score ?? 0) + 2,
+      strict.no_history.projection_feasibility?.demand_gap.unmet_weekly_tss ??
+        0,
+    ).toBeGreaterThanOrEqual(
+      lenient.no_history.projection_feasibility?.demand_gap.unmet_weekly_tss ??
+        0,
     );
   });
 
@@ -524,5 +565,159 @@ describe("phase 4 golden scenarios", () => {
       richFeasibility.readiness_score ?? 0,
     );
     expect(sparseWidth).toBeGreaterThan(richWidth);
+  });
+});
+
+describe("phase 5 calibration stabilization", () => {
+  it("keeps bounded readiness outputs under seeded calibration fuzzing", () => {
+    const random = createSeededRandom(20260215);
+    const baseInput: BuildDeterministicProjectionInput = {
+      timeline: { start_date: "2026-01-05", end_date: "2026-04-12" },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2026-04-12",
+          target_weekly_tss_range: { min: 180, max: 260 },
+        },
+      ],
+      goals: [
+        {
+          id: "goal-a",
+          name: "A race",
+          target_date: "2026-04-12",
+          priority: 1,
+          targets: [
+            {
+              target_type: "race_performance",
+              distance_m: 10000,
+              target_time_s: 2520,
+              activity_category: "run",
+            },
+          ],
+        },
+      ],
+      starting_ctl: 30,
+      creation_config: {
+        optimization_profile: "balanced",
+        max_weekly_tss_ramp_pct: 7,
+        max_ctl_ramp_per_week: 3,
+      },
+      no_history_context: {
+        history_availability_state: "sparse",
+        goal_tier: "high",
+        weeks_to_event: 14,
+      },
+    };
+
+    for (let i = 0; i < 120; i += 1) {
+      const c1 = randomInRange(random, 0.1, 0.95);
+      const c2 = randomInRange(random, 0.1, c1);
+      const c3 = randomInRange(random, 0.1, c2);
+
+      const projection = buildDeterministicProjectionPayload({
+        ...baseInput,
+        creation_config: {
+          ...baseInput.creation_config,
+          calibration: {
+            version: 1,
+            readiness_composite: randomSimplex4(random),
+            readiness_timeline: {
+              target_tsb: randomInRange(random, -5, 20),
+              form_tolerance: randomInRange(random, 8, 40),
+              fatigue_overflow_scale: randomInRange(random, 0.1, 1),
+              feasibility_blend_weight: randomInRange(random, 0, 1),
+              smoothing_iterations: randomInt(random, 0, 80),
+              smoothing_lambda: randomInRange(random, 0, 0.9),
+              max_step_delta: randomInt(random, 1, 20),
+            },
+            envelope_penalties: {
+              over_high_weight: randomInRange(random, 0, 1.5),
+              under_low_weight: randomInRange(random, 0, 1.5),
+              over_ramp_weight: randomInRange(random, 0, 1.5),
+            },
+            durability_penalties: {
+              monotony_threshold: randomInRange(random, 1, 4),
+              monotony_scale: randomInRange(random, 0.1, 6),
+              strain_threshold: randomInRange(random, 400, 2000),
+              strain_scale: randomInRange(random, 200, 3000),
+              deload_debt_scale: randomInRange(random, 0.5, 12),
+            },
+            no_history: {
+              reliability_horizon_days: randomInt(random, 14, 120),
+              confidence_floor_high: c1,
+              confidence_floor_mid: c2,
+              confidence_floor_low: c3,
+              demand_tier_time_pressure_scale: randomInRange(random, 0, 2),
+            },
+            optimizer: {
+              preparedness_weight: randomInRange(random, 0, 30),
+              risk_penalty_weight: randomInRange(random, 0, 2),
+              volatility_penalty_weight: randomInRange(random, 0, 2),
+              churn_penalty_weight: randomInRange(random, 0, 2),
+              lookahead_weeks: randomInt(random, 1, 8),
+              candidate_steps: randomInt(random, 3, 15),
+            },
+          },
+        },
+      });
+
+      expect(Number.isFinite(projection.readiness_score)).toBe(true);
+      expect(projection.readiness_score).toBeGreaterThanOrEqual(0);
+      expect(projection.readiness_score).toBeLessThanOrEqual(100);
+      expect(
+        Number.isFinite(projection.readiness_confidence ?? Number.NaN),
+      ).toBe(true);
+      expect(projection.readiness_confidence ?? -1).toBeGreaterThanOrEqual(0);
+      expect(projection.readiness_confidence ?? 101).toBeLessThanOrEqual(100);
+      expect(
+        Number.isFinite(projection.capacity_envelope?.envelope_score ?? 0),
+      ).toBe(true);
+      expect(
+        projection.capacity_envelope?.envelope_score ?? -1,
+      ).toBeGreaterThanOrEqual(0);
+      expect(
+        projection.capacity_envelope?.envelope_score ?? 101,
+      ).toBeLessThanOrEqual(100);
+
+      for (const point of projection.points) {
+        expect(Number.isFinite(point.readiness_score)).toBe(true);
+        expect(point.readiness_score).toBeGreaterThanOrEqual(0);
+        expect(point.readiness_score).toBeLessThanOrEqual(100);
+      }
+    }
+  });
+
+  it("keeps MPC objective finite under bounded random inputs", () => {
+    const random = createSeededRandom(260215);
+
+    for (let i = 0; i < 200; i += 1) {
+      const result = evaluateMpcObjective({
+        components: {
+          goal_attainment: randomInRange(random, -20, 120),
+          projected_readiness: randomInRange(random, -20, 120),
+          overload_penalty: randomInRange(random, 0, 200),
+          load_volatility_penalty: randomInRange(random, 0, 200),
+          plan_change_penalty: randomInRange(random, 0, 200),
+          monotony_penalty: randomInRange(random, 0, 200),
+          strain_penalty: randomInRange(random, 0, 200),
+        },
+        weights: {
+          w_goal: randomInRange(random, 0, 30),
+          w_readiness: randomInRange(random, 0, 30),
+          w_risk: randomInRange(random, 0, 2),
+          w_volatility: randomInRange(random, 0, 2),
+          w_churn: randomInRange(random, 0, 2),
+          w_monotony: randomInRange(random, 0, 2),
+          w_strain: randomInRange(random, 0, 2),
+        },
+      });
+
+      expect(Number.isFinite(result.objective_score)).toBe(true);
+      expect(Object.values(result.weighted_terms).every(Number.isFinite)).toBe(
+        true,
+      );
+    }
   });
 });

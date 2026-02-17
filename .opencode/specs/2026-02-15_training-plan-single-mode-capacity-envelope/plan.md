@@ -2,7 +2,7 @@
 
 Date: 2026-02-15
 Owner: Core planning + API + mobile create flow
-Status: Proposed
+Status: Completed (Phase 0-7 complete)
 Depends on: `design.md` in this spec folder
 
 ## Execution Order
@@ -12,18 +12,41 @@ Depends on: `design.md` in this spec folder
 3. Phase 2: API and persistence migration
 4. Phase 3: Mobile/web UX migration
 5. Phase 4: Hard cutoff and release stabilization
+6. Phase 5: Readiness coherence and visual truth alignment
+7. Phase 6: Safety-first optimizer objective hardening
+8. Phase 7: Schema governance and maintainability cleanup
 
 No phase starts until prior phase exit criteria are green.
 
 ## Phase Overview
 
-| Phase | Objective                                                             | Depends on | Deliverable                                                  |
-| ----- | --------------------------------------------------------------------- | ---------- | ------------------------------------------------------------ |
-| 0     | Introduce single-mode contracts while tolerating legacy input briefly | none       | Core/trpc accept new shape and mark legacy fields deprecated |
-| 1     | Implement single readiness metric with envelope realism               | Phase 0    | Deterministic core readiness pipeline in production path     |
-| 2     | Remove mode/override persistence and API output fields                | Phase 1    | Preview/create contracts reflect single-mode only            |
-| 3     | Remove mode/ack UX and align displays to single readiness             | Phase 2    | Create flow with constraint editing, no acknowledgement gate |
-| 4     | Enforce hard validation cutoff + release gates                        | Phase 3    | Production-ready single-mode rollout                         |
+| Phase | Objective                                                                             | Depends on | Deliverable                                                                    |
+| ----- | ------------------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------ |
+| 0     | Introduce single-mode contracts while tolerating legacy input briefly                 | none       | Core/trpc accept new shape and mark legacy fields deprecated                   |
+| 1     | Implement single readiness metric with envelope realism                               | Phase 0    | Deterministic core readiness pipeline in production path                       |
+| 2     | Remove mode/override persistence and API output fields                                | Phase 1    | Preview/create contracts reflect single-mode only                              |
+| 3     | Remove mode/ack UX and align displays to single readiness                             | Phase 2    | Create flow with constraint editing, no acknowledgement gate                   |
+| 4     | Enforce hard validation cutoff + release gates                                        | Phase 3    | Production-ready single-mode rollout                                           |
+| 5     | Eliminate readiness headline-vs-curve mismatch and improve projection visual fidelity | Phase 4    | Coherent readiness timeline and chart behavior aligned with final readiness    |
+| 6     | Enforce safest-default objective that maximizes highest achievable preparedness       | Phase 5    | Safety-first optimization policy in default path with explicit post-init risk  |
+| 7     | Reduce schema/contract drift and maintenance complexity                               | Phase 6    | Canonical contract boundaries and reduced inferred/duplicative input semantics |
+
+## Current Implementation Snapshot
+
+Completed in codebase:
+
+1. Single-mode hard cutoff and removal of mode/risk/ack contracts across core/trpc/mobile.
+2. Single readiness headline with readiness confidence and capacity-envelope metadata in projection outputs.
+3. Create-flow UI cleanup (no mode selector, no risk acknowledgement gate).
+4. Phase-4 stabilization matrix and latency guardrails passing.
+5. Contract cleanup for inferred duplicate input alias: `recent_influence_score` replaced by canonical `recent_influence.influence_score` path in core/trpc/mobile.
+6. Phase-5 readiness coherence delivery: canonical `display_points` contract, cross-layer readiness coherence tests, and mobile consumption without local synthetic chart reshaping.
+7. Phase-6 safety-first objective hardening: preparedness-first optimizer objective, hard-constraint preservation, and infeasible-goal best-safe progression behavior.
+8. Phase-7 schema governance hardening: strict boundary parsing against inferred aliases, adapter/write-boundary regression coverage, and schema release-gate artifact.
+
+Remaining gaps this follow-on plan addresses:
+
+1. None. Follow-on phases are complete and verified by cross-layer test matrix.
 
 ## Phase 0 - Contract Migration Scaffolding
 
@@ -180,10 +203,98 @@ No phase starts until prior phase exit criteria are green.
 2. Release gates in design doc are all green.
 3. Rollout checklist approved by core + API + mobile owners.
 
+## Phase 5 - Readiness Coherence + Visual Truth Alignment
+
+### Objectives
+
+1. Ensure projected readiness curve behavior is consistent with final readiness semantics.
+2. Remove avoidable chart-side distortion and preserve model intent in visualization.
+3. Keep one readiness headline while improving user understanding of prepare/train/rest/recover progression.
+
+### Technical Work
+
+1. Readiness pipeline coherence
+   - Refactor readiness orchestration in `packages/core/plan/projectionCalculations.ts` and `packages/core/plan/projection/readiness.ts` so stage semantics are explicit and non-overwriting.
+   - Preserve deterministic computation while exposing a single final curve source for display.
+2. Chart contract alignment
+   - Reduce client-side reshaping in `apps/mobile/components/training-plan/create/CreationProjectionChart.tsx`.
+   - Favor server/core-provided display-ready points where feasible to avoid local divergence.
+3. Coherence tests
+   - Add cross-layer readiness coherence tests (core -> trpc -> mobile fixture path).
+
+### What This Brings
+
+1. Users see a readiness curve that better reflects actual projected preparedness trajectory.
+2. Reduced confusion when goals are difficult or infeasible.
+3. Lower maintenance risk from duplicated chart logic.
+
+### Exit Criteria
+
+1. No headline-vs-curve contradiction in supported fixtures.
+2. Preview/create parity remains intact for readiness timeline and diagnostics.
+3. Determinism and latency guardrails remain green.
+
+## Phase 6 - Safety-First Objective Hardening
+
+### Objectives
+
+1. Make default planner behavior explicitly maximize highest safely achievable preparedness toward `readiness_score = 100`.
+2. Preserve hard safety constraints in default path.
+3. Keep higher-risk progression available only via explicit post-initialization customization.
+
+### Technical Work
+
+1. Objective semantics
+   - Update objective composition in `packages/core/plan/projectionCalculations.ts` / MPC path so preparedness gain dominates secondary penalties.
+2. Safety constraints
+   - Keep ramp/CTL/recovery limits as hard constraints; no default-path bypass.
+3. Explainability
+   - Ensure feasibility/rationale outputs explain why full 100 readiness may not be reachable in timeframe.
+
+### What This Brings
+
+1. Safer default plans that still push to best achievable performance.
+2. Clear user trust model: default protects athlete; custom edits can intentionally trade risk.
+
+### Exit Criteria
+
+1. Objective behavior verified by tests: maximize safe achievable readiness under constraints.
+2. Hard safety constraints never violated by default optimizer.
+3. Infeasible goals still produce best safe plan instead of hard create blocking.
+
+## Phase 7 - Schema Governance + Maintainability Cleanup
+
+### Objectives
+
+1. Prevent reintroduction of derivable/inferred duplicate fields.
+2. Reduce cross-layer schema drift and maintenance overhead.
+3. Strengthen canonical contract boundaries for core -> trpc -> mobile.
+
+### Technical Work
+
+1. Canonical schema enforcement
+   - Keep only canonical object forms in contracts (example already applied: `recent_influence`).
+2. Drift reduction
+   - Consolidate duplicated type surfaces where low-risk.
+   - Add contract tests that validate write/read and adapter parity.
+3. Governance
+   - Add release-gate checklist for schema changes (classification, fixtures, cross-layer tests).
+
+### What This Brings
+
+1. Faster safer iteration on readiness/projection without contract regressions.
+2. Lower cognitive load for future maintenance.
+
+### Exit Criteria
+
+1. No duplicate inferred aliases in active creation/projection contracts.
+2. Cross-layer contract fixtures pass across core/trpc/mobile.
+3. Schema-change governance checklist adopted in this spec tasks.
+
 ## Dependency Graph
 
 ```text
-Phase 0 -> Phase 1 -> Phase 2 -> Phase 3 -> Phase 4
+Phase 0 -> Phase 1 -> Phase 2 -> Phase 3 -> Phase 4 -> Phase 5 -> Phase 6 -> Phase 7
 ```
 
 ## Backout Strategy
@@ -199,3 +310,6 @@ Phase 0 -> Phase 1 -> Phase 2 -> Phase 3 -> Phase 4
 3. One readiness score is the sole readiness headline and includes envelope realism.
 4. CTL/ATL/TSB are retained only as training-state metrics without suitability semantics.
 5. Determinism, correctness, and latency gates pass for preview/create.
+6. Default objective is safety-first while maximizing highest achievable preparedness.
+7. Readiness visualization is coherent with projection semantics and contract outputs.
+8. Active schema/contracts avoid derivable duplicate fields and pass cross-layer governance checks.

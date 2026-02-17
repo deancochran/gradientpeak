@@ -13,29 +13,31 @@ import {
   toCreationNormalizationInput,
 } from "../../../lib/training-plan-form/adapters";
 import {
-  MAX_SAFE_CTL_RAMP_PER_WEEK,
-  MAX_SAFE_WEEKLY_TSS_RAMP_PCT,
-  MIN_PREP_DAYS_BETWEEN_GOALS,
-  getAvailableTrainingDays,
-  getCreateDisabledReason,
-  getMinimumGoalGapDays,
   getTopBlockingIssues,
   validateTrainingPlanForm,
 } from "../../../lib/training-plan-form/validation";
+import {
+  nextPendingPreviewCount,
+  shouldIgnorePreviewResponse,
+} from "../../../lib/training-plan-form/previewRequestState";
 import { trpc } from "../../../lib/trpc";
 import { Text } from "../../../components/ui/text";
 import {
   buildPreviewMinimalPlanFromForm,
+  projectionControlV2Schema,
   reducePreviewState,
+  trainingPlanCalibrationConfigSchema,
 } from "@repo/core";
 import type {
   CreationAvailabilityConfig,
   CreationContextSummary,
   CreationFeasibilitySafetySummary,
   CreationProvenance,
+  PreviewReadinessSnapshot,
   CreationValueSource,
   PreviewState,
   ProjectionChartPayload,
+  ReadinessDeltaDiagnostics,
 } from "@repo/core";
 import { Stack, useRouter } from "expo-router";
 import React, {
@@ -91,15 +93,26 @@ const areJsonStructurallyEqual = (left: unknown, right: unknown): boolean => {
   return JSON.stringify(left) === JSON.stringify(right);
 };
 
+const cloneJson = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
 const createDefaultAvailability = (): CreationAvailabilityConfig => ({
-  template: "moderate",
+  template: "custom",
   days: weekDays.map((day) => ({
     day,
     windows:
-      day === "wednesday" || day === "friday"
-        ? []
-        : [{ start_minute_of_day: 360, end_minute_of_day: 450 }],
-    max_sessions: day === "wednesday" || day === "friday" ? 0 : 1,
+      day === "wednesday" ||
+      day === "friday" ||
+      day === "saturday" ||
+      day === "sunday"
+        ? [{ start_minute_of_day: 360, end_minute_of_day: 450 }]
+        : [],
+    max_sessions:
+      day === "wednesday" ||
+      day === "friday" ||
+      day === "saturday" ||
+      day === "sunday"
+        ? 1
+        : 0,
   })),
 });
 
@@ -121,7 +134,7 @@ const createDefaultConfigState = (): TrainingPlanConfigFormData => ({
   recentInfluenceAction: "disabled",
   recentInfluenceProvenance: createProvenance("default", ["initial_default"]),
   constraints: {
-    hard_rest_days: ["wednesday", "friday"],
+    hard_rest_days: ["monday", "tuesday", "thursday"],
     min_sessions_per_week: 3,
     max_sessions_per_week: 4,
     max_single_session_duration_minutes: 90,
@@ -131,6 +144,16 @@ const createDefaultConfigState = (): TrainingPlanConfigFormData => ({
   postGoalRecoveryDays: 5,
   maxWeeklyTssRampPct: 7,
   maxCtlRampPerWeek: 3,
+  startingCtlAssumption: undefined,
+  startingFatigueState: undefined,
+  projectionControlV2: projectionControlV2Schema.parse({}),
+  calibration: trainingPlanCalibrationConfigSchema.parse({}),
+  calibrationCompositeLocks: {
+    target_attainment_weight: false,
+    envelope_weight: false,
+    durability_weight: false,
+    evidence_weight: false,
+  },
   constraintsSource: "default",
   locks: {
     availability_config: { locked: false },
@@ -146,6 +169,32 @@ const createDefaultConfigState = (): TrainingPlanConfigFormData => ({
     max_ctl_ramp_per_week: { locked: false },
   },
 });
+
+const mergeSuggestedProjectionControls = (
+  current: TrainingPlanConfigFormData["projectionControlV2"],
+  suggested: TrainingPlanConfigFormData["projectionControlV2"] | undefined,
+) => {
+  if (!suggested) {
+    return current;
+  }
+
+  return projectionControlV2Schema.parse({
+    mode: current.user_owned.mode ? current.mode : suggested.mode,
+    ambition: current.user_owned.ambition
+      ? current.ambition
+      : suggested.ambition,
+    risk_tolerance: current.user_owned.risk_tolerance
+      ? current.risk_tolerance
+      : suggested.risk_tolerance,
+    curvature: current.user_owned.curvature
+      ? current.curvature
+      : suggested.curvature,
+    curvature_strength: current.user_owned.curvature_strength
+      ? current.curvature_strength
+      : suggested.curvature_strength,
+    user_owned: { ...current.user_owned },
+  });
+};
 
 export default function CreateTrainingPlan() {
   const router = useRouter();
@@ -188,11 +237,29 @@ export default function CreateTrainingPlan() {
   const [previewState, setPreviewState] = useState<
     PreviewState<ProjectionChartPayload>
   >({});
+  const [readinessDeltaDiagnostics, setReadinessDeltaDiagnostics] = useState<
+    ReadinessDeltaDiagnostics | undefined
+  >(undefined);
+  const [previewBaselineSnapshot, setPreviewBaselineSnapshot] =
+    useState<PreviewReadinessSnapshot | null>(null);
   const [informationalConflicts, setInformationalConflicts] = useState<
     string[]
   >([]);
   const [recomputeNonce, setRecomputeNonce] = useState(0);
   const lastHandledRecomputeNonceRef = useRef(0);
+  const previewRequestIdRef = useRef(0);
+  const latestAppliedPreviewRequestIdRef = useRef(0);
+  const previewPendingRequestCountRef = useRef(0);
+  const previewBaselineSnapshotRef = useRef<PreviewReadinessSnapshot | null>(
+    null,
+  );
+  const scheduledPreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const activePreviewCancellationRef = useRef<(() => void) | null>(null);
+  const initializedFormDefaultsRef = useRef<TrainingPlanFormData | null>(null);
+  const initializedConfigDefaultsRef =
+    useRef<TrainingPlanConfigFormData | null>(null);
 
   const blockingIssues = useMemo(
     () =>
@@ -202,12 +269,7 @@ export default function CreateTrainingPlan() {
       }),
     [conflictItems, feasibilitySummary],
   );
-  const createDisabledReason = useMemo(
-    () => getCreateDisabledReason(blockingIssues),
-    [blockingIssues],
-  );
-  const canCreatePlan = !isCreating && !createDisabledReason;
-  const effectiveCreateDisabledReason = createDisabledReason;
+  const canCreatePlan = !isCreating;
 
   const suggestionsQuery = trpc.trainingPlans.getCreationSuggestions.useQuery(
     undefined,
@@ -260,6 +322,26 @@ export default function CreateTrainingPlan() {
 
   const buildCreationInput = toCreationNormalizationInput;
 
+  const resolveStartingAtlOverride = (
+    config: TrainingPlanConfigFormData,
+  ): number | undefined => {
+    if (typeof config.startingCtlAssumption !== "number") {
+      return undefined;
+    }
+
+    const offset =
+      config.startingFatigueState === "fresh"
+        ? -6
+        : config.startingFatigueState === "fatigued"
+          ? 8
+          : 0;
+    return Number(
+      Math.max(0, Math.min(200, config.startingCtlAssumption + offset)).toFixed(
+        1,
+      ),
+    );
+  };
+
   const mergeSuggestionsIntoConfig = useCallback(
     (
       current: TrainingPlanConfigFormData,
@@ -294,6 +376,27 @@ export default function CreateTrainingPlan() {
         next.constraintsSource = "suggested";
       }
 
+      const canApplyMaxWeeklyTssRamp =
+        mode === "seed" || !current.locks.max_weekly_tss_ramp_pct.locked;
+      if (canApplyMaxWeeklyTssRamp) {
+        next.maxWeeklyTssRampPct = suggestions.max_weekly_tss_ramp_pct;
+      }
+
+      const canApplyMaxCtlRamp =
+        mode === "seed" || !current.locks.max_ctl_ramp_per_week.locked;
+      if (canApplyMaxCtlRamp) {
+        next.maxCtlRampPerWeek = suggestions.max_ctl_ramp_per_week;
+      }
+
+      next.projectionControlV2 = mergeSuggestedProjectionControls(
+        current.projectionControlV2,
+        (
+          suggestions as {
+            projection_control_v2?: TrainingPlanConfigFormData["projectionControlV2"];
+          }
+        ).projection_control_v2,
+      );
+
       setInformationalConflicts(suggestions.locked_conflicts ?? []);
       setContextSummary(suggestionResponse.context_summary);
 
@@ -302,94 +405,151 @@ export default function CreateTrainingPlan() {
     [dirtyState],
   );
 
-  const refreshPreview = useCallback(
-    async (showBlockingAlert: boolean) => {
-      if (!featureFlags.trainingPlanCreateConfigMvp) {
-        return { blocked: false };
+  const refreshPreview = useCallback(async () => {
+    if (!featureFlags.trainingPlanCreateConfigMvp) {
+      return;
+    }
+
+    const previewMinimalPlan = buildPreviewMinimalPlanFromForm(formData);
+    if (!previewMinimalPlan) {
+      previewBaselineSnapshotRef.current = null;
+      setPreviewBaselineSnapshot(null);
+      setReadinessDeltaDiagnostics(undefined);
+      setPreviewState((previous) =>
+        reducePreviewState(previous, {
+          status: "failure",
+          errorMessage: "",
+        }),
+      );
+      return;
+    }
+
+    const requestId = previewRequestIdRef.current + 1;
+    previewRequestIdRef.current = requestId;
+
+    if (activePreviewCancellationRef.current) {
+      activePreviewCancellationRef.current();
+    }
+
+    let cancelled = false;
+    activePreviewCancellationRef.current = () => {
+      cancelled = true;
+    };
+
+    previewPendingRequestCountRef.current = nextPendingPreviewCount({
+      pendingCount: previewPendingRequestCountRef.current,
+      delta: 1,
+    });
+    setIsPreviewPending(true);
+
+    try {
+      const preview = await previewCreationConfigQuery({
+        minimal_plan: previewMinimalPlan,
+        creation_input: buildCreationInput(configData),
+        starting_ctl_override: configData.startingCtlAssumption,
+        starting_atl_override: resolveStartingAtlOverride(configData),
+        preview_baseline: previewBaselineSnapshotRef.current ?? undefined,
+        post_create_behavior: {
+          autonomous_mutation_enabled: false,
+        },
+      });
+
+      if (
+        shouldIgnorePreviewResponse({
+          requestId,
+          latestAppliedRequestId: latestAppliedPreviewRequestIdRef.current,
+          cancelled,
+        })
+      ) {
+        return;
       }
+      latestAppliedPreviewRequestIdRef.current = requestId;
 
-      const previewMinimalPlan = buildPreviewMinimalPlanFromForm(formData);
-      if (!previewMinimalPlan) {
-        setPreviewState((previous) =>
-          reducePreviewState(previous, {
-            status: "failure",
-            errorMessage: "",
-          }),
-        );
-        return { blocked: true };
-      }
+      setContextSummary(preview.creation_context_summary);
+      setFeasibilitySummary(preview.feasibility_safety);
+      setPreviewSnapshotToken(preview.preview_snapshot?.token);
+      setReadinessDeltaDiagnostics(preview.readiness_delta_diagnostics);
+      previewBaselineSnapshotRef.current =
+        preview.preview_snapshot_baseline ?? null;
+      setPreviewBaselineSnapshot(preview.preview_snapshot_baseline ?? null);
+      setPreviewState((previous) =>
+        reducePreviewState(previous, {
+          status: "success",
+          projectionChart: preview.projection_chart as ProjectionChartPayload,
+        }),
+      );
 
-      setIsPreviewPending(true);
-      try {
-        const preview = await previewCreationConfigQuery({
-          minimal_plan: previewMinimalPlan,
-          creation_input: buildCreationInput(configData),
-          post_create_behavior: {
-            autonomous_mutation_enabled: false,
-          },
-        });
+      const previewStartingState =
+        preview.projection_chart.constraint_summary.starting_state;
+      if (previewStartingState) {
+        setConfigData((previous) => {
+          const nextCtl =
+            previous.startingCtlAssumption ??
+            Number(previewStartingState.starting_ctl.toFixed(1));
+          const nextFatigueState =
+            previous.startingFatigueState ??
+            (previewStartingState.starting_tsb > 5
+              ? "fresh"
+              : previewStartingState.starting_tsb < -5
+                ? "fatigued"
+                : "normal");
 
-        setContextSummary(preview.creation_context_summary);
-        setFeasibilitySummary(preview.feasibility_safety);
-        setPreviewSnapshotToken(preview.preview_snapshot?.token);
-        setPreviewState((previous) =>
-          reducePreviewState(previous, {
-            status: "success",
-            projectionChart: preview.projection_chart as ProjectionChartPayload,
-          }),
-        );
-        const nextConflicts: TrainingPlanConfigConflict[] =
-          preview.conflicts.items.map((conflict) => ({
-            code: conflict.code,
-            severity: conflict.severity,
-            message: conflict.message,
-            suggestions: conflict.suggestions,
-          }));
-        setConflictItems(nextConflicts);
+          if (
+            previous.startingCtlAssumption === nextCtl &&
+            previous.startingFatigueState === nextFatigueState
+          ) {
+            return previous;
+          }
 
-        if (
-          showBlockingAlert &&
-          (preview.conflicts.is_blocking ||
-            preview.feasibility_safety.blockers.length > 0)
-        ) {
-          Alert.alert(
-            "Resolve configuration",
-            "Your current settings have blocking conflicts. Apply a quick fix or adjust the advanced fields.",
-            [{ text: "OK" }],
-          );
           return {
-            blocked: true,
-            previewSnapshotToken: preview.preview_snapshot?.token,
+            ...previous,
+            startingCtlAssumption: nextCtl,
+            startingFatigueState: nextFatigueState,
           };
-        }
-
-        return {
-          blocked: false,
-          previewSnapshotToken: preview.preview_snapshot?.token,
-        };
-      } catch {
-        setPreviewSnapshotToken(undefined);
-        setPreviewState((previous) =>
-          reducePreviewState(previous, {
-            status: "failure",
-            errorMessage:
-              "Could not compute feasibility and safety preview. Check goal details and try again.",
-          }),
-        );
-        if (showBlockingAlert) {
-          Alert.alert(
-            "Preview failed",
-            "Could not compute feasibility and safety preview. Please check your goal details and try again.",
-            [{ text: "OK" }],
-          );
-        }
-        return { blocked: true };
-      } finally {
-        setIsPreviewPending(false);
+        });
       }
-    },
-    [buildCreationInput, configData, formData, previewCreationConfigQuery],
-  );
+
+      const nextConflicts: TrainingPlanConfigConflict[] =
+        preview.conflicts.items.map((conflict) => ({
+          code: conflict.code,
+          severity: conflict.severity,
+          message: conflict.message,
+          suggestions: conflict.suggestions,
+        }));
+      setConflictItems(nextConflicts);
+
+      return;
+    } catch {
+      if (
+        shouldIgnorePreviewResponse({
+          requestId,
+          latestAppliedRequestId: latestAppliedPreviewRequestIdRef.current,
+          cancelled,
+        })
+      ) {
+        return;
+      }
+
+      setPreviewSnapshotToken(undefined);
+      setReadinessDeltaDiagnostics(undefined);
+      previewBaselineSnapshotRef.current = null;
+      setPreviewBaselineSnapshot(null);
+      setPreviewState((previous) =>
+        reducePreviewState(previous, {
+          status: "failure",
+          errorMessage:
+            "Could not compute feasibility and safety preview. Check goal details and try again.",
+        }),
+      );
+      return;
+    } finally {
+      previewPendingRequestCountRef.current = nextPendingPreviewCount({
+        pendingCount: previewPendingRequestCountRef.current,
+        delta: -1,
+      });
+      setIsPreviewPending(previewPendingRequestCountRef.current > 0);
+    }
+  }, [buildCreationInput, configData, formData, previewCreationConfigQuery]);
 
   useEffect(() => {
     if (!featureFlags.trainingPlanCreateConfigMvp || hasSeededDefaults) {
@@ -438,8 +598,7 @@ export default function CreateTrainingPlan() {
             recent_influence: {
               influence_score: configData.recentInfluenceScore,
             },
-            optimization_profile: configData.optimizationProfile,
-            post_goal_recovery_days: configData.postGoalRecoveryDays,
+            projection_control_v2: configData.projectionControlV2,
             max_weekly_tss_ramp_pct: configData.maxWeeklyTssRampPct,
             max_ctl_ramp_per_week: configData.maxCtlRampPerWeek,
             constraints: configData.constraints,
@@ -459,11 +618,8 @@ export default function CreateTrainingPlan() {
     configData.availabilityConfig,
     configData.constraints,
     configData.locks,
-    configData.maxCtlRampPerWeek,
-    configData.maxWeeklyTssRampPct,
-    configData.optimizationProfile,
-    configData.postGoalRecoveryDays,
     configData.recentInfluenceScore,
+    configData.recentInfluenceAction,
     hasSeededDefaults,
     mergeSuggestionsIntoConfig,
     recomputeNonce,
@@ -479,14 +635,35 @@ export default function CreateTrainingPlan() {
       return;
     }
 
-    const timer = setTimeout(() => {
-      void refreshPreview(false);
+    if (scheduledPreviewTimerRef.current) {
+      clearTimeout(scheduledPreviewTimerRef.current);
+    }
+
+    scheduledPreviewTimerRef.current = setTimeout(() => {
+      void refreshPreview();
     }, PREVIEW_REFRESH_DELAY_MS);
 
-    return () => clearTimeout(timer);
+    return () => {
+      if (scheduledPreviewTimerRef.current) {
+        clearTimeout(scheduledPreviewTimerRef.current);
+        scheduledPreviewTimerRef.current = null;
+      }
+    };
   }, [configData, hasSeededDefaults, refreshPreview]);
 
+  useEffect(() => {
+    return () => {
+      if (scheduledPreviewTimerRef.current) {
+        clearTimeout(scheduledPreviewTimerRef.current);
+      }
+      if (activePreviewCancellationRef.current) {
+        activePreviewCancellationRef.current();
+      }
+    };
+  }, []);
+
   const handleFormDataChange = (nextData: TrainingPlanFormData) => {
+    setPreviewSnapshotToken(undefined);
     setFormData(nextData);
     if (Object.keys(errors).length > 0) {
       setErrors({});
@@ -494,19 +671,22 @@ export default function CreateTrainingPlan() {
   };
 
   const handleConfigChange = (nextData: TrainingPlanConfigFormData) => {
-    const highImpactChanged =
-      configData.optimizationProfile !== nextData.optimizationProfile ||
-      configData.postGoalRecoveryDays !== nextData.postGoalRecoveryDays ||
-      configData.maxWeeklyTssRampPct !== nextData.maxWeeklyTssRampPct ||
-      configData.maxCtlRampPerWeek !== nextData.maxCtlRampPerWeek ||
+    const suggestionRelevantChanged =
+      configData.recentInfluenceScore !== nextData.recentInfluenceScore ||
+      configData.recentInfluenceAction !== nextData.recentInfluenceAction ||
       !areJsonStructurallyEqual(
         configData.availabilityConfig,
         nextData.availabilityConfig,
       ) ||
       !areJsonStructurallyEqual(configData.constraints, nextData.constraints) ||
+      !areJsonStructurallyEqual(
+        configData.projectionControlV2,
+        nextData.projectionControlV2,
+      ) ||
       !areJsonStructurallyEqual(configData.locks, nextData.locks);
 
-    if (highImpactChanged) {
+    if (suggestionRelevantChanged) {
+      setPreviewSnapshotToken(undefined);
       setRecomputeNonce((value) => value + 1);
     }
 
@@ -525,65 +705,129 @@ export default function CreateTrainingPlan() {
     setConfigData(nextData);
   };
 
+  useEffect(() => {
+    if (!hasSeededDefaults) {
+      return;
+    }
+
+    if (initializedFormDefaultsRef.current === null) {
+      initializedFormDefaultsRef.current = cloneJson(formData);
+    }
+
+    if (initializedConfigDefaultsRef.current === null) {
+      initializedConfigDefaultsRef.current = cloneJson(configData);
+    }
+  }, [configData, formData, hasSeededDefaults]);
+
+  const handleResetGoals = useCallback(() => {
+    const baseline = initializedFormDefaultsRef.current;
+    if (!baseline) {
+      return;
+    }
+
+    setPreviewSnapshotToken(undefined);
+    setFormData((previous) => ({
+      ...previous,
+      goals: cloneJson(baseline.goals),
+    }));
+    setErrors((previous) => ({
+      ...previous,
+      goals: "",
+    }));
+  }, []);
+
+  const handleResetAvailability = useCallback(() => {
+    const baselineForm = initializedFormDefaultsRef.current;
+    const baselineConfig = initializedConfigDefaultsRef.current;
+    if (!baselineForm || !baselineConfig) {
+      return;
+    }
+
+    setPreviewSnapshotToken(undefined);
+    setFormData((previous) => ({
+      ...previous,
+      planStartDate: baselineForm.planStartDate,
+    }));
+
+    setConfigData((previous) => ({
+      ...previous,
+      availabilityConfig: cloneJson(baselineConfig.availabilityConfig),
+      availabilityProvenance: cloneJson(baselineConfig.availabilityProvenance),
+      locks: {
+        ...previous.locks,
+        availability_config: cloneJson(
+          baselineConfig.locks.availability_config,
+        ),
+      },
+    }));
+
+    setDirtyState((previous) => ({ ...previous, availability: false }));
+    setRecomputeNonce((value) => value + 1);
+  }, []);
+
+  const handleResetLimits = useCallback(() => {
+    const baselineConfig = initializedConfigDefaultsRef.current;
+    if (!baselineConfig) {
+      return;
+    }
+
+    setPreviewSnapshotToken(undefined);
+    setConfigData((previous) => ({
+      ...previous,
+      postGoalRecoveryDays: baselineConfig.postGoalRecoveryDays,
+      maxWeeklyTssRampPct: baselineConfig.maxWeeklyTssRampPct,
+      maxCtlRampPerWeek: baselineConfig.maxCtlRampPerWeek,
+      startingCtlAssumption: baselineConfig.startingCtlAssumption,
+      startingFatigueState: baselineConfig.startingFatigueState,
+      locks: {
+        ...previous.locks,
+        post_goal_recovery_days: cloneJson(
+          baselineConfig.locks.post_goal_recovery_days,
+        ),
+        max_weekly_tss_ramp_pct: cloneJson(
+          baselineConfig.locks.max_weekly_tss_ramp_pct,
+        ),
+        max_ctl_ramp_per_week: cloneJson(
+          baselineConfig.locks.max_ctl_ramp_per_week,
+        ),
+      },
+    }));
+
+    setRecomputeNonce((value) => value + 1);
+  }, []);
+
+  const handleResetProjectionAll = useCallback(() => {
+    const baselineConfig = initializedConfigDefaultsRef.current;
+    if (!baselineConfig) {
+      return;
+    }
+
+    setPreviewSnapshotToken(undefined);
+    setConfigData((previous) => ({
+      ...previous,
+      projectionControlV2: {
+        ...cloneJson(baselineConfig.projectionControlV2),
+        user_owned: {
+          mode: false,
+          ambition: false,
+          risk_tolerance: false,
+          curvature: false,
+          curvature_strength: false,
+        },
+      },
+      calibration: cloneJson(baselineConfig.calibration),
+      calibrationCompositeLocks: cloneJson(
+        baselineConfig.calibrationCompositeLocks,
+      ),
+    }));
+
+    setRecomputeNonce((value) => value + 1);
+  }, []);
+
   const validateForm = (): boolean => {
     const nextErrors = validateTrainingPlanForm(formData);
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
-  };
-
-  const handleResolveConflict = (code: string) => {
-    setConfigData((previous) => {
-      const next = {
-        ...previous,
-        constraints: {
-          ...previous.constraints,
-          hard_rest_days: [...previous.constraints.hard_rest_days],
-        },
-      };
-
-      const availableDays = getAvailableTrainingDays(previous);
-
-      switch (code) {
-        case "min_sessions_exceeds_max":
-          next.constraints.max_sessions_per_week = Math.max(
-            next.constraints.max_sessions_per_week ?? 0,
-            next.constraints.min_sessions_per_week ?? 0,
-          );
-          next.constraintsSource = "user";
-          break;
-        case "min_sessions_exceeds_available_days":
-          next.constraints.min_sessions_per_week = availableDays;
-          next.constraintsSource = "user";
-          break;
-        case "max_sessions_exceeds_available_days":
-          next.constraints.max_sessions_per_week = availableDays;
-          next.constraintsSource = "user";
-          break;
-        case "required_tss_ramp_exceeds_cap":
-          next.maxWeeklyTssRampPct = MAX_SAFE_WEEKLY_TSS_RAMP_PCT;
-          break;
-        case "required_ctl_ramp_exceeds_cap":
-          next.maxCtlRampPerWeek = MAX_SAFE_CTL_RAMP_PER_WEEK;
-          break;
-        case "post_goal_recovery_overlaps_next_goal":
-        case "post_goal_recovery_compresses_next_goal_prep": {
-          const minimumGoalGapDays = getMinimumGoalGapDays(formData.goals);
-          const maxRecoveryDaysForPrepWindow =
-            minimumGoalGapDays === undefined
-              ? 0
-              : Math.max(0, minimumGoalGapDays - MIN_PREP_DAYS_BETWEEN_GOALS);
-
-          next.postGoalRecoveryDays = Math.max(
-            0,
-            Math.min(next.postGoalRecoveryDays, maxRecoveryDaysForPrepWindow),
-          );
-          break;
-        }
-      }
-
-      return next;
-    });
-    setRecomputeNonce((value) => value + 1);
   };
 
   const handleCreate = async () => {
@@ -609,16 +853,14 @@ export default function CreateTrainingPlan() {
         return;
       }
 
-      const previewResult = await refreshPreview(true);
-      if (!previewResult || previewResult.blocked) {
-        return;
-      }
-
       const createdPlan = await createPlanMutation.mutateAsync({
         minimal_plan: buildMinimalPayload(),
         creation_input: buildCreationInput(configData),
-        preview_snapshot_token:
-          previewResult.previewSnapshotToken ?? previewSnapshotToken,
+        starting_ctl_override: configData.startingCtlAssumption,
+        starting_atl_override: resolveStartingAtlOverride(configData),
+        preview_snapshot_token: isPreviewPending
+          ? undefined
+          : previewSnapshotToken,
         post_create_behavior: {
           autonomous_mutation_enabled: false,
         },
@@ -634,6 +876,11 @@ export default function CreateTrainingPlan() {
         "Failed to create training plan from creation config:",
         error,
       );
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to create training plan from creation config.";
+      Alert.alert("Error", message, [{ text: "OK" }]);
     } finally {
       setIsCreating(false);
     }
@@ -655,9 +902,7 @@ export default function CreateTrainingPlan() {
               accessibilityLabel={
                 isCreating ? "Creating training plan" : "Create training plan"
               }
-              accessibilityHint={
-                effectiveCreateDisabledReason ?? "Saves your plan and opens it"
-              }
+              accessibilityHint={"Saves your plan and opens it"}
               accessibilityState={{
                 disabled: !canCreatePlan,
                 busy: isCreating,
@@ -685,21 +930,24 @@ export default function CreateTrainingPlan() {
         <SinglePageForm
           formData={formData}
           onFormDataChange={handleFormDataChange}
+          onResetGoals={handleResetGoals}
           showCreationConfig={featureFlags.trainingPlanCreateConfigMvp}
           configData={configData}
           projectionChart={previewState.projectionChart}
+          readinessDeltaDiagnostics={readinessDeltaDiagnostics}
           onConfigChange={handleConfigChange}
+          onResetAvailability={handleResetAvailability}
+          onResetLimits={handleResetLimits}
+          onResetProjectionAll={handleResetProjectionAll}
           contextSummary={contextSummary}
           feasibilitySafetySummary={feasibilitySummary}
           informationalConflicts={informationalConflicts}
           blockingIssues={blockingIssues}
-          createDisabledReason={effectiveCreateDisabledReason}
           isPreviewPending={
             isPreviewPending ||
             suggestionsQuery.isLoading ||
             suggestionsQuery.isFetching
           }
-          onResolveConflict={handleResolveConflict}
           errors={errors}
         />
       </KeyboardAvoidingView>

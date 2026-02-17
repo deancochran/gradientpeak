@@ -53,6 +53,71 @@ function buildConfigFixture(): TrainingPlanConfigFormData {
     postGoalRecoveryDays: 6,
     maxWeeklyTssRampPct: 9,
     maxCtlRampPerWeek: 4,
+    projectionControlV2: {
+      mode: "advanced",
+      ambition: 0.62,
+      risk_tolerance: 0.48,
+      curvature: -0.2,
+      curvature_strength: 0.7,
+      user_owned: {
+        mode: true,
+        ambition: true,
+        risk_tolerance: false,
+        curvature: true,
+        curvature_strength: false,
+      },
+    },
+    calibration: {
+      version: 1,
+      readiness_composite: {
+        target_attainment_weight: 0.45,
+        envelope_weight: 0.3,
+        durability_weight: 0.15,
+        evidence_weight: 0.1,
+      },
+      readiness_timeline: {
+        target_tsb: 8,
+        form_tolerance: 20,
+        fatigue_overflow_scale: 0.4,
+        feasibility_blend_weight: 0.15,
+        smoothing_iterations: 24,
+        smoothing_lambda: 0.28,
+        max_step_delta: 9,
+      },
+      envelope_penalties: {
+        over_high_weight: 0.55,
+        under_low_weight: 0.2,
+        over_ramp_weight: 0.25,
+      },
+      durability_penalties: {
+        monotony_threshold: 2,
+        monotony_scale: 2,
+        strain_threshold: 900,
+        strain_scale: 900,
+        deload_debt_scale: 6,
+      },
+      no_history: {
+        reliability_horizon_days: 42,
+        confidence_floor_high: 0.75,
+        confidence_floor_mid: 0.6,
+        confidence_floor_low: 0.45,
+        demand_tier_time_pressure_scale: 1,
+      },
+      optimizer: {
+        preparedness_weight: 14,
+        risk_penalty_weight: 0.35,
+        volatility_penalty_weight: 0.22,
+        churn_penalty_weight: 0.2,
+        lookahead_weeks: 5,
+        candidate_steps: 7,
+      },
+    },
+    calibrationCompositeLocks: {
+      target_attainment_weight: false,
+      envelope_weight: false,
+      durability_weight: false,
+      evidence_weight: false,
+    },
     constraintsSource: "user",
     locks: {
       availability_config: { locked: true, locked_by: "user" },
@@ -102,6 +167,8 @@ describe("toCreationNormalizationInput", () => {
         post_goal_recovery_days: 6,
         max_weekly_tss_ramp_pct: 9,
         max_ctl_ramp_per_week: 4,
+        projection_control_v2: fixture.projectionControlV2,
+        calibration: fixture.calibration,
         locks: fixture.locks,
       },
       provenance_overrides: {
@@ -132,6 +199,7 @@ describe("toCreationNormalizationInput", () => {
     expect(mapped.user_values).not.toHaveProperty("mode");
     expect(mapped.user_values).not.toHaveProperty("risk_acceptance");
     expect(mapped.user_values).not.toHaveProperty("constraint_policy");
+    expect(mapped.user_values).not.toHaveProperty("recent_influence_score");
   });
 
   it("keeps creation-input parity for user-sourced availability", () => {
@@ -148,6 +216,30 @@ describe("toCreationNormalizationInput", () => {
     expect(mapped.provenance_overrides?.availability_provenance?.source).toBe(
       "user",
     );
+  });
+
+  it("keeps preview/create calibration replay payload deterministic", () => {
+    const fixture = buildConfigFixture();
+
+    const first = toCreationNormalizationInput(fixture);
+    const second = toCreationNormalizationInput(fixture);
+
+    expect(second).toEqual(first);
+    expect(first.user_values?.calibration).toEqual(fixture.calibration);
+    expect(first.user_values?.calibration?.version).toBe(1);
+    expect(first.user_values).not.toHaveProperty("recent_influence_score");
+    expect(first.user_values?.calibration).not.toHaveProperty("v0");
+  });
+
+  it("serializes fractional ramp caps without coercion", () => {
+    const fixture = buildConfigFixture();
+    fixture.maxWeeklyTssRampPct = 6.75;
+    fixture.maxCtlRampPerWeek = 2.4;
+
+    const mapped = toCreationNormalizationInput(fixture);
+
+    expect(mapped.user_values?.max_weekly_tss_ramp_pct).toBe(6.75);
+    expect(mapped.user_values?.max_ctl_ramp_per_week).toBe(2.4);
   });
 });
 

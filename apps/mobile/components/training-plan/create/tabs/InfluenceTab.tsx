@@ -1,15 +1,9 @@
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Text } from "@/components/ui/text";
-import { Switch } from "@/components/ui/switch";
 import { BoundedNumberInput } from "../inputs/BoundedNumberInput";
 import { parseNumberOrUndefined } from "@/lib/training-plan-form/input-parsers";
-import type {
-  CreationConfigLocks,
-  CreationRecentInfluenceAction,
-  CreationValueSource,
-} from "@repo/core";
-import { ChevronDown, ChevronUp, Lock, LockOpen } from "lucide-react-native";
+import type { CreationRecentInfluenceAction } from "@repo/core";
+import { ChevronDown, ChevronUp } from "lucide-react-native";
 import React from "react";
 import { Pressable, View } from "react-native";
 import type { TrainingPlanConfigFormData } from "../SinglePageForm";
@@ -18,7 +12,6 @@ interface InfluenceTabProps {
   configData: TrainingPlanConfigFormData;
   expanded: boolean;
   showDetails: boolean;
-  influenceSource: CreationValueSource;
   signedInfluenceScore: string;
   influenceEducationBullets: string[];
   goalInfluenceWeights: Array<{
@@ -31,7 +24,6 @@ interface InfluenceTabProps {
     CreationRecentInfluenceAction,
     { label: string; helper: string }
   >;
-  setFieldLock: (field: keyof CreationConfigLocks, locked: boolean) => void;
   onToggleExpanded: () => void;
   onToggleDetails: () => void;
   updateConfig: (updater: (draft: TrainingPlanConfigFormData) => void) => void;
@@ -41,12 +33,10 @@ export function InfluenceTab({
   configData,
   expanded,
   showDetails,
-  influenceSource,
   signedInfluenceScore,
   influenceEducationBullets,
   goalInfluenceWeights,
   recentInfluenceActionOptionCopy,
-  setFieldLock,
   onToggleExpanded,
   onToggleDetails,
   updateConfig,
@@ -83,10 +73,7 @@ export function InfluenceTab({
 
       {expanded && (
         <View className="gap-2 rounded-md border border-border bg-muted/20 p-2.5">
-          <View className="flex-row items-center justify-between">
-            <Badge variant={influenceSource === "user" ? "default" : "outline"}>
-              <Text>Source: {influenceSource}</Text>
-            </Badge>
+          <View className="items-end">
             <Button variant="outline" size="sm" onPress={onToggleDetails}>
               <Text>{showDetails ? "Hide details" : "Learn"}</Text>
             </Button>
@@ -117,31 +104,14 @@ export function InfluenceTab({
                         Priority {goal.priority}
                       </Text>
                     </View>
-                    <Badge variant="secondary">
-                      <Text>{goal.percent.toFixed(0)}%</Text>
-                    </Badge>
+                    <Text className="text-xs text-muted-foreground">
+                      {goal.percent.toFixed(0)}%
+                    </Text>
                   </View>
                 ))}
               </View>
             </>
           )}
-
-          <View className="flex-row items-center justify-between">
-            <Text className="text-sm font-medium">Lock influence</Text>
-            <View className="flex-row items-center gap-2">
-              {configData.locks.recent_influence.locked ? (
-                <Lock size={14} className="text-primary" />
-              ) : (
-                <LockOpen size={14} className="text-muted-foreground" />
-              )}
-              <Switch
-                checked={configData.locks.recent_influence.locked}
-                onCheckedChange={(value) =>
-                  setFieldLock("recent_influence", Boolean(value))
-                }
-              />
-            </View>
-          </View>
 
           <View className="flex-row gap-2">
             {(["accepted", "edited", "disabled"] as const).map((action) => (

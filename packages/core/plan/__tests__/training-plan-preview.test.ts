@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildPreviewReadinessSnapshot,
+  buildReadinessDeltaDiagnostics,
   buildPreviewMinimalPlanFromForm,
   reducePreviewState,
 } from "../trainingPlanPreview";
@@ -152,6 +154,69 @@ describe("trainingPlanPreview helpers", () => {
     expect(failureState.projectionChart).toEqual(successState.projectionChart);
     expect(failureState.previewError).toBe("Preview failed");
   });
+
+  it("builds readiness-delta diagnostics with load/fatigue/feasibility impacts", () => {
+    const diagnostics = buildReadinessDeltaDiagnostics({
+      previous: {
+        readiness_score: 72,
+        predicted_load_tss: 410,
+        predicted_fatigue_atl: 58,
+        feasibility_state: "feasible",
+        tss_ramp_clamp_weeks: 0,
+        ctl_ramp_clamp_weeks: 0,
+      },
+      current: {
+        readiness_score: 68,
+        predicted_load_tss: 430,
+        predicted_fatigue_atl: 64,
+        feasibility_state: "aggressive",
+        tss_ramp_clamp_weeks: 1,
+        ctl_ramp_clamp_weeks: 0,
+      },
+    });
+
+    expect(diagnostics.readiness.delta).toBe(-4);
+    expect(diagnostics.impacts.load.key).toBe("load");
+    expect(diagnostics.impacts.fatigue.key).toBe("fatigue");
+    expect(diagnostics.impacts.feasibility.key).toBe("feasibility");
+    expect(diagnostics.summary_codes).toContain(
+      "readiness_delta_diagnostics_v1",
+    );
+  });
+
+  it("builds preview snapshot from latest projection point", () => {
+    const snapshot = buildPreviewReadinessSnapshot({
+      projectionChart: {
+        points: [
+          {
+            readiness_score: 67,
+            predicted_load_tss: 405,
+            predicted_fatigue_atl: 60,
+          },
+          {
+            readiness_score: 69,
+            predicted_load_tss: 430,
+            predicted_fatigue_atl: 64,
+          },
+        ],
+        readiness_score: 69,
+        constraint_summary: {
+          tss_ramp_clamp_weeks: 1,
+          ctl_ramp_clamp_weeks: 0,
+        },
+      },
+      projectionFeasibilityState: "aggressive",
+    });
+
+    expect(snapshot).toEqual({
+      readiness_score: 69,
+      predicted_load_tss: 430,
+      predicted_fatigue_atl: 64,
+      feasibility_state: "aggressive",
+      tss_ramp_clamp_weeks: 1,
+      ctl_ramp_clamp_weeks: 0,
+    });
+  });
 });
 
 describe("deterministic projection safety behavior", () => {
@@ -246,6 +311,38 @@ describe("deterministic projection safety behavior", () => {
       projection.constraint_summary.starting_state.starting_state_is_prior,
     ).toBe(true);
     expect(projection.no_history.projection_feasibility).toBeTruthy();
+  });
+
+  it("uses provided starting ATL instead of forcing ATL to CTL", () => {
+    const projection = buildDeterministicProjectionPayload({
+      timeline: {
+        start_date: "2026-01-05",
+        end_date: "2026-01-25",
+      },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2026-01-25",
+          target_weekly_tss_range: { min: 180, max: 210 },
+        },
+      ],
+      goals: [
+        {
+          id: "goal-a",
+          name: "A race",
+          target_date: "2026-01-24",
+          priority: 1,
+        },
+      ],
+      starting_ctl: 50,
+      starting_atl: 42,
+    });
+
+    expect(projection.constraint_summary.starting_state.starting_ctl).toBe(50);
+    expect(projection.constraint_summary.starting_state.starting_atl).toBe(42);
+    expect(projection.constraint_summary.starting_state.starting_tsb).toBe(8);
   });
 
   it("clamps week-over-week TSS and CTL ramps when caps are low", () => {

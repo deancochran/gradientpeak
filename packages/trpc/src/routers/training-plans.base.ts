@@ -5,6 +5,7 @@ import {
   calculateTrainingLoadSeries,
   classifyCreationFeasibility,
   canonicalizeMinimalTrainingPlanCreate,
+  computeLoadBootstrapState,
   createFromCreationConfigInputSchema,
   creationConfigValueSchema,
   creationNormalizationInputSchema,
@@ -24,11 +25,13 @@ import {
   normalizeProjectionSafetyConfig,
   parseDateOnlyUtc,
   postCreateBehaviorSchema,
+  projectionControlV2Schema,
   previewCreationConfigInputSchema,
   resolveConstraintConflicts,
   trainingPlanCreationConfigFormSchema,
   trainingPlanCreateInputSchema,
   trainingPlanCreateSchema,
+  trainingPlanCalibrationConfigSchema,
   trainingPlanSchema,
   trainingPlanUpdateInputSchema,
   validatePlanFeasibility,
@@ -36,10 +39,13 @@ import {
   type DeterministicProjectionMicrocycle,
   type NoHistoryAnchorContext,
   type NoHistoryProjectionMetadata,
+  type LoadBootstrapState,
+  type PreviewReadinessSnapshot,
   type NoHistoryGoalTargetInput,
   type ProjectionChartPayload as CoreProjectionChartPayload,
   type ProjectionConstraintSummary,
   type ProjectionPeriodizationPhase,
+  type ReadinessDeltaDiagnostics,
   type ProjectionRecoverySegment,
   type NormalizeCreationConfigInput,
 } from "@repo/core";
@@ -55,8 +61,6 @@ import { createSupabaseTrainingPlanRepository } from "../infrastructure";
 import { featureFlags } from "../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { addEstimationToPlans } from "../utils/estimation-helpers";
-
-const DEFAULT_ESTIMATED_CTL = 0;
 
 const feasibilityStateSchema = z.enum(["feasible", "aggressive", "unsafe"]);
 const safetyStateSchema = z.enum(["safe", "caution", "exceeded"]);
@@ -153,6 +157,8 @@ type PreviewCreationConfigResponse = {
     block_count: number;
   };
   projection_chart: ProjectionChartPayload;
+  readiness_delta_diagnostics?: ReadinessDeltaDiagnostics;
+  preview_snapshot_baseline: PreviewReadinessSnapshot | null;
   preview_snapshot: {
     version: string;
     token: string;
@@ -471,6 +477,7 @@ function findBlockForDate(
 function buildProjectionChartPayload(input: {
   expandedPlan: ReturnType<typeof expandMinimalGoalToPlan>;
   startingCtl?: number;
+  startingAtl?: number;
   creationConfig?: NonNullable<
     Parameters<typeof buildDeterministicProjectionPayload>[0]["creation_config"]
   >;
@@ -512,6 +519,7 @@ function buildProjectionChartPayload(input: {
       targets: goal.targets,
     })),
     starting_ctl: input.startingCtl,
+    starting_atl: input.startingAtl,
     creation_config: input.creationConfig,
     no_history_context: input.noHistoryContext,
   });
@@ -528,6 +536,7 @@ function buildProjectionChartPayload(input: {
     start_date: expandedPlan.start_date,
     end_date: expandedPlan.end_date,
     points: deterministicProjection.points,
+    display_points: deterministicProjection.display_points,
     goal_markers: deterministicProjection.goal_markers,
     periodization_phases: periodizationPhases,
     microcycles,
@@ -699,6 +708,8 @@ function buildProjectionFeasibilitySummary(
     reasons.push("required_ctl_ramp_near_configured_cap");
   }
 
+  reasons.unshift("safety_first_best_safe_projection");
+
   return {
     state,
     reasons: uniqueReasons(reasons),
@@ -786,37 +797,43 @@ function deriveProjectionDrivenConflicts(input: {
   return conflicts;
 }
 
-async function estimateCurrentCtl(
-  supabase: SupabaseClient,
-  profileId: string,
-): Promise<number> {
-  const since = new Date();
-  since.setDate(since.getDate() - 42);
-
-  const { data, error } = await supabase
-    .from("activities")
-    .select("training_stress_score, started_at")
-    .eq("profile_id", profileId)
-    .gte("started_at", since.toISOString())
-    .order("started_at", { ascending: true });
-
-  if (error || !data || data.length === 0) {
-    return DEFAULT_ESTIMATED_CTL;
-  }
-
-  const tssData = data.map((activity) => activity.training_stress_score || 0);
-  const series = calculateTrainingLoadSeries(tssData, DEFAULT_ESTIMATED_CTL, 0);
-  const ctl = series[series.length - 1]?.ctl ?? DEFAULT_ESTIMATED_CTL;
-
-  return Math.round(ctl * 10) / 10;
-}
-
 const insightTimelineInputSchema = z.object({
   training_plan_id: z.string().uuid(),
   start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   timezone: z.string().min(1),
 });
+
+async function estimateCurrentCtl(
+  supabase: SupabaseClient,
+  profileId: string,
+): Promise<number> {
+  const asOf = new Date();
+  const since = new Date(asOf);
+  since.setDate(since.getDate() - 90);
+
+  const { data, error } = await supabase
+    .from("activities")
+    .select("training_stress_score, duration_seconds, started_at")
+    .eq("profile_id", profileId)
+    .gte("started_at", since.toISOString())
+    .order("started_at", { ascending: true });
+
+  if (error || !data) {
+    return 0;
+  }
+
+  const bootstrap = computeLoadBootstrapState({
+    activities: data.map((activity) => ({
+      occurred_at: activity.started_at,
+      tss: activity.training_stress_score,
+      duration_seconds: activity.duration_seconds,
+    })),
+    as_of: asOf.toISOString(),
+  });
+
+  return bootstrap.starting_ctl;
+}
 
 const goalSnapshotSchema = z.object({
   id: z.string().optional(),
@@ -837,6 +854,72 @@ const blockSnapshotSchema = z.object({
 });
 
 const CREATION_PREVIEW_SNAPSHOT_VERSION = "creation_preview_v2";
+
+function mergeCalibrationInput(
+  base?: z.input<typeof trainingPlanCalibrationConfigSchema>,
+  override?: z.input<typeof trainingPlanCalibrationConfigSchema>,
+): z.infer<typeof trainingPlanCalibrationConfigSchema> {
+  const fallback = trainingPlanCalibrationConfigSchema.parse({});
+  const baseline = base
+    ? trainingPlanCalibrationConfigSchema.parse({ ...base, version: 1 })
+    : fallback;
+
+  if (!override) {
+    return baseline;
+  }
+
+  const overrideInput = { ...override, version: 1 };
+  return trainingPlanCalibrationConfigSchema.parse({
+    ...baseline,
+    ...overrideInput,
+    version: 1,
+    readiness_composite: {
+      ...baseline.readiness_composite,
+      ...overrideInput.readiness_composite,
+    },
+    readiness_timeline: {
+      ...baseline.readiness_timeline,
+      ...overrideInput.readiness_timeline,
+    },
+    envelope_penalties: {
+      ...baseline.envelope_penalties,
+      ...overrideInput.envelope_penalties,
+    },
+    durability_penalties: {
+      ...baseline.durability_penalties,
+      ...overrideInput.durability_penalties,
+    },
+    no_history: {
+      ...baseline.no_history,
+      ...overrideInput.no_history,
+    },
+    optimizer: {
+      ...baseline.optimizer,
+      ...overrideInput.optimizer,
+    },
+  });
+}
+
+function mergeProjectionControlInput(
+  base?: z.input<typeof projectionControlV2Schema>,
+  override?: z.input<typeof projectionControlV2Schema>,
+): z.infer<typeof projectionControlV2Schema> {
+  const fallback = projectionControlV2Schema.parse({});
+  const baseline = base ? projectionControlV2Schema.parse(base) : fallback;
+
+  if (!override) {
+    return baseline;
+  }
+
+  return projectionControlV2Schema.parse({
+    ...baseline,
+    ...override,
+    user_owned: {
+      ...baseline.user_owned,
+      ...override.user_owned,
+    },
+  });
+}
 
 function formatIssuePath(path: Array<string | number>): string {
   if (path.length === 0) {
@@ -915,7 +998,7 @@ function buildCreationPreviewSnapshotToken(input: {
   finalConfig: Awaited<
     ReturnType<typeof evaluateCreationConfig>
   >["finalConfig"];
-  estimatedCurrentCtl: number;
+  loadBootstrapState: LoadBootstrapState;
   projectionConstraintSummary: ProjectionConstraintSummary;
   projectionFeasibility: ProjectionFeasibilitySummary;
   noHistoryMetadata?: NoHistoryProjectionMetadata;
@@ -929,13 +1012,16 @@ function buildCreationPreviewSnapshotToken(input: {
     post_goal_recovery_days: input.finalConfig.post_goal_recovery_days,
     max_weekly_tss_ramp_pct: input.finalConfig.max_weekly_tss_ramp_pct,
     max_ctl_ramp_per_week: input.finalConfig.max_ctl_ramp_per_week,
+    projection_control_v2: input.finalConfig.projection_control_v2,
+    calibration: input.finalConfig.calibration,
   };
 
   const snapshotPayload = {
     version: CREATION_PREVIEW_SNAPSHOT_VERSION,
     minimal_plan: canonicalizeMinimalTrainingPlanCreate(input.minimalPlan),
     normalized_creation_config: normalizedCreationConfigSnapshot,
-    estimated_current_ctl: Math.round(input.estimatedCurrentCtl * 10) / 10,
+    estimated_current_ctl:
+      Math.round(input.loadBootstrapState.starting_ctl * 10) / 10,
     projection_constraint_summary: input.projectionConstraintSummary,
     projection_feasibility: input.projectionFeasibility,
     ...(input.noHistoryMetadata
@@ -953,8 +1039,9 @@ function buildCreationPreviewSnapshotToken(input: {
 
 function buildCreationProjectionArtifacts(input: {
   minimalPlan: z.infer<typeof minimalTrainingPlanCreateSchema>;
-  estimatedCurrentCtl: number;
+  loadBootstrapState: LoadBootstrapState;
   startingCtlOverride?: number;
+  startingAtlOverride?: number;
   finalConfig: Awaited<
     ReturnType<typeof evaluateCreationConfig>
   >["finalConfig"];
@@ -964,25 +1051,33 @@ function buildCreationProjectionArtifacts(input: {
   projectionChart: ProjectionChartPayload;
   projectionFeasibility: ProjectionFeasibilitySummary;
 } {
+  const effectiveStartingCtl =
+    input.startingCtlOverride ?? input.loadBootstrapState.starting_ctl;
+  const effectiveStartingAtl =
+    input.startingAtlOverride ?? input.loadBootstrapState.starting_atl;
+
   const expandedPlan = expandMinimalGoalToPlan(input.minimalPlan, {
-    startingCtl: input.estimatedCurrentCtl,
+    startingCtl: effectiveStartingCtl,
   });
 
   const noHistoryContext = deriveNoHistoryAnchorContext({
     expandedPlan,
     contextSummary: input.contextSummary,
     finalConfig: input.finalConfig,
-    startingCtlOverride: input.startingCtlOverride,
+    startingCtlOverride: effectiveStartingCtl,
   });
 
   const projectionChart = buildProjectionChartPayload({
     expandedPlan,
-    startingCtl: input.estimatedCurrentCtl,
+    startingCtl: effectiveStartingCtl,
+    startingAtl: effectiveStartingAtl,
     creationConfig: {
       optimization_profile: input.finalConfig.optimization_profile,
       post_goal_recovery_days: input.finalConfig.post_goal_recovery_days,
       max_weekly_tss_ramp_pct: input.finalConfig.max_weekly_tss_ramp_pct,
       max_ctl_ramp_per_week: input.finalConfig.max_ctl_ramp_per_week,
+      projection_control_v2: input.finalConfig.projection_control_v2,
+      calibration: input.finalConfig.calibration,
     },
     noHistoryContext,
   });
@@ -1146,8 +1241,15 @@ export async function deriveProfileAwareCreationContext(input: {
     as_of: input.asOfIso,
   });
 
+  const loadBootstrapState = computeLoadBootstrapState({
+    activities: completedActivities,
+    as_of: input.asOfIso,
+    window_days: 90,
+  });
+
   return {
     contextSummary,
+    loadBootstrapState,
   };
 }
 
@@ -1182,6 +1284,10 @@ function buildConfirmedSuggestionsFromContext(input: {
       availability_config: input.creationInput.user_values?.availability_config,
       recent_influence: input.creationInput.user_values?.recent_influence,
       constraints: input.creationInput.user_values?.constraints,
+      max_weekly_tss_ramp_pct:
+        input.creationInput.user_values?.max_weekly_tss_ramp_pct,
+      max_ctl_ramp_per_week:
+        input.creationInput.user_values?.max_ctl_ramp_per_week,
     },
     locks: input.creationInput.user_values?.locks,
     now_iso: input.nowIso,
@@ -1194,14 +1300,67 @@ function buildConfirmedSuggestionsFromContext(input: {
     constraints: suggestionPayload.constraints,
     optimization_profile: profileDefaults.optimization_profile,
     post_goal_recovery_days: profileDefaults.post_goal_recovery_days,
-    max_weekly_tss_ramp_pct: profileDefaults.max_weekly_tss_ramp_pct,
-    max_ctl_ramp_per_week: profileDefaults.max_ctl_ramp_per_week,
+    max_weekly_tss_ramp_pct: suggestionPayload.max_weekly_tss_ramp_pct,
+    max_ctl_ramp_per_week: suggestionPayload.max_ctl_ramp_per_week,
+    projection_control_v2: mergeProjectionControlInput(
+      input.creationInput.defaults?.projection_control_v2,
+      input.creationInput.confirmed_suggestions?.projection_control_v2,
+    ),
+    calibration: mergeCalibrationInput(
+      input.creationInput.defaults?.calibration,
+      input.creationInput.confirmed_suggestions?.calibration,
+    ),
   };
 
   return {
     suggestionPayload,
     suggestedValues,
   };
+}
+
+function mergeConfirmedSuggestions(input: {
+  suggestedValues: z.infer<typeof creationConfigValueSchema>;
+  confirmedSuggestions?: any;
+}): z.infer<typeof creationConfigValueSchema> {
+  const confirmed = input.confirmedSuggestions;
+
+  // Merge precedence is deterministic and stable:
+  // suggested defaults -> previously confirmed suggestions -> user values/locks.
+  // This helper handles the first two layers; normalizeCreationConfig applies user values/locks.
+  return creationConfigValueSchema.parse({
+    availability_config:
+      confirmed?.availability_config ??
+      input.suggestedValues.availability_config,
+    recent_influence:
+      confirmed?.recent_influence ?? input.suggestedValues.recent_influence,
+    recent_influence_action:
+      confirmed?.recent_influence_action ??
+      input.suggestedValues.recent_influence_action,
+    constraints: {
+      ...input.suggestedValues.constraints,
+      ...(confirmed?.constraints ?? {}),
+    },
+    optimization_profile:
+      confirmed?.optimization_profile ??
+      input.suggestedValues.optimization_profile,
+    post_goal_recovery_days:
+      confirmed?.post_goal_recovery_days ??
+      input.suggestedValues.post_goal_recovery_days,
+    max_weekly_tss_ramp_pct:
+      confirmed?.max_weekly_tss_ramp_pct ??
+      input.suggestedValues.max_weekly_tss_ramp_pct,
+    max_ctl_ramp_per_week:
+      confirmed?.max_ctl_ramp_per_week ??
+      input.suggestedValues.max_ctl_ramp_per_week,
+    projection_control_v2: mergeProjectionControlInput(
+      input.suggestedValues.projection_control_v2,
+      confirmed?.projection_control_v2,
+    ),
+    calibration: mergeCalibrationInput(
+      input.suggestedValues.calibration,
+      confirmed?.calibration,
+    ),
+  });
 }
 
 async function evaluateCreationConfig(input: {
@@ -1211,11 +1370,12 @@ async function evaluateCreationConfig(input: {
   asOfIso?: string;
 }) {
   const nowIso = input.creationInput.now_iso ?? new Date().toISOString();
-  const { contextSummary } = await deriveProfileAwareCreationContext({
-    supabase: input.supabase,
-    profileId: input.profileId,
-    asOfIso: input.asOfIso,
-  });
+  const { contextSummary, loadBootstrapState } =
+    await deriveProfileAwareCreationContext({
+      supabase: input.supabase,
+      profileId: input.profileId,
+      asOfIso: input.asOfIso,
+    });
 
   const { suggestionPayload, suggestedValues } =
     buildConfirmedSuggestionsFromContext({
@@ -1224,33 +1384,10 @@ async function evaluateCreationConfig(input: {
       nowIso,
     });
 
-  const mergedConfirmedSuggestions = {
-    availability_config:
-      input.creationInput.confirmed_suggestions?.availability_config ??
-      suggestedValues.availability_config,
-    recent_influence:
-      input.creationInput.confirmed_suggestions?.recent_influence ??
-      suggestedValues.recent_influence,
-    recent_influence_action:
-      input.creationInput.confirmed_suggestions?.recent_influence_action ??
-      suggestedValues.recent_influence_action,
-    constraints: {
-      ...suggestedValues.constraints,
-      ...(input.creationInput.confirmed_suggestions?.constraints ?? {}),
-    },
-    optimization_profile:
-      input.creationInput.confirmed_suggestions?.optimization_profile ??
-      suggestedValues.optimization_profile,
-    post_goal_recovery_days:
-      input.creationInput.confirmed_suggestions?.post_goal_recovery_days ??
-      suggestedValues.post_goal_recovery_days,
-    max_weekly_tss_ramp_pct:
-      input.creationInput.confirmed_suggestions?.max_weekly_tss_ramp_pct ??
-      suggestedValues.max_weekly_tss_ramp_pct,
-    max_ctl_ramp_per_week:
-      input.creationInput.confirmed_suggestions?.max_ctl_ramp_per_week ??
-      suggestedValues.max_ctl_ramp_per_week,
-  };
+  const mergedConfirmedSuggestions = mergeConfirmedSuggestions({
+    suggestedValues,
+    confirmedSuggestions: input.creationInput.confirmed_suggestions,
+  }) as NonNullable<NormalizeCreationConfigInput["confirmed_suggestions"]>;
 
   const normalizedConfig = normalizeCreationConfig({
     ...input.creationInput,
@@ -1322,6 +1459,7 @@ async function evaluateCreationConfig(input: {
   return {
     finalConfig: validatedFinalConfig.data,
     contextSummary,
+    loadBootstrapState,
     suggestionPayload,
     conflictResolution,
     feasibilitySummary,
@@ -1704,7 +1842,6 @@ export const trainingPlansRouter = createTRPCRouter({
           enforceCreationConfigFeatureEnabled,
           enforceNoAutonomousPostCreateMutation,
           evaluateCreationConfig,
-          estimateCurrentCtl,
           buildCreationProjectionArtifacts,
           buildCreationPreviewSnapshotToken,
           deriveProjectionDrivenConflicts,
@@ -1730,7 +1867,6 @@ export const trainingPlansRouter = createTRPCRouter({
           enforceCreationConfigFeatureEnabled,
           enforceNoAutonomousPostCreateMutation,
           evaluateCreationConfig,
-          estimateCurrentCtl,
           buildCreationProjectionArtifacts,
           buildCreationPreviewSnapshotToken,
           deriveProjectionDrivenConflicts,
