@@ -35,6 +35,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import Svg, { Circle } from "react-native-svg";
 import { CreationProjectionChart } from "./CreationProjectionChart";
 import { type CompositeWeightLocks } from "../../../lib/training-plan-form/calibration";
 import { parseNumberOrUndefined } from "../../../lib/training-plan-form/input-parsers";
@@ -197,7 +198,7 @@ const createEmptyGoal = (targetDate?: string): GoalFormData => ({
   id: createLocalId(),
   name: "",
   targetDate: targetDate ?? new Date().toISOString().split("T")[0] ?? "",
-  priority: 1,
+  priority: 5,
   targets: [createEmptyTarget()],
 });
 
@@ -580,6 +581,77 @@ const getAssessmentTargetKindLabel = (kind: string) => {
       return kind.replaceAll("_", " ");
   }
 };
+
+const GOAL_READINESS_RING_SIZE = 48;
+const GOAL_READINESS_RING_STROKE = 5;
+
+const clampReadinessScore = (value: number | undefined): number => {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(100, value));
+};
+
+const getGoalReadinessColor = (score: number): string => {
+  if (score >= 80) {
+    return "#16a34a";
+  }
+
+  if (score >= 60) {
+    return "#d97706";
+  }
+
+  return "#dc2626";
+};
+
+function GoalReadinessRing(props: { score: number; goalTitle: string }) {
+  const normalizedScore = clampReadinessScore(props.score);
+  const radius = GOAL_READINESS_RING_SIZE / 2 - GOAL_READINESS_RING_STROKE / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - normalizedScore / 100);
+  const readinessColor = getGoalReadinessColor(normalizedScore);
+
+  return (
+    <View
+      accessible
+      accessibilityLabel={`Projected readiness ${Math.round(normalizedScore)} out of 100 for ${props.goalTitle}`}
+      className="relative items-center justify-center"
+      style={{
+        width: GOAL_READINESS_RING_SIZE,
+        height: GOAL_READINESS_RING_SIZE,
+      }}
+    >
+      <Svg width={GOAL_READINESS_RING_SIZE} height={GOAL_READINESS_RING_SIZE}>
+        <Circle
+          cx={GOAL_READINESS_RING_SIZE / 2}
+          cy={GOAL_READINESS_RING_SIZE / 2}
+          r={radius}
+          stroke="#d4d4d8"
+          strokeWidth={GOAL_READINESS_RING_STROKE}
+          fill="none"
+        />
+        <Circle
+          cx={GOAL_READINESS_RING_SIZE / 2}
+          cy={GOAL_READINESS_RING_SIZE / 2}
+          r={radius}
+          stroke={readinessColor}
+          strokeWidth={GOAL_READINESS_RING_STROKE}
+          fill="none"
+          strokeLinecap="round"
+          strokeDasharray={`${circumference} ${circumference}`}
+          strokeDashoffset={offset}
+          transform={`rotate(-90 ${GOAL_READINESS_RING_SIZE / 2} ${GOAL_READINESS_RING_SIZE / 2})`}
+        />
+      </Svg>
+      <View className="absolute items-center justify-center">
+        <Text className="text-xs font-semibold text-foreground">
+          {Math.round(normalizedScore)}
+        </Text>
+      </View>
+    </View>
+  );
+}
 
 const areStringArraysEqual = (left: string[], right: string[]) => {
   if (left.length !== right.length) {
@@ -1667,25 +1739,50 @@ export function SinglePageForm({
                   const title = marker?.name?.trim()
                     ? marker.name
                     : `Goal ${index + 1}`;
+                  const fallbackReadinessScore =
+                    assessment.target_scores.length > 0
+                      ? assessment.target_scores.reduce(
+                          (sum, target) => sum + target.score_0_100,
+                          0,
+                        ) / assessment.target_scores.length
+                      : 0;
+                  const goalReadinessScore =
+                    assessment.goal_readiness_score ?? fallbackReadinessScore;
 
                   return (
                     <View
                       key={`${assessment.goal_id}-${assessment.priority}-${index}`}
-                      className="gap-1 rounded-md border border-border bg-muted/20 p-2"
+                      className="gap-2 rounded-md border border-border bg-muted/20 p-2.5"
                     >
-                      <View className="flex-row items-center justify-between">
-                        <Text className="text-sm font-medium">{title}</Text>
-                        <Badge variant="outline">
-                          <Text>
-                            {formatFeasibilityBandLabel(
-                              assessment.feasibility_band,
-                            )}
+                      <View className="flex-row items-center gap-3">
+                        <GoalReadinessRing
+                          score={goalReadinessScore}
+                          goalTitle={title}
+                        />
+                        <View className="flex-1 gap-1">
+                          <View className="flex-row items-center justify-between gap-2">
+                            <Text
+                              className="flex-1 text-sm font-medium"
+                              numberOfLines={1}
+                            >
+                              {title}
+                            </Text>
+                            <Badge variant="outline">
+                              <Text>P{assessment.priority}</Text>
+                            </Badge>
+                          </View>
+                          <Text className="text-xs text-muted-foreground">
+                            Projected readiness
                           </Text>
-                        </Badge>
+                          <Badge variant="outline" className="self-start">
+                            <Text>
+                              {formatFeasibilityBandLabel(
+                                assessment.feasibility_band,
+                              )}
+                            </Text>
+                          </Badge>
+                        </View>
                       </View>
-                      <Text className="text-xs text-muted-foreground">
-                        Priority {assessment.priority}
-                      </Text>
                       {assessment.target_scores.map((target, targetIndex) => (
                         <Text
                           key={`${assessment.goal_id}-${target.kind}-${targetIndex}`}
@@ -1854,6 +1951,23 @@ export function SinglePageForm({
                   minimumDate={new Date()}
                   error={getError(`goals.${activeGoalIndex}.targetDate`)}
                   accessibilityHint="Sets goal target date. Format yyyy-mm-dd"
+                />
+
+                <NumberSliderInput
+                  id={`goal-priority-${activeGoal.id}`}
+                  label="Goal importance"
+                  value={activeGoal.priority}
+                  onChange={(value) => {
+                    markFieldTouched(`goals.${activeGoalIndex}.priority`);
+                    updateGoal(activeGoal.id, { priority: value });
+                  }}
+                  min={0}
+                  max={10}
+                  step={1}
+                  decimals={0}
+                  showNumericInput
+                  helperText="Rank from 0 (least important) to 10 (most important)."
+                  error={getError(`goals.${activeGoalIndex}.priority`)}
                 />
 
                 <View className="gap-2 rounded-md border border-border bg-background/70 p-2">

@@ -29,26 +29,26 @@ describe("goal and plan scoring", () => {
     expect(goal.target_scores).toHaveLength(2);
   });
 
-  it("applies A/B/C precedence in plan score", () => {
-    const strongC = {
-      goal_id: "c",
-      priority: 9,
+  it("weights higher-priority goals more strongly in plan score", () => {
+    const strongHighPriority = {
+      goal_id: "high",
+      priority: 10,
       goal_score_0_1: 1,
       target_scores: [],
       conflict_notes: [],
     };
-    const weakA = {
-      goal_id: "a",
-      priority: 1,
+    const weakLowPriority = {
+      goal_id: "low",
+      priority: 0,
       goal_score_0_1: 0.2,
       target_scores: [],
       conflict_notes: [],
     };
 
-    const plan = scorePlanGoals([strongC, weakA]);
+    const plan = scorePlanGoals([strongHighPriority, weakLowPriority]);
 
     expect(plan.tier_counts.A).toBe(1);
     expect(plan.tier_counts.C).toBe(1);
-    expect(plan.plan_goal_score_0_1).toBeLessThan(0.5);
+    expect(plan.plan_goal_score_0_1).toBeGreaterThan(0.6);
   });
 });

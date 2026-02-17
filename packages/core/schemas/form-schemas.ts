@@ -886,7 +886,7 @@ export const trainingPlanGoalPrioritySchema = z.preprocess(
       message: "Priority must be a number",
     })
     .int("Priority must be a whole number")
-    .min(1, "Priority must be at least 1")
+    .min(0, "Priority must be at least 0")
     .max(10, "Priority must be at most 10"),
 );
 
@@ -917,7 +917,7 @@ export const trainingPlanMinimalSubmitFormSchema = z.object({
       z.object({
         name: trainingPlanNameSchema,
         target_date: trainingPlanGoalDateSchema,
-        priority: trainingPlanGoalPrioritySchema.optional().default(1),
+        priority: trainingPlanGoalPrioritySchema.optional().default(5),
         targets: z.array(trainingPlanGoalTargetFormSchema).min(1),
       }),
     )

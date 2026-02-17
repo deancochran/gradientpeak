@@ -52,7 +52,7 @@ describe("training-plan form validation", () => {
 
     expect(errors["goals.0.name"]).toBe("Goal name is required");
     expect(errors["goals.0.priority"]).toBe(
-      "Priority must be between 1 and 10",
+      "Priority must be between 0 and 10",
     );
     expect(errors["goals.0.targets.0.paceMmSs"]).toBe("Pace must use mm:ss");
     expect(errors.planStartDate).toBe("Plan start date must use yyyy-mm-dd");

@@ -17,7 +17,7 @@ describe("gdi", () => {
   it("applies A-goal worst-case guard in plan aggregation", () => {
     const aGoal = computeGoalGdi({
       goal_id: "a",
-      priority: 1,
+      priority: 10,
       performance_gap: 0.9,
       load_gap: 0.9,
       timeline_pressure: 0.9,
@@ -25,7 +25,7 @@ describe("gdi", () => {
     });
     const cGoal = computeGoalGdi({
       goal_id: "c",
-      priority: 9,
+      priority: 0,
       performance_gap: 0.1,
       load_gap: 0.1,
       timeline_pressure: 0.1,

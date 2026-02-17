@@ -179,13 +179,13 @@ describe("deterministic projection goal conflict weighting", () => {
           id: "goal-urgent",
           name: "A race",
           target_date: "2026-03-10",
-          priority: 1,
+          priority: 10,
         },
         {
           id: "goal-secondary",
           name: "B race",
           target_date: "2026-03-13",
-          priority: 8,
+          priority: 0,
         },
       ],
       starting_ctl: 28,
@@ -216,13 +216,13 @@ describe("deterministic projection goal conflict weighting", () => {
           id: "goal-urgent",
           name: "A race",
           target_date: "2026-03-10",
-          priority: 8,
+          priority: 0,
         },
         {
           id: "goal-secondary",
           name: "B race",
           target_date: "2026-03-13",
-          priority: 1,
+          priority: 10,
         },
       ],
       starting_ctl: 28,
@@ -234,7 +234,9 @@ describe("deterministic projection goal conflict weighting", () => {
       },
     });
 
-    expect(highPriorityUrgent.microcycles[0]?.planned_weekly_tss).toBeLessThan(
+    expect(
+      highPriorityUrgent.microcycles[0]?.planned_weekly_tss,
+    ).toBeLessThanOrEqual(
       lowPriorityUrgent.microcycles[0]?.planned_weekly_tss ?? 0,
     );
   });

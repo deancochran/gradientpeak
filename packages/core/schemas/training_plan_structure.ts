@@ -90,7 +90,7 @@ export const goalV2Schema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1).max(100),
   target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  priority: z.number().int().min(1).max(10).default(1),
+  priority: z.number().int().min(0).max(10).default(5),
   targets: z.array(goalTargetV2Schema).min(1),
   target_performance: z.string().max(200).optional(),
   notes: z.string().max(1000).optional(),
@@ -106,7 +106,7 @@ export type TrainingGoal = z.infer<typeof trainingGoalSchema>;
 export const minimalTrainingGoalCreateSchema = z.object({
   name: z.string().max(100).default(""),
   target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  priority: z.number().int().min(1).max(10).default(1),
+  priority: z.number().int().min(0).max(10).default(5),
   targets: z.array(goalTargetV2Schema).min(1),
 });
 
@@ -1534,11 +1534,11 @@ export function getNextGoal(
 }
 
 export function getPrimaryGoal(goals: TrainingGoal[]): TrainingGoal | null {
-  return goals.sort((a, b) => a.priority - b.priority)[0] || null;
+  return goals.sort((a, b) => b.priority - a.priority)[0] || null;
 }
 
 export function getGoalsByPriority(goals: TrainingGoal[]): TrainingGoal[] {
-  return [...goals].sort((a, b) => a.priority - b.priority);
+  return [...goals].sort((a, b) => b.priority - a.priority);
 }
 
 /**

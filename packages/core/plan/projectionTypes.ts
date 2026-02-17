@@ -126,6 +126,7 @@ export interface ProjectionChartPayload {
   goal_assessments?: Array<{
     goal_id: string;
     priority: number;
+    goal_readiness_score?: number;
     feasibility_band:
       | "feasible"
       | "stretch"

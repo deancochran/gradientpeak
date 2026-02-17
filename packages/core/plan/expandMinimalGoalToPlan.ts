@@ -188,8 +188,8 @@ function buildGoalAwareSegments(
 
 function buildPrepSegments(days: number, priority: number): SegmentSpec[] {
   const normalizedPriority = normalizeGoalPriority(priority);
-  const isHighPriority = normalizedPriority <= 3;
-  const isLowPriority = normalizedPriority >= 7;
+  const isHighPriority = normalizedPriority >= 7;
+  const isLowPriority = normalizedPriority <= 3;
 
   if (days <= 4) {
     return [{ phase: "build", days, priority: normalizedPriority }];
@@ -353,7 +353,7 @@ function getPhaseTssMultiplier(phase: TrainingBlock["phase"]): number {
 
 function getPriorityTssMultiplier(priority: number): number {
   const normalized = normalizeGoalPriority(priority);
-  const centered = (6 - normalized) / 40;
+  const centered = (normalized - 4) / 40;
   return clamp(1 + centered, 0.88, 1.13);
 }
 

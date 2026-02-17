@@ -357,7 +357,7 @@ function normalizePriority(priority: number | undefined): number {
     return 5;
   }
 
-  return Math.max(1, Math.min(10, Math.round(priority)));
+  return Math.max(0, Math.min(10, Math.round(priority)));
 }
 
 function diffDateOnlyUtcDays(a: string, b: string): number {

@@ -8,42 +8,27 @@ export interface PlanScoreResult {
   tier_counts: Record<GoalPriorityTier, number>;
 }
 
-const DEFAULT_TIER_WEIGHTS: Record<GoalPriorityTier, number> = {
-  A: 0.62,
-  B: 0.28,
-  C: 0.1,
-};
-
 function round3(value: number): number {
   return Math.round(value * 1000) / 1000;
 }
 
 export function toPriorityTier(priority: number): GoalPriorityTier {
-  if (priority <= 3) return "A";
-  if (priority <= 6) return "B";
+  if (priority >= 7) return "A";
+  if (priority >= 4) return "B";
   return "C";
+}
+
+function resolvePriorityWeight(priority: number): number {
+  const clamped = Math.max(0, Math.min(10, Math.round(priority)));
+  const normalized = clamped / 10;
+  return round3(0.2 + Math.pow(normalized, 2));
 }
 
 /**
  * Aggregates per-goal scores with deterministic A/B/C precedence.
  */
-export function scorePlanGoals(
-  goals: GoalAssessmentResult[],
-  tierWeights: Record<GoalPriorityTier, number> = DEFAULT_TIER_WEIGHTS,
-): PlanScoreResult {
-  const ordered = [...goals].sort((a, b) => {
-    const aTier = toPriorityTier(a.priority);
-    const bTier = toPriorityTier(b.priority);
-    if (aTier !== bTier) {
-      return aTier.localeCompare(bTier);
-    }
-
-    if (a.priority !== b.priority) {
-      return a.priority - b.priority;
-    }
-
-    return a.goal_id.localeCompare(b.goal_id);
-  });
+export function scorePlanGoals(goals: GoalAssessmentResult[]): PlanScoreResult {
+  const ordered = [...goals].sort((a, b) => b.priority - a.priority);
 
   const tierBuckets: Record<GoalPriorityTier, number[]> = {
     A: [],
@@ -73,11 +58,16 @@ export function scorePlanGoals(
           tierBuckets.C.length,
   };
 
+  const weightedTotal = ordered.reduce((sum, goal) => {
+    return sum + goal.goal_score_0_1 * resolvePriorityWeight(goal.priority);
+  }, 0);
+  const totalWeight = ordered.reduce((sum, goal) => {
+    return sum + resolvePriorityWeight(goal.priority);
+  }, 0);
+
   return {
     plan_goal_score_0_1: round3(
-      tierMeans.A * tierWeights.A +
-        tierMeans.B * tierWeights.B +
-        tierMeans.C * tierWeights.C,
+      totalWeight <= 0 ? 0 : weightedTotal / totalWeight,
     ),
     tier_means: {
       A: round3(tierMeans.A),

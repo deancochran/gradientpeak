@@ -1,6 +1,6 @@
 import type { TrainingGoal } from "../schemas/training_plan_structure";
 
-const MIN_PRIORITY = 1;
+const MIN_PRIORITY = 0;
 const MAX_PRIORITY = 10;
 
 export function normalizeGoalPriority(priority: number | undefined): number {
@@ -18,7 +18,7 @@ export function getGoalPriorityWeight(
 ): number {
   const normalizedPriority = normalizeGoalPriority(priority);
   const effectiveMax = Math.max(maxPriority, MIN_PRIORITY);
-  return effectiveMax - normalizedPriority + 1;
+  return 1 + Math.min(effectiveMax, normalizedPriority);
 }
 
 export function calculateGoalPriorityWeights(

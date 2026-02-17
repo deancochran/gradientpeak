@@ -88,9 +88,9 @@ export function validateTrainingPlanForm(
       }
     }
 
-    if (goal.priority < 1 || goal.priority > 10) {
+    if (goal.priority < 0 || goal.priority > 10) {
       errors[`goals.${goalIndex}.priority`] =
-        "Priority must be between 1 and 10";
+        "Priority must be between 0 and 10";
     }
 
     if (!goal.targets.length) {

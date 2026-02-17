@@ -91,7 +91,7 @@ interface GoalPatternInfluence {
   goalTargetDate: string;
 }
 
-const MIN_GOAL_PRIORITY = 1;
+const MIN_GOAL_PRIORITY = 0;
 const MAX_GOAL_PRIORITY = 10;
 
 export type NoHistoryFitnessLevel = "weak" | "strong";
@@ -1041,7 +1041,7 @@ function getPriorityProgress(priority: number | undefined): number {
 
 function getPriorityInfluenceWeight(priority: number | undefined): number {
   const normalizedPriority = normalizePriority(priority);
-  return MAX_GOAL_PRIORITY - normalizedPriority + 1;
+  return normalizedPriority + 1;
 }
 
 function getGoalEventMultiplier(priority: number | undefined): number {
@@ -1177,6 +1177,7 @@ export interface DeterministicProjectionPayload {
   goal_assessments?: Array<{
     goal_id: string;
     priority: number;
+    goal_readiness_score: number;
     feasibility_band: FeasibilityBand;
     target_scores: Array<{
       kind: GoalTargetV2["target_type"];
@@ -3155,6 +3156,7 @@ export function buildDeterministicProjectionPayload(
   const goalAssessments = goalAssessmentsRaw.map((goal) => ({
     goal_id: goal.goal_id,
     priority: goal.priority,
+    goal_readiness_score: round1(goal.goal_score_0_1 * 100),
     feasibility_band: goalFeasibilityById.get(goal.goal_id) ?? "feasible",
     target_scores: goal.target_scores,
     conflict_notes: goal.conflict_notes,

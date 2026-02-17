@@ -127,7 +127,7 @@ describe("projection parity fixtures", () => {
         key: "balanced_default",
         calibration: undefined,
         expected: {
-          readiness_score: 63,
+          readiness_score: 67,
           readiness_confidence: 39,
           envelope_score: 96,
           first_weeks: [230, 238, 262.2, 231.6],
@@ -233,7 +233,7 @@ describe("projection parity fixtures", () => {
           },
         },
         expected: {
-          readiness_score: 62,
+          readiness_score: 82,
           readiness_confidence: 39,
           envelope_score: 98,
           first_weeks: [230, 238, 262.2, 231.6],
