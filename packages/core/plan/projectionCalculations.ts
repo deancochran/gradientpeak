@@ -22,6 +22,13 @@ import {
   type ProjectionSafetyConfigInput,
 } from "./projection/safety-caps";
 import {
+  READINESS_CALCULATION,
+  DISTANCE_TO_CTL,
+  PACE_TO_CTL,
+  TARGET_TYPE_CTL,
+  getPaceBaseline,
+} from "./calibration-constants";
+import {
   buildCurvatureEnvelope,
   computeCurvaturePenalty,
   resolveEffectiveProjectionControls,
@@ -592,7 +599,12 @@ export function deriveGoalDemandProfileFromTargets(input: {
   for (const target of input.goalTargets) {
     if (target.target_type === "race_performance") {
       const distanceKm = Math.max(1, Math.min(100, target.distance_m / 1000));
-      const distanceCtl = 28 + 13 * Math.log(1 + distanceKm);
+
+      // Calculate base CTL from distance using documented formula
+      const distanceCtl =
+        DISTANCE_TO_CTL.DISTANCE_CTL_BASE +
+        DISTANCE_TO_CTL.DISTANCE_CTL_SCALE * Math.log(1 + distanceKm);
+
       let paceCtlBoost = 0;
 
       if (
@@ -601,7 +613,18 @@ export function deriveGoalDemandProfileFromTargets(input: {
         target.target_time_s > 0
       ) {
         const speedKph = (distanceKm * 3600) / target.target_time_s;
-        paceCtlBoost = Math.max(0, Math.min(24, (speedKph - 9.5) * 3.2));
+
+        // Use activity-specific pace baseline (default to "run" for NoHistoryGoalTargetInput)
+        const paceBaseline = getPaceBaseline("run", distanceKm);
+
+        // Calculate pace boost with documented constants
+        paceCtlBoost = Math.max(
+          0,
+          Math.min(
+            PACE_TO_CTL.PACE_BOOST_CAP,
+            (speedKph - paceBaseline) * PACE_TO_CTL.PACE_BOOST_MULTIPLIER,
+          ),
+        );
         hasRacePaceTarget = true;
         reasons.push("race_performance_target_with_pace");
       } else {
@@ -616,20 +639,20 @@ export function deriveGoalDemandProfileFromTargets(input: {
     }
 
     if (target.target_type === "pace_threshold") {
-      targetCtlCandidates.push(56 + tierBiasCtl);
+      targetCtlCandidates.push(TARGET_TYPE_CTL.PACE_THRESHOLD + tierBiasCtl);
       candidateWeights.push(1);
       reasons.push("pace_threshold_target_included");
       continue;
     }
 
     if (target.target_type === "power_threshold") {
-      targetCtlCandidates.push(60 + tierBiasCtl);
+      targetCtlCandidates.push(TARGET_TYPE_CTL.POWER_THRESHOLD + tierBiasCtl);
       candidateWeights.push(1.05);
       reasons.push("power_threshold_target_included");
       continue;
     }
 
-    targetCtlCandidates.push(54 + tierBiasCtl);
+    targetCtlCandidates.push(TARGET_TYPE_CTL.HR_THRESHOLD + tierBiasCtl);
     candidateWeights.push(0.95);
     reasons.push("hr_threshold_target_included");
   }
@@ -2697,26 +2720,27 @@ function computeGoalReadinessScore(input: {
   const state = Math.max(0, Math.min(100, input.stateReadinessScore));
   const attainment = Math.max(0, Math.min(100, input.targetAttainmentScore));
   const alignmentLoss = Math.max(0, Math.min(100, input.goalAlignmentLoss));
+
+  // Apply non-linear attainment scaling (now linear by default: exponent = 1.0)
   const attainmentNormalized = attainment / 100;
-  const nonlinearAttainment = Math.pow(attainmentNormalized, 1.4) * 100;
-  const stateNormalized = state / 100;
-  const nonlinearAttainmentNormalized = nonlinearAttainment / 100;
+  const nonlinearAttainment =
+    Math.pow(attainmentNormalized, READINESS_CALCULATION.ATTAINMENT_EXPONENT) *
+    100;
 
-  const blended = state * 0.55 + nonlinearAttainment * 0.45;
-  const eliteSynergyBoost =
-    25 *
-    Math.pow(stateNormalized, 2) *
-    Math.pow(nonlinearAttainmentNormalized, 2);
-  const alignmentPenalty = alignmentLoss * 0.2;
-  const scoredReadiness = round1(
-    Math.max(0, Math.min(100, blended + eliteSynergyBoost - alignmentPenalty)),
-  );
+  // Blend state and attainment with documented weights
+  const blended =
+    state * READINESS_CALCULATION.STATE_WEIGHT +
+    nonlinearAttainment * READINESS_CALCULATION.ATTAINMENT_WEIGHT;
 
-  if (state >= 70 && attainment >= 60 && alignmentLoss <= 5) {
-    return Math.max(99, scoredReadiness);
-  }
+  // Elite synergy boost REMOVED (was undocumented and questionable)
+  // Previously: 25 * (state/100)^2 * (attainment/100)^2
+  // If needed, can be re-enabled via SYNERGY_BOOST_MULTIPLIER constant
 
-  return scoredReadiness;
+  // Apply alignment penalty for multi-goal conflicts
+  const alignmentPenalty =
+    alignmentLoss * READINESS_CALCULATION.ALIGNMENT_PENALTY_WEIGHT;
+
+  return round1(Math.max(0, Math.min(100, blended - alignmentPenalty)));
 }
 
 function resolveSparsityPenalty(
@@ -3584,7 +3608,16 @@ export function buildDeterministicProjectionPayload(
   const finalPointReadinessScores = computeProjectionPointReadinessScores({
     points,
     planReadinessScore: compositeReadiness.readiness_score,
-    goals: goalMarkers,
+    goals: goalMarkers.map((marker) => {
+      const sourceGoal = input.goals.find(
+        (g) => (g.id ?? `goal-${input.goals.indexOf(g) + 1}`) === marker.id,
+      );
+      return {
+        target_date: marker.target_date,
+        priority: marker.priority,
+        targets: sourceGoal?.targets ?? [],
+      };
+    }),
     timeline_calibration: calibration.readiness_timeline,
   });
   const pointsWithReadiness = pointsForScoring.map((point, i) => ({

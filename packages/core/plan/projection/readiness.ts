@@ -2,7 +2,19 @@ import type {
   CapacityEnvelopeResult,
   EvidenceState,
 } from "./capacity-envelope";
-import type { TrainingPlanCalibrationConfig } from "../../schemas/training_plan_structure";
+import type {
+  TrainingPlanCalibrationConfig,
+  GoalTargetV2,
+} from "../../schemas/training_plan_structure";
+import {
+  computePostEventFatiguePenalty,
+  computeEventRecoveryProfile,
+} from "./event-recovery";
+import {
+  READINESS_TIMELINE,
+  computeOptimalTsb,
+  computeDynamicFormWeight,
+} from "../calibration-constants";
 
 type ProjectionMicrocyclePattern =
   | "ramp"
@@ -350,6 +362,7 @@ export interface ProjectionPointReadinessInput {
 export interface ProjectionPointReadinessGoalInput {
   target_date: string;
   priority?: number;
+  targets?: GoalTargetV2[];
 }
 
 function diffDateOnlyUtcDays(a: string, b: string): number {
@@ -384,14 +397,32 @@ export function computeProjectionPointReadinessScores(input: {
 
   const goals = input.goals ?? [];
   const timelineCalibration = input.timeline_calibration;
-  const targetTsb = timelineCalibration?.target_tsb ?? 8;
-  const formTolerance = timelineCalibration?.form_tolerance ?? 20;
-  const fatigueOverflowScale =
-    timelineCalibration?.fatigue_overflow_scale ?? 0.4;
-  const feasibilityBlendWeight =
-    timelineCalibration?.feasibility_blend_weight ?? 0.15;
 
-  const rawScores = input.points.map((point) => {
+  // Compute event-duration-aware optimal TSB
+  const primaryGoal = goals[0];
+  const primaryTarget = primaryGoal?.targets?.[0];
+  const eventDurationHours =
+    primaryTarget?.target_type === "race_performance" &&
+    primaryTarget.target_time_s
+      ? primaryTarget.target_time_s / 3600
+      : undefined;
+  const targetTsb =
+    timelineCalibration?.target_tsb ??
+    computeOptimalTsb(eventDurationHours) ??
+    READINESS_TIMELINE.TARGET_TSB_DEFAULT;
+
+  const formTolerance =
+    timelineCalibration?.form_tolerance ?? READINESS_TIMELINE.FORM_TOLERANCE;
+  const fatigueOverflowScale =
+    timelineCalibration?.fatigue_overflow_scale ??
+    READINESS_TIMELINE.FATIGUE_OVERFLOW_SCALE;
+
+  // Feasibility blend weight set to 0 (disabled) - keep readiness and feasibility separate
+  const feasibilityBlendWeight =
+    timelineCalibration?.feasibility_blend_weight ??
+    READINESS_TIMELINE.FEASIBILITY_BLEND_WEIGHT;
+
+  const rawScores = input.points.map((point, idx) => {
     const ctl = Math.max(0, point.predicted_fitness_ctl);
     const atl = Math.max(0, point.predicted_fatigue_atl);
     const tsb = point.predicted_form_tsb;
@@ -400,12 +431,15 @@ export function computeProjectionPointReadinessScores(input: {
       (ctl - startingProjectedCtl) /
         Math.max(1, peakProjectedCtl - startingProjectedCtl),
     );
-    const progressiveFitnessSignal = clamp01(Math.pow(ctlProgress, 1.35));
+    const progressiveFitnessSignal = clamp01(
+      Math.pow(ctlProgress, READINESS_TIMELINE.PROGRESSIVE_FITNESS_EXPONENT),
+    );
     const absoluteFitnessSignal = clamp01(
-      ctl / Math.max(1, peakProjectedCtl * 1.15),
+      ctl / Math.max(1, peakProjectedCtl * READINESS_TIMELINE.PEAK_CTL_SCALING),
     );
     const fitnessSignal = clamp01(
-      progressiveFitnessSignal * 0.7 + absoluteFitnessSignal * 0.3,
+      progressiveFitnessSignal * READINESS_TIMELINE.PROGRESSIVE_FITNESS_WEIGHT +
+        absoluteFitnessSignal * READINESS_TIMELINE.ABSOLUTE_FITNESS_WEIGHT,
     );
     const formSignal = clamp01(1 - Math.abs(tsb - targetTsb) / formTolerance);
 
@@ -415,8 +449,25 @@ export function computeProjectionPointReadinessScores(input: {
         fatigueOverflow / Math.max(1, peakProjectedCtl * fatigueOverflowScale),
     );
 
+    // Dynamic form weight: higher near goal, lower early in plan
+    let formWeight: number = READINESS_TIMELINE.FORM_SIGNAL_WEIGHT_DEFAULT;
+    if (primaryGoal) {
+      const daysUntilGoal = diffDateOnlyUtcDays(
+        point.date,
+        primaryGoal.target_date,
+      );
+      if (daysUntilGoal >= 0) {
+        formWeight = computeDynamicFormWeight(daysUntilGoal);
+      }
+    }
+
+    const fitnessWeight: number =
+      1 - formWeight - READINESS_TIMELINE.FATIGUE_SIGNAL_WEIGHT;
+
     const readinessSignal =
-      formSignal * 0.5 + fitnessSignal * 0.3 + fatigueSignal * 0.2;
+      formSignal * formWeight +
+      fitnessSignal * fitnessWeight +
+      fatigueSignal * READINESS_TIMELINE.FATIGUE_SIGNAL_WEIGHT;
     const blendedSignal =
       readinessSignal * (1 - feasibilityBlendWeight) +
       feasibilitySignal * feasibilityBlendWeight;
@@ -427,6 +478,36 @@ export function computeProjectionPointReadinessScores(input: {
   if (goals.length === 0) {
     return rawScores;
   }
+
+  // Apply post-event fatigue penalties
+  const fatigueAdjustedScores = rawScores.map((baseScore, idx) => {
+    const point = input.points[idx];
+    if (!point) return baseScore;
+
+    let maxFatiguePenalty = 0;
+
+    // Check fatigue from each goal
+    for (const goal of goals) {
+      // Skip goals without targets
+      if (!goal.targets || goal.targets.length === 0) continue;
+
+      const penalty = computePostEventFatiguePenalty({
+        currentDate: point.date,
+        currentPoint: point,
+        eventGoal: {
+          target_date: goal.target_date,
+          targets: goal.targets,
+          projected_ctl: point.predicted_fitness_ctl,
+          projected_atl: point.predicted_fatigue_atl,
+        },
+      });
+
+      // Take maximum penalty (most limiting event)
+      maxFatiguePenalty = Math.max(maxFatiguePenalty, penalty);
+    }
+
+    return clampScore(baseScore - maxFatiguePenalty);
+  });
 
   const resolveGoalIndex = (targetDate: string): number => {
     const exactIndex = input.points.findIndex(
@@ -457,19 +538,56 @@ export function computeProjectionPointReadinessScores(input: {
   };
 
   const goalAnchors = goals
-    .map((goal) => {
+    .map((goal, idx) => {
       const goalIndex = resolveGoalIndex(goal.target_date);
-      const peakWindow = 12;
+
+      // Calculate recovery profile for this goal
+      const primaryTarget = goal.targets?.[0];
+      let recoveryProfile = {
+        recovery_days_full: 7,
+        recovery_days_functional: 3,
+        fatigue_intensity: 75,
+        atl_spike_factor: 1.2,
+      };
+
+      if (primaryTarget) {
+        const goalPoint = input.points[goalIndex];
+        recoveryProfile = computeEventRecoveryProfile({
+          target: primaryTarget,
+          projected_ctl_at_event: goalPoint?.predicted_fitness_ctl ?? 50,
+          projected_atl_at_event: goalPoint?.predicted_fatigue_atl ?? 50,
+        });
+      }
+
+      // Dynamic taper days based on intensity (5-8 days)
+      const taperDays = Math.round(
+        5 + (recoveryProfile.fatigue_intensity / 100) * 3,
+      );
+
+      // Dynamic peak window = taper + 60% of recovery
+      const peakWindow =
+        taperDays + Math.round(recoveryProfile.recovery_days_full * 0.6);
+
+      // Detect conflicts using dynamic functional recovery threshold
+      const hasConflictingGoal = goals.some((otherGoal, otherIdx) => {
+        if (idx === otherIdx) return false;
+        const daysBetween = Math.abs(
+          diffDateOnlyUtcDays(goal.target_date, otherGoal.target_date),
+        );
+        // Conflict if within functional recovery window
+        return daysBetween <= recoveryProfile.recovery_days_functional;
+      });
 
       return {
         goalIndex,
         peakWindow,
         peakSlope: 1.6,
+        allowNaturalFatigue: hasConflictingGoal,
       };
     })
     .sort((a, b) => a.goalIndex - b.goalIndex);
 
-  let optimized = [...rawScores];
+  let optimized = [...fatigueAdjustedScores];
   const iterations = timelineCalibration?.smoothing_iterations ?? 24;
   const smoothingLambda = timelineCalibration?.smoothing_lambda ?? 0.28;
   const maxStepDelta = timelineCalibration?.max_step_delta ?? 9;
@@ -480,7 +598,7 @@ export function computeProjectionPointReadinessScores(input: {
       const left = optimized[i - 1] ?? optimized[i] ?? 0;
       const center = optimized[i] ?? 0;
       const right = optimized[i + 1] ?? optimized[i] ?? 0;
-      const prior = rawScores[i] ?? center;
+      const prior = fatigueAdjustedScores[i] ?? center;
       const updated =
         (prior + smoothingLambda * left + smoothingLambda * right) /
         (1 + 2 * smoothingLambda);
@@ -495,16 +613,21 @@ export function computeProjectionPointReadinessScores(input: {
         anchor.goalIndex + anchor.peakWindow,
       );
 
-      let localMax = 0;
-      for (let i = start; i <= end; i += 1) {
-        localMax = Math.max(localMax, optimized[i] ?? 0);
+      // Only force local max if no conflicting goals
+      if (!anchor.allowNaturalFatigue) {
+        let localMax = 0;
+        for (let i = start; i <= end; i += 1) {
+          localMax = Math.max(localMax, optimized[i] ?? 0);
+        }
+
+        const requiredPeak = localMax;
+        optimized[anchor.goalIndex] = clampScore(
+          Math.max(optimized[anchor.goalIndex] ?? 0, requiredPeak),
+        );
       }
+      // For conflicting goals, let the fatigue model handle it naturally
 
-      const requiredPeak = localMax;
-      optimized[anchor.goalIndex] = clampScore(
-        Math.max(optimized[anchor.goalIndex] ?? 0, requiredPeak),
-      );
-
+      // Suppression logic still applies to all goals
       const goalScore = optimized[anchor.goalIndex] ?? 0;
       for (let i = start; i <= end; i += 1) {
         if (i === anchor.goalIndex) {
@@ -545,11 +668,14 @@ export function computeProjectionPointReadinessScores(input: {
     }
 
     optimized = optimized.map((value, i) =>
-      clampScore((value ?? 0) * 0.9 + (rawScores[i] ?? 0) * 0.1),
+      clampScore((value ?? 0) * 0.9 + (fatigueAdjustedScores[i] ?? 0) * 0.1),
     );
   }
 
   for (const anchor of goalAnchors) {
+    // Skip final anchoring for conflicting goals
+    if (anchor.allowNaturalFatigue) continue;
+
     const start = Math.max(0, anchor.goalIndex - anchor.peakWindow);
     const end = Math.min(
       optimized.length - 1,
@@ -596,7 +722,10 @@ export function computeProjectionPointReadinessScores(input: {
       anchored[goalIndex] = clampScore(
         Math.min(
           goalCeiling,
-          Math.max(anchored[goalIndex] ?? 0, rawScores[goalIndex] ?? 0),
+          Math.max(
+            anchored[goalIndex] ?? 0,
+            fatigueAdjustedScores[goalIndex] ?? 0,
+          ),
         ),
       );
     }

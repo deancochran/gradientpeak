@@ -1895,7 +1895,7 @@ describe("phase 5 benchmark and theoretical frontier validation", () => {
     }
   });
 
-  it("allows elite long-horizon readiness >=99 for theoretical run distance targets", () => {
+  it("allows elite long-horizon readiness >=70 for theoretical run distance targets (no synergy boost)", () => {
     const eliteTargets = [
       {
         id: "goal-5k-1235",
@@ -1983,14 +1983,16 @@ describe("phase 5 benchmark and theoretical frontier validation", () => {
       const goalAssessment = projection.goal_assessments?.find(
         (goal) => goal.goal_id === target.id,
       );
+      // After removing elite synergy boost, realistic readiness scores are 70-95%
+      // Elite synergy boost was undocumented and artificially inflated scores to 99+
       expect(
         goalReadiness,
-        `${target.name} readiness expected >=99 but got ${goalReadiness} (state=${goalAssessment?.state_readiness_score ?? "n/a"}, target=${goalAssessment?.target_scores?.[0]?.score_0_100 ?? "n/a"})`,
-      ).toBeGreaterThanOrEqual(99);
+        `${target.name} readiness expected >=70 but got ${goalReadiness} (state=${goalAssessment?.state_readiness_score ?? "n/a"}, target=${goalAssessment?.target_scores?.[0]?.score_0_100 ?? "n/a"})`,
+      ).toBeGreaterThanOrEqual(70);
     }
   });
 
-  it("reaches >=99 for half-marathon 1:00 with max starting fitness and aggressive controls", () => {
+  it("reaches >=75 for half-marathon 1:00 with max starting fitness (no synergy boost)", () => {
     const projection = buildDeterministicProjectionPayload({
       timeline: {
         start_date: "2026-01-05",
@@ -2046,9 +2048,10 @@ describe("phase 5 benchmark and theoretical frontier validation", () => {
       (goal) => goal.goal_id === "goal-half-1h-user-scenario",
     );
     const goalReadiness = goalAssessment?.goal_readiness_score ?? 0;
+    // After removing elite synergy boost, realistic readiness scores are 70-95%
     expect(
       goalReadiness,
-      `half 1:00 scenario expected >=99 but got ${goalReadiness} (state=${goalAssessment?.state_readiness_score ?? "n/a"}, target=${goalAssessment?.target_scores?.[0]?.score_0_100 ?? "n/a"}, alignment=${goalAssessment?.goal_alignment_loss_0_100 ?? "n/a"})`,
-    ).toBeGreaterThanOrEqual(99);
+      `half 1:00 scenario expected >=75 but got ${goalReadiness} (state=${goalAssessment?.state_readiness_score ?? "n/a"}, target=${goalAssessment?.target_scores?.[0]?.score_0_100 ?? "n/a"}, alignment=${goalAssessment?.goal_alignment_loss_0_100 ?? "n/a"})`,
+    ).toBeGreaterThanOrEqual(75);
   });
 });
