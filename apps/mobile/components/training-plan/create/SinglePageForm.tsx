@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../ui/select";
+import { Switch } from "../../ui/switch";
 import { Text } from "../../ui/text";
 import { BoundedNumberInput } from "./inputs/BoundedNumberInput";
 import { DateField } from "./inputs/DateField";
@@ -126,6 +127,8 @@ interface SinglePageFormProps {
   feasibilitySafetySummary?: CreationFeasibilitySafetySummary;
   informationalConflicts?: string[];
   blockingIssues?: BlockingIssue[];
+  allowBlockingIssueOverride?: boolean;
+  onAllowBlockingIssueOverrideChange?: (enabled: boolean) => void;
   isPreviewPending?: boolean;
   readinessDeltaDiagnostics?: ReadinessDeltaDiagnostics;
   onConfigChange: (data: TrainingPlanConfigFormData) => void;
@@ -388,6 +391,111 @@ const toRecord = (value: unknown): Record<string, unknown> | undefined => {
   }
 
   return value as Record<string, unknown>;
+};
+
+const toBoundedPercent = (value: number): number => {
+  const normalized = value <= 1 ? value * 100 : value;
+  return Math.max(0, Math.min(100, normalized));
+};
+
+const readPercent = (value: unknown): number | undefined => {
+  const numeric = readNumber(value);
+  if (numeric !== undefined) {
+    return toBoundedPercent(numeric);
+  }
+
+  const record = toRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const candidateKeys = [
+    "score",
+    "value",
+    "percent",
+    "percentage",
+    "confidence",
+    "confidence_score",
+    "confidence_0_100",
+    "uncertainty",
+    "uncertainty_score",
+    "uncertainty_0_100",
+    "prediction_uncertainty",
+    "prediction_confidence",
+  ];
+
+  for (const key of candidateKeys) {
+    const candidate = readNumber(record[key]);
+    if (candidate !== undefined) {
+      return toBoundedPercent(candidate);
+    }
+  }
+
+  return undefined;
+};
+
+const average = (values: number[]): number | undefined => {
+  if (values.length === 0) {
+    return undefined;
+  }
+
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+};
+
+const resolveGoalAssessmentConfidenceHint = (
+  assessment: NonNullable<ProjectionChartPayload["goal_assessments"]>[number],
+  projectionChart: ProjectionChartPayload | undefined,
+) => {
+  const assessmentRecord = toRecord(assessment as unknown);
+  const predictionUncertainty =
+    readPercent(assessmentRecord?.prediction_uncertainty) ??
+    readPercent(assessmentRecord?.predictionUncertainty);
+  if (predictionUncertainty !== undefined) {
+    return `Uncertainty hint: forecast spread ${Math.round(predictionUncertainty)}%.`;
+  }
+
+  const targetUncertainty = average(
+    assessment.target_scores
+      .map(
+        (
+          target: NonNullable<
+            ProjectionChartPayload["goal_assessments"]
+          >[number]["target_scores"][number],
+        ) => {
+          const record = toRecord(target as unknown);
+          return (
+            readPercent(record?.prediction_uncertainty) ??
+            readPercent(record?.predictionUncertainty)
+          );
+        },
+      )
+      .filter(
+        (value: number | undefined): value is number => value !== undefined,
+      ),
+  );
+  if (targetUncertainty !== undefined) {
+    return `Uncertainty hint: forecast spread ${Math.round(targetUncertainty)}%.`;
+  }
+
+  const confidenceScore =
+    readPercent(assessmentRecord?.prediction_confidence) ??
+    readPercent(assessmentRecord?.predictionConfidence) ??
+    readPercent(assessmentRecord?.confidence) ??
+    readPercent(assessmentRecord?.confidence_score) ??
+    readPercent(projectionChart?.readiness_confidence) ??
+    readPercent(projectionChart?.no_history?.evidence_confidence?.score);
+  if (confidenceScore !== undefined) {
+    return `Confidence hint: model confidence ${Math.round(confidenceScore)}%.`;
+  }
+
+  const confidenceState =
+    projectionChart?.no_history?.evidence_confidence?.state ??
+    projectionChart?.no_history?.projection_floor_confidence;
+  if (confidenceState) {
+    return `Confidence hint: evidence confidence ${confidenceState}.`;
+  }
+
+  return undefined;
 };
 
 const readNumber = (value: unknown): number | undefined => {
@@ -688,6 +796,8 @@ export function SinglePageForm({
   feasibilitySafetySummary,
   informationalConflicts = [],
   blockingIssues = [],
+  allowBlockingIssueOverride = false,
+  onAllowBlockingIssueOverrideChange,
   isPreviewPending = false,
   readinessDeltaDiagnostics,
   onConfigChange,
@@ -1001,6 +1111,7 @@ export function SinglePageForm({
     return blockingCount + cautionDriverCount;
   }, [blockingIssues.length, feasibilitySafetySummary]);
   const goalAssessments = projectionChart?.goal_assessments ?? [];
+  const hasBlockingIssues = blockingIssues.length > 0;
   const projectionReviewDiagnostics = useMemo(
     () => resolveProjectionReviewDiagnostics(projectionChart),
     [projectionChart],
@@ -1516,8 +1627,9 @@ export function SinglePageForm({
                   </View>
                 </View>
                 <Text className={helperTextClass}>
-                  Optional guidance only. This check explains plan fit, risk,
-                  and trend changes in plain language. It never blocks create.
+                  Review plan fit, risk, and trend changes before create.
+                  Unresolved blocking issues prevent create unless you
+                  explicitly acknowledge an override.
                 </Text>
                 {feasibilitySafetySummary ? (
                   <>
@@ -1631,8 +1743,8 @@ export function SinglePageForm({
                       moves you toward your goals.
                     </Text>
                     <Text className="text-xs text-muted-foreground">
-                      If your timeline is too tight, it shows the best safe
-                      version instead of blocking creation.
+                      If a blocking issue remains unresolved, create stays
+                      disabled until you explicitly acknowledge an override.
                     </Text>
                   </>
                 ) : (
@@ -1748,6 +1860,10 @@ export function SinglePageForm({
                       : 0;
                   const goalReadinessScore =
                     assessment.goal_readiness_score ?? fallbackReadinessScore;
+                  const confidenceHint = resolveGoalAssessmentConfidenceHint(
+                    assessment,
+                    projectionChart,
+                  );
 
                   return (
                     <View
@@ -1772,8 +1888,23 @@ export function SinglePageForm({
                             </Badge>
                           </View>
                           <Text className="text-xs text-muted-foreground">
-                            Projected readiness
+                            Goal readiness (state + difficulty)
                           </Text>
+                          {assessment.state_readiness_score !== undefined ? (
+                            <Text className="text-xs text-muted-foreground">
+                              State readiness:{" "}
+                              {Math.round(assessment.state_readiness_score)} /
+                              100
+                            </Text>
+                          ) : null}
+                          {assessment.goal_alignment_loss_0_100 !==
+                          undefined ? (
+                            <Text className="text-xs text-muted-foreground">
+                              Alignment loss:{" "}
+                              {Math.round(assessment.goal_alignment_loss_0_100)}{" "}
+                              / 100
+                            </Text>
+                          ) : null}
                           <Badge variant="outline" className="self-start">
                             <Text>
                               {formatFeasibilityBandLabel(
@@ -1803,20 +1934,29 @@ export function SinglePageForm({
                           Plan note: {formatNoteLabel(note)}
                         </Text>
                       ))}
+                      {confidenceHint ? (
+                        <Text className="text-xs text-muted-foreground">
+                          {confidenceHint} Readiness remains the primary signal.
+                        </Text>
+                      ) : null}
                     </View>
                   );
                 })}
               </View>
             )}
 
-            {activeTab === "review" && blockingIssues.length > 0 && (
+            {activeTab === "review" && hasBlockingIssues && (
               <View className="gap-2 rounded-lg border border-amber-300 bg-amber-100/40 p-3">
                 <View className="flex-row items-center gap-2">
                   <ShieldAlert size={16} className="text-amber-800" />
                   <Text className="font-semibold text-amber-800">
-                    Observations based on known standards
+                    Blocking issues
                   </Text>
                 </View>
+                <Text className="text-xs text-amber-800">
+                  Resolve these issues, or acknowledge an override to allow
+                  create.
+                </Text>
                 {blockingIssues.map((conflict) => (
                   <View
                     key={`${conflict.code}-${conflict.message}`}
@@ -1827,6 +1967,27 @@ export function SinglePageForm({
                     </Text>
                   </View>
                 ))}
+                <View className="gap-2 rounded-md border border-amber-300 p-2">
+                  <View className="flex-row items-center justify-between gap-3">
+                    <View className="flex-1 gap-1">
+                      <Text className="text-sm font-medium text-amber-900">
+                        Allow create despite blockers
+                      </Text>
+                      <Text className="text-xs text-amber-800">
+                        I understand this create may violate safety or
+                        feasibility guardrails.
+                      </Text>
+                    </View>
+                    <Switch
+                      checked={allowBlockingIssueOverride}
+                      onCheckedChange={(checked) => {
+                        onAllowBlockingIssueOverrideChange?.(checked);
+                      }}
+                      accessibilityLabel="Allow create despite blockers"
+                      accessibilityHint="Acknowledges an override and enables create while blockers remain"
+                    />
+                  </View>
+                </View>
               </View>
             )}
           </>

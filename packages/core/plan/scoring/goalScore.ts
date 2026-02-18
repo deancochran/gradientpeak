@@ -4,6 +4,7 @@ import {
   type TargetProjectionSignals,
   type TargetSatisfactionResult,
 } from "./targetSatisfaction";
+import { normalizeTargetWeight, weightedMean } from "./weightedMean";
 
 export interface GoalAssessmentInput {
   goal_id: string;
@@ -22,18 +23,6 @@ export interface GoalAssessmentResult {
 
 function round3(value: number): number {
   return Math.round(value * 1000) / 1000;
-}
-
-function normalizeWeight(rawWeight: number | undefined): number {
-  if (
-    typeof rawWeight !== "number" ||
-    Number.isNaN(rawWeight) ||
-    rawWeight <= 0
-  ) {
-    return 1;
-  }
-
-  return rawWeight;
 }
 
 function getTargetSortKey(target: GoalTargetV2): string {
@@ -97,18 +86,17 @@ export function scoreGoalAssessment(
   }
 
   const weights = orderedTargets.map((target) =>
-    normalizeWeight((target as { weight?: number }).weight),
+    normalizeTargetWeight(target.weight),
   );
-  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
-  const weightedScore = targetScores.reduce((sum, targetScore, index) => {
-    const weight = weights[index] ?? 1;
-    return sum + (targetScore.score_0_100 / 100) * weight;
-  }, 0);
+  const weightedScore = weightedMean(
+    targetScores.map((targetScore) => targetScore.score_0_100 / 100),
+    weights,
+  );
 
   return {
     goal_id: input.goal_id,
     priority: input.priority,
-    goal_score_0_1: round3(totalWeight <= 0 ? 0 : weightedScore / totalWeight),
+    goal_score_0_1: round3(weightedScore),
     target_scores: targetScores,
     conflict_notes: [],
   };

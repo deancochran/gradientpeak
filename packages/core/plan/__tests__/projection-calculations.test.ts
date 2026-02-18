@@ -156,6 +156,40 @@ describe("projection calculations", () => {
     expect(combined.multiplier).toBeGreaterThan(highPriorityOnly.multiplier);
     expect(combined.multiplier).toBeLessThan(lowPriorityOnly.multiplier);
   });
+
+  it("uses continuous weekly evolution without discrete deload cliffs", () => {
+    const projection = buildDeterministicProjectionPayload({
+      timeline: {
+        start_date: "2026-01-05",
+        end_date: "2026-02-01",
+      },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2026-02-01",
+          target_weekly_tss_range: { min: 280, max: 280 },
+        },
+      ],
+      goals: [
+        {
+          id: "goal-1",
+          name: "steady",
+          target_date: "2026-03-01",
+          priority: 1,
+        },
+      ],
+      starting_ctl: 40,
+    });
+
+    const week3 = projection.microcycles[2]?.planned_weekly_tss ?? 0;
+    const week4 = projection.microcycles[3]?.planned_weekly_tss ?? 0;
+    expect(week4).toBeGreaterThan(0);
+    expect(Math.abs(week4 - week3)).toBeLessThanOrEqual(
+      Math.max(15, week3 * 0.1),
+    );
+  });
 });
 
 describe("deterministic projection goal conflict weighting", () => {
@@ -238,6 +272,113 @@ describe("deterministic projection goal conflict weighting", () => {
       highPriorityUrgent.microcycles[0]?.planned_weekly_tss,
     ).toBeLessThanOrEqual(
       lowPriorityUrgent.microcycles[0]?.planned_weekly_tss ?? 0,
+    );
+  });
+});
+
+describe("deterministic inferred current state", () => {
+  const baseInput: Parameters<typeof buildDeterministicProjectionPayload>[0] = {
+    timeline: {
+      start_date: "2026-03-02",
+      end_date: "2026-03-23",
+    },
+    blocks: [
+      {
+        name: "Build",
+        phase: "build",
+        start_date: "2026-03-02",
+        end_date: "2026-03-23",
+        target_weekly_tss_range: { min: 200, max: 240 },
+      },
+    ],
+    goals: [
+      {
+        id: "goal-state",
+        name: "Spring race",
+        target_date: "2026-03-23",
+        priority: 2,
+      },
+    ],
+    starting_ctl: 32,
+    starting_atl: 35,
+  };
+
+  it("emits inferred_current_state with bootstrap metadata", () => {
+    const projection = buildDeterministicProjectionPayload(baseInput);
+
+    expect(projection.inferred_current_state.as_of).toBe(
+      "2026-03-02T00:00:00.000Z",
+    );
+    expect(projection.inferred_current_state.mean.ctl).toBeGreaterThanOrEqual(
+      0,
+    );
+    expect(projection.inferred_current_state.mean.atl).toBeGreaterThanOrEqual(
+      0,
+    );
+    expect(
+      projection.inferred_current_state.uncertainty.state_variance,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      projection.inferred_current_state.uncertainty.state_variance,
+    ).toBeLessThanOrEqual(1);
+    expect(
+      projection.inferred_current_state.evidence_quality.score,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      projection.inferred_current_state.evidence_quality.score,
+    ).toBeLessThanOrEqual(1);
+    expect(
+      projection.inferred_current_state.metadata.missingness_counter,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      projection.inferred_current_state.metadata.evidence_counter,
+    ).toBeGreaterThanOrEqual(0);
+  });
+
+  it("reuses prior inferred snapshot deterministically", () => {
+    const priorSnapshot = {
+      mean: {
+        ctl: 60,
+        atl: 55,
+        tsb: 5,
+        slb: 0.92,
+        durability: 72,
+        readiness: 70,
+      },
+      uncertainty: {
+        state_variance: 0.22,
+        confidence: 0.78,
+      },
+      evidence_quality: {
+        score: 0.82,
+        missingness_ratio: 0.18,
+      },
+      as_of: "2026-03-02T00:00:00.000Z",
+      metadata: {
+        updated_at: "2026-03-02T00:00:00.000Z",
+        missingness_counter: 2,
+        evidence_counter: 8,
+      },
+    };
+
+    const first = buildDeterministicProjectionPayload({
+      ...baseInput,
+      prior_inferred_snapshot: priorSnapshot,
+    });
+    const second = buildDeterministicProjectionPayload({
+      ...baseInput,
+      prior_inferred_snapshot: priorSnapshot,
+    });
+
+    expect(first.inferred_current_state).toEqual(second.inferred_current_state);
+    expect(
+      first.constraint_summary.starting_state.starting_state_is_prior,
+    ).toBe(true);
+    expect(
+      first.constraint_summary.starting_state.starting_ctl,
+    ).toBeGreaterThan(baseInput.starting_ctl ?? 0);
+    expect(first.constraint_summary.starting_state.starting_ctl).toBe(
+      first.inferred_current_state.mean.ctl,
     );
   });
 });
@@ -1270,21 +1411,33 @@ describe("phase 1 scoring integration", () => {
     });
 
     expect(projection.display_points).toEqual(projection.points);
+    expect(projection.readiness_score).toBeGreaterThanOrEqual(0);
+    expect(projection.readiness_score).toBeLessThanOrEqual(100);
+
+    const goalReadinessValues = projection.goal_markers
+      .map(
+        (goal) =>
+          projection.points.find((point) => point.date === goal.target_date)
+            ?.readiness_score,
+      )
+      .filter((value): value is number => value !== undefined);
+
+    const weightedGoalReadiness =
+      goalReadinessValues.reduce((sum, value) => sum + value, 0) /
+      Math.max(1, goalReadinessValues.length);
+
     expect(
-      Math.max(...projection.points.map((point) => point.readiness_score)),
-    ).toBeLessThanOrEqual(projection.readiness_score);
+      Math.abs(projection.readiness_score - weightedGoalReadiness),
+    ).toBeLessThanOrEqual(12);
 
     for (const goal of projection.goal_markers) {
       const goalPoint = projection.points.find(
         (point) => point.date === goal.target_date,
       );
       if (goalPoint) {
-        expect(goalPoint.readiness_score).toBeLessThanOrEqual(
-          projection.readiness_score,
-        );
         expect(
-          projection.readiness_score - goalPoint.readiness_score,
-        ).toBeLessThanOrEqual(6);
+          Math.abs(projection.readiness_score - goalPoint.readiness_score),
+        ).toBeLessThanOrEqual(12);
       }
     }
   });
@@ -1345,7 +1498,7 @@ describe("phase 2 mpc integration diagnostics", () => {
       0,
     );
     expect(diagnostics?.active_constraints).toContain(
-      "single_mode_safety_caps_enforced",
+      "invariant_numeric_bounds_enforced",
     );
     expect(diagnostics?.tie_break_chain).toEqual(expect.any(Array));
     expect((diagnostics?.tie_break_chain ?? []).length).toBeGreaterThanOrEqual(
@@ -1390,6 +1543,22 @@ describe("phase 2 mpc integration diagnostics", () => {
         curve: expect.any(Number),
       },
     });
+    expect(diagnostics?.optimization_tradeoff_summary).toMatchObject({
+      goal_utility: expect.any(Number),
+      risk_penalty: expect.any(Number),
+      volatility_penalty: expect.any(Number),
+      churn_penalty: expect.any(Number),
+      net_utility: expect.any(Number),
+    });
+    expect(diagnostics?.convergence_guard).toMatchObject({
+      max_solver_attempts: 3,
+      solver_attempts: expect.any(Number),
+      non_finite_objective_rejections: expect.any(Number),
+      stability_assertions: expect.any(Array),
+    });
+    expect(projection.optimization_tradeoff_summary).toEqual(
+      diagnostics?.optimization_tradeoff_summary,
+    );
   });
 
   it("uses deterministic cap-only fallback when optimizer is disabled", () => {
@@ -1452,14 +1621,14 @@ describe("phase 2 mpc integration diagnostics", () => {
     ).toBeLessThanOrEqual(40);
     expect(
       strictProjection.projection_diagnostics?.active_constraints,
-    ).toContain("single_mode_safety_caps_enforced");
+    ).toContain("invariant_numeric_bounds_enforced");
     expect(strictProjection.projection_diagnostics?.clamp_counts).toEqual({
       tss: strictProjection.constraint_summary.tss_ramp_clamp_weeks,
       ctl: strictProjection.constraint_summary.ctl_ramp_clamp_weeks,
     });
   });
 
-  it("maps projection_control_v2 into effective ramp caps in projection output", () => {
+  it("keeps projection_control_v2 ramp caps normalized/invariant across ambition and risk", () => {
     const conservativeControls = buildDeterministicProjectionPayload({
       ...phase2Fixture,
       creation_config: {
@@ -1488,17 +1657,25 @@ describe("phase 2 mpc integration diagnostics", () => {
     expect(
       aggressiveControls.microcycles[0]?.metadata.tss_ramp
         .max_weekly_tss_ramp_pct,
-    ).toBeGreaterThan(
+    ).toBe(
       conservativeControls.microcycles[0]?.metadata.tss_ramp
-        .max_weekly_tss_ramp_pct ?? 0,
+        .max_weekly_tss_ramp_pct,
     );
     expect(
       aggressiveControls.microcycles[0]?.metadata.ctl_ramp
         .max_ctl_ramp_per_week,
-    ).toBeGreaterThan(
+    ).toBe(
       conservativeControls.microcycles[0]?.metadata.ctl_ramp
-        .max_ctl_ramp_per_week ?? 0,
+        .max_ctl_ramp_per_week,
     );
+    expect(
+      aggressiveControls.microcycles[0]?.metadata.tss_ramp
+        .max_weekly_tss_ramp_pct,
+    ).toBe(phase2Fixture.creation_config?.max_weekly_tss_ramp_pct ?? 0);
+    expect(
+      aggressiveControls.microcycles[0]?.metadata.ctl_ramp
+        .max_ctl_ramp_per_week,
+    ).toBe(phase2Fixture.creation_config?.max_ctl_ramp_per_week ?? 0);
   });
 
   it("exposes widened frontier caps and preserves monotonic upper band under higher overrides", () => {
@@ -1590,17 +1767,15 @@ describe("phase 2 mpc integration diagnostics", () => {
     const firstThreeBackLoaded = backLoaded.microcycles
       .slice(0, 3)
       .reduce((sum, week) => sum + week.planned_weekly_tss, 0);
-    const curveTermFrontLoaded =
-      frontLoaded.projection_diagnostics?.objective_contributions.weighted_terms
-        .curve ?? 0;
-    const curveTermBackLoaded =
-      backLoaded.projection_diagnostics?.objective_contributions.weighted_terms
-        .curve ?? 0;
+    const frontCurvatureTarget =
+      frontLoaded.projection_diagnostics?.effective_optimizer_config.curvature
+        .target ?? 0;
+    const backCurvatureTarget =
+      backLoaded.projection_diagnostics?.effective_optimizer_config.curvature
+        .target ?? 0;
 
     expect(firstThreeFrontLoaded).toBeGreaterThan(firstThreeBackLoaded);
-    expect(
-      Math.abs(curveTermFrontLoaded - curveTermBackLoaded),
-    ).toBeGreaterThan(0);
+    expect(frontCurvatureTarget).toBeLessThan(backCurvatureTarget);
   });
 });
 
@@ -1718,5 +1893,162 @@ describe("phase 5 benchmark and theoretical frontier validation", () => {
       expect(Number.isFinite(cycle.planned_weekly_tss)).toBe(true);
       expect(Number.isFinite(cycle.projected_ctl)).toBe(true);
     }
+  });
+
+  it("allows elite long-horizon readiness >=99 for theoretical run distance targets", () => {
+    const eliteTargets = [
+      {
+        id: "goal-5k-1235",
+        name: "5k 12:35",
+        distance_m: 5000,
+        target_time_s: 12 * 60 + 35,
+      },
+      {
+        id: "goal-10k-2611",
+        name: "10k 26:11",
+        distance_m: 10000,
+        target_time_s: 26 * 60 + 11,
+      },
+      {
+        id: "goal-half-5600",
+        name: "Half 56:00",
+        distance_m: 21097,
+        target_time_s: 56 * 60,
+      },
+      {
+        id: "goal-marathon-2h",
+        name: "Marathon 2:00:00",
+        distance_m: 42195,
+        target_time_s: 2 * 60 * 60,
+      },
+    ] as const;
+
+    for (const target of eliteTargets) {
+      const projection = buildDeterministicProjectionPayload({
+        timeline: {
+          start_date: "2026-01-05",
+          end_date: "2028-01-07",
+        },
+        blocks: [
+          {
+            name: "Elite build",
+            phase: "build",
+            start_date: "2026-01-05",
+            end_date: "2027-12-10",
+            target_weekly_tss_range: { min: 1800, max: 2600 },
+          },
+          {
+            name: "Race taper",
+            phase: "taper",
+            start_date: "2027-12-11",
+            end_date: "2028-01-07",
+            target_weekly_tss_range: { min: 50, max: 120 },
+          },
+        ],
+        goals: [
+          {
+            id: target.id,
+            name: target.name,
+            target_date: "2028-01-07",
+            priority: 1,
+            targets: [
+              {
+                target_type: "race_performance",
+                activity_category: "run",
+                distance_m: target.distance_m,
+                target_time_s: target.target_time_s,
+              },
+            ],
+          },
+        ],
+        starting_ctl: 240,
+        starting_atl: 120,
+        starting_tsb: 120,
+        creation_config: {
+          optimization_profile: "outcome_first",
+          max_weekly_tss_ramp_pct: 40,
+          max_ctl_ramp_per_week: 12,
+          projection_control_v2: {
+            ambition: 1,
+            risk_tolerance: 1,
+            curvature: 0,
+            curvature_strength: 0,
+          },
+        },
+      });
+
+      const goalReadiness =
+        projection.goal_assessments?.find((goal) => goal.goal_id === target.id)
+          ?.goal_readiness_score ?? 0;
+      const goalAssessment = projection.goal_assessments?.find(
+        (goal) => goal.goal_id === target.id,
+      );
+      expect(
+        goalReadiness,
+        `${target.name} readiness expected >=99 but got ${goalReadiness} (state=${goalAssessment?.state_readiness_score ?? "n/a"}, target=${goalAssessment?.target_scores?.[0]?.score_0_100 ?? "n/a"})`,
+      ).toBeGreaterThanOrEqual(99);
+    }
+  });
+
+  it("reaches >=99 for half-marathon 1:00 with max starting fitness and aggressive controls", () => {
+    const projection = buildDeterministicProjectionPayload({
+      timeline: {
+        start_date: "2026-01-05",
+        end_date: "2028-01-07",
+      },
+      blocks: [
+        {
+          name: "Elite build",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2027-12-10",
+          target_weekly_tss_range: { min: 1800, max: 2600 },
+        },
+        {
+          name: "Race taper",
+          phase: "taper",
+          start_date: "2027-12-11",
+          end_date: "2028-01-07",
+          target_weekly_tss_range: { min: 50, max: 120 },
+        },
+      ],
+      goals: [
+        {
+          id: "goal-half-1h-user-scenario",
+          name: "Half marathon 1:00",
+          target_date: "2028-01-07",
+          priority: 1,
+          targets: [
+            {
+              target_type: "race_performance",
+              activity_category: "run",
+              distance_m: 21097,
+              target_time_s: 3600,
+            },
+          ],
+        },
+      ],
+      starting_ctl: 250,
+      creation_config: {
+        optimization_profile: "outcome_first",
+        max_weekly_tss_ramp_pct: 40,
+        max_ctl_ramp_per_week: 12,
+        projection_control_v2: {
+          ambition: 1,
+          risk_tolerance: 1,
+          curvature: 0,
+          curvature_strength: 0,
+        },
+      },
+    });
+
+    const goalAssessment = projection.goal_assessments?.find(
+      (goal) => goal.goal_id === "goal-half-1h-user-scenario",
+    );
+    const goalReadiness = goalAssessment?.goal_readiness_score ?? 0;
+    expect(
+      goalReadiness,
+      `half 1:00 scenario expected >=99 but got ${goalReadiness} (state=${goalAssessment?.state_readiness_score ?? "n/a"}, target=${goalAssessment?.target_scores?.[0]?.score_0_100 ?? "n/a"}, alignment=${goalAssessment?.goal_alignment_loss_0_100 ?? "n/a"})`,
+    ).toBeGreaterThanOrEqual(99);
   });
 });

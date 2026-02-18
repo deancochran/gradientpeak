@@ -1,4 +1,5 @@
-import { toPriorityTier, type GoalPriorityTier } from "./planScore";
+import { mapGoalPriorityToWeight } from "./priorityWeight";
+import { weightedMean } from "./weightedMean";
 
 export type FeasibilityBand =
   | "feasible"
@@ -28,12 +29,6 @@ export interface GoalGdiResult {
   gdi: number;
   feasibility_band: FeasibilityBand;
 }
-
-const TIER_WEIGHTS: Record<GoalPriorityTier, number> = {
-  A: 0.62,
-  B: 0.28,
-  C: 0.1,
-};
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -71,7 +66,7 @@ export function computeGoalGdi(input: GoalGdiInput): GoalGdiResult {
 }
 
 /**
- * Aggregates plan-level GDI using tier weighting plus A-tier worst-case guard.
+ * Aggregates plan-level GDI using shared monotonic priority weighting.
  */
 export function computePlanGdi(goalGdi: GoalGdiResult[]): {
   gdi: number;
@@ -81,26 +76,9 @@ export function computePlanGdi(goalGdi: GoalGdiResult[]): {
     return { gdi: 0, feasibility_band: "feasible" };
   }
 
-  let weightedSum = 0;
-  let totalWeight = 0;
-  let aGoalWorst = 0;
-  let hasAGoal = false;
-
-  for (const goal of goalGdi) {
-    const tier = toPriorityTier(goal.priority);
-    const weight = TIER_WEIGHTS[tier];
-    weightedSum += goal.gdi * weight;
-    totalWeight += weight;
-
-    if (tier === "A") {
-      hasAGoal = true;
-      aGoalWorst = Math.max(aGoalWorst, goal.gdi);
-    }
-  }
-
-  const weightedMean = totalWeight <= 0 ? 0 : weightedSum / totalWeight;
-  const guarded = hasAGoal ? Math.max(weightedMean, aGoalWorst) : weightedMean;
-  const rounded = round3(guarded);
+  const values = goalGdi.map((goal) => goal.gdi);
+  const weights = goalGdi.map((goal) => mapGoalPriorityToWeight(goal.priority));
+  const rounded = round3(weightedMean(values, weights));
 
   return {
     gdi: rounded,

@@ -1,3 +1,5 @@
+import type { InferredStateSnapshot } from "@repo/core";
+
 export interface CreateTrainingPlanRecordInput {
   name: string;
   description: string | null;
@@ -15,4 +17,12 @@ export interface TrainingPlanRepository {
   createTrainingPlan(
     input: CreateTrainingPlanRecordInput,
   ): Promise<CreatedTrainingPlanRecord>;
+  getPriorInferredStateSnapshot(
+    profileId: string,
+  ): Promise<InferredStateSnapshot | null>;
+  persistInferredStateSnapshot(input: {
+    profileId: string;
+    inferredStateSnapshot: InferredStateSnapshot;
+    trainingPlanId?: string;
+  }): Promise<void>;
 }

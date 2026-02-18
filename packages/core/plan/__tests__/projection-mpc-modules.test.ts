@@ -127,6 +127,27 @@ describe("MPC tiebreak", () => {
     expect(result.selected_candidate).toBe(300);
   });
 
+  it("guards against non-finite candidate objectives deterministically", () => {
+    const result = solveDeterministicBoundedMpc({
+      optimization_profile: "balanced",
+      previous_action: 300,
+      action_bounds: {
+        min_value: 290,
+        max_value: 310,
+      },
+      evaluate_candidate: ({ candidate_value }) => ({
+        objective_score: candidate_value === 300 ? Number.NaN : 1,
+      }),
+    });
+
+    expect(result.selected_candidate).not.toBe(300);
+    expect(
+      result.candidates.every((candidate) =>
+        Number.isFinite(candidate.objective_score),
+      ),
+    ).toBe(false);
+  });
+
   it("applies tie-break precedence objective -> delta -> date -> id -> value", () => {
     const betterObjective = compareMpcTieBreakCandidates(
       {

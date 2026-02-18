@@ -16,24 +16,28 @@ type RacePerformanceTargetInput =
       distance_m: number;
       target_time_s: number;
       activity_category?: "run" | "bike" | "swim" | "other";
+      weight?: number | string;
     }
   | {
       target_type: "race_performance";
       distance_km: number | string;
       completion_time: string;
       activity_category?: "run" | "bike" | "swim" | "other";
+      weight?: number | string;
     }
   | {
       target_type: "race_performance";
       distance_km: number | string;
       pace: string;
       activity_category?: "run" | "bike" | "swim" | "other";
+      weight?: number | string;
     }
   | {
       target_type: "race_performance";
       completion_time: string;
       pace: string;
       activity_category?: "run" | "bike" | "swim" | "other";
+      weight?: number | string;
     };
 
 type PaceThresholdTargetInput = {
@@ -43,6 +47,7 @@ type PaceThresholdTargetInput = {
   test_duration_s?: number | string;
   test_duration?: string;
   activity_category?: "run" | "bike" | "swim" | "other";
+  weight?: number | string;
 };
 
 type PowerThresholdTargetInput = {
@@ -51,11 +56,13 @@ type PowerThresholdTargetInput = {
   test_duration_s?: number | string;
   test_duration?: string;
   activity_category?: "run" | "bike" | "swim" | "other";
+  weight?: number | string;
 };
 
 type HrThresholdTargetInput = {
   target_type: "hr_threshold";
   target_lthr_bpm: number | string;
+  weight?: number | string;
 };
 
 export interface GoalInputLike {
@@ -152,6 +159,12 @@ export function normalizeGoalInput(
 function normalizeGoalTargetInput(
   target: GoalInputLike["targets"][number],
 ): GoalTargetV2 {
+  const resolvedWeight =
+    "weight" in target ? getPositiveNumber(target.weight) : null;
+  const normalizedWeight = resolvedWeight === null ? undefined : resolvedWeight;
+  const withWeight =
+    normalizedWeight === undefined ? {} : { weight: normalizedWeight };
+
   switch (target.target_type) {
     case "race_performance": {
       const activityCategory =
@@ -181,6 +194,7 @@ function normalizeGoalTargetInput(
           distance_m: directDistance,
           target_time_s: directTime,
           activity_category: activityCategory,
+          ...withWeight,
         };
       }
 
@@ -206,6 +220,7 @@ function normalizeGoalTargetInput(
           distance_m: distanceMeters,
           target_time_s: targetTimeSeconds,
           activity_category: activityCategory,
+          ...withWeight,
         };
       }
 
@@ -215,6 +230,7 @@ function normalizeGoalTargetInput(
           distance_m: distanceMeters,
           target_time_s: Math.round(distanceMeters / paceMps),
           activity_category: activityCategory,
+          ...withWeight,
         };
       }
 
@@ -224,6 +240,7 @@ function normalizeGoalTargetInput(
           distance_m: Math.round(targetTimeSeconds * paceMps),
           target_time_s: targetTimeSeconds,
           activity_category: activityCategory,
+          ...withWeight,
         };
       }
 
@@ -271,6 +288,7 @@ function normalizeGoalTargetInput(
         target_speed_mps: speedMps,
         test_duration_s: testDurationSeconds,
         activity_category: activityCategory,
+        ...withWeight,
       };
     }
     case "power_threshold": {
@@ -309,6 +327,7 @@ function normalizeGoalTargetInput(
         target_watts: watts,
         test_duration_s: testDurationSeconds,
         activity_category: activityCategory,
+        ...withWeight,
       };
     }
     case "hr_threshold": {
@@ -320,6 +339,7 @@ function normalizeGoalTargetInput(
       return {
         target_type: "hr_threshold",
         target_lthr_bpm: lthr,
+        ...withWeight,
       };
     }
   }

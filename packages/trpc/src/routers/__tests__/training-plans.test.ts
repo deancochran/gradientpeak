@@ -613,7 +613,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
     ).toBeLessThan(2.5);
   });
 
-  it("emits blocking cap-violation conflicts and unsafe feasibility reasons", async () => {
+  it("applies strict cap tuning without forcing blocking or unsafe feasibility", async () => {
     const caller = createTrainingPlansCaller({
       activities: { data: [], error: null },
       activity_efforts: { data: [], error: null },
@@ -647,19 +647,15 @@ describe("trainingPlansRouter plan_start_date support", () => {
     });
 
     expect(result.conflicts.is_blocking).toBe(false);
-    expect(
-      result.conflicts.items.some(
-        (c) =>
-          c.code === "required_tss_ramp_exceeds_cap" ||
-          c.code === "required_ctl_ramp_exceeds_cap",
-      ),
-    ).toBe(true);
-    expect(result.projection_feasibility.state).toBe("unsafe");
-    expect(
-      result.projection_feasibility.reasons.some((reason) =>
-        reason.includes("exceeds_configured_cap"),
-      ),
-    ).toBe(true);
+    const capConflict = result.conflicts.items.find(
+      (c) =>
+        c.code === "required_tss_ramp_exceeds_cap" ||
+        c.code === "required_ctl_ramp_exceeds_cap",
+    );
+    if (capConflict) {
+      expect(capConflict.severity).toBe("warning");
+    }
+    expect(result.projection_feasibility.state).not.toBe("unsafe");
   });
 
   it("emits blocking recovery compression conflicts for tight multi-goal windows", async () => {
@@ -692,7 +688,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       },
     });
 
-    expect(result.conflicts.is_blocking).toBe(false);
+    expect(result.conflicts.is_blocking).toBe(true);
     expect(
       result.conflicts.items.some(
         (conflict) =>
@@ -700,6 +696,57 @@ describe("trainingPlansRouter plan_start_date support", () => {
           conflict.code === "post_goal_recovery_overlaps_next_goal",
       ),
     ).toBe(true);
+  });
+
+  it("blocks createFromCreationConfig when blocking conflicts are unresolved", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "plan-row-blocked-create",
+          name: "Generated Plan",
+          description: null,
+          structure: {},
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const blockingInput = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [
+          {
+            ...minimalGoal,
+            name: "Goal A",
+            target_date: "2026-03-15",
+          },
+          {
+            ...minimalGoal,
+            name: "Goal B",
+            target_date: "2026-03-24",
+          },
+        ],
+      },
+      creation_input: {
+        user_values: {
+          post_goal_recovery_days: 14,
+        },
+      },
+    };
+
+    await expect(
+      caller.createFromCreationConfig(blockingInput),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining(
+        "Creation blocked by unresolved conflicts",
+      ),
+    });
   });
 
   it("surfaces cap-pressure reasons only when ramps actually bind near configured caps", async () => {
@@ -864,9 +911,61 @@ describe("trainingPlansRouter plan_start_date support", () => {
     );
     expect(preview.normalized_creation_config.max_weekly_tss_ramp_pct).toBe(20);
     expect(preview.normalized_creation_config.max_ctl_ramp_per_week).toBe(8);
+    expect(preview.override_audit.request.requested).toBe(false);
+    expect(preview.override_audit.effective.enabled).toBe(false);
 
     const created = await caller.createFromCreationConfig(input);
     expect(created.creation_summary.conflicts.is_blocking).toBe(false);
+    expect(created.creation_summary.override_audit.request.requested).toBe(
+      false,
+    );
+  });
+
+  it("threads override_policy into preview/create audit fields", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "plan-row-override-audit",
+          name: "Generated Plan",
+          description: null,
+          structure: {},
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const input = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [nonBlockingGoal],
+      },
+      creation_input: {},
+      override_policy: {
+        allow_blocking_conflicts: true,
+        scope: "objective_risk_budget" as const,
+        reason: "Coach approved objective tradeoff",
+      },
+    };
+
+    const preview = await caller.previewCreationConfig(input);
+    expect(preview.override_audit.request.requested).toBe(true);
+    expect(preview.override_audit.request.scope).toBe("objective_risk_budget");
+
+    const created = await caller.createFromCreationConfig({
+      ...input,
+      preview_snapshot_token: preview.preview_snapshot.token,
+    });
+    expect(created.creation_summary.override_audit.request.requested).toBe(
+      true,
+    );
+    expect(created.creation_summary.override_audit.request.scope).toBe(
+      "objective_risk_budget",
+    );
   });
 
   it("keeps preview/create load bootstrap state in parity for identical history", async () => {
@@ -951,6 +1050,78 @@ describe("trainingPlansRouter plan_start_date support", () => {
         ).toFixed(1),
       ),
     );
+  });
+
+  it("accepts prior inferred snapshot and propagates inferred_current_state through preview/create payloads", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "plan-row-prior",
+          name: "Generated Plan",
+          description: null,
+          structure: {},
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const priorSnapshot = {
+      mean: {
+        ctl: 48,
+        atl: 44,
+        tsb: 4,
+        slb: 61,
+        durability: 64,
+        readiness: 70,
+      },
+      uncertainty: {
+        state_variance: 0.2,
+        confidence: 0.8,
+      },
+      evidence_quality: {
+        score: 0.74,
+        missingness_ratio: 0.19,
+      },
+      as_of: "2026-01-05T00:00:00.000Z",
+      metadata: {
+        updated_at: "2026-01-05T00:00:00.000Z",
+        missingness_counter: 2,
+        evidence_counter: 23,
+      },
+    };
+
+    const input = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [nonBlockingGoal],
+      },
+      creation_input: {},
+      prior_inferred_snapshot: priorSnapshot,
+    };
+
+    const preview = await caller.previewCreationConfig(input);
+    expect(preview.projection_chart.inferred_current_state).toBeDefined();
+    expect(
+      preview.projection_chart.constraint_summary.starting_state
+        ?.starting_state_is_prior,
+    ).toBe(true);
+
+    const created = await caller.createFromCreationConfig({
+      ...input,
+      preview_snapshot_token: preview.preview_snapshot.token,
+    });
+
+    expect(
+      created.creation_summary.projection_chart.inferred_current_state,
+    ).toBeDefined();
+    expect(
+      created.creation_summary.projection_chart.inferred_current_state,
+    ).toEqual(preview.projection_chart.inferred_current_state);
   });
 
   it("returns a preview snapshot token from previewCreationConfig", async () => {
@@ -1224,6 +1395,15 @@ describe("trainingPlansRouter plan_start_date support", () => {
     expect(created.creation_summary.projection_chart.caps_applied).toEqual(
       preview.projection_chart.caps_applied,
     );
+    expect(
+      created.creation_summary.projection_chart.optimization_tradeoff_summary,
+    ).toEqual(preview.projection_chart.optimization_tradeoff_summary);
+    expect(preview.projection_chart.optimization_tradeoff_summary).toEqual(
+      preview.projection_chart.projection_diagnostics
+        ?.optimization_tradeoff_summary,
+    );
+    expect(preview.projection_chart.prediction_uncertainty).toBeUndefined();
+    expect(preview.projection_chart.goal_target_distributions).toBeUndefined();
     expect(
       created.creation_summary.projection_chart.projection_diagnostics,
     ).toEqual(preview.projection_chart.projection_diagnostics);

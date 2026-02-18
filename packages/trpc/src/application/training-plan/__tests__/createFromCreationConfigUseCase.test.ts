@@ -111,6 +111,30 @@ function createDeps(): any {
             starting_state_is_prior: false,
           },
         },
+        inferred_current_state: {
+          mean: {
+            ctl: 44,
+            atl: 39,
+            tsb: 5,
+            slb: 58,
+            durability: 62,
+            readiness: 68,
+          },
+          uncertainty: {
+            state_variance: 0.24,
+            confidence: 0.76,
+          },
+          evidence_quality: {
+            score: 0.71,
+            missingness_ratio: 0.22,
+          },
+          as_of: "2026-01-05T00:00:00.000Z",
+          metadata: {
+            updated_at: "2026-01-05T00:00:00.000Z",
+            missingness_counter: 3,
+            evidence_counter: 19,
+          },
+        },
       },
       projectionFeasibility: {
         state: "feasible" as const,
@@ -137,6 +161,8 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
         name: "Generated Plan",
         is_active: true,
       })),
+      getPriorInferredStateSnapshot: vi.fn(async () => null),
+      persistInferredStateSnapshot: vi.fn(async () => undefined),
     };
 
     const result = await createFromCreationConfigUseCase({
@@ -185,6 +211,8 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
         name: "Generated Plan",
         is_active: true,
       })),
+      getPriorInferredStateSnapshot: vi.fn(async () => null),
+      persistInferredStateSnapshot: vi.fn(async () => undefined),
     };
 
     await createFromCreationConfigUseCase({
@@ -263,6 +291,8 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
         name: "Generated Plan",
         is_active: true,
       })),
+      getPriorInferredStateSnapshot: vi.fn(async () => null),
+      persistInferredStateSnapshot: vi.fn(async () => undefined),
     };
 
     const result = await createFromCreationConfigUseCase({
@@ -311,6 +341,8 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
         name: "Generated Plan",
         is_active: true,
       })),
+      getPriorInferredStateSnapshot: vi.fn(async () => null),
+      persistInferredStateSnapshot: vi.fn(async () => undefined),
     };
 
     await createFromCreationConfigUseCase({
@@ -347,6 +379,8 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
         name: "Generated Plan",
         is_active: true,
       })),
+      getPriorInferredStateSnapshot: vi.fn(async () => null),
+      persistInferredStateSnapshot: vi.fn(async () => undefined),
     };
 
     await expect(
@@ -392,6 +426,8 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
         name: "Generated Plan",
         is_active: true,
       })),
+      getPriorInferredStateSnapshot: vi.fn(async () => null),
+      persistInferredStateSnapshot: vi.fn(async () => undefined),
     };
 
     const result = await createFromCreationConfigUseCase({
@@ -415,5 +451,233 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
       max_weekly_tss_ramp_pct: 20,
       max_ctl_ramp_per_week: 8,
     });
+  });
+
+  it("fails create when blocking conflicts exist and override policy is not explicit", async () => {
+    const deps = createDeps();
+    deps.deriveProjectionDrivenConflicts = vi.fn(() => [
+      {
+        code: "post_goal_recovery_overlaps_next_goal",
+        severity: "blocking",
+        message: "Recovery overlaps next goal",
+        field_paths: ["post_goal_recovery_days"],
+        suggestions: ["Reduce post-goal recovery"],
+      },
+    ]);
+
+    const repository = {
+      deactivateActivePlans: vi.fn(async () => undefined),
+      createTrainingPlan: vi.fn(async () => ({
+        id: "plan-row-blocked",
+        name: "Generated Plan",
+        is_active: true,
+      })),
+      getPriorInferredStateSnapshot: vi.fn(async () => null),
+      persistInferredStateSnapshot: vi.fn(async () => undefined),
+    };
+
+    await expect(
+      createFromCreationConfigUseCase({
+        supabase: {} as any,
+        profileId: "profile-123",
+        params: {
+          minimal_plan: {
+            plan_start_date: "2026-01-05",
+            goals: [],
+          },
+          creation_input: {},
+          preview_snapshot_token: "preview-token",
+          is_active: true,
+        },
+        repository,
+        deps: deps as any,
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining(
+        "Creation blocked by unresolved conflicts",
+      ),
+    });
+
+    expect(repository.createTrainingPlan).not.toHaveBeenCalled();
+  });
+
+  it("allows create when only objective/risk-budget blockers are explicitly overridden", async () => {
+    const deps = createDeps();
+    deps.deriveProjectionDrivenConflicts = vi.fn(() => [
+      {
+        code: "post_goal_recovery_compresses_next_goal_prep",
+        severity: "blocking",
+        message: "Recovery compresses prep",
+        field_paths: ["post_goal_recovery_days"],
+        suggestions: ["Reduce post-goal recovery"],
+      },
+    ]);
+
+    const repository = {
+      deactivateActivePlans: vi.fn(async () => undefined),
+      createTrainingPlan: vi.fn(async () => ({
+        id: "plan-row-overridden",
+        name: "Generated Plan",
+        is_active: true,
+      })),
+      getPriorInferredStateSnapshot: vi.fn(async () => null),
+      persistInferredStateSnapshot: vi.fn(async () => undefined),
+    };
+
+    const result = await createFromCreationConfigUseCase({
+      supabase: {} as any,
+      profileId: "profile-123",
+      params: {
+        minimal_plan: {
+          plan_start_date: "2026-01-05",
+          goals: [],
+        },
+        creation_input: {},
+        preview_snapshot_token: "preview-token",
+        is_active: true,
+        override_policy: {
+          allow_blocking_conflicts: true,
+          scope: "objective_risk_budget",
+          reason: "Coach-approved tradeoff",
+        },
+      },
+      repository,
+      deps: deps as any,
+    });
+
+    expect(result.creation_summary.conflicts.is_blocking).toBe(false);
+    expect(result.creation_summary.override_audit.effective.enabled).toBe(true);
+    expect(
+      result.creation_summary.override_audit.effective
+        .overridden_conflict_codes,
+    ).toContain("post_goal_recovery_compresses_next_goal_prep");
+  });
+
+  it("keeps invariant blockers non-overridable even when override is requested", async () => {
+    const deps = createDeps();
+    deps.deriveProjectionDrivenConflicts = vi.fn(() => [
+      {
+        code: "required_tss_ramp_exceeds_cap",
+        severity: "blocking",
+        message: "Ramp exceeds invariant cap",
+        field_paths: ["max_weekly_tss_ramp_pct"],
+        suggestions: ["Increase cap"],
+      },
+    ]);
+
+    const repository = {
+      deactivateActivePlans: vi.fn(async () => undefined),
+      createTrainingPlan: vi.fn(async () => ({
+        id: "plan-row-invariant",
+        name: "Generated Plan",
+        is_active: true,
+      })),
+      getPriorInferredStateSnapshot: vi.fn(async () => null),
+      persistInferredStateSnapshot: vi.fn(async () => undefined),
+    };
+
+    await expect(
+      createFromCreationConfigUseCase({
+        supabase: {} as any,
+        profileId: "profile-123",
+        params: {
+          minimal_plan: {
+            plan_start_date: "2026-01-05",
+            goals: [],
+          },
+          creation_input: {},
+          preview_snapshot_token: "preview-token",
+          is_active: true,
+          override_policy: {
+            allow_blocking_conflicts: true,
+            scope: "objective_risk_budget",
+            reason: "Accept objective tradeoffs",
+          },
+        },
+        repository,
+        deps: deps as any,
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining(
+        "Creation blocked by unresolved conflicts",
+      ),
+    });
+
+    expect(repository.createTrainingPlan).not.toHaveBeenCalled();
+  });
+
+  it("uses prior inferred snapshot from repository and persists posterior inferred snapshot", async () => {
+    const deps = createDeps();
+    const repository = {
+      deactivateActivePlans: vi.fn(async () => undefined),
+      createTrainingPlan: vi.fn(async () => ({
+        id: "plan-row-7",
+        name: "Generated Plan",
+        is_active: true,
+      })),
+      getPriorInferredStateSnapshot: vi.fn(async () => ({
+        mean: {
+          ctl: 41,
+          atl: 37,
+          tsb: 4,
+          slb: 56,
+          durability: 60,
+          readiness: 65,
+        },
+        uncertainty: {
+          state_variance: 0.3,
+          confidence: 0.7,
+        },
+        evidence_quality: {
+          score: 0.64,
+          missingness_ratio: 0.27,
+        },
+        as_of: "2026-01-04T00:00:00.000Z",
+        metadata: {
+          updated_at: "2026-01-04T00:00:00.000Z",
+          missingness_counter: 5,
+          evidence_counter: 17,
+        },
+      })),
+      persistInferredStateSnapshot: vi.fn(async () => undefined),
+    };
+
+    await createFromCreationConfigUseCase({
+      supabase: {} as any,
+      profileId: "profile-123",
+      params: {
+        minimal_plan: {
+          plan_start_date: "2026-01-05",
+          goals: [],
+        },
+        creation_input: {},
+        preview_snapshot_token: "preview-token",
+        is_active: true,
+      },
+      repository: repository as any,
+      deps: deps as any,
+    });
+
+    expect(repository.getPriorInferredStateSnapshot).toHaveBeenCalledWith(
+      "profile-123",
+    );
+    expect(deps.buildCreationProjectionArtifacts).toHaveBeenCalledWith(
+      expect.objectContaining({
+        priorInferredSnapshot: expect.objectContaining({
+          mean: expect.objectContaining({ ctl: 41 }),
+        }),
+      }),
+    );
+    expect(repository.persistInferredStateSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        profileId: "profile-123",
+        trainingPlanId: "plan-row-7",
+        inferredStateSnapshot: expect.objectContaining({
+          mean: expect.objectContaining({ ctl: 44 }),
+        }),
+      }),
+    );
   });
 });

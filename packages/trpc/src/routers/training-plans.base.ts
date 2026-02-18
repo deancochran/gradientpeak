@@ -20,6 +20,7 @@ import {
   formatDateOnlyUtc,
   getFormStatus,
   getTrainingIntensityZone,
+  inferredStateSnapshotSchema,
   minimalTrainingPlanCreateSchema,
   normalizeCreationConfig,
   normalizeProjectionSafetyConfig,
@@ -37,6 +38,7 @@ import {
   validatePlanFeasibility,
   type CreationContextSummary,
   type DeterministicProjectionMicrocycle,
+  type InferredStateSnapshot,
   type NoHistoryAnchorContext,
   type NoHistoryProjectionMetadata,
   type LoadBootstrapState,
@@ -148,6 +150,20 @@ type PreviewCreationConfigResponse = {
   conflicts: {
     is_blocking: boolean;
     items: CreationConflictItem[];
+  };
+  override_audit: {
+    request: {
+      requested: boolean;
+      allow_blocking_conflicts: boolean;
+      scope: "objective_risk_budget" | null;
+      reason: string | null;
+    };
+    effective: {
+      enabled: boolean;
+      overridden_conflict_codes: string[];
+      unresolved_blocking_conflict_codes: string[];
+      rationale_codes: string[];
+    };
   };
   plan_preview: {
     name: string;
@@ -478,6 +494,7 @@ function buildProjectionChartPayload(input: {
   expandedPlan: ReturnType<typeof expandMinimalGoalToPlan>;
   startingCtl?: number;
   startingAtl?: number;
+  priorInferredSnapshot?: InferredStateSnapshot;
   creationConfig?: NonNullable<
     Parameters<typeof buildDeterministicProjectionPayload>[0]["creation_config"]
   >;
@@ -520,6 +537,7 @@ function buildProjectionChartPayload(input: {
     })),
     starting_ctl: input.startingCtl,
     starting_atl: input.startingAtl,
+    prior_inferred_snapshot: input.priorInferredSnapshot,
     creation_config: input.creationConfig,
     no_history_context: input.noHistoryContext,
   });
@@ -532,6 +550,12 @@ function buildProjectionChartPayload(input: {
       ...microcycle,
     }));
 
+  const deterministicProjectionCompat =
+    deterministicProjection as typeof deterministicProjection & {
+      prediction_uncertainty?: CoreProjectionChartPayload["prediction_uncertainty"];
+      goal_target_distributions?: CoreProjectionChartPayload["goal_target_distributions"];
+    };
+
   return {
     start_date: expandedPlan.start_date,
     end_date: expandedPlan.end_date,
@@ -542,6 +566,7 @@ function buildProjectionChartPayload(input: {
     microcycles,
     recovery_segments: deterministicProjection.recovery_segments,
     constraint_summary: deterministicProjection.constraint_summary,
+    inferred_current_state: deterministicProjection.inferred_current_state,
     no_history: toNoHistoryMetadataOrUndefined(
       deterministicProjection.no_history,
     ),
@@ -555,6 +580,12 @@ function buildProjectionChartPayload(input: {
     risk_flags: deterministicProjection.risk_flags,
     caps_applied: deterministicProjection.caps_applied,
     projection_diagnostics: deterministicProjection.projection_diagnostics,
+    prediction_uncertainty:
+      deterministicProjectionCompat.prediction_uncertainty,
+    goal_target_distributions:
+      deterministicProjectionCompat.goal_target_distributions,
+    optimization_tradeoff_summary:
+      deterministicProjection.optimization_tradeoff_summary,
     goal_assessments: deterministicProjection.goal_assessments,
   };
 }
@@ -855,6 +886,16 @@ const blockSnapshotSchema = z.object({
 
 const CREATION_PREVIEW_SNAPSHOT_VERSION = "creation_preview_v2";
 
+const previewCreationConfigRouterInputSchema =
+  previewCreationConfigInputSchema.extend({
+    prior_inferred_snapshot: inferredStateSnapshotSchema.optional(),
+  });
+
+const createFromCreationConfigRouterInputSchema =
+  createFromCreationConfigInputSchema.extend({
+    prior_inferred_snapshot: inferredStateSnapshotSchema.optional(),
+  });
+
 function mergeCalibrationInput(
   base?: z.input<typeof trainingPlanCalibrationConfigSchema>,
   override?: z.input<typeof trainingPlanCalibrationConfigSchema>,
@@ -1040,6 +1081,7 @@ function buildCreationPreviewSnapshotToken(input: {
 function buildCreationProjectionArtifacts(input: {
   minimalPlan: z.infer<typeof minimalTrainingPlanCreateSchema>;
   loadBootstrapState: LoadBootstrapState;
+  priorInferredSnapshot?: InferredStateSnapshot;
   startingCtlOverride?: number;
   startingAtlOverride?: number;
   finalConfig: Awaited<
@@ -1071,6 +1113,7 @@ function buildCreationProjectionArtifacts(input: {
     expandedPlan,
     startingCtl: effectiveStartingCtl,
     startingAtl: effectiveStartingAtl,
+    priorInferredSnapshot: input.priorInferredSnapshot,
     creationConfig: {
       optimization_profile: input.finalConfig.optimization_profile,
       post_goal_recovery_days: input.finalConfig.post_goal_recovery_days,
@@ -1832,12 +1875,13 @@ export const trainingPlansRouter = createTRPCRouter({
   // Preview normalized creation config + feasibility/safety
   // ------------------------------
   previewCreationConfig: protectedProcedure
-    .input(previewCreationConfigInputSchema)
+    .input(previewCreationConfigRouterInputSchema)
     .query(async ({ ctx, input }) => {
       const result = await previewCreationConfigUseCase({
         supabase: ctx.supabase,
         profileId: ctx.session.user.id,
         params: input,
+        repository: createSupabaseTrainingPlanRepository(ctx.supabase),
         deps: {
           enforceCreationConfigFeatureEnabled,
           enforceNoAutonomousPostCreateMutation,
@@ -1856,7 +1900,7 @@ export const trainingPlansRouter = createTRPCRouter({
   // Create plan from minimal goal + normalized creation config
   // ------------------------------
   createFromCreationConfig: protectedProcedure
-    .input(createFromCreationConfigInputSchema)
+    .input(createFromCreationConfigRouterInputSchema)
     .mutation(async ({ ctx, input }) => {
       return createFromCreationConfigUseCase({
         supabase: ctx.supabase,

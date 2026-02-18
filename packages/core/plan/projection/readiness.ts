@@ -352,14 +352,6 @@ export interface ProjectionPointReadinessGoalInput {
   priority?: number;
 }
 
-function normalizePriority(priority: number | undefined): number {
-  if (typeof priority !== "number" || Number.isNaN(priority)) {
-    return 5;
-  }
-
-  return Math.max(0, Math.min(10, Math.round(priority)));
-}
-
 function diffDateOnlyUtcDays(a: string, b: string): number {
   const aMs = Date.parse(`${a}T00:00:00.000Z`);
   const bMs = Date.parse(`${b}T00:00:00.000Z`);
@@ -467,18 +459,12 @@ export function computeProjectionPointReadinessScores(input: {
   const goalAnchors = goals
     .map((goal) => {
       const goalIndex = resolveGoalIndex(goal.target_date);
-      const priority = normalizePriority(goal.priority);
-      const priorityWeight = priority / 10;
-      const peakWindow = Math.round(8 + priorityWeight * 10);
-      const basePeak = clampScore(
-        78 + priorityWeight * 10 + feasibilitySignal * 6,
-      );
+      const peakWindow = 12;
 
       return {
         goalIndex,
         peakWindow,
-        peakSlope: 1.1 + priorityWeight * 0.7,
-        basePeak,
+        peakSlope: 1.6,
       };
     })
     .sort((a, b) => a.goalIndex - b.goalIndex);
@@ -514,7 +500,7 @@ export function computeProjectionPointReadinessScores(input: {
         localMax = Math.max(localMax, optimized[i] ?? 0);
       }
 
-      const requiredPeak = Math.max(anchor.basePeak, localMax + 1);
+      const requiredPeak = localMax;
       optimized[anchor.goalIndex] = clampScore(
         Math.max(optimized[anchor.goalIndex] ?? 0, requiredPeak),
       );

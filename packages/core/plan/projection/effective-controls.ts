@@ -125,18 +125,14 @@ export function resolveEffectiveProjectionControls(
     ramp_caps: {
       max_weekly_tss_ramp_pct: round3(
         clampNumber(
-          input.normalized_config.max_weekly_tss_ramp_pct +
-            10 * ambition +
-            6 * riskTolerance,
+          input.normalized_config.max_weekly_tss_ramp_pct,
           0,
           ABSOLUTE_MAX_WEEKLY_TSS_RAMP_PCT,
         ),
       ),
       max_ctl_ramp_per_week: round3(
         clampNumber(
-          input.normalized_config.max_ctl_ramp_per_week +
-            4 * ambition +
-            2 * riskTolerance,
+          input.normalized_config.max_ctl_ramp_per_week,
           0,
           ABSOLUTE_MAX_CTL_RAMP_PER_WEEK,
         ),

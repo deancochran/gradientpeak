@@ -345,7 +345,7 @@ describe("deterministic projection safety behavior", () => {
     expect(projection.constraint_summary.starting_state.starting_tsb).toBe(8);
   });
 
-  it("clamps week-over-week TSS and CTL ramps when caps are low", () => {
+  it("keeps hard-invariant bounds while surfacing low-cap pressure", () => {
     const projection = buildDeterministicProjectionPayload({
       timeline: {
         start_date: "2026-01-05",
@@ -377,15 +377,33 @@ describe("deterministic projection safety behavior", () => {
       },
     });
 
-    const hasTssRampClamp = projection.microcycles.some(
+    const hasInvariantTssRampClamp = projection.microcycles.some(
       (week) => week.metadata.tss_ramp.clamped,
     );
-    const hasCtlRampClamp = projection.microcycles.some(
+    const hasInvariantCtlRampClamp = projection.microcycles.some(
       (week) => week.metadata.ctl_ramp.clamped,
     );
+    const hasSoftTssCapPressure = projection.microcycles.some((week) => {
+      const previous = week.metadata.tss_ramp.previous_week_tss;
+      if (previous <= 0) {
+        return false;
+      }
+      const requestedRampPct =
+        ((week.metadata.tss_ramp.requested_weekly_tss - previous) / previous) *
+        100;
+      return (
+        requestedRampPct >
+        week.metadata.tss_ramp.max_weekly_tss_ramp_pct + 0.001
+      );
+    });
+    const hasSoftCtlCapPressure = projection.microcycles.some(
+      (week) =>
+        week.metadata.ctl_ramp.requested_ctl_ramp >
+        week.metadata.ctl_ramp.max_ctl_ramp_per_week + 0.001,
+    );
 
-    expect(hasTssRampClamp).toBe(true);
-    expect(hasCtlRampClamp).toBe(true);
+    expect(hasSoftTssCapPressure || hasSoftCtlCapPressure).toBe(true);
+    expect(hasInvariantTssRampClamp || hasInvariantCtlRampClamp).toBe(true);
   });
 
   it("inserts deterministic post-goal recovery windows for multi-goal timelines", () => {

@@ -14,17 +14,17 @@ describe("gdi", () => {
     expect(mapGdiToFeasibilityBand(0.95)).toBe("infeasible");
   });
 
-  it("applies A-goal worst-case guard in plan aggregation", () => {
-    const aGoal = computeGoalGdi({
-      goal_id: "a",
+  it("weights higher-priority goal GDI more strongly", () => {
+    const highPriorityHard = computeGoalGdi({
+      goal_id: "high-hard",
       priority: 10,
       performance_gap: 0.9,
       load_gap: 0.9,
       timeline_pressure: 0.9,
       sparsity_penalty: 0,
     });
-    const cGoal = computeGoalGdi({
-      goal_id: "c",
+    const lowPriorityEasy = computeGoalGdi({
+      goal_id: "low-easy",
       priority: 0,
       performance_gap: 0.1,
       load_gap: 0.1,
@@ -32,10 +32,8 @@ describe("gdi", () => {
       sparsity_penalty: 0,
     });
 
-    const plan = computePlanGdi([aGoal, cGoal]);
-
-    expect(plan.gdi).toBe(aGoal.gdi);
-    expect(plan.feasibility_band).toBe(aGoal.feasibility_band);
+    const plan = computePlanGdi([highPriorityHard, lowPriorityEasy]);
+    expect(plan.gdi).toBeGreaterThan(0.8);
   });
 
   it("clamps goal components before GDI weighting", () => {
@@ -63,5 +61,52 @@ describe("gdi", () => {
       gdi: 0,
       feasibility_band: "feasible",
     });
+  });
+
+  it("keeps equal priorities at equal aggregation pressure", () => {
+    const plan = computePlanGdi([
+      {
+        goal_id: "g-1",
+        priority: 7,
+        components: { PG: 0, LG: 0, TP: 0, SP: 0 },
+        gdi: 1,
+        feasibility_band: "infeasible",
+      },
+      {
+        goal_id: "g-2",
+        priority: 7,
+        components: { PG: 0, LG: 0, TP: 0, SP: 0 },
+        gdi: 0,
+        feasibility_band: "feasible",
+      },
+    ]);
+
+    expect(plan.gdi).toBe(0.5);
+  });
+
+  it("marks impossible overlap as difficult instead of near-feasible", () => {
+    const plan = computePlanGdi([
+      computeGoalGdi({
+        goal_id: "goal-a",
+        priority: 10,
+        performance_gap: 0.85,
+        load_gap: 0.8,
+        timeline_pressure: 0.9,
+        sparsity_penalty: 0.1,
+      }),
+      computeGoalGdi({
+        goal_id: "goal-b",
+        priority: 9,
+        performance_gap: 0.82,
+        load_gap: 0.78,
+        timeline_pressure: 0.88,
+        sparsity_penalty: 0.1,
+      }),
+    ]);
+
+    expect(plan.gdi).toBeGreaterThan(0.85);
+    expect(["nearly_impossible", "infeasible"]).toContain(
+      plan.feasibility_band,
+    );
   });
 });

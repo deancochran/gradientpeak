@@ -69,6 +69,30 @@ function createDeps(): any {
             starting_state_is_prior: false,
           },
         },
+        inferred_current_state: {
+          mean: {
+            ctl: 44,
+            atl: 39,
+            tsb: 5,
+            slb: 58,
+            durability: 62,
+            readiness: 68,
+          },
+          uncertainty: {
+            state_variance: 0.24,
+            confidence: 0.76,
+          },
+          evidence_quality: {
+            score: 0.71,
+            missingness_ratio: 0.22,
+          },
+          as_of: "2026-01-05T00:00:00.000Z",
+          metadata: {
+            updated_at: "2026-01-05T00:00:00.000Z",
+            missingness_counter: 3,
+            evidence_counter: 19,
+          },
+        },
       },
       projectionFeasibility: {
         state: "aggressive" as const,
@@ -132,6 +156,72 @@ describe("previewCreationConfigUseCase phase 4 diagnostics", () => {
       tss_ramp_clamp_weeks: 1,
       ctl_ramp_clamp_weeks: 0,
     });
+    expect(result.override_audit.request.requested).toBe(false);
+    expect(result.override_audit.effective.enabled).toBe(false);
+  });
+
+  it("uses prior inferred snapshot from repository and persists posterior inferred snapshot", async () => {
+    const deps = createDeps();
+    const repository = {
+      getPriorInferredStateSnapshot: vi.fn(async () => ({
+        mean: {
+          ctl: 40,
+          atl: 37,
+          tsb: 3,
+          slb: 55,
+          durability: 59,
+          readiness: 64,
+        },
+        uncertainty: {
+          state_variance: 0.31,
+          confidence: 0.69,
+        },
+        evidence_quality: {
+          score: 0.63,
+          missingness_ratio: 0.28,
+        },
+        as_of: "2026-01-04T00:00:00.000Z",
+        metadata: {
+          updated_at: "2026-01-04T00:00:00.000Z",
+          missingness_counter: 5,
+          evidence_counter: 17,
+        },
+      })),
+      persistInferredStateSnapshot: vi.fn(async () => undefined),
+    };
+
+    await previewCreationConfigUseCase({
+      supabase: {} as any,
+      profileId: "profile-1",
+      params: {
+        minimal_plan: {
+          plan_start_date: "2026-01-05",
+          goals: [],
+        },
+        creation_input: {},
+      },
+      repository: repository as any,
+      deps,
+    });
+
+    expect(repository.getPriorInferredStateSnapshot).toHaveBeenCalledWith(
+      "profile-1",
+    );
+    expect(deps.buildCreationProjectionArtifacts).toHaveBeenCalledWith(
+      expect.objectContaining({
+        priorInferredSnapshot: expect.objectContaining({
+          mean: expect.objectContaining({ ctl: 40 }),
+        }),
+      }),
+    );
+    expect(repository.persistInferredStateSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        profileId: "profile-1",
+        inferredStateSnapshot: expect.objectContaining({
+          mean: expect.objectContaining({ ctl: 44 }),
+        }),
+      }),
+    );
   });
 
   it("returns baseline snapshot without delta diagnostics for first preview", async () => {
@@ -152,5 +242,75 @@ describe("previewCreationConfigUseCase phase 4 diagnostics", () => {
 
     expect(result.readiness_delta_diagnostics).toBeUndefined();
     expect(result.preview_snapshot_baseline).toBeTruthy();
+  });
+
+  it("keeps blocking conflicts blocking when no override policy is provided", async () => {
+    const deps = createDeps();
+    deps.deriveProjectionDrivenConflicts = vi.fn(() => [
+      {
+        code: "required_tss_ramp_exceeds_cap",
+        severity: "blocking",
+        message: "Required ramp exceeds cap",
+        field_paths: ["max_weekly_tss_ramp_pct"],
+        suggestions: ["Increase max_weekly_tss_ramp_pct"],
+      },
+    ]);
+
+    const result = await previewCreationConfigUseCase({
+      supabase: {} as any,
+      profileId: "profile-1",
+      params: {
+        minimal_plan: {
+          plan_start_date: "2026-01-05",
+          goals: [],
+        },
+        creation_input: {},
+      },
+      deps,
+    });
+
+    expect(result.conflicts.is_blocking).toBe(true);
+    expect(result.conflicts.items[0]?.severity).toBe("blocking");
+    expect(
+      result.override_audit.effective.unresolved_blocking_conflict_codes,
+    ).toContain("required_tss_ramp_exceeds_cap");
+  });
+
+  it("marks objective/risk-budget overrides effective in preview audit", async () => {
+    const deps = createDeps();
+    deps.deriveProjectionDrivenConflicts = vi.fn(() => [
+      {
+        code: "post_goal_recovery_compresses_next_goal_prep",
+        severity: "blocking",
+        message: "Recovery compresses prep",
+        field_paths: ["post_goal_recovery_days"],
+        suggestions: ["Reduce post_goal_recovery_days"],
+      },
+    ]);
+
+    const result = await previewCreationConfigUseCase({
+      supabase: {} as any,
+      profileId: "profile-1",
+      params: {
+        minimal_plan: {
+          plan_start_date: "2026-01-05",
+          goals: [],
+        },
+        creation_input: {},
+        override_policy: {
+          allow_blocking_conflicts: true,
+          scope: "objective_risk_budget",
+          reason: "Coach-approved risk tradeoff",
+        },
+      },
+      deps,
+    });
+
+    expect(result.conflicts.is_blocking).toBe(false);
+    expect(result.override_audit.request.requested).toBe(true);
+    expect(result.override_audit.effective.enabled).toBe(true);
+    expect(result.override_audit.effective.overridden_conflict_codes).toContain(
+      "post_goal_recovery_compresses_next_goal_prep",
+    );
   });
 });

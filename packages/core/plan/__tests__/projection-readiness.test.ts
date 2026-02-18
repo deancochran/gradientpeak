@@ -102,6 +102,53 @@ describe("computeCompositeReadiness", () => {
 });
 
 describe("computeProjectionPointReadinessScores", () => {
+  it("keeps point readiness independent of goal priority labels", () => {
+    const points = [
+      {
+        date: "2026-01-05",
+        predicted_fitness_ctl: 22,
+        predicted_fatigue_atl: 21,
+        predicted_form_tsb: 1,
+      },
+      {
+        date: "2026-01-12",
+        predicted_fitness_ctl: 28,
+        predicted_fatigue_atl: 25,
+        predicted_form_tsb: 3,
+      },
+      {
+        date: "2026-01-19",
+        predicted_fitness_ctl: 31,
+        predicted_fatigue_atl: 26,
+        predicted_form_tsb: 5,
+      },
+      {
+        date: "2026-01-26",
+        predicted_fitness_ctl: 33,
+        predicted_fatigue_atl: 27,
+        predicted_form_tsb: 6,
+      },
+    ];
+
+    const highPriority = computeProjectionPointReadinessScores({
+      points,
+      goals: [
+        { target_date: "2026-01-19", priority: 10 },
+        { target_date: "2026-01-26", priority: 9 },
+      ],
+    });
+
+    const lowPriority = computeProjectionPointReadinessScores({
+      points,
+      goals: [
+        { target_date: "2026-01-19", priority: 1 },
+        { target_date: "2026-01-26", priority: 0 },
+      ],
+    });
+
+    expect(highPriority).toEqual(lowPriority);
+  });
+
   it("anchors terminal readiness to plan readiness without globally clipping", () => {
     const scores = computeProjectionPointReadinessScores({
       points: [

@@ -245,6 +245,8 @@ export default function CreateTrainingPlan() {
   const [informationalConflicts, setInformationalConflicts] = useState<
     string[]
   >([]);
+  const [allowBlockingIssueOverride, setAllowBlockingIssueOverride] =
+    useState(false);
   const [recomputeNonce, setRecomputeNonce] = useState(0);
   const lastHandledRecomputeNonceRef = useRef(0);
   const previewRequestIdRef = useRef(0);
@@ -269,7 +271,12 @@ export default function CreateTrainingPlan() {
       }),
     [conflictItems, feasibilitySummary],
   );
-  const canCreatePlan = !isCreating;
+  const hasBlockingIssues = blockingIssues.length > 0;
+  const isCreateBlockedByPolicy =
+    featureFlags.trainingPlanCreateConfigMvp &&
+    hasBlockingIssues &&
+    !allowBlockingIssueOverride;
+  const canCreatePlan = !isCreating && !isCreateBlockedByPolicy;
 
   const suggestionsQuery = trpc.trainingPlans.getCreationSuggestions.useQuery(
     undefined,
@@ -839,6 +846,10 @@ export default function CreateTrainingPlan() {
       return;
     }
 
+    if (isCreateBlockedByPolicy) {
+      return;
+    }
+
     setIsCreating(true);
 
     try {
@@ -863,6 +874,9 @@ export default function CreateTrainingPlan() {
           : previewSnapshotToken,
         post_create_behavior: {
           autonomous_mutation_enabled: false,
+        },
+        override_policy: {
+          allow_blocking_conflicts: allowBlockingIssueOverride,
         },
         is_active: true,
       });
@@ -902,7 +916,11 @@ export default function CreateTrainingPlan() {
               accessibilityLabel={
                 isCreating ? "Creating training plan" : "Create training plan"
               }
-              accessibilityHint={"Saves your plan and opens it"}
+              accessibilityHint={
+                isCreateBlockedByPolicy
+                  ? "Resolve blocking issues or acknowledge override in Review before creating"
+                  : "Saves your plan and opens it"
+              }
               accessibilityState={{
                 disabled: !canCreatePlan,
                 busy: isCreating,
@@ -943,6 +961,8 @@ export default function CreateTrainingPlan() {
           feasibilitySafetySummary={feasibilitySummary}
           informationalConflicts={informationalConflicts}
           blockingIssues={blockingIssues}
+          allowBlockingIssueOverride={allowBlockingIssueOverride}
+          onAllowBlockingIssueOverrideChange={setAllowBlockingIssueOverride}
           isPreviewPending={
             isPreviewPending ||
             suggestionsQuery.isLoading ||

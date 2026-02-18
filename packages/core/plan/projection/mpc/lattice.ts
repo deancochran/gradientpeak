@@ -36,15 +36,22 @@ export interface DeterministicCandidateLatticeInput {
 export function buildDeterministicCandidateLattice(
   input: DeterministicCandidateLatticeInput,
 ): number[] {
+  const finiteMin = Number.isFinite(input.min_value) ? input.min_value : 0;
+  const finiteMax = Number.isFinite(input.max_value)
+    ? input.max_value
+    : finiteMin;
+  const finiteCenter = Number.isFinite(input.center_value)
+    ? input.center_value
+    : (finiteMin + finiteMax) / 2;
   const precision =
     input.precision === undefined
       ? DEFAULT_PRECISION
       : Math.max(0, Math.floor(input.precision));
 
-  const lower = Math.min(input.min_value, input.max_value);
-  const upper = Math.max(input.min_value, input.max_value);
+  const lower = Math.min(finiteMin, finiteMax);
+  const upper = Math.max(finiteMin, finiteMax);
   const count = Math.max(1, Math.floor(input.candidate_count));
-  const clampedCenter = clampNumber(input.center_value, lower, upper);
+  const clampedCenter = clampNumber(finiteCenter, lower, upper);
 
   if (upper === lower) {
     return [roundToPrecision(lower, precision)];
@@ -76,7 +83,9 @@ export function buildDeterministicCandidateLattice(
 
   lattice[nearestIndex] = roundedCenter;
 
-  return [...new Set(lattice)].sort((a, b) => a - b);
+  return [
+    ...new Set(lattice.filter((candidate) => Number.isFinite(candidate))),
+  ].sort((a, b) => a - b);
 }
 
 export interface ProfileBoundedCandidateLatticeInput {

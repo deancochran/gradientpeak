@@ -1,4 +1,6 @@
 import type { GoalAssessmentResult } from "./goalScore";
+import { mapGoalPriorityToWeight } from "./priorityWeight";
+import { weightedMean } from "./weightedMean";
 
 export type GoalPriorityTier = "A" | "B" | "C";
 
@@ -18,14 +20,8 @@ export function toPriorityTier(priority: number): GoalPriorityTier {
   return "C";
 }
 
-function resolvePriorityWeight(priority: number): number {
-  const clamped = Math.max(0, Math.min(10, Math.round(priority)));
-  const normalized = clamped / 10;
-  return round3(0.2 + Math.pow(normalized, 2));
-}
-
 /**
- * Aggregates per-goal scores with deterministic A/B/C precedence.
+ * Aggregates per-goal scores with shared continuous priority weighting.
  */
 export function scorePlanGoals(goals: GoalAssessmentResult[]): PlanScoreResult {
   const ordered = [...goals].sort((a, b) => b.priority - a.priority);
@@ -58,17 +54,14 @@ export function scorePlanGoals(goals: GoalAssessmentResult[]): PlanScoreResult {
           tierBuckets.C.length,
   };
 
-  const weightedTotal = ordered.reduce((sum, goal) => {
-    return sum + goal.goal_score_0_1 * resolvePriorityWeight(goal.priority);
-  }, 0);
-  const totalWeight = ordered.reduce((sum, goal) => {
-    return sum + resolvePriorityWeight(goal.priority);
-  }, 0);
+  const goalScores = ordered.map((goal) => goal.goal_score_0_1);
+  const priorityWeights = ordered.map((goal) =>
+    mapGoalPriorityToWeight(goal.priority),
+  );
+  const planScore = weightedMean(goalScores, priorityWeights);
 
   return {
-    plan_goal_score_0_1: round3(
-      totalWeight <= 0 ? 0 : weightedTotal / totalWeight,
-    ),
+    plan_goal_score_0_1: round3(planScore),
     tier_means: {
       A: round3(tierMeans.A),
       B: round3(tierMeans.B),

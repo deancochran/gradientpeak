@@ -55,6 +55,7 @@ export const intensityDistributionSchema = z
 export type IntensityDistribution = z.infer<typeof intensityDistributionSchema>;
 
 const targetActivityCategoryEnum = z.enum(["run", "bike", "swim", "other"]);
+const targetWeightSchema = z.number().positive().finite().optional();
 
 /**
  * Training Goal V2
@@ -65,22 +66,26 @@ export const goalTargetV2Schema = z.discriminatedUnion("target_type", [
     distance_m: z.number().positive(),
     target_time_s: z.number().int().positive(),
     activity_category: targetActivityCategoryEnum,
+    weight: targetWeightSchema,
   }),
   z.object({
     target_type: z.literal("pace_threshold"),
     target_speed_mps: z.number().positive(),
     test_duration_s: z.number().int().positive(),
     activity_category: targetActivityCategoryEnum,
+    weight: targetWeightSchema,
   }),
   z.object({
     target_type: z.literal("power_threshold"),
     target_watts: z.number().positive(),
     test_duration_s: z.number().int().positive(),
     activity_category: targetActivityCategoryEnum,
+    weight: targetWeightSchema,
   }),
   z.object({
     target_type: z.literal("hr_threshold"),
     target_lthr_bpm: z.number().int().positive(),
+    weight: targetWeightSchema,
   }),
 ]);
 
@@ -1107,6 +1112,62 @@ export const creationFeasibilitySafetySummarySchema = z.object({
 export type CreationFeasibilitySafetySummary = z.infer<
   typeof creationFeasibilitySafetySummarySchema
 >;
+
+export const inferredCurrentStateMeanSchema = z.object({
+  ctl: z.number().min(0).finite(),
+  atl: z.number().min(0).finite(),
+  tsb: z.number().finite(),
+  slb: z.number().min(0).finite(),
+  durability: z.number().min(0).max(100).finite(),
+  readiness: z.number().min(0).max(100).finite(),
+});
+
+export type InferredCurrentStateMean = z.infer<
+  typeof inferredCurrentStateMeanSchema
+>;
+
+export const inferredCurrentStateUncertaintySchema = z.object({
+  state_variance: z.number().min(0).max(1).finite(),
+  confidence: z.number().min(0).max(1).finite(),
+});
+
+export type InferredCurrentStateUncertainty = z.infer<
+  typeof inferredCurrentStateUncertaintySchema
+>;
+
+export const inferredCurrentStateEvidenceQualitySchema = z.object({
+  score: z.number().min(0).max(1).finite(),
+  missingness_ratio: z.number().min(0).max(1).finite(),
+});
+
+export type InferredCurrentStateEvidenceQuality = z.infer<
+  typeof inferredCurrentStateEvidenceQualitySchema
+>;
+
+export const inferredStateSnapshotMetadataSchema = z.object({
+  updated_at: z.string().datetime(),
+  missingness_counter: z.number().int().min(0),
+  evidence_counter: z.number().int().min(0),
+});
+
+export type InferredStateSnapshotMetadata = z.infer<
+  typeof inferredStateSnapshotMetadataSchema
+>;
+
+export const inferredCurrentStateSchema = z.object({
+  mean: inferredCurrentStateMeanSchema,
+  uncertainty: inferredCurrentStateUncertaintySchema,
+  evidence_quality: inferredCurrentStateEvidenceQualitySchema,
+  as_of: z.string().datetime(),
+});
+
+export type InferredCurrentState = z.infer<typeof inferredCurrentStateSchema>;
+
+export const inferredStateSnapshotSchema = inferredCurrentStateSchema.extend({
+  metadata: inferredStateSnapshotMetadataSchema,
+});
+
+export type InferredStateSnapshot = z.infer<typeof inferredStateSnapshotSchema>;
 
 export const trainingPlanCreationConfigSchema = z
   .object({

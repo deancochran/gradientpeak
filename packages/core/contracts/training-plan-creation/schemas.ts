@@ -161,6 +161,14 @@ export const postCreateBehaviorSchema = z.object({
   autonomous_mutation_enabled: z.boolean().default(false),
 });
 
+export const overridePolicySchema = z
+  .object({
+    allow_blocking_conflicts: z.boolean().default(false),
+    scope: z.literal("objective_risk_budget").default("objective_risk_budget"),
+    reason: z.string().trim().min(1).max(500).optional(),
+  })
+  .strict();
+
 export const getCreationSuggestionsInputSchema = z
   .object({
     as_of: z.string().datetime().optional(),
@@ -209,6 +217,7 @@ export const previewCreationConfigInputSchema = z
       .strict()
       .optional(),
     post_create_behavior: postCreateBehaviorSchema.optional(),
+    override_policy: overridePolicySchema.optional(),
   })
   .strict();
 
@@ -218,11 +227,39 @@ export const createFromCreationConfigInputSchema =
     preview_snapshot_token: z.string().min(1).optional(),
   });
 
+const projectionChartDiagnosticsCompatSchema = z
+  .object({
+    inferred_current_state: z.unknown().optional(),
+    prediction_uncertainty: z.record(z.string(), z.unknown()).optional(),
+    goal_target_distributions: z
+      .array(z.record(z.string(), z.unknown()))
+      .optional(),
+    optimization_tradeoff_summary: z.record(z.string(), z.unknown()).optional(),
+  })
+  .passthrough();
+
+export const previewCreationConfigResponseCompatSchema = z
+  .object({
+    projection_chart: projectionChartDiagnosticsCompatSchema,
+  })
+  .passthrough();
+
+export const createFromCreationConfigResponseCompatSchema = z
+  .object({
+    creation_summary: z
+      .object({
+        projection_chart: projectionChartDiagnosticsCompatSchema,
+      })
+      .passthrough(),
+  })
+  .passthrough();
+
 export type CreationConfigValue = z.infer<typeof creationConfigValueSchema>;
 export type CreationNormalizationInput = z.infer<
   typeof creationNormalizationInputSchema
 >;
 export type PostCreateBehavior = z.infer<typeof postCreateBehaviorSchema>;
+export type OverridePolicy = z.infer<typeof overridePolicySchema>;
 export type GetCreationSuggestionsInput = z.infer<
   typeof getCreationSuggestionsInputSchema
 >;
@@ -231,4 +268,10 @@ export type PreviewCreationConfigInput = z.infer<
 >;
 export type CreateFromCreationConfigInput = z.infer<
   typeof createFromCreationConfigInputSchema
+>;
+export type PreviewCreationConfigResponseCompat = z.infer<
+  typeof previewCreationConfigResponseCompatSchema
+>;
+export type CreateFromCreationConfigResponseCompat = z.infer<
+  typeof createFromCreationConfigResponseCompatSchema
 >;

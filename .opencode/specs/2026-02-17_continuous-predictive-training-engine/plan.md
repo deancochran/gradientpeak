@@ -6,7 +6,7 @@ Goal: direct replacement of training-plan projection/scoring internals with a co
 
 ## 1) Requirements Review -> Current Implementation Gaps
 
-### R1. Foward directional modeling (forward prediction of uesr state and training load/readiness/etc)
+### R1. Forward directional modeling (forward prediction of user state and training load/readiness/etc)
 
 - Requirement:
   - Infer current user state from history/efforts/profile/prior state.
@@ -66,6 +66,7 @@ Users are not forced to fix risky training plans, but accept risk of those plans
 - Add core types/schemas for inferred state and uncertainty.
 - Build deterministic filter pipeline (predict/update) in core.
 - Persist posterior state snapshot for reuse.
+- Bootstrap inferred state from historical evidence when snapshot is absent.
 
 ### Files
 
@@ -81,9 +82,16 @@ Users are not forced to fix risky training plans, but accept risk of those plans
    - `inferred_current_state.mean`
    - `inferred_current_state.uncertainty`
    - `evidence_quality`
+   - `inferred_current_state.as_of`
 2. Implement state update functions using continuous equations.
 3. Thread previous-state input into preview/create projection build path.
 4. Return inferred state in `projection_chart` payload.
+
+### Acceptance checks
+
+- Preview and create both run inverse inference on every compute.
+- Posterior snapshot persists (`state_mean`, `state_uncertainty`, `evidence_quality`, `updated_at`) and is reused.
+- Missing prior snapshot bootstraps from historical activity/effort/profile evidence.
 
 ## WS-B: Continuous Forward Projection Replacement
 
@@ -104,6 +112,12 @@ Users are not forced to fix risky training plans, but accept risk of those plans
 1. Refactor week evolution to state-based updates, not phase-multiplier cliffs.
 2. Keep absolute physiological/domain bounds; convert non-invariant rules into soft penalties.
 3. Expose optimization tradeoff diagnostics (goal utility vs risk/volatility/churn).
+
+### Acceptance checks
+
+- No discrete week-pattern multipliers directly control state transitions.
+- Invariants remain hard bounds; all other guardrails are continuous penalties/objective terms.
+- Tradeoff diagnostics are emitted in projection outputs.
 
 ## WS-C: Goal/Target Utility and Priority Consistency
 
@@ -126,6 +140,12 @@ Users are not forced to fix risky training plans, but accept risk of those plans
 3. Ensure `priority 0..10` has one monotonic interpretation everywhere.
 4. Align GDI aggregation with the same continuous priority weighting used by plan score.
 
+### Acceptance checks
+
+- Shared priority mapping function is used across target/goal/plan/GDI layers.
+- Equal priorities produce approximately equal optimization pressure.
+- Conflicting goals show realistic tradeoffs rather than dual near-100 outcomes.
+
 ## WS-D: Safety Enforcement and Override Policy
 
 ### Deliverables
@@ -147,6 +167,12 @@ Users are not forced to fix risky training plans, but accept risk of those plans
 3. Gate create in UI for blocking unless override is explicitly set.
 4. Ensure invariant-bound violations are non-overridable.
 
+### Acceptance checks
+
+- Blocking remains blocking by default across preview and create.
+- Override only adjusts objective/risk-budget behavior and is auditable.
+- Invariant violations remain hard non-overridable failures.
+
 ## WS-E: API/Contract Compatibility and UI Signal Integration
 
 ### Deliverables
@@ -165,6 +191,12 @@ Users are not forced to fix risky training plans, but accept risk of those plans
 1. Add optional fields in contract schemas for new diagnostics.
 2. Keep existing readiness ring behavior, now driven by continuous model outputs.
 3. Add confidence/uncertainty display hints where useful (non-blocking UI enhancement).
+
+### Acceptance checks
+
+- Existing route names and request/response contracts remain compatible (additive fields only).
+- `goal_assessments.goal_readiness_score` remains primary UI readiness signal.
+- New diagnostics render without blocking existing create/review flows.
 
 ## WS-F: Validation, Calibration, and Regression Coverage
 
@@ -189,6 +221,13 @@ Users are not forced to fix risky training plans, but accept risk of those plans
 3. Add equal-priority and mixed-priority tradeoff tests.
 4. Add invariant property tests (bounds never violated).
 5. Add API compatibility tests for additive fields.
+6. Add calibration checks for predicted attainment distributions vs observed outcomes.
+
+### Acceptance checks
+
+- Deterministic regression, calibration, and invariant/property suites pass.
+- Preview/create parity and stale-state handling regressions are covered.
+- Full monorepo gate passes: `pnpm check-types && pnpm lint && pnpm test`.
 
 ## 3) Execution Sequence (Direct Replacement)
 
@@ -200,6 +239,8 @@ Users are not forced to fix risky training plans, but accept risk of those plans
 6. WS-F (test hardening and calibration checks)
 
 No feature fork and no alternate engine path.
+
+Ordering constraint: WS-E can start after WS-A and WS-C outputs are stable, but release must still follow WS-D safety policy enforcement.
 
 ## 4) Definition of Done
 

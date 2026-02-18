@@ -94,6 +94,35 @@ export interface ProjectionConstraintSummary {
   };
 }
 
+export interface ProjectionInferredCurrentState {
+  mean: {
+    ctl: number;
+    atl: number;
+    tsb: number;
+    slb: number;
+    durability: number;
+    readiness: number;
+  };
+  uncertainty: {
+    state_variance: number;
+    confidence: number;
+  };
+  evidence_quality: {
+    score: number;
+    missingness_ratio: number;
+  };
+  as_of: string;
+  metadata: {
+    updated_at: string;
+    missingness_counter: number;
+    evidence_counter: number;
+  };
+}
+
+export type ProjectionPredictionUncertainty = Record<string, unknown>;
+
+export type ProjectionGoalTargetDistribution = Record<string, unknown>;
+
 export interface ProjectionChartPayload {
   start_date: string;
   end_date: string;
@@ -104,6 +133,7 @@ export interface ProjectionChartPayload {
   microcycles: DeterministicProjectionMicrocycle[];
   recovery_segments?: ProjectionRecoverySegment[];
   constraint_summary?: ProjectionConstraintSummary;
+  inferred_current_state?: ProjectionInferredCurrentState;
   no_history?: NoHistoryProjectionMetadata;
   readiness_score?: number;
   readiness_confidence?: number;
@@ -123,10 +153,15 @@ export interface ProjectionChartPayload {
   risk_flags?: string[];
   caps_applied?: string[];
   projection_diagnostics?: ProjectionDiagnostics;
+  prediction_uncertainty?: ProjectionPredictionUncertainty;
+  goal_target_distributions?: ProjectionGoalTargetDistribution[];
+  optimization_tradeoff_summary?: ProjectionDiagnostics["optimization_tradeoff_summary"];
   goal_assessments?: Array<{
     goal_id: string;
     priority: number;
     goal_readiness_score?: number;
+    state_readiness_score?: number;
+    goal_alignment_loss_0_100?: number;
     feasibility_band:
       | "feasible"
       | "stretch"
@@ -136,6 +171,7 @@ export interface ProjectionChartPayload {
     target_scores: Array<{
       kind: string;
       score_0_100: number;
+      target_weight?: number;
       unmet_gap?: number;
       rationale_codes: string[];
     }>;

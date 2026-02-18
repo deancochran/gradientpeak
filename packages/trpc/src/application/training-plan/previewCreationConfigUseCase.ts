@@ -1,9 +1,12 @@
 import {
   buildPreviewReadinessSnapshot,
   buildReadinessDeltaDiagnostics,
+  inferredStateSnapshotSchema,
   previewCreationConfigInputSchema,
+  type OverridePolicy,
   type CreationFeasibilitySafetySummary,
   type CreationContextSummary,
+  type InferredStateSnapshot,
   type LoadBootstrapState,
   type ProjectionConstraintSummary,
   type ReadinessDeltaDiagnostics,
@@ -12,10 +15,13 @@ import {
 } from "@repo/core";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import type { TrainingPlanRepository } from "../../repositories";
 
 type PreviewCreationConfigInput = z.infer<
   typeof previewCreationConfigInputSchema
->;
+> & {
+  prior_inferred_snapshot?: InferredStateSnapshot;
+};
 
 type CreationConflictItem = {
   code: string;
@@ -24,6 +30,91 @@ type CreationConflictItem = {
   field_paths: string[];
   suggestions: string[];
 };
+
+type OverrideAudit = {
+  request: {
+    requested: boolean;
+    allow_blocking_conflicts: boolean;
+    scope: "objective_risk_budget" | null;
+    reason: string | null;
+  };
+  effective: {
+    enabled: boolean;
+    overridden_conflict_codes: string[];
+    unresolved_blocking_conflict_codes: string[];
+    rationale_codes: string[];
+  };
+};
+
+const OVERRIDABLE_BLOCKING_CONFLICT_CODES = new Set([
+  "post_goal_recovery_overlaps_next_goal",
+  "post_goal_recovery_compresses_next_goal_prep",
+]);
+
+function evaluateOverrideAudit(input: {
+  conflicts: CreationConflictItem[];
+  overridePolicy?: OverridePolicy;
+}): { isBlocking: boolean; audit: OverrideAudit } {
+  const blockingConflicts = input.conflicts.filter(
+    (conflict) => conflict.severity === "blocking",
+  );
+  const overridableBlockingConflictCodes = blockingConflicts
+    .filter((conflict) =>
+      OVERRIDABLE_BLOCKING_CONFLICT_CODES.has(conflict.code),
+    )
+    .map((conflict) => conflict.code);
+
+  const overrideRequested =
+    input.overridePolicy?.allow_blocking_conflicts === true;
+  const overrideEffectiveCodes = overrideRequested
+    ? overridableBlockingConflictCodes
+    : [];
+
+  const unresolvedBlockingConflictCodes = blockingConflicts
+    .map((conflict) => conflict.code)
+    .filter((code) => !overrideEffectiveCodes.includes(code));
+
+  const rationaleCodes: string[] = [];
+  if (blockingConflicts.length === 0) {
+    rationaleCodes.push("no_blocking_conflicts");
+  }
+  if (!overrideRequested && blockingConflicts.length > 0) {
+    rationaleCodes.push("override_not_requested");
+  }
+  if (overrideRequested) {
+    rationaleCodes.push("override_scope_objective_risk_budget");
+    if (overrideEffectiveCodes.length > 0) {
+      rationaleCodes.push(
+        "override_applied_to_objective_risk_budget_conflicts",
+      );
+    } else {
+      rationaleCodes.push(
+        "override_requested_without_overridable_blocking_conflicts",
+      );
+    }
+  }
+  if (unresolvedBlockingConflictCodes.length > 0) {
+    rationaleCodes.push("non_overridable_invariant_blocking_conflicts_remain");
+  }
+
+  return {
+    isBlocking: unresolvedBlockingConflictCodes.length > 0,
+    audit: {
+      request: {
+        requested: overrideRequested,
+        allow_blocking_conflicts: overrideRequested,
+        scope: input.overridePolicy?.scope ?? null,
+        reason: input.overridePolicy?.reason ?? null,
+      },
+      effective: {
+        enabled: overrideEffectiveCodes.length > 0,
+        overridden_conflict_codes: overrideEffectiveCodes,
+        unresolved_blocking_conflict_codes: unresolvedBlockingConflictCodes,
+        rationale_codes: rationaleCodes,
+      },
+    },
+  };
+}
 
 type EvaluateCreationConfigResult = {
   finalConfig: TrainingPlanCreationConfig;
@@ -45,6 +136,7 @@ export async function previewCreationConfigUseCase<
   }) => Promise<EvaluateCreationConfigResult>,
   TProjectionChart extends {
     constraint_summary: ProjectionConstraintSummary;
+    inferred_current_state?: InferredStateSnapshot;
     points: Array<{
       readiness_score?: number;
       predicted_load_tss: number;
@@ -56,6 +148,7 @@ export async function previewCreationConfigUseCase<
   TBuildCreationProjectionArtifacts extends (input: {
     minimalPlan: PreviewCreationConfigInput["minimal_plan"];
     loadBootstrapState: LoadBootstrapState;
+    priorInferredSnapshot?: InferredStateSnapshot;
     startingCtlOverride?: number;
     startingAtlOverride?: number;
     finalConfig: Awaited<ReturnType<TEvaluateCreationConfig>>["finalConfig"];
@@ -93,6 +186,7 @@ export async function previewCreationConfigUseCase<
   supabase: SupabaseClient;
   profileId: string;
   params: PreviewCreationConfigInput;
+  repository?: TrainingPlanRepository;
   deps: {
     enforceCreationConfigFeatureEnabled: () => void;
     enforceNoAutonomousPostCreateMutation: (
@@ -116,15 +210,30 @@ export async function previewCreationConfigUseCase<
     creationInput: input.params.creation_input,
   });
 
+  const repositoryPriorSnapshot = input.repository
+    ? await input.repository.getPriorInferredStateSnapshot(input.profileId)
+    : null;
+  const priorInferredSnapshot = inferredStateSnapshotSchema
+    .nullable()
+    .parse(input.params.prior_inferred_snapshot ?? repositoryPriorSnapshot);
+
   const { expandedPlan, projectionChart, projectionFeasibility } =
     input.deps.buildCreationProjectionArtifacts({
       minimalPlan: input.params.minimal_plan,
       loadBootstrapState: evaluation.loadBootstrapState,
+      priorInferredSnapshot: priorInferredSnapshot ?? undefined,
       startingCtlOverride: input.params.starting_ctl_override,
       startingAtlOverride: input.params.starting_atl_override,
       finalConfig: evaluation.finalConfig,
       contextSummary: evaluation.contextSummary,
     });
+
+  if (projectionChart.inferred_current_state && input.repository) {
+    await input.repository.persistInferredStateSnapshot({
+      profileId: input.profileId,
+      inferredStateSnapshot: projectionChart.inferred_current_state,
+    });
+  }
 
   const previewSnapshotToken = input.deps.buildCreationPreviewSnapshotToken({
     minimalPlan: input.params.minimal_plan,
@@ -161,11 +270,12 @@ export async function previewCreationConfigUseCase<
   const allConflicts = [
     ...evaluation.conflictResolution.conflicts,
     ...projectionConflicts,
-  ].map((conflict) =>
-    conflict.severity === "blocking"
-      ? { ...conflict, severity: "warning" as const }
-      : conflict,
-  );
+  ];
+
+  const overrideEvaluation = evaluateOverrideAudit({
+    conflicts: allConflicts,
+    overridePolicy: input.params.override_policy,
+  });
 
   return {
     normalized_creation_config: evaluation.finalConfig,
@@ -174,9 +284,10 @@ export async function previewCreationConfigUseCase<
     feasibility_safety: evaluation.feasibilitySummary,
     projection_feasibility: projectionFeasibility,
     conflicts: {
-      is_blocking: false,
+      is_blocking: overrideEvaluation.isBlocking,
       items: allConflicts,
     },
+    override_audit: overrideEvaluation.audit,
     plan_preview: {
       name: expandedPlan.name,
       start_date: expandedPlan.start_date,

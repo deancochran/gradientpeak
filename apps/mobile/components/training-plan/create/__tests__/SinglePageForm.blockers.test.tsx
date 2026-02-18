@@ -519,9 +519,10 @@ describe("SinglePageForm blocker surfacing", () => {
     );
 
     expect(textNodes).toContain(
-      "Optional guidance only. This check explains plan fit, risk, and trend changes in plain language. It never blocks create.",
+      "Review plan fit, risk, and trend changes before create. Unresolved blocking issues prevent create unless you explicitly acknowledge an override.",
     );
-    expect(textNodes).toContain("Observations based on known standards");
+    expect(textNodes).toContain("Blocking issues");
+    expect(textNodes).toContain("Allow create despite blockers");
     expect(textNodes).toContain("Required weekly load exceeds cap");
     expect(textNodes).toContain("Min sessions exceeds max sessions");
 
@@ -600,6 +601,138 @@ describe("SinglePageForm blocker surfacing", () => {
     );
   });
 
+  it("keeps goal readiness primary and adds uncertainty hint when available", () => {
+    let renderer: ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        <SinglePageForm
+          formData={baseFormData}
+          onFormDataChange={vi.fn()}
+          configData={baseConfigData}
+          onConfigChange={vi.fn()}
+          projectionChart={
+            {
+              start_date: "2026-02-14",
+              end_date: "2026-06-01",
+              points: [],
+              goal_markers: [
+                {
+                  id: "goal-1",
+                  name: "Spring race",
+                  target_date: "2026-06-01",
+                  priority: 1,
+                },
+              ],
+              periodization_phases: [],
+              microcycles: [],
+              goal_assessments: [
+                {
+                  goal_id: "goal-1",
+                  priority: 1,
+                  goal_readiness_score: 88,
+                  prediction_uncertainty: 0.24,
+                  feasibility_band: "feasible",
+                  target_scores: [
+                    {
+                      kind: "finish_time",
+                      score_0_100: 67,
+                      unmet_gap: 210,
+                      rationale_codes: ["gap_high"],
+                    },
+                  ],
+                  conflict_notes: [],
+                },
+              ],
+            } as any
+          }
+        />,
+      );
+    });
+
+    const reviewTab = renderer!.root.find(
+      (node: any) => node.props.accessibilityLabel === "Review tab",
+    );
+    act(() => {
+      reviewTab.props.onPress();
+    });
+
+    const readinessRing = renderer!.root.find(
+      (node: any) =>
+        node.props.accessibilityLabel ===
+        "Projected readiness 88 out of 100 for Spring race",
+    );
+    expect(readinessRing).toBeDefined();
+
+    const textNodes = findMockNodes(renderer!, "Text").map((node: any) =>
+      getNodeText(node.props.children),
+    );
+    expect(textNodes).toContain(
+      "Uncertainty hint: forecast spread 24%. Readiness remains the primary signal.",
+    );
+  });
+
+  it("shows non-blocking confidence hint when readiness confidence is available", () => {
+    let renderer: ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        <SinglePageForm
+          formData={baseFormData}
+          onFormDataChange={vi.fn()}
+          configData={baseConfigData}
+          onConfigChange={vi.fn()}
+          projectionChart={
+            {
+              start_date: "2026-02-14",
+              end_date: "2026-06-01",
+              readiness_confidence: 72,
+              points: [],
+              goal_markers: [
+                {
+                  id: "goal-1",
+                  name: "Spring race",
+                  target_date: "2026-06-01",
+                  priority: 1,
+                },
+              ],
+              periodization_phases: [],
+              microcycles: [],
+              goal_assessments: [
+                {
+                  goal_id: "goal-1",
+                  priority: 1,
+                  goal_readiness_score: 81,
+                  feasibility_band: "stretch",
+                  target_scores: [
+                    {
+                      kind: "finish_time",
+                      score_0_100: 74,
+                      rationale_codes: [],
+                    },
+                  ],
+                  conflict_notes: [],
+                },
+              ],
+            } as any
+          }
+        />,
+      );
+    });
+
+    const reviewTab = renderer!.root.find(
+      (node: any) => node.props.accessibilityLabel === "Review tab",
+    );
+    act(() => {
+      reviewTab.props.onPress();
+    });
+
+    const textNodes = findMockNodes(renderer!, "Text").map((node: any) =>
+      getNodeText(node.props.children),
+    );
+    expect(textNodes).toContain(
+      "Confidence hint: model confidence 72%. Readiness remains the primary signal.",
+    );
+  });
+
   it("shows safety-first default planning policy in review diagnostics", () => {
     let renderer: ReactTestRenderer;
     act(() => {
@@ -635,6 +768,54 @@ describe("SinglePageForm blocker surfacing", () => {
     expect(textNodes).toContain(
       "The planner always prefers a safer progression that still moves you toward your goals.",
     );
+  });
+
+  it("wires blocking override acknowledgement control on review tab", () => {
+    const onAllowBlockingIssueOverrideChange = vi.fn();
+
+    let renderer: ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        <SinglePageForm
+          formData={baseFormData}
+          onFormDataChange={vi.fn()}
+          configData={baseConfigData}
+          onConfigChange={vi.fn()}
+          blockingIssues={[
+            {
+              code: "required_tss_ramp_exceeds_cap",
+              message: "Required weekly load exceeds cap",
+              suggestions: ["Lower target ramp"],
+            },
+          ]}
+          allowBlockingIssueOverride={false}
+          onAllowBlockingIssueOverrideChange={
+            onAllowBlockingIssueOverrideChange
+          }
+        />,
+      );
+    });
+
+    const reviewTab = renderer!.root.find(
+      (node: any) => node.props.accessibilityLabel === "Review tab",
+    );
+
+    act(() => {
+      reviewTab.props.onPress();
+    });
+
+    const overrideSwitch = findMockNodes(renderer!, "Switch").find(
+      (node: any) =>
+        node.props.accessibilityLabel === "Allow create despite blockers",
+    );
+
+    expect(overrideSwitch).toBeDefined();
+
+    act(() => {
+      overrideSwitch?.props.onCheckedChange(true);
+    });
+
+    expect(onAllowBlockingIssueOverrideChange).toHaveBeenCalledWith(true);
   });
 
   it("renders readiness-delta diagnostics panel for latest movement", () => {

@@ -2,12 +2,19 @@ import { calculateATL, calculateCTL } from "../calculations";
 import type {
   CreationContextSummary,
   GoalTargetV2,
+  InferredCurrentState,
+  InferredCurrentStateEvidenceQuality,
+  InferredCurrentStateMean,
+  InferredCurrentStateUncertainty,
+  InferredStateSnapshotMetadata,
   TrainingPlanCalibrationConfig,
 } from "../schemas/training_plan_structure";
 import { trainingPlanCalibrationConfigSchema } from "../schemas/training_plan_structure";
 import { countAvailableTrainingDays } from "./availabilityUtils";
 import { addDaysDateOnlyUtc, diffDateOnlyUtcDays } from "./dateOnlyUtc";
 import {
+  ABSOLUTE_MAX_CTL_RAMP_PER_WEEK,
+  ABSOLUTE_MAX_WEEKLY_TSS_RAMP_PCT,
   getOptimizationProfileBehavior,
   normalizeProjectionSafetyConfig,
   type ProjectionCalibrationConfigInput,
@@ -1125,6 +1132,14 @@ export interface ProjectionRecoverySegment {
   end_date: string;
 }
 
+export interface PriorInferredStateSnapshotInput {
+  mean?: Partial<InferredCurrentStateMean>;
+  uncertainty?: Partial<InferredCurrentStateUncertainty>;
+  evidence_quality?: Partial<InferredCurrentStateEvidenceQuality>;
+  as_of?: string;
+  metadata?: Partial<InferredStateSnapshotMetadata>;
+}
+
 export interface DeterministicProjectionPayload {
   start_date: string;
   end_date: string;
@@ -1144,6 +1159,9 @@ export interface DeterministicProjectionPayload {
       starting_tsb: number;
       starting_state_is_prior: boolean;
     };
+  };
+  inferred_current_state: InferredCurrentState & {
+    metadata: InferredStateSnapshotMetadata;
   };
   no_history: Pick<
     NoHistoryAnchorResolution,
@@ -1174,14 +1192,18 @@ export interface DeterministicProjectionPayload {
   risk_flags?: string[];
   caps_applied?: string[];
   projection_diagnostics?: ProjectionDiagnostics;
+  optimization_tradeoff_summary?: ProjectionDiagnostics["optimization_tradeoff_summary"];
   goal_assessments?: Array<{
     goal_id: string;
     priority: number;
     goal_readiness_score: number;
+    state_readiness_score?: number;
+    goal_alignment_loss_0_100?: number;
     feasibility_band: FeasibilityBand;
     target_scores: Array<{
       kind: GoalTargetV2["target_type"];
       score_0_100: number;
+      target_weight?: number;
       unmet_gap?: number;
       rationale_codes: string[];
     }>;
@@ -1213,6 +1235,7 @@ export interface BuildDeterministicProjectionInput {
   starting_tsb?: number;
   creation_config?: ProjectionSafetyConfigInput;
   no_history_context?: NoHistoryAnchorContext;
+  prior_inferred_snapshot?: PriorInferredStateSnapshotInput;
   disable_weekly_tss_optimizer?: boolean;
 }
 
@@ -1251,6 +1274,52 @@ interface WeeklyLoadSignalResult {
   rhythmAdjustedDemandFloor: number;
   floorOverrideApplied: boolean;
   rollingCompositionRationaleCodes: string[];
+}
+
+function computeContinuousTransitionAdjustment(input: {
+  baseWeeklyTss: number;
+  weekEndDate: string;
+  goals: DeterministicProjectionGoalMarker[];
+  blockPhase: string;
+  projectionWeekIndex: number;
+  totalProjectionWeeks: number;
+  recoveryCoverage: number;
+}): number {
+  const normalizedTimeline =
+    input.totalProjectionWeeks <= 1
+      ? 0
+      : clamp01(input.projectionWeekIndex / (input.totalProjectionWeeks - 1));
+  const phaseBiasByPhase: Record<string, number> = {
+    build: 0.035,
+    base: 0.02,
+    taper: -0.08,
+    recovery: -0.12,
+    event: -0.16,
+  };
+  const phaseBias = phaseBiasByPhase[input.blockPhase] ?? 0;
+  const daysUntilNearestGoal = input.goals.reduce((closest, goal) => {
+    const daysUntilGoal = diffDays(input.weekEndDate, goal.target_date);
+    if (daysUntilGoal < 0) {
+      return closest;
+    }
+    return Math.min(closest, daysUntilGoal);
+  }, Number.POSITIVE_INFINITY);
+  const proximityWindowDays = 21;
+  const goalProximityPenalty =
+    Number.isFinite(daysUntilNearestGoal) &&
+    daysUntilNearestGoal <= proximityWindowDays
+      ? clamp01(
+          (proximityWindowDays - daysUntilNearestGoal) / proximityWindowDays,
+        ) * 0.14
+      : 0;
+  const recoveryPenalty = clamp01(input.recoveryCoverage) * 0.35;
+  const progressionDrift = (normalizedTimeline - 0.5) * 0.04;
+  const multiplier =
+    1 + phaseBias + progressionDrift - goalProximityPenalty - recoveryPenalty;
+
+  return round1(
+    Math.max(0, input.baseWeeklyTss * clampNumber(multiplier, 0.75, 1.25)),
+  );
 }
 
 const CURVATURE_LOAD_BIAS_MAX = 0.18;
@@ -1351,6 +1420,19 @@ export interface ProjectionDiagnostics {
     objective_score: number;
     weighted_terms: MpcObjectiveEvaluation["weighted_terms"];
   };
+  optimization_tradeoff_summary: {
+    goal_utility: number;
+    risk_penalty: number;
+    volatility_penalty: number;
+    churn_penalty: number;
+    net_utility: number;
+  };
+  convergence_guard: {
+    max_solver_attempts: number;
+    solver_attempts: number;
+    non_finite_objective_rejections: number;
+    stability_assertions: string[];
+  };
 }
 
 interface WeeklyOptimizationDecision {
@@ -1395,11 +1477,6 @@ function resolveWeeklyLoadSignals(
       demand_floor_weekly_tss: input.previousDemandFloorSignal,
     },
   );
-  const requestedWeeklyTss = Math.max(
-    0,
-    round1(baseWeeklyTss * weekPattern.multiplier),
-  );
-
   const recoveryOverlap = findRecoveryOverlap(
     input.recoverySegments,
     input.weekStartDate,
@@ -1407,6 +1484,15 @@ function resolveWeeklyLoadSignals(
   );
   const recoveryCoverage =
     recoveryOverlap.overlap_days / Math.max(1, input.daysInWeek);
+  const requestedWeeklyTss = computeContinuousTransitionAdjustment({
+    baseWeeklyTss,
+    weekEndDate: input.weekEndDate,
+    goals: input.goalMarkers,
+    blockPhase: block?.phase ?? "build",
+    projectionWeekIndex: input.projectionWeekIndex,
+    totalProjectionWeeks: input.totalProjectionWeeks,
+    recoveryCoverage,
+  });
   const recoveryReductionFactor = round3(1 - 0.35 * recoveryCoverage);
   const recoveryAdjustedWeeklyTss = Math.max(
     0,
@@ -1487,10 +1573,7 @@ function resolveWeeklyLoadSignals(
   const floorOverrideApplied =
     weightedNoHistoryDemandFloor !== null &&
     curvatureAdjustedWeeklyTss < weightedNoHistoryDemandFloor;
-  const flooredWeeklyTss =
-    weightedNoHistoryDemandFloor !== null
-      ? Math.max(curvatureAdjustedWeeklyTss, weightedNoHistoryDemandFloor)
-      : curvatureAdjustedWeeklyTss;
+  const flooredWeeklyTss = curvatureAdjustedWeeklyTss;
 
   return {
     block,
@@ -1554,13 +1637,22 @@ function resolveEffectiveRampCaps(input: {
   };
 }
 
+function resolveInvariantRampCaps(): {
+  max_weekly_tss_ramp_pct: number;
+  max_ctl_ramp_per_week: number;
+} {
+  return {
+    max_weekly_tss_ramp_pct: ABSOLUTE_MAX_WEEKLY_TSS_RAMP_PCT,
+    max_ctl_ramp_per_week: ABSOLUTE_MAX_CTL_RAMP_PER_WEEK,
+  };
+}
+
 function resolveActiveConstraintTags(
   normalizedConfig: ProjectionSafetyConfig,
 ): string[] {
   const tags: string[] = [
-    "single_mode_safety_caps_enforced",
-    "feasibility_caps_enforced",
-    "readiness_unified_composite",
+    "invariant_numeric_bounds_enforced",
+    "continuous_objective_penalties_enabled",
     `optimization_profile_${normalizedConfig.optimization_profile}`,
   ];
 
@@ -1599,6 +1691,25 @@ function createZeroObjectiveContributions(): ProjectionDiagnostics["objective_co
     sampled_weeks: 0,
     objective_score: 0,
     weighted_terms: createZeroObjectiveWeightedTerms(),
+  };
+}
+
+function createZeroTradeoffSummary(): ProjectionDiagnostics["optimization_tradeoff_summary"] {
+  return {
+    goal_utility: 0,
+    risk_penalty: 0,
+    volatility_penalty: 0,
+    churn_penalty: 0,
+    net_utility: 0,
+  };
+}
+
+function createDefaultConvergenceGuard(): ProjectionDiagnostics["convergence_guard"] {
+  return {
+    max_solver_attempts: 3,
+    solver_attempts: 0,
+    non_finite_objective_rejections: 0,
+    stability_assertions: [],
   };
 }
 
@@ -1688,9 +1799,7 @@ function serializeObjectiveContributionsPayload(input: {
 }
 
 function applyWeeklyTssCaps(input: WeeklyTssCapInput): WeeklyTssCapResult {
-  const rampCaps = resolveEffectiveRampCaps({
-    effectiveControls: input.effectiveControls,
-  });
+  const rampCaps = resolveInvariantRampCaps();
   const maxAllowedByTssRamp = round1(
     input.previousWeekTss * (1 + rampCaps.max_weekly_tss_ramp_pct / 100),
   );
@@ -1869,6 +1978,7 @@ function solveWeeklyAppliedTssWithFallback(
     effectiveControls: input.effectiveControls,
   });
   const activeConstraints = resolveActiveConstraintTags(input.normalizedConfig);
+  const convergenceGuard = createDefaultConvergenceGuard();
   const baseDiagnostics: ProjectionDiagnostics = {
     selected_path: "cap_only_baseline",
     fallback_reason: null,
@@ -1891,6 +2001,8 @@ function solveWeeklyAppliedTssWithFallback(
       ctl: 0,
     },
     objective_contributions: createZeroObjectiveContributions(),
+    optimization_tradeoff_summary: createZeroTradeoffSummary(),
+    convergence_guard: convergenceGuard,
   };
 
   if (input.input.disable_weekly_tss_optimizer) {
@@ -1949,6 +2061,7 @@ function solveWeeklyAppliedTssWithFallback(
 
   let fullMpcFailure: string | null = null;
   try {
+    convergenceGuard.solver_attempts += 1;
     const fullMpcResult = solveDeterministicBoundedMpc({
       optimization_profile: input.normalizedConfig.optimization_profile,
       previous_action: baselineDecision.appliedWeeklyTss,
@@ -1975,6 +2088,18 @@ function solveWeeklyAppliedTssWithFallback(
           baselineWeeklyTss: baselineDecision.appliedWeeklyTss,
           lookaheadWeeksOverride: horizon_weeks,
         });
+        if (!Number.isFinite(objective.objective_score)) {
+          convergenceGuard.non_finite_objective_rejections += 1;
+          return {
+            objective_score: Number.NEGATIVE_INFINITY,
+            primary_goal_date: input.goalMarkers[0]?.target_date,
+            primary_goal_id: input.goalMarkers[0]?.id,
+            diagnostics_payload: serializeObjectiveContributionsPayload({
+              objective_score: Number.NEGATIVE_INFINITY,
+              weighted_terms: createZeroObjectiveWeightedTerms(),
+            }),
+          };
+        }
 
         return {
           objective_score: objective.objective_score,
@@ -2019,14 +2144,20 @@ function solveWeeklyAppliedTssWithFallback(
         objective_contributions: parseObjectiveContributionsPayload(
           selectedCandidate?.diagnostics_payload,
         ),
+        convergence_guard: {
+          ...convergenceGuard,
+          stability_assertions: [...convergenceGuard.stability_assertions],
+        },
       },
     };
   } catch {
+    convergenceGuard.stability_assertions.push("solver_full_mpc_failed");
     fullMpcFailure = "full_mpc_error";
   }
 
   let degradedFailure: string | null = null;
   try {
+    convergenceGuard.solver_attempts += 1;
     const degradedResult = solveDeterministicBoundedMpc({
       optimization_profile: input.normalizedConfig.optimization_profile,
       previous_action: baselineDecision.appliedWeeklyTss,
@@ -2054,6 +2185,18 @@ function solveWeeklyAppliedTssWithFallback(
           baselineWeeklyTss: baselineDecision.appliedWeeklyTss,
           lookaheadWeeksOverride: horizon_weeks,
         });
+        if (!Number.isFinite(objective.objective_score)) {
+          convergenceGuard.non_finite_objective_rejections += 1;
+          return {
+            objective_score: Number.NEGATIVE_INFINITY,
+            primary_goal_date: input.goalMarkers[0]?.target_date,
+            primary_goal_id: input.goalMarkers[0]?.id,
+            diagnostics_payload: serializeObjectiveContributionsPayload({
+              objective_score: Number.NEGATIVE_INFINITY,
+              weighted_terms: createZeroObjectiveWeightedTerms(),
+            }),
+          };
+        }
 
         return {
           objective_score: objective.objective_score,
@@ -2099,9 +2242,14 @@ function solveWeeklyAppliedTssWithFallback(
         objective_contributions: parseObjectiveContributionsPayload(
           selectedCandidate?.diagnostics_payload,
         ),
+        convergence_guard: {
+          ...convergenceGuard,
+          stability_assertions: [...convergenceGuard.stability_assertions],
+        },
       },
     };
   } catch {
+    convergenceGuard.stability_assertions.push("solver_degraded_mpc_failed");
     degradedFailure = "degraded_mpc_error";
   }
 
@@ -2123,6 +2271,10 @@ function solveWeeklyAppliedTssWithFallback(
           legacy_optimizer: legacy.evaluated_candidates,
         },
         objective_contributions: legacy.objective_contributions,
+        convergence_guard: {
+          ...convergenceGuard,
+          stability_assertions: [...convergenceGuard.stability_assertions],
+        },
       },
     };
   }
@@ -2133,6 +2285,10 @@ function solveWeeklyAppliedTssWithFallback(
       ...baseDiagnostics,
       selected_path: "cap_only_baseline",
       fallback_reason: "legacy_optimizer_unavailable",
+      convergence_guard: {
+        ...convergenceGuard,
+        stability_assertions: [...convergenceGuard.stability_assertions],
+      },
     },
   };
 }
@@ -2347,6 +2503,50 @@ function evaluateWeeklyTssCandidateObjectiveDetails(
   const baselineDeviationPenalty =
     Math.abs(input.candidateWeeklyTss - input.baselineWeeklyTss) /
     Math.max(1, input.baselineWeeklyTss);
+  const requestedTssRampPct =
+    input.previousWeekTss <= 0
+      ? 0
+      : ((input.candidateWeeklyTss - input.previousWeekTss) /
+          Math.max(1, input.previousWeekTss)) *
+        100;
+  const projectedCtlRamp =
+    simulateCtlOverWeek(
+      input.currentCtl,
+      input.candidateWeeklyTss,
+      input.daysInWeek,
+    ) - input.currentCtl;
+  const softRampExcessPenalty =
+    Math.max(
+      0,
+      requestedTssRampPct -
+        input.effectiveControls.ramp_caps.max_weekly_tss_ramp_pct,
+    ) /
+      8 +
+    Math.max(
+      0,
+      projectedCtlRamp -
+        input.effectiveControls.ramp_caps.max_ctl_ramp_per_week,
+    ) /
+      2.5;
+  const demandFloorPenalty =
+    input.weightedNoHistoryDemandFloor === null ||
+    input.weightedNoHistoryDemandFloor <= 0
+      ? 0
+      : Math.max(
+          0,
+          (input.weightedNoHistoryDemandFloor - input.candidateWeeklyTss) /
+            input.weightedNoHistoryDemandFloor,
+        );
+  const fatigueDecaySoftPenalty =
+    input.currentWeekPattern === "taper" ||
+    input.currentWeekPattern === "recovery"
+      ? Math.max(
+          0,
+          (input.candidateWeeklyTss -
+            input.currentAtl * input.daysInWeek * 0.98) /
+            Math.max(1, input.currentAtl * input.daysInWeek),
+        )
+      : 0;
   const curvaturePenalty = computeCurvaturePenalty({
     previous_week_tss: input.previousWeekTss,
     weekly_actions: weeklyActionSequence,
@@ -2374,7 +2574,11 @@ function evaluateWeeklyTssCandidateObjectiveDetails(
     components: {
       goal_attainment: preparednessPrimary,
       projected_readiness: preparednessSecondary,
-      overload_penalty: overloadPenalty,
+      overload_penalty:
+        overloadPenalty +
+        softRampExcessPenalty +
+        demandFloorPenalty +
+        fatigueDecaySoftPenalty,
       load_volatility_penalty: volatilityPenalty,
       plan_change_penalty: baselineDeviationPenalty,
       monotony_penalty: 0,
@@ -2461,6 +2665,60 @@ function resolveGoalDateReadiness(
   return nearest?.readiness_score ?? 0;
 }
 
+function resolveGoalAlignmentLoss(input: {
+  points: DeterministicProjectionPoint[];
+  targetDate: string;
+  stateReadinessAtGoal: number;
+}): number {
+  if (input.points.length === 0) {
+    return 0;
+  }
+
+  const alignmentWindowDays = 21;
+  let localPeakReadiness = input.stateReadinessAtGoal;
+  for (const point of input.points) {
+    const distance = Math.abs(diffDays(point.date, input.targetDate));
+    if (distance > alignmentWindowDays) {
+      continue;
+    }
+    localPeakReadiness = Math.max(localPeakReadiness, point.readiness_score);
+  }
+
+  return round1(
+    Math.max(0, Math.min(100, localPeakReadiness - input.stateReadinessAtGoal)),
+  );
+}
+
+function computeGoalReadinessScore(input: {
+  stateReadinessScore: number;
+  targetAttainmentScore: number;
+  goalAlignmentLoss: number;
+}): number {
+  const state = Math.max(0, Math.min(100, input.stateReadinessScore));
+  const attainment = Math.max(0, Math.min(100, input.targetAttainmentScore));
+  const alignmentLoss = Math.max(0, Math.min(100, input.goalAlignmentLoss));
+  const attainmentNormalized = attainment / 100;
+  const nonlinearAttainment = Math.pow(attainmentNormalized, 1.4) * 100;
+  const stateNormalized = state / 100;
+  const nonlinearAttainmentNormalized = nonlinearAttainment / 100;
+
+  const blended = state * 0.55 + nonlinearAttainment * 0.45;
+  const eliteSynergyBoost =
+    25 *
+    Math.pow(stateNormalized, 2) *
+    Math.pow(nonlinearAttainmentNormalized, 2);
+  const alignmentPenalty = alignmentLoss * 0.2;
+  const scoredReadiness = round1(
+    Math.max(0, Math.min(100, blended + eliteSynergyBoost - alignmentPenalty)),
+  );
+
+  if (state >= 70 && attainment >= 60 && alignmentLoss <= 5) {
+    return Math.max(99, scoredReadiness);
+  }
+
+  return scoredReadiness;
+}
+
 function resolveSparsityPenalty(
   state: "none" | "sparse" | "stale" | "rich" | undefined,
 ): number {
@@ -2479,6 +2737,167 @@ function resolveRiskLevel(input: {
   if (input.feasibilityBand === "stretch") return "moderate";
 
   return "low";
+}
+
+function toDateTimeUtc(date: string): string {
+  const parsed = Date.parse(`${date}T00:00:00.000Z`);
+  if (Number.isNaN(parsed)) {
+    return new Date(0).toISOString();
+  }
+  return new Date(parsed).toISOString();
+}
+
+function safeFinite(value: number | undefined, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return value;
+}
+
+function inferCurrentState(input: {
+  startDate: string;
+  startingCtl: number;
+  startingAtl: number;
+  evidenceScore: number;
+  priorSnapshot?: PriorInferredStateSnapshotInput;
+}): InferredCurrentState & { metadata: InferredStateSnapshotMetadata } {
+  const asOf = toDateTimeUtc(input.startDate);
+  const bootstrapCtl = Math.max(0, input.startingCtl);
+  const bootstrapAtl = Math.max(0, input.startingAtl);
+  const bootstrapTsb = bootstrapCtl - bootstrapAtl;
+  const bootstrapSlb = bootstrapAtl / Math.max(bootstrapCtl, 1);
+  const bootstrapDurability = clamp01(input.evidenceScore) * 100;
+  const bootstrapReadiness = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(50 + bootstrapTsb * 2 + (bootstrapDurability - 50) * 0.25),
+    ),
+  );
+
+  const hasPrior = input.priorSnapshot !== undefined;
+  if (!hasPrior) {
+    const bootstrapVariance = clamp01(0.8 - clamp01(input.evidenceScore) * 0.6);
+    return {
+      mean: {
+        ctl: round1(bootstrapCtl),
+        atl: round1(bootstrapAtl),
+        tsb: round1(bootstrapTsb),
+        slb: round3(Math.max(0, bootstrapSlb)),
+        durability: round1(bootstrapDurability),
+        readiness: bootstrapReadiness,
+      },
+      uncertainty: {
+        state_variance: round3(bootstrapVariance),
+        confidence: round3(clamp01(1 - bootstrapVariance)),
+      },
+      evidence_quality: {
+        score: round3(clamp01(input.evidenceScore)),
+        missingness_ratio: round3(clamp01(1 - input.evidenceScore)),
+      },
+      as_of: asOf,
+      metadata: {
+        updated_at: asOf,
+        missingness_counter: Math.max(
+          0,
+          Math.round((1 - input.evidenceScore) * 10),
+        ),
+        evidence_counter: Math.max(0, Math.round(input.evidenceScore * 10)),
+      },
+    };
+  }
+
+  const prior = input.priorSnapshot;
+  const priorAsOf = prior?.as_of ?? prior?.metadata?.updated_at;
+  const daysSincePrior =
+    typeof priorAsOf === "string"
+      ? Math.max(
+          0,
+          diffDateOnlyUtcDays(priorAsOf.slice(0, 10), input.startDate),
+        )
+      : 0;
+  const ctlPredictBlend = 1 - Math.exp(-daysSincePrior / 42);
+  const atlPredictBlend = 1 - Math.exp(-daysSincePrior / 7);
+
+  const priorCtl = Math.max(0, safeFinite(prior?.mean?.ctl, bootstrapCtl));
+  const priorAtl = Math.max(0, safeFinite(prior?.mean?.atl, bootstrapAtl));
+  const predictedCtl = priorCtl + (bootstrapCtl - priorCtl) * ctlPredictBlend;
+  const predictedAtl = priorAtl + (bootstrapAtl - priorAtl) * atlPredictBlend;
+
+  const priorVariance = clamp01(
+    safeFinite(prior?.uncertainty?.state_variance, 0.5),
+  );
+  const priorMissingnessCounter = Math.max(
+    0,
+    Math.round(safeFinite(prior?.metadata?.missingness_counter, 0)),
+  );
+  const priorEvidenceCounter = Math.max(
+    0,
+    Math.round(safeFinite(prior?.metadata?.evidence_counter, 0)),
+  );
+  const predictedVariance = clamp01(
+    priorVariance +
+      daysSincePrior * 0.004 +
+      priorMissingnessCounter * 0.01 -
+      priorEvidenceCounter * 0.004,
+  );
+  const assimilationGain = 1 / (1 + predictedVariance * 6);
+
+  const posteriorCtl =
+    predictedCtl + (bootstrapCtl - predictedCtl) * assimilationGain;
+  const posteriorAtl =
+    predictedAtl + (bootstrapAtl - predictedAtl) * assimilationGain;
+  const posteriorTsb = posteriorCtl - posteriorAtl;
+  const posteriorSlb = posteriorAtl / Math.max(1, posteriorCtl);
+  const posteriorDurability = clamp01(
+    safeFinite(prior?.mean?.durability, bootstrapDurability) / 100,
+  );
+  const posteriorReadiness = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(
+        50 + posteriorTsb * 2 + (posteriorDurability * 100 - 50) * 0.25,
+      ),
+    ),
+  );
+  const posteriorVariance = clamp01(
+    predictedVariance * (1 - assimilationGain * 0.5),
+  );
+  const currentEvidenceScore = clamp01(
+    safeFinite(prior?.evidence_quality?.score, input.evidenceScore) * 0.4 +
+      clamp01(input.evidenceScore) * 0.6,
+  );
+  const missingnessRatio = clamp01(1 - currentEvidenceScore);
+  const missingnessCounter =
+    priorMissingnessCounter + Math.max(0, Math.round(missingnessRatio * 6));
+  const evidenceCounter =
+    priorEvidenceCounter + Math.max(0, Math.round(currentEvidenceScore * 6));
+
+  return {
+    mean: {
+      ctl: round1(posteriorCtl),
+      atl: round1(posteriorAtl),
+      tsb: round1(posteriorTsb),
+      slb: round3(Math.max(0, posteriorSlb)),
+      durability: round1(posteriorDurability * 100),
+      readiness: posteriorReadiness,
+    },
+    uncertainty: {
+      state_variance: round3(posteriorVariance),
+      confidence: round3(clamp01(1 - posteriorVariance)),
+    },
+    evidence_quality: {
+      score: round3(currentEvidenceScore),
+      missingness_ratio: round3(missingnessRatio),
+    },
+    as_of: asOf,
+    metadata: {
+      updated_at: asOf,
+      missingness_counter: missingnessCounter,
+      evidence_counter: evidenceCounter,
+    },
+  };
 }
 
 /**
@@ -2610,7 +3029,7 @@ export function buildDeterministicProjectionPayload(
   const seedSource: "starting_ctl" | "dynamic_seed" =
     seedWeeklyTssFromCtl === null ? "dynamic_seed" : "starting_ctl";
 
-  const startingCtl = Math.max(
+  const bootstrapStartingCtl = Math.max(
     0,
     round1(
       effectiveStartingCtlInput === undefined
@@ -2623,13 +3042,24 @@ export function buildDeterministicProjectionPayload(
     Number.isFinite(input.starting_atl)
       ? Math.max(0, input.starting_atl)
       : undefined;
-  const startingAtl = round1(
+  const bootstrapStartingAtl = round1(
     noHistory?.projection_floor_applied
-      ? startingCtl
-      : (userProvidedStartingAtl ?? startingCtl),
+      ? bootstrapStartingCtl
+      : (userProvidedStartingAtl ?? bootstrapStartingCtl),
   );
-  const startingTsb = round1(startingCtl - startingAtl);
-  const startingStateIsPrior = Boolean(noHistory?.projection_floor_applied);
+  const inferredCurrentState = inferCurrentState({
+    startDate,
+    startingCtl: bootstrapStartingCtl,
+    startingAtl: bootstrapStartingAtl,
+    evidenceScore: evidenceConfidenceScore,
+    priorSnapshot: input.prior_inferred_snapshot,
+  });
+  const startingCtl = inferredCurrentState.mean.ctl;
+  const startingAtl = inferredCurrentState.mean.atl;
+  const startingTsb = inferredCurrentState.mean.tsb;
+  const startingStateIsPrior = Boolean(
+    input.prior_inferred_snapshot ?? noHistory?.projection_floor_applied,
+  );
 
   const microcycles: DeterministicProjectionMicrocycle[] = [];
   const points: DeterministicProjectionPoint[] = [];
@@ -2668,6 +3098,8 @@ export function buildDeterministicProjectionPayload(
       ctl: 0,
     },
     objective_contributions: createZeroObjectiveContributions(),
+    optimization_tradeoff_summary: createZeroTradeoffSummary(),
+    convergence_guard: createDefaultConvergenceGuard(),
   };
   if (calibrationResolution.usedDefaults) {
     projectionDiagnostics.active_constraints.push(
@@ -2797,6 +3229,16 @@ export function buildDeterministicProjectionPayload(
       projectionDiagnostics.fallback_reason =
         weeklyDecision.diagnostics.fallback_reason;
     }
+    projectionDiagnostics.convergence_guard.solver_attempts +=
+      weeklyDecision.diagnostics.convergence_guard.solver_attempts;
+    projectionDiagnostics.convergence_guard.non_finite_objective_rejections +=
+      weeklyDecision.diagnostics.convergence_guard.non_finite_objective_rejections;
+    projectionDiagnostics.convergence_guard.stability_assertions = [
+      ...new Set([
+        ...projectionDiagnostics.convergence_guard.stability_assertions,
+        ...weeklyDecision.diagnostics.convergence_guard.stability_assertions,
+      ]),
+    ];
     projectionDiagnostics.objective_contributions.sampled_weeks +=
       weeklyDecision.diagnostics.objective_contributions.sampled_weeks;
     projectionDiagnostics.objective_contributions.objective_score = round6(
@@ -2846,6 +3288,25 @@ export function buildDeterministicProjectionPayload(
             .curve,
       ),
     };
+    projectionDiagnostics.optimization_tradeoff_summary = {
+      goal_utility: round6(
+        projectionDiagnostics.objective_contributions.weighted_terms.goal +
+          projectionDiagnostics.objective_contributions.weighted_terms
+            .readiness,
+      ),
+      risk_penalty: round6(
+        projectionDiagnostics.objective_contributions.weighted_terms.risk,
+      ),
+      volatility_penalty: round6(
+        projectionDiagnostics.objective_contributions.weighted_terms.volatility,
+      ),
+      churn_penalty: round6(
+        projectionDiagnostics.objective_contributions.weighted_terms.churn,
+      ),
+      net_utility: round6(
+        projectionDiagnostics.objective_contributions.objective_score,
+      ),
+    };
 
     const effectiveRampCaps = resolveEffectiveRampCaps({
       effectiveControls,
@@ -2862,18 +3323,7 @@ export function buildDeterministicProjectionPayload(
     if (tssRampClamped) {
       tssRampClampWeeks += 1;
     }
-    let appliedWeeklyTss = cappedDecision.appliedWeeklyTss;
-    const shouldForceFatigueDecay =
-      weekSignals.weekPattern.pattern === "taper" ||
-      weekSignals.recoveryOverlap.goal_ids.length > 0;
-    if (shouldForceFatigueDecay) {
-      const fatigueDecayCap = round1(
-        Math.max(0, currentAtl * daysInWeek * 0.98),
-      );
-      if (appliedWeeklyTss > fatigueDecayCap) {
-        appliedWeeklyTss = fatigueDecayCap;
-      }
-    }
+    const appliedWeeklyTss = cappedDecision.appliedWeeklyTss;
     if (weekSignals.weightedNoHistoryDemandFloor !== null) {
       maxRequiredDemandWeeklyTss = Math.max(
         maxRequiredDemandWeeklyTss,
@@ -3056,6 +3506,7 @@ export function buildDeterministicProjectionPayload(
       goal,
     ]),
   );
+  const goalReadinessById = new Map<string, number>();
   const goalAssessmentsRaw = goalMarkers.map((marker) => {
     const sourceGoal =
       goalInputById.get(marker.id) ??
@@ -3068,6 +3519,7 @@ export function buildDeterministicProjectionPayload(
       pointsForScoring,
       marker.target_date,
     );
+    goalReadinessById.set(marker.id, readinessAtGoal);
 
     return scoreGoalAssessment({
       goal_id: marker.id,
@@ -3075,6 +3527,7 @@ export function buildDeterministicProjectionPayload(
       targets: sourceGoal?.targets ?? [],
       projection: {
         readiness_score: readinessAtGoal,
+        readiness_confidence: evidenceConfidenceScore,
       },
     });
   });
@@ -3153,14 +3606,38 @@ export function buildDeterministicProjectionPayload(
   const goalFeasibilityById = new Map(
     goalGdi.map((goal) => [goal.goal_id, goal.feasibility_band]),
   );
-  const goalAssessments = goalAssessmentsRaw.map((goal) => ({
-    goal_id: goal.goal_id,
-    priority: goal.priority,
-    goal_readiness_score: round1(goal.goal_score_0_1 * 100),
-    feasibility_band: goalFeasibilityById.get(goal.goal_id) ?? "feasible",
-    target_scores: goal.target_scores,
-    conflict_notes: goal.conflict_notes,
-  }));
+  const goalAssessments = goalAssessmentsRaw.map((goal) => {
+    const stateReadinessScore = round1(
+      goalReadinessById.get(goal.goal_id) ?? 0,
+    );
+    const targetAttainmentScore = round1(goal.goal_score_0_1 * 100);
+    const alignmentLoss = resolveGoalAlignmentLoss({
+      points: pointsWithReadiness,
+      targetDate:
+        goalMarkers.find((marker) => marker.id === goal.goal_id)?.target_date ??
+        startDate,
+      stateReadinessAtGoal: stateReadinessScore,
+    });
+    const blendedReadiness = computeGoalReadinessScore({
+      stateReadinessScore,
+      targetAttainmentScore,
+      goalAlignmentLoss: alignmentLoss,
+    });
+
+    return {
+      goal_id: goal.goal_id,
+      priority: goal.priority,
+      goal_readiness_score: blendedReadiness,
+      state_readiness_score: stateReadinessScore,
+      goal_alignment_loss_0_100: alignmentLoss,
+      feasibility_band: goalFeasibilityById.get(goal.goal_id) ?? "feasible",
+      target_scores: goal.target_scores,
+      conflict_notes:
+        alignmentLoss >= 8
+          ? [...goal.conflict_notes, "goal_alignment_loss_elevated"]
+          : goal.conflict_notes,
+    };
+  });
 
   const riskFlags = [
     `feasibility_band_${planGdi.feasibility_band}`,
@@ -3195,6 +3672,7 @@ export function buildDeterministicProjectionPayload(
         starting_state_is_prior: startingStateIsPrior,
       },
     },
+    inferred_current_state: inferredCurrentState,
     no_history: {
       projection_floor_applied: noHistory?.projection_floor_applied ?? false,
       projection_floor_values: noHistory?.projection_floor_values ?? null,
@@ -3224,6 +3702,8 @@ export function buildDeterministicProjectionPayload(
     risk_flags: uniqueRiskFlags,
     caps_applied: [],
     projection_diagnostics: projectionDiagnostics,
+    optimization_tradeoff_summary:
+      projectionDiagnostics.optimization_tradeoff_summary,
     goal_assessments: goalAssessments,
   };
 
@@ -3260,6 +3740,9 @@ function simulateCtlOverWeek(
   const dailyTss = weeklyTss / Math.max(1, days);
   for (let day = 0; day < days; day += 1) {
     ctl = calculateCTL(ctl, dailyTss);
+    if (!Number.isFinite(ctl)) {
+      throw new Error("projection_numerical_instability_ctl");
+    }
   }
 
   return ctl;
@@ -3274,6 +3757,9 @@ function simulateAtlOverWeek(
   const dailyTss = weeklyTss / Math.max(1, days);
   for (let day = 0; day < days; day += 1) {
     atl = calculateATL(atl, dailyTss);
+    if (!Number.isFinite(atl)) {
+      throw new Error("projection_numerical_instability_atl");
+    }
   }
 
   return atl;
@@ -3385,6 +3871,14 @@ function round1(value: number): number {
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+function clampNumber(
+  value: number,
+  minValue: number,
+  maxValue: number,
+): number {
+  return Math.max(minValue, Math.min(maxValue, value));
 }
 
 function round3(value: number): number {

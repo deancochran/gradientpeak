@@ -84,10 +84,13 @@ export function solveDeterministicBoundedMpc(
         candidate_value: candidateValue,
         horizon_weeks: bounds.horizon_weeks,
       });
+      const objectiveScore = Number.isFinite(evaluation.objective_score)
+        ? evaluation.objective_score
+        : Number.NEGATIVE_INFINITY;
 
       return {
         candidate_value: candidateValue,
-        objective_score: evaluation.objective_score,
+        objective_score: objectiveScore,
         delta_from_prev: Math.abs(candidateValue - input.previous_action),
         primary_goal_date: evaluation.primary_goal_date,
         primary_goal_id: evaluation.primary_goal_id,

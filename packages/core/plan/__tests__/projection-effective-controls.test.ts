@@ -11,7 +11,7 @@ import { normalizeProjectionSafetyConfig } from "../projection/safety-caps";
 const calibration = trainingPlanCalibrationConfigSchema.parse({});
 
 describe("projection effective controls mapping", () => {
-  it("keeps ambition mapping monotonic for preparedness, search, and ramp caps", () => {
+  it("keeps ambition mapping monotonic for preparedness/search while ramp caps stay invariant", () => {
     const normalizedConfig = normalizeProjectionSafetyConfig({
       optimization_profile: "balanced",
       max_weekly_tss_ramp_pct: 7,
@@ -44,15 +44,17 @@ describe("projection effective controls mapping", () => {
     expect(highAmbition.optimizer.candidate_steps).toBeGreaterThanOrEqual(
       lowAmbition.optimizer.candidate_steps,
     );
-    expect(highAmbition.ramp_caps.max_weekly_tss_ramp_pct).toBeGreaterThan(
+    expect(highAmbition.ramp_caps.max_weekly_tss_ramp_pct).toBe(
       lowAmbition.ramp_caps.max_weekly_tss_ramp_pct,
     );
-    expect(highAmbition.ramp_caps.max_ctl_ramp_per_week).toBeGreaterThan(
+    expect(highAmbition.ramp_caps.max_ctl_ramp_per_week).toBe(
       lowAmbition.ramp_caps.max_ctl_ramp_per_week,
     );
+    expect(highAmbition.ramp_caps.max_weekly_tss_ramp_pct).toBe(7);
+    expect(highAmbition.ramp_caps.max_ctl_ramp_per_week).toBe(3);
   });
 
-  it("keeps risk-tolerance mapping monotonic for penalty relaxation and ramp caps", () => {
+  it("keeps risk-tolerance monotonic for penalty relaxation while ramp caps stay invariant", () => {
     const normalizedConfig = normalizeProjectionSafetyConfig({
       optimization_profile: "balanced",
       max_weekly_tss_ramp_pct: 7,
@@ -85,12 +87,14 @@ describe("projection effective controls mapping", () => {
     expect(highRiskTolerance.optimizer.churn_penalty_weight).toBeLessThan(
       lowRiskTolerance.optimizer.churn_penalty_weight,
     );
-    expect(highRiskTolerance.ramp_caps.max_weekly_tss_ramp_pct).toBeGreaterThan(
+    expect(highRiskTolerance.ramp_caps.max_weekly_tss_ramp_pct).toBe(
       lowRiskTolerance.ramp_caps.max_weekly_tss_ramp_pct,
     );
-    expect(highRiskTolerance.ramp_caps.max_ctl_ramp_per_week).toBeGreaterThan(
+    expect(highRiskTolerance.ramp_caps.max_ctl_ramp_per_week).toBe(
       lowRiskTolerance.ramp_caps.max_ctl_ramp_per_week,
     );
+    expect(highRiskTolerance.ramp_caps.max_weekly_tss_ramp_pct).toBe(7);
+    expect(highRiskTolerance.ramp_caps.max_ctl_ramp_per_week).toBe(3);
   });
 
   it("keeps hard ramp bounds and profile/schema search bounds enforced", () => {

@@ -146,6 +146,80 @@ const asStringArray = (value: unknown): string[] => {
   return value.filter((item): item is string => typeof item === "string");
 };
 
+const toBoundedPercent = (value: number): number => {
+  const normalized = value <= 1 ? value * 100 : value;
+  return Math.max(0, Math.min(100, normalized));
+};
+
+const readPercent = (value: unknown): number | undefined => {
+  const numeric = asFiniteNumber(value);
+  if (numeric !== undefined) {
+    return toBoundedPercent(numeric);
+  }
+
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const candidateKeys = [
+    "score",
+    "value",
+    "percent",
+    "percentage",
+    "confidence",
+    "confidence_score",
+    "confidence_0_100",
+    "uncertainty",
+    "uncertainty_score",
+    "uncertainty_0_100",
+    "prediction_uncertainty",
+    "prediction_confidence",
+  ];
+
+  for (const key of candidateKeys) {
+    const candidate = asFiniteNumber(record[key]);
+    if (candidate !== undefined) {
+      return toBoundedPercent(candidate);
+    }
+  }
+
+  return undefined;
+};
+
+const resolveProjectionConfidenceHint = (
+  projectionChart: ProjectionChartPayload | undefined,
+  selectedPoint: ProjectionPoint | undefined,
+) => {
+  const selectedPointRecord = asRecord(selectedPoint as unknown);
+  const uncertaintyPercent =
+    readPercent(selectedPointRecord?.prediction_uncertainty) ??
+    readPercent(selectedPointRecord?.predictionUncertainty) ??
+    readPercent(asRecord(projectionChart as unknown)?.prediction_uncertainty) ??
+    readPercent(asRecord(projectionChart as unknown)?.predictionUncertainty);
+  if (uncertaintyPercent !== undefined) {
+    return `Uncertainty hint: forecast spread ${Math.round(uncertaintyPercent)}%. Readiness remains the primary signal.`;
+  }
+
+  const confidencePercent =
+    readPercent(selectedPointRecord?.prediction_confidence) ??
+    readPercent(selectedPointRecord?.predictionConfidence) ??
+    readPercent(projectionChart?.readiness_confidence) ??
+    readPercent(projectionChart?.no_history?.evidence_confidence?.score);
+  if (confidencePercent !== undefined) {
+    return `Confidence hint: model confidence ${Math.round(confidencePercent)}%. Readiness remains the primary signal.`;
+  }
+
+  const confidenceState =
+    projectionChart?.no_history?.evidence_confidence?.state ??
+    projectionChart?.no_history?.projection_floor_confidence;
+  if (confidenceState) {
+    return `Confidence hint: evidence confidence ${confidenceState}. Readiness remains the primary signal.`;
+  }
+
+  return undefined;
+};
+
 const toSentenceKey = (key: string) =>
   key.replaceAll("_", " ").replaceAll("-", " ").trim();
 
@@ -986,6 +1060,10 @@ export const CreationProjectionChart = React.memo(
 
     const selectedPoint = points[selectedPointIndex];
     const selectedReadiness = selectedPoint?.readiness_score;
+    const projectionConfidenceHint = resolveProjectionConfidenceHint(
+      projectionChart,
+      selectedPoint,
+    );
     const selectedPointSummary = selectedPoint
       ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date}. Weekly load ${Math.round(selectedPoint.predicted_load_tss)} TSS. Fitness ${selectedPoint.predicted_fitness_ctl.toFixed(1)} CTL. Fatigue ${selectedPoint.predicted_fatigue_atl.toFixed(1)} ATL. Readiness ${Math.round(selectedReadiness ?? 0)} out of 100.`
       : "No point selected.";
@@ -1422,6 +1500,11 @@ export const CreationProjectionChart = React.memo(
                   <Text className="text-xs text-muted-foreground">
                     Active phase: {activePhase?.name ?? "-"}
                   </Text>
+                  {projectionConfidenceHint ? (
+                    <Text className="text-xs text-muted-foreground">
+                      {projectionConfidenceHint}
+                    </Text>
+                  ) : null}
                 </View>
 
                 <View

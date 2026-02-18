@@ -124,7 +124,7 @@ describe("CreationProjectionChart metadata", () => {
     expect(uniquePointTabLabels.size).toBe(2);
   });
 
-  it("does not render a separate readiness metadata card", () => {
+  it("keeps old readiness metadata card removed but shows confidence hint", () => {
     let renderer: TestRenderer.ReactTestRenderer;
     act(() => {
       renderer = TestRenderer.create(
@@ -170,12 +170,56 @@ describe("CreationProjectionChart metadata", () => {
       .findAll((node: any) => node.type === "Text")
       .map((node: any) => getNodeText(node.props.children));
 
-    expect(textNodes.some((text) => text.includes("Confidence:"))).toBe(false);
+    expect(
+      textNodes.some((text) =>
+        text.includes(
+          "Confidence hint: model confidence 68%. Readiness remains the primary signal.",
+        ),
+      ),
+    ).toBe(true);
     expect(textNodes.some((text) => text.includes("Capacity envelope:"))).toBe(
       false,
     );
     expect(textNodes.some((text) => text.includes("limiter: ramp_limit"))).toBe(
       false,
+    );
+  });
+
+  it("shows non-blocking uncertainty hint when prediction uncertainty is available", () => {
+    let renderer: TestRenderer.ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        <CreationProjectionChart
+          projectionChart={
+            {
+              start_date: "2026-02-14",
+              end_date: "2026-03-14",
+              points: [
+                {
+                  date: "2026-02-14",
+                  predicted_load_tss: 420,
+                  predicted_fitness_ctl: 55,
+                  predicted_fatigue_atl: 62,
+                  predicted_form_tsb: -7,
+                  readiness_score: 74,
+                  prediction_uncertainty: 0.22,
+                },
+              ],
+              goal_markers: [],
+              periodization_phases: [],
+              microcycles: [],
+            } as any
+          }
+        />,
+      );
+    });
+
+    const textNodes = renderer!.root
+      .findAll((node: any) => node.type === "Text")
+      .map((node: any) => getNodeText(node.props.children));
+
+    expect(textNodes).toContain(
+      "Uncertainty hint: forecast spread 22%. Readiness remains the primary signal.",
     );
   });
 
