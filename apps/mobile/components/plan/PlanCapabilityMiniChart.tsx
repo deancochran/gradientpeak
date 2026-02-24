@@ -56,10 +56,10 @@ export function PlanCapabilityMiniChart({
 
   return (
     <View className="bg-card border border-border rounded-lg p-3 flex-1 min-h-40">
-      <Text className="text-sm font-semibold mb-1">Capability</Text>
+      <Text className="text-sm font-semibold mb-1">Readiness</Text>
       <Text className="text-[11px] text-muted-foreground mb-2">
         {category
-          ? `${category.toUpperCase()} projection`
+          ? `${category.toUpperCase()} readiness projection`
           : "Goal-date projection"}
       </Text>
 

@@ -2777,4 +2777,115 @@ describe("trainingPlansRouter analytics endpoints", () => {
       status: expect.any(String),
     });
   });
+
+  it("returns additive adherence/readiness summaries in insight timeline response", async () => {
+    const caller = createTrainingPlansCaller({
+      training_plans: {
+        data: {
+          id: planId,
+          structure: {
+            goals: [
+              {
+                id: "goal-1",
+                name: "Spring A race",
+                target_date: "2026-03-20",
+                priority: 8,
+              },
+            ],
+            blocks: [
+              {
+                start_date: "2026-01-01",
+                end_date: "2026-01-31",
+                target_weekly_tss_range: { min: 280, max: 350 },
+              },
+            ],
+            fitness_progression: {
+              target_ctl_at_peak: 64,
+            },
+            activity_distribution: {
+              run: 0.7,
+              bike: 0.3,
+            },
+          },
+        },
+        error: null,
+      },
+      planned_activities: { data: [], error: null },
+      activities: {
+        data: [
+          {
+            started_at: "2026-01-02T07:00:00.000Z",
+            training_stress_score: 52,
+            duration_seconds: 3600,
+          },
+          {
+            started_at: "2026-01-04T07:30:00.000Z",
+            training_stress_score: 60,
+            duration_seconds: 4200,
+          },
+        ],
+        error: null,
+      },
+    });
+
+    const result = await caller.getInsightTimeline({
+      training_plan_id: planId,
+      start_date: "2026-01-01",
+      end_date: "2026-01-07",
+      timezone: "UTC",
+    });
+
+    expect(result).toMatchObject({
+      window: {
+        start_date: "2026-01-01",
+        end_date: "2026-01-07",
+        timezone: "UTC",
+      },
+      plan_feasibility: {
+        state: expect.any(String),
+        reasons: expect.any(Array),
+      },
+      plan_safety: {
+        state: expect.any(String),
+        reasons: expect.any(Array),
+      },
+      capability: {
+        category: expect.any(String),
+        confidence: expect.any(Number),
+      },
+      projection: {
+        at_goal_date: {
+          confidence: expect.any(Number),
+        },
+        drivers: expect.any(Array),
+      },
+      timeline: expect.any(Array),
+      adherence_summary: {
+        score: expect.any(Number),
+        contributors: expect.any(Array),
+        interpretation: expect.any(String),
+      },
+      readiness_summary: {
+        score: expect.any(Number),
+        contributors: expect.any(Array),
+        interpretation: expect.any(String),
+      },
+    });
+
+    expect(result.adherence_summary.contributors[0]).toMatchObject({
+      key: expect.any(String),
+      label: expect.any(String),
+      value: expect.any(Number),
+      impact: expect.stringMatching(/positive|neutral|negative/),
+      detail: expect.any(String),
+    });
+
+    expect(result.readiness_summary.contributors[0]).toMatchObject({
+      key: expect.any(String),
+      label: expect.any(String),
+      value: expect.any(Number),
+      impact: expect.stringMatching(/positive|neutral|negative/),
+      detail: expect.any(String),
+    });
+  });
 });

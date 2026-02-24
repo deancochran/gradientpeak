@@ -3,11 +3,21 @@ import { TrainingPlanKpiRow } from "@/components/training-plan/TrainingPlanKpiRo
 import { TrainingPlanSummaryHeader } from "@/components/training-plan/TrainingPlanSummaryHeader";
 import { WeeklyProgressCard } from "@/components/training-plan/WeeklyProgressCard";
 import { PlanVsActualChart } from "@/components/charts/PlanVsActualChart";
+import { PlanAdherenceMiniChart } from "@/components/plan/PlanAdherenceMiniChart";
+import { PlanCapabilityMiniChart } from "@/components/plan/PlanCapabilityMiniChart";
+import {
+  DetailChartModal,
+  type DateRange,
+} from "@/components/shared/DetailChartModal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { ROUTES } from "@/lib/constants/routes";
+import {
+  TPV_NEXT_STEP_INTENTS,
+  normalizeTrainingPlanNextStep,
+} from "@/lib/constants/trainingPlanIntents";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { trpc } from "@/lib/trpc";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -15,10 +25,12 @@ import {
   Activity,
   Calendar,
   ChevronRight,
+  CircleCheck,
+  Gauge,
   Pause,
   TrendingUp,
 } from "lucide-react-native";
-import React, { useMemo } from "react";
+import React, { useCallback, useMemo } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -28,17 +40,47 @@ import {
   View,
 } from "react-native";
 
+interface InsightSummaryContributor {
+  label?: string;
+  value?: number | string;
+  detail?: string;
+}
+
+interface InsightSummary {
+  interpretation?: string | null;
+  contributors?: InsightSummaryContributor[] | null;
+}
+
 export default function TrainingPlanOverview() {
   const router = useRouter();
   const utils = trpc.useUtils();
-  const { id, nextStep } = useLocalSearchParams<{
+  const { id, nextStep, activityId } = useLocalSearchParams<{
     id?: string;
     nextStep?: string;
+    activityId?: string;
   }>();
+
+  const normalizedNextStepIntent = normalizeTrainingPlanNextStep(nextStep);
+
+  const timezone = useMemo(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    [],
+  );
+  const ninetyDayInsightWindow = useMemo(() => {
+    const endDateValue = new Date();
+    const startDateValue = new Date(endDateValue);
+    startDateValue.setDate(endDateValue.getDate() - 89);
+    return {
+      start_date: startDateValue.toISOString().split("T")[0]!,
+      end_date: endDateValue.toISOString().split("T")[0]!,
+    };
+  }, []);
 
   const snapshot = useTrainingPlanSnapshot({
     planId: id,
     includeWeeklySummaries: false,
+    insightWindow: ninetyDayInsightWindow,
+    timezone,
     curveWindow: "overview",
   });
 
@@ -77,6 +119,119 @@ export default function TrainingPlanOverview() {
   }, [idealCurveData]);
 
   const [refreshing, setRefreshing] = React.useState(false);
+  const [insightModal, setInsightModal] = React.useState<
+    "adherence" | "readiness" | null
+  >(null);
+
+  const insightTimelinePoints = useMemo(
+    () => snapshot.insightTimeline?.timeline || [],
+    [snapshot.insightTimeline],
+  );
+
+  const capabilityCurrentEstimate = useMemo(() => {
+    const directValue = snapshot.insightTimeline?.capability?.cp_or_cs;
+    if (typeof directValue === "number") {
+      return directValue;
+    }
+
+    if (!insightTimelinePoints.length) {
+      return null;
+    }
+
+    return insightTimelinePoints[insightTimelinePoints.length - 1]!.actual_tss;
+  }, [snapshot.insightTimeline, insightTimelinePoints]);
+
+  const capabilityProjectionEstimate = useMemo(() => {
+    const directProjection =
+      snapshot.insightTimeline?.projection?.at_goal_date?.projected_goal_metric;
+    if (typeof directProjection === "number") {
+      return directProjection;
+    }
+
+    if (!insightTimelinePoints.length) {
+      return null;
+    }
+
+    return insightTimelinePoints[insightTimelinePoints.length - 1]!
+      .scheduled_tss;
+  }, [snapshot.insightTimeline, insightTimelinePoints]);
+
+  const adherenceScore = useMemo(() => {
+    if (!insightTimelinePoints.length) {
+      return null;
+    }
+
+    return Math.round(
+      Math.max(
+        0,
+        Math.min(
+          100,
+          insightTimelinePoints[insightTimelinePoints.length - 1]!
+            .adherence_score,
+        ),
+      ),
+    );
+  }, [insightTimelinePoints]);
+
+  const adherenceSummary =
+    (snapshot.insightTimeline?.adherence_summary as
+      | InsightSummary
+      | undefined) || undefined;
+  const readinessSummary =
+    (snapshot.insightTimeline?.readiness_summary as
+      | InsightSummary
+      | undefined) || undefined;
+
+  const formatSummaryContributors = (
+    summary?: InsightSummary,
+  ): string | null => {
+    if (!summary?.contributors?.length) {
+      return null;
+    }
+
+    const contributorDetails = summary.contributors
+      .map((contributor) => contributor.detail?.trim())
+      .filter((detail): detail is string => Boolean(detail));
+
+    if (contributorDetails.length > 0) {
+      return contributorDetails.join(" ");
+    }
+
+    const contributorLabels = summary.contributors
+      .map((contributor) => contributor.label?.trim())
+      .filter((label): label is string => Boolean(label));
+
+    if (contributorLabels.length > 0) {
+      return contributorLabels.join(", ");
+    }
+
+    return null;
+  };
+
+  const parseDaysFromRange = (dateRange: DateRange): number => {
+    if (dateRange === "7d") {
+      return 7;
+    }
+    if (dateRange === "90d") {
+      return 90;
+    }
+    if (dateRange === "all") {
+      return insightTimelinePoints.length || 30;
+    }
+    return 30;
+  };
+
+  const handleOpenSettings = useCallback(() => {
+    router.push(ROUTES.PLAN.TRAINING_PLAN.SETTINGS);
+  }, [router]);
+
+  const handleOpenActivity = useCallback(() => {
+    if (typeof activityId !== "string") {
+      return;
+    }
+
+    router.push(ROUTES.PLAN.ACTIVITY_DETAIL(activityId) as any);
+  }, [activityId, router]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -88,7 +243,7 @@ export default function TrainingPlanOverview() {
     router.push(ROUTES.PLAN.TRAINING_PLAN.CREATE);
   };
 
-  const handleEditStructure = () => {
+  const handleEditStructure = useCallback(() => {
     if (!plan) {
       return;
     }
@@ -97,7 +252,60 @@ export default function TrainingPlanOverview() {
       pathname: ROUTES.PLAN.TRAINING_PLAN.EDIT,
       params: { id: plan.id },
     });
-  };
+  }, [plan, router]);
+
+  const focusContext = useMemo(() => {
+    if (normalizedNextStepIntent === TPV_NEXT_STEP_INTENTS.REFINE) {
+      return {
+        title: "Refine Plan",
+        description:
+          "Your plan is ready. Open edit to adjust constraints and targets, or settings for basic details.",
+        ctaLabel: "Open Edit",
+        onPress: handleEditStructure,
+      };
+    }
+
+    if (normalizedNextStepIntent === TPV_NEXT_STEP_INTENTS.EDIT) {
+      return {
+        title: "Edit Plan Structure",
+        description:
+          "Tune weekly targets and constraints in edit mode before your next scheduling cycle.",
+        ctaLabel: "Open Edit",
+        onPress: handleEditStructure,
+      };
+    }
+
+    if (normalizedNextStepIntent === TPV_NEXT_STEP_INTENTS.MANAGE) {
+      return {
+        title: "Manage Plan",
+        description:
+          "Review status, activation, and defaults in settings so the execution tab stays focused.",
+        ctaLabel: "Open Settings",
+        onPress: handleOpenSettings,
+      };
+    }
+
+    if (
+      normalizedNextStepIntent === TPV_NEXT_STEP_INTENTS.REVIEW_ACTIVITY &&
+      typeof activityId === "string"
+    ) {
+      return {
+        title: "Review Planned Activity",
+        description:
+          "Open the linked activity to inspect details and make focused adjustments.",
+        ctaLabel: "Open Activity",
+        onPress: handleOpenActivity,
+      };
+    }
+
+    return null;
+  }, [
+    activityId,
+    handleEditStructure,
+    handleOpenActivity,
+    handleOpenSettings,
+    normalizedNextStepIntent,
+  ]);
 
   React.useEffect(() => {
     if (!loadingPlan && !plan && !id) {
@@ -283,16 +491,24 @@ export default function TrainingPlanOverview() {
       <View className="flex-1 p-4 gap-4">
         {/* Header with Plan Name and Actions */}
         <View className="mb-4">
-          {nextStep === "refine" && (
+          {focusContext && (
             <Card className="border-primary/40 bg-primary/5 mb-4">
               <CardContent className="p-3">
                 <Text className="text-sm text-primary font-semibold">
-                  Refine Plan
+                  {focusContext.title}
                 </Text>
                 <Text className="text-xs text-muted-foreground mt-1">
-                  Your plan is ready. Open edit to adjust constraints and
-                  targets, or settings for basic details.
+                  {focusContext.description}
                 </Text>
+                <TouchableOpacity
+                  onPress={focusContext.onPress}
+                  className="self-start mt-2 px-3 py-1.5 rounded-full bg-primary"
+                  activeOpacity={0.8}
+                >
+                  <Text className="text-xs font-semibold text-primary-foreground">
+                    {focusContext.ctaLabel}
+                  </Text>
+                </TouchableOpacity>
               </CardContent>
             </Card>
           )}
@@ -321,6 +537,37 @@ export default function TrainingPlanOverview() {
           />
 
           <TrainingPlanKpiRow items={summaryKpis} />
+        </View>
+
+        <View>
+          <Text className="text-base font-semibold mb-2">Plan Insights</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerClassName="gap-3 pr-2"
+          >
+            <TouchableOpacity
+              onPress={() => setInsightModal("adherence")}
+              className="w-[248px]"
+              activeOpacity={0.8}
+            >
+              <PlanAdherenceMiniChart timeline={insightTimelinePoints} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setInsightModal("readiness")}
+              className="w-[248px]"
+              activeOpacity={0.8}
+            >
+              <PlanCapabilityMiniChart
+                currentCapability={capabilityCurrentEstimate}
+                projectedCapability={capabilityProjectionEstimate}
+                confidence={
+                  snapshot.insightTimeline?.projection?.at_goal_date?.confidence
+                }
+                category={snapshot.insightTimeline?.capability?.category}
+              />
+            </TouchableOpacity>
+          </ScrollView>
         </View>
 
         {/* Fitness Progress Chart - Plan vs Actual */}
@@ -557,6 +804,89 @@ export default function TrainingPlanOverview() {
           </CardContent>
         </Card>
       </View>
+
+      <DetailChartModal
+        visible={insightModal !== null}
+        onClose={() => setInsightModal(null)}
+        title={insightModal === "readiness" ? "Readiness" : "Adherence"}
+        defaultDateRange="30d"
+      >
+        {(dateRange) => {
+          const days = parseDaysFromRange(dateRange);
+          const filteredTimeline = insightTimelinePoints.slice(-days);
+          const latestPoint = filteredTimeline[filteredTimeline.length - 1];
+
+          return (
+            <View className="gap-4">
+              <View className="bg-card border border-border rounded-lg p-3 gap-2">
+                <View className="flex-row items-center gap-2">
+                  <Icon
+                    as={insightModal === "readiness" ? Gauge : CircleCheck}
+                    size={16}
+                    className="text-primary"
+                  />
+                  <Text className="text-sm font-semibold text-foreground">
+                    Definition
+                  </Text>
+                </View>
+                <Text className="text-xs text-muted-foreground">
+                  {insightModal === "readiness"
+                    ? "Readiness estimates your current load tolerance and projected goal-date capacity."
+                    : "Adherence compares planned versus completed load to show how consistently your execution matches schedule."}
+                </Text>
+              </View>
+
+              <View className="bg-card border border-border rounded-lg p-3 gap-2">
+                <Text className="text-sm font-semibold text-foreground">
+                  Interpretation
+                </Text>
+                <Text className="text-xs text-muted-foreground">
+                  {insightModal === "readiness"
+                    ? readinessSummary?.interpretation?.trim() ||
+                      `Current ${capabilityCurrentEstimate?.toFixed(1) ?? "--"} • Goal ${capabilityProjectionEstimate?.toFixed(1) ?? "--"}. Use higher confidence to trust aggressive progressions.`
+                    : adherenceSummary?.interpretation?.trim() ||
+                      `Current adherence ${adherenceScore ?? "--"}%. ${latestPoint?.boundary_state === "safe" ? "Load is inside your safety boundary." : latestPoint?.boundary_state === "caution" ? "Watch fatigue and adjust upcoming sessions." : "Reduce upcoming load or add recovery."}`}
+                </Text>
+              </View>
+
+              <View className="bg-card border border-border rounded-lg p-3 gap-2">
+                <Text className="text-sm font-semibold text-foreground">
+                  Key Contributors
+                </Text>
+                <Text className="text-xs text-muted-foreground">
+                  {insightModal === "readiness"
+                    ? formatSummaryContributors(readinessSummary) ||
+                      "Recent completed load, scheduled load ahead, target-date projection, and confidence score."
+                    : formatSummaryContributors(adherenceSummary) ||
+                      "Actual TSS, scheduled TSS, ideal path divergence, and current boundary state."}
+                </Text>
+              </View>
+
+              <PlanVsActualChart
+                timeline={filteredTimeline}
+                actualData={[]}
+                projectedData={[]}
+                showLegend
+                height={260}
+              />
+
+              <Button
+                onPress={
+                  insightModal === "readiness"
+                    ? handleEditStructure
+                    : () => setInsightModal(null)
+                }
+              >
+                <Text className="text-primary-foreground font-semibold">
+                  {insightModal === "readiness"
+                    ? "Recommended Action: Tune Targets"
+                    : "Recommended Action: Keep Execution Tight"}
+                </Text>
+              </Button>
+            </View>
+          );
+        }}
+      </DetailChartModal>
     </ScrollView>
   );
 }

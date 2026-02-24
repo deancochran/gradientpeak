@@ -72,6 +72,22 @@ const safetyStateSchema = z.enum(["safe", "caution", "exceeded"]);
 type FeasibilityState = z.infer<typeof feasibilityStateSchema>;
 type SafetyState = z.infer<typeof safetyStateSchema>;
 
+type InsightContributorImpact = "positive" | "neutral" | "negative";
+
+type InsightSummaryContributor = {
+  key: string;
+  label: string;
+  value: number;
+  impact: InsightContributorImpact;
+  detail: string;
+};
+
+type InsightSummary = {
+  score: number;
+  contributors: InsightSummaryContributor[];
+  interpretation: string;
+};
+
 type GoalAssessment = {
   goal_id: string;
   goal_name: string;
@@ -397,6 +413,206 @@ function adherenceScore(
     0,
     100,
   );
+}
+
+function getContributorImpact(
+  value: number,
+  positiveThreshold: number,
+  negativeThreshold: number,
+): InsightContributorImpact {
+  if (value >= positiveThreshold) {
+    return "positive";
+  }
+
+  if (value <= negativeThreshold) {
+    return "negative";
+  }
+
+  return "neutral";
+}
+
+function buildAdherenceSummary(
+  timeline: Array<{
+    ideal_tss: number;
+    scheduled_tss: number;
+    actual_tss: number;
+    adherence_score: number;
+    boundary_state: SafetyState;
+  }>,
+): InsightSummary {
+  if (timeline.length === 0) {
+    return {
+      score: 0,
+      contributors: [
+        {
+          key: "schedule_alignment",
+          label: "Schedule alignment",
+          value: 0,
+          impact: "neutral",
+          detail: "No timeline days available in this window",
+        },
+      ],
+      interpretation: "No adherence data is available for this date range.",
+    };
+  }
+
+  const scheduleAlignment =
+    timeline.reduce(
+      (sum, point) => sum + ratioScore(point.scheduled_tss, point.ideal_tss),
+      0,
+    ) / timeline.length;
+
+  const executionAlignment =
+    timeline.reduce(
+      (sum, point) => sum + ratioScore(point.actual_tss, point.scheduled_tss),
+      0,
+    ) / timeline.length;
+
+  const cautionDays = timeline.filter(
+    (point) => point.boundary_state === "caution",
+  ).length;
+  const exceededDays = timeline.filter(
+    (point) => point.boundary_state === "exceeded",
+  ).length;
+
+  const guardrailCompliance = clampNumber(
+    100 - cautionDays * 8 - exceededDays * 20,
+    0,
+    100,
+  );
+
+  const score =
+    Math.round(
+      timeline.reduce((sum, point) => sum + point.adherence_score, 0) /
+        timeline.length,
+    ) || 0;
+
+  return {
+    score,
+    contributors: [
+      {
+        key: "schedule_alignment",
+        label: "Schedule alignment",
+        value: Math.round(scheduleAlignment),
+        impact: getContributorImpact(scheduleAlignment, 80, 60),
+        detail: "How closely scheduled load tracks ideal load",
+      },
+      {
+        key: "execution_alignment",
+        label: "Execution alignment",
+        value: Math.round(executionAlignment),
+        impact: getContributorImpact(executionAlignment, 80, 60),
+        detail: "How closely completed load tracks scheduled load",
+      },
+      {
+        key: "boundary_compliance",
+        label: "Boundary compliance",
+        value: Math.round(guardrailCompliance),
+        impact: getContributorImpact(guardrailCompliance, 85, 60),
+        detail: "Penalty for caution and exceeded boundary days",
+      },
+    ],
+    interpretation:
+      score >= 85
+        ? "Adherence is strong and load execution is tracking the intended plan."
+        : score >= 70
+          ? "Adherence is stable with moderate variance across planned and completed load."
+          : "Adherence is inconsistent; projection confidence remains conservative until execution stabilizes.",
+  };
+}
+
+function buildReadinessSummary(input: {
+  planFeasibilityState: FeasibilityState;
+  planSafetyState: SafetyState;
+  adherenceConfidence: number;
+  capabilityConfidence: number;
+  adherenceScore: number;
+}): InsightSummary {
+  const feasibilityScoreByState: Record<FeasibilityState, number> = {
+    feasible: 100,
+    aggressive: 70,
+    unsafe: 35,
+  };
+  const safetyScoreByState: Record<SafetyState, number> = {
+    safe: 100,
+    caution: 65,
+    exceeded: 30,
+  };
+
+  const feasibilityScore = feasibilityScoreByState[input.planFeasibilityState];
+  const safetyScore = safetyScoreByState[input.planSafetyState];
+  const adherenceConfidenceScore = clampNumber(
+    Math.round(input.adherenceConfidence * 100),
+    0,
+    100,
+  );
+  const capabilityConfidenceScore = clampNumber(
+    Math.round(input.capabilityConfidence * 100),
+    0,
+    100,
+  );
+  const adherenceConsistencyScore = clampNumber(
+    Math.round(input.adherenceScore),
+    0,
+    100,
+  );
+
+  const score = Math.round(
+    feasibilityScore * 0.3 +
+      safetyScore * 0.25 +
+      adherenceConfidenceScore * 0.2 +
+      capabilityConfidenceScore * 0.15 +
+      adherenceConsistencyScore * 0.1,
+  );
+
+  return {
+    score,
+    contributors: [
+      {
+        key: "plan_feasibility",
+        label: "Plan feasibility",
+        value: feasibilityScore,
+        impact: getContributorImpact(feasibilityScore, 90, 55),
+        detail: "Readiness impact from timeline and ramp feasibility state",
+      },
+      {
+        key: "plan_safety",
+        label: "Plan safety",
+        value: safetyScore,
+        impact: getContributorImpact(safetyScore, 90, 55),
+        detail: "Readiness impact from current safety boundary exposure",
+      },
+      {
+        key: "projection_confidence",
+        label: "Projection confidence",
+        value: adherenceConfidenceScore,
+        impact: getContributorImpact(adherenceConfidenceScore, 70, 45),
+        detail: "Confidence in at-goal projection from recent adherence",
+      },
+      {
+        key: "evidence_density",
+        label: "Evidence density",
+        value: capabilityConfidenceScore,
+        impact: getContributorImpact(capabilityConfidenceScore, 70, 35),
+        detail: "Confidence supported by available activity evidence",
+      },
+      {
+        key: "adherence_consistency",
+        label: "Adherence consistency",
+        value: adherenceConsistencyScore,
+        impact: getContributorImpact(adherenceConsistencyScore, 80, 60),
+        detail: "Consistency of day-level adherence across this window",
+      },
+    ],
+    interpretation:
+      input.planSafetyState === "exceeded"
+        ? "Readiness is limited by boundary overreach; reduce load volatility before progressing."
+        : score >= 80
+          ? "Readiness is tracking well for the current objective with supportive safety signals."
+          : score >= 60
+            ? "Readiness is mixed; maintain consistency to improve confidence at the goal date."
+            : "Readiness is constrained by feasibility, safety, or limited evidence in this window.",
+  };
 }
 
 function classifyBoundaryState(
@@ -2191,12 +2407,31 @@ export const trainingPlansRouter = createTRPCRouter({
             timeline.length
           : 0;
 
+      const adherenceSummary = buildAdherenceSummary(timeline);
+
       const projectionDrivers = [
         "mvp_baseline_projection",
         adherenceAverage < 70
           ? "low_adherence_reduces_projection_confidence"
           : "adherence_within_expected_range",
       ];
+
+      const projectionConfidence =
+        adherenceAverage <= 0
+          ? 0.2
+          : clampNumber(adherenceAverage / 100, 0.2, 0.8);
+
+      const readinessSummary = buildReadinessSummary({
+        planFeasibilityState: assessments.planFeasibility.state,
+        planSafetyState,
+        adherenceConfidence: projectionConfidence,
+        capabilityConfidence: clampNumber(
+          (actualActivities?.length || 0) / 30,
+          0.1,
+          0.9,
+        ),
+        adherenceScore: adherenceSummary.score,
+      });
 
       return {
         window: {
@@ -2226,13 +2461,12 @@ export const trainingPlansRouter = createTRPCRouter({
         projection: {
           at_goal_date: {
             projected_goal_metric: null,
-            confidence:
-              adherenceAverage <= 0
-                ? 0.2
-                : clampNumber(adherenceAverage / 100, 0.2, 0.8),
+            confidence: projectionConfidence,
           },
           drivers: projectionDrivers,
         },
+        adherence_summary: adherenceSummary,
+        readiness_summary: readinessSummary,
         timeline,
       };
     }),

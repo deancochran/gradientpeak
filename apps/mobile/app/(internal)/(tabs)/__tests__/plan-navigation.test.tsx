@@ -252,7 +252,7 @@ const hasTextContaining = (
   }).length > 0;
 
 describe("Plan tab CTA routing", () => {
-  it("opens quick adjust sheet and routes manage/edit intents", () => {
+  it("opens quick adjust sheet and routes full-plan intent", () => {
     pushMock.mockReset();
     trainingPlanState.plan = {
       id: "plan-1",
@@ -278,24 +278,15 @@ describe("Plan tab CTA routing", () => {
       (node: any) => node.type === "QuickAdjustSheet",
     );
     expect(quickAdjustSheet.props.visible).toBe(true);
-    expect(pushMock).not.toHaveBeenCalledWith(
-      ROUTES.PLAN.TRAINING_PLAN.SETTINGS,
-    );
 
-    const managePlanButton = findTouchableByText(renderer, "Manage Plan");
+    const openFullPlanButton = findTouchableByText(renderer, "Open Full Plan");
     act(() => {
-      managePlanButton.props.onPress();
+      openFullPlanButton.props.onPress();
     });
-    expect(pushMock).toHaveBeenCalledWith(ROUTES.PLAN.TRAINING_PLAN.SETTINGS);
+    expect(pushMock).toHaveBeenCalledWith(ROUTES.PLAN.TRAINING_PLAN.INDEX);
 
-    const editStructureButton = findTouchableByText(renderer, "Edit Structure");
-    act(() => {
-      editStructureButton.props.onPress();
-    });
-    expect(pushMock).toHaveBeenCalledWith({
-      pathname: ROUTES.PLAN.TRAINING_PLAN.EDIT,
-      params: { id: "plan-1" },
-    });
+    expect(hasTextContaining(renderer, "Manage Plan")).toBe(false);
+    expect(hasTextContaining(renderer, "Edit Structure")).toBe(false);
 
     expect(hasTextContaining(renderer, "Progress")).toBe(true);
     expect(hasTextContaining(renderer, "50%")).toBe(true);

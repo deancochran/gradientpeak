@@ -26,7 +26,7 @@ import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { ActivityPayload } from "@repo/core";
 import { format } from "date-fns";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { CalendarDays, Pencil, Play, Settings } from "lucide-react-native";
+import { CalendarDays, Play } from "lucide-react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -466,21 +466,6 @@ function PlanScreen() {
     router.push(ROUTES.PLAN.TRAINING_PLAN.INDEX);
   };
 
-  const handleEditStructure = () => {
-    if (!plan?.id) {
-      return;
-    }
-
-    router.push({
-      pathname: ROUTES.PLAN.TRAINING_PLAN.EDIT,
-      params: { id: plan.id },
-    });
-  };
-
-  const handleManagePlan = () => {
-    router.push(ROUTES.PLAN.TRAINING_PLAN.SETTINGS);
-  };
-
   const handleQuickAdjust = () => {
     setShowQuickAdjustSheet(true);
   };
@@ -675,51 +660,23 @@ function PlanScreen() {
                       />
                       {!idealCurveData && (
                         <TouchableOpacity
-                          onPress={handleEditStructure}
+                          onPress={handleViewTrainingPlan}
                           className="mt-2 bg-orange-500/10 border border-orange-500/30 rounded-lg p-3"
                           activeOpacity={0.7}
                         >
                           <Text className="text-xs font-medium text-orange-600 text-center">
-                            Add periodization to see fitness projection • Tap to
-                            configure
+                            Add periodization to see fitness projection in the
+                            full plan view
                           </Text>
                         </TouchableOpacity>
                       )}
                     </View>
                   )}
-                </TouchableOpacity>
 
-                {/* Action Buttons Row */}
-                <View className="flex-row border-t border-border">
-                  <TouchableOpacity
-                    onPress={handleEditStructure}
-                    className="flex-1 flex-row items-center justify-center py-3 border-r border-border"
-                    activeOpacity={0.7}
-                  >
-                    <Icon
-                      as={Pencil}
-                      size={16}
-                      className="text-primary mr-1.5"
-                    />
-                    <Text className="text-xs font-medium text-primary">
-                      Edit Structure
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={handleManagePlan}
-                    className="flex-1 flex-row items-center justify-center py-3"
-                    activeOpacity={0.7}
-                  >
-                    <Icon
-                      as={Settings}
-                      size={16}
-                      className="text-primary mr-1.5"
-                    />
-                    <Text className="text-xs font-medium text-primary">
-                      Manage Plan
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                  <Text className="text-xs text-primary font-medium">
+                    Open Full Plan
+                  </Text>
+                </TouchableOpacity>
               </View>
             ) : (
               <View className="bg-card border border-border rounded-lg overflow-hidden">
