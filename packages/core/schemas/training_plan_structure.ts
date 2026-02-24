@@ -1050,6 +1050,25 @@ export const creationContextSummarySchema = z.object({
   recommended_baseline_tss_range: creationRangeSchema,
   recommended_recent_influence_range: creationRangeSchema,
   recommended_sessions_per_week_range: creationRangeSchema,
+  user_age: z.number().int().min(0).max(120).optional(),
+  user_gender: z.enum(["male", "female"]).nullable().optional(),
+  max_sustainable_ctl: z.number().min(0).max(300).optional(),
+  learned_ramp_rate: z
+    .object({
+      max_safe_ramp_rate: z.number().min(30).max(70),
+      confidence: z.enum(["low", "medium", "high"]),
+    })
+    .optional(),
+  training_quality: z
+    .object({
+      source: z.enum(["power", "hr", "neutral"]),
+      low_intensity_ratio: z.number().min(0).max(1),
+      moderate_intensity_ratio: z.number().min(0).max(1),
+      high_intensity_ratio: z.number().min(0).max(1),
+      load_factor: z.number().min(1).max(2),
+      atl_extension_days: z.number().int().min(0).max(2),
+    })
+    .optional(),
   rationale_codes: z.array(z.string().min(1).max(120)).default([]),
 });
 

@@ -368,3 +368,68 @@ export function computeDynamicFormWeight(daysUntilGoal: number): number {
     (FORM_SIGNAL_WEIGHT_MAX - FORM_SIGNAL_WEIGHT_MIN) * progress
   );
 }
+
+/**
+ * Get age-adjusted ATL time constant.
+ * Falls back to standard 7-day constant when age is unavailable.
+ */
+export function getAgeAdjustedATLTimeConstant(age?: number): number {
+  if (age === undefined || age < 30) return 7;
+  if (age < 40) return 8;
+  if (age < 50) return 11;
+  return 13;
+}
+
+/**
+ * Get age-adjusted CTL time constant.
+ * Falls back to standard 42-day constant when age is unavailable.
+ */
+export function getAgeAdjustedCTLTimeConstant(age?: number): number {
+  if (age === undefined || age < 40) return 42;
+  if (age < 50) return 45;
+  return 48;
+}
+
+/**
+ * Age-adjusted sustainable CTL ceiling.
+ */
+export function getMaxSustainableCTL(age?: number): number {
+  if (age === undefined || age < 30) return 150;
+  if (age < 40) return 130;
+  if (age < 50) return 110;
+  return 90;
+}
+
+/**
+ * Age-adjusted ramp rate multiplier.
+ */
+export function getAgeAdjustedRampRateMultiplier(age?: number): number {
+  if (age === undefined || age < 40) return 1;
+  if (age < 50) return 0.85;
+  return 0.7;
+}
+
+/**
+ * Get gender-adjusted fatigue time multiplier.
+ *
+ * ATL is a fatigue time constant: higher value means slower fatigue decay
+ * (longer recovery window). Female adjustment increases ATL time constant.
+ */
+export function getGenderAdjustedFatigueTimeMultiplier(
+  gender?: "male" | "female" | null,
+): number {
+  if (gender === "female") return 1.08;
+  return 1;
+}
+
+/**
+ * Combine age and gender ATL adjustments.
+ */
+export function getPersonalizedATLTimeConstant(
+  age?: number,
+  gender?: "male" | "female" | null,
+): number {
+  const base = getAgeAdjustedATLTimeConstant(age);
+  const multiplier = getGenderAdjustedFatigueTimeMultiplier(gender);
+  return Math.round(base * multiplier);
+}

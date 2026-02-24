@@ -67,6 +67,7 @@ export function DurationInput({
         </Text>
       </Label>
       <Input
+        className={error ? "border-destructive bg-destructive/5" : undefined}
         aria-labelledby={id}
         value={draftValue}
         onChangeText={handleTextChange}
@@ -80,7 +81,11 @@ export function DurationInput({
       {helperText ? (
         <Text className="text-xs text-muted-foreground">{helperText}</Text>
       ) : null}
-      {error ? <Text className="text-xs text-destructive">{error}</Text> : null}
+      {error ? (
+        <Text className="text-xs text-destructive">
+          Adjust this field: {error}
+        </Text>
+      ) : null}
     </View>
   );
 }

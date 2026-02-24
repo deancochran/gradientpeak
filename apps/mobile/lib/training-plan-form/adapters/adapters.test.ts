@@ -6,6 +6,8 @@ import type {
 import { buildPreviewMinimalPlanFromForm } from "@repo/core";
 import {
   buildMinimalTrainingPlanPayload,
+  toTrainingPlanConfigFormDataFromStructure,
+  toTrainingPlanFormDataFromStructure,
   toCreationNormalizationInput,
 } from "./index";
 
@@ -332,5 +334,94 @@ describe("buildMinimalTrainingPlanPayload", () => {
     });
 
     expect(previewPayload).toEqual(createPayload);
+  });
+});
+
+describe("training plan reverse adapters", () => {
+  it("maps structure goals back into form data deterministically", () => {
+    const structure = {
+      start_date: "2026-01-05",
+      goals: [
+        {
+          id: "goal-a",
+          name: "Marathon",
+          target_date: "2026-10-01",
+          priority: 1,
+          targets: [
+            {
+              id: "target-a1",
+              target_type: "race_performance",
+              distance_m: 42195,
+              target_time_s: 11100,
+              activity_category: "run",
+            },
+            {
+              id: "target-a2",
+              target_type: "hr_threshold",
+              target_lthr_bpm: 168,
+            },
+          ],
+        },
+      ],
+    };
+
+    const first = toTrainingPlanFormDataFromStructure({ structure });
+    const second = toTrainingPlanFormDataFromStructure({ structure });
+
+    expect(first).toEqual(second);
+    expect(first.planStartDate).toBe("2026-01-05");
+    expect(first.goals[0]?.targets[0]).toMatchObject({
+      targetType: "race_performance",
+      distanceKm: "42.195",
+      completionTimeHms: "3:05:00",
+    });
+    expect(first.goals[0]?.targets[1]).toMatchObject({
+      targetType: "hr_threshold",
+      targetLthrBpm: 168,
+    });
+  });
+
+  it("prefers metadata snapshot fields for config with deterministic fallback", () => {
+    const structure = {
+      fitness_progression: { starting_ctl: 52 },
+      metadata: {
+        creation_config_snapshot: {
+          availability_config: {
+            template: "moderate",
+            days: [],
+          },
+          recent_influence: { influence_score: 0.37 },
+          recent_influence_action: "accepted",
+          constraints: {
+            hard_rest_days: ["monday"],
+            min_sessions_per_week: 2,
+            max_sessions_per_week: 5,
+            max_single_session_duration_minutes: 120,
+            goal_difficulty_preference: "balanced",
+          },
+          optimization_profile: "outcome_first",
+          post_goal_recovery_days: 8,
+          max_weekly_tss_ramp_pct: 9,
+          max_ctl_ramp_per_week: 4,
+        },
+        creation_calibration: {
+          snapshot: {
+            version: 1,
+          },
+        },
+      },
+    };
+
+    const first = toTrainingPlanConfigFormDataFromStructure({ structure });
+    const second = toTrainingPlanConfigFormDataFromStructure({ structure });
+
+    expect(first).toEqual(second);
+    expect(first.startingCtlAssumption).toBe(52);
+    expect(first.recentInfluenceScore).toBe(0.37);
+    expect(first.optimizationProfile).toBe("outcome_first");
+    expect(first.postGoalRecoveryDays).toBe(8);
+    expect(first.maxWeeklyTssRampPct).toBe(9);
+    expect(first.maxCtlRampPerWeek).toBe(4);
+    expect(first.calibration.version).toBe(1);
   });
 });

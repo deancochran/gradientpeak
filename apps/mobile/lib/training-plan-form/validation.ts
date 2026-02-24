@@ -2,6 +2,7 @@ import type {
   CreationAvailabilityConfig,
   CreationFeasibilitySafetySummary,
 } from "@repo/core";
+import { z } from "zod";
 import {
   parseDateOnly,
   parseDistanceKmToMeters,
@@ -17,6 +18,7 @@ export const MAX_SAFE_CTL_RAMP_PER_WEEK = 8;
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 interface GoalTargetForValidation {
+  id: string;
   targetType:
     | "race_performance"
     | "pace_threshold"
@@ -32,6 +34,7 @@ interface GoalTargetForValidation {
 }
 
 interface GoalForValidation {
+  id: string;
   name: string;
   targetDate: string;
   priority: number;
@@ -42,6 +45,250 @@ interface TrainingPlanFormForValidation {
   planStartDate?: string;
   goals: GoalForValidation[];
 }
+
+const goalTargetSchema = z
+  .object({
+    id: z.string().min(1),
+    targetType: z.enum([
+      "race_performance",
+      "pace_threshold",
+      "power_threshold",
+      "hr_threshold",
+    ]),
+    activityCategory: z.enum(["run", "bike", "swim", "other"]).optional(),
+    distanceKm: z.string().optional(),
+    completionTimeHms: z.string().optional(),
+    paceMmSs: z.string().optional(),
+    testDurationHms: z.string().optional(),
+    targetWatts: z.number().optional(),
+    targetLthrBpm: z.number().optional(),
+  })
+  .superRefine((target, ctx) => {
+    switch (target.targetType) {
+      case "race_performance": {
+        if (!target.activityCategory) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["activityCategory"],
+            message: "Select an activity for race performance",
+          });
+        }
+        const distanceM = parseDistanceKmToMeters(target.distanceKm);
+        if (!distanceM) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["distanceKm"],
+            message: "Distance (km) must be greater than 0",
+          });
+        }
+        const targetTimeS = parseHmsToSeconds(target.completionTimeHms ?? "");
+        if (!targetTimeS) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["completionTimeHms"],
+            message: "Completion time must use h:mm:ss",
+          });
+        }
+        break;
+      }
+      case "pace_threshold": {
+        const paceSeconds = parseMmSsToSeconds(target.paceMmSs ?? "");
+        if (!paceSeconds) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["paceMmSs"],
+            message: "Pace must use mm:ss",
+          });
+        }
+        if (!target.activityCategory) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["activityCategory"],
+            message: "Select an activity for pace threshold",
+          });
+        }
+        const testDurationS = parseHmsToSeconds(target.testDurationHms ?? "");
+        if (!testDurationS) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["testDurationHms"],
+            message: "Test duration must use h:mm:ss",
+          });
+        }
+        break;
+      }
+      case "power_threshold": {
+        if (!target.targetWatts || target.targetWatts <= 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["targetWatts"],
+            message: "Target watts must be greater than 0",
+          });
+        }
+        if (!target.activityCategory) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["activityCategory"],
+            message: "Select an activity for power threshold",
+          });
+        }
+        const testDurationS = parseHmsToSeconds(target.testDurationHms ?? "");
+        if (!testDurationS) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["testDurationHms"],
+            message: "Test duration must use h:mm:ss",
+          });
+        }
+        break;
+      }
+      case "hr_threshold": {
+        if (!target.targetLthrBpm || target.targetLthrBpm <= 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["targetLthrBpm"],
+            message: "LTHR must be greater than 0",
+          });
+        }
+        break;
+      }
+    }
+  });
+
+const goalSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string(),
+    targetDate: z.string(),
+    priority: z.number(),
+    targets: z
+      .array(goalTargetSchema)
+      .min(1, "At least one target is required"),
+  })
+  .superRefine((goal, ctx) => {
+    if (!goal.name.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["name"],
+        message: "Goal name is required",
+      });
+    }
+
+    if (!goal.targetDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["targetDate"],
+        message: "Target date is required",
+      });
+    } else {
+      const targetDate = new Date(goal.targetDate);
+      if (!Number.isNaN(targetDate.getTime())) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (targetDate < today) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["targetDate"],
+            message: "Target date must be in the future",
+          });
+        }
+      }
+    }
+
+    if (goal.priority < 0 || goal.priority > 10) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["priority"],
+        message: "Priority must be between 0 and 10",
+      });
+    }
+  });
+
+const hasTargetDetailIssue = (target: GoalTargetForValidation): boolean => {
+  if (target.targetType === "race_performance") {
+    return (
+      !target.activityCategory ||
+      !parseDistanceKmToMeters(target.distanceKm) ||
+      !parseHmsToSeconds(target.completionTimeHms ?? "")
+    );
+  }
+
+  if (target.targetType === "pace_threshold") {
+    return (
+      !target.activityCategory ||
+      !parseMmSsToSeconds(target.paceMmSs ?? "") ||
+      !parseHmsToSeconds(target.testDurationHms ?? "")
+    );
+  }
+
+  if (target.targetType === "power_threshold") {
+    return (
+      !target.activityCategory ||
+      !target.targetWatts ||
+      target.targetWatts <= 0 ||
+      !parseHmsToSeconds(target.testDurationHms ?? "")
+    );
+  }
+
+  return !target.targetLthrBpm || target.targetLthrBpm <= 0;
+};
+
+export const trainingPlanFormSchema = z
+  .object({
+    planStartDate: z.string().optional(),
+    goals: z.array(goalSchema).min(1, "At least one goal is required"),
+  })
+  .superRefine((formData, ctx) => {
+    const normalizedPlanStartDate = parseDateOnly(formData.planStartDate);
+    if (formData.planStartDate && !normalizedPlanStartDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["planStartDate"],
+        message: "Plan start date must use yyyy-mm-dd",
+      });
+    }
+
+    if (normalizedPlanStartDate) {
+      const latestGoalDate = formData.goals
+        .map((goal) => goal.targetDate)
+        .filter((targetDate) => DATE_ONLY_PATTERN.test(targetDate))
+        .reduce<string | undefined>((latest, targetDate) => {
+          if (!latest || targetDate > latest) {
+            return targetDate;
+          }
+          return latest;
+        }, undefined);
+
+      if (latestGoalDate && normalizedPlanStartDate > latestGoalDate) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["planStartDate"],
+          message:
+            "Plan start date must be on or before the latest goal target date",
+        });
+      }
+    }
+
+    if (
+      formData.goals.some(
+        (goal) =>
+          goal.targets.length === 0 ||
+          goal.targets.some((target) => hasTargetDetailIssue(target)),
+      )
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["goals"],
+        message: "Each goal must include valid target details",
+      });
+    }
+  });
+
+export type TrainingPlanFormSchemaData = z.infer<typeof trainingPlanFormSchema>;
+export type TrainingPlanGoalSchemaData =
+  TrainingPlanFormSchemaData["goals"][number];
+export type TrainingPlanGoalTargetSchemaData =
+  TrainingPlanGoalSchemaData["targets"][number];
 
 export interface BlockingConflictLike {
   code: string;
@@ -64,134 +311,18 @@ const SUPPRESSED_OBSERVATION_CODES = new Set<string>([
 export function validateTrainingPlanForm(
   formData: TrainingPlanFormForValidation,
 ): Record<string, string> {
+  const parsed = trainingPlanFormSchema.safeParse(formData);
+  if (parsed.success) {
+    return {};
+  }
+
   const errors: Record<string, string> = {};
-
-  if (!formData.goals.length) {
-    errors.goals = "At least one goal is required";
-  }
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  formData.goals.forEach((goal, goalIndex) => {
-    if (!goal.name.trim()) {
-      errors[`goals.${goalIndex}.name`] = "Goal name is required";
+  for (const issue of parsed.error.issues) {
+    const path = issue.path.join(".");
+    if (!path || errors[path]) {
+      continue;
     }
-
-    if (!goal.targetDate) {
-      errors[`goals.${goalIndex}.targetDate`] = "Target date is required";
-    } else {
-      const targetDate = new Date(goal.targetDate);
-      if (targetDate < today) {
-        errors[`goals.${goalIndex}.targetDate`] =
-          "Target date must be in the future";
-      }
-    }
-
-    if (goal.priority < 0 || goal.priority > 10) {
-      errors[`goals.${goalIndex}.priority`] =
-        "Priority must be between 0 and 10";
-    }
-
-    if (!goal.targets.length) {
-      errors[`goals.${goalIndex}.targets`] = "At least one target is required";
-      return;
-    }
-
-    goal.targets.forEach((target, targetIndex) => {
-      switch (target.targetType) {
-        case "race_performance": {
-          if (!target.activityCategory) {
-            errors[
-              `goals.${goalIndex}.targets.${targetIndex}.activityCategory`
-            ] = "Select an activity for race performance";
-          }
-          const distanceM = parseDistanceKmToMeters(target.distanceKm);
-          if (!distanceM) {
-            errors[`goals.${goalIndex}.targets.${targetIndex}.distanceKm`] =
-              "Distance (km) must be greater than 0";
-          }
-          const targetTimeS = parseHmsToSeconds(target.completionTimeHms ?? "");
-          if (!targetTimeS) {
-            errors[
-              `goals.${goalIndex}.targets.${targetIndex}.completionTimeHms`
-            ] = "Completion time must use h:mm:ss";
-          }
-          break;
-        }
-        case "pace_threshold": {
-          const paceSeconds = parseMmSsToSeconds(target.paceMmSs ?? "");
-          if (!paceSeconds) {
-            errors[`goals.${goalIndex}.targets.${targetIndex}.paceMmSs`] =
-              "Pace must use mm:ss";
-          }
-          if (!target.activityCategory) {
-            errors[
-              `goals.${goalIndex}.targets.${targetIndex}.activityCategory`
-            ] = "Select an activity for pace threshold";
-          }
-          const testDurationS = parseHmsToSeconds(target.testDurationHms ?? "");
-          if (!testDurationS) {
-            errors[
-              `goals.${goalIndex}.targets.${targetIndex}.testDurationHms`
-            ] = "Test duration must use h:mm:ss";
-          }
-          break;
-        }
-        case "power_threshold": {
-          if (!target.targetWatts || target.targetWatts <= 0) {
-            errors[`goals.${goalIndex}.targets.${targetIndex}.targetWatts`] =
-              "Target watts must be greater than 0";
-          }
-          if (!target.activityCategory) {
-            errors[
-              `goals.${goalIndex}.targets.${targetIndex}.activityCategory`
-            ] = "Select an activity for power threshold";
-          }
-          const testDurationS = parseHmsToSeconds(target.testDurationHms ?? "");
-          if (!testDurationS) {
-            errors[
-              `goals.${goalIndex}.targets.${targetIndex}.testDurationHms`
-            ] = "Test duration must use h:mm:ss";
-          }
-          break;
-        }
-        case "hr_threshold": {
-          if (!target.targetLthrBpm || target.targetLthrBpm <= 0) {
-            errors[`goals.${goalIndex}.targets.${targetIndex}.targetLthrBpm`] =
-              "LTHR must be greater than 0";
-          }
-          break;
-        }
-      }
-    });
-  });
-
-  const normalizedPlanStartDate = parseDateOnly(formData.planStartDate);
-  if (formData.planStartDate && !normalizedPlanStartDate) {
-    errors.planStartDate = "Plan start date must use yyyy-mm-dd";
-  }
-
-  if (normalizedPlanStartDate) {
-    const latestGoalDate = formData.goals
-      .map((goal) => goal.targetDate)
-      .filter((targetDate) => DATE_ONLY_PATTERN.test(targetDate))
-      .reduce<string | undefined>((latest, targetDate) => {
-        if (!latest || targetDate > latest) {
-          return targetDate;
-        }
-        return latest;
-      }, undefined);
-
-    if (latestGoalDate && normalizedPlanStartDate > latestGoalDate) {
-      errors.planStartDate =
-        "Plan start date must be on or before the latest goal target date";
-    }
-  }
-
-  if (Object.keys(errors).some((key) => key.includes(".targets"))) {
-    errors.goals =
-      errors.goals ?? "Each goal must include valid target details";
+    errors[path] = issue.message;
   }
 
   return errors;
@@ -215,7 +346,7 @@ export function getAvailableTrainingDays(config: {
 }
 
 export function getMinimumGoalGapDays(
-  goals: Array<{ targetDate: string }>,
+  goals: { targetDate: string }[],
 ): number | undefined {
   const sortedGoalDates = goals
     .map((goal) => goal.targetDate)

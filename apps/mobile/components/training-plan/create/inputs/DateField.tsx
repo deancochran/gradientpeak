@@ -67,7 +67,7 @@ export function DateField({
       </Label>
       <Pressable
         onPress={() => setIsPickerVisible(true)}
-        className="rounded-md border border-input bg-background px-3 py-3"
+        className={`rounded-md border px-3 py-3 ${error ? "border-destructive bg-destructive/5" : "border-input bg-background"}`}
         accessibilityRole="button"
         accessibilityLabel={label}
         accessibilityHint={
@@ -93,7 +93,11 @@ export function DateField({
           <Text>Clear date</Text>
         </Button>
       ) : null}
-      {error ? <Text className="text-xs text-destructive">{error}</Text> : null}
+      {error ? (
+        <Text className="text-xs text-destructive">
+          Adjust this field: {error}
+        </Text>
+      ) : null}
     </View>
   );
 }

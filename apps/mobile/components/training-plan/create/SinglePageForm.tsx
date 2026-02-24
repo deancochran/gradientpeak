@@ -41,7 +41,6 @@ import { CreationProjectionChart } from "./CreationProjectionChart";
 import { type CompositeWeightLocks } from "../../../lib/training-plan-form/calibration";
 import { parseNumberOrUndefined } from "../../../lib/training-plan-form/input-parsers";
 import type { BlockingIssue } from "../../../lib/training-plan-form/validation";
-import { validateTrainingPlanForm } from "../../../lib/training-plan-form/validation";
 import type {
   CreationAvailabilityConfig,
   CreationConfigLocks,
@@ -150,13 +149,15 @@ type FormTabKey =
   | "calibration"
   | "review";
 
-const formTabs: Array<{ key: FormTabKey; label: string }> = [
+const formTabs: { key: FormTabKey; label: string }[] = [
   { key: "goals", label: "Goals" },
   { key: "availability", label: "Availability" },
   { key: "constraints", label: "Limits" },
   { key: "calibration", label: "Tuning" },
   { key: "review", label: "Review" },
 ];
+
+type TabIssueCounts = Record<FormTabKey, number>;
 
 const createLocalId = () =>
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -207,7 +208,7 @@ const createEmptyGoal = (targetDate?: string): GoalFormData => ({
 
 const raceDistancePresetsByCategory: Record<
   "run" | "bike" | "swim" | "other",
-  Array<{ label: string; km: string }>
+  { label: string; km: string }[]
 > = {
   run: [
     { label: "5K", km: "5" },
@@ -241,17 +242,17 @@ const targetTypeOptions: { value: GoalTargetType; label: string }[] = [
   { value: "hr_threshold", label: "Heart-rate threshold" },
 ];
 
-const activityCategoryOptions: Array<{
+const activityCategoryOptions: {
   value: "run" | "bike" | "swim" | "other";
   label: string;
-}> = [
+}[] = [
   { value: "run", label: "Run" },
   { value: "bike", label: "Bike" },
   { value: "swim", label: "Swim" },
   { value: "other", label: "Other" },
 ];
 
-const weekDays: Array<CreationAvailabilityConfig["days"][number]["day"]> = [
+const weekDays: CreationAvailabilityConfig["days"][number]["day"][] = [
   "monday",
   "tuesday",
   "wednesday",
@@ -267,15 +268,6 @@ const helperTextClass = "text-xs text-muted-foreground";
 
 const getWeekDayLabel = (day: string) =>
   day.slice(0, 1).toUpperCase() + day.slice(1, 3);
-
-const formatMinutesAsTime = (minuteOfDay: number) => {
-  const clamped = Math.max(0, Math.min(1439, minuteOfDay));
-  const hours = Math.floor(clamped / 60)
-    .toString()
-    .padStart(2, "0");
-  const minutes = (clamped % 60).toString().padStart(2, "0");
-  return `${hours}:${minutes}`;
-};
 
 const getActivityCategoryLabel = (
   category?: GoalTargetFormData["activityCategory"],
@@ -335,12 +327,6 @@ const getTargetSummary = (target: GoalTargetFormData) => {
     return `${target.targetLthrBpm} bpm`;
   }
   return "LTHR bpm";
-};
-
-const getGoalSummary = (goal: GoalFormData) => {
-  const trimmedName = goal.name.trim();
-  const label = trimmedName || "Untitled goal";
-  return `${label} - ${goal.targetDate || "No date"} - ${goal.targets.length} target(s)`;
 };
 
 const formatFeasibilityBandLabel = (
@@ -761,20 +747,6 @@ function GoalReadinessRing(props: { score: number; goalTitle: string }) {
   );
 }
 
-const areStringArraysEqual = (left: string[], right: string[]) => {
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  for (let index = 0; index < left.length; index += 1) {
-    if (left[index] !== right[index]) {
-      return false;
-    }
-  }
-
-  return true;
-};
-
 const toNoHistoryConfidenceLabel = (
   confidence: NoHistoryProjectionMetadata["projection_floor_confidence"],
 ) => {
@@ -814,7 +786,6 @@ export function SinglePageForm({
   const [editingTargetRef, setEditingTargetRef] =
     useState<EditingTargetRef | null>(null);
   const [activeTab, setActiveTab] = useState<FormTabKey>("goals");
-  const [touchedFieldPaths, setTouchedFieldPaths] = useState<string[]>([]);
 
   const handleTabChange = useCallback((tab: FormTabKey) => {
     setActiveTab(tab);
@@ -1002,19 +973,6 @@ export function SinglePageForm({
     });
   };
 
-  const addTarget = (goalId: string) => {
-    const target = createTargetByType("race_performance");
-    onFormDataChange({
-      ...formData,
-      goals: formData.goals.map((goal) =>
-        goal.id === goalId
-          ? { ...goal, targets: [...goal.targets, target] }
-          : goal,
-      ),
-    });
-    setEditingTargetRef({ goalId, targetId: target.id });
-  };
-
   const addTargetWithType = (goalId: string, targetType: GoalTargetType) => {
     const target = createTargetByType(targetType);
     onFormDataChange({
@@ -1048,7 +1006,34 @@ export function SinglePageForm({
     });
   };
 
-  const getError = (path: string) => errors[path] ?? inlineErrors[path];
+  const getError = (path: string) => errors[path];
+
+  const formValidationErrors = errors;
+
+  const goalErrorCountsById = useMemo(() => {
+    const map = new Map<string, number>();
+
+    formData.goals.forEach((goal) => {
+      map.set(goal.id, 0);
+    });
+
+    for (const path of Object.keys(formValidationErrors)) {
+      const match = /^goals\.(\d+)\./.exec(path);
+      if (!match) {
+        continue;
+      }
+
+      const goalIndex = Number(match[1]);
+      const goal = formData.goals[goalIndex];
+      if (!goal) {
+        continue;
+      }
+
+      map.set(goal.id, (map.get(goal.id) ?? 0) + 1);
+    }
+
+    return map;
+  }, [formData.goals, formValidationErrors]);
 
   const getTargetRowError = (goalIndex: number, targetIndex: number) => {
     const prefix = `goals.${goalIndex}.targets.${targetIndex}`;
@@ -1065,30 +1050,6 @@ export function SinglePageForm({
   };
 
   const closeTargetEditor = () => setEditingTargetRef(null);
-
-  const markFieldTouched = useCallback((path: string) => {
-    setTouchedFieldPaths((previous) =>
-      previous.includes(path) ? previous : [...previous, path],
-    );
-  }, []);
-
-  const inlineErrors = useMemo(() => {
-    if (touchedFieldPaths.length === 0) {
-      return {} as Record<string, string>;
-    }
-
-    const touched = new Set(touchedFieldPaths);
-    const nextErrors = validateTrainingPlanForm(formData);
-    const visibleErrors: Record<string, string> = {};
-
-    for (const [path, message] of Object.entries(nextErrors)) {
-      if (touched.has(path)) {
-        visibleErrors[path] = message;
-      }
-    }
-
-    return visibleErrors;
-  }, [formData, touchedFieldPaths]);
 
   const activeGoal = useMemo(
     () =>
@@ -1110,6 +1071,32 @@ export function SinglePageForm({
 
     return blockingCount + cautionDriverCount;
   }, [blockingIssues.length, feasibilitySafetySummary]);
+  const tabIssueCounts = useMemo<TabIssueCounts>(() => {
+    const counts: TabIssueCounts = {
+      goals: 0,
+      availability: 0,
+      constraints: 0,
+      calibration: 0,
+      review: reviewNoticeCount,
+    };
+
+    for (const path of Object.keys(formValidationErrors)) {
+      if (path === "goals" || path.startsWith("goals.")) {
+        counts.goals += 1;
+        continue;
+      }
+
+      if (path === "planStartDate") {
+        counts.availability += 1;
+      }
+    }
+
+    return counts;
+  }, [formValidationErrors, reviewNoticeCount]);
+  const tabsWithIssues = useMemo(
+    () => formTabs.filter((tab) => tabIssueCounts[tab.key] > 0),
+    [tabIssueCounts],
+  );
   const goalAssessments = projectionChart?.goal_assessments ?? [];
   const hasBlockingIssues = blockingIssues.length > 0;
   const projectionReviewDiagnostics = useMemo(
@@ -1156,11 +1143,13 @@ export function SinglePageForm({
         >
           {formTabs.map((tab) => {
             const isActive = tab.key === activeTab;
+            const issueCount = tabIssueCounts[tab.key];
+            const hasIssues = issueCount > 0;
             return (
               <Pressable
                 key={tab.key}
                 onPress={() => handleTabChange(tab.key)}
-                className={`border-b-2 px-1.5 py-2 ${isActive ? "border-primary" : "border-transparent"}`}
+                className={`border-b-2 px-1.5 py-2 ${isActive ? "border-primary" : hasIssues ? "border-amber-400" : "border-transparent"}`}
                 accessibilityRole="tab"
                 accessibilityState={{ selected: isActive }}
                 accessibilityLabel={`${tab.label} tab`}
@@ -1172,15 +1161,29 @@ export function SinglePageForm({
                 hitSlop={8}
                 style={{ minHeight: 44, justifyContent: "center" }}
               >
-                <Text
-                  className={`text-sm ${isActive ? "font-semibold text-foreground" : "text-muted-foreground"}`}
-                >
-                  {tab.label}
-                </Text>
+                <View className="flex-row items-center gap-1">
+                  <Text
+                    className={`text-sm ${isActive ? "font-semibold text-foreground" : hasIssues ? "font-medium text-amber-700" : "text-muted-foreground"}`}
+                  >
+                    {tab.label}
+                  </Text>
+                  {hasIssues ? (
+                    <View className="min-w-4 rounded-full bg-amber-100 px-1 py-0.5">
+                      <Text className="text-center text-[10px] font-semibold text-amber-700">
+                        {issueCount}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
               </Pressable>
             );
           })}
         </ScrollView>
+        {tabsWithIssues.length > 0 ? (
+          <Text className="pt-1 text-xs text-amber-700">
+            Needs attention: {tabsWithIssues.map((tab) => tab.label).join(", ")}
+          </Text>
+        ) : null}
       </View>
 
       <ScrollView
@@ -1281,7 +1284,6 @@ export function SinglePageForm({
                   label="Plan start date"
                   value={formData.planStartDate}
                   onChange={(nextDate) => {
-                    markFieldTouched("planStartDate");
                     onFormDataChange({
                       ...formData,
                       planStartDate: nextDate,
@@ -2021,11 +2023,13 @@ export function SinglePageForm({
               >
                 {formData.goals.map((goal, goalIndex) => {
                   const isActive = activeGoal?.id === goal.id;
+                  const goalIssueCount = goalErrorCountsById.get(goal.id) ?? 0;
+                  const goalHasIssues = goalIssueCount > 0;
                   return (
                     <Pressable
                       key={goal.id}
                       onPress={() => setActiveGoalId(goal.id)}
-                      className={`rounded-md border px-3 py-2 ${isActive ? "border-primary bg-primary/10" : "border-border bg-background"}`}
+                      className={`rounded-md border px-3 py-2 ${isActive ? "border-primary bg-primary/10" : goalHasIssues ? "border-amber-300 bg-amber-100/40" : "border-border bg-background"}`}
                       accessibilityRole="button"
                       accessibilityState={{ selected: isActive }}
                       accessibilityLabel={`Goal ${goalIndex + 1}`}
@@ -2046,6 +2050,9 @@ export function SinglePageForm({
                         <Badge variant={isActive ? "default" : "outline"}>
                           <Text>{goal.targets.length}</Text>
                         </Badge>
+                        {goalHasIssues ? (
+                          <View className="h-2 w-2 rounded-full bg-amber-500" />
+                        ) : null}
                       </View>
                     </Pressable>
                   );
@@ -2073,10 +2080,15 @@ export function SinglePageForm({
                       aria-label="Goal name"
                       placeholder="Goal name"
                       value={activeGoal.name}
-                      onChangeText={(value) =>
-                        updateGoal(activeGoal.id, { name: value })
-                      }
+                      onChangeText={(value) => {
+                        updateGoal(activeGoal.id, { name: value });
+                      }}
                       maxLength={100}
+                      className={
+                        getError(`goals.${activeGoalIndex}.name`)
+                          ? "border-destructive bg-destructive/5"
+                          : undefined
+                      }
                     />
                     {getError(`goals.${activeGoalIndex}.name`) && (
                       <Text className="text-xs text-destructive">
@@ -2105,7 +2117,6 @@ export function SinglePageForm({
                     if (!nextDate) {
                       return;
                     }
-                    markFieldTouched(`goals.${activeGoalIndex}.targetDate`);
                     updateGoal(activeGoal.id, { targetDate: nextDate });
                   }}
                   required
@@ -2119,7 +2130,6 @@ export function SinglePageForm({
                   label="Goal importance"
                   value={activeGoal.priority}
                   onChange={(value) => {
-                    markFieldTouched(`goals.${activeGoalIndex}.priority`);
                     updateGoal(activeGoal.id, { priority: value });
                   }}
                   min={0}
@@ -2199,7 +2209,7 @@ export function SinglePageForm({
                     return (
                       <View
                         key={target.id}
-                        className="gap-1 rounded-md border border-border bg-background/80 px-2 py-2"
+                        className={`gap-1 rounded-md border bg-background/80 px-2 py-2 ${rowError ? "border-destructive bg-destructive/5" : "border-border"}`}
                       >
                         <View className="flex-row items-center gap-2">
                           {icon}
@@ -2252,6 +2262,11 @@ export function SinglePageForm({
                               className="text-muted-foreground"
                             />
                           </Button>
+                          {rowError ? (
+                            <Text className="text-[11px] font-medium text-destructive">
+                              Adjust
+                            </Text>
+                          ) : null}
                         </View>
 
                         {rowError && (
@@ -2329,7 +2344,16 @@ export function SinglePageForm({
                     );
                   }}
                 >
-                  <SelectTrigger aria-labelledby="editor-target-type">
+                  <SelectTrigger
+                    aria-labelledby="editor-target-type"
+                    className={
+                      getError(
+                        `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.targetType`,
+                      )
+                        ? "border-destructive bg-destructive/5"
+                        : undefined
+                    }
+                  >
                     <SelectValue placeholder="Select target type" />
                   </SelectTrigger>
                   <SelectContent>
@@ -2392,7 +2416,16 @@ export function SinglePageForm({
                         );
                       }}
                     >
-                      <SelectTrigger aria-labelledby="editor-race-category">
+                      <SelectTrigger
+                        aria-labelledby="editor-race-category"
+                        className={
+                          getError(
+                            `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.activityCategory`,
+                          )
+                            ? "border-destructive bg-destructive/5"
+                            : undefined
+                        }
+                      >
                         <SelectValue placeholder="Select activity" />
                       </SelectTrigger>
                       <SelectContent>
@@ -2423,9 +2456,6 @@ export function SinglePageForm({
                     label="Distance"
                     value={editingContext.target.distanceKm ?? ""}
                     onChange={(nextValue) => {
-                      markFieldTouched(
-                        `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.distanceKm`,
-                      );
                       updateTarget(
                         editingContext.goal.id,
                         editingContext.target.id,
@@ -2460,9 +2490,6 @@ export function SinglePageForm({
                     label="Completion Time"
                     value={editingContext.target.completionTimeHms ?? ""}
                     onChange={(nextValue) => {
-                      markFieldTouched(
-                        `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.completionTimeHms`,
-                      );
                       updateTarget(
                         editingContext.goal.id,
                         editingContext.target.id,
@@ -2518,7 +2545,16 @@ export function SinglePageForm({
                         );
                       }}
                     >
-                      <SelectTrigger aria-labelledby="editor-pace-category">
+                      <SelectTrigger
+                        aria-labelledby="editor-pace-category"
+                        className={
+                          getError(
+                            `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.activityCategory`,
+                          )
+                            ? "border-destructive bg-destructive/5"
+                            : undefined
+                        }
+                      >
                         <SelectValue placeholder="Select activity" />
                       </SelectTrigger>
                       <SelectContent>
@@ -2549,9 +2585,6 @@ export function SinglePageForm({
                     label="Target Pace"
                     value={editingContext.target.paceMmSs ?? ""}
                     onChange={(nextValue) => {
-                      markFieldTouched(
-                        `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.paceMmSs`,
-                      );
                       updateTarget(
                         editingContext.goal.id,
                         editingContext.target.id,
@@ -2572,9 +2605,6 @@ export function SinglePageForm({
                     label="Required Test Duration"
                     value={editingContext.target.testDurationHms ?? ""}
                     onChange={(nextValue) => {
-                      markFieldTouched(
-                        `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.testDurationHms`,
-                      );
                       updateTarget(
                         editingContext.goal.id,
                         editingContext.target.id,
@@ -2630,7 +2660,16 @@ export function SinglePageForm({
                         );
                       }}
                     >
-                      <SelectTrigger aria-labelledby="editor-power-category">
+                      <SelectTrigger
+                        aria-labelledby="editor-power-category"
+                        className={
+                          getError(
+                            `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.activityCategory`,
+                          )
+                            ? "border-destructive bg-destructive/5"
+                            : undefined
+                        }
+                      >
                         <SelectValue placeholder="Select activity" />
                       </SelectTrigger>
                       <SelectContent>
@@ -2665,9 +2704,6 @@ export function SinglePageForm({
                         : String(editingContext.target.targetWatts)
                     }
                     onChange={(value) => {
-                      markFieldTouched(
-                        `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.targetWatts`,
-                      );
                       updateTarget(
                         editingContext.goal.id,
                         editingContext.target.id,
@@ -2694,9 +2730,6 @@ export function SinglePageForm({
                     label="Required Test Duration"
                     value={editingContext.target.testDurationHms ?? ""}
                     onChange={(nextValue) => {
-                      markFieldTouched(
-                        `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.testDurationHms`,
-                      );
                       updateTarget(
                         editingContext.goal.id,
                         editingContext.target.id,
@@ -2725,9 +2758,6 @@ export function SinglePageForm({
                       : String(editingContext.target.targetLthrBpm)
                   }
                   onChange={(value) => {
-                    markFieldTouched(
-                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.targetLthrBpm`,
-                    );
                     updateTarget(
                       editingContext.goal.id,
                       editingContext.target.id,

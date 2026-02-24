@@ -14,6 +14,8 @@ describe("deriveCreationContext", () => {
       30,
     );
     expect(context.recommended_baseline_tss_range.max).toBeLessThanOrEqual(120);
+    expect(context.learned_ramp_rate?.max_safe_ramp_rate).toBe(40);
+    expect(context.learned_ramp_rate?.confidence).toBe("low");
   });
 
   it("widens baseline recommendations upward with rich recent activity", () => {
@@ -108,5 +110,35 @@ describe("deriveCreationContext", () => {
     expect(
       context.rationale_codes.some((code) => code.startsWith("preferred_day_")),
     ).toBe(true);
+  });
+
+  it("adds personalization outputs while keeping backward-compatible core fields", () => {
+    const context = deriveCreationContext({
+      completed_activities: [
+        {
+          occurred_at: "2026-02-10T08:00:00.000Z",
+          tss: 90,
+          power_zone_1_seconds: 200,
+          power_zone_2_seconds: 200,
+          power_zone_3_seconds: 100,
+          power_zone_4_seconds: 100,
+          power_zone_5_seconds: 50,
+          power_zone_6_seconds: 25,
+          power_zone_7_seconds: 25,
+        },
+      ],
+      profile: {
+        dob: "1990-01-01",
+        gender: "female",
+      },
+      as_of: "2026-02-16T00:00:00.000Z",
+    });
+
+    expect(context.user_age).toBeDefined();
+    expect(context.user_gender).toBe("female");
+    expect(context.max_sustainable_ctl).toBeDefined();
+    expect(context.training_quality?.source).toBe("power");
+    expect(context.history_availability_state).toBeDefined();
+    expect(context.recommended_baseline_tss_range.min).toBeDefined();
   });
 });

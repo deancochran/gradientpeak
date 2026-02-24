@@ -54,8 +54,25 @@ export interface ProjectionControlV2Input {
   curvature_strength?: number;
 }
 
+export type RampLearningConfidence = "low" | "medium" | "high";
+
+export interface LearnedRampRateInput {
+  max_safe_ramp_rate?: number | null;
+  confidence?: RampLearningConfidence | null;
+}
+
+export interface EffectiveLearnedRampRate {
+  max_safe_ramp_rate: number;
+  confidence: RampLearningConfidence;
+  source: "learned" | "default";
+}
+
 export const ABSOLUTE_MAX_WEEKLY_TSS_RAMP_PCT = 40;
 export const ABSOLUTE_MAX_CTL_RAMP_PER_WEEK = 12;
+export const DEFAULT_LEARNED_RAMP_RATE = 40;
+export const MIN_LEARNED_RAMP_RATE = 30;
+export const MAX_LEARNED_RAMP_RATE = 70;
+const RAMP_PCT_BASELINE_WEEKLY_TSS = 200;
 
 const PROJECTION_PROFILE_DEFAULTS: Record<
   OptimizationProfile,
@@ -95,6 +112,7 @@ export interface ProjectionSafetyConfigInput {
   post_goal_recovery_days?: number;
   max_weekly_tss_ramp_pct?: number;
   max_ctl_ramp_per_week?: number;
+  learned_ramp_rate?: LearnedRampRateInput;
   projection_control_v2?: ProjectionControlV2Input;
   calibration?: ProjectionCalibrationConfigInput;
 }
@@ -104,6 +122,7 @@ export interface ProjectionSafetyConfig {
   post_goal_recovery_days: number;
   max_weekly_tss_ramp_pct: number;
   max_ctl_ramp_per_week: number;
+  learned_ramp_rate: EffectiveLearnedRampRate;
 }
 
 export interface OptimizationProfileBehavior {
@@ -164,6 +183,17 @@ export function normalizeProjectionSafetyConfig(
 ): ProjectionSafetyConfig {
   const profile = input?.optimization_profile ?? "balanced";
   const defaults = PROJECTION_PROFILE_DEFAULTS[profile];
+  const learnedRampRate = resolveEffectiveLearnedRampRate(
+    input?.learned_ramp_rate,
+  );
+  const learnedRampPct = convertLearnedRampRateToPct(
+    learnedRampRate.max_safe_ramp_rate,
+  );
+  const effectiveWeeklyRampPct =
+    input?.max_weekly_tss_ramp_pct ??
+    (learnedRampRate.source === "learned"
+      ? learnedRampPct
+      : defaults.max_weekly_tss_ramp_pct);
 
   return {
     optimization_profile: profile,
@@ -178,10 +208,7 @@ export function normalizeProjectionSafetyConfig(
     ),
     max_weekly_tss_ramp_pct: Math.max(
       0,
-      Math.min(
-        ABSOLUTE_MAX_WEEKLY_TSS_RAMP_PCT,
-        input?.max_weekly_tss_ramp_pct ?? defaults.max_weekly_tss_ramp_pct,
-      ),
+      Math.min(ABSOLUTE_MAX_WEEKLY_TSS_RAMP_PCT, effectiveWeeklyRampPct),
     ),
     max_ctl_ramp_per_week: Math.max(
       0,
@@ -190,5 +217,38 @@ export function normalizeProjectionSafetyConfig(
         input?.max_ctl_ramp_per_week ?? defaults.max_ctl_ramp_per_week,
       ),
     ),
+    learned_ramp_rate: learnedRampRate,
+  };
+}
+
+export function convertLearnedRampRateToPct(rampRate: number): number {
+  const safeRampRate = Math.max(
+    MIN_LEARNED_RAMP_RATE,
+    Math.min(MAX_LEARNED_RAMP_RATE, rampRate),
+  );
+  return Math.round((safeRampRate / RAMP_PCT_BASELINE_WEEKLY_TSS) * 100);
+}
+
+export function resolveEffectiveLearnedRampRate(
+  input: LearnedRampRateInput | undefined,
+): EffectiveLearnedRampRate {
+  const confidence = input?.confidence ?? "low";
+  const hasLearnedRate = typeof input?.max_safe_ramp_rate === "number";
+
+  if (hasLearnedRate && (confidence === "medium" || confidence === "high")) {
+    return {
+      max_safe_ramp_rate: Math.max(
+        MIN_LEARNED_RAMP_RATE,
+        Math.min(MAX_LEARNED_RAMP_RATE, Math.round(input.max_safe_ramp_rate!)),
+      ),
+      confidence,
+      source: "learned",
+    };
+  }
+
+  return {
+    max_safe_ramp_rate: DEFAULT_LEARNED_RAMP_RATE,
+    confidence: "low",
+    source: "default",
   };
 }

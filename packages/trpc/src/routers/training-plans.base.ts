@@ -58,6 +58,7 @@ import {
   createFromCreationConfigUseCase,
   getCreationSuggestionsUseCase,
   previewCreationConfigUseCase,
+  updateFromCreationConfigUseCase,
 } from "../application/training-plan";
 import { createSupabaseTrainingPlanRepository } from "../infrastructure";
 import { featureFlags } from "../lib/features";
@@ -896,6 +897,11 @@ const createFromCreationConfigRouterInputSchema =
     prior_inferred_snapshot: inferredStateSnapshotSchema.optional(),
   });
 
+const updateFromCreationConfigRouterInputSchema =
+  createFromCreationConfigRouterInputSchema.extend({
+    plan_id: z.string().uuid(),
+  });
+
 function mergeCalibrationInput(
   base?: z.input<typeof trainingPlanCalibrationConfigSchema>,
   override?: z.input<typeof trainingPlanCalibrationConfigSchema>,
@@ -1153,12 +1159,12 @@ export async function deriveProfileAwareCreationContext(input: {
   const recentEffortsCutoff = new Date(asOf);
   recentEffortsCutoff.setDate(recentEffortsCutoff.getDate() - 84);
 
-  const [activitiesResult, effortsResult, profileMetricsResult] =
+  const [activitiesResult, effortsResult, profileMetricsResult, profileResult] =
     await Promise.all([
       input.supabase
         .from("activities")
         .select(
-          "started_at, activity_category, duration_seconds, training_stress_score",
+          "started_at, activity_category, duration_seconds, training_stress_score, power_zone_1_seconds, power_zone_2_seconds, power_zone_3_seconds, power_zone_4_seconds, power_zone_5_seconds, power_zone_6_seconds, power_zone_7_seconds, hr_zone_1_seconds, hr_zone_2_seconds, hr_zone_3_seconds, hr_zone_4_seconds, hr_zone_5_seconds",
         )
         .eq("profile_id", input.profileId)
         .gte("started_at", recentActivitiesCutoff.toISOString())
@@ -1179,6 +1185,11 @@ export async function deriveProfileAwareCreationContext(input: {
         .eq("profile_id", input.profileId)
         .in("metric_type", ["lthr", "weight_kg"])
         .order("recorded_at", { ascending: false }),
+      input.supabase
+        .from("profiles")
+        .select("dob, gender")
+        .eq("id", input.profileId)
+        .limit(1),
     ]);
 
   if (activitiesResult.error) {
@@ -1202,6 +1213,13 @@ export async function deriveProfileAwareCreationContext(input: {
     );
   }
 
+  if (profileResult.error) {
+    console.warn(
+      "Failed to load profile for creation context. Falling back to null profile signals.",
+      profileResult.error.message,
+    );
+  }
+
   const completedActivities = (
     activitiesResult.error ? [] : (activitiesResult.data ?? [])
   ).map((activity) => ({
@@ -1209,6 +1227,18 @@ export async function deriveProfileAwareCreationContext(input: {
     activity_category: activity.activity_category,
     duration_seconds: activity.duration_seconds,
     tss: activity.training_stress_score,
+    power_zone_1_seconds: activity.power_zone_1_seconds,
+    power_zone_2_seconds: activity.power_zone_2_seconds,
+    power_zone_3_seconds: activity.power_zone_3_seconds,
+    power_zone_4_seconds: activity.power_zone_4_seconds,
+    power_zone_5_seconds: activity.power_zone_5_seconds,
+    power_zone_6_seconds: activity.power_zone_6_seconds,
+    power_zone_7_seconds: activity.power_zone_7_seconds,
+    hr_zone_1_seconds: activity.hr_zone_1_seconds,
+    hr_zone_2_seconds: activity.hr_zone_2_seconds,
+    hr_zone_3_seconds: activity.hr_zone_3_seconds,
+    hr_zone_4_seconds: activity.hr_zone_4_seconds,
+    hr_zone_5_seconds: activity.hr_zone_5_seconds,
   }));
 
   const activityCounts = completedActivities.reduce<Record<string, number>>(
@@ -1281,6 +1311,14 @@ export async function deriveProfileAwareCreationContext(input: {
       category_mix: categoryMix,
     },
     profile_metrics: profileMetrics,
+    profile: {
+      dob: profileResult.data?.[0]?.dob ?? null,
+      gender:
+        profileResult.data?.[0]?.gender === "male" ||
+        profileResult.data?.[0]?.gender === "female"
+          ? profileResult.data[0].gender
+          : null,
+    },
     as_of: input.asOfIso,
   });
 
@@ -1319,6 +1357,15 @@ function buildConfirmedSuggestionsFromContext(input: {
     max_weekly_tss_ramp_pct:
       input.creationInput.defaults?.max_weekly_tss_ramp_pct,
     max_ctl_ramp_per_week: input.creationInput.defaults?.max_ctl_ramp_per_week,
+    learned_ramp_rate:
+      featureFlags.personalizationRampLearning &&
+      input.contextSummary.learned_ramp_rate
+        ? {
+            max_safe_ramp_rate:
+              input.contextSummary.learned_ramp_rate.max_safe_ramp_rate,
+            confidence: input.contextSummary.learned_ramp_rate.confidence,
+          }
+        : undefined,
   });
 
   const suggestionPayload = deriveCreationSuggestions({
@@ -1343,7 +1390,11 @@ function buildConfirmedSuggestionsFromContext(input: {
     constraints: suggestionPayload.constraints,
     optimization_profile: profileDefaults.optimization_profile,
     post_goal_recovery_days: profileDefaults.post_goal_recovery_days,
-    max_weekly_tss_ramp_pct: suggestionPayload.max_weekly_tss_ramp_pct,
+    max_weekly_tss_ramp_pct:
+      featureFlags.personalizationRampLearning &&
+      input.contextSummary.learned_ramp_rate
+        ? profileDefaults.max_weekly_tss_ramp_pct
+        : suggestionPayload.max_weekly_tss_ramp_pct,
     max_ctl_ramp_per_week: suggestionPayload.max_ctl_ramp_per_week,
     projection_control_v2: mergeProjectionControlInput(
       input.creationInput.defaults?.projection_control_v2,
@@ -1915,6 +1966,27 @@ export const trainingPlansRouter = createTRPCRouter({
           buildCreationPreviewSnapshotToken,
           deriveProjectionDrivenConflicts,
           throwPathValidationError,
+          parseTrainingPlanStructure: (value) => {
+            trainingPlanSchema.parse(value);
+          },
+        },
+      });
+    }),
+
+  updateFromCreationConfig: protectedProcedure
+    .input(updateFromCreationConfigRouterInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      return updateFromCreationConfigUseCase({
+        supabase: ctx.supabase,
+        profileId: ctx.session.user.id,
+        params: input,
+        deps: {
+          enforceCreationConfigFeatureEnabled,
+          enforceNoAutonomousPostCreateMutation,
+          evaluateCreationConfig,
+          buildCreationProjectionArtifacts,
+          buildCreationPreviewSnapshotToken,
+          deriveProjectionDrivenConflicts,
           parseTrainingPlanStructure: (value) => {
             trainingPlanSchema.parse(value);
           },

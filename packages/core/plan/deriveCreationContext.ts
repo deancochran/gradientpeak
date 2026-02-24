@@ -2,12 +2,33 @@ import {
   creationContextSummarySchema,
   type CreationContextSummary,
 } from "../schemas/training_plan_structure";
+import { calculateAge } from "../calculations";
+import { getMaxSustainableCTL } from "./calibration-constants";
+import { learnIndividualRampRate } from "./ramp-learning";
+import { calculateRollingTrainingQuality } from "../calculations/training-quality";
 
 export interface CreationCompletedActivitySignal {
   occurred_at: string;
   activity_category?: string | null;
   duration_seconds?: number | null;
   tss?: number | null;
+  power_zone_1_seconds?: number | null;
+  power_zone_2_seconds?: number | null;
+  power_zone_3_seconds?: number | null;
+  power_zone_4_seconds?: number | null;
+  power_zone_5_seconds?: number | null;
+  power_zone_6_seconds?: number | null;
+  power_zone_7_seconds?: number | null;
+  hr_zone_1_seconds?: number | null;
+  hr_zone_2_seconds?: number | null;
+  hr_zone_3_seconds?: number | null;
+  hr_zone_4_seconds?: number | null;
+  hr_zone_5_seconds?: number | null;
+}
+
+export interface CreationProfileSignal {
+  dob?: string | null;
+  gender?: "male" | "female" | null;
 }
 
 export interface CreationEffortSignal {
@@ -35,6 +56,7 @@ export interface DeriveCreationContextInput {
   efforts?: CreationEffortSignal[];
   activity_context?: CreationActivityContextSignal;
   profile_metrics?: CreationProfileMetricsSignal;
+  profile?: CreationProfileSignal;
   as_of?: string;
 }
 
@@ -111,6 +133,12 @@ export function deriveCreationContext(
   const effortCount = recentEfforts.length;
 
   const metrics = input.profile_metrics;
+  const userAge = calculateAge(input.profile?.dob ?? null);
+  const userGender =
+    input.profile?.gender === "male" || input.profile?.gender === "female"
+      ? input.profile.gender
+      : null;
+  const maxSustainableCtl = getMaxSustainableCTL(userAge);
   const presentMetricCount = [
     metrics?.ftp,
     metrics?.threshold_hr,
@@ -251,6 +279,34 @@ export function deriveCreationContext(
     .slice(0, 2)
     .map((item) => item.day);
 
+  const learnedRampRate = learnIndividualRampRate(
+    (input.completed_activities ?? []).map((activity) => ({
+      occurred_at: activity.occurred_at,
+      tss: activity.tss,
+    })),
+  );
+
+  const trainingQuality = calculateRollingTrainingQuality(
+    (input.completed_activities ?? []).map((activity) => ({
+      occurred_at: activity.occurred_at,
+      tss: activity.tss,
+      power_zone_1_seconds: activity.power_zone_1_seconds,
+      power_zone_2_seconds: activity.power_zone_2_seconds,
+      power_zone_3_seconds: activity.power_zone_3_seconds,
+      power_zone_4_seconds: activity.power_zone_4_seconds,
+      power_zone_5_seconds: activity.power_zone_5_seconds,
+      power_zone_6_seconds: activity.power_zone_6_seconds,
+      power_zone_7_seconds: activity.power_zone_7_seconds,
+      hr_zone_1_seconds: activity.hr_zone_1_seconds,
+      hr_zone_2_seconds: activity.hr_zone_2_seconds,
+      hr_zone_3_seconds: activity.hr_zone_3_seconds,
+      hr_zone_4_seconds: activity.hr_zone_4_seconds,
+      hr_zone_5_seconds: activity.hr_zone_5_seconds,
+    })),
+    28,
+    safeAsOf,
+  );
+
   const rationaleCodes = [
     `history_${historyState}`,
     `consistency_${consistencyMarker}`,
@@ -284,6 +340,14 @@ export function deriveCreationContext(
       min: sessionMin,
       max: sessionMax,
     },
+    user_age: userAge,
+    user_gender: userGender,
+    max_sustainable_ctl: maxSustainableCtl,
+    learned_ramp_rate: {
+      max_safe_ramp_rate: learnedRampRate.maxSafeRampRate,
+      confidence: learnedRampRate.confidence,
+    },
+    training_quality: trainingQuality,
     rationale_codes: rationaleCodes,
   });
 }

@@ -97,7 +97,7 @@ export function BoundedNumberInput({
       </Label>
       <View className="flex-row items-center gap-2">
         <Input
-          className="flex-1"
+          className={`flex-1 ${error ? "border-destructive bg-destructive/5" : ""}`}
           aria-labelledby={id}
           value={draftValue}
           onChangeText={handleTextChange}
@@ -130,7 +130,11 @@ export function BoundedNumberInput({
       {helperText ? (
         <Text className="text-xs text-muted-foreground">{helperText}</Text>
       ) : null}
-      {error ? <Text className="text-xs text-destructive">{error}</Text> : null}
+      {error ? (
+        <Text className="text-xs text-destructive">
+          Adjust this field: {error}
+        </Text>
+      ) : null}
     </View>
   );
 }

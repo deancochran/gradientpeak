@@ -676,6 +676,7 @@ export type Database = {
           bio: string | null
           created_at: string
           dob: string | null
+          gender: string | null
           id: string
           idx: number
           language: string | null
@@ -689,6 +690,7 @@ export type Database = {
           bio?: string | null
           created_at?: string
           dob?: string | null
+          gender?: string | null
           id: string
           idx?: number
           language?: string | null
@@ -702,6 +704,7 @@ export type Database = {
           bio?: string | null
           created_at?: string
           dob?: string | null
+          gender?: string | null
           id?: string
           idx?: number
           language?: string | null

@@ -10,6 +10,9 @@ import { TrainingLoadChart } from "@/components/charts/TrainingLoadChart";
 import { PlanAdherenceMiniChart } from "@/components/plan/PlanAdherenceMiniChart";
 import { PlanCapabilityMiniChart } from "@/components/plan/PlanCapabilityMiniChart";
 import { PlanStatusSummaryCard } from "@/components/plan/PlanStatusSummaryCard";
+import { TrainingPlanKpiRow } from "@/components/training-plan/TrainingPlanKpiRow";
+import { QuickAdjustSheet } from "@/components/training-plan/QuickAdjustSheet";
+import { TrainingPlanSummaryHeader } from "@/components/training-plan/TrainingPlanSummaryHeader";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
@@ -18,10 +21,12 @@ import { ROUTES } from "@/lib/constants/routes";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import { trpc } from "@/lib/trpc";
 import { isActivityCompleted } from "@/lib/utils/plan/dateGrouping";
+import { useSmartSuggestions } from "@/lib/hooks/useSmartSuggestions";
+import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { ActivityPayload } from "@repo/core";
 import { format } from "date-fns";
-import { useRouter } from "expo-router";
-import { CalendarDays, Play, Settings } from "lucide-react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { CalendarDays, Pencil, Play, Settings } from "lucide-react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -37,6 +42,9 @@ import { useColorScheme } from "nativewind";
 
 function PlanScreen() {
   const router = useRouter();
+  const searchParams = useLocalSearchParams<{
+    quickAdjust?: string | string[];
+  }>();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === "dark";
 
@@ -48,6 +56,7 @@ function PlanScreen() {
   );
   const [refreshing, setRefreshing] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [showQuickAdjustSheet, setShowQuickAdjustSheet] = useState(false);
   const [scheduleModalDate, setScheduleModalDate] = useState<
     string | undefined
   >();
@@ -56,6 +65,19 @@ function PlanScreen() {
   const [selectedInsightRange, setSelectedInsightRange] = useState<7 | 30 | 90>(
     30,
   );
+
+  const shouldAutoOpenQuickAdjust = useMemo(() => {
+    const quickAdjustParam = searchParams.quickAdjust;
+    const normalized = Array.isArray(quickAdjustParam)
+      ? quickAdjustParam[0]
+      : quickAdjustParam;
+
+    if (!normalized) {
+      return false;
+    }
+
+    return normalized === "1" || normalized.toLowerCase() === "true";
+  }, [searchParams.quickAdjust]);
 
   const todayDate = useMemo(() => new Date(), []);
   const timezone = useMemo(
@@ -85,37 +107,22 @@ function PlanScreen() {
     };
   }, [currentMonth]);
 
-  // Query for training plan
-  const {
-    data: plan,
-    isLoading: loadingPlan,
-    refetch: refetchPlan,
-  } = trpc.trainingPlans.get.useQuery();
-
-  const {
-    data: status,
-    isLoading: loadingStatus,
-    refetch: refetchStatus,
-  } = trpc.trainingPlans.getCurrentStatus.useQuery(undefined, {
-    enabled: !!plan,
+  const snapshot = useTrainingPlanSnapshot({
+    insightWindow,
+    timezone,
   });
 
-  const {
-    data: insightTimeline,
-    isLoading: loadingInsightTimeline,
-    isError: insightTimelineError,
-    refetch: refetchInsightTimeline,
-  } = trpc.trainingPlans.getInsightTimeline.useQuery(
-    {
-      training_plan_id: plan?.id || "",
-      start_date: insightWindow.start_date,
-      end_date: insightWindow.end_date,
-      timezone,
-    },
-    {
-      enabled: !!plan?.id,
-    },
-  );
+  const plan = snapshot.plan;
+  const status = snapshot.status;
+  const insightTimeline = snapshot.insightTimeline;
+  const weeklySummaries = snapshot.weeklySummaries;
+  const actualCurveData = snapshot.actualCurveData;
+  const idealCurveData = snapshot.idealCurveData;
+  const refetchSnapshot = snapshot.refetch;
+  const refetchSnapshotAll = snapshot.refetchAll;
+  const refetchInsightTimeline = snapshot.refetchers.insightTimeline;
+  const loadingInsightTimeline = snapshot.loading.insightTimeline;
+  const insightTimelineError = snapshot.errors.insightTimeline;
 
   // Query for activities in the current month
   const {
@@ -143,41 +150,14 @@ function PlanScreen() {
     },
   );
 
+  const smartSuggestion = useSmartSuggestions({
+    plan,
+    status,
+    weeklySummaries,
+  });
+
   // Calculate date ranges for fitness data
   const today = todayDate;
-  const thirtyDaysAgo = useMemo(() => {
-    const date = new Date(today);
-    date.setDate(today.getDate() - 30);
-    return date;
-  }, [today]);
-  const fourteenDaysAhead = useMemo(() => {
-    const date = new Date(today);
-    date.setDate(today.getDate() + 14);
-    return date;
-  }, [today]);
-
-  // Get actual fitness curve (last 30 days)
-  const { data: actualCurveData, refetch: refetchFitnessHistory } =
-    trpc.trainingPlans.getActualCurve.useQuery(
-      {
-        start_date: thirtyDaysAgo.toISOString().split("T")[0]!,
-        end_date: today.toISOString().split("T")[0]!,
-      },
-      { enabled: !!plan },
-    );
-
-  // Get ideal fitness curve from training plan (if exists)
-  const { data: idealCurveData, refetch: refetchIdealCurve } =
-    trpc.trainingPlans.getIdealCurve.useQuery(
-      {
-        id: plan?.id || "",
-        start_date: thirtyDaysAgo.toISOString().split("T")[0]!,
-        end_date: fourteenDaysAhead.toISOString().split("T")[0]!,
-      },
-      {
-        enabled: !!plan?.id,
-      },
-    );
 
   // Extract data from API responses
   const fitnessHistory = useMemo(
@@ -486,6 +466,25 @@ function PlanScreen() {
     router.push(ROUTES.PLAN.TRAINING_PLAN.INDEX);
   };
 
+  const handleEditStructure = () => {
+    if (!plan?.id) {
+      return;
+    }
+
+    router.push({
+      pathname: ROUTES.PLAN.TRAINING_PLAN.EDIT,
+      params: { id: plan.id },
+    });
+  };
+
+  const handleManagePlan = () => {
+    router.push(ROUTES.PLAN.TRAINING_PLAN.SETTINGS);
+  };
+
+  const handleQuickAdjust = () => {
+    setShowQuickAdjustSheet(true);
+  };
+
   // Calculate plan progress if we have a plan with target date
   // MUST be before any conditional returns to follow React Hooks rules
   const planProgress = useMemo(() => {
@@ -530,40 +529,45 @@ function PlanScreen() {
     };
   }, [plan]);
 
+  const progressSummary = useMemo(() => {
+    if (!planProgress) {
+      return "-";
+    }
+
+    if ("daysRemaining" in planProgress) {
+      return `${planProgress.daysRemaining}d left`;
+    }
+
+    if ("weeksActive" in planProgress) {
+      return `Week ${planProgress.weeksActive}`;
+    }
+
+    return "-";
+  }, [planProgress]);
+
+  const summaryKpis = useMemo(() => {
+    const items = [
+      { label: "Progress", value: progressSummary },
+      { label: "Adherence", value: `${adherenceRate}%` },
+    ];
+
+    if (status) {
+      items.push({ label: "Fitness", value: `${status.ctl} CTL` });
+    }
+
+    return items;
+  }, [progressSummary, adherenceRate, status]);
+
   const handleRefresh = async () => {
     setRefreshing(true);
-    const insightRefresh = plan?.id
-      ? refetchInsightTimeline()
-      : Promise.resolve();
-    await Promise.all([
-      refetchPlan(),
-      refetchStatus(),
-      insightRefresh,
-      refetchActivities(),
-      refetchFitnessHistory(),
-      refetchIdealCurve(),
-    ]);
+    await Promise.all([refetchSnapshotAll(), refetchActivities()]);
     setRefreshing(false);
   };
 
   useFocusEffect(
     useCallback(() => {
-      const insightRefresh = plan?.id
-        ? refetchInsightTimeline()
-        : Promise.resolve();
-      void Promise.all([
-        refetchPlan(),
-        refetchStatus(),
-        insightRefresh,
-        refetchActivities(),
-      ]);
-    }, [
-      plan?.id,
-      refetchPlan,
-      refetchStatus,
-      refetchInsightTimeline,
-      refetchActivities,
-    ]),
+      void Promise.all([refetchSnapshot(), refetchActivities()]);
+    }, [refetchSnapshot, refetchActivities]),
   );
 
   useEffect(() => {
@@ -571,21 +575,45 @@ function PlanScreen() {
       return;
     }
 
-    void Promise.all([
-      refetchStatus(),
-      refetchInsightTimeline(),
-      refetchActivities(),
-    ]);
-  }, [plan?.id, refetchStatus, refetchInsightTimeline, refetchActivities]);
+    void Promise.all([refetchSnapshot(), refetchActivities()]);
+  }, [plan?.id, refetchSnapshot, refetchActivities]);
+
+  useEffect(() => {
+    if (!shouldAutoOpenQuickAdjust) {
+      return;
+    }
+
+    setShowQuickAdjustSheet(true);
+  }, [shouldAutoOpenQuickAdjust]);
 
   // Loading state
-  if (loadingPlan || loadingStatus || loadingAllPlanned) {
+  if (snapshot.isLoadingSharedDependencies || loadingAllPlanned) {
     return (
       <View className="flex-1 bg-background">
         <AppHeader title="Plan" />
         <ScrollView className="flex-1 p-6">
           <PlanCalendarSkeleton />
         </ScrollView>
+      </View>
+    );
+  }
+
+  if (snapshot.hasSharedDependencyError) {
+    return (
+      <View className="flex-1 bg-background">
+        <AppHeader title="Plan" />
+        <View className="flex-1 items-center justify-center px-6 gap-3">
+          <Text className="text-sm text-muted-foreground text-center">
+            Unable to load training plan right now.
+          </Text>
+          <TouchableOpacity
+            onPress={() => void refetchSnapshot()}
+            className="px-4 py-2 rounded-full border border-border bg-card"
+            activeOpacity={0.8}
+          >
+            <Text className="text-sm text-foreground">Retry</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
@@ -610,52 +638,15 @@ function PlanScreen() {
                   className="p-4"
                   activeOpacity={0.7}
                 >
-                  <View className="flex-row items-start justify-between mb-3">
-                    <View className="flex-1">
-                      <Text className="font-semibold text-lg mb-1">
-                        {planProgress.planName}
-                      </Text>
-                      <Text className="text-xs text-muted-foreground">
-                        {plan.is_active ? "Active" : "Paused"} • Started{" "}
-                        {new Date(plan.created_at).toLocaleDateString()}
-                      </Text>
-                    </View>
-                  </View>
+                  <TrainingPlanSummaryHeader
+                    title={planProgress.planName}
+                    isActive={plan.is_active}
+                    createdAt={plan.created_at}
+                    variant="compact"
+                  />
 
-                  {/* Metadata Row */}
-                  <View className="flex-row gap-3 mb-3">
-                    <View className="flex-1 bg-muted/50 rounded-lg p-2.5">
-                      <Text className="text-xs text-muted-foreground mb-0.5">
-                        Progress
-                      </Text>
-                      {"daysRemaining" in planProgress ? (
-                        <Text className="text-sm font-semibold">
-                          {planProgress.daysRemaining}d left
-                        </Text>
-                      ) : "weeksActive" in planProgress ? (
-                        <Text className="text-sm font-semibold">
-                          Week {planProgress.weeksActive}
-                        </Text>
-                      ) : null}
-                    </View>
-                    <View className="flex-1 bg-muted/50 rounded-lg p-2.5">
-                      <Text className="text-xs text-muted-foreground mb-0.5">
-                        Adherence
-                      </Text>
-                      <Text className="text-sm font-semibold">
-                        {adherenceRate}%
-                      </Text>
-                    </View>
-                    {status && (
-                      <View className="flex-1 bg-muted/50 rounded-lg p-2.5">
-                        <Text className="text-xs text-muted-foreground mb-0.5">
-                          Fitness
-                        </Text>
-                        <Text className="text-sm font-semibold">
-                          {status.ctl} CTL
-                        </Text>
-                      </View>
-                    )}
+                  <View className="mb-3">
+                    <TrainingPlanKpiRow items={summaryKpis} variant="compact" />
                   </View>
 
                   {/* Progress Bar */}
@@ -684,9 +675,7 @@ function PlanScreen() {
                       />
                       {!idealCurveData && (
                         <TouchableOpacity
-                          onPress={() =>
-                            router.push(ROUTES.PLAN.TRAINING_PLAN.SETTINGS)
-                          }
+                          onPress={handleEditStructure}
                           className="mt-2 bg-orange-500/10 border border-orange-500/30 rounded-lg p-3"
                           activeOpacity={0.7}
                         >
@@ -703,9 +692,21 @@ function PlanScreen() {
                 {/* Action Buttons Row */}
                 <View className="flex-row border-t border-border">
                   <TouchableOpacity
-                    onPress={() =>
-                      router.push(ROUTES.PLAN.TRAINING_PLAN.SETTINGS)
-                    }
+                    onPress={handleEditStructure}
+                    className="flex-1 flex-row items-center justify-center py-3 border-r border-border"
+                    activeOpacity={0.7}
+                  >
+                    <Icon
+                      as={Pencil}
+                      size={16}
+                      className="text-primary mr-1.5"
+                    />
+                    <Text className="text-xs font-medium text-primary">
+                      Edit Structure
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleManagePlan}
                     className="flex-1 flex-row items-center justify-center py-3"
                     activeOpacity={0.7}
                   >
@@ -715,7 +716,7 @@ function PlanScreen() {
                       className="text-primary mr-1.5"
                     />
                     <Text className="text-xs font-medium text-primary">
-                      Settings
+                      Manage Plan
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -851,14 +852,12 @@ function PlanScreen() {
 
               <View className="flex-row gap-2">
                 <TouchableOpacity
-                  onPress={() =>
-                    router.push(ROUTES.PLAN.TRAINING_PLAN.SETTINGS)
-                  }
+                  onPress={handleQuickAdjust}
                   className="flex-1 bg-muted rounded-lg py-2.5 items-center"
                   activeOpacity={0.8}
                 >
                   <Text className="text-sm text-muted-foreground font-medium">
-                    Adjust Plan
+                    Quick Adjust
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -1039,6 +1038,13 @@ function PlanScreen() {
           onSuccess={handleRefresh}
         />
       )}
+
+      <QuickAdjustSheet
+        visible={showQuickAdjustSheet}
+        onClose={() => setShowQuickAdjustSheet(false)}
+        plan={plan}
+        smartSuggestion={smartSuggestion}
+      />
 
       {/* Training Status Detail Modal */}
       <DetailChartModal

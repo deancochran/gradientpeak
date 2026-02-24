@@ -6,6 +6,7 @@ import {
   type TrainingPlanConfigFormData,
   type TrainingPlanFormData,
 } from "../SinglePageForm";
+import { validateTrainingPlanForm } from "@/lib/training-plan-form/validation";
 
 vi.mock("react-native", () => ({
   Modal: (props: any) => React.createElement("Modal", props, props.children),
@@ -255,6 +256,49 @@ const baseConfigData = {
 } as unknown as TrainingPlanConfigFormData;
 
 describe("SinglePageForm blocker surfacing", () => {
+  it("shows tab-level issue hints before submit", () => {
+    let renderer: ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        <SinglePageForm
+          formData={baseFormData}
+          onFormDataChange={vi.fn()}
+          configData={baseConfigData}
+          onConfigChange={vi.fn()}
+          errors={validateTrainingPlanForm(baseFormData)}
+        />,
+      );
+    });
+
+    const textNodes = findMockNodes(renderer!, "Text");
+    const allText = textNodes
+      .map((node: any) => getNodeText(node.props.children))
+      .join("\n");
+
+    expect(allText).toContain("Needs attention: Goals");
+  });
+
+  it("applies invalid field styling when RHF errors are present", () => {
+    let renderer: ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        <SinglePageForm
+          formData={baseFormData}
+          onFormDataChange={vi.fn()}
+          configData={baseConfigData}
+          onConfigChange={vi.fn()}
+          errors={{ "goals.0.name": "Goal name is required" }}
+        />,
+      );
+    });
+
+    const goalNameInput = findMockNodes(renderer!, "Input").find(
+      (node: any) => node.props["aria-label"] === "Goal name",
+    );
+
+    expect(goalNameInput?.props.className).toContain("border-destructive");
+  });
+
   it("marks projection controls as user-owned when edited", () => {
     const handleConfigChange = vi.fn();
     let renderer: ReactTestRenderer;

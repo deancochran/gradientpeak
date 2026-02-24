@@ -8,6 +8,8 @@ export const trainingPlansCreationRouter = createTRPCRouter({
     trainingPlansBaseRouter._def.procedures.previewCreationConfig,
   createFromCreationConfig:
     trainingPlansBaseRouter._def.procedures.createFromCreationConfig,
+  updateFromCreationConfig:
+    trainingPlansBaseRouter._def.procedures.updateFromCreationConfig,
   createFromMinimalGoal:
     trainingPlansBaseRouter._def.procedures.createFromMinimalGoal,
   getFeasibilityPreview:

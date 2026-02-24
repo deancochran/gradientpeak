@@ -58,6 +58,7 @@ create table public.profiles (
     id uuid primary key references auth.users(id) on delete cascade,
     idx serial unique,
     dob date,
+    gender text check (gender in ('male', 'female')),
     username text unique,
     language text default 'en',
     preferred_units text default 'metric',

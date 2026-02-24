@@ -1,4 +1,12 @@
 import type { PublicProfilesRow } from "@repo/supabase";
+import {
+  getAgeAdjustedCTLTimeConstant,
+  getPersonalizedATLTimeConstant,
+} from "./plan/calibration-constants";
+import {
+  getIntensityAdjustedATLTimeConstant,
+  type TrainingQualityProfile,
+} from "./calculations/training-quality";
 
 export type PublicActivityMetric = string;
 export type PublicActivityMetricDataType = "float" | "latlng" | "boolean";
@@ -1006,36 +1014,46 @@ export function formatDurationCompactMs(milliseconds: number): string {
 // =======================
 
 /**
- * Time constants for training load calculations
- * CTL (Chronic Training Load / Fitness) - 42 day time constant
- * ATL (Acute Training Load / Fatigue) - 7 day time constant
- */
-const CTL_TIME_CONSTANT = 42;
-const ATL_TIME_CONSTANT = 7;
-
-/**
  * Calculate Chronic Training Load (CTL) - Long-term fitness
- * Uses exponential weighted moving average with 42-day time constant
+ * Uses exponential weighted moving average with age-adjusted time constant
  *
  * @param previousCTL - Previous day's CTL value
  * @param todayTSS - Today's Training Stress Score
+ * @param userAge - Optional user age for age-adjusted time constants
  * @returns New CTL value
  */
-export function calculateCTL(previousCTL: number, todayTSS: number): number {
-  const alpha = 2 / (CTL_TIME_CONSTANT + 1);
+export function calculateCTL(
+  previousCTL: number,
+  todayTSS: number,
+  userAge?: number,
+): number {
+  const timeConstant = getAgeAdjustedCTLTimeConstant(userAge);
+  const alpha = 2 / (timeConstant + 1);
   return previousCTL + alpha * (todayTSS - previousCTL);
 }
 
 /**
  * Calculate Acute Training Load (ATL) - Short-term fatigue
- * Uses exponential weighted moving average with 7-day time constant
+ * Uses exponential weighted moving average with age-adjusted time constant
  *
  * @param previousATL - Previous day's ATL value
  * @param todayTSS - Today's Training Stress Score
+ * @param userAge - Optional user age for age-adjusted time constants
  * @returns New ATL value
  */
-export function calculateATL(previousATL: number, todayTSS: number): number {
-  const alpha = 2 / (ATL_TIME_CONSTANT + 1);
+export function calculateATL(
+  previousATL: number,
+  todayTSS: number,
+  userAge?: number,
+  userGender?: "male" | "female" | null,
+  trainingQuality?: TrainingQualityProfile,
+): number {
+  const baseTimeConstant = getPersonalizedATLTimeConstant(userAge, userGender);
+  const timeConstant = getIntensityAdjustedATLTimeConstant(
+    baseTimeConstant,
+    trainingQuality,
+  );
+  const alpha = 2 / (timeConstant + 1);
   return previousATL + alpha * (todayTSS - previousATL);
 }
 
@@ -1066,6 +1084,9 @@ export function calculateTrainingLoadSeries(
   dailyTSS: number[],
   initialCTL = 0,
   initialATL = 0,
+  userAge?: number,
+  userGender?: "male" | "female" | null,
+  trainingQuality?: TrainingQualityProfile,
 ): Array<{ date: number; tss: number; ctl: number; atl: number; tsb: number }> {
   const results: Array<{
     date: number;
@@ -1079,8 +1100,14 @@ export function calculateTrainingLoadSeries(
   let currentATL = initialATL;
 
   dailyTSS.forEach((tss, index) => {
-    currentCTL = calculateCTL(currentCTL, tss);
-    currentATL = calculateATL(currentATL, tss);
+    currentCTL = calculateCTL(currentCTL, tss, userAge);
+    currentATL = calculateATL(
+      currentATL,
+      tss,
+      userAge,
+      userGender,
+      trainingQuality,
+    );
     const tsb = calculateTSB(currentCTL, currentATL);
 
     results.push({
@@ -1376,7 +1403,7 @@ export function calculateTargetDailyTSS(
   // This gives a reasonable estimate for planning
   const ctlGap = targetCTL - currentCTL;
   const dailyIncrease = ctlGap / daysToTarget;
-  const alpha = 2 / (CTL_TIME_CONSTANT + 1);
+  const alpha = 2 / (getAgeAdjustedCTLTimeConstant(undefined) + 1);
 
   return currentCTL + dailyIncrease / alpha;
 }

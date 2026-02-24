@@ -36,3 +36,4 @@ export * from "./scoring/gdi";
 export * from "./projectionTypes";
 export * from "./resolveConstraintConflicts";
 export * from "./trainingPlanPreview";
+export * from "./ramp-learning";

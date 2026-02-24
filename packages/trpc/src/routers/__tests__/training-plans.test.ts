@@ -749,6 +749,97 @@ describe("trainingPlansRouter plan_start_date support", () => {
     });
   });
 
+  it("updates an existing plan via updateFromCreationConfig while preserving id", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "11111111-1111-4111-8111-111111111111",
+          name: "Existing Plan",
+          description: null,
+          structure: {
+            id: "11111111-1111-4111-8111-111111111111",
+          },
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const input = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [nonBlockingGoal],
+      },
+      creation_input: {},
+    };
+
+    const preview = await caller.previewCreationConfig(input);
+    const updated = await caller.updateFromCreationConfig({
+      ...input,
+      plan_id: "11111111-1111-4111-8111-111111111111",
+      preview_snapshot_token: preview.preview_snapshot.token,
+    });
+
+    expect(updated.id).toBe("11111111-1111-4111-8111-111111111111");
+    expect(updated.creation_summary.conflicts.is_blocking).toBe(false);
+  });
+
+  it("rejects updateFromCreationConfig when blocking conflicts are unresolved", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "11111111-1111-4111-8111-111111111111",
+          name: "Existing Plan",
+          description: null,
+          structure: {
+            id: "11111111-1111-4111-8111-111111111111",
+          },
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    await expect(
+      caller.updateFromCreationConfig({
+        plan_id: "11111111-1111-4111-8111-111111111111",
+        minimal_plan: {
+          plan_start_date: "2026-01-05",
+          goals: [
+            {
+              ...minimalGoal,
+              name: "Goal A",
+              target_date: "2026-03-15",
+            },
+            {
+              ...minimalGoal,
+              name: "Goal B",
+              target_date: "2026-03-24",
+            },
+          ],
+        },
+        creation_input: {
+          user_values: {
+            post_goal_recovery_days: 14,
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining(
+        "Creation blocked by unresolved conflicts",
+      ),
+    });
+  });
+
   it("surfaces cap-pressure reasons only when ramps actually bind near configured caps", async () => {
     const caller = createTrainingPlansCaller({
       activities: { data: [], error: null },

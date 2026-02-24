@@ -13,11 +13,13 @@ describe("training-plan form validation", () => {
       planStartDate: "2026-02-14",
       goals: [
         {
+          id: "goal-1",
           name: "Spring race",
           targetDate: "2026-06-01",
           priority: 1,
           targets: [
             {
+              id: "target-1",
               targetType: "race_performance",
               activityCategory: "run",
               distanceKm: "21.1",
@@ -36,11 +38,13 @@ describe("training-plan form validation", () => {
       planStartDate: "bad-date",
       goals: [
         {
+          id: "goal-1",
           name: "",
           targetDate: "2020-01-01",
           priority: 20,
           targets: [
             {
+              id: "target-1",
               targetType: "pace_threshold",
               paceMmSs: "4:99",
               testDurationHms: "20:00",

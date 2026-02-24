@@ -17,13 +17,8 @@ export const ROUTES = {
     TRAINING_PLAN: {
       INDEX: "/training-plan" as const,
       CREATE: "/training-plan-create" as const,
-      METHOD_SELECTOR: "/training-plan-method-selector" as const,
-      WIZARD: "/training-plan-wizard" as const,
-      REVIEW: "/training-plan-review" as const,
       SETTINGS: "/training-plan-settings" as const,
-      // Deprecated: use ROUTES.LIBRARY_WITH_RESOURCE("training_plans") instead.
-      LIST: "/training-plans-list" as const,
-      ADJUST: "/training-plan-adjust" as const,
+      EDIT: "/training-plan-edit" as const,
     },
 
     // Create Activity Plan Routes

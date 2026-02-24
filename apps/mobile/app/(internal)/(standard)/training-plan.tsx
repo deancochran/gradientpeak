@@ -1,4 +1,6 @@
 import { UpcomingActivitiesCard } from "@/components/training-plan/UpcomingActivitiesCard";
+import { TrainingPlanKpiRow } from "@/components/training-plan/TrainingPlanKpiRow";
+import { TrainingPlanSummaryHeader } from "@/components/training-plan/TrainingPlanSummaryHeader";
 import { WeeklyProgressCard } from "@/components/training-plan/WeeklyProgressCard";
 import { PlanVsActualChart } from "@/components/charts/PlanVsActualChart";
 import { Button } from "@/components/ui/button";
@@ -6,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { ROUTES } from "@/lib/constants/routes";
+import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { trpc } from "@/lib/trpc";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import {
@@ -33,69 +36,19 @@ export default function TrainingPlanOverview() {
     nextStep?: string;
   }>();
 
-  // Get training plan - if ID is provided, get specific plan, otherwise get active plan
-  const { data: plan, isLoading: loadingPlan } =
-    trpc.trainingPlans.get.useQuery(id ? { id } : undefined);
+  const snapshot = useTrainingPlanSnapshot({
+    planId: id,
+    includeWeeklySummaries: false,
+    curveWindow: "overview",
+  });
 
-  // Get current status (CTL/ATL/TSB)
-  const { data: status, isLoading: loadingStatus } =
-    trpc.trainingPlans.getCurrentStatus.useQuery(undefined, {
-      enabled: !!plan,
-    });
+  const plan = snapshot.plan;
+  const status = snapshot.status;
+  const loadingPlan = snapshot.isLoadingSharedDependencies;
 
-  // Calculate date ranges for fitness data
   const today = useMemo(() => new Date(), []);
-
-  // For the actual curve, get data from plan start (or 90 days ago, whichever is earlier)
-  const actualStartDate = useMemo(() => {
-    if (!plan) {
-      const date = new Date(today);
-      date.setDate(today.getDate() - 90);
-      return date;
-    }
-    const planStart = new Date(plan.created_at);
-    const ninetyDaysAgo = new Date(today);
-    ninetyDaysAgo.setDate(today.getDate() - 90);
-    return planStart < ninetyDaysAgo ? planStart : ninetyDaysAgo;
-  }, [plan, today]);
-
-  // For the ideal curve, get the target date from periodization or default to 90 days ahead
-  const idealEndDate = useMemo(() => {
-    if (!plan) {
-      const date = new Date(today);
-      date.setDate(today.getDate() + 90);
-      return date;
-    }
-    const structure = plan.structure as any;
-    const targetDate = structure?.periodization_template?.target_date;
-    if (targetDate) {
-      return new Date(targetDate);
-    }
-    const date = new Date(today);
-    date.setDate(today.getDate() + 90);
-    return date;
-  }, [plan, today]);
-
-  // Get actual fitness curve (from plan start to today)
-  const { data: actualCurveData } = trpc.trainingPlans.getActualCurve.useQuery(
-    {
-      start_date: actualStartDate.toISOString().split("T")[0]!,
-      end_date: today.toISOString().split("T")[0]!,
-    },
-    { enabled: !!plan },
-  );
-
-  // Get ideal fitness curve from training plan (from plan start to target date)
-  const { data: idealCurveData } = trpc.trainingPlans.getIdealCurve.useQuery(
-    {
-      id: plan?.id || "",
-      start_date: actualStartDate.toISOString().split("T")[0]!,
-      end_date: idealEndDate.toISOString().split("T")[0]!,
-    },
-    {
-      enabled: !!plan?.id,
-    },
-  );
+  const actualCurveData = snapshot.actualCurveData;
+  const idealCurveData = snapshot.idealCurveData;
 
   // Extract data from API responses
   const fitnessHistory = useMemo(
@@ -127,15 +80,23 @@ export default function TrainingPlanOverview() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([
-      utils.trainingPlans.get.invalidate(),
-      utils.trainingPlans.getCurrentStatus.invalidate(),
-    ]);
+    await snapshot.refetchAll();
     setRefreshing(false);
   };
 
   const handleCreatePlan = () => {
     router.push(ROUTES.PLAN.TRAINING_PLAN.CREATE);
+  };
+
+  const handleEditStructure = () => {
+    if (!plan) {
+      return;
+    }
+
+    router.push({
+      pathname: ROUTES.PLAN.TRAINING_PLAN.EDIT,
+      params: { id: plan.id },
+    });
   };
 
   React.useEffect(() => {
@@ -163,6 +124,25 @@ export default function TrainingPlanOverview() {
     };
   }, [plan]);
 
+  const summaryKpis = useMemo(() => {
+    const completedActivities = status?.weekProgress?.completedActivities || 0;
+    const totalActivities = status?.weekProgress?.totalPlannedActivities || 0;
+
+    const items = [
+      { label: "Week Progress", value: planProgress.week },
+      {
+        label: "Adherence",
+        value: `${completedActivities}/${totalActivities}`,
+      },
+    ];
+
+    if (status) {
+      items.push({ label: "Fitness", value: `${status.ctl} CTL` });
+    }
+
+    return items;
+  }, [planProgress.week, status]);
+
   // Loading state
   if (loadingPlan) {
     return (
@@ -171,6 +151,23 @@ export default function TrainingPlanOverview() {
         <Text className="text-muted-foreground mt-4">
           Loading training plan...
         </Text>
+      </View>
+    );
+  }
+
+  if (snapshot.hasSharedDependencyError) {
+    return (
+      <View className="flex-1 bg-background items-center justify-center px-6 gap-3">
+        <Text className="text-muted-foreground text-center">
+          Unable to load training plan right now.
+        </Text>
+        <TouchableOpacity
+          onPress={() => void snapshot.refetch()}
+          className="px-4 py-2 rounded-full border border-border bg-card"
+          activeOpacity={0.8}
+        >
+          <Text className="text-foreground">Retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -293,78 +290,37 @@ export default function TrainingPlanOverview() {
                   Refine Plan
                 </Text>
                 <Text className="text-xs text-muted-foreground mt-1">
-                  Your plan is ready. Open plan settings any time to adjust
-                  constraints, targets, and details.
+                  Your plan is ready. Open edit to adjust constraints and
+                  targets, or settings for basic details.
                 </Text>
               </CardContent>
             </Card>
           )}
 
-          <View className="flex-row items-start justify-between mb-3">
-            <View className="flex-1">
-              <Text className="text-2xl font-bold mb-2">{plan.name}</Text>
-              {plan.description && (
-                <Text className="text-base text-muted-foreground mb-3">
-                  {plan.description}
-                </Text>
-              )}
-
-              {/* High-level Plan Info */}
-              <View className="flex-row items-center gap-4 mb-2">
-                <View className="flex-row items-center gap-1.5">
-                  <View
-                    className={`w-2 h-2 rounded-full ${plan.is_active ? "bg-green-500" : "bg-orange-500"}`}
-                  />
-                  <Text className="text-sm text-muted-foreground">
-                    {plan.is_active ? "Active" : "Inactive"}
-                  </Text>
+          <TrainingPlanSummaryHeader
+            title={plan.name}
+            description={plan.description || undefined}
+            isActive={plan.is_active}
+            inactiveLabel="Inactive"
+            createdAt={plan.created_at}
+            showStatusDot
+            formatStartedDate={(date) =>
+              date.toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })
+            }
+            rightAccessory={
+              <TouchableOpacity onPress={handleEditStructure} className="ml-3">
+                <View className="bg-primary/10 rounded-full p-2">
+                  <Icon as={ChevronRight} size={24} className="text-primary" />
                 </View>
-                <Text className="text-sm text-muted-foreground">
-                  Started{" "}
-                  {new Date(plan.created_at).toLocaleDateString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  })}
-                </Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              onPress={() => router.push(ROUTES.PLAN.TRAINING_PLAN.SETTINGS)}
-              className="ml-3"
-            >
-              <View className="bg-primary/10 rounded-full p-2">
-                <Icon as={ChevronRight} size={24} className="text-primary" />
-              </View>
-            </TouchableOpacity>
-          </View>
+              </TouchableOpacity>
+            }
+          />
 
-          {/* Quick Stats Row */}
-          <View className="flex-row gap-3">
-            <View className="flex-1 bg-card border border-border rounded-lg p-3">
-              <Text className="text-xs text-muted-foreground mb-1">
-                Week Progress
-              </Text>
-              <Text className="text-lg font-bold">{planProgress.week}</Text>
-            </View>
-            <View className="flex-1 bg-card border border-border rounded-lg p-3">
-              <Text className="text-xs text-muted-foreground mb-1">
-                Adherence
-              </Text>
-              <Text className="text-lg font-bold">
-                {status?.weekProgress?.completedActivities || 0}/
-                {status?.weekProgress?.totalPlannedActivities || 0}
-              </Text>
-            </View>
-            {status && (
-              <View className="flex-1 bg-card border border-border rounded-lg p-3">
-                <Text className="text-xs text-muted-foreground mb-1">
-                  Fitness
-                </Text>
-                <Text className="text-lg font-bold">{status.ctl} CTL</Text>
-              </View>
-            )}
-          </View>
+          <TrainingPlanKpiRow items={summaryKpis} />
         </View>
 
         {/* Fitness Progress Chart - Plan vs Actual */}
@@ -586,6 +542,15 @@ export default function TrainingPlanOverview() {
                       </View>
                     </>
                   )}
+                  <View className="h-px bg-border" />
+                  <TouchableOpacity
+                    onPress={handleEditStructure}
+                    className="pt-1"
+                  >
+                    <Text className="text-sm font-semibold text-primary">
+                      Edit structure in composer
+                    </Text>
+                  </TouchableOpacity>
                 </>
               )}
             </View>
