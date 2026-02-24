@@ -1,10 +1,10 @@
 import {
-  CREATION_MAX_CTL_RAMP_PER_WEEK,
-  CREATION_MAX_WEEKLY_TSS_RAMP_PCT,
   creationAvailabilityConfigSchema,
+  creationBehaviorControlsV1Schema,
   creationConstraintsSchema,
   creationProvenanceSchema,
   creationRecentInfluenceActionEnum,
+  type CreationBehaviorControlsV1,
   type CreationConfigLocks,
   type CreationContextSummary,
   type CreationProvenance,
@@ -34,8 +34,7 @@ export interface DeriveCreationSuggestionsInput {
       max_single_session_duration_minutes: number;
       goal_difficulty_preference: "conservative" | "balanced" | "stretch";
     }>;
-    max_weekly_tss_ramp_pct?: number;
-    max_ctl_ramp_per_week?: number;
+    behavior_controls_v1?: Partial<CreationBehaviorControlsV1>;
   };
   locks?: Partial<CreationConfigLocks>;
   now_iso?: string;
@@ -50,8 +49,7 @@ export interface CreationSuggestions {
   recent_influence_action: "accepted" | "edited" | "disabled";
   recent_influence_provenance: CreationProvenance;
   constraints: ReturnType<typeof creationConstraintsSchema.parse>;
-  max_weekly_tss_ramp_pct: number;
-  max_ctl_ramp_per_week: number;
+  behavior_controls_v1: CreationBehaviorControlsV1;
   locked_conflicts: string[];
 }
 
@@ -131,10 +129,10 @@ function markerToScore(marker: "low" | "moderate" | "high"): number {
   return 0.2;
 }
 
-function deriveRampCapSuggestions(input: {
+function deriveBehaviorControlSuggestions(input: {
   context: CreationContextSummary;
   profileMode: "no_data" | "rich_data" | "mixed";
-}): { maxWeeklyTssRampPct: number; maxCtlRampPerWeek: number } {
+}): CreationBehaviorControlsV1 {
   const { context, profileMode } = input;
   const sessionsRange = context.recommended_sessions_per_week_range;
   const sessionsMidpoint = (sessionsRange.min + sessionsRange.max) / 2;
@@ -166,28 +164,39 @@ function deriveRampCapSuggestions(input: {
     profileMode === "no_data" ? 0.9 : profileMode === "rich_data" ? 1.1 : 1;
   const certaintyMultiplier = 0.9 + rangeCertaintyScore * 0.18;
 
-  const maxWeeklyTssRampPct = Number(
-    clamp(
-      (3.5 + aggressivenessScore * 5.8) *
-        profileMultiplier *
-        certaintyMultiplier,
-      0,
-      CREATION_MAX_WEEKLY_TSS_RAMP_PCT,
-    ).toFixed(2),
+  const aggressiveSignal = clamp(
+    aggressivenessScore * profileMultiplier * certaintyMultiplier,
+    0,
+    1,
   );
+  const stabilitySignal = clamp(1 - aggressiveSignal * 0.75, 0, 1);
 
-  const maxCtlRampPerWeek = Number(
-    clamp(
-      (1 + aggressivenessScore * 3.2) * profileMultiplier * certaintyMultiplier,
-      0,
-      CREATION_MAX_CTL_RAMP_PER_WEEK,
-    ).toFixed(2),
-  );
-
-  return {
-    maxWeeklyTssRampPct,
-    maxCtlRampPerWeek,
-  };
+  return creationBehaviorControlsV1Schema.parse({
+    aggressiveness: Number(aggressiveSignal.toFixed(3)),
+    variability: Number((1 - stabilitySignal * 0.7).toFixed(3)),
+    spike_frequency: Number((0.15 + aggressiveSignal * 0.7).toFixed(3)),
+    shape_target: Number(
+      (profileMode === "rich_data"
+        ? 0.2
+        : profileMode === "no_data"
+          ? -0.1
+          : 0
+      ).toFixed(3),
+    ),
+    shape_strength: Number((0.25 + aggressiveSignal * 0.5).toFixed(3)),
+    recovery_priority: Number((0.75 - aggressiveSignal * 0.35).toFixed(3)),
+    starting_fitness_confidence: Number(
+      clamp(
+        profileMode === "rich_data"
+          ? 0.78
+          : profileMode === "mixed"
+            ? 0.62
+            : 0.45,
+        0,
+        1,
+      ).toFixed(3),
+    ),
+  });
 }
 
 /**
@@ -221,7 +230,7 @@ export function deriveCreationSuggestions(
         ? Math.max(context.signal_quality, 0.75)
         : clamp(context.signal_quality, 0.4, 0.75);
 
-  const rampCapSuggestions = deriveRampCapSuggestions({
+  const behaviorControlSuggestions = deriveBehaviorControlSuggestions({
     context,
     profileMode,
   });
@@ -326,22 +335,15 @@ export function deriveCreationSuggestions(
     }
   }
 
-  if (
-    locks?.max_weekly_tss_ramp_pct?.locked &&
-    input.existing_values?.max_weekly_tss_ramp_pct !== undefined &&
-    input.existing_values.max_weekly_tss_ramp_pct !==
-      rampCapSuggestions.maxWeeklyTssRampPct
-  ) {
-    conflicts.push("max_weekly_tss_ramp_pct_locked_differs_from_suggestion");
-  }
-
-  if (
-    locks?.max_ctl_ramp_per_week?.locked &&
-    input.existing_values?.max_ctl_ramp_per_week !== undefined &&
-    input.existing_values.max_ctl_ramp_per_week !==
-      rampCapSuggestions.maxCtlRampPerWeek
-  ) {
-    conflicts.push("max_ctl_ramp_per_week_locked_differs_from_suggestion");
+  if (locks?.behavior_controls_v1?.locked) {
+    const existingBehavior = input.existing_values?.behavior_controls_v1;
+    if (
+      existingBehavior !== undefined &&
+      JSON.stringify(existingBehavior) !==
+        JSON.stringify(behaviorControlSuggestions)
+    ) {
+      conflicts.push("behavior_controls_v1_locked_differs_from_suggestion");
+    }
   }
 
   return {
@@ -362,8 +364,7 @@ export function deriveCreationSuggestions(
       context.rationale_codes,
     ),
     constraints: normalizedConstraintsSuggestion,
-    max_weekly_tss_ramp_pct: rampCapSuggestions.maxWeeklyTssRampPct,
-    max_ctl_ramp_per_week: rampCapSuggestions.maxCtlRampPerWeek,
+    behavior_controls_v1: behaviorControlSuggestions,
     locked_conflicts: conflicts,
   };
 }

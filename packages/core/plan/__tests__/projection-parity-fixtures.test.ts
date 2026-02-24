@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { buildProjectionEngineInput, deterministicUuidFromSeed } from "../..";
 import { buildDeterministicProjectionPayload } from "../projection/engine";
 
 describe("projection parity fixtures", () => {
@@ -46,6 +47,11 @@ describe("projection parity fixtures", () => {
         post_goal_recovery_days: 5,
         max_weekly_tss_ramp_pct: 7,
         max_ctl_ramp_per_week: 3,
+        learned_ramp_rate: {
+          max_safe_ramp_rate: 40,
+          confidence: "low",
+          source: "default",
+        },
       },
       tss_ramp_clamp_weeks: 0,
       ctl_ramp_clamp_weeks: 0,
@@ -283,4 +289,277 @@ describe("projection parity fixtures", () => {
     expect(conservative.first_weeks).toEqual(balanced.first_weeks);
     expect(aggressive.first_weeks).toEqual(balanced.first_weeks);
   });
+
+  it("keeps local-preview and server recompute payload assembly in parity for low/sparse/rich/no-history fixtures", () => {
+    const fixtures: Array<{
+      key: "low" | "sparse" | "rich" | "no-history";
+      input: any;
+    }> = [
+      {
+        key: "low",
+        input: {
+          expanded_plan: {
+            start_date: "2026-01-05",
+            end_date: "2026-03-15",
+            blocks: [
+              {
+                name: "Base",
+                phase: "base",
+                start_date: "2026-01-05",
+                end_date: "2026-03-15",
+                target_weekly_tss_range: { min: 150, max: 190 },
+              },
+            ],
+            goals: [
+              {
+                id: "goal-low",
+                name: "Low fixture goal",
+                target_date: "2026-03-15",
+                priority: 1,
+              },
+            ],
+          },
+          starting_ctl: 16,
+          starting_atl: 19,
+          normalized_creation_config: {
+            optimization_profile: "sustainable",
+            post_goal_recovery_days: 7,
+            behavior_controls_v1: {
+              aggressiveness: 0.2,
+              variability: 0.25,
+              spike_frequency: 0.15,
+              shape_target: -0.2,
+              shape_strength: 0.25,
+              recovery_priority: 0.85,
+              starting_fitness_confidence: 0.45,
+            },
+          },
+        },
+      },
+      {
+        key: "sparse",
+        input: {
+          expanded_plan: {
+            start_date: "2026-01-05",
+            end_date: "2026-04-05",
+            blocks: [
+              {
+                name: "Build",
+                phase: "build",
+                start_date: "2026-01-05",
+                end_date: "2026-04-05",
+                target_weekly_tss_range: { min: 210, max: 260 },
+              },
+            ],
+            goals: [
+              {
+                id: "goal-sparse",
+                name: "Sparse fixture goal",
+                target_date: "2026-04-05",
+                priority: 1,
+              },
+            ],
+          },
+          starting_ctl: 33,
+          starting_atl: 36,
+          normalized_creation_config: {
+            optimization_profile: "balanced",
+            post_goal_recovery_days: 5,
+            behavior_controls_v1: {
+              aggressiveness: 0.45,
+              variability: 0.45,
+              spike_frequency: 0.35,
+              shape_target: 0,
+              shape_strength: 0.35,
+              recovery_priority: 0.6,
+              starting_fitness_confidence: 0.6,
+            },
+          },
+        },
+      },
+      {
+        key: "rich",
+        input: {
+          expanded_plan: {
+            start_date: "2026-01-05",
+            end_date: "2026-05-03",
+            blocks: [
+              {
+                name: "Build",
+                phase: "build",
+                start_date: "2026-01-05",
+                end_date: "2026-05-03",
+                target_weekly_tss_range: { min: 260, max: 340 },
+              },
+            ],
+            goals: [
+              {
+                id: "goal-rich",
+                name: "Rich fixture goal",
+                target_date: "2026-05-03",
+                priority: 1,
+              },
+            ],
+          },
+          starting_ctl: 58,
+          starting_atl: 62,
+          normalized_creation_config: {
+            optimization_profile: "outcome_first",
+            post_goal_recovery_days: 3,
+            behavior_controls_v1: {
+              aggressiveness: 0.8,
+              variability: 0.75,
+              spike_frequency: 0.75,
+              shape_target: 0.25,
+              shape_strength: 0.8,
+              recovery_priority: 0.25,
+              starting_fitness_confidence: 0.8,
+            },
+          },
+        },
+      },
+      {
+        key: "no-history",
+        input: {
+          expanded_plan: {
+            start_date: "2026-01-05",
+            end_date: "2026-09-06",
+            blocks: [
+              {
+                name: "Build",
+                phase: "build",
+                start_date: "2026-01-05",
+                end_date: "2026-09-06",
+                target_weekly_tss_range: { min: 220, max: 280 },
+              },
+            ],
+            goals: [
+              {
+                id: "goal-none",
+                name: "No history fixture goal",
+                target_date: "2026-09-06",
+                priority: 1,
+                targets: [
+                  {
+                    target_type: "race_performance",
+                    distance_m: 42195,
+                    target_time_s: 11100,
+                    activity_category: "run",
+                  },
+                ],
+              },
+            ],
+          },
+          no_history_context: {
+            history_availability_state: "none",
+            goal_tier: "medium",
+            weeks_to_event: 35,
+          },
+          normalized_creation_config: {
+            optimization_profile: "balanced",
+            post_goal_recovery_days: 5,
+            behavior_controls_v1: {
+              aggressiveness: 0.45,
+              variability: 0.45,
+              spike_frequency: 0.35,
+              shape_target: 0,
+              shape_strength: 0.35,
+              recovery_priority: 0.6,
+              starting_fitness_confidence: 0.6,
+            },
+          },
+        },
+      },
+    ];
+
+    for (const fixture of fixtures) {
+      const localPath = buildLocalPreviewPathLike(fixture.input);
+      const serverPath = buildServerRecomputePathLike(fixture.input);
+      const tolerance = 0.05;
+
+      const localDates = localPath.points.map((point) => point.date);
+      expect(localDates).toEqual(
+        [...localDates].sort((a, b) => a.localeCompare(b)),
+      );
+      expect(serverPath.points.map((point) => point.date)).toEqual(localDates);
+
+      for (let i = 0; i < localPath.points.length; i += 1) {
+        const localPoint = localPath.points[i]!;
+        const serverPoint = serverPath.points[i]!;
+
+        expect(localPoint.date, `${fixture.key} point ${i} date`).toBe(
+          serverPoint.date,
+        );
+        expect(
+          Math.abs(localPoint.readiness_score - serverPoint.readiness_score),
+          `${fixture.key} point ${i} readiness_score`,
+        ).toBeLessThanOrEqual(tolerance);
+        expect(
+          Math.abs(
+            localPoint.predicted_load_tss - serverPoint.predicted_load_tss,
+          ),
+          `${fixture.key} point ${i} predicted_load_tss`,
+        ).toBeLessThanOrEqual(tolerance);
+        expect(
+          Math.abs(
+            localPoint.predicted_fatigue_atl -
+              serverPoint.predicted_fatigue_atl,
+          ),
+          `${fixture.key} point ${i} predicted_fatigue_atl`,
+        ).toBeLessThanOrEqual(tolerance);
+      }
+
+      expect(localPath.constraint_summary).toEqual(
+        serverPath.constraint_summary,
+      );
+      expect(localPath.goal_markers).toEqual(serverPath.goal_markers);
+      expect(localPath.readiness_score).toBeCloseTo(
+        serverPath.readiness_score,
+        4,
+      );
+      expect(serverPath.readiness_confidence).toBeDefined();
+      expect(localPath.readiness_confidence).toBeCloseTo(
+        serverPath.readiness_confidence ?? 0,
+        4,
+      );
+    }
+  });
 });
+
+function buildLocalPreviewPathLike(
+  input: Parameters<typeof buildProjectionEngineInput>[0],
+) {
+  return buildDeterministicProjectionPayload(buildProjectionEngineInput(input));
+}
+
+function buildServerRecomputePathLike(
+  input: Parameters<typeof buildProjectionEngineInput>[0],
+) {
+  const deterministicProjection = buildDeterministicProjectionPayload(
+    buildProjectionEngineInput(input),
+  );
+
+  const expandedPlan = input.expanded_plan;
+
+  return {
+    ...deterministicProjection,
+    periodization_phases: expandedPlan.blocks.map((block, index) => ({
+      id: deterministicUuidFromSeed(
+        `projection-phase|${expandedPlan.start_date}|${expandedPlan.end_date}|${index}|${block.name}|${block.start_date}|${block.end_date}`,
+      ),
+      name: block.name,
+      start_date: block.start_date,
+      end_date: block.end_date,
+      target_weekly_tss_min:
+        Math.round((block.target_weekly_tss_range?.min ?? 0) * 10) / 10,
+      target_weekly_tss_max:
+        Math.round((block.target_weekly_tss_range?.max ?? 0) * 10) / 10,
+    })),
+    microcycles: deterministicProjection.microcycles.map((microcycle) => ({
+      id: deterministicUuidFromSeed(
+        `projection-microcycle|${expandedPlan.start_date}|${microcycle.week_start_date}|${microcycle.week_end_date}`,
+      ),
+      ...microcycle,
+    })),
+  };
+}

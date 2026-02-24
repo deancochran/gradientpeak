@@ -14,6 +14,11 @@ import {
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { TrainingPlanRepository } from "../../repositories";
+import {
+  buildConflictCommitError,
+  buildInvalidPayloadCommitError,
+  buildStalePreviewCommitError,
+} from "../../lib/errors/trainingPlanCommitErrors";
 
 type CreateFromCreationConfigInput = z.infer<
   typeof createFromCreationConfigInputSchema
@@ -239,10 +244,9 @@ export async function createFromCreationConfigUseCase<
     input.params.preview_snapshot_token &&
     input.params.preview_snapshot_token !== expectedPreviewSnapshotToken
   ) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message:
-        "Creation preview is stale or invalid. Refresh previewCreationConfig and retry createFromCreationConfig.",
+    throw buildStalePreviewCommitError({
+      operation: "createFromCreationConfig",
+      providedToken: input.params.preview_snapshot_token,
     });
   }
 
@@ -262,14 +266,10 @@ export async function createFromCreationConfigUseCase<
   });
 
   if (overrideEvaluation.isBlocking) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message:
-        "Creation blocked by unresolved conflicts. Resolve blocking conflicts or submit an explicit override_policy for objective/risk-budget conflicts.",
-      cause: {
-        blocking_conflict_codes:
-          overrideEvaluation.audit.effective.unresolved_blocking_conflict_codes,
-      },
+    throw buildConflictCommitError({
+      operation: "createFromCreationConfig",
+      blockingConflictCodes:
+        overrideEvaluation.audit.effective.unresolved_blocking_conflict_codes,
     });
   }
 
@@ -295,10 +295,15 @@ export async function createFromCreationConfigUseCase<
   try {
     input.deps.parseTrainingPlanStructure(structureWithId);
   } catch (validationError) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "Generated training plan structure is invalid",
-      cause: validationError,
+    throw buildInvalidPayloadCommitError({
+      operation: "createFromCreationConfig",
+      reason: "generated_plan_failed_schema_validation",
+      details: {
+        validation_error:
+          validationError instanceof Error
+            ? validationError.message
+            : "unknown_validation_error",
+      },
     });
   }
 

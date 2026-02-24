@@ -15,9 +15,7 @@ export type CreationConfigAdapterInput = Pick<
   | "constraints"
   | "optimizationProfile"
   | "postGoalRecoveryDays"
-  | "maxWeeklyTssRampPct"
-  | "maxCtlRampPerWeek"
-  | "projectionControlV2"
+  | "behaviorControlsV1"
   | "calibration"
   | "constraintsSource"
   | "locks"
@@ -31,9 +29,7 @@ export function toCreationNormalizationInput(
     recent_influence_action: state.recentInfluenceAction,
     optimization_profile: state.optimizationProfile,
     post_goal_recovery_days: state.postGoalRecoveryDays,
-    max_weekly_tss_ramp_pct: state.maxWeeklyTssRampPct,
-    max_ctl_ramp_per_week: state.maxCtlRampPerWeek,
-    projection_control_v2: state.projectionControlV2,
+    behavior_controls_v1: state.behaviorControlsV1,
     calibration: state.calibration,
     locks: state.locks,
   };

@@ -2,7 +2,7 @@
 
 Date: 2026-02-24
 Owner: Product + Mobile + Core Planning
-Status: Proposed
+Status: Active - Hard Cutover
 Type: UX Simplification + Optimization Control Model
 
 ## Executive Summary
@@ -30,14 +30,14 @@ Current issues in the creation flow:
   observed weekly TSS trajectory.
 - Cap/bound controls dominate perception, while users actually want to control training rhythm
   (spikes, smoothness, front-load/back-load, recovery bias).
-- There is weak explainability when controls have no visible effect due to constraints,
-  fallback paths, or readiness-preservation behavior.
+- There is weak explainability when controls have no visible effect due to constraints
+  or readiness-preservation behavior.
 
 Observed implementation mismatch:
 
 - Projection controls influence optimizer weights/search and curvature preferences, but users do not
   see a clear intent-based mapping.
-- Safety rails and fallback behavior can flatten trajectory differences, reducing visible control
+- Safety rails and suppression behavior can flatten trajectory differences, reducing visible control
   effect.
 
 ## Goals
@@ -120,6 +120,11 @@ Hard cutover:
 - Remove `projection_control_v2` from create/edit and preview payload contracts.
 - Remove deprecated cap slider fields from create/edit tuning UI contracts.
 - Remove legacy normalization and mapping paths instead of maintaining dual support.
+- Treat deprecated projection-control helpers/tests as in-scope removals,
+  not deferred cleanup.
+
+Current implementation target: complete all deprecated projection-control removals in the
+same delivery scope as the contract cutover.
 
 ### 2) Objective Mapping
 

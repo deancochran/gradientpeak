@@ -190,6 +190,47 @@ describe("projection calculations", () => {
       Math.max(15, week3 * 0.1),
     );
   });
+
+  it("keeps week-to-week load variability from periodization patterns without explicit ramp overrides", () => {
+    const projection = buildDeterministicProjectionPayload({
+      timeline: {
+        start_date: "2026-01-05",
+        end_date: "2026-02-08",
+      },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2026-02-08",
+          target_weekly_tss_range: { min: 300, max: 300 },
+        },
+      ],
+      goals: [
+        {
+          id: "goal-1",
+          name: "Summer race",
+          target_date: "2026-06-01",
+          priority: 2,
+        },
+      ],
+      starting_ctl: 42,
+      creation_config: {
+        optimization_profile: "balanced",
+      },
+      disable_weekly_tss_optimizer: true,
+    });
+
+    const weekLoads = projection.microcycles
+      .slice(0, 4)
+      .map((cycle) => cycle.planned_weekly_tss);
+
+    expect(new Set(weekLoads).size).toBeGreaterThan(1);
+    expect(weekLoads[2] ?? 0).toBeGreaterThan(weekLoads[1] ?? 0);
+    expect(weekLoads[3] ?? Number.POSITIVE_INFINITY).toBeLessThan(
+      weekLoads[2] ?? 0,
+    );
+  });
 });
 
 describe("deterministic projection goal conflict weighting", () => {
@@ -1628,54 +1669,46 @@ describe("phase 2 mpc integration diagnostics", () => {
     });
   });
 
-  it("keeps projection_control_v2 ramp caps normalized/invariant across ambition and risk", () => {
-    const conservativeControls = buildDeterministicProjectionPayload({
+  it("keeps configured ramp caps invariant across optimization profiles", () => {
+    const sustainableControls = buildDeterministicProjectionPayload({
       ...phase2Fixture,
       creation_config: {
-        ...phase2Fixture.creation_config,
-        projection_control_v2: {
-          ambition: 0,
-          risk_tolerance: 0,
-          curvature: 0,
-          curvature_strength: 0,
-        },
+        optimization_profile: "sustainable",
+        max_weekly_tss_ramp_pct: 7,
+        max_ctl_ramp_per_week: 3,
       },
     });
-    const aggressiveControls = buildDeterministicProjectionPayload({
+    const outcomeFirstControls = buildDeterministicProjectionPayload({
       ...phase2Fixture,
       creation_config: {
-        ...phase2Fixture.creation_config,
-        projection_control_v2: {
-          ambition: 1,
-          risk_tolerance: 1,
-          curvature: 0,
-          curvature_strength: 0,
-        },
+        optimization_profile: "outcome_first",
+        max_weekly_tss_ramp_pct: 7,
+        max_ctl_ramp_per_week: 3,
       },
     });
 
     expect(
-      aggressiveControls.microcycles[0]?.metadata.tss_ramp
+      outcomeFirstControls.microcycles[0]?.metadata.tss_ramp
         .max_weekly_tss_ramp_pct,
     ).toBe(
-      conservativeControls.microcycles[0]?.metadata.tss_ramp
+      sustainableControls.microcycles[0]?.metadata.tss_ramp
         .max_weekly_tss_ramp_pct,
     );
     expect(
-      aggressiveControls.microcycles[0]?.metadata.ctl_ramp
+      outcomeFirstControls.microcycles[0]?.metadata.ctl_ramp
         .max_ctl_ramp_per_week,
     ).toBe(
-      conservativeControls.microcycles[0]?.metadata.ctl_ramp
+      sustainableControls.microcycles[0]?.metadata.ctl_ramp
         .max_ctl_ramp_per_week,
     );
     expect(
-      aggressiveControls.microcycles[0]?.metadata.tss_ramp
+      outcomeFirstControls.microcycles[0]?.metadata.tss_ramp
         .max_weekly_tss_ramp_pct,
-    ).toBe(phase2Fixture.creation_config?.max_weekly_tss_ramp_pct ?? 0);
+    ).toBe(7);
     expect(
-      aggressiveControls.microcycles[0]?.metadata.ctl_ramp
+      outcomeFirstControls.microcycles[0]?.metadata.ctl_ramp
         .max_ctl_ramp_per_week,
-    ).toBe(phase2Fixture.creation_config?.max_ctl_ramp_per_week ?? 0);
+    ).toBe(3);
   });
 
   it("exposes widened frontier caps and preserves monotonic upper band under higher overrides", () => {
@@ -1685,12 +1718,6 @@ describe("phase 2 mpc integration diagnostics", () => {
         ...phase2Fixture.creation_config,
         max_weekly_tss_ramp_pct: 20,
         max_ctl_ramp_per_week: 8,
-        projection_control_v2: {
-          ambition: 1,
-          risk_tolerance: 1,
-          curvature: 0,
-          curvature_strength: 0,
-        },
       },
     });
     const theoreticalFrontier = buildDeterministicProjectionPayload({
@@ -1699,12 +1726,6 @@ describe("phase 2 mpc integration diagnostics", () => {
         ...phase2Fixture.creation_config,
         max_weekly_tss_ramp_pct: 40,
         max_ctl_ramp_per_week: 12,
-        projection_control_v2: {
-          ambition: 1,
-          risk_tolerance: 1,
-          curvature: 0,
-          curvature_strength: 0,
-        },
       },
     });
 
@@ -1735,47 +1756,29 @@ describe("phase 2 mpc integration diagnostics", () => {
     expect(frontierUpperBand).toBeGreaterThanOrEqual(practicalUpperBand);
   });
 
-  it("applies curvature controls to shape early vs late weekly load", () => {
-    const frontLoaded = buildDeterministicProjectionPayload({
+  it("keeps deterministic neutral curvature diagnostics without legacy shape overrides", () => {
+    const first = buildDeterministicProjectionPayload({
       ...phase2Fixture,
       creation_config: {
         ...phase2Fixture.creation_config,
-        projection_control_v2: {
-          ambition: 0.7,
-          risk_tolerance: 0.6,
-          curvature: -1,
-          curvature_strength: 1,
-        },
       },
     });
-    const backLoaded = buildDeterministicProjectionPayload({
+    const second = buildDeterministicProjectionPayload({
       ...phase2Fixture,
       creation_config: {
         ...phase2Fixture.creation_config,
-        projection_control_v2: {
-          ambition: 0.7,
-          risk_tolerance: 0.6,
-          curvature: 1,
-          curvature_strength: 1,
-        },
       },
     });
 
-    const firstThreeFrontLoaded = frontLoaded.microcycles
-      .slice(0, 3)
-      .reduce((sum, week) => sum + week.planned_weekly_tss, 0);
-    const firstThreeBackLoaded = backLoaded.microcycles
-      .slice(0, 3)
-      .reduce((sum, week) => sum + week.planned_weekly_tss, 0);
-    const frontCurvatureTarget =
-      frontLoaded.projection_diagnostics?.effective_optimizer_config.curvature
-        .target ?? 0;
-    const backCurvatureTarget =
-      backLoaded.projection_diagnostics?.effective_optimizer_config.curvature
-        .target ?? 0;
+    const firstCurvature =
+      first.projection_diagnostics?.effective_optimizer_config.curvature;
+    const secondCurvature =
+      second.projection_diagnostics?.effective_optimizer_config.curvature;
 
-    expect(firstThreeFrontLoaded).toBeGreaterThan(firstThreeBackLoaded);
-    expect(frontCurvatureTarget).toBeLessThan(backCurvatureTarget);
+    expect(firstCurvature?.target).toBe(0);
+    expect(firstCurvature?.strength).toBe(0.35);
+    expect(firstCurvature?.weight).toBeGreaterThan(0);
+    expect(secondCurvature).toEqual(firstCurvature);
   });
 });
 
@@ -1866,12 +1869,6 @@ describe("phase 5 benchmark and theoretical frontier validation", () => {
         optimization_profile: "outcome_first",
         max_weekly_tss_ramp_pct: 40,
         max_ctl_ramp_per_week: 12,
-        projection_control_v2: {
-          ambition: 1,
-          risk_tolerance: 1,
-          curvature: 0,
-          curvature_strength: 0,
-        },
       },
     };
 
@@ -1968,12 +1965,6 @@ describe("phase 5 benchmark and theoretical frontier validation", () => {
           optimization_profile: "outcome_first",
           max_weekly_tss_ramp_pct: 40,
           max_ctl_ramp_per_week: 12,
-          projection_control_v2: {
-            ambition: 1,
-            risk_tolerance: 1,
-            curvature: 0,
-            curvature_strength: 0,
-          },
         },
       });
 
@@ -2035,12 +2026,6 @@ describe("phase 5 benchmark and theoretical frontier validation", () => {
         optimization_profile: "outcome_first",
         max_weekly_tss_ramp_pct: 40,
         max_ctl_ramp_per_week: 12,
-        projection_control_v2: {
-          ambition: 1,
-          risk_tolerance: 1,
-          curvature: 0,
-          curvature_strength: 0,
-        },
       },
     });
 

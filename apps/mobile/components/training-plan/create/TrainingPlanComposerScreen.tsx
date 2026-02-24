@@ -18,6 +18,12 @@ import {
   getTopBlockingIssues,
   trainingPlanFormSchema,
 } from "@/lib/training-plan-form/validation";
+import {
+  hasBehaviorControlsChanged,
+  shouldApplyBehaviorControlSuggestions,
+} from "@/lib/training-plan-form/behaviorControlsState";
+import { computeLocalCreationPreview } from "@/lib/training-plan-form/localPreview";
+import { mapTrainingPlanSaveError } from "@/lib/training-plan-form/saveErrorMapping";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   nextPendingPreviewCount,
@@ -27,7 +33,6 @@ import { trpc } from "@/lib/trpc";
 import { Text } from "@/components/ui/text";
 import {
   buildPreviewMinimalPlanFromForm,
-  projectionControlV2Schema,
   reducePreviewState,
   trainingPlanCalibrationConfigSchema,
 } from "@repo/core";
@@ -36,7 +41,6 @@ import type {
   CreationContextSummary,
   CreationFeasibilitySafetySummary,
   CreationProvenance,
-  PreviewReadinessSnapshot,
   CreationValueSource,
   PreviewState,
   ProjectionChartPayload,
@@ -222,11 +226,17 @@ const createDefaultConfigState = (): TrainingPlanConfigFormData => ({
   },
   optimizationProfile: "balanced",
   postGoalRecoveryDays: 5,
-  maxWeeklyTssRampPct: 7,
-  maxCtlRampPerWeek: 3,
+  behaviorControlsV1: {
+    aggressiveness: 0.5,
+    variability: 0.5,
+    spike_frequency: 0.35,
+    shape_target: 0,
+    shape_strength: 0.35,
+    recovery_priority: 0.6,
+    starting_fitness_confidence: 0.6,
+  },
   startingCtlAssumption: undefined,
   startingFatigueState: undefined,
-  projectionControlV2: projectionControlV2Schema.parse({}),
   calibration: trainingPlanCalibrationConfigSchema.parse({}),
   calibrationCompositeLocks: {
     target_attainment_weight: false,
@@ -245,36 +255,9 @@ const createDefaultConfigState = (): TrainingPlanConfigFormData => ({
     goal_difficulty_preference: { locked: false },
     optimization_profile: { locked: false },
     post_goal_recovery_days: { locked: false },
-    max_weekly_tss_ramp_pct: { locked: false },
-    max_ctl_ramp_per_week: { locked: false },
+    behavior_controls_v1: { locked: false },
   },
 });
-
-const mergeSuggestedProjectionControls = (
-  current: TrainingPlanConfigFormData["projectionControlV2"],
-  suggested: TrainingPlanConfigFormData["projectionControlV2"] | undefined,
-) => {
-  if (!suggested) {
-    return current;
-  }
-
-  return projectionControlV2Schema.parse({
-    mode: current.user_owned.mode ? current.mode : suggested.mode,
-    ambition: current.user_owned.ambition
-      ? current.ambition
-      : suggested.ambition,
-    risk_tolerance: current.user_owned.risk_tolerance
-      ? current.risk_tolerance
-      : suggested.risk_tolerance,
-    curvature: current.user_owned.curvature
-      ? current.curvature
-      : suggested.curvature,
-    curvature_strength: current.user_owned.curvature_strength
-      ? current.curvature_strength
-      : suggested.curvature_strength,
-    user_owned: { ...current.user_owned },
-  });
-};
 
 export function TrainingPlanComposerScreen(
   contract: TrainingPlanComposerModeContract,
@@ -325,6 +308,7 @@ export function TrainingPlanComposerScreen(
     availability: false,
     recent: false,
     constraints: false,
+    behaviorControls: false,
   });
   const [contextSummary, setContextSummary] = useState<
     CreationContextSummary | undefined
@@ -335,9 +319,6 @@ export function TrainingPlanComposerScreen(
   const [conflictItems, setConflictItems] = useState<
     TrainingPlanConfigConflict[]
   >([]);
-  const [previewSnapshotToken, setPreviewSnapshotToken] = useState<
-    string | undefined
-  >(undefined);
   const [previewState, setPreviewState] = useState<
     PreviewState<ProjectionChartPayload>
   >({});
@@ -354,9 +335,9 @@ export function TrainingPlanComposerScreen(
   const previewRequestIdRef = useRef(0);
   const latestAppliedPreviewRequestIdRef = useRef(0);
   const previewPendingRequestCountRef = useRef(0);
-  const previewBaselineSnapshotRef = useRef<PreviewReadinessSnapshot | null>(
-    null,
-  );
+  const previewBaselineSnapshotRef = useRef<
+    Parameters<typeof computeLocalCreationPreview>[0]["previewBaseline"] | null
+  >(null);
   const scheduledPreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -396,8 +377,6 @@ export function TrainingPlanComposerScreen(
       enabled: featureFlags.trainingPlanCreateConfigMvp && !isEditMode,
     },
   );
-  const previewCreationConfigQuery =
-    utils.client.trainingPlans.previewCreationConfig.query;
   const getCreationSuggestionsQuery =
     utils.client.trainingPlans.getCreationSuggestions.query;
   type CreationSuggestionsResponse = Awaited<
@@ -421,9 +400,8 @@ export function TrainingPlanComposerScreen(
     {
       invalidate: [utils.trainingPlans],
       onError: (error) => {
-        const errorMessage =
-          error.message || "Failed to create training plan from config.";
-        Alert.alert("Error", errorMessage, [{ text: "OK" }]);
+        const mapped = mapTrainingPlanSaveError(error);
+        Alert.alert("Error", mapped.message, [{ text: "OK" }]);
         setIsCreating(false);
       },
     },
@@ -434,9 +412,8 @@ export function TrainingPlanComposerScreen(
     {
       invalidate: [utils.trainingPlans],
       onError: (error) => {
-        const errorMessage =
-          error.message || "Failed to save training plan changes.";
-        Alert.alert("Error", errorMessage, [{ text: "OK" }]);
+        const mapped = mapTrainingPlanSaveError(error);
+        Alert.alert("Error", mapped.message, [{ text: "OK" }]);
         setIsCreating(false);
       },
     },
@@ -507,26 +484,21 @@ export function TrainingPlanComposerScreen(
         next.constraintsSource = "suggested";
       }
 
-      const canApplyMaxWeeklyTssRamp =
-        mode === "seed" || !current.locks.max_weekly_tss_ramp_pct.locked;
-      if (canApplyMaxWeeklyTssRamp) {
-        next.maxWeeklyTssRampPct = suggestions.max_weekly_tss_ramp_pct;
-      }
-
-      const canApplyMaxCtlRamp =
-        mode === "seed" || !current.locks.max_ctl_ramp_per_week.locked;
-      if (canApplyMaxCtlRamp) {
-        next.maxCtlRampPerWeek = suggestions.max_ctl_ramp_per_week;
-      }
-
-      next.projectionControlV2 = mergeSuggestedProjectionControls(
-        current.projectionControlV2,
-        (
+      const canApplyBehaviorControls = shouldApplyBehaviorControlSuggestions({
+        mode,
+        locked: current.locks.behavior_controls_v1.locked,
+        dirty: dirtyState.behaviorControls,
+      });
+      if (canApplyBehaviorControls) {
+        const suggestedBehaviorControls = (
           suggestions as {
-            projection_control_v2?: TrainingPlanConfigFormData["projectionControlV2"];
+            behavior_controls_v1?: TrainingPlanConfigFormData["behaviorControlsV1"];
           }
-        ).projection_control_v2,
-      );
+        ).behavior_controls_v1;
+        if (suggestedBehaviorControls) {
+          next.behaviorControlsV1 = suggestedBehaviorControls;
+        }
+      }
 
       setInformationalConflicts(suggestions.locked_conflicts ?? []);
       setContextSummary(suggestionResponse.context_summary);
@@ -573,16 +545,16 @@ export function TrainingPlanComposerScreen(
     setIsPreviewPending(true);
 
     try {
-      const preview = await previewCreationConfigQuery({
-        minimal_plan: previewMinimalPlan,
-        creation_input: buildCreationInput(configData),
-        starting_ctl_override: configData.startingCtlAssumption,
-        starting_atl_override: resolveStartingAtlOverride(configData),
-        preview_baseline: previewBaselineSnapshotRef.current ?? undefined,
-        post_create_behavior: {
-          autonomous_mutation_enabled: false,
-        },
-      });
+      const preview = await Promise.resolve(
+        computeLocalCreationPreview({
+          minimalPlan: previewMinimalPlan,
+          creationInput: buildCreationInput(configData),
+          contextSummary,
+          startingCtlOverride: configData.startingCtlAssumption,
+          startingAtlOverride: resolveStartingAtlOverride(configData),
+          previewBaseline: previewBaselineSnapshotRef.current ?? undefined,
+        }),
+      );
 
       if (
         shouldIgnorePreviewResponse({
@@ -595,21 +567,20 @@ export function TrainingPlanComposerScreen(
       }
       latestAppliedPreviewRequestIdRef.current = requestId;
 
-      setContextSummary(preview.creation_context_summary);
-      setFeasibilitySummary(preview.feasibility_safety);
-      setPreviewSnapshotToken(preview.preview_snapshot?.token);
-      setReadinessDeltaDiagnostics(preview.readiness_delta_diagnostics);
-      previewBaselineSnapshotRef.current =
-        preview.preview_snapshot_baseline ?? null;
+      if (preview.feasibilitySummary) {
+        setFeasibilitySummary(preview.feasibilitySummary);
+      }
+      setReadinessDeltaDiagnostics(preview.readinessDeltaDiagnostics);
+      previewBaselineSnapshotRef.current = preview.previewSnapshotBaseline;
       setPreviewState((previous) =>
         reducePreviewState(previous, {
           status: "success",
-          projectionChart: preview.projection_chart as ProjectionChartPayload,
+          projectionChart: preview.projectionChart,
         }),
       );
 
       const previewStartingState =
-        preview.projection_chart.constraint_summary.starting_state;
+        preview.projectionChart.constraint_summary?.starting_state;
       if (previewStartingState) {
         setConfigData((previous) => {
           const nextCtl =
@@ -638,13 +609,14 @@ export function TrainingPlanComposerScreen(
         });
       }
 
-      const nextConflicts: TrainingPlanConfigConflict[] =
-        preview.conflicts.items.map((conflict) => ({
+      const nextConflicts: TrainingPlanConfigConflict[] = preview.conflicts.map(
+        (conflict) => ({
           code: conflict.code,
           severity: conflict.severity,
           message: conflict.message,
           suggestions: conflict.suggestions,
-        }));
+        }),
+      );
       setConflictItems(nextConflicts);
 
       return;
@@ -659,14 +631,13 @@ export function TrainingPlanComposerScreen(
         return;
       }
 
-      setPreviewSnapshotToken(undefined);
       setReadinessDeltaDiagnostics(undefined);
       previewBaselineSnapshotRef.current = null;
       setPreviewState((previous) =>
         reducePreviewState(previous, {
           status: "failure",
           errorMessage:
-            "Could not compute feasibility and safety preview. Check goal details and try again.",
+            "Could not compute the local projection preview. Review inputs and retry.",
         }),
       );
       return;
@@ -677,7 +648,7 @@ export function TrainingPlanComposerScreen(
       });
       setIsPreviewPending(previewPendingRequestCountRef.current > 0);
     }
-  }, [buildCreationInput, configData, formData, previewCreationConfigQuery]);
+  }, [buildCreationInput, configData, contextSummary, formData]);
 
   useEffect(() => {
     if (!isEditMode) {
@@ -754,9 +725,7 @@ export function TrainingPlanComposerScreen(
             recent_influence: {
               influence_score: configData.recentInfluenceScore,
             },
-            projection_control_v2: configData.projectionControlV2,
-            max_weekly_tss_ramp_pct: configData.maxWeeklyTssRampPct,
-            max_ctl_ramp_per_week: configData.maxCtlRampPerWeek,
+            behavior_controls_v1: configData.behaviorControlsV1,
             constraints: configData.constraints,
           },
         });
@@ -774,9 +743,7 @@ export function TrainingPlanComposerScreen(
     configData.availabilityConfig,
     configData.constraints,
     configData.locks,
-    configData.maxCtlRampPerWeek,
-    configData.maxWeeklyTssRampPct,
-    configData.projectionControlV2,
+    configData.behaviorControlsV1,
     configData.recentInfluenceScore,
     configData.recentInfluenceAction,
     hasSeededDefaults,
@@ -822,7 +789,6 @@ export function TrainingPlanComposerScreen(
   }, []);
 
   const handleFormDataChange = (nextData: TrainingPlanFormData) => {
-    setPreviewSnapshotToken(undefined);
     form.setValue("planStartDate", nextData.planStartDate, {
       shouldDirty: true,
       shouldValidate: true,
@@ -841,15 +807,14 @@ export function TrainingPlanComposerScreen(
         configData.availabilityConfig,
         nextData.availabilityConfig,
       ) ||
-      !areJsonStructurallyEqual(configData.constraints, nextData.constraints) ||
       !areJsonStructurallyEqual(
-        configData.projectionControlV2,
-        nextData.projectionControlV2,
+        configData.behaviorControlsV1,
+        nextData.behaviorControlsV1,
       ) ||
+      !areJsonStructurallyEqual(configData.constraints, nextData.constraints) ||
       !areJsonStructurallyEqual(configData.locks, nextData.locks);
 
     if (suggestionRelevantChanged) {
-      setPreviewSnapshotToken(undefined);
       setRecomputeNonce((value) => value + 1);
     }
 
@@ -863,6 +828,12 @@ export function TrainingPlanComposerScreen(
         nextData.recentInfluenceProvenance.source === "user",
       constraints:
         previous.constraints || nextData.constraintsSource === "user",
+      behaviorControls:
+        previous.behaviorControls ||
+        hasBehaviorControlsChanged(
+          configData.behaviorControlsV1,
+          nextData.behaviorControlsV1,
+        ),
     }));
 
     setConfigData(nextData);
@@ -888,7 +859,6 @@ export function TrainingPlanComposerScreen(
       return;
     }
 
-    setPreviewSnapshotToken(undefined);
     form.setValue("goals", cloneJson(baseline.goals), {
       shouldDirty: true,
       shouldValidate: true,
@@ -902,7 +872,6 @@ export function TrainingPlanComposerScreen(
       return;
     }
 
-    setPreviewSnapshotToken(undefined);
     form.setValue("planStartDate", baselineForm.planStartDate, {
       shouldDirty: true,
       shouldValidate: true,
@@ -930,12 +899,10 @@ export function TrainingPlanComposerScreen(
       return;
     }
 
-    setPreviewSnapshotToken(undefined);
     setConfigData((previous) => ({
       ...previous,
       postGoalRecoveryDays: baselineConfig.postGoalRecoveryDays,
-      maxWeeklyTssRampPct: baselineConfig.maxWeeklyTssRampPct,
-      maxCtlRampPerWeek: baselineConfig.maxCtlRampPerWeek,
+      behaviorControlsV1: cloneJson(baselineConfig.behaviorControlsV1),
       startingCtlAssumption: baselineConfig.startingCtlAssumption,
       startingFatigueState: baselineConfig.startingFatigueState,
       locks: {
@@ -943,15 +910,13 @@ export function TrainingPlanComposerScreen(
         post_goal_recovery_days: cloneJson(
           baselineConfig.locks.post_goal_recovery_days,
         ),
-        max_weekly_tss_ramp_pct: cloneJson(
-          baselineConfig.locks.max_weekly_tss_ramp_pct,
-        ),
-        max_ctl_ramp_per_week: cloneJson(
-          baselineConfig.locks.max_ctl_ramp_per_week,
+        behavior_controls_v1: cloneJson(
+          baselineConfig.locks.behavior_controls_v1,
         ),
       },
     }));
 
+    setDirtyState((previous) => ({ ...previous, behaviorControls: false }));
     setRecomputeNonce((value) => value + 1);
   }, []);
 
@@ -961,19 +926,8 @@ export function TrainingPlanComposerScreen(
       return;
     }
 
-    setPreviewSnapshotToken(undefined);
     setConfigData((previous) => ({
       ...previous,
-      projectionControlV2: {
-        ...cloneJson(baselineConfig.projectionControlV2),
-        user_owned: {
-          mode: false,
-          ambition: false,
-          risk_tolerance: false,
-          curvature: false,
-          curvature_strength: false,
-        },
-      },
       calibration: cloneJson(baselineConfig.calibration),
       calibrationCompositeLocks: cloneJson(
         baselineConfig.calibrationCompositeLocks,
@@ -1013,9 +967,6 @@ export function TrainingPlanComposerScreen(
         creation_input: buildCreationInput(configData),
         starting_ctl_override: configData.startingCtlAssumption,
         starting_atl_override: resolveStartingAtlOverride(configData),
-        preview_snapshot_token: isPreviewPending
-          ? undefined
-          : previewSnapshotToken,
         post_create_behavior: {
           autonomous_mutation_enabled: false,
         },
@@ -1051,11 +1002,20 @@ export function TrainingPlanComposerScreen(
         "Failed to save training plan from creation config:",
         error,
       );
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Failed to save training plan from creation config.";
-      Alert.alert("Error", message, [{ text: "OK" }]);
+      const mapped = mapTrainingPlanSaveError(error);
+      if (mapped.action === "refresh_preview") {
+        Alert.alert("Error", mapped.message, [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Refresh preview",
+            onPress: () => {
+              void refreshPreview();
+            },
+          },
+        ]);
+      } else {
+        Alert.alert("Error", mapped.message, [{ text: "OK" }]);
+      }
     } finally {
       setIsCreating(false);
     }
@@ -1136,6 +1096,20 @@ export function TrainingPlanComposerScreen(
             <Text className="text-xs text-destructive">
               {previewState.previewError}
             </Text>
+            <Pressable
+              onPress={() => {
+                void refreshPreview();
+              }}
+              disabled={isPreviewPending}
+              className="mt-2 self-start rounded-md border border-destructive/30 px-3 py-1"
+              accessibilityRole="button"
+              accessibilityLabel="Retry projection preview"
+              accessibilityState={{ disabled: isPreviewPending }}
+            >
+              <Text className="text-xs font-medium text-destructive">
+                Retry preview
+              </Text>
+            </Pressable>
           </View>
         ) : null}
         {isEditMode ? (

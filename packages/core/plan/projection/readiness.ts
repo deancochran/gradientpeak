@@ -398,6 +398,34 @@ export function computeProjectionPointReadinessScores(input: {
   const goals = input.goals ?? [];
   const timelineCalibration = input.timeline_calibration;
 
+  const resolveGoalIndex = (targetDate: string): number => {
+    const exactIndex = input.points.findIndex(
+      (point) => point.date === targetDate,
+    );
+    if (exactIndex >= 0) {
+      return exactIndex;
+    }
+
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    let nearestIndex = 0;
+    for (let i = 0; i < input.points.length; i += 1) {
+      const candidatePoint = input.points[i];
+      if (!candidatePoint) {
+        continue;
+      }
+
+      const distance = Math.abs(
+        diffDateOnlyUtcDays(candidatePoint.date, targetDate),
+      );
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestIndex = i;
+      }
+    }
+
+    return nearestIndex;
+  };
+
   // Compute event-duration-aware optimal TSB
   const primaryGoal = goals[0];
   const primaryTarget = primaryGoal?.targets?.[0];
@@ -491,14 +519,17 @@ export function computeProjectionPointReadinessScores(input: {
       // Skip goals without targets
       if (!goal.targets || goal.targets.length === 0) continue;
 
+      const goalIndex = resolveGoalIndex(goal.target_date);
+      const eventPoint = input.points[goalIndex] ?? point;
+
       const penalty = computePostEventFatiguePenalty({
         currentDate: point.date,
         currentPoint: point,
         eventGoal: {
           target_date: goal.target_date,
           targets: goal.targets,
-          projected_ctl: point.predicted_fitness_ctl,
-          projected_atl: point.predicted_fatigue_atl,
+          projected_ctl: eventPoint.predicted_fitness_ctl,
+          projected_atl: eventPoint.predicted_fatigue_atl,
         },
       });
 
@@ -509,83 +540,121 @@ export function computeProjectionPointReadinessScores(input: {
     return clampScore(baseScore - maxFatiguePenalty);
   });
 
-  const resolveGoalIndex = (targetDate: string): number => {
-    const exactIndex = input.points.findIndex(
-      (point) => point.date === targetDate,
-    );
-    if (exactIndex >= 0) {
-      return exactIndex;
+  const goalProfiles = goals.map((goal) => {
+    const goalIndex = resolveGoalIndex(goal.target_date);
+    const primaryTarget = goal.targets?.[0];
+    let recoveryProfile = {
+      recovery_days_full: 7,
+      recovery_days_functional: 3,
+      fatigue_intensity: 75,
+      atl_spike_factor: 1.2,
+    };
+
+    if (primaryTarget) {
+      const goalPoint = input.points[goalIndex];
+      recoveryProfile = computeEventRecoveryProfile({
+        target: primaryTarget,
+        projected_ctl_at_event: goalPoint?.predicted_fitness_ctl ?? 50,
+        projected_atl_at_event: goalPoint?.predicted_fatigue_atl ?? 50,
+      });
     }
 
-    let nearestDistance = Number.POSITIVE_INFINITY;
-    let nearestIndex = 0;
-    for (let i = 0; i < input.points.length; i += 1) {
-      const candidatePoint = input.points[i];
-      if (!candidatePoint) {
-        continue;
-      }
+    return {
+      goal,
+      goalIndex,
+      recoveryProfile,
+    };
+  });
 
-      const distance = Math.abs(
-        diffDateOnlyUtcDays(candidatePoint.date, targetDate),
-      );
-      if (distance < nearestDistance) {
-        nearestDistance = distance;
-        nearestIndex = i;
-      }
-    }
-
-    return nearestIndex;
-  };
-
-  const goalAnchors = goals
-    .map((goal, idx) => {
-      const goalIndex = resolveGoalIndex(goal.target_date);
-
-      // Calculate recovery profile for this goal
-      const primaryTarget = goal.targets?.[0];
-      let recoveryProfile = {
-        recovery_days_full: 7,
-        recovery_days_functional: 3,
-        fatigue_intensity: 75,
-        atl_spike_factor: 1.2,
-      };
-
-      if (primaryTarget) {
-        const goalPoint = input.points[goalIndex];
-        recoveryProfile = computeEventRecoveryProfile({
-          target: primaryTarget,
-          projected_ctl_at_event: goalPoint?.predicted_fitness_ctl ?? 50,
-          projected_atl_at_event: goalPoint?.predicted_fatigue_atl ?? 50,
-        });
-      }
-
+  const goalAnchors = goalProfiles
+    .map((profile, idx) => {
       // Dynamic taper days based on intensity (5-8 days)
       const taperDays = Math.round(
-        5 + (recoveryProfile.fatigue_intensity / 100) * 3,
+        5 + (profile.recoveryProfile.fatigue_intensity / 100) * 3,
       );
 
       // Dynamic peak window = taper + 60% of recovery
       const peakWindow =
-        taperDays + Math.round(recoveryProfile.recovery_days_full * 0.6);
+        taperDays +
+        Math.round(profile.recoveryProfile.recovery_days_full * 0.6);
 
-      // Detect conflicts using dynamic functional recovery threshold
-      const hasConflictingGoal = goals.some((otherGoal, otherIdx) => {
+      // Conflict if goals are within either event's functional recovery window.
+      const hasConflictingGoal = goalProfiles.some((otherProfile, otherIdx) => {
         if (idx === otherIdx) return false;
         const daysBetween = Math.abs(
-          diffDateOnlyUtcDays(goal.target_date, otherGoal.target_date),
+          diffDateOnlyUtcDays(
+            profile.goal.target_date,
+            otherProfile.goal.target_date,
+          ),
         );
-        // Conflict if within functional recovery window
-        return daysBetween <= recoveryProfile.recovery_days_functional;
+        const conflictWindow = Math.max(
+          profile.recoveryProfile.recovery_days_functional,
+          otherProfile.recoveryProfile.recovery_days_functional,
+        );
+
+        return daysBetween <= conflictWindow;
       });
 
       return {
-        goalIndex,
+        goalIndex: profile.goalIndex,
+        targetDate: profile.goal.target_date,
         peakWindow,
         peakSlope: 1.6,
         allowNaturalFatigue: hasConflictingGoal,
+        recoveryDaysFunctional:
+          profile.recoveryProfile.recovery_days_functional,
       };
     })
     .sort((a, b) => a.goalIndex - b.goalIndex);
+
+  const goalIndexSet = new Set(goalAnchors.map((anchor) => anchor.goalIndex));
+
+  const applyDirectionalConflictCaps = (scores: number[]): number[] => {
+    if (goalAnchors.length < 2) {
+      return scores;
+    }
+
+    const capped = [...scores];
+    for (let i = 1; i < goalAnchors.length; i += 1) {
+      const previous = goalAnchors[i - 1];
+      const current = goalAnchors[i];
+      if (!previous || !current) {
+        continue;
+      }
+
+      const daysBetween = diffDateOnlyUtcDays(
+        previous.targetDate,
+        current.targetDate,
+      );
+      if (daysBetween < 0) {
+        continue;
+      }
+
+      const directionalConflictWindow = Math.max(
+        previous.recoveryDaysFunctional,
+        current.recoveryDaysFunctional,
+      );
+      if (daysBetween > directionalConflictWindow) {
+        continue;
+      }
+
+      if (current.goalIndex === previous.goalIndex) {
+        continue;
+      }
+
+      const previousScore = capped[previous.goalIndex] ?? 0;
+      const currentFatigueBound = fatigueAdjustedScores[current.goalIndex] ?? 0;
+      capped[current.goalIndex] = clampScore(
+        Math.min(
+          capped[current.goalIndex] ?? 0,
+          previousScore,
+          currentFatigueBound,
+        ),
+      );
+    }
+
+    return capped;
+  };
 
   let optimized = [...fatigueAdjustedScores];
   const iterations = timelineCalibration?.smoothing_iterations ?? 24;
@@ -633,6 +702,9 @@ export function computeProjectionPointReadinessScores(input: {
         if (i === anchor.goalIndex) {
           continue;
         }
+        if (goalIndexSet.has(i)) {
+          continue;
+        }
 
         const dayDistance = Math.abs(
           diffDateOnlyUtcDays(
@@ -670,6 +742,8 @@ export function computeProjectionPointReadinessScores(input: {
     optimized = optimized.map((value, i) =>
       clampScore((value ?? 0) * 0.9 + (fatigueAdjustedScores[i] ?? 0) * 0.1),
     );
+
+    optimized = applyDirectionalConflictCaps(optimized);
   }
 
   for (const anchor of goalAnchors) {
@@ -690,6 +764,8 @@ export function computeProjectionPointReadinessScores(input: {
       Math.max(optimized[anchor.goalIndex] ?? 0, localMax),
     );
   }
+
+  optimized = applyDirectionalConflictCaps(optimized);
 
   if (typeof input.planReadinessScore === "number") {
     const planReadinessCap = clampScore(input.planReadinessScore);
@@ -714,11 +790,24 @@ export function computeProjectionPointReadinessScores(input: {
 
     for (const goal of goals) {
       const goalIndex = resolveGoalIndex(goal.target_date);
+      const anchor = goalAnchors.find((item) => item.goalIndex === goalIndex);
       const goalProgress = terminalIndex <= 0 ? 1 : goalIndex / terminalIndex;
       const goalCeiling =
         startingCeiling +
         (planReadinessCap - startingCeiling) *
           Math.pow(clamp01(goalProgress), 1.15);
+
+      if (anchor?.allowNaturalFatigue) {
+        anchored[goalIndex] = clampScore(
+          Math.min(
+            goalCeiling,
+            anchored[goalIndex] ?? 0,
+            fatigueAdjustedScores[goalIndex] ?? 0,
+          ),
+        );
+        continue;
+      }
+
       anchored[goalIndex] = clampScore(
         Math.min(
           goalCeiling,
@@ -730,8 +819,10 @@ export function computeProjectionPointReadinessScores(input: {
       );
     }
 
-    anchored[terminalIndex] = planReadinessCap;
-    return anchored;
+    const anchoredWithConflictCaps = applyDirectionalConflictCaps(anchored);
+
+    anchoredWithConflictCaps[terminalIndex] = planReadinessCap;
+    return anchoredWithConflictCaps;
   }
 
   return optimized;

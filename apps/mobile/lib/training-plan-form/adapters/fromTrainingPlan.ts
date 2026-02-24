@@ -9,7 +9,6 @@ import {
   formatSecondsToMmSs,
 } from "@/lib/training-plan-form/input-parsers";
 import {
-  projectionControlV2Schema,
   trainingPlanCalibrationConfigSchema,
   type CreationAvailabilityConfig,
   type CreationProvenance,
@@ -120,11 +119,17 @@ const createDefaultConfigState = (): TrainingPlanConfigFormData => ({
   },
   optimizationProfile: "balanced",
   postGoalRecoveryDays: 5,
-  maxWeeklyTssRampPct: 7,
-  maxCtlRampPerWeek: 3,
+  behaviorControlsV1: {
+    aggressiveness: 0.5,
+    variability: 0.5,
+    spike_frequency: 0.35,
+    shape_target: 0,
+    shape_strength: 0.35,
+    recovery_priority: 0.6,
+    starting_fitness_confidence: 0.6,
+  },
   startingCtlAssumption: undefined,
   startingFatigueState: undefined,
-  projectionControlV2: projectionControlV2Schema.parse({}),
   calibration: trainingPlanCalibrationConfigSchema.parse({}),
   calibrationCompositeLocks: {
     target_attainment_weight: false,
@@ -143,8 +148,7 @@ const createDefaultConfigState = (): TrainingPlanConfigFormData => ({
     goal_difficulty_preference: { locked: false },
     optimization_profile: { locked: false },
     post_goal_recovery_days: { locked: false },
-    max_weekly_tss_ramp_pct: { locked: false },
-    max_ctl_ramp_per_week: { locked: false },
+    behavior_controls_v1: { locked: false },
   },
 });
 
@@ -326,10 +330,6 @@ export function toTrainingPlanConfigFormDataFromStructure(input: {
   const calibrationSnapshot = asRecord(
     asRecord(metadata.creation_calibration)?.snapshot,
   );
-  const projectionSnapshot = asRecord(
-    creationConfigSnapshot?.projection_control_v2,
-  );
-
   const merged = {
     ...defaults,
     availabilityConfig:
@@ -355,23 +355,13 @@ export function toTrainingPlanConfigFormDataFromStructure(input: {
     postGoalRecoveryDays:
       asNumber(creationConfigSnapshot?.post_goal_recovery_days) ??
       defaults.postGoalRecoveryDays,
-    maxWeeklyTssRampPct:
-      asNumber(creationConfigSnapshot?.max_weekly_tss_ramp_pct) ??
-      defaults.maxWeeklyTssRampPct,
-    maxCtlRampPerWeek:
-      asNumber(creationConfigSnapshot?.max_ctl_ramp_per_week) ??
-      defaults.maxCtlRampPerWeek,
+    behaviorControlsV1:
+      (creationConfigSnapshot?.behavior_controls_v1 as
+        | TrainingPlanConfigFormData["behaviorControlsV1"]
+        | undefined) ?? defaults.behaviorControlsV1,
     startingCtlAssumption:
       asNumber(asRecord(parsedStructure.fitness_progression)?.starting_ctl) ??
       defaults.startingCtlAssumption,
-    projectionControlV2: projectionControlV2Schema.parse({
-      ...defaults.projectionControlV2,
-      ...(projectionSnapshot ?? {}),
-      user_owned: {
-        ...defaults.projectionControlV2.user_owned,
-        ...(asRecord(projectionSnapshot?.user_owned) ?? {}),
-      },
-    }),
     calibration: trainingPlanCalibrationConfigSchema.parse(
       calibrationSnapshot ?? creationConfigSnapshot?.calibration ?? {},
     ),

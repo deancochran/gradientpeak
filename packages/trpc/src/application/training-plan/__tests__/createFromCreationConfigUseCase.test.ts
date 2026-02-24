@@ -401,7 +401,13 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
       }),
     ).rejects.toMatchObject({
       code: "BAD_REQUEST",
-      message: expect.stringContaining("Refresh previewCreationConfig"),
+      message: expect.stringContaining("Refresh preview"),
+      cause: {
+        domain: "training_plan_commit",
+        code: "TRAINING_PLAN_COMMIT_STALE_PREVIEW",
+        operation: "createFromCreationConfig",
+        recoverable: true,
+      },
     });
   });
 
@@ -497,6 +503,15 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
       message: expect.stringContaining(
         "Creation blocked by unresolved conflicts",
       ),
+      cause: {
+        domain: "training_plan_commit",
+        code: "TRAINING_PLAN_COMMIT_CONFLICT",
+        operation: "createFromCreationConfig",
+        recoverable: true,
+        details: {
+          blocking_conflict_codes: ["post_goal_recovery_overlaps_next_goal"],
+        },
+      },
     });
 
     expect(repository.createTrainingPlan).not.toHaveBeenCalled();
@@ -603,6 +618,15 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
       message: expect.stringContaining(
         "Creation blocked by unresolved conflicts",
       ),
+      cause: {
+        domain: "training_plan_commit",
+        code: "TRAINING_PLAN_COMMIT_CONFLICT",
+        operation: "createFromCreationConfig",
+        recoverable: true,
+        details: {
+          blocking_conflict_codes: ["required_tss_ramp_exceeds_cap"],
+        },
+      },
     });
 
     expect(repository.createTrainingPlan).not.toHaveBeenCalled();
@@ -679,5 +703,52 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
         }),
       }),
     );
+  });
+
+  it("rejects create when generated structure is invalid", async () => {
+    const deps = createDeps();
+    deps.parseTrainingPlanStructure = vi.fn(() => {
+      throw new Error("invalid structure");
+    });
+
+    const repository = {
+      deactivateActivePlans: vi.fn(async () => undefined),
+      createTrainingPlan: vi.fn(async () => ({
+        id: "plan-row-invalid",
+        name: "Generated Plan",
+        is_active: true,
+      })),
+      getPriorInferredStateSnapshot: vi.fn(async () => null),
+      persistInferredStateSnapshot: vi.fn(async () => undefined),
+    };
+
+    await expect(
+      createFromCreationConfigUseCase({
+        supabase: {} as any,
+        profileId: "profile-123",
+        params: {
+          minimal_plan: {
+            plan_start_date: "2026-01-05",
+            goals: [],
+          },
+          creation_input: {},
+          preview_snapshot_token: "preview-token",
+          is_active: true,
+        },
+        repository,
+        deps: deps as any,
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Generated training plan structure is invalid",
+      cause: {
+        domain: "training_plan_commit",
+        code: "TRAINING_PLAN_COMMIT_INVALID_PAYLOAD",
+        operation: "createFromCreationConfig",
+        recoverable: true,
+      },
+    });
+
+    expect(repository.createTrainingPlan).not.toHaveBeenCalled();
   });
 });

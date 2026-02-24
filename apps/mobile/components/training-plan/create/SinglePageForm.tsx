@@ -45,6 +45,7 @@ import type {
   CreationAvailabilityConfig,
   CreationConfigLocks,
   CreationConstraints,
+  CreationBehaviorControlsV1,
   CreationContextSummary,
   CreationFeasibilitySafetySummary,
   NoHistoryProjectionMetadata,
@@ -54,7 +55,6 @@ import type {
   CreationRecentInfluenceAction,
   TrainingPlanCalibrationConfig,
   CreationValueSource,
-  ProjectionControlV2,
 } from "@repo/core";
 
 export type GoalTargetType =
@@ -97,11 +97,9 @@ export interface TrainingPlanConfigFormData {
   constraints: CreationConstraints;
   optimizationProfile: "outcome_first" | "balanced" | "sustainable";
   postGoalRecoveryDays: number;
-  maxWeeklyTssRampPct: number;
-  maxCtlRampPerWeek: number;
+  behaviorControlsV1: CreationBehaviorControlsV1;
   startingCtlAssumption?: number;
   startingFatigueState?: "fresh" | "normal" | "fatigued";
-  projectionControlV2: ProjectionControlV2;
   calibration: TrainingPlanCalibrationConfig;
   calibrationCompositeLocks: CompositeWeightLocks;
   constraintsSource: CreationValueSource;
@@ -800,6 +798,7 @@ export function SinglePageForm({
           hard_rest_days: [...configData.constraints.hard_rest_days],
         },
         locks: { ...configData.locks },
+        behaviorControlsV1: { ...configData.behaviorControlsV1 },
         calibration: {
           ...configData.calibration,
           readiness_composite: {
@@ -819,12 +818,6 @@ export function SinglePageForm({
           },
           optimizer: {
             ...configData.calibration.optimizer,
-          },
-        },
-        projectionControlV2: {
-          ...configData.projectionControlV2,
-          user_owned: {
-            ...configData.projectionControlV2.user_owned,
           },
         },
         calibrationCompositeLocks: { ...configData.calibrationCompositeLocks },
@@ -1411,44 +1404,9 @@ export function SinglePageForm({
                 </View>
 
                 <View className={sectionCardClass}>
-                  <Text className="text-sm">Weekly load increase cap (%)</Text>
-                  <PercentSliderInput
-                    id="max-weekly-load-ramp"
-                    value={configData.maxWeeklyTssRampPct}
-                    min={0}
-                    max={40}
-                    step={0.25}
-                    showNumericInput={false}
-                    helperText="Caps weekly load growth."
-                    onChange={(nextValue) => {
-                      updateConfig((draft) => {
-                        draft.maxWeeklyTssRampPct = nextValue;
-                      });
-                    }}
-                  />
-                </View>
-
-                <View className={sectionCardClass}>
-                  <Text className="text-sm">Weekly fitness increase cap</Text>
-                  <NumberSliderInput
-                    id="max-weekly-ctl-ramp"
-                    label="Cap"
-                    value={configData.maxCtlRampPerWeek}
-                    min={0}
-                    max={12}
-                    step={0.1}
-                    decimals={2}
-                    unitLabel="CTL/wk"
-                    helperText="Caps weekly CTL growth."
-                    onChange={(value) => {
-                      updateConfig((draft) => {
-                        draft.maxCtlRampPerWeek = Math.max(
-                          0,
-                          Math.min(12, Number(value.toFixed(2))),
-                        );
-                      });
-                    }}
-                  />
+                  <Text className="text-xs text-muted-foreground">
+                    Safety caps are always enforced internally.
+                  </Text>
                 </View>
               </View>
             )}
@@ -1466,139 +1424,128 @@ export function SinglePageForm({
                   </Button>
                 </View>
                 <View className={sectionCardClass}>
-                  <NumberSliderInput
-                    id="proj-ambition"
-                    label="Ambition"
-                    value={configData.projectionControlV2.ambition}
+                  <PercentSliderInput
+                    id="behavior-aggressiveness"
+                    label="Aggressiveness"
+                    value={configData.behaviorControlsV1.aggressiveness * 100}
                     min={0}
-                    max={1}
-                    decimals={2}
-                    step={0.01}
-                    helperText="Higher values push for bigger readiness gains."
-                    onChange={(value) => {
+                    max={100}
+                    step={1}
+                    helperText="Higher values push progression harder."
+                    onChange={(percent) => {
                       updateConfig((draft) => {
-                        draft.projectionControlV2.ambition = value;
-                        draft.projectionControlV2.user_owned.ambition = true;
+                        draft.behaviorControlsV1.aggressiveness = Number(
+                          (percent / 100).toFixed(2),
+                        );
                       });
                     }}
+                    showNumericInput={false}
                   />
-                  <NumberSliderInput
-                    id="proj-risk-tolerance"
-                    label="Risk tolerance"
-                    value={configData.projectionControlV2.risk_tolerance}
+                  <PercentSliderInput
+                    id="behavior-variability"
+                    label="Variability"
+                    value={configData.behaviorControlsV1.variability * 100}
                     min={0}
-                    max={1}
-                    decimals={2}
-                    step={0.01}
-                    helperText="Higher values allow riskier progression choices."
-                    onChange={(value) => {
+                    max={100}
+                    step={1}
+                    helperText="Higher values allow more week-to-week variation."
+                    onChange={(percent) => {
                       updateConfig((draft) => {
-                        draft.projectionControlV2.risk_tolerance = value;
-                        draft.projectionControlV2.user_owned.risk_tolerance = true;
+                        draft.behaviorControlsV1.variability = Number(
+                          (percent / 100).toFixed(2),
+                        );
                       });
                     }}
+                    showNumericInput={false}
+                  />
+                  <PercentSliderInput
+                    id="behavior-spike-frequency"
+                    label="Spike frequency"
+                    value={configData.behaviorControlsV1.spike_frequency * 100}
+                    min={0}
+                    max={100}
+                    step={1}
+                    helperText="Higher values allow bigger peak weeks more often."
+                    onChange={(percent) => {
+                      updateConfig((draft) => {
+                        draft.behaviorControlsV1.spike_frequency = Number(
+                          (percent / 100).toFixed(2),
+                        );
+                      });
+                    }}
+                    showNumericInput={false}
                   />
                   <NumberSliderInput
-                    id="proj-curvature"
-                    label="Curvature"
-                    value={configData.projectionControlV2.curvature}
+                    id="behavior-shape-target"
+                    label="Load shape target"
+                    value={configData.behaviorControlsV1.shape_target}
                     min={-1}
                     max={1}
                     decimals={2}
                     step={0.05}
-                    helperText="Negative front-loads. Positive back-loads."
+                    helperText="Negative values bias early load, positive values bias later load."
                     onChange={(value) => {
                       updateConfig((draft) => {
-                        draft.projectionControlV2.curvature = value;
-                        draft.projectionControlV2.user_owned.curvature = true;
+                        draft.behaviorControlsV1.shape_target = Number(
+                          value.toFixed(2),
+                        );
                       });
                     }}
                   />
-                  <NumberSliderInput
-                    id="proj-curvature-strength"
-                    label="Curvature strength"
-                    value={configData.projectionControlV2.curvature_strength}
+                  <PercentSliderInput
+                    id="behavior-shape-strength"
+                    label="Load shape strength"
+                    value={configData.behaviorControlsV1.shape_strength * 100}
                     min={0}
-                    max={1}
-                    decimals={2}
-                    step={0.01}
-                    helperText="Controls how strongly curvature preference is enforced."
-                    onChange={(value) => {
+                    max={100}
+                    step={1}
+                    helperText="Higher values enforce the selected load shape more strongly."
+                    onChange={(percent) => {
                       updateConfig((draft) => {
-                        draft.projectionControlV2.curvature_strength = value;
-                        draft.projectionControlV2.user_owned.curvature_strength = true;
+                        draft.behaviorControlsV1.shape_strength = Number(
+                          (percent / 100).toFixed(2),
+                        );
                       });
                     }}
-                  />
-                </View>
-                <View className={sectionCardClass}>
-                  <NumberSliderInput
-                    id="cal-preparedness-weight"
-                    label="Push fitness multiplier"
-                    value={configData.calibration.optimizer.preparedness_weight}
-                    min={0}
-                    max={30}
-                    decimals={1}
-                    step={0.1}
-                    unitLabel="x"
-                    helperText="Higher values prioritize readiness gains more strongly."
-                    onChange={(value) => {
-                      updateConfig((draft) => {
-                        draft.calibration.optimizer.preparedness_weight = value;
-                      });
-                    }}
+                    showNumericInput={false}
                   />
                   <NumberSliderInput
-                    id="cal-risk-penalty"
-                    label="Overload risk multiplier"
-                    value={configData.calibration.optimizer.risk_penalty_weight}
-                    min={0}
-                    max={2}
-                    decimals={2}
-                    step={0.05}
-                    unitLabel="x"
-                    helperText="Higher values penalize fatigue-risky progression more."
-                    onChange={(value) => {
-                      updateConfig((draft) => {
-                        draft.calibration.optimizer.risk_penalty_weight = value;
-                      });
-                    }}
-                  />
-                  <NumberSliderInput
-                    id="cal-volatility-penalty"
-                    label="Volatility multiplier"
+                    id="behavior-recovery-priority"
+                    label="Recovery priority"
                     value={
-                      configData.calibration.optimizer.volatility_penalty_weight
+                      configData.behaviorControlsV1.recovery_priority * 100
                     }
                     min={0}
-                    max={2}
-                    decimals={2}
-                    step={0.05}
-                    unitLabel="x"
-                    helperText="Higher values reduce week-to-week load swings."
+                    max={100}
+                    decimals={0}
+                    step={1}
+                    unitLabel="%"
+                    helperText="Higher values prioritize recovery over risk-taking."
                     onChange={(value) => {
                       updateConfig((draft) => {
-                        draft.calibration.optimizer.volatility_penalty_weight =
-                          value;
+                        draft.behaviorControlsV1.recovery_priority = Number(
+                          (value / 100).toFixed(2),
+                        );
                       });
                     }}
                   />
                   <NumberSliderInput
-                    id="cal-churn-penalty"
-                    label="Schedule stability multiplier"
+                    id="behavior-starting-fitness-confidence"
+                    label="Starting fitness confidence"
                     value={
-                      configData.calibration.optimizer.churn_penalty_weight
+                      configData.behaviorControlsV1
+                        .starting_fitness_confidence * 100
                     }
                     min={0}
-                    max={2}
-                    decimals={2}
-                    step={0.05}
-                    unitLabel="x"
-                    helperText="Higher values reduce frequent plan rewrites."
+                    max={100}
+                    decimals={0}
+                    step={1}
+                    unitLabel="%"
+                    helperText="Lower values anchor early weeks more conservatively."
                     onChange={(value) => {
                       updateConfig((draft) => {
-                        draft.calibration.optimizer.churn_penalty_weight =
-                          value;
+                        draft.behaviorControlsV1.starting_fitness_confidence =
+                          Number((value / 100).toFixed(2));
                       });
                     }}
                   />

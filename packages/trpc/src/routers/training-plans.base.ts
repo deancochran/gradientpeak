@@ -1,6 +1,7 @@
 // packages/trpc/src/routers/training-plans.base.ts
 import {
   addDaysDateOnlyUtc,
+  buildProjectionEngineInput,
   buildDeterministicProjectionPayload,
   calculateTrainingLoadSeries,
   classifyCreationFeasibility,
@@ -26,7 +27,6 @@ import {
   normalizeProjectionSafetyConfig,
   parseDateOnlyUtc,
   postCreateBehaviorSchema,
-  projectionControlV2Schema,
   previewCreationConfigInputSchema,
   resolveConstraintConflicts,
   trainingPlanCreationConfigFormSchema,
@@ -50,6 +50,7 @@ import {
   type ReadinessDeltaDiagnostics,
   type ProjectionRecoverySegment,
   type NormalizeCreationConfigInput,
+  type TrainingPlanCreationConfig,
 } from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -496,9 +497,7 @@ function buildProjectionChartPayload(input: {
   startingCtl?: number;
   startingAtl?: number;
   priorInferredSnapshot?: InferredStateSnapshot;
-  creationConfig?: NonNullable<
-    Parameters<typeof buildDeterministicProjectionPayload>[0]["creation_config"]
-  >;
+  normalizedCreationConfig?: TrainingPlanCreationConfig;
   noHistoryContext?: NoHistoryAnchorContext;
 }): ProjectionChartPayload {
   const { expandedPlan } = input;
@@ -517,31 +516,16 @@ function buildProjectionChartPayload(input: {
         Math.round((block.target_weekly_tss_range?.max ?? 0) * 10) / 10,
     }));
 
-  const deterministicProjection = buildDeterministicProjectionPayload({
-    timeline: {
-      start_date: expandedPlan.start_date,
-      end_date: expandedPlan.end_date,
-    },
-    blocks: expandedPlan.blocks.map((block) => ({
-      name: block.name,
-      phase: block.phase,
-      start_date: block.start_date,
-      end_date: block.end_date,
-      target_weekly_tss_range: block.target_weekly_tss_range,
-    })),
-    goals: expandedPlan.goals.map((goal) => ({
-      id: goal.id,
-      name: goal.name,
-      target_date: goal.target_date,
-      priority: goal.priority,
-      targets: goal.targets,
-    })),
-    starting_ctl: input.startingCtl,
-    starting_atl: input.startingAtl,
-    prior_inferred_snapshot: input.priorInferredSnapshot,
-    creation_config: input.creationConfig,
-    no_history_context: input.noHistoryContext,
-  });
+  const deterministicProjection = buildDeterministicProjectionPayload(
+    buildProjectionEngineInput({
+      expanded_plan: expandedPlan,
+      normalized_creation_config: input.normalizedCreationConfig,
+      starting_ctl: input.startingCtl,
+      starting_atl: input.startingAtl,
+      prior_inferred_snapshot: input.priorInferredSnapshot,
+      no_history_context: input.noHistoryContext,
+    }),
+  );
 
   const microcycles: ProjectionMicrocycleWithId[] =
     deterministicProjection.microcycles.map((microcycle) => ({
@@ -769,10 +753,13 @@ function deriveProjectionDrivenConflicts(input: {
       code: "required_tss_ramp_exceeds_cap",
       severity: "blocking",
       message:
-        "Required week-to-week TSS progression exceeds the configured max_weekly_tss_ramp_pct",
-      field_paths: ["max_weekly_tss_ramp_pct", "optimization_profile"],
+        "Required week-to-week TSS progression exceeds current safety guardrails",
+      field_paths: [
+        "behavior_controls_v1.aggressiveness",
+        "optimization_profile",
+      ],
       suggestions: [
-        "Raise max_weekly_tss_ramp_pct",
+        "Lower aggressiveness or spike frequency",
         "Move one or more goals farther out",
         "Pick a less conservative optimization profile",
       ],
@@ -783,11 +770,13 @@ function deriveProjectionDrivenConflicts(input: {
     conflicts.push({
       code: "required_ctl_ramp_exceeds_cap",
       severity: "blocking",
-      message:
-        "Required CTL progression exceeds the configured max_ctl_ramp_per_week",
-      field_paths: ["max_ctl_ramp_per_week", "optimization_profile"],
+      message: "Required CTL progression exceeds current safety guardrails",
+      field_paths: [
+        "behavior_controls_v1.aggressiveness",
+        "optimization_profile",
+      ],
       suggestions: [
-        "Raise max_ctl_ramp_per_week",
+        "Lower aggressiveness or increase recovery priority",
         "Extend timeline before high-priority goals",
         "Lower expected peak load requirements",
       ],
@@ -947,27 +936,6 @@ function mergeCalibrationInput(
   });
 }
 
-function mergeProjectionControlInput(
-  base?: z.input<typeof projectionControlV2Schema>,
-  override?: z.input<typeof projectionControlV2Schema>,
-): z.infer<typeof projectionControlV2Schema> {
-  const fallback = projectionControlV2Schema.parse({});
-  const baseline = base ? projectionControlV2Schema.parse(base) : fallback;
-
-  if (!override) {
-    return baseline;
-  }
-
-  return projectionControlV2Schema.parse({
-    ...baseline,
-    ...override,
-    user_owned: {
-      ...baseline.user_owned,
-      ...override.user_owned,
-    },
-  });
-}
-
 function formatIssuePath(path: Array<string | number>): string {
   if (path.length === 0) {
     return "root";
@@ -1057,9 +1025,7 @@ function buildCreationPreviewSnapshotToken(input: {
     constraints: input.finalConfig.constraints,
     optimization_profile: input.finalConfig.optimization_profile,
     post_goal_recovery_days: input.finalConfig.post_goal_recovery_days,
-    max_weekly_tss_ramp_pct: input.finalConfig.max_weekly_tss_ramp_pct,
-    max_ctl_ramp_per_week: input.finalConfig.max_ctl_ramp_per_week,
-    projection_control_v2: input.finalConfig.projection_control_v2,
+    behavior_controls_v1: input.finalConfig.behavior_controls_v1,
     calibration: input.finalConfig.calibration,
   };
 
@@ -1120,14 +1086,7 @@ function buildCreationProjectionArtifacts(input: {
     startingCtl: effectiveStartingCtl,
     startingAtl: effectiveStartingAtl,
     priorInferredSnapshot: input.priorInferredSnapshot,
-    creationConfig: {
-      optimization_profile: input.finalConfig.optimization_profile,
-      post_goal_recovery_days: input.finalConfig.post_goal_recovery_days,
-      max_weekly_tss_ramp_pct: input.finalConfig.max_weekly_tss_ramp_pct,
-      max_ctl_ramp_per_week: input.finalConfig.max_ctl_ramp_per_week,
-      projection_control_v2: input.finalConfig.projection_control_v2,
-      calibration: input.finalConfig.calibration,
-    },
+    normalizedCreationConfig: input.finalConfig,
     noHistoryContext,
   });
 
@@ -1354,9 +1313,6 @@ function buildConfirmedSuggestionsFromContext(input: {
       suggestedOptimizationProfile,
     post_goal_recovery_days:
       input.creationInput.defaults?.post_goal_recovery_days,
-    max_weekly_tss_ramp_pct:
-      input.creationInput.defaults?.max_weekly_tss_ramp_pct,
-    max_ctl_ramp_per_week: input.creationInput.defaults?.max_ctl_ramp_per_week,
     learned_ramp_rate:
       featureFlags.personalizationRampLearning &&
       input.contextSummary.learned_ramp_rate
@@ -1374,10 +1330,8 @@ function buildConfirmedSuggestionsFromContext(input: {
       availability_config: input.creationInput.user_values?.availability_config,
       recent_influence: input.creationInput.user_values?.recent_influence,
       constraints: input.creationInput.user_values?.constraints,
-      max_weekly_tss_ramp_pct:
-        input.creationInput.user_values?.max_weekly_tss_ramp_pct,
-      max_ctl_ramp_per_week:
-        input.creationInput.user_values?.max_ctl_ramp_per_week,
+      behavior_controls_v1:
+        input.creationInput.user_values?.behavior_controls_v1,
     },
     locks: input.creationInput.user_values?.locks,
     now_iso: input.nowIso,
@@ -1390,16 +1344,7 @@ function buildConfirmedSuggestionsFromContext(input: {
     constraints: suggestionPayload.constraints,
     optimization_profile: profileDefaults.optimization_profile,
     post_goal_recovery_days: profileDefaults.post_goal_recovery_days,
-    max_weekly_tss_ramp_pct:
-      featureFlags.personalizationRampLearning &&
-      input.contextSummary.learned_ramp_rate
-        ? profileDefaults.max_weekly_tss_ramp_pct
-        : suggestionPayload.max_weekly_tss_ramp_pct,
-    max_ctl_ramp_per_week: suggestionPayload.max_ctl_ramp_per_week,
-    projection_control_v2: mergeProjectionControlInput(
-      input.creationInput.defaults?.projection_control_v2,
-      input.creationInput.confirmed_suggestions?.projection_control_v2,
-    ),
+    behavior_controls_v1: suggestionPayload.behavior_controls_v1,
     calibration: mergeCalibrationInput(
       input.creationInput.defaults?.calibration,
       input.creationInput.confirmed_suggestions?.calibration,
@@ -1440,16 +1385,9 @@ function mergeConfirmedSuggestions(input: {
     post_goal_recovery_days:
       confirmed?.post_goal_recovery_days ??
       input.suggestedValues.post_goal_recovery_days,
-    max_weekly_tss_ramp_pct:
-      confirmed?.max_weekly_tss_ramp_pct ??
-      input.suggestedValues.max_weekly_tss_ramp_pct,
-    max_ctl_ramp_per_week:
-      confirmed?.max_ctl_ramp_per_week ??
-      input.suggestedValues.max_ctl_ramp_per_week,
-    projection_control_v2: mergeProjectionControlInput(
-      input.suggestedValues.projection_control_v2,
-      confirmed?.projection_control_v2,
-    ),
+    behavior_controls_v1:
+      confirmed?.behavior_controls_v1 ??
+      input.suggestedValues.behavior_controls_v1,
     calibration: mergeCalibrationInput(
       input.suggestedValues.calibration,
       confirmed?.calibration,

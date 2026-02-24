@@ -1507,7 +1507,7 @@ function resolveWeeklyLoadSignals(
   );
   const recoveryCoverage =
     recoveryOverlap.overlap_days / Math.max(1, input.daysInWeek);
-  const requestedWeeklyTss = computeContinuousTransitionAdjustment({
+  const transitionAdjustedWeeklyTss = computeContinuousTransitionAdjustment({
     baseWeeklyTss,
     weekEndDate: input.weekEndDate,
     goals: input.goalMarkers,
@@ -1516,10 +1516,14 @@ function resolveWeeklyLoadSignals(
     totalProjectionWeeks: input.totalProjectionWeeks,
     recoveryCoverage,
   });
+  const periodizedWeeklyTss = Math.max(
+    0,
+    round1(transitionAdjustedWeeklyTss * weekPattern.multiplier),
+  );
   const recoveryReductionFactor = round3(1 - 0.35 * recoveryCoverage);
   const recoveryAdjustedWeeklyTss = Math.max(
     0,
-    round1(requestedWeeklyTss * recoveryReductionFactor),
+    round1(periodizedWeeklyTss * recoveryReductionFactor),
   );
   const curvatureAdjustedWeeklyTss = applyCurvatureLoadBias({
     weeklyTss: recoveryAdjustedWeeklyTss,
@@ -2940,7 +2944,7 @@ export function buildDeterministicProjectionPayload(
   const effectiveControls = resolveEffectiveProjectionControls({
     normalized_config: normalizedConfig,
     calibration,
-    projection_control: input.creation_config?.projection_control_v2,
+    behavior_controls_v1: input.creation_config?.behavior_controls_v1,
   });
   const goalMarkers = input.goals
     .map((goal, index) => ({

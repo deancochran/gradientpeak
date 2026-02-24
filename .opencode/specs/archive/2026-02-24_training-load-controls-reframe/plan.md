@@ -1,7 +1,7 @@
 # Plan: Training Load Controls Reframe
 
 Date: 2026-02-24
-Status: Proposed
+Status: Active - Hard Cutover
 Owner: Core + Mobile + Product
 
 Implements `./design.md`.
@@ -9,6 +9,10 @@ Implements `./design.md`.
 ## Phase 0 - Baseline and Contracts
 
 Objective: establish current behavior baseline and define hard-cutover contracts.
+
+Cutover rule: no deprecated aliases, removed contract keys, or dual-write support.
+
+Deprecated projection-control removals are in-scope for completion in this plan, not post-plan cleanup.
 
 Steps:
 
@@ -111,7 +115,7 @@ Objective: execute a single-release hard cutover and verify production behavior.
 
 Steps:
 
-1. Ship client and server contract changes together (no dual-path support).
+1. Ship client and server contract changes together (single-path hard cutover only).
 2. Capture telemetry on slider usage and impact confidence.
 3. Verify zero usage of removed payload keys after release.
 

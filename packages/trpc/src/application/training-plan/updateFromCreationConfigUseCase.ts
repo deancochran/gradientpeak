@@ -14,6 +14,12 @@ import {
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Json } from "@repo/supabase";
 import { z } from "zod";
+import {
+  buildConflictCommitError,
+  buildInvalidPayloadCommitError,
+  buildNotFoundCommitError,
+  buildStalePreviewCommitError,
+} from "../../lib/errors/trainingPlanCommitErrors";
 
 type UpdateFromCreationConfigInput = z.infer<
   typeof createFromCreationConfigInputSchema
@@ -204,9 +210,8 @@ export async function updateFromCreationConfigUseCase<
     .single();
 
   if (existingPlanError || !existingPlan) {
-    throw new TRPCError({
-      code: "NOT_FOUND",
-      message: "Training plan not found or you do not have access to edit it",
+    throw buildNotFoundCommitError({
+      operation: "updateFromCreationConfig",
     });
   }
 
@@ -245,10 +250,9 @@ export async function updateFromCreationConfigUseCase<
     input.params.preview_snapshot_token &&
     input.params.preview_snapshot_token !== expectedPreviewSnapshotToken
   ) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message:
-        "Creation preview is stale or invalid. Refresh previewCreationConfig and retry updateFromCreationConfig.",
+    throw buildStalePreviewCommitError({
+      operation: "updateFromCreationConfig",
+      providedToken: input.params.preview_snapshot_token,
     });
   }
 
@@ -268,14 +272,10 @@ export async function updateFromCreationConfigUseCase<
   });
 
   if (overrideEvaluation.isBlocking) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message:
-        "Creation blocked by unresolved conflicts. Resolve blocking conflicts or submit an explicit override_policy for objective/risk-budget conflicts.",
-      cause: {
-        blocking_conflict_codes:
-          overrideEvaluation.audit.effective.unresolved_blocking_conflict_codes,
-      },
+    throw buildConflictCommitError({
+      operation: "updateFromCreationConfig",
+      blockingConflictCodes:
+        overrideEvaluation.audit.effective.unresolved_blocking_conflict_codes,
     });
   }
 
@@ -318,10 +318,15 @@ export async function updateFromCreationConfigUseCase<
   try {
     input.deps.parseTrainingPlanStructure(structureWithId);
   } catch (validationError) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "Generated training plan structure is invalid",
-      cause: validationError,
+    throw buildInvalidPayloadCommitError({
+      operation: "updateFromCreationConfig",
+      reason: "generated_plan_failed_schema_validation",
+      details: {
+        validation_error:
+          validationError instanceof Error
+            ? validationError.message
+            : "unknown_validation_error",
+      },
     });
   }
 

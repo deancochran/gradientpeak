@@ -105,24 +105,14 @@ describe("training plan creation contracts", () => {
       creation_input: {
         user_values: {
           optimization_profile: "sustainable",
-          max_weekly_tss_ramp_pct: 6,
-        },
-      },
-    });
-
-    expect(result.success).toBe(true);
-  });
-
-  it("accepts projection_control_v2 partial user overrides", () => {
-    const result = createFromCreationConfigInputSchema.safeParse({
-      minimal_plan: minimalPlan,
-      creation_input: {
-        user_values: {
-          projection_control_v2: {
-            ambition: 0.72,
-            user_owned: {
-              ambition: true,
-            },
+          behavior_controls_v1: {
+            aggressiveness: 0.7,
+            variability: 0.3,
+            spike_frequency: 0.5,
+            shape_target: -0.2,
+            shape_strength: 0.8,
+            recovery_priority: 0.6,
+            starting_fitness_confidence: 0.4,
           },
         },
       },
@@ -138,99 +128,140 @@ describe("training plan creation contracts", () => {
     expect(result.success).toBe(true);
   });
 
-  it("backfills projection_control_v2 defaults in active creation config schema", () => {
+  describe("strictness matrix for unknown and legacy key rejection", () => {
     const base = normalizeCreationConfig({});
-    const legacyShape: Partial<typeof base> = { ...base };
-    delete legacyShape.projection_control_v2;
-    const parsed = trainingPlanCreationConfigSchema.parse(legacyShape);
 
-    expect(parsed.projection_control_v2).toEqual({
-      mode: "simple",
-      ambition: 0.5,
-      risk_tolerance: 0.4,
-      curvature: 0,
-      curvature_strength: 0.35,
-      user_owned: {
-        mode: false,
-        ambition: false,
-        risk_tolerance: false,
-        curvature: false,
-        curvature_strength: false,
+    const strictnessCases: Array<{
+      name: string;
+      run: () => boolean;
+    }> = [
+      {
+        name: "active config rejects unknown top-level key",
+        run: () =>
+          trainingPlanCreationConfigSchema.safeParse({
+            ...base,
+            removed_tuning_control_key: {
+              level: 0.8,
+            },
+          }).success,
       },
-    });
-  });
-
-  it("keeps active creation config schema strict about removed legacy fields", () => {
-    const base = normalizeCreationConfig({});
-    const result = trainingPlanCreationConfigSchema.safeParse({
-      ...base,
-      mode: "safe_default",
-    });
-
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects removed mode/risk/policy fields from active config schema", () => {
-    const base = normalizeCreationConfig({});
-    const result = trainingPlanCreationConfigSchema.safeParse({
-      ...base,
-      mode: "risk_accepted",
-      risk_acceptance: {
-        accepted: true,
-        reason: "Explicitly accept elevated risk",
-        accepted_at_iso: "2026-02-14T10:15:00.000Z",
+      {
+        name: "active config rejects legacy mode field",
+        run: () =>
+          trainingPlanCreationConfigSchema.safeParse({
+            ...base,
+            mode: "safe_default",
+          }).success,
       },
-      constraint_policy: {
-        enforce_safety_caps: true,
-        enforce_feasibility_caps: true,
-        readiness_cap_enabled: false,
+      {
+        name: "active config rejects legacy mode/risk/policy group",
+        run: () =>
+          trainingPlanCreationConfigSchema.safeParse({
+            ...base,
+            mode: "risk_accepted",
+            risk_acceptance: {
+              accepted: true,
+              reason: "Explicitly accept elevated risk",
+              accepted_at_iso: "2026-02-14T10:15:00.000Z",
+            },
+            constraint_policy: {
+              enforce_safety_caps: true,
+              enforce_feasibility_caps: true,
+              readiness_cap_enabled: false,
+            },
+          }).success,
       },
-    });
-
-    expect(result.success).toBe(false);
-  });
-
-  it("hard-rejects removed legacy fields in active preview/create inputs", () => {
-    const result = createFromCreationConfigInputSchema.safeParse({
-      minimal_plan: minimalPlan,
-      creation_input: {
-        mode: "risk_accepted",
-        risk_acceptance: {
-          accepted: true,
-          reason: "Explicitly accept elevated risk",
-        },
-        constraint_policy: {
-          enforce_safety_caps: false,
-        },
-        user_values: {
-          optimization_profile: "outcome_first",
-          max_weekly_tss_ramp_pct: 8,
-          max_ctl_ramp_per_week: 3,
-        },
+      {
+        name: "create input rejects legacy mode/risk/policy and removed cap keys",
+        run: () =>
+          createFromCreationConfigInputSchema.safeParse({
+            minimal_plan: minimalPlan,
+            creation_input: {
+              mode: "risk_accepted",
+              risk_acceptance: {
+                accepted: true,
+                reason: "Explicitly accept elevated risk",
+              },
+              constraint_policy: {
+                enforce_safety_caps: false,
+              },
+              user_values: {
+                optimization_profile: "outcome_first",
+                max_weekly_tss_ramp_pct: 8,
+                max_ctl_ramp_per_week: 3,
+              },
+            },
+          }).success,
       },
-    });
-
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects inferred duplicate aliases in creation and suggestions inputs", () => {
-    const createResult = createFromCreationConfigInputSchema.safeParse({
-      minimal_plan: minimalPlan,
-      creation_input: {
-        user_values: {
-          recent_influence_score: 0.4,
-        },
+      {
+        name: "create input rejects removed cap aliases",
+        run: () =>
+          createFromCreationConfigInputSchema.safeParse({
+            minimal_plan: minimalPlan,
+            creation_input: {
+              user_values: {
+                max_weekly_tss_ramp_pct: 8,
+                max_ctl_ramp_per_week: 3,
+              },
+            },
+          }).success,
       },
-    });
-
-    const suggestionsResult = getCreationSuggestionsInputSchema.safeParse({
-      existing_values: {
-        recent_influence_score: 0.4,
+      {
+        name: "create input rejects legacy projection_control_v2 alias",
+        run: () =>
+          createFromCreationConfigInputSchema.safeParse({
+            minimal_plan: minimalPlan,
+            creation_input: {
+              user_values: {
+                projection_control_v2: {
+                  ambition: 0.8,
+                },
+              },
+            },
+          }).success,
       },
-    });
+      {
+        name: "create input rejects inferred duplicate alias recent_influence_score",
+        run: () =>
+          createFromCreationConfigInputSchema.safeParse({
+            minimal_plan: minimalPlan,
+            creation_input: {
+              user_values: {
+                recent_influence_score: 0.4,
+              },
+            },
+          }).success,
+      },
+      {
+        name: "suggestions input rejects inferred duplicate alias recent_influence_score",
+        run: () =>
+          getCreationSuggestionsInputSchema.safeParse({
+            existing_values: {
+              recent_influence_score: 0.4,
+            },
+          }).success,
+      },
+      {
+        name: "create input rejects client-provided projection artifacts",
+        run: () =>
+          createFromCreationConfigInputSchema.safeParse({
+            minimal_plan: minimalPlan,
+            creation_input: {},
+            projection_chart: {
+              readiness_score: 100,
+            },
+            creation_summary: {
+              projection_chart: {
+                readiness_score: 100,
+              },
+            },
+          }).success,
+      },
+    ];
 
-    expect(createResult.success).toBe(false);
-    expect(suggestionsResult.success).toBe(false);
+    it.each(strictnessCases)("$name", ({ run }) => {
+      expect(run()).toBe(false);
+    });
   });
 
   it("accepts partial calibration overrides in creation input", () => {

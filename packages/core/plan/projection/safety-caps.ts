@@ -46,14 +46,6 @@ export interface ProjectionCalibrationConfigInput {
   };
 }
 
-export interface ProjectionControlV2Input {
-  mode?: "simple" | "advanced";
-  ambition?: number;
-  risk_tolerance?: number;
-  curvature?: number;
-  curvature_strength?: number;
-}
-
 export type RampLearningConfidence = "low" | "medium" | "high";
 
 export interface LearnedRampRateInput {
@@ -112,8 +104,16 @@ export interface ProjectionSafetyConfigInput {
   post_goal_recovery_days?: number;
   max_weekly_tss_ramp_pct?: number;
   max_ctl_ramp_per_week?: number;
+  behavior_controls_v1?: {
+    aggressiveness?: number;
+    variability?: number;
+    spike_frequency?: number;
+    shape_target?: number;
+    shape_strength?: number;
+    recovery_priority?: number;
+    starting_fitness_confidence?: number;
+  };
   learned_ramp_rate?: LearnedRampRateInput;
-  projection_control_v2?: ProjectionControlV2Input;
   calibration?: ProjectionCalibrationConfigInput;
 }
 

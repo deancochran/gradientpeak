@@ -1,23 +1,21 @@
 import {
   creationAvailabilityConfigSchema,
+  creationBehaviorControlsV1Schema,
   creationConfigLocksSchema,
   creationConstraintsSchema,
   creationOptimizationProfileEnum,
-  projectionControlOwnershipMapV2Schema,
-  projectionControlV2Schema,
   creationProvenanceSchema,
   creationRecentInfluenceActionEnum,
   creationValueSourceEnum,
   trainingPlanCreationConfigSchema,
   type CreationAvailabilityConfig,
+  type CreationBehaviorControlsV1,
   type CreationConfigLocks,
   type CreationConstraints,
   type CreationProvenance,
   type CreationRecentInfluence,
   type CreationRecentInfluenceAction,
   type CreationValueSource,
-  type ProjectionControlOwnershipMapV2,
-  type ProjectionControlV2,
   type TrainingPlanCalibrationConfig,
   type TrainingPlanCreationConfig,
   trainingPlanCalibrationConfigSchema,
@@ -40,19 +38,8 @@ type CreationConfigValues = {
   constraints: CreationConstraints;
   optimization_profile: "outcome_first" | "balanced" | "sustainable";
   post_goal_recovery_days: number;
-  max_weekly_tss_ramp_pct: number;
-  max_ctl_ramp_per_week: number;
-  projection_control_v2: ProjectionControlV2;
+  behavior_controls_v1: CreationBehaviorControlsV1;
   calibration: TrainingPlanCalibrationConfig;
-};
-
-type PartialProjectionControlInput = {
-  mode?: ProjectionControlV2["mode"];
-  ambition?: number;
-  risk_tolerance?: number;
-  curvature?: number;
-  curvature_strength?: number;
-  user_owned?: Partial<ProjectionControlOwnershipMapV2>;
 };
 
 type PartialCalibrationInput = {
@@ -73,11 +60,7 @@ type PartialCalibrationInput = {
   optimizer?: Partial<TrainingPlanCalibrationConfig["optimizer"]>;
 };
 
-type CreationConfigInputValues = Omit<
-  CreationConfigValues,
-  "calibration" | "projection_control_v2"
-> & {
-  projection_control_v2: PartialProjectionControlInput;
+type CreationConfigInputValues = Omit<CreationConfigValues, "calibration"> & {
   calibration: PartialCalibrationInput;
 };
 
@@ -140,82 +123,17 @@ const DEFAULT_VALUES: CreationConfigValues = {
   constraints: CONSERVATIVE_DEFAULT_CONSTRAINTS,
   optimization_profile: "balanced",
   post_goal_recovery_days: 5,
-  max_weekly_tss_ramp_pct: 7,
-  max_ctl_ramp_per_week: 3,
-  projection_control_v2: projectionControlV2Schema.parse({}),
+  behavior_controls_v1: {
+    aggressiveness: 0.5,
+    variability: 0.5,
+    spike_frequency: 0.35,
+    shape_target: 0,
+    shape_strength: 0.35,
+    recovery_priority: 0.6,
+    starting_fitness_confidence: 0.6,
+  },
   calibration: trainingPlanCalibrationConfigSchema.parse({}),
 };
-
-function normalizeProjectionControlWithPrecedence(
-  userValue: PartialProjectionControlInput | undefined,
-  suggestionValue: PartialProjectionControlInput | undefined,
-  defaultValue: ProjectionControlV2,
-): ProjectionControlV2 {
-  return projectionControlV2Schema.parse({
-    mode: pickByPrecedence(
-      userValue?.mode,
-      suggestionValue?.mode,
-      defaultValue.mode,
-      false,
-    ).value,
-    ambition: pickByPrecedence(
-      userValue?.ambition,
-      suggestionValue?.ambition,
-      defaultValue.ambition,
-      false,
-    ).value,
-    risk_tolerance: pickByPrecedence(
-      userValue?.risk_tolerance,
-      suggestionValue?.risk_tolerance,
-      defaultValue.risk_tolerance,
-      false,
-    ).value,
-    curvature: pickByPrecedence(
-      userValue?.curvature,
-      suggestionValue?.curvature,
-      defaultValue.curvature,
-      false,
-    ).value,
-    curvature_strength: pickByPrecedence(
-      userValue?.curvature_strength,
-      suggestionValue?.curvature_strength,
-      defaultValue.curvature_strength,
-      false,
-    ).value,
-    user_owned: projectionControlOwnershipMapV2Schema.parse({
-      mode: pickByPrecedence(
-        userValue?.user_owned?.mode,
-        suggestionValue?.user_owned?.mode,
-        defaultValue.user_owned.mode,
-        false,
-      ).value,
-      ambition: pickByPrecedence(
-        userValue?.user_owned?.ambition,
-        suggestionValue?.user_owned?.ambition,
-        defaultValue.user_owned.ambition,
-        false,
-      ).value,
-      risk_tolerance: pickByPrecedence(
-        userValue?.user_owned?.risk_tolerance,
-        suggestionValue?.user_owned?.risk_tolerance,
-        defaultValue.user_owned.risk_tolerance,
-        false,
-      ).value,
-      curvature: pickByPrecedence(
-        userValue?.user_owned?.curvature,
-        suggestionValue?.user_owned?.curvature,
-        defaultValue.user_owned.curvature,
-        false,
-      ).value,
-      curvature_strength: pickByPrecedence(
-        userValue?.user_owned?.curvature_strength,
-        suggestionValue?.user_owned?.curvature_strength,
-        defaultValue.user_owned.curvature_strength,
-        false,
-      ).value,
-    }),
-  });
-}
 
 function mergeCalibration(
   base: TrainingPlanCalibrationConfig,
@@ -392,17 +310,13 @@ export function normalizeCreationConfig(
       ...CONSERVATIVE_DEFAULT_CONSTRAINTS,
       ...input.defaults?.constraints,
     }),
-    projection_control_v2: projectionControlV2Schema.parse({
-      ...DEFAULT_VALUES.projection_control_v2,
-      ...input.defaults?.projection_control_v2,
-      user_owned: {
-        ...DEFAULT_VALUES.projection_control_v2.user_owned,
-        ...input.defaults?.projection_control_v2?.user_owned,
-      },
-    }),
     calibration: mergeCalibration(
       DEFAULT_VALUES.calibration,
       input.defaults?.calibration,
+    ),
+    behavior_controls_v1: creationBehaviorControlsV1Schema.parse(
+      input.defaults?.behavior_controls_v1 ??
+        DEFAULT_VALUES.behavior_controls_v1,
     ),
   };
 
@@ -448,24 +362,11 @@ export function normalizeCreationConfig(
     locks.post_goal_recovery_days.locked,
   );
 
-  const maxWeeklyTssRampPctPick = pickByPrecedence(
-    input.user_values?.max_weekly_tss_ramp_pct,
-    input.confirmed_suggestions?.max_weekly_tss_ramp_pct,
-    defaultValues.max_weekly_tss_ramp_pct,
-    locks.max_weekly_tss_ramp_pct.locked,
-  );
-
-  const maxCtlRampPerWeekPick = pickByPrecedence(
-    input.user_values?.max_ctl_ramp_per_week,
-    input.confirmed_suggestions?.max_ctl_ramp_per_week,
-    defaultValues.max_ctl_ramp_per_week,
-    locks.max_ctl_ramp_per_week.locked,
-  );
-
-  const projectionControl = normalizeProjectionControlWithPrecedence(
-    input.user_values?.projection_control_v2,
-    input.confirmed_suggestions?.projection_control_v2,
-    defaultValues.projection_control_v2,
+  const behaviorControlsPick = pickByPrecedence(
+    input.user_values?.behavior_controls_v1,
+    input.confirmed_suggestions?.behavior_controls_v1,
+    defaultValues.behavior_controls_v1,
+    locks.behavior_controls_v1.locked,
   );
 
   const calibrationPick = pickByPrecedence(
@@ -511,9 +412,9 @@ export function normalizeCreationConfig(
       optimizationProfilePick.value,
     ),
     post_goal_recovery_days: postGoalRecoveryDaysPick.value,
-    max_weekly_tss_ramp_pct: maxWeeklyTssRampPctPick.value,
-    max_ctl_ramp_per_week: maxCtlRampPerWeekPick.value,
-    projection_control_v2: projectionControl,
+    behavior_controls_v1: creationBehaviorControlsV1Schema.parse(
+      behaviorControlsPick.value,
+    ),
     calibration: mergeCalibration(
       DEFAULT_VALUES.calibration,
       calibrationPick.value,

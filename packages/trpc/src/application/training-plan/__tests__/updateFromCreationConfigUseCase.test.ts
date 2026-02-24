@@ -127,6 +127,122 @@ describe("updateFromCreationConfigUseCase", () => {
       message: expect.stringContaining(
         "Creation blocked by unresolved conflicts",
       ),
+      cause: {
+        domain: "training_plan_commit",
+        code: "TRAINING_PLAN_COMMIT_CONFLICT",
+        operation: "updateFromCreationConfig",
+        recoverable: true,
+        details: {
+          blocking_conflict_codes: ["required_tss_ramp_exceeds_cap"],
+        },
+      },
+    });
+  });
+
+  it("rejects stale preview token with typed stale cause", async () => {
+    const supabase = createSupabaseMock({
+      data: {
+        id: "11111111-1111-4111-8111-111111111111",
+        structure: { id: "11111111-1111-4111-8111-111111111111" },
+        is_active: true,
+      },
+      error: null,
+    });
+    const deps = createDeps();
+
+    await expect(
+      updateFromCreationConfigUseCase({
+        supabase,
+        profileId: "profile-123",
+        params: {
+          plan_id: "11111111-1111-4111-8111-111111111111",
+          minimal_plan: { plan_start_date: "2026-01-05", goals: [] },
+          creation_input: {},
+          preview_snapshot_token: "stale-preview-token",
+          is_active: true,
+        },
+        deps,
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining("Refresh preview"),
+      cause: {
+        domain: "training_plan_commit",
+        code: "TRAINING_PLAN_COMMIT_STALE_PREVIEW",
+        operation: "updateFromCreationConfig",
+        recoverable: true,
+      },
+    });
+  });
+
+  it("rejects invalid generated payload with typed invalid cause", async () => {
+    const supabase = createSupabaseMock({
+      data: {
+        id: "11111111-1111-4111-8111-111111111111",
+        structure: { id: "11111111-1111-4111-8111-111111111111" },
+        is_active: true,
+      },
+      error: null,
+    });
+    const deps = createDeps();
+    deps.parseTrainingPlanStructure = vi.fn(() => {
+      throw new Error("invalid structure");
+    });
+
+    await expect(
+      updateFromCreationConfigUseCase({
+        supabase,
+        profileId: "profile-123",
+        params: {
+          plan_id: "11111111-1111-4111-8111-111111111111",
+          minimal_plan: { plan_start_date: "2026-01-05", goals: [] },
+          creation_input: {},
+          preview_snapshot_token: "preview-token",
+          is_active: true,
+        },
+        deps,
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Generated training plan structure is invalid",
+      cause: {
+        domain: "training_plan_commit",
+        code: "TRAINING_PLAN_COMMIT_INVALID_PAYLOAD",
+        operation: "updateFromCreationConfig",
+        recoverable: true,
+      },
+    });
+  });
+
+  it("rejects when plan is missing or not owned by caller", async () => {
+    const supabase = createSupabaseMock({
+      data: null,
+      error: { message: "not found" },
+    });
+    const deps = createDeps();
+
+    await expect(
+      updateFromCreationConfigUseCase({
+        supabase,
+        profileId: "profile-123",
+        params: {
+          plan_id: "11111111-1111-4111-8111-111111111111",
+          minimal_plan: { plan_start_date: "2026-01-05", goals: [] },
+          creation_input: {},
+          preview_snapshot_token: "preview-token",
+          is_active: true,
+        },
+        deps,
+      }),
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Training plan not found or you do not have access to edit it",
+      cause: {
+        domain: "training_plan_commit",
+        code: "TRAINING_PLAN_COMMIT_NOT_FOUND",
+        operation: "updateFromCreationConfig",
+        recoverable: false,
+      },
     });
   });
 });

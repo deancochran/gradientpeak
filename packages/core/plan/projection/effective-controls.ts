@@ -1,7 +1,6 @@
 import type { TrainingPlanCalibrationConfig } from "../../schemas/training_plan_structure";
 import type {
   OptimizationProfile,
-  ProjectionControlV2Input,
   ProjectionSafetyConfig,
 } from "./safety-caps";
 import {
@@ -11,7 +10,7 @@ import {
 import { getMpcProfileBounds } from "./mpc/lattice";
 
 export interface EffectiveProjectionControls {
-  projection_control: Required<ProjectionControlV2Input>;
+  behavior_controls: ResolvedBehaviorControls;
   optimizer: {
     preparedness_weight: number;
     risk_penalty_weight: number;
@@ -41,15 +40,37 @@ export type CurvatureEnvelopePattern =
 interface ResolveEffectiveProjectionControlsInput {
   normalized_config: ProjectionSafetyConfig;
   calibration: TrainingPlanCalibrationConfig;
-  projection_control?: ProjectionControlV2Input;
+  behavior_controls_v1?: ProjectionBehaviorControlsV1Input;
 }
 
-const PROJECTION_CONTROL_DEFAULTS: Required<ProjectionControlV2Input> = {
-  mode: "simple",
-  ambition: 0.5,
-  risk_tolerance: 0.4,
-  curvature: 0,
-  curvature_strength: 0.35,
+interface ProjectionBehaviorControlsV1Input {
+  aggressiveness?: number;
+  variability?: number;
+  spike_frequency?: number;
+  shape_target?: number;
+  shape_strength?: number;
+  recovery_priority?: number;
+  starting_fitness_confidence?: number;
+}
+
+interface ResolvedBehaviorControls {
+  aggressiveness: number;
+  variability: number;
+  spike_frequency: number;
+  shape_target: number;
+  shape_strength: number;
+  recovery_priority: number;
+  starting_fitness_confidence: number;
+}
+
+const BEHAVIOR_CONTROL_DEFAULTS: ResolvedBehaviorControls = {
+  aggressiveness: 0.5,
+  variability: 0.5,
+  spike_frequency: 0.35,
+  shape_target: 0,
+  shape_strength: 0.35,
+  recovery_priority: 0.6,
+  starting_fitness_confidence: 0.6,
 };
 
 const OPTIMIZER_SCHEMA_BOUNDS = {
@@ -67,9 +88,15 @@ const CURVATURE_TARGET_SCALE = 0.18;
 export function resolveEffectiveProjectionControls(
   input: ResolveEffectiveProjectionControlsInput,
 ): EffectiveProjectionControls {
-  const control = normalizeProjectionControl(input.projection_control);
-  const ambition = control.ambition;
-  const riskTolerance = control.risk_tolerance;
+  const behaviorControls = normalizeBehaviorControls(
+    input.behavior_controls_v1,
+  );
+  const aggressiveness = behaviorControls.aggressiveness;
+  const variability = behaviorControls.variability;
+  const spikeFrequency = behaviorControls.spike_frequency;
+  const recoveryPriority = behaviorControls.recovery_priority;
+  const startingFitnessConfidence =
+    behaviorControls.starting_fitness_confidence;
 
   const profileBounds = getMpcProfileBounds(
     input.normalized_config.optimization_profile,
@@ -95,29 +122,59 @@ export function resolveEffectiveProjectionControls(
     maxCandidateSteps,
   );
 
+  const preparednessScale = lerp(0.82, 1.5, aggressiveness);
+  const recoveryPreparednessScale = lerp(1.08, 0.82, recoveryPriority);
+  const confidencePreparednessScale = lerp(
+    0.88,
+    1.08,
+    startingFitnessConfidence,
+  );
+  const riskScale =
+    lerp(1.45, 0.62, aggressiveness) *
+    lerp(0.85, 1.4, recoveryPriority) *
+    lerp(1.3, 0.82, startingFitnessConfidence) *
+    lerp(1.18, 0.86, spikeFrequency);
+  const volatilityScale =
+    lerp(1.6, 0.58, variability) * lerp(0.9, 1.3, recoveryPriority);
+  const churnScale =
+    lerp(1.52, 0.64, variability) * lerp(0.92, 1.28, recoveryPriority);
+  const lookaheadTarget =
+    baseLookahead +
+    (maxLookahead - baseLookahead) * lerp(0.35, 1, aggressiveness);
+  const candidateTarget =
+    baseCandidateSteps +
+    (maxCandidateSteps - baseCandidateSteps) *
+      clampNumber(
+        0.55 * aggressiveness + 0.3 * spikeFrequency + 0.15 * variability,
+        0,
+        1,
+      );
+
   return {
-    projection_control: control,
+    behavior_controls: behaviorControls,
     optimizer: {
       preparedness_weight: round3(
-        baseOptimizer.preparedness_weight * lerp(0.75, 1.65, ambition),
+        baseOptimizer.preparedness_weight *
+          preparednessScale *
+          recoveryPreparednessScale *
+          confidencePreparednessScale,
       ),
       risk_penalty_weight: round3(
-        baseOptimizer.risk_penalty_weight * lerp(1.8, 0.35, riskTolerance),
+        baseOptimizer.risk_penalty_weight * riskScale,
       ),
       volatility_penalty_weight: round3(
-        baseOptimizer.volatility_penalty_weight *
-          lerp(1.45, 0.5, riskTolerance),
+        baseOptimizer.volatility_penalty_weight * volatilityScale,
       ),
       churn_penalty_weight: round3(
-        baseOptimizer.churn_penalty_weight * lerp(1.3, 0.55, riskTolerance),
+        baseOptimizer.churn_penalty_weight * churnScale,
       ),
       lookahead_weeks: clampInteger(
-        Math.round(lerp(baseLookahead, maxLookahead, ambition)),
+        Math.round(lookaheadTarget),
         OPTIMIZER_SCHEMA_BOUNDS.lookahead_weeks.min,
         maxLookahead,
       ),
       candidate_steps: clampInteger(
-        Math.round(lerp(baseCandidateSteps, maxCandidateSteps, ambition)),
+        Math.round(candidateTarget),
         OPTIMIZER_SCHEMA_BOUNDS.candidate_steps.min,
         maxCandidateSteps,
       ),
@@ -139,9 +196,11 @@ export function resolveEffectiveProjectionControls(
       ),
     },
     curvature: {
-      target: control.curvature,
-      strength: control.curvature_strength,
-      weight: round3(lerp(0, CURVATURE_WEIGHT_MAX, control.curvature_strength)),
+      target: behaviorControls.shape_target,
+      strength: behaviorControls.shape_strength,
+      weight: round3(
+        lerp(0, CURVATURE_WEIGHT_MAX, behaviorControls.shape_strength),
+      ),
     },
   };
 }
@@ -197,32 +256,43 @@ export function computeCurvaturePenalty(input: {
   return round6(penalty / samples);
 }
 
-function normalizeProjectionControl(
-  input: ProjectionControlV2Input | undefined,
-): Required<ProjectionControlV2Input> {
+function normalizeBehaviorControls(
+  input: ProjectionBehaviorControlsV1Input | undefined,
+): ResolvedBehaviorControls {
   return {
-    mode:
-      input?.mode === "advanced" || input?.mode === "simple"
-        ? input.mode
-        : PROJECTION_CONTROL_DEFAULTS.mode,
-    ambition: clampNumber(
-      input?.ambition ?? PROJECTION_CONTROL_DEFAULTS.ambition,
+    aggressiveness: clampNumber(
+      input?.aggressiveness ?? BEHAVIOR_CONTROL_DEFAULTS.aggressiveness,
       0,
       1,
     ),
-    risk_tolerance: clampNumber(
-      input?.risk_tolerance ?? PROJECTION_CONTROL_DEFAULTS.risk_tolerance,
+    variability: clampNumber(
+      input?.variability ?? BEHAVIOR_CONTROL_DEFAULTS.variability,
       0,
       1,
     ),
-    curvature: clampNumber(
-      input?.curvature ?? PROJECTION_CONTROL_DEFAULTS.curvature,
+    spike_frequency: clampNumber(
+      input?.spike_frequency ?? BEHAVIOR_CONTROL_DEFAULTS.spike_frequency,
+      0,
+      1,
+    ),
+    shape_target: clampNumber(
+      input?.shape_target ?? BEHAVIOR_CONTROL_DEFAULTS.shape_target,
       -1,
       1,
     ),
-    curvature_strength: clampNumber(
-      input?.curvature_strength ??
-        PROJECTION_CONTROL_DEFAULTS.curvature_strength,
+    shape_strength: clampNumber(
+      input?.shape_strength ?? BEHAVIOR_CONTROL_DEFAULTS.shape_strength,
+      0,
+      1,
+    ),
+    recovery_priority: clampNumber(
+      input?.recovery_priority ?? BEHAVIOR_CONTROL_DEFAULTS.recovery_priority,
+      0,
+      1,
+    ),
+    starting_fitness_confidence: clampNumber(
+      input?.starting_fitness_confidence ??
+        BEHAVIOR_CONTROL_DEFAULTS.starting_fitness_confidence,
       0,
       1,
     ),

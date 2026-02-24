@@ -11,90 +11,83 @@ import { normalizeProjectionSafetyConfig } from "../projection/safety-caps";
 const calibration = trainingPlanCalibrationConfigSchema.parse({});
 
 describe("projection effective controls mapping", () => {
-  it("keeps ambition mapping monotonic for preparedness/search while ramp caps stay invariant", () => {
+  it("keeps aggressiveness mapping monotonic for preparedness/search while ramp caps stay invariant", () => {
     const normalizedConfig = normalizeProjectionSafetyConfig({
       optimization_profile: "balanced",
       max_weekly_tss_ramp_pct: 7,
       max_ctl_ramp_per_week: 3,
     });
 
-    const lowAmbition = resolveEffectiveProjectionControls({
+    const lowAggressiveness = resolveEffectiveProjectionControls({
       normalized_config: normalizedConfig,
       calibration,
-      projection_control: {
-        ambition: 0,
-        risk_tolerance: 0.4,
+      behavior_controls_v1: {
+        aggressiveness: 0,
       },
     });
-    const highAmbition = resolveEffectiveProjectionControls({
+    const highAggressiveness = resolveEffectiveProjectionControls({
       normalized_config: normalizedConfig,
       calibration,
-      projection_control: {
-        ambition: 1,
-        risk_tolerance: 0.4,
+      behavior_controls_v1: {
+        aggressiveness: 1,
       },
     });
 
-    expect(highAmbition.optimizer.preparedness_weight).toBeGreaterThan(
-      lowAmbition.optimizer.preparedness_weight,
+    expect(highAggressiveness.optimizer.preparedness_weight).toBeGreaterThan(
+      lowAggressiveness.optimizer.preparedness_weight,
     );
-    expect(highAmbition.optimizer.lookahead_weeks).toBeGreaterThanOrEqual(
-      lowAmbition.optimizer.lookahead_weeks,
+    expect(highAggressiveness.optimizer.lookahead_weeks).toBeGreaterThanOrEqual(
+      lowAggressiveness.optimizer.lookahead_weeks,
     );
-    expect(highAmbition.optimizer.candidate_steps).toBeGreaterThanOrEqual(
-      lowAmbition.optimizer.candidate_steps,
+    expect(highAggressiveness.optimizer.candidate_steps).toBeGreaterThanOrEqual(
+      lowAggressiveness.optimizer.candidate_steps,
     );
-    expect(highAmbition.ramp_caps.max_weekly_tss_ramp_pct).toBe(
-      lowAmbition.ramp_caps.max_weekly_tss_ramp_pct,
+    expect(highAggressiveness.ramp_caps.max_weekly_tss_ramp_pct).toBe(
+      lowAggressiveness.ramp_caps.max_weekly_tss_ramp_pct,
     );
-    expect(highAmbition.ramp_caps.max_ctl_ramp_per_week).toBe(
-      lowAmbition.ramp_caps.max_ctl_ramp_per_week,
+    expect(highAggressiveness.ramp_caps.max_ctl_ramp_per_week).toBe(
+      lowAggressiveness.ramp_caps.max_ctl_ramp_per_week,
     );
-    expect(highAmbition.ramp_caps.max_weekly_tss_ramp_pct).toBe(7);
-    expect(highAmbition.ramp_caps.max_ctl_ramp_per_week).toBe(3);
+    expect(highAggressiveness.ramp_caps.max_weekly_tss_ramp_pct).toBe(7);
+    expect(highAggressiveness.ramp_caps.max_ctl_ramp_per_week).toBe(3);
   });
 
-  it("keeps risk-tolerance monotonic for penalty relaxation while ramp caps stay invariant", () => {
+  it("keeps variability mapping monotonic for volatility/churn penalty relaxation", () => {
     const normalizedConfig = normalizeProjectionSafetyConfig({
       optimization_profile: "balanced",
       max_weekly_tss_ramp_pct: 7,
       max_ctl_ramp_per_week: 3,
     });
 
-    const lowRiskTolerance = resolveEffectiveProjectionControls({
+    const lowVariability = resolveEffectiveProjectionControls({
       normalized_config: normalizedConfig,
       calibration,
-      projection_control: {
-        ambition: 0.5,
-        risk_tolerance: 0,
+      behavior_controls_v1: {
+        variability: 0,
       },
     });
-    const highRiskTolerance = resolveEffectiveProjectionControls({
+    const highVariability = resolveEffectiveProjectionControls({
       normalized_config: normalizedConfig,
       calibration,
-      projection_control: {
-        ambition: 0.5,
-        risk_tolerance: 1,
+      behavior_controls_v1: {
+        variability: 1,
       },
     });
 
-    expect(highRiskTolerance.optimizer.risk_penalty_weight).toBeLessThan(
-      lowRiskTolerance.optimizer.risk_penalty_weight,
+    expect(highVariability.optimizer.volatility_penalty_weight).toBeLessThan(
+      lowVariability.optimizer.volatility_penalty_weight,
     );
-    expect(highRiskTolerance.optimizer.volatility_penalty_weight).toBeLessThan(
-      lowRiskTolerance.optimizer.volatility_penalty_weight,
+    expect(highVariability.optimizer.churn_penalty_weight).toBeLessThan(
+      lowVariability.optimizer.churn_penalty_weight,
     );
-    expect(highRiskTolerance.optimizer.churn_penalty_weight).toBeLessThan(
-      lowRiskTolerance.optimizer.churn_penalty_weight,
+    expect(highVariability.ramp_caps.max_weekly_tss_ramp_pct).toBe(
+      lowVariability.ramp_caps.max_weekly_tss_ramp_pct,
     );
-    expect(highRiskTolerance.ramp_caps.max_weekly_tss_ramp_pct).toBe(
-      lowRiskTolerance.ramp_caps.max_weekly_tss_ramp_pct,
+    expect(highVariability.ramp_caps.max_ctl_ramp_per_week).toBe(
+      lowVariability.ramp_caps.max_ctl_ramp_per_week,
     );
-    expect(highRiskTolerance.ramp_caps.max_ctl_ramp_per_week).toBe(
-      lowRiskTolerance.ramp_caps.max_ctl_ramp_per_week,
-    );
-    expect(highRiskTolerance.ramp_caps.max_weekly_tss_ramp_pct).toBe(7);
-    expect(highRiskTolerance.ramp_caps.max_ctl_ramp_per_week).toBe(3);
+    expect(highVariability.ramp_caps.max_weekly_tss_ramp_pct).toBe(7);
+    expect(highVariability.ramp_caps.max_ctl_ramp_per_week).toBe(3);
   });
 
   it("keeps hard ramp bounds and profile/schema search bounds enforced", () => {
@@ -112,9 +105,10 @@ describe("projection effective controls mapping", () => {
           candidate_steps: 15,
         },
       }),
-      projection_control: {
-        ambition: 1,
-        risk_tolerance: 1,
+      behavior_controls_v1: {
+        aggressiveness: 1,
+        variability: 1,
+        spike_frequency: 1,
       },
     });
 
@@ -150,11 +144,14 @@ describe("projection effective controls mapping", () => {
         max_ctl_ramp_per_week: 3,
       }),
       calibration,
-      projection_control: {
-        ambition: 0.72,
-        risk_tolerance: 0.28,
-        curvature: -0.3,
-        curvature_strength: 0.84,
+      behavior_controls_v1: {
+        aggressiveness: 0.72,
+        variability: 0.28,
+        spike_frequency: 0.44,
+        shape_target: -0.3,
+        shape_strength: 0.84,
+        recovery_priority: 0.61,
+        starting_fitness_confidence: 0.77,
       },
     } as const;
 
@@ -171,9 +168,10 @@ describe("projection effective controls mapping", () => {
         max_ctl_ramp_per_week: 12,
       }),
       calibration,
-      projection_control: {
-        ambition: 1,
-        risk_tolerance: 1,
+      behavior_controls_v1: {
+        aggressiveness: 1,
+        variability: 1,
+        spike_frequency: 1,
       },
     });
 
@@ -185,6 +183,25 @@ describe("projection effective controls mapping", () => {
 });
 
 describe("curvature controls", () => {
+  it("maps behavior shape controls into curvature outputs", () => {
+    const mapped = resolveEffectiveProjectionControls({
+      normalized_config: normalizeProjectionSafetyConfig({
+        optimization_profile: "balanced",
+        max_weekly_tss_ramp_pct: 7,
+        max_ctl_ramp_per_week: 3,
+      }),
+      calibration,
+      behavior_controls_v1: {
+        shape_target: -0.55,
+        shape_strength: 0.7,
+      },
+    });
+
+    expect(mapped.curvature.target).toBe(-0.55);
+    expect(mapped.curvature.strength).toBe(0.7);
+    expect(mapped.curvature.weight).toBeGreaterThan(0);
+  });
+
   it("matches curvature polarity by reducing penalty when sign aligns", () => {
     const weeklyActions = [220, 245, 278, 320, 370];
     const envelopes = weeklyActions.map((_, index) =>

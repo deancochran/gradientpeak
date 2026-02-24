@@ -7,10 +7,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Text } from "@/components/ui/text";
-import { BoundedNumberInput } from "../inputs/BoundedNumberInput";
 import { IntegerStepper } from "../inputs/IntegerStepper";
-import { PercentSliderInput } from "../inputs/PercentSliderInput";
-import { parseNumberOrUndefined } from "@/lib/training-plan-form/input-parsers";
 import type {
   CreationAvailabilityConfig,
   CreationConstraints,
@@ -44,8 +41,6 @@ interface ConstraintsTabProps {
     string
   >;
   postGoalRecoveryDetailCopy: string;
-  maxWeeklyTssRampDetailCopy: string;
-  maxCtlRampDetailCopy: string;
   getWeekDayLabel: (day: string) => string;
   onToggleExpanded: () => void;
   onToggleDetails: () => void;
@@ -64,8 +59,6 @@ export function ConstraintsTab({
   optimizationProfileHelperCopy,
   optimizationProfileDetailCopy,
   postGoalRecoveryDetailCopy,
-  maxWeeklyTssRampDetailCopy,
-  maxCtlRampDetailCopy,
   getWeekDayLabel,
   onToggleExpanded,
   onToggleDetails,
@@ -291,55 +284,10 @@ export function ConstraintsTab({
           </View>
 
           <View className="gap-1.5 rounded-md border border-border bg-background/50 p-2">
-            <Text className="text-sm">Weekly load cap (%)</Text>
-            <PercentSliderInput
-              id="max-weekly-load-ramp"
-              value={configData.maxWeeklyTssRampPct}
-              min={0}
-              max={20}
-              step={0.25}
-              onChange={(nextValue) => {
-                updateConfig((draft) => {
-                  draft.maxWeeklyTssRampPct = nextValue;
-                });
-              }}
-            />
-            {showDetails && (
-              <Text className="text-[11px] text-muted-foreground">
-                {maxWeeklyTssRampDetailCopy}
-              </Text>
-            )}
-          </View>
-
-          <View className="gap-1.5 rounded-md border border-border bg-background/50 p-2">
-            <Text className="text-sm">Weekly CTL cap</Text>
-            <BoundedNumberInput
-              id="max-weekly-ctl-ramp"
-              label="Cap value"
-              value={String(configData.maxCtlRampPerWeek)}
-              min={0}
-              max={8}
-              decimals={2}
-              unitLabel="CTL/wk"
-              helperText="0-8"
-              onChange={(value) => {
-                const parsed = parseNumberOrUndefined(value);
-                if (parsed === undefined) {
-                  return;
-                }
-                updateConfig((draft) => {
-                  draft.maxCtlRampPerWeek = Math.max(
-                    0,
-                    Math.min(8, Number(parsed.toFixed(2))),
-                  );
-                });
-              }}
-            />
-            {showDetails && (
-              <Text className="text-[11px] text-muted-foreground">
-                {maxCtlRampDetailCopy}
-              </Text>
-            )}
+            <Text className="text-sm">Safety caps</Text>
+            <Text className="text-[11px] text-muted-foreground">
+              Weekly ramp and CTL safety caps remain enforced internally.
+            </Text>
           </View>
         </View>
       )}

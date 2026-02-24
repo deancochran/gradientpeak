@@ -7,21 +7,14 @@ describe("normalizeCreationConfig safety fields", () => {
 
     expect(normalized.optimization_profile).toBe("balanced");
     expect(normalized.post_goal_recovery_days).toBe(5);
-    expect(normalized.max_weekly_tss_ramp_pct).toBe(7);
-    expect(normalized.max_ctl_ramp_per_week).toBe(3);
-    expect(normalized.projection_control_v2).toEqual({
-      mode: "simple",
-      ambition: 0.5,
-      risk_tolerance: 0.4,
-      curvature: 0,
-      curvature_strength: 0.35,
-      user_owned: {
-        mode: false,
-        ambition: false,
-        risk_tolerance: false,
-        curvature: false,
-        curvature_strength: false,
-      },
+    expect(normalized.behavior_controls_v1).toEqual({
+      aggressiveness: 0.5,
+      variability: 0.5,
+      spike_frequency: 0.35,
+      shape_target: 0,
+      shape_strength: 0.35,
+      recovery_priority: 0.6,
+      starting_fitness_confidence: 0.6,
     });
   });
 
@@ -30,37 +23,22 @@ describe("normalizeCreationConfig safety fields", () => {
       user_values: {
         optimization_profile: "sustainable",
         post_goal_recovery_days: 10,
-        max_weekly_tss_ramp_pct: 4,
-        max_ctl_ramp_per_week: 1.5,
-        projection_control_v2: {
-          mode: "advanced",
-          ambition: 0.8,
-          user_owned: {
-            mode: true,
-            ambition: true,
-          },
+        behavior_controls_v1: {
+          aggressiveness: 0.8,
+          variability: 0.3,
+          spike_frequency: 0.7,
+          shape_target: -0.4,
+          shape_strength: 0.9,
+          recovery_priority: 0.75,
+          starting_fitness_confidence: 0.25,
         },
       },
     });
 
     expect(normalized.optimization_profile).toBe("sustainable");
     expect(normalized.post_goal_recovery_days).toBe(10);
-    expect(normalized.max_weekly_tss_ramp_pct).toBe(4);
-    expect(normalized.max_ctl_ramp_per_week).toBe(1.5);
-    expect(normalized.projection_control_v2).toEqual({
-      mode: "advanced",
-      ambition: 0.8,
-      risk_tolerance: 0.4,
-      curvature: 0,
-      curvature_strength: 0.35,
-      user_owned: {
-        mode: true,
-        ambition: true,
-        risk_tolerance: false,
-        curvature: false,
-        curvature_strength: false,
-      },
-    });
+    expect(normalized.behavior_controls_v1.aggressiveness).toBe(0.8);
+    expect(normalized.behavior_controls_v1.shape_target).toBe(-0.4);
   });
 
   it("fills deterministic calibration defaults when omitted", () => {

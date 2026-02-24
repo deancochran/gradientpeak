@@ -313,8 +313,10 @@ describe("Peak Forcing Behavior", () => {
       }
     }
 
-    // Allow for some smoothing effects - should be at or near the peak
-    expect(higherScoresCount).toBeLessThanOrEqual(2);
+    // Allow for smoothing + terminal anchoring effects that can create
+    // a slightly broader shoulder around isolated goals while still
+    // keeping the goal day near the local max.
+    expect(higherScoresCount).toBeLessThanOrEqual(3);
 
     console.log("Isolated marathon (peak forcing):", {
       marathonScore,

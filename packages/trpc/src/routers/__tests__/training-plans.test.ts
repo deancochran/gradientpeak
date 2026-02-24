@@ -59,6 +59,46 @@ function percentile(values: number[], p: number): number {
   return sorted[idx] ?? 0;
 }
 
+const CONSERVATIVE_BEHAVIOR_CONTROLS = {
+  aggressiveness: 0.1,
+  variability: 0.2,
+  spike_frequency: 0.1,
+  shape_target: -0.25,
+  shape_strength: 0.2,
+  recovery_priority: 0.9,
+  starting_fitness_confidence: 0.45,
+} as const;
+
+const BALANCED_BEHAVIOR_CONTROLS = {
+  aggressiveness: 0.5,
+  variability: 0.5,
+  spike_frequency: 0.35,
+  shape_target: 0,
+  shape_strength: 0.35,
+  recovery_priority: 0.6,
+  starting_fitness_confidence: 0.6,
+} as const;
+
+const AGGRESSIVE_BEHAVIOR_CONTROLS = {
+  aggressiveness: 0.85,
+  variability: 0.8,
+  spike_frequency: 0.85,
+  shape_target: 0.35,
+  shape_strength: 0.85,
+  recovery_priority: 0.2,
+  starting_fitness_confidence: 0.75,
+} as const;
+
+const FRONTIER_BEHAVIOR_CONTROLS = {
+  aggressiveness: 1,
+  variability: 1,
+  spike_frequency: 1,
+  shape_target: 0.6,
+  shape_strength: 1,
+  recovery_priority: 0,
+  starting_fitness_confidence: 0.85,
+} as const;
+
 function assertSaneProjectionDiagnostics(diagnostics: any) {
   expect(diagnostics).toBeDefined();
   expect([
@@ -212,8 +252,15 @@ describe("trainingPlansRouter.getCreationSuggestions", () => {
         recent_influence: expect.any(Object),
         recent_influence_action: expect.any(String),
         constraints: expect.any(Object),
-        max_weekly_tss_ramp_pct: expect.any(Number),
-        max_ctl_ramp_per_week: expect.any(Number),
+        behavior_controls_v1: {
+          aggressiveness: expect.any(Number),
+          variability: expect.any(Number),
+          spike_frequency: expect.any(Number),
+          shape_target: expect.any(Number),
+          shape_strength: expect.any(Number),
+          recovery_priority: expect.any(Number),
+          starting_fitness_confidence: expect.any(Number),
+        },
         locked_conflicts: expect.any(Array),
       },
     });
@@ -395,36 +442,37 @@ describe("trainingPlansRouter.getCreationSuggestions", () => {
     expect(noneHistory.context_summary.history_availability_state).toBe("none");
 
     expect(
-      noneHistory.suggestions.max_weekly_tss_ramp_pct,
+      noneHistory.suggestions.behavior_controls_v1.aggressiveness,
     ).toBeGreaterThanOrEqual(0);
-    expect(noneHistory.suggestions.max_weekly_tss_ramp_pct).toBeLessThanOrEqual(
-      40,
+    expect(
+      noneHistory.suggestions.behavior_controls_v1.aggressiveness,
+    ).toBeLessThanOrEqual(1);
+    expect(
+      noneHistory.suggestions.behavior_controls_v1.recovery_priority,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      noneHistory.suggestions.behavior_controls_v1.recovery_priority,
+    ).toBeLessThanOrEqual(1);
+
+    expect(
+      sparseHistory.suggestions.behavior_controls_v1.aggressiveness,
+    ).toBeGreaterThan(
+      noneHistory.suggestions.behavior_controls_v1.aggressiveness,
     );
     expect(
-      noneHistory.suggestions.max_ctl_ramp_per_week,
-    ).toBeGreaterThanOrEqual(0);
-    expect(noneHistory.suggestions.max_ctl_ramp_per_week).toBeLessThanOrEqual(
-      12,
+      sparseHistory.suggestions.behavior_controls_v1.recovery_priority,
+    ).toBeLessThan(
+      noneHistory.suggestions.behavior_controls_v1.recovery_priority,
     );
-
-    expect(sparseHistory.suggestions.max_weekly_tss_ramp_pct).toBeGreaterThan(
-      noneHistory.suggestions.max_weekly_tss_ramp_pct,
+    expect(
+      richHistory.suggestions.behavior_controls_v1.aggressiveness,
+    ).toBeGreaterThan(
+      sparseHistory.suggestions.behavior_controls_v1.aggressiveness,
     );
-    expect(sparseHistory.suggestions.max_ctl_ramp_per_week).toBeGreaterThan(
-      noneHistory.suggestions.max_ctl_ramp_per_week,
-    );
-    expect(richHistory.suggestions.max_weekly_tss_ramp_pct).toBeGreaterThan(
-      sparseHistory.suggestions.max_weekly_tss_ramp_pct,
-    );
-    expect(richHistory.suggestions.max_ctl_ramp_per_week).toBeGreaterThan(
-      sparseHistory.suggestions.max_ctl_ramp_per_week,
-    );
-
-    expect(richHistory.suggestions.max_weekly_tss_ramp_pct).toBeLessThanOrEqual(
-      40,
-    );
-    expect(richHistory.suggestions.max_ctl_ramp_per_week).toBeLessThanOrEqual(
-      12,
+    expect(
+      richHistory.suggestions.behavior_controls_v1.recovery_priority,
+    ).toBeLessThan(
+      sparseHistory.suggestions.behavior_controls_v1.recovery_priority,
     );
   });
 });
@@ -568,7 +616,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       profile_metrics: { data: [], error: null },
     });
 
-    const suggestedCaps = await caller.getCreationSuggestions();
+    const suggestedControls = await caller.getCreationSuggestions();
 
     const result = await caller.previewCreationConfig({
       minimal_plan: {
@@ -599,18 +647,15 @@ describe("trainingPlansRouter plan_start_date support", () => {
       "sustainable",
     );
     expect(result.normalized_creation_config.post_goal_recovery_days).toBe(7);
-    expect(result.normalized_creation_config.max_weekly_tss_ramp_pct).toBe(
-      suggestedCaps.suggestions.max_weekly_tss_ramp_pct,
-    );
-    expect(result.normalized_creation_config.max_ctl_ramp_per_week).toBe(
-      suggestedCaps.suggestions.max_ctl_ramp_per_week,
+    expect(result.normalized_creation_config.behavior_controls_v1).toEqual(
+      suggestedControls.suggestions.behavior_controls_v1,
     );
     expect(
-      result.normalized_creation_config.max_weekly_tss_ramp_pct,
-    ).toBeLessThan(6);
+      result.normalized_creation_config.behavior_controls_v1.aggressiveness,
+    ).toBeLessThan(0.5);
     expect(
-      result.normalized_creation_config.max_ctl_ramp_per_week,
-    ).toBeLessThan(2.5);
+      result.normalized_creation_config.behavior_controls_v1.recovery_priority,
+    ).toBeGreaterThan(0.6);
   });
 
   it("applies strict cap tuning without forcing blocking or unsafe feasibility", async () => {
@@ -640,8 +685,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       },
       creation_input: {
         user_values: {
-          max_weekly_tss_ramp_pct: 0,
-          max_ctl_ramp_per_week: 0,
+          behavior_controls_v1: CONSERVATIVE_BEHAVIOR_CONTROLS,
         },
       },
     });
@@ -840,6 +884,37 @@ describe("trainingPlansRouter plan_start_date support", () => {
     });
   });
 
+  it("rejects updateFromCreationConfig when plan is missing or not owned", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: null,
+        error: { message: "not found" },
+      },
+    });
+
+    await expect(
+      caller.updateFromCreationConfig({
+        plan_id: "11111111-1111-4111-8111-111111111111",
+        minimal_plan: {
+          plan_start_date: "2026-01-05",
+          goals: [nonBlockingGoal],
+        },
+        creation_input: {},
+      }),
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      cause: {
+        domain: "training_plan_commit",
+        code: "TRAINING_PLAN_COMMIT_NOT_FOUND",
+        operation: "updateFromCreationConfig",
+        recoverable: false,
+      },
+    });
+  });
+
   it("surfaces cap-pressure reasons only when ramps actually bind near configured caps", async () => {
     const caller = createTrainingPlansCaller({
       activities: { data: [], error: null },
@@ -868,8 +943,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       },
       creation_input: {
         user_values: {
-          max_weekly_tss_ramp_pct: 20,
-          max_ctl_ramp_per_week: 8,
+          behavior_controls_v1: AGGRESSIVE_BEHAVIOR_CONTROLS,
         },
       },
       starting_ctl_override: 70,
@@ -913,14 +987,17 @@ describe("trainingPlansRouter plan_start_date support", () => {
       },
       creation_input: {
         user_values: {
-          max_weekly_tss_ramp_pct: Math.min(
-            20,
-            Number((tssRequestedMax * 1.05).toFixed(2)),
-          ),
-          max_ctl_ramp_per_week: Math.min(
-            8,
-            Number((ctlRequestedMax * 1.05).toFixed(2)),
-          ),
+          behavior_controls_v1: {
+            ...AGGRESSIVE_BEHAVIOR_CONTROLS,
+            aggressiveness: Math.min(
+              1,
+              Number((tssRequestedMax / 20).toFixed(2)),
+            ),
+            spike_frequency: Math.min(
+              1,
+              Number((ctlRequestedMax / 8).toFixed(2)),
+            ),
+          },
         },
       },
       starting_ctl_override: 70,
@@ -990,8 +1067,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       creation_input: {
         user_values: {
           optimization_profile: "outcome_first" as const,
-          max_weekly_tss_ramp_pct: 20,
-          max_ctl_ramp_per_week: 8,
+          behavior_controls_v1: AGGRESSIVE_BEHAVIOR_CONTROLS,
         },
       },
     };
@@ -1000,8 +1076,9 @@ describe("trainingPlansRouter plan_start_date support", () => {
     expect(preview.normalized_creation_config.optimization_profile).toBe(
       "outcome_first",
     );
-    expect(preview.normalized_creation_config.max_weekly_tss_ramp_pct).toBe(20);
-    expect(preview.normalized_creation_config.max_ctl_ramp_per_week).toBe(8);
+    expect(preview.normalized_creation_config.behavior_controls_v1).toEqual(
+      AGGRESSIVE_BEHAVIOR_CONTROLS,
+    );
     expect(preview.override_audit.request.requested).toBe(false);
     expect(preview.override_audit.effective.enabled).toBe(false);
 
@@ -1262,8 +1339,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       creation_input: {
         user_values: {
           optimization_profile: "outcome_first" as const,
-          max_weekly_tss_ramp_pct: 20,
-          max_ctl_ramp_per_week: 8,
+          behavior_controls_v1: AGGRESSIVE_BEHAVIOR_CONTROLS,
         },
       },
     };
@@ -1325,7 +1401,13 @@ describe("trainingPlansRouter plan_start_date support", () => {
       }),
     ).rejects.toMatchObject({
       code: "BAD_REQUEST",
-      message: expect.stringContaining("Refresh previewCreationConfig"),
+      message: expect.stringContaining("Refresh preview"),
+      cause: {
+        domain: "training_plan_commit",
+        code: "TRAINING_PLAN_COMMIT_STALE_PREVIEW",
+        operation: "createFromCreationConfig",
+        recoverable: true,
+      },
     });
 
     await expect(
@@ -1335,7 +1417,68 @@ describe("trainingPlansRouter plan_start_date support", () => {
       }),
     ).rejects.toMatchObject({
       code: "BAD_REQUEST",
-      message: expect.stringContaining("Refresh previewCreationConfig"),
+      message: expect.stringContaining("Refresh preview"),
+      cause: {
+        domain: "training_plan_commit",
+        code: "TRAINING_PLAN_COMMIT_STALE_PREVIEW",
+        operation: "createFromCreationConfig",
+        recoverable: true,
+      },
+    });
+  });
+
+  it("surfaces typed conflict cause from updateFromCreationConfig", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "11111111-1111-4111-8111-111111111111",
+          name: "Existing Plan",
+          description: null,
+          structure: {
+            id: "11111111-1111-4111-8111-111111111111",
+          },
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    await expect(
+      caller.updateFromCreationConfig({
+        plan_id: "11111111-1111-4111-8111-111111111111",
+        minimal_plan: {
+          plan_start_date: "2026-01-05",
+          goals: [
+            {
+              ...minimalGoal,
+              name: "Goal A",
+              target_date: "2026-03-15",
+            },
+            {
+              ...minimalGoal,
+              name: "Goal B",
+              target_date: "2026-03-24",
+            },
+          ],
+        },
+        creation_input: {
+          user_values: {
+            post_goal_recovery_days: 14,
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      cause: {
+        domain: "training_plan_commit",
+        code: "TRAINING_PLAN_COMMIT_CONFLICT",
+        operation: "updateFromCreationConfig",
+        recoverable: true,
+      },
     });
   });
 
@@ -1365,8 +1508,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       creation_input: {
         user_values: {
           optimization_profile: "balanced" as const,
-          max_weekly_tss_ramp_pct: 7,
-          max_ctl_ramp_per_week: 3,
+          behavior_controls_v1: BALANCED_BEHAVIOR_CONTROLS,
         },
       },
     };
@@ -1379,15 +1521,14 @@ describe("trainingPlansRouter plan_start_date support", () => {
         creation_input: {
           user_values: {
             optimization_profile: "outcome_first",
-            max_weekly_tss_ramp_pct: 20,
-            max_ctl_ramp_per_week: 8,
+            behavior_controls_v1: AGGRESSIVE_BEHAVIOR_CONTROLS,
           },
         },
         preview_snapshot_token: preview.preview_snapshot.token,
       }),
     ).rejects.toMatchObject({
       code: "BAD_REQUEST",
-      message: expect.stringContaining("Refresh previewCreationConfig"),
+      message: expect.stringContaining("Refresh preview"),
     });
   });
 
@@ -1418,8 +1559,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       creation_input: {
         user_values: {
           optimization_profile: "outcome_first" as const,
-          max_weekly_tss_ramp_pct: 20,
-          max_ctl_ramp_per_week: 8,
+          behavior_controls_v1: AGGRESSIVE_BEHAVIOR_CONTROLS,
         },
       },
     };
@@ -1449,10 +1589,8 @@ describe("trainingPlansRouter plan_start_date support", () => {
     expect(created.creation_summary.normalized_creation_config).toMatchObject({
       optimization_profile:
         preview.normalized_creation_config.optimization_profile,
-      max_weekly_tss_ramp_pct:
-        preview.normalized_creation_config.max_weekly_tss_ramp_pct,
-      max_ctl_ramp_per_week:
-        preview.normalized_creation_config.max_ctl_ramp_per_week,
+      behavior_controls_v1:
+        preview.normalized_creation_config.behavior_controls_v1,
     });
     expect(
       created.creation_summary.normalized_creation_config.calibration,
@@ -1551,6 +1689,216 @@ describe("trainingPlansRouter plan_start_date support", () => {
     ).toBe(false);
   });
 
+  it("keeps preview/create/update parity across low/sparse/rich/no-history hybrid fixtures", async () => {
+    const historyFixtures: Array<{
+      key: "low" | "sparse" | "rich" | "no-history";
+      activities: QueryResult;
+    }> = [
+      {
+        key: "low",
+        activities: {
+          data: [
+            {
+              started_at: "2026-01-03T06:30:00.000Z",
+              activity_category: "run",
+              duration_seconds: 1800,
+              training_stress_score: 25,
+            },
+            {
+              started_at: "2026-01-09T06:30:00.000Z",
+              activity_category: "run",
+              duration_seconds: 2100,
+              training_stress_score: 31,
+            },
+          ],
+          error: null,
+        },
+      },
+      {
+        key: "sparse",
+        activities: {
+          data: [
+            {
+              started_at: "2026-01-04T06:30:00.000Z",
+              activity_category: "run",
+              duration_seconds: 3200,
+              training_stress_score: 48,
+            },
+            {
+              started_at: "2026-01-08T06:30:00.000Z",
+              activity_category: "run",
+              duration_seconds: 3600,
+              training_stress_score: 55,
+            },
+            {
+              started_at: "2026-01-12T06:30:00.000Z",
+              activity_category: "ride",
+              duration_seconds: 4200,
+              training_stress_score: 62,
+            },
+          ],
+          error: null,
+        },
+      },
+      {
+        key: "rich",
+        activities: {
+          data: [
+            {
+              started_at: "2025-12-20T06:30:00.000Z",
+              activity_category: "run",
+              duration_seconds: 3600,
+              training_stress_score: 72,
+            },
+            {
+              started_at: "2025-12-23T06:30:00.000Z",
+              activity_category: "run",
+              duration_seconds: 4100,
+              training_stress_score: 78,
+            },
+            {
+              started_at: "2025-12-26T06:30:00.000Z",
+              activity_category: "ride",
+              duration_seconds: 5200,
+              training_stress_score: 95,
+            },
+            {
+              started_at: "2025-12-29T06:30:00.000Z",
+              activity_category: "run",
+              duration_seconds: 4300,
+              training_stress_score: 84,
+            },
+            {
+              started_at: "2026-01-01T06:30:00.000Z",
+              activity_category: "run",
+              duration_seconds: 4500,
+              training_stress_score: 88,
+            },
+            {
+              started_at: "2026-01-04T06:30:00.000Z",
+              activity_category: "ride",
+              duration_seconds: 5600,
+              training_stress_score: 102,
+            },
+            {
+              started_at: "2026-01-07T06:30:00.000Z",
+              activity_category: "run",
+              duration_seconds: 3900,
+              training_stress_score: 76,
+            },
+            {
+              started_at: "2026-01-10T06:30:00.000Z",
+              activity_category: "run",
+              duration_seconds: 4700,
+              training_stress_score: 90,
+            },
+          ],
+          error: null,
+        },
+      },
+      {
+        key: "no-history",
+        activities: { data: [], error: null },
+      },
+    ];
+
+    const input = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [nonBlockingGoal],
+      },
+      creation_input: {
+        user_values: {
+          optimization_profile: "balanced" as const,
+          behavior_controls_v1: BALANCED_BEHAVIOR_CONTROLS,
+        },
+      },
+    };
+
+    for (const fixture of historyFixtures) {
+      const caller = createTrainingPlansCaller({
+        activities: fixture.activities,
+        activity_efforts: { data: [], error: null },
+        profile_metrics: { data: [], error: null },
+        training_plans: {
+          data: {
+            id: "11111111-1111-4111-8111-111111111111",
+            name: "Existing Plan",
+            description: null,
+            structure: { id: "11111111-1111-4111-8111-111111111111" },
+            is_active: true,
+            profile_id: "profile-123",
+          },
+          error: null,
+        },
+      });
+
+      const preview = await caller.previewCreationConfig(input);
+      const created = await caller.createFromCreationConfig({
+        ...input,
+        preview_snapshot_token: preview.preview_snapshot.token,
+      });
+      const updated = await caller.updateFromCreationConfig({
+        ...input,
+        plan_id: "11111111-1111-4111-8111-111111111111",
+        preview_snapshot_token: preview.preview_snapshot.token,
+      });
+
+      const previewDates = preview.projection_chart.points.map(
+        (point) => point.date,
+      );
+      expect(previewDates, `${fixture.key} preview dates sorted`).toEqual(
+        [...previewDates].sort((a, b) => a.localeCompare(b)),
+      );
+
+      const createdChart = created.creation_summary.projection_chart;
+      const updatedChart = updated.creation_summary.projection_chart;
+      expect(createdChart.points.map((point: any) => point.date)).toEqual(
+        previewDates,
+      );
+      expect(updatedChart.points.map((point: any) => point.date)).toEqual(
+        previewDates,
+      );
+      expect(createdChart.constraint_summary).toEqual(
+        preview.projection_chart.constraint_summary,
+      );
+      expect(updatedChart.constraint_summary).toEqual(
+        preview.projection_chart.constraint_summary,
+      );
+      expect(createdChart.projection_diagnostics).toEqual(
+        preview.projection_chart.projection_diagnostics,
+      );
+      expect(updatedChart.projection_diagnostics).toEqual(
+        preview.projection_chart.projection_diagnostics,
+      );
+
+      const tolerance = 0.05;
+      expect(
+        Math.abs(
+          createdChart.readiness_score -
+            (preview.projection_chart.readiness_score ?? 0),
+        ),
+        `${fixture.key} create readiness_score`,
+      ).toBeLessThanOrEqual(tolerance);
+      expect(
+        Math.abs(
+          updatedChart.readiness_score -
+            (preview.projection_chart.readiness_score ?? 0),
+        ),
+        `${fixture.key} update readiness_score`,
+      ).toBeLessThanOrEqual(tolerance);
+      expect(preview.projection_chart.readiness_confidence).toBeDefined();
+      expect(createdChart.readiness_confidence).toBeCloseTo(
+        preview.projection_chart.readiness_confidence ?? 0,
+        4,
+      );
+      expect(updatedChart.readiness_confidence).toBeCloseTo(
+        preview.projection_chart.readiness_confidence ?? 0,
+        4,
+      );
+    }
+  });
+
   it("preserves deterministic diagnostics path in preview", async () => {
     const caller = createTrainingPlansCaller({
       activities: { data: [], error: null },
@@ -1590,8 +1938,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       creation_input: {
         user_values: {
           optimization_profile: "balanced" as const,
-          max_weekly_tss_ramp_pct: 7,
-          max_ctl_ramp_per_week: 3,
+          behavior_controls_v1: BALANCED_BEHAVIOR_CONTROLS,
         },
       },
     };
@@ -1897,8 +2244,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
         user_values: {
           optimization_profile: "sustainable",
           post_goal_recovery_days: 6,
-          max_weekly_tss_ramp_pct: 4,
-          max_ctl_ramp_per_week: 1.5,
+          behavior_controls_v1: CONSERVATIVE_BEHAVIOR_CONTROLS,
         },
       },
     });
@@ -1907,17 +2253,24 @@ describe("trainingPlansRouter plan_start_date support", () => {
       "sustainable",
     );
     expect(result.normalized_creation_config.post_goal_recovery_days).toBe(6);
-    expect(result.normalized_creation_config.max_weekly_tss_ramp_pct).toBe(4);
-    expect(result.normalized_creation_config.max_ctl_ramp_per_week).toBe(1.5);
+    expect(result.normalized_creation_config.behavior_controls_v1).toEqual(
+      CONSERVATIVE_BEHAVIOR_CONTROLS,
+    );
 
     expect(
       result.projection_chart.constraint_summary.normalized_creation_config,
     ).toMatchObject({
       optimization_profile: "sustainable",
       post_goal_recovery_days: 6,
-      max_weekly_tss_ramp_pct: 4,
-      max_ctl_ramp_per_week: 1.5,
     });
+    expect(
+      result.projection_chart.projection_diagnostics?.effective_optimizer_config
+        .caps.max_weekly_tss_ramp_pct ?? 0,
+    ).toBeLessThanOrEqual(10);
+    expect(
+      result.projection_chart.projection_diagnostics?.effective_optimizer_config
+        .caps.max_ctl_ramp_per_week ?? 0,
+    ).toBeLessThanOrEqual(5);
     expect(result.projection_chart.recovery_segments.length).toBeGreaterThan(0);
     expect(
       result.projection_chart.microcycles.some((week) => week.metadata),
@@ -1929,6 +2282,34 @@ describe("trainingPlansRouter plan_start_date support", () => {
       activities: { data: [], error: null },
       activity_efforts: { data: [], error: null },
       profile_metrics: { data: [], error: null },
+    });
+
+    const practical = await caller.previewCreationConfig({
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [
+          {
+            name: "Theoretical Marathon",
+            target_date: "2026-09-20",
+            priority: 1,
+            targets: [
+              {
+                target_type: "race_performance",
+                distance_m: 42195,
+                target_time_s: 9600,
+                activity_category: "run",
+              },
+            ],
+          },
+        ],
+      },
+      creation_input: {
+        user_values: {
+          optimization_profile: "outcome_first",
+          behavior_controls_v1: AGGRESSIVE_BEHAVIOR_CONTROLS,
+        },
+      },
+      starting_ctl_override: 70,
     });
 
     const result = await caller.previewCreationConfig({
@@ -1953,37 +2334,18 @@ describe("trainingPlansRouter plan_start_date support", () => {
       creation_input: {
         user_values: {
           optimization_profile: "outcome_first",
-          max_weekly_tss_ramp_pct: 40,
-          max_ctl_ramp_per_week: 12,
-          projection_control_v2: {
-            ambition: 1,
-            risk_tolerance: 1,
-            curvature: 0,
-            curvature_strength: 0,
-            user_owned: {
-              ambition: true,
-              risk_tolerance: true,
-              curvature: true,
-              curvature_strength: true,
-              mode: false,
-            },
-          },
+          behavior_controls_v1: FRONTIER_BEHAVIOR_CONTROLS,
         },
       },
       starting_ctl_override: 70,
     });
 
-    expect(result.normalized_creation_config.max_weekly_tss_ramp_pct).toBe(40);
-    expect(result.normalized_creation_config.max_ctl_ramp_per_week).toBe(12);
-    expect(
-      result.projection_chart.constraint_summary.normalized_creation_config
-        .max_weekly_tss_ramp_pct,
-    ).toBe(40);
-    expect(
-      result.projection_chart.constraint_summary.normalized_creation_config
-        .max_ctl_ramp_per_week,
-    ).toBe(12);
-
+    expect(result.normalized_creation_config.behavior_controls_v1).toEqual(
+      FRONTIER_BEHAVIOR_CONTROLS,
+    );
+    const practicalCaps =
+      practical.projection_chart.projection_diagnostics
+        ?.effective_optimizer_config.caps;
     const diagnostics = result.projection_chart.projection_diagnostics;
     expect(diagnostics).toBeDefined();
     expect(diagnostics?.effective_optimizer_config.caps).toMatchObject({
@@ -1992,16 +2354,10 @@ describe("trainingPlansRouter plan_start_date support", () => {
     });
     expect(
       diagnostics?.effective_optimizer_config.caps.max_weekly_tss_ramp_pct ?? 0,
-    ).toBeGreaterThan(20);
+    ).toBeGreaterThanOrEqual(practicalCaps?.max_weekly_tss_ramp_pct ?? 0);
     expect(
       diagnostics?.effective_optimizer_config.caps.max_ctl_ramp_per_week ?? 0,
-    ).toBeGreaterThan(8);
-    expect(
-      diagnostics?.effective_optimizer_config.caps.max_weekly_tss_ramp_pct ?? 0,
-    ).toBeLessThanOrEqual(40);
-    expect(
-      diagnostics?.effective_optimizer_config.caps.max_ctl_ramp_per_week ?? 0,
-    ).toBeLessThanOrEqual(12);
+    ).toBeGreaterThanOrEqual(practicalCaps?.max_ctl_ramp_per_week ?? 0);
     expect((diagnostics?.active_constraints ?? []).length).toBeGreaterThan(0);
     expect(diagnostics?.objective_contributions).toMatchObject({
       sampled_weeks: expect.any(Number),
@@ -2048,21 +2404,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       creation_input: {
         user_values: {
           optimization_profile: "outcome_first",
-          max_weekly_tss_ramp_pct: 40,
-          max_ctl_ramp_per_week: 12,
-          projection_control_v2: {
-            ambition: 1,
-            risk_tolerance: 1,
-            curvature: 0,
-            curvature_strength: 0,
-            user_owned: {
-              ambition: true,
-              risk_tolerance: true,
-              curvature: true,
-              curvature_strength: true,
-              mode: false,
-            },
-          },
+          behavior_controls_v1: FRONTIER_BEHAVIOR_CONTROLS,
         },
       },
       starting_ctl_override: 220,
@@ -2082,10 +2424,10 @@ describe("trainingPlansRouter plan_start_date support", () => {
     });
     expect(
       diagnostics?.effective_optimizer_config.caps.max_weekly_tss_ramp_pct ?? 0,
-    ).toBeGreaterThan(20);
+    ).toBeGreaterThan(0);
     expect(
       diagnostics?.effective_optimizer_config.caps.max_ctl_ramp_per_week ?? 0,
-    ).toBeGreaterThan(8);
+    ).toBeGreaterThan(0);
     expect(result.projection_chart.no_history?.projection_floor_applied).toBe(
       true,
     );
@@ -2118,8 +2460,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       creation_input: {
         user_values: {
           optimization_profile: "outcome_first" as const,
-          max_weekly_tss_ramp_pct: 20,
-          max_ctl_ramp_per_week: 8,
+          behavior_controls_v1: AGGRESSIVE_BEHAVIOR_CONTROLS,
         },
       },
     };
@@ -2180,8 +2521,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
             readiness_cap_enabled: false,
           },
           optimization_profile: "outcome_first" as const,
-          max_weekly_tss_ramp_pct: 20,
-          max_ctl_ramp_per_week: 8,
+          behavior_controls_v1: AGGRESSIVE_BEHAVIOR_CONTROLS,
         },
       },
     };
@@ -2194,6 +2534,71 @@ describe("trainingPlansRouter plan_start_date support", () => {
       caller.createFromCreationConfig({
         ...input,
         preview_snapshot_token: "not-used-because-parse-fails",
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+
+    await expect(
+      caller.updateFromCreationConfig({
+        ...input,
+        plan_id: "11111111-1111-4111-8111-111111111111",
+        preview_snapshot_token: "not-used-because-parse-fails",
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+  });
+
+  it("rejects client-injected projection artifacts in create/update payloads", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "11111111-1111-4111-8111-111111111111",
+          name: "Existing Plan",
+          description: null,
+          structure: { id: "11111111-1111-4111-8111-111111111111" },
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const poisonedPayload = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [nonBlockingGoal],
+      },
+      creation_input: {},
+      projection_chart: {
+        readiness_score: 100,
+        points: [{ date: "2026-10-15", readiness_score: 100 }],
+      },
+      creation_summary: {
+        projection_chart: {
+          readiness_score: 100,
+        },
+      },
+    };
+
+    await expect(
+      caller.createFromCreationConfig({
+        ...(poisonedPayload as any),
+        preview_snapshot_token: "client-crafted-token",
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+
+    await expect(
+      caller.updateFromCreationConfig({
+        ...(poisonedPayload as any),
+        plan_id: "11111111-1111-4111-8111-111111111111",
+        preview_snapshot_token: "client-crafted-token",
       }),
     ).rejects.toMatchObject({
       code: "BAD_REQUEST",
@@ -2233,8 +2638,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       creation_input: {
         user_values: {
           optimization_profile: "outcome_first" as const,
-          max_weekly_tss_ramp_pct: 20,
-          max_ctl_ramp_per_week: 8,
+          behavior_controls_v1: AGGRESSIVE_BEHAVIOR_CONTROLS,
         },
       },
     };

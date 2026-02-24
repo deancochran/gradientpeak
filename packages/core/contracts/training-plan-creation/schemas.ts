@@ -1,148 +1,51 @@
 import { z } from "zod";
 import {
   creationAvailabilityConfigSchema,
+  creationBehaviorControlsV1Schema,
   creationConfigLocksSchema,
   creationConstraintsSchema,
-  CREATION_MAX_CTL_RAMP_PER_WEEK,
-  CREATION_MAX_WEEKLY_TSS_RAMP_PCT,
   creationOptimizationProfileEnum,
   creationProvenanceSchema,
   creationRecentInfluenceActionEnum,
-  projectionControlV2Schema,
   creationRecentInfluenceSchema,
+  trainingPlanCalibrationInputSchema,
   trainingPlanCalibrationConfigSchema,
   minimalTrainingPlanCreateSchema,
 } from "../../schemas/training_plan_structure";
 
-const calibrationInputSchema = z
-  .object({
-    version: z.literal(1).optional(),
-    readiness_composite: z
-      .object({
-        target_attainment_weight: z.number().min(0).max(1).finite().optional(),
-        envelope_weight: z.number().min(0).max(1).finite().optional(),
-        durability_weight: z.number().min(0).max(1).finite().optional(),
-        evidence_weight: z.number().min(0).max(1).finite().optional(),
-      })
-      .strict()
-      .optional(),
-    readiness_timeline: z
-      .object({
-        target_tsb: z.number().min(-5).max(20).finite().optional(),
-        form_tolerance: z.number().min(8).max(40).finite().optional(),
-        fatigue_overflow_scale: z.number().min(0.1).max(1).finite().optional(),
-        feasibility_blend_weight: z.number().min(0).max(1).finite().optional(),
-        smoothing_iterations: z.number().int().min(0).max(80).optional(),
-        smoothing_lambda: z.number().min(0).max(0.9).finite().optional(),
-        max_step_delta: z.number().int().min(1).max(20).optional(),
-      })
-      .strict()
-      .optional(),
-    envelope_penalties: z
-      .object({
-        over_high_weight: z.number().min(0).max(1.5).finite().optional(),
-        under_low_weight: z.number().min(0).max(1.5).finite().optional(),
-        over_ramp_weight: z.number().min(0).max(1.5).finite().optional(),
-      })
-      .strict()
-      .optional(),
-    durability_penalties: z
-      .object({
-        monotony_threshold: z.number().min(1).max(4).finite().optional(),
-        monotony_scale: z.number().min(0.1).max(6).finite().optional(),
-        strain_threshold: z.number().min(400).max(2000).finite().optional(),
-        strain_scale: z.number().min(200).max(3000).finite().optional(),
-        deload_debt_scale: z.number().min(0.5).max(12).finite().optional(),
-      })
-      .strict()
-      .optional(),
-    no_history: z
-      .object({
-        reliability_horizon_days: z.number().int().min(14).max(120).optional(),
-        confidence_floor_high: z
-          .number()
-          .min(0.1)
-          .max(0.95)
-          .finite()
-          .optional(),
-        confidence_floor_mid: z.number().min(0.1).max(0.95).finite().optional(),
-        confidence_floor_low: z.number().min(0.1).max(0.95).finite().optional(),
-        demand_tier_time_pressure_scale: z
-          .number()
-          .min(0)
-          .max(2)
-          .finite()
-          .optional(),
-      })
-      .strict()
-      .optional(),
-    optimizer: z
-      .object({
-        preparedness_weight: z.number().min(0).max(30).finite().optional(),
-        risk_penalty_weight: z.number().min(0).max(2).finite().optional(),
-        volatility_penalty_weight: z.number().min(0).max(2).finite().optional(),
-        churn_penalty_weight: z.number().min(0).max(2).finite().optional(),
-        lookahead_weeks: z.number().int().min(1).max(8).optional(),
-        candidate_steps: z.number().int().min(3).max(15).optional(),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict();
+const creationConfigCoreFields = {
+  availability_config: creationAvailabilityConfigSchema,
+  recent_influence: creationRecentInfluenceSchema,
+  recent_influence_action: creationRecentInfluenceActionEnum,
+  constraints: creationConstraintsSchema,
+  optimization_profile: creationOptimizationProfileEnum,
+  post_goal_recovery_days: z.number().int().min(0).max(28),
+  behavior_controls_v1: creationBehaviorControlsV1Schema,
+};
 
 export const creationConfigValueSchema = z
   .object({
-    availability_config: creationAvailabilityConfigSchema,
-    recent_influence: creationRecentInfluenceSchema,
-    recent_influence_action: creationRecentInfluenceActionEnum,
-    constraints: creationConstraintsSchema,
-    optimization_profile: creationOptimizationProfileEnum,
-    post_goal_recovery_days: z.number().int().min(0).max(28),
-    max_weekly_tss_ramp_pct: z
-      .number()
-      .min(0)
-      .max(CREATION_MAX_WEEKLY_TSS_RAMP_PCT),
-    max_ctl_ramp_per_week: z
-      .number()
-      .min(0)
-      .max(CREATION_MAX_CTL_RAMP_PER_WEEK),
-    projection_control_v2: projectionControlV2Schema,
+    ...creationConfigCoreFields,
     calibration: trainingPlanCalibrationConfigSchema,
   })
   .strict();
 
 const creationConfigInputValueSchema = z
   .object({
-    availability_config: creationAvailabilityConfigSchema,
-    recent_influence: creationRecentInfluenceSchema,
-    recent_influence_action: creationRecentInfluenceActionEnum,
-    constraints: creationConstraintsSchema,
-    optimization_profile: creationOptimizationProfileEnum,
-    post_goal_recovery_days: z.number().int().min(0).max(28),
-    max_weekly_tss_ramp_pct: z
-      .number()
-      .min(0)
-      .max(CREATION_MAX_WEEKLY_TSS_RAMP_PCT),
-    max_ctl_ramp_per_week: z
-      .number()
-      .min(0)
-      .max(CREATION_MAX_CTL_RAMP_PER_WEEK),
-    projection_control_v2: projectionControlV2Schema,
-    calibration: calibrationInputSchema,
+    ...creationConfigCoreFields,
+    calibration: trainingPlanCalibrationInputSchema,
   })
   .strict();
 
+const creationNormalizationUserValuesSchema = creationConfigInputValueSchema
+  .extend({
+    locks: creationConfigLocksSchema,
+  })
+  .partial();
+
 export const creationNormalizationInputSchema = z
   .object({
-    user_values: creationConfigValueSchema
-      .extend({
-        calibration: calibrationInputSchema,
-      })
-      .extend({
-        locks: creationConfigLocksSchema,
-      })
-      .partial()
-      .optional(),
+    user_values: creationNormalizationUserValuesSchema.optional(),
     confirmed_suggestions: creationConfigInputValueSchema.partial().optional(),
     defaults: creationConfigInputValueSchema.partial().optional(),
     provenance_overrides: z
@@ -175,22 +78,16 @@ export const getCreationSuggestionsInputSchema = z
     locks: creationConfigLocksSchema.partial().optional(),
     existing_values: z
       .object({
-        availability_config: creationAvailabilityConfigSchema.optional(),
-        recent_influence: creationRecentInfluenceSchema.optional(),
-        optimization_profile: creationOptimizationProfileEnum.optional(),
-        post_goal_recovery_days: z.number().int().min(0).max(28).optional(),
-        max_weekly_tss_ramp_pct: z
-          .number()
-          .min(0)
-          .max(CREATION_MAX_WEEKLY_TSS_RAMP_PCT)
-          .optional(),
-        max_ctl_ramp_per_week: z
-          .number()
-          .min(0)
-          .max(CREATION_MAX_CTL_RAMP_PER_WEEK)
-          .optional(),
-        projection_control_v2: projectionControlV2Schema.optional(),
-        calibration: calibrationInputSchema.optional(),
+        availability_config:
+          creationConfigCoreFields.availability_config.optional(),
+        recent_influence: creationConfigCoreFields.recent_influence.optional(),
+        optimization_profile:
+          creationConfigCoreFields.optimization_profile.optional(),
+        post_goal_recovery_days:
+          creationConfigCoreFields.post_goal_recovery_days.optional(),
+        behavior_controls_v1:
+          creationConfigCoreFields.behavior_controls_v1.optional(),
+        calibration: trainingPlanCalibrationInputSchema.optional(),
         constraints: creationConstraintsSchema.partial().optional(),
       })
       .strict()

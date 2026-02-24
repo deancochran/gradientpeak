@@ -180,21 +180,14 @@ const baseConfigData = {
   },
   optimizationProfile: "balanced",
   postGoalRecoveryDays: 5,
-  maxWeeklyTssRampPct: 8,
-  maxCtlRampPerWeek: 4,
-  projectionControlV2: {
-    mode: "advanced",
-    ambition: 0.5,
-    risk_tolerance: 0.4,
-    curvature: 0,
-    curvature_strength: 0.35,
-    user_owned: {
-      mode: false,
-      ambition: false,
-      risk_tolerance: false,
-      curvature: false,
-      curvature_strength: false,
-    },
+  behaviorControlsV1: {
+    aggressiveness: 0.5,
+    variability: 0.5,
+    spike_frequency: 0.35,
+    shape_target: 0,
+    shape_strength: 0.35,
+    recovery_priority: 0.6,
+    starting_fitness_confidence: 0.6,
   },
   calibration: {
     version: 1,
@@ -251,7 +244,14 @@ const baseConfigData = {
   locks: {
     availability_config: { locked: false },
     recent_influence: { locked: false },
-    constraints: { locked: false },
+    hard_rest_days: { locked: false },
+    min_sessions_per_week: { locked: false },
+    max_sessions_per_week: { locked: false },
+    max_single_session_duration_minutes: { locked: false },
+    goal_difficulty_preference: { locked: false },
+    optimization_profile: { locked: false },
+    post_goal_recovery_days: { locked: false },
+    behavior_controls_v1: { locked: false },
   },
 } as unknown as TrainingPlanConfigFormData;
 
@@ -299,8 +299,7 @@ describe("SinglePageForm blocker surfacing", () => {
     expect(goalNameInput?.props.className).toContain("border-destructive");
   });
 
-  it("marks projection controls as user-owned when edited", () => {
-    const handleConfigChange = vi.fn();
+  it("shows behavior controls inline without mode switching", () => {
     let renderer: ReactTestRenderer;
     act(() => {
       renderer = TestRenderer.create(
@@ -308,60 +307,6 @@ describe("SinglePageForm blocker surfacing", () => {
           formData={baseFormData}
           onFormDataChange={vi.fn()}
           configData={baseConfigData}
-          onConfigChange={handleConfigChange}
-        />,
-      );
-    });
-
-    const tuningTab = renderer!.root.find(
-      (node: any) => node.props.accessibilityLabel === "Tuning tab",
-    );
-
-    act(() => {
-      tuningTab.props.onPress();
-    });
-
-    const sliderNodes = findMockNodes(renderer!, "NumberSliderInput");
-    const ambitionSlider = sliderNodes.find(
-      (node: any) => node.props.id === "proj-ambition",
-    );
-
-    act(() => {
-      ambitionSlider?.props.onChange(0.78);
-    });
-
-    const firstConfig = handleConfigChange.mock.calls.at(-1)?.[0];
-    expect(firstConfig?.projectionControlV2.ambition).toBe(0.78);
-    expect(firstConfig?.projectionControlV2.user_owned.ambition).toBe(true);
-
-    const curvatureStrengthSlider = sliderNodes.find(
-      (node: any) => node.props.id === "proj-curvature-strength",
-    );
-    act(() => {
-      curvatureStrengthSlider?.props.onChange(0.91);
-    });
-
-    const secondConfig = handleConfigChange.mock.calls.at(-1)?.[0];
-    expect(secondConfig?.projectionControlV2.curvature_strength).toBe(0.91);
-    expect(
-      secondConfig?.projectionControlV2.user_owned.curvature_strength,
-    ).toBe(true);
-  });
-
-  it("shows technical multipliers inline without mode switching", () => {
-    let renderer: ReactTestRenderer;
-    act(() => {
-      renderer = TestRenderer.create(
-        <SinglePageForm
-          formData={baseFormData}
-          onFormDataChange={vi.fn()}
-          configData={{
-            ...baseConfigData,
-            projectionControlV2: {
-              ...baseConfigData.projectionControlV2,
-              mode: "simple",
-            },
-          }}
           onConfigChange={vi.fn()}
         />,
       );
@@ -374,10 +319,10 @@ describe("SinglePageForm blocker surfacing", () => {
       tuningTab.props.onPress();
     });
 
-    const sliderNodes = findMockNodes(renderer!, "NumberSliderInput");
+    const sliderNodes = findMockNodes(renderer!, "PercentSliderInput");
     expect(
       sliderNodes.some(
-        (node: any) => node.props.id === "cal-preparedness-weight",
+        (node: any) => node.props.id === "behavior-aggressiveness",
       ),
     ).toBe(true);
 
@@ -426,7 +371,7 @@ describe("SinglePageForm blocker surfacing", () => {
     expect(onResetProjectionAll).toHaveBeenCalledTimes(1);
   });
 
-  it("uses frontier-aligned limits slider ranges", () => {
+  it("removes cap sliders from limits tab", () => {
     let renderer: ReactTestRenderer;
     act(() => {
       renderer = TestRenderer.create(
@@ -449,28 +394,19 @@ describe("SinglePageForm blocker surfacing", () => {
     const numberSliders = findMockNodes(renderer!, "NumberSliderInput");
     const percentSliders = findMockNodes(renderer!, "PercentSliderInput");
 
-    const weeklyRamp = percentSliders.find(
-      (node: any) => node.props.id === "max-weekly-load-ramp",
-    )?.props;
-    const ctlRamp = numberSliders.find(
-      (node: any) => node.props.id === "max-weekly-ctl-ramp",
-    )?.props;
-
-    expect(weeklyRamp).toMatchObject({
-      min: 0,
-      max: 40,
-      step: 0.25,
-    });
-    expect(ctlRamp).toMatchObject({
-      min: 0,
-      max: 12,
-      step: 0.1,
-      decimals: 2,
-      unitLabel: "CTL/wk",
-    });
+    expect(
+      percentSliders.some(
+        (node: any) => node.props.id === "max-weekly-load-ramp",
+      ),
+    ).toBe(false);
+    expect(
+      numberSliders.some(
+        (node: any) => node.props.id === "max-weekly-ctl-ramp",
+      ),
+    ).toBe(false);
   });
 
-  it("uses multiplier slider ranges for optimizer tuning", () => {
+  it("uses behavior control sliders for default tuning", () => {
     let renderer: ReactTestRenderer;
     act(() => {
       renderer = TestRenderer.create(
@@ -495,34 +431,27 @@ describe("SinglePageForm blocker surfacing", () => {
     const byId = (id: string) =>
       sliderNodes.find((node: any) => node.props.id === id)?.props;
 
-    expect(byId("cal-preparedness-weight")).toMatchObject({
-      min: 0,
-      max: 30,
-      step: 0.1,
-      decimals: 1,
-      label: "Push fitness multiplier",
-    });
-    expect(byId("cal-risk-penalty")).toMatchObject({
-      min: 0,
-      max: 2,
+    expect(byId("behavior-shape-target")).toMatchObject({
+      min: -1,
+      max: 1,
       step: 0.05,
       decimals: 2,
-      label: "Overload risk multiplier",
+      label: "Load shape target",
     });
-    expect(byId("cal-volatility-penalty")).toMatchObject({
+    expect(byId("behavior-recovery-priority")).toMatchObject({
       min: 0,
-      max: 2,
-      step: 0.05,
-      decimals: 2,
-      label: "Volatility multiplier",
+      max: 100,
+      step: 1,
+      decimals: 0,
+      label: "Recovery priority",
     });
-    expect(byId("cal-churn-penalty")).toMatchObject({
-      min: 0,
-      max: 2,
-      step: 0.05,
-      decimals: 2,
-      label: "Schedule stability multiplier",
-    });
+    const percentSliderIds = findMockNodes(renderer!, "PercentSliderInput").map(
+      (node: any) => node.props.id,
+    );
+    expect(percentSliderIds).toContain("behavior-aggressiveness");
+    expect(percentSliderIds).toContain("behavior-variability");
+    expect(percentSliderIds).toContain("behavior-spike-frequency");
+    expect(percentSliderIds).toContain("behavior-shape-strength");
   });
 
   it("shows review observations without fix CTAs on review tab", () => {

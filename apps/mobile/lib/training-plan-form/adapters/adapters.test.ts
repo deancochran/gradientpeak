@@ -53,21 +53,14 @@ function buildConfigFixture(): TrainingPlanConfigFormData {
     },
     optimizationProfile: "balanced",
     postGoalRecoveryDays: 6,
-    maxWeeklyTssRampPct: 9,
-    maxCtlRampPerWeek: 4,
-    projectionControlV2: {
-      mode: "advanced",
-      ambition: 0.62,
-      risk_tolerance: 0.48,
-      curvature: -0.2,
-      curvature_strength: 0.7,
-      user_owned: {
-        mode: true,
-        ambition: true,
-        risk_tolerance: false,
-        curvature: true,
-        curvature_strength: false,
-      },
+    behaviorControlsV1: {
+      aggressiveness: 0.7,
+      variability: 0.4,
+      spike_frequency: 0.5,
+      shape_target: -0.2,
+      shape_strength: 0.8,
+      recovery_priority: 0.6,
+      starting_fitness_confidence: 0.35,
     },
     calibration: {
       version: 1,
@@ -128,8 +121,7 @@ function buildConfigFixture(): TrainingPlanConfigFormData {
       min_sessions_per_week: { locked: true, locked_by: "user" },
       optimization_profile: { locked: true, locked_by: "user" },
       post_goal_recovery_days: { locked: true, locked_by: "user" },
-      max_weekly_tss_ramp_pct: { locked: true, locked_by: "user" },
-      max_ctl_ramp_per_week: { locked: true, locked_by: "user" },
+      behavior_controls_v1: { locked: true, locked_by: "user" },
     },
   } as unknown as TrainingPlanConfigFormData;
 }
@@ -167,9 +159,7 @@ describe("toCreationNormalizationInput", () => {
         constraints: fixture.constraints,
         optimization_profile: "balanced",
         post_goal_recovery_days: 6,
-        max_weekly_tss_ramp_pct: 9,
-        max_ctl_ramp_per_week: 4,
-        projection_control_v2: fixture.projectionControlV2,
+        behavior_controls_v1: fixture.behaviorControlsV1,
         calibration: fixture.calibration,
         locks: fixture.locks,
       },
@@ -233,15 +223,15 @@ describe("toCreationNormalizationInput", () => {
     expect(first.user_values?.calibration).not.toHaveProperty("v0");
   });
 
-  it("serializes fractional ramp caps without coercion", () => {
+  it("serializes behavior controls deterministically", () => {
     const fixture = buildConfigFixture();
-    fixture.maxWeeklyTssRampPct = 6.75;
-    fixture.maxCtlRampPerWeek = 2.4;
+    fixture.behaviorControlsV1.shape_target = -0.55;
+    fixture.behaviorControlsV1.shape_strength = 0.92;
 
     const mapped = toCreationNormalizationInput(fixture);
 
-    expect(mapped.user_values?.max_weekly_tss_ramp_pct).toBe(6.75);
-    expect(mapped.user_values?.max_ctl_ramp_per_week).toBe(2.4);
+    expect(mapped.user_values?.behavior_controls_v1?.shape_target).toBe(-0.55);
+    expect(mapped.user_values?.behavior_controls_v1?.shape_strength).toBe(0.92);
   });
 });
 
@@ -401,8 +391,15 @@ describe("training plan reverse adapters", () => {
           },
           optimization_profile: "outcome_first",
           post_goal_recovery_days: 8,
-          max_weekly_tss_ramp_pct: 9,
-          max_ctl_ramp_per_week: 4,
+          behavior_controls_v1: {
+            aggressiveness: 0.8,
+            variability: 0.45,
+            spike_frequency: 0.6,
+            shape_target: 0.2,
+            shape_strength: 0.7,
+            recovery_priority: 0.5,
+            starting_fitness_confidence: 0.65,
+          },
         },
         creation_calibration: {
           snapshot: {
@@ -420,8 +417,8 @@ describe("training plan reverse adapters", () => {
     expect(first.recentInfluenceScore).toBe(0.37);
     expect(first.optimizationProfile).toBe("outcome_first");
     expect(first.postGoalRecoveryDays).toBe(8);
-    expect(first.maxWeeklyTssRampPct).toBe(9);
-    expect(first.maxCtlRampPerWeek).toBe(4);
+    expect(first.behaviorControlsV1.aggressiveness).toBe(0.8);
+    expect(first.behaviorControlsV1.shape_target).toBe(0.2);
     expect(first.calibration.version).toBe(1);
   });
 });
