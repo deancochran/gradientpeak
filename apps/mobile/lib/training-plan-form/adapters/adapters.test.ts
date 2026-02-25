@@ -160,6 +160,7 @@ describe("toCreationNormalizationInput", () => {
         optimization_profile: "balanced",
         post_goal_recovery_days: 6,
         behavior_controls_v1: fixture.behaviorControlsV1,
+        calibration_composite_locks: fixture.calibrationCompositeLocks,
         calibration: fixture.calibration,
         locks: fixture.locks,
       },
@@ -400,6 +401,12 @@ describe("training plan reverse adapters", () => {
             recovery_priority: 0.5,
             starting_fitness_confidence: 0.65,
           },
+          calibration_composite_locks: {
+            target_attainment_weight: true,
+            envelope_weight: false,
+            durability_weight: true,
+            evidence_weight: false,
+          },
         },
         creation_calibration: {
           snapshot: {
@@ -419,6 +426,12 @@ describe("training plan reverse adapters", () => {
     expect(first.postGoalRecoveryDays).toBe(8);
     expect(first.behaviorControlsV1.aggressiveness).toBe(0.8);
     expect(first.behaviorControlsV1.shape_target).toBe(0.2);
+    expect(first.calibrationCompositeLocks).toEqual({
+      target_attainment_weight: true,
+      envelope_weight: false,
+      durability_weight: true,
+      evidence_weight: false,
+    });
     expect(first.calibration.version).toBe(1);
   });
 });

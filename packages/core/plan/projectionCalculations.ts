@@ -1281,6 +1281,7 @@ interface WeeklyLoadSignalInput {
   blocks: BuildDeterministicProjectionInput["blocks"];
   totalProjectionWeeks: number;
   curvatureControls?: EffectiveProjectionControls["curvature"];
+  aggressivenessControl?: number;
 }
 
 interface WeeklyLoadSignalResult {
@@ -1346,6 +1347,39 @@ function computeContinuousTransitionAdjustment(input: {
 }
 
 const CURVATURE_LOAD_BIAS_MAX = 0.18;
+const AGGRESSIVENESS_WEEKLY_SIGNAL_MAX_BIAS = 0.08;
+
+function applyAggressivenessWeeklyLoadBias(input: {
+  weeklyTss: number;
+  aggressivenessControl?: number;
+  pattern: CurvatureEnvelopePattern;
+}): number {
+  const aggressiveness = clamp01(input.aggressivenessControl ?? 0.5);
+  const centeredAggressiveness = aggressiveness - 0.5;
+  if (Math.abs(centeredAggressiveness) < 1e-6) {
+    return input.weeklyTss;
+  }
+
+  const patternWeight =
+    input.pattern === "ramp"
+      ? 1
+      : input.pattern === "deload"
+        ? 0.55
+        : input.pattern === "taper"
+          ? 0.3
+          : input.pattern === "event"
+            ? 0.18
+            : 0.2;
+  const normalizedSignal = centeredAggressiveness * 2;
+  const multiplier = clampNumber(
+    1 +
+      normalizedSignal * AGGRESSIVENESS_WEEKLY_SIGNAL_MAX_BIAS * patternWeight,
+    1 - AGGRESSIVENESS_WEEKLY_SIGNAL_MAX_BIAS,
+    1 + AGGRESSIVENESS_WEEKLY_SIGNAL_MAX_BIAS,
+  );
+
+  return round1(Math.max(0, input.weeklyTss * multiplier));
+}
 
 interface WeeklyTssCapInput {
   flooredWeeklyTss: number;
@@ -1533,6 +1567,13 @@ function resolveWeeklyLoadSignals(
       recoveryOverlap.goal_ids.length > 0 ? "recovery" : weekPattern.pattern,
     curvatureControls: input.curvatureControls,
   });
+  const weeklyPatternForBias: CurvatureEnvelopePattern =
+    recoveryOverlap.goal_ids.length > 0 ? "recovery" : weekPattern.pattern;
+  const aggressivenessAdjustedWeeklyTss = applyAggressivenessWeeklyLoadBias({
+    weeklyTss: curvatureAdjustedWeeklyTss,
+    aggressivenessControl: input.aggressivenessControl,
+    pattern: weeklyPatternForBias,
+  });
   const enforceNoHistoryStartingFloor =
     input.noHistory?.target_event_ctl !== null &&
     input.noHistory?.target_event_ctl !== undefined &&
@@ -1599,8 +1640,8 @@ function resolveWeeklyLoadSignals(
   });
   const floorOverrideApplied =
     weightedNoHistoryDemandFloor !== null &&
-    curvatureAdjustedWeeklyTss < weightedNoHistoryDemandFloor;
-  const flooredWeeklyTss = curvatureAdjustedWeeklyTss;
+    aggressivenessAdjustedWeeklyTss < weightedNoHistoryDemandFloor;
+  const flooredWeeklyTss = aggressivenessAdjustedWeeklyTss;
 
   return {
     block,
@@ -2420,6 +2461,8 @@ function evaluateWeeklyTssCandidateObjectiveDetails(
       blocks: input.input.blocks,
       totalProjectionWeeks,
       curvatureControls: input.effectiveControls.curvature,
+      aggressivenessControl:
+        input.effectiveControls.behavior_controls.aggressiveness,
     });
 
     const simWeeklyTss = applyWeeklyTssCaps({
@@ -3170,6 +3213,7 @@ export function buildDeterministicProjectionPayload(
       blocks: input.blocks,
       totalProjectionWeeks,
       curvatureControls: effectiveControls.curvature,
+      aggressivenessControl: effectiveControls.behavior_controls.aggressiveness,
     });
 
     if (weekSignals.enforceNoHistoryStartingFloor) {

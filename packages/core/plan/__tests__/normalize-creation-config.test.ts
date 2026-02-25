@@ -16,6 +16,12 @@ describe("normalizeCreationConfig safety fields", () => {
       recovery_priority: 0.6,
       starting_fitness_confidence: 0.6,
     });
+    expect(normalized.calibration_composite_locks).toEqual({
+      target_attainment_weight: false,
+      envelope_weight: false,
+      durability_weight: false,
+      evidence_weight: false,
+    });
   });
 
   it("accepts explicit user overrides inside hard bounds", () => {
@@ -32,6 +38,12 @@ describe("normalizeCreationConfig safety fields", () => {
           recovery_priority: 0.75,
           starting_fitness_confidence: 0.25,
         },
+        calibration_composite_locks: {
+          target_attainment_weight: true,
+          envelope_weight: false,
+          durability_weight: true,
+          evidence_weight: false,
+        },
       },
     });
 
@@ -39,6 +51,12 @@ describe("normalizeCreationConfig safety fields", () => {
     expect(normalized.post_goal_recovery_days).toBe(10);
     expect(normalized.behavior_controls_v1.aggressiveness).toBe(0.8);
     expect(normalized.behavior_controls_v1.shape_target).toBe(-0.4);
+    expect(normalized.calibration_composite_locks).toEqual({
+      target_attainment_weight: true,
+      envelope_weight: false,
+      durability_weight: true,
+      evidence_weight: false,
+    });
   });
 
   it("fills deterministic calibration defaults when omitted", () => {

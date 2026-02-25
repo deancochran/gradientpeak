@@ -252,7 +252,7 @@ const hasTextContaining = (
   }).length > 0;
 
 describe("Plan tab CTA routing", () => {
-  it("opens quick adjust sheet and routes full-plan intent", () => {
+  it("routes full-plan intent and keeps execution-only controls", () => {
     pushMock.mockReset();
     trainingPlanState.plan = {
       id: "plan-1",
@@ -269,15 +269,7 @@ describe("Plan tab CTA routing", () => {
       renderer = TestRenderer.create(<PlanScreenWithErrorBoundary />);
     });
 
-    const quickAdjustButton = findTouchableByText(renderer, "Quick Adjust");
-    act(() => {
-      quickAdjustButton.props.onPress();
-    });
-
-    const quickAdjustSheet = renderer.root.find(
-      (node: any) => node.type === "QuickAdjustSheet",
-    );
-    expect(quickAdjustSheet.props.visible).toBe(true);
+    expect(hasTextContaining(renderer, "Quick Adjust")).toBe(false);
 
     const openFullPlanButton = findTouchableByText(renderer, "Open Full Plan");
     act(() => {
@@ -287,10 +279,12 @@ describe("Plan tab CTA routing", () => {
 
     expect(hasTextContaining(renderer, "Manage Plan")).toBe(false);
     expect(hasTextContaining(renderer, "Edit Structure")).toBe(false);
+    expect(hasTextContaining(renderer, "Open Calendar")).toBe(true);
 
-    expect(hasTextContaining(renderer, "Progress")).toBe(true);
-    expect(hasTextContaining(renderer, "50%")).toBe(true);
-    expect(hasTextContaining(renderer, "42 CTL")).toBe(true);
+    expect(hasTextContaining(renderer, "sessions completed this week")).toBe(
+      true,
+    );
+    expect(hasTextContaining(renderer, "Plan Insights")).toBe(false);
   });
 
   it("routes create/select intent from no-plan state to library training plans", () => {

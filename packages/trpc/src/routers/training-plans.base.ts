@@ -1561,6 +1561,13 @@ function buildConfirmedSuggestionsFromContext(input: {
     optimization_profile: profileDefaults.optimization_profile,
     post_goal_recovery_days: profileDefaults.post_goal_recovery_days,
     behavior_controls_v1: suggestionPayload.behavior_controls_v1,
+    calibration_composite_locks: input.creationInput.user_values
+      ?.calibration_composite_locks ?? {
+      target_attainment_weight: false,
+      envelope_weight: false,
+      durability_weight: false,
+      evidence_weight: false,
+    },
     calibration: mergeCalibrationInput(
       input.creationInput.defaults?.calibration,
       input.creationInput.confirmed_suggestions?.calibration,
@@ -1604,6 +1611,9 @@ function mergeConfirmedSuggestions(input: {
     behavior_controls_v1:
       confirmed?.behavior_controls_v1 ??
       input.suggestedValues.behavior_controls_v1,
+    calibration_composite_locks:
+      confirmed?.calibration_composite_locks ??
+      input.suggestedValues.calibration_composite_locks,
     calibration: mergeCalibrationInput(
       input.suggestedValues.calibration,
       confirmed?.calibration,
@@ -1928,8 +1938,10 @@ export const trainingPlansRouter = createTRPCRouter({
         });
       }
 
+      const shouldBeActive = input.is_active ?? true;
+
       // If creating as active, deactivate any existing active plans
-      if (input.is_active) {
+      if (shouldBeActive) {
         await ctx.supabase
           .from("training_plans")
           .update({ is_active: false })
@@ -1943,7 +1955,7 @@ export const trainingPlansRouter = createTRPCRouter({
           name: input.name,
           description: input.description ?? null,
           structure: structureWithId as any, // Cast to satisfy Supabase Json type
-          is_active: input.is_active ?? true,
+          is_active: shouldBeActive,
           profile_id: ctx.session.user.id,
         })
         .select("*")

@@ -17,7 +17,6 @@ export const ROUTES = {
     TRAINING_PLAN: {
       INDEX: "/training-plan" as const,
       CREATE: "/training-plan-create" as const,
-      SETTINGS: "/training-plan-settings" as const,
       EDIT: "/training-plan-edit" as const,
     },
 

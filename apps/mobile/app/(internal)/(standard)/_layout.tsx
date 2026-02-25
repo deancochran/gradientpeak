@@ -43,7 +43,6 @@ import { ChevronLeft } from "lucide-react-native";
  * - training-plan - Training plan overview
  * - training-plan-create - Create new training plan
  * - training-plan-edit - Edit training plan structure
- * - training-plan-settings - Training plan settings
  *
  * SETTINGS:
  * - settings - App settings
@@ -174,12 +173,6 @@ export default function StandardLayout() {
         name="training-plan-edit"
         options={{
           title: "Edit Training Plan",
-        }}
-      />
-      <Stack.Screen
-        name="training-plan-settings"
-        options={{
-          title: "Training Plan Settings",
         }}
       />
       <Stack.Screen

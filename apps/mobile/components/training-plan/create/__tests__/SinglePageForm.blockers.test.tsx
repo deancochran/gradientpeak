@@ -30,6 +30,10 @@ vi.mock("@/components/ui/input", () => ({
   Input: (props: any) => React.createElement("Input", props),
 }));
 
+vi.mock("@/components/ui/textarea", () => ({
+  Textarea: (props: any) => React.createElement("Textarea", props),
+}));
+
 vi.mock("@/components/ui/label", () => ({
   Label: (props: any) => React.createElement("Label", props, props.children),
 }));
@@ -275,7 +279,57 @@ describe("SinglePageForm blocker surfacing", () => {
       .map((node: any) => getNodeText(node.props.children))
       .join("\n");
 
-    expect(allText).toContain("Needs attention: Goals");
+    expect(allText).toContain("Needs attention: Plan, Goals");
+  });
+
+  it("wires plan tab metadata fields", () => {
+    const onPlanMetadataChange = vi.fn();
+
+    let renderer: ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        <SinglePageForm
+          planMetadata={{
+            name: "Build Phase",
+            description: "Progressive block",
+            isActive: true,
+          }}
+          onPlanMetadataChange={onPlanMetadataChange}
+          formData={baseFormData}
+          onFormDataChange={vi.fn()}
+          configData={baseConfigData}
+          onConfigChange={vi.fn()}
+        />,
+      );
+    });
+
+    const planTab = renderer!.root.find(
+      (node: any) => node.props.accessibilityLabel === "Plan tab",
+    );
+    act(() => {
+      planTab.props.onPress();
+    });
+
+    const planNameInput = findMockNodes(renderer!, "Input").find(
+      (node: any) => node.props["aria-label"] === "Plan name",
+    );
+    act(() => {
+      planNameInput?.props.onChangeText("Peak Block");
+    });
+
+    const activeSwitch = findMockNodes(renderer!, "Switch").find(
+      (node: any) => node.props.accessibilityLabel === "Active plan",
+    );
+    act(() => {
+      activeSwitch?.props.onCheckedChange(false);
+    });
+
+    expect(onPlanMetadataChange).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Peak Block" }),
+    );
+    expect(onPlanMetadataChange).toHaveBeenCalledWith(
+      expect.objectContaining({ isActive: false }),
+    );
   });
 
   it("applies invalid field styling when RHF errors are present", () => {

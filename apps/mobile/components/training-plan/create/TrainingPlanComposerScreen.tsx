@@ -4,6 +4,7 @@ import {
   type TrainingPlanConfigConflict,
   type TrainingPlanConfigFormData,
   type TrainingPlanFormData,
+  type TrainingPlanMetadataFormData,
 } from "@/components/training-plan/create/SinglePageForm";
 import { featureFlags } from "@/lib/constants/features";
 import { ROUTES } from "@/lib/constants/routes";
@@ -78,6 +79,18 @@ export type TrainingPlanComposerModeContract =
       mode: "edit";
       planId: string;
     };
+
+export type TrainingPlanComposerInitialTab =
+  | "plan"
+  | "goals"
+  | "availability"
+  | "constraints"
+  | "calibration"
+  | "review";
+
+type TrainingPlanComposerScreenProps = TrainingPlanComposerModeContract & {
+  initialTab?: TrainingPlanComposerInitialTab;
+};
 
 const isUuid = (value: string): boolean =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -260,7 +273,7 @@ const createDefaultConfigState = (): TrainingPlanConfigFormData => ({
 });
 
 export function TrainingPlanComposerScreen(
-  contract: TrainingPlanComposerModeContract,
+  contract: TrainingPlanComposerScreenProps,
 ) {
   assertModeContract(contract);
 
@@ -300,6 +313,12 @@ export function TrainingPlanComposerScreen(
   const [configData, setConfigData] = useState<TrainingPlanConfigFormData>(
     createDefaultConfigState,
   );
+  const [planMetadata, setPlanMetadata] =
+    useState<TrainingPlanMetadataFormData>(() => ({
+      name: "New Training Plan",
+      description: "",
+      isActive: true,
+    }));
   const [hasHydratedFromEditPlan, setHasHydratedFromEditPlan] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [isPreviewPending, setIsPreviewPending] = useState(false);
@@ -415,6 +434,20 @@ export function TrainingPlanComposerScreen(
         const mapped = mapTrainingPlanSaveError(error);
         Alert.alert("Error", mapped.message, [{ text: "OK" }]);
         setIsCreating(false);
+      },
+    },
+  );
+
+  const updatePlanMetadataMutation = useReliableMutation(
+    trpc.trainingPlans.update,
+    {
+      invalidate: [utils.trainingPlans],
+      onError: (error) => {
+        Alert.alert(
+          "Error",
+          error.message || "Failed to update training plan.",
+          [{ text: "OK" }],
+        );
       },
     },
   );
@@ -669,6 +702,11 @@ export function TrainingPlanComposerScreen(
         structure: editPlanQuery.data.structure,
       }),
     );
+    setPlanMetadata({
+      name: editPlanQuery.data.name,
+      description: editPlanQuery.data.description ?? "",
+      isActive: editPlanQuery.data.is_active,
+    });
     setHasHydratedFromEditPlan(true);
     setHasSeededDefaults(true);
   }, [editPlanQuery.data, form, hasHydratedFromEditPlan, isEditMode]);
@@ -945,6 +983,16 @@ export function TrainingPlanComposerScreen(
     setIsCreating(true);
 
     try {
+      const planName = planMetadata.name.trim();
+      if (!planName) {
+        Alert.alert("Invalid Input", "Plan name cannot be empty", [
+          { text: "OK" },
+        ]);
+        return;
+      }
+
+      const description = planMetadata.description.trim();
+
       if (!featureFlags.trainingPlanCreateConfigMvp) {
         if (isEditMode) {
           throw new Error(
@@ -955,6 +1003,12 @@ export function TrainingPlanComposerScreen(
         const createdPlan = await createPlanLegacyMutation.mutateAsync(
           buildMinimalPayload(),
         );
+        await updatePlanMetadataMutation.mutateAsync({
+          id: createdPlan.id,
+          name: planName,
+          description: description.length > 0 ? description : null,
+          is_active: planMetadata.isActive,
+        });
         router.replace({
           pathname: ROUTES.PLAN.TRAINING_PLAN.INDEX,
           params: { id: createdPlan.id, nextStep: "refine" },
@@ -973,13 +1027,20 @@ export function TrainingPlanComposerScreen(
         override_policy: {
           allow_blocking_conflicts: allowBlockingIssueOverride,
         },
-        is_active: isEditMode ? (editPlanQuery.data?.is_active ?? true) : true,
+        is_active: planMetadata.isActive,
       };
 
       if (isEditMode) {
         const updatedPlan = await updatePlanMutation.mutateAsync({
           ...payload,
           plan_id: contract.planId,
+        });
+
+        await updatePlanMetadataMutation.mutateAsync({
+          id: updatedPlan.id,
+          name: planName,
+          description: description.length > 0 ? description : null,
+          is_active: planMetadata.isActive,
         });
 
         router.replace({
@@ -991,6 +1052,13 @@ export function TrainingPlanComposerScreen(
 
       const createdPlan = await createPlanMutation.mutateAsync({
         ...payload,
+      });
+
+      await updatePlanMetadataMutation.mutateAsync({
+        id: createdPlan.id,
+        name: planName,
+        description: description.length > 0 ? description : null,
+        is_active: planMetadata.isActive,
       });
 
       router.replace({
@@ -1121,6 +1189,9 @@ export function TrainingPlanComposerScreen(
           </View>
         ) : null}
         <SinglePageForm
+          planMetadata={planMetadata}
+          onPlanMetadataChange={setPlanMetadata}
+          initialTab={contract.initialTab}
           formData={formData}
           onFormDataChange={handleFormDataChange}
           onResetGoals={handleResetGoals}

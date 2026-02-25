@@ -87,6 +87,25 @@ describe("updateFromCreationConfigUseCase", () => {
 
     expect(result.id).toBe("11111111-1111-4111-8111-111111111111");
     expect(result.creation_summary.conflicts.is_blocking).toBe(false);
+
+    const updateCalls = (supabase.__builder.update as any).mock.calls;
+    const persistedUpdatePayload = updateCalls.find(
+      ([value]: Array<Record<string, unknown>>) =>
+        value && "structure" in value,
+    )?.[0] as { structure?: { metadata?: Record<string, unknown> } };
+
+    expect(
+      persistedUpdatePayload?.structure?.metadata?.creation_config_snapshot,
+    ).toMatchObject({
+      optimization_profile: "balanced",
+      post_goal_recovery_days: 5,
+    });
+    expect(
+      persistedUpdatePayload?.structure?.metadata?.creation_form_snapshot,
+    ).toEqual({
+      plan_start_date: "2026-01-05",
+      goals: [],
+    });
   });
 
   it("rejects unresolved conflicts", async () => {

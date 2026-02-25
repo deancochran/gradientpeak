@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   creationAvailabilityConfigSchema,
   creationBehaviorControlsV1Schema,
+  creationCalibrationCompositeLocksSchema,
   creationConfigLocksSchema,
   creationConstraintsSchema,
   creationOptimizationProfileEnum,
@@ -21,6 +22,12 @@ const creationConfigCoreFields = {
   optimization_profile: creationOptimizationProfileEnum,
   post_goal_recovery_days: z.number().int().min(0).max(28),
   behavior_controls_v1: creationBehaviorControlsV1Schema,
+  calibration_composite_locks: creationCalibrationCompositeLocksSchema.default({
+    target_attainment_weight: false,
+    envelope_weight: false,
+    durability_weight: false,
+    evidence_weight: false,
+  }),
 };
 
 export const creationConfigValueSchema = z
@@ -87,6 +94,8 @@ export const getCreationSuggestionsInputSchema = z
           creationConfigCoreFields.post_goal_recovery_days.optional(),
         behavior_controls_v1:
           creationConfigCoreFields.behavior_controls_v1.optional(),
+        calibration_composite_locks:
+          creationConfigCoreFields.calibration_composite_locks.optional(),
         calibration: trainingPlanCalibrationInputSchema.optional(),
         constraints: creationConstraintsSchema.partial().optional(),
       })

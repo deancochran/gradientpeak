@@ -122,6 +122,8 @@ const formatCompactAxisNumber = (value: number) => {
   return `${Math.round(value)}`;
 };
 
+const formatWeeklyTss = (value: number) => value.toFixed(1);
+
 const asRecord = (value: unknown): UnknownRecord | undefined => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
@@ -1065,7 +1067,7 @@ export const CreationProjectionChart = React.memo(
       selectedPoint,
     );
     const selectedPointSummary = selectedPoint
-      ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date}. Weekly load ${Math.round(selectedPoint.predicted_load_tss)} TSS. Fitness ${selectedPoint.predicted_fitness_ctl.toFixed(1)} CTL. Fatigue ${selectedPoint.predicted_fatigue_atl.toFixed(1)} ATL. Readiness ${Math.round(selectedReadiness ?? 0)} out of 100.`
+      ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date}. Weekly load ${formatWeeklyTss(selectedPoint.predicted_load_tss)} TSS. Fitness ${selectedPoint.predicted_fitness_ctl.toFixed(1)} CTL. Fatigue ${selectedPoint.predicted_fatigue_atl.toFixed(1)} ATL. Readiness ${Math.round(selectedReadiness ?? 0)} out of 100.`
       : "No point selected.";
     const activePhase = useMemo(() => {
       if (!projectionChart || !selectedPoint) {
@@ -1104,7 +1106,7 @@ export const CreationProjectionChart = React.memo(
     );
 
     const selectedWeekSummary = selectedMicrocycle?.metadata
-      ? `${formatIsoDate(selectedMicrocycle.week_start_date, "MMM d")} to ${formatIsoDate(selectedMicrocycle.week_end_date, "MMM d")}. Requested ${Math.round(selectedMicrocycle.metadata.tss_ramp.raw_requested_weekly_tss)} TSS${selectedMicrocycle.metadata.tss_ramp.floor_override_applied ? `, floored to ${Math.round(selectedMicrocycle.metadata.tss_ramp.requested_weekly_tss)} TSS` : ""}, applied ${Math.round(selectedMicrocycle.metadata.tss_ramp.applied_weekly_tss)} TSS${selectedMicrocycle.metadata.tss_ramp.floor_override_applied ? " (floor minimum applied)" : selectedMicrocycle.metadata.tss_ramp.clamped ? " due to load ramp cap" : " within load ramp cap"}. Requested CTL ramp ${selectedMicrocycle.metadata.ctl_ramp.requested_ctl_ramp.toFixed(2)}, applied ${selectedMicrocycle.metadata.ctl_ramp.applied_ctl_ramp.toFixed(2)}${selectedMicrocycle.metadata.ctl_ramp.clamped ? " due to CTL cap" : " within CTL cap"}.${selectedMicrocycle.metadata.recovery.active ? ` Recovery active at ${toPercentReductionLabel(selectedMicrocycle.metadata.recovery.reduction_factor)} load reduction.` : " Recovery not active."}`
+      ? `${formatIsoDate(selectedMicrocycle.week_start_date, "MMM d")} to ${formatIsoDate(selectedMicrocycle.week_end_date, "MMM d")}. Requested ${formatWeeklyTss(selectedMicrocycle.metadata.tss_ramp.raw_requested_weekly_tss)} TSS${selectedMicrocycle.metadata.tss_ramp.floor_override_applied ? `, floored to ${formatWeeklyTss(selectedMicrocycle.metadata.tss_ramp.requested_weekly_tss)} TSS` : ""}, applied ${formatWeeklyTss(selectedMicrocycle.metadata.tss_ramp.applied_weekly_tss)} TSS${selectedMicrocycle.metadata.tss_ramp.floor_override_applied ? " (floor minimum applied)" : selectedMicrocycle.metadata.tss_ramp.clamped ? " due to load ramp cap" : " within load ramp cap"}. Requested CTL ramp ${selectedMicrocycle.metadata.ctl_ramp.requested_ctl_ramp.toFixed(2)}, applied ${selectedMicrocycle.metadata.ctl_ramp.applied_ctl_ramp.toFixed(2)}${selectedMicrocycle.metadata.ctl_ramp.clamped ? " due to CTL cap" : " within CTL cap"}.${selectedMicrocycle.metadata.recovery.active ? ` Recovery active at ${toPercentReductionLabel(selectedMicrocycle.metadata.recovery.reduction_factor)} load reduction.` : " Recovery not active."}`
       : "No per-week safety metadata available for this point.";
 
     const recoverySegmentSummary = projectionChart?.recovery_segments?.length
@@ -1490,7 +1492,7 @@ export const CreationProjectionChart = React.memo(
                   <Text className="text-xs font-medium">Training state</Text>
                   <Text className="text-xs text-muted-foreground">
                     {selectedPoint
-                      ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date} - Weekly load ${Math.round(selectedPoint.predicted_load_tss)} TSS - CTL ${selectedPoint.predicted_fitness_ctl.toFixed(1)} - ATL ${selectedPoint.predicted_fatigue_atl.toFixed(1)} - Readiness ${Math.round(selectedReadiness ?? 0)}/100`
+                      ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date} - Weekly load ${formatWeeklyTss(selectedPoint.predicted_load_tss)} TSS - CTL ${selectedPoint.predicted_fitness_ctl.toFixed(1)} - ATL ${selectedPoint.predicted_fatigue_atl.toFixed(1)} - Readiness ${Math.round(selectedReadiness ?? 0)}/100`
                       : "Tap a point to inspect projected details."}
                   </Text>
                   <Text className="text-xs text-muted-foreground">
@@ -1532,19 +1534,19 @@ export const CreationProjectionChart = React.memo(
                       </Text>
                       <Text className="text-[11px] text-muted-foreground">
                         Weekly load: requested{" "}
-                        {Math.round(
+                        {formatWeeklyTss(
                           selectedMicrocycle.metadata.tss_ramp
                             .raw_requested_weekly_tss,
                         )}
                         {selectedMicrocycle.metadata.tss_ramp
                           .floor_override_applied
-                          ? `, floored to ${Math.round(
+                          ? `, floored to ${formatWeeklyTss(
                               selectedMicrocycle.metadata.tss_ramp
                                 .requested_weekly_tss,
                             )}`
                           : ""}
                         , applied{" "}
-                        {Math.round(
+                        {formatWeeklyTss(
                           selectedMicrocycle.metadata.tss_ramp
                             .applied_weekly_tss,
                         )}
@@ -1565,7 +1567,7 @@ export const CreationProjectionChart = React.memo(
                           .demand_band_minimum_weekly_tss !== undefined &&
                         selectedMicrocycle.metadata.tss_ramp
                           .demand_band_minimum_weekly_tss !== null
-                          ? ` (${Math.round(selectedMicrocycle.metadata.tss_ramp.demand_band_minimum_weekly_tss)} TSS min)`
+                          ? ` (${formatWeeklyTss(selectedMicrocycle.metadata.tss_ramp.demand_band_minimum_weekly_tss)} TSS min)`
                           : ""}
                       </Text>
                       <Text className="text-[11px] text-muted-foreground">
@@ -1614,7 +1616,7 @@ export const CreationProjectionChart = React.memo(
                           accessibilityRole="tab"
                           accessibilityState={{ selected: isActive }}
                           accessibilityLabel={`Point ${index + 1} of ${points.length}, ${dateLabel}`}
-                          accessibilityHint={`Weekly load ${Math.round(point.predicted_load_tss)} TSS, fitness ${point.predicted_fitness_ctl.toFixed(1)} CTL, fatigue ${point.predicted_fatigue_atl.toFixed(1)} ATL, readiness ${Math.round(point.readiness_score ?? 0)} out of 100`}
+                          accessibilityHint={`Weekly load ${formatWeeklyTss(point.predicted_load_tss)} TSS, fitness ${point.predicted_fitness_ctl.toFixed(1)} CTL, fatigue ${point.predicted_fatigue_atl.toFixed(1)} ATL, readiness ${Math.round(point.readiness_score ?? 0)} out of 100`}
                           hitSlop={8}
                           style={{
                             minHeight: 44,
@@ -1716,8 +1718,8 @@ export const CreationProjectionChart = React.memo(
                               {microcycle.phase} - {microcycle.pattern}
                             </Text>
                             <Text className="text-[11px] text-muted-foreground">
-                              {Math.round(microcycle.planned_weekly_tss)} TSS /
-                              CTL {microcycle.projected_ctl.toFixed(1)}
+                              {formatWeeklyTss(microcycle.planned_weekly_tss)}{" "}
+                              TSS / CTL {microcycle.projected_ctl.toFixed(1)}
                             </Text>
                             {microcycle.metadata ? (
                               <Text className="text-[11px] text-muted-foreground">

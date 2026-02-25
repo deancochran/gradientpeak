@@ -1,6 +1,7 @@
 import {
   creationAvailabilityConfigSchema,
   creationBehaviorControlsV1Schema,
+  creationCalibrationCompositeLocksSchema,
   creationConfigLocksSchema,
   creationConstraintsSchema,
   creationOptimizationProfileEnum,
@@ -10,6 +11,7 @@ import {
   trainingPlanCreationConfigSchema,
   type CreationAvailabilityConfig,
   type CreationBehaviorControlsV1,
+  type CreationCalibrationCompositeLocks,
   type CreationConfigLocks,
   type CreationConstraints,
   type CreationProvenance,
@@ -39,6 +41,7 @@ type CreationConfigValues = {
   optimization_profile: "outcome_first" | "balanced" | "sustainable";
   post_goal_recovery_days: number;
   behavior_controls_v1: CreationBehaviorControlsV1;
+  calibration_composite_locks: CreationCalibrationCompositeLocks;
   calibration: TrainingPlanCalibrationConfig;
 };
 
@@ -131,6 +134,12 @@ const DEFAULT_VALUES: CreationConfigValues = {
     shape_strength: 0.35,
     recovery_priority: 0.6,
     starting_fitness_confidence: 0.6,
+  },
+  calibration_composite_locks: {
+    target_attainment_weight: false,
+    envelope_weight: false,
+    durability_weight: false,
+    evidence_weight: false,
   },
   calibration: trainingPlanCalibrationConfigSchema.parse({}),
 };
@@ -318,6 +327,10 @@ export function normalizeCreationConfig(
       input.defaults?.behavior_controls_v1 ??
         DEFAULT_VALUES.behavior_controls_v1,
     ),
+    calibration_composite_locks: creationCalibrationCompositeLocksSchema.parse(
+      input.defaults?.calibration_composite_locks ??
+        DEFAULT_VALUES.calibration_composite_locks,
+    ),
   };
 
   const availabilityPick = pickByPrecedence(
@@ -376,6 +389,13 @@ export function normalizeCreationConfig(
     false,
   );
 
+  const calibrationCompositeLocksPick = pickByPrecedence(
+    input.user_values?.calibration_composite_locks,
+    input.confirmed_suggestions?.calibration_composite_locks,
+    defaultValues.calibration_composite_locks,
+    false,
+  );
+
   const normalizedDays = WEEK_DAYS.map((day) => {
     return (
       availabilityPick.value.days.find((entry) => entry.day === day) ?? {
@@ -414,6 +434,9 @@ export function normalizeCreationConfig(
     post_goal_recovery_days: postGoalRecoveryDaysPick.value,
     behavior_controls_v1: creationBehaviorControlsV1Schema.parse(
       behaviorControlsPick.value,
+    ),
+    calibration_composite_locks: creationCalibrationCompositeLocksSchema.parse(
+      calibrationCompositeLocksPick.value,
     ),
     calibration: mergeCalibration(
       DEFAULT_VALUES.calibration,

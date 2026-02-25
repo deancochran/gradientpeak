@@ -18,6 +18,7 @@ import {
   TPV_NEXT_STEP_INTENTS,
   normalizeTrainingPlanNextStep,
 } from "@/lib/constants/trainingPlanIntents";
+import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { trpc } from "@/lib/trpc";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -28,6 +29,7 @@ import {
   CircleCheck,
   Gauge,
   Pause,
+  Trash2,
   TrendingUp,
 } from "lucide-react-native";
 import React, { useCallback, useMemo } from "react";
@@ -122,6 +124,21 @@ export default function TrainingPlanOverview() {
   const [insightModal, setInsightModal] = React.useState<
     "adherence" | "readiness" | null
   >(null);
+
+  const deletePlanMutation = useReliableMutation(trpc.trainingPlans.delete, {
+    invalidate: [utils.trainingPlans],
+    onSuccess: () => {
+      Alert.alert("Plan Deleted", "Your training plan has been deleted", [
+        {
+          text: "OK",
+          onPress: () => router.replace(ROUTES.PLAN.INDEX),
+        },
+      ]);
+    },
+    onError: (error) => {
+      Alert.alert("Delete Failed", error.message || "Failed to delete plan");
+    },
+  });
 
   const insightTimelinePoints = useMemo(
     () => snapshot.insightTimeline?.timeline || [],
@@ -222,8 +239,11 @@ export default function TrainingPlanOverview() {
   };
 
   const handleOpenSettings = useCallback(() => {
-    router.push(ROUTES.PLAN.TRAINING_PLAN.SETTINGS);
-  }, [router]);
+    router.push({
+      pathname: ROUTES.PLAN.TRAINING_PLAN.EDIT,
+      params: { id: plan?.id, initialTab: "plan" },
+    });
+  }, [plan?.id, router]);
 
   const handleOpenActivity = useCallback(() => {
     if (typeof activityId !== "string") {
@@ -244,23 +264,40 @@ export default function TrainingPlanOverview() {
   };
 
   const handleEditStructure = useCallback(() => {
+    router.push({
+      pathname: ROUTES.PLAN.TRAINING_PLAN.EDIT,
+      params: { id: plan?.id, initialTab: "goals" },
+    });
+  }, [plan?.id, router]);
+
+  const handleDeletePlan = useCallback(() => {
     if (!plan) {
       return;
     }
 
-    router.push({
-      pathname: ROUTES.PLAN.TRAINING_PLAN.EDIT,
-      params: { id: plan.id },
-    });
-  }, [plan, router]);
+    Alert.alert(
+      "Delete Training Plan?",
+      "This action cannot be undone. All planned activities associated with this training plan will also be deleted.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            await deletePlanMutation.mutateAsync({ id: plan.id });
+          },
+        },
+      ],
+    );
+  }, [deletePlanMutation, plan]);
 
   const focusContext = useMemo(() => {
     if (normalizedNextStepIntent === TPV_NEXT_STEP_INTENTS.REFINE) {
       return {
         title: "Refine Plan",
         description:
-          "Your plan is ready. Open edit to adjust constraints and targets, or settings for basic details.",
-        ctaLabel: "Open Edit",
+          "Your plan is ready. Open edit to adjust constraints, targets, and plan details.",
+        ctaLabel: "Structure",
         onPress: handleEditStructure,
       };
     }
@@ -270,7 +307,7 @@ export default function TrainingPlanOverview() {
         title: "Edit Plan Structure",
         description:
           "Tune weekly targets and constraints in edit mode before your next scheduling cycle.",
-        ctaLabel: "Open Edit",
+        ctaLabel: "Structure",
         onPress: handleEditStructure,
       };
     }
@@ -279,8 +316,8 @@ export default function TrainingPlanOverview() {
       return {
         title: "Manage Plan",
         description:
-          "Review status, activation, and defaults in settings so the execution tab stays focused.",
-        ctaLabel: "Open Settings",
+          "Review status, activation, and defaults in edit so the execution tab stays focused.",
+        ctaLabel: "Manage Plan",
         onPress: handleOpenSettings,
       };
     }
@@ -528,7 +565,7 @@ export default function TrainingPlanOverview() {
               })
             }
             rightAccessory={
-              <TouchableOpacity onPress={handleEditStructure} className="ml-3">
+              <TouchableOpacity onPress={handleOpenSettings} className="ml-3">
                 <View className="bg-primary/10 rounded-full p-2">
                   <Icon as={ChevronRight} size={24} className="text-primary" />
                 </View>
@@ -619,13 +656,11 @@ export default function TrainingPlanOverview() {
                       </Text>
                     </Button>
                     <TouchableOpacity
-                      onPress={() =>
-                        router.push(ROUTES.PLAN.TRAINING_PLAN.SETTINGS)
-                      }
+                      onPress={handleOpenSettings}
                       className="items-center py-2"
                     >
                       <Text className="text-xs text-primary">
-                        Or customize manually in Settings →
+                        Or customize manually in Edit →
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -698,7 +733,7 @@ export default function TrainingPlanOverview() {
                     Plan Inactive
                   </Text>
                   <Text className="text-sm text-muted-foreground">
-                    This training plan is currently inactive. Go to settings to
+                    This training plan is currently inactive. Go to edit to
                     activate it.
                   </Text>
                 </View>
@@ -800,6 +835,32 @@ export default function TrainingPlanOverview() {
                   </TouchableOpacity>
                 </>
               )}
+            </View>
+          </CardContent>
+        </Card>
+
+        <Card className="border-destructive">
+          <CardHeader>
+            <CardTitle className="text-destructive">Danger Zone</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <View className="gap-3">
+              <Text className="text-sm text-muted-foreground">
+                Deleting this training plan will permanently remove its
+                structure and all associated planned activities.
+              </Text>
+              <Button
+                variant="destructive"
+                onPress={handleDeletePlan}
+                disabled={deletePlanMutation.isPending}
+              >
+                <Icon as={Trash2} size={18} className="text-white mr-2" />
+                <Text className="text-white font-semibold">
+                  {deletePlanMutation.isPending
+                    ? "Deleting..."
+                    : "Delete Training Plan"}
+                </Text>
+              </Button>
             </View>
           </CardContent>
         </Card>

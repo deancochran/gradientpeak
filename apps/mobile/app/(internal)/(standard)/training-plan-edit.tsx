@@ -1,7 +1,8 @@
-import { TrainingPlanComposerScreen } from "../../../components/training-plan/create/TrainingPlanComposerScreen";
+import { TrainingPlanComposerScreen } from "@/components/training-plan/create/TrainingPlanComposerScreen";
 import { Text } from "../../../components/ui/text";
 import { ROUTES } from "../../../lib/constants/routes";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import React from "react";
 import { Pressable, View } from "react-native";
 
 const isUuid = (value: string): boolean =>
@@ -10,10 +11,41 @@ const isUuid = (value: string): boolean =>
   );
 
 export default function TrainingPlanEditRoute() {
-  const { id } = useLocalSearchParams<{ id?: string }>();
+  const { id, initialTab, section } = useLocalSearchParams<{
+    id?: string;
+    initialTab?: string;
+    section?: string;
+  }>();
   const router = useRouter();
+  const hasValidId = Boolean(id && isUuid(id));
 
-  if (!id || !isUuid(id)) {
+  const resolvedInitialTab = (() => {
+    const tab = (initialTab || "").toLowerCase();
+    if (
+      tab === "plan" ||
+      tab === "goals" ||
+      tab === "availability" ||
+      tab === "constraints" ||
+      tab === "calibration" ||
+      tab === "review"
+    ) {
+      return tab as
+        | "plan"
+        | "goals"
+        | "availability"
+        | "constraints"
+        | "calibration"
+        | "review";
+    }
+
+    if ((section || "").toLowerCase() === "overview") {
+      return "plan" as const;
+    }
+
+    return "goals" as const;
+  })();
+
+  if (!hasValidId) {
     return (
       <View className="flex-1 items-center justify-center bg-background px-6">
         <Text className="text-lg font-semibold">Missing plan id</Text>
@@ -32,5 +64,11 @@ export default function TrainingPlanEditRoute() {
     );
   }
 
-  return <TrainingPlanComposerScreen mode="edit" planId={id} />;
+  return (
+    <TrainingPlanComposerScreen
+      mode="edit"
+      planId={id as string}
+      initialTab={resolvedInitialTab}
+    />
+  );
 }

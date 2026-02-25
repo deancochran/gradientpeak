@@ -49,6 +49,61 @@ function createTrainingPlansCaller(results: Record<string, QueryResult> = {}) {
   } as any);
 }
 
+function createTrainingPlansCreateHarness() {
+  const deactivationEq = vi.fn();
+  const deactivationBuilder: any = {
+    eq: vi.fn((field: string, value: unknown) => {
+      deactivationEq(field, value);
+      return deactivationBuilder;
+    }),
+    then: (onFulfilled: (value: QueryResult) => unknown) =>
+      Promise.resolve({ data: null, error: null }).then(onFulfilled),
+  };
+
+  let insertedPayload: Record<string, unknown> | null = null;
+
+  const insertBuilder: any = {
+    select: vi.fn(() => insertBuilder),
+    single: vi.fn(async () => ({
+      data: {
+        id: "22222222-2222-4222-8222-222222222222",
+        ...(insertedPayload ?? {}),
+      },
+      error: null,
+    })),
+  };
+
+  const tableBuilder: any = {
+    update: vi.fn(() => deactivationBuilder),
+    insert: vi.fn((payload: Record<string, unknown>) => {
+      insertedPayload = payload;
+      return insertBuilder;
+    }),
+  };
+
+  const caller = trainingPlansRouter.createCaller({
+    supabase: {
+      from: vi.fn(() => tableBuilder),
+    } as any,
+    session: {
+      user: {
+        id: "profile-123",
+      },
+    },
+    headers: new Headers(),
+    clientType: "test",
+    trpcSource: "vitest",
+  } as any);
+
+  return {
+    caller,
+    tableBuilder,
+    deactivationBuilder,
+    deactivationEq,
+    getInsertedPayload: () => insertedPayload,
+  };
+}
+
 function percentile(values: number[], p: number): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -227,6 +282,48 @@ describe("deriveProfileAwareCreationContext", () => {
         starting_atl: expect.any(Number),
         starting_tsb: expect.any(Number),
       },
+    });
+  });
+});
+
+describe("trainingPlansRouter.create active-plan invariant", () => {
+  const maintenanceCreateInput = {
+    name: "New Plan",
+    structure: {
+      plan_type: "maintenance" as const,
+      name: "Maintenance Structure",
+      start_date: "2026-01-05",
+      activity_distribution: {
+        run: {
+          target_percentage: 1,
+        },
+      },
+    },
+  };
+
+  it("deactivates existing active plans when is_active is omitted", async () => {
+    const harness = createTrainingPlansCreateHarness();
+
+    await harness.caller.create(maintenanceCreateInput);
+
+    expect(harness.tableBuilder.update).toHaveBeenCalledWith({
+      is_active: false,
+    });
+    expect(harness.deactivationEq).toHaveBeenCalledWith(
+      "profile_id",
+      "profile-123",
+    );
+    expect(harness.deactivationEq).toHaveBeenCalledWith("is_active", true);
+  });
+
+  it("defaults inserted plan to active when is_active is omitted", async () => {
+    const harness = createTrainingPlansCreateHarness();
+
+    await harness.caller.create(maintenanceCreateInput);
+
+    expect(harness.getInsertedPayload()).toMatchObject({
+      is_active: true,
+      profile_id: "profile-123",
     });
   });
 });

@@ -448,6 +448,19 @@ export const creationConfigLocksSchema = z.object({
 
 export type CreationConfigLocks = z.infer<typeof creationConfigLocksSchema>;
 
+export const creationCalibrationCompositeLocksSchema = z
+  .object({
+    target_attainment_weight: z.boolean().default(false),
+    envelope_weight: z.boolean().default(false),
+    durability_weight: z.boolean().default(false),
+    evidence_weight: z.boolean().default(false),
+  })
+  .strict();
+
+export type CreationCalibrationCompositeLocks = z.infer<
+  typeof creationCalibrationCompositeLocksSchema
+>;
+
 export const creationValueSourceEnum = z.enum(["user", "suggested", "default"]);
 
 export type CreationValueSource = z.infer<typeof creationValueSourceEnum>;
@@ -559,6 +572,13 @@ export const trainingPlanCreationConfigSchema = z
         candidate_steps: 7,
       },
     }),
+    calibration_composite_locks:
+      creationCalibrationCompositeLocksSchema.default({
+        target_attainment_weight: false,
+        envelope_weight: false,
+        durability_weight: false,
+        evidence_weight: false,
+      }),
     locks: creationConfigLocksSchema,
     context_summary: creationContextSummarySchema.optional(),
     feasibility_safety_summary:

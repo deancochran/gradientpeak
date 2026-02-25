@@ -359,6 +359,10 @@ export function toTrainingPlanConfigFormDataFromStructure(input: {
       (creationConfigSnapshot?.behavior_controls_v1 as
         | TrainingPlanConfigFormData["behaviorControlsV1"]
         | undefined) ?? defaults.behaviorControlsV1,
+    calibrationCompositeLocks:
+      (creationConfigSnapshot?.calibration_composite_locks as
+        | TrainingPlanConfigFormData["calibrationCompositeLocks"]
+        | undefined) ?? defaults.calibrationCompositeLocks,
     startingCtlAssumption:
       asNumber(asRecord(parsedStructure.fitness_progression)?.starting_ctl) ??
       defaults.startingCtlAssumption,

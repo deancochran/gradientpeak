@@ -277,6 +277,8 @@ export async function createFromCreationConfigUseCase<
   const calibrationSnapshot = trainingPlanCalibrationConfigSchema.parse(
     evaluation.finalConfig.calibration ?? {},
   );
+  const creationConfigSnapshot = evaluation.finalConfig;
+  const creationFormSnapshot = input.params.minimal_plan;
 
   const structureWithId = {
     ...expandedPlan,
@@ -285,6 +287,8 @@ export async function createFromCreationConfigUseCase<
       ...(typeof expandedPlan.metadata === "object" && expandedPlan.metadata
         ? expandedPlan.metadata
         : {}),
+      creation_config_snapshot: creationConfigSnapshot,
+      creation_form_snapshot: creationFormSnapshot,
       creation_calibration: {
         version: calibrationSnapshot.version,
         snapshot: calibrationSnapshot,

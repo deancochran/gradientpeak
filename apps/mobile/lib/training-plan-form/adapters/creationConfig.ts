@@ -16,6 +16,7 @@ export type CreationConfigAdapterInput = Pick<
   | "optimizationProfile"
   | "postGoalRecoveryDays"
   | "behaviorControlsV1"
+  | "calibrationCompositeLocks"
   | "calibration"
   | "constraintsSource"
   | "locks"
@@ -30,6 +31,7 @@ export function toCreationNormalizationInput(
     optimization_profile: state.optimizationProfile,
     post_goal_recovery_days: state.postGoalRecoveryDays,
     behavior_controls_v1: state.behaviorControlsV1,
+    calibration_composite_locks: state.calibrationCompositeLocks,
     calibration: state.calibration,
     locks: state.locks,
   };

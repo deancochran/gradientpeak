@@ -52,7 +52,6 @@ describe("standard layout training-plan route declarations", () => {
         "training-plan",
         "training-plan-create",
         "training-plan-edit",
-        "training-plan-settings",
       ]),
     );
 

@@ -77,7 +77,17 @@ vi.mock("@/lib/trpc", () => ({
         invalidate: vi.fn(),
       },
     }),
+    trainingPlans: {
+      delete: {},
+    },
   },
+}));
+
+vi.mock("@/lib/hooks/useReliableMutation", () => ({
+  useReliableMutation: () => ({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
 }));
 
 vi.mock("react-native", () => ({
@@ -171,6 +181,7 @@ vi.mock("lucide-react-native", () => {
     CircleCheck: Icon,
     Gauge: Icon,
     Pause: Icon,
+    Trash2: Icon,
     TrendingUp: Icon,
   };
 });
@@ -308,7 +319,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     expect(pushMock).not.toHaveBeenCalled();
   });
 
-  it("renders focused banner and routes settings intent", () => {
+  it("renders focused banner and routes manage intent", () => {
     resetTestState();
     snapshotState.plan = {
       id: "plan-1",
@@ -327,15 +338,18 @@ describe("TrainingPlanOverview deep-link routing", () => {
 
     expect(hasTextContaining(renderer, "Manage Plan")).toBe(true);
 
-    const settingsButton = findTouchableByText(renderer, "Open Settings");
+    const settingsButton = findTouchableByText(renderer, "Manage Plan");
     act(() => {
       settingsButton.props.onPress();
     });
 
-    expect(pushMock).toHaveBeenCalledWith(ROUTES.PLAN.TRAINING_PLAN.SETTINGS);
+    expect(pushMock).toHaveBeenCalledWith({
+      pathname: ROUTES.PLAN.TRAINING_PLAN.EDIT,
+      params: { id: "plan-1", initialTab: "plan" },
+    });
   });
 
-  it("routes edit-structure intent CTA to edit screen", () => {
+  it("routes edit-structure intent CTA to structure section", () => {
     resetTestState();
     snapshotState.plan = {
       id: "plan-2",
@@ -354,14 +368,14 @@ describe("TrainingPlanOverview deep-link routing", () => {
 
     expect(hasTextContaining(renderer, "Edit Plan Structure")).toBe(true);
 
-    const editButton = findTouchableByText(renderer, "Open Edit");
+    const editButton = findTouchableByText(renderer, "Structure");
     act(() => {
       editButton.props.onPress();
     });
 
     expect(pushMock).toHaveBeenCalledWith({
       pathname: ROUTES.PLAN.TRAINING_PLAN.EDIT,
-      params: { id: "plan-2" },
+      params: { id: "plan-2", initialTab: "goals" },
     });
   });
 

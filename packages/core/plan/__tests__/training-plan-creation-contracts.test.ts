@@ -114,6 +114,12 @@ describe("training plan creation contracts", () => {
             recovery_priority: 0.6,
             starting_fitness_confidence: 0.4,
           },
+          calibration_composite_locks: {
+            target_attainment_weight: true,
+            envelope_weight: false,
+            durability_weight: true,
+            evidence_weight: false,
+          },
         },
       },
     });

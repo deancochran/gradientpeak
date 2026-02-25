@@ -323,6 +323,13 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
     expect(persistedStructure?.metadata).not.toHaveProperty(
       "creation_config_mvp",
     );
+    expect(persistedStructure?.metadata?.creation_config_snapshot).toEqual(
+      finalConfigFixture,
+    );
+    expect(persistedStructure?.metadata?.creation_form_snapshot).toEqual({
+      plan_start_date: "2026-01-05",
+      goals: [],
+    });
     expect(persistedStructure?.metadata?.creation_calibration).toMatchObject({
       version: 1,
     });

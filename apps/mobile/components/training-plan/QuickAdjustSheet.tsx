@@ -113,7 +113,10 @@ export function QuickAdjustSheet({
 
   const handleCustomAdjustment = () => {
     onClose();
-    router.push(ROUTES.PLAN.TRAINING_PLAN.SETTINGS);
+    router.push({
+      pathname: ROUTES.PLAN.TRAINING_PLAN.EDIT,
+      params: { id: plan.id, initialTab: "plan" },
+    });
   };
 
   return (

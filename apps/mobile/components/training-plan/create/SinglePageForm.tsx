@@ -2,6 +2,7 @@ import { Badge } from "../../ui/badge";
 import { Button } from "../../ui/button";
 import { Input } from "../../ui/input";
 import { Label } from "../../ui/label";
+import { Textarea } from "../../ui/textarea";
 import {
   Select,
   SelectContent,
@@ -88,6 +89,12 @@ export interface TrainingPlanFormData {
   goals: GoalFormData[];
 }
 
+export interface TrainingPlanMetadataFormData {
+  name: string;
+  description: string;
+  isActive: boolean;
+}
+
 export interface TrainingPlanConfigFormData {
   availabilityConfig: CreationAvailabilityConfig;
   availabilityProvenance: CreationProvenance;
@@ -114,6 +121,9 @@ export interface TrainingPlanConfigConflict {
 }
 
 interface SinglePageFormProps {
+  planMetadata?: TrainingPlanMetadataFormData;
+  onPlanMetadataChange?: (data: TrainingPlanMetadataFormData) => void;
+  initialTab?: FormTabKey;
   formData: TrainingPlanFormData;
   onFormDataChange: (data: TrainingPlanFormData) => void;
   onResetGoals?: () => void;
@@ -141,6 +151,7 @@ interface EditingTargetRef {
 }
 
 type FormTabKey =
+  | "plan"
   | "goals"
   | "availability"
   | "constraints"
@@ -148,6 +159,7 @@ type FormTabKey =
   | "review";
 
 const formTabs: { key: FormTabKey; label: string }[] = [
+  { key: "plan", label: "Plan" },
   { key: "goals", label: "Goals" },
   { key: "availability", label: "Availability" },
   { key: "constraints", label: "Limits" },
@@ -756,6 +768,9 @@ const toNoHistoryConfidenceLabel = (
 };
 
 export function SinglePageForm({
+  planMetadata,
+  onPlanMetadataChange,
+  initialTab,
   formData,
   onFormDataChange,
   onResetGoals,
@@ -776,6 +791,16 @@ export function SinglePageForm({
   onResetProjectionAll,
   errors = {},
 }: SinglePageFormProps) {
+  const resolvedPlanMetadata =
+    planMetadata ??
+    ({
+      name: "",
+      description: "",
+      isActive: true,
+    } satisfies TrainingPlanMetadataFormData);
+  const handlePlanMetadataChange = (next: TrainingPlanMetadataFormData) => {
+    onPlanMetadataChange?.(next);
+  };
   const { height: windowHeight } = useWindowDimensions();
   const previewChartMaxHeight = Math.floor(windowHeight * 0.2);
   const [activeGoalId, setActiveGoalId] = useState<string | null>(
@@ -783,7 +808,15 @@ export function SinglePageForm({
   );
   const [editingTargetRef, setEditingTargetRef] =
     useState<EditingTargetRef | null>(null);
-  const [activeTab, setActiveTab] = useState<FormTabKey>("goals");
+  const [activeTab, setActiveTab] = useState<FormTabKey>(initialTab ?? "goals");
+
+  useEffect(() => {
+    if (!initialTab) {
+      return;
+    }
+
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
   const handleTabChange = useCallback((tab: FormTabKey) => {
     setActiveTab(tab);
@@ -1066,6 +1099,7 @@ export function SinglePageForm({
   }, [blockingIssues.length, feasibilitySafetySummary]);
   const tabIssueCounts = useMemo<TabIssueCounts>(() => {
     const counts: TabIssueCounts = {
+      plan: resolvedPlanMetadata.name.trim().length > 0 ? 0 : 1,
       goals: 0,
       availability: 0,
       constraints: 0,
@@ -1085,7 +1119,7 @@ export function SinglePageForm({
     }
 
     return counts;
-  }, [formValidationErrors, reviewNoticeCount]);
+  }, [formValidationErrors, resolvedPlanMetadata.name, reviewNoticeCount]);
   const tabsWithIssues = useMemo(
     () => formTabs.filter((tab) => tabIssueCounts[tab.key] > 0),
     [tabIssueCounts],
@@ -1183,6 +1217,86 @@ export function SinglePageForm({
         className="flex-1"
         contentContainerClassName="gap-3 px-4 pt-3 pb-8"
       >
+        {activeTab === "plan" && (
+          <View className={tabPanelClass}>
+            <Text className="font-semibold">Plan details</Text>
+            <Text className={helperTextClass}>
+              Manage plan identity, lifecycle, and deletion from this section.
+            </Text>
+            <View className="gap-1.5">
+              <Label nativeID="plan-name-input">
+                <Text className="text-sm font-medium">
+                  Plan name<Text className="text-destructive">*</Text>
+                </Text>
+              </Label>
+              <Input
+                aria-labelledby="plan-name-input"
+                aria-label="Plan name"
+                placeholder="Enter plan name"
+                value={resolvedPlanMetadata.name}
+                onChangeText={(name) => {
+                  handlePlanMetadataChange({
+                    ...resolvedPlanMetadata,
+                    name,
+                  });
+                }}
+                maxLength={120}
+                className={
+                  resolvedPlanMetadata.name.trim().length === 0
+                    ? "border-destructive bg-destructive/5"
+                    : undefined
+                }
+              />
+              {resolvedPlanMetadata.name.trim().length === 0 ? (
+                <Text className="text-xs text-destructive">
+                  Plan name is required.
+                </Text>
+              ) : null}
+            </View>
+            <View className="gap-1.5">
+              <Label nativeID="plan-description-input">
+                <Text className="text-sm font-medium">Description</Text>
+              </Label>
+              <Textarea
+                aria-labelledby="plan-description-input"
+                aria-label="Plan description"
+                placeholder="Optional description"
+                value={resolvedPlanMetadata.description}
+                onChangeText={(description) => {
+                  handlePlanMetadataChange({
+                    ...resolvedPlanMetadata,
+                    description,
+                  });
+                }}
+                numberOfLines={3}
+                maxLength={500}
+              />
+            </View>
+            <View className="gap-2 rounded-md border border-border bg-muted/20 p-3">
+              <View className="flex-row items-center justify-between gap-3">
+                <View className="flex-1 gap-1">
+                  <Text className="text-sm font-medium">Active plan</Text>
+                  <Text className="text-xs text-muted-foreground">
+                    {resolvedPlanMetadata.isActive
+                      ? "This plan is active and drives your current training."
+                      : "This plan is inactive. Turn it on to use it as your active plan."}
+                  </Text>
+                </View>
+                <Switch
+                  checked={resolvedPlanMetadata.isActive}
+                  onCheckedChange={(checked) => {
+                    handlePlanMetadataChange({
+                      ...resolvedPlanMetadata,
+                      isActive: checked,
+                    });
+                  }}
+                  accessibilityLabel="Active plan"
+                />
+              </View>
+            </View>
+          </View>
+        )}
+
         {showCreationConfig && (
           <>
             {activeTab === "review" && (

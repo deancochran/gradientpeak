@@ -1711,6 +1711,58 @@ describe("phase 2 mpc integration diagnostics", () => {
     ).toBe(3);
   });
 
+  it("applies a bounded direct aggressiveness effect to weekly load signals", () => {
+    const lowAggressiveness = buildDeterministicProjectionPayload({
+      ...phase2Fixture,
+      disable_weekly_tss_optimizer: true,
+      creation_config: {
+        ...phase2Fixture.creation_config,
+        behavior_controls_v1: {
+          aggressiveness: 0.1,
+          variability: 0.5,
+          spike_frequency: 0.35,
+          shape_target: 0,
+          shape_strength: 0.35,
+          recovery_priority: 0.6,
+          starting_fitness_confidence: 0.6,
+        },
+      },
+    });
+    const highAggressiveness = buildDeterministicProjectionPayload({
+      ...phase2Fixture,
+      disable_weekly_tss_optimizer: true,
+      creation_config: {
+        ...phase2Fixture.creation_config,
+        behavior_controls_v1: {
+          aggressiveness: 0.9,
+          variability: 0.5,
+          spike_frequency: 0.35,
+          shape_target: 0,
+          shape_strength: 0.35,
+          recovery_priority: 0.6,
+          starting_fitness_confidence: 0.6,
+        },
+      },
+    });
+
+    const lowRequested = lowAggressiveness.microcycles.map(
+      (cycle) => cycle.metadata?.tss_ramp.raw_requested_weekly_tss ?? 0,
+    );
+    const highRequested = highAggressiveness.microcycles.map(
+      (cycle) => cycle.metadata?.tss_ramp.raw_requested_weekly_tss ?? 0,
+    );
+
+    expect(highRequested).toHaveLength(lowRequested.length);
+    expect(
+      highRequested.some(
+        (value, index) => value > (lowRequested[index] ?? value) + 0.4,
+      ),
+    ).toBe(true);
+    expect(
+      highRequested.every((value) => Number.isFinite(value) && value >= 0),
+    ).toBe(true);
+  });
+
   it("exposes widened frontier caps and preserves monotonic upper band under higher overrides", () => {
     const practicalCeiling = buildDeterministicProjectionPayload({
       ...phase2Fixture,
