@@ -27,7 +27,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     refetch,
   } = trpc.auth.getUser.useQuery(undefined, {
     retry: false,
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
 
   const isAuthenticated = !!user && !error;

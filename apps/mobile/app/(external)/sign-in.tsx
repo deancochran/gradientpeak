@@ -64,9 +64,9 @@ export default function SignInScreen() {
             message: "Invalid email or password. Please try again.",
           });
         } else if (error.message?.includes("Email not confirmed")) {
-          form.setError("root", {
-            message:
-              "Please verify your email address before signing in. Check your email for a verification link.",
+          router.push({
+            pathname: "/(external)/verify",
+            params: { email: data.email },
           });
         } else {
           form.setError("root", {

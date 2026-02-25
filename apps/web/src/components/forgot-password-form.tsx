@@ -40,7 +40,6 @@ export function ForgotPasswordForm({
     try {
       await resetPasswordMutation.mutateAsync({
         email,
-        redirectTo: `${window.location.origin}/auth/update-password`,
       });
     } catch {
       // Error handling is done in mutation onError

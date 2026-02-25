@@ -72,10 +72,13 @@ function ProfileEditScreen() {
     duration: 3600, // 1 hour for FTP
   });
 
+  // Use stable date reference to prevent infinite refetch loops
+  const [now] = useState(() => new Date());
+
   // Fetch LTHR from profile metrics
   const { data: lthrMetric } = trpc.profileMetrics.getAtDate.useQuery({
     metric_type: "lthr",
-    date: new Date(),
+    date: now,
   });
 
   const updateProfileMutation = useReliableMutation(trpc.profiles.update, {

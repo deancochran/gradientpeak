@@ -135,10 +135,13 @@ export default function ResetPasswordScreen() {
 
       console.log("✅ Password updated successfully");
 
+      // Force sign-out for security
+      await supabase.auth.signOut();
+
       Alert.alert(
-        "Success!",
-        "Your password has been updated successfully. You are now signed in.",
-        [{ text: "OK", onPress: () => router.replace("/") }],
+        "Password Updated",
+        "Your password has been changed. Please sign in with your new credentials.",
+        [{ text: "OK", onPress: () => router.replace("/(external)/sign-in") }],
       );
     } catch (err) {
       console.error("💥 Unexpected password update error:", err);

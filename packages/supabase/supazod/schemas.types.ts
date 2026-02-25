@@ -13,6 +13,7 @@ export type PublicActivityLocation = z.infer<
   typeof generated.publicActivityLocationSchema
 >;
 export type PublicEffortType = z.infer<typeof generated.publicEffortTypeSchema>;
+export type PublicGender = z.infer<typeof generated.publicGenderSchema>;
 export type PublicIntegrationProvider = z.infer<
   typeof generated.publicIntegrationProviderSchema
 >;
@@ -163,4 +164,16 @@ export type PublicTrainingPlansUpdate = z.infer<
 >;
 export type PublicTrainingPlansRelationships = z.infer<
   typeof generated.publicTrainingPlansRelationshipsSchema
+>;
+export type PublicDeleteOwnAccountArgs = z.infer<
+  typeof generated.publicDeleteOwnAccountArgsSchema
+>;
+export type PublicDeleteOwnAccountReturns = z.infer<
+  typeof generated.publicDeleteOwnAccountReturnsSchema
+>;
+export type PublicGetUserStatusArgs = z.infer<
+  typeof generated.publicGetUserStatusArgsSchema
+>;
+export type PublicGetUserStatusReturns = z.infer<
+  typeof generated.publicGetUserStatusReturnsSchema
 >;

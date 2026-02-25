@@ -81,7 +81,7 @@ enabled = true
 # Port to use for Supabase Studio.
 port = 54323
 # External URL of the API server that frontend connects to.
-api_url = "http://IP_ADDRESS"
+api_url = "http://100.119.109.24"
 # OpenAI API Key to use for Supabase AI in the Supabase Studio.
 openai_api_key = "env(OPENAI_API_KEY)"
 
@@ -122,19 +122,19 @@ allowed_mime_types = ["application/gpx+xml", "text/xml", "application/xml"]
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
-site_url = "http://IP_ADDRESS:3000"
+site_url = "http://100.119.109.24:3000"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
 additional_redirect_urls = [
   "http://127.0.0.1:3000",
   "https://127.0.0.1:3000",
-  "http://IP_ADDRESS:3000",
-  "https://IP_ADDRESS:3000",
-  "app-scheme-dev://auth/callback",
-  "app-scheme-dev://(modal)/reset-password",
-  "app-scheme-prev://auth/callback",
-  "app-scheme-prev://(modal)/reset-password",
-  "app-scheme://auth/callback",
-  "app-scheme://(modal)/reset-password",
+  "http://100.119.109.24:3000",
+  "https://100.119.109.24:3000",
+  "gradientpeak-dev://auth/callback",
+  "gradientpeak-dev://(modal)/reset-password",
+  "gradientpeak-prev://auth/callback",
+  "gradientpeak-prev://(modal)/reset-password",
+  "gradientpeak://auth/callback",
+  "gradientpeak://(modal)/reset-password",
 ]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
@@ -159,7 +159,7 @@ password_requirements = ""
 
 [auth.rate_limit]
 # Number of emails that can be sent per hour. Requires auth.email.smtp to be enabled.
-email_sent = 2
+email_sent = 50
 # Number of SMS messages that can be sent per hour. Requires auth.sms to be enabled.
 sms_sent = 30
 # Number of anonymous sign-ins that can be made per hour per IP address. Requires enable_anonymous_sign_ins = true.
@@ -186,8 +186,8 @@ enable_signup = true
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true
 # If enabled, users need to confirm their email address before signing in.
-# Set to false for local development so users can sign up without email verification
-enable_confirmations = false
+# Must be true to enforce verification-before-onboarding flow.
+enable_confirmations = true
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
 secure_password_change = false
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
@@ -221,6 +221,19 @@ content_path = "./supabase/templates/invite.html"
 [auth.email.template.recovery]
 subject = "Reset your password for {{ .SiteName }}"
 content_path = "./supabase/templates/recovery.html"
+
+[auth.email.template.email_change]
+subject = "Confirm your email change for {{ .SiteName }}"
+content_path = "./supabase/templates/email_change.html"
+
+# Security Notifications
+[auth.email.notification.password_changed]
+enabled = true
+content_path = "./templates/password_changed_notification.html"
+
+[auth.email.notification.email_changed]
+enabled = true
+content_path = "./templates/email_changed_notification.html"
 
 [auth.sms]
 # Allow/disallow new user signups via SMS to your project.

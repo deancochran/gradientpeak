@@ -5,7 +5,6 @@ import {
   QueryClientProvider,
 } from "@tanstack/react-query";
 import * as Network from "expo-network";
-import { router } from "expo-router";
 import * as React from "react";
 import { Alert, AppState, Platform } from "react-native";
 import { useAuthStore } from "../stores/auth-store";
@@ -29,11 +28,7 @@ const handleGlobalError = (error: unknown) => {
     // Prevent infinite loops by checking if we're already logged out
     const { session } = useAuthStore.getState();
     if (session) {
-      useAuthStore.getState().clearSession();
-      // Use setImmediate to ensure we're out of the current render cycle
-      setTimeout(() => {
-        router.replace("/(external)/sign-in");
-      }, 0);
+      void useAuthStore.getState().clearSession();
     }
   }
 };

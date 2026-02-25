@@ -1,4 +1,4 @@
-import { useRequireAuth } from "@/lib/hooks/useAuth";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { ActivityRecorderProvider } from "@/lib/providers/ActivityRecorderProvider";
 import { FocusModeProvider } from "@/lib/contexts/FocusModeContext";
 import { Stack } from "expo-router";
@@ -26,86 +26,86 @@ import { Stack } from "expo-router";
  * - submit: Gestures disabled to prevent data loss during submission
  */
 export default function RecordLayout() {
-  const { profile } = useRequireAuth();
+  const { profile } = useAuth();
 
   return (
     <ActivityRecorderProvider profile={profile || null}>
       <FocusModeProvider>
         <Stack
-        screenOptions={{
-          headerShown: true,
-          headerBackTitle: "Back",
-          animation: "slide_from_right",
-          gestureEnabled: true,
-          gestureDirection: "horizontal",
-        }}
-      >
-        <Stack.Screen
-          name="index"
-          options={{
-            title: "Record Activity",
-            headerShown: false,
-            gestureEnabled: false, // Prevent accidental exit during recording
-          }}
-        />
-        <Stack.Screen
-          name="activity"
-          options={{
-            title: "Select Activity",
+          screenOptions={{
+            headerShown: true,
+            headerBackTitle: "Back",
+            animation: "slide_from_right",
             gestureEnabled: true,
+            gestureDirection: "horizontal",
           }}
-        />
-        <Stack.Screen
-          name="sensors"
-          options={{
-            title: "Sensors",
-            gestureEnabled: true,
-          }}
-        />
-        <Stack.Screen
-          name="permissions"
-          options={{
-            title: "Permissions",
-            gestureEnabled: true,
-          }}
-        />
-        <Stack.Screen
-          name="plan"
-          options={{
-            title: "Select Activity Plan",
-            gestureEnabled: true,
-          }}
-        />
-        <Stack.Screen
-          name="route"
-          options={{
-            title: "Select Route",
-            gestureEnabled: true,
-          }}
-        />
-        <Stack.Screen
-          name="route-preview"
-          options={{
-            title: "Route Preview",
-            gestureEnabled: true,
-          }}
-        />
-        <Stack.Screen
-          name="ftms"
-          options={{
-            title: "Trainer Control",
-            gestureEnabled: true,
-          }}
-        />
-        <Stack.Screen
-          name="submit"
-          options={{
-            title: "Submit Activity",
-            headerShown: false,
-            gestureEnabled: false, // Prevent accidental navigation during submission
-          }}
-        />
-      </Stack>
+        >
+          <Stack.Screen
+            name="index"
+            options={{
+              title: "Record Activity",
+              headerShown: false,
+              gestureEnabled: false, // Prevent accidental exit during recording
+            }}
+          />
+          <Stack.Screen
+            name="activity"
+            options={{
+              title: "Select Activity",
+              gestureEnabled: true,
+            }}
+          />
+          <Stack.Screen
+            name="sensors"
+            options={{
+              title: "Sensors",
+              gestureEnabled: true,
+            }}
+          />
+          <Stack.Screen
+            name="permissions"
+            options={{
+              title: "Permissions",
+              gestureEnabled: true,
+            }}
+          />
+          <Stack.Screen
+            name="plan"
+            options={{
+              title: "Select Activity Plan",
+              gestureEnabled: true,
+            }}
+          />
+          <Stack.Screen
+            name="route"
+            options={{
+              title: "Select Route",
+              gestureEnabled: true,
+            }}
+          />
+          <Stack.Screen
+            name="route-preview"
+            options={{
+              title: "Route Preview",
+              gestureEnabled: true,
+            }}
+          />
+          <Stack.Screen
+            name="ftms"
+            options={{
+              title: "Trainer Control",
+              gestureEnabled: true,
+            }}
+          />
+          <Stack.Screen
+            name="submit"
+            options={{
+              title: "Submit Activity",
+              headerShown: false,
+              gestureEnabled: false, // Prevent accidental navigation during submission
+            }}
+          />
+        </Stack>
       </FocusModeProvider>
     </ActivityRecorderProvider>
   );

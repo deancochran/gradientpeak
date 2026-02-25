@@ -10,7 +10,7 @@ import { GarminFitEncoder } from "@/lib/services/fit/GarminFitEncoder";
 import { initSentry } from "@/lib/services/sentry";
 import { useTheme } from "@/lib/stores/theme-store";
 import { PortalHost } from "@rn-primitives/portal";
-import { router, Slot } from "expo-router";
+import { Redirect, router, Slot, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "nativewind";
 import * as React from "react";
@@ -74,16 +74,96 @@ function AppContent() {
     verifyInstallation();
   }
 
-  const { loading: authLoading } = useAuth();
+  const { userStatus, onboardingStatus, isAuthenticated, isFullyLoaded, user } =
+    useAuth();
   const { theme, isLoaded: isThemeLoaded } = useTheme();
   const { colorScheme } = useColorScheme();
+  const segments = useSegments();
 
-  if (authLoading || !isThemeLoaded) {
+  const inInternalGroup = segments[0] === "(internal)";
+  const inExternalGroup = segments[0] === "(external)";
+  const isOnboardingScreen =
+    segments[0] === "(internal)" &&
+    segments[1] === "(standard)" &&
+    segments[2] === "onboarding";
+  const isVerificationScreen =
+    segments[0] === "(external)" && segments[1] === "verify";
+  const isAuthCallbackScreen =
+    segments[0] === "(external)" && segments[1] === "callback";
+
+  const guardDecision = React.useMemo(() => {
+    if (!isFullyLoaded || !isThemeLoaded) {
+      return { type: "loading" as const };
+    }
+
+    // Not signed in: only external routes are allowed.
+    if (!isAuthenticated) {
+      return inExternalGroup
+        ? { type: "allow" as const }
+        : { type: "redirect" as const, to: "/(external)/sign-in" as const };
+    }
+
+    // Signed in but not verified: only verify/callback allowed.
+    if (userStatus !== "verified") {
+      if (isVerificationScreen || isAuthCallbackScreen) {
+        return { type: "allow" as const };
+      }
+
+      return {
+        type: "redirect" as const,
+        to: "/(external)/verify" as const,
+        params: { email: user?.email || "" },
+      };
+    }
+
+    // Verified but not onboarded: onboarding is mandatory before internal app.
+    if (onboardingStatus !== true) {
+      return isOnboardingScreen
+        ? { type: "allow" as const }
+        : {
+            type: "redirect" as const,
+            to: "/(internal)/(standard)/onboarding" as const,
+          };
+    }
+
+    // Fully eligible users should stay in internal app shell.
+    if (!inInternalGroup || isOnboardingScreen) {
+      return { type: "redirect" as const, to: "/(internal)/(tabs)" as const };
+    }
+
+    return { type: "allow" as const };
+  }, [
+    inExternalGroup,
+    inInternalGroup,
+    isAuthCallbackScreen,
+    isAuthenticated,
+    isFullyLoaded,
+    isOnboardingScreen,
+    isThemeLoaded,
+    isVerificationScreen,
+    onboardingStatus,
+    user,
+    userStatus,
+  ]);
+
+  if (guardDecision.type === "loading") {
     return (
       <View className="flex-1 items-center justify-center bg-background">
         <ActivityIndicator size="large" className="text-foreground" />
       </View>
     );
+  }
+
+  if (guardDecision.type === "redirect") {
+    if (guardDecision.to === "/(external)/verify") {
+      return (
+        <Redirect
+          href={{ pathname: guardDecision.to, params: guardDecision.params }}
+        />
+      );
+    }
+
+    return <Redirect href={guardDecision.to} />;
   }
 
   // Use NativeWind's colorScheme
