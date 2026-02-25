@@ -49,6 +49,29 @@ interface ActivityPlanCreationState {
   reset: () => void;
 }
 
+export function createMinimalActivityPlanStructure(
+  activityName: string = "Main Activity",
+): ActivityPlanStructureV2 {
+  return {
+    version: 2,
+    intervals: [
+      {
+        id: randomUUID(),
+        name: activityName,
+        repetitions: 1,
+        steps: [
+          {
+            id: randomUUID(),
+            name: activityName,
+            duration: { type: "untilFinished" },
+            targets: [],
+          },
+        ],
+      },
+    ],
+  };
+}
+
 /**
  * Generate a default timestamped activity name
  */

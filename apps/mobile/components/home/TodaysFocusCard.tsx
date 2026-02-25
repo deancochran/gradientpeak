@@ -74,7 +74,7 @@ export function TodaysFocusCard({
           <View className="flex-row items-center justify-between">
             <View className="flex-1">
               <Text className="text-muted-foreground text-xs font-semibold uppercase tracking-wider mb-1">
-                Today's Focus
+                Today&apos;s Focus
               </Text>
               <Text className="text-foreground text-2xl font-bold">
                 {todaysActivity.title}

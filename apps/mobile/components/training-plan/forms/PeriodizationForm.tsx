@@ -438,8 +438,8 @@ export function PeriodizationForm({
               </Text>
             </View>
             <Text className="text-sm text-muted-foreground mt-2">
-              Enable periodization if you're training for a specific event or
-              want structured fitness progression.
+              Enable periodization if you&apos;re training for a specific event
+              or want structured fitness progression.
             </Text>
           </CardContent>
         </Card>

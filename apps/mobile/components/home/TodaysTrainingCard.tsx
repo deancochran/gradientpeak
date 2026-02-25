@@ -105,7 +105,7 @@ const TodaysTrainingCard: React.FC<TodaysTrainingCardProps> = ({
         </View>
         <View className="flex-1">
           <Text className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            Today's Training
+            Today&apos;s Training
           </Text>
           <Text className="text-lg font-bold text-foreground" numberOfLines={1}>
             {todaysActivity.title}

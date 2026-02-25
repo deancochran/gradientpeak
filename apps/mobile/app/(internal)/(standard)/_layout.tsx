@@ -1,3 +1,4 @@
+import React from "react";
 import { Stack, useRouter } from "expo-router";
 import { TouchableOpacity } from "react-native";
 import { Icon } from "@/components/ui/icon";
@@ -41,7 +42,7 @@ import { ChevronLeft } from "lucide-react-native";
  * TRAINING PLANS:
  * - training-plan - Training plan overview
  * - training-plan-create - Create new training plan
- * - training-plan-settings - Training plan settings
+ * - training-plan-edit - Edit training plan structure
  *
  * SETTINGS:
  * - settings - App settings
@@ -157,12 +158,6 @@ export default function StandardLayout() {
 
       {/* TRAINING PLANS */}
       <Stack.Screen
-        name="training-plans-list"
-        options={{
-          title: "Training Plans",
-        }}
-      />
-      <Stack.Screen
         name="training-plan"
         options={{
           title: "Training Plan",
@@ -175,33 +170,9 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
-        name="training-plan-method-selector"
+        name="training-plan-edit"
         options={{
-          title: "Create Training Plan",
-        }}
-      />
-      <Stack.Screen
-        name="training-plan-wizard"
-        options={{
-          title: "Training Plan Wizard",
-        }}
-      />
-      <Stack.Screen
-        name="training-plan-adjust"
-        options={{
-          title: "Adjust Training Plan",
-        }}
-      />
-      <Stack.Screen
-        name="training-plan-review"
-        options={{
-          title: "Review Plan",
-        }}
-      />
-      <Stack.Screen
-        name="training-plan-settings"
-        options={{
-          title: "Training Plan Settings",
+          title: "Edit Training Plan",
         }}
       />
       <Stack.Screen

@@ -1,0 +1,2988 @@
+import { describe, expect, it, vi } from "vitest";
+import { TRPCError } from "@trpc/server";
+import { deriveProfileAwareCreationContext } from "../training_plans";
+import { trainingPlansRouter } from "../training_plans";
+
+type QueryResult = {
+  data: any;
+  error: { message: string } | null;
+};
+
+function createSupabaseMock(results: Record<string, QueryResult>) {
+  return {
+    from: (table: string) => {
+      const result = results[table] ?? { data: [], error: null };
+      const builder: any = {
+        select: vi.fn(() => builder),
+        update: vi.fn(() => builder),
+        insert: vi.fn(() => builder),
+        delete: vi.fn(() => builder),
+        eq: vi.fn(() => builder),
+        neq: vi.fn(() => builder),
+        gte: vi.fn(() => builder),
+        lte: vi.fn(() => builder),
+        lt: vi.fn(() => builder),
+        in: vi.fn(() => builder),
+        order: vi.fn(() => builder),
+        single: vi.fn(() => Promise.resolve(result)),
+        limit: vi.fn(() => builder),
+        then: (onFulfilled: (value: QueryResult) => unknown) =>
+          Promise.resolve(result).then(onFulfilled),
+      };
+
+      return builder;
+    },
+  };
+}
+
+function createTrainingPlansCaller(results: Record<string, QueryResult> = {}) {
+  return trainingPlansRouter.createCaller({
+    supabase: createSupabaseMock(results) as any,
+    session: {
+      user: {
+        id: "profile-123",
+      },
+    },
+    headers: new Headers(),
+    clientType: "test",
+    trpcSource: "vitest",
+  } as any);
+}
+
+function createTrainingPlansCreateHarness() {
+  const deactivationEq = vi.fn();
+  const deactivationBuilder: any = {
+    eq: vi.fn((field: string, value: unknown) => {
+      deactivationEq(field, value);
+      return deactivationBuilder;
+    }),
+    then: (onFulfilled: (value: QueryResult) => unknown) =>
+      Promise.resolve({ data: null, error: null }).then(onFulfilled),
+  };
+
+  let insertedPayload: Record<string, unknown> | null = null;
+
+  const insertBuilder: any = {
+    select: vi.fn(() => insertBuilder),
+    single: vi.fn(async () => ({
+      data: {
+        id: "22222222-2222-4222-8222-222222222222",
+        ...(insertedPayload ?? {}),
+      },
+      error: null,
+    })),
+  };
+
+  const tableBuilder: any = {
+    update: vi.fn(() => deactivationBuilder),
+    insert: vi.fn((payload: Record<string, unknown>) => {
+      insertedPayload = payload;
+      return insertBuilder;
+    }),
+  };
+
+  const caller = trainingPlansRouter.createCaller({
+    supabase: {
+      from: vi.fn(() => tableBuilder),
+    } as any,
+    session: {
+      user: {
+        id: "profile-123",
+      },
+    },
+    headers: new Headers(),
+    clientType: "test",
+    trpcSource: "vitest",
+  } as any);
+
+  return {
+    caller,
+    tableBuilder,
+    deactivationBuilder,
+    deactivationEq,
+    getInsertedPayload: () => insertedPayload,
+  };
+}
+
+function percentile(values: number[], p: number): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = Math.min(
+    sorted.length - 1,
+    Math.max(0, Math.ceil((p / 100) * sorted.length) - 1),
+  );
+  return sorted[idx] ?? 0;
+}
+
+const CONSERVATIVE_BEHAVIOR_CONTROLS = {
+  aggressiveness: 0.1,
+  variability: 0.2,
+  spike_frequency: 0.1,
+  shape_target: -0.25,
+  shape_strength: 0.2,
+  recovery_priority: 0.9,
+  starting_fitness_confidence: 0.45,
+} as const;
+
+const BALANCED_BEHAVIOR_CONTROLS = {
+  aggressiveness: 0.5,
+  variability: 0.5,
+  spike_frequency: 0.35,
+  shape_target: 0,
+  shape_strength: 0.35,
+  recovery_priority: 0.6,
+  starting_fitness_confidence: 0.6,
+} as const;
+
+const AGGRESSIVE_BEHAVIOR_CONTROLS = {
+  aggressiveness: 0.85,
+  variability: 0.8,
+  spike_frequency: 0.85,
+  shape_target: 0.35,
+  shape_strength: 0.85,
+  recovery_priority: 0.2,
+  starting_fitness_confidence: 0.75,
+} as const;
+
+const FRONTIER_BEHAVIOR_CONTROLS = {
+  aggressiveness: 1,
+  variability: 1,
+  spike_frequency: 1,
+  shape_target: 0.6,
+  shape_strength: 1,
+  recovery_priority: 0,
+  starting_fitness_confidence: 0.85,
+} as const;
+
+function assertSaneProjectionDiagnostics(diagnostics: any) {
+  expect(diagnostics).toBeDefined();
+  expect([
+    "full_mpc",
+    "degraded_bounded_mpc",
+    "legacy_optimizer",
+    "cap_only_baseline",
+  ]).toContain(diagnostics.selected_path);
+  expect(typeof diagnostics.candidate_counts.full_mpc).toBe("number");
+  expect(typeof diagnostics.candidate_counts.degraded_bounded_mpc).toBe(
+    "number",
+  );
+  expect(typeof diagnostics.candidate_counts.legacy_optimizer).toBe("number");
+  expect(typeof diagnostics.prune_counts.full_mpc).toBe("number");
+  expect(typeof diagnostics.prune_counts.degraded_bounded_mpc).toBe("number");
+  expect(Array.isArray(diagnostics.active_constraints)).toBe(true);
+  expect(Array.isArray(diagnostics.tie_break_chain)).toBe(true);
+  expect(diagnostics.effective_optimizer_config).toMatchObject({
+    weights: {
+      preparedness_weight: expect.any(Number),
+      risk_penalty_weight: expect.any(Number),
+      volatility_penalty_weight: expect.any(Number),
+      churn_penalty_weight: expect.any(Number),
+    },
+    caps: {
+      max_weekly_tss_ramp_pct: expect.any(Number),
+      max_ctl_ramp_per_week: expect.any(Number),
+    },
+    search: {
+      lookahead_weeks: expect.any(Number),
+      candidate_steps: expect.any(Number),
+    },
+    curvature: {
+      target: expect.any(Number),
+      strength: expect.any(Number),
+      weight: expect.any(Number),
+    },
+  });
+  expect(diagnostics.clamp_counts).toMatchObject({
+    tss: expect.any(Number),
+    ctl: expect.any(Number),
+  });
+  expect(diagnostics.objective_contributions).toMatchObject({
+    sampled_weeks: expect.any(Number),
+    objective_score: expect.any(Number),
+    weighted_terms: {
+      goal: expect.any(Number),
+      readiness: expect.any(Number),
+      risk: expect.any(Number),
+      volatility: expect.any(Number),
+      churn: expect.any(Number),
+      monotony: expect.any(Number),
+      strain: expect.any(Number),
+      curve: expect.any(Number),
+    },
+  });
+
+  expect(diagnostics.candidate_counts.full_mpc).toBeGreaterThanOrEqual(0);
+  expect(
+    diagnostics.candidate_counts.degraded_bounded_mpc,
+  ).toBeGreaterThanOrEqual(0);
+  expect(diagnostics.candidate_counts.legacy_optimizer).toBeGreaterThanOrEqual(
+    0,
+  );
+
+  if (diagnostics.selected_path === "full_mpc") {
+    expect(diagnostics.candidate_counts.full_mpc).toBeGreaterThan(0);
+  }
+  if (diagnostics.selected_path === "degraded_bounded_mpc") {
+    expect(diagnostics.candidate_counts.degraded_bounded_mpc).toBeGreaterThan(
+      0,
+    );
+  }
+  if (diagnostics.selected_path === "legacy_optimizer") {
+    expect(diagnostics.candidate_counts.legacy_optimizer).toBeGreaterThan(0);
+  }
+
+  const fallbackReason = diagnostics.fallback_reason;
+  expect(fallbackReason === null || typeof fallbackReason === "string").toBe(
+    true,
+  );
+}
+
+describe("deriveProfileAwareCreationContext", () => {
+  it("falls back to empty arrays when one source query fails", async () => {
+    const supabase = createSupabaseMock({
+      activities: {
+        data: [
+          {
+            started_at: "2026-01-10T10:00:00.000Z",
+            activity_category: "run",
+            duration_seconds: 3600,
+            training_stress_score: 65,
+          },
+        ],
+        error: null,
+      },
+      activity_efforts: {
+        data: null,
+        error: { message: "efforts query failed" },
+      },
+      profile_metrics: {
+        data: [
+          {
+            metric_type: "weight_kg",
+            value: 72,
+            recorded_at: "2026-01-05T00:00:00.000Z",
+          },
+        ],
+        error: null,
+      },
+    });
+
+    await expect(
+      deriveProfileAwareCreationContext({
+        supabase: supabase as any,
+        profileId: "profile-123",
+      }),
+    ).resolves.toMatchObject({
+      contextSummary: {
+        history_availability_state: expect.any(String),
+        rationale_codes: expect.any(Array),
+      },
+      loadBootstrapState: {
+        starting_ctl: expect.any(Number),
+        starting_atl: expect.any(Number),
+        starting_tsb: expect.any(Number),
+      },
+    });
+  });
+});
+
+describe("trainingPlansRouter.create active-plan invariant", () => {
+  const maintenanceCreateInput = {
+    name: "New Plan",
+    structure: {
+      plan_type: "maintenance" as const,
+      name: "Maintenance Structure",
+      start_date: "2026-01-05",
+      activity_distribution: {
+        run: {
+          target_percentage: 1,
+        },
+      },
+    },
+  };
+
+  it("deactivates existing active plans when is_active is omitted", async () => {
+    const harness = createTrainingPlansCreateHarness();
+
+    await harness.caller.create(maintenanceCreateInput);
+
+    expect(harness.tableBuilder.update).toHaveBeenCalledWith({
+      is_active: false,
+    });
+    expect(harness.deactivationEq).toHaveBeenCalledWith(
+      "profile_id",
+      "profile-123",
+    );
+    expect(harness.deactivationEq).toHaveBeenCalledWith("is_active", true);
+  });
+
+  it("defaults inserted plan to active when is_active is omitted", async () => {
+    const harness = createTrainingPlansCreateHarness();
+
+    await harness.caller.create(maintenanceCreateInput);
+
+    expect(harness.getInsertedPayload()).toMatchObject({
+      is_active: true,
+      profile_id: "profile-123",
+    });
+  });
+});
+
+describe("trainingPlansRouter.getCreationSuggestions", () => {
+  it("returns the same contract shape for context summary and suggestions", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+
+    const result = await caller.getCreationSuggestions();
+
+    expect(result).toMatchObject({
+      context_summary: {
+        history_availability_state: expect.any(String),
+        signal_quality: expect.any(Number),
+        rationale_codes: expect.any(Array),
+      },
+      suggestions: {
+        availability_config: expect.any(Object),
+        recent_influence: expect.any(Object),
+        recent_influence_action: expect.any(String),
+        constraints: expect.any(Object),
+        behavior_controls_v1: {
+          aggressiveness: expect.any(Number),
+          variability: expect.any(Number),
+          spike_frequency: expect.any(Number),
+          shape_target: expect.any(Number),
+          shape_strength: expect.any(Number),
+          recovery_priority: expect.any(Number),
+          starting_fitness_confidence: expect.any(Number),
+        },
+        locked_conflicts: expect.any(Array),
+      },
+    });
+  });
+
+  it("keeps suggestion payload shape when optional params are provided", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+
+    const result = await caller.getCreationSuggestions({
+      as_of: "2026-01-10T00:00:00.000Z",
+      existing_values: {
+        recent_influence: { influence_score: 0.2 },
+      },
+    });
+
+    expect(result.context_summary).toMatchObject({
+      history_availability_state: expect.any(String),
+      rationale_codes: expect.any(Array),
+    });
+    expect(result.suggestions).toMatchObject({
+      recent_influence: { influence_score: expect.any(Number) },
+      locked_conflicts: expect.any(Array),
+    });
+  });
+
+  it("maintains baseline initialization bands across none/sparse/rich fixtures", async () => {
+    const fixtureOutputs = await Promise.all([
+      createTrainingPlansCaller({
+        activities: { data: [], error: null },
+        activity_efforts: { data: [], error: null },
+        profile_metrics: { data: [], error: null },
+      }).getCreationSuggestions(),
+      createTrainingPlansCaller({
+        activities: {
+          data: [
+            {
+              started_at: "2026-01-05T10:00:00.000Z",
+              activity_category: "run",
+              duration_seconds: 3200,
+              training_stress_score: 48,
+            },
+            {
+              started_at: "2026-01-08T10:00:00.000Z",
+              activity_category: "run",
+              duration_seconds: 3600,
+              training_stress_score: 58,
+            },
+            {
+              started_at: "2026-01-11T10:00:00.000Z",
+              activity_category: "ride",
+              duration_seconds: 3900,
+              training_stress_score: 62,
+            },
+          ],
+          error: null,
+        },
+        activity_efforts: {
+          data: [
+            {
+              activity_category: "run",
+              effort_type: "speed",
+              duration_seconds: 300,
+              best_value: 4.1,
+              effort_date: "2026-01-08T10:20:00.000Z",
+            },
+          ],
+          error: null,
+        },
+        profile_metrics: {
+          data: [
+            {
+              metric_type: "weight_kg",
+              value: 70,
+              recorded_at: "2026-01-10T00:00:00.000Z",
+            },
+          ],
+          error: null,
+        },
+      }).getCreationSuggestions(),
+      createTrainingPlansCaller({
+        activities: {
+          data: [
+            {
+              started_at: "2025-12-20T08:00:00.000Z",
+              activity_category: "run",
+              duration_seconds: 3600,
+              training_stress_score: 72,
+            },
+            {
+              started_at: "2025-12-23T08:00:00.000Z",
+              activity_category: "run",
+              duration_seconds: 4100,
+              training_stress_score: 78,
+            },
+            {
+              started_at: "2025-12-26T08:00:00.000Z",
+              activity_category: "ride",
+              duration_seconds: 5200,
+              training_stress_score: 95,
+            },
+            {
+              started_at: "2025-12-29T08:00:00.000Z",
+              activity_category: "run",
+              duration_seconds: 4300,
+              training_stress_score: 84,
+            },
+            {
+              started_at: "2026-01-01T08:00:00.000Z",
+              activity_category: "run",
+              duration_seconds: 4500,
+              training_stress_score: 88,
+            },
+            {
+              started_at: "2026-01-04T08:00:00.000Z",
+              activity_category: "ride",
+              duration_seconds: 5600,
+              training_stress_score: 102,
+            },
+            {
+              started_at: "2026-01-07T08:00:00.000Z",
+              activity_category: "run",
+              duration_seconds: 3900,
+              training_stress_score: 76,
+            },
+            {
+              started_at: "2026-01-10T08:00:00.000Z",
+              activity_category: "run",
+              duration_seconds: 4700,
+              training_stress_score: 90,
+            },
+          ],
+          error: null,
+        },
+        activity_efforts: {
+          data: [
+            {
+              activity_category: "run",
+              effort_type: "power",
+              duration_seconds: 1200,
+              best_value: 320,
+              effort_date: "2026-01-10T08:30:00.000Z",
+            },
+            {
+              activity_category: "run",
+              effort_type: "speed",
+              duration_seconds: 600,
+              best_value: 4.8,
+              effort_date: "2026-01-10T08:20:00.000Z",
+            },
+          ],
+          error: null,
+        },
+        profile_metrics: {
+          data: [
+            {
+              metric_type: "lthr",
+              value: 168,
+              recorded_at: "2026-01-09T00:00:00.000Z",
+            },
+            {
+              metric_type: "weight_kg",
+              value: 69,
+              recorded_at: "2026-01-09T00:00:00.000Z",
+            },
+          ],
+          error: null,
+        },
+      }).getCreationSuggestions(),
+    ]);
+
+    const noneHistory = fixtureOutputs[0];
+    const sparseHistory = fixtureOutputs[1];
+    const richHistory = fixtureOutputs[2];
+
+    expect(noneHistory.context_summary.history_availability_state).toBe("none");
+
+    expect(
+      noneHistory.suggestions.behavior_controls_v1.aggressiveness,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      noneHistory.suggestions.behavior_controls_v1.aggressiveness,
+    ).toBeLessThanOrEqual(1);
+    expect(
+      noneHistory.suggestions.behavior_controls_v1.recovery_priority,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      noneHistory.suggestions.behavior_controls_v1.recovery_priority,
+    ).toBeLessThanOrEqual(1);
+
+    expect(
+      sparseHistory.suggestions.behavior_controls_v1.aggressiveness,
+    ).toBeGreaterThan(
+      noneHistory.suggestions.behavior_controls_v1.aggressiveness,
+    );
+    expect(
+      sparseHistory.suggestions.behavior_controls_v1.recovery_priority,
+    ).toBeLessThan(
+      noneHistory.suggestions.behavior_controls_v1.recovery_priority,
+    );
+    expect(
+      richHistory.suggestions.behavior_controls_v1.aggressiveness,
+    ).toBeGreaterThan(
+      sparseHistory.suggestions.behavior_controls_v1.aggressiveness,
+    );
+    expect(
+      richHistory.suggestions.behavior_controls_v1.recovery_priority,
+    ).toBeLessThan(
+      sparseHistory.suggestions.behavior_controls_v1.recovery_priority,
+    );
+  });
+});
+
+describe("trainingPlansRouter preview bootstrap baseline fixtures", () => {
+  const minimalPlan = {
+    plan_start_date: "2026-01-05",
+    goals: [
+      {
+        name: "Context Fixture Goal",
+        target_date: "2026-10-15",
+        priority: 1,
+        targets: [
+          {
+            target_type: "hr_threshold" as const,
+            target_lthr_bpm: 162,
+          },
+        ],
+      },
+    ],
+  };
+
+  it("returns deterministic preview bootstrap baseline for identical fixture input", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: {
+        data: [
+          {
+            started_at: "2026-01-02T08:00:00.000Z",
+            activity_category: "run",
+            duration_seconds: 3600,
+            training_stress_score: 58,
+          },
+          {
+            started_at: "2026-01-04T08:00:00.000Z",
+            activity_category: "run",
+            duration_seconds: 4100,
+            training_stress_score: 64,
+          },
+        ],
+        error: null,
+      },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+
+    const first = await caller.previewCreationConfig({
+      minimal_plan: minimalPlan,
+      creation_input: {},
+    });
+    const second = await caller.previewCreationConfig({
+      minimal_plan: minimalPlan,
+      creation_input: {},
+    });
+
+    expect(first.preview_snapshot_baseline).toBeTruthy();
+    expect(first.preview_snapshot_baseline).toEqual(
+      second.preview_snapshot_baseline,
+    );
+
+    const baseline = first.preview_snapshot_baseline!;
+    expect(baseline.readiness_score).toBeGreaterThanOrEqual(0);
+    expect(baseline.readiness_score).toBeLessThanOrEqual(100);
+    expect(baseline.predicted_load_tss).toBeGreaterThanOrEqual(0);
+    expect(baseline.predicted_load_tss).toBeLessThanOrEqual(10000);
+    expect(baseline.predicted_fatigue_atl).toBeGreaterThanOrEqual(0);
+    expect(baseline.predicted_fatigue_atl).toBeLessThanOrEqual(2000);
+    expect(["feasible", "aggressive", "unsafe"]).toContain(
+      baseline.feasibility_state,
+    );
+    expect(baseline.tss_ramp_clamp_weeks).toBeGreaterThanOrEqual(0);
+    expect(baseline.tss_ramp_clamp_weeks).toBeLessThanOrEqual(104);
+    expect(baseline.ctl_ramp_clamp_weeks).toBeGreaterThanOrEqual(0);
+    expect(baseline.ctl_ramp_clamp_weeks).toBeLessThanOrEqual(104);
+  });
+});
+
+describe("trainingPlansRouter plan_start_date support", () => {
+  const minimalGoal = {
+    name: "Spring 10k",
+    target_date: "2026-03-15",
+    priority: 1,
+    targets: [
+      {
+        target_type: "race_performance" as const,
+        distance_m: 10000,
+        target_time_s: 2700,
+        activity_category: "run" as const,
+      },
+    ],
+  };
+
+  const nonBlockingGoal = {
+    name: "Threshold check",
+    target_date: "2026-10-15",
+    priority: 1,
+    targets: [
+      {
+        target_type: "hr_threshold" as const,
+        target_lthr_bpm: 160,
+      },
+    ],
+  };
+
+  it("rejects a plan_start_date that is after the latest goal date", async () => {
+    const caller = createTrainingPlansCaller();
+    const lateStartInput = {
+      plan_start_date: "2026-03-20",
+      goals: [minimalGoal],
+    };
+
+    let previewThrown: unknown;
+    try {
+      await caller.getFeasibilityPreview(lateStartInput);
+    } catch (error) {
+      previewThrown = error;
+    }
+
+    expect(previewThrown).toBeInstanceOf(TRPCError);
+    expect((previewThrown as TRPCError).code).toBe("BAD_REQUEST");
+    expect((previewThrown as TRPCError).message).toContain("plan_start_date");
+
+    let createThrown: unknown;
+    try {
+      await caller.createFromCreationConfig({
+        minimal_plan: lateStartInput,
+        creation_input: {},
+      });
+    } catch (error) {
+      createThrown = error;
+    }
+
+    expect(createThrown).toBeInstanceOf(TRPCError);
+    expect((createThrown as TRPCError).code).toBe("BAD_REQUEST");
+    expect((createThrown as TRPCError).message).toContain("plan_start_date");
+  });
+
+  it("applies optimization profile defaults for omitted recovery/ramp fields", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+
+    const suggestedControls = await caller.getCreationSuggestions();
+
+    const result = await caller.previewCreationConfig({
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [
+          {
+            ...minimalGoal,
+            target_date: "2026-09-15",
+            targets: [
+              {
+                target_type: "race_performance",
+                distance_m: 10000,
+                target_time_s: 5400,
+                activity_category: "run",
+              },
+            ],
+          },
+        ],
+      },
+      creation_input: {
+        user_values: {
+          optimization_profile: "sustainable",
+        },
+      },
+    });
+
+    expect(result.normalized_creation_config.optimization_profile).toBe(
+      "sustainable",
+    );
+    expect(result.normalized_creation_config.post_goal_recovery_days).toBe(7);
+    expect(result.normalized_creation_config.behavior_controls_v1).toEqual(
+      suggestedControls.suggestions.behavior_controls_v1,
+    );
+    expect(
+      result.normalized_creation_config.behavior_controls_v1.aggressiveness,
+    ).toBeLessThan(0.5);
+    expect(
+      result.normalized_creation_config.behavior_controls_v1.recovery_priority,
+    ).toBeGreaterThan(0.6);
+  });
+
+  it("applies strict cap tuning without forcing blocking or unsafe feasibility", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+
+    const result = await caller.previewCreationConfig({
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [
+          {
+            ...minimalGoal,
+            target_date: "2026-09-15",
+            targets: [
+              {
+                target_type: "race_performance",
+                distance_m: 10000,
+                target_time_s: 5400,
+                activity_category: "run",
+              },
+            ],
+          },
+        ],
+      },
+      creation_input: {
+        user_values: {
+          behavior_controls_v1: CONSERVATIVE_BEHAVIOR_CONTROLS,
+        },
+      },
+    });
+
+    expect(result.conflicts.is_blocking).toBe(false);
+    const capConflict = result.conflicts.items.find(
+      (c) =>
+        c.code === "required_tss_ramp_exceeds_cap" ||
+        c.code === "required_ctl_ramp_exceeds_cap",
+    );
+    if (capConflict) {
+      expect(capConflict.severity).toBe("warning");
+    }
+    expect(result.projection_feasibility.state).not.toBe("unsafe");
+  });
+
+  it("emits blocking recovery compression conflicts for tight multi-goal windows", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+
+    const result = await caller.previewCreationConfig({
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [
+          {
+            ...minimalGoal,
+            name: "Goal A",
+            target_date: "2026-03-15",
+          },
+          {
+            ...minimalGoal,
+            name: "Goal B",
+            target_date: "2026-03-24",
+          },
+        ],
+      },
+      creation_input: {
+        user_values: {
+          post_goal_recovery_days: 14,
+        },
+      },
+    });
+
+    expect(result.conflicts.is_blocking).toBe(true);
+    expect(
+      result.conflicts.items.some(
+        (conflict) =>
+          conflict.code === "post_goal_recovery_compresses_next_goal_prep" ||
+          conflict.code === "post_goal_recovery_overlaps_next_goal",
+      ),
+    ).toBe(true);
+  });
+
+  it("blocks createFromCreationConfig when blocking conflicts are unresolved", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "plan-row-blocked-create",
+          name: "Generated Plan",
+          description: null,
+          structure: {},
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const blockingInput = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [
+          {
+            ...minimalGoal,
+            name: "Goal A",
+            target_date: "2026-03-15",
+          },
+          {
+            ...minimalGoal,
+            name: "Goal B",
+            target_date: "2026-03-24",
+          },
+        ],
+      },
+      creation_input: {
+        user_values: {
+          post_goal_recovery_days: 14,
+        },
+      },
+    };
+
+    await expect(
+      caller.createFromCreationConfig(blockingInput),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining(
+        "Creation blocked by unresolved conflicts",
+      ),
+    });
+  });
+
+  it("updates an existing plan via updateFromCreationConfig while preserving id", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "11111111-1111-4111-8111-111111111111",
+          name: "Existing Plan",
+          description: null,
+          structure: {
+            id: "11111111-1111-4111-8111-111111111111",
+          },
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const input = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [nonBlockingGoal],
+      },
+      creation_input: {},
+    };
+
+    const preview = await caller.previewCreationConfig(input);
+    const updated = await caller.updateFromCreationConfig({
+      ...input,
+      plan_id: "11111111-1111-4111-8111-111111111111",
+      preview_snapshot_token: preview.preview_snapshot.token,
+    });
+
+    expect(updated.id).toBe("11111111-1111-4111-8111-111111111111");
+    expect(updated.creation_summary.conflicts.is_blocking).toBe(false);
+  });
+
+  it("rejects updateFromCreationConfig when blocking conflicts are unresolved", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "11111111-1111-4111-8111-111111111111",
+          name: "Existing Plan",
+          description: null,
+          structure: {
+            id: "11111111-1111-4111-8111-111111111111",
+          },
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    await expect(
+      caller.updateFromCreationConfig({
+        plan_id: "11111111-1111-4111-8111-111111111111",
+        minimal_plan: {
+          plan_start_date: "2026-01-05",
+          goals: [
+            {
+              ...minimalGoal,
+              name: "Goal A",
+              target_date: "2026-03-15",
+            },
+            {
+              ...minimalGoal,
+              name: "Goal B",
+              target_date: "2026-03-24",
+            },
+          ],
+        },
+        creation_input: {
+          user_values: {
+            post_goal_recovery_days: 14,
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining(
+        "Creation blocked by unresolved conflicts",
+      ),
+    });
+  });
+
+  it("rejects updateFromCreationConfig when plan is missing or not owned", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: null,
+        error: { message: "not found" },
+      },
+    });
+
+    await expect(
+      caller.updateFromCreationConfig({
+        plan_id: "11111111-1111-4111-8111-111111111111",
+        minimal_plan: {
+          plan_start_date: "2026-01-05",
+          goals: [nonBlockingGoal],
+        },
+        creation_input: {},
+      }),
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      cause: {
+        domain: "training_plan_commit",
+        code: "TRAINING_PLAN_COMMIT_NOT_FOUND",
+        operation: "updateFromCreationConfig",
+        recoverable: false,
+      },
+    });
+  });
+
+  it("surfaces cap-pressure reasons only when ramps actually bind near configured caps", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+
+    const baseline = await caller.previewCreationConfig({
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [
+          {
+            name: "Aggressive Marathon",
+            target_date: "2026-07-05",
+            priority: 1,
+            targets: [
+              {
+                target_type: "race_performance",
+                distance_m: 42195,
+                target_time_s: 9900,
+                activity_category: "run",
+              },
+            ],
+          },
+        ],
+      },
+      creation_input: {
+        user_values: {
+          behavior_controls_v1: AGGRESSIVE_BEHAVIOR_CONTROLS,
+        },
+      },
+      starting_ctl_override: 70,
+    });
+
+    const tssRequestedMax = Math.max(
+      ...baseline.projection_chart.microcycles.map((microcycle) => {
+        const tss = microcycle.metadata?.tss_ramp;
+        if (!tss || tss.previous_week_tss <= 0) return 0;
+        return (
+          ((tss.requested_weekly_tss - tss.previous_week_tss) /
+            tss.previous_week_tss) *
+          100
+        );
+      }),
+    );
+    const ctlRequestedMax = Math.max(
+      ...baseline.projection_chart.microcycles.map(
+        (microcycle) => microcycle.metadata?.ctl_ramp.requested_ctl_ramp ?? 0,
+      ),
+    );
+
+    const nearCap = await caller.previewCreationConfig({
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [
+          {
+            name: "Aggressive Marathon",
+            target_date: "2026-07-05",
+            priority: 1,
+            targets: [
+              {
+                target_type: "race_performance",
+                distance_m: 42195,
+                target_time_s: 9900,
+                activity_category: "run",
+              },
+            ],
+          },
+        ],
+      },
+      creation_input: {
+        user_values: {
+          behavior_controls_v1: {
+            ...AGGRESSIVE_BEHAVIOR_CONTROLS,
+            aggressiveness: Math.min(
+              1,
+              Number((tssRequestedMax / 20).toFixed(2)),
+            ),
+            spike_frequency: Math.min(
+              1,
+              Number((ctlRequestedMax / 8).toFixed(2)),
+            ),
+          },
+        },
+      },
+      starting_ctl_override: 70,
+    });
+
+    expect(["feasible", "aggressive", "unsafe"]).toContain(
+      nearCap.projection_feasibility.state,
+    );
+    expect(nearCap.projection_feasibility.reasons.length).toBeGreaterThan(0);
+    const hasCapPressureReason = nearCap.projection_feasibility.reasons.some(
+      (reason) =>
+        reason.includes("near_configured_cap") ||
+        reason.includes("exceeds_configured_cap"),
+    );
+    if (nearCap.projection_feasibility.state === "feasible") {
+      expect(hasCapPressureReason).toBe(false);
+    } else {
+      expect(hasCapPressureReason).toBe(true);
+    }
+    expect(nearCap.projection_feasibility.reasons).toContain(
+      "safety_first_best_safe_projection",
+    );
+  });
+
+  it("rejects inferred alias fields in getCreationSuggestions input", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+
+    await expect(
+      caller.getCreationSuggestions({
+        existing_values: {
+          recent_influence_score: 0.2,
+        } as any,
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+  });
+
+  it("surfaces deterministic preview metadata and allows create when unblocked", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "plan-row-1",
+          name: "Generated Plan",
+          description: null,
+          structure: {},
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const input = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [nonBlockingGoal],
+      },
+      starting_ctl_override: 42,
+      creation_input: {
+        user_values: {
+          optimization_profile: "outcome_first" as const,
+          behavior_controls_v1: AGGRESSIVE_BEHAVIOR_CONTROLS,
+        },
+      },
+    };
+
+    const preview = await caller.previewCreationConfig(input);
+    expect(preview.normalized_creation_config.optimization_profile).toBe(
+      "outcome_first",
+    );
+    expect(preview.normalized_creation_config.behavior_controls_v1).toEqual(
+      AGGRESSIVE_BEHAVIOR_CONTROLS,
+    );
+    expect(preview.override_audit.request.requested).toBe(false);
+    expect(preview.override_audit.effective.enabled).toBe(false);
+
+    const created = await caller.createFromCreationConfig(input);
+    expect(created.creation_summary.conflicts.is_blocking).toBe(false);
+    expect(created.creation_summary.override_audit.request.requested).toBe(
+      false,
+    );
+  });
+
+  it("threads override_policy into preview/create audit fields", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "plan-row-override-audit",
+          name: "Generated Plan",
+          description: null,
+          structure: {},
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const input = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [nonBlockingGoal],
+      },
+      creation_input: {},
+      override_policy: {
+        allow_blocking_conflicts: true,
+        scope: "objective_risk_budget" as const,
+        reason: "Coach approved objective tradeoff",
+      },
+    };
+
+    const preview = await caller.previewCreationConfig(input);
+    expect(preview.override_audit.request.requested).toBe(true);
+    expect(preview.override_audit.request.scope).toBe("objective_risk_budget");
+
+    const created = await caller.createFromCreationConfig({
+      ...input,
+      preview_snapshot_token: preview.preview_snapshot.token,
+    });
+    expect(created.creation_summary.override_audit.request.requested).toBe(
+      true,
+    );
+    expect(created.creation_summary.override_audit.request.scope).toBe(
+      "objective_risk_budget",
+    );
+  });
+
+  it("keeps preview/create load bootstrap state in parity for identical history", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: {
+        data: [
+          {
+            started_at: "2026-01-28T06:30:00.000Z",
+            activity_category: "run",
+            duration_seconds: 4200,
+            training_stress_score: 78,
+          },
+          {
+            started_at: "2026-02-01T06:30:00.000Z",
+            activity_category: "run",
+            duration_seconds: 3800,
+            training_stress_score: 70,
+          },
+          {
+            started_at: "2026-02-04T06:30:00.000Z",
+            activity_category: "bike",
+            duration_seconds: 5400,
+            training_stress_score: 102,
+          },
+          {
+            started_at: "2026-02-10T06:30:00.000Z",
+            activity_category: "run",
+            duration_seconds: 3600,
+            training_stress_score: 66,
+          },
+        ],
+        error: null,
+      },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "plan-row-bootstrap",
+          name: "Generated Plan",
+          description: null,
+          structure: {},
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const input = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [nonBlockingGoal],
+      },
+      creation_input: {},
+    };
+
+    const preview = await caller.previewCreationConfig(input);
+    const created = await caller.createFromCreationConfig({
+      ...input,
+      preview_snapshot_token: preview.preview_snapshot.token,
+    });
+
+    const previewStartingState =
+      preview.projection_chart.constraint_summary.starting_state;
+    const createStartingState =
+      created.creation_summary.projection_chart.constraint_summary
+        .starting_state;
+
+    expect(previewStartingState).toBeDefined();
+    expect(createStartingState).toBeDefined();
+    expect(createStartingState).toEqual(previewStartingState);
+    if (!previewStartingState!.starting_state_is_prior) {
+      expect(previewStartingState!.starting_atl).not.toBe(
+        previewStartingState!.starting_ctl,
+      );
+    }
+    expect(previewStartingState!.starting_tsb).toBe(
+      Number(
+        (
+          previewStartingState!.starting_ctl -
+          previewStartingState!.starting_atl
+        ).toFixed(1),
+      ),
+    );
+  });
+
+  it("accepts prior inferred snapshot and propagates inferred_current_state through preview/create payloads", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "plan-row-prior",
+          name: "Generated Plan",
+          description: null,
+          structure: {},
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const priorSnapshot = {
+      mean: {
+        ctl: 48,
+        atl: 44,
+        tsb: 4,
+        slb: 61,
+        durability: 64,
+        readiness: 70,
+      },
+      uncertainty: {
+        state_variance: 0.2,
+        confidence: 0.8,
+      },
+      evidence_quality: {
+        score: 0.74,
+        missingness_ratio: 0.19,
+      },
+      as_of: "2026-01-05T00:00:00.000Z",
+      metadata: {
+        updated_at: "2026-01-05T00:00:00.000Z",
+        missingness_counter: 2,
+        evidence_counter: 23,
+      },
+    };
+
+    const input = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [nonBlockingGoal],
+      },
+      creation_input: {},
+      prior_inferred_snapshot: priorSnapshot,
+    };
+
+    const preview = await caller.previewCreationConfig(input);
+    expect(preview.projection_chart.inferred_current_state).toBeDefined();
+    expect(
+      preview.projection_chart.constraint_summary.starting_state
+        ?.starting_state_is_prior,
+    ).toBe(true);
+
+    const created = await caller.createFromCreationConfig({
+      ...input,
+      preview_snapshot_token: preview.preview_snapshot.token,
+    });
+
+    expect(
+      created.creation_summary.projection_chart.inferred_current_state,
+    ).toBeDefined();
+    expect(
+      created.creation_summary.projection_chart.inferred_current_state,
+    ).toEqual(preview.projection_chart.inferred_current_state);
+  });
+
+  it("returns a preview snapshot token from previewCreationConfig", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+
+    const result = await caller.previewCreationConfig({
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [nonBlockingGoal],
+      },
+      creation_input: {},
+    });
+
+    expect(result.preview_snapshot.version).toBe("creation_preview_v2");
+    expect(typeof result.preview_snapshot.token).toBe("string");
+    expect(result.preview_snapshot.token.length).toBeGreaterThan(0);
+  });
+
+  it("accepts create when preview snapshot token matches and config is unblocked", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "plan-row-1",
+          name: "Generated Plan",
+          description: null,
+          structure: {},
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const input = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [nonBlockingGoal],
+      },
+      starting_ctl_override: 42,
+      creation_input: {
+        user_values: {
+          optimization_profile: "outcome_first" as const,
+          behavior_controls_v1: AGGRESSIVE_BEHAVIOR_CONTROLS,
+        },
+      },
+    };
+
+    const preview = await caller.previewCreationConfig(input);
+    const created = await caller.createFromCreationConfig({
+      ...input,
+      preview_snapshot_token: preview.preview_snapshot.token,
+    });
+    expect(created.creation_summary.conflicts.is_blocking).toBe(false);
+  });
+
+  it("fails createFromCreationConfig when preview snapshot token is stale or invalid", async () => {
+    const previewCaller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+
+    const createCaller = createTrainingPlansCaller({
+      activities: {
+        data: [
+          {
+            started_at: "2026-01-01T10:00:00.000Z",
+            training_stress_score: 150,
+          },
+        ],
+        error: null,
+      },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "plan-row-1",
+          name: "Generated Plan",
+          description: null,
+          structure: {},
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const input = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [nonBlockingGoal],
+      },
+      creation_input: {},
+    };
+
+    const preview = await previewCaller.previewCreationConfig(input);
+
+    await expect(
+      createCaller.createFromCreationConfig({
+        ...input,
+        preview_snapshot_token: preview.preview_snapshot.token,
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining("Refresh preview"),
+      cause: {
+        domain: "training_plan_commit",
+        code: "TRAINING_PLAN_COMMIT_STALE_PREVIEW",
+        operation: "createFromCreationConfig",
+        recoverable: true,
+      },
+    });
+
+    await expect(
+      createCaller.createFromCreationConfig({
+        ...input,
+        preview_snapshot_token: "invalid-token",
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining("Refresh preview"),
+      cause: {
+        domain: "training_plan_commit",
+        code: "TRAINING_PLAN_COMMIT_STALE_PREVIEW",
+        operation: "createFromCreationConfig",
+        recoverable: true,
+      },
+    });
+  });
+
+  it("surfaces typed conflict cause from updateFromCreationConfig", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "11111111-1111-4111-8111-111111111111",
+          name: "Existing Plan",
+          description: null,
+          structure: {
+            id: "11111111-1111-4111-8111-111111111111",
+          },
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    await expect(
+      caller.updateFromCreationConfig({
+        plan_id: "11111111-1111-4111-8111-111111111111",
+        minimal_plan: {
+          plan_start_date: "2026-01-05",
+          goals: [
+            {
+              ...minimalGoal,
+              name: "Goal A",
+              target_date: "2026-03-15",
+            },
+            {
+              ...minimalGoal,
+              name: "Goal B",
+              target_date: "2026-03-24",
+            },
+          ],
+        },
+        creation_input: {
+          user_values: {
+            post_goal_recovery_days: 14,
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      cause: {
+        domain: "training_plan_commit",
+        code: "TRAINING_PLAN_COMMIT_CONFLICT",
+        operation: "updateFromCreationConfig",
+        recoverable: true,
+      },
+    });
+  });
+
+  it("invalidates preview tokens when creation config changes between preview and create", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "plan-row-1",
+          name: "Generated Plan",
+          description: null,
+          structure: {},
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const previewInput = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [nonBlockingGoal],
+      },
+      creation_input: {
+        user_values: {
+          optimization_profile: "balanced" as const,
+          behavior_controls_v1: BALANCED_BEHAVIOR_CONTROLS,
+        },
+      },
+    };
+
+    const preview = await caller.previewCreationConfig(previewInput);
+
+    await expect(
+      caller.createFromCreationConfig({
+        minimal_plan: previewInput.minimal_plan,
+        creation_input: {
+          user_values: {
+            optimization_profile: "outcome_first",
+            behavior_controls_v1: AGGRESSIVE_BEHAVIOR_CONTROLS,
+          },
+        },
+        preview_snapshot_token: preview.preview_snapshot.token,
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining("Refresh preview"),
+    });
+  });
+
+  it("keeps preview/create projection diagnostics and metadata in parity", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "plan-row-1",
+          name: "Generated Plan",
+          description: null,
+          structure: {},
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const input = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [minimalGoal],
+      },
+      starting_ctl_override: 42,
+      creation_input: {
+        user_values: {
+          optimization_profile: "outcome_first" as const,
+          behavior_controls_v1: AGGRESSIVE_BEHAVIOR_CONTROLS,
+        },
+      },
+    };
+
+    const baselinePreview = await caller.previewCreationConfig(input);
+    expect(baselinePreview.preview_snapshot_baseline).toBeTruthy();
+    const preview = await caller.previewCreationConfig({
+      ...input,
+      preview_baseline: baselinePreview.preview_snapshot_baseline ?? undefined,
+    });
+    const created = await caller.createFromCreationConfig({
+      ...input,
+      preview_snapshot_token: preview.preview_snapshot.token,
+    });
+
+    const replayPreview = await caller.previewCreationConfig({
+      ...input,
+      creation_input: {
+        user_values: {
+          ...input.creation_input.user_values,
+          calibration: created.creation_summary.calibration.snapshot,
+        },
+      },
+      preview_baseline: preview.preview_snapshot_baseline ?? undefined,
+    });
+
+    expect(created.creation_summary.normalized_creation_config).toMatchObject({
+      optimization_profile:
+        preview.normalized_creation_config.optimization_profile,
+      behavior_controls_v1:
+        preview.normalized_creation_config.behavior_controls_v1,
+    });
+    expect(
+      created.creation_summary.normalized_creation_config.calibration,
+    ).toEqual(preview.normalized_creation_config.calibration);
+    expect(created.creation_summary.calibration).toEqual({
+      version: preview.normalized_creation_config.calibration.version,
+      snapshot: preview.normalized_creation_config.calibration,
+    });
+    expect(preview.readiness_delta_diagnostics?.readiness.delta).toBe(0);
+    expect(preview.readiness_delta_diagnostics?.summary_codes).toContain(
+      "readiness_delta_diagnostics_v1",
+    );
+    expect(created.creation_summary.projection_feasibility).toEqual(
+      preview.projection_feasibility,
+    );
+    expect(created.creation_summary.projection_chart.readiness_score).toBe(
+      preview.projection_chart.readiness_score,
+    );
+    expect(created.creation_summary.projection_chart.readiness_confidence).toBe(
+      preview.projection_chart.readiness_confidence,
+    );
+    expect(created.creation_summary.projection_chart.display_points).toEqual(
+      preview.projection_chart.display_points,
+    );
+    expect(created.creation_summary.projection_chart.capacity_envelope).toEqual(
+      preview.projection_chart.capacity_envelope,
+    );
+    expect(created.creation_summary.projection_chart.risk_flags).toEqual(
+      preview.projection_chart.risk_flags,
+    );
+    expect(created.creation_summary.projection_chart.caps_applied).toEqual(
+      preview.projection_chart.caps_applied,
+    );
+    expect(
+      created.creation_summary.projection_chart.optimization_tradeoff_summary,
+    ).toEqual(preview.projection_chart.optimization_tradeoff_summary);
+    expect(preview.projection_chart.optimization_tradeoff_summary).toEqual(
+      preview.projection_chart.projection_diagnostics
+        ?.optimization_tradeoff_summary,
+    );
+    expect(preview.projection_chart.prediction_uncertainty).toBeUndefined();
+    expect(preview.projection_chart.goal_target_distributions).toBeUndefined();
+    expect(
+      created.creation_summary.projection_chart.projection_diagnostics,
+    ).toEqual(preview.projection_chart.projection_diagnostics);
+    expect(preview.projection_chart.projection_diagnostics).toMatchObject({
+      effective_optimizer_config: {
+        weights: expect.any(Object),
+        caps: expect.any(Object),
+        search: expect.any(Object),
+        curvature: expect.any(Object),
+      },
+      clamp_counts: {
+        tss: expect.any(Number),
+        ctl: expect.any(Number),
+      },
+      objective_contributions: {
+        sampled_weeks: expect.any(Number),
+        objective_score: expect.any(Number),
+        weighted_terms: {
+          curve: expect.any(Number),
+        },
+      },
+    });
+    expect(
+      created.creation_summary.projection_chart.projection_diagnostics
+        ?.effective_optimizer_config,
+    ).toEqual(
+      preview.projection_chart.projection_diagnostics
+        ?.effective_optimizer_config,
+    );
+    expect(
+      created.creation_summary.projection_chart.projection_diagnostics
+        ?.clamp_counts,
+    ).toEqual(preview.projection_chart.projection_diagnostics?.clamp_counts);
+    expect(
+      created.creation_summary.projection_chart.projection_diagnostics
+        ?.objective_contributions,
+    ).toEqual(
+      preview.projection_chart.projection_diagnostics?.objective_contributions,
+    );
+    expect(replayPreview.projection_chart.projection_diagnostics).toEqual(
+      created.creation_summary.projection_chart.projection_diagnostics,
+    );
+    expect(replayPreview.projection_chart.readiness_score).toBe(
+      created.creation_summary.projection_chart.readiness_score,
+    );
+    expect(replayPreview.normalized_creation_config.calibration).toEqual(
+      created.creation_summary.calibration.snapshot,
+    );
+    expect("mode_applied" in created.creation_summary.projection_chart).toBe(
+      false,
+    );
+    expect(
+      "overrides_applied" in created.creation_summary.projection_chart,
+    ).toBe(false);
+  });
+
+  it("keeps preview/create/update parity across low/sparse/rich/no-history hybrid fixtures", async () => {
+    const historyFixtures: Array<{
+      key: "low" | "sparse" | "rich" | "no-history";
+      activities: QueryResult;
+    }> = [
+      {
+        key: "low",
+        activities: {
+          data: [
+            {
+              started_at: "2026-01-03T06:30:00.000Z",
+              activity_category: "run",
+              duration_seconds: 1800,
+              training_stress_score: 25,
+            },
+            {
+              started_at: "2026-01-09T06:30:00.000Z",
+              activity_category: "run",
+              duration_seconds: 2100,
+              training_stress_score: 31,
+            },
+          ],
+          error: null,
+        },
+      },
+      {
+        key: "sparse",
+        activities: {
+          data: [
+            {
+              started_at: "2026-01-04T06:30:00.000Z",
+              activity_category: "run",
+              duration_seconds: 3200,
+              training_stress_score: 48,
+            },
+            {
+              started_at: "2026-01-08T06:30:00.000Z",
+              activity_category: "run",
+              duration_seconds: 3600,
+              training_stress_score: 55,
+            },
+            {
+              started_at: "2026-01-12T06:30:00.000Z",
+              activity_category: "ride",
+              duration_seconds: 4200,
+              training_stress_score: 62,
+            },
+          ],
+          error: null,
+        },
+      },
+      {
+        key: "rich",
+        activities: {
+          data: [
+            {
+              started_at: "2025-12-20T06:30:00.000Z",
+              activity_category: "run",
+              duration_seconds: 3600,
+              training_stress_score: 72,
+            },
+            {
+              started_at: "2025-12-23T06:30:00.000Z",
+              activity_category: "run",
+              duration_seconds: 4100,
+              training_stress_score: 78,
+            },
+            {
+              started_at: "2025-12-26T06:30:00.000Z",
+              activity_category: "ride",
+              duration_seconds: 5200,
+              training_stress_score: 95,
+            },
+            {
+              started_at: "2025-12-29T06:30:00.000Z",
+              activity_category: "run",
+              duration_seconds: 4300,
+              training_stress_score: 84,
+            },
+            {
+              started_at: "2026-01-01T06:30:00.000Z",
+              activity_category: "run",
+              duration_seconds: 4500,
+              training_stress_score: 88,
+            },
+            {
+              started_at: "2026-01-04T06:30:00.000Z",
+              activity_category: "ride",
+              duration_seconds: 5600,
+              training_stress_score: 102,
+            },
+            {
+              started_at: "2026-01-07T06:30:00.000Z",
+              activity_category: "run",
+              duration_seconds: 3900,
+              training_stress_score: 76,
+            },
+            {
+              started_at: "2026-01-10T06:30:00.000Z",
+              activity_category: "run",
+              duration_seconds: 4700,
+              training_stress_score: 90,
+            },
+          ],
+          error: null,
+        },
+      },
+      {
+        key: "no-history",
+        activities: { data: [], error: null },
+      },
+    ];
+
+    const input = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [nonBlockingGoal],
+      },
+      creation_input: {
+        user_values: {
+          optimization_profile: "balanced" as const,
+          behavior_controls_v1: BALANCED_BEHAVIOR_CONTROLS,
+        },
+      },
+    };
+
+    for (const fixture of historyFixtures) {
+      const caller = createTrainingPlansCaller({
+        activities: fixture.activities,
+        activity_efforts: { data: [], error: null },
+        profile_metrics: { data: [], error: null },
+        training_plans: {
+          data: {
+            id: "11111111-1111-4111-8111-111111111111",
+            name: "Existing Plan",
+            description: null,
+            structure: { id: "11111111-1111-4111-8111-111111111111" },
+            is_active: true,
+            profile_id: "profile-123",
+          },
+          error: null,
+        },
+      });
+
+      const preview = await caller.previewCreationConfig(input);
+      const created = await caller.createFromCreationConfig({
+        ...input,
+        preview_snapshot_token: preview.preview_snapshot.token,
+      });
+      const updated = await caller.updateFromCreationConfig({
+        ...input,
+        plan_id: "11111111-1111-4111-8111-111111111111",
+        preview_snapshot_token: preview.preview_snapshot.token,
+      });
+
+      const previewDates = preview.projection_chart.points.map(
+        (point) => point.date,
+      );
+      expect(previewDates, `${fixture.key} preview dates sorted`).toEqual(
+        [...previewDates].sort((a, b) => a.localeCompare(b)),
+      );
+
+      const createdChart = created.creation_summary.projection_chart;
+      const updatedChart = updated.creation_summary.projection_chart;
+      expect(createdChart.points.map((point: any) => point.date)).toEqual(
+        previewDates,
+      );
+      expect(updatedChart.points.map((point: any) => point.date)).toEqual(
+        previewDates,
+      );
+      expect(createdChart.constraint_summary).toEqual(
+        preview.projection_chart.constraint_summary,
+      );
+      expect(updatedChart.constraint_summary).toEqual(
+        preview.projection_chart.constraint_summary,
+      );
+      expect(createdChart.projection_diagnostics).toEqual(
+        preview.projection_chart.projection_diagnostics,
+      );
+      expect(updatedChart.projection_diagnostics).toEqual(
+        preview.projection_chart.projection_diagnostics,
+      );
+
+      const tolerance = 0.05;
+      expect(
+        Math.abs(
+          createdChart.readiness_score -
+            (preview.projection_chart.readiness_score ?? 0),
+        ),
+        `${fixture.key} create readiness_score`,
+      ).toBeLessThanOrEqual(tolerance);
+      expect(
+        Math.abs(
+          updatedChart.readiness_score -
+            (preview.projection_chart.readiness_score ?? 0),
+        ),
+        `${fixture.key} update readiness_score`,
+      ).toBeLessThanOrEqual(tolerance);
+      expect(preview.projection_chart.readiness_confidence).toBeDefined();
+      expect(createdChart.readiness_confidence).toBeCloseTo(
+        preview.projection_chart.readiness_confidence ?? 0,
+        4,
+      );
+      expect(updatedChart.readiness_confidence).toBeCloseTo(
+        preview.projection_chart.readiness_confidence ?? 0,
+        4,
+      );
+    }
+  });
+
+  it("preserves deterministic diagnostics path in preview", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "plan-row-1",
+          name: "Generated Plan",
+          description: null,
+          structure: {},
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const relaxedGoal = {
+      name: "Safe Fallback Goal",
+      target_date: "2026-10-15",
+      priority: 1,
+      targets: [
+        {
+          target_type: "hr_threshold" as const,
+          target_lthr_bpm: 160,
+        },
+      ],
+    };
+
+    const input = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [relaxedGoal],
+      },
+      starting_ctl_override: 42,
+      creation_input: {
+        user_values: {
+          optimization_profile: "balanced" as const,
+          behavior_controls_v1: BALANCED_BEHAVIOR_CONTROLS,
+        },
+      },
+    };
+
+    const preview = await caller.previewCreationConfig(input);
+
+    expect(preview.projection_chart.projection_diagnostics).toMatchObject({
+      selected_path: expect.any(String),
+      candidate_counts: expect.any(Object),
+      prune_counts: expect.any(Object),
+      tie_break_chain: expect.any(Array),
+    });
+    const fallbackReason =
+      preview.projection_chart.projection_diagnostics?.fallback_reason;
+    expect(fallbackReason === null || typeof fallbackReason === "string").toBe(
+      true,
+    );
+  });
+
+  it("returns preview timeline anchored to plan_start_date when provided", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: {
+        data: [],
+        error: null,
+      },
+      activity_efforts: {
+        data: [],
+        error: null,
+      },
+      profile_metrics: {
+        data: [],
+        error: null,
+      },
+    });
+
+    const result = await caller.previewCreationConfig({
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [minimalGoal],
+      },
+      creation_input: {},
+    });
+
+    expect(result.plan_preview.start_date).toBe("2026-01-05");
+    expect(result.projection_chart.start_date).toBe("2026-01-05");
+    expect(result.plan_preview.end_date).toBe("2026-03-15");
+    expect(result.projection_chart.end_date).toBe("2026-03-15");
+  });
+
+  it("keeps projected load and fitness above zero near event week", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: {
+        data: [],
+        error: null,
+      },
+      activity_efforts: {
+        data: [],
+        error: null,
+      },
+      profile_metrics: {
+        data: [],
+        error: null,
+      },
+    });
+
+    const result = await caller.previewCreationConfig({
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [minimalGoal],
+      },
+      creation_input: {},
+    });
+
+    const points = result.projection_chart.points;
+    const displayPoints = result.projection_chart.display_points;
+    expect(points.length).toBeGreaterThan(1);
+    expect(displayPoints).toEqual(points);
+
+    const last = points.at(-1)!;
+    expect(last.predicted_load_tss).toBeGreaterThan(0);
+    expect(last.predicted_fitness_ctl).toBeGreaterThan(0);
+  });
+
+  it("applies no-history projection floor metadata when user has no activity data", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+
+    const result = await caller.previewCreationConfig({
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [minimalGoal],
+      },
+      creation_input: {},
+    });
+
+    const points = result.projection_chart.points;
+    expect(points.length).toBeGreaterThan(0);
+    expect(points[0]!.predicted_fitness_ctl).toBeGreaterThanOrEqual(0);
+    expect(result.projection_chart.no_history).toMatchObject({
+      projection_floor_applied: true,
+      floor_clamped_by_availability: expect.any(Boolean),
+      fitness_level: expect.any(String),
+      fitness_inference_reasons: expect.any(Array),
+      projection_floor_confidence: expect.any(String),
+      evidence_confidence: {
+        score: expect.any(Number),
+        state: expect.any(String),
+        reasons: expect.any(Array),
+      },
+      projection_feasibility: {
+        demand_gap: expect.any(Object),
+        readiness_band: expect.any(String),
+        dominant_limiters: expect.any(Array),
+        readiness_score: expect.any(Number),
+        readiness_components: {
+          load_state: expect.any(Number),
+          intensity_balance: expect.any(Number),
+          specificity: expect.any(Number),
+          execution_confidence: expect.any(Number),
+        },
+        projection_uncertainty: {
+          tss_low: expect.any(Number),
+          tss_likely: expect.any(Number),
+          tss_high: expect.any(Number),
+          confidence: expect.any(Number),
+        },
+      },
+    });
+  });
+
+  it("avoids finishing projected fitness below starting fitness for ambitious marathon goal", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+
+    const result = await caller.previewCreationConfig({
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [
+          {
+            name: "Sub-2:45 Marathon",
+            target_date: "2026-07-05",
+            priority: 1,
+            targets: [
+              {
+                target_type: "race_performance",
+                distance_m: 42195,
+                target_time_s: 9900,
+                activity_category: "run",
+              },
+            ],
+          },
+        ],
+      },
+      creation_input: {},
+    });
+
+    const points = result.projection_chart.points;
+    expect(points.length).toBeGreaterThan(1);
+
+    const startFitness = points[0]!.predicted_fitness_ctl;
+    const endFitness = points[points.length - 1]!.predicted_fitness_ctl;
+
+    expect(endFitness).toBeGreaterThanOrEqual(startFitness);
+  });
+
+  it("keeps long-horizon sub-3 marathon demand from collapsing to low fixed weekly TSS", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+
+    const result = await caller.previewCreationConfig({
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [
+          {
+            name: "Sub-3 Marathon",
+            target_date: "2026-09-06",
+            priority: 1,
+            targets: [
+              {
+                target_type: "race_performance",
+                distance_m: 42195,
+                target_time_s: 10800,
+                activity_category: "run",
+              },
+            ],
+          },
+        ],
+      },
+      creation_input: {},
+    });
+
+    const peakWeeklyTss = result.projection_chart.microcycles.reduce(
+      (max, week) => Math.max(max, week.planned_weekly_tss),
+      0,
+    );
+
+    expect(peakWeeklyTss).toBeGreaterThan(120);
+  });
+
+  it("includes all goals as markers in projection chart for multi-goal previews", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+
+    const result = await caller.previewCreationConfig({
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [
+          {
+            name: "Spring 10k",
+            target_date: "2026-03-15",
+            priority: 1,
+            targets: [
+              {
+                target_type: "race_performance",
+                distance_m: 10000,
+                target_time_s: 2700,
+                activity_category: "run",
+              },
+            ],
+          },
+          {
+            name: "Summer Half",
+            target_date: "2026-06-20",
+            priority: 2,
+            targets: [
+              {
+                target_type: "race_performance",
+                distance_m: 21097,
+                target_time_s: 6000,
+                activity_category: "run",
+              },
+            ],
+          },
+        ],
+      },
+      creation_input: {},
+    });
+
+    const goalMarkerDates = result.projection_chart.goal_markers.map(
+      (goal) => goal.target_date,
+    );
+    expect(goalMarkerDates).toEqual(["2026-03-15", "2026-06-20"]);
+
+    const pointDates = new Set(
+      result.projection_chart.points.map((p) => p.date),
+    );
+    expect(pointDates.has("2026-03-15")).toBe(true);
+    expect(pointDates.has("2026-06-20")).toBe(true);
+  });
+
+  it("threads safety controls into normalized config and projection metadata", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+
+    const result = await caller.previewCreationConfig({
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [
+          {
+            name: "Goal One",
+            target_date: "2026-02-10",
+            priority: 2,
+            targets: [
+              {
+                target_type: "race_performance",
+                distance_m: 5000,
+                target_time_s: 1320,
+                activity_category: "run",
+              },
+            ],
+          },
+          {
+            name: "Goal Two",
+            target_date: "2026-03-15",
+            priority: 1,
+            targets: [
+              {
+                target_type: "race_performance",
+                distance_m: 10000,
+                target_time_s: 2700,
+                activity_category: "run",
+              },
+            ],
+          },
+        ],
+      },
+      creation_input: {
+        user_values: {
+          optimization_profile: "sustainable",
+          post_goal_recovery_days: 6,
+          behavior_controls_v1: CONSERVATIVE_BEHAVIOR_CONTROLS,
+        },
+      },
+    });
+
+    expect(result.normalized_creation_config.optimization_profile).toBe(
+      "sustainable",
+    );
+    expect(result.normalized_creation_config.post_goal_recovery_days).toBe(6);
+    expect(result.normalized_creation_config.behavior_controls_v1).toEqual(
+      CONSERVATIVE_BEHAVIOR_CONTROLS,
+    );
+
+    expect(
+      result.projection_chart.constraint_summary.normalized_creation_config,
+    ).toMatchObject({
+      optimization_profile: "sustainable",
+      post_goal_recovery_days: 6,
+    });
+    expect(
+      result.projection_chart.projection_diagnostics?.effective_optimizer_config
+        .caps.max_weekly_tss_ramp_pct ?? 0,
+    ).toBeLessThanOrEqual(10);
+    expect(
+      result.projection_chart.projection_diagnostics?.effective_optimizer_config
+        .caps.max_ctl_ramp_per_week ?? 0,
+    ).toBeLessThanOrEqual(5);
+    expect(result.projection_chart.recovery_segments.length).toBeGreaterThan(0);
+    expect(
+      result.projection_chart.microcycles.some((week) => week.metadata),
+    ).toBe(true);
+  });
+
+  it("accepts widened frontier overrides and exposes canonical diagnostics for theoretical runs", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+
+    const practical = await caller.previewCreationConfig({
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [
+          {
+            name: "Theoretical Marathon",
+            target_date: "2026-09-20",
+            priority: 1,
+            targets: [
+              {
+                target_type: "race_performance",
+                distance_m: 42195,
+                target_time_s: 9600,
+                activity_category: "run",
+              },
+            ],
+          },
+        ],
+      },
+      creation_input: {
+        user_values: {
+          optimization_profile: "outcome_first",
+          behavior_controls_v1: AGGRESSIVE_BEHAVIOR_CONTROLS,
+        },
+      },
+      starting_ctl_override: 70,
+    });
+
+    const result = await caller.previewCreationConfig({
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [
+          {
+            name: "Theoretical Marathon",
+            target_date: "2026-09-20",
+            priority: 1,
+            targets: [
+              {
+                target_type: "race_performance",
+                distance_m: 42195,
+                target_time_s: 9600,
+                activity_category: "run",
+              },
+            ],
+          },
+        ],
+      },
+      creation_input: {
+        user_values: {
+          optimization_profile: "outcome_first",
+          behavior_controls_v1: FRONTIER_BEHAVIOR_CONTROLS,
+        },
+      },
+      starting_ctl_override: 70,
+    });
+
+    expect(result.normalized_creation_config.behavior_controls_v1).toEqual(
+      FRONTIER_BEHAVIOR_CONTROLS,
+    );
+    const practicalCaps =
+      practical.projection_chart.projection_diagnostics
+        ?.effective_optimizer_config.caps;
+    const diagnostics = result.projection_chart.projection_diagnostics;
+    expect(diagnostics).toBeDefined();
+    expect(diagnostics?.effective_optimizer_config.caps).toMatchObject({
+      max_weekly_tss_ramp_pct: expect.any(Number),
+      max_ctl_ramp_per_week: expect.any(Number),
+    });
+    expect(
+      diagnostics?.effective_optimizer_config.caps.max_weekly_tss_ramp_pct ?? 0,
+    ).toBeGreaterThanOrEqual(practicalCaps?.max_weekly_tss_ramp_pct ?? 0);
+    expect(
+      diagnostics?.effective_optimizer_config.caps.max_ctl_ramp_per_week ?? 0,
+    ).toBeGreaterThanOrEqual(practicalCaps?.max_ctl_ramp_per_week ?? 0);
+    expect((diagnostics?.active_constraints ?? []).length).toBeGreaterThan(0);
+    expect(diagnostics?.objective_contributions).toMatchObject({
+      sampled_weeks: expect.any(Number),
+      weighted_terms: {
+        curve: expect.any(Number),
+      },
+    });
+
+    expect(result.projection_chart.no_history).toMatchObject({
+      projection_floor_applied: expect.any(Boolean),
+      projection_feasibility: {
+        readiness_band: expect.any(String),
+        demand_gap: expect.any(Object),
+      },
+    });
+  });
+
+  it("lets no-history users request an explicit elite-theoretical load frontier even with moderate goals", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+
+    const result = await caller.previewCreationConfig({
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [
+          {
+            name: "Marathon PR Attempt",
+            target_date: "2026-09-20",
+            priority: 1,
+            targets: [
+              {
+                target_type: "race_performance",
+                distance_m: 42195,
+                target_time_s: 9900,
+                activity_category: "run",
+              },
+            ],
+          },
+        ],
+      },
+      creation_input: {
+        user_values: {
+          optimization_profile: "outcome_first",
+          behavior_controls_v1: FRONTIER_BEHAVIOR_CONTROLS,
+        },
+      },
+      starting_ctl_override: 220,
+    });
+
+    const weeklyPeak = Math.max(
+      ...result.projection_chart.microcycles.map(
+        (cycle) => cycle.planned_weekly_tss,
+      ),
+    );
+    const diagnostics = result.projection_chart.projection_diagnostics;
+
+    expect(weeklyPeak).toBeGreaterThan(1500);
+    expect(diagnostics?.effective_optimizer_config.caps).toMatchObject({
+      max_weekly_tss_ramp_pct: expect.any(Number),
+      max_ctl_ramp_per_week: expect.any(Number),
+    });
+    expect(
+      diagnostics?.effective_optimizer_config.caps.max_weekly_tss_ramp_pct ?? 0,
+    ).toBeGreaterThan(0);
+    expect(
+      diagnostics?.effective_optimizer_config.caps.max_ctl_ramp_per_week ?? 0,
+    ).toBeGreaterThan(0);
+    expect(result.projection_chart.no_history?.projection_floor_applied).toBe(
+      true,
+    );
+  });
+
+  it("accepts create payload with no mode/risk fields and no acknowledgement requirement", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "plan-row-1",
+          name: "Generated Plan",
+          description: null,
+          structure: {},
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const input = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [minimalGoal],
+      },
+      starting_ctl_override: 42,
+      creation_input: {
+        user_values: {
+          optimization_profile: "outcome_first" as const,
+          behavior_controls_v1: AGGRESSIVE_BEHAVIOR_CONTROLS,
+        },
+      },
+    };
+
+    const preview = await caller.previewCreationConfig(input);
+    const created = await caller.createFromCreationConfig({
+      ...input,
+      preview_snapshot_token: preview.preview_snapshot.token,
+    });
+
+    expect(created.creation_summary.conflicts.is_blocking).toBe(false);
+  });
+
+  it("hard-rejects removed mode/risk/constraint fields", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+
+    const relaxedGoal = {
+      name: "Threshold check",
+      target_date: "2026-10-15",
+      priority: 1,
+      targets: [
+        {
+          target_type: "hr_threshold" as const,
+          target_lthr_bpm: 160,
+        },
+      ],
+    };
+
+    const input = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [relaxedGoal],
+      },
+      creation_input: {
+        mode: "risk_accepted",
+        risk_acceptance: {
+          accepted: true,
+          reason: "Accept elevated risk",
+        },
+        constraint_policy: {
+          enforce_safety_caps: true,
+          enforce_feasibility_caps: false,
+          readiness_cap_enabled: false,
+        },
+        user_values: {
+          mode: "risk_accepted",
+          risk_acceptance: {
+            accepted: true,
+            reason: "Accept elevated risk",
+          },
+          constraint_policy: {
+            enforce_safety_caps: true,
+            enforce_feasibility_caps: false,
+            readiness_cap_enabled: false,
+          },
+          optimization_profile: "outcome_first" as const,
+          behavior_controls_v1: AGGRESSIVE_BEHAVIOR_CONTROLS,
+        },
+      },
+    };
+
+    await expect(caller.previewCreationConfig(input)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+
+    await expect(
+      caller.createFromCreationConfig({
+        ...input,
+        preview_snapshot_token: "not-used-because-parse-fails",
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+
+    await expect(
+      caller.updateFromCreationConfig({
+        ...input,
+        plan_id: "11111111-1111-4111-8111-111111111111",
+        preview_snapshot_token: "not-used-because-parse-fails",
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+  });
+
+  it("rejects client-injected projection artifacts in create/update payloads", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "11111111-1111-4111-8111-111111111111",
+          name: "Existing Plan",
+          description: null,
+          structure: { id: "11111111-1111-4111-8111-111111111111" },
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const poisonedPayload = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [nonBlockingGoal],
+      },
+      creation_input: {},
+      projection_chart: {
+        readiness_score: 100,
+        points: [{ date: "2026-10-15", readiness_score: 100 }],
+      },
+      creation_summary: {
+        projection_chart: {
+          readiness_score: 100,
+        },
+      },
+    };
+
+    await expect(
+      caller.createFromCreationConfig({
+        ...(poisonedPayload as any),
+        preview_snapshot_token: "client-crafted-token",
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+
+    await expect(
+      caller.updateFromCreationConfig({
+        ...(poisonedPayload as any),
+        plan_id: "11111111-1111-4111-8111-111111111111",
+        preview_snapshot_token: "client-crafted-token",
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+  });
+
+  it("keeps preview/create latency percentiles and diagnostics within rollout guardrails", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      training_plans: {
+        data: {
+          id: "plan-row-1",
+          name: "Generated Plan",
+          description: null,
+          structure: {},
+          is_active: true,
+          profile_id: "profile-123",
+        },
+        error: null,
+      },
+    });
+
+    const iterations = 8;
+    const thresholdsMs = {
+      preview: { p50: 1500, p95: 3000, p99: 3500 },
+      create: { p50: 1800, p95: 3500, p99: 4000 },
+    };
+
+    const input = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [minimalGoal],
+      },
+      starting_ctl_override: 42,
+      creation_input: {
+        user_values: {
+          optimization_profile: "outcome_first" as const,
+          behavior_controls_v1: AGGRESSIVE_BEHAVIOR_CONTROLS,
+        },
+      },
+    };
+
+    const previewLatenciesMs: number[] = [];
+    const createLatenciesMs: number[] = [];
+
+    for (let i = 0; i < iterations; i += 1) {
+      const previewStart = performance.now();
+      const preview = await caller.previewCreationConfig(input);
+      previewLatenciesMs.push(performance.now() - previewStart);
+      assertSaneProjectionDiagnostics(
+        preview.projection_chart.projection_diagnostics,
+      );
+
+      const createStart = performance.now();
+      const created = await caller.createFromCreationConfig({
+        ...input,
+        preview_snapshot_token: preview.preview_snapshot.token,
+      });
+      createLatenciesMs.push(performance.now() - createStart);
+      assertSaneProjectionDiagnostics(
+        created.creation_summary.projection_chart.projection_diagnostics,
+      );
+
+      expect(
+        created.creation_summary.projection_chart.projection_diagnostics,
+      ).toEqual(preview.projection_chart.projection_diagnostics);
+    }
+
+    const previewP50 = percentile(previewLatenciesMs, 50);
+    const previewP95 = percentile(previewLatenciesMs, 95);
+    const previewP99 = percentile(previewLatenciesMs, 99);
+    const createP50 = percentile(createLatenciesMs, 50);
+    const createP95 = percentile(createLatenciesMs, 95);
+    const createP99 = percentile(createLatenciesMs, 99);
+
+    expect(previewP50).toBeLessThan(thresholdsMs.preview.p50);
+    expect(previewP95).toBeLessThan(thresholdsMs.preview.p95);
+    expect(previewP99).toBeLessThan(thresholdsMs.preview.p99);
+    expect(createP50).toBeLessThan(thresholdsMs.create.p50);
+    expect(createP95).toBeLessThan(thresholdsMs.create.p95);
+    expect(createP99).toBeLessThan(thresholdsMs.create.p99);
+  });
+});
+
+describe("trainingPlansRouter analytics endpoints", () => {
+  const planId = "11111111-1111-4111-8111-111111111111";
+
+  it("returns null current status when no plan exists", async () => {
+    const caller = createTrainingPlansCaller({
+      training_plans: { data: null, error: null },
+    });
+
+    const result = await caller.getCurrentStatus();
+    expect(result).toBeNull();
+  });
+
+  it("returns ideal curve projection payload shape", async () => {
+    const caller = createTrainingPlansCaller({
+      training_plans: {
+        data: {
+          id: planId,
+          structure: {
+            periodization_template: {
+              starting_ctl: 42,
+              target_ctl: 60,
+              target_date: "2026-03-31",
+            },
+            blocks: [],
+            target_weekly_tss: 280,
+          },
+        },
+        error: null,
+      },
+      activities: { data: [], error: null },
+    });
+
+    const result = await caller.getIdealCurve({
+      id: planId,
+      start_date: "2026-01-01",
+      end_date: "2026-03-31",
+    });
+
+    expect(result).toMatchObject({
+      dataPoints: expect.any(Array),
+      startCTL: expect.any(Number),
+      targetCTL: expect.any(Number),
+      targetDate: expect.any(String),
+    });
+  });
+
+  it("returns actual curve data points", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+    });
+
+    const result = await caller.getActualCurve({
+      start_date: "2026-01-01T00:00:00.000Z",
+      end_date: "2026-01-07T00:00:00.000Z",
+    });
+
+    expect(result).toMatchObject({
+      dataPoints: expect.any(Array),
+    });
+  });
+
+  it("returns weekly summary rows", async () => {
+    const caller = createTrainingPlansCaller({
+      training_plans: {
+        data: {
+          id: planId,
+          structure: {
+            blocks: [],
+            constraints: { available_days_per_week: ["monday", "wednesday"] },
+          },
+        },
+        error: null,
+      },
+      planned_activities: { data: [], error: null },
+      activities: { data: [], error: null },
+    });
+
+    const result = await caller.getWeeklySummary({
+      training_plan_id: planId,
+      weeks_back: 2,
+    });
+
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({
+      weekStart: expect.any(String),
+      weekEnd: expect.any(String),
+      plannedTSS: expect.any(Number),
+      completedTSS: expect.any(Number),
+      status: expect.any(String),
+    });
+  });
+
+  it("returns additive adherence/readiness summaries in insight timeline response", async () => {
+    const caller = createTrainingPlansCaller({
+      training_plans: {
+        data: {
+          id: planId,
+          structure: {
+            goals: [
+              {
+                id: "goal-1",
+                name: "Spring A race",
+                target_date: "2026-03-20",
+                priority: 8,
+              },
+            ],
+            blocks: [
+              {
+                start_date: "2026-01-01",
+                end_date: "2026-01-31",
+                target_weekly_tss_range: { min: 280, max: 350 },
+              },
+            ],
+            fitness_progression: {
+              target_ctl_at_peak: 64,
+            },
+            activity_distribution: {
+              run: 0.7,
+              bike: 0.3,
+            },
+          },
+        },
+        error: null,
+      },
+      planned_activities: { data: [], error: null },
+      activities: {
+        data: [
+          {
+            started_at: "2026-01-02T07:00:00.000Z",
+            training_stress_score: 52,
+            duration_seconds: 3600,
+          },
+          {
+            started_at: "2026-01-04T07:30:00.000Z",
+            training_stress_score: 60,
+            duration_seconds: 4200,
+          },
+        ],
+        error: null,
+      },
+    });
+
+    const result = await caller.getInsightTimeline({
+      training_plan_id: planId,
+      start_date: "2026-01-01",
+      end_date: "2026-01-07",
+      timezone: "UTC",
+    });
+
+    expect(result).toMatchObject({
+      window: {
+        start_date: "2026-01-01",
+        end_date: "2026-01-07",
+        timezone: "UTC",
+      },
+      plan_feasibility: {
+        state: expect.any(String),
+        reasons: expect.any(Array),
+      },
+      plan_safety: {
+        state: expect.any(String),
+        reasons: expect.any(Array),
+      },
+      capability: {
+        category: expect.any(String),
+        confidence: expect.any(Number),
+      },
+      projection: {
+        at_goal_date: {
+          confidence: expect.any(Number),
+        },
+        drivers: expect.any(Array),
+      },
+      timeline: expect.any(Array),
+      adherence_summary: {
+        score: expect.any(Number),
+        contributors: expect.any(Array),
+        interpretation: expect.any(String),
+      },
+      readiness_summary: {
+        score: expect.any(Number),
+        contributors: expect.any(Array),
+        interpretation: expect.any(String),
+      },
+    });
+
+    expect(result.adherence_summary.contributors[0]).toMatchObject({
+      key: expect.any(String),
+      label: expect.any(String),
+      value: expect.any(Number),
+      impact: expect.stringMatching(/positive|neutral|negative/),
+      detail: expect.any(String),
+    });
+
+    expect(result.readiness_summary.contributors[0]).toMatchObject({
+      key: expect.any(String),
+      label: expect.any(String),
+      value: expect.any(Number),
+      impact: expect.stringMatching(/positive|neutral|negative/),
+      detail: expect.any(String),
+    });
+  });
+});

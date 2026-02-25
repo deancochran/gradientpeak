@@ -20,6 +20,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   Calendar,
   CalendarCheck,
+  CalendarX,
   Copy,
   Edit,
   Share2,
@@ -175,8 +176,21 @@ export default function ActivityPlanDetailPage() {
 
   const handleRemoveSchedule = () => {
     if (!plannedActivity) return;
-    // TODO: Implement remove from schedule
-    console.log("Remove from schedule", plannedActivity.id);
+
+    Alert.alert(
+      "Remove Scheduled Activity",
+      "This will remove the scheduled session from your calendar.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: () => {
+            removeScheduleMutation.mutate({ id: plannedActivity.id });
+          },
+        },
+      ],
+    );
   };
 
   const handleDuplicate = () => {
@@ -221,6 +235,21 @@ export default function ActivityPlanDetailPage() {
         "Error",
         error.message ||
           "Failed to delete activity plan. It may be used in scheduled activities.",
+      );
+    },
+  });
+
+  const removeScheduleMutation = trpc.plannedActivities.delete.useMutation({
+    onSuccess: async () => {
+      await utils.plannedActivities.invalidate();
+      await utils.trainingPlans.invalidate();
+      setShowScheduleModal(false);
+      router.back();
+    },
+    onError: (error) => {
+      Alert.alert(
+        "Error",
+        error.message || "Failed to remove scheduled activity",
       );
     },
   });
@@ -339,15 +368,36 @@ export default function ActivityPlanDetailPage() {
               </Button>
 
               <Button
-                onPress={handleSchedule}
+                onPress={isScheduled ? handleReschedule : handleSchedule}
                 variant="outline"
                 size="sm"
                 className="flex-1 flex-row items-center justify-center gap-1.5"
               >
                 <Icon as={Calendar} size={16} className="text-foreground" />
-                <Text className="text-foreground text-sm">Schedule</Text>
+                <Text className="text-foreground text-sm">
+                  {isScheduled ? "Reschedule" : "Schedule"}
+                </Text>
               </Button>
             </View>
+
+            {isScheduled && plannedActivityId && (
+              <View className="flex-row gap-2">
+                <Button
+                  onPress={handleRemoveSchedule}
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 flex-row items-center justify-center gap-1.5"
+                  disabled={removeScheduleMutation.isPending}
+                >
+                  <Icon as={CalendarX} size={16} className="text-destructive" />
+                  <Text className="text-destructive text-sm">
+                    {removeScheduleMutation.isPending
+                      ? "Removing..."
+                      : "Remove Schedule"}
+                  </Text>
+                </Button>
+              </View>
+            )}
 
             {/* Secondary Actions Row */}
             <View className="flex-row gap-2">
@@ -618,6 +668,8 @@ export default function ActivityPlanDetailPage() {
           plannedActivityId={plannedActivityId}
           onSuccess={() => {
             setShowScheduleModal(false);
+            utils.plannedActivities.invalidate();
+            utils.trainingPlans.invalidate();
             router.back();
           }}
         />

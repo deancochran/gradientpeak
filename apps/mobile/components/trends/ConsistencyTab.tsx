@@ -106,8 +106,8 @@ export function ConsistencyTab({
                 🔥 Active Streak!
               </Text>
               <Text className="text-xs text-green-700">
-                You've trained {consistencyData.currentStreak} days in a row.
-                Keep it up!
+                You&apos;ve trained {consistencyData.currentStreak} days in a
+                row. Keep it up!
               </Text>
             </View>
           ) : (

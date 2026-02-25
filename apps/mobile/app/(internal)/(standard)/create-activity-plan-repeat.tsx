@@ -391,7 +391,9 @@ export default function RepeatEditScreen() {
           </Button>
 
           <View className="items-center">
-            <Text className="text-lg font-semibold">Edit Interval</Text>
+            <Text className="text-lg font-semibold">
+              Advanced Repeat Editor
+            </Text>
             <Text className="text-xs text-muted-foreground">
               {metrics.stepCount} steps × {metrics.repeatCount} ={" "}
               {formatDurationCompact(metrics.totalDurationSeconds)}
@@ -485,6 +487,11 @@ export default function RepeatEditScreen() {
           <Button variant="outline" size="sm" onPress={handleAddStep}>
             <Text>+ Add Step</Text>
           </Button>
+        </View>
+        <View className="px-4 py-2 bg-muted/20">
+          <Text className="text-xs text-muted-foreground">
+            Optional advanced editing for interval patterns and repeats.
+          </Text>
         </View>
 
         {localInterval.steps.length === 0 ? (

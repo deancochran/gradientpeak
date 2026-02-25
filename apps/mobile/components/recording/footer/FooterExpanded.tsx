@@ -19,10 +19,12 @@
 import { Text } from "@/components/ui/text";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import type {
-  PublicActivityCategory,
-  PublicActivityLocation,
-  RecordingState,
+  RecordingState
 } from "@repo/core";
+import type {
+  PublicActivityCategory,
+  PublicActivityLocation
+} from "@repo/supabase";
 import { router } from "expo-router";
 import React from "react";
 import { Pressable, ScrollView, View } from "react-native";

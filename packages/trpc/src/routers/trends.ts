@@ -1,5 +1,7 @@
 import {
+  calculateRollingTrainingQuality,
   calculateATL,
+  calculateAge,
   calculateCTL,
   calculateTSB,
   getFormStatus,
@@ -7,6 +9,7 @@ import {
 } from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { featureFlags } from "../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 // Input schemas
@@ -192,6 +195,31 @@ export const trendsRouter = createTRPCRouter({
       const startDate = new Date(input.start_date);
       const endDate = new Date(input.end_date);
 
+      const { data: profile, error: profileError } = await ctx.supabase
+        .from("profiles")
+        .select("dob, gender")
+        .eq("id", ctx.session.user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: profileError.message,
+        });
+      }
+
+      const userAge = calculateAge(profile?.dob ?? null);
+      const userGender =
+        profile?.gender === "male" || profile?.gender === "female"
+          ? profile.gender
+          : null;
+      const effectiveAge = featureFlags.personalizationAgeConstants
+        ? userAge
+        : undefined;
+      const effectiveGender = featureFlags.personalizationGenderAdjustment
+        ? userGender
+        : undefined;
+
       // Get all activities in the date range plus 42 days before (for CTL calculation)
       const extendedStart = new Date(startDate);
       extendedStart.setDate(startDate.getDate() - 42);
@@ -214,6 +242,10 @@ export const trendsRouter = createTRPCRouter({
       if (!activities || activities.length === 0) {
         return { dataPoints: [], currentStatus: null };
       }
+
+      const rollingTrainingQuality = featureFlags.personalizationTrainingQuality
+        ? calculateRollingTrainingQuality(activities)
+        : undefined;
 
       // Calculate CTL/ATL/TSB for each day
       const tssData: { date: string; tss: number }[] = [];
@@ -247,8 +279,14 @@ export const trendsRouter = createTRPCRouter({
         if (!dateStr) continue;
 
         const tss = activitiesByDate.get(dateStr) || 0;
-        currentCTL = calculateCTL(currentCTL, tss);
-        currentATL = calculateATL(currentATL, tss);
+        currentCTL = calculateCTL(currentCTL, tss, effectiveAge);
+        currentATL = calculateATL(
+          currentATL,
+          tss,
+          effectiveAge,
+          effectiveGender,
+          rollingTrainingQuality,
+        );
         const tsb = calculateTSB(currentCTL, currentATL);
 
         tssData.push({ date: dateStr, tss });
@@ -270,8 +308,14 @@ export const trendsRouter = createTRPCRouter({
 
       for (const item of tssData) {
         const date = new Date(item.date);
-        currentCTL = calculateCTL(currentCTL, item.tss);
-        currentATL = calculateATL(currentATL, item.tss);
+        currentCTL = calculateCTL(currentCTL, item.tss, effectiveAge);
+        currentATL = calculateATL(
+          currentATL,
+          item.tss,
+          effectiveAge,
+          effectiveGender,
+          rollingTrainingQuality,
+        );
         const tsb = calculateTSB(currentCTL, currentATL);
 
         if (date >= startDate && date <= endDate) {
@@ -300,7 +344,21 @@ export const trendsRouter = createTRPCRouter({
             }
           : null;
 
-      return { dataPoints, currentStatus };
+      return {
+        dataPoints,
+        currentStatus,
+        personalizationTelemetry: {
+          flags: {
+            age_constants: featureFlags.personalizationAgeConstants,
+            gender_adjustment: featureFlags.personalizationGenderAdjustment,
+            training_quality: featureFlags.personalizationTrainingQuality,
+            ramp_learning: featureFlags.personalizationRampLearning,
+          },
+          user_age: effectiveAge ?? null,
+          user_gender: effectiveGender ?? null,
+          training_quality: rollingTrainingQuality ?? null,
+        },
+      };
     }),
 
   // ------------------------------

@@ -1,6 +1,21 @@
 {
   "$schema": "https://turborepo.com/schema.json",
   "ui": "tui",
+  "globalEnv": [
+    "OAUTH_CALLBACK_BASE_URL",
+    "VERCEL_URL",
+    "STRAVA_CLIENT_ID",
+    "STRAVA_CLIENT_SECRET",
+    "WAHOO_CLIENT_ID",
+    "WAHOO_CLIENT_SECRET",
+    "TRAININGPEAKS_CLIENT_ID",
+    "TRAININGPEAKS_CLIENT_SECRET",
+    "GARMIN_CLIENT_ID",
+    "GARMIN_CLIENT_SECRET",
+    "ZWIFT_CLIENT_ID",
+    "ZWIFT_CLIENT_SECRET",
+    "NEXT_PRIVATE_SUPABASE_SECRET_KEY"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

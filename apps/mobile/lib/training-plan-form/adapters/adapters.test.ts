@@ -1,0 +1,437 @@
+import { describe, expect, it } from "vitest";
+import type {
+  GoalFormData,
+  TrainingPlanConfigFormData,
+} from "@/components/training-plan/create/SinglePageForm";
+import { buildPreviewMinimalPlanFromForm } from "@repo/core";
+import {
+  buildMinimalTrainingPlanPayload,
+  toTrainingPlanConfigFormDataFromStructure,
+  toTrainingPlanFormDataFromStructure,
+  toCreationNormalizationInput,
+} from "./index";
+
+function buildConfigFixture(): TrainingPlanConfigFormData {
+  return {
+    availabilityConfig: {
+      template: "moderate",
+      days: [
+        {
+          day: "tuesday",
+          windows: [{ start_minute_of_day: 360, end_minute_of_day: 480 }],
+        },
+      ],
+    },
+    availabilityProvenance: {
+      source: "suggested",
+      confidence: 0.8,
+      rationale: ["fixture"],
+      references: [],
+      updated_at: "2026-01-01T00:00:00.000Z",
+    },
+    recentInfluenceScore: 0.66,
+    recentInfluenceAction: "edited",
+    recentInfluenceProvenance: {
+      source: "user",
+      confidence: 1,
+      rationale: ["fixture"],
+      references: [],
+      updated_at: "2026-01-01T00:00:00.000Z",
+    },
+    constraints: {
+      hard_rest_days: ["monday"],
+      min_sessions_per_week: 3,
+      max_sessions_per_week: 6,
+      long_activity_days: ["saturday"],
+      avoid_activity_days: ["friday"],
+      preferred_activity_days: ["tuesday", "thursday"],
+      available_days_per_week: ["tuesday", "wednesday", "thursday"],
+      max_consecutive_training_days: 4,
+      max_double_days_per_week: 1,
+      min_rest_days_per_week: 1,
+      goal_difficulty_preference: "balanced",
+    },
+    optimizationProfile: "balanced",
+    postGoalRecoveryDays: 6,
+    behaviorControlsV1: {
+      aggressiveness: 0.7,
+      variability: 0.4,
+      spike_frequency: 0.5,
+      shape_target: -0.2,
+      shape_strength: 0.8,
+      recovery_priority: 0.6,
+      starting_fitness_confidence: 0.35,
+    },
+    calibration: {
+      version: 1,
+      readiness_composite: {
+        target_attainment_weight: 0.45,
+        envelope_weight: 0.3,
+        durability_weight: 0.15,
+        evidence_weight: 0.1,
+      },
+      readiness_timeline: {
+        target_tsb: 8,
+        form_tolerance: 20,
+        fatigue_overflow_scale: 0.4,
+        feasibility_blend_weight: 0.15,
+        smoothing_iterations: 24,
+        smoothing_lambda: 0.28,
+        max_step_delta: 9,
+      },
+      envelope_penalties: {
+        over_high_weight: 0.55,
+        under_low_weight: 0.2,
+        over_ramp_weight: 0.25,
+      },
+      durability_penalties: {
+        monotony_threshold: 2,
+        monotony_scale: 2,
+        strain_threshold: 900,
+        strain_scale: 900,
+        deload_debt_scale: 6,
+      },
+      no_history: {
+        reliability_horizon_days: 42,
+        confidence_floor_high: 0.75,
+        confidence_floor_mid: 0.6,
+        confidence_floor_low: 0.45,
+        demand_tier_time_pressure_scale: 1,
+      },
+      optimizer: {
+        preparedness_weight: 14,
+        risk_penalty_weight: 0.35,
+        volatility_penalty_weight: 0.22,
+        churn_penalty_weight: 0.2,
+        lookahead_weeks: 5,
+        candidate_steps: 7,
+      },
+    },
+    calibrationCompositeLocks: {
+      target_attainment_weight: false,
+      envelope_weight: false,
+      durability_weight: false,
+      evidence_weight: false,
+    },
+    constraintsSource: "user",
+    locks: {
+      availability_config: { locked: true, locked_by: "user" },
+      recent_influence: { locked: false },
+      hard_rest_days: { locked: true, locked_by: "user" },
+      min_sessions_per_week: { locked: true, locked_by: "user" },
+      optimization_profile: { locked: true, locked_by: "user" },
+      post_goal_recovery_days: { locked: true, locked_by: "user" },
+      behavior_controls_v1: { locked: true, locked_by: "user" },
+    },
+  } as unknown as TrainingPlanConfigFormData;
+}
+
+function buildGoalFixture(): GoalFormData[] {
+  return [
+    {
+      id: "goal-1",
+      name: "  Spring Marathon  ",
+      targetDate: "2026-05-01",
+      priority: 1,
+      targets: [
+        {
+          id: "target-1",
+          targetType: "race_performance",
+          activityCategory: "run",
+          distanceKm: "42.2",
+          completionTimeHms: "03:10:00",
+        },
+      ],
+    },
+  ];
+}
+
+describe("toCreationNormalizationInput", () => {
+  it("maps config fields deterministically and preserves lock precedence", () => {
+    const fixture = buildConfigFixture();
+    const mapped = toCreationNormalizationInput(fixture);
+
+    expect(mapped).toEqual({
+      user_values: {
+        availability_config: fixture.availabilityConfig,
+        recent_influence: { influence_score: 0.66 },
+        recent_influence_action: "edited",
+        constraints: fixture.constraints,
+        optimization_profile: "balanced",
+        post_goal_recovery_days: 6,
+        behavior_controls_v1: fixture.behaviorControlsV1,
+        calibration_composite_locks: fixture.calibrationCompositeLocks,
+        calibration: fixture.calibration,
+        locks: fixture.locks,
+      },
+      provenance_overrides: {
+        availability_provenance: fixture.availabilityProvenance,
+        recent_influence_provenance: fixture.recentInfluenceProvenance,
+      },
+    });
+
+    expect(mapped.user_values?.locks?.min_sessions_per_week?.locked_by).toBe(
+      "user",
+    );
+  });
+
+  it("does not send constraints as user overrides when not user-owned", () => {
+    const fixture = buildConfigFixture();
+    fixture.constraintsSource = "suggested";
+
+    const mapped = toCreationNormalizationInput(fixture);
+
+    expect(mapped.user_values?.constraints).toBeUndefined();
+  });
+
+  it("omits legacy mode/risk/policy payload fields", () => {
+    const fixture = buildConfigFixture();
+
+    const mapped = toCreationNormalizationInput(fixture);
+
+    expect(mapped.user_values).not.toHaveProperty("mode");
+    expect(mapped.user_values).not.toHaveProperty("risk_acceptance");
+    expect(mapped.user_values).not.toHaveProperty("constraint_policy");
+    expect(mapped.user_values).not.toHaveProperty("recent_influence_score");
+  });
+
+  it("keeps creation-input parity for user-sourced availability", () => {
+    const fixture = buildConfigFixture();
+    fixture.availabilityProvenance.source = "user";
+    fixture.locks.availability_config = { locked: false };
+
+    const mapped = toCreationNormalizationInput(fixture);
+
+    expect(mapped.user_values?.availability_config).toEqual(
+      fixture.availabilityConfig,
+    );
+    expect(mapped.user_values).not.toHaveProperty("risk_acceptance");
+    expect(mapped.provenance_overrides?.availability_provenance?.source).toBe(
+      "user",
+    );
+  });
+
+  it("keeps preview/create calibration replay payload deterministic", () => {
+    const fixture = buildConfigFixture();
+
+    const first = toCreationNormalizationInput(fixture);
+    const second = toCreationNormalizationInput(fixture);
+
+    expect(second).toEqual(first);
+    expect(first.user_values?.calibration).toEqual(fixture.calibration);
+    expect(first.user_values?.calibration?.version).toBe(1);
+    expect(first.user_values).not.toHaveProperty("recent_influence_score");
+    expect(first.user_values?.calibration).not.toHaveProperty("v0");
+  });
+
+  it("serializes behavior controls deterministically", () => {
+    const fixture = buildConfigFixture();
+    fixture.behaviorControlsV1.shape_target = -0.55;
+    fixture.behaviorControlsV1.shape_strength = 0.92;
+
+    const mapped = toCreationNormalizationInput(fixture);
+
+    expect(mapped.user_values?.behavior_controls_v1?.shape_target).toBe(-0.55);
+    expect(mapped.user_values?.behavior_controls_v1?.shape_strength).toBe(0.92);
+  });
+});
+
+describe("buildMinimalTrainingPlanPayload", () => {
+  it("normalizes payload and converts race target fields", () => {
+    const payload = buildMinimalTrainingPlanPayload({
+      planStartDate: "2026-01-05",
+      goals: buildGoalFixture(),
+    });
+
+    expect(payload).toEqual({
+      plan_start_date: "2026-01-05",
+      goals: [
+        {
+          name: "Spring Marathon",
+          target_date: "2026-05-01",
+          priority: 1,
+          targets: [
+            {
+              target_type: "race_performance",
+              distance_m: 42200,
+              target_time_s: 11400,
+              activity_category: "run",
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("keeps create and preview minimal payloads in parity", () => {
+    const goals: GoalFormData[] = [
+      {
+        id: "goal-1",
+        name: "Spring Marathon",
+        targetDate: "2026-05-01",
+        priority: 1,
+        targets: [
+          {
+            id: "target-1",
+            targetType: "race_performance",
+            activityCategory: "run",
+            distanceKm: "42.2",
+            completionTimeHms: "03:10:00",
+          },
+          {
+            id: "target-2",
+            targetType: "pace_threshold",
+            activityCategory: "run",
+            paceMmSs: "04:15",
+            testDurationHms: "00:20:00",
+          },
+        ],
+      },
+      {
+        id: "goal-2",
+        name: "FTP Block",
+        targetDate: "2026-07-15",
+        priority: 2,
+        targets: [
+          {
+            id: "target-3",
+            targetType: "power_threshold",
+            activityCategory: "bike",
+            targetWatts: 280,
+            testDurationHms: "00:20:00",
+          },
+          {
+            id: "target-4",
+            targetType: "hr_threshold",
+            targetLthrBpm: 168,
+          },
+        ],
+      },
+    ];
+
+    const createPayload = buildMinimalTrainingPlanPayload({
+      planStartDate: "2026-01-05",
+      goals,
+    });
+
+    const previewPayload = buildPreviewMinimalPlanFromForm({
+      planStartDate: "2026-01-05",
+      goals: goals.map((goal) => ({
+        name: goal.name,
+        targetDate: goal.targetDate,
+        priority: goal.priority,
+        targets: goal.targets,
+      })),
+    });
+
+    expect(previewPayload).toEqual(createPayload);
+  });
+});
+
+describe("training plan reverse adapters", () => {
+  it("maps structure goals back into form data deterministically", () => {
+    const structure = {
+      start_date: "2026-01-05",
+      goals: [
+        {
+          id: "goal-a",
+          name: "Marathon",
+          target_date: "2026-10-01",
+          priority: 1,
+          targets: [
+            {
+              id: "target-a1",
+              target_type: "race_performance",
+              distance_m: 42195,
+              target_time_s: 11100,
+              activity_category: "run",
+            },
+            {
+              id: "target-a2",
+              target_type: "hr_threshold",
+              target_lthr_bpm: 168,
+            },
+          ],
+        },
+      ],
+    };
+
+    const first = toTrainingPlanFormDataFromStructure({ structure });
+    const second = toTrainingPlanFormDataFromStructure({ structure });
+
+    expect(first).toEqual(second);
+    expect(first.planStartDate).toBe("2026-01-05");
+    expect(first.goals[0]?.targets[0]).toMatchObject({
+      targetType: "race_performance",
+      distanceKm: "42.195",
+      completionTimeHms: "3:05:00",
+    });
+    expect(first.goals[0]?.targets[1]).toMatchObject({
+      targetType: "hr_threshold",
+      targetLthrBpm: 168,
+    });
+  });
+
+  it("prefers metadata snapshot fields for config with deterministic fallback", () => {
+    const structure = {
+      fitness_progression: { starting_ctl: 52 },
+      metadata: {
+        creation_config_snapshot: {
+          availability_config: {
+            template: "moderate",
+            days: [],
+          },
+          recent_influence: { influence_score: 0.37 },
+          recent_influence_action: "accepted",
+          constraints: {
+            hard_rest_days: ["monday"],
+            min_sessions_per_week: 2,
+            max_sessions_per_week: 5,
+            max_single_session_duration_minutes: 120,
+            goal_difficulty_preference: "balanced",
+          },
+          optimization_profile: "outcome_first",
+          post_goal_recovery_days: 8,
+          behavior_controls_v1: {
+            aggressiveness: 0.8,
+            variability: 0.45,
+            spike_frequency: 0.6,
+            shape_target: 0.2,
+            shape_strength: 0.7,
+            recovery_priority: 0.5,
+            starting_fitness_confidence: 0.65,
+          },
+          calibration_composite_locks: {
+            target_attainment_weight: true,
+            envelope_weight: false,
+            durability_weight: true,
+            evidence_weight: false,
+          },
+        },
+        creation_calibration: {
+          snapshot: {
+            version: 1,
+          },
+        },
+      },
+    };
+
+    const first = toTrainingPlanConfigFormDataFromStructure({ structure });
+    const second = toTrainingPlanConfigFormDataFromStructure({ structure });
+
+    expect(first).toEqual(second);
+    expect(first.startingCtlAssumption).toBe(52);
+    expect(first.recentInfluenceScore).toBe(0.37);
+    expect(first.optimizationProfile).toBe("outcome_first");
+    expect(first.postGoalRecoveryDays).toBe(8);
+    expect(first.behaviorControlsV1.aggressiveness).toBe(0.8);
+    expect(first.behaviorControlsV1.shape_target).toBe(0.2);
+    expect(first.calibrationCompositeLocks).toEqual({
+      target_attainment_weight: true,
+      envelope_weight: false,
+      durability_weight: true,
+      evidence_weight: false,
+    });
+    expect(first.calibration.version).toBe(1);
+  });
+});

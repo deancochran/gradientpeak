@@ -12,8 +12,15 @@
 import { z } from "zod";
 import {
   publicActivitiesInsertSchema,
+  publicActivityCategorySchema,
   publicActivityPlansInsertSchema,
 } from "@repo/supabase";
+import {
+  creationProvenanceSchema,
+  creationRecentInfluenceActionEnum,
+  goalTargetV2Schema,
+  trainingPlanCreationConfigSchema,
+} from "./training_plan_structure";
 
 // ============================================================================
 // REUSABLE VALIDATION PATTERNS
@@ -53,6 +60,61 @@ const stringToNumber = (val: unknown) => {
   }
   return val;
 };
+
+/**
+ * Strict decimal distance input in kilometers.
+ * Accepts numbers or plain decimal strings only (no scientific notation).
+ */
+export const distanceKmSchema = z.preprocess(
+  (val) => {
+    if (typeof val === "number") return val;
+    if (typeof val !== "string") return val;
+
+    const trimmed = val.trim();
+    if (trimmed === "") return val;
+    if (!/^\d+(\.\d+)?$/.test(trimmed)) return val;
+    return Number(trimmed);
+  },
+  z
+    .number({ message: "Distance must be a decimal number in km" })
+    .positive("Distance must be greater than 0 km"),
+);
+
+export const distanceKmToMetersSchema = distanceKmSchema.transform((km) =>
+  Math.round(km * 1000),
+);
+
+/**
+ * Strict completion time input in h:mm:ss format.
+ */
+export const completionTimeHmsSchema = z
+  .string()
+  .trim()
+  .regex(/^\d+:[0-5]\d:[0-5]\d$/, "Completion time must use h:mm:ss format");
+
+export const completionTimeHmsToSecondsSchema =
+  completionTimeHmsSchema.transform((value) => {
+    const [hours = 0, minutes = 0, seconds = 0] = value.split(":").map(Number);
+    return hours * 3600 + minutes * 60 + seconds;
+  });
+
+/**
+ * Strict pace input in mm:ss format.
+ */
+export const paceMmSsSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{1,2}:[0-5]\d$/, "Pace must use mm:ss format")
+  .refine((value) => {
+    const [minutes = 0, seconds = 0] = value.split(":").map(Number);
+    return minutes > 0 || seconds > 0;
+  }, "Pace must be greater than 00:00");
+
+export const paceMmSsToMpsSchema = paceMmSsSchema.transform((value) => {
+  const [minutes = 0, seconds = 0] = value.split(":").map(Number);
+  const totalSecondsPerKm = minutes * 60 + seconds;
+  return 1000 / totalSecondsPerKm;
+});
 
 /**
  * Email validation pattern
@@ -655,13 +717,7 @@ export const activityLocationSchema = z.enum(["outdoor", "indoor"]);
 /**
  * Activity category validation
  */
-export const activityCategorySchema = z.enum([
-  "run",
-  "bike",
-  "swim",
-  "strength",
-  "other",
-]);
+export const activityCategorySchema = publicActivityCategorySchema;
 
 /**
  * Activity Plan Create Form Schema
@@ -818,6 +874,125 @@ export const optionalTrainingPlanDescriptionSchema = z.preprocess(
     .max(1000, "Description must be less than 1000 characters")
     .nullable(),
 );
+
+export const trainingPlanGoalDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Target date must use YYYY-MM-DD format");
+
+export const trainingPlanGoalPrioritySchema = z.preprocess(
+  stringToNumber,
+  z
+    .number({
+      message: "Priority must be a number",
+    })
+    .int("Priority must be a whole number")
+    .min(0, "Priority must be at least 0")
+    .max(10, "Priority must be at most 10"),
+);
+
+export const trainingPlanGoalTargetFormSchema = goalTargetV2Schema;
+
+export const trainingPlanMinimalGoalFormSchema = z.object({
+  goal_name: trainingPlanNameSchema,
+  target_date: trainingPlanGoalDateSchema,
+});
+
+export type TrainingPlanMinimalGoalFormData = z.infer<
+  typeof trainingPlanMinimalGoalFormSchema
+>;
+
+export const trainingPlanAdvancedGoalFormSchema =
+  trainingPlanMinimalGoalFormSchema.extend({
+    priority: trainingPlanGoalPrioritySchema.optional(),
+    targets: z.array(trainingPlanGoalTargetFormSchema).min(1),
+  });
+
+export type TrainingPlanAdvancedGoalFormData = z.infer<
+  typeof trainingPlanAdvancedGoalFormSchema
+>;
+
+export const trainingPlanMinimalSubmitFormSchema = z.object({
+  goals: z
+    .array(
+      z.object({
+        name: trainingPlanNameSchema,
+        target_date: trainingPlanGoalDateSchema,
+        priority: trainingPlanGoalPrioritySchema.optional().default(5),
+        targets: z.array(trainingPlanGoalTargetFormSchema).min(1),
+      }),
+    )
+    .min(1),
+});
+
+export type TrainingPlanMinimalSubmitFormData = z.infer<
+  typeof trainingPlanMinimalSubmitFormSchema
+>;
+
+/**
+ * Training plan creation provenance metadata at form boundary.
+ * Allows confidence to be submitted as a number or numeric string.
+ */
+export const trainingPlanCreationProvenanceFormSchema =
+  creationProvenanceSchema.extend({
+    confidence: z.preprocess(
+      (val) => stringToNumber(emptyStringToNull(val)),
+      z.number().min(0).max(1).nullable(),
+    ),
+  });
+
+export type TrainingPlanCreationProvenanceFormData = z.infer<
+  typeof trainingPlanCreationProvenanceFormSchema
+>;
+
+/**
+ * Form-level validator for creation config used by preview/create MVP endpoints.
+ * Adds cross-field checks that are specific to submission semantics.
+ */
+export const trainingPlanCreationConfigFormSchema =
+  trainingPlanCreationConfigSchema.superRefine((data, ctx) => {
+    if (
+      data.recent_influence_action ===
+        creationRecentInfluenceActionEnum.enum.disabled &&
+      data.recent_influence.influence_score !== 0
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["recent_influence", "influence_score"],
+        message:
+          'recent_influence.influence_score must be 0 when recent_influence_action is "disabled"',
+      });
+    }
+
+    if (
+      data.recent_influence_action ===
+        creationRecentInfluenceActionEnum.enum.accepted &&
+      data.recent_influence_provenance.source !== "suggested"
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["recent_influence_provenance", "source"],
+        message:
+          'recent_influence_provenance.source must be "suggested" when action is "accepted"',
+      });
+    }
+
+    if (
+      data.recent_influence_action ===
+        creationRecentInfluenceActionEnum.enum.edited &&
+      data.recent_influence_provenance.source !== "user"
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["recent_influence_provenance", "source"],
+        message:
+          'recent_influence_provenance.source must be "user" when action is "edited"',
+      });
+    }
+  });
+
+export type TrainingPlanCreationConfigFormData = z.infer<
+  typeof trainingPlanCreationConfigFormSchema
+>;
 
 /**
  * Weekly TSS target validation
@@ -1256,6 +1431,14 @@ export const formSchemas = {
 
   // Training plan schemas
   trainingPlanCreate: trainingPlanCreateFormSchema,
+  trainingPlanMinimalGoal: trainingPlanMinimalGoalFormSchema,
+  trainingPlanAdvancedGoal: trainingPlanAdvancedGoalFormSchema,
+  trainingPlanMinimalSubmit: trainingPlanMinimalSubmitFormSchema,
+  trainingPlanCreationProvenance: trainingPlanCreationProvenanceFormSchema,
+  trainingPlanCreationConfig: trainingPlanCreationConfigFormSchema,
+  distanceKm: distanceKmSchema,
+  completionTimeHms: completionTimeHmsSchema,
+  paceMmSs: paceMmSsSchema,
   trainingPlanBasicInfo: trainingPlanBasicInfoFormSchema,
   trainingPlanWeeklyTargets: trainingPlanWeeklyTargetsFormSchema,
   trainingPlanRecoveryRules: trainingPlanRecoveryRulesFormSchema,

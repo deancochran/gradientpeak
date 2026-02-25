@@ -1,11 +1,13 @@
 import {
+  RecordingServiceActivityPlan,
+  type PublicActivityMetric,
+  type PublicActivityMetricDataType,
+} from "@repo/core";
+import type {
   PublicActivityCategory,
   PublicActivityLocation,
-  PublicActivityMetric,
-  PublicActivityMetricDataType,
   PublicProfilesRow,
-  RecordingServiceActivityPlan,
-} from "@repo/core";
+} from "@repo/supabase";
 import {
   Activity,
   Bike,

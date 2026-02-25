@@ -1,11 +1,14 @@
 import {
+  calculateRollingTrainingQuality,
   calculateATL,
+  calculateAge,
   calculateCTL,
   calculateTSB,
   getFormStatus,
 } from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { featureFlags } from "../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { addEstimationToPlans } from "../utils/estimation-helpers";
 
@@ -30,6 +33,31 @@ export const homeRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
       const today = new Date();
       today.setHours(0, 0, 0, 0);
+
+      const { data: profile, error: profileError } = await ctx.supabase
+        .from("profiles")
+        .select("dob, gender")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (profileError) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: profileError.message,
+        });
+      }
+
+      const userAge = calculateAge(profile?.dob ?? null);
+      const userGender =
+        profile?.gender === "male" || profile?.gender === "female"
+          ? profile.gender
+          : null;
+      const effectiveAge = featureFlags.personalizationAgeConstants
+        ? userAge
+        : undefined;
+      const effectiveGender = featureFlags.personalizationGenderAdjustment
+        ? userGender
+        : undefined;
 
       // --- 1. Fetch Active Plan ---
       const { data: plan } = await ctx.supabase
@@ -71,7 +99,7 @@ export const homeRouter = createTRPCRouter({
       const { data: activities, error: activitiesError } = await ctx.supabase
         .from("activities")
         .select(
-          "id, started_at, duration_seconds, distance_meters, training_stress_score, type",
+          "id, started_at, duration_seconds, distance_meters, training_stress_score, type, power_zone_1_seconds, power_zone_2_seconds, power_zone_3_seconds, power_zone_4_seconds, power_zone_5_seconds, power_zone_6_seconds, power_zone_7_seconds, hr_zone_1_seconds, hr_zone_2_seconds, hr_zone_3_seconds, hr_zone_4_seconds, hr_zone_5_seconds",
         )
         .eq("profile_id", userId)
         .gte("started_at", historyStart.toISOString())
@@ -84,6 +112,11 @@ export const homeRouter = createTRPCRouter({
           message: activitiesError.message,
         });
       }
+
+      const rollingTrainingQuality =
+        featureFlags.personalizationTrainingQuality && activities
+          ? calculateRollingTrainingQuality(activities)
+          : undefined;
 
       // --- 4. Fetch Planned Activities (Future & Current Week) ---
       // We need planned activities for the Schedule (Future) AND for the Weekly Summary (Past days of this week)
@@ -161,8 +194,14 @@ export const homeRouter = createTRPCRouter({
         const dateStr = date.toISOString().split("T")[0]!;
 
         const tss = tssByDate.get(dateStr) || 0;
-        currentCTL = calculateCTL(currentCTL, tss);
-        currentATL = calculateATL(currentATL, tss);
+        currentCTL = calculateCTL(currentCTL, tss, effectiveAge);
+        currentATL = calculateATL(
+          currentATL,
+          tss,
+          effectiveAge,
+          effectiveGender,
+          rollingTrainingQuality,
+        );
         const tsb = calculateTSB(currentCTL, currentATL);
 
         // Only add to result if within chart range
@@ -364,8 +403,14 @@ export const homeRouter = createTRPCRouter({
         const dateStr = date.toISOString().split("T")[0]!;
 
         const plannedTss = futureTssByDate.get(dateStr) || 0;
-        projectedCTL = calculateCTL(projectedCTL, plannedTss);
-        projectedATL = calculateATL(projectedATL, plannedTss);
+        projectedCTL = calculateCTL(projectedCTL, plannedTss, effectiveAge);
+        projectedATL = calculateATL(
+          projectedATL,
+          plannedTss,
+          effectiveAge,
+          effectiveGender,
+          rollingTrainingQuality,
+        );
         const projectedTsb = calculateTSB(projectedCTL, projectedATL);
 
         projectedFitness.push({
@@ -487,6 +532,17 @@ export const homeRouter = createTRPCRouter({
         idealFitnessCurve, // Ideal CTL progression from training plan periodization
         goalMetrics, // User's fitness goal
         todaysActivity, // Convenience field
+        personalizationTelemetry: {
+          flags: {
+            age_constants: featureFlags.personalizationAgeConstants,
+            gender_adjustment: featureFlags.personalizationGenderAdjustment,
+            training_quality: featureFlags.personalizationTrainingQuality,
+            ramp_learning: featureFlags.personalizationRampLearning,
+          },
+          user_age: effectiveAge ?? null,
+          user_gender: effectiveGender ?? null,
+          training_quality: rollingTrainingQuality ?? null,
+        },
       };
     }),
 });

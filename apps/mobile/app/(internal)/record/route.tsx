@@ -19,7 +19,9 @@ import { Text } from "@/components/ui/text";
 import { useRecordingConfiguration } from "@/lib/hooks/useRecordingConfiguration";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { trpc } from "@/lib/trpc";
-import type { PublicActivityCategory } from "@repo/core";
+import type {
+  PublicActivityCategory
+} from "@repo/supabase";
 import { router } from "expo-router";
 import { Check, Search } from "lucide-react-native";
 import React, { useCallback, useState } from "react";

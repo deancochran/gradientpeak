@@ -16,8 +16,8 @@
 
 import {
   AggregatedStream,
-  PublicActivityMetric,
-  PublicActivityMetricDataType,
+  type PublicActivityMetric,
+  type PublicActivityMetricDataType,
 } from "@repo/core";
 import { Directory, File, Paths } from "expo-file-system";
 import { LocationReading, SensorReading } from "./types";

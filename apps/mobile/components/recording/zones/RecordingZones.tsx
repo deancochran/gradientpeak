@@ -28,8 +28,8 @@ import Animated, {
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import type {
   PublicActivityCategory,
-  PublicActivityLocation,
-} from "@repo/core";
+  PublicActivityLocation
+} from "@repo/supabase";
 import { useFocusMode } from "@/lib/contexts/FocusModeContext";
 
 import { ZoneA } from "./ZoneA";

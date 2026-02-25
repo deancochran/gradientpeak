@@ -10,7 +10,9 @@
  * that don't share state.
  */
 
-import { PublicProfilesRow } from "@repo/core";
+import type {
+  PublicProfilesRow
+} from "@repo/supabase";
 import React, {
   createContext,
   useContext,

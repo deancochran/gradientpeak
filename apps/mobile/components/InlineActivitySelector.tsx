@@ -2,10 +2,12 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import {
-  PublicActivityCategory,
-  PublicActivityLocation,
-  getActivityDisplayName,
+  getActivityDisplayName
 } from "@repo/core";
+import type {
+  PublicActivityCategory,
+  PublicActivityLocation
+} from "@repo/supabase";
 import {
   Activity,
   Bike,

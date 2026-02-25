@@ -1,0 +1,296 @@
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Text } from "@/components/ui/text";
+import { IntegerStepper } from "../inputs/IntegerStepper";
+import type {
+  CreationAvailabilityConfig,
+  CreationConstraints,
+} from "@repo/core";
+import { ChevronDown, ChevronUp } from "lucide-react-native";
+import React from "react";
+import { Pressable, View } from "react-native";
+import type { TrainingPlanConfigFormData } from "../SinglePageForm";
+
+interface ConstraintsTabProps {
+  configData: TrainingPlanConfigFormData;
+  expanded: boolean;
+  showDetails: boolean;
+  informationalConflicts: string[];
+  restDaysCount: number;
+  weekDays: Array<CreationAvailabilityConfig["days"][number]["day"]>;
+  goalDifficultyOptions: Array<{
+    value: NonNullable<CreationConstraints["goal_difficulty_preference"]>;
+    label: string;
+  }>;
+  optimizationProfileOptions: Array<{
+    value: TrainingPlanConfigFormData["optimizationProfile"];
+    label: string;
+  }>;
+  optimizationProfileHelperCopy: Record<
+    TrainingPlanConfigFormData["optimizationProfile"],
+    string
+  >;
+  optimizationProfileDetailCopy: Record<
+    TrainingPlanConfigFormData["optimizationProfile"],
+    string
+  >;
+  postGoalRecoveryDetailCopy: string;
+  getWeekDayLabel: (day: string) => string;
+  onToggleExpanded: () => void;
+  onToggleDetails: () => void;
+  updateConfig: (updater: (draft: TrainingPlanConfigFormData) => void) => void;
+}
+
+export function ConstraintsTab({
+  configData,
+  expanded,
+  showDetails,
+  informationalConflicts,
+  restDaysCount,
+  weekDays,
+  goalDifficultyOptions,
+  optimizationProfileOptions,
+  optimizationProfileHelperCopy,
+  optimizationProfileDetailCopy,
+  postGoalRecoveryDetailCopy,
+  getWeekDayLabel,
+  onToggleExpanded,
+  onToggleDetails,
+  updateConfig,
+}: ConstraintsTabProps) {
+  return (
+    <View className="gap-2 rounded-lg border border-border bg-card p-2.5">
+      <Pressable
+        onPress={onToggleExpanded}
+        className="flex-row items-center justify-between rounded-md border border-border px-3 py-2"
+      >
+        <View className="flex-1">
+          <Text className="text-sm font-medium">Limits</Text>
+          <Text className="text-xs text-muted-foreground">
+            Rest {restDaysCount}d, sessions{" "}
+            {configData.constraints.min_sessions_per_week ?? 0}-
+            {configData.constraints.max_sessions_per_week ?? 0}
+          </Text>
+        </View>
+        <View className="flex-row items-center gap-1">
+          <Text className="text-xs text-muted-foreground">
+            {expanded ? "Hide" : "Edit"}
+          </Text>
+          {expanded ? (
+            <ChevronUp size={16} className="text-muted-foreground" />
+          ) : (
+            <ChevronDown size={16} className="text-muted-foreground" />
+          )}
+        </View>
+      </Pressable>
+
+      {expanded && (
+        <View className="gap-2 rounded-md border border-border bg-muted/20 p-2.5">
+          <View className="items-end">
+            <Button variant="outline" size="sm" onPress={onToggleDetails}>
+              <Text>{showDetails ? "Hide details" : "Learn"}</Text>
+            </Button>
+          </View>
+
+          <Text className="text-sm">Sessions / week</Text>
+          <View className="flex-row gap-2">
+            <View className="flex-1">
+              <IntegerStepper
+                id="min-sessions-per-week"
+                label="Min"
+                value={configData.constraints.min_sessions_per_week ?? 0}
+                min={0}
+                max={14}
+                onChange={(nextValue) => {
+                  updateConfig((draft) => {
+                    draft.constraints.min_sessions_per_week = nextValue;
+                    draft.constraintsSource = "user";
+                  });
+                }}
+              />
+            </View>
+            <View className="flex-1">
+              <IntegerStepper
+                id="max-sessions-per-week"
+                label="Max"
+                value={configData.constraints.max_sessions_per_week ?? 0}
+                min={0}
+                max={14}
+                onChange={(nextValue) => {
+                  updateConfig((draft) => {
+                    draft.constraints.max_sessions_per_week = nextValue;
+                    draft.constraintsSource = "user";
+                  });
+                }}
+              />
+            </View>
+          </View>
+
+          <View className="gap-1.5">
+            <Text className="text-sm">Hard rest days</Text>
+            <View className="flex-row flex-wrap gap-2">
+              {weekDays.map((day) => {
+                const selected =
+                  configData.constraints.hard_rest_days.includes(day);
+                return (
+                  <Button
+                    key={`rest-${day}`}
+                    variant={selected ? "default" : "outline"}
+                    size="sm"
+                    onPress={() => {
+                      updateConfig((draft) => {
+                        draft.constraints.hard_rest_days = selected
+                          ? draft.constraints.hard_rest_days.filter(
+                              (candidate) => candidate !== day,
+                            )
+                          : [...draft.constraints.hard_rest_days, day];
+                        draft.constraintsSource = "user";
+                      });
+                    }}
+                  >
+                    <Text>{getWeekDayLabel(day)}</Text>
+                  </Button>
+                );
+              })}
+            </View>
+          </View>
+
+          <View className="gap-1.5">
+            <Text className="text-sm">Max session (min)</Text>
+            <IntegerStepper
+              id="max-session-duration"
+              value={
+                configData.constraints.max_single_session_duration_minutes ?? 90
+              }
+              min={20}
+              max={600}
+              onChange={(nextValue) => {
+                updateConfig((draft) => {
+                  draft.constraints.max_single_session_duration_minutes =
+                    nextValue;
+                  draft.constraintsSource = "user";
+                });
+              }}
+            />
+          </View>
+
+          <View className="gap-1.5">
+            <Text className="text-sm">Goal difficulty</Text>
+            <Select
+              value={{
+                value:
+                  configData.constraints.goal_difficulty_preference ??
+                  "balanced",
+                label:
+                  goalDifficultyOptions.find(
+                    (option) =>
+                      option.value ===
+                      configData.constraints.goal_difficulty_preference,
+                  )?.label ?? "Balanced",
+              }}
+              onValueChange={(option) => {
+                if (!option?.value) return;
+                updateConfig((draft) => {
+                  draft.constraints.goal_difficulty_preference =
+                    option.value as "conservative" | "balanced" | "stretch";
+                  draft.constraintsSource = "user";
+                });
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Choose preference" />
+              </SelectTrigger>
+              <SelectContent>
+                {goalDifficultyOptions.map((option) => (
+                  <SelectItem
+                    key={option.value}
+                    label={option.label}
+                    value={option.value}
+                  >
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </View>
+
+          <View className="gap-1.5 rounded-md border border-border bg-background/50 p-2">
+            <Text className="text-sm font-medium">Plan style</Text>
+            <Select
+              value={{
+                value: configData.optimizationProfile,
+                label:
+                  optimizationProfileOptions.find(
+                    (option) => option.value === configData.optimizationProfile,
+                  )?.label ?? "Balanced",
+              }}
+              onValueChange={(option) => {
+                if (!option?.value) return;
+                updateConfig((draft) => {
+                  draft.optimizationProfile =
+                    option.value as TrainingPlanConfigFormData["optimizationProfile"];
+                });
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Choose profile" />
+              </SelectTrigger>
+              <SelectContent>
+                {optimizationProfileOptions.map((option) => (
+                  <SelectItem
+                    key={option.value}
+                    label={option.label}
+                    value={option.value}
+                  >
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Text className="text-[11px] text-muted-foreground">
+              {optimizationProfileHelperCopy[configData.optimizationProfile]}
+            </Text>
+            {showDetails && (
+              <Text className="text-[11px] text-muted-foreground">
+                {optimizationProfileDetailCopy[configData.optimizationProfile]}
+              </Text>
+            )}
+          </View>
+
+          <View className="gap-1.5 rounded-md border border-border bg-background/50 p-2">
+            <Text className="text-sm">Recovery days</Text>
+            <IntegerStepper
+              id="post-goal-recovery-days"
+              value={configData.postGoalRecoveryDays}
+              min={0}
+              max={28}
+              onChange={(nextValue) => {
+                updateConfig((draft) => {
+                  draft.postGoalRecoveryDays = nextValue;
+                });
+              }}
+            />
+            {showDetails && (
+              <Text className="text-[11px] text-muted-foreground">
+                {postGoalRecoveryDetailCopy}
+              </Text>
+            )}
+          </View>
+
+          <View className="gap-1.5 rounded-md border border-border bg-background/50 p-2">
+            <Text className="text-sm">Safety caps</Text>
+            <Text className="text-[11px] text-muted-foreground">
+              Weekly ramp and CTL safety caps remain enforced internally.
+            </Text>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}

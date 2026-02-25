@@ -21,10 +21,12 @@ import { Text } from "@/components/ui/text";
 import { useGpsTracking } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import type {
-  PublicActivityCategory,
-  PublicActivityLocation,
-  RecordingState,
+  RecordingState
 } from "@repo/core";
+import type {
+  PublicActivityCategory,
+  PublicActivityLocation
+} from "@repo/supabase";
 import { router } from "expo-router";
 import { MapPin, MapPinOff } from "lucide-react-native";
 import React from "react";

@@ -16,10 +16,12 @@ import { useFocusMode } from "@/lib/contexts/FocusModeContext";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import BottomSheet, { BottomSheetBackdrop, SNAP_POINT_TYPE } from "@gorhom/bottom-sheet";
 import type {
-  PublicActivityCategory,
-  PublicActivityLocation,
-  RecordingState,
+  RecordingState
 } from "@repo/core";
+import type {
+  PublicActivityCategory,
+  PublicActivityLocation
+} from "@repo/supabase";
 import React, { useCallback, useMemo, useRef } from "react";
 import { View, useColorScheme } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";

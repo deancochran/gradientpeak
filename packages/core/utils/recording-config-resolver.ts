@@ -62,10 +62,8 @@ export class RecordingConfigResolver {
     // Indoor routes show map to visualize progress along the route based on distance/effort
     const shouldShowMap = canTrackLocation || hasRoute;
 
-    // Steps: Show if there's a structured plan to follow
-    // FAULT TOLERANCE: Always show plan card if in planned mode, even if structure parsing failed
-    // This ensures users can always see their plan details during recording
-    const shouldShowSteps = hasStructuredPlan || input.mode === "planned";
+    // Steps: Show only when there's a structured plan to follow
+    const shouldShowSteps = hasStructuredPlan;
 
     // Route overlay: Show if we're tracking location AND have a route to overlay
     const shouldShowRouteOverlay = canTrackLocation && hasRoute;
@@ -164,7 +162,11 @@ export class RecordingConfigResolver {
     }
 
     // Warn if planned but no structure
-    if (input.mode === "planned" && !input.plan?.hasStructure) {
+    if (
+      input.mode === "planned" &&
+      !input.plan?.hasStructure &&
+      !input.plan?.hasRoute
+    ) {
       warnings.push("Selected plan has no structure. Recording as unplanned.");
     }
 

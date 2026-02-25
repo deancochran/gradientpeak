@@ -26,8 +26,8 @@ export function calculateSeasonBestCurve(
   const {
     days = 90,
     now = new Date(),
-    activity_category,
-    effort_type,
+    activity_category = "bike",
+    effort_type = "power",
   } = options;
   const cutoffDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
 

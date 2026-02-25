@@ -3,9 +3,10 @@ import { EmptyStateCard, ListSkeleton } from "@/components/shared";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { trpc } from "@/lib/trpc";
+import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { Calendar, Plus } from "lucide-react-native";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import {
   RefreshControl,
   ScrollView,
@@ -16,6 +17,7 @@ import {
 export default function ScheduledScreen() {
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
+  const utils = trpc.useUtils();
 
   // Query all scheduled activities
   const {
@@ -31,8 +33,16 @@ export default function ScheduledScreen() {
   const handleRefresh = async () => {
     setRefreshing(true);
     await refetch();
+    await utils.trainingPlans.invalidate();
     setRefreshing(false);
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+      utils.trainingPlans.invalidate();
+    }, [refetch, utils.trainingPlans]),
+  );
 
   const handleActivityTap = (activityId: string) => {
     router.push(`/scheduled-activity-detail?id=${activityId}` as any);

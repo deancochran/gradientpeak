@@ -3,6 +3,7 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import z, { ZodError } from "zod";
 import type { createTRPCContext } from "./context";
+import { isTrainingPlanCommitErrorCause } from "./lib/errors/trainingPlanCommitErrors";
 
 const t = initTRPC.context<typeof createTRPCContext>().create({
   transformer: superjson,
@@ -14,6 +15,7 @@ const t = initTRPC.context<typeof createTRPCContext>().create({
         error.cause instanceof ZodError
           ? z.flattenError(error.cause as ZodError<Record<string, unknown>>)
           : null,
+      cause: isTrainingPlanCommitErrorCause(error.cause) ? error.cause : null,
     },
   }),
 });

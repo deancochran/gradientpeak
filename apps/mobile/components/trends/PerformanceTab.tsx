@@ -25,10 +25,6 @@ export function PerformanceTab({
     "speed" | "power" | "heartrate"
   >("speed");
 
-  if (performanceLoading) {
-    return <TrendsOverviewSkeleton />;
-  }
-
   const dataPoints = performanceData?.dataPoints ?? [];
 
   // Check which metrics are available
@@ -48,7 +44,11 @@ export function PerformanceTab({
     ) {
       setSelectedMetric("heartrate");
     }
-  }, [hasSpeed, hasPower, hasHeartRate]);
+  }, [hasSpeed, hasPower, hasHeartRate, selectedMetric]);
+
+  if (performanceLoading) {
+    return <TrendsOverviewSkeleton />;
+  }
 
   return (
     <View className="space-y-4">

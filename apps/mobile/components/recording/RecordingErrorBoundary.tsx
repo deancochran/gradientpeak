@@ -51,7 +51,9 @@ export class RecordingErrorBoundary extends Component<
     };
   }
 
-  static getDerivedStateFromError(error: Error): Partial<RecordingErrorBoundaryState> {
+  static getDerivedStateFromError(
+    error: Error,
+  ): Partial<RecordingErrorBoundaryState> {
     // Update state so the next render will show the fallback UI
     return {
       hasError: true,
@@ -64,7 +66,7 @@ export class RecordingErrorBoundary extends Component<
     console.error(
       `[RecordingErrorBoundary] ${this.props.componentName} crashed:`,
       error,
-      errorInfo
+      errorInfo,
     );
 
     // Update state with error info
@@ -86,7 +88,7 @@ export class RecordingErrorBoundary extends Component<
     });
 
     console.log(
-      `[RecordingErrorBoundary] Reloading ${this.props.componentName}`
+      `[RecordingErrorBoundary] Reloading ${this.props.componentName}`,
     );
   };
 
@@ -115,7 +117,10 @@ export class RecordingErrorBoundary extends Component<
               </Text>
               {this.state.errorInfo?.componentStack && (
                 <Text className="text-xs font-mono text-muted-foreground mt-2">
-                  {this.state.errorInfo.componentStack.split('\n').slice(0, 3).join('\n')}
+                  {this.state.errorInfo.componentStack
+                    .split("\n")
+                    .slice(0, 3)
+                    .join("\n")}
                 </Text>
               )}
             </View>
@@ -149,11 +154,14 @@ export class RecordingErrorBoundary extends Component<
  */
 export function withErrorBoundary<P extends object>(
   Component: React.ComponentType<P>,
-  componentName: string
+  componentName: string,
 ): React.ComponentType<P> {
-  return (props: P) => (
+  const WrappedComponent = (props: P) => (
     <RecordingErrorBoundary componentName={componentName}>
       <Component {...props} />
     </RecordingErrorBoundary>
   );
+
+  WrappedComponent.displayName = `withErrorBoundary(${componentName})`;
+  return WrappedComponent;
 }

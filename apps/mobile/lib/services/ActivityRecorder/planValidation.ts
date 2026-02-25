@@ -5,9 +5,11 @@
  */
 
 import type {
-  PublicProfilesRow,
-  RecordingServiceActivityPlan,
+  RecordingServiceActivityPlan
 } from "@repo/core";
+import type {
+  PublicProfilesRow
+} from "@repo/supabase";
 
 export interface PlanValidationResult {
   isValid: boolean;

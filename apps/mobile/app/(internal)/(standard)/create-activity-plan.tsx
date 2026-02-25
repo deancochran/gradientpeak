@@ -418,14 +418,15 @@ export default function CreateActivityPlanScreen() {
                 {intervals.length === 0 ? (
                   <View className="flex-1 items-center justify-center py-12">
                     <Text className="text-base text-muted-foreground mb-2">
-                      No structure defined
+                      Structure is optional
                     </Text>
                     <Text className="text-sm text-muted-foreground text-center mb-4">
-                      Tap to add steps and intervals
+                      Save now for a simple default, or tap to customize
+                      intervals
                     </Text>
                     <View className="bg-muted rounded-lg px-6 py-3">
                       <Text className="text-sm font-medium">
-                        + Add Structure
+                        + Edit Advanced Structure
                       </Text>
                     </View>
                   </View>

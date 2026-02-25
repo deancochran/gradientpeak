@@ -17,12 +17,7 @@ export const ROUTES = {
     TRAINING_PLAN: {
       INDEX: "/training-plan" as const,
       CREATE: "/training-plan-create" as const,
-      METHOD_SELECTOR: "/training-plan-method-selector" as const,
-      WIZARD: "/training-plan-wizard" as const,
-      REVIEW: "/training-plan-review" as const,
-      SETTINGS: "/training-plan-settings" as const,
-      LIST: "/training-plans-list" as const,
-      ADJUST: "/training-plan-adjust" as const,
+      EDIT: "/training-plan-edit" as const,
     },
 
     // Create Activity Plan Routes
@@ -55,6 +50,9 @@ export const ROUTES = {
   // Other Tab Routes
   DISCOVER: "/(internal)/(tabs)/discover" as const,
   LIBRARY: "/(internal)/(tabs)/library" as const,
+  LIBRARY_WITH_RESOURCE: (
+    resource: "activity_plans" | "training_plans" | "activities" | "routes",
+  ) => `/(internal)/(tabs)/library?resource=${resource}` as const,
 
   // Settings & Profile
   SETTINGS: "/settings" as const,
