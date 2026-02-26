@@ -26,16 +26,15 @@ Implements `./design.md` and `./plan.md`.
 - [ ] Implement and validate HR-quality gate + power-based TRIMP fallback.
 - [ ] Standardize ACWR rolling-window computation (acute 7d, chronic 28d baseline).
 - [ ] Standardize Training Monotony rolling-window computation.
-- [ ] Implement sparse-history Bayesian priors by sport + ability level.
-- [ ] Implement posterior updates and expose estimate uncertainty internally.
-- [ ] Add tests for sparse-history transitions and convergence behavior.
+- [ ] Implement sparse-history MVP behavior (provisional/null-safe outputs and thresholds).
+- [ ] Add tests for sparse-history transitions and provisional behavior.
 
 ## Validation - End-to-End
 
 - [ ] Validate cadence, HR, and power against reference app/head unit on same ride.
 - [ ] Validate persisted parsed metrics match validated live values.
 - [ ] Validate ACWR/Monotony outputs for users with >= 28 days of history.
-- [ ] Validate Bayesian estimates for users with < 28 days of history.
+- [ ] Validate provisional sparse-history behavior for users with < 28 days of history.
 - [ ] Validate no divide-by-zero or undefined metrics in edge cases.
 
 ## Quality Gates
@@ -52,3 +51,8 @@ Implements `./design.md` and `./plan.md`.
 - [ ] Phase 2 acceptance criteria in `design.md` are satisfied.
 - [ ] Parser audit matrix is complete and linked to implementation files.
 - [ ] Metrics engine behavior is test-covered for full-history and sparse-history users.
+
+## Post-MVP Backlog (Deferred)
+
+- [ ] Add Bayesian priors/posteriors for sparse-history ACWR and Monotony.
+- [ ] Add uncertainty propagation for downstream readiness weighting.
