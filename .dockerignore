@@ -16,3 +16,6 @@ coverage
 *.log
 pnpm-debug.log*
 *.local
+**/*.local
+.env*
+**/.env*
