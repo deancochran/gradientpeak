@@ -1,6 +1,9 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
+  outputFileTracingRoot: path.join(__dirname, "../.."),
   transpilePackages: ["@repo/core", "@repo/trpc", "@repo/supabase"],
   allowedDevOrigins: [
     "http://100.119.109.24:3000",

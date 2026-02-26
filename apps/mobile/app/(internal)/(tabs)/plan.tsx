@@ -9,6 +9,7 @@ import { Text } from "@/components/ui/text";
 import { ROUTES } from "@/lib/constants/routes";
 
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
+import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGuard";
 import { trpc } from "@/lib/trpc";
 import { isActivityCompleted } from "@/lib/utils/plan/dateGrouping";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
@@ -45,6 +46,7 @@ function PlanScreen() {
   const [scheduleModalDate, setScheduleModalDate] = useState<
     string | undefined
   >();
+  const guardNavigation = useNavigationActionGuard();
 
   // Calculate month range for calendar
   const { startDate, endDate } = useMemo(() => {
@@ -221,12 +223,16 @@ function PlanScreen() {
     };
     activitySelectionStore.setSelection(payload);
 
-    router.push("/record" as any);
+    guardNavigation(() => {
+      router.push("/record" as any);
+    });
   };
 
   const handleScheduleActivity = () => {
     // Open library to select a plan first
-    router.push("/library" as any);
+    guardNavigation(() => {
+      router.replace("/library" as any);
+    });
   };
 
   const handleViewTrainingPlan = () => {
@@ -427,7 +433,11 @@ function PlanScreen() {
               <View className="bg-card border border-border rounded-lg overflow-hidden">
                 <TouchableOpacity
                   onPress={() =>
-                    router.push(ROUTES.LIBRARY_WITH_RESOURCE("training_plans"))
+                    guardNavigation(() =>
+                      router.replace(
+                        ROUTES.LIBRARY_WITH_RESOURCE("training_plans"),
+                      ),
+                    )
                   }
                   className="p-6"
                   activeOpacity={0.7}

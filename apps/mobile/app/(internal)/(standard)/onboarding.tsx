@@ -16,9 +16,25 @@ import {
   TouchableOpacity,
   Platform,
 } from "react-native";
-import AppleHealthKit, { HealthKitPermissions } from "react-native-health";
 import * as WebBrowser from "expo-web-browser";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+type HealthKitPermissions = {
+  permissions: {
+    read: string[];
+    write: string[];
+  };
+};
+
+type AppleHealthKitModule = {
+  Constants: {
+    Permissions: Record<string, string>;
+  };
+  initHealthKit: (
+    permissions: HealthKitPermissions,
+    callback: (error: string | null) => void,
+  ) => void;
+};
 
 // ================================
 // Types
@@ -490,6 +506,18 @@ const IntegrationsStep = ({ data, updateData }: StepProps) => {
         return;
       }
 
+      let AppleHealthKit: AppleHealthKitModule;
+      try {
+        AppleHealthKit = require("react-native-health")
+          .default as AppleHealthKitModule;
+      } catch {
+        Alert.alert(
+          "Not Available",
+          "Apple Health integration is not available in this build.",
+        );
+        return;
+      }
+
       const permissions = {
         permissions: {
           read: [
@@ -508,7 +536,7 @@ const IntegrationsStep = ({ data, updateData }: StepProps) => {
         },
       } as HealthKitPermissions;
 
-      AppleHealthKit.initHealthKit(permissions, (error: string) => {
+      AppleHealthKit.initHealthKit(permissions, (error) => {
         if (error) {
           console.error("[HealthKit] Error:", error);
           Alert.alert("Error", "Failed to connect to Apple Health.");

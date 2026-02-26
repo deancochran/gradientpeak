@@ -28,6 +28,7 @@
  */
 
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
+import { getServerConfig } from "@/lib/server-config";
 import { trpc } from "@/lib/trpc";
 import { queryKeys } from "@repo/trpc/client";
 import { useQueryClient } from "@tanstack/react-query";
@@ -46,11 +47,9 @@ import {
   calculateNormalizedPower,
   calculatePowerHeartRateRatio,
   calculateTotalWork,
-  calculateVariabilityIndex
+  calculateVariabilityIndex,
 } from "@repo/core";
-import type {
-  PublicActivitiesInsert
-} from "@repo/supabase";
+import type { PublicActivitiesInsert } from "@repo/supabase";
 import { useCallback, useEffect, useReducer } from "react";
 
 import { FitUploader } from "@/lib/services/fit/FitUploader";
@@ -623,8 +622,9 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
           signedUrlData.filePath,
         );
 
-        const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-        const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+        const supabaseUrl = getServerConfig().supabaseUrl;
+        const supabaseAnonKey =
+          process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
 
         const uploader = new FitUploader(
           supabaseUrl,

@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ServerUrlOverride } from "@/components/auth/ServerUrlOverride";
 import {
   Form,
   FormControl,
@@ -19,6 +20,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/hooks/useAuth";
+import {
+  getHostedApiUrl,
+  setServerUrlOverride,
+  useServerConfig,
+} from "@/lib/server-config";
+import { useAuthStore } from "@/lib/stores/auth-store";
 import { supabase } from "@/lib/supabase/client";
 
 const signInSchema = z.object({
@@ -44,6 +51,16 @@ export default function SignInScreen() {
   const router = useRouter();
   const { loading: authLoading } = useAuth();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [isServerConfigExpanded, setIsServerConfigExpanded] =
+    React.useState(false);
+  const serverConfig = useServerConfig();
+  const [serverUrlInput, setServerUrlInput] = React.useState(
+    serverConfig.overrideUrl ?? serverConfig.apiUrl,
+  );
+
+  React.useEffect(() => {
+    setServerUrlInput(serverConfig.overrideUrl ?? serverConfig.apiUrl);
+  }, [serverConfig.overrideUrl, serverConfig.apiUrl]);
 
   const form = useForm<SignInFields>({
     resolver: zodResolver(signInSchema),
@@ -52,6 +69,18 @@ export default function SignInScreen() {
   const onSignIn = async (data: SignInFields) => {
     setIsSubmitting(true);
     try {
+      if (isServerConfigExpanded) {
+        const nextUrl = serverUrlInput.trim();
+        const hostedApiUrl = getHostedApiUrl();
+        const { changed } = await setServerUrlOverride(
+          nextUrl.length === 0 || nextUrl === hostedApiUrl ? null : nextUrl,
+        );
+
+        if (changed) {
+          await useAuthStore.getState().clearSession();
+        }
+      }
+
       const { error } = await supabase.auth.signInWithPassword({
         email: data.email,
         password: data.password,
@@ -194,6 +223,16 @@ export default function SignInScreen() {
             >
               <Text>{isLoading ? "Signing In..." : "Sign In"}</Text>
             </Button>
+
+            <ServerUrlOverride
+              expanded={isServerConfigExpanded}
+              value={serverUrlInput}
+              usingHostedDefault={!serverConfig.overrideUrl}
+              onToggle={() =>
+                setIsServerConfigExpanded((currentValue) => !currentValue)
+              }
+              onChange={setServerUrlInput}
+            />
 
             {/* Forgot Password Link */}
             <Button

@@ -5,6 +5,7 @@ import { Text } from "@/components/ui/text";
 import "@/global.css";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
+import { initializeServerConfig, useServerConfig } from "@/lib/server-config";
 import { StreamBuffer } from "@/lib/services/ActivityRecorder/StreamBuffer";
 import { GarminFitEncoder } from "@/lib/services/fit/GarminFitEncoder";
 import { initSentry } from "@/lib/services/sentry";
@@ -196,6 +197,15 @@ function AppContent() {
 
 export default function RootLayout() {
   console.log("RootLayout loaded");
+  const { initialized } = useServerConfig();
+
+  React.useEffect(() => {
+    if (initialized) {
+      return;
+    }
+
+    void initializeServerConfig();
+  }, [initialized]);
 
   // Clean up any orphaned recording files on app startup
   React.useEffect(() => {
@@ -210,6 +220,14 @@ export default function RootLayout() {
     // Note: Sentry is initialized at module level above to catch early errors
     console.log("App initialization complete - Sentry active in production");
   }, []);
+
+  if (!initialized) {
+    return (
+      <View className="flex-1 items-center justify-center bg-background">
+        <ActivityIndicator size="large" className="text-foreground" />
+      </View>
+    );
+  }
 
   return (
     <QueryProvider>

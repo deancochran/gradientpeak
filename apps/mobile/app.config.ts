@@ -105,7 +105,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       // OAuth and API configuration
       redirectUri:
         process.env.EXPO_PUBLIC_REDIRECT_URI || `${scheme}://integrations`,
-      apiUrl: process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000",
+      apiUrl: process.env.EXPO_PUBLIC_API_URL,
     },
     plugins: [
       "expo-router",

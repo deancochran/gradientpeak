@@ -7,6 +7,7 @@ import {
 import * as Network from "expo-network";
 import * as React from "react";
 import { Alert, AppState, Platform } from "react-native";
+import { useServerConfig } from "../server-config";
 import { useAuthStore } from "../stores/auth-store";
 import { createTRPCClient, trpc } from "../trpc";
 
@@ -56,7 +57,12 @@ export const setupFocusManager = () => {
 };
 
 export function QueryProvider({ children }: { children: React.ReactNode }) {
-  const trpcClient = React.useMemo(() => createTRPCClient(), []);
+  const { version } = useServerConfig();
+  const trpcClient = React.useMemo(() => createTRPCClient(), [version]);
+
+  React.useEffect(() => {
+    queryClient.clear();
+  }, [version]);
 
   React.useEffect(() => {
     const cleanupNetwork = setupNetworkListener();

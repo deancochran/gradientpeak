@@ -1,4 +1,5 @@
 import { Icon } from "@/components/ui/icon";
+import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGuard";
 import { useTheme } from "@/lib/stores/theme-store";
 import { NAV_THEME, THEME } from "@/lib/theme";
 import { Tabs, useRouter } from "expo-router";
@@ -9,6 +10,7 @@ import { TouchableOpacity, View } from "react-native";
 export default function InternalLayout() {
   const { theme } = useTheme();
   const router = useRouter();
+  const guardNavigation = useNavigationActionGuard();
 
   // Determine if we're in dark mode
   const isDark = theme === "dark";
@@ -56,7 +58,7 @@ export default function InternalLayout() {
             tabBarButton: (props) => (
               <TouchableOpacity
                 {...(props as any)}
-                onPress={() => router.push("/record")}
+                onPress={() => guardNavigation(() => router.push("/record"))}
               />
             ),
           }}

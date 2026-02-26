@@ -353,8 +353,8 @@ function SettingsScreen() {
               Update Email Address
             </Text>
             <Text className="text-xs text-muted-foreground mb-3">
-              You'll need to verify both your current and new email addresses to
-              complete this change.
+              You&apos;ll need to verify both your current and new email
+              addresses to complete this change.
             </Text>
             <Input
               value={newEmail}
