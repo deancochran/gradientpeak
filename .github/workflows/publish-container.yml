@@ -62,4 +62,4 @@ jobs:
           cache-to: type=gha,mode=max
           attests: |
             type=provenance,mode=max
-            type=sbom,generator=image
+            type=sbom
