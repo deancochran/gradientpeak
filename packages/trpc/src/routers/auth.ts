@@ -18,7 +18,7 @@ const sendPasswordResetEmailSchema = z.object({
 });
 
 const updatePasswordSchema = z.object({
-  currentPassword: z.string().min(6),
+  currentPassword: z.string().min(6).optional(),
   newPassword: z.string().min(6),
 });
 
@@ -205,18 +205,21 @@ export const authRouter = createTRPCRouter({
     .input(updatePasswordSchema)
     .mutation(async ({ ctx, input }) => {
       try {
-        // Verify current password by re-authenticating
-        const { error: signInError } =
-          await ctx.supabase.auth.signInWithPassword({
-            email: ctx.session.user.email!,
-            password: input.currentPassword,
-          });
+        if (input.currentPassword) {
+          // Verify current password by re-authenticating when provided.
+          // Recovery-link flows can rotate password without current password.
+          const { error: signInError } =
+            await ctx.supabase.auth.signInWithPassword({
+              email: ctx.session.user.email!,
+              password: input.currentPassword,
+            });
 
-        if (signInError) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Current password is incorrect",
-          });
+          if (signInError) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Current password is incorrect",
+            });
+          }
         }
 
         // Update to new password

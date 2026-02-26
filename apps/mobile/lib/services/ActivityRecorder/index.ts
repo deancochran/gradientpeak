@@ -17,12 +17,12 @@ import {
   RecordingServiceActivityPlan,
   type IntervalStepV2,
   type RecordingCapabilities,
-  type RecordingConfiguration
+  type RecordingConfiguration,
 } from "@repo/core";
 import type {
   PublicActivityCategory,
   PublicActivityLocation,
-  PublicProfilesRow
+  PublicProfilesRow,
 } from "@repo/supabase";
 
 import { FitRecord, GarminFitEncoder } from "../fit/GarminFitEncoder";
@@ -609,10 +609,12 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       console.log("[Service] Loading route:", routeId);
 
       // Import vanilla trpc client (for use outside React components)
-      const { vanillaTrpc } = await import("@/lib/trpc");
+      const { getVanillaTrpcClient } = await import("@/lib/trpc");
 
       // Load full route with coordinates
-      const route = await vanillaTrpc.routes.loadFull.query({ id: routeId });
+      const route = await getVanillaTrpcClient().routes.loadFull.query({
+        id: routeId,
+      });
 
       if (!route || !route.coordinates || route.coordinates.length === 0) {
         console.warn("[Service] Route has no coordinates");

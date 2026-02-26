@@ -17,3 +17,18 @@ vi.mock("react-native-svg", () => {
     Circle: MockCircle,
   };
 });
+
+vi.mock("expo-secure-store", () => {
+  const store = new Map<string, string>();
+
+  return {
+    getItemAsync: vi.fn(async (key: string) => store.get(key) ?? null),
+    setItemAsync: vi.fn(async (key: string, value: string) => {
+      store.set(key, value);
+    }),
+    deleteItemAsync: vi.fn(async (key: string) => {
+      store.delete(key);
+    }),
+    __store: store,
+  };
+});

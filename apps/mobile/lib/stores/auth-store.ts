@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
+import { initializeServerConfig } from "@/lib/server-config";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Session, User } from "@supabase/supabase-js";
 import { create } from "zustand";
@@ -82,6 +83,7 @@ export const useAuthStore = create<AuthState>()(
         }
 
         try {
+          await initializeServerConfig();
           set({ loading: true, error: null });
 
           console.log("🔄 Calling supabase.auth.getSession()");

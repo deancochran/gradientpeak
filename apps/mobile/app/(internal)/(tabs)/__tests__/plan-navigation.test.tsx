@@ -4,8 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 import { ROUTES } from "@/lib/constants/routes";
 import PlanScreenWithErrorBoundary from "../plan";
 
-const { pushMock, localSearchParamsMock } = vi.hoisted(() => ({
+const { pushMock, replaceMock, localSearchParamsMock } = vi.hoisted(() => ({
   pushMock: vi.fn(),
+  replaceMock: vi.fn(),
   localSearchParamsMock: {} as Record<string, string | string[] | undefined>,
 }));
 
@@ -46,7 +47,7 @@ vi.mock("nativewind", () => ({
 }));
 
 vi.mock("expo-router", () => ({
-  useRouter: () => ({ push: pushMock }),
+  useRouter: () => ({ push: pushMock, replace: replaceMock }),
   useLocalSearchParams: () => localSearchParamsMock,
 }));
 
@@ -289,6 +290,7 @@ describe("Plan tab CTA routing", () => {
 
   it("routes create/select intent from no-plan state to library training plans", () => {
     pushMock.mockReset();
+    replaceMock.mockReset();
     trainingPlanState.plan = null;
     Object.keys(localSearchParamsMock).forEach((key) => {
       delete localSearchParamsMock[key];
@@ -304,7 +306,7 @@ describe("Plan tab CTA routing", () => {
       viewPlansButton.props.onPress();
     });
 
-    expect(pushMock).toHaveBeenCalledWith(
+    expect(replaceMock).toHaveBeenCalledWith(
       ROUTES.LIBRARY_WITH_RESOURCE("training_plans"),
     );
   });

@@ -12,6 +12,7 @@ import { DetailChartModal } from "@/components/shared/DetailChartModal";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Text } from "@/components/ui/text";
 import { useHomeData } from "@/lib/hooks/useHomeData";
+import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGuard";
 import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import React, { useCallback } from "react";
@@ -22,6 +23,7 @@ function HomeScreen() {
   const [refreshing, setRefreshing] = React.useState(false);
   const [trainingStatusModalVisible, setTrainingStatusModalVisible] =
     React.useState(false);
+  const guardNavigation = useNavigationActionGuard();
 
   const {
     plan,
@@ -57,21 +59,27 @@ function HomeScreen() {
     if (!todaysActivity) return;
 
     // Navigate to plan page with activity ID to open the modal
-    router.push({
-      pathname: "/(internal)/(tabs)/plan",
-      params: { activityId: todaysActivity.id },
-    } as any);
+    guardNavigation(() => {
+      router.replace({
+        pathname: "/(internal)/(tabs)/plan",
+        params: { activityId: todaysActivity.id },
+      } as any);
+    });
   };
 
   const handleViewPlan = () => {
-    router.push("/(internal)/(tabs)/plan");
+    guardNavigation(() => {
+      router.replace("/(internal)/(tabs)/plan");
+    });
   };
 
   const handlePressActivity = (activityId: string) => {
-    router.push({
-      pathname: "/(internal)/(tabs)/plan",
-      params: { activityId },
-    } as any);
+    guardNavigation(() => {
+      router.replace({
+        pathname: "/(internal)/(tabs)/plan",
+        params: { activityId },
+      } as any);
+    });
   };
 
   if (isLoading) {

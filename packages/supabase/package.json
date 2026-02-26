@@ -7,9 +7,10 @@
     ".": "./index.ts"
   },
   "scripts": {
-    "dev": "run-p dev:supabase dev:functions",
-    "dev:supabase": "supabase start",
-    "dev:functions": "supabase functions serve",
+    "dev": "run-s dev:supabase dev:functions",
+    "dev:supabase": "SUPABASE_PUBLIC_API_URL=${SUPABASE_PUBLIC_API_URL:-http://127.0.0.1:54321} SUPABASE_AUTH_SITE_URL=${SUPABASE_AUTH_SITE_URL:-http://127.0.0.1:3000} SUPABASE_AUTH_WEB_REDIRECT_URL=${SUPABASE_AUTH_WEB_REDIRECT_URL:-http://127.0.0.1:3000} SUPABASE_AUTH_WEB_REDIRECT_URL_SECURE=${SUPABASE_AUTH_WEB_REDIRECT_URL_SECURE:-https://127.0.0.1:3000} supabase start",
+    "stop:supabase": "supabase stop",
+    "dev:functions": "SUPABASE_PUBLIC_API_URL=${SUPABASE_PUBLIC_API_URL:-http://127.0.0.1:54321} SUPABASE_AUTH_SITE_URL=${SUPABASE_AUTH_SITE_URL:-http://127.0.0.1:3000} SUPABASE_AUTH_WEB_REDIRECT_URL=${SUPABASE_AUTH_WEB_REDIRECT_URL:-http://127.0.0.1:3000} SUPABASE_AUTH_WEB_REDIRECT_URL_SECURE=${SUPABASE_AUTH_WEB_REDIRECT_URL_SECURE:-https://127.0.0.1:3000} supabase functions serve",
     "functions:deploy": "supabase functions deploy",
     "functions:new": "supabase functions new",
     "update-types": "npm run generate-types && npm run generate-schemas",

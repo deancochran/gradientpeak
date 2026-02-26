@@ -13,6 +13,7 @@ import {
 } from "lucide-react-native";
 import {
   ActivityIndicator,
+  InteractionManager,
   Modal,
   Pressable,
   ScrollView,
@@ -126,10 +127,13 @@ export function ActivityListModal({
   };
 
   const handleActivityPress = (activityId: string) => {
-    if (onActivityPress) {
-      onActivityPress(activityId);
-    }
     onClose();
+
+    if (onActivityPress) {
+      InteractionManager.runAfterInteractions(() => {
+        onActivityPress(activityId);
+      });
+    }
   };
 
   return (
