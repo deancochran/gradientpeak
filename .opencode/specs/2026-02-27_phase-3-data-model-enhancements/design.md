@@ -44,11 +44,12 @@ This phase is about representational correctness and safe evolution of existing 
 ## Required Outcomes
 
 1. Calendar-capable event abstraction exists and supports recurrence + series edit scope.
-2. Training hierarchy is representable without ambiguity and supports reuse of plans/collections/workouts.
-3. Template application always creates independent instances (no shared mutable state).
-4. Multi-goal and multi-target structures support per-target readiness and aggregation.
-5. Coaching relationships, permission scopes, messaging, and notifications are modeled with clear ownership and lifecycle.
-6. All schema changes are type-safe and reflected in generated Supabase artifacts.
+2. `planned_activities` is removed from the Phase 3 schema; planned activities are represented as `events` with `event_type='planned_activity'`.
+3. Training hierarchy is representable without ambiguity and supports reuse of plans/collections/workouts.
+4. Template application always creates independent instances (no shared mutable state).
+5. Multi-goal and multi-target structures support per-target readiness and aggregation.
+6. Coaching relationships, permission scopes, messaging, and notifications are modeled with clear ownership and lifecycle.
+7. All schema changes are type-safe and reflected in generated Supabase artifacts.
 
 ## Functional Requirements
 
@@ -59,6 +60,7 @@ This phase is about representational correctness and safe evolution of existing 
 - Recurrence must support RRULE-compatible expression.
 - Recurring edits must represent scope: single instance, future instances, full series.
 - Imported iCal entries must preserve source identity to support idempotent sync updates.
+- Planned workout scheduling uses `events` as source of truth; there is no `planned_activities` table in the Phase 3 target schema.
 
 ### B) Training Hierarchy
 
@@ -92,6 +94,11 @@ This phase is about representational correctness and safe evolution of existing 
 
 ## Contract Decisions (Locked Before Migration)
 
+- Canonical scheduling storage is `events` (not `planned_activities`):
+  - `event_type='planned_activity'` represents planned workout records
+  - all read/write APIs, app consumers, and integrations must use `events` contracts only
+  - all direct references to `planned_activities` are removed in this phase
+
 - Recurrence storage model is `series + exceptions`:
   - one canonical series record owns RRULE/timezone/base event fields
   - exception records store only per-occurrence overrides or cancellations keyed by occurrence
@@ -119,6 +126,7 @@ This phase is about representational correctness and safe evolution of existing 
 ## Minimal Viable Relational Footprint
 
 - Use a lean core table set for Phase 3: events (+ series/exceptions), plan hierarchy joins, templates metadata, goals/targets, coaching relationships/grants, conversations/participants/messages, notifications.
+- Do not preserve a compatibility `planned_activities` table/view in target architecture; migration output must reference `events` only.
 - Prefer typed columns and enums over subtype table explosion; do not create one table per event kind unless a hard integrity requirement appears.
 - Keep template social metadata minimal (likes/saves relations only); defer analytics/materialized counters until usage proves need.
 - Store unread state at participant checkpoint level (`last_read_seq`) instead of per-message receipt rows for every read.
@@ -128,7 +136,7 @@ This phase is about representational correctness and safe evolution of existing 
 ## Non-Functional Requirements
 
 - Additive-first migration strategy where possible.
-- Backward-compatible reads during rollout.
+- Single-schema cutover to `events` with coordinated router/client updates in same phase.
 - Idempotent synchronization keys for imported events/messages where relevant.
 - Strict generated type alignment after each schema change.
 
@@ -138,19 +146,21 @@ This phase is about representational correctness and safe evolution of existing 
 - No duplicate imported event records for same source feed + external event identifier.
 - No shared mutable references between templates and applied instances.
 - Permission checks must be relationship-scoped, not global user-scoped.
+- No residual references to `planned_activities` remain in schema, generated types, routers, integrations, or first-party app clients.
 
 ## Acceptance Criteria
 
 1. Event model can represent all required event kinds and recurrence semantics.
-2. Training hierarchy relations support reuse and preserve ordering/offsets.
-3. Template apply flow produces independent instances verified by tests.
-4. Multi-goal/multi-target model supports per-target readiness persistence.
-5. Coaching permissions enforce expected access boundaries.
-6. Conversation/message/notification tables support unread state and soft delete semantics.
-7. Supabase schema, migrations, and generated types are synchronized.
+2. Planned-activity features resolve from canonical `events` model with `event_type='planned_activity'`.
+3. Training hierarchy relations support reuse and preserve ordering/offsets.
+4. Template apply flow produces independent instances verified by tests.
+5. Multi-goal/multi-target model supports per-target readiness persistence.
+6. Coaching permissions enforce expected access boundaries.
+7. Conversation/message/notification tables support unread state and soft delete semantics.
+8. Supabase schema, migrations, and generated types are synchronized.
 
 ## Exit Criteria
 
 - `tasks.md` checklist complete.
 - Contract-level integration tests pass.
-- Backward compatibility validated for existing read paths.
+- Zero `planned_activities` references remain in active Phase 3 code paths.

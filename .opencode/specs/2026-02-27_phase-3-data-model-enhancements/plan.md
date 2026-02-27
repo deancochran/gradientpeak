@@ -13,10 +13,8 @@ Inputs: `design.md`
   - generated database and Zod types
 - `packages/trpc`:
   - read/write procedures aligned to new model
-  - dual-read/dual-write orchestration during transition window
   - permission enforcement at procedure boundaries
-  - compatibility adapters for existing `planned_activities` and `training_plans` consumers
-  - mapping adapters for backward-compatible responses during transition
+  - complete cutover from `planned_activities` routes/contracts to `events` routes/contracts
 - `packages/core`:
   - shared enums/contracts where needed for model-level concepts
   - no database-specific logic
@@ -36,10 +34,12 @@ Lock these decisions before any migration is authored:
 
 ### A) Unified Calendar Events
 
+- Add canonical `events` storage to supersede `planned_activities` for all schedule use cases.
 - Add or refactor event entities to support typed events + optional links.
 - Add recurrence fields and instance/series linkage model.
 - Add imported-source identity fields for idempotent upsert behavior.
 - Add recurrence split support for `this-and-future` through deterministic series split contracts.
+- Remove `planned_activities` schema and API dependencies; planned activities become `events` with `event_type='planned_activity'`.
 
 ### B) Training Hierarchy and Reuse
 
@@ -170,17 +170,19 @@ create index if not exists idx_messages_conversation_seq
   on messages (conversation_id, seq);
 ```
 
-### B) `packages/trpc/src/routers/planned_activities.ts` (compatibility adapter sketch)
+### B) `packages/trpc/src/routers/events.ts` (events-first query sketch)
 
 ```ts
-// During transition: keep old response shape while reading from new tables.
 const event = await ctx.supabase
-  .from("event_series")
-  .select("id,title,starts_at,ends_at,event_type")
+  .from("events")
+  .select(
+    "id,title,starts_at,ends_at,event_type,activity_plan_id,training_plan_id",
+  )
   .eq("id", input.eventId)
+  .eq("event_type", "planned_activity")
   .single();
 
-return mapEventSeriesToPlannedActivity(event.data);
+return event.data;
 ```
 
 ### C) New router surface (`packages/trpc/src/routers/events.ts`) sketch
@@ -240,20 +242,57 @@ await ctx.supabase.from("notifications").upsert(
 
 - Schema: `packages/supabase/schemas/init.sql`, `packages/supabase/migrations/*`
 - Generated types: `packages/supabase/database.types.ts`, `packages/supabase/supazod/schemas.ts`, `packages/supabase/supazod/schemas.types.ts`
-- Routers: `packages/trpc/src/routers/planned_activities.ts`, `packages/trpc/src/routers/activity_plans.ts`, new `packages/trpc/src/routers/events.ts`, new `packages/trpc/src/routers/coaching.ts`, new `packages/trpc/src/routers/messages.ts`, new `packages/trpc/src/routers/notifications.ts`
+- Routers: remove `packages/trpc/src/routers/planned_activities.ts`, update `packages/trpc/src/routers/activity_plans.ts`, add `packages/trpc/src/routers/events.ts`, add `packages/trpc/src/routers/coaching.ts`, add `packages/trpc/src/routers/messages.ts`, add `packages/trpc/src/routers/notifications.ts`
 - Core contracts: `packages/core/contracts/*`, `packages/core/schemas/*`
 - Mobile adapters likely touched: `apps/mobile/lib/hooks/useTrainingPlanSnapshot.ts`, `apps/mobile/components/ScheduleActivityModal.tsx`
 
+## 3.2) `planned_activities` -> `events` redesign blueprint
+
+This blueprint is mandatory for this phase and enforces a full cutover (no long-lived compatibility layer).
+
+### A) Why this redesign
+
+- Current repository coupling is broad (`planned_activities` appears in schema, routers, mobile flows, Wahoo sync, and tests).
+- Direct rename/drop would create high regression risk and break integrations.
+- Hard cutover keeps one canonical model and avoids long-term maintenance of duplicate contracts.
+
+### B) Canonical model decision
+
+- `events` is source of truth for planned scheduling.
+- Use `event_type='planned_activity'` to preserve semantics.
+- `planned_activities` is removed from target schema and active code paths in this phase.
+
+### C) Required migration phases
+
+1. **Expand**: create `events` (+ recurrence and identity tables) and add required indexes/constraints.
+2. **Backfill**: idempotently migrate `planned_activities` rows to `events` with deterministic mapping.
+3. **Cutover**: switch routers/services/clients/integrations to `events` APIs and contracts.
+4. **Remove**: delete `planned_activities` references from schema, generated types, routers, tests, and clients.
+5. **Verify**: run migration replay, compile checks, and integration tests on events-only paths.
+
+### D) Hotspot files requiring explicit migration review
+
+- Schema/types: `packages/supabase/schemas/init.sql`, `packages/supabase/database.types.ts`, `packages/supabase/supazod/schemas.ts`
+- Router hotspots: `packages/trpc/src/routers/planned_activities.ts`, `packages/trpc/src/routers/training-plans.base.ts`, `packages/trpc/src/routers/home.ts`, `packages/trpc/src/routers/activity_plans.ts`, `packages/trpc/src/routers/activities.ts`, `packages/trpc/src/routers/integrations.ts`
+- Integration hotspots: `packages/trpc/src/lib/integrations/wahoo/sync-service.ts`, `packages/trpc/src/lib/integrations/wahoo/activity-importer.ts`
+- Mobile hotspots: `apps/mobile/app/(internal)/(tabs)/plan.tsx`, `apps/mobile/components/ScheduleActivityModal.tsx`, `apps/mobile/lib/services/ActivityRecorder/index.ts`, `apps/mobile/lib/hooks/useActivitySubmission.ts`
+
+### E) Cutover and rollback conditions
+
+- Row parity checks by profile/date/status between pre-cutover source snapshot and canonical events.
+- Recurrence parity checks for split/override behavior.
+- Sync validation checks for Wahoo mapping resolution.
+- Roll back the migration release if post-cutover verification fails; no dual-read fallback path is maintained.
+
 ## 4) Migration Strategy
 
-- Additive-first, dual-write/dual-read transition is mandatory until parity gates pass.
-- Preserve old read paths while new write paths stabilize through explicit compatibility adapters.
-- Compatibility scope includes all existing `planned_activities`/`training_plans` consumers.
+- Additive-first migration to build events model, followed by hard cutover to events-only reads/writes.
+- Remove old read paths in same phase once events cutover verification passes.
 - Include backfill scripts where derived linkage data is required.
 - Backfill invariants must be defined before execution (row parity, ownership parity, recurrence parity, no orphan rows).
 - Rollback criteria: any invariant failure above threshold, unresolved drift, or query latency regression beyond agreed SLO.
 - Migration replay on a clean database plus schema/data drift checks is a required gate before rollout approval.
-- Cleanup is phased: remove compatibility code only after sustained parity, zero fallback reads, and observability sign-off.
+- Cleanup is mandatory in-phase: remove compatibility code and deprecated references before completion sign-off.
 
 ## 5) Integrity Constraints and Index Baseline
 
@@ -297,12 +336,12 @@ supabase migration up
 pnpm --filter @repo/supabase run update-types
 ```
 
-## 7) API and Compatibility Plan
+## 7) API Cutover Plan
 
 - Introduce new procedure inputs/outputs behind explicit versioned fields when needed.
-- Keep old response shape compatibility where existing mobile/web screens still depend on it.
-- Route transitional reads through compatibility adapters for `planned_activities`/`training_plans` consumers until removal criteria are met.
-- Add focused mapping tests to prevent shape regressions.
+- Remove `plannedActivities` router surface and migrate consumers to `events` procedures.
+- Rename or replace query-client keys/selectors so all planned scheduling data resolves through `events`.
+- Add focused mapping tests to prevent event-shape regressions.
 
 ## 8) Validation and QA Strategy
 
@@ -328,11 +367,11 @@ pnpm --filter @repo/supabase run update-types
 - lock model contracts
 - add base tables/columns/indexes with additive strategy
 
-### Phase 2 - tRPC wiring and compatibility adapters
+### Phase 2 - tRPC and client cutover
 
 - implement write/read paths for new model
-- preserve existing consumers via adapters where needed
-- run dual-write/dual-read with parity instrumentation
+- migrate existing consumers to events-only contracts
+- remove `plannedActivities` API usage and client query keys
 
 ### Phase 3 - Backfill and integrity hardening
 
@@ -344,7 +383,7 @@ pnpm --filter @repo/supabase run update-types
 
 - full type/test/lint gates
 - run migration replay + drift checks as release gate
-- remove temporary compatibility code only when cleanup criteria are satisfied
+- confirm no active references to `planned_activities` remain
 
 ## 10) Quality Gates
 
@@ -362,5 +401,5 @@ pnpm lint
 2. Existing consumers remain stable or are explicitly migrated.
 3. Migration workflow is reproducible on a clean local database.
 4. Migration replay and drift checks pass with documented evidence.
-5. Temporary compatibility paths are removed or tracked with explicit exit criteria.
+5. No active references to `planned_activities` remain in schema, generated types, routers, integrations, or clients.
 6. All tasks in `tasks.md` are complete.
