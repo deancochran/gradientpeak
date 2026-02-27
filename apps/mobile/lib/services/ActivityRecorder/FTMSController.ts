@@ -13,6 +13,7 @@ import {
 } from "@repo/core";
 import { Buffer } from "buffer";
 import { Device } from "react-native-ble-plx";
+import { decodeBase64ToBytes, toDataView } from "./ble-bytes";
 
 // Re-export for backwards compatibility
 export { ControlMode };
@@ -57,8 +58,10 @@ export class FTMSController {
         throw new Error("Failed to read FTMS features");
       }
 
-      const buffer = Buffer.from(characteristic.value, "base64");
-      const view = new DataView(buffer.buffer);
+      const view = toDataView(decodeBase64ToBytes(characteristic.value));
+      if (view.byteLength < 8) {
+        throw new Error("Malformed FTMS features payload");
+      }
 
       // Parse Fitness Machine Features (Bytes 0-3)
       const machineFeatures = view.getUint32(0, true);
@@ -264,14 +267,17 @@ export class FTMSController {
           .catch(() => null);
 
         if (powerChar?.value) {
-          const buffer = Buffer.from(powerChar.value, "base64");
-          const view = new DataView(buffer.buffer);
-          this.features.powerRange = {
-            min: view.getInt16(0, true),
-            max: view.getInt16(2, true),
-            increment: view.getUint16(4, true),
-          };
-          console.log("[FTMS] Power range:", this.features.powerRange);
+          const view = toDataView(decodeBase64ToBytes(powerChar.value));
+          if (view.byteLength < 6) {
+            console.warn("[FTMS] Malformed supported power range payload");
+          } else {
+            this.features.powerRange = {
+              min: view.getInt16(0, true),
+              max: view.getInt16(2, true),
+              increment: view.getUint16(4, true),
+            };
+            console.log("[FTMS] Power range:", this.features.powerRange);
+          }
         }
       }
 
@@ -285,14 +291,17 @@ export class FTMSController {
           .catch(() => null);
 
         if (speedChar?.value) {
-          const buffer = Buffer.from(speedChar.value, "base64");
-          const view = new DataView(buffer.buffer);
-          this.features.speedRange = {
-            min: view.getUint16(0, true) * 0.01, // Convert to km/h
-            max: view.getUint16(2, true) * 0.01,
-            increment: view.getUint16(4, true) * 0.01,
-          };
-          console.log("[FTMS] Speed range:", this.features.speedRange);
+          const view = toDataView(decodeBase64ToBytes(speedChar.value));
+          if (view.byteLength < 6) {
+            console.warn("[FTMS] Malformed supported speed range payload");
+          } else {
+            this.features.speedRange = {
+              min: view.getUint16(0, true) * 0.01, // Convert to km/h
+              max: view.getUint16(2, true) * 0.01,
+              increment: view.getUint16(4, true) * 0.01,
+            };
+            console.log("[FTMS] Speed range:", this.features.speedRange);
+          }
         }
       }
 
@@ -306,17 +315,22 @@ export class FTMSController {
           .catch(() => null);
 
         if (inclinationChar?.value) {
-          const buffer = Buffer.from(inclinationChar.value, "base64");
-          const view = new DataView(buffer.buffer);
-          this.features.inclinationRange = {
-            min: view.getInt16(0, true) * 0.1, // Convert to percent
-            max: view.getInt16(2, true) * 0.1,
-            increment: view.getUint16(4, true) * 0.1,
-          };
-          console.log(
-            "[FTMS] Inclination range:",
-            this.features.inclinationRange,
-          );
+          const view = toDataView(decodeBase64ToBytes(inclinationChar.value));
+          if (view.byteLength < 6) {
+            console.warn(
+              "[FTMS] Malformed supported inclination range payload",
+            );
+          } else {
+            this.features.inclinationRange = {
+              min: view.getInt16(0, true) * 0.1, // Convert to percent
+              max: view.getInt16(2, true) * 0.1,
+              increment: view.getUint16(4, true) * 0.1,
+            };
+            console.log(
+              "[FTMS] Inclination range:",
+              this.features.inclinationRange,
+            );
+          }
         }
       }
 
@@ -330,17 +344,20 @@ export class FTMSController {
           .catch(() => null);
 
         if (resistanceChar?.value) {
-          const buffer = Buffer.from(resistanceChar.value, "base64");
-          const view = new DataView(buffer.buffer);
-          this.features.resistanceRange = {
-            min: view.getInt16(0, true) * 0.1,
-            max: view.getInt16(2, true) * 0.1,
-            increment: view.getUint16(4, true) * 0.1,
-          };
-          console.log(
-            "[FTMS] Resistance range:",
-            this.features.resistanceRange,
-          );
+          const view = toDataView(decodeBase64ToBytes(resistanceChar.value));
+          if (view.byteLength < 6) {
+            console.warn("[FTMS] Malformed supported resistance range payload");
+          } else {
+            this.features.resistanceRange = {
+              min: view.getInt16(0, true) * 0.1,
+              max: view.getInt16(2, true) * 0.1,
+              increment: view.getUint16(4, true) * 0.1,
+            };
+            console.log(
+              "[FTMS] Resistance range:",
+              this.features.resistanceRange,
+            );
+          }
         }
       }
 
@@ -354,14 +371,20 @@ export class FTMSController {
           .catch(() => null);
 
         if (hrChar?.value) {
-          const buffer = Buffer.from(hrChar.value, "base64");
-          const view = new DataView(buffer.buffer);
-          this.features.heartRateRange = {
-            min: view.getUint8(0),
-            max: view.getUint8(1),
-            increment: view.getUint8(2),
-          };
-          console.log("[FTMS] Heart rate range:", this.features.heartRateRange);
+          const view = toDataView(decodeBase64ToBytes(hrChar.value));
+          if (view.byteLength < 3) {
+            console.warn("[FTMS] Malformed supported heart rate range payload");
+          } else {
+            this.features.heartRateRange = {
+              min: view.getUint8(0),
+              max: view.getUint8(1),
+              increment: view.getUint8(2),
+            };
+            console.log(
+              "[FTMS] Heart rate range:",
+              this.features.heartRateRange,
+            );
+          }
         }
       }
     } catch (error) {
@@ -926,84 +949,119 @@ export class FTMSController {
     try {
       for (let attempt = 0; attempt < retries; attempt++) {
         try {
-          // Setup a promise to listen for the response
+          let abortResponseWait: (() => void) | undefined;
+
           const responsePromise = new Promise<FTMSResponse>(
             (resolve, reject) => {
-              const timeout = setTimeout(() => {
-                reject(new Error("Response timeout"));
+              let settled = false;
+              let subscription: { remove: () => void } | undefined;
+              let timeout: ReturnType<typeof setTimeout> | undefined;
+
+              const cleanup = () => {
+                if (timeout) {
+                  clearTimeout(timeout);
+                  timeout = undefined;
+                }
+                if (subscription) {
+                  subscription.remove();
+                  subscription = undefined;
+                }
+              };
+
+              const succeed = (response: FTMSResponse) => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                resolve(response);
+              };
+
+              const fail = (error: Error) => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                reject(error);
+              };
+
+              timeout = setTimeout(() => {
+                fail(new Error("Response timeout"));
               }, 2000);
 
-              // Monitor control point for response (Op Code 0x80)
-              const subscription = this.device.monitorCharacteristicForService(
+              abortResponseWait = () => {
+                fail(new Error("Control point write aborted"));
+              };
+
+              subscription = this.device.monitorCharacteristicForService(
                 BLE_SERVICE_UUIDS.FITNESS_MACHINE,
                 FTMS_CHARACTERISTICS.CONTROL_POINT,
                 (error, characteristic) => {
                   if (error) {
-                    clearTimeout(timeout);
-                    subscription.remove();
-                    reject(error);
+                    fail(
+                      error instanceof Error ? error : new Error(String(error)),
+                    );
                     return;
                   }
 
                   if (!characteristic?.value) return;
 
-                  const responseBuffer = Buffer.from(
+                  const responseBytes = decodeBase64ToBytes(
                     characteristic.value,
-                    "base64",
                   );
-                  const responseOpCode = responseBuffer[0];
 
-                  // Check if this is a response code (0x80)
-                  if (responseOpCode === FTMS_OPCODES.RESPONSE_CODE) {
-                    clearTimeout(timeout);
-                    subscription.remove();
-
-                    const receivedRequestOpCode = responseBuffer[1];
-                    const resultCode = responseBuffer[2];
-
-                    // Verify this response is for our request
-                    if (receivedRequestOpCode === requestOpCode) {
-                      const resultCodeName = this.getResultCodeName(resultCode);
-                      const success = resultCode === FTMS_RESULT_CODES.SUCCESS;
-
-                      resolve({
-                        requestOpCode,
-                        resultCode,
-                        resultCodeName,
-                        success,
-                        parameters:
-                          responseBuffer.length > 3
-                            ? new Uint8Array(responseBuffer.slice(3))
-                            : undefined,
-                      });
-                    }
+                  if (responseBytes.byteLength < 1) {
+                    return;
                   }
+
+                  const responseOpCode = responseBytes[0];
+                  if (responseOpCode !== FTMS_OPCODES.RESPONSE_CODE) {
+                    return;
+                  }
+
+                  if (responseBytes.byteLength < 3) {
+                    fail(new Error("Malformed FTMS response payload"));
+                    return;
+                  }
+
+                  const receivedRequestOpCode = responseBytes[1];
+                  if (receivedRequestOpCode !== requestOpCode) {
+                    console.warn(
+                      `[FTMS] Ignoring response for opcode 0x${receivedRequestOpCode.toString(16)} while waiting for 0x${requestOpCode.toString(16)}`,
+                    );
+                    return;
+                  }
+
+                  const resultCode = responseBytes[2];
+                  succeed({
+                    requestOpCode,
+                    resultCode,
+                    resultCodeName: this.getResultCodeName(resultCode),
+                    success: resultCode === FTMS_RESULT_CODES.SUCCESS,
+                    parameters:
+                      responseBytes.byteLength > 3
+                        ? responseBytes.slice(3)
+                        : undefined,
+                  });
                 },
               );
             },
           );
 
-          // Write the command
-          await this.device.writeCharacteristicWithResponseForService(
-            BLE_SERVICE_UUIDS.FITNESS_MACHINE,
-            FTMS_CHARACTERISTICS.CONTROL_POINT,
-            Buffer.from(buffer).toString("base64"),
-          );
+          try {
+            await this.device.writeCharacteristicWithResponseForService(
+              BLE_SERVICE_UUIDS.FITNESS_MACHINE,
+              FTMS_CHARACTERISTICS.CONTROL_POINT,
+              Buffer.from(buffer).toString("base64"),
+            );
+          } catch (writeError) {
+            abortResponseWait?.();
+            throw writeError;
+          }
 
-          // Wait for response
           const response = await responsePromise;
-
-          // Unblock after successful write
-          setTimeout(() => {
-            this.isBlocked = false;
-          }, 500); // 500ms delay before accepting next command
-
           return response;
         } catch (error) {
           console.warn(`[FTMS] Write attempt ${attempt + 1} failed:`, error);
 
           if (attempt < retries - 1) {
-            // Exponential backoff: 500ms, 1s, 2s
             const delay = Math.pow(2, attempt) * 500;
             await new Promise((resolve) => setTimeout(resolve, delay));
           }
@@ -1018,10 +1076,9 @@ export class FTMSController {
         success: false,
       };
     } finally {
-      // Ensure control point is unblocked even on error
       setTimeout(() => {
         this.isBlocked = false;
-      }, 1000);
+      }, 500);
     }
   }
 
@@ -1064,8 +1121,12 @@ export class FTMSController {
 
           if (!characteristic?.value) return;
 
-          const buffer = Buffer.from(characteristic.value, "base64");
-          const opCode = buffer[0];
+          const bytes = decodeBase64ToBytes(characteristic.value);
+          if (bytes.byteLength < 1) {
+            return;
+          }
+
+          const opCode = bytes[0];
 
           const statusMessages: Record<number, string> = {
             0x01: "Reset",

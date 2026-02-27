@@ -16,3 +16,4 @@ export * from "./threshold-detection";
 export * from "./training-effect";
 export * from "./tss";
 export * from "./vo2max";
+export * from "./workload";

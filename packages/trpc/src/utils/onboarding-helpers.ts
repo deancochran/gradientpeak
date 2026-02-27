@@ -158,15 +158,17 @@ export async function batchInsertActivityEfforts(
   profileId: string,
   efforts: DerivedEffort[],
   source: string = "onboarding",
+  activityId: string | null = null,
 ) {
   if (efforts.length === 0) {
     return { data: [], error: null };
   }
 
-  // Generate UUIDs for efforts since activity_id is required but we don't have an activity
+  // Some deployments require non-null activity_id while newer schema allows null.
+  // Use caller-provided activityId when available for compatibility.
   const effortsToInsert = efforts.map((e) => ({
     profile_id: profileId,
-    activity_id: null, // Manual entries have no associated activity
+    activity_id: activityId,
     activity_category: e.activity_category as ActivityCategory,
     duration_seconds: e.duration_seconds,
     effort_type: e.effort_type as EffortType,

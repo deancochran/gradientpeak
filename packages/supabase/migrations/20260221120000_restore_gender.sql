@@ -1,6 +1,17 @@
 alter table public.profiles
-  add column gender text;
+  add column if not exists gender text;
 
-alter table public.profiles
-  add constraint profiles_gender_check
-  check (gender in ('male', 'female'));
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'profiles_gender_check'
+      and conrelid = 'public.profiles'::regclass
+  ) then
+    alter table public.profiles
+      add constraint profiles_gender_check
+      check (gender in ('male', 'female'));
+  end if;
+end
+$$;

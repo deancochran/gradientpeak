@@ -8,6 +8,7 @@
 import type { StandardActivity } from "@repo/core";
 import {
   calculateTSSFromAvailableData,
+  computeTrimp,
   extractHeartRateZones,
   extractPowerZones,
   parseFitFileWithSDK,
@@ -399,6 +400,20 @@ export const fitFilesRouter = createTRPCRouter({
           maxHeartRate ||
           (maxHRMetric?.value ? Number(maxHRMetric.value) : 190);
 
+        // Fetch Resting HR
+        const { data: restingHRMetric } = await supabase
+          .from("profile_metrics")
+          .select("value")
+          .eq("profile_id", userId)
+          .eq("metric_type", "resting_hr")
+          .order("recorded_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const restingHR = restingHRMetric?.value
+          ? Number(restingHRMetric.value)
+          : 60; // Default 60
+
         // For FTP, we ideally want to calculate it dynamically, but that's expensive here.
         // For now, let's use a default or try to fetch a cached value if we had one.
         // Since we removed the logs table, we'll default to 200W for now,
@@ -429,6 +444,8 @@ export const fitFilesRouter = createTRPCRouter({
         let tss: number | undefined;
         let normalizedPower: number | undefined;
         let intensityFactor: number | undefined;
+        let trimp: number | null = null;
+        let trimpSource: string | null = null;
 
         // Calculate TSS using whatever data is available (Power > HR > Pace)
         try {
@@ -475,6 +492,26 @@ export const fitFilesRouter = createTRPCRouter({
         } catch (error) {
           console.error("Failed to calculate TSS:", error);
           // Don't fail the mutation, just skip TSS calculation
+        }
+
+        try {
+          const trimpResult = computeTrimp({
+            coverageDays: 28,
+            durationSeconds: duration,
+            avgHeartRateBpm: avgHeartRate ?? null,
+            restingHeartRateBpm: restingHR,
+            maxHeartRateBpm: maxHR,
+            hrSampleCount: hrStream.length,
+            hrCoverageRatio: hrStream.length / Math.max(records.length, 1),
+            avgPowerWatts: avgPower ?? null,
+          });
+
+          if (typeof trimpResult.value === "number") {
+            trimp = trimpResult.value;
+            trimpSource = trimpResult.source ?? null;
+          }
+        } catch (error) {
+          console.error("Failed to calculate TRIMP:", error);
         }
 
         // ========================================================================
@@ -643,6 +680,8 @@ export const fitFilesRouter = createTRPCRouter({
             : null,
           intensity_factor: intensityFactor || null,
           training_stress_score: tss ? Math.round(tss) : null,
+          trimp,
+          trimp_source: trimpSource,
 
           // Cadence metrics
           avg_cadence: avgCadence ? Math.round(avgCadence) : null,
@@ -823,19 +862,6 @@ export const fitFilesRouter = createTRPCRouter({
         }
 
         // 3. Estimate VO2 Max
-        const { data: restingHRMetric } = await supabase
-          .from("profile_metrics")
-          .select("value")
-          .eq("profile_id", userId)
-          .eq("metric_type", "resting_hr")
-          .order("recorded_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        const restingHR = restingHRMetric?.value
-          ? Number(restingHRMetric.value)
-          : 60; // Default 60
-
         if (maxHeartRate && restingHR) {
           const estimatedVO2 = estimateVO2Max(maxHeartRate, restingHR);
           // We could log this or notify

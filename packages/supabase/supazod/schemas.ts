@@ -123,6 +123,8 @@ export const publicActivitiesRowSchema = z.object({
   total_strokes: z.number().nullable(),
   training_effect: publicTrainingEffectLabelSchema.nullable(),
   training_stress_score: z.number().nullable(),
+  trimp: z.number().nullable(),
+  trimp_source: z.string().nullable(),
   type: z.string(),
   updated_at: z.string(),
 });
@@ -186,6 +188,8 @@ export const publicActivitiesInsertSchema = z.object({
   total_strokes: z.number().optional().nullable(),
   training_effect: publicTrainingEffectLabelSchema.optional().nullable(),
   training_stress_score: z.number().optional().nullable(),
+  trimp: z.number().optional().nullable(),
+  trimp_source: z.string().optional().nullable(),
   type: z.string(),
   updated_at: z.string().optional(),
 });
@@ -249,6 +253,8 @@ export const publicActivitiesUpdateSchema = z.object({
   total_strokes: z.number().optional().nullable(),
   training_effect: publicTrainingEffectLabelSchema.optional().nullable(),
   training_stress_score: z.number().optional().nullable(),
+  trimp: z.number().optional().nullable(),
+  trimp_source: z.string().optional().nullable(),
   type: z.string().optional(),
   updated_at: z.string().optional(),
 });

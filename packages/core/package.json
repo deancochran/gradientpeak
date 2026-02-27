@@ -5,6 +5,8 @@
   "main": "./index.ts",
   "exports": {
     ".": "./index.ts",
+    "./bluetooth": "./bluetooth/index.ts",
+    "./bluetooth/*": "./bluetooth/*.ts",
     "./calculations": "./calculations/index.ts",
     "./estimation": "./estimation/index.ts",
     "./plan": "./plan/index.ts",
