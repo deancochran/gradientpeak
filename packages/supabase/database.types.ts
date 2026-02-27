@@ -96,6 +96,8 @@ export type Database = {
             | Database["public"]["Enums"]["training_effect_label"]
             | null
           training_stress_score: number | null
+          trimp: number | null
+          trimp_source: string | null
           type: string
           updated_at: string
         }
@@ -160,6 +162,8 @@ export type Database = {
             | Database["public"]["Enums"]["training_effect_label"]
             | null
           training_stress_score?: number | null
+          trimp?: number | null
+          trimp_source?: string | null
           type: string
           updated_at?: string
         }
@@ -224,6 +228,8 @@ export type Database = {
             | Database["public"]["Enums"]["training_effect_label"]
             | null
           training_stress_score?: number | null
+          trimp?: number | null
+          trimp_source?: string | null
           type?: string
           updated_at?: string
         }

@@ -1,113 +1,176 @@
-# Technical Implementation Plan - Phase 2 Data Integrity & Metrics Engine
+# Technical Implementation Plan - Phase 2 Data Integrity & Metrics Engine (MVP)
 
 Date: 2026-02-26
-Status: Ready for implementation
-Owner: Mobile + Core + Backend
+Status: Ready for implementation (with contract lock)
+Owner: Mobile + Core + Backend + QA
 Inputs: `design.md`
 
-## 1) Implementation Intent
+## 1) Target Architecture
 
-Deliver Phase 2 in two parallel workstreams:
+- `apps/mobile`:
+  - BLE discovery, subscription, and lifecycle management
+  - conversion of characteristic payload to byte array
+  - dispatch parsed readings to recording pipeline
+- `@repo/core`:
+  - pure parser utilities and characteristic parsers (new module)
+  - pure BLE parsing helpers and delta/wrap arithmetic
+  - pure workload calculations (TRIMP, ACWR, Monotony)
+  - sparse-history status policy
+- `@repo/trpc`:
+  - orchestrate ingestion and persistence
+  - call canonical `@repo/core` formulas
+  - expose metric values + status metadata in endpoints
 
-1. Sensor parser audit and corrections.
-2. Metrics computation hardening with practical sparse-history handling.
+## 2) File-Level Implementation Map
 
-## 2) Guardrails
+### Mobile (recording and BLE parsing call sites)
 
-1. Do not ship parser changes without byte-level validation references.
-2. Do not duplicate formulas across packages; keep one source of truth per metric.
-3. Do not block metrics output for sparse-history users; use clear MVP provisional behavior.
-4. Keep scope limited to correctness and compute layer (no UI refactor coupling).
-5. Defer Bayesian inference to post-MVP.
+- `apps/mobile/lib/services/ActivityRecorder/sensors.ts`
+  - fix CSC cadence derivation and offset handling
+  - harden FTMS/HR/Cycling Power parsing paths
+  - add debug payload logging toggle path
+- `apps/mobile/lib/services/ActivityRecorder/FTMSController.ts`
+  - validate control point response opcode/result handling
+  - preserve single in-flight request behavior
 
-## 3) Workstream A - Bluetooth Parser Audit
+### Core (canonical logic)
 
-### A0 - Current-state inventory
+- `packages/core/bluetooth/` (new)
+  - characteristic parsers and shared byte/offset helpers
+  - delta/wrap arithmetic helpers used by mobile call sites
+- `packages/core/calculations/workload.ts` (new)
+  - `computeTrimp(...)`
+  - `computeAcwr(...)`
+  - `computeMonotony(...)`
+  - status envelope helpers
+- `packages/core/calculations/index.ts`
+  - export new workload functions
+- `packages/core/calculations/__tests__/workload.test.ts` (new)
+  - deterministic unit coverage for formulas and guards
 
-- Identify all GATT notifications currently parsed during recording.
-- Map each parser to source characteristic UUID and spec section.
-- Record current field assumptions (offsets, widths, scale, endianness).
+### Backend (ingestion and persistence)
 
-Deliverable:
+- `packages/trpc/src/routers/fit-files.ts`
+  - compute TRIMP at ingestion and persist
+- `packages/trpc/src/routers/activities.ts`
+  - preserve mapping consistency for metric fields
+- `packages/trpc/src/routers/home.ts`
+- `packages/trpc/src/routers/trends.ts`
+  - expose ACWR/Monotony + sparse-history status from canonical calculations
 
-- Parser inventory table with file references and risk levels.
+## 3) Canonical Formula and Policy Decisions
 
-### A1 - Spec-conformance corrections
+### TRIMP
 
-- Fix CSC cadence derivation from cumulative counters and event times.
-- Make Cycling Power parser flag-aware and optional-field safe.
-- Make Heart Rate parser width-aware based on flags (8-bit/16-bit).
-- Make FTMS Indoor Bike parser fully flag-driven with dynamic offsets.
+- Primary: HR-based TRIMP when HR quality threshold is satisfied.
+- Fallback: power-proxy load when HR quality fails and power load exists.
+- Emit source tag: `hr` or `power_proxy`.
+- Contract lock required before implementation: define exact HR quality threshold and exact fallback algorithm inputs/formula.
 
-Deliverable:
+### ACWR
 
-- Corrected parser implementations and focused tests per characteristic.
+- `acute = average(dailyLoad, last 7 days)`
+- `chronic = average(dailyLoad, last 28 days)`
+- `acwr = acute / chronic` with denominator guard.
+- Contract lock required before implementation: define canonical daily-load series semantics (day boundary/timezone, zero-load day handling, inclusion rules).
 
-### A2 - Observability and regression diagnostics
+### Monotony
 
-- Add dev debug mode for raw hex payload + parsed field output.
-- Add guardrails for timestamp wrap-around and missing previous samples.
+- `monotony = mean(last 7 dailyLoad) / stddev(last 7 dailyLoad)`
+- if stddev is zero or near-zero, return safe null/status (never Infinity/NaN).
 
-Deliverable:
+### Sparse-History Policy (MVP)
 
-- Reproducible debug output for targeted recording sessions.
+- status thresholds:
+  - `<7 days`: `insufficient_history`
+  - `7-27 days`: `provisional`
+  - `>=28 days`: `stable`
 
-## 4) Workstream B - Metrics Engine
+## 4) Data and API Contract Updates
 
-### B0 - Formula baseline and data path mapping
+### Metric Value Envelope
 
-- Locate current TRIMP/ACWR/Monotony computations and storage writes.
-- Define one canonical computation path from activity completion to persistence.
+Use this response shape for ACWR and Monotony outputs:
 
-Deliverable:
+```ts
+type MetricStatus = "insufficient_history" | "provisional" | "stable";
 
-- Canonical metrics flow diagram and ownership map.
+type MetricValueEnvelope = {
+  value: number | null;
+  status: MetricStatus;
+  coverageDays: number;
+  requiredDays: number;
+  source?: "hr" | "power_proxy";
+  reasonCode?: string;
+};
+```
 
-### B1 - Metric computation implementation hardening
+### Persistence
 
-- Enforce TRIMP computation for each completed activity.
-- Add HR-quality check and power-based fallback path.
-- Standardize ACWR and Monotony rolling-window computations.
-- Add protections for small sample sizes and zero variance denominator.
-- Define and implement sparse-history MVP behavior (provisional/null-safe outputs).
+- Persist TRIMP per completed activity when compute inputs exist.
+- Keep ACWR/Monotony computed from canonical daily load history for MVP.
+- If schema changes are required, follow the required DB workflow exactly (below).
 
-Deliverable:
+### Required DB Workflow (Order Is Mandatory)
 
-- Stable metric outputs across complete and partial histories.
+When a schema update is needed for this phase, execute these steps in order:
 
-### B2 - Post-MVP placeholder (Bayesian estimation)
+1. Update `packages/supabase/schemas/init.sql` first.
+2. Generate migration via `supabase db diff`.
+3. Apply migration via `supabase migration up`.
+4. Update generated types/schemas via `pnpm --filter @repo/supabase run update-types`.
 
-- Not implemented in MVP.
-- Document extension points only, no production dependency.
+Notes:
 
-## 5) Execution Order
+- Do not skip directly to migration edits before `init.sql` is updated.
+- Keep migration SQL and `init.sql` consistent in the same change set.
+- Verify all three generated outputs are updated by `pnpm --filter @repo/supabase run update-types` before closing the task.
 
-1. A0 and B0 in parallel.
-2. A1 parser fixes.
-3. B1 metric hardening.
-4. A2 observability.
-5. Document post-MVP extension points.
-6. Controlled workout validation and test pass.
+## 5) Implementation Phases (Low-Risk Order)
 
-## 6) Test Strategy
+### Phase 1 - Core math foundation
 
-### Parser tests
+- Add workload module in `@repo/core` + tests.
+- No runtime wiring changes yet.
 
-- Synthetic fixtures per characteristic with flag combinations and edge offsets.
-- Counter/timestamp delta tests for CSC cadence.
-- Width and conditional-field parsing tests for HR/Cycling Power/FTMS.
+### Phase 2 - Parser extraction and hardening
 
-### Metrics tests
+- Extract parser logic to pure helpers (`@repo/core`) with fixture-driven tests.
+- Fix CSC cadence + wrap-around behavior.
+- Harden FTMS/HR/Cycling Power parsing.
+- Add parser fixtures and branch tests.
 
-- TRIMP with and without valid HR input.
-- ACWR/Monotony window boundary conditions.
-- Sparse-history provisional behavior snapshots.
-- Divide-by-zero and missing-data safety checks.
+### Phase 3 - Mobile and backend wiring
 
-### Field validation
+- Wire mobile recording call sites to canonical parsers.
+- Call core workload functions in ingestion path.
+- Persist TRIMP and return ACWR/Monotony envelopes in read endpoints.
 
-- Run a controlled ERG session and compare to head unit/reference app.
-- Confirm persisted metrics and plotted trends are physiologically plausible.
+### Phase 4 - Validation and cleanup
+
+- run controlled replay/validation sessions
+- normalize naming mismatches and remove duplicate formulas
+
+## 6) QA and Test Strategy
+
+### Parser Tests
+
+- fixtures for each characteristic with flags on/off combinations
+- wrap-around delta tests (counter and timestamp)
+- truncated payload safety tests
+
+### Metrics Tests
+
+- TRIMP HR-valid, HR-invalid fallback, no-input behavior
+- ACWR exact boundary windows (7/28)
+- Monotony zero-variance guard
+- sparse-history status transitions
+
+### Integration Tests
+
+- ingestion path persists expected metric fields
+- endpoint responses include `MetricValueEnvelope`
+- duplicate-ingestion/idempotency guard for daily-load history integrity
 
 ## 7) Quality Gates
 
@@ -116,18 +179,30 @@ pnpm --filter mobile test
 pnpm --filter mobile check-types
 pnpm --filter @repo/core test
 pnpm --filter @repo/core check-types
+pnpm --filter @repo/trpc test
+pnpm --filter @repo/trpc check-types
 pnpm check-types
 pnpm lint
 ```
 
-## 8) Definition of Done
+## 8) Risks and Mitigations
 
-1. Parser outputs match spec and reference behavior.
-2. TRIMP/ACWR/Monotony are consistently computed and stored.
-3. Sparse-history behavior is explicit, safe, and test-covered.
-4. Tests cover key parser branches and metrics edge cases.
+1. Parser regressions from offset errors -> fixture-first tests + per-flag coverage.
+2. Formula drift across packages -> all formulas in `@repo/core` only.
+3. Metric compute failures blocking activity insert -> fail-open with null/status + logging.
+4. Sparse-history confusion -> explicit status + coverage metadata.
+5. Naming drift between payload and DB fields -> single mapping adapter and test coverage.
 
-## 9) Post-MVP Notes
+## 9) Definition of Done
 
-- Bayesian priors/posteriors and uncertainty propagation are intentionally deferred.
-- Revisit after MVP metrics are validated in production-like usage.
+1. Parser behavior is spec-correct and test-covered for required characteristics.
+2. TRIMP/ACWR/Monotony are computed by canonical `@repo/core` logic.
+3. Sparse-history outputs are explicit and safe.
+4. Endpoint outputs and persisted values match contract and tests.
+5. All checklist items in `tasks.md` are completed.
+
+## 10) Post-MVP Extension Points
+
+- Bayesian sparse-history estimation.
+- uncertainty propagation to readiness/recommendation systems.
+- precomputed workload snapshots if query performance requires it.

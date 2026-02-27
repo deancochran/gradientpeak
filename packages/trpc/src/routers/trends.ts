@@ -11,6 +11,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { featureFlags } from "../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { buildWorkloadEnvelopes } from "../utils/workload";
 
 // Input schemas
 const dateRangeSchema = z.object({
@@ -240,7 +241,12 @@ export const trendsRouter = createTRPCRouter({
       }
 
       if (!activities || activities.length === 0) {
-        return { dataPoints: [], currentStatus: null };
+        const workload = buildWorkloadEnvelopes([], startDate, endDate);
+        return {
+          dataPoints: [],
+          currentStatus: null,
+          workload,
+        };
       }
 
       const rollingTrainingQuality = featureFlags.personalizationTrainingQuality
@@ -344,9 +350,18 @@ export const trendsRouter = createTRPCRouter({
             }
           : null;
 
+      const workloadWindowStart = new Date(endDate);
+      workloadWindowStart.setDate(endDate.getDate() - 27);
+      const workload = buildWorkloadEnvelopes(
+        activities,
+        workloadWindowStart,
+        endDate,
+      );
+
       return {
         dataPoints,
         currentStatus,
+        workload,
         personalizationTelemetry: {
           flags: {
             age_constants: featureFlags.personalizationAgeConstants,

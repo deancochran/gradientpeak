@@ -134,6 +134,17 @@ export const onboardingRouter = createTRPCRouter({
 
       // 3. Derive and insert all activity efforts
       const allEfforts = [];
+      const warnings: string[] = [];
+
+      const { data: latestActivity } = await supabase
+        .from("activities")
+        .select("id")
+        .eq("profile_id", userId)
+        .order("started_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const fallbackActivityId = latestActivity?.id ?? null;
 
       // Merge user input with baseline for performance metrics
       const finalFtp = input.ftp ?? baseline?.ftp;
@@ -168,10 +179,23 @@ export const onboardingRouter = createTRPCRouter({
           userId,
           allEfforts,
           input.experience_level,
+          fallbackActivityId,
         );
 
         if (effortsError) {
-          throw new Error(`Failed to insert efforts: ${effortsError.message}`);
+          const isActivityIdNotNullViolation =
+            effortsError.message?.includes("activity_id") &&
+            effortsError.message?.includes("not-null");
+
+          if (isActivityIdNotNullViolation && !fallbackActivityId) {
+            warnings.push(
+              "Skipped effort insertion because this environment requires activity_id and no activities exist yet.",
+            );
+          } else {
+            throw new Error(
+              `Failed to insert efforts: ${effortsError.message}`,
+            );
+          }
         }
       }
 
@@ -180,10 +204,11 @@ export const onboardingRouter = createTRPCRouter({
         success: true,
         created: {
           profile_metrics: metrics.length,
-          activity_efforts: allEfforts.length,
+          activity_efforts: warnings.length > 0 ? 0 : allEfforts.length,
         },
         baseline_used: !!baseline,
         confidence: baseline?.confidence || "high",
+        warnings,
       };
     }),
 

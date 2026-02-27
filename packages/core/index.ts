@@ -200,6 +200,7 @@ export * from "./plan"; // Training plan normalization/expansion helpers
 export * from "./samples"; // Sample data for testing and development
 export * from "./schemas"; // Zod schemas and types (includes formatDuration for DurationV2)
 export * from "./contracts"; // Shared API contracts
+export * from "./bluetooth"; // Canonical BLE parsers
 export * from "./utils"; // Utility functions
 
 // ============================================================================
@@ -217,6 +218,7 @@ export type { StandardActivity } from "./types/normalization";
 export * from "./calculations/duration";
 export * from "./calculations/tss";
 export * from "./calculations/training-quality";
+export * from "./calculations/workload";
 
 // Performance curves (power, pace, HR)
 export * from "./calculations/curves";
@@ -242,6 +244,7 @@ export * from "./detection/hr-tests";
 export * as Calculations from "./calculations";
 export * as CalculationsV2 from "./calculations_v2";
 export * as Constants from "./constants";
+export * as Bluetooth from "./bluetooth";
 export * as Estimation from "./estimation";
 export * as Plan from "./plan";
 export * as Samples from "./samples";

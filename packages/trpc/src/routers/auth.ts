@@ -148,27 +148,8 @@ export const authRouter = createTRPCRouter({
     }
   }),
 
-  getUser: publicProcedure.query(async ({ ctx }) => {
-    try {
-      const { data, error } = await ctx.supabase.auth.getUser();
-
-      if (error || !data.user) {
-        throw new TRPCError({
-          code: "UNAUTHORIZED",
-          message: "Not authenticated",
-        });
-      }
-
-      return data.user;
-    } catch (error) {
-      if (error instanceof TRPCError) {
-        throw error;
-      }
-      throw new TRPCError({
-        code: "UNAUTHORIZED",
-        message: "Authentication failed",
-      });
-    }
+  getUser: protectedProcedure.query(({ ctx }) => {
+    return ctx.session.user;
   }),
 
   sendPasswordResetEmail: publicProcedure

@@ -396,6 +396,8 @@ create table if not exists public.activities (
     normalized_power integer,
     intensity_factor numeric(4,3),
     training_stress_score integer,
+    trimp numeric(10,2),
+    trimp_source text check (trimp_source in ('hr', 'power_proxy')),
 
     -- Cadence metrics
     avg_cadence integer,
@@ -501,6 +503,14 @@ create index if not exists idx_activities_tss
     on public.activities(training_stress_score desc)
     where training_stress_score is not null;
 
+create index if not exists idx_activities_trimp
+    on public.activities(trimp desc)
+    where trimp is not null;
+
+create index if not exists idx_activities_trimp_source
+    on public.activities(trimp_source)
+    where trimp_source is not null;
+
 create index if not exists idx_activities_duration
     on public.activities(duration_seconds desc);
 
@@ -582,7 +592,8 @@ create type public.effort_type as enum (
 
 create table public.activity_efforts (
     id uuid primary key default uuid_generate_v4(),
-    activity_id uuid null references public.activities(id) on delete cascade, -- nullable for manual entries
+    -- Nullable for onboarding/manual efforts that are not tied to a recorded activity
+    activity_id uuid references public.activities(id) on delete cascade,
     profile_id uuid not null references public.profiles(id) on delete cascade,
     activity_category activity_category not null,
 

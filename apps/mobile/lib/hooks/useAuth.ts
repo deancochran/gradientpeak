@@ -52,7 +52,7 @@ export const useAuth = () => {
 
   // Keep auth user data fresh (email, verification status, metadata changes)
   const authUserQuery = trpc.auth.getUser.useQuery(undefined, {
-    enabled: ready && isAuthenticated,
+    enabled: ready && isAuthenticated && !!session?.access_token,
     staleTime: 0,
     refetchOnMount: "always",
   });

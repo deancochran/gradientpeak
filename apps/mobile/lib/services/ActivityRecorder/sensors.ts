@@ -1,18 +1,34 @@
-import { BLE_SERVICE_UUIDS, FTMS_CHARACTERISTICS } from "@repo/core";
+import {
+  BLE_SERVICE_UUIDS,
+  FTMS_CHARACTERISTICS,
+  parseCscMeasurement,
+  parseCyclingPowerMeasurement,
+  parseFtmsIndoorBikeData,
+  parseHeartRateMeasurement,
+  type CscParserState,
+} from "@repo/core";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Buffer } from "buffer";
 import {
   BleError,
   BleManager,
   Characteristic,
   Device,
 } from "react-native-ble-plx";
+import { decodeBase64ToBytes, toDataView } from "./ble-bytes";
 import {
   ControlMode,
   FTMSController,
   type FTMSFeatures,
 } from "./FTMSController";
 import { SensorReading } from "./types";
+
+const SENSOR_PARSER_DEBUG = {
+  enabled: false,
+};
+
+export function setSensorParserDebugEnabled(enabled: boolean): void {
+  SENSOR_PARSER_DEBUG.enabled = enabled;
+}
 
 /** --- Connection states --- */
 export type SensorConnectionState =
@@ -123,11 +139,56 @@ export class SensorsManager {
     new Map();
   private readonly STATE_TRANSITION_DEBOUNCE_MS = 500;
 
+  // CSC parser state must be maintained per-device for delta-based cadence.
+  private cscParserStates: Map<string, CscParserState> = new Map();
+
   constructor() {
     this.initialize();
     this.startConnectionMonitoring();
     // Load persisted sensors and attempt auto-reconnection
     this.loadPersistedSensors();
+  }
+
+  private toHex(bytes: Uint8Array): string {
+    return Array.from(bytes)
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+  }
+
+  private shouldDebugParsers(): boolean {
+    const isDevRuntime = (globalThis as { __DEV__?: boolean }).__DEV__ === true;
+    return isDevRuntime && SENSOR_PARSER_DEBUG.enabled;
+  }
+
+  private logParserDebug(label: string, rawBytes: Uint8Array, parsed: unknown) {
+    if (!this.shouldDebugParsers()) {
+      return;
+    }
+
+    console.log(
+      `[SensorsManager][ParserDebug] ${label} raw=${this.toHex(rawBytes)}`,
+    );
+    console.log(`[SensorsManager][ParserDebug] ${label} parsed=`, parsed);
+  }
+
+  private toBytes(data: Uint8Array | ArrayBuffer): Uint8Array {
+    return data instanceof Uint8Array ? data : new Uint8Array(data);
+  }
+
+  private createReading(
+    metric: SensorReading["metric"],
+    value: number,
+    deviceId: string,
+    source?: string,
+    timestamp: number = Date.now(),
+  ): SensorReading | null {
+    return this.validateSensorReading({
+      metric,
+      dataType: "float",
+      value,
+      timestamp,
+      metadata: source ? { deviceId, source } : { deviceId },
+    });
   }
 
   /** Initialize BLE manager */
@@ -637,6 +698,7 @@ export class SensorsManager {
       };
 
       this.connectedSensors.set(device.id, connectedSensor);
+      this.cscParserStates.delete(device.id);
       await this.monitorKnownCharacteristics(connectedSensor);
 
       // Check if device supports FTMS control
@@ -725,6 +787,7 @@ export class SensorsManager {
 
     // Remove from connected sensors map
     this.connectedSensors.delete(deviceId);
+    this.cscParserStates.delete(deviceId);
 
     // Remove from persistence - user manually disconnected
     console.log(
@@ -745,6 +808,7 @@ export class SensorsManager {
         this.disconnectSensor(id),
       ),
     );
+    this.cscParserStates.clear();
   }
 
   /**
@@ -856,11 +920,8 @@ export class SensorsManager {
 
         if (!char?.value) return;
 
-        const reading = this.parseBleData(
-          metricType,
-          Buffer.from(char.value, "base64").buffer,
-          sensor.id,
-        );
+        const rawBytes = decodeBase64ToBytes(char.value);
+        const reading = this.parseBleData(metricType, rawBytes, sensor.id);
         if (reading) {
           // Update sensor health timestamp
           this.updateSensorDataTimestamp(sensor.id);
@@ -916,8 +977,8 @@ export class SensorsManager {
       // Read initial battery level
       const initialValue = await characteristic.read();
       if (initialValue?.value) {
-        const buffer = Buffer.from(initialValue.value, "base64");
-        const batteryLevel = buffer.readUInt8(0);
+        const bytes = decodeBase64ToBytes(initialValue.value);
+        const batteryLevel = bytes[0];
         console.log(
           `[SensorsManager] Initial battery level for ${sensor.name}: ${batteryLevel}%`,
         );
@@ -938,8 +999,8 @@ export class SensorsManager {
 
         if (!char?.value) return;
 
-        const buffer = Buffer.from(char.value, "base64");
-        const batteryLevel = buffer.readUInt8(0);
+        const bytes = decodeBase64ToBytes(char.value);
+        const batteryLevel = bytes[0];
 
         console.log(
           `[SensorsManager] Battery level for ${sensor.name}: ${batteryLevel}%`,
@@ -1045,8 +1106,8 @@ export class SensorsManager {
 
         if (!char?.value) return;
 
-        const buffer = Buffer.from(char.value, "base64");
-        const readings = this.parseIndoorBikeData(buffer.buffer, sensor.id);
+        const rawBytes = decodeBase64ToBytes(char.value);
+        const readings = this.parseIndoorBikeData(rawBytes, sensor.id);
 
         if (readings && readings.length > 0) {
           // Update sensor health timestamp
@@ -1075,332 +1136,152 @@ export class SensorsManager {
    * @returns Array of sensor readings (power, cadence, speed, etc.)
    */
   private parseIndoorBikeData(
-    data: ArrayBuffer,
+    data: Uint8Array,
     deviceId: string,
   ): SensorReading[] {
-    if (data.byteLength < 2) return [];
+    const parsed = parseFtmsIndoorBikeData(data);
+    this.logParserDebug(`ftms-indoor-bike:${deviceId}`, data, parsed);
 
-    const view = new DataView(data);
-    const flags = view.getUint16(0, true); // Flags field (2 bytes, little-endian)
-    let offset = 2; // Start after flags
-
-    const readings: SensorReading[] = [];
     const timestamp = Date.now();
+    const readings: SensorReading[] = [];
 
-    try {
-      // Bit 0: More Data (0 = no more data, 1 = more data)
-      // Not used for parsing, just indicates if more characteristics exist
-
-      // Bit 1: Average Speed present
-      if (flags & 0x02) {
-        if (data.byteLength >= offset + 2) {
-          const avgSpeed = view.getUint16(offset, true) * 0.01; // Resolution: 0.01 km/h
-          offset += 2;
-
-          // Convert km/h to m/s for consistency with other speed sensors
-          const speedMs = avgSpeed / 3.6;
-          const reading = this.validateSensorReading({
-            metric: "speed",
-            dataType: "float",
-            value: speedMs,
-            timestamp,
-            metadata: { deviceId, source: "ftms_indoor_bike" },
-          });
-          if (reading) readings.push(reading);
-        }
-      }
-
-      // Bit 2: Instantaneous Cadence present
-      if (flags & 0x04) {
-        if (data.byteLength >= offset + 2) {
-          const cadence = view.getUint16(offset, true) * 0.5; // Resolution: 0.5 rpm
-          offset += 2;
-
-          const reading = this.validateSensorReading({
-            metric: "cadence",
-            dataType: "float",
-            value: cadence,
-            timestamp,
-            metadata: { deviceId, source: "ftms_indoor_bike" },
-          });
-          if (reading) readings.push(reading);
-
-          console.log(
-            `[SensorsManager] Parsed cadence from FTMS: ${cadence.toFixed(1)} rpm`,
-          );
-        }
-      }
-
-      // Bit 3: Average Cadence present
-      if (flags & 0x08) {
-        if (data.byteLength >= offset + 2) {
-          const avgCadence = view.getUint16(offset, true) * 0.5; // Resolution: 0.5 rpm
-          offset += 2;
-
-          // We prioritize instantaneous cadence, but if only average is present, use it
-          if (!(flags & 0x04)) {
-            const reading = this.validateSensorReading({
-              metric: "cadence",
-              dataType: "float",
-              value: avgCadence,
-              timestamp,
-              metadata: { deviceId, source: "ftms_indoor_bike_avg" },
-            });
-            if (reading) readings.push(reading);
-
-            console.log(
-              `[SensorsManager] Parsed average cadence from FTMS: ${avgCadence.toFixed(1)} rpm`,
-            );
-          }
-        }
-      }
-
-      // Bit 4: Total Distance present (uint24, 1 meter resolution)
-      if (flags & 0x10) {
-        if (data.byteLength >= offset + 3) {
-          // Read 24-bit unsigned integer (3 bytes, little-endian)
-          const totalDistance =
-            view.getUint8(offset) |
-            (view.getUint8(offset + 1) << 8) |
-            (view.getUint8(offset + 2) << 16);
-          offset += 3;
-
-          console.log(
-            `[SensorsManager] FTMS Total Distance: ${totalDistance}m`,
-          );
-        }
-      }
-
-      // Bit 5: Resistance Level present (sint16, unitless, resolution 1)
-      if (flags & 0x20) {
-        if (data.byteLength >= offset + 2) {
-          const resistanceLevel = view.getInt16(offset, true);
-          offset += 2;
-
-          console.log(
-            `[SensorsManager] FTMS Resistance Level: ${resistanceLevel}`,
-          );
-        }
-      }
-
-      // Bit 6: Instantaneous Power present (sint16, watts, resolution 1W)
-      if (flags & 0x40) {
-        if (data.byteLength >= offset + 2) {
-          const power = view.getInt16(offset, true);
-          offset += 2;
-
-          const reading = this.validateSensorReading({
-            metric: "power",
-            dataType: "float",
-            value: power,
-            timestamp,
-            metadata: { deviceId, source: "ftms_indoor_bike" },
-          });
-          if (reading) readings.push(reading);
-        }
-      }
-
-      // Bit 7: Average Power present (sint16, watts, resolution 1W)
-      if (flags & 0x80) {
-        if (data.byteLength >= offset + 2) {
-          const avgPower = view.getInt16(offset, true);
-          offset += 2;
-          // We prioritize instantaneous power over average
-          console.log(`[SensorsManager] FTMS Average Power: ${avgPower}W`);
-        }
-      }
-
-      // Bit 8-9: Expended Energy present (uint16, total/per hour/per minute)
-      if (flags & 0x100) {
-        if (data.byteLength >= offset + 2) {
-          const totalEnergy = view.getUint16(offset, true); // kcal
-          offset += 2;
-          console.log(
-            `[SensorsManager] FTMS Total Energy: ${totalEnergy} kcal`,
-          );
-        }
-        if (data.byteLength >= offset + 2) {
-          const energyPerHour = view.getUint16(offset, true); // kcal/h
-          offset += 2;
-          console.log(
-            `[SensorsManager] FTMS Energy/Hour: ${energyPerHour} kcal/h`,
-          );
-        }
-        if (data.byteLength >= offset + 1) {
-          const energyPerMinute = view.getUint8(offset); // kcal/min
-          offset += 1;
-          console.log(
-            `[SensorsManager] FTMS Energy/Min: ${energyPerMinute} kcal/min`,
-          );
-        }
-      }
-
-      // Bit 10: Heart Rate present (uint8, bpm)
-      if (flags & 0x200) {
-        if (data.byteLength >= offset + 1) {
-          const heartRate = view.getUint8(offset);
-          offset += 1;
-
-          const reading = this.validateSensorReading({
-            metric: "heartrate",
-            dataType: "float",
-            value: heartRate,
-            timestamp,
-            metadata: { deviceId, source: "ftms_indoor_bike" },
-          });
-          if (reading) {
-            readings.push(reading);
-            console.log(
-              `[SensorsManager] Parsed heart rate from FTMS: ${heartRate} bpm`,
-            );
-          }
-        }
-      }
-
-      // Bit 11: Metabolic Equivalent present (uint8, resolution 0.1)
-      if (flags & 0x400) {
-        if (data.byteLength >= offset + 1) {
-          const metabolicEquivalent = view.getUint8(offset) * 0.1;
-          offset += 1;
-          console.log(
-            `[SensorsManager] FTMS Metabolic Equivalent: ${metabolicEquivalent.toFixed(1)}`,
-          );
-        }
-      }
-
-      // Bit 12: Elapsed Time present (uint16, seconds)
-      if (flags & 0x800) {
-        if (data.byteLength >= offset + 2) {
-          const elapsedTime = view.getUint16(offset, true);
-          offset += 2;
-          console.log(`[SensorsManager] FTMS Elapsed Time: ${elapsedTime}s`);
-        }
-      }
-
-      // Bit 13: Remaining Time present (uint16, seconds)
-      if (flags & 0x1000) {
-        if (data.byteLength >= offset + 2) {
-          const remainingTime = view.getUint16(offset, true);
-          offset += 2;
-          console.log(
-            `[SensorsManager] FTMS Remaining Time: ${remainingTime}s`,
-          );
-        }
-      }
-
-      return readings;
-    } catch (error) {
-      console.error("[SensorsManager] Error parsing Indoor Bike Data:", error);
-      return [];
+    if (typeof parsed.speedMps === "number") {
+      const reading = this.createReading(
+        "speed",
+        parsed.speedMps,
+        deviceId,
+        "ftms_indoor_bike",
+        timestamp,
+      );
+      if (reading) readings.push(reading);
     }
+
+    if (typeof parsed.cadenceRpm === "number") {
+      const reading = this.createReading(
+        "cadence",
+        parsed.cadenceRpm,
+        deviceId,
+        "ftms_indoor_bike",
+        timestamp,
+      );
+      if (reading) readings.push(reading);
+    }
+
+    if (typeof parsed.powerWatts === "number") {
+      const reading = this.createReading(
+        "power",
+        parsed.powerWatts,
+        deviceId,
+        "ftms_indoor_bike",
+        timestamp,
+      );
+      if (reading) readings.push(reading);
+    }
+
+    if (typeof parsed.hrBpm === "number") {
+      const reading = this.createReading(
+        "heartrate",
+        parsed.hrBpm,
+        deviceId,
+        "ftms_indoor_bike",
+        timestamp,
+      );
+      if (reading) readings.push(reading);
+    }
+
+    return readings;
   }
 
-  /* --- BLE Data Parsing Helpers (unchanged) --- */
-  parseHeartRate(data: ArrayBuffer, deviceId: string): SensorReading | null {
-    if (data.byteLength < 2) return null;
-    const view = new DataView(data);
-    const is16Bit = (view.getUint8(0) & 0x01) !== 0;
-    const value = is16Bit ? view.getUint16(1, true) : view.getUint8(1);
-    if (value < 30 || value > 250) return null;
+  /* --- BLE Data Parsing Helpers --- */
+  parseHeartRate(
+    data: Uint8Array | ArrayBuffer,
+    deviceId: string,
+  ): SensorReading | null {
+    const bytes = this.toBytes(data);
+    const parsed = parseHeartRateMeasurement(data);
+    this.logParserDebug(`heart-rate:${deviceId}`, bytes, parsed);
 
-    return this.validateSensorReading({
-      metric: "heartrate",
-      dataType: "float",
-      value,
-      timestamp: Date.now(),
-      metadata: { deviceId },
-    });
+    if (typeof parsed.hrBpm !== "number") return null;
+    return this.createReading("heartrate", parsed.hrBpm, deviceId);
   }
 
-  parsePower(data: ArrayBuffer, deviceId: string): SensorReading | null {
-    if (data.byteLength < 4) return null;
-    const view = new DataView(data);
-    const power = view.getInt16(2, true);
-    const value = Math.max(0, Math.min(power, 4000));
-    return this.validateSensorReading({
-      metric: "power",
-      dataType: "float",
-      value,
-      timestamp: Date.now(),
-      metadata: { deviceId },
-    });
+  parsePower(
+    data: Uint8Array | ArrayBuffer,
+    deviceId: string,
+  ): SensorReading | null {
+    const bytes = this.toBytes(data);
+    const parsed = parseCyclingPowerMeasurement(data);
+    this.logParserDebug(`cycling-power:${deviceId}`, bytes, parsed);
+    if (typeof parsed.powerWatts !== "number") return null;
+
+    const value = Math.max(0, Math.min(parsed.powerWatts, 4000));
+    return this.createReading("power", value, deviceId);
   }
 
   parseCSCMeasurement(
-    data: ArrayBuffer,
+    data: Uint8Array | ArrayBuffer,
     deviceId: string,
   ): SensorReading | null {
-    if (data.byteLength < 1) return null;
-    const view = new DataView(data);
-    const flags = view.getUint8(0);
-    let offset = 1;
+    const bytes = this.toBytes(data);
+    const previousState = this.cscParserStates.get(deviceId);
+    const parsed = parseCscMeasurement(data, previousState);
+    this.cscParserStates.set(deviceId, parsed.nextState);
+    this.logParserDebug(`csc:${deviceId}`, bytes, parsed);
 
-    if (flags & 0x01 && data.byteLength >= offset + 6) {
-      const value = view.getUint32(offset, true);
-      return this.validateSensorReading({
-        metric: "speed",
-        dataType: "float",
-        value,
-        timestamp: Date.now(),
-        metadata: { deviceId },
-      });
+    if (typeof parsed.cadenceRpm === "number") {
+      return this.createReading("cadence", parsed.cadenceRpm, deviceId);
     }
-    if (flags & 0x02 && data.byteLength >= offset + 4) {
-      const value = view.getUint16(offset, true);
-      return this.validateSensorReading({
-        metric: "cadence",
-        dataType: "float",
-        value,
-        timestamp: Date.now(),
-        metadata: { deviceId },
-      });
+
+    if (typeof parsed.speedMps === "number") {
+      return this.createReading("speed", parsed.speedMps, deviceId);
     }
+
     return null;
   }
 
   parseRSCMeasurement(
-    data: ArrayBuffer,
+    data: Uint8Array | ArrayBuffer,
     deviceId: string,
   ): SensorReading | null {
-    if (data.byteLength < 1) return null;
-    const view = new DataView(data);
+    const bytes = this.toBytes(data);
+    const view = toDataView(bytes);
+    if (bytes.byteLength < 1) return null;
     const flags = view.getUint8(0);
     let offset = 1;
 
     // Instantaneous Speed is always present (uint16, 1/256 m/s)
-    if (data.byteLength >= offset + 2) {
+    if (bytes.byteLength >= offset + 2) {
       const rawSpeed = view.getUint16(offset, true);
       const speedMs = rawSpeed / 256; // Convert to m/s
       offset += 2;
 
       // Instantaneous Cadence (uint8, steps/min) - only if bit 0 is set
-      if (flags & 0x01 && data.byteLength >= offset + 1) {
+      if (flags & 0x01 && bytes.byteLength >= offset + 1) {
         const cadence = view.getUint8(offset);
-        // Return cadence reading (prioritize cadence over speed for this characteristic)
-        return this.validateSensorReading({
-          metric: "cadence",
-          dataType: "float",
-          value: cadence,
-          timestamp: Date.now(),
-          metadata: { deviceId },
+        this.logParserDebug(`rsc:${deviceId}`, bytes, {
+          flags,
+          cadenceRpm: cadence,
+          speedMps: speedMs,
         });
+        // Return cadence reading (prioritize cadence over speed for this characteristic)
+        return this.createReading("cadence", cadence, deviceId);
       }
 
-      // If no cadence, return speed
-      return this.validateSensorReading({
-        metric: "speed",
-        dataType: "float",
-        value: speedMs,
-        timestamp: Date.now(),
-        metadata: { deviceId },
+      this.logParserDebug(`rsc:${deviceId}`, bytes, {
+        flags,
+        cadenceRpm: null,
+        speedMps: speedMs,
       });
+
+      // If no cadence, return speed
+      return this.createReading("speed", speedMs, deviceId);
     }
     return null;
   }
 
   parseBleData(
     metricType: BleMetricType,
-    raw: ArrayBuffer,
+    raw: Uint8Array,
     deviceId: string,
   ): SensorReading | null {
     let reading: SensorReading | null = null;
@@ -1423,17 +1304,7 @@ export class SensorsManager {
         return null;
     }
 
-    // Validate reading before returning (bounds checking)
-    if (!reading) return null;
-
-    const validated = this.validateSensorReading(reading);
-    if (!validated) {
-      console.warn(
-        `[SensorsManager] Invalid ${reading.metric} reading rejected: ${reading.value}`,
-      );
-    }
-
-    return validated;
+    return reading;
   }
 
   smoothSensorData(values: number[], window = 3): number[] {

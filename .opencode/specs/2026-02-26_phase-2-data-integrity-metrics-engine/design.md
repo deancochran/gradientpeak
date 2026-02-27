@@ -1,83 +1,127 @@
-# Phase 2 Specification - Data Integrity & Metrics Engine
+# Phase 2 Specification - Data Integrity & Metrics Engine (MVP)
 
 Date: 2026-02-26
-Owner: Mobile + Core + Backend
-Status: Proposed
-Type: Sensor data correctness + training metrics computation
+Owner: Mobile + Core + Backend + QA
+Status: Active
+Type: Sensor correctness + workload metrics foundation
 
 ## Executive Summary
 
-Phase 2 ensures raw workout data is trustworthy and derived training load metrics are stable with a practical MVP implementation.
+Phase 2 MVP ensures two outcomes:
 
-This phase is complete only when:
+1. Live workout sensor values are physically plausible and spec-correct.
+2. Workload metrics are computed consistently from a single canonical logic layer.
 
-1. Bluetooth characteristic parsers are spec-correct and validated against known-good references.
-2. TRIMP, ACWR, and Training Monotony are computed consistently for all completed activities.
-3. Sparse-history users receive safe, explicit provisional behavior without misleading precision.
+This phase intentionally prioritizes correctness, deterministic behavior, and testability over advanced modeling.
+
+## MVP Scope
+
+### In Scope
+
+- Bluetooth parsing correctness for currently used characteristics:
+  - CSC Measurement
+  - Cycling Power Measurement
+  - Heart Rate Measurement
+  - FTMS Indoor Bike Data
+  - FTMS control point response/state handling
+- Raw payload observability in dev/debug mode (hex payload + parsed result).
+- Canonical metrics computation and persistence:
+  - TRIMP (HR-based primary)
+  - TRIMP fallback when HR quality is insufficient
+  - ACWR (7-day acute / 28-day chronic)
+  - Training Monotony (7-day mean / standard deviation)
+- Sparse-history behavior without Bayesian modeling:
+  - explicit status envelopes (`insufficient_history`, `provisional`, `stable`)
+  - safe null/guard behavior instead of fabricated precision
+
+### Out of Scope (Post-MVP)
+
+- Bayesian priors/posteriors for workload metrics.
+- Uncertainty propagation for downstream weighting engines.
+- UI redesign/polish work from later phases.
+- New recommendation or readiness model behavior beyond metrics inputs.
 
 ## Problem Statement
 
-- At least one live metric (cadence) shows physiologically impossible behavior, indicating parser defects.
-- Variable-length and flag-dependent characteristics are vulnerable to offset and width parsing mistakes.
-- Training metrics may be present but not computed from a single canonical ruleset.
-- Sparse-history users still need understandable output without over-engineered estimation.
+- Current cadence behavior indicates parsing defects (counter interpreted as instantaneous rate and/or offset issues).
+- Flag-dependent characteristics are susceptible to incorrect fixed-offset parsing.
+- Workload metrics are not yet centralized through one canonical compute path.
+- Sparse-history users need clear outputs that do not imply false confidence.
 
-## Goals
+## Architecture Decisions
 
-1. Audit and correct all currently parsed workout Bluetooth characteristics.
-2. Guarantee cadence is derived from cumulative counters and event time deltas.
-3. Add developer debug instrumentation to map raw hex payloads to parsed values.
-4. Standardize TRIMP, ACWR, and Training Monotony calculations behind one computation layer.
-5. Define MVP sparse-history behavior (provisional/null-safe outputs) for ACWR and Monotony.
-
-## Non-Goals
-
-- No UI redesign work from Phase 9 in this phase.
-- No calendar/training plan schema expansions from Phase 3.
-- No coaching/messaging features from Phase 10.
-- No Bayesian modeling in MVP scope for this phase.
+1. BLE transport remains in mobile (`apps/mobile`), but parsing math should be pure and testable.
+2. Metric formulas must live in `@repo/core` as single source of truth.
+3. Persistence and orchestration belong in backend (`@repo/trpc`), not in mobile or core.
+4. `@repo/core` remains database-independent and framework-independent.
 
 ## Functional Requirements
 
-### 2.1 Bluetooth Parsing Integrity
+### A) Bluetooth Parsing Integrity
 
-- Every parsed Bluetooth characteristic must follow official field layout, flags, width, endianness, and unit scaling.
-- CSC cadence must be computed from delta crank revolutions over delta event time; raw cumulative counters are never displayed as rate.
-- Cycling Power, Heart Rate, and Indoor Bike Data parsers must be flag-driven and offset-safe.
-- FTMS control/status parsing and command mapping must be validated for correctness.
-- Parsed values written to persistence must match validated interpreted values.
+- Parser behavior must be flag-driven and offset-safe for all variable-length characteristics.
+- Endianness and unit scaling must follow spec for every parsed field.
+- Cadence must be derived from delta crank revolutions and delta event time, including wrap-around handling.
+- No cumulative counter is allowed to be emitted as instantaneous cadence.
+- Truncated/invalid payloads must fail safely (skip reading, no crash).
+- FTMS control point responses must be validated against request opcode and result code.
 
-### 2.2 Metrics Engine
+### B) Metrics Engine Integrity
 
-- TRIMP must be computed for every completed activity, using HR-based method when valid HR data exists.
-- If HR data is absent or unreliable, fallback to a documented power-based proxy.
-- ACWR must use 7-day acute load over rolling 28-day chronic baseline.
-- Training Monotony must use rolling 7-day daily TRIMP mean divided by standard deviation.
-- Sparse-history behavior must be deterministic and explicit (e.g., provisional status and/or null-safe values until minimum history threshold is met).
+- TRIMP is computed for every completed activity when sufficient inputs are available.
+- TRIMP source must be explicit:
+  - `hr` when HR quality threshold is met
+  - `power_proxy` fallback when HR quality is insufficient but power-based load exists
+- ACWR must use 7-day acute and 28-day chronic windows from a canonical daily-load series.
+- Monotony must use 7-day mean/stddev from the same canonical daily-load series.
+- Divide-by-zero and low-sample conditions must return safe values + explicit status.
+
+### C) Sparse-History MVP Behavior
+
+- Status envelope must be emitted with metric values:
+  - `insufficient_history`
+  - `provisional`
+  - `stable`
+- Recommended thresholds:
+  - `<7 days`: insufficient for ACWR/Monotony
+  - `7-27 days`: provisional
+  - `>=28 days`: stable for ACWR
+- Monotony with zero variance must not return Infinity/NaN.
+
+## Data Contracts (MVP)
+
+- Parsed reading contract includes:
+  - metric type
+  - value
+  - source characteristic
+  - timestamp
+- Workload metric contract includes:
+  - `value: number | null`
+  - `status: "insufficient_history" | "provisional" | "stable"`
+  - `coverageDays: number`
+  - `requiredDays: number`
+  - `source` (where applicable)
 
 ## Non-Functional Requirements
 
-- Determinism: parser outputs and metrics are reproducible for same input stream.
-- Observability: debug mode can emit raw hex + parsed output for each notification.
-- Safety: metric calculations must avoid divide-by-zero and invalid-window conditions.
-- Maintainability: centralize parsing and metric formulas; avoid duplicated logic.
+- Deterministic outputs for identical inputs.
+- No parser crash from malformed payloads.
+- Minimal overhead in recording hot path.
+- Strong unit coverage for pure parsing/metric logic.
+- Traceable debug logs in development mode.
+- Database change hygiene: schema changes must be authored in `init.sql` first, then diffed/migrated/applied, then types regenerated.
 
 ## Acceptance Criteria
 
-1. Live workout validation against reference device/app shows plausible cadence/power/HR trajectories.
-2. No flag-dependent characteristic parser uses hardcoded fixed offsets.
-3. Developer debug logs can map payload bytes to parsed fields for targeted sessions.
-4. Every completed activity receives a TRIMP value (direct or fallback path).
-5. ACWR and Monotony compute for users with sufficient history and behave predictably for sparse-history users.
-6. Unit tests cover parser edge cases and metrics window boundaries.
+1. Controlled validation sessions show plausible cadence/power/HR traces.
+2. No flag-dependent parser path uses fixed offsets where flags control layout.
+3. Raw hex + parsed output can be captured in debug mode.
+4. TRIMP, ACWR, and Monotony are produced by canonical core logic.
+5. Sparse-history users receive explicit statuses rather than misleading stable values.
+6. All edge-case tests pass (wrap-around, truncation, zero variance, small windows).
 
-## Exit Criteria for Phase 2
+## Exit Criteria
 
-- Sensor parsing defects are resolved and validated in controlled workouts.
-- Metrics pipeline is consistent, documented, and test-covered.
-- Sparse-history behavior is clear, safe, and non-misleading for downstream readiness/recommendation phases.
-
-## Post-MVP Enhancements (Explicitly Out of Scope)
-
-- Bayesian priors/posteriors for ACWR and Monotony.
-- Uncertainty propagation fields for downstream model weighting.
+- Phase 2 checklist in `tasks.md` is complete.
+- Metrics and parser behaviors are validated by tests and at least one controlled ride replay.
+- Remaining advanced modeling items are documented in post-MVP backlog.

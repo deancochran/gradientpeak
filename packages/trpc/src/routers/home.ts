@@ -11,6 +11,7 @@ import { z } from "zod";
 import { featureFlags } from "../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { addEstimationToPlans } from "../utils/estimation-helpers";
+import { buildWorkloadEnvelopes } from "../utils/workload";
 
 const upcomingDaysSchema = z.object({
   days: z.number().min(1).max(14).default(7),
@@ -98,9 +99,7 @@ export const homeRouter = createTRPCRouter({
       // Fetching enough history for trends and current week stats
       const { data: activities, error: activitiesError } = await ctx.supabase
         .from("activities")
-        .select(
-          "id, started_at, duration_seconds, distance_meters, training_stress_score, type, power_zone_1_seconds, power_zone_2_seconds, power_zone_3_seconds, power_zone_4_seconds, power_zone_5_seconds, power_zone_6_seconds, power_zone_7_seconds, hr_zone_1_seconds, hr_zone_2_seconds, hr_zone_3_seconds, hr_zone_4_seconds, hr_zone_5_seconds",
-        )
+        .select("*")
         .eq("profile_id", userId)
         .gte("started_at", historyStart.toISOString())
         .lte("started_at", today.toISOString()) // Up to now
@@ -300,7 +299,16 @@ export const homeRouter = createTRPCRouter({
         count: weeklyPlanned.length,
       };
 
-      // --- 9. Schedule (Future) ---
+      // --- 9. Current Workload Envelopes (ACWR/Monotony) ---
+      const workloadWindowStart = new Date(today);
+      workloadWindowStart.setDate(today.getDate() - 27);
+      const workload = buildWorkloadEnvelopes(
+        activities || [],
+        workloadWindowStart,
+        today,
+      );
+
+      // --- 10. Schedule (Future) ---
       const todayStr = today.toISOString().split("T")[0]!;
 
       // Check which planned activities have been completed by matching with actual activities
@@ -336,7 +344,7 @@ export const homeRouter = createTRPCRouter({
 
       const todaysActivity = schedule.find((s) => s.isToday) || null;
 
-      // --- 10. Calculate Projected Fitness (Future CTL based on plan) ---
+      // --- 11. Calculate Projected Fitness (Future CTL based on plan) ---
       const projectionDays = 42; // Project 42 days into future
       const projectionEnd = new Date(today);
       projectionEnd.setDate(today.getDate() + projectionDays);
@@ -422,7 +430,7 @@ export const homeRouter = createTRPCRouter({
         });
       }
 
-      // --- 11. Calculate Ideal CTL Curve from Training Plan ---
+      // --- 12. Calculate Ideal CTL Curve from Training Plan ---
       // This creates the "where you should be" line based on periodization
       const idealFitnessCurve = [];
       let goalMetrics = null;
@@ -502,7 +510,7 @@ export const homeRouter = createTRPCRouter({
         }
       }
 
-      // --- 12. Calculate Plan Adherence ---
+      // --- 13. Calculate Plan Adherence ---
       const adherence =
         weeklyPlannedStats.tss > 0
           ? Math.round((weeklyActualStats.tss / weeklyPlannedStats.tss) * 100)
@@ -517,6 +525,7 @@ export const homeRouter = createTRPCRouter({
             }
           : null,
         currentStatus: todayStatus,
+        workload,
         consistency: {
           streak,
           weeklyCount: weeklyActualStats.count,
