@@ -435,6 +435,122 @@ export type Database = {
           },
         ]
       }
+      events: {
+        Row: {
+          activity_plan_id: string | null
+          all_day: boolean
+          created_at: string
+          description: string | null
+          ends_at: string | null
+          event_type: Database["public"]["Enums"]["event_type"]
+          external_calendar_id: string | null
+          external_event_id: string | null
+          id: string
+          idx: number
+          integration_account_id: string | null
+          linked_activity_id: string | null
+          notes: string | null
+          occurrence_key: string
+          original_starts_at: string | null
+          profile_id: string
+          recurrence_rule: string | null
+          recurrence_timezone: string | null
+          series_id: string | null
+          source_provider: string | null
+          starts_at: string
+          status: Database["public"]["Enums"]["event_status"]
+          timezone: string
+          title: string
+          training_plan_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          activity_plan_id?: string | null
+          all_day?: boolean
+          created_at?: string
+          description?: string | null
+          ends_at?: string | null
+          event_type: Database["public"]["Enums"]["event_type"]
+          external_calendar_id?: string | null
+          external_event_id?: string | null
+          id?: string
+          idx?: number
+          integration_account_id?: string | null
+          linked_activity_id?: string | null
+          notes?: string | null
+          occurrence_key?: string
+          original_starts_at?: string | null
+          profile_id: string
+          recurrence_rule?: string | null
+          recurrence_timezone?: string | null
+          series_id?: string | null
+          source_provider?: string | null
+          starts_at: string
+          status?: Database["public"]["Enums"]["event_status"]
+          timezone?: string
+          title: string
+          training_plan_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          activity_plan_id?: string | null
+          all_day?: boolean
+          created_at?: string
+          description?: string | null
+          ends_at?: string | null
+          event_type?: Database["public"]["Enums"]["event_type"]
+          external_calendar_id?: string | null
+          external_event_id?: string | null
+          id?: string
+          idx?: number
+          integration_account_id?: string | null
+          linked_activity_id?: string | null
+          notes?: string | null
+          occurrence_key?: string
+          original_starts_at?: string | null
+          profile_id?: string
+          recurrence_rule?: string | null
+          recurrence_timezone?: string | null
+          series_id?: string | null
+          source_provider?: string | null
+          starts_at?: string
+          status?: Database["public"]["Enums"]["event_status"]
+          timezone?: string
+          title?: string
+          training_plan_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "events_activity_plan_id_fkey"
+            columns: ["activity_plan_id"]
+            isOneToOne: false
+            referencedRelation: "activity_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "events_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "events_series_id_fkey"
+            columns: ["series_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "events_training_plan_id_fkey"
+            columns: ["training_plan_id"]
+            isOneToOne: false
+            referencedRelation: "training_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       integrations: {
         Row: {
           access_token: string
@@ -561,64 +677,6 @@ export type Database = {
           },
         ]
       }
-      planned_activities: {
-        Row: {
-          activity_plan_id: string | null
-          created_at: string
-          id: string
-          idx: number
-          notes: string | null
-          profile_id: string
-          scheduled_date: string
-          training_plan_id: string | null
-          updated_at: string
-        }
-        Insert: {
-          activity_plan_id?: string | null
-          created_at?: string
-          id?: string
-          idx?: number
-          notes?: string | null
-          profile_id: string
-          scheduled_date: string
-          training_plan_id?: string | null
-          updated_at?: string
-        }
-        Update: {
-          activity_plan_id?: string | null
-          created_at?: string
-          id?: string
-          idx?: number
-          notes?: string | null
-          profile_id?: string
-          scheduled_date?: string
-          training_plan_id?: string | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "planned_activities_activity_plan_id_fkey"
-            columns: ["activity_plan_id"]
-            isOneToOne: false
-            referencedRelation: "activity_plans"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "planned_activities_profile_id_fkey"
-            columns: ["profile_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "planned_activities_training_plan_id_fkey"
-            columns: ["training_plan_id"]
-            isOneToOne: false
-            referencedRelation: "training_plans"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       profile_metrics: {
         Row: {
           created_at: string
@@ -721,13 +779,13 @@ export type Database = {
         }
         Relationships: []
       }
-      synced_planned_activities: {
+      synced_events: {
         Row: {
           created_at: string
+          event_id: string
           external_id: string
           id: string
           idx: number
-          planned_activity_id: string
           profile_id: string
           provider: Database["public"]["Enums"]["integration_provider"]
           synced_at: string
@@ -735,10 +793,10 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          event_id: string
           external_id: string
           id?: string
           idx?: number
-          planned_activity_id: string
           profile_id: string
           provider: Database["public"]["Enums"]["integration_provider"]
           synced_at?: string
@@ -746,10 +804,10 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          event_id?: string
           external_id?: string
           id?: string
           idx?: number
-          planned_activity_id?: string
           profile_id?: string
           provider?: Database["public"]["Enums"]["integration_provider"]
           synced_at?: string
@@ -757,14 +815,14 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "synced_planned_activities_planned_activity_id_fkey"
-            columns: ["planned_activity_id"]
+            foreignKeyName: "synced_events_event_id_fkey"
+            columns: ["event_id"]
             isOneToOne: false
-            referencedRelation: "planned_activities"
+            referencedRelation: "events"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "synced_planned_activities_profile_id_fkey"
+            foreignKeyName: "synced_events_profile_id_fkey"
             columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
@@ -831,6 +889,13 @@ export type Database = {
       activity_category: "run" | "bike" | "swim" | "strength" | "other"
       activity_location: "outdoor" | "indoor"
       effort_type: "power" | "speed"
+      event_status: "scheduled" | "completed" | "cancelled"
+      event_type:
+        | "planned_activity"
+        | "rest_day"
+        | "race"
+        | "custom"
+        | "imported"
       gender: "male" | "female" | "other"
       integration_provider:
         | "strava"
@@ -990,6 +1055,14 @@ export const Constants = {
       activity_category: ["run", "bike", "swim", "strength", "other"],
       activity_location: ["outdoor", "indoor"],
       effort_type: ["power", "speed"],
+      event_status: ["scheduled", "completed", "cancelled"],
+      event_type: [
+        "planned_activity",
+        "rest_day",
+        "race",
+        "custom",
+        "imported",
+      ],
       gender: ["male", "female", "other"],
       integration_provider: [
         "strava",

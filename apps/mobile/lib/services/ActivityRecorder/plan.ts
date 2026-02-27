@@ -33,14 +33,14 @@ export class PlanManager extends EventEmitter<PlanManagerEvents> {
   private steps: IntervalStepV2[] = [];
   public planProgress?: PlannedActivityProgress;
   public selectedActivityPlan: RecordingServiceActivityPlan;
-  public plannedActivityId: string | undefined;
+  public eventId: string | undefined;
   private isAdvancing = false;
   private advanceTimeout?: number;
   public lastUpdateTime?: number;
 
   constructor(
     selectedPlannedActivity: RecordingServiceActivityPlan,
-    plannedActivityId: string | undefined,
+    eventId: string | undefined,
   ) {
     super();
     this.selectedActivityPlan = selectedPlannedActivity;
@@ -60,7 +60,7 @@ export class PlanManager extends EventEmitter<PlanManagerEvents> {
     }
     this.steps = flatSteps;
 
-    this.plannedActivityId = plannedActivityId;
+    this.eventId = eventId;
 
     this.planProgress = {
       state: "not_started",

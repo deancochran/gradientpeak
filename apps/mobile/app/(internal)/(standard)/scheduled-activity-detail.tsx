@@ -27,20 +27,19 @@ import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
 function PlannedActivityDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const plannedActivityId = params.id as string;
+  const eventId = params.id as string;
   const utils = trpc.useUtils();
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
 
   // Query planned activity with plan details
-  const { data: plannedActivity, isLoading } =
-    trpc.plannedActivities.getById.useQuery(
-      { id: plannedActivityId },
-      { enabled: !!plannedActivityId },
-    );
+  const { data: plannedActivity, isLoading } = trpc.events.getById.useQuery(
+    { id: eventId },
+    { enabled: !!eventId },
+  );
 
   // Delete mutation
-  const deleteMutation = useReliableMutation(trpc.plannedActivities.delete, {
-    invalidate: [utils.plannedActivities, utils.trainingPlans],
+  const deleteMutation = useReliableMutation(trpc.events.delete, {
+    invalidate: [utils.events, utils.trainingPlans],
     success: "Activity removed from your schedule",
     onSuccess: () => router.back(),
   });
@@ -51,7 +50,7 @@ function PlannedActivityDetailScreen() {
     const payload: ActivityPayload = {
       category: plannedActivity.activity_plan.activity_category,
       location: plannedActivity.activity_plan.activity_location,
-      plannedActivityId: plannedActivity.id,
+      eventId: plannedActivity.id,
       plan: plannedActivity.activity_plan as any,
     };
 
@@ -73,7 +72,7 @@ function PlannedActivityDetailScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: () => deleteMutation.mutate({ id: plannedActivityId }),
+          onPress: () => deleteMutation.mutate({ id: eventId }),
         },
       ],
     );
@@ -355,9 +354,9 @@ function PlannedActivityDetailScreen() {
         <ScheduleActivityModal
           visible={showRescheduleModal}
           onClose={() => setShowRescheduleModal(false)}
-          plannedActivityId={plannedActivity.id}
+          eventId={plannedActivity.id}
           onSuccess={() => {
-            utils.plannedActivities.invalidate();
+            utils.events.invalidate();
             utils.trainingPlans.invalidate();
           }}
         />

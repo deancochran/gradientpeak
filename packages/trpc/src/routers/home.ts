@@ -120,21 +120,22 @@ export const homeRouter = createTRPCRouter({
       // --- 4. Fetch Planned Activities (Future & Current Week) ---
       // We need planned activities for the Schedule (Future) AND for the Weekly Summary (Past days of this week)
       // So we fetch from startOfWeek to scheduleEnd
-      const { data: plannedActivities, error: plannedError } =
+      const { data: plannedActivitiesRaw, error: plannedError } =
         await ctx.supabase
-          .from("planned_activities")
+          .from("events")
           .select(
             `
           id,
-          scheduled_date,
+          starts_at,
           notes,
           activity_plan:activity_plans (*)
         `,
           )
           .eq("profile_id", userId)
-          .gte("scheduled_date", startOfWeek.toISOString())
-          .lt("scheduled_date", scheduleEnd.toISOString())
-          .order("scheduled_date", { ascending: true });
+          .eq("event_type", "planned_activity")
+          .gte("starts_at", startOfWeek.toISOString())
+          .lt("starts_at", scheduleEnd.toISOString())
+          .order("starts_at", { ascending: true });
 
       if (plannedError) {
         throw new TRPCError({
@@ -142,6 +143,11 @@ export const homeRouter = createTRPCRouter({
           message: plannedError.message,
         });
       }
+
+      const plannedActivities = (plannedActivitiesRaw || []).map((planned) => ({
+        ...planned,
+        scheduled_date: planned.starts_at?.split("T")[0] ?? "",
+      }));
 
       // --- 5. Process Estimations for Planned Activities ---
       let activitiesWithEstimations = plannedActivities || [];
@@ -350,19 +356,25 @@ export const homeRouter = createTRPCRouter({
       projectionEnd.setDate(today.getDate() + projectionDays);
 
       // Fetch future planned activities for projection
-      const { data: futureActivities } = await ctx.supabase
-        .from("planned_activities")
+      const { data: futureActivitiesRaw } = await ctx.supabase
+        .from("events")
         .select(
           `
           id,
-          scheduled_date,
+          starts_at,
           activity_plan:activity_plans (*)
         `,
         )
         .eq("profile_id", userId)
-        .gte("scheduled_date", today.toISOString())
-        .lt("scheduled_date", projectionEnd.toISOString())
-        .order("scheduled_date", { ascending: true });
+        .eq("event_type", "planned_activity")
+        .gte("starts_at", today.toISOString())
+        .lt("starts_at", projectionEnd.toISOString())
+        .order("starts_at", { ascending: true });
+
+      const futureActivities = (futureActivitiesRaw || []).map((planned) => ({
+        ...planned,
+        scheduled_date: planned.starts_at?.split("T")[0] ?? "",
+      }));
 
       const projectedFitness = [];
       let projectedCTL = currentCTL;

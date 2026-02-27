@@ -71,7 +71,7 @@ function PlanScreen() {
     data: activitiesData,
     isLoading: loadingAllPlanned,
     refetch: refetchActivities,
-  } = trpc.plannedActivities.list.useQuery({
+  } = trpc.events.list.useQuery({
     date_from: startDate,
     date_to: endDate,
     training_plan_id: plan?.id,
@@ -218,7 +218,7 @@ function PlanScreen() {
     const payload: ActivityPayload = {
       category: plannedActivity.activity_plan.activity_category,
       location: plannedActivity.activity_plan.activity_location,
-      plannedActivityId: plannedActivity.id,
+      eventId: plannedActivity.id,
       plan: plannedActivity.activity_plan,
     };
     activitySelectionStore.setSelection(payload);

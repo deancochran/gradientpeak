@@ -95,6 +95,7 @@ export const activitiesRouter = createTRPCRouter({
     .input(
       ActivityUploadSchema.extend({
         profile_id: z.string(),
+        eventId: z.string().uuid().optional().nullable(),
       }).refine(
         (data) => new Date(data.finishedAt) > new Date(data.startedAt),
         {
@@ -113,6 +114,24 @@ export const activitiesRouter = createTRPCRouter({
         throw new Error("Activity duration must be positive.");
       }
 
+      let linkedActivityPlanId: string | null = null;
+      if (input.eventId) {
+        const { data: linkedEvent, error: linkedEventError } =
+          await ctx.supabase
+            .from("events")
+            .select("activity_plan_id")
+            .eq("id", input.eventId)
+            .eq("profile_id", ctx.session.user.id)
+            .eq("event_type", "planned_activity")
+            .single();
+
+        if (linkedEventError || !linkedEvent) {
+          throw new Error("Linked event not found.");
+        }
+
+        linkedActivityPlanId = linkedEvent.activity_plan_id;
+      }
+
       const newActivity = {
         profile_id: input.profile_id,
         name: input.name,
@@ -124,7 +143,7 @@ export const activitiesRouter = createTRPCRouter({
         duration_seconds,
         moving_seconds: input.movingSeconds,
         distance_meters: input.distanceMeters,
-        activity_plan_id: input.plannedActivityId,
+        activity_plan_id: linkedActivityPlanId,
         // Metrics - will be updated later
         training_stress_score: input.metrics.tss,
         intensity_factor: input.metrics.if,

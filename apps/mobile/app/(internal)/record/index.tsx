@@ -16,13 +16,10 @@ import { useRecordingCapabilities } from "@/lib/hooks/useRecordingConfig";
 import { useAllPermissionsGranted } from "@/lib/hooks/useStandalonePermissions";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
-import type {
-  ActivityPayload,
-  RecordingState
-} from "@repo/core";
+import type { ActivityPayload, RecordingState } from "@repo/core";
 import type {
   PublicActivityCategory,
-  PublicActivityLocation
+  PublicActivityLocation,
 } from "@repo/supabase";
 import { useRouter } from "expo-router";
 import {
@@ -116,7 +113,7 @@ function RecordScreen() {
           category: selection.category,
           location: selection.location,
           hasPlan: !!selection.plan,
-          plannedActivityId: selection.plannedActivityId,
+          eventId: selection.eventId,
         });
 
         // Initialize the service based on the selection

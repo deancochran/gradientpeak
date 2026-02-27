@@ -32,13 +32,13 @@ export default function WorkoutsReorder() {
     data: plannedActivitiesData,
     isLoading,
     refetch,
-  } = trpc.plannedActivities.list.useQuery({
+  } = trpc.events.list.useQuery({
     limit: 100,
   });
 
-  const updateMutation = trpc.plannedActivities.update.useMutation({
+  const updateMutation = trpc.events.update.useMutation({
     onSuccess: () => {
-      utils.plannedActivities.invalidate();
+      utils.events.invalidate();
     },
   });
 

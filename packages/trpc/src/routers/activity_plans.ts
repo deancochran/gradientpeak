@@ -330,7 +330,7 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
-      // Delete the plan - foreign key constraint will set planned_activities.activity_plan_id to null
+      // Delete the plan - foreign key constraint will set events.activity_plan_id to null
       const { error } = await ctx.supabase
         .from("activity_plans")
         .delete()

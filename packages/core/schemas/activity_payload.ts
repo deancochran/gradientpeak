@@ -157,7 +157,7 @@ export const ActivityUploadSchema = z.object({
   hrZoneSeconds: z.array(z.number().int()).length(5).optional().nullable(),
   powerZoneSeconds: z.array(z.number().int()).length(7).optional().nullable(),
   profileSnapshot: ProfileSnapshotSchema.optional().nullable(),
-  plannedActivityId: z.string().uuid().optional().nullable(),
+  eventId: z.string().uuid().optional().nullable(),
   routeId: z.string().uuid().optional().nullable(),
   polyline: z.string().optional().nullable(),
   mapBounds: z
@@ -196,7 +196,7 @@ export type ActivityLocation = PublicActivityLocation;
 export const ActivityPayloadSchema = z.object({
   category: z.enum(["run", "bike", "swim", "strength", "other"]),
   location: z.enum(["indoor", "outdoor"]),
-  plannedActivityId: z.string().optional(),
+  eventId: z.string().optional(),
   plan: z.custom<RecordingServiceActivityPlan>().optional(),
 });
 

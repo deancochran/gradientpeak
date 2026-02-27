@@ -21,23 +21,23 @@ Implements `./design.md` and `./plan.md`.
 
 ## 1) Unified Event Model
 
-- [ ] Introduce canonical `events` storage for planned scheduling and remove `planned_activities` from target schema.
-- [ ] Add schema support for typed calendar events.
-- [ ] Add optional link fields to planned workouts/goals/custom/imported references.
-- [ ] Add start/end/all-day semantics.
-- [ ] Add recurrence and series/instance linkage fields.
-- [ ] Add imported source identity fields (feed URL/source key + external event ID).
-- [ ] Add uniqueness constraints for import idempotency.
-- [ ] Add and validate occurrence-level idempotency uniqueness for recurring imports.
+- [x] Introduce canonical `events` storage for planned scheduling and remove `planned_activities` from target schema.
+- [x] Add schema support for typed calendar events.
+- [x] Add optional link fields to planned workouts/goals/custom/imported references.
+- [x] Add start/end/all-day semantics.
+- [x] Add recurrence and series/instance linkage fields.
+- [x] Add imported source identity fields (feed URL/source key + external event ID).
+- [x] Add uniqueness constraints for import idempotency.
+- [x] Add and validate occurrence-level idempotency uniqueness for recurring imports.
 
 ## 1.1) `planned_activities` to `events` Cutover Program
 
-- [ ] Backfill existing `planned_activities` rows to canonical `events` with deterministic idempotent mapping.
-- [ ] Replace `plannedActivities` router usage with `events` router usage across app clients.
-- [ ] Update integration flows (including Wahoo sync/import) to resolve planned records through events identity.
-- [ ] Delete `planned_activities` table and any dependent DB objects from Phase 3 schema/migrations.
-- [ ] Remove all `planned_activities` references from generated DB types and supazod outputs.
-- [ ] Remove `planned_activities` router file and related query-client keys.
+- [x] Backfill existing `planned_activities` rows to canonical `events` with deterministic idempotent mapping.
+- [x] Replace `plannedActivities` router usage with `events` router usage across app clients.
+- [x] Update integration flows (including Wahoo sync/import) to resolve planned records through events identity.
+- [x] Delete `planned_activities` table and any dependent DB objects from Phase 3 schema/migrations.
+- [x] Remove all `planned_activities` references from generated DB types and supazod outputs.
+- [x] Remove `planned_activities` router file and related query-client keys.
 
 ## 2) Training Hierarchy Support
 
@@ -78,24 +78,24 @@ Implements `./design.md` and `./plan.md`.
 
 ## 7) DB Workflow and Type Generation
 
-- [ ] Update `packages/supabase/schemas/init.sql` first for each schema change set.
-- [ ] Run `supabase db diff` and review generated migration SQL.
-- [ ] Run `supabase migration up` and verify local DB applies cleanly.
-- [ ] Run `pnpm --filter @repo/supabase run update-types`.
-- [ ] Verify `database.types.ts`, `supazod/schemas.ts`, and `supazod/schemas.types.ts` updated.
+- [x] Update `packages/supabase/schemas/init.sql` first for each schema change set.
+- [x] Run `supabase db diff` and review generated migration SQL.
+- [x] Run `supabase migration up` and verify local DB applies cleanly.
+- [x] Run `pnpm --filter @repo/supabase run update-types`.
+- [x] Verify `database.types.ts`, `supazod/schemas.ts`, and `supazod/schemas.types.ts` updated.
 
 ## 8) tRPC Wiring and Cutover
 
 - [ ] Add/adjust routers to read/write new event/hierarchy/template models.
-- [ ] Update `activities` router planned linkage semantics to avoid `plannedActivityId`/`activity_plan_id` ambiguity.
+- [x] Update `activities` router planned linkage semantics to avoid `plannedActivityId`/`activity_plan_id` ambiguity.
 - [ ] Add permission checks for coach-scoped procedures.
 - [ ] Add conversation/message/notification procedures.
-- [ ] Remove `plannedActivities` router surface and replace all internal usage with events procedures.
-- [ ] Rename/update client query keys to events-only naming and invalidate old planned-activities keys.
+- [x] Remove `plannedActivities` router surface and replace all internal usage with events procedures.
+- [x] Rename/update client query keys to events-only naming and invalidate old planned-activities keys.
 
 ## 9) Data Integrity and Backfill
 
-- [ ] Add any needed backfill scripts for pre-cutover record linkage.
+- [x] Add any needed backfill scripts for pre-cutover record linkage.
 - [ ] Define backfill invariants before execution (row parity, ownership parity, recurrence parity, orphan count).
 - [ ] Validate idempotent import behavior for external events.
 - [ ] Validate template apply isolation (no shared mutable references).
@@ -129,4 +129,4 @@ Implements `./design.md` and `./plan.md`.
 - [ ] `design.md` acceptance criteria satisfied.
 - [ ] `plan.md` architecture and migration strategy reflected in implementation.
 - [ ] No unresolved schema drift for Phase 3 artifacts.
-- [ ] Zero remaining `planned_activities` references checkpoint signed off with evidence.
+- [x] Zero remaining `planned_activities` references checkpoint signed off with evidence.

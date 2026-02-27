@@ -68,9 +68,18 @@ import { addEstimationToPlans } from "../utils/estimation-helpers";
 
 const feasibilityStateSchema = z.enum(["feasible", "aggressive", "unsafe"]);
 const safetyStateSchema = z.enum(["safe", "caution", "exceeded"]);
+const plannedEventType = "planned_activity" as const;
 
 type FeasibilityState = z.infer<typeof feasibilityStateSchema>;
 type SafetyState = z.infer<typeof safetyStateSchema>;
+
+function toDayStartIso(dateOnly: string): string {
+  return `${dateOnly}T00:00:00.000Z`;
+}
+
+function toNextDayStartIso(dateOnly: string): string {
+  return toDayStartIso(addDaysDateOnlyUtc(dateOnly, 1));
+}
 
 type InsightContributorImpact = "positive" | "neutral" | "negative";
 
@@ -2314,13 +2323,21 @@ export const trainingPlansRouter = createTRPCRouter({
         blockRampWarnings,
       });
 
-      const { data: plannedActivitiesRaw } = await ctx.supabase
-        .from("planned_activities")
-        .select("scheduled_date, activity_plan:activity_plans (*)")
+      const { data: plannedActivitiesEventsRaw } = await ctx.supabase
+        .from("events")
+        .select("starts_at, activity_plan:activity_plans (*)")
         .eq("profile_id", ctx.session.user.id)
+        .eq("event_type", plannedEventType)
         .eq("training_plan_id", input.training_plan_id)
-        .gte("scheduled_date", input.start_date)
-        .lte("scheduled_date", input.end_date);
+        .gte("starts_at", toDayStartIso(input.start_date))
+        .lt("starts_at", toNextDayStartIso(input.end_date));
+
+      const plannedActivitiesRaw = (plannedActivitiesEventsRaw || []).map(
+        (item) => ({
+          ...item,
+          scheduled_date: item.starts_at?.split("T")[0] ?? "",
+        }),
+      );
 
       const activityPlans = (plannedActivitiesRaw || [])
         .map((item) => item.activity_plan)
@@ -2611,7 +2628,7 @@ export const trainingPlansRouter = createTRPCRouter({
     }),
 
   // ------------------------------
-  // Delete training plan (cascades to delete planned activities)
+  // Delete training plan (cascades to delete planned events)
   // ------------------------------
   delete: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
@@ -2632,17 +2649,18 @@ export const trainingPlansRouter = createTRPCRouter({
         });
       }
 
-      // Delete all planned activities associated with this training plan first
+      // Delete all planned events associated with this training plan first
       const { error: deleteActivitiesError } = await ctx.supabase
-        .from("planned_activities")
+        .from("events")
         .delete()
+        .eq("event_type", plannedEventType)
         .eq("training_plan_id", input.id)
         .eq("profile_id", ctx.session.user.id);
 
       if (deleteActivitiesError) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: `Failed to delete planned activities: ${deleteActivitiesError.message}`,
+          message: `Failed to delete planned events: ${deleteActivitiesError.message}`,
         });
       }
 
@@ -2765,12 +2783,21 @@ export const trainingPlansRouter = createTRPCRouter({
       ) || 0;
 
     // Get planned activities this week with their activity plans
-    const { data: plannedActivities } = await ctx.supabase
-      .from("planned_activities")
+    const weekStartDate = startOfWeek.toISOString().split("T")[0] || "";
+    const weekEndDate = endOfWeek.toISOString().split("T")[0] || "";
+
+    const { data: plannedActivitiesEvents } = await ctx.supabase
+      .from("events")
       .select("*, activity_plan:activity_plans (*)")
       .eq("profile_id", ctx.session.user.id)
-      .gte("scheduled_date", startOfWeek.toISOString().split("T")[0])
-      .lt("scheduled_date", endOfWeek.toISOString().split("T")[0]);
+      .eq("event_type", plannedEventType)
+      .gte("starts_at", toDayStartIso(weekStartDate))
+      .lt("starts_at", toDayStartIso(weekEndDate));
+
+    const plannedActivities = (plannedActivitiesEvents || []).map((item) => ({
+      ...item,
+      scheduled_date: item.starts_at?.split("T")[0] ?? "",
+    }));
 
     // Extract activity plans and add estimations
     const activityPlans = (plannedActivities || [])
@@ -2805,14 +2832,26 @@ export const trainingPlansRouter = createTRPCRouter({
     const fiveDaysFromNow = new Date(today);
     fiveDaysFromNow.setDate(today.getDate() + 5);
 
-    const { data: upcomingActivitiesRaw } = await ctx.supabase
-      .from("planned_activities")
+    const todayDate = today.toISOString().split("T")[0] || "";
+    const fiveDaysFromNowDate =
+      fiveDaysFromNow.toISOString().split("T")[0] || "";
+
+    const { data: upcomingActivitiesEventsRaw } = await ctx.supabase
+      .from("events")
       .select("*, activity_plan:activity_plans (*)")
       .eq("profile_id", ctx.session.user.id)
-      .gte("scheduled_date", today.toISOString().split("T")[0])
-      .lte("scheduled_date", fiveDaysFromNow.toISOString().split("T")[0])
-      .order("scheduled_date", { ascending: true })
+      .eq("event_type", plannedEventType)
+      .gte("starts_at", toDayStartIso(todayDate))
+      .lt("starts_at", toNextDayStartIso(fiveDaysFromNowDate))
+      .order("starts_at", { ascending: true })
       .limit(5);
+
+    const upcomingActivitiesRaw = (upcomingActivitiesEventsRaw || []).map(
+      (item) => ({
+        ...item,
+        scheduled_date: item.starts_at?.split("T")[0] ?? "",
+      }),
+    );
 
     // Add estimations to upcoming activity plans
     const upcomingPlans = (upcomingActivitiesRaw || [])
@@ -3227,12 +3266,23 @@ export const trainingPlansRouter = createTRPCRouter({
       startDate.setDate(today.getDate() - input.weeks_back * 7);
 
       // Get all planned activities in range with full activity plans
-      const { data: plannedActivitiesRaw } = await ctx.supabase
-        .from("planned_activities")
+      const startDateOnly = startDate.toISOString().split("T")[0] || "";
+      const todayDateOnly = today.toISOString().split("T")[0] || "";
+
+      const { data: plannedActivitiesEventsRaw } = await ctx.supabase
+        .from("events")
         .select("*, activity_plan:activity_plans (*)")
         .eq("training_plan_id", input.training_plan_id)
-        .gte("scheduled_date", startDate.toISOString().split("T")[0])
-        .lte("scheduled_date", today.toISOString().split("T")[0]);
+        .eq("event_type", plannedEventType)
+        .gte("starts_at", toDayStartIso(startDateOnly))
+        .lt("starts_at", toNextDayStartIso(todayDateOnly));
+
+      const plannedActivitiesRaw = (plannedActivitiesEventsRaw || []).map(
+        (item) => ({
+          ...item,
+          scheduled_date: item.starts_at?.split("T")[0] ?? "",
+        }),
+      );
 
       // Extract activity plans and add estimations
       const activityPlans = (plannedActivitiesRaw || [])

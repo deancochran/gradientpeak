@@ -13,14 +13,14 @@ import {
   addEstimationToPlans,
 } from "../utils/estimation-helpers";
 
-type PlannedActivityLifecycleStatus =
+type EventLifecycleStatus =
   | "scheduled"
   | "completed"
   | "skipped"
   | "rescheduled"
   | "expired";
 
-type PlannedActivityStatusContext = {
+type EventStatusContext = {
   completedByDate: Set<string>;
   completedByDateAndPlan: Set<string>;
   todayDateKey: string;
@@ -32,8 +32,89 @@ type InsightRefreshHint = {
   refresh_key: string;
 };
 
+type ActivityPlanRecord = Database["public"]["Tables"]["activity_plans"]["Row"];
+
+const plannedEventType = "planned_activity" as const;
+
+const plannedEventSelect = `
+  id,
+  idx,
+  profile_id,
+  activity_plan_id,
+  training_plan_id,
+  notes,
+  status,
+  created_at,
+  updated_at,
+  starts_at,
+  ends_at,
+  activity_plan:activity_plans (*)
+`;
+
+type PlannedEventRecord = {
+  id: string;
+  idx: number;
+  profile_id: string;
+  activity_plan_id: string | null;
+  training_plan_id: string | null;
+  notes: string | null;
+  status: Database["public"]["Enums"]["event_status"];
+  created_at: string;
+  updated_at: string;
+  starts_at: string;
+  ends_at: string | null;
+  activity_plan: ActivityPlanRecord | null;
+};
+
+const validateConstraintsSchema = z.object({
+  training_plan_id: z.string().uuid(),
+  scheduled_date: z
+    .string()
+    .refine((val) => !Number.isNaN(Date.parse(val)), "Invalid date format"),
+  activity_plan_id: z.string().uuid(),
+});
+
+const eventListSchema = z.object({
+  activity_category: z.string().optional(),
+  activity_location: z.string().optional(),
+  activity_plan_id: z.string().optional(),
+  training_plan_id: z.string().uuid().optional(),
+  include_adhoc: z.boolean().default(true),
+  date_from: z.string().optional(),
+  date_to: z.string().optional(),
+  limit: z.number().min(1).max(100).default(20),
+  cursor: z.string().optional(),
+});
+
 function toDateKey(value: string): string {
   return value.split("T")[0] || value;
+}
+
+function toDayStartIso(dateValue: string): string {
+  return `${toDateKey(dateValue)}T00:00:00.000Z`;
+}
+
+function toNextDayStartIso(dateValue: string): string {
+  const day = new Date(toDayStartIso(dateValue));
+  day.setUTCDate(day.getUTCDate() + 1);
+  return day.toISOString();
+}
+
+function mapEvent<T extends PlannedEventRecord>(
+  event: T,
+): Omit<T, "starts_at" | "ends_at"> & { scheduled_date: string } {
+  const { starts_at, ends_at: _endsAt, ...rest } = event;
+
+  return {
+    ...rest,
+    scheduled_date: toDateKey(starts_at),
+  };
+}
+
+function mapEvents<T extends PlannedEventRecord>(
+  events: T[] | null,
+): Array<Omit<T, "starts_at" | "ends_at"> & { scheduled_date: string }> {
+  return (events || []).map((event) => mapEvent(event));
 }
 
 function getRecordValue(record: unknown, key: string): unknown {
@@ -42,10 +123,7 @@ function getRecordValue(record: unknown, key: string): unknown {
 }
 
 function hasTruthyRecordValue(record: unknown, keys: string[]): boolean {
-  return keys.some((key) => {
-    const value = getRecordValue(record, key);
-    return Boolean(value);
-  });
+  return keys.some((key) => Boolean(getRecordValue(record, key)));
 }
 
 function getRecordString(record: unknown, key: string): string | undefined {
@@ -60,84 +138,64 @@ function buildCompletedSignature(
   return `${dateKey}::${activityPlanId}`;
 }
 
-function resolvePlannedActivityStatus(
-  plannedActivity: {
+function resolveEventStatus(
+  event: {
     scheduled_date: string;
     activity_plan_id?: string | null;
   },
-  statusContext: PlannedActivityStatusContext,
-): PlannedActivityLifecycleStatus {
-  const scheduledDateKey = toDateKey(plannedActivity.scheduled_date);
-  const explicitStatus = getRecordString(
-    plannedActivity,
-    "status",
-  )?.toLowerCase();
+  statusContext: EventStatusContext,
+): EventLifecycleStatus {
+  const scheduledDateKey = toDateKey(event.scheduled_date);
+  const explicitStatus = getRecordString(event, "status")?.toLowerCase();
 
   const completedByMatch =
     statusContext.completedByDate.has(scheduledDateKey) &&
-    (plannedActivity.activity_plan_id
+    (event.activity_plan_id
       ? statusContext.completedByDateAndPlan.has(
-          buildCompletedSignature(
-            scheduledDateKey,
-            plannedActivity.activity_plan_id,
-          ),
+          buildCompletedSignature(scheduledDateKey, event.activity_plan_id),
         )
       : true);
   const explicitlyCompleted =
     explicitStatus === "completed" ||
-    hasTruthyRecordValue(plannedActivity, [
-      "completed_activity_id",
-      "completed_at",
-    ]);
-  if (completedByMatch || explicitlyCompleted) {
-    return "completed";
-  }
+    hasTruthyRecordValue(event, ["completed_activity_id", "completed_at"]);
+  if (completedByMatch || explicitlyCompleted) return "completed";
 
   const explicitlySkipped =
     explicitStatus === "skipped" ||
-    hasTruthyRecordValue(plannedActivity, ["skipped_at", "is_skipped"]);
-  if (explicitlySkipped) {
-    return "skipped";
-  }
+    hasTruthyRecordValue(event, ["skipped_at", "is_skipped"]);
+  if (explicitlySkipped) return "skipped";
 
   const explicitlyRescheduled =
     explicitStatus === "rescheduled" ||
-    hasTruthyRecordValue(plannedActivity, [
+    hasTruthyRecordValue(event, [
       "rescheduled_at",
       "rescheduled_from_date",
       "original_scheduled_date",
     ]);
-  if (explicitlyRescheduled) {
-    return "rescheduled";
-  }
+  if (explicitlyRescheduled) return "rescheduled";
 
-  if (scheduledDateKey < statusContext.todayDateKey) {
-    return "expired";
-  }
-
+  if (scheduledDateKey < statusContext.todayDateKey) return "expired";
   return "scheduled";
 }
 
-async function addPlannedActivityLifecycleStatus<
+async function addEventLifecycleStatus<
   T extends {
     scheduled_date: string;
     activity_plan_id?: string | null;
   },
 >(
-  plannedActivities: T[],
+  events: T[],
   ctx: { supabase: SupabaseClient<Database>; profileId: string },
-): Promise<Array<T & { status: PlannedActivityLifecycleStatus }>> {
-  if (plannedActivities.length === 0) return [];
+): Promise<Array<T & { status: EventLifecycleStatus }>> {
+  if (events.length === 0) return [];
 
-  const dateKeys = plannedActivities.map((activity) =>
-    toDateKey(activity.scheduled_date),
-  );
+  const dateKeys = events.map((event) => toDateKey(event.scheduled_date));
   const sortedDateKeys = [...dateKeys].sort();
   const minDateKey = sortedDateKeys[0];
   const maxDateKey = sortedDateKeys[sortedDateKeys.length - 1];
   if (!minDateKey || !maxDateKey) {
-    return plannedActivities.map((activity) => ({
-      ...activity,
+    return events.map((event) => ({
+      ...event,
       status: "scheduled",
     }));
   }
@@ -174,16 +232,15 @@ async function addPlannedActivityLifecycleStatus<
     }
   });
 
-  const todayDateKey = toDateKey(new Date().toISOString());
-  const statusContext: PlannedActivityStatusContext = {
+  const statusContext: EventStatusContext = {
     completedByDate,
     completedByDateAndPlan,
-    todayDateKey,
+    todayDateKey: toDateKey(new Date().toISOString()),
   };
 
-  return plannedActivities.map((activity) => ({
-    ...activity,
-    status: resolvePlannedActivityStatus(activity, statusContext),
+  return events.map((event) => ({
+    ...event,
+    status: resolveEventStatus(event, statusContext),
   }));
 }
 
@@ -207,92 +264,56 @@ function buildInsightRefreshHint(params: {
   };
 }
 
-// Validation constraint schema
-const validateConstraintsSchema = z.object({
-  training_plan_id: z.string().uuid(),
-  scheduled_date: z
-    .string()
-    .refine((val) => !isNaN(Date.parse(val)), "Invalid date format"),
-  activity_plan_id: z.string().uuid(),
-});
-
-// Update your schema to support cursor-based pagination
-const plannedActivityListSchema = z.object({
-  activity_category: z.string().optional(),
-  activity_location: z.string().optional(),
-  activity_plan_id: z.string().optional(),
-  training_plan_id: z.string().uuid().optional(), // ✅ New filter
-  include_adhoc: z.boolean().default(true), // ✅ Filter for ad-hoc activities
-  date_from: z.string().optional(),
-  date_to: z.string().optional(),
-  limit: z.number().min(1).max(100).default(20),
-  cursor: z.string().optional(), // Changed from offset to cursor
-});
-
-// Input schemas are now imported from core
-
-export const plannedActivitiesRouter = createTRPCRouter({
-  // ------------------------------
-  // Get single planned activity with plan details
-  // ------------------------------
+export const eventsRouter = createTRPCRouter({
   getById: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
       const { data, error } = await ctx.supabase
-        .from("planned_activities")
-        .select(
-          `
-          *,
-          activity_plan:activity_plans (*)
-        `,
-        )
+        .from("events")
+        .select(plannedEventSelect)
         .eq("id", input.id)
         .eq("profile_id", ctx.session.user.id)
+        .eq("event_type", plannedEventType)
         .single();
 
-      if (error)
+      if (error || !data) {
         throw new TRPCError({
           code: "NOT_FOUND",
-          message: "Planned activity not found",
+          message: "Planned event not found",
         });
+      }
 
-      // Add estimation to the activity plan
-      if (data.activity_plan) {
+      const event = mapEvent(data as PlannedEventRecord);
+
+      if (event.activity_plan) {
         const planWithEstimation = await addEstimationToPlan(
-          data.activity_plan,
+          event.activity_plan,
           ctx.supabase,
           ctx.session.user.id,
         );
         return {
-          ...data,
+          ...event,
           activity_plan: planWithEstimation,
         };
       }
 
-      return data;
+      return event;
     }),
 
-  // ------------------------------
-  // Get today's planned activities
-  // ------------------------------
   getToday: protectedProcedure.query(async ({ ctx }) => {
-    const today = new Date().toISOString().split("T")[0]; // Get YYYY-MM-DD format
-    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000)
-      .toISOString()
-      .split("T")[0];
+    const today = toDateKey(new Date().toISOString());
+    const tomorrow = toDateKey(
+      new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    );
 
     const { data, error } = await ctx.supabase
-      .from("planned_activities")
-      .select(
-        `
-        *,
-        activity_plan:activity_plans (*)
-      `,
-      )
+      .from("events")
+      .select(plannedEventSelect)
       .eq("profile_id", ctx.session.user.id)
-      .gte("scheduled_date", today)
-      .lt("scheduled_date", tomorrow)
-      .order("scheduled_date", { ascending: true });
+      .eq("event_type", plannedEventType)
+      .gte("starts_at", toDayStartIso(today))
+      .lt("starts_at", toDayStartIso(tomorrow))
+      .order("starts_at", { ascending: true });
 
     if (error) {
       throw new TRPCError({
@@ -301,10 +322,11 @@ export const plannedActivitiesRouter = createTRPCRouter({
       });
     }
 
-    // Add estimation to each activity plan
-    if (data && data.length > 0) {
-      const plans = data
-        .map((pa) => pa.activity_plan)
+    const events = mapEvents(data as PlannedEventRecord[] | null);
+
+    if (events.length > 0) {
+      const plans = events
+        .map((event) => event.activity_plan)
         .filter((plan): plan is NonNullable<typeof plan> => plan !== null);
 
       const plansWithEstimation = await addEstimationToPlans(
@@ -313,37 +335,34 @@ export const plannedActivitiesRouter = createTRPCRouter({
         ctx.session.user.id,
       );
 
-      // Map back to planned activities
       const plansMap = new Map(plansWithEstimation.map((p) => [p.id, p]));
-      return data.map((pa) => ({
-        ...pa,
-        activity_plan: pa.activity_plan
-          ? plansMap.get(pa.activity_plan.id)
+      return events.map((event) => ({
+        ...event,
+        activity_plan: event.activity_plan
+          ? plansMap.get(event.activity_plan.id)
           : null,
       }));
     }
 
-    return data || [];
+    return events;
   }),
 
-  // ------------------------------
-  // Get this week's planned activities count
-  // ------------------------------
   getWeekCount: protectedProcedure.query(async ({ ctx }) => {
     const now = new Date();
     const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - now.getDay()); // Sunday
+    startOfWeek.setDate(now.getDate() - now.getDay());
     startOfWeek.setHours(0, 0, 0, 0);
 
     const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(startOfWeek.getDate() + 7); // Next Sunday
+    endOfWeek.setDate(startOfWeek.getDate() + 7);
 
     const { count, error } = await ctx.supabase
-      .from("planned_activities")
+      .from("events")
       .select("*", { count: "exact", head: true })
       .eq("profile_id", ctx.session.user.id)
-      .gte("scheduled_date", startOfWeek.toISOString())
-      .lt("scheduled_date", endOfWeek.toISOString());
+      .eq("event_type", plannedEventType)
+      .gte("starts_at", startOfWeek.toISOString())
+      .lt("starts_at", endOfWeek.toISOString());
 
     if (error) {
       throw new TRPCError({
@@ -355,18 +374,14 @@ export const plannedActivitiesRouter = createTRPCRouter({
     return count || 0;
   }),
 
-  // ------------------------------
-  // Create planned activity
-  // ------------------------------
   create: protectedProcedure
     .input(plannedActivityCreateSchema)
     .mutation(async ({ ctx, input }) => {
-      // Verify the activity plan exists and user has access to it
       const { data: activityPlan, error: planError } = await ctx.supabase
         .from("activity_plans")
         .select("*")
         .eq("id", input.activity_plan_id)
-        .or(`profile_id.eq.${ctx.session.user.id},is_system_template.eq.true`) // Allow user's plans or system templates
+        .or(`profile_id.eq.${ctx.session.user.id},is_system_template.eq.true`)
         .single();
 
       if (planError || !activityPlan) {
@@ -376,9 +391,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
         });
       }
 
-      // ✅ FIX: Auto-populate training_plan_id from active plan if not provided
       let trainingPlanId = input.training_plan_id;
-
       if (!trainingPlanId) {
         const { data: activePlan } = await ctx.supabase
           .from("training_plans")
@@ -386,28 +399,40 @@ export const plannedActivitiesRouter = createTRPCRouter({
           .eq("profile_id", ctx.session.user.id)
           .eq("is_active", true)
           .single();
-
         trainingPlanId = activePlan?.id;
       }
 
+      const startsAt = toDayStartIso(input.scheduled_date);
+      const endsAt = toNextDayStartIso(input.scheduled_date);
+
       const { data, error } = await ctx.supabase
-        .from("planned_activities")
+        .from("events")
         .insert({
-          ...input,
           profile_id: ctx.session.user.id,
-          training_plan_id: trainingPlanId, // ✅ New field
+          event_type: plannedEventType,
+          title: "Planned Activity",
+          all_day: true,
+          timezone: "UTC",
+          starts_at: startsAt,
+          ends_at: endsAt,
+          status: "scheduled",
+          activity_plan_id: input.activity_plan_id,
+          training_plan_id: trainingPlanId,
+          notes: input.notes ?? null,
         })
-        .select("*")
+        .select(plannedEventSelect)
         .single();
 
-      if (error)
-        throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+      if (error || !data)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: error?.message ?? "Failed to create planned event",
+        });
 
-      // Automatically sync to Wahoo if integration is connected
-      // Track sync status to return to user
+      const event = mapEvent(data as PlannedEventRecord);
+
       let wahooSyncResult: { success: boolean; error?: string } | null = null;
       try {
-        // Check if Wahoo integration exists
         const { data: integration } = await ctx.supabase
           .from("integrations")
           .select("provider")
@@ -417,17 +442,13 @@ export const plannedActivitiesRouter = createTRPCRouter({
 
         if (integration) {
           const syncService = new WahooSyncService(ctx.supabase);
-          const result = await syncService.syncPlannedActivity(
-            data.id,
+          const result = await syncService.syncEvent(
+            event.id,
             ctx.session.user.id,
           );
-          wahooSyncResult = {
-            success: result.success,
-            error: result.error,
-          };
+          wahooSyncResult = { success: result.success, error: result.error };
         }
       } catch (error) {
-        // Log error but don't fail the request
         console.error("Failed to auto-sync to Wahoo:", error);
         wahooSyncResult = {
           success: false,
@@ -439,19 +460,16 @@ export const plannedActivitiesRouter = createTRPCRouter({
       }
 
       return {
-        ...data,
+        ...event,
         wahooSync: wahooSyncResult,
         insight_refresh_hint: buildInsightRefreshHint({
-          trainingPlanId: data.training_plan_id,
-          changedDate: data.scheduled_date,
-          changeAt: data.updated_at,
+          trainingPlanId: event.training_plan_id,
+          changedDate: event.scheduled_date,
+          changeAt: event.updated_at,
         }),
       };
     }),
 
-  // ------------------------------
-  // Update planned activity
-  // ------------------------------
   update: protectedProcedure
     .input(
       z
@@ -465,21 +483,21 @@ export const plannedActivitiesRouter = createTRPCRouter({
         typeof plannedActivityUpdateSchema
       >;
 
-      // Check ownership
       const { data: existing } = await ctx.supabase
-        .from("planned_activities")
-        .select("*")
+        .from("events")
+        .select(plannedEventSelect)
         .eq("id", id)
         .eq("profile_id", ctx.session.user.id)
+        .eq("event_type", plannedEventType)
         .single();
 
-      if (!existing)
+      if (!existing) {
         throw new TRPCError({
           code: "NOT_FOUND",
-          message: "Planned activity not found",
+          message: "Planned event not found",
         });
+      }
 
-      // If updating activity plan, verify it exists and is accessible
       if (updates.activity_plan_id) {
         const { data: activityPlan, error: planError } = await ctx.supabase
           .from("activity_plans")
@@ -496,23 +514,42 @@ export const plannedActivitiesRouter = createTRPCRouter({
         }
       }
 
+      const eventUpdates: {
+        activity_plan_id?: string;
+        notes?: string | null;
+        starts_at?: string;
+        ends_at?: string;
+      } = {
+        ...(updates.activity_plan_id !== undefined
+          ? { activity_plan_id: updates.activity_plan_id }
+          : {}),
+        ...(updates.notes !== undefined ? { notes: updates.notes } : {}),
+      };
+
+      if (updates.scheduled_date !== undefined) {
+        eventUpdates.starts_at = toDayStartIso(updates.scheduled_date);
+        eventUpdates.ends_at = toNextDayStartIso(updates.scheduled_date);
+      }
+
       const { data, error } = await ctx.supabase
-        .from("planned_activities")
-        .update({
-          ...updates,
-        })
+        .from("events")
+        .update(eventUpdates)
         .eq("id", id)
-        .select("*")
+        .eq("profile_id", ctx.session.user.id)
+        .eq("event_type", plannedEventType)
+        .select(plannedEventSelect)
         .single();
 
-      if (error)
-        throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+      if (error || !data)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: error?.message ?? "Failed to update planned event",
+        });
 
-      // Automatically sync to Wahoo if integration is connected
-      // Track sync status to return to user
+      const event = mapEvent(data as PlannedEventRecord);
+
       let wahooSyncResult: { success: boolean; error?: string } | null = null;
       try {
-        // Check if Wahoo integration exists
         const { data: integration } = await ctx.supabase
           .from("integrations")
           .select("provider")
@@ -522,17 +559,10 @@ export const plannedActivitiesRouter = createTRPCRouter({
 
         if (integration) {
           const syncService = new WahooSyncService(ctx.supabase);
-          const result = await syncService.syncPlannedActivity(
-            id,
-            ctx.session.user.id,
-          );
-          wahooSyncResult = {
-            success: result.success,
-            error: result.error,
-          };
+          const result = await syncService.syncEvent(id, ctx.session.user.id);
+          wahooSyncResult = { success: result.success, error: result.error };
         }
       } catch (error) {
-        // Log error but don't fail the request
         console.error("Failed to auto-sync update to Wahoo:", error);
         wahooSyncResult = {
           success: false,
@@ -544,67 +574,56 @@ export const plannedActivitiesRouter = createTRPCRouter({
       }
 
       return {
-        ...data,
+        ...event,
         wahooSync: wahooSyncResult,
         insight_refresh_hint: buildInsightRefreshHint({
-          trainingPlanId: data.training_plan_id,
-          changedDate: data.scheduled_date,
-          changeAt: data.updated_at,
+          trainingPlanId: event.training_plan_id,
+          changedDate: event.scheduled_date,
+          changeAt: event.updated_at,
         }),
       };
     }),
 
-  // ------------------------------
-  // Delete planned activity
-  // ------------------------------
   delete: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const { data: existing } = await ctx.supabase
-        .from("planned_activities")
-        .select("*")
+        .from("events")
+        .select(plannedEventSelect)
         .eq("id", input.id)
         .eq("profile_id", ctx.session.user.id)
+        .eq("event_type", plannedEventType)
         .single();
 
-      if (!existing)
+      if (!existing) {
         throw new TRPCError({
           code: "NOT_FOUND",
-          message: "Planned activity not found",
+          message: "Planned event not found",
         });
+      }
 
-      // Unsync from Wahoo before deleting (if synced)
-      const unsyncWahoo = async () => {
-        try {
-          // Check if Wahoo integration exists
-          const { data: integration } = await ctx.supabase
-            .from("integrations")
-            .select("*")
-            .eq("profile_id", ctx.session.user.id)
+      try {
+        const { data: integration } = await ctx.supabase
+          .from("integrations")
+          .select("*")
+          .eq("profile_id", ctx.session.user.id)
+          .eq("provider", "wahoo")
+          .single();
 
-            .eq("provider", "wahoo")
-            .single();
-
-          if (integration) {
-            const syncService = new WahooSyncService(ctx.supabase);
-            await syncService.unsyncPlannedActivity(
-              input.id,
-              ctx.session.user.id,
-            );
-          }
-        } catch (error) {
-          // Log error but don't fail the request
-          console.error("Failed to auto-unsync from Wahoo:", error);
+        if (integration) {
+          const syncService = new WahooSyncService(ctx.supabase);
+          await syncService.unsyncEvent(input.id, ctx.session.user.id);
         }
-      };
-
-      // Trigger unsync and await it to ensure it completes before deletion
-      await unsyncWahoo();
+      } catch (error) {
+        console.error("Failed to auto-unsync from Wahoo:", error);
+      }
 
       const { error } = await ctx.supabase
-        .from("planned_activities")
+        .from("events")
         .delete()
-        .eq("id", input.id);
+        .eq("id", input.id)
+        .eq("profile_id", ctx.session.user.id)
+        .eq("event_type", plannedEventType);
 
       if (error)
         throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
@@ -613,51 +632,45 @@ export const plannedActivitiesRouter = createTRPCRouter({
         success: true,
         insight_refresh_hint: buildInsightRefreshHint({
           trainingPlanId: existing.training_plan_id,
-          changedDate: existing.scheduled_date,
+          changedDate: toDateKey(existing.starts_at),
           changeAt: existing.updated_at,
         }),
       };
     }),
 
-  // ------------------------------
-  // List / search planned activities
-  // ------------------------------
   list: protectedProcedure
-    .input(plannedActivityListSchema)
+    .input(eventListSchema)
     .query(async ({ ctx, input }) => {
       const limit = input.limit;
 
       let query = ctx.supabase
-        .from("planned_activities")
-        .select(
-          `
-          *,
-          activity_plan:activity_plans (*)
-        `,
-        )
+        .from("events")
+        .select(plannedEventSelect)
         .eq("profile_id", ctx.session.user.id)
-        .order("scheduled_date", { ascending: true })
-        .order("id", { ascending: true }) // Secondary sort for stable pagination
-        .limit(limit + 1); // Fetch one extra to check if there's more
+        .eq("event_type", plannedEventType)
+        .order("starts_at", { ascending: true })
+        .order("id", { ascending: true })
+        .limit(limit + 1);
 
-      // Apply cursor (if provided, fetch items after this cursor)
       if (input.cursor) {
         const [cursorDate, cursorId] = input.cursor.split("_");
-        query = query.or(
-          `scheduled_date.gt.${cursorDate},and(scheduled_date.eq.${cursorDate},id.gt.${cursorId})`,
-        );
+        if (cursorDate && cursorId) {
+          query = query.or(
+            `starts_at.gt.${cursorDate},and(starts_at.eq.${cursorDate},id.gt.${cursorId})`,
+          );
+        }
       }
 
-      // ✅ Filter by training plan
       if (input.training_plan_id) {
         query = query.eq("training_plan_id", input.training_plan_id);
       } else if (!input.include_adhoc) {
         query = query.not("training_plan_id", "is", null);
       }
 
-      // Apply date filters
-      if (input.date_from) query = query.gte("scheduled_date", input.date_from);
-      if (input.date_to) query = query.lte("scheduled_date", input.date_to);
+      if (input.date_from)
+        query = query.gte("starts_at", toDayStartIso(input.date_from));
+      if (input.date_to)
+        query = query.lt("starts_at", toNextDayStartIso(input.date_to));
       if (input.activity_category) {
         query = query.eq(
           "activity_plan.activity_category",
@@ -672,7 +685,6 @@ export const plannedActivitiesRouter = createTRPCRouter({
       }
 
       const { data, error } = await query;
-
       if (error) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
@@ -680,12 +692,13 @@ export const plannedActivitiesRouter = createTRPCRouter({
         });
       }
 
-      // Check if there are more items
-      const hasMore = data.length > limit;
-      const items = hasMore ? data.slice(0, limit) : data;
+      const rows = data ?? [];
+      const hasMore = rows.length > limit;
+      const events = mapEvents(
+        (hasMore ? rows.slice(0, limit) : rows) as PlannedEventRecord[],
+      );
 
-      // Filter out items without activity plans (shouldn't happen due to FK constraint)
-      const validItems = items.filter(
+      const validItems = events.filter(
         (
           item,
         ): item is typeof item & {
@@ -693,32 +706,30 @@ export const plannedActivitiesRouter = createTRPCRouter({
         } => item.activity_plan != null,
       );
 
-      // Add estimation to each activity plan
       let itemsWithEstimation = validItems;
       if (validItems.length > 0) {
         const plansWithEstimation = await addEstimationToPlans(
-          validItems.map((pa) => pa.activity_plan),
+          validItems.map((event) => event.activity_plan),
           ctx.supabase,
           ctx.session.user.id,
         );
 
-        // Map back to planned activities
         const plansMap = new Map(plansWithEstimation.map((p) => [p.id, p]));
-        itemsWithEstimation = validItems.map((pa) => ({
-          ...pa,
-          activity_plan: plansMap.get(pa.activity_plan.id) || pa.activity_plan,
+        itemsWithEstimation = validItems.map((event) => ({
+          ...event,
+          activity_plan:
+            plansMap.get(event.activity_plan.id) || event.activity_plan,
         }));
       }
 
-      // Generate next cursor from last item
       let nextCursor: string | undefined;
-      if (hasMore && items.length > 0) {
-        const lastItem = items[items.length - 1];
+      if (hasMore && events.length > 0) {
+        const lastItem = events[events.length - 1];
         if (!lastItem) throw new Error("Unexpected error");
         nextCursor = `${lastItem.scheduled_date}_${lastItem.id}`;
       }
 
-      const itemsWithStatus = await addPlannedActivityLifecycleStatus(
+      const itemsWithStatus = await addEventLifecycleStatus(
         itemsWithEstimation,
         {
           supabase: ctx.supabase,
@@ -732,13 +743,9 @@ export const plannedActivitiesRouter = createTRPCRouter({
       };
     }),
 
-  // ------------------------------
-  // Validate constraints before scheduling
-  // ------------------------------
   validateConstraints: protectedProcedure
     .input(validateConstraintsSchema)
     .query(async ({ ctx, input }) => {
-      // Get the training plan
       const { data: plan, error: planError } = await ctx.supabase
         .from("training_plans")
         .select("*")
@@ -753,7 +760,6 @@ export const plannedActivitiesRouter = createTRPCRouter({
         });
       }
 
-      // Get the activity plan to calculate TSS
       const { data: activityPlan, error: activityPlanError } =
         await ctx.supabase
           .from("activity_plans")
@@ -769,10 +775,14 @@ export const plannedActivitiesRouter = createTRPCRouter({
         });
       }
 
-      const structure = plan.structure as any;
+      const structure = plan.structure as {
+        target_weekly_tss_max?: number;
+        target_activities_per_week?: number;
+        max_consecutive_days?: number;
+        min_rest_days_per_week?: number;
+      };
       const scheduledDate = new Date(input.scheduled_date);
 
-      // Get the week boundaries (Sunday to Saturday)
       const startOfWeek = new Date(scheduledDate);
       startOfWeek.setDate(scheduledDate.getDate() - scheduledDate.getDay());
       startOfWeek.setHours(0, 0, 0, 0);
@@ -780,27 +790,24 @@ export const plannedActivitiesRouter = createTRPCRouter({
       const endOfWeek = new Date(startOfWeek);
       endOfWeek.setDate(startOfWeek.getDate() + 7);
 
-      // Get this week's planned activities with full plan data for TSS calculation
       const { data: plannedThisWeek } = await ctx.supabase
-        .from("planned_activities")
-        .select(
-          `
-          *,
-          activity_plan:activity_plans (*)
-        `,
-        )
+        .from("events")
+        .select(plannedEventSelect)
         .eq("profile_id", ctx.session.user.id)
-        .gte("scheduled_date", startOfWeek.toISOString().split("T")[0])
-        .lt("scheduled_date", endOfWeek.toISOString().split("T")[0]);
+        .eq("event_type", plannedEventType)
+        .gte("starts_at", startOfWeek.toISOString().split("T")[0] || "")
+        .lt("starts_at", endOfWeek.toISOString().split("T")[0] || "");
 
-      // Get user profile for TSS estimation
+      const plannedThisWeekMapped = mapEvents(
+        plannedThisWeek as PlannedEventRecord[] | null,
+      );
+
       const { data: profile } = await ctx.supabase
         .from("profiles")
         .select("*")
         .eq("id", ctx.session.user.id)
         .single();
 
-      // Fetch latest FTP from activity efforts (best 20m power * 0.95)
       const cutoffDate = new Date(
         Date.now() - 90 * 24 * 60 * 60 * 1000,
       ).toISOString();
@@ -820,7 +827,6 @@ export const plannedActivitiesRouter = createTRPCRouter({
         ? Math.round(best20m.value * 0.95)
         : undefined;
 
-      // Fetch latest threshold HR from profile metrics
       const { data: lthrMetric } = await ctx.supabase
         .from("profile_metrics")
         .select("value")
@@ -834,8 +840,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
         ? Number(lthrMetric.value)
         : undefined;
 
-      // Fetch latest weight from profile metrics
-      const { data: weightMetrics } = await ctx.supabase
+      const { data: weightMetric } = await ctx.supabase
         .from("profile_metrics")
         .select("*")
         .eq("profile_id", ctx.session.user.id)
@@ -847,29 +852,26 @@ export const plannedActivitiesRouter = createTRPCRouter({
       const userMetrics = {
         ftp: ftpValue,
         threshold_hr: lthrValue,
-        weight_kg: weightMetrics?.value,
+        weight_kg: weightMetric?.value,
         dob: profile?.dob,
       };
 
-      // Calculate TSS for current week's activities
       const { estimateActivity, buildEstimationContext } =
         await import("@repo/core");
 
-      const currentWeeklyTSS = (plannedThisWeek || []).reduce((sum, pa) => {
-        if (!pa.activity_plan) return sum;
-
+      const currentWeeklyTSS = plannedThisWeekMapped.reduce((sum, event) => {
+        if (!event.activity_plan) return sum;
         const context = buildEstimationContext({
           userProfile: userMetrics,
           activityPlan: {
-            ...pa.activity_plan,
-            route_id: pa.activity_plan.route_id || undefined,
+            ...event.activity_plan,
+            route_id: event.activity_plan.route_id || undefined,
           },
         });
         const estimation = estimateActivity(context);
         return sum + estimation.tss;
       }, 0);
 
-      // Calculate TSS for the new activity
       const context = buildEstimationContext({
         userProfile: userMetrics,
         activityPlan: {
@@ -878,11 +880,8 @@ export const plannedActivitiesRouter = createTRPCRouter({
         },
       });
       const newActivityEstimation = estimateActivity(context);
-
-      // Calculate new weekly TSS
       const newWeeklyTSS = currentWeeklyTSS + newActivityEstimation.tss;
 
-      // Check 1: Weekly TSS constraint
       const maxWeeklyTSS = structure.target_weekly_tss_max || Infinity;
       const weeklyTSSStatus =
         newWeeklyTSS <= maxWeeklyTSS
@@ -891,8 +890,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
             ? "warning"
             : "violated";
 
-      // Check 2: Activities per week
-      const currentActivitiesCount = (plannedThisWeek || []).length;
+      const currentActivitiesCount = plannedThisWeekMapped.length;
       const newActivitiesCount = currentActivitiesCount + 1;
       const targetActivitiesPerWeek = structure.target_activities_per_week || 7;
       const activitiesPerWeekStatus =
@@ -902,24 +900,22 @@ export const plannedActivitiesRouter = createTRPCRouter({
             ? "warning"
             : "violated";
 
-      // Check 3: Consecutive training days
-      // Get activities around the scheduled date
       const threeDaysBefore = new Date(scheduledDate);
       threeDaysBefore.setDate(scheduledDate.getDate() - 3);
       const threeDaysAfter = new Date(scheduledDate);
       threeDaysAfter.setDate(scheduledDate.getDate() + 3);
 
       const { data: nearbyActivities } = await ctx.supabase
-        .from("planned_activities")
-        .select("*")
+        .from("events")
+        .select("starts_at")
         .eq("profile_id", ctx.session.user.id)
-        .gte("scheduled_date", threeDaysBefore.toISOString().split("T")[0])
-        .lte("scheduled_date", threeDaysAfter.toISOString().split("T")[0])
-        .order("scheduled_date", { ascending: true });
+        .eq("event_type", plannedEventType)
+        .gte("starts_at", threeDaysBefore.toISOString().split("T")[0] || "")
+        .lte("starts_at", threeDaysAfter.toISOString().split("T")[0] || "")
+        .order("starts_at", { ascending: true });
 
-      // Calculate consecutive days including the new activity
       const allDates = [
-        ...(nearbyActivities || []).map((a) => a.scheduled_date),
+        ...(nearbyActivities || []).map((a) => toDateKey(a.starts_at)),
         input.scheduled_date,
       ].sort();
 
@@ -929,6 +925,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
         const prevDateStr = allDates[i - 1];
         const currDateStr = allDates[i];
         if (!prevDateStr || !currDateStr) continue;
+
         const prevDate = new Date(prevDateStr);
         const currDate = new Date(currDateStr);
         const diffDays = Math.round(
@@ -951,7 +948,6 @@ export const plannedActivitiesRouter = createTRPCRouter({
             ? "warning"
             : "violated";
 
-      // Check 4: Rest days per week
       const restDaysThisWeek = 7 - newActivitiesCount;
       const minRestDays = structure.min_rest_days_per_week || 0;
       const restDaysStatus =
@@ -960,10 +956,6 @@ export const plannedActivitiesRouter = createTRPCRouter({
           : restDaysThisWeek >= minRestDays - 1
             ? "warning"
             : "violated";
-
-      // Note: Hard activity spacing validation is NOT included because intensity
-      // is calculated after activity completion from IF, not pre-assigned.
-      // This constraint can be analyzed retrospectively but not enforced prospectively.
 
       return {
         constraints: {
@@ -987,7 +979,7 @@ export const plannedActivitiesRouter = createTRPCRouter({
               | "satisfied"
               | "warning"
               | "violated",
-            current: maxConsecutive - 1, // Subtract 1 to show current without new activity
+            current: maxConsecutive - 1,
             withNew: maxConsecutive,
             limit: maxConsecutiveDays,
           },
@@ -1011,29 +1003,22 @@ export const plannedActivitiesRouter = createTRPCRouter({
       };
     }),
 
-  // ------------------------------
-  // List planned activities by week
-  // ------------------------------
   listByWeek: protectedProcedure
     .input(
       z.object({
-        weekStart: z.string(), // ISO date string for start of week
-        weekEnd: z.string(), // ISO date string for end of week
+        weekStart: z.string(),
+        weekEnd: z.string(),
       }),
     )
     .query(async ({ ctx, input }) => {
       const { data, error } = await ctx.supabase
-        .from("planned_activities")
-        .select(
-          `
-          *,
-          activity_plan:activity_plans (*)
-        `,
-        )
+        .from("events")
+        .select(plannedEventSelect)
         .eq("profile_id", ctx.session.user.id)
-        .gte("scheduled_date", input.weekStart)
-        .lte("scheduled_date", input.weekEnd)
-        .order("scheduled_date", { ascending: true })
+        .eq("event_type", plannedEventType)
+        .gte("starts_at", toDayStartIso(input.weekStart))
+        .lt("starts_at", toNextDayStartIso(input.weekEnd))
+        .order("starts_at", { ascending: true })
         .order("id", { ascending: true });
 
       if (error) {
@@ -1043,10 +1028,10 @@ export const plannedActivitiesRouter = createTRPCRouter({
         });
       }
 
-      // Add estimation to each activity plan
-      if (data && data.length > 0) {
-        const plans = data
-          .map((pa) => pa.activity_plan)
+      const events = mapEvents(data as PlannedEventRecord[] | null);
+      if (events.length > 0) {
+        const plans = events
+          .map((event) => event.activity_plan)
           .filter((plan): plan is NonNullable<typeof plan> => plan !== null);
 
         const plansWithEstimation = await addEstimationToPlans(
@@ -1055,22 +1040,21 @@ export const plannedActivitiesRouter = createTRPCRouter({
           ctx.session.user.id,
         );
 
-        // Map back to planned activities
         const plansMap = new Map(plansWithEstimation.map((p) => [p.id, p]));
-        const itemsWithEstimation = data.map((pa) => ({
-          ...pa,
-          activity_plan: pa.activity_plan
-            ? plansMap.get(pa.activity_plan.id)
+        const itemsWithEstimation = events.map((event) => ({
+          ...event,
+          activity_plan: event.activity_plan
+            ? plansMap.get(event.activity_plan.id)
             : null,
         }));
 
-        return addPlannedActivityLifecycleStatus(itemsWithEstimation, {
+        return addEventLifecycleStatus(itemsWithEstimation, {
           supabase: ctx.supabase,
           profileId: ctx.session.user.id,
         });
       }
 
-      return addPlannedActivityLifecycleStatus(data || [], {
+      return addEventLifecycleStatus(events, {
         supabase: ctx.supabase,
         profileId: ctx.session.user.id,
       });

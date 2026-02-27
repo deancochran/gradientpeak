@@ -2,7 +2,7 @@ import type {
   PublicIntegrationProvider,
   PublicIntegrationsInsert,
   PublicIntegrationsRow,
-  PublicIntegrationsUpdate
+  PublicIntegrationsUpdate,
 } from "@repo/supabase";
 
 import { TRPCError } from "@trpc/server";
@@ -323,18 +323,18 @@ export const integrationsRouter = createTRPCRouter({
   // Wahoo Sync Endpoints
   // ==============================
 
-  // Sync a planned activity to Wahoo
+  // Sync a planned activity event to Wahoo
   wahoo: createTRPCRouter({
-    syncPlannedActivity: protectedProcedure
+    syncEvent: protectedProcedure
       .input(
         z.object({
-          plannedActivityId: z.string().uuid(),
+          eventId: z.string().uuid(),
         }),
       )
       .mutation(async ({ ctx, input }) => {
         const syncService = new WahooSyncService(ctx.supabase);
-        const result = await syncService.syncPlannedActivity(
-          input.plannedActivityId,
+        const result = await syncService.syncEvent(
+          input.eventId,
           ctx.session.user.id,
         );
 
@@ -348,17 +348,17 @@ export const integrationsRouter = createTRPCRouter({
         return result;
       }),
 
-    // Unsync (remove) a planned activity from Wahoo
-    unsyncPlannedActivity: protectedProcedure
+    // Unsync (remove) an event from Wahoo
+    unsyncEvent: protectedProcedure
       .input(
         z.object({
-          plannedActivityId: z.string().uuid(),
+          eventId: z.string().uuid(),
         }),
       )
       .mutation(async ({ ctx, input }) => {
         const syncService = new WahooSyncService(ctx.supabase);
-        const result = await syncService.unsyncPlannedActivity(
-          input.plannedActivityId,
+        const result = await syncService.unsyncEvent(
+          input.eventId,
           ctx.session.user.id,
         );
 
@@ -372,17 +372,17 @@ export const integrationsRouter = createTRPCRouter({
         return result;
       }),
 
-    // Get sync status for a planned activity
-    getSyncStatus: protectedProcedure
+    // Get sync status for an event
+    getEventSyncStatus: protectedProcedure
       .input(
         z.object({
-          plannedActivityId: z.string().uuid(),
+          eventId: z.string().uuid(),
         }),
       )
       .query(async ({ ctx, input }) => {
         const syncService = new WahooSyncService(ctx.supabase);
-        const status = await syncService.getSyncStatus(
-          input.plannedActivityId,
+        const status = await syncService.getEventSyncStatus(
+          input.eventId,
           ctx.session.user.id,
         );
 
@@ -393,18 +393,18 @@ export const integrationsRouter = createTRPCRouter({
     testSync: protectedProcedure
       .input(
         z.object({
-          plannedActivityId: z.string().uuid(),
+          eventId: z.string().uuid(),
         }),
       )
       .mutation(async ({ ctx, input }) => {
         const syncService = new WahooSyncService(ctx.supabase);
 
         console.log(
-          `[Wahoo Test Sync] Starting test sync for planned activity: ${input.plannedActivityId}`,
+          `[Wahoo Test Sync] Starting test sync for event: ${input.eventId}`,
         );
 
-        const result = await syncService.syncPlannedActivity(
-          input.plannedActivityId,
+        const result = await syncService.syncEvent(
+          input.eventId,
           ctx.session.user.id,
         );
 

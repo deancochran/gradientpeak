@@ -24,7 +24,7 @@ export interface WahooWorkoutData {
   planId: number;
   name: string;
   scheduledDate: string; // ISO date string
-  externalId: string; // Your planned_activity_id (from planned_activities table)
+  externalId: string; // Your event_id (from events table)
   routeId?: number; // Optional route_id to attach to workout
   workoutTypeId: number; // Required: Wahoo workout type ID
   durationMinutes: number; // Required: Duration in minutes

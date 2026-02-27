@@ -19,6 +19,20 @@ export const publicActivityLocationSchema = z.enum(["outdoor", "indoor"]);
 
 export const publicEffortTypeSchema = z.enum(["power", "speed"]);
 
+export const publicEventStatusSchema = z.enum([
+  "scheduled",
+  "completed",
+  "cancelled",
+]);
+
+export const publicEventTypeSchema = z.enum([
+  "planned_activity",
+  "rest_day",
+  "race",
+  "custom",
+  "imported",
+]);
+
 export const publicGenderSchema = z.enum(["male", "female", "other"]);
 
 export const publicIntegrationProviderSchema = z.enum([
@@ -467,6 +481,124 @@ export const publicActivityRoutesRelationshipsSchema = z.tuple([
   }),
 ]);
 
+export const publicEventsRowSchema = z.object({
+  activity_plan_id: z.string().nullable(),
+  all_day: z.boolean(),
+  created_at: z.string(),
+  description: z.string().nullable(),
+  ends_at: z.string().nullable(),
+  event_type: publicEventTypeSchema,
+  external_calendar_id: z.string().nullable(),
+  external_event_id: z.string().nullable(),
+  id: z.string(),
+  idx: z.number(),
+  integration_account_id: z.string().nullable(),
+  linked_activity_id: z.string().nullable(),
+  notes: z.string().nullable(),
+  occurrence_key: z.string(),
+  original_starts_at: z.string().nullable(),
+  profile_id: z.string(),
+  recurrence_rule: z.string().nullable(),
+  recurrence_timezone: z.string().nullable(),
+  series_id: z.string().nullable(),
+  source_provider: z.string().nullable(),
+  starts_at: z.string(),
+  status: publicEventStatusSchema,
+  timezone: z.string(),
+  title: z.string(),
+  training_plan_id: z.string().nullable(),
+  updated_at: z.string(),
+});
+
+export const publicEventsInsertSchema = z.object({
+  activity_plan_id: z.string().optional().nullable(),
+  all_day: z.boolean().optional(),
+  created_at: z.string().optional(),
+  description: z.string().optional().nullable(),
+  ends_at: z.string().optional().nullable(),
+  event_type: publicEventTypeSchema,
+  external_calendar_id: z.string().optional().nullable(),
+  external_event_id: z.string().optional().nullable(),
+  id: z.string().optional(),
+  idx: z.number().optional(),
+  integration_account_id: z.string().optional().nullable(),
+  linked_activity_id: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+  occurrence_key: z.string().optional(),
+  original_starts_at: z.string().optional().nullable(),
+  profile_id: z.string(),
+  recurrence_rule: z.string().optional().nullable(),
+  recurrence_timezone: z.string().optional().nullable(),
+  series_id: z.string().optional().nullable(),
+  source_provider: z.string().optional().nullable(),
+  starts_at: z.string(),
+  status: publicEventStatusSchema.optional(),
+  timezone: z.string().optional(),
+  title: z.string(),
+  training_plan_id: z.string().optional().nullable(),
+  updated_at: z.string().optional(),
+});
+
+export const publicEventsUpdateSchema = z.object({
+  activity_plan_id: z.string().optional().nullable(),
+  all_day: z.boolean().optional(),
+  created_at: z.string().optional(),
+  description: z.string().optional().nullable(),
+  ends_at: z.string().optional().nullable(),
+  event_type: publicEventTypeSchema.optional(),
+  external_calendar_id: z.string().optional().nullable(),
+  external_event_id: z.string().optional().nullable(),
+  id: z.string().optional(),
+  idx: z.number().optional(),
+  integration_account_id: z.string().optional().nullable(),
+  linked_activity_id: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+  occurrence_key: z.string().optional(),
+  original_starts_at: z.string().optional().nullable(),
+  profile_id: z.string().optional(),
+  recurrence_rule: z.string().optional().nullable(),
+  recurrence_timezone: z.string().optional().nullable(),
+  series_id: z.string().optional().nullable(),
+  source_provider: z.string().optional().nullable(),
+  starts_at: z.string().optional(),
+  status: publicEventStatusSchema.optional(),
+  timezone: z.string().optional(),
+  title: z.string().optional(),
+  training_plan_id: z.string().optional().nullable(),
+  updated_at: z.string().optional(),
+});
+
+export const publicEventsRelationshipsSchema = z.tuple([
+  z.object({
+    foreignKeyName: z.literal("events_activity_plan_id_fkey"),
+    columns: z.tuple([z.literal("activity_plan_id")]),
+    isOneToOne: z.literal(false),
+    referencedRelation: z.literal("activity_plans"),
+    referencedColumns: z.tuple([z.literal("id")]),
+  }),
+  z.object({
+    foreignKeyName: z.literal("events_profile_id_fkey"),
+    columns: z.tuple([z.literal("profile_id")]),
+    isOneToOne: z.literal(false),
+    referencedRelation: z.literal("profiles"),
+    referencedColumns: z.tuple([z.literal("id")]),
+  }),
+  z.object({
+    foreignKeyName: z.literal("events_series_id_fkey"),
+    columns: z.tuple([z.literal("series_id")]),
+    isOneToOne: z.literal(false),
+    referencedRelation: z.literal("events"),
+    referencedColumns: z.tuple([z.literal("id")]),
+  }),
+  z.object({
+    foreignKeyName: z.literal("events_training_plan_id_fkey"),
+    columns: z.tuple([z.literal("training_plan_id")]),
+    isOneToOne: z.literal(false),
+    referencedRelation: z.literal("training_plans"),
+    referencedColumns: z.tuple([z.literal("id")]),
+  }),
+]);
+
 export const publicIntegrationsRowSchema = z.object({
   access_token: z.string(),
   created_at: z.string(),
@@ -599,66 +731,6 @@ export const publicOauthStatesRelationshipsSchema = z.tuple([
   }),
 ]);
 
-export const publicPlannedActivitiesRowSchema = z.object({
-  activity_plan_id: z.string().nullable(),
-  created_at: z.string(),
-  id: z.string(),
-  idx: z.number(),
-  notes: z.string().nullable(),
-  profile_id: z.string(),
-  scheduled_date: z.string(),
-  training_plan_id: z.string().nullable(),
-  updated_at: z.string(),
-});
-
-export const publicPlannedActivitiesInsertSchema = z.object({
-  activity_plan_id: z.string().optional().nullable(),
-  created_at: z.string().optional(),
-  id: z.string().optional(),
-  idx: z.number().optional(),
-  notes: z.string().optional().nullable(),
-  profile_id: z.string(),
-  scheduled_date: z.string(),
-  training_plan_id: z.string().optional().nullable(),
-  updated_at: z.string().optional(),
-});
-
-export const publicPlannedActivitiesUpdateSchema = z.object({
-  activity_plan_id: z.string().optional().nullable(),
-  created_at: z.string().optional(),
-  id: z.string().optional(),
-  idx: z.number().optional(),
-  notes: z.string().optional().nullable(),
-  profile_id: z.string().optional(),
-  scheduled_date: z.string().optional(),
-  training_plan_id: z.string().optional().nullable(),
-  updated_at: z.string().optional(),
-});
-
-export const publicPlannedActivitiesRelationshipsSchema = z.tuple([
-  z.object({
-    foreignKeyName: z.literal("planned_activities_activity_plan_id_fkey"),
-    columns: z.tuple([z.literal("activity_plan_id")]),
-    isOneToOne: z.literal(false),
-    referencedRelation: z.literal("activity_plans"),
-    referencedColumns: z.tuple([z.literal("id")]),
-  }),
-  z.object({
-    foreignKeyName: z.literal("planned_activities_profile_id_fkey"),
-    columns: z.tuple([z.literal("profile_id")]),
-    isOneToOne: z.literal(false),
-    referencedRelation: z.literal("profiles"),
-    referencedColumns: z.tuple([z.literal("id")]),
-  }),
-  z.object({
-    foreignKeyName: z.literal("planned_activities_training_plan_id_fkey"),
-    columns: z.tuple([z.literal("training_plan_id")]),
-    isOneToOne: z.literal(false),
-    referencedRelation: z.literal("training_plans"),
-    referencedColumns: z.tuple([z.literal("id")]),
-  }),
-]);
-
 export const publicProfileMetricsRowSchema = z.object({
   created_at: z.string(),
   id: z.string(),
@@ -763,54 +835,52 @@ export const publicProfilesUpdateSchema = z.object({
   username: z.string().optional().nullable(),
 });
 
-export const publicSyncedPlannedActivitiesRowSchema = z.object({
+export const publicSyncedEventsRowSchema = z.object({
   created_at: z.string(),
+  event_id: z.string(),
   external_id: z.string(),
   id: z.string(),
   idx: z.number(),
-  planned_activity_id: z.string(),
   profile_id: z.string(),
   provider: publicIntegrationProviderSchema,
   synced_at: z.string(),
   updated_at: z.string(),
 });
 
-export const publicSyncedPlannedActivitiesInsertSchema = z.object({
+export const publicSyncedEventsInsertSchema = z.object({
   created_at: z.string().optional(),
+  event_id: z.string(),
   external_id: z.string(),
   id: z.string().optional(),
   idx: z.number().optional(),
-  planned_activity_id: z.string(),
   profile_id: z.string(),
   provider: publicIntegrationProviderSchema,
   synced_at: z.string().optional(),
   updated_at: z.string().optional(),
 });
 
-export const publicSyncedPlannedActivitiesUpdateSchema = z.object({
+export const publicSyncedEventsUpdateSchema = z.object({
   created_at: z.string().optional(),
+  event_id: z.string().optional(),
   external_id: z.string().optional(),
   id: z.string().optional(),
   idx: z.number().optional(),
-  planned_activity_id: z.string().optional(),
   profile_id: z.string().optional(),
   provider: publicIntegrationProviderSchema.optional(),
   synced_at: z.string().optional(),
   updated_at: z.string().optional(),
 });
 
-export const publicSyncedPlannedActivitiesRelationshipsSchema = z.tuple([
+export const publicSyncedEventsRelationshipsSchema = z.tuple([
   z.object({
-    foreignKeyName: z.literal(
-      "synced_planned_activities_planned_activity_id_fkey",
-    ),
-    columns: z.tuple([z.literal("planned_activity_id")]),
+    foreignKeyName: z.literal("synced_events_event_id_fkey"),
+    columns: z.tuple([z.literal("event_id")]),
     isOneToOne: z.literal(false),
-    referencedRelation: z.literal("planned_activities"),
+    referencedRelation: z.literal("events"),
     referencedColumns: z.tuple([z.literal("id")]),
   }),
   z.object({
-    foreignKeyName: z.literal("synced_planned_activities_profile_id_fkey"),
+    foreignKeyName: z.literal("synced_events_profile_id_fkey"),
     columns: z.tuple([z.literal("profile_id")]),
     isOneToOne: z.literal(false),
     referencedRelation: z.literal("profiles"),

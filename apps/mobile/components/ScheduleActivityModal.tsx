@@ -56,7 +56,7 @@
  * <ScheduleActivityModal
  *   visible={showModal}
  *   onClose={() => setShowModal(false)}
- *   plannedActivityId={activityId}
+ *   eventId={activityId}
  * />
  * ```
  *
@@ -86,7 +86,7 @@ import {
   plannedActivityScheduleFormSchema,
   type PlannedActivityScheduleFormData,
 } from "@repo/core";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { Calendar, Clock, TrendingUp, X } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
@@ -104,10 +104,10 @@ interface ScheduleActivityModalProps {
   onClose: () => void;
   onSuccess?: () => void;
 
-  // Either provide activityPlanId (database ID), activityPlan (template object), or plannedActivityId (edit)
+  // Either provide activityPlanId (database ID), activityPlan (template object), or eventId (edit)
   activityPlanId?: string;
   activityPlan?: any; // Template object from discover/samples
-  plannedActivityId?: string;
+  eventId?: string;
 
   // Optional pre-selected date
   preselectedDate?: string;
@@ -122,17 +122,17 @@ export function ScheduleActivityModal({
   onSuccess,
   activityPlanId,
   activityPlan,
-  plannedActivityId,
+  eventId,
   preselectedDate,
   trainingPlanId,
 }: ScheduleActivityModalProps) {
-  const isEditMode = !!plannedActivityId;
+  const isEditMode = !!eventId;
   const isTemplate = !!activityPlan && !activityPlanId;
 
-  // Validation: Must have either activityPlanId, activityPlan, or plannedActivityId
-  if (!activityPlanId && !activityPlan && !plannedActivityId) {
+  // Validation: Must have either activityPlanId, activityPlan, or eventId
+  if (!activityPlanId && !activityPlan && !eventId) {
     throw new Error(
-      "ScheduleActivityModal requires either activityPlanId, activityPlan, or plannedActivityId",
+      "ScheduleActivityModal requires either activityPlanId, activityPlan, or eventId",
     );
   }
 
@@ -161,11 +161,12 @@ export function ScheduleActivityModal({
       ? new Date(scheduledDateString)
       : new Date();
   const currentActivityPlanId = watch("activity_plan_id");
+  const scheduledDateForApi = format(scheduledDate, "yyyy-MM-dd");
 
   // Fetch existing activity if editing
   const { data: existingActivity, isLoading: loadingExistingActivity } =
-    trpc.plannedActivities.getById.useQuery(
-      { id: plannedActivityId! },
+    trpc.events.getById.useQuery(
+      { id: eventId! },
       { enabled: isEditMode && visible },
     );
 
@@ -184,10 +185,10 @@ export function ScheduleActivityModal({
     data: validation,
     isLoading: validationLoading,
     error: validationError,
-  } = trpc.plannedActivities.validateConstraints.useQuery(
+  } = trpc.events.validateConstraints.useQuery(
     {
       training_plan_id: trainingPlanId!,
-      scheduled_date: scheduledDateString,
+      scheduled_date: scheduledDateForApi,
       activity_plan_id: currentActivityPlanId,
     },
     {
@@ -213,8 +214,8 @@ export function ScheduleActivityModal({
 
   const utils = trpc.useUtils();
 
-  const createMutation = useReliableMutation(trpc.plannedActivities.create, {
-    invalidate: [utils.plannedActivities, utils.trainingPlans],
+  const createMutation = useReliableMutation(trpc.events.create, {
+    invalidate: [utils.events, utils.trainingPlans],
     success: "Activity scheduled!",
     onSuccess: () => {
       onSuccess?.();
@@ -222,8 +223,8 @@ export function ScheduleActivityModal({
     },
   });
 
-  const updateMutation = useReliableMutation(trpc.plannedActivities.update, {
-    invalidate: [utils.plannedActivities, utils.trainingPlans],
+  const updateMutation = useReliableMutation(trpc.events.update, {
+    invalidate: [utils.events, utils.trainingPlans],
     success: "Activity updated!",
     onSuccess: () => {
       onSuccess?.();
@@ -234,15 +235,15 @@ export function ScheduleActivityModal({
   const onSubmit = (data: PlannedActivityScheduleFormData) => {
     if (isEditMode) {
       updateMutation.mutate({
-        id: plannedActivityId,
+        id: eventId,
         activity_plan_id: data.activity_plan_id,
-        scheduled_date: data.scheduled_date,
+        scheduled_date: format(parseISO(data.scheduled_date), "yyyy-MM-dd"),
         notes: data.notes || undefined,
       });
     } else {
       createMutation.mutate({
         activity_plan_id: data.activity_plan_id,
-        scheduled_date: data.scheduled_date,
+        scheduled_date: format(parseISO(data.scheduled_date), "yyyy-MM-dd"),
         notes: data.notes || undefined,
         training_plan_id: data.training_plan_id || undefined,
       });

@@ -24,7 +24,7 @@ export default function ScheduledScreen() {
     data: scheduledData,
     isLoading,
     refetch,
-  } = trpc.plannedActivities.list.useQuery({
+  } = trpc.events.list.useQuery({
     limit: 100, // Get all activities for scheduling view
   });
 

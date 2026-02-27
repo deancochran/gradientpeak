@@ -40,6 +40,20 @@ create type public.training_effect_label as enum (
     'vo2max'
 );
 
+create type public.event_type as enum (
+    'planned_activity',
+    'rest_day',
+    'race',
+    'custom',
+    'imported'
+);
+
+create type public.event_status as enum (
+    'scheduled',
+    'completed',
+    'cancelled'
+);
+
 -- ============================================================================
 -- HELPER FUNCTIONS
 -- ============================================================================
@@ -220,40 +234,107 @@ create trigger update_activity_plans_updated_at
     execute function update_updated_at_column();
 
 -- ============================================================================
--- PLANNED ACTIVITIES
+-- EVENTS
 -- ============================================================================
-create table if not exists public.planned_activities (
+create table if not exists public.events (
     id uuid primary key default uuid_generate_v4(),
     idx serial unique not null,
     profile_id uuid not null references public.profiles(id) on delete cascade,
+
+    event_type event_type not null,
+    status event_status not null default 'scheduled',
+    title text not null,
+    description text,
+    all_day boolean not null default false,
+    starts_at timestamptz not null,
+    ends_at timestamptz,
+    timezone text not null default 'UTC',
+
+    -- Optional linkage fields for planned-activity and broader event modeling
     activity_plan_id uuid references public.activity_plans(id) on delete set null,
-    training_plan_id uuid references public.training_plans(id) on delete cascade,
-    scheduled_date date not null,
+    training_plan_id uuid references public.training_plans(id) on delete set null,
+    linked_activity_id uuid,
+
+    -- Recurrence fields (series + occurrence identity)
+    series_id uuid references public.events(id) on delete cascade,
+    recurrence_rule text,
+    recurrence_timezone text,
+    occurrence_key text not null default '',
+    original_starts_at timestamptz,
+
+    -- Imported-source identity fields (idempotent upsert baseline)
+    source_provider text,
+    integration_account_id uuid,
+    external_calendar_id text,
+    external_event_id text,
+
     notes text,
     created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now()
+    updated_at timestamptz not null default now(),
+
+    constraint events_time_window check (ends_at is null or ends_at > starts_at),
+    constraint events_series_not_self check (series_id is null or series_id <> id),
+    constraint events_recurrence_timezone_requires_rule check (
+        recurrence_timezone is null or recurrence_rule is not null
+    ),
+    constraint events_series_occurrence_key_required check (
+        series_id is null or btrim(occurrence_key) <> ''
+    ),
+    constraint events_source_identity_complete check (
+        (source_provider is null and integration_account_id is null and external_calendar_id is null and external_event_id is null) or
+        (source_provider is not null and integration_account_id is not null and external_calendar_id is not null and external_event_id is not null)
+    ),
+    constraint events_source_provider_non_empty check (
+        source_provider is null or btrim(source_provider) <> ''
+    ),
+    constraint events_external_calendar_non_empty check (
+        external_calendar_id is null or btrim(external_calendar_id) <> ''
+    ),
+    constraint events_external_event_non_empty check (
+        external_event_id is null or btrim(external_event_id) <> ''
+    )
 );
 
-create index if not exists idx_planned_activities_profile_id
-    on public.planned_activities(profile_id);
+create index if not exists idx_events_profile_starts_at
+    on public.events(profile_id, starts_at);
 
-create index if not exists idx_planned_activities_activity_plan_id
-    on public.planned_activities(activity_plan_id);
+create index if not exists idx_events_profile_status_starts_at
+    on public.events(profile_id, status, starts_at);
 
-create index if not exists idx_planned_activities_training_plan_id
-    on public.planned_activities(training_plan_id);
+create index if not exists idx_events_event_type_starts_at
+    on public.events(event_type, starts_at);
 
-create index if not exists idx_planned_activities_scheduled_date
-    on public.planned_activities(scheduled_date);
+create index if not exists idx_events_activity_plan
+    on public.events(activity_plan_id)
+    where activity_plan_id is not null;
 
-create index if not exists idx_planned_activities_plan_date
-    on public.planned_activities(activity_plan_id, scheduled_date);
+create index if not exists idx_events_training_plan
+    on public.events(training_plan_id)
+    where training_plan_id is not null;
 
-create index if not exists idx_planned_activities_training_plan_date
-    on public.planned_activities(training_plan_id, scheduled_date);
+create unique index if not exists idx_events_series_occurrence_unique
+    on public.events(series_id, occurrence_key)
+    where series_id is not null;
 
-create trigger update_planned_activities_updated_at
-    before update on public.planned_activities
+create unique index if not exists idx_events_external_identity_unique
+    on public.events(
+        source_provider,
+        integration_account_id,
+        external_calendar_id,
+        external_event_id,
+        occurrence_key
+    )
+    where source_provider is not null
+        and integration_account_id is not null
+        and external_calendar_id is not null
+        and external_event_id is not null;
+
+create index if not exists idx_events_integration_calendar_updated
+    on public.events(integration_account_id, external_calendar_id, updated_at)
+    where integration_account_id is not null and external_calendar_id is not null;
+
+create trigger update_events_updated_at
+    before update on public.events
     for each row
     execute function update_updated_at_column();
 
@@ -313,32 +394,32 @@ create index if not exists idx_oauth_states_profile_id
     on public.oauth_states(profile_id);
 
 -- ============================================================================
--- SYNCED PLANNED ACTIVITIES
+-- SYNCED EVENTS
 -- ============================================================================
-create table if not exists public.synced_planned_activities (
+create table if not exists public.synced_events (
     id uuid primary key default uuid_generate_v4(),
     idx serial unique not null,
     profile_id uuid not null references public.profiles(id) on delete cascade,
-    planned_activity_id uuid not null references public.planned_activities(id) on delete cascade,
+    event_id uuid not null references public.events(id) on delete cascade,
     provider integration_provider not null,
     external_id text not null,
     synced_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
     created_at timestamptz not null default now(),
-    constraint unique_planned_activity_per_provider unique (planned_activity_id, provider)
+    constraint unique_event_per_provider unique (event_id, provider)
 );
 
-create index if not exists idx_synced_planned_activities_profile
-    on public.synced_planned_activities(profile_id);
+create index if not exists idx_synced_events_profile
+    on public.synced_events(profile_id);
 
-create index if not exists idx_synced_planned_activities_planned
-    on public.synced_planned_activities(planned_activity_id);
+create index if not exists idx_synced_events_event
+    on public.synced_events(event_id);
 
-create index if not exists idx_synced_planned_activities_provider
-    on public.synced_planned_activities(provider, external_id);
+create index if not exists idx_synced_events_provider
+    on public.synced_events(provider, external_id);
 
-create trigger update_synced_planned_activities_updated_at
-    before update on public.synced_planned_activities
+create trigger update_synced_events_updated_at
+    before update on public.synced_events
     for each row
     execute function update_updated_at_column();
 
@@ -789,10 +870,10 @@ alter table public.activity_plans disable row level security;
 alter table public.activity_routes disable row level security;
 
 alter table public.integrations disable row level security;
+alter table public.events disable row level security;
 alter table public.notifications disable row level security;
 alter table public.oauth_states disable row level security;
-alter table public.planned_activities disable row level security;
 alter table public.profiles disable row level security;
 alter table public.profile_metrics disable row level security;
-alter table public.synced_planned_activities disable row level security;
+alter table public.synced_events disable row level security;
 alter table public.training_plans disable row level security;
