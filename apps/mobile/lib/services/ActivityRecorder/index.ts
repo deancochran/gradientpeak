@@ -106,7 +106,7 @@ export interface ServiceEvents {
   // Plan events
   planSelected: (data: {
     plan: RecordingServiceActivityPlan;
-    plannedId?: string;
+    eventId?: string;
   }) => void;
   stepChanged: (info: StepInfo) => void;
   planCleared: () => void;
@@ -148,7 +148,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   // === Plan State (minimal tracking) ===
   private _plan?: RecordingServiceActivityPlan;
-  private _plannedActivityId?: string;
+  private _eventId?: string;
   private _steps: IntervalStepV2[] = [];
   private _stepIndex: number = 0;
   private _stepStartMovingTime: number = 0; // Moving time when current step started
@@ -310,8 +310,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return this._plan;
   }
 
-  get plannedActivityId(): string | undefined {
-    return this._plannedActivityId;
+  get eventId(): string | undefined {
+    return this._eventId;
   }
 
   get stepIndex(): number {
@@ -509,7 +509,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // Plan Actions
   // ================================
 
-  selectPlan(plan: RecordingServiceActivityPlan, plannedId?: string): void {
+  selectPlan(plan: RecordingServiceActivityPlan, eventId?: string): void {
     console.log("[Service] Selected plan:", plan.name);
     console.log(
       "[Service] Plan structure:",
@@ -517,7 +517,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     );
 
     this._plan = plan;
-    this._plannedActivityId = plannedId;
+    this._eventId = eventId;
     if (!plan.activity_category || !plan.activity_location) {
       throw new Error("no plan category or location found");
     }
@@ -537,7 +537,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     // Create PlanManager which will handle expanding intervals to flat steps
     try {
       // PlanManager constructor expands intervals × repetitions into flat steps internally
-      const planManager = new PlanManager(plan, plannedId);
+      const planManager = new PlanManager(plan, eventId);
       this._steps = (planManager as any).steps || []; // Access private steps array
 
       console.log(
@@ -575,7 +575,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       }
     }
 
-    this.emit("planSelected", { plan, plannedId });
+    this.emit("planSelected", { plan, eventId });
 
     // Emit step changed immediately so UI shows the first step
     this.emit("stepChanged", this.getStepInfo());
@@ -590,7 +590,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     console.log("[Service] Clearing plan");
 
     this._plan = undefined;
-    this._plannedActivityId = undefined;
+    this._eventId = undefined;
     this._steps = [];
     this._stepIndex = 0;
     this._stepStartMovingTime = 0;
@@ -1136,7 +1136,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       activityLocation: this.selectedActivityLocation,
       profileId: this.profile.id,
       profile: this.profile,
-      plannedActivityId: this._plannedActivityId,
+      eventId: this._eventId,
       activityPlan: this._plan,
     };
 
@@ -1451,7 +1451,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         };
 
         console.log("[Service] Selecting plan from payload:", plan.name);
-        this.selectPlan(plan, payload.plannedActivityId);
+        this.selectPlan(plan, payload.eventId);
       } else {
         // Quick start activity - only clear plan if this is truly initial setup
         // Check if there's an existing plan to determine if this is initial setup

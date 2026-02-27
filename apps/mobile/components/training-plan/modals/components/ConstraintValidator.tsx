@@ -3,8 +3,8 @@
 import { Text } from "@/components/ui/text";
 import { View } from "react-native";
 import {
-    ConstraintIndicator,
-    type ConstraintStatus,
+  ConstraintIndicator,
+  type ConstraintStatus,
 } from "./ConstraintIndicator";
 
 interface ConstraintValidationResult {
@@ -64,7 +64,7 @@ interface ConstraintValidatorProps {
  *
  * Usage:
  * ```tsx
- * const { data: validation, isLoading } = trpc.plannedActivities.validateConstraints.useQuery({
+ * const { data: validation, isLoading } = trpc.events.validateConstraints.useQuery({
  *   training_plan_id: planId,
  *   scheduled_date: date,
  *   activity: { estimated_tss: 100, intensity: "moderate" }

@@ -20,9 +20,7 @@ import { useActivityStatus, usePlan } from "@/lib/hooks/useActivityRecorder";
 import { useRecordingConfiguration } from "@/lib/hooks/useRecordingConfiguration";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { trpc } from "@/lib/trpc";
-import type {
-  PublicActivityCategory
-} from "@repo/supabase";
+import type { PublicActivityCategory } from "@repo/supabase";
 import { router } from "expo-router";
 import { Check, Search } from "lucide-react-native";
 import React, { useCallback, useState } from "react";
@@ -52,9 +50,9 @@ export default function PlanPickerPage() {
     PublicActivityCategory | "all"
   >("all");
 
-  // Fetch today's planned activities
+  // Fetch today's planned events
   const { data: plannedActivities, isLoading } =
-    trpc.plannedActivities.getToday.useQuery();
+    trpc.events.getToday.useQuery();
 
   // Filter planned activities by search and category filter
   const filteredPlannedActivities = React.useMemo(() => {
@@ -87,7 +85,7 @@ export default function PlanPickerPage() {
   // Handle planned activity selection
   const handlePlanPress = useCallback(
     (
-      plannedActivityId: string,
+      eventId: string,
       planCategory: PublicActivityCategory,
       planLocation: string,
     ) => {
@@ -102,7 +100,7 @@ export default function PlanPickerPage() {
         });
       }
 
-      attachPlan(plannedActivityId);
+      attachPlan(eventId);
       router.back();
     },
     [attachPlan, service, activityCategory],
@@ -114,8 +112,7 @@ export default function PlanPickerPage() {
     router.back();
   }, [detachPlan]);
 
-  const currentPlannedActivityId =
-    service?.recordingMetadata?.plannedActivityId;
+  const currentEventId = service?.recordingMetadata?.eventId;
 
   return (
     <View className="flex-1 bg-background">
@@ -184,7 +181,7 @@ export default function PlanPickerPage() {
         )}
 
         {/* Detach Plan Option (if plan attached) */}
-        {!isLoading && currentPlannedActivityId && (
+        {!isLoading && currentEventId && (
           <Pressable
             onPress={handleDetach}
             className="bg-card p-4 rounded-lg border border-border mb-3"
@@ -211,7 +208,7 @@ export default function PlanPickerPage() {
               <PlannedActivityListItem
                 key={plannedActivity.id}
                 plannedActivity={plannedActivity as any}
-                isSelected={plannedActivity.id === currentPlannedActivityId}
+                isSelected={plannedActivity.id === currentEventId}
                 onPress={() =>
                   handlePlanPress(
                     plannedActivity.id,

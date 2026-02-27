@@ -1,7 +1,7 @@
 /**
  * ActivityList Component
  * Reusable component for displaying grouped activities
- * Eliminates duplication across index.tsx and planned_activities/index.tsx
+ * Eliminates duplication across calendar list entry points
  */
 
 import {

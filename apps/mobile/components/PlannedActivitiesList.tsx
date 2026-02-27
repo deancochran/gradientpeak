@@ -21,7 +21,7 @@ export function PlannedActivitiesList({
 
   // Fetch today's planned activities using tRPC
   const { data: plannedActivities, isLoading: loading } =
-    trpc.plannedActivities.getToday.useQuery();
+    trpc.events.getToday.useQuery();
 
   // Handle navigation to activity plan detail page
   const handleNavigateToDetail = (activity: any) => {
@@ -37,7 +37,7 @@ export function PlannedActivitiesList({
     const payload: ActivityPayload = {
       category: activityPlan?.activity_category || "other",
       location: activityPlan?.activity_location || "indoor",
-      plannedActivityId: activity.id,
+      eventId: activity.id,
       plan: activityPlan,
     };
     onActivitySelect(payload);

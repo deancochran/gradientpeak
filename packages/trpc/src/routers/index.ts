@@ -3,11 +3,11 @@ import { createTRPCRouter } from "../trpc";
 import { activitiesRouter } from "./activities";
 import { activityPlansRouter } from "./activity_plans";
 import { authRouter } from "./auth";
+import { eventsRouter } from "./events";
 import { fitFilesRouter } from "./fit-files";
 import { homeRouter } from "./home";
 import { integrationsRouter } from "./integrations";
 import { onboardingRouter } from "./onboarding";
-import { plannedActivitiesRouter } from "./planned_activities";
 import { profilesRouter } from "./profiles";
 
 import { profileMetricsRouter } from "./profile-metrics";
@@ -27,7 +27,7 @@ export const appRouter = createTRPCRouter({
   profileMetrics: profileMetricsRouter,
   activities: activitiesRouter,
   activityPlans: activityPlansRouter,
-  plannedActivities: plannedActivitiesRouter,
+  events: eventsRouter,
   fitFiles: fitFilesRouter,
   integrations: integrationsRouter,
   trainingPlans: trainingPlansRouter,

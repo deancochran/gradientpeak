@@ -23,7 +23,7 @@ class ActivitySelectionStore {
       category: payload.category,
       location: payload.location,
       hasPlan: !!payload.plan,
-      plannedActivityId: payload.plannedActivityId,
+      eventId: payload.eventId,
     });
     this.selection = payload;
   }

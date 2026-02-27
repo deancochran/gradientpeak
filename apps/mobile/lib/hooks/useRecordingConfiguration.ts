@@ -19,35 +19,56 @@ import { trpc } from "@/lib/trpc";
  * ```tsx
  * const { attachPlan, detachPlan, attachRoute, detachRoute } = useRecordingConfiguration(service);
  *
- * // Attach a plan by ID
- * await attachPlan('plan-uuid');
+ * // Attach from a scheduled event ID
+ * await attachPlan('event-uuid');
  *
  * // Detach current plan
  * detachPlan();
  * ```
  */
-export function useRecordingConfiguration(service: ActivityRecorderService | null) {
+export function useRecordingConfiguration(
+  service: ActivityRecorderService | null,
+) {
   const utils = trpc.useUtils();
 
   /**
-   * Attach a training plan by ID
-   * Fetches the plan data and calls service.selectPlan()
+   * Attach a scheduled event by ID
+   * Fetches linked activity plan data and calls service.selectPlan()
    */
   const attachPlan = useCallback(
-    async (planId: string) => {
+    async (eventId: string) => {
       if (!service) {
         console.warn("[useRecordingConfiguration] No service available");
         return;
       }
 
       try {
-        console.log("[useRecordingConfiguration] Attaching plan:", planId);
+        console.log(
+          "[useRecordingConfiguration] Attaching plan from event:",
+          eventId,
+        );
 
-        // Fetch plan data
-        const planData = await utils.client.trainingPlans.get.query({ id: planId });
+        const eventData = await utils.client.events.getById.query({
+          id: eventId,
+        });
+
+        if (!eventData?.activity_plan_id) {
+          console.error(
+            "[useRecordingConfiguration] Event has no linked activity plan:",
+            eventId,
+          );
+          return;
+        }
+
+        const planData = await utils.client.activityPlans.getById.query({
+          id: eventData.activity_plan_id,
+        });
 
         if (!planData) {
-          console.error("[useRecordingConfiguration] Plan not found:", planId);
+          console.error(
+            "[useRecordingConfiguration] Activity plan not found for event:",
+            eventId,
+          );
           return;
         }
 
@@ -56,16 +77,22 @@ export function useRecordingConfiguration(service: ActivityRecorderService | nul
           name: planData.name,
           description: planData.description || undefined,
           structure: planData.structure,
-          activity_category: service.selectedActivityCategory,
-          route_id: undefined, // Plans can have route_id in structure
+          activity_category:
+            planData.activity_category || service.selectedActivityCategory,
+          activity_location:
+            planData.activity_location || service.selectedActivityLocation,
+          route_id: planData.route_id || undefined,
         };
 
         // Attach plan to service
-        service.selectPlan(plan as any, planId);
+        service.selectPlan(plan as any, eventId);
 
         console.log("[useRecordingConfiguration] Plan attached successfully");
       } catch (error) {
-        console.error("[useRecordingConfiguration] Failed to attach plan:", error);
+        console.error(
+          "[useRecordingConfiguration] Failed to attach plan:",
+          error,
+        );
       }
     },
     [service, utils],
@@ -102,7 +129,9 @@ export function useRecordingConfiguration(service: ActivityRecorderService | nul
       // TODO: Implement route attachment
       // This will require adding a public method to ActivityRecorderService
       // to load routes directly (not just via plans)
-      console.warn("[useRecordingConfiguration] Route attachment not yet implemented");
+      console.warn(
+        "[useRecordingConfiguration] Route attachment not yet implemented",
+      );
     },
     [service],
   );
@@ -121,7 +150,9 @@ export function useRecordingConfiguration(service: ActivityRecorderService | nul
 
     // TODO: Implement route detachment
     // This will require adding a public method to ActivityRecorderService
-    console.warn("[useRecordingConfiguration] Route detachment not yet implemented");
+    console.warn(
+      "[useRecordingConfiguration] Route detachment not yet implemented",
+    );
   }, [service]);
 
   return {

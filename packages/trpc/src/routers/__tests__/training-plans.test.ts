@@ -2855,7 +2855,7 @@ describe("trainingPlansRouter analytics endpoints", () => {
         },
         error: null,
       },
-      planned_activities: { data: [], error: null },
+      events: { data: [], error: null },
       activities: { data: [], error: null },
     });
 
@@ -2907,7 +2907,7 @@ describe("trainingPlansRouter analytics endpoints", () => {
         },
         error: null,
       },
-      planned_activities: { data: [], error: null },
+      events: { data: [], error: null },
       activities: {
         data: [
           {

@@ -27,13 +27,11 @@ import type {
   SessionStats,
   StatsUpdateEvent,
 } from "@/lib/services/ActivityRecorder/types";
-import type {
-  RecordingServiceActivityPlan
-} from "@repo/core";
+import type { RecordingServiceActivityPlan } from "@repo/core";
 import type {
   PublicActivityCategory,
   PublicActivityLocation,
-  PublicProfilesRow
+  PublicProfilesRow,
 } from "@repo/supabase";
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import type { Device } from "react-native-ble-plx";
@@ -142,7 +140,7 @@ export function useActivityRecorderData(
     // Recording state
     isActive: recordingState === "recording",
     isPaused: recordingState === "paused",
-    recordingId: service?.recordingMetadata?.plannedActivityId,
+    recordingId: service?.recordingMetadata?.eventId,
 
     // Service reference for advanced use
     service,
@@ -328,8 +326,8 @@ export function usePlan(service: ActivityRecorderService | null) {
   if (!service?.hasPlan) {
     return {
       hasPlan: false as const,
-      select: (plan: RecordingServiceActivityPlan, id?: string) =>
-        service?.selectPlan(plan, id),
+      select: (plan: RecordingServiceActivityPlan, eventId?: string) =>
+        service?.selectPlan(plan, eventId),
       clear: () => service?.clearPlan(),
     };
   }
@@ -350,8 +348,8 @@ export function usePlan(service: ActivityRecorderService | null) {
     isFinished: info.isFinished,
     canAdvance: info.progress?.canAdvance ?? false,
     advance: () => service.advanceStep(),
-    select: (plan: RecordingServiceActivityPlan, id?: string) =>
-      service.selectPlan(plan, id),
+    select: (plan: RecordingServiceActivityPlan, eventId?: string) =>
+      service.selectPlan(plan, eventId),
     clear: () => service.clearPlan(),
     planTimeRemaining: service.planTimeRemaining,
   };

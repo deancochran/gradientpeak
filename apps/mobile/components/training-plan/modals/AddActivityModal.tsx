@@ -93,7 +93,7 @@ export function AddActivityModal({
     data: validation,
     isLoading: validationLoading,
     error: validationError,
-  } = trpc.plannedActivities.validateConstraints.useQuery(
+  } = trpc.events.validateConstraints.useQuery(
     {
       training_plan_id: trainingPlanId,
       scheduled_date: selectedDate,
@@ -107,8 +107,8 @@ export function AddActivityModal({
   const utils = trpc.useUtils();
 
   // Schedule activity mutation
-  const scheduleMutation = useReliableMutation(trpc.plannedActivities.create, {
-    invalidate: [utils.plannedActivities],
+  const scheduleMutation = useReliableMutation(trpc.events.create, {
+    invalidate: [utils.events],
     success: "Activity scheduled!",
     onSuccess: () => {
       onSuccess?.();

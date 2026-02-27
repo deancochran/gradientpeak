@@ -135,16 +135,20 @@ export const queryKeys = {
       [...queryKeys.trainingPlans.all, "curve", planId, type] as const,
   },
 
-  // Planned activities query keys
-  plannedActivities: {
-    all: ["plannedActivities"] as const,
-    lists: () => [...queryKeys.plannedActivities.all, "list"] as const,
+  // Events query keys
+  events: {
+    all: ["events"] as const,
+    lists: () => [...queryKeys.events.all, "list"] as const,
     list: (filters: Record<string, unknown>) =>
-      [...queryKeys.plannedActivities.lists(), filters] as const,
-    details: () => [...queryKeys.plannedActivities.all, "detail"] as const,
-    detail: (id: string) =>
-      [...queryKeys.plannedActivities.details(), id] as const,
-    weekCount: () => [...queryKeys.plannedActivities.all, "weekCount"] as const,
+      [...queryKeys.events.lists(), filters] as const,
+    details: () => [...queryKeys.events.all, "detail"] as const,
+    detail: (id: string) => [...queryKeys.events.details(), id] as const,
+    today: () => [...queryKeys.events.all, "today"] as const,
+    weekCount: () => [...queryKeys.events.all, "weekCount"] as const,
+    constraints: (filters: Record<string, unknown>) =>
+      [...queryKeys.events.all, "constraints", filters] as const,
+    byWeek: (weekStart: string, weekEnd: string) =>
+      [...queryKeys.events.all, "byWeek", weekStart, weekEnd] as const,
   },
 
   // Profile query keys

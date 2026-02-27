@@ -11,7 +11,7 @@ vi.mock("@repo/core", async () => {
   };
 });
 
-import { plannedActivitiesRouter } from "../planned_activities";
+import { eventsRouter } from "../events";
 
 type QueryResult = {
   data: any;
@@ -45,8 +45,8 @@ function createSupabaseMock(results: Record<string, QueryResult>) {
   };
 }
 
-function createPlannedActivitiesCaller(results: Record<string, QueryResult>) {
-  return plannedActivitiesRouter.createCaller({
+function createEventsCaller(results: Record<string, QueryResult>) {
+  return eventsRouter.createCaller({
     supabase: createSupabaseMock(results) as any,
     session: {
       user: {
@@ -59,9 +59,9 @@ function createPlannedActivitiesCaller(results: Record<string, QueryResult>) {
   } as any);
 }
 
-describe("plannedActivitiesRouter.validateConstraints", () => {
+describe("eventsRouter.validateConstraints", () => {
   it("returns violated constraint statuses when adding activity breaches plan limits", async () => {
-    const caller = createPlannedActivitiesCaller({
+    const caller = createEventsCaller({
       training_plans: {
         data: {
           id: "11111111-1111-4111-8111-111111111111",
@@ -83,11 +83,11 @@ describe("plannedActivitiesRouter.validateConstraints", () => {
         },
         error: null,
       },
-      planned_activities: {
+      events: {
         data: [
           {
             id: "a1",
-            scheduled_date: "2026-01-06",
+            starts_at: "2026-01-06T00:00:00.000Z",
             activity_plan: {
               id: "plan-a",
               route_id: null,
@@ -97,7 +97,7 @@ describe("plannedActivitiesRouter.validateConstraints", () => {
           },
           {
             id: "a2",
-            scheduled_date: "2026-01-07",
+            starts_at: "2026-01-07T00:00:00.000Z",
             activity_plan: {
               id: "plan-b",
               route_id: null,

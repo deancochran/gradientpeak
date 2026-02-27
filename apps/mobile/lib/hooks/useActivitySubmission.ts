@@ -337,7 +337,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         queryKey: queryKeys.trainingPlans.status(),
       });
       queryClient.invalidateQueries({
-        queryKey: queryKeys.plannedActivities.weekCount(),
+        queryKey: queryKeys.events.all,
       });
       // Invalidate home dashboard to update CTL/ATL/TSB and weekly stats
       // Use predicate to invalidate all home-related queries
@@ -540,7 +540,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         queryKey: queryKeys.trainingPlans.status(),
       });
       queryClient.invalidateQueries({
-        queryKey: queryKeys.plannedActivities.weekCount(),
+        queryKey: queryKeys.events.all,
       });
       queryClient.invalidateQueries({
         predicate: (query) =>

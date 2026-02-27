@@ -76,12 +76,12 @@ export class WahooActivityImporter {
         };
       }
 
-      // 3. Find linked planned activity (if any)
-      // Note: This queries synced_planned_activities which links planned_activities to external workouts
+      // 3. Find linked planned activity event (if any)
+      // Note: This queries synced_events which links events to external workouts
       // The external_id column stores the Wahoo workout ID
-      const { data: syncedActivity } = await this.supabase
-        .from("synced_planned_activities")
-        .select("planned_activity_id")
+      const { data: syncedActivity } = await (this.supabase as any)
+        .from("synced_events")
+        .select("event_id")
         .eq("provider", "wahoo")
         .eq("external_id", summary.workout_id.toString())
         .eq("profile_id", integration.profile_id)
@@ -102,13 +102,15 @@ export class WahooActivityImporter {
           (summary.duration_total_accum || 0) * 1000,
       ).toISOString();
 
-      // 4a. If we have a planned_activity_id, get the associated activity_plan_id
+      // 4a. If we have an event_id, get the associated activity_plan_id
       let activityPlanId: string | null = null;
-      if (syncedActivity?.planned_activity_id) {
+      if (syncedActivity?.event_id) {
         const { data: plannedActivity } = await this.supabase
-          .from("planned_activities")
+          .from("events")
           .select("activity_plan_id")
-          .eq("id", syncedActivity.planned_activity_id)
+          .eq("id", syncedActivity.event_id)
+          .eq("event_type", "planned_activity")
+          .eq("profile_id", integration.profile_id)
           .single();
 
         activityPlanId = plannedActivity?.activity_plan_id || null;

@@ -13,6 +13,10 @@ export type PublicActivityLocation = z.infer<
   typeof generated.publicActivityLocationSchema
 >;
 export type PublicEffortType = z.infer<typeof generated.publicEffortTypeSchema>;
+export type PublicEventStatus = z.infer<
+  typeof generated.publicEventStatusSchema
+>;
+export type PublicEventType = z.infer<typeof generated.publicEventTypeSchema>;
 export type PublicGender = z.infer<typeof generated.publicGenderSchema>;
 export type PublicIntegrationProvider = z.infer<
   typeof generated.publicIntegrationProviderSchema
@@ -72,6 +76,16 @@ export type PublicActivityRoutesUpdate = z.infer<
 export type PublicActivityRoutesRelationships = z.infer<
   typeof generated.publicActivityRoutesRelationshipsSchema
 >;
+export type PublicEventsRow = z.infer<typeof generated.publicEventsRowSchema>;
+export type PublicEventsInsert = z.infer<
+  typeof generated.publicEventsInsertSchema
+>;
+export type PublicEventsUpdate = z.infer<
+  typeof generated.publicEventsUpdateSchema
+>;
+export type PublicEventsRelationships = z.infer<
+  typeof generated.publicEventsRelationshipsSchema
+>;
 export type PublicIntegrationsRow = z.infer<
   typeof generated.publicIntegrationsRowSchema
 >;
@@ -108,18 +122,6 @@ export type PublicOauthStatesUpdate = z.infer<
 export type PublicOauthStatesRelationships = z.infer<
   typeof generated.publicOauthStatesRelationshipsSchema
 >;
-export type PublicPlannedActivitiesRow = z.infer<
-  typeof generated.publicPlannedActivitiesRowSchema
->;
-export type PublicPlannedActivitiesInsert = z.infer<
-  typeof generated.publicPlannedActivitiesInsertSchema
->;
-export type PublicPlannedActivitiesUpdate = z.infer<
-  typeof generated.publicPlannedActivitiesUpdateSchema
->;
-export type PublicPlannedActivitiesRelationships = z.infer<
-  typeof generated.publicPlannedActivitiesRelationshipsSchema
->;
 export type PublicProfileMetricsRow = z.infer<
   typeof generated.publicProfileMetricsRowSchema
 >;
@@ -141,17 +143,17 @@ export type PublicProfilesInsert = z.infer<
 export type PublicProfilesUpdate = z.infer<
   typeof generated.publicProfilesUpdateSchema
 >;
-export type PublicSyncedPlannedActivitiesRow = z.infer<
-  typeof generated.publicSyncedPlannedActivitiesRowSchema
+export type PublicSyncedEventsRow = z.infer<
+  typeof generated.publicSyncedEventsRowSchema
 >;
-export type PublicSyncedPlannedActivitiesInsert = z.infer<
-  typeof generated.publicSyncedPlannedActivitiesInsertSchema
+export type PublicSyncedEventsInsert = z.infer<
+  typeof generated.publicSyncedEventsInsertSchema
 >;
-export type PublicSyncedPlannedActivitiesUpdate = z.infer<
-  typeof generated.publicSyncedPlannedActivitiesUpdateSchema
+export type PublicSyncedEventsUpdate = z.infer<
+  typeof generated.publicSyncedEventsUpdateSchema
 >;
-export type PublicSyncedPlannedActivitiesRelationships = z.infer<
-  typeof generated.publicSyncedPlannedActivitiesRelationshipsSchema
+export type PublicSyncedEventsRelationships = z.infer<
+  typeof generated.publicSyncedEventsRelationshipsSchema
 >;
 export type PublicTrainingPlansRow = z.infer<
   typeof generated.publicTrainingPlansRowSchema

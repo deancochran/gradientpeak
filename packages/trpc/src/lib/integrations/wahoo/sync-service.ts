@@ -35,22 +35,23 @@ export interface SyncResult {
 export class WahooSyncService {
   constructor(private supabase: SupabaseClient<Database>) {}
 
+  private syncedEventsTable() {
+    return (this.supabase as any).from("synced_events");
+  }
+
   /**
-   * Sync a planned activity to Wahoo
+   * Sync an event to Wahoo
    * Handles both new syncs and updates to existing syncs
    */
-  async syncPlannedActivity(
-    plannedActivityId: string,
-    profileId: string,
-  ): Promise<SyncResult> {
+  async syncEvent(eventId: string, profileId: string): Promise<SyncResult> {
     try {
-      // 1. Fetch planned activity with all related data
+      // 1. Fetch planned-activity event with all related data
       const { data: planned, error: plannedError } = await this.supabase
-        .from("planned_activities")
+        .from("events")
         .select(
           `
           id,
-          scheduled_date,
+          starts_at,
           activity_plan:activity_plans (
             id,
             name,
@@ -63,15 +64,16 @@ export class WahooSyncService {
           )
         `,
         )
-        .eq("id", plannedActivityId)
+        .eq("id", eventId)
         .eq("profile_id", profileId)
+        .eq("event_type", "planned_activity")
         .single();
 
       if (plannedError || !planned) {
         return {
           success: false,
           action: "no_change",
-          error: "Planned activity not found",
+          error: "Planned activity event not found",
         };
       }
 
@@ -104,7 +106,7 @@ export class WahooSyncService {
         return {
           success: false,
           action: "no_change",
-          error: "Activity plan not found for this planned activity.",
+          error: "Activity plan not found for this planned activity event.",
         };
       }
 
@@ -182,11 +184,11 @@ export class WahooSyncService {
       }
 
       // 5. Check if already synced
-      const { data: existingSync } = await this.supabase
-        .from("synced_planned_activities")
+      const { data: existingSync } = await this.syncedEventsTable()
         .select("id, external_id, updated_at")
-        .eq("planned_activity_id", plannedActivityId)
+        .eq("event_id", eventId)
         .eq("provider", "wahoo")
+        .eq("profile_id", profileId)
         .single();
 
       const wahooClient = createWahooClient({
@@ -354,7 +356,7 @@ export class WahooSyncService {
     const durationSeconds = calculateWorkoutDuration(structure);
     const durationMinutes = Math.ceil(durationSeconds / 60);
 
-    const scheduledDate = new Date(planned.scheduled_date);
+    const scheduledDate = new Date(planned.starts_at);
     const today = new Date();
     const daysUntilWorkout = Math.ceil(
       (scheduledDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
@@ -397,9 +399,9 @@ export class WahooSyncService {
     );
 
     // Store sync record (only workout_id, not plan_id)
-    await this.supabase.from("synced_planned_activities").insert({
+    await this.syncedEventsTable().insert({
       profile_id: profileId,
-      planned_activity_id: planned.id, // This is correct - links to planned_activities table
+      event_id: planned.id,
       provider: "wahoo",
       external_id: workout.id.toString(),
       synced_at: new Date().toISOString(),
@@ -440,12 +442,11 @@ export class WahooSyncService {
       // Update the workout
       await wahooClient.updateWorkout(existingSync.external_id, {
         name: planned.activity_plan.name,
-        scheduledDate: new Date(planned.scheduled_date).toISOString(),
+        scheduledDate: new Date(planned.starts_at).toISOString(),
       });
 
       // Update sync record timestamp
-      await this.supabase
-        .from("synced_planned_activities")
+      await this.syncedEventsTable()
         .update({ updated_at: new Date().toISOString() })
         .eq("id", existingSync.id);
 
@@ -492,7 +493,7 @@ export class WahooSyncService {
       const workout = await wahooClient.createWorkout({
         planId: plan.id,
         name: planned.activity_plan.name,
-        scheduledDate: new Date(planned.scheduled_date).toISOString(),
+        scheduledDate: new Date(planned.starts_at).toISOString(),
         externalId: planned.id,
         workoutTypeId: workoutTypeId,
         durationMinutes: durationMinutes,
@@ -507,8 +508,7 @@ export class WahooSyncService {
       }
 
       // Update sync record with new workout ID
-      await this.supabase
-        .from("synced_planned_activities")
+      await this.syncedEventsTable()
         .update({
           external_id: workout.id.toString(),
           updated_at: new Date().toISOString(),
@@ -527,16 +527,12 @@ export class WahooSyncService {
   /**
    * Remove sync - delete workout from Wahoo and remove sync record
    */
-  async unsyncPlannedActivity(
-    plannedActivityId: string,
-    profileId: string,
-  ): Promise<SyncResult> {
+  async unsyncEvent(eventId: string, profileId: string): Promise<SyncResult> {
     try {
       // 1. Fetch sync record
-      const { data: sync, error: syncError } = await this.supabase
-        .from("synced_planned_activities")
+      const { data: sync, error: syncError } = await this.syncedEventsTable()
         .select("id, external_id")
-        .eq("planned_activity_id", plannedActivityId)
+        .eq("event_id", eventId)
         .eq("provider", "wahoo")
         .eq("profile_id", profileId)
         .single();
@@ -579,10 +575,7 @@ export class WahooSyncService {
       }
 
       // 4. Delete sync record
-      await this.supabase
-        .from("synced_planned_activities")
-        .delete()
-        .eq("id", sync.id);
+      await this.syncedEventsTable().delete().eq("id", sync.id);
 
       return {
         success: true,
@@ -602,16 +595,12 @@ export class WahooSyncService {
   }
 
   /**
-   * Get sync status for a planned activity
+   * Get sync status for an event
    */
-  async getSyncStatus(
-    plannedActivityId: string,
-    profileId: string,
-  ): Promise<any> {
-    const { data } = await this.supabase
-      .from("synced_planned_activities")
+  async getEventSyncStatus(eventId: string, profileId: string): Promise<any> {
+    const { data } = await this.syncedEventsTable()
       .select("*")
-      .eq("planned_activity_id", plannedActivityId)
+      .eq("event_id", eventId)
       .eq("provider", "wahoo")
       .eq("profile_id", profileId)
       .single();
@@ -620,16 +609,12 @@ export class WahooSyncService {
   }
 
   /**
-   * Get all syncs for a planned activity (all providers)
+   * Get all syncs for an event (all providers)
    */
-  async getAllSyncs(
-    plannedActivityId: string,
-    profileId: string,
-  ): Promise<any[]> {
-    const { data } = await this.supabase
-      .from("synced_planned_activities")
+  async getAllEventSyncs(eventId: string, profileId: string): Promise<any[]> {
+    const { data } = await this.syncedEventsTable()
       .select("*")
-      .eq("planned_activity_id", plannedActivityId)
+      .eq("event_id", eventId)
       .eq("profile_id", profileId);
 
     return data || [];

@@ -36,7 +36,7 @@ export default function ActivityPlanDetailPage() {
   const { profile } = useAuth();
   const params = useLocalSearchParams();
   const planId = params.planId as string | undefined;
-  const plannedActivityId = params.plannedActivityId as string | undefined;
+  const eventId = params.eventId as string | undefined;
   const [showScheduleModal, setShowScheduleModal] = useState(false);
 
   const utils = trpc.useUtils();
@@ -45,12 +45,9 @@ export default function ActivityPlanDetailPage() {
   const { data: fetchedPlan, isLoading: loadingPlan } =
     trpc.activityPlans.getById.useQuery({ id: planId! }, { enabled: !!planId });
 
-  // Fetch planned activity if plannedActivityId is provided
+  // Fetch planned activity if eventId is provided
   const { data: plannedActivity, isLoading: loadingPlannedActivity } =
-    trpc.plannedActivities.getById.useQuery(
-      { id: plannedActivityId! },
-      { enabled: !!plannedActivityId },
-    );
+    trpc.events.getById.useQuery({ id: eventId! }, { enabled: !!eventId });
 
   // Fetch route if plan has one
   const routeId =
@@ -157,7 +154,7 @@ export default function ActivityPlanDetailPage() {
       category: activityPlan.activity_category,
       location: activityPlan.activity_location,
       plan: activityPlan,
-      plannedActivityId: plannedActivity?.id,
+      eventId: plannedActivity?.id,
     };
 
     activitySelectionStore.setSelection(payload);
@@ -239,9 +236,9 @@ export default function ActivityPlanDetailPage() {
     },
   });
 
-  const removeScheduleMutation = trpc.plannedActivities.delete.useMutation({
+  const removeScheduleMutation = trpc.events.delete.useMutation({
     onSuccess: async () => {
-      await utils.plannedActivities.invalidate();
+      await utils.events.invalidate();
       await utils.trainingPlans.invalidate();
       setShowScheduleModal(false);
       router.back();
@@ -380,7 +377,7 @@ export default function ActivityPlanDetailPage() {
               </Button>
             </View>
 
-            {isScheduled && plannedActivityId && (
+            {isScheduled && eventId && (
               <View className="flex-row gap-2">
                 <Button
                   onPress={handleRemoveSchedule}
@@ -661,14 +658,12 @@ export default function ActivityPlanDetailPage() {
         <ScheduleActivityModal
           visible={showScheduleModal}
           onClose={() => setShowScheduleModal(false)}
-          activityPlanId={plannedActivityId ? undefined : planId}
-          activityPlan={
-            !planId && !plannedActivityId ? activityPlan : undefined
-          }
-          plannedActivityId={plannedActivityId}
+          activityPlanId={eventId ? undefined : planId}
+          activityPlan={!planId && !eventId ? activityPlan : undefined}
+          eventId={eventId}
           onSuccess={() => {
             setShowScheduleModal(false);
-            utils.plannedActivities.invalidate();
+            utils.events.invalidate();
             utils.trainingPlans.invalidate();
             router.back();
           }}

@@ -188,7 +188,7 @@ vi.mock("@/lib/trpc", () => {
           useQuery: () => queryResult({ dataPoints: [] }),
         },
       },
-      plannedActivities: {
+      events: {
         list: {
           useQuery: () => queryResult({ items: [] }),
         },
