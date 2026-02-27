@@ -1,20 +1,25 @@
 import { useRouter } from "expo-router";
-import { useCallback, useEffect } from "react";
-import { Alert, BackHandler, Platform, ScrollView, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  BackHandler,
+  Platform,
+  Pressable,
+  ScrollView,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { trpc } from "@/lib/trpc";
-import type {
-  PublicIntegrationProvider
-} from "@repo/supabase";
+import type { PublicIntegrationProvider } from "@repo/supabase";
 import Constants from "expo-constants";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
-import { ChevronLeft } from "lucide-react-native";
+import { Check, ChevronLeft, ChevronRight } from "lucide-react-native";
 
 type IntegrationConfig = {
   provider: PublicIntegrationProvider;
@@ -59,11 +64,18 @@ function getMobileRedirectUri(): string {
 
 export default function IntegrationsScreen() {
   const router = useRouter();
+  const [pendingByProvider, setPendingByProvider] = useState<
+    Partial<Record<PublicIntegrationProvider, "connect" | "disconnect">>
+  >({});
 
   const utils = trpc.useUtils();
 
   // tRPC queries
-  const { data: integrations, refetch } = trpc.integrations.list.useQuery();
+  const {
+    data: integrations,
+    refetch,
+    isLoading: integrationsLoading,
+  } = trpc.integrations.list.useQuery();
   const getAuthUrlMutation = useReliableMutation(trpc.integrations.getAuthUrl, {
     silent: true, // No success message for auth URL generation
   });
@@ -80,6 +92,7 @@ export default function IntegrationsScreen() {
         const success = url.searchParams.get("success");
         const error = url.searchParams.get("error");
         const provider = url.searchParams.get("provider");
+        const errorDetail = url.searchParams.get("error_detail");
 
         if (success === "true") {
           Alert.alert("Success", `Successfully connected to ${provider}!`);
@@ -102,6 +115,13 @@ export default function IntegrationsScreen() {
               break;
             case "server_error":
               errorMessage = "An unexpected error occurred. Please try again.";
+              break;
+            case "token_exchange_failed":
+              errorMessage = `OAuth token exchange failed. ${errorDetail ? `Provider said: ${errorDetail}` : "Check callback URL, app credentials, and redirect URI match."}`;
+              break;
+            case "store_integration_failed":
+              errorMessage =
+                "Connected with provider, but failed to save integration. Please try again.";
               break;
             case "invalid_provider":
               errorMessage = "Invalid provider. Please try again.";
@@ -146,21 +166,7 @@ export default function IntegrationsScreen() {
   }, [handleClose]);
 
   const handleConnect = async (provider: PublicIntegrationProvider) => {
-    // Show "coming soon" alert for integrations not yet implemented
-    const comingSoonProviders: PublicIntegrationProvider[] = [
-      "strava",
-      "trainingpeaks",
-      "garmin",
-      "zwift",
-    ];
-
-    if (comingSoonProviders.includes(provider)) {
-      Alert.alert(
-        "Coming Soon",
-        `${getProviderDisplayName(provider)} integration will be added soon. Stay tuned!`,
-      );
-      return;
-    }
+    setPendingByProvider((prev) => ({ ...prev, [provider]: "connect" }));
 
     try {
       // Get the redirect URI for the current environment
@@ -180,11 +186,15 @@ export default function IntegrationsScreen() {
 
       if (result.type === "cancel") {
         Alert.alert("Cancelled", "OAuth flow was cancelled");
+      } else if (result.type === "success" && "url" in result && result.url) {
+        handleDeepLink({ url: result.url });
       }
       // Success/error handling happens via deep link
     } catch (error) {
       console.error("OAuth initiation error:", error);
       Alert.alert("Error", "Failed to initiate connection. Please try again.");
+    } finally {
+      setPendingByProvider((prev) => ({ ...prev, [provider]: undefined }));
     }
   };
 
@@ -198,6 +208,10 @@ export default function IntegrationsScreen() {
           text: "Disconnect",
           style: "destructive",
           onPress: async () => {
+            setPendingByProvider((prev) => ({
+              ...prev,
+              [provider]: "disconnect",
+            }));
             try {
               await disconnectMutation.mutateAsync({ provider });
               refetch();
@@ -205,6 +219,11 @@ export default function IntegrationsScreen() {
             } catch (error) {
               console.error("Disconnect error:", error);
               Alert.alert("Error", "Failed to disconnect. Please try again.");
+            } finally {
+              setPendingByProvider((prev) => ({
+                ...prev,
+                [provider]: undefined,
+              }));
             }
           },
         },
@@ -220,21 +239,17 @@ export default function IntegrationsScreen() {
     return INTEGRATIONS.find((i) => i.provider === provider)?.name || provider;
   };
 
-  const isLoading =
-    getAuthUrlMutation.isPending || disconnectMutation.isPending;
-
   return (
     <View className="flex-1 bg-background">
       {/* Header */}
       <View className="flex-row items-center px-6 py-4 border-b border-border/50">
-        <Button
+        <Pressable
           onPress={handleClose}
-          variant="ghost"
-          className="p-2 -ml-2 "
+          className="p-2 -ml-2"
           testID="back-button"
         >
           <Icon as={ChevronLeft} size={24} />
-        </Button>
+        </Pressable>
         <Text className="text-xl font-semibold text-foreground ml-4">
           Integrations
         </Text>
@@ -243,51 +258,65 @@ export default function IntegrationsScreen() {
       {/* Content */}
       <ScrollView
         className="flex-1"
-        contentContainerClassName="p-6 gap-4"
+        contentContainerClassName="px-6 py-5"
         showsVerticalScrollIndicator={false}
       >
-        <View className="mb-2">
+        <View className="mb-4">
           <Text className="text-muted-foreground text-base">
-            Connect your fitness tracking platforms to sync activities and
+            Connect your fitness platforms to sync planned and completed
             activities.
           </Text>
+          {integrationsLoading ? (
+            <Text className="text-xs text-muted-foreground mt-2">
+              Checking connection status...
+            </Text>
+          ) : null}
         </View>
 
         {INTEGRATIONS.map((integration) => {
           const connected = isConnected(integration.provider);
+          const pendingAction = pendingByProvider[integration.provider];
+          const isPending = pendingAction !== undefined;
 
           return (
-            <Card key={integration.provider} className="bg-card border-border">
-              <CardContent className="p-4">
-                <View className="flex-row items-center justify-between">
-                  <View className="flex-row items-center gap-3 flex-1">
-                    <Text className="text-lg font-semibold text-card-foreground">
-                      {integration.name}
-                    </Text>
-                    {connected && (
-                      <View className="bg-green-100 dark:bg-green-900 px-2 py-1 rounded-full">
-                        <Text className="text-xs text-green-700 dark:text-green-300 font-medium">
-                          Connected
-                        </Text>
-                      </View>
-                    )}
-                  </View>
+            <TouchableOpacity
+              key={integration.provider}
+              onPress={() =>
+                connected
+                  ? handleDisconnect(integration.provider)
+                  : handleConnect(integration.provider)
+              }
+              disabled={isPending}
+              activeOpacity={0.7}
+              className={`flex-row items-center justify-between border rounded-xl px-4 py-3 mb-2 ${
+                connected
+                  ? "border-green-500 bg-green-500/10"
+                  : "border-border bg-card"
+              } ${isPending ? "opacity-70" : ""}`}
+            >
+              <View>
+                <Text className="text-base font-semibold text-foreground">
+                  {integration.name}
+                </Text>
+                <Text className="text-xs text-muted-foreground mt-0.5">
+                  {connected
+                    ? "Connected - tap to disconnect"
+                    : "Not connected - tap to connect"}
+                </Text>
+              </View>
 
-                  <Button
-                    onPress={() =>
-                      connected
-                        ? handleDisconnect(integration.provider)
-                        : handleConnect(integration.provider)
-                    }
-                    variant={connected ? "destructive" : "default"}
-                    disabled={isLoading}
-                    size="sm"
-                  >
-                    <Text>{connected ? "Disconnect" : "Connect"}</Text>
-                  </Button>
-                </View>
-              </CardContent>
-            </Card>
+              {isPending ? (
+                <ActivityIndicator size="small" />
+              ) : connected ? (
+                <Icon as={Check} className="text-green-600" size={20} />
+              ) : (
+                <Icon
+                  as={ChevronRight}
+                  className="text-muted-foreground"
+                  size={20}
+                />
+              )}
+            </TouchableOpacity>
           );
         })}
       </ScrollView>

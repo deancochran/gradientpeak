@@ -30,7 +30,11 @@ export function AppHeader({ showGreeting = true, title }: AppHeaderProps) {
   };
 
   const handleAvatarPress = () => {
-    router.push("/settings" as any);
+    if (!user?.id) return;
+    router.push({
+      pathname: "/user/[userId]",
+      params: { userId: user.id },
+    } as any);
   };
 
   // Extract timestamp from avatar URL if it exists (added during upload)

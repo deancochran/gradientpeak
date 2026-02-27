@@ -19,6 +19,26 @@ const trainingZonesUpdateSchema = z.object({
   ftp: z.number().int().positive().optional(),
 });
 
+const publicProfileProjection = [
+  "id",
+  "username",
+  "avatar_url",
+  "bio",
+  "gender",
+  "preferred_units",
+  "language",
+].join(", ");
+
+const publicProfileSchema = z.object({
+  id: z.string().uuid(),
+  username: z.string().nullable(),
+  avatar_url: z.string().nullable(),
+  bio: z.string().nullable(),
+  gender: z.string().nullable(),
+  preferred_units: z.string().nullable(),
+  language: z.string().nullable(),
+});
+
 export const profilesRouter = createTRPCRouter({
   get: protectedProcedure.query(async ({ ctx }) => {
     try {
@@ -54,14 +74,14 @@ export const profilesRouter = createTRPCRouter({
     }
   }),
 
-  // Get public profile data by ID (for displaying in activity feeds)
+  // Get public-safe profile data by ID (for user detail and activity feeds)
   getPublicById: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
       try {
         const { data: profile, error } = await ctx.supabase
           .from("profiles")
-          .select("*")
+          .select(publicProfileProjection)
           .eq("id", input.id)
           .single();
 
@@ -78,7 +98,7 @@ export const profilesRouter = createTRPCRouter({
           });
         }
 
-        return profile;
+        return publicProfileSchema.parse(profile);
       } catch (error) {
         if (error instanceof TRPCError) {
           throw error;

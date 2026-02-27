@@ -373,6 +373,7 @@ function ActivityDetailScreen() {
         {/* Header */}
         <ActivityHeader
           user={{
+            id: activity.profile_id,
             username: profile?.username || "Unknown User",
             avatarUrl: profile?.avatar_url,
           }}

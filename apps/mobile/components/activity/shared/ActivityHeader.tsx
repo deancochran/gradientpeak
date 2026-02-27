@@ -4,6 +4,7 @@ import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
+import { useRouter } from "expo-router";
 import { format } from "date-fns";
 import {
   Activity,
@@ -13,10 +14,11 @@ import {
   Waves,
 } from "lucide-react-native";
 import React from "react";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 
 interface ActivityHeaderProps {
   user: {
+    id?: string;
     username: string;
     avatarUrl?: string | null;
   };
@@ -53,32 +55,43 @@ export function ActivityHeader({
   onNotesChange,
   variant = "card",
 }: ActivityHeaderProps) {
+  const router = useRouter();
   const deviceInfo = [activity.device_manufacturer, activity.device_product]
     .filter(Boolean)
     .join(" ");
 
   const ActivityIcon = ACTIVITY_ICONS[activity.type] || Activity;
 
+  const handleUserPress = () => {
+    if (!user.id) return;
+    router.push({
+      pathname: "/user/[userId]",
+      params: { userId: user.id },
+    } as any);
+  };
+
   const Content = (
     <>
       {/* Header: Avatar + Username + Metadata */}
       <View className="flex-row items-start gap-3 mb-3">
-        <Avatar className="w-10 h-10" alt={user.username}>
-          {user.avatarUrl && <AvatarImage source={{ uri: user.avatarUrl }} />}
-          <AvatarFallback>
-            <Text className="text-sm font-semibold">
-              {user.username?.[0]?.toUpperCase() || "?"}
-            </Text>
-          </AvatarFallback>
-        </Avatar>
+        <Pressable onPress={handleUserPress} disabled={!user.id}>
+          <Avatar className="w-10 h-10" alt={user.username}>
+            {user.avatarUrl && <AvatarImage source={{ uri: user.avatarUrl }} />}
+            <AvatarFallback>
+              <Text className="text-sm font-semibold">
+                {user.username?.[0]?.toUpperCase() || "?"}
+              </Text>
+            </AvatarFallback>
+          </Avatar>
+        </Pressable>
 
         <View className="flex-1">
-          {/* Username */}
-          <Text className="text-sm font-semibold text-foreground">
-            {user.username}
-          </Text>
+          <Pressable onPress={handleUserPress} disabled={!user.id}>
+            <Text className="text-sm font-semibold text-foreground">
+              {user.username}
+            </Text>
+          </Pressable>
 
-          {/* Metadata Row: Icon + Date/Time + Device */}
           <View className="flex-row items-center gap-1.5 mt-1">
             <Icon
               as={ActivityIcon}

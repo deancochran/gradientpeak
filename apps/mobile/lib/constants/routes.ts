@@ -54,9 +54,8 @@ export const ROUTES = {
     resource: "activity_plans" | "training_plans" | "activities" | "routes",
   ) => `/(internal)/(tabs)/library?resource=${resource}` as const,
 
-  // Settings & Profile
-  SETTINGS: "/settings" as const,
-  PROFILE: "/profile" as const,
+  // Profile
+  USER_DETAIL: (userId: string) => `/user/${userId}` as const,
   PROFILE_EDIT: "/profile-edit" as const,
   INTEGRATIONS: "/integrations" as const,
   NOTIFICATIONS: "/notifications" as const,

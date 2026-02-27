@@ -12,6 +12,7 @@ import {
   useRecordingState,
   useSensors,
 } from "@/lib/hooks/useActivityRecorder";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { useRecordingCapabilities } from "@/lib/hooks/useRecordingConfig";
 import { useAllPermissionsGranted } from "@/lib/hooks/useStandalonePermissions";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
@@ -56,6 +57,7 @@ function mapServiceStateToRecordingState(serviceState: string): RecordingState {
 
 function RecordScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const [isInitialized, setIsInitialized] = useState(false);
   const [activityModalVisible, setActivityModalVisible] = useState(false);
   const insets = useSafeAreaInsets();
@@ -256,9 +258,13 @@ function RecordScreen() {
           `This workout requires the following metrics:\n\n${metricDetails}\n\nWithout these, automatic trainer control (ERG mode) and accurate targets will not be available.\n\nSet these in Settings → Profile.`,
           [
             {
-              text: "Go to Settings",
+              text: "Go to Profile",
               onPress: () => {
-                router.push("/settings");
+                if (!user?.id) return;
+                router.push({
+                  pathname: "/user/[userId]",
+                  params: { userId: user.id },
+                } as any);
               },
             },
             {
@@ -310,7 +316,7 @@ function RecordScreen() {
       console.error("[RecordModal] Error starting recording:", error);
       Alert.alert("Error", "Failed to start recording. Please try again.");
     }
-  }, [allPermissionsGranted, start, service, router]);
+  }, [allPermissionsGranted, start, service, router, user?.id]);
 
   // Handle finish action - navigate immediately
   const handleFinish = useCallback(async () => {
