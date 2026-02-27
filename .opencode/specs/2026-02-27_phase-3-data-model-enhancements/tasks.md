@@ -8,10 +8,13 @@ Implements `./design.md` and `./plan.md`.
 
 ## 0) Contract Lock
 
+- [ ] Publish contract lock artifact (`phase-3-contract-lock.md` or ADR) with approved owners and date.
 - [ ] Finalize event taxonomy and required/optional fields.
 - [ ] Finalize recurrence contract (RRULE + series/instance edit semantics).
+- [ ] Lock recurrence split contract for `this-and-future` (boundary selection, truncation rule, new-series linkage).
 - [ ] Finalize training hierarchy relationship contract.
 - [ ] Finalize template visibility/apply-copy semantics.
+- [ ] Lock external import idempotency key shape (`provider + integration + calendar + event + occurrence`).
 - [ ] Finalize goals/targets metric identity + readiness fields.
 - [ ] Finalize coaching permission set and lifecycle states.
 - [ ] Finalize notification routing type contract.
@@ -24,6 +27,7 @@ Implements `./design.md` and `./plan.md`.
 - [ ] Add recurrence and series/instance linkage fields.
 - [ ] Add imported source identity fields (feed URL/source key + external event ID).
 - [ ] Add uniqueness constraints for import idempotency.
+- [ ] Add and validate occurrence-level idempotency uniqueness for recurring imports.
 
 ## 2) Training Hierarchy Support
 
@@ -38,6 +42,7 @@ Implements `./design.md` and `./plan.md`.
 - [ ] Add visibility state (`private`/`public`).
 - [ ] Add likes/saves relation model.
 - [ ] Add apply lineage metadata and copy-isolation guarantees.
+- [ ] Verify template apply copy-on-write isolation with lineage metadata persistence checks.
 
 ## 4) Goals and Multi-Target Support
 
@@ -75,19 +80,26 @@ Implements `./design.md` and `./plan.md`.
 - [ ] Add permission checks for coach-scoped procedures.
 - [ ] Add conversation/message/notification procedures.
 - [ ] Keep compatibility adapters for existing consumers where needed.
+- [ ] Instrument dual-read/dual-write parity metrics for compatibility adapters.
+- [ ] Define and track adapter removal criteria (zero fallback reads for agreed window + parity pass).
 
 ## 9) Data Integrity and Backfill
 
 - [ ] Add any needed backfill scripts for legacy record linkage.
+- [ ] Define backfill invariants before execution (row parity, ownership parity, recurrence parity, orphan count).
 - [ ] Validate idempotent import behavior for external events.
 - [ ] Validate template apply isolation (no shared mutable references).
 - [ ] Validate no orphan records after migration/backfill.
+- [ ] Execute migration replay and drift checks on clean + seeded datasets.
+- [ ] Document rollback decision criteria and observed thresholds.
 
 ## 10) Tests
 
 - [ ] Schema constraint tests for key integrity and uniqueness rules.
 - [ ] Router tests for event recurrence edit scopes.
+- [ ] Router tests for recurrence series split behavior (`this-only`, `this-and-future`, `all`) with boundary assertions.
 - [ ] Router tests for template apply copy isolation.
+- [ ] Router tests for idempotent sync uniqueness across provider/integration/calendar/event/occurrence keys.
 - [ ] Router tests for multi-goal/multi-target CRUD/readiness fields.
 - [ ] Router tests for coaching permission enforcement.
 - [ ] Router tests for conversation unread/read and message soft-delete.
@@ -107,3 +119,4 @@ Implements `./design.md` and `./plan.md`.
 - [ ] `design.md` acceptance criteria satisfied.
 - [ ] `plan.md` architecture and migration strategy reflected in implementation.
 - [ ] No unresolved schema drift for Phase 3 artifacts.
+- [ ] Compatibility adapter removal checkpoint signed off with observability evidence.

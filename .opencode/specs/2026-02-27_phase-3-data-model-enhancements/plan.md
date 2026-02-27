@@ -13,7 +13,9 @@ Inputs: `design.md`
   - generated database and Zod types
 - `packages/trpc`:
   - read/write procedures aligned to new model
+  - dual-read/dual-write orchestration during transition window
   - permission enforcement at procedure boundaries
+  - compatibility adapters for existing `planned_activities` and `training_plans` consumers
   - mapping adapters for backward-compatible responses during transition
 - `packages/core`:
   - shared enums/contracts where needed for model-level concepts
@@ -37,6 +39,7 @@ Lock these decisions before any migration is authored:
 - Add or refactor event entities to support typed events + optional links.
 - Add recurrence fields and instance/series linkage model.
 - Add imported-source identity fields for idempotent upsert behavior.
+- Add recurrence split support for `this-and-future` through deterministic series split contracts.
 
 ### B) Training Hierarchy and Reuse
 
@@ -62,14 +65,222 @@ Lock these decisions before any migration is authored:
 - Permission relation model with independent grants.
 - Conversation participants, message records, read checkpoints.
 - Notification records with typed route target references.
+- Keep unread model checkpoint-based (`last_read_seq`) and defer per-message receipts.
+
+## 3.1) Implementation Sketches (for `init.sql` and key files)
+
+The snippets below are implementation-oriented examples to reduce ambiguity before migration authoring.
+They are not final SQL/TypeScript and must be aligned with existing naming conventions and RLS posture.
+
+### A) `packages/supabase/schemas/init.sql` (illustrative additions)
+
+```sql
+-- Recurrence master rows
+create table if not exists event_series (
+  id uuid primary key default gen_random_uuid(),
+  profile_id uuid not null references profiles(id) on delete cascade,
+  event_type text not null,
+  title text not null,
+  starts_at timestamptz not null,
+  ends_at timestamptz,
+  timezone text not null default 'UTC',
+  rrule text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (ends_at is null or ends_at > starts_at)
+);
+
+-- Per-occurrence overrides/cancellations
+create table if not exists event_exceptions (
+  id uuid primary key default gen_random_uuid(),
+  series_id uuid not null references event_series(id) on delete cascade,
+  occurrence_key text not null,
+  status text not null default 'active',
+  override_title text,
+  override_starts_at timestamptz,
+  override_ends_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (series_id, occurrence_key)
+);
+
+-- Imported source identity for idempotent upserts
+create table if not exists external_event_links (
+  id uuid primary key default gen_random_uuid(),
+  series_id uuid references event_series(id) on delete cascade,
+  provider text not null,
+  integration_account_id uuid not null,
+  external_calendar_id text not null,
+  external_event_id text not null,
+  occurrence_key text not null,
+  updated_at timestamptz not null default now(),
+  unique (
+    provider,
+    integration_account_id,
+    external_calendar_id,
+    external_event_id,
+    occurrence_key
+  )
+);
+
+-- Relationship-scoped coaching grants
+create table if not exists coaching_relationships (
+  id uuid primary key default gen_random_uuid(),
+  coach_profile_id uuid not null references profiles(id) on delete cascade,
+  athlete_profile_id uuid not null references profiles(id) on delete cascade,
+  status text not null,
+  created_at timestamptz not null default now(),
+  check (coach_profile_id <> athlete_profile_id)
+);
+
+create table if not exists coaching_permission_grants (
+  relationship_id uuid not null references coaching_relationships(id) on delete cascade,
+  permission text not null,
+  granted boolean not null default true,
+  primary key (relationship_id, permission)
+);
+
+-- Messaging unread checkpoint model
+create table if not exists conversations (
+  id uuid primary key default gen_random_uuid(),
+  kind text not null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists conversation_participants (
+  conversation_id uuid not null references conversations(id) on delete cascade,
+  profile_id uuid not null references profiles(id) on delete cascade,
+  last_read_seq bigint not null default 0,
+  joined_at timestamptz not null default now(),
+  primary key (conversation_id, profile_id),
+  check (last_read_seq >= 0)
+);
+
+create table if not exists messages (
+  id uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null references conversations(id) on delete cascade,
+  author_profile_id uuid not null references profiles(id) on delete cascade,
+  seq bigint not null,
+  body text,
+  deleted_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (conversation_id, seq)
+);
+
+create index if not exists idx_messages_conversation_seq
+  on messages (conversation_id, seq);
+```
+
+### B) `packages/trpc/src/routers/planned_activities.ts` (compatibility adapter sketch)
+
+```ts
+// During transition: keep old response shape while reading from new tables.
+const event = await ctx.supabase
+  .from("event_series")
+  .select("id,title,starts_at,ends_at,event_type")
+  .eq("id", input.eventId)
+  .single();
+
+return mapEventSeriesToPlannedActivity(event.data);
+```
+
+### C) New router surface (`packages/trpc/src/routers/events.ts`) sketch
+
+```ts
+createOrUpdateException: protectedProcedure
+  .input(
+    z.object({
+      seriesId: z.string().uuid(),
+      occurrenceKey: z.string().min(1),
+      scope: z.enum(["single", "future", "all"]),
+    }),
+  )
+  .mutation(async ({ ctx, input }) => {
+    if (input.scope === "future") {
+      return splitSeriesAtBoundary(ctx, input.seriesId, input.occurrenceKey);
+    }
+    return upsertException(ctx, input);
+  });
+```
+
+### D) Core contract sketch (`packages/core/contracts/phase-3.ts`)
+
+```ts
+export const RecurrenceEditScopeSchema = z.enum(["single", "future", "all"]);
+
+export const ExternalIdentitySchema = z.object({
+  provider: z.string().min(1),
+  integrationAccountId: z.string().uuid(),
+  externalCalendarId: z.string().min(1),
+  externalEventId: z.string().min(1),
+  occurrenceKey: z.string().min(1),
+});
+```
+
+### E) Notifications dedupe sketch (`packages/trpc/src/routers/notifications.ts`)
+
+```ts
+await ctx.supabase.from("notifications").upsert(
+  {
+    profile_id: input.profileId,
+    type: input.type,
+    target_type: input.targetType,
+    target_id: input.targetId,
+    dedupe_version_or_window: input.dedupeWindow,
+    title: input.title,
+    message: input.message,
+  },
+  {
+    onConflict:
+      "profile_id,type,target_type,target_id,dedupe_version_or_window",
+  },
+);
+```
+
+### F) File impact map (implementation context)
+
+- Schema: `packages/supabase/schemas/init.sql`, `packages/supabase/migrations/*`
+- Generated types: `packages/supabase/database.types.ts`, `packages/supabase/supazod/schemas.ts`, `packages/supabase/supazod/schemas.types.ts`
+- Routers: `packages/trpc/src/routers/planned_activities.ts`, `packages/trpc/src/routers/activity_plans.ts`, new `packages/trpc/src/routers/events.ts`, new `packages/trpc/src/routers/coaching.ts`, new `packages/trpc/src/routers/messages.ts`, new `packages/trpc/src/routers/notifications.ts`
+- Core contracts: `packages/core/contracts/*`, `packages/core/schemas/*`
+- Mobile adapters likely touched: `apps/mobile/lib/hooks/useTrainingPlanSnapshot.ts`, `apps/mobile/components/ScheduleActivityModal.tsx`
 
 ## 4) Migration Strategy
 
-- Prefer additive changes first, then compatibility adapters, then optional cleanup migration.
-- Preserve old read paths while new write paths stabilize.
+- Additive-first, dual-write/dual-read transition is mandatory until parity gates pass.
+- Preserve old read paths while new write paths stabilize through explicit compatibility adapters.
+- Compatibility scope includes all existing `planned_activities`/`training_plans` consumers.
 - Include backfill scripts where derived linkage data is required.
+- Backfill invariants must be defined before execution (row parity, ownership parity, recurrence parity, no orphan rows).
+- Rollback criteria: any invariant failure above threshold, unresolved drift, or query latency regression beyond agreed SLO.
+- Migration replay on a clean database plus schema/data drift checks is a required gate before rollout approval.
+- Cleanup is phased: remove compatibility code only after sustained parity, zero fallback reads, and observability sign-off.
 
-## 5) Required DB Workflow (Order Mandatory)
+## 5) Integrity Constraints and Index Baseline
+
+Must-have baseline constraints/indexes (names illustrative; exact SQL decided during implementation):
+
+- Recurrence integrity:
+  - unique `(series_id, occurrence_key)` for exception rows
+  - FK `event.series_id -> event_series.id` with delete behavior aligned to lifecycle policy
+  - check constraint for valid scope enum (`single`, `future`, `all`) where stored
+  - index `(user_id, start_at)` for calendar range queries
+- Import idempotency:
+  - unique `(provider, integration_account_id, external_calendar_id, external_event_id, occurrence_key)`
+  - check `provider <> ''` and non-null external identifiers
+  - index `(integration_account_id, external_calendar_id, updated_at)` for sync scans
+- Coaching relationships/permissions:
+  - unique active relationship `(coach_id, athlete_id)` with lifecycle-aware partial uniqueness
+  - FK permissions table references relationship row (not user-global table)
+  - check preventing self-relationship (`coach_id <> athlete_id`)
+  - index `(athlete_id, status)` for roster filtering
+- Unread + notifications:
+  - unique participant `(conversation_id, user_id)`
+  - check `last_read_seq >= 0`
+  - message index `(conversation_id, seq)` for unread delta computation
+  - notification dedupe unique `(user_id, type, target_type, target_id, dedupe_version_or_window)`
+  - notification index `(user_id, read_at, created_at)` for inbox queries
+
+## 6) Required DB Workflow (Order Mandatory)
 
 For each schema update in this phase:
 
@@ -79,19 +290,28 @@ For each schema update in this phase:
 4. Run `pnpm --filter @repo/supabase run update-types`.
 5. Verify generated artifacts are updated and compile cleanly.
 
-## 6) API and Compatibility Plan
+```bash
+# Required execution sequence
+supabase db diff
+supabase migration up
+pnpm --filter @repo/supabase run update-types
+```
+
+## 7) API and Compatibility Plan
 
 - Introduce new procedure inputs/outputs behind explicit versioned fields when needed.
 - Keep old response shape compatibility where existing mobile/web screens still depend on it.
+- Route transitional reads through compatibility adapters for `planned_activities`/`training_plans` consumers until removal criteria are met.
 - Add focused mapping tests to prevent shape regressions.
 
-## 7) Validation and QA Strategy
+## 8) Validation and QA Strategy
 
 ### Schema Tests
 
 - Constraint validation (foreign keys, uniqueness, check constraints).
 - Idempotency checks for imported event sync keys.
 - Permission-bound access tests for coach/athlete operations.
+- Migration replay + drift detection tests against clean and seeded databases.
 
 ### Router/Integration Tests
 
@@ -101,7 +321,7 @@ For each schema update in this phase:
 - Conversation unread/read-state updates and soft-delete visibility.
 - Notification routing metadata integrity.
 
-## 8) Implementation Phases
+## 9) Implementation Phases
 
 ### Phase 1 - Contracts and schema skeleton
 
@@ -112,18 +332,21 @@ For each schema update in this phase:
 
 - implement write/read paths for new model
 - preserve existing consumers via adapters where needed
+- run dual-write/dual-read with parity instrumentation
 
 ### Phase 3 - Backfill and integrity hardening
 
 - run backfills
+- validate backfill invariants and rollback criteria
 - enforce stricter constraints where safe
 
 ### Phase 4 - Verification and cleanup
 
 - full type/test/lint gates
-- remove temporary compatibility code that is no longer needed
+- run migration replay + drift checks as release gate
+- remove temporary compatibility code only when cleanup criteria are satisfied
 
-## 9) Quality Gates
+## 10) Quality Gates
 
 ```bash
 pnpm --filter @repo/supabase run update-types
@@ -133,9 +356,11 @@ pnpm check-types
 pnpm lint
 ```
 
-## 10) Definition of Done
+## 11) Definition of Done
 
 1. All Phase 3 model concepts are representable in schema and accessible through tRPC.
 2. Existing consumers remain stable or are explicitly migrated.
 3. Migration workflow is reproducible on a clean local database.
-4. All tasks in `tasks.md` are complete.
+4. Migration replay and drift checks pass with documented evidence.
+5. Temporary compatibility paths are removed or tracked with explicit exit criteria.
+6. All tasks in `tasks.md` are complete.
