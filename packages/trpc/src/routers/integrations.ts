@@ -455,7 +455,10 @@ function buildOAuthUrl(
       authUrl: "https://api.wahooligan.com/oauth/authorize",
       clientId: process.env.WAHOO_CLIENT_ID!,
       scopes: [
+        "email",
+        "user_write",
         "power_zones_read",
+        "power_zones_write",
         "workouts_read",
         "workouts_write",
         "plans_read",
@@ -463,6 +466,7 @@ function buildOAuthUrl(
         "routes_read",
         "routes_write",
         "user_read",
+        "offline_data",
       ],
     },
     trainingpeaks: {
@@ -569,15 +573,17 @@ async function refreshProviderToken(
     throw new Error(`Unknown provider: ${provider}`);
   }
 
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: refreshToken,
+    client_id: config.clientId,
+    client_secret: config.clientSecret,
+  });
+
   const response = await fetch(config.tokenUrl, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-      client_id: config.clientId,
-      client_secret: config.clientSecret,
-    }),
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
   });
 
   if (!response.ok) {

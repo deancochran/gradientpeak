@@ -3,6 +3,16 @@ import { appRouter, createTRPCContext } from "@repo/trpc/server";
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 
+class OAuthTokenExchangeError extends Error {
+  constructor(
+    message: string,
+    public readonly detail?: string,
+  ) {
+    super(message);
+    this.name = "OAuthTokenExchangeError";
+  }
+}
+
 const OAUTH_CONFIGS = {
   strava: {
     tokenUrl: "https://www.strava.com/api/v3/oauth/token",
@@ -49,27 +59,61 @@ async function exchangeCodeForTokens(
 
   const redirectUri = `${baseUrl}/api/integrations/callback/${provider}`;
 
-  const response = await fetch(config.tokenUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      client_id: config.clientId,
-      client_secret: config.clientSecret,
+  const requestToken = async (useBasicAuth: boolean) => {
+    const body = new URLSearchParams({
       code,
       grant_type: "authorization_code",
       redirect_uri: redirectUri,
-    }),
-  });
+      ...(useBasicAuth
+        ? {}
+        : {
+            client_id: config.clientId,
+            client_secret: config.clientSecret,
+          }),
+    });
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+    };
+
+    if (useBasicAuth) {
+      headers.Authorization = `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString("base64")}`;
+    }
+
+    return fetch(config.tokenUrl, {
+      method: "POST",
+      headers,
+      body: body.toString(),
+    });
+  };
+
+  // Wahoo can require confidential client auth via Basic auth.
+  // Retry with body credentials for compatibility if needed.
+  let response = await requestToken(true);
+  if (!response.ok) {
+    response = await requestToken(false);
+  }
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
+    const detail =
+      (typeof errorData?.error_description === "string" &&
+        errorData.error_description) ||
+      (typeof errorData?.error === "string" && errorData.error) ||
+      (typeof errorData?.message === "string" && errorData.message) ||
+      `http_${response.status}`;
+
     console.error("Token exchange failed:", {
       status: response.status,
       statusText: response.statusText,
       error: errorData,
       provider,
     });
-    throw new Error(`Token exchange failed: ${response.status}`);
+    throw new OAuthTokenExchangeError(
+      `Token exchange failed: ${response.status}`,
+      detail,
+    );
   }
 
   return response.json();
@@ -187,27 +231,52 @@ export async function GET(
     }
 
     // Store integration using tRPC
-    await caller.integrations.storeIntegration({
-      userId,
-      provider,
-      externalId,
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token || null,
-      expiresAt: tokens.expires_in
-        ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
-        : null,
-      scope: tokens.scope || null,
-      state, // Pass state to clean it up after storing
-    });
+    try {
+      await caller.integrations.storeIntegration({
+        userId,
+        provider,
+        externalId,
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token || null,
+        expiresAt: tokens.expires_in
+          ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+          : null,
+        scope: tokens.scope || null,
+        state, // Pass state to clean it up after storing
+      });
+    } catch (storeError) {
+      console.error("Failed to store integration:", {
+        provider,
+        userId,
+        externalId,
+        error: storeError,
+      });
+      await caller.integrations.deleteOAuthState({ state });
+      return NextResponse.redirect(
+        `${mobileRedirectUri}?error=store_integration_failed&provider=${provider}`,
+      );
+    }
 
     // Redirect back to mobile app with success
     return NextResponse.redirect(
       `${mobileRedirectUri}?success=true&provider=${provider}`,
     );
   } catch (error) {
-    console.error("OAuth callback error:", error);
+    const detail =
+      error instanceof OAuthTokenExchangeError
+        ? error.detail || "unknown"
+        : "unknown";
+
+    console.error("OAuth callback error:", {
+      provider,
+      state,
+      detail,
+      error,
+    });
     // Clean up state on any error
     await caller.integrations.deleteOAuthState({ state });
-    return NextResponse.redirect(`${mobileRedirectUri}?error=server_error`);
+    return NextResponse.redirect(
+      `${mobileRedirectUri}?error=token_exchange_failed&provider=${provider}&error_detail=${encodeURIComponent(detail)}`,
+    );
   }
 }

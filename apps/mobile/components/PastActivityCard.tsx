@@ -85,10 +85,11 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
   // Use profile data with fallback
   const profileData = useMemo(() => {
     return {
+      id: activity.profile_id,
       username: profile?.username || "Unknown User",
-      avatar_url: profile?.avatar_url || null,
+      avatarUrl: profile?.avatar_url || null,
     };
-  }, [profile]);
+  }, [activity.profile_id, profile]);
 
   // Fetch route data if route_id exists (pre-planned route)
   const { data: route } = trpc.routes.get.useQuery(

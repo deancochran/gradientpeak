@@ -44,8 +44,10 @@ import { ChevronLeft } from "lucide-react-native";
  * - training-plan-create - Create new training plan
  * - training-plan-edit - Edit training plan structure
  *
+ * USER:
+ * - user/[userId] - Universal user profile
+ *
  * SETTINGS:
- * - settings - App settings
  * - integrations - Connected services
  * - notifications - Notification preferences
  * - profile-edit - Edit user profile
@@ -182,13 +184,15 @@ export default function StandardLayout() {
         }}
       />
 
-      {/* SETTINGS */}
+      {/* USER */}
       <Stack.Screen
-        name="settings"
+        name="user/[userId]"
         options={{
-          title: "Settings",
+          title: "Profile",
         }}
       />
+
+      {/* SETTINGS */}
       <Stack.Screen
         name="integrations"
         options={{

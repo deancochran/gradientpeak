@@ -3,8 +3,8 @@
  * Handles incoming webhooks from Wahoo for completed workout summaries
  *
  * Security:
- * - HMAC-SHA256 signature verification
  * - Webhook token validation
+ * - Optional HMAC-SHA256 signature verification (if header present)
  * - Always returns 200 to prevent retry storms
  *
  * Setup:
@@ -70,17 +70,7 @@ export async function POST(request: NextRequest) {
     const body = await request.text();
     const signature = request.headers.get("X-Wahoo-Signature");
 
-    // 3. Verify HMAC signature
-    if (!verifyWebhookSignature(body, signature, WAHOO_WEBHOOK_TOKEN)) {
-      console.error("Invalid webhook signature", {
-        hasSignature: !!signature,
-        bodyLength: body.length,
-      });
-      // Return 401 for invalid signatures to alert about potential security issues
-      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
-    }
-
-    // 4. Parse payload
+    // 3. Parse payload
     let payload: WahooWebhookPayload;
     try {
       payload = JSON.parse(body);
@@ -90,10 +80,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true }, { status: 200 });
     }
 
-    // 5. Validate webhook token
+    // 4. Validate webhook token (primary auth mechanism documented by Wahoo)
     if (payload.webhook_token !== WAHOO_WEBHOOK_TOKEN) {
       console.error("Invalid webhook token in payload");
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+      return NextResponse.json({ received: true }, { status: 200 });
+    }
+
+    // 5. Verify optional HMAC signature if present
+    if (
+      signature &&
+      !verifyWebhookSignature(body, signature, WAHOO_WEBHOOK_TOKEN)
+    ) {
+      console.error("Invalid webhook signature", {
+        hasSignature: true,
+        bodyLength: body.length,
+      });
+      return NextResponse.json({ received: true }, { status: 200 });
     }
 
     // 6. Log received event
@@ -135,12 +137,23 @@ function verifyWebhookSignature(
   }
 
   try {
+    const normalizedSignature = signature.startsWith("sha256=")
+      ? signature.slice("sha256=".length)
+      : signature;
+
     // Wahoo uses HMAC-SHA256 with webhook token as secret
     const hmac = crypto.createHmac("sha256", secret);
     const digest = hmac.update(body, "utf8").digest("hex");
 
+    if (normalizedSignature.length !== digest.length) {
+      return false;
+    }
+
     // Constant-time comparison to prevent timing attacks
-    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest));
+    return crypto.timingSafeEqual(
+      Buffer.from(normalizedSignature),
+      Buffer.from(digest),
+    );
   } catch (error) {
     console.error("Error verifying webhook signature:", error);
     return false;
