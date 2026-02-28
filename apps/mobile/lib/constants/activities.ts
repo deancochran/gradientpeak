@@ -1,7 +1,4 @@
-import type {
-  PublicActivityCategory,
-  PublicActivityLocation
-} from "@repo/supabase";
+import type { PublicActivityCategory } from "@repo/supabase";
 import {
   Activity,
   Bike,
@@ -67,20 +64,20 @@ export function getActivityCategoryConfig(category: string) {
  */
 export function getActivityDisplayName(
   category: PublicActivityCategory,
-  location: PublicActivityLocation,
+  gpsRecordingEnabled: boolean,
 ): string {
   const categoryConfig = getActivityCategoryConfig(category);
-  const locationText = location === "indoor" ? "Indoor" : "Outdoor";
+  const gpsText = gpsRecordingEnabled ? "GPS On" : "GPS Off";
 
   // Special cases for better naming
-  if (category === "run" && location === "indoor") {
+  if (category === "run" && !gpsRecordingEnabled) {
     return "Treadmill";
   }
-  if (category === "bike" && location === "indoor") {
+  if (category === "bike" && !gpsRecordingEnabled) {
     return "Bike Trainer";
   }
 
-  return `${locationText} ${categoryConfig.name}`;
+  return `${categoryConfig.name} (${gpsText})`;
 }
 
 /**

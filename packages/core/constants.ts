@@ -7,14 +7,6 @@
 // ================================
 
 /**
- * Activity location types
- */
-export const ACTIVITY_LOCATIONS = {
-  outdoor: { name: "Outdoor", description: "Outdoor activity" },
-  indoor: { name: "Indoor", description: "Indoor activity" },
-} as const;
-
-/**
  * Activity category configuration for UI display
  * Each category has icon, color, and metadata
  */
@@ -55,89 +47,6 @@ export const ACTIVITY_CATEGORY_CONFIG = {
     description: "Other physical activity",
   },
 } as const;
-
-/**
- * Legacy: Combined activity type configuration
- * Maps old combined types to new structure for backwards compatibility
- * @deprecated Use ACTIVITY_CATEGORY_CONFIG and ACTIVITY_LOCATIONS instead
- */
-export const ACTIVITY_TYPE_CONFIG = {
-  outdoor_run: {
-    name: "Outdoor Run",
-    shortName: "Run",
-    icon: "🏃",
-    color: "#2563eb",
-    category: "cardio",
-    description: "Running outdoors",
-    location: "outdoor" as const,
-    activityCategory: "run" as const,
-  },
-  outdoor_bike: {
-    name: "Outdoor Bike",
-    shortName: "Bike",
-    icon: "🚴",
-    color: "#16a34a",
-    category: "cardio",
-    description: "Cycling outdoors",
-    location: "outdoor" as const,
-    activityCategory: "bike" as const,
-  },
-  indoor_run: {
-    name: "Treadmill",
-    shortName: "Treadmill",
-    icon: "🏃",
-    color: "#9333ea",
-    category: "cardio",
-    description: "Running on treadmill",
-    location: "indoor" as const,
-    activityCategory: "run" as const,
-  },
-  indoor_bike: {
-    name: "Bike Trainer",
-    shortName: "Trainer",
-    icon: "🚴",
-    color: "#ea580c",
-    category: "cardio",
-    description: "Cycling on indoor trainer",
-    location: "indoor" as const,
-    activityCategory: "bike" as const,
-  },
-  indoor_strength: {
-    name: "Strength Training",
-    shortName: "Strength",
-    icon: "💪",
-    color: "#dc2626",
-    category: "strength",
-    description: "Resistance training",
-    location: "indoor" as const,
-    activityCategory: "strength" as const,
-  },
-  indoor_swim: {
-    name: "Swimming",
-    shortName: "Swim",
-    icon: "🏊",
-    color: "#0891b2",
-    category: "cardio",
-    description: "Swimming activity",
-    location: "indoor" as const,
-    activityCategory: "swim" as const,
-  },
-  other: {
-    name: "Other Activity",
-    shortName: "Other",
-    icon: "⚡",
-    color: "#6b7280",
-    category: "other",
-    description: "Other physical activity",
-    location: "outdoor" as const,
-    activityCategory: "other" as const,
-  },
-} as const;
-
-/**
- * Type helper for activity types
- */
-export type ActivityType = keyof typeof ACTIVITY_TYPE_CONFIG;
 
 /**
  * Activity categories for grouping

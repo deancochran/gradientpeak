@@ -12,11 +12,7 @@
  * - Simple data flow: Buffer -> Calculate -> Emit
  */
 
-import type {
-  PublicActivityCategory,
-  PublicActivityLocation,
-  PublicProfilesRow
-} from "@repo/supabase";
+import type { PublicActivityCategory, PublicProfilesRow } from "@repo/supabase";
 import { EventEmitter } from "expo";
 import { MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
 import { DataBuffer, type LatLngBufferedReading } from "./DataBuffer";
@@ -48,7 +44,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private zones: ZoneConfig;
   private metrics: LiveMetricsState;
   private isActive = false;
-  private activityLocation?: PublicActivityLocation; // Track if indoor/outdoor
+  private gpsRecordingEnabled = true;
   private activityCategory?: PublicActivityCategory; // Track activity type for calorie calculation
 
   // === Core Components ===
@@ -115,13 +111,8 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
   // ==================== PUBLIC API ====================
 
-  /**
-   * Set activity location (indoor/outdoor)
-   * Should be called before startRecording() to properly configure distance calculation
-   */
-  public setActivityLocation(location: PublicActivityLocation): void {
-    this.activityLocation = location;
-    console.log("[LiveMetricsManager] Activity location set to:", location);
+  public setGpsRecordingEnabled(enabled: boolean): void {
+    this.gpsRecordingEnabled = enabled;
   }
 
   /**
@@ -248,10 +239,10 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
         this.updateMaxValues(reading.metric, reading.value);
       }
 
-      // Calculate virtual distance for indoor activities based on power
+      // Calculate virtual distance when GPS recording is disabled
       if (
         this.isActive &&
-        this.activityLocation === "indoor" &&
+        !this.gpsRecordingEnabled &&
         reading.metric === "power" &&
         typeof reading.value === "number"
       ) {
@@ -310,12 +301,8 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     });
 
     // Calculate distance if we have a previous location (only when active)
-    // Skip GPS distance for indoor activities (use virtual distance from power instead)
-    if (
-      this.isActive &&
-      previousLocation &&
-      this.activityLocation !== "indoor"
-    ) {
+    // Skip GPS distance when GPS recording is disabled
+    if (this.isActive && previousLocation && this.gpsRecordingEnabled) {
       const distance = this.calculateDistance(previousLocation, location);
 
       // Filter GPS noise
@@ -582,9 +569,9 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       return sensorSpeed;
     }
 
-    // Fallback to GPS speed calculation for outdoor activities
+    // Fallback to GPS speed calculation when GPS recording is enabled
     // This ensures we always have speed/pace data even without sensors
-    if (this.activityLocation === "outdoor" && this.lastLocation) {
+    if (this.gpsRecordingEnabled && this.lastLocation) {
       // Calculate speed from recent GPS positions
       const gpsSpeed = this.calculateGPSSpeed();
       if (gpsSpeed !== undefined) {
@@ -596,8 +583,8 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       }
     }
 
-    // For indoor activities, calculate from power if available
-    if (this.activityLocation === "indoor" && this.lastPowerValue > 0) {
+    // When GPS recording is disabled, calculate from power if available
+    if (!this.gpsRecordingEnabled && this.lastPowerValue > 0) {
       // Estimate speed from power using the same physics model
       const powerWatts = this.lastPowerValue;
       const CRR = 0.005;

@@ -2,17 +2,14 @@
  * Recording Configuration System
  *
  * Defines what features are available and should be shown based on:
- * - Activity type (outdoor run, indoor bike, etc.)
+ * - Activity type (run, bike, etc.)
  * - Recording mode (planned vs unplanned)
  * - Connected devices (FTMS trainer, sensors)
  * - Plan structure (has steps, route, etc.)
- * - GPS availability
+ * - GPS intent + availability
  */
 
-import type {
-  PublicActivityCategory,
-  PublicActivityLocation,
-} from "@repo/supabase";
+import type { PublicActivityCategory } from "@repo/supabase";
 
 import type { FTMSFeatures } from "../ftms-types";
 
@@ -23,7 +20,7 @@ import type { FTMSFeatures } from "../ftms-types";
 export interface RecordingConfigInput {
   // Core activity details
   activityCategory: PublicActivityCategory;
-  activityLocation: PublicActivityLocation;
+  gpsRecordingEnabled: boolean;
   mode: "planned" | "unplanned";
 
   // Plan details (if planned)

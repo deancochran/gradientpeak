@@ -66,25 +66,35 @@ type PlannedEventRecord = {
   activity_plan: ActivityPlanRecord | null;
 };
 
-const validateConstraintsSchema = z.object({
-  training_plan_id: z.string().uuid(),
-  scheduled_date: z
-    .string()
-    .refine((val) => !Number.isNaN(Date.parse(val)), "Invalid date format"),
-  activity_plan_id: z.string().uuid(),
-});
+const validateConstraintsSchema = z
+  .object({
+    training_plan_id: z.string().uuid(),
+    scheduled_date: z
+      .string()
+      .refine((val) => !Number.isNaN(Date.parse(val)), "Invalid date format"),
+    activity_plan_id: z.string().uuid(),
+  })
+  .strict();
 
-const eventListSchema = z.object({
-  activity_category: z.string().optional(),
-  activity_location: z.string().optional(),
-  activity_plan_id: z.string().optional(),
-  training_plan_id: z.string().uuid().optional(),
-  include_adhoc: z.boolean().default(true),
-  date_from: z.string().optional(),
-  date_to: z.string().optional(),
-  limit: z.number().min(1).max(100).default(20),
-  cursor: z.string().optional(),
-});
+const plannedActivityCreateInputSchema = plannedActivityCreateSchema.strict();
+const plannedActivityUpdateWithIdInputSchema = plannedActivityUpdateSchema
+  .extend({
+    id: z.string().uuid(),
+  })
+  .strict();
+
+const eventListSchema = z
+  .object({
+    activity_category: z.string().optional(),
+    activity_plan_id: z.string().optional(),
+    training_plan_id: z.string().uuid().optional(),
+    include_adhoc: z.boolean().default(true),
+    date_from: z.string().optional(),
+    date_to: z.string().optional(),
+    limit: z.number().min(1).max(100).default(20),
+    cursor: z.string().optional(),
+  })
+  .strict();
 
 function toDateKey(value: string): string {
   return value.split("T")[0] || value;
@@ -375,7 +385,7 @@ export const eventsRouter = createTRPCRouter({
   }),
 
   create: protectedProcedure
-    .input(plannedActivityCreateSchema)
+    .input(plannedActivityCreateInputSchema)
     .mutation(async ({ ctx, input }) => {
       const { data: activityPlan, error: planError } = await ctx.supabase
         .from("activity_plans")
@@ -471,17 +481,9 @@ export const eventsRouter = createTRPCRouter({
     }),
 
   update: protectedProcedure
-    .input(
-      z
-        .object({
-          id: z.string().uuid(),
-        })
-        .and(plannedActivityUpdateSchema),
-    )
+    .input(plannedActivityUpdateWithIdInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const { id, ...updates } = input as { id: string } & z.infer<
-        typeof plannedActivityUpdateSchema
-      >;
+      const { id, ...updates } = input;
 
       const { data: existing } = await ctx.supabase
         .from("events")
@@ -677,13 +679,6 @@ export const eventsRouter = createTRPCRouter({
           input.activity_category,
         );
       }
-      if (input.activity_location) {
-        query = query.eq(
-          "activity_plan.activity_location",
-          input.activity_location,
-        );
-      }
-
       const { data, error } = await query;
       if (error) {
         throw new TRPCError({
@@ -1048,15 +1043,22 @@ export const eventsRouter = createTRPCRouter({
             : null,
         }));
 
-        return addEventLifecycleStatus(itemsWithEstimation, {
-          supabase: ctx.supabase,
-          profileId: ctx.session.user.id,
-        });
+        const itemsWithStatus = await addEventLifecycleStatus(
+          itemsWithEstimation,
+          {
+            supabase: ctx.supabase,
+            profileId: ctx.session.user.id,
+          },
+        );
+
+        return itemsWithStatus;
       }
 
-      return addEventLifecycleStatus(events, {
+      const itemsWithStatus = await addEventLifecycleStatus(events, {
         supabase: ctx.supabase,
         profileId: ctx.session.user.id,
       });
+
+      return itemsWithStatus;
     }),
 });

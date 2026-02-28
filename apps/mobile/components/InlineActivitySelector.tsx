@@ -1,13 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import {
-  getActivityDisplayName
-} from "@repo/core";
-import type {
-  PublicActivityCategory,
-  PublicActivityLocation
-} from "@repo/supabase";
+import { getActivityDisplayName } from "@repo/core";
+import type { PublicActivityCategory } from "@repo/supabase";
 import {
   Activity,
   Bike,
@@ -22,7 +17,7 @@ import { Pressable, ScrollView, View } from "react-native";
 interface InlineActivitySelectorProps {
   onActivitySelect: (
     category: PublicActivityCategory,
-    location: PublicActivityLocation,
+    gpsRecordingEnabled: boolean,
   ) => void;
 }
 
@@ -44,14 +39,14 @@ export function InlineActivitySelector({
 }: InlineActivitySelectorProps) {
   const [selectedCategory, setSelectedCategory] =
     useState<PublicActivityCategory | null>(null);
-  const [selectedLocation, setSelectedLocation] =
-    useState<PublicActivityLocation | null>(null);
+  const [gpsRecordingEnabled, setGpsRecordingEnabled] = useState<
+    boolean | null
+  >(null);
 
-  // Auto-confirm when both selections made
-  const handleLocationSelect = (location: PublicActivityLocation) => {
-    setSelectedLocation(location);
+  const handleGpsSelect = (nextGpsRecordingEnabled: boolean) => {
+    setGpsRecordingEnabled(nextGpsRecordingEnabled);
     if (selectedCategory) {
-      onActivitySelect(selectedCategory, location);
+      onActivitySelect(selectedCategory, nextGpsRecordingEnabled);
     }
   };
 
@@ -72,7 +67,7 @@ export function InlineActivitySelector({
               key={activity.category}
               onPress={() => {
                 setSelectedCategory(activity.category);
-                setSelectedLocation(null); // Reset location when changing activity
+                setGpsRecordingEnabled(null); // Reset GPS state when changing activity
               }}
               className={`items-center justify-center px-4 py-3 rounded-xl border-2 ${
                 selectedCategory === activity.category
@@ -96,70 +91,66 @@ export function InlineActivitySelector({
                     : "text-foreground"
                 }`}
               >
-                {getActivityDisplayName(activity.category, "outdoor").split(
-                  " ",
-                )[0]}
+                {getActivityDisplayName(activity.category, true).split(" ")[0]}
               </Text>
             </Pressable>
           ))}
         </ScrollView>
       </View>
 
-      {/* Step 2: Select Location (only shown when activity selected) */}
+      {/* Step 2: Select GPS recording (only shown when activity selected) */}
       {selectedCategory && (
         <View>
           <Text className="text-sm font-medium text-muted-foreground mb-3">
-            Location
+            GPS Recording
           </Text>
           <View className="flex-row gap-3">
             <Button
-              variant={
-                selectedLocation === "outdoor" ? "default" : "outline"
-              }
-              onPress={() => handleLocationSelect("outdoor")}
+              variant={gpsRecordingEnabled === true ? "default" : "outline"}
+              onPress={() => handleGpsSelect(true)}
               className="flex-1 h-14"
             >
               <Icon
                 as={MapPin}
                 size={20}
                 className={
-                  selectedLocation === "outdoor"
+                  gpsRecordingEnabled === true
                     ? "color-background"
                     : "text-foreground"
                 }
               />
               <Text
                 className={`ml-2 font-semibold ${
-                  selectedLocation === "outdoor"
+                  gpsRecordingEnabled === true
                     ? "text-background"
                     : "text-foreground"
                 }`}
               >
-                Outdoor
+                GPS ON
               </Text>
             </Button>
             <Button
-              variant={selectedLocation === "indoor" ? "default" : "outline"}
-              onPress={() => handleLocationSelect("indoor")}
+              variant={gpsRecordingEnabled === false ? "default" : "outline"}
+              onPress={() => handleGpsSelect(false)}
               className="flex-1 h-14"
             >
               <Icon
                 as={Activity}
                 size={20}
                 className={
-                  selectedLocation === "indoor"
+                  gpsRecordingEnabled === false
                     ? "color-background"
                     : "text-foreground"
                 }
               />
               <Text
                 className={`ml-2 font-semibold ${
-                  selectedLocation === "indoor"
+                  gpsRecordingEnabled === false
                     ? "text-background"
                     : "text-foreground"
                 }`}
               >
-                Indoor
+                GPS OFF
               </Text>
             </Button>
           </View>

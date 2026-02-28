@@ -18,13 +18,8 @@
 
 import { Text } from "@/components/ui/text";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import type {
-  RecordingState
-} from "@repo/core";
-import type {
-  PublicActivityCategory,
-  PublicActivityLocation
-} from "@repo/supabase";
+import type { RecordingState } from "@repo/core";
+import type { PublicActivityCategory } from "@repo/supabase";
 import { router } from "expo-router";
 import React from "react";
 import { Pressable, ScrollView, View } from "react-native";
@@ -36,7 +31,7 @@ export interface FooterExpandedProps {
   service: ActivityRecorderService | null;
   recordingState: RecordingState;
   category: PublicActivityCategory;
-  location: PublicActivityLocation;
+  gpsRecordingEnabled: boolean;
   hasPlan: boolean;
   hasRoute: boolean;
   onStart: () => void;
@@ -50,7 +45,7 @@ export function FooterExpanded({
   service,
   recordingState,
   category,
-  location,
+  gpsRecordingEnabled,
   hasPlan,
   hasRoute,
   onStart,
@@ -120,7 +115,7 @@ export function FooterExpanded({
           {/* Activity Tile (Locked only during recording) */}
           <ConfigTile
             label="Activity"
-            value={`${category.replace("_", " ")} · ${location}`}
+            value={`${category.replace("_", " ")} · GPS ${gpsRecordingEnabled ? "ON" : "OFF"}`}
             onPress={handleActivityPress}
             disabled={recordingState !== "not_started"}
           />

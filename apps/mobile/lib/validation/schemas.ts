@@ -11,7 +11,6 @@
 // Re-export all form schemas from core
 export {
   activityCategorySchema,
-  activityLocationSchema,
   // Activity schemas
   activityNameSchema,
   activityNotesSchema,

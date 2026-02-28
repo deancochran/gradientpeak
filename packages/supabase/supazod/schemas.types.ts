@@ -9,9 +9,6 @@ import * as generated from "./schemas";
 export type PublicActivityCategory = z.infer<
   typeof generated.publicActivityCategorySchema
 >;
-export type PublicActivityLocation = z.infer<
-  typeof generated.publicActivityLocationSchema
->;
 export type PublicEffortType = z.infer<typeof generated.publicEffortTypeSchema>;
 export type PublicEventStatus = z.infer<
   typeof generated.publicEventStatusSchema

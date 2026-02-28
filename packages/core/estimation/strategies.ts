@@ -259,13 +259,14 @@ function getHRZoneIndex(thresholdPercent: number): number {
 
 /**
  * Estimate metrics from route data (distance, elevation)
- * Medium accuracy for outdoor activities without structure
+ * Medium accuracy for GPS-enabled activities without structure
  * Accuracy: 70-80% depending on route detail
  */
 export function estimateFromRoute(
   context: EstimationContext,
 ): EstimationResult {
-  const { route, profile, activityCategory, fitnessState, ftp, weightKg } = context;
+  const { route, profile, activityCategory, fitnessState, ftp, weightKg } =
+    context;
 
   if (!route) {
     throw new Error("Route-based estimation requires route data");

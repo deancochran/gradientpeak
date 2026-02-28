@@ -36,7 +36,7 @@ export function PlannedActivitiesList({
     const activityPlan = activity.activity_plan;
     const payload: ActivityPayload = {
       category: activityPlan?.activity_category || "other",
-      location: activityPlan?.activity_location || "indoor",
+      gpsRecordingEnabled: true,
       eventId: activity.id,
       plan: activityPlan,
     };

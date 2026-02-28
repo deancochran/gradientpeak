@@ -18,7 +18,7 @@ import type {
 } from "@repo/core/schemas/activity_plan_v2";
 import * as Haptics from "expo-haptics";
 import { Plus, Trash2 } from "lucide-react-native";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { Dimensions, ScrollView, View } from "react-native";
 import { z } from "zod";
@@ -49,9 +49,6 @@ const formSchema = z.object({
       type: z.literal("repetitions"),
       count: z.number().int().positive(),
     }),
-    z.object({
-      type: z.literal("untilFinished"),
-    }),
   ]),
   targets: z
     .array(
@@ -66,11 +63,11 @@ const formSchema = z.object({
           "cadence",
           "RPE",
         ]),
-        intensity: z.number().min(0),
+        intensity: z.number().positive(),
       }),
     )
-    .max(3)
-    .optional(),
+    .min(1, "At least one target is required")
+    .max(3),
   notes: z.string().optional(),
 });
 
@@ -87,7 +84,6 @@ const DURATION_TYPES = [
   { value: "time", label: "Time-based" },
   { value: "distance", label: "Distance-based" },
   { value: "repetitions", label: "Repetitions" },
-  { value: "untilFinished", label: "Until Finished" },
 ];
 
 const TIME_UNITS = [
@@ -166,6 +162,7 @@ export function StepEditorDialog({
   defaultSegmentName,
 }: StepEditorDialogProps) {
   const isMountedRef = useRef(true);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const form = useForm<FormData>({
     defaultValues: {
@@ -196,10 +193,14 @@ export function StepEditorDialog({
       form.reset({
         name: step.name || "",
         description: step.description || "",
-        duration: step.duration, // Already in V2 format
+        duration:
+          step.duration.type === "untilFinished"
+            ? { type: "time", seconds: 300 }
+            : step.duration,
         targets: step.targets || [],
         notes: step.notes || "",
       });
+      setSaveError(null);
     } else if (open) {
       // Creating new step - use V2 format
       form.reset({
@@ -209,6 +210,7 @@ export function StepEditorDialog({
         targets: [],
         notes: "",
       });
+      setSaveError(null);
     }
   }, [step, form, open, defaultSegmentName]);
 
@@ -219,9 +221,11 @@ export function StepEditorDialog({
     const result = formSchema.safeParse(values);
 
     if (!result.success) {
-      console.error("❌ Validation errors:", result.error.flatten());
+      setSaveError(result.error.issues[0]?.message ?? "Fix step inputs.");
       return;
     }
+
+    setSaveError(null);
 
     // Create IntervalStepV2 - duration is already in V2 format
     const stepV2: IntervalStepV2 = {
@@ -265,9 +269,7 @@ export function StepEditorDialog({
   const handleDurationTypeChange = (value: string) => {
     if (!isMountedRef.current) return;
 
-    if (value === "untilFinished") {
-      form.setValue("duration", { type: "untilFinished" });
-    } else if (value === "time") {
+    if (value === "time") {
       form.setValue("duration", { type: "time", seconds: 600 }); // 10 minutes
     } else if (value === "distance") {
       form.setValue("duration", { type: "distance", meters: 1000 }); // 1km
@@ -277,7 +279,7 @@ export function StepEditorDialog({
   };
 
   const getDurationUnits = () => {
-    if (!durationType || durationType.type === "untilFinished") return [];
+    if (!durationType) return [];
     if (durationType.type === "time") return TIME_UNITS;
     if (durationType.type === "distance") return DISTANCE_UNITS;
     return [{ value: "reps", label: "reps" }];
@@ -286,10 +288,9 @@ export function StepEditorDialog({
   const currentDurationType = durationType?.type || "time";
 
   // Get current UI value and unit for display
-  const currentUIValue =
-    durationType && durationType.type !== "untilFinished"
-      ? v2ToUIValue(durationType)
-      : { value: 10, unit: "minutes" };
+  const currentUIValue = durationType
+    ? v2ToUIValue(durationType)
+    : { value: 10, unit: "minutes" };
 
   const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
   const dialogWidth = Math.min(screenWidth * 0.9, 400);
@@ -403,7 +404,7 @@ export function StepEditorDialog({
               </View>
 
               {/* Duration Value & Unit */}
-              {durationType && durationType.type !== "untilFinished" && (
+              {durationType && (
                 <View className="flex-row gap-3">
                   <View className="flex-1">
                     <Label nativeID="duration-value">Value</Label>
@@ -546,7 +547,7 @@ export function StepEditorDialog({
                 {targets.length === 0 && (
                   <View className="border-2 border-dashed border-muted rounded-lg p-4">
                     <Text className="text-sm text-muted-foreground text-center">
-                      No intensity targets. Tap Add Target to set one.
+                      Add at least one target before saving.
                     </Text>
                   </View>
                 )}
@@ -663,6 +664,10 @@ export function StepEditorDialog({
                   </Text>
                 )}
               </View>
+
+              {saveError ? (
+                <Text className="text-xs text-destructive">{saveError}</Text>
+              ) : null}
 
               {/* Notes */}
               <View>

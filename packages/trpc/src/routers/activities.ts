@@ -12,10 +12,12 @@ export const activitiesRouter = createTRPCRouter({
   // List activities by date range (legacy - for trends/analytics)
   list: protectedProcedure
     .input(
-      z.object({
-        date_from: z.string(),
-        date_to: z.string(),
-      }),
+      z
+        .object({
+          date_from: z.string(),
+          date_to: z.string(),
+        })
+        .strict(),
     )
     .query(async ({ ctx, input }) => {
       const { data, error } = await ctx.supabase
@@ -33,19 +35,21 @@ export const activitiesRouter = createTRPCRouter({
   // Paginated list of activities with filters
   listPaginated: protectedProcedure
     .input(
-      z.object({
-        limit: z.number().min(1).max(100).default(20),
-        offset: z.number().min(0).default(0),
-        activity_category: z
-          .enum(["run", "bike", "swim", "strength", "other"])
-          .optional(),
-        date_from: z.string().optional(),
-        date_to: z.string().optional(),
-        sort_by: z
-          .enum(["date", "distance", "duration", "tss"])
-          .default("date"),
-        sort_order: z.enum(["asc", "desc"]).default("desc"),
-      }),
+      z
+        .object({
+          limit: z.number().min(1).max(100).default(20),
+          offset: z.number().min(0).default(0),
+          activity_category: z
+            .enum(["run", "bike", "swim", "strength", "other"])
+            .optional(),
+          date_from: z.string().optional(),
+          date_to: z.string().optional(),
+          sort_by: z
+            .enum(["date", "distance", "duration", "tss"])
+            .default("date"),
+          sort_order: z.enum(["asc", "desc"]).default("desc"),
+        })
+        .strict(),
     )
     .query(async ({ ctx, input }) => {
       let query = ctx.supabase
@@ -96,13 +100,15 @@ export const activitiesRouter = createTRPCRouter({
       ActivityUploadSchema.extend({
         profile_id: z.string(),
         eventId: z.string().uuid().optional().nullable(),
-      }).refine(
-        (data) => new Date(data.finishedAt) > new Date(data.startedAt),
-        {
-          message: "finishedAt must be after startedAt",
-          path: ["finishedAt"],
-        },
-      ),
+      })
+        .strict()
+        .refine(
+          (data) => new Date(data.finishedAt) > new Date(data.startedAt),
+          {
+            message: "finishedAt must be after startedAt",
+            path: ["finishedAt"],
+          },
+        ),
     )
     .mutation(async ({ input, ctx }) => {
       const duration_seconds =
@@ -137,7 +143,6 @@ export const activitiesRouter = createTRPCRouter({
         name: input.name,
         notes: input.notes,
         type: input.type,
-        location: input.location,
         started_at: input.startedAt,
         finished_at: input.finishedAt,
         duration_seconds,
@@ -163,9 +168,11 @@ export const activitiesRouter = createTRPCRouter({
 
   getById: protectedProcedure
     .input(
-      z.object({
-        id: z.string().uuid(),
-      }),
+      z
+        .object({
+          id: z.string().uuid(),
+        })
+        .strict(),
     )
     .query(async ({ input, ctx }) => {
       const { data, error } = await ctx.supabase
@@ -188,14 +195,16 @@ export const activitiesRouter = createTRPCRouter({
   // Update activity (e.g., to set metrics after calculation)
   update: protectedProcedure
     .input(
-      z.object({
-        id: z.string().uuid(),
-        intensity_factor: z.number().optional(),
-        training_stress_score: z.number().optional(),
-        normalized_power: z.number().optional(),
-        name: z.string().optional(),
-        notes: z.string().nullable().optional(),
-      }),
+      z
+        .object({
+          id: z.string().uuid(),
+          intensity_factor: z.number().optional(),
+          training_stress_score: z.number().optional(),
+          normalized_power: z.number().optional(),
+          name: z.string().optional(),
+          notes: z.string().nullable().optional(),
+        })
+        .strict(),
     )
     .mutation(async ({ ctx, input }) => {
       const { id, ...updates } = input;
@@ -216,9 +225,11 @@ export const activitiesRouter = createTRPCRouter({
   // Activity streams are automatically deleted via cascade
   delete: protectedProcedure
     .input(
-      z.object({
-        id: z.string().uuid(),
-      }),
+      z
+        .object({
+          id: z.string().uuid(),
+        })
+        .strict(),
     )
     .mutation(async ({ ctx, input }) => {
       // Verify ownership and get FIT file path before deletion

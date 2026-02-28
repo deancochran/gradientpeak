@@ -4,10 +4,7 @@ import {
 } from "@/components/shared/ActivityPlanCard";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import type {
-  PublicActivityCategory,
-  PublicActivityLocation
-} from "@repo/supabase";
+import type { PublicActivityCategory } from "@repo/supabase";
 import { ActivityPayload, getSampleActivitiesByCategory } from "@repo/core";
 import { useRouter } from "expo-router";
 import {
@@ -32,7 +29,7 @@ const CATEGORIES = [
     icon: Footprints,
     color: "text-emerald-600",
     category: "run" as PublicActivityCategory,
-    location: "outdoor" as PublicActivityLocation,
+    gpsRecordingEnabled: true,
   },
   {
     id: "bike-outdoor",
@@ -40,7 +37,7 @@ const CATEGORIES = [
     icon: Bike,
     color: "text-blue-600",
     category: "bike" as PublicActivityCategory,
-    location: "outdoor" as PublicActivityLocation,
+    gpsRecordingEnabled: true,
   },
   {
     id: "bike-indoor",
@@ -48,7 +45,7 @@ const CATEGORIES = [
     icon: Bike,
     color: "text-orange-600",
     category: "bike" as PublicActivityCategory,
-    location: "indoor" as PublicActivityLocation,
+    gpsRecordingEnabled: false,
   },
   {
     id: "run-indoor",
@@ -56,7 +53,7 @@ const CATEGORIES = [
     icon: Footprints,
     color: "text-purple-600",
     category: "run" as PublicActivityCategory,
-    location: "indoor" as PublicActivityLocation,
+    gpsRecordingEnabled: false,
   },
   {
     id: "strength-indoor",
@@ -64,7 +61,7 @@ const CATEGORIES = [
     icon: Dumbbell,
     color: "text-red-600",
     category: "strength" as PublicActivityCategory,
-    location: "indoor" as PublicActivityLocation,
+    gpsRecordingEnabled: false,
   },
   {
     id: "swim-indoor",
@@ -72,7 +69,7 @@ const CATEGORIES = [
     icon: Waves,
     color: "text-cyan-600",
     category: "swim" as PublicActivityCategory,
-    location: "indoor" as PublicActivityLocation,
+    gpsRecordingEnabled: false,
   },
   {
     id: "other-outdoor",
@@ -80,7 +77,7 @@ const CATEGORIES = [
     icon: Activity,
     color: "text-gray-600",
     category: "other" as PublicActivityCategory,
-    location: "outdoor" as PublicActivityLocation,
+    gpsRecordingEnabled: true,
   },
   // Conditionally spread the dev object into the array
   ...(__DEV__
@@ -91,7 +88,7 @@ const CATEGORIES = [
           icon: Code,
           color: "text-blue-600",
           category: "dev" as any,
-          location: "outdoor" as PublicActivityLocation,
+          gpsRecordingEnabled: true,
         },
       ]
     : []),
@@ -127,7 +124,7 @@ export function TemplatesList({ onTemplateSelect }: TemplatesListProps) {
         {CATEGORIES.map((category) => {
           const templates = getSampleActivitiesByCategory(
             category.category as any,
-            category.location,
+            category.gpsRecordingEnabled,
           );
 
           return (
@@ -176,7 +173,7 @@ export function TemplatesList({ onTemplateSelect }: TemplatesListProps) {
 
   const templates = getSampleActivitiesByCategory(
     category.category as any,
-    category.location,
+    category.gpsRecordingEnabled,
   );
 
   return (
@@ -233,7 +230,7 @@ export function TemplatesList({ onTemplateSelect }: TemplatesListProps) {
   function handleRecord(template: any) {
     const payload: ActivityPayload = {
       category: template.activity_category,
-      location: template.activity_location,
+      gpsRecordingEnabled: true,
       plan: template,
     };
     onTemplateSelect(payload);

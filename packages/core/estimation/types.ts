@@ -1,8 +1,4 @@
-import type {
-  PublicActivityCategory,
-  PublicActivityLocation,
-  PublicProfilesRow,
-} from "@repo/supabase";
+import type { PublicActivityCategory, PublicProfilesRow } from "@repo/supabase";
 
 import type { ActivityPlanStructureV2 } from "../schemas/activity_plan_v2";
 
@@ -44,7 +40,6 @@ export interface EstimationContext {
 
   // Activity details
   activityCategory: PublicActivityCategory;
-  activityLocation: PublicActivityLocation;
 
   // Optional route data
   route?: Route;

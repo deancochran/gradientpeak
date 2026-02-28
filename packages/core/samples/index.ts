@@ -65,29 +65,28 @@ export function getSampleActivitiesByType(
   return SAMPLE_ACTIVITIES_BY_TYPE[activityType] || [];
 }
 
-// Helper function to get sample activities by category and location
+// Helper function to get sample activities by category and GPS intent
 export function getSampleActivitiesByCategory(
   category: "run" | "bike" | "swim" | "strength" | "other" | "dev",
-  location: "indoor" | "outdoor",
+  gpsRecordingEnabled: boolean,
 ) {
-  const key = `${location}_${category}` as const;
+  if (category === "run") {
+    return gpsRecordingEnabled
+      ? SAMPLE_ACTIVITIES_BY_TYPE.outdoor_run
+      : SAMPLE_ACTIVITIES_BY_TYPE.indoor_treadmill;
+  }
 
-  // Map to the actual keys in SAMPLE_ACTIVITIES_BY_TYPE
-  const mappings: Record<string, keyof typeof SAMPLE_ACTIVITIES_BY_TYPE> = {
-    outdoor_run: "outdoor_run",
-    outdoor_bike: "outdoor_bike",
-    indoor_run: "indoor_treadmill",
-    indoor_bike: "indoor_bike_trainer",
-    indoor_strength: "indoor_strength",
-    indoor_swim: "indoor_swim",
-    outdoor_other: "other",
-    indoor_other: "other",
-    outdoor_dev: "dev",
-    indoor_dev: "dev",
-  };
+  if (category === "bike") {
+    return gpsRecordingEnabled
+      ? SAMPLE_ACTIVITIES_BY_TYPE.outdoor_bike
+      : SAMPLE_ACTIVITIES_BY_TYPE.indoor_bike_trainer;
+  }
 
-  const mappedKey = mappings[key];
-  return mappedKey ? SAMPLE_ACTIVITIES_BY_TYPE[mappedKey] || [] : [];
+  if (category === "swim") return SAMPLE_ACTIVITIES_BY_TYPE.indoor_swim;
+  if (category === "strength") return SAMPLE_ACTIVITIES_BY_TYPE.indoor_strength;
+  if (category === "other") return SAMPLE_ACTIVITIES_BY_TYPE.other;
+  if (category === "dev") return SAMPLE_ACTIVITIES_BY_TYPE.dev;
+  return [];
 }
 
 // Total count of sample activities: 36 activities across 7 activity types

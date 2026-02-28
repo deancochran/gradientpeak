@@ -23,12 +23,11 @@ export const ROUTES = {
     // Create Activity Plan Routes
     CREATE_ACTIVITY_PLAN: {
       INDEX: "/create-activity-plan" as const,
-      STRUCTURE: "/create-activity-plan-structure" as const,
-      REPEAT: "/create-activity-plan-repeat" as const,
     },
 
     // Dynamic Routes (use with params)
-    PLAN_DETAIL: (planId: string) => `/plan/${planId}` as const,
+    PLAN_DETAIL: (planId: string) =>
+      `/activity-plan-detail?id=${planId}` as const,
     ACTIVITY_DETAIL: (activityId: string) =>
       `/scheduled-activity-detail?id=${activityId}` as const,
   },

@@ -13,7 +13,7 @@ export const EASY_SWIM: RecordingServiceActivityPlan = {
   description:
     "Comfortable continuous swim focusing on technique and aerobic base",
   activity_category: "swim",
-  activity_location: "indoor",
+  gps_recording_enabled: false,
   structure: createPlan()
     .step({
       name: "Easy Warm-up",
@@ -49,7 +49,7 @@ export const SPRINT_INTERVALS_SWIM: RecordingServiceActivityPlan = {
   name: "Sprint Intervals",
   description: "High-intensity sprint intervals for speed development",
   activity_category: "swim",
-  activity_location: "indoor",
+  gps_recording_enabled: false,
   structure: createPlan()
     .step({
       name: "Progressive Warm-up",
@@ -111,7 +111,7 @@ export const THRESHOLD_SWIM: RecordingServiceActivityPlan = {
   name: "Threshold Set",
   description: "Sustained threshold efforts for lactate tolerance",
   activity_category: "swim",
-  activity_location: "indoor",
+  gps_recording_enabled: false,
   structure: createPlan()
     .step({
       name: "Warm-up",
@@ -157,7 +157,7 @@ export const TECHNIQUE_SWIM: RecordingServiceActivityPlan = {
   name: "Technique Focus",
   description: "Technical swimming session focusing on stroke mechanics",
   activity_category: "swim",
-  activity_location: "indoor",
+  gps_recording_enabled: false,
   structure: createPlan()
     .step({
       name: "Easy Warm-up",
@@ -214,7 +214,7 @@ export const ENDURANCE_SWIM: RecordingServiceActivityPlan = {
   name: "Endurance Set",
   description: "Long aerobic swim for endurance base building",
   activity_category: "swim",
-  activity_location: "indoor",
+  gps_recording_enabled: false,
   structure: createPlan()
     .step({
       name: "Extended Warm-up",

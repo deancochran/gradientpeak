@@ -30,8 +30,6 @@ export const durationUnitEnum = z.enum([
 
 export const durationTypeEnum = z.enum(["time", "distance", "repetitions"]);
 
-export const activityLocationEnum = z.enum(["outdoor", "indoor"]);
-
 export const activityCategoryEnum = z.enum([
   "run",
   "bike",
@@ -284,7 +282,6 @@ export const activityPlanSchema = z
       .string()
       .max(1000, { message: "Description cannot exceed 1000 characters" })
       .optional(),
-    activity_location: activityLocationEnum,
     activity_category: activityCategoryEnum,
     structure: activityPlanStructureSchema,
     route_id: z.string().uuid().optional(),
@@ -293,6 +290,7 @@ export const activityPlanSchema = z
       .max(1000, { message: "Notes cannot exceed 1000 characters" })
       .optional(),
   })
+  .strict()
   .refine(
     (data) => {
       const hasSteps = data.structure.steps && data.structure.steps.length > 0;

@@ -30,8 +30,6 @@ import { ChevronLeft } from "lucide-react-native";
  * ACTIVITY PLANS:
  * - activity-plan-detail - View/edit activity plan details
  * - create-activity-plan - Main activity plan builder
- * - create-activity-plan-structure - Plan structure editor
- * - create-activity-plan-repeat - Plan repeat configuration
  * - plan-library - Browse and manage activity plans
  *
  * SCHEDULED ACTIVITIES:
@@ -123,18 +121,6 @@ export default function StandardLayout() {
         name="create-activity-plan"
         options={{
           title: "Create Activity Plan",
-        }}
-      />
-      <Stack.Screen
-        name="create-activity-plan-structure"
-        options={{
-          title: "Plan Structure",
-        }}
-      />
-      <Stack.Screen
-        name="create-activity-plan-repeat"
-        options={{
-          title: "Repeat Settings",
         }}
       />
       <Stack.Screen

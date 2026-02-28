@@ -20,13 +20,8 @@ import { Badge } from "@/components/ui/badge";
 import { Text } from "@/components/ui/text";
 import { useGpsTracking } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import type {
-  RecordingState
-} from "@repo/core";
-import type {
-  PublicActivityCategory,
-  PublicActivityLocation
-} from "@repo/supabase";
+import type { RecordingState } from "@repo/core";
+import type { PublicActivityCategory } from "@repo/supabase";
 import { router } from "expo-router";
 import { MapPin, MapPinOff } from "lucide-react-native";
 import React from "react";
@@ -39,7 +34,7 @@ export interface FooterExpandedContentProps {
   service: ActivityRecorderService | null;
   recordingState: RecordingState;
   category: PublicActivityCategory;
-  location: PublicActivityLocation;
+  gpsRecordingEnabled: boolean;
   hasPlan: boolean;
   hasRoute: boolean;
   onStart: () => void;
@@ -53,7 +48,7 @@ export function FooterExpandedContent({
   service,
   recordingState,
   category,
-  location,
+  gpsRecordingEnabled,
   hasPlan,
   hasRoute,
   onStart,
@@ -137,7 +132,7 @@ export function FooterExpandedContent({
           {/* GPS Toggle Tile (Indoor/Outdoor Mode) */}
           <ConfigTile
             label="GPS"
-            value={gpsEnabled ? "Outdoor" : "Indoor"}
+            value={gpsEnabled ? "ON" : "OFF"}
             onPress={handleGpsToggle}
           />
 

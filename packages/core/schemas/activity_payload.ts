@@ -143,36 +143,37 @@ export type ProfileSnapshot = z.infer<typeof ProfileSnapshotSchema>;
  * Complete schema for uploading an activity with all data
  * Used by mobile app when finishing a recording
  */
-export const ActivityUploadSchema = z.object({
-  name: z.string().min(1),
-  notes: z.string().optional().nullable(),
-  type: z.enum(["bike", "run", "swim", "strength", "other"]),
-  location: z.enum(["indoor", "outdoor"]).optional().nullable(),
-  startedAt: z.string(),
-  finishedAt: z.string(),
-  durationSeconds: z.number().int().min(0),
-  movingSeconds: z.number().int().min(0),
-  distanceMeters: z.number().int().min(0),
-  metrics: ActivityMetricsSchema,
-  hrZoneSeconds: z.array(z.number().int()).length(5).optional().nullable(),
-  powerZoneSeconds: z.array(z.number().int()).length(7).optional().nullable(),
-  profileSnapshot: ProfileSnapshotSchema.optional().nullable(),
-  eventId: z.string().uuid().optional().nullable(),
-  routeId: z.string().uuid().optional().nullable(),
-  polyline: z.string().optional().nullable(),
-  mapBounds: z
-    .object({
-      minLat: z.number(),
-      maxLat: z.number(),
-      minLng: z.number(),
-      maxLng: z.number(),
-    })
-    .optional()
-    .nullable(),
-  laps: z.array(z.record(z.string(), z.any())).optional().nullable(),
-  powerCurve: z.record(z.string(), z.number()).optional().nullable(),
-  deviceName: z.string().optional().nullable(),
-});
+export const ActivityUploadSchema = z
+  .object({
+    name: z.string().min(1),
+    notes: z.string().optional().nullable(),
+    type: z.enum(["bike", "run", "swim", "strength", "other"]),
+    startedAt: z.string(),
+    finishedAt: z.string(),
+    durationSeconds: z.number().int().min(0),
+    movingSeconds: z.number().int().min(0),
+    distanceMeters: z.number().int().min(0),
+    metrics: ActivityMetricsSchema,
+    hrZoneSeconds: z.array(z.number().int()).length(5).optional().nullable(),
+    powerZoneSeconds: z.array(z.number().int()).length(7).optional().nullable(),
+    profileSnapshot: ProfileSnapshotSchema.optional().nullable(),
+    eventId: z.string().uuid().optional().nullable(),
+    routeId: z.string().uuid().optional().nullable(),
+    polyline: z.string().optional().nullable(),
+    mapBounds: z
+      .object({
+        minLat: z.number(),
+        maxLat: z.number(),
+        minLng: z.number(),
+        maxLng: z.number(),
+      })
+      .optional()
+      .nullable(),
+    laps: z.array(z.record(z.string(), z.any())).optional().nullable(),
+    powerCurve: z.record(z.string(), z.number()).optional().nullable(),
+    deviceName: z.string().optional().nullable(),
+  })
+  .strict();
 
 export type ActivityUpload = z.infer<typeof ActivityUploadSchema>;
 
@@ -181,24 +182,22 @@ export type ActivityUpload = z.infer<typeof ActivityUploadSchema>;
 // ==============================
 
 // Import database types
-import type {
-  PublicActivityCategory,
-  PublicActivityLocation,
-} from "@repo/supabase";
+import type { PublicActivityCategory } from "@repo/supabase";
 
 export type ActivityCategory = PublicActivityCategory;
-export type ActivityLocation = PublicActivityLocation;
 
 // ==============================
 // ACTIVITY PAYLOAD SCHEMA
 // ==============================
 
-export const ActivityPayloadSchema = z.object({
-  category: z.enum(["run", "bike", "swim", "strength", "other"]),
-  location: z.enum(["indoor", "outdoor"]),
-  eventId: z.string().optional(),
-  plan: z.custom<RecordingServiceActivityPlan>().optional(),
-});
+export const ActivityPayloadSchema = z
+  .object({
+    category: z.enum(["run", "bike", "swim", "strength", "other"]),
+    gpsRecordingEnabled: z.boolean(),
+    eventId: z.string().optional(),
+    plan: z.custom<RecordingServiceActivityPlan>().optional(),
+  })
+  .strict();
 
 export type ActivityPayload = z.infer<typeof ActivityPayloadSchema>;
 
@@ -211,12 +210,8 @@ export type ActivityPayload = z.infer<typeof ActivityPayloadSchema>;
  */
 export const isContinuousActivity = (
   category: PublicActivityCategory,
-  location: PublicActivityLocation,
 ): boolean => {
-  return (
-    (category === "run" || category === "bike") &&
-    (location === "outdoor" || location === "indoor")
-  );
+  return category === "run" || category === "bike";
 };
 
 /**
@@ -229,12 +224,12 @@ export const isStepBasedActivity = (
 };
 
 /**
- * Check if activity is outdoor (requires GPS)
+ * Check if activity is configured to record GPS
  */
-export const isOutdoorActivity = (
-  location: PublicActivityLocation,
+export const isGpsRecordingEnabled = (
+  gpsRecordingEnabled: boolean,
 ): boolean => {
-  return location === "outdoor";
+  return gpsRecordingEnabled;
 };
 
 /**
@@ -242,19 +237,14 @@ export const isOutdoorActivity = (
  */
 export const getActivityDisplayName = (
   category: PublicActivityCategory,
-  location: PublicActivityLocation,
+  _gpsRecordingEnabled: boolean,
 ): string => {
-  if (category === "bike" && location === "indoor")
-    return "Indoor Bike Trainer";
-  if (category === "run" && location === "indoor") return "Treadmill";
   if (category === "strength") return "Strength Training";
   if (category === "swim") return "Swimming";
   if (category === "other") return "Other Activity";
 
-  // Standard format: "Outdoor Run", "Outdoor Bike"
-  const locationStr = location.charAt(0).toUpperCase() + location.slice(1);
   const categoryStr = category.charAt(0).toUpperCase() + category.slice(1);
-  return `${locationStr} ${categoryStr}`;
+  return categoryStr;
 };
 
 /**
@@ -277,7 +267,6 @@ export const getActivityGeneralCategory = (
  */
 export const supportsStructuredActivities = (
   category: PublicActivityCategory,
-  location: PublicActivityLocation,
 ): boolean => {
   return category === "run" || category === "bike" || category === "strength";
 };
@@ -287,18 +276,18 @@ export const supportsStructuredActivities = (
  */
 export const getPrimaryMetrics = (
   category: PublicActivityCategory,
-  location: PublicActivityLocation,
+  gpsRecordingEnabled: boolean,
 ): string[] => {
-  if (category === "run" && location === "outdoor") {
+  if (category === "run" && gpsRecordingEnabled) {
     return ["pace", "heartRate", "distance", "elevation"];
   }
-  if (category === "run" && location === "indoor") {
+  if (category === "run" && !gpsRecordingEnabled) {
     return ["pace", "heartRate", "incline"];
   }
-  if (category === "bike" && location === "outdoor") {
+  if (category === "bike" && gpsRecordingEnabled) {
     return ["power", "speed", "heartRate", "cadence", "elevation"];
   }
-  if (category === "bike" && location === "indoor") {
+  if (category === "bike" && !gpsRecordingEnabled) {
     return ["power", "heartRate", "cadence"];
   }
   if (category === "strength") {
@@ -354,7 +343,6 @@ export const mapActivityTypeToCategory = (
  */
 export const canRecordActivity = (
   category: PublicActivityCategory,
-  location: PublicActivityLocation,
 ): boolean => {
   return category === "run" || category === "bike" || category === "strength";
 };

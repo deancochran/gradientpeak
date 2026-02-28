@@ -11,7 +11,7 @@ export const UPPER_BODY_STRENGTH: RecordingServiceActivityPlan = {
   name: "Upper Body Strength",
   description: "Comprehensive upper body strength training session",
   activity_category: "strength",
-  activity_location: "indoor",
+  gps_recording_enabled: false,
   structure: createPlan()
     .step({
       name: "Dynamic Warm-up",
@@ -61,7 +61,7 @@ export const LOWER_BODY_STRENGTH: RecordingServiceActivityPlan = {
   name: "Lower Body Strength",
   description: "Comprehensive lower body strength and power training",
   activity_category: "strength",
-  activity_location: "indoor",
+  gps_recording_enabled: false,
   structure: createPlan()
     .step({
       name: "Dynamic Warm-up",
@@ -112,7 +112,7 @@ export const FULL_BODY_CIRCUIT: RecordingServiceActivityPlan = {
   name: "Full Body Circuit",
   description: "High-intensity full body circuit training",
   activity_category: "strength",
-  activity_location: "indoor",
+  gps_recording_enabled: false,
   structure: createPlan()
     .step({
       name: "Movement Prep",
@@ -158,7 +158,7 @@ export const CORE_STABILITY: RecordingServiceActivityPlan = {
   name: "Core and Stability",
   description: "Focused core strength and stability training",
   activity_category: "strength",
-  activity_location: "indoor",
+  gps_recording_enabled: false,
   structure: createPlan()
     .step({
       name: "Core Activation",
@@ -209,7 +209,7 @@ export const FUNCTIONAL_MOVEMENT: RecordingServiceActivityPlan = {
   name: "Functional Movement",
   description: "Movement patterns for daily life and sport performance",
   activity_category: "strength",
-  activity_location: "indoor",
+  gps_recording_enabled: false,
   structure: createPlan()
     .step({
       name: "Movement Preparation",
@@ -262,7 +262,7 @@ export const SYSTEM_UPPER_BODY_STRENGTH: RecordingServiceActivityPlan = {
   description:
     "Bench press, rows, and overhead press - Complete upper body workout",
   activity_category: "strength",
-  activity_location: "indoor",
+  gps_recording_enabled: false,
   structure: createPlan()
     .warmup({
       duration: Duration.minutes(5),
@@ -327,7 +327,7 @@ export const SYSTEM_LOWER_BODY_STRENGTH: RecordingServiceActivityPlan = {
   name: "Lower Body Strength",
   description: "Squats, deadlifts, and lunges - Complete lower body workout",
   activity_category: "strength",
-  activity_location: "indoor",
+  gps_recording_enabled: false,
   structure: createPlan()
     .warmup({
       duration: Duration.minutes(5),

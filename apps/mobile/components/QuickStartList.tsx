@@ -1,13 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import {
-  getActivityDisplayName
-} from "@repo/core";
-import type {
-  PublicActivityCategory,
-  PublicActivityLocation
-} from "@repo/supabase";
+import { getActivityDisplayName } from "@repo/core";
+import type { PublicActivityCategory } from "@repo/supabase";
 import {
   Activity,
   Bike,
@@ -21,63 +16,63 @@ import { View } from "react-native";
 interface QuickStartListProps {
   onActivitySelect: (
     category: PublicActivityCategory,
-    location: PublicActivityLocation,
+    gpsRecordingEnabled: boolean,
   ) => void;
 }
 
 // Activity configurations
 const ACTIVITY_CONFIGS: {
   category: PublicActivityCategory;
-  location: PublicActivityLocation;
+  gpsRecordingEnabled: boolean;
   icon: any;
   color: string;
   description: string;
 }[] = [
   {
     category: "run",
-    location: "outdoor",
+    gpsRecordingEnabled: true,
     icon: Footprints,
     color: "text-emerald-600",
     description: "GPS tracking, pace analysis",
   },
   {
     category: "bike",
-    location: "outdoor",
+    gpsRecordingEnabled: true,
     icon: Bike,
     color: "text-blue-600",
     description: "GPS tracking, speed & elevation",
   },
   {
     category: "bike",
-    location: "indoor",
+    gpsRecordingEnabled: false,
     icon: Bike,
     color: "text-orange-600",
     description: "Power & cadence tracking",
   },
   {
     category: "run",
-    location: "indoor",
+    gpsRecordingEnabled: false,
     icon: Footprints,
     color: "text-purple-600",
     description: "Pace & incline tracking",
   },
   {
     category: "strength",
-    location: "indoor",
+    gpsRecordingEnabled: false,
     icon: Dumbbell,
     color: "text-red-600",
     description: "Sets, reps & weight tracking",
   },
   {
     category: "swim",
-    location: "indoor",
+    gpsRecordingEnabled: false,
     icon: Waves,
     color: "text-cyan-600",
     description: "Distance & stroke tracking",
   },
   {
     category: "other",
-    location: "outdoor",
+    gpsRecordingEnabled: true,
     icon: Activity,
     color: "text-gray-600",
     description: "Basic time & heart rate",
@@ -89,9 +84,11 @@ export function QuickStartList({ onActivitySelect }: QuickStartListProps) {
     <View className="gap-3">
       {ACTIVITY_CONFIGS.map((config, index) => (
         <ActivityCard
-          key={`${config.category}-${config.location}-${index}`}
+          key={`${config.category}-${config.gpsRecordingEnabled}-${index}`}
           config={config}
-          onSelect={() => onActivitySelect(config.category, config.location)}
+          onSelect={() =>
+            onActivitySelect(config.category, config.gpsRecordingEnabled)
+          }
         />
       ))}
     </View>
@@ -118,7 +115,7 @@ function ActivityCard({ config, onSelect }: ActivityCardProps) {
 
       <View className="flex-1">
         <Text className="text-lg font-semibold mb-1">
-          {getActivityDisplayName(config.category, config.location)}
+          {getActivityDisplayName(config.category, config.gpsRecordingEnabled)}
         </Text>
         <Text className="text-sm text-muted-foreground">
           {config.description}

@@ -26,21 +26,19 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import type {
-  PublicActivityCategory,
-  PublicActivityLocation
-} from "@repo/supabase";
+import type { PublicActivityCategory } from "@repo/supabase";
 import { useFocusMode } from "@/lib/contexts/FocusModeContext";
 
 import { ZoneA } from "./ZoneA";
 import { ZoneB } from "./ZoneB";
 import { ZoneC } from "./ZoneC";
 import { RecordingErrorBoundary } from "../RecordingErrorBoundary";
+import { shouldShowZoneA } from "./mapGating";
 
 export interface RecordingZonesProps {
   service: ActivityRecorderService | null;
   category: PublicActivityCategory;
-  location: PublicActivityLocation;
+  gpsRecordingEnabled: boolean;
   hasPlan: boolean;
   hasRoute: boolean;
 }
@@ -51,7 +49,7 @@ export interface RecordingZonesProps {
 export interface ZoneFocusOverlayProps {
   service: ActivityRecorderService | null;
   category: PublicActivityCategory;
-  location: PublicActivityLocation;
+  gpsRecordingEnabled: boolean;
   hasPlan: boolean;
   hasRoute: boolean;
 }
@@ -59,7 +57,7 @@ export interface ZoneFocusOverlayProps {
 export function RecordingZones({
   service,
   category,
-  location,
+  gpsRecordingEnabled,
   hasPlan,
   hasRoute,
 }: RecordingZonesProps) {
@@ -67,13 +65,8 @@ export function RecordingZones({
 
   // Determine zone visibility based on configuration
   const { showZoneA, showZoneB, showZoneC } = useMemo(() => {
-    const isOutdoor = location === "outdoor";
-    const isIndoor = location === "indoor";
-
     // Zone A visibility logic
-    const showZoneA =
-      isOutdoor || // Always show for outdoor
-      (isIndoor && hasRoute); // Show for indoor only if has route
+    const showZoneA = shouldShowZoneA(gpsRecordingEnabled, hasRoute);
 
     // Zone B visibility logic
     const showZoneB = hasPlan; // Only show if plan exists
@@ -82,21 +75,27 @@ export function RecordingZones({
     const showZoneC = true;
 
     return { showZoneA, showZoneB, showZoneC };
-  }, [location, hasPlan, hasRoute]);
+  }, [gpsRecordingEnabled, hasPlan, hasRoute]);
 
   // Hide regular zones when any zone is focused
-  const isAnyZoneFocused = focusState === "zone-a" || focusState === "zone-b" || focusState === "zone-c";
+  const isAnyZoneFocused =
+    focusState === "zone-a" ||
+    focusState === "zone-b" ||
+    focusState === "zone-c";
 
   return (
     /* Zone stack - flexbox layout with gap, no padding */
-    <View className="flex-1 gap-4" style={{ opacity: isAnyZoneFocused ? 0 : 1 }}>
+    <View
+      className="flex-1 gap-4"
+      style={{ opacity: isAnyZoneFocused ? 0 : 1 }}
+    >
       {/* Zone A: Context Layer (Map/Route) */}
       {showZoneA && (
         <AnimatedZoneContainer show={showZoneA} useFlex={true}>
           <RecordingErrorBoundary componentName="Zone A">
             <ZoneA
               service={service}
-              location={location}
+              gpsRecordingEnabled={gpsRecordingEnabled}
               hasRoute={hasRoute}
               isFocused={focusState === "zone-a"}
             />
@@ -121,10 +120,7 @@ export function RecordingZones({
       {showZoneC && (
         <AnimatedZoneContainer show={showZoneC} useFlex={true}>
           <RecordingErrorBoundary componentName="Zone C">
-            <ZoneC
-              service={service}
-              isFocused={focusState === "zone-c"}
-            />
+            <ZoneC service={service} isFocused={focusState === "zone-c"} />
           </RecordingErrorBoundary>
         </AnimatedZoneContainer>
       )}
@@ -143,7 +139,7 @@ export function RecordingZones({
 export function ZoneFocusOverlay({
   service,
   category,
-  location,
+  gpsRecordingEnabled,
   hasPlan,
   hasRoute,
 }: ZoneFocusOverlayProps) {
@@ -151,15 +147,12 @@ export function ZoneFocusOverlay({
 
   // Determine zone visibility based on configuration
   const { showZoneA, showZoneB, showZoneC } = useMemo(() => {
-    const isOutdoor = location === "outdoor";
-    const isIndoor = location === "indoor";
-
-    const showZoneA = isOutdoor || (isIndoor && hasRoute);
+    const showZoneA = shouldShowZoneA(gpsRecordingEnabled, hasRoute);
     const showZoneB = hasPlan;
     const showZoneC = true;
 
     return { showZoneA, showZoneB, showZoneC };
-  }, [location, hasPlan, hasRoute]);
+  }, [gpsRecordingEnabled, hasPlan, hasRoute]);
 
   if (focusState === "none" || focusState === "footer") return null;
 
@@ -170,7 +163,7 @@ export function ZoneFocusOverlay({
       <RecordingErrorBoundary componentName="Zone A">
         <ZoneA
           service={service}
-          location={location}
+          gpsRecordingEnabled={gpsRecordingEnabled}
           hasRoute={hasRoute}
           isFocused={true}
         />
@@ -237,14 +230,14 @@ function AnimatedZoneContainer({
         opacity: opacity.value,
         transform: [{ scale: scale.value }],
         flex: height.value, // Animate flex value from 0 to 1
-        overflow: 'hidden',
+        overflow: "hidden",
       };
     } else {
       // Content-based sizing: don't use flex, just scale opacity
       return {
         opacity: opacity.value,
         transform: [{ scale: scale.value }],
-        overflow: 'hidden',
+        overflow: "hidden",
       };
     }
   });
@@ -254,9 +247,5 @@ function AnimatedZoneContainer({
     return null;
   }
 
-  return (
-    <Animated.View style={animatedStyle}>
-      {children}
-    </Animated.View>
-  );
+  return <Animated.View style={animatedStyle}>{children}</Animated.View>;
 }

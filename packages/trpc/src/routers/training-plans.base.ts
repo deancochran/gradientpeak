@@ -2878,8 +2878,6 @@ export const trainingPlansRouter = createTRPCRouter({
               name: upcomingPlansWithEstimations[index].name,
               activity_category:
                 upcomingPlansWithEstimations[index].activity_category,
-              activity_location:
-                upcomingPlansWithEstimations[index].activity_location,
               estimated_duration:
                 upcomingPlansWithEstimations[index].estimated_duration,
               estimated_tss: upcomingPlansWithEstimations[index].estimated_tss,

@@ -79,8 +79,6 @@ export function useRecordingConfiguration(
           structure: planData.structure,
           activity_category:
             planData.activity_category || service.selectedActivityCategory,
-          activity_location:
-            planData.activity_location || service.selectedActivityLocation,
           route_id: planData.route_id || undefined,
         };
 

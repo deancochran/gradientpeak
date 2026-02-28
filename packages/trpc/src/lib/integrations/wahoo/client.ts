@@ -94,7 +94,10 @@ export interface WahooWorkout {
 
 export interface WahooWorkoutSummary {
   id: number;
-  workout_id: number;
+  workout_id?: number;
+  started_at?: string;
+  created_at?: string;
+  updated_at?: string;
   ascent_accum: number;
   cadence_avg: number;
   calories_accum: number;
@@ -109,6 +112,11 @@ export interface WahooWorkoutSummary {
   work_accum: number;
   file: {
     url: string;
+  };
+  workout?: {
+    id: number;
+    name?: string;
+    workout_type_id?: number;
   };
   fitness_app_id: number;
   manual: boolean;

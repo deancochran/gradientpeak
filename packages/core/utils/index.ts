@@ -7,9 +7,6 @@
 // Export all activity defaults
 export * from "./activity-defaults";
 
-// Export from plan-view-logic (exclude ActivityType, canHaveRoute, isOutdoorActivity - in schemas)
-export { isIndoorActivity } from "./plan-view-logic";
-
 // Export from polyline (exclude calculateDistance - in calculations)
 export {
   calculateBounds,

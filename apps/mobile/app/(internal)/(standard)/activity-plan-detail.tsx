@@ -152,7 +152,7 @@ export default function ActivityPlanDetailPage() {
 
     const payload: ActivityPayload = {
       category: activityPlan.activity_category,
-      location: activityPlan.activity_location,
+      gpsRecordingEnabled: true,
       plan: activityPlan,
       eventId: plannedActivity?.id,
     };
@@ -338,10 +338,6 @@ export default function ActivityPlanDetailPage() {
           <View className="flex-row items-center gap-2 mb-3">
             <Text className="text-sm text-muted-foreground capitalize">
               {activityPlan.activity_category}
-            </Text>
-            <Text className="text-sm text-muted-foreground">•</Text>
-            <Text className="text-sm text-muted-foreground capitalize">
-              {activityPlan.activity_location}
             </Text>
           </View>
 

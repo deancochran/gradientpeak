@@ -21,7 +21,7 @@ class ActivitySelectionStore {
   setSelection(payload: ActivityPayload): void {
     console.log("[ActivitySelectionStore] Setting selection:", {
       category: payload.category,
-      location: payload.location,
+      gpsRecordingEnabled: payload.gpsRecordingEnabled,
       hasPlan: !!payload.plan,
       eventId: payload.eventId,
     });
@@ -38,7 +38,7 @@ class ActivitySelectionStore {
       console.log(
         "[ActivitySelectionStore] Consuming selection:",
         current.category,
-        current.location,
+        current.gpsRecordingEnabled,
       );
       this.selection = null;
     } else {
@@ -64,7 +64,7 @@ class ActivitySelectionStore {
       console.log(
         "[ActivitySelectionStore] Clearing selection:",
         this.selection.category,
-        this.selection.location,
+        this.selection.gpsRecordingEnabled,
       );
     } else {
       console.log("[ActivitySelectionStore] Clearing empty store");
@@ -85,13 +85,13 @@ class ActivitySelectionStore {
   getSelectionInfo(): {
     hasSelection: boolean;
     category?: string;
-    location?: string;
+    gpsRecordingEnabled?: boolean;
     hasPlan?: boolean;
   } {
     return {
       hasSelection: this.selection !== null,
       category: this.selection?.category,
-      location: this.selection?.location,
+      gpsRecordingEnabled: this.selection?.gpsRecordingEnabled,
       hasPlan: !!this.selection?.plan,
     };
   }

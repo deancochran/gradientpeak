@@ -162,27 +162,86 @@ function ActivityDetailScreen() {
     );
   };
 
+  const routeCoordinates = useMemo(() => {
+    if (activity?.polyline) {
+      return decodePolyline(activity.polyline);
+    }
+
+    const records = streamsData?.records;
+    if (!records || records.length === 0) {
+      return [];
+    }
+
+    const coordinates: Array<{ latitude: number; longitude: number }> = [];
+
+    for (const record of records as any[]) {
+      const latitude =
+        typeof record.positionLat === "number"
+          ? record.positionLat
+          : typeof record.latitude === "number"
+            ? record.latitude
+            : null;
+      const longitude =
+        typeof record.positionLong === "number"
+          ? record.positionLong
+          : typeof record.longitude === "number"
+            ? record.longitude
+            : null;
+
+      if (
+        latitude !== null &&
+        longitude !== null &&
+        Math.abs(latitude) <= 90 &&
+        Math.abs(longitude) <= 180 &&
+        !(latitude === 0 && longitude === 0)
+      ) {
+        coordinates.push({ latitude, longitude });
+      }
+    }
+
+    return coordinates;
+  }, [activity?.polyline, streamsData?.records]);
+
   // Process map data
   const mapRegion = useMemo(() => {
-    if (!activity?.map_bounds) return null;
-    const bounds = activity.map_bounds as any;
-    const midLat = (bounds.min_lat + bounds.max_lat) / 2;
-    const midLng = (bounds.min_lng + bounds.max_lng) / 2;
-    const deltaLat = Math.abs(bounds.max_lat - bounds.min_lat) * 1.1;
-    const deltaLng = Math.abs(bounds.max_lng - bounds.min_lng) * 1.1;
+    if (activity?.map_bounds) {
+      const bounds = activity.map_bounds as any;
+      const midLat = (bounds.min_lat + bounds.max_lat) / 2;
+      const midLng = (bounds.min_lng + bounds.max_lng) / 2;
+      const deltaLat = Math.abs(bounds.max_lat - bounds.min_lat) * 1.1;
+      const deltaLng = Math.abs(bounds.max_lng - bounds.min_lng) * 1.1;
+
+      return {
+        latitude: midLat,
+        longitude: midLng,
+        latitudeDelta: Math.max(deltaLat, 0.005),
+        longitudeDelta: Math.max(deltaLng, 0.005),
+      } as Region;
+    }
+
+    if (routeCoordinates.length === 0) {
+      return null;
+    }
+
+    let minLat = routeCoordinates[0]!.latitude;
+    let maxLat = routeCoordinates[0]!.latitude;
+    let minLng = routeCoordinates[0]!.longitude;
+    let maxLng = routeCoordinates[0]!.longitude;
+
+    for (const coordinate of routeCoordinates) {
+      minLat = Math.min(minLat, coordinate.latitude);
+      maxLat = Math.max(maxLat, coordinate.latitude);
+      minLng = Math.min(minLng, coordinate.longitude);
+      maxLng = Math.max(maxLng, coordinate.longitude);
+    }
 
     return {
-      latitude: midLat,
-      longitude: midLng,
-      latitudeDelta: Math.max(deltaLat, 0.005),
-      longitudeDelta: Math.max(deltaLng, 0.005),
+      latitude: (minLat + maxLat) / 2,
+      longitude: (minLng + maxLng) / 2,
+      latitudeDelta: Math.max((maxLat - minLat) * 1.1, 0.005),
+      longitudeDelta: Math.max((maxLng - minLng) * 1.1, 0.005),
     } as Region;
-  }, [activity]);
-
-  const routeCoordinates = useMemo(() => {
-    if (!activity?.polyline) return [];
-    return decodePolyline(activity.polyline);
-  }, [activity]);
+  }, [activity?.map_bounds, routeCoordinates]);
 
   // Process streams data for charts
   const { chartStreams, elevationStream, distanceStream } = useMemo(() => {
@@ -383,7 +442,6 @@ function ActivityDetailScreen() {
             startedAt: activity.started_at,
             device_manufacturer: activity.device_manufacturer,
             device_product: activity.device_product,
-            location: activity.location,
           }}
           notes={activity.notes ?? undefined}
         />

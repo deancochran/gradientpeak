@@ -18,10 +18,7 @@ import { useAllPermissionsGranted } from "@/lib/hooks/useStandalonePermissions";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import type { ActivityPayload, RecordingState } from "@repo/core";
-import type {
-  PublicActivityCategory,
-  PublicActivityLocation,
-} from "@repo/supabase";
+import type { PublicActivityCategory } from "@repo/supabase";
 import { useRouter } from "expo-router";
 import {
   Activity,
@@ -69,8 +66,7 @@ function RecordScreen() {
   const state = useRecordingState(service);
   const { count: sensorCount } = useSensors(service);
   const plan = usePlan(service);
-  const { isOutdoorActivity, activityCategory, activityLocation } =
-    useActivityStatus(service);
+  const { gpsRecordingEnabled, activityCategory } = useActivityStatus(service);
   const { start, pause, resume, finish } = useRecorderActions(service);
   const { allGranted: allPermissionsGranted, isLoading: permissionsLoading } =
     useAllPermissionsGranted();
@@ -96,14 +92,14 @@ function RecordScreen() {
 
         if (!selection) {
           // No pre-loaded activity - this is a direct tab access
-          // Default to outdoor run
+          // Default to run with GPS enabled
           console.log(
-            "[RecordModal] No selection found - defaulting to outdoor run",
+            "[RecordModal] No selection found - defaulting to run with GPS ON",
           );
 
           const defaultPayload: ActivityPayload = {
             category: "run",
-            location: "outdoor",
+            gpsRecordingEnabled: true,
           };
 
           service.selectActivityFromPayload(defaultPayload);
@@ -113,7 +109,7 @@ function RecordScreen() {
 
         console.log("[RecordModal] Selection loaded:", {
           category: selection.category,
-          location: selection.location,
+          gpsRecordingEnabled: selection.gpsRecordingEnabled,
           hasPlan: !!selection.plan,
           eventId: selection.eventId,
         });
@@ -141,7 +137,7 @@ function RecordScreen() {
 
   // Handle activity selection from modal (for quick start)
   const handleActivitySelect = useCallback(
-    (category: PublicActivityCategory, location: PublicActivityLocation) => {
+    (category: PublicActivityCategory, nextGpsRecordingEnabled: boolean) => {
       if (!service) {
         Alert.alert("Error", "Service not initialized");
         return;
@@ -149,27 +145,27 @@ function RecordScreen() {
 
       console.log("[RecordModal] Activity selected from modal:", {
         category,
-        location,
+        gpsRecordingEnabled: nextGpsRecordingEnabled,
       });
 
-      // When changing location/category, DO NOT include the plan in the payload
+      // When changing category/GPS state, DO NOT include the plan in the payload
       // This allows selectActivityFromPayload to call updateActivityConfiguration
-      // which preserves the plan and only updates the location/category
+      // which preserves the plan and only updates the category/GPS state
       const payload: ActivityPayload = {
         category,
-        location,
+        gpsRecordingEnabled: nextGpsRecordingEnabled,
         // Note: We intentionally DO NOT include the plan here
-        // The plan should remain untouched when just changing location/category
+        // The plan should remain untouched when just changing category/GPS state
       };
 
       console.log("[RecordModal] Updating activity configuration:", {
         category,
-        location,
+        gpsRecordingEnabled: nextGpsRecordingEnabled,
         hasPlan: !!service.plan,
       });
 
       // This will call updateActivityConfiguration (if state !== 'pending')
-      // which preserves the existing plan and only updates location/category
+      // which preserves the existing plan and only updates category/GPS state
       service.selectActivityFromPayload(payload);
     },
     [service],
@@ -342,10 +338,10 @@ function RecordScreen() {
   // Debug: Track activity status changes
   useEffect(() => {
     console.log("[RecordModal] Activity status changed:", {
-      isOutdoorActivity,
+      gpsRecordingEnabled,
       hasPlan: plan.hasPlan,
     });
-  }, [isOutdoorActivity, plan.hasPlan]);
+  }, [gpsRecordingEnabled, plan.hasPlan]);
 
   // Get recording capabilities - determines what UI to show
   const capabilities = useRecordingCapabilities(service);
@@ -396,7 +392,7 @@ function RecordScreen() {
         onClose={() => setActivityModalVisible(false)}
         onActivitySelect={handleActivitySelect}
         currentCategory={activityCategory || "run"}
-        currentLocation={activityLocation || "outdoor"}
+        currentGpsRecordingEnabled={gpsRecordingEnabled}
       />
 
       {/* Sensor Disconnect Warning */}
@@ -432,7 +428,7 @@ function RecordScreen() {
         <RecordingZones
           service={service}
           category={activityCategory}
-          location={activityLocation}
+          gpsRecordingEnabled={gpsRecordingEnabled}
           hasPlan={plan.hasPlan}
           hasRoute={hasRoute}
         />
@@ -441,7 +437,7 @@ function RecordScreen() {
         <ZoneFocusOverlay
           service={service}
           category={activityCategory}
-          location={activityLocation}
+          gpsRecordingEnabled={gpsRecordingEnabled}
           hasPlan={plan.hasPlan}
           hasRoute={hasRoute}
         />
@@ -452,7 +448,7 @@ function RecordScreen() {
         service={service}
         recordingState={mapServiceStateToRecordingState(state)}
         category={activityCategory}
-        location={activityLocation}
+        gpsRecordingEnabled={gpsRecordingEnabled}
         hasPlan={plan.hasPlan}
         hasRoute={hasRoute}
         onStart={handleStart}

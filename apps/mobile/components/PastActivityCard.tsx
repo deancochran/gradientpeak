@@ -1,13 +1,9 @@
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
 import { ActivityHeader } from "@/components/activity/shared/ActivityHeader";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
-import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { trpc } from "@/lib/trpc";
 import { decodePolyline } from "@repo/core";
-import { format } from "date-fns";
-import { MapPin } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -27,7 +23,6 @@ interface PastActivityCardProps {
     duration_seconds: number;
     moving_seconds: number;
     distance_meters: number;
-    location?: string | null;
     route_id?: string | null;
     activity_plan_id?: string | null;
     metrics?: any;
@@ -148,16 +143,6 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
     return null;
   }, [activity.type, activity.distance_meters, activity.moving_seconds]);
 
-  // Format location
-  const locationString = useMemo(() => {
-    if (!activity.location) return null;
-    // Check if we have a string location
-    if (typeof activity.location === "string") {
-      return activity.location;
-    }
-    return null;
-  }, [activity.location]);
-
   return (
     <Pressable onPress={onPress} disabled={!onPress}>
       <Card>
@@ -172,7 +157,6 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
                 startedAt: activity.started_at,
                 device_manufacturer: activity.device_manufacturer,
                 device_product: activity.device_product,
-                location: locationString,
               }}
               variant="embedded"
             />

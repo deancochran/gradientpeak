@@ -6,7 +6,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Text } from "@/components/ui/text";
-import { ACTIVITY_CATEGORY_CONFIG, ACTIVITY_LOCATIONS } from "@repo/core";
+import { ACTIVITY_CATEGORY_CONFIG } from "@repo/core";
 import * as Haptics from "expo-haptics";
 import { memo, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
@@ -139,7 +139,7 @@ export const ActivityTypeSelector = memo<ActivityTypeSelectorProps>(
 ActivityTypeSelector.displayName = "ActivityTypeSelector";
 
 // ============================================================================
-// NEW COMPONENTS FOR SEPARATED LOCATION AND CATEGORY
+// ACTIVITY CATEGORY SELECTOR
 // ============================================================================
 
 interface ActivityCategorySelectorProps {
@@ -263,51 +263,3 @@ export const ActivityCategorySelector = memo<ActivityCategorySelectorProps>(
 );
 
 ActivityCategorySelector.displayName = "ActivityCategorySelector";
-
-interface ActivityLocationSelectorProps {
-  value: string;
-  onChange: (location: string) => void;
-}
-
-export const ActivityLocationSelector = memo<ActivityLocationSelectorProps>(
-  function ActivityLocationSelector({
-    value,
-    onChange,
-  }: ActivityLocationSelectorProps) {
-    const handleSelect = (location: string) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      onChange(location);
-    };
-
-    return (
-      <View className="flex-row gap-2">
-        {Object.entries(ACTIVITY_LOCATIONS).map(([key, config]) => {
-          const isSelected = value === key;
-
-          return (
-            <Pressable
-              key={key}
-              onPress={() => handleSelect(key)}
-              className={`flex-1 flex-row items-center justify-center gap-2 p-3 rounded-lg border ${
-                isSelected
-                  ? "bg-primary/10 border-primary"
-                  : "bg-card border-border active:bg-muted"
-              }`}
-            >
-              <Text
-                className={`text-sm font-medium ${
-                  isSelected ? "text-primary" : "text-foreground"
-                }`}
-              >
-                {key === "outdoor" ? "🌳" : "🏠"} {config.name}
-              </Text>
-              {isSelected && <Text className="text-primary text-xs">✓</Text>}
-            </Pressable>
-          );
-        })}
-      </View>
-    );
-  },
-);
-
-ActivityLocationSelector.displayName = "ActivityLocationSelector";

@@ -3,11 +3,7 @@ import {
   type PublicActivityMetric,
   type PublicActivityMetricDataType,
 } from "@repo/core";
-import type {
-  PublicActivityCategory,
-  PublicActivityLocation,
-  PublicProfilesRow,
-} from "@repo/supabase";
+import type { PublicActivityCategory, PublicProfilesRow } from "@repo/supabase";
 import {
   Activity,
   Bike,
@@ -415,7 +411,7 @@ export interface RecordingMetadata {
   startedAt: string; // ISO timestamp
   endedAt?: string; // ISO timestamp (set on finish)
   activityCategory: PublicActivityCategory;
-  activityLocation: PublicActivityLocation;
+  gpsRecordingEnabled: boolean;
   profileId: string;
   profile: PublicProfilesRow;
   eventId?: string;
